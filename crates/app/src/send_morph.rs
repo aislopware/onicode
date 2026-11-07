@@ -99,9 +99,9 @@ pub(crate) fn expanded_width(label: &str, window: &Window) -> f32 {
 }
 
 impl Morph {
-    /// Steps toward `face`, whose pill is `target` wide when expanded.
-    pub(crate) fn frame(&mut self, face: Face, target: f32, animate: bool) -> Frame {
-        let now = Instant::now();
+    /// Steps toward `face`, whose pill is `target` wide when expanded, as it stands at `now` (the
+    /// frame's time, so a frame drawn again at the same moment stands where this one did).
+    pub(crate) fn frame(&mut self, face: Face, target: f32, animate: bool, now: Instant) -> Frame {
         let to = if face.expanded { target } else { SQUARE };
         let previous = self.shown.replace(face);
         // Width: ease from wherever it is now toward the new size.

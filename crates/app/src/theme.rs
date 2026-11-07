@@ -64,17 +64,18 @@ const TWEEN_LENGTH: std::time::Duration = std::time::Duration::from_millis(360);
 
 #[cfg(test)]
 pub(crate) fn configure(p: &crate::settings::Preferences, system_light: bool) -> bool {
-    configure_project(p, None, system_light, false)
+    configure_project(p, None, system_light, false, std::time::Instant::now())
 }
 /// Paint with `project`'s colors in place of the app-wide ones. With
 /// `animate`, a change of colors blends from what is on screen; call again
-/// each frame while [`tweening`] so the blend advances. Returns whether the
-/// painted colors changed.
+/// each frame while [`tweening`] so the blend advances, standing at `now` (the frame's time).
+/// Returns whether the painted colors changed.
 pub(crate) fn configure_project(
     p: &crate::settings::Preferences,
     project: Option<&onicode_protocol::project_appearance::ProjectTheme>,
     system_light: bool,
     animate: bool,
+    now: std::time::Instant,
 ) -> bool {
     let light = p.theme == "light" || (p.theme == "system" && system_light);
     let (workspace_theme, accent_color, hue, saturation, dark_lightness) = match project {
@@ -133,7 +134,6 @@ pub(crate) fn configure_project(
         diff_strong: p.diff_palette == "high-contrast",
         syntax: syntax_palette(workspace_theme, light),
     };
-    let now = std::time::Instant::now();
     if TARGET.with(|t| t.replace(Some(tokens))) != Some(tokens) {
         let shown = TOKENS.with(|t| *t.borrow());
         // A light/dark flip repaints too much at once to blend well.
@@ -145,7 +145,7 @@ pub(crate) fn configure_project(
     }
     let painted = match TWEEN.get() {
         Some((from, start)) => {
-            let t = (now - start).as_secs_f32() / TWEEN_LENGTH.as_secs_f32();
+            let t = now.saturating_duration_since(start).as_secs_f32() / TWEEN_LENGTH.as_secs_f32();
             if t >= 1. {
                 TWEEN.set(None);
                 tokens
@@ -700,18 +700,36 @@ mod composer_tests {
             saturation: 40,
             ..Default::default()
         };
-        assert!(configure_project(&preferences, Some(&theme), false, true));
+        let start = std::time::Instant::now();
+        assert!(configure_project(
+            &preferences,
+            Some(&theme),
+            false,
+            true,
+            start
+        ));
         assert!(tweening());
         // The blend starts from the colors on screen.
         assert_eq!(accent_color(), app_accent);
-        std::thread::sleep(TWEEN_LENGTH);
-        configure_project(&preferences, Some(&theme), false, true);
+        configure_project(
+            &preferences,
+            Some(&theme),
+            false,
+            true,
+            start + TWEEN_LENGTH,
+        );
         assert!(!tweening());
         assert_eq!(accent_color(), rgb(0xef4444).into());
         assert_eq!(picked_accent(), rgb(0xef4444).into());
         assert_eq!(shell_fill().h, 20. / 360.);
         // Without animation the app colors return at once.
-        assert!(configure_project(&preferences, None, false, false));
+        assert!(configure_project(
+            &preferences,
+            None,
+            false,
+            false,
+            start + TWEEN_LENGTH
+        ));
         assert!(!tweening());
         assert_eq!(accent_color(), app_accent);
     }

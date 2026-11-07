@@ -887,17 +887,17 @@ impl QuickComposer {
     fn picker_motion(&mut self, window: &mut Window, cx: &App) -> (f32, f32, bool) {
         // The probe sits inside the 1px border on each side.
         let natural = self.card.get().map(|b| f32::from(b.size.height) + 2.);
+        let now = cx.frame_time();
         if self.motion_picker != self.picker {
             self.motion_picker = self.picker;
-            self.motion = (!cx.reduce_motion() && self.height > 0.)
-                .then(|| (std::time::Instant::now(), self.height));
+            self.motion = (!cx.reduce_motion() && self.height > 0.).then_some((now, self.height));
         }
         let (Some((start, from)), Some(to)) = (self.motion, natural) else {
             self.motion = None;
             self.height = natural.unwrap_or(0.);
             return (self.height, 1., false);
         };
-        let elapsed = start.elapsed().as_secs_f32();
+        let elapsed = now.saturating_duration_since(start).as_secs_f32();
         if elapsed >= PICKER_RESIZE {
             self.motion = None;
             self.height = to;

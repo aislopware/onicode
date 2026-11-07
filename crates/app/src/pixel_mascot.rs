@@ -58,7 +58,7 @@ pub(crate) fn avatar(name: &str, color: u32, status: &str, side: f32, still: boo
                 crate::pulse::Rate::Low
             };
             let animate = moves && crate::pulse::request(rate, window, cx);
-            let t = crate::pulse::elapsed(cx).as_secs_f32();
+            let t = crate::pulse::elapsed(window, cx).as_secs_f32();
             let talk = animate && status == "working" && (t * 3.).floor() as u64 % 2 == 1;
             let sprite = &SPRITES[index];
             let rows = if talk { &sprite.talk } else { &sprite.rest };

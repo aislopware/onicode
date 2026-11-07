@@ -143,7 +143,7 @@ impl Shell {
         } else {
             self.started_groups(ids)
         };
-        let now = Instant::now();
+        let now = cx.frame_time();
         let mut animating = false;
         let mut seen = HashSet::new();
         for &id in ids {
@@ -222,7 +222,7 @@ impl Shell {
                 self.session_row(id, cx)
             };
         };
-        let now = Instant::now();
+        let now = cx.frame_time();
         let progress = self.rails.motions.get(&id).map_or(0., |m| m.value(now));
         let open = self.rails.motions.get(&id).is_some_and(|m| m.open);
         let row = self.session_row_with(id, nested, Some((&rail, open)), cx);
@@ -1009,7 +1009,8 @@ mod tests {
     /// Rail motion runs on the wall clock, as the window's frames do.
     fn settle(window: gpui::WindowHandle<Shell>, cx: &mut VisualTestContext) {
         for _ in 0..2 {
-            std::thread::sleep(OPEN + Duration::from_millis(20));
+            cx.executor()
+                .advance_clock(OPEN + Duration::from_millis(20));
             window
                 .update(cx, |shell, _, cx| {
                     shell.invalidate_chrome(cx);
@@ -1081,7 +1082,7 @@ mod tests {
         // Clicking the orchestrator opens its agents and folds the other rail;
         // the click does not also land on an agent that grows in under it.
         let row = bounds(cx, format!("sidebar-session-{other}")).unwrap();
-        let clicked = Instant::now();
+        let clicked = cx.update(|_, cx| cx.frame_time());
         cx.simulate_click(row.center(), Default::default());
         cx.run_until_parked();
         window

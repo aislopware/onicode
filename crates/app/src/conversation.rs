@@ -1586,7 +1586,8 @@ impl Conversation {
     fn begin_turn(&mut self, cx: &mut Context<Self>) {
         self.submission_generation = self.submission_generation.wrapping_add(1);
         if !self.summary.has_messages {
-            self.composer_motion.capture(self.composer_anchor.get());
+            self.composer_motion
+                .capture(self.composer_anchor.get(), cx.frame_time());
         }
         self.busy = true;
         self.stopping = false;
@@ -2984,7 +2985,7 @@ impl Conversation {
             .children(menu)
             .children(self.model_list_popover(cx))
             .children(self.orchestration_card(cx))
-            .children(if self.is_remote() { None } else { self.usage_notice(cx) })
+            .children(if self.is_remote() { None } else { self.usage_notice(window, cx) })
             .child(self.changes_shelf(window, cx))
             .child(self.background_shelf(window, cx))
             .child(self.message_queue(window, cx))
@@ -3446,6 +3447,7 @@ impl Conversation {
             face,
             crate::send_morph::expanded_width(face.label, window),
             !cx.reduce_motion(),
+            cx.frame_time(),
         );
         if frame.moving {
             window.request_animation_frame();
@@ -3835,7 +3837,8 @@ mod composer_motion_tests {
         );
         window
             .update(cx, |c, _, cx| {
-                c.composer_motion.elapsed(Duration::from_millis(120));
+                c.composer_motion
+                    .elapsed(Duration::from_millis(120), cx.frame_time());
                 cx.notify();
             })
             .unwrap();
@@ -3857,7 +3860,8 @@ mod composer_motion_tests {
                         < 1.
                 );
                 assert!(c.input.focus_handle(cx).is_focused(w));
-                c.composer_motion.elapsed(Duration::from_millis(480));
+                c.composer_motion
+                    .elapsed(Duration::from_millis(480), cx.frame_time());
                 cx.notify();
                 bounds
             })

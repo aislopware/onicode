@@ -169,14 +169,15 @@ impl Render for Chrome {
             // leave its last frame short of the end, drawn from then on.
             .update(cx, |shell, cx| match kind {
                 ChromeKind::Sidebar => {
-                    if shell.spaces_nudge.is_some() || shell.classic_tabs.animating() {
+                    if shell.spaces_nudge.is_some() || shell.classic_tabs.animating(cx.frame_time())
+                    {
                         window.request_animation_frame();
                     }
                     shell.sidebar(cx)
                 }
                 ChromeKind::Tabs => shell.tabs(window, cx),
                 ChromeKind::Projects => {
-                    if shell.project_rail_animating() {
+                    if shell.project_rail_animating(cx.frame_time()) {
                         window.request_animation_frame();
                     }
                     shell.project_rail(cx)
@@ -1092,7 +1093,7 @@ impl Shell {
             pin_deck: Default::default(),
             pin_card_hover: None,
             title_tab_motion: Default::default(),
-            title_tab_selection: (None, None, std::time::Instant::now()),
+            title_tab_selection: (None, None, cx.frame_time()),
             session_hover: None,
             session_preview: None,
             preview_close: None,
@@ -1326,11 +1327,18 @@ impl Shell {
         // sidebar and tab strip again with it. The preview only reads it.
         let shell = cx.weak_entity();
         let sidebar = self.sidebar_frame.clone();
+        // The navigation's New marks the chat in view while it has no messages.
+        let mut had_messages = view.read(cx).summary.has_messages;
         self.observations
             .push(App::observe(cx, &view, move |view, cx| {
                 let Some(shell) = shell.upgrade() else {
                     return;
                 };
+                let has_messages = view.read(cx).summary.has_messages;
+                if has_messages != had_messages {
+                    had_messages = has_messages;
+                    shell.update(cx, |shell, cx| shell.notify_navigation(cx));
+                }
                 // Notices are reconciled as the shell renders: a turn begun or
                 // ended, or an approval or question raised, notifies it, which
                 // the chat's own notifications never do.
@@ -1694,7 +1702,7 @@ impl Shell {
         self.workspace.right_panel_open = open;
         let previous = self.right_slide.take();
         self.right_slide = (!cx.reduce_motion()).then(|| match previous {
-            Some(slide) => slide.retarget(to, std::time::Instant::now()),
+            Some(slide) => slide.retarget(to, cx.frame_time()),
             None => PaneSlide::new(if open { 0. } else { full }, to, full),
         });
         self.sync_right_panel(cx);
@@ -2080,7 +2088,7 @@ impl Shell {
                     let distance = self.split_width() * ratio;
                     let slide = match self.review_slide.take() {
                         Some((sid, slide, _)) if sid == id => {
-                            slide.retarget(ratio, std::time::Instant::now())
+                            slide.retarget(ratio, cx.frame_time())
                         }
                         _ => PaneSlide::new(0., ratio, distance),
                     };
@@ -2148,7 +2156,7 @@ impl Shell {
         } else if !cx.reduce_motion() && self.workspace.active == Some(id) {
             let distance = self.split_width() * ratio;
             let slide = match self.review_slide.take() {
-                Some((sid, slide, _)) if sid == id => slide.retarget(0., std::time::Instant::now()),
+                Some((sid, slide, _)) if sid == id => slide.retarget(0., cx.frame_time()),
                 _ => PaneSlide::new(ratio, 0., distance),
             };
             self.review_slide = Some((id, slide, review));
@@ -2401,7 +2409,7 @@ impl Shell {
         });
         let motion = match self.pane_motion.as_ref().filter(|m| m.tab == tab) {
             Some(motion) => {
-                let (t, done) = motion.slide.at(std::time::Instant::now());
+                let (t, done) = motion.slide.at(cx.frame_time());
                 if done {
                     self.pane_motion = None;
                     None
@@ -2662,7 +2670,7 @@ impl Shell {
         }
         let in_split = split.is_some();
         let chat = self.sessions.get(&id).cloned();
-        let now = std::time::Instant::now();
+        let now = cx.frame_time();
         let sliding = self
             .review_slide
             .as_ref()
@@ -3041,7 +3049,7 @@ impl Shell {
         self.dock_slide = Some((
             project.clone(),
             match self.dock_slide.take() {
-                Some((p, slide)) if p == project => slide.retarget(to, std::time::Instant::now()),
+                Some((p, slide)) if p == project => slide.retarget(to, cx.frame_time()),
                 _ => PaneSlide::new(1. - to, to, size),
             },
         ));
@@ -3307,7 +3315,7 @@ impl Shell {
         };
         let progress = match self.dock_slide.as_ref().filter(|(p, _)| *p == project) {
             Some((_, slide)) => {
-                let (t, done) = slide.at(std::time::Instant::now());
+                let (t, done) = slide.at(cx.frame_time());
                 if done {
                     self.dock_slide = None;
                     None
@@ -4304,7 +4312,7 @@ impl Shell {
             None
         } else {
             Some(match self.sidebar_slide.take() {
-                Some(slide) => slide.retarget(to, std::time::Instant::now()),
+                Some(slide) => slide.retarget(to, cx.frame_time()),
                 None => PaneSlide::new(1. - to, to, self.workspace.sidebar_width),
             })
         };
@@ -5089,8 +5097,11 @@ impl Shell {
                             let previous = panel.read(cx).tab();
                             let changes = crate::right_panel::RightTab::Changes;
                             if previous != changes {
-                                this.corner_reveal =
-                                    Some(crate::project_tabs::TabReveal::new(changes, previous));
+                                this.corner_reveal = Some(crate::project_tabs::TabReveal::new(
+                                    changes,
+                                    previous,
+                                    cx.frame_time(),
+                                ));
                             }
                             panel.update(cx, |panel, cx| panel.select(changes, cx));
                             this.set_right_panel_open(true, window, cx);
@@ -6865,7 +6876,11 @@ impl Shell {
         // A short slide in from the side the new spaces come from.
         let (nudge_x, nudge_opacity) = match self.spaces_nudge {
             Some((direction, start)) => {
-                let t = start.elapsed().as_secs_f32() / 0.2;
+                let t = cx
+                    .frame_time()
+                    .saturating_duration_since(start)
+                    .as_secs_f32()
+                    / 0.2;
                 if t >= 1. {
                     self.spaces_nudge = None;
                     (0., 1.)
@@ -7025,7 +7040,7 @@ impl Shell {
 
     fn nudge_spaces(&mut self, direction: f32, cx: &mut Context<Self>) {
         if !cx.reduce_motion() {
-            self.spaces_nudge = Some((direction, std::time::Instant::now()));
+            self.spaces_nudge = Some((direction, cx.frame_time()));
         }
         self.invalidate_chrome(cx);
     }
@@ -7200,12 +7215,12 @@ impl Shell {
         tab: i64,
         copy: &TabCopy,
         animate: bool,
+        now: std::time::Instant,
     ) -> ((Option<usize>, f32, f32), f32) {
         let Some(shown) = copy.panes.get(copy.focus).map(|p| p.key) else {
             self.pane_ticks.remove(&tab);
             return ((None, 0., 1.), 1.);
         };
-        let now = std::time::Instant::now();
         let position = |key: (i64, bool)| copy.panes.iter().position(|p| p.key == key);
         let tick = self.pane_ticks.entry(tab).or_insert(PaneTick {
             shown,
@@ -7528,7 +7543,7 @@ impl Shell {
             } else if drag.active {
                 self.cancel_pane_drag(cx);
                 // Each tab glides from where it is drawn into its new slot.
-                let now = std::time::Instant::now();
+                let now = cx.frame_time();
                 let visible = self.strip_tabs(cx);
                 let drawn: Vec<(TitleTab, f32)> = visible
                     .iter()
@@ -7577,8 +7592,8 @@ impl Shell {
         target: f32,
         follow: bool,
         reduced: bool,
+        now: std::time::Instant,
     ) -> (f32, bool) {
-        let now = std::time::Instant::now();
         // The dragged tab rides the pointer; it eases only into a slot.
         if follow || reduced {
             self.tab_shifts.remove(&id);
@@ -7666,7 +7681,7 @@ impl Shell {
         let (slots, opening) = self.title_tab_motion.sync(
             tabs.iter().map(|tab| (tab.clone(), ())).collect(),
             animate,
-            std::time::Instant::now(),
+            cx.frame_time(),
         );
         // Pinned tabs leave the strip for the deck at its left edge; as it
         // fans out it takes more of the strip and the tabs give way.
@@ -7699,7 +7714,7 @@ impl Shell {
         };
         // The selected tab keeps a wider share; the others split the rest.
         let selected = self.active_title_tab();
-        let now = std::time::Instant::now();
+        let now = cx.frame_time();
         let selection_changed = self.title_tab_selection.1 != selected;
         if selection_changed {
             let previous = self.title_tab_selection.1.take();
@@ -7801,8 +7816,13 @@ impl Shell {
             .enumerate()
             .map(|(ix, id)| {
                 let target = self.tab_shift(ix).as_f32();
-                let (value, active) =
-                    self.eased_shift(id.clone(), target, dragged.as_ref() == Some(&id), reduced);
+                let (value, active) = self.eased_shift(
+                    id.clone(),
+                    target,
+                    dragged.as_ref() == Some(&id),
+                    reduced,
+                    now,
+                );
                 moving |= active;
                 px(value)
             })
@@ -7825,6 +7845,7 @@ impl Shell {
                     id,
                     &copy,
                     pane_motion && !selection_changed && selected == Some(TitleTab::Session(id)),
+                    now,
                 );
                 moving |= tick.0.0.is_some();
                 copies.insert(id, (copy, tick));
@@ -8323,6 +8344,7 @@ impl Shell {
             project_theme,
             system_light(cx),
             animate,
+            cx.frame_time(),
         )
     }
 
@@ -8423,9 +8445,11 @@ impl Render for Shell {
             window.set_background_appearance(crate::theme::window_backdrop(glass));
         }
         self.sync_settings(cx);
+        // The tab strip is sized from what this render settles (`tabs_width`).
+        let strip_inputs = (self.sidebar_fraction, self.right_drawn);
         self.sidebar_fraction = match &self.sidebar_slide {
             Some(slide) => {
-                let (fraction, done) = slide.at(std::time::Instant::now());
+                let (fraction, done) = slide.at(cx.frame_time());
                 if done {
                     self.sidebar_slide = None;
                 } else {
@@ -8530,7 +8554,7 @@ impl Render for Shell {
         let full = self.right_panel_width();
         let right_width = match &self.right_slide {
             Some(slide) => {
-                let (width, done) = slide.at(std::time::Instant::now());
+                let (width, done) = slide.at(cx.frame_time());
                 if done {
                     self.right_slide = None;
                     self.sync_right_panel(cx);
@@ -8548,6 +8572,11 @@ impl Render for Shell {
         };
         let right_shown = self.right_panel_shown(cx);
         self.right_drawn = if right_shown { right_width } else { 0. };
+        if strip_inputs != (self.sidebar_fraction, self.right_drawn) {
+            // The strip is a view of its own, built after this render in the same frame: updating
+            // it here has it built again from the values just settled.
+            self.tabs_frame.update(cx, |_, cx| cx.notify());
+        }
         let poll_git = self.window_active;
         self.git.update(cx, |git, cx| {
             git.set_polling(poll_git && git.available(), cx)
@@ -10617,9 +10646,10 @@ mod tests {
                 }
             })
             .unwrap();
-        // Tab motion runs on the wall clock, as the window's frames do.
+        // Tab motion runs on the frame clock, which the test's executor moves.
         let settle = |cx: &mut gpui::VisualTestContext| {
-            std::thread::sleep(crate::tab_motion::DURATION + std::time::Duration::from_millis(20));
+            cx.executor()
+                .advance_clock(crate::tab_motion::DURATION + std::time::Duration::from_millis(20));
             window
                 .update(cx, |shell, _, cx| {
                     shell.tabs_frame.update(cx, |_, cx| cx.notify())
@@ -10690,7 +10720,8 @@ mod tests {
             .unwrap();
         let mut seen = Vec::new();
         for _ in 0..16 {
-            std::thread::sleep(std::time::Duration::from_millis(16));
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(16));
             window
                 .update(cx, |shell, _, cx| {
                     shell.tabs_frame.update(cx, |_, cx| cx.notify())
@@ -10711,7 +10742,8 @@ mod tests {
             .unwrap();
         let mut closing = Vec::new();
         for _ in 0..16 {
-            std::thread::sleep(std::time::Duration::from_millis(16));
+            cx.executor()
+                .advance_clock(std::time::Duration::from_millis(16));
             window
                 .update(cx, |shell, _, cx| {
                     shell.tabs_frame.update(cx, |_, cx| cx.notify())
@@ -11439,20 +11471,10 @@ mod tests {
                     .as_ref()
                     .unwrap()
                     .elapsed(Duration::from_millis(65));
-                let before = shell
-                    .sidebar_slide
-                    .as_ref()
-                    .unwrap()
-                    .at(std::time::Instant::now())
-                    .0;
+                let before = shell.sidebar_slide.as_ref().unwrap().at(cx.frame_time()).0;
                 shell.toggle_sidebar(w, cx);
                 assert!(shell.workspace.sidebar_visible);
-                let after = shell
-                    .sidebar_slide
-                    .as_ref()
-                    .unwrap()
-                    .at(std::time::Instant::now())
-                    .0;
+                let after = shell.sidebar_slide.as_ref().unwrap().at(cx.frame_time()).0;
                 assert!((after - before).abs() < 0.01);
             })
             .unwrap();
@@ -11519,7 +11541,7 @@ mod tests {
                     let (slots, moving) = shell.title_tab_motion.sync(
                         tabs.into_iter().map(|tab| (tab, ())).collect(),
                         true,
-                        std::time::Instant::now(),
+                        cx.frame_time(),
                     );
                     assert!(
                         !moving,

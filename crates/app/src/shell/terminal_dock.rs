@@ -44,7 +44,8 @@ struct Running {
 
 /// TerminalLiveMark: three bars that light in turn over 3.2s.
 pub(super) struct LiveMark {
-    epoch: Instant,
+    /// The quarter of the cycle shown, which each tick moves on and tells the mark of.
+    step: u8,
     _tick: Task<()>,
 }
 const LIVE_CYCLE: f32 = 3.2;
@@ -59,20 +60,27 @@ impl LiveMark {
                 // Each step redraws the whole window; hold the mark while
                 // nobody is looking at it or motion is reduced.
                 let still = cx.update(|cx| cx.reduce_motion() || !crate::pulse::app_active(cx));
-                if !still && this.update(cx, |_, cx| cx.notify()).is_err() {
+                if !still
+                    && this
+                        .update(cx, |this, cx| {
+                            this.step = (this.step + 1) % 4;
+                            cx.notify();
+                        })
+                        .is_err()
+                {
                     break;
                 }
             }
         });
         Self {
-            epoch: Instant::now(),
+            step: 0,
             _tick: tick,
         }
     }
 }
 impl Render for LiveMark {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let phase = (self.epoch.elapsed().as_secs_f32() / LIVE_CYCLE).fract();
+        let phase = f32::from(self.step) * 0.25;
         let reduced = cx.reduce_motion();
         div()
             .flex()
@@ -126,8 +134,8 @@ fn eased_shift(
     target: f32,
     follow: bool,
     reduced: bool,
+    now: Instant,
 ) -> (f32, bool) {
-    let now = Instant::now();
     if follow || reduced {
         shifts.remove(&id);
         return (target, false);
@@ -533,7 +541,7 @@ impl Shell {
             return;
         }
         let project = self.workspace.project.clone();
-        let now = Instant::now();
+        let now = cx.frame_time();
         let live = self.live_terminals();
         // Each tab glides from where it is drawn into its new slot.
         let drawn: Vec<(EntityId, f32)> = live
@@ -625,6 +633,7 @@ impl Shell {
             DockSide::Right => "panel-right",
         };
         let reduced = cx.reduce_motion();
+        let now = cx.frame_time();
         let dragged = self.dock_drag.as_ref().filter(|d| d.active).map(|d| d.from);
         let mut moving = false;
         let shifts: Vec<f32> = live
@@ -638,6 +647,7 @@ impl Shell {
                     target,
                     dragged == Some(ix),
                     reduced,
+                    now,
                 );
                 moving |= active;
                 value
@@ -648,9 +658,7 @@ impl Shell {
             .iter()
             .map(|t| (t.entity_id(), SharedString::from(t.read(cx).title.clone())))
             .collect();
-        let (slots, opening) = self
-            .dock_tab_motion
-            .sync(keyed, animate, std::time::Instant::now());
+        let (slots, opening) = self.dock_tab_motion.sync(keyed, animate, now);
         if moving || opening {
             window.request_animation_frame();
         }

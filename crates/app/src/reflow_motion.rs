@@ -133,7 +133,7 @@ impl Element for Glide {
     ) {
         let reflow = self
             .motion
-            .offset(self.key, bounds, Instant::now(), cx.reduce_motion());
+            .offset(self.key, bounds, cx.frame_time(), cx.reduce_motion());
         if reflow != 0. {
             // Notifies the transcript, so its cached view keeps painting.
             window.request_animation_frame();

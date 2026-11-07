@@ -1,6 +1,5 @@
 //! SkillsPage's independently scrolling document, without chat alignment or fades.
 use std::sync::Arc;
-use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{
@@ -165,7 +164,7 @@ impl SkillDocument {
                 .py_2()
                 .child(markdown::code_lines(fence, lines.clone(), None, "", false))
                 .into_any_element(),
-            _ => markdown::body(row, id, Tone::Normal, None, Instant::now()),
+            _ => markdown::body(row, id, Tone::Normal, None, cx.frame_time()),
         };
         frame
             .pt(px(if at == 0 { 16. } else { row.gap }))

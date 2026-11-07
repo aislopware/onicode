@@ -3,7 +3,6 @@
 //! Entrances grow upward from its edge without scaling the clipped contents.
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
-use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{AnyElement, Div, IntoElement, Pixels, Stateful, Window, div, px};
@@ -82,7 +81,7 @@ impl Motion {
         let Some(slide) = rows.get(id) else {
             return child.into_any_element();
         };
-        let (progress, done) = slide.at(Instant::now());
+        let (progress, done) = slide.at(window.frame_time());
         if done {
             rows.remove(id);
             child.into_any_element()
@@ -101,7 +100,7 @@ impl Motion {
         let Some(slide) = card.as_ref() else {
             return child.into_any_element();
         };
-        let (progress, done) = slide.at(Instant::now());
+        let (progress, done) = slide.at(window.frame_time());
         if done {
             *card = None;
             child.into_any_element()

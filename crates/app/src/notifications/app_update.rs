@@ -1,6 +1,5 @@
 //! The post-update card (updated, or rolled back) and What's new. The updater
 //! itself is `updater.rs`; an install records the marker this card reads.
-use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{Context, EventEmitter, FontWeight, Render, Role, Window, div, img, px};
@@ -300,7 +299,7 @@ impl Render for WhatsNew {
                     format!("whats-new-row-{ix}").into(),
                     Tone::Normal,
                     None,
-                    Instant::now(),
+                    cx.frame_time(),
                 ),
             ));
         }

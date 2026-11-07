@@ -20,10 +20,11 @@ struct Launch {
 #[derive(Clone, Default)]
 pub(crate) struct ComposerMotion(Rc<RefCell<Option<Launch>>>);
 impl ComposerMotion {
-    pub(crate) fn capture(&self, from: Option<Bounds<Pixels>>) {
+    /// Keeps the empty-session slot `from` for the launch, captured at `now` (the frame clock).
+    pub(crate) fn capture(&self, from: Option<Bounds<Pixels>>, now: Instant) {
         *self.0.borrow_mut() = from.map(|from| Launch {
             from,
-            captured: Instant::now(),
+            captured: now,
             animation: None,
         });
     }
@@ -65,12 +66,13 @@ impl ComposerMotion {
         (delta * remaining, true)
     }
 
+    /// Has the launch stand `elapsed` in at `now` (the frame clock).
     #[cfg(test)]
-    pub(crate) fn elapsed(&self, elapsed: Duration) {
+    pub(crate) fn elapsed(&self, elapsed: Duration, now: Instant) {
         if let Some(launch) = self.0.borrow_mut().as_mut()
             && let Some((started, _)) = launch.animation.as_mut()
         {
-            *started = Instant::now() - elapsed;
+            *started = now - elapsed;
         }
     }
 }
@@ -119,7 +121,7 @@ impl Element for Slide {
     ) {
         let (offset, active) = self
             .motion
-            .offset(bounds, Instant::now(), cx.reduce_motion());
+            .offset(bounds, cx.frame_time(), cx.reduce_motion());
         if active {
             window.request_animation_frame();
         }
@@ -154,8 +156,8 @@ mod tests {
         let motion = ComposerMotion::default();
         let from = Bounds::new(point(px(100.), px(300.)), size(px(600.), px(150.)));
         let to = Bounds::new(point(px(50.), px(700.)), size(px(700.), px(100.)));
-        motion.capture(Some(from));
         let start = Instant::now();
+        motion.capture(Some(from), start);
         assert_eq!(
             motion.offset(to, start, false),
             (point(px(0.), px(-400.)), true)
@@ -172,20 +174,17 @@ mod tests {
         let motion = ComposerMotion::default();
         let from = Bounds::new(point(px(0.), px(300.)), size(px(600.), px(100.)));
         let to = Bounds::new(point(px(0.), px(700.)), from.size);
-        assert!(!motion.offset(to, Instant::now(), false).1);
-        motion.capture(Some(from));
-        assert!(!motion.offset(to, Instant::now(), true).1);
-        motion.capture(Some(from));
+        let now = Instant::now();
+        assert!(!motion.offset(to, now, false).1);
+        motion.capture(Some(from), now);
+        assert!(!motion.offset(to, now, true).1);
+        motion.capture(Some(from), now);
         assert!(
             !motion
-                .offset(
-                    to,
-                    Instant::now() + LAUNCH_WINDOW + Duration::from_millis(1),
-                    false
-                )
+                .offset(to, now + LAUNCH_WINDOW + Duration::from_millis(1), false)
                 .1
         );
-        motion.capture(Some(to));
-        assert!(!motion.offset(to, Instant::now(), false).1);
+        motion.capture(Some(to), now);
+        assert!(!motion.offset(to, now, false).1);
     }
 }

@@ -200,7 +200,8 @@ impl Motion {
         if cx.reduce_motion() {
             return 1.;
         }
-        let t = ((self.0.elapsed().as_secs_f32() * 1000. - delay) / ms).clamp(0., 1.);
+        let elapsed = cx.frame_time().saturating_duration_since(self.0);
+        let t = ((elapsed.as_secs_f32() * 1000. - delay) / ms).clamp(0., 1.);
         if t < 1. {
             window.request_animation_frame();
         }

@@ -16,11 +16,12 @@ pub(crate) struct TabReveal<T = RightTab> {
 }
 
 impl<T: Copy + PartialEq> TabReveal<T> {
-    pub(crate) fn new(open: T, closing: T) -> Self {
+    /// A reveal that starts at `now`, on the frame clock.
+    pub(crate) fn new(open: T, closing: T, now: Instant) -> Self {
         Self {
             open,
             closing,
-            start: Instant::now(),
+            start: now,
         }
     }
 
@@ -29,7 +30,11 @@ impl<T: Copy + PartialEq> TabReveal<T> {
             return None;
         }
         // TabButton's duration-200 ease-out on the label's grid track.
-        let t = self.start.elapsed().as_secs_f32() / 0.2;
+        let t = cx
+            .frame_time()
+            .saturating_duration_since(self.start)
+            .as_secs_f32()
+            / 0.2;
         if t < 1. {
             window.request_animation_frame();
         }

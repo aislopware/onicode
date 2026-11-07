@@ -48,7 +48,7 @@ use crate::theme::*;
 /// Animates the transcript on the first display frame at or after `due`.
 fn motion_frame(view: gpui::WeakEntity<TranscriptView>, due: Option<Instant>, window: &Window) {
     window.on_next_frame(move |window, cx| {
-        if due.is_some_and(|due| Instant::now() < due) {
+        if due.is_some_and(|due| cx.frame_time() < due) {
             motion_frame(view, due, window);
         } else {
             let _ = view.update(cx, |this, cx| this.animate_frame(cx));
@@ -410,8 +410,8 @@ pub(crate) struct TranscriptView {
     hovered_prompt_actions: Option<usize>,
     follow: Follow,
     saved_draft: Option<onicode_protocol::follow_up::Message>,
-    /// A clock for the tool and task shimmers.
-    started_at: Instant,
+    /// When the shimmers' clock started: the first frame drawn.
+    started_at: Option<Instant>,
     /// One clock per frame for row motion. The list measures rows and the
     /// footer re-measures them; mixed times leave the spacer a few pixels
     /// short of a fast disclosure, so an anchored prompt bounces.
@@ -494,6 +494,8 @@ pub(crate) struct TranscriptView {
     model: String,
     active_provider_turn_id: Option<String>,
     started: Option<std::time::Instant>,
+    /// The live turn's working time as its once-a-second tick last showed it.
+    worked: std::time::Duration,
     elapsed: HashMap<usize, std::time::Duration>,
     outline: outline::Outline,
     pub(crate) list: ListState,
@@ -629,6 +631,15 @@ impl TranscriptView {
     }
 
     /// Follow-ups delivered during a provider run share its original receipt.
+    /// Seconds the shimmers have run at the frame being drawn.
+    fn shimmer_clock(&self, cx: &gpui::App) -> f32 {
+        self.started_at.map_or(0., |start| {
+            cx.frame_time()
+                .saturating_duration_since(start)
+                .as_secs_f32()
+        })
+    }
+
     pub(crate) fn active_turn(&self) -> Option<usize> {
         let start = self.live_start.min(self.source.len());
         let prompt = self.source[start..]
@@ -820,7 +831,7 @@ impl TranscriptView {
     /// Measures the live turn's tail before the list lays it out, so growth
     /// the list follows is painted as an offset that eases away.
     fn update_follow(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let now = Instant::now();
+        let now = cx.frame_time();
         let animated = self.streaming || self.follow.until.is_some_and(|until| now < until);
         if self.document || !self.visible || cx.reduce_motion() {
             self.follow = Follow::default();
@@ -1002,7 +1013,7 @@ impl TranscriptView {
             // The old rows may wrap differently at the new width.
             self.follow.measured = None;
         } else if shift != 0. {
-            let now = Instant::now();
+            let now = window.frame_time();
             if self.streaming
                 || self.follow.until.is_some_and(|until| now < until)
                 || self.follow.offset.abs() >= 0.25
@@ -1400,7 +1411,7 @@ impl TranscriptView {
             hovered_prompt_actions: None,
             follow: Follow::default(),
             saved_draft: None,
-            started_at: Instant::now(),
+            started_at: None,
             frame_now: Instant::now(),
             measurements: Default::default(),
             markdown_cache: Default::default(),
@@ -1471,6 +1482,7 @@ impl TranscriptView {
             model: "Codex".into(),
             active_provider_turn_id: None,
             started: None,
+            worked: std::time::Duration::ZERO,
             elapsed: HashMap::new(),
             outline: outline::Outline::default(),
             list: {
@@ -1511,8 +1523,9 @@ impl TranscriptView {
             self.anchor_turn = None;
         }
         if !self.smooth_reveal {
+            let now = cx.frame_time();
             for reveal in self.reveals.values_mut() {
-                reveal.settle(Instant::now());
+                reveal.settle(now);
             }
         }
         self.rebuild(0, cx);
@@ -1547,7 +1560,7 @@ impl TranscriptView {
                     .saturating_add(row.text.len());
             }
         }
-        let now = Instant::now();
+        let now = cx.frame_time();
         for reveal in self.reveals.values_mut() {
             reveal.settle(now);
         }
@@ -1569,7 +1582,8 @@ impl TranscriptView {
             // that prompt, just as React pins on lastUserId rather than busy.
             // Otherwise the old spacer collapses for a frame before the new
             // prompt gets its own anchor and entrance.
-            self.started = Some(std::time::Instant::now());
+            self.started = Some(cx.frame_time());
+            self.worked = std::time::Duration::ZERO;
             cx.spawn(async move |this, cx| {
                 loop {
                     cx.background_executor()
@@ -1580,6 +1594,10 @@ impl TranscriptView {
                             // The working time redraws the whole transcript;
                             // skip it while the tab or the app is out of view.
                             if this.streaming && this.visible && crate::pulse::app_active(cx) {
+                                if let Some(started) = this.started {
+                                    this.worked =
+                                        cx.frame_time().saturating_duration_since(started);
+                                }
                                 cx.notify();
                             }
                             this.streaming
@@ -1592,19 +1610,20 @@ impl TranscriptView {
             })
             .detach();
         } else {
-            self.follow.until = Some(Instant::now() + std::time::Duration::from_millis(1200));
+            let now = cx.frame_time();
+            self.follow.until = Some(now + std::time::Duration::from_millis(1200));
             if let Some(started) = self.started.take()
                 && let Some(turn) = self.active_turn()
             {
-                self.elapsed.insert(turn, started.elapsed());
+                let worked = now.saturating_duration_since(started);
+                self.elapsed.insert(turn, worked);
                 let completed_at = onicode_protocol::time::now_ms();
-                let started_at =
-                    Some(completed_at.saturating_sub(started.elapsed().as_millis() as u64));
+                let started_at = Some(completed_at.saturating_sub(worked.as_millis() as u64));
                 let info = self.turns.entry(turn).or_default();
                 info.provider = self.provider.clone();
                 info.model = self.model.clone();
                 info.started_at = started_at;
-                info.duration_ms = started.elapsed().as_millis() as u64;
+                info.duration_ms = worked.as_millis() as u64;
                 info.duration_known = true;
                 info.completed_at = started_at.and_then(|at| at.checked_add(info.duration_ms));
             }
@@ -1628,7 +1647,7 @@ impl TranscriptView {
             return;
         }
         self.selection.clear();
-        let now = Instant::now();
+        let now = cx.frame_time();
         // Settled tabs retain their parsed rows, measured heights and scroll
         // anchor. Only undisplayed text or outgoing animation rows need a
         // source rebuild when visibility changes.
@@ -1644,7 +1663,7 @@ impl TranscriptView {
                     .map(|(key, _)| key.0),
             )
             .min();
-        let panels: HashSet<_> = self.agent_panels.animate().into_iter().collect();
+        let panels: HashSet<_> = self.agent_panels.animate(now).into_iter().collect();
         if !self.motions.is_empty() || !panels.is_empty() {
             self.phase_layouts.clear();
             for (ix, row) in self.rows.iter().enumerate() {
@@ -1665,7 +1684,7 @@ impl TranscriptView {
             scroll.enable(false);
         }
         self.motions.clear();
-        self.agent_panels.settle();
+        self.agent_panels.settle(now);
         if let Some(start) = rebuild_from.filter(|_| !self.source.is_empty()) {
             self.rebuild(start.min(self.source.len() - 1), cx);
         }
@@ -1747,7 +1766,7 @@ impl TranscriptView {
         submitted.begin("assistant");
         if !settings.internal_message && self.visible && !cx.reduce_motion() {
             self.burst = burst::Kind::from_prompt(prompt, settings)
-                .map(|kind| burst::Burst::new(self.source.len(), kind));
+                .map(|kind| burst::Burst::new(self.source.len(), kind, cx.frame_time()));
         }
         self.patch(self.source.len(), submitted.rows, cx);
     }
@@ -1857,7 +1876,7 @@ impl TranscriptView {
         {
             self.introduced_prompt = Some(prompt);
             if self.visible && !cx.reduce_motion() {
-                self.prompt_rise = Some((prompt, Instant::now()));
+                self.prompt_rise = Some((prompt, cx.frame_time()));
                 self.prompt_rise_pending = true;
             }
         }
@@ -1887,7 +1906,7 @@ impl TranscriptView {
             self.rebuild_passes += 1;
         }
         self.phase_layouts.clear();
-        let now = Instant::now();
+        let now = cx.frame_time();
         let following = self.list.is_following_tail();
         let offset = self.list.logical_scroll_top();
         let anchor = self.rows.get(offset.item_ix).map(|r| r.key);
@@ -2879,13 +2898,13 @@ impl TranscriptView {
         if !self.visible || cx.reduce_motion() || self.frame_scheduled {
             return;
         }
-        let now = Instant::now();
+        let now = cx.frame_time();
         let smooth = resized
             || !self.motions.is_empty()
             || self.agent_panels.animating()
             || self
                 .prompt_rise
-                .is_some_and(|(_, born)| born.elapsed().as_secs_f32() < 0.88)
+                .is_some_and(|(_, born)| now.saturating_duration_since(born).as_secs_f32() < 0.88)
             || self.burst.is_some_and(|burst| burst.active(now));
         if smooth {
             self.frame_scheduled = true;
@@ -2903,7 +2922,7 @@ impl TranscriptView {
     }
 
     fn animate_frame(&mut self, cx: &mut Context<Self>) {
-        self.last_motion_frame = Some(Instant::now());
+        self.last_motion_frame = Some(cx.frame_time());
         self.frame_scheduled = false;
         // A frame queued before switching tabs must not invalidate the hidden
         // transcript's retained layout or advance its presentation animations.
@@ -2911,7 +2930,7 @@ impl TranscriptView {
             return;
         }
         let mut changed_phases = HashSet::new();
-        for start in self.agent_panels.animate() {
+        for start in self.agent_panels.animate(cx.frame_time()) {
             for (ix, row) in self.rows.iter().enumerate() {
                 if row.key.0 == start {
                     self.list.remeasure_items(ix..ix + 1);
@@ -2919,7 +2938,7 @@ impl TranscriptView {
                 }
             }
         }
-        let now = Instant::now();
+        let now = cx.frame_time();
         let mut changed = None;
         for (&at, reveal) in &mut self.reveals {
             if reveal.step(now, self.streaming) {
@@ -3444,7 +3463,7 @@ impl TranscriptView {
                     && message_start >= self.live_start
                     && self.source[message_start..].iter().all(|r| !r.is_prompt());
                 let elapsed = if live {
-                    self.started.map(|at| at.elapsed())
+                    self.started.map(|_| self.worked)
                 } else {
                     self.elapsed.get(&turn).copied().or_else(|| {
                         self.turns
@@ -3539,7 +3558,9 @@ impl TranscriptView {
                         if live && !cx.reduce_motion() {
                             crate::activity::shimmer(
                                 title,
-                                self.started.map_or(0., |s| s.elapsed().as_secs_f32()),
+                                self.started.map_or(0., |s| {
+                                    cx.frame_time().saturating_duration_since(s).as_secs_f32()
+                                }),
                             )
                         } else {
                             div().child(title).into_any_element()
@@ -3617,7 +3638,9 @@ impl TranscriptView {
                         if active && !cx.reduce_motion() {
                             crate::activity::shimmer(
                                 title,
-                                self.started.map_or(0., |s| s.elapsed().as_secs_f32()),
+                                self.started.map_or(0., |s| {
+                                    cx.frame_time().saturating_duration_since(s).as_secs_f32()
+                                }),
                             )
                         } else {
                             div().child(title).into_any_element()
@@ -4142,7 +4165,10 @@ impl TranscriptView {
             && message_start >= prompt
             && !cx.reduce_motion()
         {
-            let elapsed = born.elapsed().as_secs_f32();
+            let elapsed = cx
+                .frame_time()
+                .saturating_duration_since(born)
+                .as_secs_f32();
             if message_start == prompt {
                 let rise = crate::reveal::bezier((elapsed / 0.56).min(1.), 0.22, 1., 0.36, 1.);
                 let fade = crate::reveal::bezier((elapsed / 0.48).min(1.), 0., 0., 0.58, 1.);
@@ -4313,9 +4339,12 @@ impl Render for TranscriptView {
         }
         self.selection.begin_frame();
         self.phase_max_height = live_phase::max_height(window);
-        self.frame_now = Instant::now();
+        self.frame_now = cx.frame_time();
+        self.started_at = self.started_at.or(Some(self.frame_now));
+        // Word fades tick on the shared loop clock while the stream leases it.
+        let fades_now = crate::pulse::now(window, cx);
         for reveal in self.reveals.values_mut() {
-            reveal.fades.advance(self.frame_now);
+            reveal.fades.advance(fades_now);
         }
         self.markdown_cache
             .begin_frame(&self.file_link_base, &self.search_match);
@@ -4331,7 +4360,7 @@ impl Render for TranscriptView {
                 }));
         }
         self.update_follow(window, cx);
-        let now = Instant::now();
+        let now = self.frame_now;
         if self.prompt_rise_pending {
             self.prompt_rise_pending = false;
             if let Some((_, born)) = self.prompt_rise.as_mut() {
@@ -4551,7 +4580,7 @@ mod scroll_tests {
     }
     fn settle(view: &mut TranscriptView, cx: &mut Context<TranscriptView>) {
         for reveal in view.reveals.values_mut() {
-            reveal.settle(Instant::now());
+            reveal.settle(cx.frame_time());
         }
         view.prompt_rise = None;
         view.motions.clear();
@@ -4772,7 +4801,7 @@ mod scroll_tests {
                 PacedText::new(
                     "The complete live answer has arrived.",
                     true,
-                    Instant::now(),
+                    cx.frame_time(),
                 ),
             );
             assert!(view.reveals[&1].behind());
@@ -4948,7 +4977,7 @@ mod scroll_tests {
                 );
                 assert_eq!(view.phase_toggle, None);
                 // Hold a partial reveal long enough to inspect actual list geometry.
-                let start = Instant::now() - std::time::Duration::from_secs(25);
+                let start = cx.frame_time() - std::time::Duration::from_secs(25);
                 for motion in view.motions.values_mut() {
                     *motion = Motion::phase(1, true, start);
                     motion.duration = std::time::Duration::from_secs(100);
@@ -5057,7 +5086,7 @@ mod scroll_tests {
             for elapsed_ms in [40, 160, 220, 280, 310, 319, 320] {
                 window
                     .update(cx, |view, _, cx| {
-                        let start = Instant::now() - std::time::Duration::from_millis(elapsed_ms);
+                        let start = cx.frame_time() - std::time::Duration::from_millis(elapsed_ms);
                         for motion in view.motions.values_mut() {
                             motion.start = start;
                         }
@@ -5174,7 +5203,7 @@ mod scroll_tests {
                             Motion::new(
                                 true,
                                 false,
-                                Instant::now() - std::time::Duration::from_secs(1),
+                                cx.frame_time() - std::time::Duration::from_secs(1),
                             ),
                         );
                     }
@@ -5245,7 +5274,8 @@ mod scroll_tests {
                 );
                 view.streaming(false, cx);
                 view.prompt_rise_pending = false;
-                view.prompt_rise = Some((0, Instant::now() - std::time::Duration::from_millis(40)));
+                view.prompt_rise =
+                    Some((0, cx.frame_time() - std::time::Duration::from_millis(40)));
             })
             .unwrap();
         cx.refresh().unwrap();
@@ -5268,7 +5298,7 @@ mod scroll_tests {
                 let position = bubble.bounds.top().0 / w.scale_factor();
                 let anchor = view.list.logical_scroll_top();
                 view.prompt_rise =
-                    Some((0, Instant::now() - std::time::Duration::from_millis(900)));
+                    Some((0, cx.frame_time() - std::time::Duration::from_millis(900)));
                 cx.notify();
                 (position, anchor)
             })

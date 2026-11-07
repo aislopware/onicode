@@ -94,22 +94,22 @@ struct WorkspaceTabDrag {
 }
 
 impl WorkspaceTabs {
-    pub(super) fn animating(&self) -> bool {
+    /// Whether a tab still glides at `now`, the frame's time.
+    pub(super) fn animating(&self, now: std::time::Instant) -> bool {
         self.shifts.values().any(|shift| {
-            shift.from != shift.to && shift.start.elapsed().as_secs_f32() < REORDER_DURATION
+            shift.from != shift.to
+                && now.saturating_duration_since(shift.start).as_secs_f32() < REORDER_DURATION
         })
     }
 
-    fn offset(&self, tab: ClassicSidebarTab) -> f32 {
+    fn offset(&self, tab: ClassicSidebarTab, now: std::time::Instant) -> f32 {
         if let Some(drag) = &self.drag
             && drag.active
             && drag.tab == tab
         {
             return drag.offset.as_f32();
         }
-        self.shifts
-            .get(&tab)
-            .map_or(0., |shift| shift.at(std::time::Instant::now()).0)
+        self.shifts.get(&tab).map_or(0., |shift| shift.at(now).0)
     }
 }
 
@@ -477,6 +477,7 @@ impl Shell {
             .drag
             .as_ref()
             .is_some_and(|drag| drag.active);
+        let now = cx.frame_time();
         div()
             .id("classic-workspace-tabs")
             .debug_selector(|| "classic-workspace-tabs".into())
@@ -495,7 +496,7 @@ impl Shell {
                     .into_iter()
                     .map(|tab| {
                         let active = self.classic_sidebar_tab == tab;
-                        let offset = self.classic_tabs.offset(tab);
+                        let offset = self.classic_tabs.offset(tab, now);
                         let dragging = self
                             .classic_tabs
                             .drag
@@ -682,7 +683,7 @@ impl Shell {
             let mut preview = drag.order.clone();
             let moved = preview.remove(drag.from);
             preview.insert(to, moved);
-            let now = std::time::Instant::now();
+            let now = cx.frame_time();
             for (original, tab) in drag.order.iter().enumerate() {
                 if *tab == drag.tab {
                     continue;
@@ -720,7 +721,7 @@ impl Shell {
         let mut reordered = drag.order.clone();
         let tab = reordered.remove(drag.from);
         reordered.insert(drag.to, tab);
-        let now = std::time::Instant::now();
+        let now = cx.frame_time();
         for (previous, tab) in drag.order.iter().enumerate() {
             let destination = reordered
                 .iter()
@@ -763,7 +764,7 @@ impl Shell {
             return false;
         };
         if drag.active {
-            let now = std::time::Instant::now();
+            let now = cx.frame_time();
             for tab in drag.order {
                 let from = if tab == drag.tab {
                     drag.offset.as_f32()

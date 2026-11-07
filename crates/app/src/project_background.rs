@@ -183,7 +183,7 @@ impl ProjectBackground {
 
     pub(crate) fn fade_in(&mut self, cx: &mut Context<Self>) {
         if !cx.reduce_motion() {
-            self.fade = Some(Instant::now());
+            self.fade = Some(cx.frame_time());
             cx.notify();
         }
     }
@@ -193,11 +193,12 @@ impl ProjectBackground {
         let Some(start) = self.fade else {
             return 1.;
         };
+        let now = window.frame_time();
         if self.image.is_none() {
-            self.fade = Some(Instant::now());
+            self.fade = Some(now);
             return 0.;
         }
-        let t = (start.elapsed().as_secs_f32() / FADE.as_secs_f32()).min(1.);
+        let t = (now.saturating_duration_since(start).as_secs_f32() / FADE.as_secs_f32()).min(1.);
         if t >= 1. {
             self.fade = None;
         } else {

@@ -13,6 +13,9 @@ pub(crate) struct PaneSlide {
     start: Cell<Option<Instant>>,
     #[cfg(test)]
     fixed_elapsed: Cell<Option<std::time::Duration>>,
+    /// How far in the next sample starts the slide, for a test that sets it in motion.
+    #[cfg(test)]
+    backdate: Cell<Option<std::time::Duration>>,
 }
 
 impl PaneSlide {
@@ -33,6 +36,8 @@ impl PaneSlide {
             start: Cell::new(None),
             #[cfg(test)]
             fixed_elapsed: Cell::new(None),
+            #[cfg(test)]
+            backdate: Cell::new(None),
         }
     }
 
@@ -59,6 +64,11 @@ impl PaneSlide {
         // Starting at first paint prevents construction/loading time from
         // skipping the opening frames. No timer competes with display refresh.
         let start = self.start.get().unwrap_or(now);
+        #[cfg(test)]
+        let start = self
+            .backdate
+            .take()
+            .map_or(start, |elapsed| now.checked_sub(elapsed).unwrap_or(now));
         self.start.set(Some(start));
         let t = now.saturating_duration_since(start).as_secs_f32();
         #[cfg(test)]
@@ -85,10 +95,11 @@ impl PaneSlide {
         (value, velocity, false)
     }
 
+    /// Has the next frame stand `elapsed` into the slide, on whatever clock that frame reads.
     #[cfg(test)]
     pub(crate) fn elapsed(&self, elapsed: std::time::Duration) {
         self.fixed_elapsed.set(None);
-        self.start.set(Some(Instant::now() - elapsed));
+        self.backdate.set(Some(elapsed));
     }
 
     #[cfg(test)]

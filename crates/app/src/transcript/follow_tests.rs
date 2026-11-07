@@ -183,7 +183,7 @@ fn ordinary_overflow_glides_and_keeps_settling_after_streaming_ends(cx: &mut Tes
     window
         .update(cx, |view, _, cx| {
             view.streaming(false, cx);
-            view.follow.last_frame = Some(Instant::now() - std::time::Duration::from_millis(16));
+            view.follow.last_frame = Some(cx.frame_time() - std::time::Duration::from_millis(16));
         })
         .unwrap();
     render(window, cx);
@@ -236,8 +236,8 @@ fn ordinary_height_collapse_eases_back_and_a_new_prompt_resets_follow(cx: &mut T
         })
         .unwrap();
     window
-        .update(cx, |view, _, _| {
-            view.follow.last_frame = Some(Instant::now() - std::time::Duration::from_millis(16));
+        .update(cx, |view, _, cx| {
+            view.follow.last_frame = Some(cx.frame_time() - std::time::Duration::from_millis(16));
         })
         .unwrap();
     render(window, cx);
@@ -421,7 +421,8 @@ fn closing_work_above_the_answer_moves_it_one_way(cx: &mut TestAppContext) {
             );
         }
         previous = Some(top);
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(16));
     }
 }
 
@@ -542,7 +543,8 @@ fn the_line_being_read_never_moves_back_down_as_work_folds(cx: &mut TestAppConte
                 prev = Some((row.key, top));
             })
             .unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(16));
         t += 16;
     }
 }
@@ -888,7 +890,8 @@ fn an_anchored_prompt_stays_put_while_new_prose_folds_the_work_above(cx: &mut Te
                 prev = top;
             })
             .unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(16));
         t += 16;
     }
 }
@@ -960,7 +963,8 @@ fn replacing_work_near_the_viewport_limit_keeps_the_prompt_anchored(cx: &mut Tes
                 );
             })
             .unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(16));
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(16));
     }
     window
         .update(cx, |view, _, cx| {
@@ -1047,7 +1051,7 @@ fn empty_and_unrevealed_replacements_do_not_reopen_previous_work(cx: &mut TestAp
                 Some(4),
                 "paced text must be visible before it replaces the current block"
             );
-            view.reveals.get_mut(&5).unwrap().settle(Instant::now());
+            view.reveals.get_mut(&5).unwrap().settle(cx.frame_time());
             view.rebuild(5, cx);
             assert_eq!(view.fold_targets[&1], Some(5));
             assert!(

@@ -57,11 +57,11 @@ pub(super) struct Burst {
 }
 
 impl Burst {
-    pub(super) fn new(prompt: usize, kind: Kind) -> Self {
+    pub(super) fn new(prompt: usize, kind: Kind, now: Instant) -> Self {
         Self {
             prompt,
             kind,
-            born: Instant::now(),
+            born: now,
             seed: std::collections::hash_map::RandomState::new().hash_one(prompt),
         }
     }

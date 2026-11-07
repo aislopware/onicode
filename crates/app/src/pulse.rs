@@ -46,6 +46,9 @@ struct Lease {
     /// Painted a loop since the clock last notified it.
     painted: bool,
     on_tick: Option<FrameCallback>,
+    /// The moment the view's loops show: the tick that last notified it, so a frame that reuses
+    /// the view between ticks shows what drawing it afresh would.
+    at: Instant,
 }
 
 #[derive(Default)]
@@ -87,6 +90,7 @@ fn request_inner(
         return false;
     }
     let view = window.current_view();
+    let at = cx.frame_time();
     let clock = cx.default_global::<Clock>();
     clock
         .leases
@@ -104,6 +108,7 @@ fn request_inner(
             rate,
             painted: true,
             on_tick,
+            at,
         });
     if !clock.running {
         clock.running = true;
@@ -120,19 +125,36 @@ fn request_inner(
     true
 }
 
-/// Time on the shared clock, so loops of one period stay in step.
-pub(crate) fn elapsed(cx: &mut App) -> Duration {
-    let now = cx.background_executor().now();
-    let clock = cx.default_global::<Clock>();
-    now - *clock.epoch.get_or_insert(now)
+/// The moment the loops of the view being drawn show: the tick that last notified it, or the
+/// frame's moment before it leased the clock. A loop reads this, not a clock of its own, so a frame
+/// that reuses the view between ticks shows what drawing it afresh would.
+pub(crate) fn now(window: &Window, cx: &mut App) -> Instant {
+    let frame = cx.frame_time();
+    cx.default_global::<Clock>()
+        .leases
+        .get(&window.current_view())
+        .map_or(frame, |lease| lease.at)
 }
 
-/// The fraction of `period` the shared clock is into, in `0..1`.
-pub(crate) fn phase(period: Duration, cx: &mut App) -> f32 {
+/// How far the frame being drawn stands past [`now`], for a loop timed from its own start.
+pub(crate) fn lag(window: &Window, cx: &mut App) -> Duration {
+    cx.frame_time().saturating_duration_since(now(window, cx))
+}
+
+/// Time on the shared clock that the loops of the view being drawn show, so loops of one period
+/// stay in step.
+pub(crate) fn elapsed(window: &Window, cx: &mut App) -> Duration {
+    let now = now(window, cx);
+    let clock = cx.default_global::<Clock>();
+    now.saturating_duration_since(*clock.epoch.get_or_insert(now))
+}
+
+/// The fraction of `period` the view being drawn's loops are into, in `0..1`.
+pub(crate) fn phase(period: Duration, window: &Window, cx: &mut App) -> f32 {
     if period.is_zero() {
         return 0.;
     }
-    let into = elapsed(cx).as_nanos() % period.as_nanos();
+    let into = elapsed(window, cx).as_nanos() % period.as_nanos();
     into as f32 / period.as_nanos() as f32
 }
 
@@ -165,6 +187,7 @@ pub(crate) async fn beat(cx: &mut gpui::AsyncApp) {
 
 fn tick(cx: &mut App) -> bool {
     let background = !app_visible(cx);
+    let at = cx.frame_time();
     let clock = cx.global_mut::<Clock>();
     // Before the loops notify, so whatever the waiters change draws with them.
     for beat in clock.beats.drain(..) {
@@ -182,6 +205,7 @@ fn tick(cx: &mut App) -> bool {
             return false;
         }
         lease.painted = false;
+        lease.at = at;
         due.push((*view, lease.on_tick.take()));
         true
     });
@@ -267,7 +291,7 @@ impl Element for Looping {
         cx: &mut App,
     ) -> (LayoutId, AnyElement) {
         let phase = if request(self.rate, window, cx) {
-            phase(self.period, cx)
+            phase(self.period, window, cx)
         } else {
             0.
         };

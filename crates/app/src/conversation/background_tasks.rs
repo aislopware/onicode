@@ -45,6 +45,8 @@ impl Conversation {
         if tasks.is_empty() {
             return div().into_any_element();
         }
+        // The clocks count seconds on the relative clock, which notifies this view as it moves.
+        let now = u64::try_from(crate::inbox::RelativeNow::read(window, cx).ms(1_000)).unwrap_or(0);
         // Over a queued message the card tucks in behind it, a deck of two.
         let inset = if self.follow_ups.state.messages.is_empty() {
             px(8.)
@@ -117,7 +119,7 @@ impl Conversation {
                         format!("{agent} continues when they finish")
                     }),
             )
-            .when_some(single, |d, task| d.child(live_clock(task)))
+            .when_some(single, |d, task| d.child(live_clock(task, now)))
             .when(collapsible, |d| {
                 d.child(
                     div()
@@ -144,7 +146,7 @@ impl Conversation {
             .max_h(px(ROW_HEIGHT * VISIBLE_ROWS))
             .overflow_y_scroll()
             .children(tasks.iter().map(|task| {
-                let row = background_row(task);
+                let row = background_row(task, now);
                 self.background.motion.row(&task.id, row, row_width, window)
             }));
         let card = composer_shelf::card("background-tasks-card", self.classic_layout)
@@ -159,7 +161,7 @@ impl Conversation {
     }
 }
 
-fn background_row(task: &BackgroundTask) -> gpui::Stateful<gpui::Div> {
+fn background_row(task: &BackgroundTask, now: u64) -> gpui::Stateful<gpui::Div> {
     div()
         .id(SharedString::from(format!("background-{}", task.id)))
         .debug_selector({
@@ -209,18 +211,17 @@ fn background_row(task: &BackgroundTask) -> gpui::Stateful<gpui::Div> {
                     )
                 }),
         )
-        .child(live_clock(task))
+        .child(live_clock(task, now))
 }
 
-/// Elapsed time beside a breathing green dot.
-fn live_clock(task: &BackgroundTask) -> impl IntoElement {
-    let started_at = task.started_at;
+/// Elapsed time at `now` (Unix ms) beside a breathing green dot.
+fn live_clock(task: &BackgroundTask, now: u64) -> impl IntoElement {
+    let ms = now.saturating_sub(task.started_at);
     crate::pulse::looping(
         SharedString::from(format!("background-clock-{}", task.id)),
         std::time::Duration::from_millis(2_000),
         crate::pulse::Rate::Low,
         move |phase| {
-            let ms = onicode_protocol::time::now_ms().saturating_sub(started_at);
             // A slow breath: the dot swells and its halo fades out.
             let breath = 0.5 - 0.5 * (phase * std::f32::consts::TAU).cos();
             let live: gpui::Hsla = gpui::rgb(LIVE).into();

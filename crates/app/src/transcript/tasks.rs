@@ -189,8 +189,8 @@ impl AgentPanels {
         !self.arrivals.is_empty() || self.parts.values().any(|part| part.motion.is_some())
     }
 
-    pub(super) fn animate(&mut self) -> Vec<usize> {
-        let now = Instant::now();
+    /// Retires the motions finished at `now` and returns the rows they move.
+    pub(super) fn animate(&mut self, now: Instant) -> Vec<usize> {
         let mut changed = Vec::new();
         for part in self.parts.values_mut() {
             if let Some(motion) = &part.motion {
@@ -209,19 +209,25 @@ impl AgentPanels {
         changed
     }
 
-    pub(super) fn settle(&mut self) {
+    pub(super) fn settle(&mut self, now: Instant) {
         self.arrivals.clear();
         for part in self.parts.values_mut() {
             part.motion = None;
         }
-        self.returned_at = Some(Instant::now());
+        self.returned_at = Some(now);
         for scroll in self.scrolls.values_mut() {
             scroll.enable(false);
         }
     }
 
-    fn observe_steps(&mut self, key: &str, steps: &[&AgentStep], source: usize, animate: bool) {
-        let now = Instant::now();
+    fn observe_steps(
+        &mut self,
+        key: &str,
+        steps: &[&AgentStep],
+        source: usize,
+        animate: bool,
+        now: Instant,
+    ) {
         let returning = self
             .returned_at
             .is_some_and(|returned| now.duration_since(returned) < Duration::from_millis(400));
@@ -274,12 +280,11 @@ impl AgentPanels {
             .is_some_and(|part| part.motion.is_some())
     }
 
-    fn progress(&self, key: &str, open: bool) -> (f32, f32, f32) {
+    fn progress(&self, key: &str, open: bool, now: Instant) -> (f32, f32, f32) {
         self.parts
             .get(key)
             .and_then(|part| part.motion.as_ref())
             .map_or(if open { (1., 1., 1.) } else { (0., 0., 0.) }, |motion| {
-                let now = Instant::now();
                 let (height, opacity) = motion.value(now);
                 (height, opacity, motion.rotation(now))
             })
@@ -298,7 +303,7 @@ impl TranscriptView {
         part.open = Some(open);
         part.source = start;
         if self.visible && !cx.reduce_motion() {
-            let now = Instant::now();
+            let now = cx.frame_time();
             part.motion = Some(part.motion.as_ref().map_or_else(
                 || Motion::phase(start, open, now),
                 |motion| motion.redirect(open, now),
@@ -344,7 +349,7 @@ fn disclosure(
     width: Pixels,
     body: AnyElement,
 ) -> AnyElement {
-    let (height, opacity, _) = view.agent_panels.progress(key, open);
+    let (height, opacity, _) = view.agent_panels.progress(key, open, view.frame_now);
     if height >= 1. {
         return body;
     }
@@ -386,11 +391,16 @@ fn agent(
         // Work arriving behind the row is history when it opens again.
         for phase in agent_phases(run) {
             let phase_key = format!("agent-phase:{start}:{}:{}", call.id, phase.id);
-            view.agent_panels
-                .observe_steps(&phase_key, &phase.steps, start, false);
+            view.agent_panels.observe_steps(
+                &phase_key,
+                &phase.steps,
+                start,
+                false,
+                cx.frame_time(),
+            );
         }
     }
-    let rotation = view.agent_panels.progress(&key, open).2;
+    let rotation = view.agent_panels.progress(&key, open, cx.frame_time()).2;
     let toggle_key = key.clone();
     let status = run.status_line(&call.state);
     let kind = onicode_protocol::provider::Kind::parse(&view.provider)
@@ -460,10 +470,7 @@ fn agent(
                             })
                         })
                         .child(if active && view.visible && !cx.reduce_motion() {
-                            crate::activity::shimmer(
-                                name.clone(),
-                                view.started_at.elapsed().as_secs_f32(),
-                            )
+                            crate::activity::shimmer(name.clone(), view.shimmer_clock(cx))
                         } else {
                             div().child(name).into_any_element()
                         }),
@@ -678,6 +685,7 @@ fn agent_trail(
             &phase.steps,
             start,
             live && open && view.visible && !cx.reduce_motion(),
+            cx.frame_time(),
         );
         let calls: Vec<_> = phase
             .steps
@@ -740,7 +748,7 @@ fn agent_trail(
             .is_some_and(|step| step.text.trim().lines().any(|line| line.trim().is_empty()));
         let inert = phase.steps.is_empty() && !has_headline_detail;
         let toggle_key = key.clone();
-        let rotation = view.agent_panels.progress(&key, open).2;
+        let rotation = view.agent_panels.progress(&key, open, cx.frame_time()).2;
         let mut group = div()
             .id(SharedString::from(key.clone()))
             .w_full()
@@ -790,7 +798,7 @@ fn agent_trail(
                     )
                     .child(div().flex_1().min_w_0().truncate().child(
                         if live && view.visible && !cx.reduce_motion() {
-                            crate::activity::shimmer(title, view.started_at.elapsed().as_secs_f32())
+                            crate::activity::shimmer(title, view.shimmer_clock(cx))
                         } else {
                             div().child(title).into_any_element()
                         },
@@ -838,7 +846,7 @@ fn agent_trail(
                     .arrivals
                     .get(&format!("{key}:{}", step.id))
                     .map(|arrival| {
-                        let now = Instant::now();
+                        let now = cx.frame_time();
                         if now < arrival.motion.start {
                             (0., 0.)
                         } else {
@@ -992,7 +1000,7 @@ fn markdown_text(
                 format!("agent-md:{identity}:{index}").into(),
                 tone,
                 None,
-                Instant::now(),
+                cx.frame_time(),
             )
         };
         body = body.child(

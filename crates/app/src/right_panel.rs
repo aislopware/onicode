@@ -377,7 +377,7 @@ impl RightPanel {
 
     pub(crate) fn select(&mut self, tab: RightTab, cx: &mut Context<Self>) {
         if self.tab != tab {
-            self.reveal = Some(TabReveal::new(tab, self.tab));
+            self.reveal = Some(TabReveal::new(tab, self.tab, cx.frame_time()));
         }
         self.tab = tab;
         self.sync_panes(cx);

@@ -35,12 +35,13 @@ pub(crate) fn hold_clock(now: Option<Instant>) {
     HELD_NOW.set(now);
 }
 
-fn now() -> Instant {
+/// The frame's time, which every reveal stands at, or the held clock.
+fn now(cx: &App) -> Instant {
     #[cfg(test)]
     if let Some(now) = HELD_NOW.get() {
         return now;
     }
-    Instant::now()
+    cx.frame_time()
 }
 
 /// Each title change scatters its particles differently, except under a held clock.
@@ -384,7 +385,7 @@ impl Element for ParticleText {
                 style: style.clone(),
                 transition: None,
             });
-            let frame = state.prepare(&self.text, style, bounds, now(), window, cx);
+            let frame = state.prepare(&self.text, style, bounds, now(cx), window, cx);
             (frame, state)
         })
     }

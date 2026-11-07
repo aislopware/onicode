@@ -813,7 +813,7 @@ impl Shell {
             })
     }
 
-    fn notify_navigation(&self, cx: &mut Context<Self>) {
+    pub(super) fn notify_navigation(&self, cx: &mut Context<Self>) {
         if self.workspace.classic_layout {
             self.projects_frame.update(cx, |_, cx| cx.notify());
         } else {

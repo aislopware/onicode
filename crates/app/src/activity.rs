@@ -60,8 +60,10 @@ impl Element for Shimmer {
         window: &mut Window,
         cx: &mut App,
     ) {
-        // The sweep repaints its whole transcript, so it runs at 15fps.
+        // The sweep repaints its whole transcript, so it runs at 15fps, and stands at the tick
+        // that last drew it: the caller's time is the frame's, which may be past that tick.
         crate::pulse::request(crate::pulse::Rate::Half, window, cx);
+        self.elapsed = (self.elapsed - crate::pulse::lag(window, cx).as_secs_f32()).max(0.);
         self.text.prepaint(None, None, bounds, state, window, cx);
     }
 

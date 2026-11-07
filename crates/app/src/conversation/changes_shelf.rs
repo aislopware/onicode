@@ -21,15 +21,15 @@ pub(super) struct ChangesShelf {
 }
 
 impl ChangesShelf {
-    /// Springs toward open or shut, from wherever an earlier slide got to.
-    fn slide_to(&self, open: bool, animate: bool) {
+    /// Springs toward open or shut at `now` (the frame clock), from wherever an earlier slide got
+    /// to.
+    fn slide_to(&self, open: bool, animate: bool, now: Instant) {
         let mut slide = self.slide.borrow_mut();
         if !animate {
             *slide = None;
             return;
         }
         let to = if open { 1. } else { 0. };
-        let now = Instant::now();
         *slide = Some(match slide.as_ref() {
             Some(current) => current.retarget(to, now),
             None => PaneSlide::new(1. - to, to, 40.),
@@ -40,9 +40,9 @@ impl ChangesShelf {
     /// rests open (`None` inside) — `None` overall once it has folded away.
     /// A running slide may sit at exactly 0 or 1 on its first frame, so the
     /// caller keeps drawing frames until the spring reports done.
-    fn progress(&self) -> Option<Option<f32>> {
+    fn progress(&self, now: Instant) -> Option<Option<f32>> {
         let mut slide = self.slide.borrow_mut();
-        let Some((progress, done)) = slide.as_ref().map(|s| s.at(Instant::now())) else {
+        let Some((progress, done)) = slide.as_ref().map(|s| s.at(now)) else {
             return self.open.then_some(None);
         };
         if done {
@@ -65,7 +65,7 @@ impl Conversation {
     fn toggle_changes(&mut self, cx: &mut Context<Self>) {
         self.changes.open = !self.changes.open;
         self.changes
-            .slide_to(self.changes.open, !cx.reduce_motion());
+            .slide_to(self.changes.open, !cx.reduce_motion(), cx.frame_time());
         cx.notify();
     }
 
@@ -153,7 +153,7 @@ impl Conversation {
         if self.change_totals(cx).is_none() {
             return div().into_any_element();
         }
-        let Some(progress) = self.changes.progress() else {
+        let Some(progress) = self.changes.progress(cx.frame_time()) else {
             return div().into_any_element();
         };
         let width = self.composer_anchor.get().map(|bounds| bounds.size.width);
@@ -230,7 +230,8 @@ mod tests {
             open: true,
             ..Default::default()
         };
-        shelf.slide_to(true, true);
+        let now = std::time::Instant::now();
+        shelf.slide_to(true, true, now);
         // Opened and settled: rests without a slide.
         shelf
             .slide
@@ -238,18 +239,18 @@ mod tests {
             .as_ref()
             .unwrap()
             .elapsed(std::time::Duration::from_secs(5));
-        assert_eq!(shelf.progress(), Some(None));
+        assert_eq!(shelf.progress(now), Some(None));
         // Closing starts at fully open, yet still counts as running.
         shelf.open = false;
-        shelf.slide_to(false, true);
-        assert!(matches!(shelf.progress(), Some(Some(p)) if p >= 0.99));
+        shelf.slide_to(false, true, now);
+        assert!(matches!(shelf.progress(now), Some(Some(p)) if p >= 0.99));
         shelf
             .slide
             .borrow()
             .as_ref()
             .unwrap()
             .elapsed(std::time::Duration::from_secs(5));
-        assert_eq!(shelf.progress(), None, "folded away");
+        assert_eq!(shelf.progress(now), None, "folded away");
     }
 
     #[test]

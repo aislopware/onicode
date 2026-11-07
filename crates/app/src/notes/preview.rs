@@ -1,6 +1,5 @@
 //! Notes use shared Markdown rendering with their desktop image asset paths.
 use std::path::{Component, Path, PathBuf};
-use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, ImageSource, Render, Role, Window, div, px};
@@ -115,7 +114,7 @@ fn append_markdown(rows: &mut Vec<Row>, text: &str, cwd: &str) {
     }
 }
 impl Render for Preview {
-    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .w_full()
             .min_w_0()
@@ -166,7 +165,7 @@ impl Render for Preview {
                                 .py_2()
                                 .child(markdown::code_lines(fence, lines.clone(), None, "", false))
                                 .into_any_element(),
-                            _ => markdown::body(row, id, Tone::Normal, None, Instant::now()),
+                            _ => markdown::body(row, id, Tone::Normal, None, cx.frame_time()),
                         };
                         div()
                             .pt(px(row.gap))

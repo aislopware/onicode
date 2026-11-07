@@ -266,7 +266,7 @@ impl Btw {
         let from = match self.morph.filter(|_| was_rendered) {
             Some(morph) => {
                 let ease = if open { OPEN_EASE } else { CLOSE_EASE };
-                invert(ease, 1. - morph.eased(Instant::now()))
+                invert(ease, 1. - morph.eased(cx.frame_time()))
             }
             None => 0.,
         };
@@ -1388,7 +1388,7 @@ impl Btw {
 
 impl Render for Btw {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let now = Instant::now();
+        let now = cx.frame_time();
         self.step_motion(now, window, cx);
         if !self.rendered {
             return div().into_any_element();
@@ -1600,7 +1600,11 @@ fn paint_question_burst(
     cx: &mut App,
 ) {
     const MARKS: usize = 16;
-    let t = born.elapsed().as_secs_f32() * 1000.;
+    let t = cx
+        .frame_time()
+        .saturating_duration_since(born)
+        .as_secs_f32()
+        * 1000.;
     let accent = crate::theme::picked_accent();
     let (color, glow) = if crate::theme::is_light() {
         (accent, fx::mix(accent, 0.45))
@@ -1794,7 +1798,7 @@ impl Conversation {
             });
             // Only the composer's fade needs this view to redraw with the sheet.
             self._btw_observer = Some(cx.observe(&btw, |this, btw, cx| {
-                let home = btw.read(cx).home_opacity(Instant::now());
+                let home = btw.read(cx).home_opacity(cx.frame_time());
                 if home != this.btw_home.1 {
                     this.btw_home.1 = home;
                     cx.notify();

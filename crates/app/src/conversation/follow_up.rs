@@ -180,7 +180,8 @@ impl Conversation {
                 .detach();
         }
         if !self.summary.has_messages {
-            self.composer_motion.capture(self.composer_anchor.get());
+            self.composer_motion
+                .capture(self.composer_anchor.get(), cx.frame_time());
         }
         self.summary.has_messages = true;
         self.follow_ups.draft_selected = false;

@@ -596,7 +596,7 @@ impl TranscriptView {
             .child(div().min_w_0().truncate().child(if still {
                 div().child(label).into_any_element()
             } else {
-                crate::activity::shimmer(label, self.started_at.elapsed().as_secs_f32())
+                crate::activity::shimmer(label, self.shimmer_clock(cx))
             }))
             .into_any_element()
     }

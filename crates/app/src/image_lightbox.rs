@@ -175,12 +175,13 @@ impl ImageLightbox {
         cx.stop_propagation();
     }
 
-    fn displayed_view(&self) -> View {
+    /// The view as it stands at `now` (the frame clock) while a zoom eases.
+    fn displayed_view(&self, now: Instant) -> View {
         let Some((from, born)) = self.transition else {
             return self.view;
         };
         let t = crate::reveal::bezier(
-            (born.elapsed().as_secs_f32() / 0.06).min(1.),
+            (now.saturating_duration_since(born).as_secs_f32() / 0.06).min(1.),
             0.,
             0.,
             0.58,
@@ -196,10 +197,8 @@ impl ImageLightbox {
     fn set_view(&mut self, next: View, cx: &mut Context<Self>) {
         let next = next.clamp(self.viewport, self.image_size);
         if next != self.view {
-            self.transition = self
-                .drag
-                .is_none()
-                .then(|| (self.displayed_view(), Instant::now()));
+            let now = cx.frame_time();
+            self.transition = self.drag.is_none().then(|| (self.displayed_view(now), now));
             self.view = next;
             cx.notify();
         }
@@ -258,10 +257,13 @@ impl Render for ImageLightbox {
             );
         }
         self.view = self.view.clamp(self.viewport, self.image_size);
-        let view = self.displayed_view().clamp(self.viewport, self.image_size);
+        let now = cx.frame_time();
+        let view = self
+            .displayed_view(now)
+            .clamp(self.viewport, self.image_size);
         if self
             .transition
-            .is_some_and(|(_, born)| born.elapsed().as_secs_f32() < 0.06)
+            .is_some_and(|(_, born)| now.saturating_duration_since(born).as_secs_f32() < 0.06)
         {
             window.request_animation_frame();
         } else {
@@ -295,7 +297,7 @@ impl Render for ImageLightbox {
                 cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
                     cx.stop_propagation();
                     if !this
-                        .image_bounds(this.displayed_view())
+                        .image_bounds(this.displayed_view(cx.frame_time()))
                         .contains(&event.position)
                         || this.image.is_none()
                     {

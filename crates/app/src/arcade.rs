@@ -81,13 +81,13 @@ impl Arcade {
             index: 0,
             mode: "mid",
             heading: (0, 0),
-            last: Instant::now(),
-            switched: Instant::now(),
+            last: cx.frame_time(),
+            switched: cx.frame_time(),
         }
     }
 
-    fn tick(&mut self, reduced: bool) {
-        let now = Instant::now();
+    /// Steps the engine to `now`, the frame clock.
+    fn tick(&mut self, reduced: bool, now: Instant) {
         if now.duration_since(self.last) < Duration::from_millis(33) && !self.frame.cells.is_empty()
         {
             return;
@@ -128,7 +128,7 @@ impl Arcade {
 
     fn release(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.playing = false;
-        self.switched = Instant::now();
+        self.switched = cx.frame_time();
         if let Some(focus) = self.previous.take() {
             window.focus(&focus, cx);
         }
@@ -150,7 +150,7 @@ impl Render for Arcade {
         let leased =
             crate::pulse::request_frame(crate::pulse::Rate::Smooth, window, cx, move |cx| {
                 view.update(cx, |this, cx| {
-                    this.tick(cx.reduce_motion());
+                    this.tick(cx.reduce_motion(), cx.frame_time());
                     cx.notify();
                 })
                 .ok();
@@ -158,12 +158,12 @@ impl Render for Arcade {
         if !leased {
             // Reduced motion leases no clock: the arcade steps as it draws,
             // and a game in play keeps drawing.
-            self.tick(reduced);
+            self.tick(reduced, cx.frame_time());
             if self.playing {
                 window.request_animation_frame();
             }
         } else if self.frame.cells.is_empty() {
-            self.tick(reduced);
+            self.tick(reduced, cx.frame_time());
         }
         let frame = self.frame.clone();
         let playing = self.playing;
@@ -418,7 +418,7 @@ impl Render for Arcade {
                         )
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.index = i;
-                            this.switched = Instant::now();
+                            this.switched = cx.frame_time();
                             cx.notify();
                         }))
                 }));

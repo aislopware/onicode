@@ -59,10 +59,11 @@ window's pointer, modifiers or focus. So:
 - `GPUI_VIEW_RETENTION=0` and `GPUI_CHECK_RETAINED=panic` (each retained frame compared with one drawn from
   scratch) settle whether retention is to blame. monocode's code was written for a GPUI that redrew on any notify,
   so the retained audit (`.research/monocode/stack-port.md` step 13) fixes each stale read at its source, and
-  `scripts/ci/nextest.toml` is to set `GPUI_CHECK_RETAINED=panic` for every test of the app (a nextest setup
-  script), so each view test also proves its view is told of every change it shows. Turned on for a trial, it
-  failed 40 view tests (InkField, the shell's Chrome, the transcript, ProjectTabs, FileActionError); the switch
-  lands with their fixes. A test that forces `refresh()` before it looks draws from scratch and proves nothing
+  `scripts/ci/nextest.toml` sets `GPUI_CHECK_RETAINED=panic` for every test of the app (a nextest setup script),
+  so each view test also proves its view is told of every change it shows. Turned on, it first failed 40 view
+  tests; nearly all read the wall clock while drawing, so the scratch frame drew a later moment. Every render now
+  reads `frame_time()` (the pulse loops through `pulse::now`), and view tests move animations with the executor's
+  clock, never by sleeping. A test that forces `refresh()` before it looks draws from scratch and proves nothing
   about retention.
 - A transcript row's measured height is kept across a resize that keeps the column's width, so a pane sliding beside
   it lays out no row again. The pane-slide bench (`pane_motion_frame_cost_with_long_history`, 10,000 messages, 80

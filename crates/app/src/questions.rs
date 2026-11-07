@@ -197,7 +197,7 @@ impl QuestionCard {
         self.turn = Some(Turn {
             from: self.step,
             forward: step > self.step,
-            at: Instant::now(),
+            at: cx.frame_time(),
         });
         self.turns += 1;
         self.step = step;
@@ -612,10 +612,11 @@ impl Render for QuestionCard {
             window.defer(cx, move |window, cx| window.focus(&focus, cx));
         }
         let reduced = cx.reduce_motion();
+        let now = cx.frame_time();
         let outgoing = self
             .turn
             .as_ref()
-            .filter(|turn| !reduced && turn.at.elapsed() < SLIDE)
+            .filter(|turn| !reduced && now.saturating_duration_since(turn.at) < SLIDE)
             .map(|turn| (turn.from, turn.forward));
         if outgoing.is_none() {
             self.turn = None;
@@ -748,11 +749,10 @@ impl Overlay {
             }
             self.shown = current;
         }
-        if self
-            .leaving
-            .as_ref()
-            .is_some_and(|(card, at)| Some(card.entity_id()) == current || at.elapsed() > FADE)
-        {
+        let now = cx.frame_time();
+        if self.leaving.as_ref().is_some_and(|(card, at)| {
+            Some(card.entity_id()) == current || now.saturating_duration_since(*at) > FADE
+        }) {
             self.leaving = None;
         }
         let covered = card.is_some();
@@ -806,7 +806,7 @@ impl Overlay {
     /// Keeps `card` painting while it fades out after being answered, then
     /// repaints `owner` so the faded card stops covering the composer.
     pub(crate) fn release<T: 'static>(&mut self, card: Entity<QuestionCard>, cx: &mut Context<T>) {
-        self.leaving = Some((card, Instant::now()));
+        self.leaving = Some((card, cx.frame_time()));
         cx.spawn(async move |owner, cx| {
             cx.background_executor()
                 .timer(FADE + Duration::from_millis(30))

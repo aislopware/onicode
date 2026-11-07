@@ -20,7 +20,8 @@ pub(super) struct PinFan {
     hovered: bool,
     open: bool,
     from: f32,
-    start: std::time::Instant,
+    /// When the last change of `open` began, on the frame clock; never, while it rests.
+    start: Option<std::time::Instant>,
 }
 
 impl Default for PinFan {
@@ -29,7 +30,7 @@ impl Default for PinFan {
             hovered: false,
             open: false,
             from: 0.,
-            start: std::time::Instant::now(),
+            start: None,
         }
     }
 }
@@ -39,10 +40,10 @@ impl PinFan {
     /// still moving.
     fn at(&self, now: std::time::Instant, reduced: bool) -> (f32, bool) {
         let to = if self.open { 1. } else { 0. };
-        if reduced {
+        let Some(start) = self.start.filter(|_| !reduced) else {
             return (to, false);
-        }
-        let t = now.saturating_duration_since(self.start).as_secs_f32() / FAN_DURATION;
+        };
+        let t = now.saturating_duration_since(start).as_secs_f32() / FAN_DURATION;
         if t >= 1. {
             return (to, false);
         }
@@ -50,14 +51,13 @@ impl PinFan {
         (self.from + (to - self.from) * eased, true)
     }
 
-    fn set(&mut self, open: bool, reduced: bool) {
+    fn set(&mut self, open: bool, reduced: bool, now: std::time::Instant) {
         if self.open == open {
             return;
         }
-        let now = std::time::Instant::now();
         self.from = self.at(now, reduced).0;
         self.open = open;
-        self.start = now;
+        self.start = Some(now);
     }
 }
 
@@ -174,8 +174,9 @@ impl Shell {
         });
         let (fan, moving) = if stacks {
             let open = self.pin_fan.hovered || menu_on_pin;
-            self.pin_fan.set(open, reduced);
-            self.pin_fan.at(std::time::Instant::now(), reduced)
+            let now = cx.frame_time();
+            self.pin_fan.set(open, reduced, now);
+            self.pin_fan.at(now, reduced)
         } else {
             self.pin_fan = PinFan {
                 hovered: self.pin_fan.hovered,
@@ -198,7 +199,7 @@ impl Shell {
                 pinned.iter().position(|p| p == kept)
             })
             .unwrap_or(0);
-        let now = std::time::Instant::now();
+        let now = cx.frame_time();
         if self.pin_deck.front.as_ref() != Some(&pinned[top]) {
             let was = self.pin_deck.front.replace(pinned[top].clone());
             self.pin_deck.shuffle = was

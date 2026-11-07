@@ -164,7 +164,7 @@ fn activated(event: &gpui::KeyDownEvent) -> bool {
 }
 
 impl VisualView {
-    pub(crate) fn new(document: VisualDocument, _cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(document: VisualDocument, cx: &mut Context<Self>) -> Self {
         let mut this = Self {
             document,
             runtime: None,
@@ -180,7 +180,7 @@ impl VisualView {
             revision: 0,
             scene_cache: HashMap::new(),
             inline: None,
-            motion: dither::Motion(std::time::Instant::now()),
+            motion: dither::Motion(cx.frame_time()),
         };
         this.initialize();
         this

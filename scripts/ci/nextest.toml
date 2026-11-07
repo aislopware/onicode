@@ -1,5 +1,8 @@
 # nextest profiles for scripts/dev/check.sh and CI. No retries anywhere: a flaky test gets a deterministic repro.
 
+# Setup scripts are still behind nextest's experimental gate; the retained check below is one.
+experimental = ["setup-scripts"]
+
 [profile.default]
 retries = 0
 fail-fast = false
@@ -7,6 +10,16 @@ fail-fast = false
 leak-timeout = { period = "500ms", result = "fail" }
 # A hung test is killed after ten minutes.
 slow-timeout = { period = "60s", terminate-after = 10 }
+
+# Every test of the app draws each frame that retained anything a second time from scratch and panics where the two
+# differ (docs/onicode/decisions/rendering.md, "Retained mode"), so each view test also proves its view is told of
+# every change it shows. Other profiles take this rule from the default one, as they take its overrides.
+[[profile.default.scripts]]
+filter = 'package(onicode)'
+setup = 'retained-check'
+
+[scripts.setup.retained-check]
+command = ['sh', '-c', 'echo GPUI_CHECK_RETAINED=panic >> "$NEXTEST_ENV"']
 
 # Pull requests and main: the same set today; slow and soak tests get filtered out here when they exist.
 [profile.ci]

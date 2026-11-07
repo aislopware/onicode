@@ -925,7 +925,7 @@ mod tests {
             assert!(long > short);
             view.motions.insert(
                 view.rows[indices[0]].key,
-                Motion::new(false, false, Instant::now() - Duration::from_secs(2)),
+                Motion::new(false, false, cx.frame_time() - Duration::from_secs(2)),
             );
             view.animate_frame(cx);
             view.begin_measurements(window, cx);

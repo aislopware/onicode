@@ -354,9 +354,18 @@ impl Conversation {
         cx.notify();
     }
 
-    pub(super) fn usage_notice(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+    pub(super) fn usage_notice(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> Option<AnyElement> {
         let limit = self.settings.usage_limit.as_ref()?;
-        let now = usage::now_ms();
+        // What this tells changes only as the reset passes: the relative clock notifies this view
+        // by then, so a frame that reuses it shows what drawing it afresh would.
+        let now = match limit.resets_at {
+            Some(at) => at - crate::inbox::RelativeNow::read(window, cx).until(at, 1_000),
+            None => usage::now_ms(),
+        };
         let waiting = limit.waiting(now);
         let armed = limit.resume_at_reset;
         let switching = self.account_switching;

@@ -75,11 +75,10 @@ impl PhaseTile {
         }
     }
 
-    /// How far the glyph has turned into the chevron, eased (0 glyph, 1
-    /// chevron), and whether it is still moving.
-    fn step(&mut self) -> (f32, bool) {
+    /// How far the glyph has turned into the chevron at `now`, eased (0 glyph,
+    /// 1 chevron), and whether it is still moving.
+    fn step(&mut self, now: Instant) -> (f32, bool) {
         let wanted = self.open || self.hovered;
-        let now = Instant::now();
         let progress =
             |at: Instant| (now.saturating_duration_since(at).as_secs_f32() / MORPH).min(1.);
         match self.morph {
@@ -108,8 +107,8 @@ impl PhaseTile {
 }
 
 impl Render for PhaseTile {
-    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        let (morph, moving) = self.step();
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (morph, moving) = self.step(cx.frame_time());
         if moving {
             window.request_animation_frame();
         }

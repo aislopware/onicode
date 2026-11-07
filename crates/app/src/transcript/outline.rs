@@ -192,7 +192,7 @@ impl TranscriptView {
             .outline
             .hovered
             .and_then(|hovered| bars.iter().position(|&p| p == hovered));
-        let now = Instant::now();
+        let now = cx.frame_time();
         let reduced = cx.reduce_motion();
         self.outline
             .tweens

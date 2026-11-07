@@ -158,7 +158,7 @@ fn edge_fade(
         } else {
             (0., 0.)
         };
-        let now = Instant::now();
+        let now = cx.frame_time();
         edges.frame = edges.update(target, now, cx.reduce_motion());
         if edges
             .changed
@@ -441,7 +441,7 @@ mod tests {
                 cx.set_reduce_motion(false);
                 view.streaming(false, cx);
                 assert!(view.rows.iter().any(|r| r.phase_group() == Some(1)));
-                let now = Instant::now();
+                let now = cx.frame_time();
                 for motion in view.motions.values_mut() {
                     assert_eq!(motion.group, Some(1));
                     assert!(!motion.opening);

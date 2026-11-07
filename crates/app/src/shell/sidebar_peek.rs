@@ -34,7 +34,7 @@ pub(super) struct SidebarPeek {
 }
 
 impl SidebarPeek {
-    fn new(open: bool, from: f32, reduce_motion: bool) -> Self {
+    fn new(open: bool, from: f32, reduce_motion: bool, now: Instant) -> Self {
         Self {
             open,
             from: if reduce_motion {
@@ -42,7 +42,7 @@ impl SidebarPeek {
             } else {
                 from
             },
-            start: Instant::now(),
+            start: now,
         }
     }
 
@@ -106,16 +106,17 @@ impl Shell {
         if open && !self.peek_available() {
             return;
         }
+        let now = cx.frame_time();
         let current = match &self.sidebar_peek {
             Some(peek) if peek.open == open => return,
-            Some(peek) => peek.at(Instant::now()).0,
+            Some(peek) => peek.at(now).0,
             None if !open => return,
             None => 0.,
         };
         if !open {
             self.close_preview(cx);
         }
-        self.sidebar_peek = Some(SidebarPeek::new(open, current, cx.reduce_motion()));
+        self.sidebar_peek = Some(SidebarPeek::new(open, current, cx.reduce_motion(), now));
         self.peek_animating = true;
         cx.notify();
     }
@@ -209,7 +210,7 @@ impl Shell {
         }
         let progress = match &self.sidebar_peek {
             Some(peek) => {
-                let (progress, done) = peek.at(Instant::now());
+                let (progress, done) = peek.at(cx.frame_time());
                 if done {
                     self.peek_animating = false;
                     if !peek.open {

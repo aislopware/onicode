@@ -1,7 +1,6 @@
 //! Flowing Inbox prose. The detail page owns scrolling; this is never a chat.
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{
@@ -243,7 +242,7 @@ impl InboxDocument {
                             ),
                         })
                         .into_any_element(),
-                    _ => markdown::body(row, id, Tone::Normal, None, Instant::now()),
+                    _ => markdown::body(row, id, Tone::Normal, None, cx.frame_time()),
                 };
                 div()
                     .w_full()

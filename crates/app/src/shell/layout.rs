@@ -606,7 +606,8 @@ impl Shell {
                                         if closing == tab {
                                             return;
                                         }
-                                        this.corner_reveal = Some(TabReveal::new(tab, closing));
+                                        this.corner_reveal =
+                                            Some(TabReveal::new(tab, closing, cx.frame_time()));
                                         panel.update(cx, |p, cx| p.select(tab, cx));
                                         this.invalidate_chrome(cx);
                                         cx.notify();

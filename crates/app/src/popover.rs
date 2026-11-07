@@ -3,7 +3,6 @@
 // src/features/files/ui/ExplorerMenu.tsx.
 use std::cell::Cell;
 use std::rc::Rc;
-use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{
@@ -458,9 +457,11 @@ impl RenderOnce for Popover {
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         // Keyed like the surface, so it lives exactly as long as the popover
         // stays rendered and the entrance replays on every open.
-        let opened = window.use_keyed_state(self.id.clone(), cx, |_, _| Instant::now());
+        let now = cx.frame_time();
+        let opened = window.use_keyed_state(self.id.clone(), cx, |_, _| now);
         let enter = if self.animate {
-            entrance(opened.read(cx).elapsed().as_secs_f32(), cx.reduce_motion())
+            let open_for = now.saturating_duration_since(*opened.read(cx));
+            entrance(open_for.as_secs_f32(), cx.reduce_motion())
         } else {
             1.
         };

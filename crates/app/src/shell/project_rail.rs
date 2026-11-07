@@ -866,8 +866,9 @@ impl Shell {
             .entry(id.clone())
             .or_default()
             .clone();
-        let offset = self.project_rail_item_offset(&id, true);
-        let dragging = self.project_rail_item_raised(&id, true);
+        let now = cx.frame_time();
+        let offset = self.project_rail_item_offset(&id, true, now);
+        let dragging = self.project_rail_item_raised(&id, true, now);
         let color = group
             .custom_color
             .as_ref()
@@ -1118,8 +1119,9 @@ impl Shell {
         let pin_path = path.clone();
         let drag_path = path.clone();
         let pinned = self.workspace.project_rail_pinned.contains(&path);
-        let offset = self.project_rail_project_offset(&path);
-        let raised = self.project_rail_project_raised(&path);
+        let now = cx.frame_time();
+        let offset = self.project_rail_project_offset(&path, now);
+        let raised = self.project_rail_project_raised(&path, now);
         let reordering = self.project_rail_reordering();
         let bounds = self
             .project_rail_list
@@ -1394,7 +1396,8 @@ impl Shell {
         id
     }
 
-    fn project_rail_item_offset(&self, id: &str, group: bool) -> f32 {
+    /// Where a rail item is drawn at `now`, the frame's time.
+    fn project_rail_item_offset(&self, id: &str, group: bool, now: std::time::Instant) -> f32 {
         if let Some(drag) = &self.project_rail_drag
             && drag.group == group
             && drag.path == id
@@ -1405,11 +1408,11 @@ impl Shell {
         self.project_rail_list
             .shifts
             .get(&rail_shift_key(id, group))
-            .map_or(0., |shift| shift.at(std::time::Instant::now()).0)
+            .map_or(0., |shift| shift.at(now).0)
     }
 
-    fn project_rail_project_offset(&self, path: &str) -> f32 {
-        let project = self.project_rail_item_offset(path, false);
+    fn project_rail_project_offset(&self, path: &str, now: std::time::Instant) -> f32 {
+        let project = self.project_rail_item_offset(path, false, now);
         if self.workspace.project_rail_pinned.contains(path) {
             return project;
         }
@@ -1418,10 +1421,10 @@ impl Shell {
                 .workspace
                 .project_rail_assignments
                 .get(path)
-                .map_or(0., |group| self.project_rail_item_offset(group, true))
+                .map_or(0., |group| self.project_rail_item_offset(group, true, now))
     }
 
-    fn project_rail_item_raised(&self, id: &str, group: bool) -> bool {
+    fn project_rail_item_raised(&self, id: &str, group: bool, now: std::time::Instant) -> bool {
         let key = rail_shift_key(id, group);
         self.project_rail_drag
             .as_ref()
@@ -1431,17 +1434,17 @@ impl Shell {
                     .project_rail_list
                     .shifts
                     .get(&key)
-                    .is_some_and(|shift| !shift.at(std::time::Instant::now()).1)
+                    .is_some_and(|shift| !shift.at(now).1)
     }
 
-    fn project_rail_project_raised(&self, path: &str) -> bool {
-        self.project_rail_item_raised(path, false)
+    fn project_rail_project_raised(&self, path: &str, now: std::time::Instant) -> bool {
+        self.project_rail_item_raised(path, false, now)
             || !self.workspace.project_rail_pinned.contains(path)
                 && self
                     .workspace
                     .project_rail_assignments
                     .get(path)
-                    .is_some_and(|id| self.project_rail_item_raised(id, true))
+                    .is_some_and(|id| self.project_rail_item_raised(id, true, now))
     }
 
     fn project_rail_reordering(&self) -> bool {
@@ -1450,14 +1453,15 @@ impl Shell {
             .is_some_and(|drag| drag.active)
     }
 
-    pub(super) fn project_rail_animating(&self) -> bool {
+    /// Whether a rail item still glides at `now`, the frame's time.
+    pub(super) fn project_rail_animating(&self, now: std::time::Instant) -> bool {
         self.workspace.classic_layout
             && self.workspace.project_rail_open
             && self
                 .project_rail_list
                 .shifts
                 .values()
-                .any(|shift| shift.from != shift.to && !shift.at(std::time::Instant::now()).1)
+                .any(|shift| shift.from != shift.to && !shift.at(now).1)
     }
 
     fn start_project_rail_drag(
@@ -1471,7 +1475,7 @@ impl Shell {
         // Tauri's row buttons take keyboard focus on press. Keep Escape on the
         // workspace while a native div row is being dragged as well.
         window.focus(&self.focus, cx);
-        let now = std::time::Instant::now();
+        let now = cx.frame_time();
         let items: Vec<(String, Bounds<Pixels>)> = if group {
             self.workspace
                 .project_rail_groups
@@ -1498,7 +1502,7 @@ impl Shell {
                             }
                         }
                     }
-                    let offset = self.project_rail_item_offset(&candidate.id, true);
+                    let offset = self.project_rail_item_offset(&candidate.id, true, now);
                     bounds.origin.y -= px(offset);
                     Some((candidate.id.clone(), bounds))
                 })
@@ -1510,7 +1514,7 @@ impl Shell {
                 .filter(|path| self.workspace.project_rail_peers(path, &id))
                 .filter_map(|path| {
                     let mut bounds = self.project_rail_list.bounds.get(path)?.get()?;
-                    bounds.origin.y -= px(self.project_rail_project_offset(path));
+                    bounds.origin.y -= px(self.project_rail_project_offset(path, now));
                     Some((path.clone(), bounds))
                 })
                 .collect()
@@ -1572,7 +1576,7 @@ impl Shell {
         if drag.to != to {
             drag.to = to;
             let starts = drag.layout(to);
-            let now = std::time::Instant::now();
+            let now = cx.frame_time();
             for (ix, id) in drag.order.iter().enumerate() {
                 if ix == drag.from {
                     continue;
@@ -1608,7 +1612,7 @@ impl Shell {
         let moved = reordered.remove(drag.from);
         reordered.insert(drag.to, moved);
         let starts = drag.layout(drag.to);
-        let now = std::time::Instant::now();
+        let now = cx.frame_time();
         for (ix, id) in drag.order.iter().enumerate() {
             let key = rail_shift_key(id, drag.group);
             let old_offset = if ix == drag.from {
@@ -1669,7 +1673,7 @@ impl Shell {
         };
         if drag.active {
             self.project_rail_list.settling = Some(rail_shift_key(&drag.path, drag.group));
-            let now = std::time::Instant::now();
+            let now = cx.frame_time();
             for (ix, id) in drag.order.iter().enumerate() {
                 let key = rail_shift_key(id, drag.group);
                 let from = if ix == drag.from {
@@ -1945,7 +1949,7 @@ mod tests {
                     vec!["second", "first"]
                 );
                 assert!(
-                    !shell.project_rail_animating(),
+                    !shell.project_rail_animating(cx.frame_time()),
                     "reduced motion must settle immediately"
                 );
                 assert!(shell.project_rail_drag.is_none());

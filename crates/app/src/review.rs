@@ -1511,9 +1511,7 @@ impl ReviewPane {
             .iter()
             .map(|s| (format!("{:?}", s.tab), s.tab.clone()))
             .collect();
-        let (slots, moving) = self
-            .tab_motion
-            .sync(keyed, animate, std::time::Instant::now());
+        let (slots, moving) = self.tab_motion.sync(keyed, animate, cx.frame_time());
         if moving {
             window.request_animation_frame();
         }
@@ -1806,7 +1804,7 @@ impl Render for ReviewPane {
         }
         let fade = match &self.revealed {
             Some(reveal) => {
-                let (opacity, done) = reveal.opacity(std::time::Instant::now());
+                let (opacity, done) = reveal.opacity(cx.frame_time());
                 if !done {
                     window.request_animation_frame();
                 } else {
