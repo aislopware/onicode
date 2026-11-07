@@ -261,8 +261,8 @@ impl GitPicker {
                 cx.emit(Picked::Dismissed)
             }
             choice => {
-                let checkout = self.cwd.to_string_lossy().into_owned();
-                let engine = crate::engine_client::local(cx);
+                let (engine, checkout) =
+                    crate::engine_client::for_project(&self.cwd.to_string_lossy(), cx);
                 let work = match choice {
                     Choice::Branch(branch) => engine
                         .call::<Switch>(Some(OpId::new()), Switch { checkout, branch })

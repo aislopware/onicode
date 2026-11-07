@@ -15,6 +15,19 @@ use crate::theme::*;
 /// The card shows this many files until expanded.
 const COLLAPSED: usize = 3;
 
+/// `status`, as `engine` named its files, in the app's spelling.
+fn respell(
+    engine: &crate::engine_client::Engine,
+    mut status: CheckpointStatus,
+) -> CheckpointStatus {
+    if engine.target().is_some() {
+        for file in &mut status.files {
+            file.path = engine.app_path(&file.path);
+        }
+    }
+    status
+}
+
 pub(crate) enum SessionReviewEvent {
     /// Review the session's changes, focused on one file when given.
     Open { path: Option<String> },
@@ -111,14 +124,17 @@ impl SessionReview {
         }
         self.generation += 1;
         let generation = self.generation;
-        let read = crate::engine_client::local(cx).call::<ReadCheckpoint>(
+        let (engine, cwd) = crate::engine_client::for_project(&self.cwd, cx);
+        let read = engine.call::<ReadCheckpoint>(
             None,
             ReadCheckpoint {
-                session: self.session,
-                cwd: self.cwd.clone(),
+                session: engine.row(self.session),
+                cwd,
             },
         );
-        let work = cx.background_executor().spawn(read);
+        let work = cx
+            .background_executor()
+            .spawn(async move { read.await.map(|status| respell(&engine, status)) });
         self._load = Some(cx.spawn(async move |this, cx| {
             let status = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -152,18 +168,20 @@ impl SessionReview {
         cx.notify();
         self.generation += 1;
         let generation = self.generation;
+        let (engine, cwd) = crate::engine_client::for_project(&self.cwd, cx);
         let restore = RestoreCheckpoint {
-            session: self.session,
-            cwd: self.cwd.clone(),
+            session: engine.row(self.session),
+            cwd,
             restore: match action {
                 Action::Keep => Restore::Keep,
                 Action::Undo => Restore::Undo,
             },
             path: None,
         };
-        let work =
-            crate::engine_client::local(cx).call::<RestoreCheckpoint>(Some(OpId::new()), restore);
-        let work = cx.background_executor().spawn(work);
+        let work = engine.call::<RestoreCheckpoint>(Some(OpId::new()), restore);
+        let work = cx
+            .background_executor()
+            .spawn(async move { work.await.map(|status| respell(&engine, status)) });
         self._load = Some(cx.spawn(async move |this, cx| {
             let status = work.await;
             let _ = this.update(cx, |this, cx| {

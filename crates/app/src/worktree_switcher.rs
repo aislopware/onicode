@@ -272,15 +272,19 @@ impl WorktreeSwitcher {
         let cwd = self.focused.as_ref().map_or(&self.cwd, |f| &f.path).clone();
         self.creating = true;
         self.error = None;
-        let work = crate::engine_client::local(cx).call::<CreateWorktree>(
+        let (engine, checkout) = crate::engine_client::for_project(&cwd, cx);
+        let work = engine.call::<CreateWorktree>(
             Some(OpId::new()),
             CreateWorktree {
-                checkout: cwd,
+                checkout,
                 worktree: NewWorktree::Named { branch },
             },
         );
         cx.spawn(async move |this, cx| {
-            let result = work.await;
+            let result = work.await.map(|mut tree| {
+                tree.path = engine.app_path(&tree.path);
+                tree
+            });
             let _ = this.update(cx, |this, cx| {
                 this.creating = false;
                 match result {

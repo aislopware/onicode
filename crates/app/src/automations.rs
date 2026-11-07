@@ -825,6 +825,8 @@ impl Automations {
                         this.load_controls(cx);
                     }
                     ProjectPicked::New => this.browse_project(cx),
+                    // Automations' picker never offers machines.
+                    ProjectPicked::Remote => {}
                 }
                 window.focus(&this.focus, cx);
                 cx.notify();

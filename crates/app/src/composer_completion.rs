@@ -141,6 +141,8 @@ impl Completion {
     pub(crate) fn new(input: Entity<input::Input>, cwd: String, cx: &mut Context<Self>) -> Self {
         input.update(cx, |input, cx| input.enable_inline_commands(cx));
         let observe = cx.observe(&input, |this, _, cx| this.sync(cx));
+        // The project's engine: the app's own, or the one a `peer://` project names.
+        let engine = engine_client::for_project(&cwd, cx).0;
         Self {
             input,
             notes: Vec::new(),
@@ -181,7 +183,7 @@ impl Completion {
             generation: 0,
             cancel: Arc::new(AtomicBool::new(false)),
             listing: None,
-            engine: engine_client::local(cx),
+            engine,
             anchor: AnchorSlot::default(),
             composer_anchor: AnchorSlot::default(),
             container_anchor: AnchorSlot::default(),
@@ -230,6 +232,7 @@ impl Completion {
         self.cancel.store(true, Ordering::Relaxed);
         self.stop_listing();
         self.generation += 1;
+        self.engine = self.engine.for_path(cwd).0;
         self.cwd = cwd.into();
         self.skills.clear();
         self.native_commands.clear();
@@ -475,7 +478,7 @@ impl Completion {
             None,
             Commands {
                 provider,
-                project: self.cwd.clone(),
+                project: self.engine.path_of(&self.cwd),
                 account: onicode_protocol::accounts::DEFAULT.into(),
                 model: None,
             },
@@ -513,7 +516,7 @@ impl Completion {
         self.error = None;
         self.cancel = Arc::new(AtomicBool::new(false));
         self.load_native(cx);
-        let cwd = self.cwd.clone();
+        let cwd = self.engine.path_of(&self.cwd);
         let generation = self.generation;
         self.stop_listing();
         let id = onicode_protocol::new_id();
@@ -537,10 +540,17 @@ impl Completion {
         let mcp = self
             .engine
             .call::<McpServers>(None, McpServers { project: cwd });
+        let engine = self.engine.clone();
         let work = cx.background_executor().spawn(async move {
             let notes = notes.await.unwrap_or_default();
             let skills = skills.await.unwrap_or_default();
-            let files = listing.await.map(|listed| listed.files);
+            let files = listing.await.map(|listed| {
+                let mut files = listed.files;
+                for file in &mut files {
+                    file.path = engine.app_path(&file.path);
+                }
+                files
+            });
             let mcp = mcp.await.unwrap_or_default();
             (skills, files, notes, mcp)
         });

@@ -983,7 +983,15 @@ impl ReviewPane {
         let generation = source.generation.fetch_add(1, Ordering::SeqCst) + 1;
         let tab = source.tab.clone();
         let counter = source.generation.clone();
-        let engine = crate::engine_client::local(cx);
+        // The checkout's engine, and the checkout and change set as it names them: a session's
+        // turn by the row it stores the session at.
+        let (engine, checkout) = crate::engine_client::for_project(&checkout, cx);
+        let changes = match changes {
+            ChangeSet::Checkpoint { session } => ChangeSet::Checkpoint {
+                session: engine.row(session),
+            },
+            changes => changes,
+        };
         let list = cx.background_executor().spawn(engine.call::<Diff>(
             None,
             Diff {
@@ -991,12 +999,21 @@ impl ReviewPane {
                 changes: changes.clone(),
             },
         ));
+        let lister = engine.clone();
         let task = cx.spawn(async move |this, cx| {
-            let listed = list.await.map(|DiffList { files, versions }| {
-                let versions: Option<HashMap<String, FileDiffVersion>> =
-                    versions.map(|versions| versions.into_iter().collect());
-                (files, versions)
-            });
+            let listed = list.await.map(
+                |DiffList {
+                     mut files,
+                     versions,
+                 }| {
+                    for file in &mut files {
+                        file.path = lister.app_path(&file.path);
+                    }
+                    let versions: Option<HashMap<String, FileDiffVersion>> =
+                        versions.map(|versions| versions.into_iter().collect());
+                    (files, versions)
+                },
+            );
             let order = this.update(cx, |this, cx| {
                 let source = this
                     .sources
@@ -1430,9 +1447,9 @@ impl ReviewPane {
             Change::Discard(path) => Some(GitEcho::Discard(Some(path.clone()))),
             Change::Stage(_) => None,
         };
-        let engine = crate::engine_client::local(cx);
-        let op = OpId::new();
         let covering = checkout.clone();
+        let (engine, checkout) = crate::engine_client::for_project(&checkout, cx);
+        let op = OpId::new();
         let work = match change {
             Change::Stage(target) => {
                 Either::Left(engine.call::<Stage>(Some(op), Stage { checkout, target }))

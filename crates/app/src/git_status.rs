@@ -236,8 +236,8 @@ impl ProjectGit {
             return;
         }
         let checkout = self.project.clone();
-        let watched = checkout.clone();
-        let watching = engine_client::local(cx).watch::<WatchGit>(move |since| WatchGit {
+        let (engine, watched) = engine_client::for_project(&checkout, cx);
+        let watching = engine.watch::<WatchGit>(move |since| WatchGit {
             checkout: watched.clone(),
             since,
         });
@@ -382,12 +382,8 @@ impl ProjectGit {
         self.in_flight = true;
         self.reads_sent += 1;
         let project = self.project.clone();
-        let read = engine_client::local(cx).call::<ReadStatus>(
-            None,
-            ReadStatus {
-                checkout: project.clone(),
-            },
-        );
+        let (engine, checkout) = engine_client::for_project(&project, cx);
+        let read = engine.call::<ReadStatus>(None, ReadStatus { checkout });
         cx.spawn(async move |this, cx| {
             let result = read.await;
             let _ = this.update(cx, |this, cx| {

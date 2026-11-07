@@ -1416,6 +1416,8 @@ impl ModelList {
 pub(crate) enum ProjectPicked {
     Project(String),
     New,
+    /// "Open folder on a machine…".
+    Remote,
 }
 
 /// ProjectPickerPopover: a search field over the projects, the current one
@@ -1426,6 +1428,7 @@ pub(crate) struct ProjectPicker {
     projects: Vec<String>,
     current: String,
     active: usize,
+    allow_remote: bool,
     search: Entity<input::Input>,
     _changed: Subscription,
 }
@@ -1447,9 +1450,16 @@ impl ProjectPicker {
             projects,
             current: current.into(),
             active: 0,
+            allow_remote: false,
             search,
             _changed: changed,
         }
+    }
+
+    /// Offers "Open folder on a machine…" below "New project".
+    pub(crate) fn allow_remote(mut self) -> Self {
+        self.allow_remote = true;
+        self
     }
 
     pub(crate) fn search_focus(&self, cx: &gpui::App) -> FocusHandle {
@@ -1554,6 +1564,10 @@ impl Render for ProjectPicker {
                             .child(if current {
                                 icon("check-2", 14.)
                                     .text_color(content(1.))
+                                    .into_any_element()
+                            } else if onicode_protocol::ProjectRef::parse_uri(&path).is_some() {
+                                icon("globe", 14.)
+                                    .text_color(content(0.6))
                                     .into_any_element()
                             } else {
                                 crate::project_settings::project_icon(
@@ -1689,7 +1703,30 @@ impl Render for ProjectPicker {
                             )
                             .child("New project")
                             .on_click(cx.listener(|_, _, _, cx| cx.emit(ProjectPicked::New))),
-                    ),
+                    )
+                    .when(self.allow_remote, |d| {
+                        d.child(
+                            div()
+                                .id("project-remote")
+                                .role(Role::Button)
+                                .aria_label("Open folder on a machine")
+                                .cursor_pointer()
+                                .h(px(36.))
+                                .px(px(10.))
+                                .gap(px(10.))
+                                .rounded(px(8.))
+                                .flex()
+                                .items_center()
+                                .text_size(px(13.))
+                                .text_color(content(0.75))
+                                .hover(|s| s.bg(content(0.08)).text_color(content(1.)))
+                                .child(icon("globe", 16.).text_color(content(0.75)))
+                                .child("Open folder on a machine…")
+                                .on_click(
+                                    cx.listener(|_, _, _, cx| cx.emit(ProjectPicked::Remote)),
+                                ),
+                        )
+                    }),
             )
     }
 }

@@ -565,10 +565,11 @@ impl FilesHub {
             .map(|watched| watched.schedule.due())
     }
 
-    /// `ListDir`.
+    /// `ListDir`. A path of `~`, or under `~/`, is read under this engine's home: a viewer on
+    /// another machine starts "Open folder on a machine" there without knowing where it is.
     pub async fn list_dir(&self, body: ListDir) -> Result<Vec<DirEntry>, String> {
         let probe = self.probe.clone();
-        self.blocking(move || probe.list_dir(Path::new(&body.path)))
+        self.blocking(move || probe.list_dir(&home_relative(&body.path)))
             .await
     }
 
@@ -926,6 +927,19 @@ fn drives() -> Vec<Drive> {
 
 /// Folders under home whose name holds `query`, breadth first, skipping hidden folders,
 /// `Library` and dependency folders, within a bounded walk.
+/// `path`, a leading `~` read as this engine's home.
+fn home_relative(path: &str) -> PathBuf {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    match (path.strip_prefix('~'), home) {
+        (Some(""), Some(home)) => home,
+        (Some(rest), Some(home)) => match rest.strip_prefix('/') {
+            Some(under) => home.join(under),
+            None => PathBuf::from(path),
+        },
+        _ => PathBuf::from(path),
+    }
+}
+
 fn home_folders(query: &str, limit: u32) -> Vec<String> {
     const MAX_DEPTH: usize = 4;
     const MAX_VISITS: usize = 20_000;

@@ -22,7 +22,7 @@ use onicode_protocol::files::{
     NewPath, Relisted, Severity, WatchDir,
 };
 
-use crate::engine_client::{self, WatchUpdate, Watching};
+use crate::engine_client::{self, Engine, WatchUpdate, Watching};
 use crate::file_icons::file_type_icon;
 use crate::git_status::{GitChanged, ProjectGit};
 use crate::input::{self, Input};
@@ -330,6 +330,41 @@ fn on_this_mac(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// `listed`, as `engine` named its folders, in the app's spelling.
+fn respell_listed(engine: &Engine, listed: Vec<Relisted>) -> Vec<Relisted> {
+    if engine.target().is_none() {
+        return listed;
+    }
+    listed
+        .into_iter()
+        .map(|relisted| Relisted {
+            root: engine.app_path(&relisted.root),
+            path: engine.app_path(&relisted.path),
+            scan: relisted.scan,
+        })
+        .collect()
+}
+
+/// `moved`, as `engine` named its paths, in the app's spelling.
+fn respell_new_path(engine: &Engine, moved: NewPath) -> NewPath {
+    NewPath {
+        path: engine.app_path(&moved.path),
+        listed: respell_listed(engine, moved.listed),
+    }
+}
+
+/// `listing`, as `engine` named its entries, in the app's spelling.
+fn respell_listing(engine: &Engine, mut listing: Listing) -> Listing {
+    if engine.target().is_some()
+        && let Entries::Read(entries) = &mut listing.entries
+    {
+        for entry in entries {
+            entry.path = engine.app_path(&entry.path);
+        }
+    }
+    listing
+}
+
 /// How a create, rename or move came back.
 fn landed(result: &Result<NewPath, String>) -> Landed<'_> {
     match result {
@@ -584,9 +619,10 @@ impl Explorer {
     }
 
     fn watch_dir(&mut self, path: String, cx: &mut Context<Self>) {
-        let root = self.cwd.clone();
-        let watched = path.clone();
-        let watching = engine_client::local(cx).watch::<WatchDir>(move |since| WatchDir {
+        let engine = self.engine(cx);
+        let root = engine.path_of(&self.cwd);
+        let watched = engine.path_of(&path);
+        let watching = engine.watch::<WatchDir>(move |since| WatchDir {
             root: root.clone(),
             path: watched.clone(),
             since,
@@ -602,6 +638,7 @@ impl Explorer {
                         None => continue,
                     },
                 };
+                let listing = respell_listing(&engine, listing);
                 if this
                     .update(cx, |this, cx| this.listed(&dir, listing, cx))
                     .is_err()
@@ -708,6 +745,36 @@ impl Explorer {
             self.refold(folder);
         }
         self.rebuild(cx);
+    }
+
+    /// The engine that serves the project ([`engine_client::for_project`]).
+    fn engine(&self, cx: &mut App) -> Engine {
+        engine_client::for_project(&self.cwd, cx).0
+    }
+
+    /// Moves or copies `from` on the project's engine under `op`; the reply's paths come back
+    /// in the app's spelling.
+    fn moving(
+        &self,
+        op: OpId,
+        from: &str,
+        to: Destination,
+        cx: &mut App,
+    ) -> impl Future<Output = Result<NewPath, String>> + 'static + use<> {
+        let engine = self.engine(cx);
+        let to = match to {
+            Destination::Rename(name) => Destination::Rename(name),
+            Destination::Into(dest) => Destination::Into(engine.path_of(&dest)),
+            Destination::CopyInto(dest) => Destination::CopyInto(engine.path_of(&dest)),
+        };
+        let call = engine.call::<Move>(
+            Some(op),
+            Move {
+                from: engine.path_of(from),
+                to,
+            },
+        );
+        async move { call.await.map(|moved| respell_new_path(&engine, moved)) }
     }
 
     fn forget(&mut self, path: &str) {
@@ -1022,13 +1089,7 @@ impl Explorer {
                     }));
                 }
                 let op = OpId::new();
-                let call = engine_client::local(cx).call::<Move>(
-                    Some(op),
-                    Move {
-                        from: path.clone(),
-                        to: Destination::Rename(name.clone()),
-                    },
-                );
+                let call = self.moving(op, &path, Destination::Rename(name.clone()), cx);
                 self.echo(op, echoes, cx);
                 cx.spawn_in(window, async move |this, cx| {
                     let result = call.await;
@@ -1069,14 +1130,16 @@ impl Explorer {
                     .into_iter()
                     .collect();
                 let op = OpId::new();
-                let call = engine_client::local(cx).call::<Create>(
+                let engine = self.engine(cx);
+                let create = engine.call::<Create>(
                     Some(op),
                     Create {
-                        parent: parent.clone(),
+                        parent: engine.path_of(&parent),
                         name: name.clone(),
                         dir: as_folder,
                     },
                 );
+                let call = async move { create.await.map(|made| respell_new_path(&engine, made)) };
                 self.echo(op, echoes, cx);
                 cx.spawn_in(window, async move |this, cx| {
                     let result = call.await;
@@ -1225,11 +1288,19 @@ impl Explorer {
                     this.clip = None;
                 }
                 let op = OpId::new();
-                let call = engine_client::local(cx)
-                    .call::<DeletePath>(Some(op), DeletePath { path: path.clone() });
+                let engine = this.engine(cx);
+                let call = engine.call::<DeletePath>(
+                    Some(op),
+                    DeletePath {
+                        path: engine.path_of(&path),
+                    },
+                );
                 this.run(
                     Some((op, vec![Echo::Remove(path.clone())])),
-                    async move { call.await.map(|deleted| (None, deleted.listed)) },
+                    async move {
+                        call.await
+                            .map(|deleted| (None, respell_listed(&engine, deleted.listed)))
+                    },
                     vec![parent],
                     is_dir.then_some(path),
                     window,
@@ -1305,13 +1376,7 @@ impl Explorer {
                 echoes.push(Echo::Remove(from.clone()));
                 echoes.extend(self.arriving(&from, clip.is_dir, &dest));
             }
-            let call = engine_client::local(cx).call::<Move>(
-                Some(op),
-                Move {
-                    from: from.clone(),
-                    to: Destination::Into(dest.clone()),
-                },
-            );
+            let call = self.moving(op, &from, Destination::Into(dest.clone()), cx);
             self.echo(op, echoes, cx);
             cx.spawn_in(window, async move |this, cx| {
                 let result = call.await;
@@ -1335,13 +1400,7 @@ impl Explorer {
             .detach();
         } else {
             let echo = Self::copied(&from, clip.is_dir, &dest, &self.taken(&dest));
-            let call = engine_client::local(cx).call::<Move>(
-                Some(op),
-                Move {
-                    from,
-                    to: Destination::CopyInto(dest.clone()),
-                },
-            );
+            let call = self.moving(op, &from, Destination::CopyInto(dest.clone()), cx);
             self.run(
                 Some((op, vec![echo])),
                 async move { call.await.map(|moved| (Some(moved.path), moved.listed)) },
@@ -1382,7 +1441,9 @@ impl Explorer {
             self.echo(op, vec![echo], cx);
             copies.push((op, from));
         }
-        let engine = engine_client::local(cx);
+        // Finder's files are this Mac's; a project on another engine is copied into there.
+        let engine = self.engine(cx);
+        let into = engine.path_of(&dest);
         cx.spawn_in(window, async move |this, cx| {
             let mut created = None;
             for (at, (op, from)) in copies.iter().enumerate() {
@@ -1391,10 +1452,11 @@ impl Explorer {
                         Some(*op),
                         Move {
                             from: from.clone(),
-                            to: Destination::CopyInto(dest.clone()),
+                            to: Destination::CopyInto(into.clone()),
                         },
                     )
-                    .await;
+                    .await
+                    .map(|moved| respell_new_path(&engine, moved));
                 let failed = this.update_in(cx, |this, _, cx| {
                     this.settle(*op, landed(&result), cx);
                     match result {
@@ -1438,13 +1500,7 @@ impl Explorer {
         let is_dir = self.is_dir_at(&path);
         let op = OpId::new();
         let echo = Self::copied(&path, is_dir, &parent, &self.taken(&parent));
-        let call = engine_client::local(cx).call::<Move>(
-            Some(op),
-            Move {
-                from: path,
-                to: Destination::CopyInto(parent.clone()),
-            },
-        );
+        let call = self.moving(op, &path, Destination::CopyInto(parent.clone()), cx);
         self.run(
             Some((op, vec![echo])),
             async move { call.await.map(|moved| (Some(moved.path), moved.listed)) },
@@ -2232,6 +2288,43 @@ mod tests {
     use gpui::{TestAppContext, VisualTestContext};
 
     use super::*;
+
+    /// What another engine answers names its own paths; the explorer keeps them as the app
+    /// spells that engine's project, and the app's own engine's paths stay as they are.
+    #[gpui::test]
+    fn another_engines_paths_come_back_as_its_project_uri(cx: &mut TestAppContext) {
+        let own = cx.update(Engine::memory);
+        let away = own.on(onicode_protocol::EngineId("nMac".into()));
+        let entry = |path: &str| DirEntry {
+            name: basename(path).to_owned(),
+            path: path.into(),
+            is_dir: false,
+            ignored: false,
+        };
+        let listing = || Listing {
+            scan: 3,
+            entries: Entries::Read(vec![entry("/code/a.rs")]),
+        };
+        let Entries::Read(entries) = respell_listing(&away, listing()).entries else {
+            panic!("a listing that was read");
+        };
+        assert_eq!(entries[0].path, "peer://nMac/code/a.rs");
+        assert_eq!(respell_listing(&own, listing()), listing());
+        let moved = respell_new_path(
+            &away,
+            NewPath {
+                path: "/code/b.rs".into(),
+                listed: vec![Relisted {
+                    root: "/code".into(),
+                    path: "/code".into(),
+                    scan: 4,
+                }],
+            },
+        );
+        assert_eq!(moved.path, "peer://nMac/code/b.rs");
+        assert_eq!(moved.listed[0].root, "peer://nMac/code");
+        assert_eq!(away.path_of(&moved.path), "/code/b.rs");
+    }
 
     /// A folder of its own under the temp dir, gone with the test.
     struct Folder(PathBuf);

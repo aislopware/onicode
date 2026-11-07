@@ -250,16 +250,17 @@ impl Terminal {
         }
     }
 
-    /// Opens the terminal on the app's engine and watches it.
+    /// Opens the terminal on the engine that serves `cwd` (the app's own, or the one a `peer://`
+    /// project names) and watches it there.
     fn host(cwd: &str, cx: &mut Context<Self>) -> Hosted {
-        let engine = engine_client::local(cx);
+        let (engine, cwd) = engine_client::for_project(cwd, cx);
         let id = TerminalId::new();
         let (outbox, queued) = async_channel::unbounded::<Outgoing>();
         let (opened, on_open) = async_channel::bounded::<()>(1);
         let open = OpenTerminal {
             terminal: id,
             viewer: viewer(),
-            cwd: cwd.to_owned(),
+            cwd,
             size: START,
             colors: OSC_COLORS,
         };

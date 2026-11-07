@@ -404,10 +404,11 @@ impl FileEditor {
             return;
         }
         self.loading = true;
-        let read = engine_client::local(cx).call::<Read>(
+        let (engine, path) = engine_client::for_project(&self.path, cx);
+        let read = engine.call::<Read>(
             None,
             Read {
-                path: self.path.clone(),
+                path,
                 unless: self.digest.filter(|_| !force),
             },
         );
@@ -602,10 +603,11 @@ impl FileEditor {
         else {
             return;
         };
-        let diff = engine_client::local(cx).call::<FileDiff>(
+        let (engine, checkout) = engine_client::for_project(&self.cwd, cx);
+        let diff = engine.call::<FileDiff>(
             None,
             FileDiff {
-                checkout: self.cwd.clone(),
+                checkout,
                 path: relative,
                 changes: ChangeSet::WorkingTree,
                 staged: None,
@@ -791,16 +793,14 @@ impl FileEditor {
                 }
                 let doc = this.document.as_ref()?;
                 let saved = this.input.read(cx).content.to_string();
+                let (engine, path) = engine_client::for_project(&this.path, cx);
                 let body = Write {
-                    path: this.path.clone(),
+                    path,
                     text: saved.clone(),
                     encoding: doc.encoding,
                     expected: doc.digest,
                 };
-                Some((
-                    engine_client::local(cx).call::<Write>(Some(OpId::new()), body),
-                    saved,
-                ))
+                Some((engine.call::<Write>(Some(OpId::new()), body), saved))
             }) else {
                 return;
             };

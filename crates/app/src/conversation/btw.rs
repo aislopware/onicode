@@ -426,7 +426,7 @@ impl Btw {
                     },
                     body: text.clone(),
                     tags: Vec::new(),
-                    source_session: self.session,
+                    source_session: self.engine.row(self.session),
                     source_cwd: self
                         .active()
                         .map(|thread| thread.cwd.clone())
@@ -1769,7 +1769,8 @@ impl Conversation {
             snapshot: snapshot(&rows[..end]),
             provider,
             model: info.model_id.clone().or_else(|| self.model.clone()),
-            cwd: self.execution_cwd().into(),
+            // Side threads run in the session's engine, at its spelling of the checkout.
+            cwd: self.engine.path_of(self.execution_cwd()),
             settings,
         })
     }

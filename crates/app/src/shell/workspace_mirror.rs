@@ -446,6 +446,24 @@ impl Shell {
         C::Params: Send + 'static,
         C::Reply: Send + 'static,
     {
+        let engine = self.engine.clone();
+        self.workspace_call_on::<C>(&engine, body, echo, cx, settle);
+    }
+
+    /// [`Self::workspace_call`] made to `engine`: another engine's, for a call about one of its
+    /// sessions (`Shell::session_engine`), whose body names the row it stores it at.
+    pub(super) fn workspace_call_on<C: Call + 'static>(
+        &mut self,
+        engine: &Engine,
+        body: C::Params,
+        echo: Option<Echo>,
+        cx: &mut Context<Self>,
+        settle: impl FnOnce(&mut Self, Result<C::Reply, String>, &mut Context<Self>) + 'static,
+    ) where
+        C::Params: Send + 'static,
+        C::Reply: Send + 'static,
+    {
+        let engine = engine.clone();
         let op = OpId::new();
         if let Some(echo) = echo {
             self.mirror.marking = Some(HashSet::new());
@@ -458,13 +476,17 @@ impl Shell {
                 rows,
             });
         }
-        let previous = self.group_writes.take();
-        self.group_writes = Some(cx.spawn(async move |this, cx| {
+        // Another engine's call neither waits behind the app's own engine's writes nor holds
+        // them up while that engine is offline, and its effect arrives on that engine's
+        // workspace watch, so its echo goes with the reply.
+        let peer = engine.target().is_some();
+        let previous = if peer { None } else { self.group_writes.take() };
+        let write = cx.spawn(async move |this, cx| {
             if let Some(previous) = previous {
                 previous.await;
             }
-            let Ok(call) = this.update(cx, |this, cx| {
-                engine_client::call::<C>(&this.engine, Some(op), body, cx)
+            let Ok(call) = this.update(cx, |_, cx| {
+                engine_client::call::<C>(&engine, Some(op), body, cx)
             }) else {
                 return;
             };
@@ -480,6 +502,8 @@ impl Shell {
                         !refused
                     });
                     this.reshow_workspace(rows, cx);
+                } else if peer {
+                    this.mirror.echoes.retain(|echoed| echoed.op != op);
                 } else if let Some(echoed) =
                     this.mirror.echoes.iter_mut().find(|echoed| echoed.op == op)
                 {
@@ -489,7 +513,12 @@ impl Shell {
                 this.invalidate_chrome(cx);
                 cx.notify();
             });
-        }));
+        });
+        if peer {
+            write.detach();
+        } else {
+            self.group_writes = Some(write);
+        }
     }
 
     /// [`Self::workspace_call`] for a call answered with an [`Outcome`]: a failure, or a refusal
@@ -504,7 +533,22 @@ impl Shell {
     ) where
         C::Params: Send + 'static,
     {
-        self.workspace_call::<C>(body, echo, cx, move |this, reply, _| match reply {
+        let engine = self.engine.clone();
+        self.workspace_write_on::<C>(&engine, what, body, echo, cx);
+    }
+
+    /// [`Self::workspace_write`] made to `engine`, as [`Self::workspace_call_on`].
+    pub(super) fn workspace_write_on<C: Call<Reply = Outcome> + 'static>(
+        &mut self,
+        engine: &Engine,
+        what: &'static str,
+        body: C::Params,
+        echo: Option<Echo>,
+        cx: &mut Context<Self>,
+    ) where
+        C::Params: Send + 'static,
+    {
+        self.workspace_call_on::<C>(engine, body, echo, cx, move |this, reply, _| match reply {
             Err(error) | Ok(Outcome::Rejected(Rejection::Denied(error))) => {
                 this.error = Some(format!("Could not {what}: {error}"));
             }
@@ -522,16 +566,18 @@ impl Shell {
         start: NewSession,
         cx: &mut Context<Self>,
     ) -> gpui::Task<Result<(Session, Option<Settings>), String>> {
+        // A project on another machine creates the session there.
+        let (engine, cwd) = self.engine.for_path(cwd);
         let body = CreateSession {
             session: SessionId::new(),
             provider: provider.to_owned(),
-            cwd: cwd.to_owned(),
+            cwd,
             title,
             start,
             started_by: None,
         };
-        let call = engine_client::call::<CreateSession>(&self.engine, Some(OpId::new()), body, cx);
-        cx.spawn(async move |_, _| {
+        let call = engine_client::call::<CreateSession>(&engine, Some(OpId::new()), body, cx);
+        cx.spawn(async move |this, cx| {
             let created = call.await?;
             match created.outcome {
                 Outcome::Applied => {}
@@ -541,21 +587,18 @@ impl Shell {
                 }
             }
             let summary = created.session.ok_or("The engine created no session")?;
-            Ok((summary.session, created.settings.map(|settings| *settings)))
+            let session = match engine.target() {
+                Some(peer) => {
+                    let session = super::peer_sessions::shown(&engine, &summary);
+                    let (peer, row) = (peer.clone(), session.id);
+                    this.update(cx, |this, _| this.peers_adopt(row, peer))
+                        .map_err(|error| error.to_string())?;
+                    session
+                }
+                None => summary.session,
+            };
+            Ok((session, created.settings.map(|settings| *settings)))
         })
-    }
-
-    /// Makes a call that changes nothing, off the main thread.
-    pub(super) fn workspace_read<C: Call + 'static>(
-        &mut self,
-        body: C::Params,
-        cx: &mut Context<Self>,
-    ) -> gpui::Task<Result<C::Reply, String>>
-    where
-        C::Params: Send + 'static,
-        C::Reply: Send + 'static,
-    {
-        engine_client::call::<C>(&self.engine, None, body, cx)
     }
 }
 

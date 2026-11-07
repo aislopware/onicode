@@ -253,8 +253,8 @@ impl TranscriptView {
             .insert(key.clone(), Load::Loading);
         let cwd = self.file_link_base.clone().unwrap_or_else(|| ".".into());
         let (repo, kind, number) = (work.repo.clone(), work.kind, work.number as i64);
-        // `gh` runs in the engine, which holds the GitHub sign-in.
-        let engine = crate::engine_client::local(cx);
+        // `gh` runs in the project's engine, which holds the GitHub sign-in there.
+        let (engine, cwd) = crate::engine_client::for_project(&cwd, cx);
         let fetch_item = item.is_none().then(|| {
             engine.call::<ReadWorkItem>(
                 None,

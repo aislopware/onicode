@@ -624,10 +624,11 @@ impl Shell {
                 }
             },
             "worktrees.list" | "worktrees.create" => {
-                let engine = crate::engine_client::local(cx);
+                let (engine, project) = crate::engine_client::for_project(&project, cx);
                 let work = cx.background_executor().spawn(async move {
                     let value = if action == "worktrees.list" {
                         let snapshot = engine.call::<Refs>(None, Refs { checkout: project }).await?;
+                        let snapshot = crate::git_cache::respell(&engine, snapshot);
                         json!({"worktrees":snapshot.worktrees.iter().map(worktree_json).collect::<Vec<_>>(),"branches":snapshot.branches.iter().map(|b|json!({"name":b.name,"remote":b.remote})).collect::<Vec<_>>()})
                     } else {
                         let branch = app::text(&input, "branch", 400)?;
@@ -649,6 +650,10 @@ impl Shell {
                                 },
                             )
                             .await?;
+                        let tree = onicode_protocol::git::Worktree {
+                            path: engine.app_path(&tree.path),
+                            ..tree
+                        };
                         worktree_json(&tree)
                     };
                     Ok((value, Effect::None))

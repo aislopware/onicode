@@ -1728,13 +1728,15 @@ impl Shell {
         let paths: Vec<_> = self.project_rail_stats.queued.drain().collect();
         self.project_rail_stats.loading = true;
         // One read at a time, as the rail always took them.
-        let engine = crate::engine_client::local(cx);
+        // Each project on the engine that serves it.
+        let reads: Vec<_> = paths
+            .into_iter()
+            .map(|path| (crate::engine_client::for_project(&path, cx), path))
+            .collect();
         let work = cx.background_executor().spawn(async move {
-            let mut values = Vec::with_capacity(paths.len());
-            for path in paths {
-                let read = onicode_protocol::git::ReadDiffStats {
-                    checkout: path.clone(),
-                };
+            let mut values = Vec::with_capacity(reads.len());
+            for ((engine, checkout), path) in reads {
+                let read = onicode_protocol::git::ReadDiffStats { checkout };
                 let stats = engine
                     .call::<onicode_protocol::git::ReadDiffStats>(None, read)
                     .await

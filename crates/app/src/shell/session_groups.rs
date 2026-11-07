@@ -558,15 +558,30 @@ impl Shell {
                         shell.mark_session(*row, cx, |summary| summary.pinned = pinned);
                     }
                 });
-                self.workspace_write::<Pin>(
-                    "pin the session",
-                    Pin {
-                        sessions: ids,
-                        pinned,
-                    },
-                    Some(echo),
-                    cx,
-                );
+                // Each engine pins its own sessions, by the rows it stores them at; the echo
+                // rides the first call and marks them all.
+                let mut by_engine: Vec<(Engine, Vec<i64>)> = Vec::new();
+                for id in &ids {
+                    let engine = self.session_engine(*id);
+                    let row = engine.row(*id);
+                    match by_engine
+                        .iter_mut()
+                        .find(|(held, _)| held.target() == engine.target())
+                    {
+                        Some((_, rows)) => rows.push(row),
+                        None => by_engine.push((engine, vec![row])),
+                    }
+                }
+                let mut echo: Option<super::workspace_mirror::Echo> = Some(echo);
+                for (engine, sessions) in by_engine {
+                    self.workspace_write_on::<Pin>(
+                        &engine,
+                        "pin the session",
+                        Pin { sessions, pinned },
+                        echo.take(),
+                        cx,
+                    );
+                }
                 self.invalidate_chrome(cx);
             }
             "rename" => self.start_rename(RenameTarget::Session(id), window, cx),
@@ -747,19 +762,29 @@ impl Shell {
         }
         self.invalidate_chrome(cx);
         // The engine drops its recorded turns, reminder and folder entry with it.
-        self.workspace_call::<Delete>(Delete { session: id }, None, cx, move |this, reply, cx| {
-            this.deleting.remove(&id);
-            match reply {
-                Ok(Outcome::Applied | Outcome::Rejected(Rejection::Gone)) => {
-                    this.forget_session(id, cx);
+        let engine = self.session_engine(id);
+        let session = engine.row(id);
+        self.workspace_call_on::<Delete>(
+            &engine,
+            Delete { session },
+            None,
+            cx,
+            move |this, reply, cx| {
+                this.deleting.remove(&id);
+                match reply {
+                    Ok(Outcome::Applied | Outcome::Rejected(Rejection::Gone)) => {
+                        this.forget_session(id, cx);
+                    }
+                    Ok(Outcome::Rejected(rejection)) => {
+                        this.error = Some(format!("Could not delete the session: {rejection:?}"));
+                    }
+                    Err(error) => {
+                        this.error = Some(format!("Could not delete the session: {error}"))
+                    }
                 }
-                Ok(Outcome::Rejected(rejection)) => {
-                    this.error = Some(format!("Could not delete the session: {rejection:?}"));
-                }
-                Err(error) => this.error = Some(format!("Could not delete the session: {error}")),
-            }
-            this.sync_settings(cx);
-        });
+                this.sync_settings(cx);
+            },
+        );
     }
 
     /// Drops a session the engine deleted from every view of it.
@@ -880,10 +905,12 @@ impl Shell {
                                 summary.title.clone_from(&title);
                             });
                         });
-                        self.workspace_write::<Rename>(
+                        let engine = self.session_engine(id);
+                        self.workspace_write_on::<Rename>(
+                            &engine,
                             "rename the session",
                             Rename {
-                                session: id,
+                                session: engine.row(id),
                                 title: name,
                                 expected: None,
                             },

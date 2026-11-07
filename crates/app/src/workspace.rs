@@ -98,6 +98,8 @@ pub(crate) struct Workspace {
     pub sidebar_notes_visible: bool,
     pub sidebar_automations_visible: bool,
     pub sidebar_inbox_visible: bool,
+    /// The focused sidebar's Machines section.
+    pub sidebar_machines_visible: bool,
     pub sidebar_activity_visible: bool,
     /// The inset right panel: open state, tab, width and tab order.
     pub right_panel_open: bool,
@@ -330,6 +332,7 @@ impl Default for Workspace {
             sidebar_notes_visible: true,
             sidebar_automations_visible: true,
             sidebar_inbox_visible: true,
+            sidebar_machines_visible: true,
             sidebar_activity_visible: true,
             right_panel_open: false,
             right_panel_tab: Default::default(),

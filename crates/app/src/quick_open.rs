@@ -99,17 +99,23 @@ impl QuickOpen {
             cx.notify();
         });
         // Closing Quick Open stops its listing.
-        let engine = engine_client::local(cx);
+        let (engine, root) = engine_client::for_project(&cwd, cx);
         let listing_id = onicode_protocol::new_id();
         let listing = engine.call::<SearchPaths>(
             None,
             SearchPaths {
-                root: cwd,
+                root,
                 search: listing_id.clone(),
             },
         );
+        let lister = engine.clone();
         cx.spawn(async move |this, cx| {
-            let result = listing.await;
+            let result = listing.await.map(|mut listed| {
+                for file in &mut listed.files {
+                    file.path = lister.app_path(&file.path);
+                }
+                listed
+            });
             let _ = this.update(cx, |this, cx| {
                 this.loading = false;
                 this.listing = None;

@@ -9,6 +9,8 @@ use super::*;
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Row {
     Navigation,
+    /// The Machines section, in the slot monocode's Monos held.
+    Machines,
     Pinned,
     Folders,
     Group(Entry),
@@ -118,8 +120,8 @@ impl SidebarList {
             );
         }
         self.rows = rows;
-        // Navigation can change height without the list changing.
-        self.state.remeasure_items(0..self.rows.len().min(1));
+        // Navigation and the Machines section can change height without the list changing.
+        self.state.remeasure_items(0..self.rows.len().min(2));
     }
 }
 
@@ -287,7 +289,7 @@ impl Shell {
             return;
         }
         let groups = self.project_groups();
-        let mut rows = vec![Row::Navigation];
+        let mut rows = vec![Row::Navigation, Row::Machines];
         let mut folders = false;
         for entry in entries {
             let (members, collapsed) = match entry {
@@ -485,6 +487,7 @@ impl Shell {
         self.sidebar_list.visible_rows.borrow_mut().push(ix);
         let content = match row {
             Row::Navigation => return self.sidebar_navigation(cx),
+            Row::Machines => return self.machines_section(cx),
             Row::Pinned => section_label("Pinned").into_any(),
             Row::Folders => section_label("Folders").into_any(),
             Row::Group(entry) => {
@@ -574,6 +577,10 @@ impl Shell {
                 .icon("inbox")
                 .toggle(self.workspace.sidebar_inbox_visible)
                 .into(),
+            MenuAction::new("sidebar-machines", "Machines")
+                .icon("internet")
+                .toggle(self.workspace.sidebar_machines_visible)
+                .into(),
             MenuAction::new("sidebar-activity", "Activity")
                 .icon("response-activity")
                 .toggle(self.workspace.sidebar_activity_visible)
@@ -593,6 +600,7 @@ impl Shell {
             "sidebar-notes" => &mut self.workspace.sidebar_notes_visible,
             "sidebar-automations" => &mut self.workspace.sidebar_automations_visible,
             "sidebar-inbox" => &mut self.workspace.sidebar_inbox_visible,
+            "sidebar-machines" => &mut self.workspace.sidebar_machines_visible,
             "sidebar-activity" => &mut self.workspace.sidebar_activity_visible,
             "compact-session-cards" => &mut self.workspace.compact_session_cards,
             _ => return,

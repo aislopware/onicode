@@ -69,17 +69,25 @@ pub(crate) fn remember(cwd: &str, state: &Snapshot) {
 /// for the next menu that opens on it. A failure leaves the last successful
 /// list intact.
 pub(crate) fn load(cwd: String, cx: &mut App) -> Task<Result<Snapshot, String>> {
-    let refs = crate::engine_client::local(cx).call::<Refs>(
-        None,
-        Refs {
-            checkout: cwd.clone(),
-        },
-    );
+    let (engine, checkout) = crate::engine_client::for_project(&cwd, cx);
+    let refs = engine.call::<Refs>(None, Refs { checkout });
     cx.background_executor().spawn(async move {
-        let state = refs.await?;
+        let state = respell(&engine, refs.await?);
         remember(&cwd, &state);
         Ok(state)
     })
+}
+
+/// `state`, as `engine` named its worktrees, in the app's spelling.
+pub(crate) fn respell(engine: &crate::engine_client::Engine, mut state: Snapshot) -> Snapshot {
+    if engine.target().is_none() {
+        return state;
+    }
+    for worktree in &mut state.worktrees {
+        worktree.path = engine.app_path(&worktree.path);
+    }
+    state.here = state.here.map(|here| engine.app_path(&here));
+    state
 }
 
 #[cfg(test)]

@@ -780,6 +780,9 @@ impl Conversation {
                 if let Some(mut settings) = settings.map(|settings| *settings)
                     && settings.revision >= this.settings.revision
                 {
+                    // The engine names the session's checkout as it spells its paths.
+                    settings.worktree_cwd =
+                        settings.worktree_cwd.map(|cwd| this.engine.app_path(&cwd));
                     if !this.summary.has_messages
                         && settings.revision == 0
                         && settings.account.id == onicode_protocol::accounts::DEFAULT
@@ -1138,6 +1141,8 @@ impl Conversation {
             .as_ref()
             .and_then(|turn| turn.model_id.clone())
             .or_else(|| settings.model.clone());
+        // The session's engine runs the turn, in its own spelling of the checkout.
+        settings.worktree_cwd = settings.worktree_cwd.map(|cwd| self.engine.path_of(&cwd));
         // The engine runs the turn. A one-slot channel: while the view waits for its beat,
         // what arrives folds into the next update instead of queueing behind it.
         let (tx, rx) = async_channel::bounded(1);
@@ -1219,7 +1224,7 @@ impl Conversation {
                         }
                         let source_selected = this.summary.provider == source_provider
                             && this.settings.account.id == source_account;
-                        if let Some(cwd) = update.worktree_cwd
+                        if let Some(cwd) = update.worktree_cwd.map(|cwd| this.engine.app_path(&cwd))
                             && (this.settings.worktree_cwd.as_ref() != Some(&cwd)
                                 || this.settings.new_worktree)
                         {
@@ -1623,8 +1628,8 @@ impl Conversation {
                     },
                     body: text.clone(),
                     tags: Vec::new(),
-                    source_session: self.summary.id,
-                    source_cwd: self.summary.cwd.clone(),
+                    source_session: self.engine.row(self.summary.id),
+                    source_cwd: self.engine.path_of(&self.summary.cwd),
                 };
                 let saved = crate::engine_client::call::<SaveResponseNote>(
                     &self.engine,
@@ -1773,14 +1778,14 @@ impl Conversation {
     fn prepare_worktree(&mut self, cx: &mut Context<Self>) {
         self.preparing_worktree = true;
         self.status = "Creating worktree…".into();
-        let cwd = self.summary.cwd.clone();
+        let cwd = self.engine.path_of(&self.summary.cwd);
         let base = self
             .settings
             .worktree_base
             .clone()
             .or(self.branch.clone())
             .unwrap_or_else(|| "HEAD".into());
-        let session = self.summary.id;
+        let session = self.engine.row(self.summary.id);
         let work = self.engine.call::<CreateWorktree>(
             Some(OpId::new()),
             CreateWorktree {
@@ -1794,7 +1799,7 @@ impl Conversation {
                 this.preparing_worktree = false;
                 match result {
                     Ok(tree) => {
-                        this.settings.worktree_cwd = Some(tree.path);
+                        this.settings.worktree_cwd = Some(this.engine.app_path(&tree.path));
                         this.settings.new_worktree = false;
                         this.save_settings(cx);
                         this.refresh_git(cx);
@@ -1953,6 +1958,7 @@ impl Conversation {
             .as_nanos() as u64;
         let mut settings = self.settings.clone();
         settings.model = self.model.clone();
+        settings.worktree_cwd = settings.worktree_cwd.map(|cwd| self.engine.path_of(&cwd));
         let provider = self.summary.provider.clone();
         // A blank session's placeholder follows its provider; any other title is the
         // workspace's.
@@ -1974,7 +1980,7 @@ impl Conversation {
                 return;
             }
             let _ = this.update(cx, |this, cx| {
-                let id = this.summary.id;
+                let id = this.engine.row(this.summary.id);
                 if let Some(title) = title {
                     let body = Rename {
                         session: id,
@@ -2300,7 +2306,7 @@ impl Conversation {
                         Some(onicode_protocol::agent::ProviderSwitch {
                             from: self.summary.provider.clone(),
                             model_label: self.model_label().to_string(),
-                            cwd: self.execution_cwd().to_owned(),
+                            cwd: self.engine.path_of(self.execution_cwd()),
                             model: self.model.clone(),
                             model_settings: self.settings.model_settings.clone(),
                             effort: self.settings.effort.clone(),

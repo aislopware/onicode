@@ -652,10 +652,11 @@ impl TranscriptView {
             return;
         };
         self.commit_files.insert(hash.clone(), None);
-        let work = crate::engine_client::local(cx).call::<onicode_protocol::git::CommitFiles>(
+        let (engine, checkout) = crate::engine_client::for_project(&cwd, cx);
+        let work = engine.call::<onicode_protocol::git::CommitFiles>(
             None,
             onicode_protocol::git::CommitFiles {
-                checkout: cwd,
+                checkout,
                 sha: hash.clone(),
             },
         );

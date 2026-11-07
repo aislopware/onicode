@@ -65,8 +65,8 @@ pub(crate) struct SearchView {
     truncated: (bool, bool),
     error: Option<String>,
     cancel: Arc<AtomicBool>,
-    /// The app's own engine, which searches files, and the engine whose saved
-    /// conversations this view searches.
+    /// The engine that serves the project, which searches its files, and the
+    /// engine whose saved conversations this view searches.
     files_engine: engine_client::Engine,
     sessions_engine: engine_client::Engine,
     /// The engine searches still running for this view's query, each under an
@@ -112,17 +112,23 @@ impl SearchView {
             this.active = 0;
             this.refresh(cx);
         });
-        let files_engine = engine_client::local(cx);
+        let (files_engine, root) = engine_client::for_project(&cwd, cx);
         let listing_id = onicode_protocol::new_id();
         let listing = files_engine.call::<SearchPaths>(
             None,
             SearchPaths {
-                root: cwd.clone(),
+                root,
                 search: listing_id.clone(),
             },
         );
+        let lister = files_engine.clone();
         cx.spawn(async move |this, cx| {
-            let result = listing.await;
+            let result = listing.await.map(|mut listed| {
+                for file in &mut listed.files {
+                    file.path = lister.app_path(&file.path);
+                }
+                listed
+            });
             let _ = this.update(cx, |this, cx| {
                 this.listing = None;
                 if let Ok(listed) = result {
@@ -402,7 +408,7 @@ impl SearchView {
                 None,
                 SearchContent {
                     options: search::project::SearchOptions {
-                        cwd: self.cwd.clone(),
+                        cwd: engine.path_of(&self.cwd),
                         query: query.clone(),
                         case_sensitive: false,
                         whole_word: false,
@@ -414,9 +420,12 @@ impl SearchView {
                 },
             );
             let work = cx.background_executor().spawn(async move {
-                found
-                    .await
-                    .map(|r| (search::content(r.matches, &query), r.truncated))
+                found.await.map(|mut r| {
+                    for found in &mut r.matches {
+                        found.path = engine.app_path(&found.path);
+                    }
+                    (search::content(r.matches, &query), r.truncated)
+                })
             });
             cx.spawn(async move |this, cx| {
                 let result = work.await;

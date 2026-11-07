@@ -355,12 +355,8 @@ impl Changes {
             self.pr = None;
             return;
         }
-        let work = engine_client::local(cx).call::<PrStatus>(
-            None,
-            PrStatus {
-                checkout: self.cwd.clone(),
-            },
-        );
+        let (engine, checkout) = self.engine(cx);
+        let work = engine.call::<PrStatus>(None, PrStatus { checkout });
         let work = cx.background_executor().spawn(work);
         cx.spawn(async move |this, cx| {
             let pr = work.await.ok().flatten();
@@ -481,9 +477,9 @@ impl Changes {
             .spawn(async move { matches!(answer.await, Ok(0)) })
     }
 
-    /// The engine's calls, and the checkout they name.
+    /// The engine that serves the checkout, and the checkout as it names it.
     fn engine(&self, cx: &mut App) -> (Engine, String) {
-        (engine_client::local(cx), self.cwd.clone())
+        engine_client::for_project(&self.cwd, cx)
     }
 
     /// Runs the engine call `work` with `busy` held, showing `echo` until the

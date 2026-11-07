@@ -16,11 +16,14 @@ mod idle_agents;
 mod image_lightbox_tests;
 mod layout;
 mod live_agents;
+mod machines;
 mod new_chat_choice;
 #[cfg(test)]
 mod new_chat_choice_tests;
 mod notifications;
 mod orchestration;
+mod peer_projects;
+mod peer_sessions;
 mod picker_preferences;
 mod pinned_tabs;
 mod project_rail;
@@ -643,6 +646,11 @@ pub(crate) struct Shell {
     client_decorations: bool,
     tabs_frame: Entity<Chrome>,
     engine: Engine,
+    /// The machines on the tailnet, as the sidebar's Machines section shows them.
+    machines: machines::Followed,
+    /// The sessions of projects on other engines.
+    peers: peer_sessions::Peers,
+    peer_project_picker: Option<peer_projects::Open>,
     /// The app's own saved state: the workspace, saved here on every change.
     ui_state: crate::ui_state::UiState,
     sessions: HashMap<i64, Entity<Conversation>>,
@@ -842,7 +850,13 @@ impl Shell {
         // The views read and change this machine's files and checkouts through this engine.
         crate::engine_client::set_local(&engine, cx);
         let ui_state = crate::ui_state::shared(cx);
-        let metadata: Vec<_> = summaries.iter().map(|s| (s.id, s.cwd.clone())).collect();
+        // Sessions on other machines as the last launch saw them: their saved tabs come back.
+        let kept_peers = Self::kept_peer_sessions(&engine);
+        let metadata: Vec<_> = summaries
+            .iter()
+            .chain(kept_peers.iter().map(|(_, session)| session))
+            .map(|s| (s.id, s.cwd.clone()))
+            .collect();
         let mut workspace = Workspace::restore(saved.as_deref(), &metadata, &cwd);
         let engine_settings_now = engine.settings_now();
         workspace.preferences.engine = engine_settings_now.clone();
@@ -979,6 +993,9 @@ impl Shell {
             client_decorations: false,
             tabs_frame,
             engine,
+            machines: machines::Followed::default(),
+            peers: peer_sessions::Peers::default(),
+            peer_project_picker: None,
             ui_state,
             sessions: HashMap::new(),
             session_summaries: HashMap::new(),
@@ -1142,6 +1159,7 @@ impl Shell {
             this.order.push(summary.id);
             this.session_summaries.insert(summary.id, summary);
         }
+        this.show_kept_peer_sessions(kept_peers);
         if let Some(id) = this.workspace.active {
             this.ensure_session(this.workspace.session_for_pane(id), cx);
             this.record_worktree_session(id, cx);
@@ -1154,6 +1172,8 @@ impl Shell {
         this.update_usage_provider(cx);
         this.apply_preferences(cx);
         this.mirror_workspace(cx);
+        this.follow_peers(cx);
+        this.follow_machines(cx);
         this.mirror_engine_settings(cx);
         this.initialize_automations(cx);
         if this.workspace.active.is_none() {
@@ -1223,7 +1243,8 @@ impl Shell {
             .insert(id, cx.new(|_| SessionMark::tab(summary.provider.clone())));
         let appearance = self.appearance(&summary.cwd);
         let worktree = self.session_worktrees.get(&id).cloned().flatten();
-        let view = cx.new(|cx| Conversation::new(summary, self.engine.clone(), cx));
+        let engine = self.session_engine(id);
+        let view = cx.new(|cx| Conversation::new(summary, engine, cx));
         view.update(cx, |view, cx| {
             // Events may arrive before the first asynchronous agent load. Seed
             // the indexed working directory so those events cannot erase it.
@@ -1388,11 +1409,12 @@ impl Shell {
         }
         self.close_preview(cx);
         let archived = !self.session_metadata(id, cx).summary.archived;
+        let engine = self.session_engine(id);
         let work = crate::engine_client::call::<onicode_protocol::workspace::Archive>(
-            &self.engine,
+            &engine,
             Some(onicode_protocol::OpId::new()),
             onicode_protocol::workspace::Archive {
-                session: id,
+                session: engine.row(id),
                 archived,
             },
             cx,
@@ -3971,6 +3993,7 @@ impl Shell {
         }
         self.workspace.worktree_focus = self.worktree_focus.clone();
         self.workspace.normalize_title_order();
+        self.follow_peers(cx);
         self.sync_git(cx);
         self.update_chat_visibility(cx);
         self.update_usage_provider(cx);
@@ -5389,6 +5412,9 @@ impl Shell {
                     MenuAction::new("open-project", "Open folder…")
                         .icon("folder-add")
                         .into(),
+                    MenuAction::new("open-remote-project", "Open folder on a machine…")
+                        .icon("globe")
+                        .into(),
                 ],
                 230.,
                 MenuStyle::Explorer,
@@ -5397,6 +5423,7 @@ impl Shell {
                 let picker = cx.new(|cx| {
                     ProjectPicker::new(&self.workspace.projects, &self.workspace.project, cx)
                         .appearance(self.workspace.project_appearance.clone())
+                        .allow_remote()
                 });
                 events.push(cx.subscribe_in(
                     &picker,
@@ -5408,6 +5435,10 @@ impl Shell {
                                 this.select_project(path.clone(), window, cx)
                             }
                             ProjectPicked::New => this.open_project(cx),
+                            ProjectPicked::Remote => {
+                                this.open_peer_project(None, window, cx);
+                                return;
+                            }
                         }
                         this.focus_active(window, cx);
                         this.invalidate_chrome(cx);
@@ -5427,6 +5458,7 @@ impl Shell {
                 let picker = cx.new(|cx| {
                     ProjectPicker::new(&self.workspace.projects, &self.workspace.project, cx)
                         .appearance(self.workspace.project_appearance.clone())
+                        .allow_remote()
                 });
                 events.push(cx.subscribe_in(
                     &picker,
@@ -5439,6 +5471,10 @@ impl Shell {
                             }
                             ProjectPicked::Project(_) => {}
                             ProjectPicked::New => this.open_project(cx),
+                            ProjectPicked::Remote => {
+                                this.open_peer_project(None, window, cx);
+                                return;
+                            }
                         }
                         this.focus_active(window, cx);
                         this.invalidate_chrome(cx);
@@ -5482,6 +5518,9 @@ impl Shell {
                         MenuAction::new("project-settings", "Project settings")
                             .icon("sliders")
                             .flyout(self.project_settings_flyout(events, window, cx))
+                            .into(),
+                        MenuAction::new("open-remote-project", "Open folder on a machine…")
+                            .icon("globe")
                             .into(),
                         MenuAction::new("settings", "Settings")
                             .icon("settings")
@@ -5650,11 +5689,11 @@ impl Shell {
             }
             MenuTarget::Session(id) => self.run_session_menu(id, action, window, cx),
             MenuTarget::Folder(folder) => self.run_folder_menu(folder, action, window, cx),
-            MenuTarget::ProjectRailAdd => {
-                if action == "open-project" {
-                    self.open_project(cx);
-                }
-            }
+            MenuTarget::ProjectRailAdd => match action {
+                "open-project" => self.open_project(cx),
+                "open-remote-project" => self.open_peer_project(None, window, cx),
+                _ => {}
+            },
             MenuTarget::CompactProjectPicker => {}
             MenuTarget::ProjectRailGroup(id) => {
                 if action == "delete-project-group" {
@@ -5670,6 +5709,8 @@ impl Shell {
                 // "Project settings" opens the project's menu beside its row.
                 if action == "settings" {
                     self.open_settings(crate::settings::Section::General, window, cx);
+                } else if action == "open-remote-project" {
+                    self.open_peer_project(None, window, cx);
                 } else if action == "project-settings" {
                     let at = row
                         .map_or_else(Point::default, |r| Point::new(r.right(), r.top() - px(8.)));
@@ -5705,7 +5746,12 @@ impl Shell {
                         self.project_order_changed(&path, cx);
                     }
                 } else if action == "reveal" {
-                    cx.reveal_path(std::path::Path::new(&path));
+                    if onicode_protocol::ProjectRef::parse_uri(&path).is_some() {
+                        self.error = Some("Folders on another machine stay on it.".into());
+                        cx.notify();
+                    } else {
+                        cx.reveal_path(std::path::Path::new(&path));
+                    }
                 } else if action == "project-theme" {
                     self.open_project_theme(path, window, cx);
                 } else if action == "background" {
@@ -5775,8 +5821,13 @@ impl Shell {
                 this.sidebar_frame.update(cx, |_, cx| cx.notify());
                 // An already-open conversation has its own live metadata.
                 (!this.sessions.contains_key(&id)).then(|| {
-                    this.workspace_read::<onicode_protocol::workspace::PreviewSession>(
-                        onicode_protocol::workspace::PreviewSession { session: id },
+                    let engine = this.session_engine(id);
+                    crate::engine_client::call::<onicode_protocol::workspace::PreviewSession>(
+                        &engine,
+                        None,
+                        onicode_protocol::workspace::PreviewSession {
+                            session: engine.row(id),
+                        },
                         cx,
                     )
                 })
@@ -8749,6 +8800,10 @@ impl Render for Shell {
                 if this.cancel_classic_sidebar_tab(cx) {
                     return;
                 }
+                if this.peer_project_picker.is_some() {
+                    this.close_peer_project(window, cx);
+                    return;
+                }
                 if this.quick_open.is_some() {
                     this.close_quick_open(window, cx);
                     return;
@@ -8975,6 +9030,7 @@ impl Render for Shell {
             .children(self.resource_modal(window, cx))
             .children(self.quick_open_modal(window, cx))
             .children(self.search_modal(window, cx))
+            .children(self.peer_project_modal(window, cx))
             .children(self.notice_modals(window, cx))
             .children(self.folder_picker_popover(window, cx))
             .children(crate::accounts::get(cx))

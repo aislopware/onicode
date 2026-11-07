@@ -24,6 +24,13 @@
 //! not, the turn is refused with a status saying so and the conversation keeps what it last saw,
 //! read-only. A mutating call made meanwhile waits in the app's engine's outbox.
 //!
+//! A project on another engine is spelled `peer://<engine>/<path>` ([`ProjectRef::uri`]) wherever
+//! the app keeps a path, and plain paths are the app's own engine's. [`for_project`] turns either
+//! into the engine that serves it and the path as that engine names it; [`Engine::app_path`]
+//! spells a path an engine answered with back in the app's way. A session on another engine is
+//! named in the app's maps by a row of its own ([`peer_row`]), above every row an engine stores,
+//! and its engine's client knows which row and session that is there ([`Engine::adopt`]).
+//!
 //! Tests run an engine in memory and call its service in place, on gpui's deterministic
 //! executors (`Engine::memory`, built only for tests).
 use std::collections::HashMap;
@@ -55,7 +62,8 @@ use onicode_protocol::transcript::Row;
 use onicode_protocol::usage::Limit;
 use onicode_protocol::workspace::{WatchWorkspace, WorkspaceEvent, WorkspaceState};
 use onicode_protocol::{
-    Call, Cursor, EngineId, Item, MessageId, OpId, Outcome, Routed, SessionId, Watch,
+    Call, Cursor, EngineId, Item, MessageId, OpId, Outcome, ProjectRef, Routed, SessionId,
+    SessionKey, Watch,
 };
 #[cfg(test)]
 use onicode_rpc::RpcService as _;
@@ -88,12 +96,15 @@ struct LocalEngine(Engine);
 
 impl Global for LocalEngine {}
 
-/// The workspace, engine settings and machines as this viewer last saw them.
+/// The workspace, engine settings and machines as this viewer last saw them, and the workspace
+/// of every other engine it followed, by engine id.
 #[derive(Default, Serialize, Deserialize)]
 struct Seen {
     workspace: Option<WorkspaceState>,
     settings: Option<EngineSettings>,
     machines: Option<Machines>,
+    #[serde(default)]
+    peers: HashMap<String, WorkspaceState>,
 }
 
 /// [`Seen`], followed from the engine's watches and kept on disk, so a window's first frame
@@ -158,11 +169,16 @@ impl Mirror {
 }
 
 fn fold_workspace(seen: &mut Seen, update: WorkspaceUpdate) {
+    fold_into(&mut seen.workspace, &update);
+}
+
+/// Lays `update` over the workspace `held`.
+fn fold_into(held: &mut Option<WorkspaceState>, update: &WorkspaceUpdate) {
     match update {
-        WatchUpdate::Snapshot(state) => seen.workspace = Some(*state),
+        WatchUpdate::Snapshot(state) => *held = Some(state.as_ref().clone()),
         WatchUpdate::Events(events) => {
-            if let Some(state) = seen.workspace.as_mut() {
-                for event in &events {
+            if let Some(state) = held.as_mut() {
+                for event in events {
                     onicode_engine::workspace::apply(state, event);
                 }
             }
@@ -265,6 +281,9 @@ pub(crate) struct EngineClient {
     /// Each stored session's id, by the engine that stores it (`None`: the app's own) and its
     /// row there, as that engine named it; a session keeps its id.
     sessions: Mutex<HashMap<(Option<EngineId>, i64), SessionId>>,
+    /// Each session on another engine the app names by a row of its own ([`peer_row`]): the
+    /// row that engine stores it at.
+    peer_rows: Mutex<HashMap<i64, i64>>,
     /// Every call made, by name with its routed params, for a test to assert on.
     #[cfg(test)]
     calls: Mutex<Vec<(&'static str, serde_json::Value)>>,
@@ -329,6 +348,7 @@ impl EngineClient {
             link,
             executor: cx.background_executor().clone(),
             sessions: Mutex::default(),
+            peer_rows: Mutex::default(),
             #[cfg(test)]
             calls: Mutex::default(),
         })
@@ -448,6 +468,17 @@ impl EngineClient {
             })
     }
 
+    /// The row its engine stores the session the app names `row` under: a peer session's row
+    /// there ([`peer_row`]), else `row` itself.
+    fn stored_row(&self, row: i64) -> i64 {
+        self.peer_rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&row)
+            .copied()
+            .unwrap_or(row)
+    }
+
     /// The id of the session stored at `row` in the engine `target` names.
     async fn session_id(&self, target: Option<&EngineId>, row: i64) -> Result<SessionId, String> {
         let key = (target.cloned(), row);
@@ -463,7 +494,13 @@ impl EngineClient {
             #[cfg(test)]
             (Link::Direct(local), None) => local.session.session_id(row)?,
             _ => self
-                .call::<ResolveSession>(target, None, ResolveSession { row })
+                .call::<ResolveSession>(
+                    target,
+                    None,
+                    ResolveSession {
+                        row: self.stored_row(row),
+                    },
+                )
                 .await?
                 .ok_or("Session no longer exists")?,
         };
@@ -720,12 +757,17 @@ pub(crate) fn start_turn(
     _: &mut App,
 ) -> TurnControls {
     let target = engine.target.clone();
+    let row = summary.id;
+    // The session as its engine stores it: its row and path there.
+    let mut summary = summary;
+    summary.id = engine.row(row);
+    summary.cwd = engine.path_of(&summary.cwd);
     let engine = engine.client.clone();
     let message = MessageId::new();
     let op = OpId::new();
     let turn = Arc::new(Turn {
         target,
-        row: summary.id,
+        row,
         viewer: Mutex::new(Viewer::default()),
         nudge: Notify::new(),
         cancel,
@@ -1112,6 +1154,41 @@ pub(crate) fn local(cx: &mut App) -> Engine {
     engine
 }
 
+/// The engine that serves `path`, as the app spells it (`peer://` or plain), and the path as
+/// that engine names it: [`Engine::for_path`] on the app's own engine. Every view that reads or
+/// changes a project's files, checkouts, terminals or searches reaches it through this.
+pub(crate) fn for_project(path: &str, cx: &mut App) -> (Engine, String) {
+    local(cx).for_path(path)
+}
+
+/// The rows the app names sessions on other engines by: above every row an engine's store
+/// gives out, and below the panes' negative ids.
+const PEER_ROWS: i64 = 1 << 62;
+
+/// The row the app names the session `key` by: the same on every launch, so a saved tab of it
+/// comes back, and never one of an engine's own rows. FNV-1a over the engine id and the
+/// session's id, folded under [`PEER_ROWS`].
+pub(crate) fn peer_row(key: &SessionKey) -> i64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in key
+        .engine
+        .0
+        .bytes()
+        .chain([0])
+        .chain(key.session.0.as_bytes().iter().copied())
+    {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0100_0000_01b3);
+    }
+    PEER_ROWS | i64::try_from(hash >> 2).unwrap_or(0)
+}
+
+/// Whether the app names `id` a session on another engine ([`peer_row`]).
+#[cfg(test)]
+pub(crate) fn is_peer_row(id: i64) -> bool {
+    id >= PEER_ROWS
+}
+
 /// What a watcher receives: the whole state, or what changed since.
 pub(crate) enum WatchUpdate<S, E> {
     Snapshot(Box<S>),
@@ -1182,19 +1259,73 @@ impl Engine {
     /// The engine `engine` names, reached through this one's connection: the app's own engine
     /// serves what names it and forwards the rest over the tailnet. Every call, watch and turn
     /// made through the result names it.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the Machines view (step 12) opens peer sessions through it"
-        )
-    )]
     #[must_use]
     pub(crate) fn on(&self, engine: EngineId) -> Self {
         Self {
             client: self.client.clone(),
             target: Some(engine),
         }
+    }
+
+    /// The engine this one's calls name: `None` for the app's own.
+    pub(crate) fn target(&self) -> Option<&EngineId> {
+        self.target.as_ref()
+    }
+
+    /// The engine that serves `path`, as the app spells it, and the path as that engine names
+    /// it: the one a `peer://` path names, else this one with the path as it is.
+    #[must_use]
+    pub(crate) fn for_path(&self, path: &str) -> (Self, String) {
+        match ProjectRef::parse_uri(path) {
+            Some(project) => (self.on(project.engine), project.path),
+            None => (self.clone(), path.to_owned()),
+        }
+    }
+
+    /// `path`, as the app spells it, as this engine names it: a `peer://` path of this engine
+    /// loses its scheme and engine; anything else stays as it is.
+    #[must_use]
+    pub(crate) fn path_of(&self, path: &str) -> String {
+        match (ProjectRef::parse_uri(path), &self.target) {
+            (Some(project), Some(target)) if project.engine == *target => project.path,
+            _ => path.to_owned(),
+        }
+    }
+
+    /// `path`, as this engine named it, as the app spells it: a path of another engine becomes
+    /// its `peer://` URI; the app's own engine's paths are plain.
+    #[must_use]
+    pub(crate) fn app_path(&self, path: &str) -> String {
+        match &self.target {
+            Some(engine) => ProjectRef {
+                engine: engine.clone(),
+                path: path.to_owned(),
+            }
+            .uri(),
+            None => path.to_owned(),
+        }
+    }
+
+    /// The row this engine stores the session the app names `id` under: for a session on
+    /// another engine, the row there ([`Self::adopt`]); else `id` itself.
+    #[must_use]
+    pub(crate) fn row(&self, id: i64) -> i64 {
+        self.client.stored_row(id)
+    }
+
+    /// Names the session `session`, stored at `row` in this (other) engine, by the app's row
+    /// `id` ([`peer_row`]): its calls and turns made under `id` reach it there.
+    pub(crate) fn adopt(&self, id: i64, row: i64, session: SessionId) {
+        self.client
+            .peer_rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(id, row);
+        self.client
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert((self.target.clone(), id), session);
     }
 
     /// An engine over a store in memory for a test: no disk watched, no provider CLI, `gh` or
@@ -1248,6 +1379,24 @@ impl Engine {
             }
             #[cfg(test)]
             Link::Direct(local) => local.settings.current(),
+        }
+    }
+
+    /// Every other engine's workspace as the app last saw it, kept across launches, for a
+    /// window's first frame: the sessions of projects on other machines, before their engines
+    /// answer or while they are offline. Empty for an engine in memory.
+    pub(crate) fn peer_workspaces_now(&self) -> Vec<(EngineId, WorkspaceState)> {
+        match &self.client.link {
+            Link::Socket { mirror, .. } => mirror
+                .seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .peers
+                .iter()
+                .map(|(engine, state)| (EngineId(engine.clone()), state.clone()))
+                .collect(),
+            #[cfg(test)]
+            Link::Direct(_) => Vec::new(),
         }
     }
 
@@ -1727,22 +1876,65 @@ async fn resume<W: Watch>(
 }
 
 /// Watches `engine`'s workspace: a snapshot, then every batch of events, resuming with its
-/// cursor whenever the engine drops it behind. Ends when the receiver goes.
+/// cursor whenever the engine drops it behind. Ends when the receiver goes. Another engine's
+/// workspace starts from what the app last saw of it, kept across launches, so its sessions show
+/// at once and stay shown, as last seen, while that engine is offline.
 pub(crate) fn watch_workspace(
     engine: &Engine,
     _: &mut App,
 ) -> async_channel::Receiver<WorkspaceUpdate> {
     let (target, engine) = (engine.target.clone(), engine.client.clone());
     let (updates, received) = async_channel::unbounded();
-    engine
-        .executor
-        .clone()
+    let executor = engine.executor.clone();
+    let kept = match (&engine.link, &target) {
+        (Link::Socket { mirror, .. }, Some(peer)) => Some((mirror.clone(), peer.0.clone())),
+        _ => None,
+    };
+    let Some((mirror, key)) = kept else {
+        executor
+            .spawn(resume::<WatchWorkspace>(
+                engine,
+                target,
+                |since| WatchWorkspace { since },
+                updates,
+            ))
+            .detach();
+        return received;
+    };
+    let last_seen = mirror
+        .seen
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .peers
+        .get(&key)
+        .cloned();
+    if let Some(state) = last_seen {
+        let _ = updates.try_send(WatchUpdate::Snapshot(Box::new(state)));
+    }
+    let (live, arriving) = async_channel::unbounded();
+    executor
         .spawn(resume::<WatchWorkspace>(
             engine,
             target,
             |since| WatchWorkspace { since },
-            updates,
+            live,
         ))
+        .detach();
+    executor
+        .spawn(async move {
+            while let Ok(update) = arriving.recv().await {
+                mirror.update(|seen| {
+                    let mut held = seen.peers.remove(&key);
+                    fold_into(&mut held, &update);
+                    if let Some(state) = held {
+                        seen.peers.insert(key.clone(), state);
+                    }
+                });
+                if updates.send(update).await.is_err() {
+                    return;
+                }
+            }
+        })
         .detach();
     received
 }
@@ -1866,6 +2058,64 @@ mod tests {
         let (name, params) = calls.last().expect("the call was made");
         assert_eq!(*name, "EngineInfo");
         assert_eq!(params["engine"], "elsewhere");
+    }
+
+    /// A `peer://` path reaches its engine with the path as that engine names it, and what the
+    /// engine answers comes back as the app spells it; a plain path stays on the app's own.
+    #[gpui::test]
+    fn a_peer_path_routes_to_its_engine(cx: &mut gpui::TestAppContext) {
+        let engine = cx.update(Engine::memory);
+        let (own, path) = engine.for_path("/Users/me/code");
+        assert_eq!(own.target(), None);
+        assert_eq!(path, "/Users/me/code");
+        assert_eq!(own.app_path("/Users/me/code"), "/Users/me/code");
+        let (studio, path) = engine.for_path("peer://nStudio/Users/me/app/src/main.rs");
+        assert_eq!(studio.target(), Some(&EngineId("nStudio".into())));
+        assert_eq!(path, "/Users/me/app/src/main.rs");
+        assert_eq!(
+            studio.app_path("/Users/me/app/README.md"),
+            "peer://nStudio/Users/me/app/README.md"
+        );
+        assert_eq!(
+            studio.path_of("peer://nStudio/Users/me/app"),
+            "/Users/me/app"
+        );
+        assert_eq!(
+            studio.path_of("peer://nAttic/srv"),
+            "peer://nAttic/srv",
+            "another engine's path is not this one's"
+        );
+        let (_, path) = cx.update(|cx| for_project("peer://nStudio/Users/me/app", cx));
+        assert_eq!(path, "/Users/me/app");
+    }
+
+    /// A peer session is named by a row of the app's own, above every row an engine gives out,
+    /// and calls under it name the row and id its engine keeps, without asking for them.
+    #[gpui::test]
+    fn a_peer_session_is_reached_by_the_row_its_engine_keeps(cx: &mut gpui::TestAppContext) {
+        let engine = cx.update(Engine::memory);
+        let studio = engine.on(EngineId("nStudio".into()));
+        let key = SessionKey {
+            engine: EngineId("nStudio".into()),
+            session: SessionId::new(),
+        };
+        let id = peer_row(&key);
+        assert!(is_peer_row(id) && id > 0, "never a pane's negative id");
+        assert_eq!(peer_row(&key), id, "the same on every launch");
+        let other = SessionKey {
+            engine: EngineId("nAttic".into()),
+            session: key.session,
+        };
+        assert_ne!(peer_row(&other), id);
+        assert!(!is_peer_row(i64::from(u32::MAX)));
+        studio.adopt(id, 7, key.session);
+        assert_eq!(studio.row(id), 7);
+        assert_eq!(engine.row(42), 42);
+        let found =
+            futures::executor::block_on(studio.client.session_id(studio.target.as_ref(), id));
+        assert_eq!(found, Ok(key.session));
+        let calls = cx.update(|cx| calls_for_test(&engine, cx));
+        assert!(calls.iter().all(|(name, _)| *name != "ResolveSession"));
     }
 
     fn snapshot(epoch: u64, turn: Option<session::TurnState>) -> Item<SessionState, SessionEvent> {

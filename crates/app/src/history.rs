@@ -157,10 +157,11 @@ impl History {
         self.loading = true;
         self.error = None;
         let cwd = self.cwd.clone();
-        let read = crate::engine_client::local(cx).call::<git_calls::History>(
+        let (engine, checkout) = crate::engine_client::for_project(&cwd, cx);
+        let read = engine.call::<git_calls::History>(
             None,
             git_calls::History {
-                checkout: cwd.clone(),
+                checkout,
                 limit: Some(200),
             },
         );

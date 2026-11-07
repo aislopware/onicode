@@ -250,10 +250,11 @@ impl SettingsView {
         }
         let generation = self.management_generation;
         let work = if matches!(target, Target::Worktree) {
-            let create = crate::engine_client::local(cx).call::<CreateWorktree>(
+            let (engine, checkout) = crate::engine_client::for_project(&cwd, cx);
+            let create = engine.call::<CreateWorktree>(
                 Some(OpId::new()),
                 CreateWorktree {
-                    checkout: cwd,
+                    checkout,
                     worktree: NewWorktree::Project {
                         branch: name,
                         base: Some(base),

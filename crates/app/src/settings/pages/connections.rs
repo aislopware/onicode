@@ -1,5 +1,8 @@
 //! ConnectionsSettings.tsx's machine list, read from the engine's `WatchMachines`: this machine
-//! and every engine and viewer on the tailnet, with how each link travels.
+//! and every engine and viewer on the tailnet, with how each link travels. "Add machine" opens a
+//! card that says how a Mac joins: there is nothing to type, since admission is tailnet whois.
+//! The directory has no lasting forget (a machine leaves the list when it leaves the tailnet),
+//! so a row has no remove button.
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Div, FontWeight, SharedString, Task, div, px};
 use onicode_protocol::engine::{
@@ -7,6 +10,7 @@ use onicode_protocol::engine::{
 };
 
 use crate::engine_client::Watching;
+use crate::settings::widgets::secondary_button;
 use crate::settings::{Section, SettingsView};
 use crate::theme::*;
 
@@ -14,6 +18,8 @@ use crate::theme::*;
 pub(in crate::settings) struct ConnectionsState {
     /// The machines as last seen; `None` until the engine first answers.
     machines: Option<Machines>,
+    /// The add-machine card is open.
+    adding: bool,
     watch: Option<(
         Watching<Machines, onicode_protocol::engine::MachineEvent>,
         Task<()>,
@@ -107,9 +113,17 @@ impl SettingsView {
 
     pub(in crate::settings) fn leave_connections(&mut self) {
         self.connections.watch = None;
+        self.connections.adding = false;
     }
 
-    pub(super) fn connections_page(&self) -> Vec<AnyElement> {
+    /// Opens the add-machine card: the sidebar's Machines `+` and the folder modal's
+    /// "Add a machine" land here.
+    pub(crate) fn add_machine(&mut self, cx: &mut Context<Self>) {
+        self.connections.adding = true;
+        cx.notify();
+    }
+
+    pub(super) fn connections_page(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mut page = vec![
             div()
                 .relative()
@@ -130,6 +144,14 @@ impl SettingsView {
                         )
                         .child(paragraph("Run agents on another computer and return to them from your laptop. The host keeps working when you close Onicode here.").mt_1()),
                 )
+                .when(!self.connections.adding, |d| {
+                    d.child(
+                        secondary_button("add-machine", "Add machine", false, false)
+                            .child(icon("plus", 16.))
+                            .child("Add machine")
+                            .on_click(cx.listener(|this, _, _, cx| this.add_machine(cx))),
+                    )
+                })
                 .into_any_element(),
         ];
         let machines = self
@@ -153,6 +175,7 @@ impl SettingsView {
                     .child("Checking connection…")
                     .into_any_element(),
             );
+            page.extend(self.add_machine_card(cx));
             return page;
         }
         let mut list = div()
@@ -188,7 +211,80 @@ impl SettingsView {
             );
         }
         page.push(list.into_any_element());
+        let others = machines
+            .iter()
+            .any(|machine| !matches!(machine.kind, MachineKind::This));
+        if !others && !self.connections.adding {
+            page.push(
+                div()
+                    .mt_5()
+                    .rounded_xl()
+                    .border_1()
+                    .border_color(content(0.15))
+                    .px_5()
+                    .py_8()
+                    .text_center()
+                    .text_size(px(13.))
+                    .text_color(content(0.45))
+                    .child("Macs on your tailnet that run Onicode appear here.")
+                    .into_any_element(),
+            );
+        }
+        page.extend(self.add_machine_card(cx));
         page
+    }
+
+    /// The add-machine card, in the page's bordered idiom, while it is open.
+    fn add_machine_card(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        if !self.connections.adding {
+            return None;
+        }
+        Some(
+            div()
+                .mt_5()
+                .p_5()
+                .rounded_xl()
+                .border_1()
+                .border_color(content(0.1))
+                .flex()
+                .flex_col()
+                .gap_4()
+                .child(
+                    div()
+                        .flex()
+                        .justify_between()
+                        .child(
+                            div()
+                                .text_size(px(14.))
+                                .font_weight(FontWeight::MEDIUM)
+                                .child("Add a machine"),
+                        )
+                        .child(
+                            div()
+                                .rounded_sm()
+                                .bg(content(0.1))
+                                .px_2()
+                                .py_1()
+                                .text_size(px(11.))
+                                .text_color(content(0.6))
+                                .child("Tailscale"),
+                        ),
+                )
+                .child(paragraph(
+                    "Install Onicode on the machine and sign in to the same tailnet; it appears here.",
+                ))
+                .child(
+                    div().flex().justify_end().gap_2().child(
+                        secondary_button("cancel-machine", "Done", false, false)
+                            .child("Done")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.connections.adding = false;
+                                cx.notify();
+                            })),
+                    ),
+                )
+                .into_any_element(),
+        )
     }
 }
 

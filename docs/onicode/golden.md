@@ -33,3 +33,7 @@ bounds again, as monocode's did (it had placed them a device pixel lower, at the
 place). The project background spans the view's width at the image's aspect from the top, which is what monocode's
 taffy 0.13 made of `img().size_full()` (taffy 0.15 resolves the height to the view's and centres the cover), so the
 app now lays that out explicitly.
+
+Step 12 (engine.md) puts the focused sidebar's Machines section where monocode's Monos section stood, with its
+empty "Add a machine" row as monocode drew an empty roster, so the scenes that show the focused sidebar were recorded
+again with it; nothing else in them moved.

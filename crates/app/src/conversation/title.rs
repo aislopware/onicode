@@ -66,15 +66,16 @@ impl Conversation {
         }
         self.summary.title.clone_from(&seed);
         let body = GenerateTitle {
-            session: self.summary.id,
+            session: self.engine.row(self.summary.id),
             message: message.to_owned(),
             placeholder,
             seed,
-            cwd: self
-                .settings
-                .worktree_cwd
-                .clone()
-                .unwrap_or_else(|| self.summary.cwd.clone()),
+            cwd: self.engine.path_of(
+                self.settings
+                    .worktree_cwd
+                    .as_deref()
+                    .unwrap_or(&self.summary.cwd),
+            ),
             model: self.background_text_model(cx),
         };
         // Applied or not, the workspace says what the title became.

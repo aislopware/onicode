@@ -183,8 +183,12 @@ impl Conversation {
         let read = self.engine.call::<ReadSessionChanges>(
             None,
             ReadSessionChanges {
-                checkout: cwd.clone(),
-                paths: self.session_edits.clone(),
+                checkout: self.engine.path_of(&cwd),
+                paths: self
+                    .session_edits
+                    .iter()
+                    .map(|path| self.engine.path_of(path))
+                    .collect(),
                 commit,
             },
         );

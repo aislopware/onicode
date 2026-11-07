@@ -305,6 +305,37 @@ says, in monocode's machine rows: this engine and every engine and viewer on the
 round trip, version, protocol and live agents. Adding a machine and "Open folder on a machine…" return with step
 12, the phones half with step 13. `PROTOCOL` stays 10.
 
+**Step 12 as built.** A project on another engine is spelled `peer://<engine>/<path>` wherever the app
+keeps a path (`ProjectRef::uri`/`parse_uri`; the engine id escapes `%` and `/`, so any id reads back,
+and the path is absolute, as engines name folders); plain paths are the app's own engine's. One function,
+`engine_client::for_project`, turns either spelling into the engine that serves it (`Engine::on` for a
+peer) and the path as that engine names it, and every view that reads or changes a project's files,
+checkouts, terminals, searches or worktrees goes through it; `Engine::app_path` spells what an engine
+answers back in the app's way. Settings, MCP, accounts, the inbox, harness updates and resource pressure
+stay on the app's own engine. The app's engine lists only its own sessions, so the shell follows the
+workspace of every engine a `peer://` project names (`shell/peer_sessions.rs`) and lays that project's
+sessions over its maps like its own. The shell keys sessions by row, and two engines' rows collide, so a
+peer session is named by a row of the app's own, `peer_row(SessionKey)`: FNV-1a over the engine and
+session ids folded above 2^62, the same on every launch (a saved tab comes back) and apart from engine
+rows and the panes' negative ids. `Engine::adopt` tells the client which row and `SessionId` that is
+there, so session calls, turns and the row-bearing workspace calls (`Engine::row`) reach it; its
+conversation is handed `Engine::on(peer)`. Each followed workspace is kept in `viewer-cache.json` beside
+the app's own, so an offline engine's rows show as last seen across launches, and a turn for one is
+refused with the status its engine gives. Folders, reminders and orchestration in a peer project stay on
+that engine: its sessions show ungrouped. "Open folder on a machine" is monocode's modal again
+(`shell/peer_projects.rs`), its machine chips from `WatchMachines`, its folders from the peer's `ListDir`
+(which now reads `~` as the engine's home) and, for a typed name, `SearchHomeFolders`; it checks the
+folder with `Stat` and adds the project's URI. Its entries are back in the sidebar project menu, the
+header and compact project pickers and the rail's add menu. The focused sidebar's Machines section sits in
+the slot monocode's Monos held, with the same header: each other engine (never a viewer, never this
+machine) with its `internet` glyph tinted by link (direct, relayed, away), its name and its running
+agents; a row opens the modal on that machine and `+` opens Connections' add card ("Install Onicode on
+the machine and sign in to the same tailnet; it appears here."). The shell keeps only what the section
+draws, so a round trip moving every few seconds never redraws the sidebar. A peer project shows the
+`internet` tile and the pickers' globe. Connections has no "Forget": the directory's `forget` lasts only
+until the next refresh, and a machine leaves the list when it leaves the tailnet. No protocol shape
+changed; `PROTOCOL` stays 10.
+
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,
 `EngineInfo` and `UpdateEngine`, whose shapes are frozen, so the machines list can say "Needs update" and offer

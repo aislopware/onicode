@@ -168,7 +168,7 @@ impl Conversation {
                 .take(42)
                 .collect();
             let body = Rename {
-                session: self.summary.id,
+                session: self.engine.row(self.summary.id),
                 title: self.summary.title.clone(),
                 expected: None,
             };

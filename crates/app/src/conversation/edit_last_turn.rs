@@ -212,7 +212,7 @@ impl Conversation {
             || self.summary.provider_id.as_deref() != Some(edit.provider_id.as_str())
             || self.summary.provider != edit.provider
             || self.settings.account.id != edit.account_id
-            || self.execution_cwd() != edit.cwd
+            || self.engine.path_of(self.execution_cwd()) != edit.cwd
         {
             self.status = "Conversation changed; cancel the edit before sending".into();
             cx.notify();

@@ -271,7 +271,7 @@ impl Conversation {
                             Some(onicode_protocol::agent::ProviderSwitch {
                                 from: this.summary.provider.clone(),
                                 model_label: this.model_label().to_string(),
-                                cwd: this.execution_cwd().to_owned(),
+                                cwd: this.engine.path_of(this.execution_cwd()),
                                 model: this.model.clone(),
                                 model_settings: this.settings.model_settings.clone(),
                                 effort: this.settings.effort.clone(),
@@ -305,7 +305,7 @@ impl Conversation {
                             provider: kind,
                             thread,
                             account: old.clone(),
-                            cwd: this.execution_cwd().to_owned(),
+                            cwd: this.engine.path_of(this.execution_cwd()),
                         },
                     );
                     cx.background_executor().spawn(forget).detach();

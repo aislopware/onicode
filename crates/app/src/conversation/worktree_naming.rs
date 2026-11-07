@@ -13,14 +13,16 @@ impl Conversation {
         let Some(cwd) = self.settings.worktree_cwd.clone() else {
             return;
         };
-        if naming::temporary_branch(Path::new(&cwd), self.summary.id).is_none() {
+        // The checkout's name carries the row its engine stores the session at.
+        let row = self.engine.row(self.summary.id);
+        if naming::temporary_branch(Path::new(&cwd), row).is_none() {
             return;
         }
         self.naming_worktree = true;
         let body = NameWorktree {
-            session: self.summary.id,
-            root: self.summary.cwd.clone(),
-            cwd: cwd.clone(),
+            session: row,
+            root: self.engine.path_of(&self.summary.cwd),
+            cwd: self.engine.path_of(&cwd),
             message: message.to_owned(),
             model: self.background_text_model(cx),
         };

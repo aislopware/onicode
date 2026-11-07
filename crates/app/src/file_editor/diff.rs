@@ -140,7 +140,8 @@ impl FileEditor {
                 // for it, so Changes shows it once the engine's status does.
                 let covering = checkout.clone();
                 let Ok(call) = this.update(cx, |_, cx| {
-                    engine_client::local(cx).call::<Stage>(
+                    let (engine, checkout) = engine_client::for_project(&checkout, cx);
+                    engine.call::<Stage>(
                         Some(OpId::new()),
                         Stage {
                             checkout,

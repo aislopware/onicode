@@ -215,7 +215,7 @@ impl Conversation {
             &self.engine,
             Some(OpId::new()),
             SaveAttachments {
-                session: Some(self.summary.id),
+                session: Some(self.engine.row(self.summary.id)),
                 kept: self
                     .attachments
                     .iter()

@@ -110,6 +110,7 @@ impl ProjectSearch {
             .into_iter()
             .map(|input| cx.subscribe(input, |this, _, _: &input::Changed, cx| this.refresh(cx)))
             .collect();
+        let engine = engine_client::for_project(&cwd, cx).0;
         Self {
             cwd,
             active,
@@ -126,7 +127,7 @@ impl ProjectSearch {
             truncated: false,
             cancel: Arc::new(AtomicBool::new(false)),
             running: None,
-            engine: engine_client::local(cx),
+            engine,
             debounce: None,
             scroll: ScrollHandle::new(),
             _subscriptions: subscriptions,
@@ -156,6 +157,9 @@ impl ProjectSearch {
 
     pub(crate) fn set_root(&mut self, cwd: String, cx: &mut Context<Self>) {
         if self.cwd != cwd {
+            // A search still running stops on the engine it runs on.
+            self.stop_running();
+            self.engine = engine_client::for_project(&cwd, cx).0;
             self.cwd = cwd;
             self.groups.clear();
             self.count = 0;
@@ -169,7 +173,7 @@ impl ProjectSearch {
             (!text.is_empty()).then(|| text.to_owned())
         };
         SearchOptions {
-            cwd: self.cwd.clone(),
+            cwd: self.engine.path_of(&self.cwd),
             query: self.query.read(cx).content.trim().to_owned(),
             case_sensitive: self.case_sensitive,
             whole_word: self.whole_word,
@@ -230,8 +234,12 @@ impl ProjectSearch {
                 options: options.clone(),
             },
         );
+        let engine = self.engine.clone();
         let work = cx.background_executor().spawn(async move {
-            let result = search.await?;
+            let mut result = search.await?;
+            for source in &mut result.matches {
+                source.path = engine.app_path(&source.path);
+            }
             let ranges = project::preview_ranges(&result.matches, &options);
             let mut groups: Vec<Group> = Vec::new();
             let mut by_path = HashMap::new();

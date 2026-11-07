@@ -24,7 +24,7 @@ impl SettingsView {
         match self.section {
             Section::General => self.general_page(cx),
             // Settings → Connections holds the machines; phones return with step 13.
-            Section::Connections => self.connections_page(),
+            Section::Connections => self.connections_page(cx),
             Section::Appearance => self.appearance_page(window, cx),
             Section::Keybindings => self.keybindings_page(cx),
             Section::Chat => self.chat_page(cx),

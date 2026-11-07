@@ -53,7 +53,35 @@ pub struct ProjectRef {
     pub path: String,
 }
 
+/// How the app spells a [`ProjectRef`] on another engine: `peer://<engine>/<path>`.
+const PEER_SCHEME: &str = "peer://";
+
 impl ProjectRef {
+    /// The app's spelling of the project, or of a path inside it: `peer://`, the engine id with
+    /// `%` and `/` escaped (`%25`, `%2F`) so any id reads back whole, then the path, which is
+    /// absolute as every engine names its folders. A project on the app's own engine is spelled
+    /// as its plain path instead, which never starts with the scheme.
+    #[must_use]
+    pub fn uri(&self) -> String {
+        let engine = self.engine.0.replace('%', "%25").replace('/', "%2F");
+        format!("{PEER_SCHEME}{engine}{}", self.path)
+    }
+
+    /// The project (or path inside one) `text` spells with [`Self::uri`]; `None` for a plain
+    /// path, or for a URI without an engine or an absolute path.
+    #[must_use]
+    pub fn parse_uri(text: &str) -> Option<Self> {
+        let rest = text.strip_prefix(PEER_SCHEME)?;
+        let (engine, path) = rest.split_at(rest.find('/')?);
+        if engine.is_empty() {
+            return None;
+        }
+        Some(Self {
+            engine: EngineId(engine.replace("%2F", "/").replace("%25", "%")),
+            path: path.to_owned(),
+        })
+    }
+
     /// `body` on its way to the project's engine, under `op` when it mutates.
     #[must_use]
     pub fn routed<T>(&self, op: Option<OpId>, body: T) -> crate::Routed<T> {
@@ -169,5 +197,64 @@ mod tests {
             path: "/code".into(),
         };
         assert_eq!(project.to_string(), "nMac:/code");
+    }
+
+    #[test]
+    fn a_peer_project_reads_as_a_uri() {
+        let project = ProjectRef {
+            engine: EngineId("nMacStudio".into()),
+            path: "/Users/me/code/app".into(),
+        };
+        assert_eq!(project.uri(), "peer://nMacStudio/Users/me/code/app");
+        assert_eq!(ProjectRef::parse_uri(&project.uri()), Some(project));
+        // An id kept off the tailnet is the host name, which may hold a slash.
+        let odd = ProjectRef {
+            engine: EngineId("Me/50% Mac".into()),
+            path: "/".into(),
+        };
+        assert_eq!(odd.uri(), "peer://Me%2F50%25 Mac/");
+        assert_eq!(ProjectRef::parse_uri(&odd.uri()), Some(odd));
+        for plain in [
+            "/Users/me/code",
+            "~",
+            "",
+            "peer://",
+            "peer:///code",
+            "peer://nMac",
+        ] {
+            assert_eq!(ProjectRef::parse_uri(plain), None, "{plain}");
+        }
+    }
+
+    mod uri {
+        use proptest::prelude::*;
+
+        use crate::ids::{EngineId, PEER_SCHEME, ProjectRef};
+
+        proptest! {
+            /// Every engine id and absolute path, spaces and any script included, reads back
+            /// whole.
+            #[test]
+            fn round_trips(engine in "\\PC{1,24}", path in "(/[^/]{0,12}){1,6}") {
+                let project = ProjectRef { engine: EngineId(engine), path };
+                let uri = project.uri();
+                prop_assert!(uri.starts_with(PEER_SCHEME));
+                prop_assert_eq!(ProjectRef::parse_uri(&uri), Some(project));
+            }
+
+            /// A path inside a project is the project's URI and the rest of the path.
+            #[test]
+            fn a_file_extends_its_project(path in "(/[^/]{1,12}){1,4}", file in "(/[^/]{1,12}){1,3}") {
+                let project = ProjectRef { engine: EngineId("nMac".into()), path: path.clone() };
+                let inside = ProjectRef { engine: EngineId("nMac".into()), path: format!("{path}{file}") };
+                prop_assert_eq!(inside.uri(), format!("{}{file}", project.uri()));
+            }
+
+            /// A plain path, absolute or home-relative, is never a peer URI.
+            #[test]
+            fn plain_paths_are_not_uris(path in "[/~]\\PC{0,40}") {
+                prop_assert_eq!(ProjectRef::parse_uri(&path), None);
+            }
+        }
     }
 }
