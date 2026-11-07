@@ -1,4 +1,5 @@
 //! Notification surfaces and delivery shared by the workspace and Settings.
+pub(crate) mod agent_alerts;
 pub(crate) mod app_update;
 pub(crate) mod approvals;
 pub(crate) mod delivery;

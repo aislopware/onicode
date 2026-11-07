@@ -5,6 +5,22 @@ use std::sync::mpsc::{self, Receiver};
 
 use super::delivery::{Permission, Target};
 
+/// What the owner did with an agent alert's button (`docs/onicode/decisions/alerts.md`).
+#[cfg_attr(
+    not(target_os = "macos"),
+    expect(
+        dead_code,
+        reason = "only the macOS notification center reports buttons"
+    )
+)]
+pub struct AlertResponse {
+    /// The alert's identifier.
+    pub id: String,
+    pub action: onicode_protocol::alerts::AlertAction,
+    /// What was typed into the Reply field.
+    pub text: Option<String>,
+}
+
 #[cfg_attr(
     not(target_os = "macos"),
     expect(dead_code, reason = "only the macOS backend posts notifications")
@@ -43,6 +59,12 @@ pub fn show(_: Notification) -> Receiver<Result<(), String>> {
 }
 #[cfg(not(target_os = "macos"))]
 pub fn drain_clicks() -> Vec<Target> {
+    Vec::new()
+}
+#[cfg(not(target_os = "macos"))]
+pub fn show_alert(_: &onicode_protocol::alerts::Alert, _: bool) {}
+#[cfg(not(target_os = "macos"))]
+pub fn drain_alert_responses() -> Vec<AlertResponse> {
     Vec::new()
 }
 #[cfg(not(target_os = "macos"))]

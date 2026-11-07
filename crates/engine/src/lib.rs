@@ -6,18 +6,27 @@
 //! group, and the terminal hub hosts every terminal for the Terminal group. [`EngineService`]
 //! serves every group over one store only the engine opens ([`Local`]). The `onicode-engine`
 //! process serves it on a Unix socket in the data dir ([`host`]); a viewer reaches it through a
-//! [`link::Link`], which connects, launches the engine when none runs, and resumes.
+//! [`link::Link`], which connects, launches the engine when none runs, and resumes. On the tailnet
+//! ([`peers`]) the engine serves its peers and forwards what its viewer sends another engine
+//! ([`router`]), keeping mutating calls for an engine that is away in a durable outbox until it
+//! returns; [`machines`] lists every machine it knows.
 pub mod accounts;
+pub mod alerts;
 pub mod app_access;
 mod feed;
 pub mod files;
 mod fs_watch;
 pub mod git;
 pub mod host;
+pub mod keep_awake;
 mod ledger;
 pub mod link;
 mod local;
+pub mod machines;
+mod outbox;
+pub mod peers;
 mod probe;
+pub mod router;
 mod searches;
 mod service;
 pub mod session;

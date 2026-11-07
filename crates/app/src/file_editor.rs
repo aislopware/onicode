@@ -382,7 +382,7 @@ impl FileEditor {
             self.selection.dismiss();
         }
         if let Some(media) = &self.media {
-            media.update(cx, |m, _| m.set_visible(visible));
+            media.update(cx, |m, cx| m.set_visible(visible, cx));
         }
         if visible && !was {
             self.load(false, cx);
@@ -591,7 +591,7 @@ impl FileEditor {
         let media =
             cx.new(|cx| media::MediaPreview::video(self.path.clone(), size, modified, source, cx));
         let visible = self.visible;
-        media.update(cx, |m, _| m.set_visible(visible));
+        media.update(cx, |m, cx| m.set_visible(visible, cx));
         self.media_events = Some(cx.subscribe(&media, |this, _, _: &media::MediaEvent, cx| {
             this.load(true, cx)
         }));

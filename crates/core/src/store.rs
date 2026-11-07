@@ -13,6 +13,7 @@ mod session_preview;
 pub use session_preview::SessionPreviewData;
 mod edit;
 mod engine_ledger;
+mod outbox;
 mod rewind;
 mod shared;
 mod side_threads;
@@ -22,6 +23,7 @@ use std::path::Path;
 pub use edit::EditSnapshot;
 pub use monocode_import::{ImportReport, monocode_database};
 pub use onicode_protocol::sessions::{Reminder, Session, native_model};
+pub use outbox::OutboxEntry;
 use rusqlite::{Connection, params};
 pub use side_threads::DesktopSideThread;
 
@@ -122,12 +124,17 @@ impl Store {
             }
         }
         // SQLite adds no constraint with a column, so the uid's uniqueness is an index. The
-        // engine's ledger of processed mutating calls rides beside it.
+        // engine's ledger of processed mutating calls rides beside it, and the outbox of calls
+        // waiting for an engine that was offline (`outbox.rs`).
         conn.execute_batch(
             "CREATE UNIQUE INDEX IF NOT EXISTS native_sessions_uid ON native_sessions(uid);
              CREATE TABLE IF NOT EXISTS ops(op TEXT PRIMARY KEY, session TEXT NOT NULL,
                receipt TEXT NOT NULL, at INTEGER NOT NULL);
-             CREATE INDEX IF NOT EXISTS ops_at ON ops(at);",
+             CREATE INDEX IF NOT EXISTS ops_at ON ops(at);
+             CREATE TABLE IF NOT EXISTS outbox(n INTEGER PRIMARY KEY AUTOINCREMENT,
+               op TEXT NOT NULL UNIQUE, engine TEXT NOT NULL, method TEXT NOT NULL,
+               params TEXT NOT NULL, at INTEGER NOT NULL);
+             CREATE INDEX IF NOT EXISTS outbox_engine ON outbox(engine, n);",
         )
         .map_err(|e| e.to_string())?;
         let has_sent_at = conn
@@ -660,7 +667,7 @@ impl Store {
     /// Stream saved message bodies without loading conversations into the UI.
     /// Rejoin native row fragments so phrase matches span storage boundaries.
     pub fn search_sessions(
-        &self,
+        &mut self,
         query: &str,
         cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
     ) -> Result<(Vec<crate::search::Hit>, bool), String> {

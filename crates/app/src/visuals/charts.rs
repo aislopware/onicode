@@ -62,6 +62,7 @@ pub(super) fn chart(
     height: f32,
     motion: Motion,
     id: SharedString,
+    view: gpui::EntityId,
 ) -> AnyElement {
     let legend = (series.len() > 1).then(|| {
         div()
@@ -87,7 +88,7 @@ pub(super) fn chart(
         .flex_col()
         .gap_3()
         .child(
-            hoverable(id).w_full().h(px(height)).child(
+            hoverable(id, view).w_full().h(px(height)).child(
                 canvas(
                     |_, _, _| {},
                     move |bounds, _, window, cx| {
@@ -641,6 +642,7 @@ pub(super) fn donut(
     value: Option<String>,
     motion: Motion,
     id: SharedString,
+    view: gpui::EntityId,
 ) -> AnyElement {
     const SIZE: f32 = 184.;
     const FLOOR: f32 = 3. / 16.;
@@ -820,7 +822,12 @@ pub(super) fn donut(
         .flex_wrap()
         .items_center()
         .gap_6()
-        .child(hoverable(id).size(px(SIZE)).flex_shrink_0().child(ring))
+        .child(
+            hoverable(id, view)
+                .size(px(SIZE))
+                .flex_shrink_0()
+                .child(ring),
+        )
         .child(legend)
         .into_any_element()
 }
@@ -833,6 +840,7 @@ pub(super) fn heatmap(
     token: ThemeColor,
     motion: Motion,
     id: SharedString,
+    view: gpui::EntityId,
 ) -> AnyElement {
     const SQUARE: i32 = 4;
     const PITCH: i32 = 5;
@@ -955,7 +963,7 @@ pub(super) fn heatmap(
         },
     )
     .size_full();
-    hoverable(id)
+    hoverable(id, view)
         .w_full()
         .h(px(height))
         .child(map)

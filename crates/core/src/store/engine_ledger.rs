@@ -19,6 +19,8 @@ pub(super) struct MemoryLedger {
     uids: HashMap<String, Uuid>,
     /// Op to its session, receipt and when it was recorded (Unix ms).
     ops: HashMap<String, (Uuid, String, u64)>,
+    /// The outbox, oldest first (`outbox.rs`).
+    pub(super) outbox: Vec<super::outbox::OutboxEntry>,
 }
 
 fn sql<T>(result: rusqlite::Result<T>) -> Result<T, String> {

@@ -5,7 +5,6 @@ use super::*;
 
 /// The conversations the engine was last told to spare, so a frame that shows the same ones
 /// sends nothing.
-#[derive(Default)]
 struct Kept(Vec<i64>);
 impl gpui::Global for Kept {}
 
@@ -26,7 +25,9 @@ impl Shell {
         if let Some(preview) = &self.session_preview {
             ids.push(preview.id);
         }
-        if cx.default_global::<Kept>().0 == ids {
+        // Read, not `default_global`: that writes the global, and a global
+        // written as the shell renders counts as changed on every frame.
+        if cx.try_global::<Kept>().is_some_and(|kept| kept.0 == ids) {
             return;
         }
         cx.set_global(Kept(ids.clone()));

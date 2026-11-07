@@ -1,13 +1,19 @@
 use gpui::prelude::*;
-use gpui::{AnyElement, Context, SharedString, div, px};
+use gpui::{AnyElement, Context, SharedString, Window, div, px};
 use onicode_protocol::provider::Kind;
 
 use crate::settings::widgets::{note, secondary_button};
 use crate::settings::{ModelChoice, SettingsView};
 use crate::theme::*;
 impl SettingsView {
-    pub(super) fn providers_page(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn providers_page(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let p = self.prefs.clone();
+        // A reset that passes shows its window empty: the clock tells this page when.
+        let now = crate::inbox::RelativeNow::read(window, cx).ms(30_000);
         let accounts = if let Some(center) = crate::accounts::get(cx) {
             center.update(cx, |center, cx| {
                 center.mask_emails = p.mask_emails;
@@ -15,7 +21,7 @@ impl SettingsView {
                 for kind in onicode_protocol::accounts::PROVIDERS {
                     center.load_provider(kind, false, cx);
                 }
-                center.settings_rows(cx)
+                center.settings_rows(now, cx)
             })
         } else {
             vec![note("Provider accounts load with the workspace.")]

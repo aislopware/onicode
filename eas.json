@@ -10,7 +10,7 @@
       },
       "custom": {
         "macos": {
-          "command": "scripts/bundle-macos.sh",
+          "command": "scripts/release/bundle-macos.sh",
           "artifactPath": "target/package/Onicode.app"
         }
       }

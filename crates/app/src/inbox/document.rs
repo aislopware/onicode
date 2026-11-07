@@ -625,7 +625,10 @@ mod tests {
                     ))),
                     ..Default::default()
                 },
-                |_, cx| {
+                |window, cx| {
+                    // Counts measured and materialized rows, which the retained check's frame
+                    // from scratch adds to.
+                    window.set_check_retained(None);
                     cx.new(|cx| Fixture {
                         document: cx.new(|cx| InboxDocument::new(text, PathBuf::from("/repo"), cx)),
                         scroll: ScrollHandle::new(),

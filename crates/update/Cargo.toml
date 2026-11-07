@@ -9,6 +9,9 @@ publish.workspace = true
 anyhow.workspace = true
 futures.workspace = true
 reqwest.workspace = true
+# reqwest's rustls has no crypto provider of its own: the client installs ring, the one onicode-core's
+# rustls already locks.
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std"] }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true

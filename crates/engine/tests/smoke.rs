@@ -57,6 +57,8 @@ impl Door for Smoke {
             .arg(onicode_launch::DATA_DIR_ARG)
             .arg(&self.data)
             .env("HOME", &self.home)
+            // Off the tailnet: a test never joins the real one.
+            .env(onicode_engine::peers::PEERS_ENV, "0")
             .env("ONICODE_CODEX_BINARY", &self.provider);
         let child = onicode_launch::spawn_detached(&mut command, None)
             .map_err(|error| error.to_string())?;

@@ -180,7 +180,7 @@ impl Conversation {
         let cwd = self.execution_cwd().to_owned();
         let commit =
             crate::transcript::git_turns::latest_commit(self.transcript.read(cx).source_rows());
-        let read = crate::engine_client::local(cx).call::<ReadSessionChanges>(
+        let read = self.engine.call::<ReadSessionChanges>(
             None,
             ReadSessionChanges {
                 checkout: cwd.clone(),

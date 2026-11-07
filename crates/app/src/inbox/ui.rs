@@ -1,7 +1,11 @@
+use std::cell::{Cell, RefCell};
+use std::rc::Rc;
+
 use gpui::prelude::*;
 use gpui::{
-    Animation, AnimationExt, AnyElement, ClipboardItem, CursorStyle, Div, FontWeight, Hsla,
-    MouseButton, Pixels, Role, SharedString, Stateful, Window, canvas, div, list, px, rgb,
+    Animation, AnimationExt, AnyElement, ClipboardItem, CursorStyle, Div, EntityId, FontWeight,
+    Global, Hsla, MouseButton, Pixels, Role, SharedString, Stateful, Window, canvas, div, list, px,
+    rgb,
 };
 
 use super::*;
@@ -84,13 +88,138 @@ fn icon_action_with(
 fn action_icon(name: &'static str, ink: Hsla) -> gpui::Svg {
     icon(name, 14.).text_color(ink)
 }
-pub(crate) fn relative_time(iso: &str) -> String {
-    if model::timestamp_ms(iso) == 0 {
+/// The wall clock relative times ("5 minutes ago") are told against, in
+/// Unix milliseconds. gpui-fast draws a view again only when something it
+/// read changed, and the time is nothing it reads, so the clock moves on by
+/// itself and notifies the views that told a time since it last moved, as
+/// the pulse notifies the loops that leased it. It moves at the pace the
+/// labels told since then need: every second while one counts seconds.
+pub(crate) struct RelativeClock {
+    now_ms: i64,
+    /// The finest step a label told since the clock last moved needs.
+    finest: Rc<Cell<i64>>,
+    /// The views that told a time since the clock last moved.
+    readers: Rc<RefCell<std::collections::HashSet<EntityId>>>,
+}
+impl Global for RelativeClock {}
+
+/// The clock's pace while no label counts seconds or minutes.
+const RELATIVE_CLOCK_COARSE_MS: i64 = 300_000;
+
+fn wall_now_ms() -> i64 {
+    i64::try_from(onicode_protocol::time::now_ms()).unwrap_or(i64::MAX)
+}
+
+/// Starts the [`RelativeClock`], once per app; views that tell times start it
+/// as they are made.
+pub(crate) fn start_relative_clock(cx: &mut App) {
+    if cx.has_global::<RelativeClock>() {
+        return;
+    }
+    cx.set_global(RelativeClock {
+        now_ms: wall_now_ms(),
+        finest: Rc::new(Cell::new(RELATIVE_CLOCK_COARSE_MS)),
+        readers: Rc::default(),
+    });
+    cx.spawn(async move |cx| {
+        loop {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(1))
+                .await;
+            if !cx.update(|cx| move_relative_clock(wall_now_ms(), cx)) {
+                break;
+            }
+        }
+    })
+    .detach();
+}
+
+/// Moves the [`RelativeClock`] to `now` once a label told since it last
+/// moved is due to change, notifying the views that told one. Returns
+/// whether there is a clock.
+fn move_relative_clock(now: i64, cx: &mut App) -> bool {
+    let Some(clock) = cx.try_global::<RelativeClock>() else {
+        return false;
+    };
+    if now - clock.now_ms < clock.finest.get() || clock.readers.borrow().is_empty() {
+        return true;
+    }
+    let readers = clock.readers.take();
+    cx.update_global(|clock: &mut RelativeClock, _| {
+        clock.now_ms = now;
+        clock.finest.set(RELATIVE_CLOCK_COARSE_MS);
+    });
+    for view in readers {
+        cx.notify(view);
+    }
+    true
+}
+
+/// The [`RelativeClock`] as the view being drawn reads it.
+pub(crate) struct RelativeNow {
+    ms: i64,
+    finest: Option<Rc<Cell<i64>>>,
+}
+impl RelativeNow {
+    /// Reads the clock for the view being drawn, which is notified when it
+    /// moves; before it is started, the wall clock, which nothing tells of.
+    pub(crate) fn read(window: &Window, cx: &App) -> Self {
+        match cx.try_global::<RelativeClock>() {
+            Some(clock) => {
+                clock.readers.borrow_mut().insert(window.current_view());
+                Self {
+                    ms: clock.now_ms,
+                    finest: Some(clock.finest.clone()),
+                }
+            }
+            None => Self {
+                ms: wall_now_ms(),
+                finest: None,
+            },
+        }
+    }
+
+    /// The clock's Unix milliseconds, for labels that change within `pace` of
+    /// any moment (a countdown in minutes): the clock moves on that often
+    /// while the view tells them.
+    pub(crate) fn ms(&self, pace: i64) -> i64 {
+        self.pace(pace);
+        self.ms
+    }
+
+    fn pace(&self, step: i64) {
+        if let Some(finest) = &self.finest {
+            finest.set(finest.get().min(step));
+        }
+    }
+
+    /// Milliseconds from now to `at` (negative in the past), noting how soon
+    /// a label of it changes so the clock moves on in time: within
+    /// `under_a_minute` while it is less than a minute away (a second for a
+    /// label that counts seconds), within 15 seconds while it counts minutes.
+    pub(crate) fn until(&self, at: i64, under_a_minute: i64) -> i64 {
+        let until = at - self.ms;
+        self.pace(match until.unsigned_abs() {
+            0..60_000 => under_a_minute,
+            60_000..3_600_000 => 15_000,
+            _ => RELATIVE_CLOCK_COARSE_MS,
+        });
+        until
+    }
+}
+
+pub(crate) fn relative_time(iso: &str, now: &RelativeNow) -> String {
+    let at = model::timestamp_ms(iso);
+    if at == 0 {
         return String::new();
     }
-    let mut value =
-        (((model::timestamp_ms(iso) - chrono::Utc::now().timestamp_millis()) as f64 / 1000.) + 0.5)
-            .floor();
+    // A time stamped after the clock last moved is now, not "in 3 seconds":
+    // the clock moves on within a second of a label that counts seconds.
+    let until = match now.until(at, 1_000) {
+        1..60_000 => 0,
+        until => until,
+    };
+    let mut value = ((until as f64 / 1000.) + 0.5).floor();
     let mut unit = "second";
     for (step, name) in [
         (60., "second"),
@@ -156,7 +285,7 @@ pub(super) struct SummaryRows {
     discussion: bool,
     keys: Vec<SharedString>,
 }
-fn timeline_event(name: &str, action: &str, time: &str) -> Div {
+fn timeline_event(name: &str, action: &str, time: &str, now: &RelativeNow) -> Div {
     div()
         .h(px(20.))
         .min_w_0()
@@ -179,7 +308,7 @@ fn timeline_event(name: &str, action: &str, time: &str) -> Div {
         )
         .child(action.to_owned())
         .when(!time.is_empty(), |d| {
-            d.child("·").child(relative_time(time))
+            d.child("·").child(relative_time(time, now))
         })
 }
 fn menu_row(
@@ -351,7 +480,8 @@ impl Inbox {
         )
     }
 
-    fn list_view(&self, cx: &mut Context<Self>) -> AnyElement {
+    fn list_view(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let now = RelativeNow::read(window, cx);
         let connected = model::PROVIDERS
             .into_iter()
             .filter(|provider| {
@@ -579,7 +709,7 @@ impl Inbox {
                             .child(
                                 div()
                                     .text_color(content(0.45))
-                                    .child(relative_time(&item.updated_at)),
+                                    .child(relative_time(&item.updated_at, &now)),
                             )
                             .when(unread, |d| {
                                 d.child(div().size(px(6.)).rounded_full().bg(accent_color()))
@@ -704,6 +834,9 @@ impl Inbox {
                 .into_any_element();
         };
         let is_pr = item.kind == "pr";
+        let now = RelativeNow::read(window, cx);
+        let created = format!("Created {}", relative_time(&item.created_at, &now));
+        let updated = format!("Updated {}", relative_time(&item.updated_at, &now));
         let details = self.details.clone().unwrap_or_default();
         let assignees = item
             .assignees
@@ -839,14 +972,8 @@ impl Inbox {
                                     ),
                                 |d| d.child("·").child("Unassigned"),
                             )
-                            .when(!item.created_at.is_empty(), |d| {
-                                d.child("·")
-                                    .child(format!("Created {}", relative_time(&item.created_at)))
-                            })
-                            .when(!item.updated_at.is_empty(), |d| {
-                                d.child("·")
-                                    .child(format!("Updated {}", relative_time(&item.updated_at)))
-                            })
+                            .when(!item.created_at.is_empty(), |d| d.child("·").child(created))
+                            .when(!item.updated_at.is_empty(), |d| d.child("·").child(updated))
                             .when(!base_ref.is_empty() && !head_ref.is_empty(), |d| {
                                 let branch = head_ref.to_owned();
                                 d.child("·").child(
@@ -1231,6 +1358,7 @@ impl Inbox {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let now = RelativeNow::read(window, cx);
         let nested = matches!(style, CommentStyle::Reply);
         let timeline = matches!(style, CommentStyle::Timeline);
         let has_body = !comment.body.trim().is_empty();
@@ -1320,7 +1448,7 @@ impl Inbox {
                 d.child("·").child(
                     action(
                         format!("inbox-comment-time-{}", comment.id),
-                        relative_time(&comment.created_at),
+                        relative_time(&comment.created_at, &now),
                     )
                     .h_auto()
                     .px_0()
@@ -1525,6 +1653,7 @@ impl Inbox {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let entry = self.activity[ix].clone();
+        let now = RelativeNow::read(window, cx);
         let timeline = item.kind == "pr" && item.provider == "github";
         let width = self.summary_body_width();
         if !timeline {
@@ -1584,7 +1713,8 @@ impl Inbox {
                         "DISMISSED" => "had a review dismissed",
                         _ => "reviewed",
                     };
-                    timeline_event(&comment.author, verb, &comment.created_at).into_any_element()
+                    timeline_event(&comment.author, verb, &comment.created_at, &now)
+                        .into_any_element()
                 } else {
                     self.comment_card(
                         item,
@@ -1635,6 +1765,7 @@ impl Inbox {
                                 }
                             ),
                             &time,
+                            &now,
                         )))
                         .into_any_element(),
                 );
@@ -2822,7 +2953,7 @@ impl gpui::Render for Inbox {
             self.focus_comment = false;
             window.focus(&self.comment.focus_handle(cx), cx);
         }
-        let list = self.list_view(cx);
+        let list = self.list_view(window, cx);
         let detail = self.detail_view(window, cx);
         div()
             .id("inbox-view")
@@ -3250,5 +3381,100 @@ mod tests {
             let bytes = crate::assets::Assets.load(name).unwrap().unwrap();
             assert!(std::str::from_utf8(&bytes).unwrap().contains("<svg"));
         }
+    }
+
+    /// A time told in a view, and the label it showed when last built.
+    struct Stamp {
+        at: &'static str,
+        shown: String,
+    }
+    impl Render for Stamp {
+        fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+            self.shown = relative_time(self.at, &RelativeNow::read(window, cx));
+            div().child(self.shown.clone())
+        }
+    }
+    /// A page around the stamp, drawn again for its own reasons.
+    struct StampPage {
+        stamp: Entity<Stamp>,
+        count: u32,
+    }
+    impl Render for StampPage {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size(px(300.))
+                .child(format!("count {}", self.count))
+                .child(self.stamp.clone())
+        }
+    }
+
+    /// A relative time moves on with the clock, not whenever something else
+    /// happens to draw it: the stamp is drawn again when the clock moves, never
+    /// stale beside a page drawn again around it, and the clock is asked to
+    /// move every second while the label counts seconds.
+    #[gpui::test]
+    fn relative_times_move_on_with_the_clock(cx: &mut TestAppContext) {
+        let base = model::timestamp_ms("2026-10-22T08:00:30Z");
+        let finest = Rc::new(Cell::new(RELATIVE_CLOCK_COARSE_MS));
+        cx.update(|cx| {
+            cx.set_global(RelativeClock {
+                now_ms: base,
+                finest: finest.clone(),
+                readers: Rc::default(),
+            });
+        });
+        let (page, cx) = cx.add_window_view(|window, cx| {
+            window.set_check_retained(Some(gpui::RetainedCheck::Record));
+            StampPage {
+                stamp: cx.new(|_| Stamp {
+                    at: "2026-10-22T08:00:00Z",
+                    shown: String::new(),
+                }),
+                count: 0,
+            }
+        });
+        cx.run_until_parked();
+        let stamp = page.read_with(cx, |page, _| page.stamp.clone());
+        let shown = |cx: &mut gpui::VisualTestContext| stamp.read_with(cx, |s, _| s.shown.clone());
+        assert_eq!(shown(cx), "30 seconds ago");
+        assert_eq!(
+            finest.get(),
+            1_000,
+            "a label counting seconds asks for each second"
+        );
+        let count_up = |cx: &mut gpui::VisualTestContext| {
+            page.update(cx, |page, cx| {
+                page.count += 1;
+                cx.notify();
+            });
+            cx.run_until_parked();
+            let reports = cx.update(|window, _| window.take_retained_check_reports());
+            assert_eq!(reports, Vec::<String>::new());
+        };
+        count_up(cx);
+        // Not yet due: half a second on, a label counting seconds stands.
+        cx.update(|_, cx| assert!(move_relative_clock(base + 500, cx)));
+        cx.run_until_parked();
+        assert_eq!(shown(cx), "30 seconds ago");
+        cx.update(|_, cx| assert!(move_relative_clock(base + 60_000, cx)));
+        cx.run_until_parked();
+        assert_eq!(shown(cx), "1 minute ago");
+        assert_eq!(
+            finest.get(),
+            15_000,
+            "a label counting minutes asks every 15 seconds"
+        );
+        count_up(cx);
+        assert_eq!(shown(cx), "1 minute ago");
+        // A stamp after the clock last moved reads as now until it moves.
+        let future = RelativeNow {
+            ms: base,
+            finest: None,
+        };
+        assert_eq!(relative_time("2026-10-22T08:00:40Z", &future), "now");
+        assert_eq!(
+            relative_time("2026-10-22T08:02:30Z", &future),
+            "in 2 minutes"
+        );
     }
 }

@@ -28,6 +28,7 @@ pub fn quiet() -> Options {
         probe: Some(Arc::new(OfflineProbe)),
         trackers: Some(Arc::new(OfflineTrackers)),
         gh: Some(Arc::new(OfflineGh)),
+        runner: None,
     }
 }
 

@@ -5,8 +5,12 @@ name: CI
 #
 #   static    every checker that builds nothing (scripts/dev/check.sh static, fmt, deps)
 #   lint      clippy for Linux, so cfg(linux) code still compiles, and rustdoc, warnings denied
-#   mac       scripts/ci/mac.sh: clippy for macOS, the app, every test, mutants on the diff; nightly gates
+#   mac       scripts/ci/mac.sh: clippy for macOS, the app and engine, every test, mutants on the diff;
+#             nightly gates; then Onicode.app assembled and verified (scripts/native/bundle-native-macos.sh)
 #   result    "CI result", the GitHub-side check to require
+#
+# Releases are not built here: better-update builds, signs and notarizes them on a Mac with the vault
+# unlocked (docs/onicode/decisions/releases.md).
 #
 # mac runs on GitHub's xcode-27 image (macOS 27, Xcode 27.2 with the 27.2 SDKs and simulator).
 
@@ -128,6 +132,11 @@ jobs:
         env:
           SUITE: ${{ github.event_name == 'schedule' && 'nightly' || 'pr' }}
         run: scripts/ci/mac.sh "$SUITE"
+      # The release layout from the binaries mac.sh built (`cargo bins` builds onicode-engine beside
+      # the app): Onicode.app with `Contents/MacOS/Onicode Engine` and desktopd, signed ad hoc and
+      # verified, so a broken engine target or bundle fails here rather than at a release.
+      - name: Bundle
+        run: scripts/native/bundle-native-macos.sh dev "$GITHUB_WORKSPACE/target"
 
   result:
     name: CI result

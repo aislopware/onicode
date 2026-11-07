@@ -32,8 +32,9 @@ pub struct ProviderDefaults {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EngineSettings {
-    /// Keep the Mac awake while a turn runs (acted on once the engine runs on its own).
-    pub keep_awake: bool,
+    /// Hold off idle system sleep while a turn runs or a terminal runs a program in the
+    /// foreground (`docs/onicode/decisions/keep-awake.md`).
+    pub keep_awake_while_agents_run: bool,
     /// Claude Code runs the person's own hooks.
     pub claude_hooks: bool,
     /// The model for session titles, branch names, commit messages and pull requests; `None`
@@ -64,7 +65,7 @@ pub struct EngineSettings {
 impl Default for EngineSettings {
     fn default() -> Self {
         Self {
-            keep_awake: false,
+            keep_awake_while_agents_run: true,
             claude_hooks: true,
             background_model: None,
             binary_paths: BTreeMap::new(),
@@ -84,7 +85,7 @@ impl Default for EngineSettings {
 /// One setting with its whole value: the typed keys of [`SetEngineSetting`].
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EngineSetting {
-    KeepAwake(bool),
+    KeepAwakeWhileAgentsRun(bool),
     ClaudeHooks(bool),
     BackgroundModel(Option<ModelChoice>),
     BinaryPaths(BTreeMap<String, String>),
@@ -104,7 +105,7 @@ impl EngineSetting {
     #[must_use]
     pub fn key(&self) -> &'static str {
         match self {
-            Self::KeepAwake(_) => "keep-awake",
+            Self::KeepAwakeWhileAgentsRun(_) => "keep-awake-while-agents-run",
             Self::ClaudeHooks(_) => "claude-hooks",
             Self::BackgroundModel(_) => "background-model",
             Self::BinaryPaths(_) => "binary-paths",
@@ -125,7 +126,9 @@ impl EngineSettings {
     /// Sets one key, on the host and in every viewer's mirror alike.
     pub fn apply(&mut self, setting: &EngineSetting) {
         match setting.clone() {
-            EngineSetting::KeepAwake(value) => self.keep_awake = value,
+            EngineSetting::KeepAwakeWhileAgentsRun(value) => {
+                self.keep_awake_while_agents_run = value;
+            }
             EngineSetting::ClaudeHooks(value) => self.claude_hooks = value,
             EngineSetting::BackgroundModel(value) => self.background_model = value,
             EngineSetting::BinaryPaths(value) => self.binary_paths = value,
@@ -157,7 +160,7 @@ impl EngineSettings {
     #[must_use]
     pub fn all(&self) -> Vec<EngineSetting> {
         vec![
-            EngineSetting::KeepAwake(self.keep_awake),
+            EngineSetting::KeepAwakeWhileAgentsRun(self.keep_awake_while_agents_run),
             EngineSetting::ClaudeHooks(self.claude_hooks),
             EngineSetting::BackgroundModel(self.background_model.clone()),
             EngineSetting::BinaryPaths(self.binary_paths.clone()),

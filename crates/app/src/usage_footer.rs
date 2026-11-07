@@ -27,6 +27,10 @@ pub(crate) fn bind(cx: &mut App) {
 
 use crate::accounts::{Cached as CachedUsage, Key};
 
+/// How often the footer polls usage, in milliseconds, and so how often its
+/// countdowns move on.
+const USAGE_POLL_MS: i64 = 30_000;
+
 fn index(kind: Kind) -> usize {
     match kind {
         Kind::Codex => 0,
@@ -89,10 +93,11 @@ impl UsageFooter {
     }
 
     pub(crate) fn new(kind: Kind, cx: &mut Context<Self>) -> Self {
+        crate::inbox::start_relative_clock(cx);
         let clock = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor()
-                    .timer(Duration::from_secs(30))
+                    .timer(Duration::from_millis(USAGE_POLL_MS.unsigned_abs()))
                     .await;
                 if this
                     .update(cx, |this, cx| {
@@ -322,7 +327,8 @@ impl UsageFooter {
             .into_any_element()
     }
 
-    fn details(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    /// The popover's body, its times told against `now` (Unix milliseconds).
+    fn details(&self, now: i64, cx: &mut Context<Self>) -> gpui::AnyElement {
         if self.show_accounts
             && let Some(center) = crate::accounts::get(cx)
         {
@@ -335,8 +341,7 @@ impl UsageFooter {
                 center.picker(
                     kind,
                     &selected,
-                    &project,
-                    session,
+                    (&project, session),
                     move |window, cx| {
                         let _ = weak.update(cx, |this, cx| {
                             this.show_accounts = false;
@@ -344,6 +349,7 @@ impl UsageFooter {
                             cx.notify();
                         });
                     },
+                    now,
                     cx,
                 )
             });
@@ -385,7 +391,6 @@ impl UsageFooter {
                 .into_any_element();
         }
         let state = &self.cache[index(self.kind)];
-        let now = usage::now_ms();
         let updated = match &state.snapshot {
             Some(snapshot) if snapshot.updated_at > 0 => {
                 match (now - snapshot.updated_at).max(0) / 60_000 {
@@ -569,7 +574,7 @@ impl UsageFooter {
                     }),
             )
             .children(self.suggestion(cx))
-            .children(self.banked_resets(cx))
+            .children(self.banked_resets(now, cx))
             .into_any()
     }
 
@@ -812,9 +817,11 @@ impl UsageFooter {
 }
 use crate::accounts::ui::bar_color as usage_color;
 impl Render for UsageFooter {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Countdowns count minutes: the shared clock moves on, and draws this
+        // again, as often as the usage itself is polled.
+        let now = crate::inbox::RelativeNow::read(window, cx).ms(USAGE_POLL_MS);
         let state = &self.cache[index(self.kind)];
-        let now = usage::now_ms();
         let label = if let Some(snapshot) = &state.snapshot {
             snapshot
                 .windows
@@ -954,7 +961,7 @@ impl Render for UsageFooter {
                         .on_dismiss(move |window, cx| {
                             let _ = weak.update(cx, |this, cx| this.dismiss(window, cx));
                         })
-                        .child(self.details(cx)),
+                        .child(self.details(now, cx)),
                 )
             })
     }

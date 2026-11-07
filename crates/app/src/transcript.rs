@@ -4217,13 +4217,23 @@ impl TranscriptView {
             .into_any_element()
     }
 
+    /// Read after the list lays out, so the change is told once the frame
+    /// is drawn.
     fn update_jump(&mut self, cx: &mut Context<Self>) {
         let show =
             !self.list.is_following_tail() && self.list.max_offset_for_scrollbar().y > px(1.);
         if self.show_jump != show {
             self.show_jump = show;
-            cx.notify();
+            Self::notify_after_draw(cx);
         }
+    }
+
+    /// Notifies this view once the frame being drawn is done: a notify
+    /// raised while drawing asks for no frame, so what layout taught the
+    /// view would otherwise wait for an unrelated one.
+    fn notify_after_draw(cx: &mut Context<Self>) {
+        let view = cx.entity();
+        cx.defer(move |cx| view.update(cx, |_, cx| cx.notify()));
     }
 
     pub(crate) fn set_jump_beside_pill(&mut self, beside: bool, cx: &mut Context<Self>) {
@@ -4376,15 +4386,16 @@ impl Render for TranscriptView {
                     move |bounds, window, cx| {
                         let _ = view.update(cx, |this, cx| {
                             if this.viewport != bounds {
-                                // Layout learns the width after the outline
+                                // Layout learns the size after the outline
                                 // was built. Redraw after this frame only if
-                                // its visibility changes; an extra layout
-                                // otherwise advances chat motion needlessly.
-                                if this.outline_visible_at(this.viewport.size.width)
-                                    != this.outline_visible_at(bounds.size.width)
+                                // the outline shows or sizes differently; an
+                                // extra layout otherwise advances chat motion
+                                // needlessly.
+                                let shown = this.outline_visible_at(bounds.size.width);
+                                if shown != this.outline_visible_at(this.viewport.size.width)
+                                    || (shown && this.viewport.size.height != bounds.size.height)
                                 {
-                                    let view = cx.entity();
-                                    cx.defer(move |cx| view.update(cx, |_, cx| cx.notify()));
+                                    Self::notify_after_draw(cx);
                                 }
                                 this.selection.clear();
                                 this.viewport = bounds;
@@ -5566,6 +5577,65 @@ mod scroll_tests {
                 );
                 view.jump_to_bottom(cx);
                 assert!(!view.show_jump && view.list.is_following_tail());
+            })
+            .unwrap();
+    }
+
+    /// Whether the jump to the bottom shows is learned once the list has laid
+    /// out, while the window draws. It is told after that frame, so the button
+    /// is drawn on the next one rather than whenever something else draws.
+    #[gpui::test]
+    fn jump_button_shows_on_the_frame_after_the_list_leaves_the_tail(cx: &mut TestAppContext) {
+        cx.update(|cx| cx.set_reduce_motion(true));
+        let window = cx.update(|cx| {
+            cx.open_window(
+                WindowOptions {
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                        point(px(0.), px(0.)),
+                        size(px(700.), px(600.)),
+                    ))),
+                    ..Default::default()
+                },
+                |window, cx| {
+                    window.set_check_retained(Some(gpui::RetainedCheck::Record));
+                    cx.new(|_| TranscriptView::new())
+                },
+            )
+            .unwrap()
+        });
+        window
+            .update(cx, |view, _, cx| {
+                view.patch(
+                    0,
+                    vec![
+                        row("user", "Explain the change"),
+                        row(
+                            "assistant",
+                            &"A paragraph of streamed reply text.\n\n".repeat(80),
+                        ),
+                    ],
+                    cx,
+                );
+                settle(view, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |view, _, cx| {
+                assert!(view.list.is_following_tail() && !view.show_jump);
+                view.list.scroll_by(px(-150.));
+                cx.notify();
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |view, window, _| {
+                assert!(view.show_jump);
+                assert!(
+                    view.jump_bounds().is_some(),
+                    "the button is drawn without waiting for another frame"
+                );
+                assert_eq!(window.take_retained_check_reports(), Vec::<String>::new());
             })
             .unwrap();
     }

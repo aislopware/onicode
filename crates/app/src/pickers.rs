@@ -80,10 +80,19 @@ pub(crate) fn model_display_name(kind: Kind, id: &str, name: &str) -> SharedStri
 static NAMES: LazyLock<Mutex<HashMap<(Kind, String), String>>> = LazyLock::new(Mutex::default);
 
 /// Keeps the names of a catalog the engine sent, for labels drawn before a picker loads.
-pub(crate) fn remember_catalog(kind: Kind, models: &[Model]) {
+/// Those labels read the names from outside any entity, wherever a model is named (rails,
+/// tabs, composers), so a name that changes refreshes the windows: views drawn again from
+/// the last frame would otherwise keep the fallback they showed before the catalog came.
+pub(crate) fn remember_catalog(kind: Kind, models: &[Model], cx: &mut gpui::App) {
     let mut names = NAMES.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut changed = false;
     for model in models {
-        names.insert((kind, model.id.clone()), model.name.clone());
+        let old = names.insert((kind, model.id.clone()), model.name.clone());
+        changed |= old.as_ref() != Some(&model.name);
+    }
+    drop(names);
+    if changed {
+        cx.refresh_windows();
     }
 }
 
@@ -764,7 +773,7 @@ impl ModelList {
                 this.loading.retain(|k| *k != kind);
                 match result {
                     Ok(models) => {
-                        remember_catalog(kind, &models);
+                        remember_catalog(kind, &models, cx);
                         this.catalogs.retain(|(k, _)| *k != kind);
                         this.catalogs.push((kind, models));
                     }

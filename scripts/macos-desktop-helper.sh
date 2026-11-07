@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced by scripts/bundle-macos.sh, scripts/package-macos.sh and scripts/run-macos-dev.sh: puts
+# Sourced by scripts/native/bundle-native-macos.sh (which scripts/release/bundle-macos.sh runs): puts
 # onicode-desktopd into its helper bundle inside Onicode.app, with the launchd agent plist
 # SMAppService registers (docs/onicode/decisions/onboarding-grants.md; the layout is
 # onicode_grants::bundle's).

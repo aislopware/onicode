@@ -142,11 +142,28 @@ impl Focusable for Arcade {
 }
 impl Render for Arcade {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.tick(cx.reduce_motion());
-        // The engine steps at most every 33ms, so repaint on the shared 30fps
-        // clock. A game in play keeps running under reduced motion.
-        if !crate::pulse::request(crate::pulse::Rate::Smooth, window, cx) && self.playing {
-            window.request_animation_frame();
+        // The engine steps at most every 33ms, so it steps on the shared 30fps
+        // clock's tick and render reads no clock: a frame that draws the
+        // arcade again from the last one shows what building it afresh would.
+        let reduced = cx.reduce_motion();
+        let view = cx.weak_entity();
+        let leased =
+            crate::pulse::request_frame(crate::pulse::Rate::Smooth, window, cx, move |cx| {
+                view.update(cx, |this, cx| {
+                    this.tick(cx.reduce_motion());
+                    cx.notify();
+                })
+                .ok();
+            });
+        if !leased {
+            // Reduced motion leases no clock: the arcade steps as it draws,
+            // and a game in play keeps drawing.
+            self.tick(reduced);
+            if self.playing {
+                window.request_animation_frame();
+            }
+        } else if self.frame.cells.is_empty() {
+            self.tick(reduced);
         }
         let frame = self.frame.clone();
         let playing = self.playing;

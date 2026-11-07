@@ -14,7 +14,10 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use onicode_protocol::agent::AccessMode;
-use onicode_protocol::engine::{EngineInfo, Hello, ResolveSession, StopEngine, UpdateEngine};
+use onicode_protocol::engine::{
+    EngineInfo, EngineLoad, Hello, LinkPath, MachineKind, MachineLink, ResolveSession, StopEngine,
+    UpdateEngine, WatchMachines,
+};
 use onicode_protocol::files::{
     AdoptAttachments, Create, DeletePath, Destination, Entries, ListDir, ListDrives, Move,
     PathKind, Read, SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths,
@@ -230,6 +233,8 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<UpdateEngine>();
     shapes.call::<StopEngine>();
     shapes.call::<ResolveSession>();
+    shapes.watch::<WatchMachines>();
+    shapes.call::<EngineLoad>();
     // Session.
     shapes.watch::<WatchSession>();
     shapes.call::<Send>();
@@ -403,10 +408,18 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<onicode_protocol::app_access::AppNotes>();
     // Settings pages.
     shapes.call::<onicode_protocol::settings_pages::ReadWorktreeMarks>();
+    // Alerts.
+    shapes.watch::<onicode_protocol::alerts::WatchAlerts>();
+    shapes.call::<onicode_protocol::alerts::SetViewportFocus>();
     // What every call and watch travels in.
     shapes.envelope::<Cursor>("Cursor");
     shapes.envelope::<Item<(), ()>>("Item");
     shapes.envelope::<Routed<()>>("Routed");
+    shapes.envelope::<onicode_protocol::SessionKey>("SessionKey");
+    shapes.envelope::<onicode_protocol::ProjectRef>("ProjectRef");
+    shapes.variants::<MachineKind>();
+    shapes.variants::<MachineLink>();
+    shapes.variants::<LinkPath>();
     shapes.variants::<Rejection>();
     shapes.variants::<Verdict>();
     shapes.variants::<QueueChange>();
@@ -432,6 +445,12 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<onicode_protocol::usage::Status>();
     shapes.variants::<engine_settings::EngineSetting>();
     shapes.variants::<engine_settings::EngineSettingsEvent>();
+    shapes.variants::<onicode_protocol::alerts::AlertsEvent>();
+    shapes.variants::<onicode_protocol::alerts::AlertKind>();
+    shapes.variants::<onicode_protocol::alerts::AlertAction>();
+    shapes.variants::<onicode_protocol::alerts::Need>();
+    shapes.variants::<onicode_protocol::alerts::Subject>();
+    shapes.variants::<onicode_protocol::alerts::OnScreen>();
     shapes.table()
 }
 

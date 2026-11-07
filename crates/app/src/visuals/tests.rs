@@ -413,3 +413,65 @@ fn width_changes_emit_row_remeasure_events(cx: &mut TestAppContext) {
         "Responsive width changes must also remeasure the transcript row"
     );
 }
+
+/// A table's columns follow the width the visual was last laid out at, which
+/// its render learns a frame late. The view is told once the frame that
+/// measured a new width is drawn, so a frame drawing it from the last frame
+/// afterwards, as the host's does here, shows the columns a frame drawn from
+/// scratch shows.
+#[gpui::test]
+fn table_columns_follow_a_new_width_on_the_next_frame(cx: &mut TestAppContext) {
+    struct Host {
+        view: gpui::Entity<VisualView>,
+        count: u32,
+    }
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .size_full()
+                .flex()
+                .flex_col()
+                .child(format!("count {}", self.count))
+                .child(self.view.clone())
+        }
+    }
+    let window = cx.update(|cx| {
+        cx.open_window(Default::default(), |window, cx| {
+            window.set_check_retained(Some(gpui::RetainedCheck::Record));
+            let view = cx.new(|cx| {
+                VisualView::new(
+                    document("return () => visual.table(['a','b','c'],[['one','two','three']]);"),
+                    cx,
+                )
+            });
+            cx.new(|_| Host { view, count: 0 })
+        })
+        .unwrap()
+    });
+    let visual = &mut gpui::VisualTestContext::from_window(window.into(), cx);
+    visual.run_until_parked();
+    for width in [700., 610.] {
+        visual.simulate_window_resize(window.into(), size(px(width), px(500.)));
+        visual.run_until_parked();
+        // The host draws again; the visual, not notified since, is drawn from
+        // the last frame and must match the same frame drawn from scratch.
+        window
+            .update(visual, |host, _, cx| {
+                host.count += 1;
+                cx.notify();
+            })
+            .unwrap();
+        visual.run_until_parked();
+        let content = visual.debug_bounds("visual-content").unwrap();
+        window
+            .update(visual, |host, window, cx| {
+                let measured = host.view.read(cx).width.get();
+                assert!(
+                    (measured - content.size.width.as_f32()).abs() < 1.,
+                    "the visual measured its own width: {measured} vs {content:?}"
+                );
+                assert_eq!(window.take_retained_check_reports(), Vec::<String>::new());
+            })
+            .unwrap();
+    }
+}

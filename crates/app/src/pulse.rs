@@ -331,14 +331,22 @@ mod tests {
         }
     }
 
+    /// A spinning spinner counting its renders, in a window the retained
+    /// check leaves alone: it draws each frame that drew anything again a
+    /// second time from scratch, which runs every render again.
+    fn spinner(window: &mut Window, renders: &Rc<Cell<usize>>) -> Spinner {
+        window.set_check_retained(None);
+        Spinner {
+            spinning: true,
+            renders: renders.clone(),
+        }
+    }
+
     #[gpui::test]
     fn a_loop_repaints_on_the_clock_and_parks_once_it_is_gone(cx: &mut TestAppContext) {
         cx.update(|cx| cx.set_reduce_motion(false));
         let renders = Rc::new(Cell::new(0));
-        let (view, cx) = cx.add_window_view(|_, _| Spinner {
-            spinning: true,
-            renders: renders.clone(),
-        });
+        let (view, cx) = cx.add_window_view(|window, _| spinner(window, &renders));
         cx.run_until_parked();
         let first = renders.get();
         cx.executor().advance_clock(TICK * 2);
@@ -369,10 +377,7 @@ mod tests {
     fn a_visible_window_keeps_full_pace_and_a_hidden_one_slows(cx: &mut TestAppContext) {
         cx.update(|cx| cx.set_reduce_motion(false));
         let renders = Rc::new(Cell::new(0));
-        let (_view, cx) = cx.add_window_view(|_, _| Spinner {
-            spinning: true,
-            renders: renders.clone(),
-        });
+        let (_view, cx) = cx.add_window_view(|window, _| spinner(window, &renders));
         cx.run_until_parked();
         // A test window is visible but never active, like one behind another app.
         let start = renders.get();
@@ -396,10 +401,7 @@ mod tests {
     fn reduced_motion_leases_nothing(cx: &mut TestAppContext) {
         cx.update(|cx| cx.set_reduce_motion(true));
         let renders = Rc::new(Cell::new(0));
-        let (_view, cx) = cx.add_window_view(|_, _| Spinner {
-            spinning: true,
-            renders: renders.clone(),
-        });
+        let (_view, cx) = cx.add_window_view(|window, _| spinner(window, &renders));
         cx.run_until_parked();
         let first = renders.get();
         cx.executor()

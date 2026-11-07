@@ -16,6 +16,10 @@
 //! * The streams the peer opens are served: RPC streams by the RPC service
 //!   ([`onicode_rpc::serve_carried`]), every other kind by the [`StreamHandler`], as are the
 //!   datagrams.
+//! * A subscription ([`PeerSubscription`]) outlives the link it rode: one that loses to a duplicate
+//!   subscribes again on the kept link, and one that [resumes](PeerSubscription::resuming) also
+//!   waits out a lost link and subscribes again once its device is back, from where its consumer
+//!   is.
 
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -37,6 +41,9 @@ use tokio::task::AbortHandle;
 use tokio::time::Instant;
 
 use crate::{PeerCarrier, PeerDirectory, PeerEndpoint, PeerError, PeerSession};
+
+/// How often [`PeerLinks::reach`] looks again when nothing it waits on says that anything moved.
+const REACH_POLL: Duration = Duration::from_secs(1);
 
 /// How often a link pings while the person is using the device.
 pub const PING_INTERACTIVE: Duration = Duration::from_secs(1);
@@ -389,6 +396,8 @@ impl PeerLinks {
             params,
             link,
             inner: Some(inner),
+            resume: None,
+            done: false,
         })
     }
 
@@ -423,6 +432,46 @@ impl PeerLinks {
         match &self.0.entries.lock().get(device)?.slot {
             Slot::Live(live) => Some(live.link.clone()),
             _ => None,
+        }
+    }
+
+    /// The hello of `device`'s live link: what it says it is and can do.
+    #[must_use]
+    pub fn hello(&self, device: &str) -> Option<Hello> {
+        match &self.0.entries.lock().get(device)?.slot {
+            Slot::Live(live) => Some(live.peer.clone()),
+            _ => None,
+        }
+    }
+
+    /// The link to `device`, waiting until there is one: through its backoffs, and for the
+    /// directory to find it again when it left. Ends only when a link is up or the links shut
+    /// down.
+    ///
+    /// # Errors
+    ///
+    /// [`PeerError::Shutdown`].
+    pub async fn reach(&self, device: &str) -> Result<Link, PeerError> {
+        let mut changes = self.0.changes.subscribe();
+        let mut found = self.0.directory.subscribe();
+        loop {
+            changes.borrow_and_update();
+            found.borrow_and_update();
+            let wait = match self.ready(device).await {
+                Ok(link) if !link.is_closed() => return Ok(link),
+                Err(PeerError::Shutdown) => return Err(PeerError::Shutdown),
+                Err(PeerError::Unreachable { retry_in, .. }) => {
+                    retry_in.clamp(Duration::from_millis(1), REACH_POLL)
+                }
+                // A closed link still in its slot, an engine the directory lost, or one on
+                // another build: something will move.
+                Ok(_) | Err(_) => REACH_POLL,
+            };
+            tokio::select! {
+                _ = changes.changed() => {}
+                _ = found.changed() => {}
+                () = tokio::time::sleep(wait) => {}
+            }
         }
     }
 
@@ -871,10 +920,18 @@ fn retire(links: PeerLinks, link: Link, keep: impl Send + 'static) {
     });
 }
 
+/// Rewrites a subscription's params from each item it delivers, so a subscription that starts
+/// again resumes where its consumer is (a watch's cursor). Returning `false` ends the
+/// subscription after that item, as a watch ends after `Resync`.
+pub type Resume = Box<dyn FnMut(&serde_json::Value, &mut serde_json::Value) -> bool + Send + Sync>;
+
 /// A subscription over [`PeerLinks`]. When two engines dial each other at once, both keep the
 /// link the smaller device id dialled and close the other; a subscription on the closed one
-/// subscribes again on the kept one rather than ending. Watched methods send their whole state
-/// first, so the consumer sees a fresh start, as after any resubscribe. Any other end is final.
+/// subscribes again on the kept one rather than ending. Without [`Self::resuming`] it subscribes
+/// with its first params, so a watch starts over from its whole state; any other end is final. A
+/// resuming one also outlives a lost link: it waits for its device to be reachable again
+/// ([`PeerLinks::reach`]) and subscribes with the params its [`Resume`] kept, so a watch picks up
+/// after the last item its consumer took.
 pub struct PeerSubscription {
     links: PeerLinks,
     device: String,
@@ -882,22 +939,48 @@ pub struct PeerSubscription {
     params: serde_json::Value,
     link: Link,
     inner: Option<CarriedSubscription>,
+    resume: Option<Resume>,
+    /// The resume hook ended it.
+    done: bool,
 }
 
 impl PeerSubscription {
+    /// The same subscription, resuming through `resume` after a lost or duplicate link.
+    #[must_use]
+    pub fn resuming(mut self, resume: Resume) -> Self {
+        self.resume = Some(resume);
+        self
+    }
+
+    /// The device it subscribes to.
+    #[must_use]
+    pub fn device(&self) -> &str {
+        &self.device
+    }
+
     /// The next item; `None` once the stream ends for good.
     pub async fn recv(&mut self) -> Option<serde_json::Value> {
         loop {
-            if let Some(inner) = &mut self.inner
+            if !self.done
+                && let Some(inner) = &mut self.inner
                 && let Some(item) = inner.recv().await
             {
+                if let Some(resume) = &mut self.resume
+                    && !resume(&item, &mut self.params)
+                {
+                    self.done = true;
+                }
                 return Some(item);
             }
             self.inner = None;
-            if !self.link.is_closed() {
+            if self.done || !self.link.is_closed() {
                 return None;
             }
-            self.link = self.replacement().await?;
+            self.link = if self.resume.is_some() {
+                self.follow().await?
+            } else {
+                self.replacement().await?
+            };
             self.inner = CarrierClient::new(Arc::new(PeerCarrier::new(self.link.clone())))
                 .subscribe(&self.method, self.params.clone())
                 .await
@@ -906,6 +989,21 @@ impl PeerSubscription {
             if self.inner.is_none() && !self.link.is_closed() {
                 return None;
             }
+        }
+    }
+
+    /// The next link to the device that is up: the kept one after a duplicate, or the one dialled
+    /// (by either end) once the device is back. `None` once the links shut down.
+    async fn follow(&self) -> Option<Link> {
+        let mut changes = self.links.subscribe_changes();
+        loop {
+            changes.borrow_and_update();
+            let link = self.links.reach(&self.device).await.ok()?;
+            if !link.is_closed() && link.id() != self.link.id() {
+                return Some(link);
+            }
+            // The closed link still holds its slot for a moment.
+            let _ = tokio::time::timeout(REACH_POLL, changes.changed()).await;
         }
     }
 

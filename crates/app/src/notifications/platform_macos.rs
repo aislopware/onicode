@@ -11,12 +11,15 @@ use objc2::{AnyThread, MainThreadMarker, define_class};
 use objc2_app_kit::NSApplication;
 use objc2_foundation::{NSArray, NSBundle, NSError, NSSet, NSString};
 use objc2_user_notifications::*;
+use onicode_protocol::alerts::{self, Alert, AlertAction};
 
-use super::{Notification, Permission, Target, resolved};
+use super::{AlertResponse, Notification, Permission, Target, resolved};
 
 const CATEGORY: &str = "onicode.session";
 const SHOW: &str = "onicode.session.show";
 static CLICKS: Mutex<VecDeque<Target>> = Mutex::new(VecDeque::new());
+/// Agent alert buttons pressed, until the shell's poll takes them.
+static ALERT_RESPONSES: Mutex<VecDeque<AlertResponse>> = Mutex::new(VecDeque::new());
 
 define_class!(
     #[unsafe(super(NSObject))]
@@ -44,7 +47,19 @@ define_class!(
             completion: &block2::DynBlock<dyn Fn()>,
         ) {
             let action = response.actionIdentifier();
-            if (action.to_string() == SHOW
+            if let Some(button) = AlertAction::from_id(&action.to_string()) {
+                // An agent alert's button: the shell makes its call; the app stays behind.
+                let text = response
+                    .downcast_ref::<UNTextInputNotificationResponse>()
+                    .map(|reply| reply.userText().to_string());
+                if let Ok(mut queue) = ALERT_RESPONSES.lock() {
+                    queue.push_back(AlertResponse {
+                        id: response.notification().request().identifier().to_string(),
+                        action: button,
+                        text,
+                    });
+                }
+            } else if (action.to_string() == SHOW
                 || action.isEqualToString(unsafe { UNNotificationDefaultActionIdentifier }))
                 && let Some(target) =
                     Target::from_tag(&response.notification().request().identifier().to_string())
@@ -94,9 +109,56 @@ pub fn initialize() -> bool {
                 &NSArray::new(),
                 UNNotificationCategoryOptions::empty(),
             );
-        center.setNotificationCategories(&NSSet::from_retained_slice(&[category]));
+        let mut categories = vec![category];
+        categories.extend(
+            alerts::ACTION_SETS
+                .iter()
+                .map(|actions| alert_category(actions)),
+        );
+        center.setNotificationCategories(&NSSet::from_retained_slice(&categories));
     });
     true
+}
+
+/// The category of one set of agent alert buttons. None brings the app forward; Reply opens a
+/// text field, and Stop shows as destructive.
+fn alert_category(actions: &[AlertAction]) -> Retained<UNNotificationCategory> {
+    let buttons: Vec<Retained<UNNotificationAction>> = actions
+        .iter()
+        .map(|action| {
+            let id = NSString::from_str(action.id());
+            let title = NSString::from_str(action.label());
+            match action {
+                AlertAction::Reply => Retained::into_super(
+                    UNTextInputNotificationAction::actionWithIdentifier_title_options_textInputButtonTitle_textInputPlaceholder(
+                        &id,
+                        &title,
+                        UNNotificationActionOptions::empty(),
+                        &NSString::from_str("Send"),
+                        &NSString::from_str("Reply"),
+                    ),
+                ),
+                AlertAction::Stop => UNNotificationAction::actionWithIdentifier_title_options(
+                    &id,
+                    &title,
+                    UNNotificationActionOptions::Destructive,
+                ),
+                AlertAction::Approve | AlertAction::Deny => {
+                    UNNotificationAction::actionWithIdentifier_title_options(
+                        &id,
+                        &title,
+                        UNNotificationActionOptions::empty(),
+                    )
+                }
+            }
+        })
+        .collect();
+    UNNotificationCategory::categoryWithIdentifier_actions_intentIdentifiers_options(
+        &NSString::from_str(&alerts::category(actions)),
+        &NSArray::from_retained_slice(&buttons),
+        &NSArray::new(),
+        UNNotificationCategoryOptions::empty(),
+    )
 }
 
 fn map_settings(settings: &UNNotificationSettings) -> Permission {
@@ -188,6 +250,39 @@ pub fn show(notification: Notification) -> Receiver<Result<(), String>> {
     });
     center.getNotificationSettingsWithCompletionHandler(&block);
     receiver
+}
+
+/// Posts an agent alert in monocode's look (the app's name, the chat's title, the words) with
+/// its buttons, replacing what shows under its identifier. The center drops it without
+/// permission; the shell asked at opt-in.
+pub fn show_alert(alert: &Alert, sound: bool) {
+    let Some(center) = center() else {
+        return;
+    };
+    let content = UNMutableNotificationContent::new();
+    content.setTitle(&NSString::from_str("Onicode"));
+    content.setSubtitle(&NSString::from_str(&alert.title));
+    content.setBody(&NSString::from_str(
+        &crate::notifications::delivery::clip_body(&alert.body),
+    ));
+    content.setCategoryIdentifier(&NSString::from_str(&alert.category()));
+    if sound {
+        content.setSound(Some(&UNNotificationSound::defaultSound()));
+    }
+    let request = UNNotificationRequest::requestWithIdentifier_content_trigger(
+        &NSString::from_str(&alert.id),
+        &content,
+        None,
+    );
+    center.addNotificationRequest_withCompletionHandler(&request, None);
+}
+
+/// The agent alert buttons pressed since the last call.
+pub fn drain_alert_responses() -> Vec<AlertResponse> {
+    ALERT_RESPONSES
+        .lock()
+        .map(|mut queue| queue.drain(..).collect())
+        .unwrap_or_default()
 }
 
 pub fn drain_clicks() -> Vec<Target> {

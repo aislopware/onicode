@@ -49,8 +49,22 @@ window's pointer, modifiers or focus. So:
   a parent's or the root's frames.
 - A notify raised while drawing never wakes the window. Send it through `window.on_next_frame` or `cx.defer`, and
   only when the value changed. Nothing writes an entity or a global on every frame.
-- `window.refresh()` stays only where a change is truly window-wide: theme, settings and keyboard layout.
+- `window.refresh()` stays only where a change is truly window-wide: theme, settings and keyboard layout. It is
+  dropped while the window draws, so a change found then refreshes nothing. The theme's colors live in a
+  thread-local every view reads, so the shell paints them before the frame that shows a change: as it is notified
+  (an app-level observer that only reads it) and as the system turns light or dark, refreshing the windows when
+  they changed. A size a layout probe measures while drawing notifies the view drawing it through `cx.defer`.
+- Work done in a render because monocode redrew everything on any notify has to be told: the shell reconciles
+  notices as it renders, so its observer of each chat notifies it when the chat's turn or pending inputs move.
 - `GPUI_VIEW_RETENTION=0` and `GPUI_CHECK_RETAINED=panic` (each retained frame compared with one drawn from
   scratch) settle whether retention is to blame. monocode's code was written for a GPUI that redrew on any notify,
-  so the retained audit (`.research/monocode/stack-port.md` step 13) turns the check on in the app's view tests and
-  fixes each stale read at its source.
+  so the retained audit (`.research/monocode/stack-port.md` step 13) fixes each stale read at its source, and
+  `scripts/ci/nextest.toml` is to set `GPUI_CHECK_RETAINED=panic` for every test of the app (a nextest setup
+  script), so each view test also proves its view is told of every change it shows. Turned on for a trial, it
+  failed 40 view tests (InkField, the shell's Chrome, the transcript, ProjectTabs, FileActionError); the switch
+  lands with their fixes. A test that forces `refresh()` before it looks draws from scratch and proves nothing
+  about retention.
+- A transcript row's measured height is kept across a resize that keeps the column's width, so a pane sliding beside
+  it lays out no row again. The pane-slide bench (`pane_motion_frame_cost_with_long_history`, 10,000 messages, 80
+  frames, release) went from CPU p50 11.9 ms to 7.5 ms (p95 8.1 ms), its samples including the second render the
+  layout probes ask for while the panel moves.

@@ -240,7 +240,10 @@ impl FileEditor {
                         let was_open = this.selection.target.is_some();
                         this.selection.dismiss();
                         if was_open {
-                            cx.notify();
+                            // A notify while drawing asks for no frame: close the
+                            // menu once this frame is drawn.
+                            let view = cx.entity();
+                            cx.defer(move |cx| view.update(cx, |_, cx| cx.notify()));
                         }
                     });
                 }

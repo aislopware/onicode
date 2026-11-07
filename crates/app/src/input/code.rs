@@ -12,7 +12,7 @@ use crate::editor_scrollbar::{Metrics, WIDTH};
 const TOP_PADDING: f32 = 8.;
 const BOTTOM_PADDING: f32 = 32.;
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq)]
 struct MarkerHit {
     bounds: Bounds<Pixels>,
     pos: usize,
@@ -1670,109 +1670,117 @@ impl Element for CodeElement {
     ) -> CodePaint {
         // Measure wrapped block heights only when the document or pane width
         // changes. Short lines use a conservative UTF-8 byte-width bound;
-        // offscreen lines do not retain glyph runs.
-        self.input.update(cx, |i, _| {
-            let code = i.code.as_ref().unwrap();
-            let gutter = px(code.gutter());
-            let width = (bounds.size.width - gutter - px(WIDTH + 12.)).max(px(1.));
-            if code.layout_width != Some(width) {
-                let mut tops = Vec::with_capacity(code.offsets.len() + 1);
-                let mut y = TOP_PADDING;
-                let mut deleted_rows = Vec::new();
-                let mut deletion_changes = code
-                    .analysis
-                    .changes
-                    .iter()
-                    .filter(|c| c.kind != "add")
-                    .peekable();
-                let sample = w.text_system().shape_line(
-                    "M".into(),
-                    px(i.font_size),
-                    &[TextRun {
-                        len: 1,
-                        font: gpui::font(crate::fonts::mono()),
-                        color: crate::theme::content(1.),
-                        background_color: None,
-                        underline: None,
-                        strikethrough: None,
-                    }],
-                    None,
-                );
-                for row in 0..code.offsets.len() {
-                    while deletion_changes
-                        .peek()
-                        .is_some_and(|c| code.row(c.from) < row)
-                    {
-                        deletion_changes.next();
-                    }
-                    if !code.hidden(row) && code.diff {
+        // offscreen lines do not retain glyph runs. Updating the input while it
+        // draws counts as changing it, so it is updated only when it does.
+        let measured = {
+            let code = self.input.read(cx).code.as_ref().unwrap();
+            let width = (bounds.size.width - px(code.gutter()) - px(WIDTH + 12.)).max(px(1.));
+            code.layout_width == Some(width)
+        };
+        if !measured {
+            self.input.update(cx, |i, _| {
+                let code = i.code.as_ref().unwrap();
+                let gutter = px(code.gutter());
+                let width = (bounds.size.width - gutter - px(WIDTH + 12.)).max(px(1.));
+                if code.layout_width != Some(width) {
+                    let mut tops = Vec::with_capacity(code.offsets.len() + 1);
+                    let mut y = TOP_PADDING;
+                    let mut deleted_rows = Vec::new();
+                    let mut deletion_changes = code
+                        .analysis
+                        .changes
+                        .iter()
+                        .filter(|c| c.kind != "add")
+                        .peekable();
+                    let sample = w.text_system().shape_line(
+                        "M".into(),
+                        px(i.font_size),
+                        &[TextRun {
+                            len: 1,
+                            font: gpui::font(crate::fonts::mono()),
+                            color: crate::theme::content(1.),
+                            background_color: None,
+                            underline: None,
+                            strikethrough: None,
+                        }],
+                        None,
+                    );
+                    for row in 0..code.offsets.len() {
                         while deletion_changes
                             .peek()
-                            .is_some_and(|c| code.row(c.from) == row)
+                            .is_some_and(|c| code.row(c.from) < row)
                         {
-                            let change = deletion_changes.next().unwrap();
-                            let mut offset = 0;
-                            for (n, text) in change
-                                .original
-                                .strip_suffix('\n')
-                                .unwrap_or(&change.original)
-                                .split('\n')
-                                .enumerate()
+                            deletion_changes.next();
+                        }
+                        if !code.hidden(row) && code.diff {
+                            while deletion_changes
+                                .peek()
+                                .is_some_and(|c| code.row(c.from) == row)
                             {
-                                let tokens: Vec<_> = change
-                                    .tokens
-                                    .iter()
-                                    .filter(|t| t.to > offset && t.from < offset + text.len())
-                                    .map(|t| crate::editor_analysis::Token {
-                                        from: t.from.saturating_sub(offset),
-                                        to: t.to.min(offset + text.len()) - offset,
-                                        kind: t.kind.clone(),
-                                    })
-                                    .collect();
-                                offset += text.len() + 1;
-                                let line = token_line(
-                                    text,
-                                    &tokens,
-                                    code.wrap.then_some(width),
-                                    i.font_size,
-                                    w,
-                                );
-                                let height = line.size(i.line_height()).height.as_f32();
-                                deleted_rows.push((
-                                    y,
-                                    height,
-                                    text.to_owned(),
-                                    change.old_line + n,
-                                    tokens,
-                                ));
-                                y += height;
+                                let change = deletion_changes.next().unwrap();
+                                let mut offset = 0;
+                                for (n, text) in change
+                                    .original
+                                    .strip_suffix('\n')
+                                    .unwrap_or(&change.original)
+                                    .split('\n')
+                                    .enumerate()
+                                {
+                                    let tokens: Vec<_> = change
+                                        .tokens
+                                        .iter()
+                                        .filter(|t| t.to > offset && t.from < offset + text.len())
+                                        .map(|t| crate::editor_analysis::Token {
+                                            from: t.from.saturating_sub(offset),
+                                            to: t.to.min(offset + text.len()) - offset,
+                                            kind: t.kind.clone(),
+                                        })
+                                        .collect();
+                                    offset += text.len() + 1;
+                                    let line = token_line(
+                                        text,
+                                        &tokens,
+                                        code.wrap.then_some(width),
+                                        i.font_size,
+                                        w,
+                                    );
+                                    let height = line.size(i.line_height()).height.as_f32();
+                                    deleted_rows.push((
+                                        y,
+                                        height,
+                                        text.to_owned(),
+                                        change.old_line + n,
+                                        tokens,
+                                    ));
+                                    y += height;
+                                }
                             }
                         }
+                        tops.push(y);
+                        if code.hidden(row) {
+                            continue;
+                        }
+                        let start = code.offsets[row];
+                        let end = code.offsets.get(row + 1).map_or(i.content.len(), |n| n - 1);
+                        let text = &i.content[start..end];
+                        let short = !text.contains('\t') && sample.width * text.len() <= width;
+                        y += if !code.wrap || short {
+                            i.line_height
+                        } else {
+                            shape(i, row, Some(width), w)
+                                .size(i.line_height())
+                                .height
+                                .as_f32()
+                        };
                     }
                     tops.push(y);
-                    if code.hidden(row) {
-                        continue;
-                    }
-                    let start = code.offsets[row];
-                    let end = code.offsets.get(row + 1).map_or(i.content.len(), |n| n - 1);
-                    let text = &i.content[start..end];
-                    let short = !text.contains('\t') && sample.width * text.len() <= width;
-                    y += if !code.wrap || short {
-                        i.line_height
-                    } else {
-                        shape(i, row, Some(width), w)
-                            .size(i.line_height())
-                            .height
-                            .as_f32()
-                    };
+                    let code = i.code.as_mut().unwrap();
+                    code.tops = tops;
+                    code.deleted_rows = deleted_rows;
+                    code.layout_width = Some(width);
                 }
-                tops.push(y);
-                let code = i.code.as_mut().unwrap();
-                code.tops = tops;
-                code.deleted_rows = deleted_rows;
-                code.layout_width = Some(width);
-            }
-        });
+            });
+        }
         let i = self.input.read(cx);
         let code = i.code.as_ref().unwrap();
         let gutter = px(code.gutter());
@@ -2124,21 +2132,41 @@ impl Element for CodeElement {
                 }
             },
         );
-        self.input.update(cx, |i, _| {
-            i.bounds = Some(state.text_bounds);
-            i.scroll_x = state.scroll.x;
-            i.scroll_y = state.scroll.y;
-            let code = i.code.as_mut().unwrap();
-            code.reveal = false;
-            code.rail = Some(rail);
-            code.markers = markers;
-            for (_, line) in &state.lines {
-                code.max_width = code
-                    .max_width
-                    .max(line.width() - state.text_bounds.size.width + px(20.));
-            }
-            code.visible = std::mem::take(&mut state.lines);
-        });
+        // Updating the input while it draws counts as a change for every view
+        // that reads it: hand the hit tests a new layout only when it differs.
+        let i = self.input.read(cx);
+        let code = i.code.as_ref().unwrap();
+        let visible = &code.visible;
+        let mut max_width = code.max_width;
+        for (_, line) in &state.lines {
+            let overflow = line.width() - state.text_bounds.size.width + px(20.);
+            max_width = max_width.max(overflow);
+        }
+        let unchanged = i.bounds == Some(state.text_bounds)
+            && i.scroll_x == state.scroll.x
+            && i.scroll_y == state.scroll.y
+            && !code.reveal
+            && code.rail == Some(rail)
+            && code.markers == markers
+            && code.max_width == max_width
+            && visible.len() == state.lines.len()
+            && visible
+                .iter()
+                .zip(&state.lines)
+                .all(|((a, x), (b, y))| a == b && same_line(x, y));
+        if !unchanged {
+            self.input.update(cx, |i, _| {
+                i.bounds = Some(state.text_bounds);
+                i.scroll_x = state.scroll.x;
+                i.scroll_y = state.scroll.y;
+                let code = i.code.as_mut().unwrap();
+                code.reveal = false;
+                code.rail = Some(rail);
+                code.markers = markers;
+                code.max_width = max_width;
+                code.visible = std::mem::take(&mut state.lines);
+            });
+        }
     }
 }
 

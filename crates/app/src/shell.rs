@@ -32,6 +32,8 @@ mod quick_open;
 mod rails;
 mod remote_projects;
 mod remote_sessions;
+#[cfg(test)]
+mod retained_tests;
 mod search;
 mod session_filters;
 mod session_folders;
@@ -162,21 +164,22 @@ impl Render for Chrome {
         self.renders += 1;
         let kind = self.kind;
         self.owner
+            // Whether a motion goes on is asked before the frame is built from
+            // the clock: asked after, a motion ending between the two would
+            // leave its last frame short of the end, drawn from then on.
             .update(cx, |shell, cx| match kind {
                 ChromeKind::Sidebar => {
-                    let sidebar = shell.sidebar(cx);
                     if shell.spaces_nudge.is_some() || shell.classic_tabs.animating() {
                         window.request_animation_frame();
                     }
-                    sidebar
+                    shell.sidebar(cx)
                 }
                 ChromeKind::Tabs => shell.tabs(window, cx),
                 ChromeKind::Projects => {
-                    let rail = shell.project_rail(cx);
                     if shell.project_rail_animating() {
                         window.request_animation_frame();
                     }
-                    rail
+                    shell.project_rail(cx)
                 }
             })
             .unwrap_or_else(|_| div().into_any())
@@ -1317,14 +1320,39 @@ impl Shell {
                 cx.notify();
             },
         ));
+        // A streaming chat notifies its view on every 30Hz frame. Observed
+        // through the shell, each notification would update the shell, and
+        // the shell's next frame would count it changed and build the cached
+        // sidebar and tab strip again with it. The preview only reads it.
+        let shell = cx.weak_entity();
+        let sidebar = self.sidebar_frame.clone();
         self.observations
-            .push(cx.observe(&view, move |this, _, cx| {
-                if this
-                    .session_preview
-                    .as_ref()
-                    .is_some_and(|preview| preview.id == id)
-                {
-                    this.sidebar_frame.update(cx, |_, cx| cx.notify());
+            .push(App::observe(cx, &view, move |view, cx| {
+                let Some(shell) = shell.upgrade() else {
+                    return;
+                };
+                // Notices are reconciled as the shell renders: a turn begun or
+                // ended, or an approval or question raised, notifies it, which
+                // the chat's own notifications never do.
+                let seen = notifications::notice_inputs(view.read(cx), cx);
+                let (previewed, moved) = {
+                    let shell = shell.read(cx);
+                    (
+                        shell
+                            .session_preview
+                            .as_ref()
+                            .is_some_and(|preview| preview.id == id),
+                        shell.notice_seen(id) != Some(&seen),
+                    )
+                };
+                if previewed {
+                    sidebar.update(cx, |_, cx| cx.notify());
+                }
+                if moved {
+                    shell.update(cx, |shell, cx| {
+                        shell.note_notice_inputs(id, seen);
+                        cx.notify();
+                    });
                 }
             }));
         self.observe_orchestration(&view, id, cx);
@@ -8267,6 +8295,65 @@ fn enter_from(leaf: &LayoutLeaf) -> (Edge, Rect) {
         )
     }
 }
+/// Whether the system asks the app's windows to be light.
+fn system_light(cx: &App) -> bool {
+    matches!(
+        cx.window_appearance(),
+        gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight
+    )
+}
+impl Shell {
+    /// Paints with the colors the settings, the system appearance and the
+    /// active project ask for, blending from the project last painted, and
+    /// returns whether the painted colors changed ([`configure_project`]).
+    fn paint_theme(&self, cx: &App) -> bool {
+        let project = &self.workspace.project;
+        let animate = !cx.reduce_motion()
+            && self
+                .theme_project
+                .as_ref()
+                .is_some_and(|previous| previous != project);
+        let project_theme = self
+            .workspace
+            .project_appearance
+            .get(project)
+            .and_then(|a| a.theme.as_ref());
+        configure_project(
+            &self.workspace.preferences,
+            project_theme,
+            system_light(cx),
+            animate,
+        )
+    }
+
+    /// [`Self::paint_theme`] before the frame that shows a change, as the
+    /// shell is notified and as the system turns light or dark. Every view
+    /// reads the colors outside any entity ([`crate::theme`]), so a change
+    /// refreshes the windows and their next frame is drawn whole: no view is
+    /// drawn again from the last frame in the old colors beside views built
+    /// in the new ones, as one painted while the shell renders would leave
+    /// them. It reads the shell and writes it only on a project switch: an
+    /// update of the shell on every notification would count it changed for
+    /// the cached sidebar, tab strip and project rail that read it, and
+    /// build them again with every frame of a slide.
+    fn sync_theme(shell: &Entity<Self>, cx: &mut App) {
+        let (painted, switched) = {
+            let this = shell.read(cx);
+            (
+                this.paint_theme(cx),
+                this.theme_project.as_ref() != Some(&this.workspace.project),
+            )
+        };
+        if painted {
+            cx.refresh_windows();
+        }
+        if switched {
+            shell.update(cx, |this, _| {
+                this.theme_project = Some(this.workspace.project.clone());
+            });
+        }
+    }
+}
 impl Render for Shell {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.keep_visible_idle_agents(cx);
@@ -8318,33 +8405,19 @@ impl Render for Shell {
             self.review_slide = None;
             self.sync_right_panel(cx);
         }
-        let p = &self.workspace.preferences;
-        let system_light = matches!(
-            cx.window_appearance(),
-            gpui::WindowAppearance::Light | gpui::WindowAppearance::VibrantLight
-        );
-        let project = &self.workspace.project;
-        let animate = !cx.reduce_motion()
-            && self
-                .theme_project
-                .as_ref()
-                .is_some_and(|previous| previous != project);
-        let project_theme = self
-            .workspace
-            .project_appearance
-            .get(project)
-            .and_then(|a| a.theme.as_ref());
-        // Repainting bypasses cached views, so every surface follows the blend.
-        if configure_project(p, project_theme, system_light, animate) {
+        // Already in step, as the shell's notifications and the system's
+        // appearance sync the colors before the frame (`sync_theme`). A
+        // blend steps once per frame, through this view's next frame.
+        if self.paint_theme(cx) {
             cx.refresh_windows();
+        }
+        if self.theme_project.as_ref() != Some(&self.workspace.project) {
+            self.theme_project = Some(self.workspace.project.clone());
         }
         if tweening() {
             window.request_animation_frame();
         }
-        if self.theme_project.as_ref() != Some(project) {
-            self.theme_project = Some(project.clone());
-        }
-        let glass = window_glass(p, system_light);
+        let glass = window_glass(&self.workspace.preferences, system_light(cx));
         if self.window_glass != Some(glass) {
             self.window_glass = Some(glass);
             window.set_background_appearance(crate::theme::window_backdrop(glass));
@@ -8376,6 +8449,22 @@ impl Render for Shell {
         let sidebar_width = self.workspace.sidebar_width * self.sidebar_fraction;
         if !self.window_observed {
             self.window_observed = true;
+            // The colors follow the shell's settings and project as it is
+            // notified, before the frame that draws it, and the system's
+            // light or dark, which nothing a view reads tells it of.
+            let shell = cx.entity();
+            self.observations
+                .push(App::observe(cx, &shell, |shell, cx| {
+                    Self::sync_theme(&shell, cx)
+                }));
+            let shell = shell.downgrade();
+            self.observations
+                .push(cx.on_window_appearance_change(move |cx| {
+                    if let Some(shell) = shell.upgrade() {
+                        Self::sync_theme(&shell, cx);
+                        shell.update(cx, |_, cx| cx.notify());
+                    }
+                }));
             self.shortcuts = Some(shortcuts::install(cx.weak_entity(), window, cx));
             self.observations
                 .push(cx.on_focus_lost(window, |this, window, cx| {
@@ -9078,6 +9167,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (window, a, b) = window(cx);
+        counting_renders(cx, window);
         let transcript = window
             .update(cx, |shell, _, cx| {
                 shell.sessions[&a].update(cx, |session, cx| {
@@ -11615,6 +11705,7 @@ mod tests {
     #[gpui::test]
     fn sidebar_hover_updates_labels_without_rebuilding_the_chat(cx: &mut TestAppContext) {
         let (window, _, active) = window(cx);
+        counting_renders(cx, window);
         let root = window.root(cx).unwrap();
         let transcript =
             root.read_with(cx, |s, cx| s.sessions[&active].read(cx).transcript.clone());
@@ -11720,6 +11811,15 @@ mod tests {
     pub(super) fn window(cx: &mut TestAppContext) -> (WindowHandle<Shell>, i64, i64) {
         let (window, a, b, ()) = seeded_window(cx, |_| {});
         (window, a, b)
+    }
+    /// Turns the retained check off for a test that counts renders: the
+    /// check draws each frame that drew anything again a second time, from
+    /// scratch, which runs every render again and counts with them.
+    pub(super) fn counting_renders(cx: &mut TestAppContext, window: WindowHandle<Shell>) {
+        cx.update_window(window.into(), |_, window, _| {
+            window.set_check_retained(None);
+        })
+        .unwrap();
     }
     /// [`window`], with `seed` writing to the engine's store before the shell opens, so the
     /// engine's workspace holds what it wrote.
@@ -11970,6 +12070,8 @@ mod tests {
             Arc::new(gpui_apple::AppleTextSystem::new()),
         );
         let (window, _, id) = window(cx);
+        // Measured as the app draws, unchecked, and counting renders.
+        counting_renders(cx, window);
         let transcript = window.update(cx, |shell, w, cx| {
             shell.open(id, w, cx);
             let session = shell.sessions[&id].clone();
@@ -12022,16 +12124,17 @@ mod tests {
                     })
                     .unwrap();
                 }
-                let (after, settled) = root.read_with(cx, |shell, _| {
-                    (shell.render_passes, shell.right_slide.is_none())
-                });
+                let after = root.read_with(cx, |shell, _| shell.render_passes);
                 let passes = after - before;
-                // Finishing the slide installs the settled panel layout and
-                // can notify the shell once more. Include that work in this
-                // sample; every other frame must still render exactly once.
+                // While the panel slides, the layout probes measure its new
+                // place each frame and tell the shell once the frame is drawn
+                // (popover::layout_probe): the app folds that into the next
+                // animation frame, the test platform draws it at once, so a
+                // sliding sample holds two renders. Finishing the slide can
+                // add the settled layout's. No sample holds more.
                 assert!(
-                    passes == 1 || (passes == 2 && sliding && settled),
-                    "expected one render, or two at settling; got {passes}"
+                    passes == 1 || (passes == 2 && sliding),
+                    "expected one render, or two while sliding; got {passes} (frame {frame})"
                 );
                 settling_passes += passes - 1;
                 frames.push(start.elapsed().as_secs_f64() * 1000.);
@@ -12992,6 +13095,7 @@ mod tests {
     #[gpui::test]
     fn typing_and_streaming_do_not_rebuild_sidebar_or_tabs(cx: &mut TestAppContext) {
         let (window, _, b) = window(cx);
+        counting_renders(cx, window);
         let root = window.root(cx).unwrap();
         let chrome = root.read_with(cx, |s, _| (s.sidebar_frame.clone(), s.tabs_frame.clone()));
         let before = (
@@ -13043,6 +13147,7 @@ mod tests {
     #[gpui::test]
     fn title_particle_frames_only_invalidate_the_sidebar(cx: &mut TestAppContext) {
         let (window, _, id) = window(cx);
+        counting_renders(cx, window);
         cx.update(|cx| cx.set_reduce_motion(false));
         // Blank tabs deliberately have no sidebar card. Mount a conversation
         // before changing its title, so this exercises an existing label.

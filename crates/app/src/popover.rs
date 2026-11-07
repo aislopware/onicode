@@ -230,15 +230,19 @@ impl AnchorSlot {
     }
 
     /// A probe for sizes the next render lays out from: a change of size
-    /// asks for another frame, so nothing waits on unrelated input to catch up.
+    /// notifies the view drawing the probe once the frame is drawn, so it is
+    /// built again from the new size rather than drawn from the last frame,
+    /// and nothing waits on unrelated input to catch up. (A refresh asked for
+    /// while drawing is dropped.)
     pub(crate) fn layout_probe(&self) -> impl IntoElement {
         let slot = self.clone();
         canvas(
-            move |bounds, window, _| {
+            move |bounds, window, cx| {
                 let changed = slot.get().is_none_or(|old| old.size != bounds.size);
                 slot.set(Some(bounds));
                 if changed {
-                    window.refresh();
+                    let view = window.current_view();
+                    cx.defer(move |cx| cx.notify(view));
                 }
             },
             |_, _, _, _| {},
@@ -1879,6 +1883,55 @@ mod tests {
             assert_eq!(entrance_offset(side, 0.), from);
             assert_eq!(entrance_offset(side, 1.), Point::default());
         }
+    }
+
+    /// Lays out from the size its probe measured, as the pane tree and the
+    /// composer's completion menu do.
+    struct ProbeHost {
+        bounds: AnchorSlot,
+        laid_out: Option<Pixels>,
+    }
+    impl Render for ProbeHost {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            self.laid_out = self.bounds.get().map(|b| b.size.width);
+            div().size_full().child(self.bounds.layout_probe())
+        }
+    }
+
+    /// A size the probe measures while the frame draws reaches its view's
+    /// next render, on the first frame and after a resize, though nothing
+    /// else notifies the view: retained, it would keep the size it read.
+    #[gpui::test]
+    fn a_layout_probe_builds_its_view_again_at_a_new_size(cx: &mut gpui::TestAppContext) {
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                window.set_check_retained(Some(gpui::RetainedCheck::Record));
+                cx.new(|_| ProbeHost {
+                    bounds: AnchorSlot::default(),
+                    laid_out: None,
+                })
+            })
+            .unwrap()
+        });
+        cx.run_until_parked();
+        let measured = |cx: &mut gpui::TestAppContext| {
+            window
+                .update(cx, |host, window, _| {
+                    (host.laid_out, window.viewport_size().width)
+                })
+                .unwrap()
+        };
+        let (laid_out, width) = measured(cx);
+        assert_eq!(laid_out, Some(width), "the first size measured is laid out");
+        cx.simulate_window_resize(window.into(), size(px(640.), px(480.)));
+        cx.run_until_parked();
+        let (laid_out, width) = measured(cx);
+        assert_eq!(width, px(640.));
+        assert_eq!(laid_out, Some(width), "the new size is laid out");
+        let reports = window
+            .update(cx, |_, window, _| window.take_retained_check_reports())
+            .unwrap();
+        assert_eq!(reports, Vec::<String>::new());
     }
 
     struct MotionHost {

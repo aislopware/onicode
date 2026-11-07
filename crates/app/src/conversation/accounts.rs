@@ -171,40 +171,6 @@ impl Conversation {
     /// Follows the engine's hold on this session's usage limit while it shows one: the reset the
     /// engine learned from the account's usage, and the resume the engine sent once an armed
     /// limit came due. The engine alone resumes; this view only stops showing what it took.
-    pub(super) fn sync_usage_limit(&mut self, cx: &mut Context<Self>) {
-        if self.busy || self.is_remote() || self.settings.usage_limit.is_none() {
-            return;
-        }
-        let record = self.session_call::<ReadSession>(None, |session| ReadSession { session }, cx);
-        cx.spawn(async move |this, cx| {
-            let Ok(record) = record.await else {
-                return;
-            };
-            let held = record.settings.and_then(|settings| settings.usage_limit);
-            let _ = this.update(cx, |this, cx| {
-                if this.busy {
-                    return;
-                }
-                let Some(limit) = this.settings.usage_limit.as_mut() else {
-                    return;
-                };
-                match held {
-                    Some(held) if limit.resets_at.is_none() && held.resets_at.is_some() => {
-                        limit.resets_at = held.resets_at;
-                        cx.notify();
-                    }
-                    None if limit.resume_at_reset && !limit.waiting(usage::now_ms()) => {
-                        this.settings.usage_limit = None;
-                        cx.emit(SessionChanged);
-                        cx.notify();
-                    }
-                    _ => {}
-                }
-            });
-        })
-        .detach();
-    }
-
     /// The person's Continue: a prompt like any other, which the engine runs and which lifts the
     /// limit as every turn does.
     pub(crate) fn resume_usage(&mut self, cx: &mut Context<Self>) {

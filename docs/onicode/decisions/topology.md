@@ -12,11 +12,11 @@ Thin clients (iOS, `onicode-client`) dial every engine directly. On macOS a thin
 the Tailscale LocalAPI, as an engine does. iOS has no LocalAPI to read, so the phone keeps a list of engines the
 person typed (`EngineList`: MagicDNS names or tailnet addresses), dials each over QUIC, and each engine admits the
 phone by its own whois of the phone's address. `NWPathMonitor` redials the links at once on a network handover
-(`PeerLinks::follow_path`). The host device stays the sole executor of a chat;
-session documents sync replica to replica by Loro version vectors; registry rows replicate with a per-origin
-version vector. Research: `.research/p2p-transport.md` (local only).
+(`PeerLinks::follow_path`). A session's host engine is its only writer; every other device watches it and sends
+commands (`engine.md`, "Authority"), and nothing is replicated. Research: `.research/p2p-transport.md` (local
+only).
 
-The engine joins the tailnet itself: on boot (`EngineConfig.peers`) it binds a `PeerEndpoint` as `Role::Engine`,
+The engine joins the tailnet itself: on start (unless `ONICODE_PEERS=0`) it binds a `PeerEndpoint` as `Role::Engine`,
 discovers the other engines through `PeerDirectory`, and serves its own RPC to them through `PeerLinks`. Forwarded
 calls and subscriptions take that link. Links are admitted by tailscale whois alone. Tests and fixtures never join the real
 tailnet: they run engines over `onicode-net-sim`, whose seeded tailnet gives each engine its own node.

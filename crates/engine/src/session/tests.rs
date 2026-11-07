@@ -2321,6 +2321,8 @@ struct ResumeWorld {
     /// A message of the person's own went in while the limit was armed or its resume in
     /// flight: it, not the resume, continued the conversation.
     superseded: bool,
+    /// Due ticks so far: each lands one backoff cap later than the last.
+    due_beats: i64,
 }
 
 impl ResumeWorld {
@@ -2335,6 +2337,7 @@ impl ResumeWorld {
             prompted: std::collections::HashSet::new(),
             spoken: 0,
             superseded: false,
+            due_beats: 0,
         };
         // What a real turn's start saves.
         locked(&world.harness.store)
@@ -2460,7 +2463,12 @@ impl ResumeWorld {
         match step {
             Resume::Tick { due } => {
                 let armed = self.armed() || self.in_flight();
-                let now = if *due { RESET + 30_000 } else { RESET - 1 };
+                let now = if *due {
+                    self.due_beats += 1;
+                    RESET + 30_000 + self.due_beats * 900_000
+                } else {
+                    RESET - 1
+                };
                 let idle = self.running.is_none();
                 let now = u64::try_from(now).unwrap();
                 assert_eq!(self.harness.hub.resume_limits(now), Ok(()));

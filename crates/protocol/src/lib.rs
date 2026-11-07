@@ -11,6 +11,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 pub mod agents;
+pub mod alerts;
 pub mod app_access;
 pub mod b64;
 pub mod engine;
@@ -24,12 +25,12 @@ pub mod terminal;
 pub mod work;
 pub mod workspace;
 
-pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
+pub use ids::{EngineId, MessageId, OpId, ProjectRef, SessionId, SessionKey, TerminalId};
 
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 9;
+pub const PROTOCOL: u32 = 10;
 
 /// One request and its reply.
 pub trait Call {
@@ -76,7 +77,9 @@ pub enum Item<S, E> {
     Resync,
 }
 
-/// A call's or a watch's params on their way to an engine.
+/// A call's or a watch's params on their way to an engine. The app speaks only to its own engine,
+/// which serves what names it (or nothing) and forwards the rest to the engine named, over the
+/// tailnet; a peer's engine serves only what names it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Routed<T> {
     /// The engine that serves it; `None` is the engine this connection reaches.
@@ -146,6 +149,8 @@ pub const METHODS: &[Method] = &[
     call::<engine::UpdateEngine>(),
     call::<engine::StopEngine>(),
     call::<engine::ResolveSession>(),
+    watch::<engine::WatchMachines>(),
+    call::<engine::EngineLoad>(),
     // Session.
     watch::<session::WatchSession>(),
     call::<session::Send>(),
@@ -319,6 +324,9 @@ pub const METHODS: &[Method] = &[
     call::<app_access::AppNotes>(),
     // Settings pages.
     call::<settings_pages::ReadWorktreeMarks>(),
+    // Alerts.
+    watch::<alerts::WatchAlerts>(),
+    call::<alerts::SetViewportFocus>(),
 ];
 
 /// The row of [`METHODS`] named `name`.

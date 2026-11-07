@@ -9,7 +9,9 @@
 //! calls its protocol marks as an agent's, and until a connection has greeted the engine with its
 //! `PROTOCOL` only the frozen calls are answered. The engine beats its own schedulers and sweeps
 //! deleted conversations; `StopEngine`, `SIGTERM` or `SIGINT` stop it, removing the socket before
-//! the lock goes, and its agents die with it.
+//! the lock goes, and its agents die with it. The process also joins the tailnet
+//! ([`Host::on_tailnet`], unless `ONICODE_PEERS=0`): as soon as Tailscale is up it serves its peers
+//! and forwards what its viewers send other engines (`peers.rs`, `router.rs`).
 use std::collections::HashSet;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -32,7 +34,7 @@ mod tests;
 pub use lock::{Holder, InstanceLock, LOCK, build_stamp, stop_holder};
 
 use crate::local::{Local, Options};
-use crate::service::EngineService;
+use crate::router::Router;
 use crate::session::ThreadSpawn;
 
 /// The socket inside the data dir.
@@ -58,7 +60,7 @@ pub fn prepare_dir(dir: &Path) -> std::io::Result<()> {
 
 /// The calls answered before a connection greets the engine with its own `PROTOCOL`: their shapes
 /// never change, so a viewer on another protocol can still say "Needs update".
-const FROZEN: [&str; 3] = [Hello::NAME, EngineInfo::NAME, UpdateEngine::NAME];
+pub(crate) const FROZEN: [&str; 3] = [Hello::NAME, EngineInfo::NAME, UpdateEngine::NAME];
 
 /// The calls an agent's scoped token may make (`Call::AGENT`).
 static AGENT_CALLS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
@@ -71,7 +73,7 @@ static AGENT_CALLS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
 
 /// One admitted connection's view of the engine.
 struct Admitted {
-    service: Arc<EngineService>,
+    service: Arc<Router>,
     /// The chat an agent's server says it serves, for an agent's connection.
     agent: Option<Option<String>>,
     /// The connection said `Hello` with this engine's `PROTOCOL`.
@@ -79,7 +81,7 @@ struct Admitted {
 }
 
 impl Admitted {
-    fn new(service: Arc<EngineService>, admission: Admission) -> Self {
+    fn new(service: Arc<Router>, admission: Admission) -> Self {
         Self {
             service,
             agent: (admission.scope == Scope::Agent).then_some(admission.chat),
@@ -127,6 +129,8 @@ pub struct Host {
     tokens: IpcTokens,
     uid: u32,
     beat: Option<Duration>,
+    /// Join the tailnet while serving.
+    tailnet: bool,
 }
 
 impl Host {
@@ -173,6 +177,7 @@ impl Host {
             tokens,
             uid,
             beat: None,
+            tailnet: false,
         }))
     }
 
@@ -181,6 +186,14 @@ impl Host {
     #[must_use]
     pub fn beating(mut self, beat: Duration) -> Self {
         self.beat = Some(beat);
+        self
+    }
+
+    /// This host, joining the tailnet as soon as Tailscale is up. Off it (a test's host), the
+    /// engine serves only its socket, and calls for other engines wait in its outbox.
+    #[must_use]
+    pub fn on_tailnet(mut self) -> Self {
+        self.tailnet = true;
         self
     }
 
@@ -201,6 +214,7 @@ impl Host {
             tokens,
             uid,
             beat,
+            tailnet,
         } = self;
         let service = local.service.clone();
         let serving = onicode_rpc::serve_unix(listener, Gate { tokens, uid }, move |admission| {
@@ -230,6 +244,27 @@ impl Host {
                 }
             }
         };
+        let joining = local.clone();
+        let peering_dir = dir.clone();
+        let peering = async move {
+            if tailnet {
+                let peers = crate::peers::Peers::join(&peering_dir, joining.peer_service()).await;
+                joining.join(peers);
+            }
+            std::future::pending::<()>().await;
+        };
+        let alerting = crate::alerts::pump(
+            local.alerts.clone(),
+            local.workspace.clone(),
+            local.session.clone(),
+            local.terminal.clone(),
+        );
+        let keeping_awake = crate::keep_awake::run(
+            local.workspace.clone(),
+            local.terminal.clone(),
+            local.settings.clone(),
+            crate::keep_awake::system(),
+        );
         let stopped = async {
             local.stopped().await;
             tokio::time::sleep(STOP_GRACE).await;
@@ -237,6 +272,9 @@ impl Host {
         tokio::select! {
             () = serving => {}
             () = beating => {}
+            () = peering => {}
+            () = alerting => {}
+            () = keeping_awake => {}
             () = stopped => {}
             () = until => {}
         }
@@ -276,7 +314,15 @@ pub fn run(dir: &Path) -> Result<(), String> {
     let served = runtime.block_on(async {
         let open = |dir: &Path| Local::open(dir, Arc::new(ThreadSpawn), Options::default());
         match Host::bind(dir, open)? {
-            Some(host) => host.beating(BEAT).serve(terminated()).await,
+            Some(host) => {
+                let host = host.beating(BEAT);
+                let host = if crate::peers::enabled() {
+                    host.on_tailnet()
+                } else {
+                    host
+                };
+                host.serve(terminated()).await;
+            }
             None => eprintln!("Another engine serves {}", dir.display()),
         }
         Ok(())

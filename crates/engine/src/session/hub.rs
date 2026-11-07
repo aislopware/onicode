@@ -286,6 +286,16 @@ impl SessionHub {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// How many sessions have a turn running now: the engine's live agents, as the machines list
+    /// shows them.
+    pub fn live_agents(&self) -> usize {
+        self.lock()
+            .sessions
+            .values()
+            .filter(|live| live.turn.is_some())
+            .count()
+    }
+
     /// The protocol id of the store's session `id`.
     pub fn session_id(&self, id: i64) -> Result<SessionId, String> {
         locked(&self.store)?.session_uid(id).map(SessionId)
@@ -704,7 +714,11 @@ impl SessionHub {
         }
         if finished {
             if resuming {
-                events.extend(self.resume_ended(resumes, live.id, started, cancelled));
+                let reason = match &status {
+                    Some(SessionEvent::Status { status, .. }) => status.as_str(),
+                    _ => "",
+                };
+                events.extend(self.resume_ended(resumes, live.id, started, cancelled, reason));
             }
             if let Some(limit) = limited {
                 events.extend(self.hold_limit(live.id, limit, reported));

@@ -104,6 +104,10 @@ impl Target {
         expect(dead_code, reason = "only macOS reports which notification was opened")
     )]
     pub fn from_tag(tag: &str) -> Option<Self> {
+        // An agent alert, posted by the app or by the engine while the app was closed.
+        if let Some(row) = onicode_protocol::alerts::alert_row(tag) {
+            return Some(Self::Session(row));
+        }
         if let Some(rest) = tag.strip_prefix("onicode-session:") {
             let (id, sequence) = rest.split_once(':')?;
             sequence.parse::<u64>().ok()?;

@@ -3,8 +3,9 @@
 //! The engine carries no media and captures nothing (its Screen Recording grant would be the
 //! app's): it brokers. `OpenDesktop` makes sure desktopd runs (launchd starts it as the app's
 //! login-item agent) and answers with a [`DesktopEndpoint`]; the client dials that directly.
-//! The methods are `onicode_rpc::methods::{OPEN_DESKTOP, DESKTOP_GRANTS, DESKTOP_OPEN_GUIDE}`,
-//! forwardable, so a client reaches any Mac's engine through its own.
+//! The engine's calls are `OpenDesktop`, `DesktopGrants` and `DesktopOpenGuide`
+//! (`docs/onicode/decisions/remote-desktop.md`), forwardable, so a client reaches any Mac's engine
+//! through its own.
 
 use std::net::SocketAddr;
 

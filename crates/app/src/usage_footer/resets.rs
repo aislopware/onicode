@@ -19,7 +19,13 @@ impl UsageFooter {
                 .is_some_and(|credits| credits.available_count > 0)
     }
 
-    pub(super) fn banked_resets(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    /// The Codex banked resets, their expiry told against `now` (Unix
+    /// milliseconds).
+    pub(super) fn banked_resets(
+        &self,
+        now: i64,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
         if self.kind != Kind::Codex {
             return None;
         }
@@ -78,6 +84,7 @@ impl UsageFooter {
                                 row,
                                 selected && busy,
                                 busy || spent || center.is_none(),
+                                now,
                                 cx,
                             )
                         })),
@@ -108,10 +115,10 @@ impl UsageFooter {
         row: &ResetRow,
         applying: bool,
         disabled: bool,
+        now: i64,
         cx: &mut Context<Self>,
     ) -> gpui::AnyElement {
         let confirming = self.confirm_reset.as_ref() == Some(&row.key) && !disabled;
-        let now = usage::now_ms();
         let expiry = match row.credit.as_ref().and_then(|c| c.expires_at) {
             None => "Expiry not provided".into(),
             Some(at) if at <= now => "Expires now".into(),

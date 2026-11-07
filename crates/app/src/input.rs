@@ -1878,13 +1878,46 @@ impl Element for InputElement {
                 );
             }
         });
-        self.input.update(cx, |i, _| {
-            i.lines = std::mem::take(&mut state.lines);
-            i.bounds = Some(bounds);
-            i.scroll_x = state.scroll.x;
-            i.scroll_y = state.scroll.y;
-        });
+        // Writing the input while it draws counts as a change for every view
+        // that reads it, which would build them again after every paint: hand
+        // the hit tests a new layout only when it differs.
+        let i = self.input.read(cx);
+        let unchanged = i.bounds == Some(bounds)
+            && i.scroll_x == state.scroll.x
+            && i.scroll_y == state.scroll.y
+            && same_lines(&i.lines, &state.lines);
+        if !unchanged {
+            self.input.update(cx, |i, _| {
+                i.lines = std::mem::take(&mut state.lines);
+                i.bounds = Some(bounds);
+                i.scroll_x = state.scroll.x;
+                i.scroll_y = state.scroll.y;
+            });
+        }
     }
+}
+
+/// Whether two layouts of the input's lines place every glyph alike: the same
+/// text, shaped in the same font at the same size and wrapped at the same
+/// places.
+fn same_lines(a: &[WrappedLine], b: &[WrappedLine]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same_line(a, b))
+}
+
+/// [`same_lines`] for one line.
+fn same_line(a: &WrappedLine, b: &WrappedLine) -> bool {
+    let (x, y) = (&a.unwrapped_layout, &b.unwrapped_layout);
+    let fonts = x.runs.len() == y.runs.len()
+        && x.runs
+            .iter()
+            .zip(&y.runs)
+            .all(|(p, q)| p.font_id == q.font_id);
+    a.text == b.text
+        && a.wrap_boundaries == b.wrap_boundaries
+        && a.wrap_width == b.wrap_width
+        && x.font_size == y.font_size
+        && x.width == y.width
+        && fonts
 }
 impl Render for Input {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2056,6 +2089,57 @@ mod native_input_tests {
             .unwrap();
         cx.refresh().unwrap();
         window
+    }
+    /// The input hands its hit tests the lines it painted. Painted again
+    /// unchanged, it leaves them be: updating it while it draws would build
+    /// every view that reads it again on the next frame.
+    #[gpui::test]
+    fn painting_an_unchanged_input_leaves_its_readers_retained(cx: &mut TestAppContext) {
+        struct Host {
+            input: Entity<Input>,
+            renders: usize,
+        }
+        impl Render for Host {
+            fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+                self.renders += 1;
+                let empty = self.input.read(cx).content.is_empty();
+                div()
+                    .size_full()
+                    .child(if empty { "empty" } else { "draft" })
+                    .child(self.input.clone())
+            }
+        }
+        let window = cx.update(|cx| {
+            bind(cx);
+            cx.open_window(WindowOptions::default(), |window, cx| {
+                // The check's frame from scratch runs every render again,
+                // which would count here.
+                window.set_check_retained(None);
+                let input = cx.new(Input::new);
+                cx.new(|_| Host { input, renders: 0 })
+            })
+            .unwrap()
+        });
+        cx.run_until_parked();
+        let input = window.update(cx, |host, _, _| host.input.clone()).unwrap();
+        // Repainted as a scroll or an animation repaints it: notified, not changed.
+        let repaint = |cx: &mut TestAppContext| {
+            cx.update(|cx| cx.notify(input.entity_id()));
+            cx.run_until_parked();
+        };
+        repaint(cx);
+        let before = window.update(cx, |host, _, _| host.renders).unwrap();
+        for _ in 0..3 {
+            repaint(cx);
+        }
+        window
+            .update(cx, |host, _, _| {
+                assert_eq!(
+                    host.renders, before,
+                    "the host is drawn from the last frame"
+                );
+            })
+            .unwrap();
     }
     #[gpui::test]
     fn context_menu_preserves_selection_copies_pastes_and_restores_focus(cx: &mut TestAppContext) {

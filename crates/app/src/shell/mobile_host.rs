@@ -1885,15 +1885,23 @@ mod tests {
                         None,
                         cx,
                     );
+                });
+                conversation
+            })
+            .unwrap();
+        // The saved settings reach the view through the engine's watch; the turn's limit lands
+        // after them, as it does when a turn ends at one.
+        cx.run_until_parked();
+        window
+            .update(cx, |shell, _, cx| {
+                shell.sessions[&id].update(cx, |v, _| {
                     v.settings.usage_limit = Some(onicode_protocol::usage::Limit {
                         resets_at: Some(onicode_protocol::usage::now_ms() + 60_000),
                         resume_at_reset: false,
                     });
                 });
-                conversation
             })
             .unwrap();
-        cx.run_until_parked();
         window
             .update(cx, |shell, _, cx| {
                 // The engine holds the limit a turn ended at; the phone arms that one.

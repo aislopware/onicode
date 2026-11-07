@@ -1691,9 +1691,11 @@ impl Render for DiffView {
                     .child(
                         canvas(
                             move |bounds, _, cx| {
-                                // A new width moves the scroll limits: lay out again.
+                                // A new width moves the scroll limits: lay out again,
+                                // once this frame is drawn, since a notify while
+                                // drawing asks for no frame.
                                 if viewport.get().is_none_or(|old| old.size != bounds.size) {
-                                    cx.notify(view_id);
+                                    cx.defer(move |cx| cx.notify(view_id));
                                 }
                                 viewport.set(Some(bounds));
                             },
@@ -1875,12 +1877,63 @@ mod tests {
             })
             .unwrap();
     }
+    /// Render clamps the sideways scroll to limits the viewport it measured
+    /// while drawing sets. A new size is told once that frame is drawn, so the
+    /// scroll is clamped on the next frame, with nothing left for a later one.
+    #[gpui::test]
+    fn a_wider_pane_clamps_the_sideways_scroll_on_the_next_frame(cx: &mut gpui::TestAppContext) {
+        use gpui::size;
+        let wide: String = (0..20)
+            .map(|i| format!("{i} {}\n", "x".repeat(300)))
+            .collect();
+        let edited = wide.replacen("1 x", "1 y", 1);
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |window, cx| {
+                window.set_check_retained(Some(gpui::RetainedCheck::Record));
+                cx.new(DiffView::new)
+            })
+            .unwrap()
+        });
+        let cx = &mut gpui::VisualTestContext::from_window(window.into(), cx);
+        cx.simulate_window_resize(window.into(), size(px(900.), px(600.)));
+        window
+            .update(cx, |view, _, cx| {
+                view.set_files(vec![file("a.rs", &wide, &edited)], cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |view, _, cx| {
+                view.scroll_x = view.max_scroll_x();
+                assert!(view.scroll_x > 0.);
+                cx.notify();
+            })
+            .unwrap();
+        cx.run_until_parked();
+        let narrow = window.update(cx, |view, _, _| view.scroll_x).unwrap();
+        cx.simulate_window_resize(window.into(), size(px(1500.), px(600.)));
+        cx.run_until_parked();
+        window
+            .update(cx, |view, window, _| {
+                assert!(view.scroll_x < narrow, "a wider lane scrolls less far");
+                assert_eq!(view.scroll_x, view.max_scroll_x());
+                assert_eq!(window.take_retained_check_reports(), Vec::<String>::new());
+            })
+            .unwrap();
+    }
     #[cfg(target_os = "macos")]
     #[gpui::test]
     fn sticky_header_retains_its_translucent_blur_surface(cx: &mut gpui::TestAppContext) {
         let long: String = (0..60).map(|i| format!("line {i}\n")).collect();
+        // Short enough that the hunk scrolls, so the header stays pinned once laid out.
         let window = cx.update(|cx| {
-            cx.open_window(Default::default(), |_, cx| cx.new(DiffView::new))
+            let bounds =
+                gpui::Bounds::new(gpui::point(px(0.), px(0.)), gpui::size(px(800.), px(160.)));
+            let options = gpui::WindowOptions {
+                window_bounds: Some(gpui::WindowBounds::Windowed(bounds)),
+                ..Default::default()
+            };
+            cx.open_window(options, |_, cx| cx.new(DiffView::new))
                 .unwrap()
         });
         window

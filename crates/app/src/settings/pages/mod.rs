@@ -35,7 +35,7 @@ impl SettingsView {
             Section::Appearance => self.appearance_page(window, cx),
             Section::Keybindings => self.keybindings_page(cx),
             Section::Chat => self.chat_page(cx),
-            Section::Providers => self.providers_page(cx),
+            Section::Providers => self.providers_page(window, cx),
             Section::Mcp => self.mcp_page(cx),
             Section::Skills => self.skills_page(cx),
             Section::Inbox => self.inbox_page(cx),

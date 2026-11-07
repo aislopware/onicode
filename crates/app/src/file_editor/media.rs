@@ -215,12 +215,17 @@ impl MediaPreview {
         self.image.is_none() && self.size == size && self.modified == modified
     }
 
-    pub(super) fn set_visible(&mut self, visible: bool) {
+    pub(super) fn set_visible(&mut self, visible: bool, cx: &mut Context<Self>) {
+        if self.visible == visible {
+            return;
+        }
         self.visible = visible;
         #[cfg(target_os = "macos")]
         if !visible && let Some(video) = &self.video {
             video.hide();
         }
+        // The native player is placed, and shown again, as the view paints.
+        cx.notify();
     }
 
     fn scale(&self) -> f32 {
@@ -408,7 +413,12 @@ impl gpui::Render for MediaPreview {
                             let b = viewport_scroll.bounds();
                             if bounds.get() != Some(b) {
                                 bounds.set(Some(b));
-                                let _ = entity.update(cx, |_, cx| cx.notify());
+                                // Render fits the image to these bounds; a notify
+                                // while drawing asks for no frame, so it waits
+                                // until this one is drawn.
+                                cx.defer(move |cx| {
+                                    let _ = entity.update(cx, |_, cx| cx.notify());
+                                });
                             }
                             let tile = 8.;
                             for row in 0..(b.size.height.as_f32() / tile).ceil() as usize {

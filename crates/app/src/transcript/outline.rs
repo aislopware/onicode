@@ -98,7 +98,7 @@ impl TranscriptView {
         let active = self.measure_active();
         if self.outline.active != active {
             self.outline.active = active;
-            cx.notify();
+            Self::notify_after_draw(cx);
         }
     }
 

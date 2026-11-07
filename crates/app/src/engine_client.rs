@@ -17,6 +17,14 @@
 //! Changes, review, history and worktree views read and change files and checkouts through the
 //! app's own engine ([`local`]).
 //!
+//! Every call and watch names the engine that serves it (`Routed.engine`): `None` for the app's
+//! own, or another engine on the tailnet, which the app's own engine forwards to (engine.md,
+//! "Step 9 as built"). [`Engine::on`] is the same connection aimed at another engine; the app never
+//! dials one itself. The machines the app's engine knows are mirrored like the workspace, so a
+//! turn for another engine's session knows at once whether that engine is reachable; while it is
+//! not, the turn is refused with a status saying so and the conversation keeps what it last saw,
+//! read-only. A mutating call made meanwhile waits in the app's engine's outbox.
+//!
 //! Tests run an engine in memory and call its service in place, on gpui's deterministic
 //! executors (`Engine::memory`, built only for tests).
 use std::collections::HashMap;
@@ -32,18 +40,24 @@ use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use gpui::{App, BackgroundExecutor, Global, Task};
 use onicode_engine::link::{SocketDoor, Timing};
-use onicode_engine::session::{Expect, Viewer};
+use onicode_engine::session::{Expect, Viewer, apply};
 use onicode_engine::turn::{Database, Update};
 use onicode_protocol::agent::{Control, Decision, Settings};
-use onicode_protocol::engine::ResolveSession;
+use onicode_protocol::engine::{
+    MachineEvent, MachineKind, MachineLink, Machines, ResolveSession, WatchMachines,
+};
 use onicode_protocol::engine_settings::{EngineSettings, EngineSettingsEvent, WatchEngineSettings};
 use onicode_protocol::session::{
     self, Answer, Decide, KeepQuestionOpen, SessionEvent, SessionState, SteerNow, Stop,
     TurnContext, Verdict, WatchSession,
 };
 use onicode_protocol::sessions::Session;
+use onicode_protocol::transcript::Row;
+use onicode_protocol::usage::Limit;
 use onicode_protocol::workspace::{WatchWorkspace, WorkspaceEvent, WorkspaceState};
-use onicode_protocol::{Call, Cursor, Item, MessageId, OpId, Outcome, Routed, SessionId, Watch};
+use onicode_protocol::{
+    Call, Cursor, EngineId, Item, MessageId, OpId, Outcome, Routed, SessionId, Watch,
+};
 #[cfg(test)]
 use onicode_rpc::RpcService as _;
 use onicode_rpc::RpcSubscription;
@@ -75,11 +89,12 @@ struct LocalEngine(Engine);
 
 impl Global for LocalEngine {}
 
-/// The workspace and engine settings as this viewer last saw them.
+/// The workspace, engine settings and machines as this viewer last saw them.
 #[derive(Default, Serialize, Deserialize)]
 struct Seen {
     workspace: Option<WorkspaceState>,
     settings: Option<EngineSettings>,
+    machines: Option<Machines>,
 }
 
 /// [`Seen`], followed from the engine's watches and kept on disk, so a window's first frame
@@ -171,6 +186,19 @@ fn fold_settings(seen: &mut Seen, update: WatchUpdate<EngineSettings, EngineSett
     }
 }
 
+fn fold_machines(seen: &mut Seen, update: WatchUpdate<Machines, MachineEvent>) {
+    match update {
+        WatchUpdate::Snapshot(machines) => seen.machines = Some(*machines),
+        WatchUpdate::Events(events) => {
+            if let Some(machines) = seen.machines.as_mut() {
+                for event in &events {
+                    machines.apply(event);
+                }
+            }
+        }
+    }
+}
+
 enum Link {
     /// The engine process, over its socket, served on the link's tokio thread.
     Socket {
@@ -237,8 +265,9 @@ impl onicode_engine::workspace::Chores for TestChores {
 pub(crate) struct EngineClient {
     link: Link,
     executor: BackgroundExecutor,
-    /// Each stored session's engine id, as the engine named it; a session keeps its id.
-    sessions: Mutex<HashMap<i64, SessionId>>,
+    /// Each stored session's id, by the engine that stores it (`None`: the app's own) and its
+    /// row there, as that engine named it; a session keeps its id.
+    sessions: Mutex<HashMap<(Option<EngineId>, i64), SessionId>>,
     /// Every call made, by name with its routed params, for a test to assert on.
     #[cfg(test)]
     calls: Mutex<Vec<(&'static str, serde_json::Value)>>,
@@ -323,9 +352,16 @@ impl EngineClient {
         }
     }
 
-    async fn call<C: Call>(&self, op: Option<OpId>, body: C::Params) -> Result<C::Reply, String> {
+    /// Makes call `C` of the engine `target` names (`None`: the app's own), through the app's own
+    /// engine.
+    async fn call<C: Call>(
+        &self,
+        target: Option<&EngineId>,
+        op: Option<OpId>,
+        body: C::Params,
+    ) -> Result<C::Reply, String> {
         let params = serde_json::to_value(Routed {
-            engine: None,
+            engine: target.cloned(),
             op,
             body,
         })
@@ -353,8 +389,10 @@ impl EngineClient {
         serde_json::from_value(reply).map_err(|error| error.to_string())
     }
 
+    /// Watches `W` on the engine `target` names, through the app's own engine.
     async fn watch<W: Watch>(
         &self,
+        target: Option<&EngineId>,
         body: W::Params,
     ) -> Result<BoxStream<'static, Item<W::State, W::Event>>, String>
     where
@@ -362,7 +400,7 @@ impl EngineClient {
         W::Event: Send + 'static,
     {
         let params = serde_json::to_value(Routed {
-            engine: None,
+            engine: target.cloned(),
             op: None,
             body,
         })
@@ -384,28 +422,58 @@ impl EngineClient {
         }
     }
 
-    /// The engine id of the session stored at `row`.
-    async fn session_id(&self, row: i64) -> Result<SessionId, String> {
+    /// The machines the app's own engine knows, as last seen: kept across launches like the
+    /// workspace, `None` before the engine first answered.
+    fn machines_now(&self) -> Option<Machines> {
+        match &self.link {
+            Link::Socket { mirror, .. } => mirror
+                .seen
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .machines
+                .clone(),
+            #[cfg(test)]
+            Link::Direct(local) => Some(local.machines.current()),
+        }
+    }
+
+    /// Whether the engine `target` names answers now: the app's own always does; another while
+    /// the app's engine holds a live link to it.
+    fn reachable(&self, target: Option<&EngineId>) -> bool {
+        let Some(target) = target else {
+            return true;
+        };
+        self.machines_now()
+            .and_then(|machines| machines.get(target).cloned())
+            .is_some_and(|machine| {
+                matches!(machine.kind, MachineKind::This)
+                    || matches!(machine.link, MachineLink::Here | MachineLink::Live)
+            })
+    }
+
+    /// The id of the session stored at `row` in the engine `target` names.
+    async fn session_id(&self, target: Option<&EngineId>, row: i64) -> Result<SessionId, String> {
+        let key = (target.cloned(), row);
         if let Some(session) = self
             .sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .get(&row)
+            .get(&key)
         {
             return Ok(*session);
         }
-        let session = match &self.link {
-            Link::Socket { link, .. } => link
-                .ask::<ResolveSession>(None, ResolveSession { row })
+        let session = match (&self.link, target) {
+            #[cfg(test)]
+            (Link::Direct(local), None) => local.session.session_id(row)?,
+            _ => self
+                .call::<ResolveSession>(target, None, ResolveSession { row })
                 .await?
                 .ok_or("Session no longer exists")?,
-            #[cfg(test)]
-            Link::Direct(local) => local.session.session_id(row)?,
         };
         self.sessions
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(row, session);
+            .insert(key, session);
         Ok(session)
     }
 }
@@ -424,7 +492,7 @@ fn follow<W: Watch + 'static>(
     let (updates, received) = async_channel::unbounded();
     engine
         .executor
-        .spawn(resume::<W>(engine.clone(), params, updates))
+        .spawn(resume::<W>(engine.clone(), None, params, updates))
         .detach();
     let mirror = mirror.clone();
     engine
@@ -479,6 +547,14 @@ impl TurnControls {
     pub(crate) fn is_engine(&self) -> bool {
         matches!(self, Self::Engine(_))
     }
+
+    /// The prompt this view sent, for a turn the engine runs.
+    pub(crate) fn message(&self) -> Option<MessageId> {
+        match self {
+            Self::Channel(_) => None,
+            Self::Engine(engine) => engine.turn.message,
+        }
+    }
 }
 
 impl From<mpsc::Sender<Control>> for TurnControls {
@@ -489,7 +565,9 @@ impl From<mpsc::Sender<Control>> for TurnControls {
 
 /// What a turn's controls and its forwarder share.
 struct Turn {
-    /// The session's stored row.
+    /// The engine that stores the session and runs the turn (`None`: the app's own).
+    target: Option<EngineId>,
+    /// The session's row in that engine's store.
     row: i64,
     viewer: Mutex<Viewer>,
     /// Wakes the forwarder to hand the conversation what the viewer holds now.
@@ -498,6 +576,8 @@ struct Turn {
     cancel: Arc<AtomicBool>,
     /// The forwarder saw the turn end.
     finished: AtomicBool,
+    /// The prompt this view sent for the turn (`None`: a turn the view joined).
+    message: Option<MessageId>,
 }
 
 impl Turn {
@@ -508,7 +588,12 @@ impl Turn {
 
 /// A Session call for a turn, made once its session's engine id is known.
 type Ask = Box<
-    dyn FnOnce(Arc<EngineClient>, SessionId) -> BoxFuture<'static, Result<Outcome, String>> + Send,
+    dyn FnOnce(
+            Arc<EngineClient>,
+            Option<EngineId>,
+            SessionId,
+        ) -> BoxFuture<'static, Result<Outcome, String>>
+        + Send,
 >;
 
 pub(crate) struct EngineControls {
@@ -535,28 +620,38 @@ impl EngineControls {
                     return;
                 };
                 lock(&self.turn.viewer).expect(op, Expect::Steer { id: message.id });
-                Box::new(move |engine, session| {
+                Box::new(move |engine, target, session| {
                     let body = SteerNow {
                         session,
                         id: queued,
                     };
-                    async move { engine.call::<SteerNow>(Some(op), body).await }.boxed()
+                    async move {
+                        engine
+                            .call::<SteerNow>(target.as_ref(), Some(op), body)
+                            .await
+                    }
+                    .boxed()
                 })
             }
-            Decision::Answer(answers) => Box::new(move |engine, session| {
+            Decision::Answer(answers) => Box::new(move |engine, target, session| {
                 let body = Answer {
                     session,
                     question: id,
                     answers,
                 };
-                async move { engine.call::<Answer>(Some(op), body).await }.boxed()
+                async move { engine.call::<Answer>(target.as_ref(), Some(op), body).await }.boxed()
             }),
-            Decision::KeepOpen => Box::new(move |engine, session| {
+            Decision::KeepOpen => Box::new(move |engine, target, session| {
                 let body = KeepQuestionOpen {
                     session,
                     question: id,
                 };
-                async move { engine.call::<KeepQuestionOpen>(Some(op), body).await }.boxed()
+                async move {
+                    engine
+                        .call::<KeepQuestionOpen>(target.as_ref(), Some(op), body)
+                        .await
+                }
+                .boxed()
             }),
             decision => {
                 let answer = match decision {
@@ -564,24 +659,25 @@ impl EngineControls {
                     Decision::Session => Verdict::AllowForSession,
                     _ => Verdict::Deny,
                 };
-                Box::new(move |engine, session| {
+                Box::new(move |engine, target, session| {
                     let body = Decide {
                         session,
                         approval: id,
                         answer,
                     };
-                    async move { engine.call::<Decide>(Some(op), body).await }.boxed()
+                    async move { engine.call::<Decide>(target.as_ref(), Some(op), body).await }
+                        .boxed()
                 })
             }
         };
         let engine = self.engine.clone();
-        let row = self.turn.row;
+        let (target, row) = (self.turn.target.clone(), self.turn.row);
         self.engine
             .executor
             .spawn(async move {
                 // Applied or not, the turn's events say what became of it.
-                if let Ok(session) = engine.session_id(row).await {
-                    let _ = ask(engine, session).await;
+                if let Ok(session) = engine.session_id(target.as_ref(), row).await {
+                    let _ = ask(engine, target, session).await;
                 }
             })
             .detach();
@@ -596,13 +692,13 @@ impl Drop for EngineControls {
             return;
         }
         let engine = self.engine.clone();
-        let row = self.turn.row;
+        let (target, row) = (self.turn.target.clone(), self.turn.row);
         self.engine
             .executor
             .spawn(async move {
-                if let Ok(session) = engine.session_id(row).await {
+                if let Ok(session) = engine.session_id(target.as_ref(), row).await {
                     let _ = engine
-                        .call::<Stop>(Some(OpId::new()), Stop { session })
+                        .call::<Stop>(target.as_ref(), Some(OpId::new()), Stop { session })
                         .await;
                 }
             })
@@ -610,8 +706,9 @@ impl Drop for EngineControls {
     }
 }
 
-/// Runs `prompt` as a turn of `summary` in `engine`, under the composer's `settings`. Its updates
-/// arrive on `updates`, one per beat: the conversation merges them as it merged the turn's own.
+/// Runs `prompt` as a turn of `summary` in `engine` (the engine it names: the app's own or one it
+/// forwards to), under the composer's `settings`. Its updates arrive on `updates`, one per beat:
+/// the conversation merges them as it merged the turn's own.
 pub(crate) fn start_turn(
     engine: &Engine,
     summary: Session,
@@ -621,15 +718,18 @@ pub(crate) fn start_turn(
     updates: async_channel::Sender<Update>,
     _: &mut App,
 ) -> TurnControls {
-    let engine = engine.0.clone();
+    let target = engine.target.clone();
+    let engine = engine.client.clone();
     let message = MessageId::new();
     let op = OpId::new();
     let turn = Arc::new(Turn {
+        target,
         row: summary.id,
         viewer: Mutex::new(Viewer::default()),
         nudge: Notify::new(),
         cancel,
         finished: AtomicBool::new(false),
+        message: Some(message),
     });
     {
         let mut viewer = lock(&turn.viewer);
@@ -705,25 +805,38 @@ async fn forward(
     send: impl FnOnce(SessionId) -> session::Send + Send,
     updates: &async_channel::Sender<Update>,
 ) -> Result<(), String> {
-    let session = engine.session_id(turn.row).await?;
+    let target = turn.target.as_ref();
+    if let Some(away) = target
+        && !engine.reachable(target)
+    {
+        // The conversation keeps what it last saw of the session, read-only, under this status.
+        return Err(format!(
+            "{away} is offline: this session shows what it last saw until that machine is back"
+        ));
+    }
+    let session = engine.session_id(target, turn.row).await?;
     // A turn stopped before it left is still sent: the engine keeps its prompt, and the stop
     // that follows once it is taken (`relay`, `Next::Sent`) ends it with the update that
     // settles the conversation.
     // Watch first: the turn's events follow the snapshot.
     let mut items = engine
-        .watch::<WatchSession>(watching(session, None))
+        .watch::<WatchSession>(target, watching(session, None))
         .await?;
     let first = items.next().await.ok_or("The engine closed this session")?;
     absorb(&turn.viewer, first);
     let (refusal, refusals) = async_channel::bounded(1);
     let caller = engine.clone();
+    let owner = turn.target.clone();
     let body = send(session);
     engine
         .executor
         .spawn(async move {
             // Applied arrives with the turn's first update, a denial with its last; only a call
             // the engine could not take leaves the turn unstarted.
-            if let Err(error) = caller.call::<session::Send>(Some(op), body).await {
+            if let Err(error) = caller
+                .call::<session::Send>(owner.as_ref(), Some(op), body)
+                .await
+            {
                 let _ = refusal.send(error).await;
             }
         })
@@ -763,6 +876,7 @@ async fn relay(
     updates: &async_channel::Sender<Update>,
 ) -> Result<(), String> {
     let viewer = &turn.viewer;
+    let target = turn.target.as_ref();
     let rewatch = |viewer: &Mutex<Viewer>| watching(session, cursor(viewer));
     let epoch = cursor(viewer).map(|at| at.epoch);
     loop {
@@ -783,7 +897,9 @@ async fn relay(
         let mut finished = match next {
             Next::Item(item) => match *item {
                 Some(Item::Resync) => {
-                    items = engine.watch::<WatchSession>(rewatch(viewer)).await?;
+                    items = engine
+                        .watch::<WatchSession>(target, rewatch(viewer))
+                        .await?;
                     continue;
                 }
                 Some(item) => take_in(viewer, item, epoch, refused.is_none()),
@@ -799,7 +915,7 @@ async fn relay(
                 if turn.stopped() {
                     // Stopped while the engine started it: a stop sent meanwhile found no turn.
                     let _ = engine
-                        .call::<Stop>(Some(OpId::new()), Stop { session })
+                        .call::<Stop>(target, Some(OpId::new()), Stop { session })
                         .await;
                 }
                 continue;
@@ -809,7 +925,9 @@ async fn relay(
         // Whatever else is ready joins this beat's update.
         while !finished && let Some(Some(item)) = items.next().now_or_never() {
             if matches!(item, Item::Resync) {
-                items = engine.watch::<WatchSession>(rewatch(viewer)).await?;
+                items = engine
+                    .watch::<WatchSession>(target, rewatch(viewer))
+                    .await?;
                 continue;
             }
             finished = take_in(viewer, item, epoch, refused.is_none());
@@ -826,6 +944,102 @@ async fn relay(
     }
 }
 
+/// Follows the turn the engine runs now in the session stored at `row`, one this view did not
+/// send: an automation's, another viewer's, or the engine's usage-limit resume. The first update
+/// carries the rows from `from` on as the turn holds them; a turn that ended before the watch
+/// joined arrives finished.
+pub(crate) fn join_turn(
+    engine: &Engine,
+    row: i64,
+    from: usize,
+    cancel: Arc<AtomicBool>,
+    updates: async_channel::Sender<Update>,
+    _: &mut App,
+) -> TurnControls {
+    let target = engine.target.clone();
+    let engine = engine.client.clone();
+    let turn = Arc::new(Turn {
+        target,
+        row,
+        viewer: Mutex::new(Viewer::default()),
+        nudge: Notify::new(),
+        cancel,
+        finished: AtomicBool::new(false),
+        message: None,
+    });
+    let follower = engine.clone();
+    let running = turn.clone();
+    engine
+        .executor
+        .spawn(async move {
+            let ended = join(follower, &running, from, &updates).await;
+            running.finished.store(true, Ordering::Release);
+            if let Err(status) = ended
+                && let Some(update) = refuse(&running.viewer, status)
+            {
+                let _ = updates.send(update).await;
+            }
+        })
+        .detach();
+    TurnControls::Engine(EngineControls { engine, turn })
+}
+
+/// Watches the session and forwards its running turn until it finishes or the conversation
+/// stops listening. One turn's snapshot starts at that turn's prompt; a view holding less than
+/// that reads the whole transcript instead.
+async fn join(
+    engine: Arc<EngineClient>,
+    turn: &Turn,
+    from: usize,
+    updates: &async_channel::Sender<Update>,
+) -> Result<(), String> {
+    let target = turn.target.as_ref();
+    let session = engine.session_id(target, turn.row).await?;
+    let mut window = 1;
+    loop {
+        let watch = WatchSession {
+            session,
+            since: None,
+            window_turns: window,
+        };
+        let mut items = engine.watch::<WatchSession>(target, watch).await?;
+        let Some(Item::Snapshot { at, state }) = items.next().await else {
+            return Err("The engine closed this session".into());
+        };
+        if from < state.first_row && window == 1 {
+            window = usize::MAX;
+            continue;
+        }
+        let opening = opening(&state, from);
+        let finished = opening.finished;
+        absorb(&turn.viewer, Item::Snapshot { at, state });
+        if updates.send(opening).await.is_err() || finished {
+            return Ok(());
+        }
+        return relay(&engine, session, items, None, turn, updates).await;
+    }
+}
+
+/// A joined turn's first update: the rows from `from` on (from the snapshot's first row when
+/// the view holds fewer) and the turn's state so far.
+fn opening(state: &SessionState, from: usize) -> Update {
+    let start = from.clamp(state.first_row, end(state));
+    let turn = state.turn.as_ref();
+    Update {
+        start,
+        rows: rows_from(state, start),
+        status: state.status.clone(),
+        provider_turn_id: turn.and_then(|turn| turn.provider_turn_id.clone()),
+        turn_ready: turn.is_some_and(|turn| turn.ready),
+        finished: turn.is_none_or(|turn| turn.finished),
+        approvals: state.approvals.clone(),
+        questions: state.questions.clone(),
+        background: (!state.background.is_empty()).then(|| state.background.clone()),
+        context: state.context,
+        ..Update::default()
+    }
+}
+
 /// Makes a call to `engine`, off the main thread. A mutating call carries the
 /// viewer's `op`: the caller echoes its effect in the same frame and settles the echo with the
 /// reply, and a retry under the same op gets the first reply.
@@ -839,9 +1053,9 @@ where
     C::Params: Send + 'static,
     C::Reply: Send + 'static,
 {
-    let engine = engine.0.clone();
+    let (client, target) = (engine.client.clone(), engine.target.clone());
     cx.background_executor()
-        .spawn(async move { engine.call::<C>(op, body).await })
+        .spawn(async move { client.call::<C>(target.as_ref(), op, body).await })
 }
 
 /// Makes a call naming the session stored at `row`, its engine id looked up off the main thread.
@@ -857,17 +1071,23 @@ where
     C::Params: Send + 'static,
     C::Reply: Send + 'static,
 {
-    let engine = engine.0.clone();
+    let (client, target) = (engine.client.clone(), engine.target.clone());
     cx.background_executor().spawn(async move {
-        let session = engine.session_id(row).await?;
-        engine.call::<C>(op, body(session)).await
+        let target = target.as_ref();
+        let session = client.session_id(target, row).await?;
+        client.call::<C>(target, op, body(session)).await
     })
 }
 
-/// The app's engine, held by every view that reads or changes what it keeps: cloned freely, and
-/// used where no `App` is at hand (a view's `Drop`, or a task it spawns).
+/// An engine as the app reaches it, held by every view that reads or changes what it keeps:
+/// cloned freely, and used where no `App` is at hand (a view's `Drop`, or a task it spawns). Its
+/// calls and watches name `target`; the connection is always the app's own engine's.
 #[derive(Clone)]
-pub(crate) struct Engine(Arc<EngineClient>);
+pub(crate) struct Engine {
+    client: Arc<EngineClient>,
+    /// The engine served: `None` for the app's own, else one it forwards to.
+    target: Option<EngineId>,
+}
 
 /// Names `engine` the app's own: the shell's, which [`local`] serves.
 pub(crate) fn set_local(engine: &Engine, cx: &mut App) {
@@ -941,8 +1161,40 @@ impl Engine {
             |since| WatchEngineSettings { since },
             fold_settings,
         );
+        follow::<WatchMachines>(
+            &engine,
+            &mirror,
+            |since| WatchMachines { since },
+            fold_machines,
+        );
         keep(Arc::downgrade(&mirror), engine.executor.clone());
-        Ok(Self(engine))
+        Ok(Self::own(engine))
+    }
+
+    /// The app's own engine over `client`.
+    fn own(client: Arc<EngineClient>) -> Self {
+        Self {
+            client,
+            target: None,
+        }
+    }
+
+    /// The engine `engine` names, reached through this one's connection: the app's own engine
+    /// serves what names it and forwards the rest over the tailnet. Every call, watch and turn
+    /// made through the result names it.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the Machines view (step 12) opens peer sessions through it"
+        )
+    )]
+    #[must_use]
+    pub(crate) fn on(&self, engine: EngineId) -> Self {
+        Self {
+            client: self.client.clone(),
+            target: Some(engine),
+        }
     }
 
     /// An engine over a store in memory for a test: no disk watched, no provider CLI, `gh` or
@@ -956,19 +1208,19 @@ impl Engine {
         let spawn = Arc::new(GpuiSpawn(cx.background_executor().clone()));
         let local =
             onicode_engine::Local::memory(spawn, options).expect("an engine in memory opens");
-        Self(EngineClient::new(Link::Direct(Box::new(local)), cx))
+        Self::own(EngineClient::new(Link::Direct(Box::new(local)), cx))
     }
 
     /// Writes and reads a test engine's store as typed calls.
     #[cfg(test)]
     pub(crate) fn seed(&self) -> onicode_engine::testing::Seed {
-        self.0.direct().seed()
+        self.client.direct().seed()
     }
 
     /// The store itself: the SSH remote and the phone host only; steps 10-11 delete them. The
     /// app's own connection to the engine's store, opened on first use.
     pub(crate) fn legacy_store(&self) -> Database {
-        match &self.0.link {
+        match &self.client.link {
             Link::Socket { dir, legacy, .. } => legacy
                 .get_or_init(|| {
                     onicode_engine::Local::open_legacy_store(dir)
@@ -982,7 +1234,7 @@ impl Engine {
 
     /// The directory the engine keeps its data in, `None` for one in memory.
     pub(crate) fn data_dir(&self) -> Option<PathBuf> {
-        match &self.0.link {
+        match &self.client.link {
             Link::Socket { dir, .. } => Some(dir.clone()),
             #[cfg(test)]
             Link::Direct(local) => local.data_dir(),
@@ -993,7 +1245,7 @@ impl Engine {
     /// holds it now. Only a first launch, with nothing kept, waits for the engine. The shell's
     /// mirror follows it from there.
     pub(crate) fn workspace_now(&self) -> Result<WorkspaceState, String> {
-        match &self.0.link {
+        match &self.client.link {
             Link::Socket { mirror, .. } => mirror
                 .now(|seen| seen.workspace.clone())
                 .ok_or_else(|| "The engine has not answered yet".to_owned()),
@@ -1005,7 +1257,7 @@ impl Engine {
     /// The engine settings for a window's first frame, as [`Engine::workspace_now`]; the defaults
     /// when the engine has not answered. The shell's mirror follows them from there.
     pub(crate) fn settings_now(&self) -> EngineSettings {
-        match &self.0.link {
+        match &self.client.link {
             Link::Socket { mirror, .. } => {
                 mirror.now(|seen| seen.settings.clone()).unwrap_or_default()
             }
@@ -1027,8 +1279,8 @@ impl Engine {
         C::Params: Send + 'static,
         C::Reply: Send + 'static,
     {
-        let engine = self.0.clone();
-        async move { engine.call::<C>(op, body).await }
+        let (client, target) = (self.client.clone(), self.target.clone());
+        async move { client.call::<C>(target.as_ref(), op, body).await }
     }
 
     /// Watches `W` from the params `params` makes for a cursor: a snapshot, then every batch of
@@ -1045,10 +1297,12 @@ impl Engine {
         W::Event: Send + 'static,
     {
         let (updates, received) = async_channel::unbounded();
-        let task = self
-            .0
-            .executor
-            .spawn(resume::<W>(self.0.clone(), params, updates));
+        let task = self.client.executor.spawn(resume::<W>(
+            self.client.clone(),
+            self.target.clone(),
+            params,
+            updates,
+        ));
         Watching {
             updates: received,
             _task: task,
@@ -1060,12 +1314,13 @@ impl Engine {
     /// on. Sent off the main thread and let go: a stop that arrives before its search stops it as
     /// it starts.
     pub(crate) fn stop_search(&self, search: String) {
-        let engine = self.0.clone();
-        self.0
+        let (engine, target) = (self.client.clone(), self.target.clone());
+        self.client
             .executor
             .spawn(async move {
                 let _ = engine
                     .call::<onicode_protocol::files::StopSearch>(
+                        target.as_ref(),
                         None,
                         onicode_protocol::files::StopSearch { search },
                     )
@@ -1085,12 +1340,13 @@ impl Engine {
         C::Params: Send + 'static,
         C::Reply: Send + 'static,
     {
-        let engine = self.0.clone();
-        self.0
+        let (engine, target) = (self.client.clone(), self.target.clone());
+        self.client
             .executor
             .spawn(async move {
-                if let Ok(session) = engine.session_id(row).await {
-                    let _ = engine.call::<C>(op, body(session)).await;
+                let target = target.as_ref();
+                if let Ok(session) = engine.session_id(target, row).await {
+                    let _ = engine.call::<C>(target, op, body(session)).await;
                 }
             })
             .detach();
@@ -1108,13 +1364,14 @@ pub(crate) fn session_events(
     row: i64,
     _: &mut App,
 ) -> async_channel::Receiver<SessionEvent> {
-    let engine = engine.0.clone();
+    let (target, engine) = (engine.target.clone(), engine.client.clone());
     let (events, received) = async_channel::unbounded();
     let executor = engine.executor.clone();
     executor
         .clone()
         .spawn(async move {
-            let Ok(session) = engine.session_id(row).await else {
+            let target = target.as_ref();
+            let Ok(session) = engine.session_id(target, row).await else {
                 return;
             };
             let mut since: Option<Cursor> = None;
@@ -1127,7 +1384,7 @@ pub(crate) fn session_events(
                     since,
                     window_turns: 0,
                 };
-                let mut items = match engine.watch::<WatchSession>(watch).await {
+                let mut items = match engine.watch::<WatchSession>(target, watch).await {
                     Ok(items) => items,
                     Err(_) if engine.reconnects() && !events.is_closed() => {
                         executor.timer(RETRY).await;
@@ -1181,6 +1438,239 @@ pub(crate) fn session_events(
     received
 }
 
+/// What a session's turns watcher reports ([`session_turns`]).
+#[derive(Debug)]
+pub(crate) enum SessionTurn {
+    /// A turn is running: its prompt's id when it carries one, so the view that sent it knows it.
+    Started { message: Option<MessageId> },
+    /// What changed while no turn ran: the rows from a transcript index on, and the usage limit
+    /// when it moved (`Some(None)`: cleared).
+    Between {
+        rows: Option<(usize, Vec<Row>)>,
+        usage_limit: Option<Option<Limit>>,
+    },
+}
+
+/// The turns the engine runs in the session stored at `row`, and what changes between them:
+/// a one-turn watch resumed with its cursor like [`session_events`]. Ends when the receiver goes
+/// or the engine stops serving the session.
+pub(crate) fn session_turns(
+    engine: &Engine,
+    row: i64,
+    _: &mut App,
+) -> async_channel::Receiver<SessionTurn> {
+    let (target, engine) = (engine.target.clone(), engine.client.clone());
+    let (turns, received) = async_channel::unbounded();
+    let executor = engine.executor.clone();
+    executor
+        .clone()
+        .spawn(async move {
+            let target = target.as_ref();
+            let Ok(session) = engine.session_id(target, row).await else {
+                return;
+            };
+            let mut hearing = Hearing::default();
+            // The watch a `Resync` ended, held until the next one has joined.
+            let mut ended = None;
+            loop {
+                let watch = WatchSession {
+                    session,
+                    since: hearing.cursor,
+                    window_turns: 1,
+                };
+                let mut items = match engine.watch::<WatchSession>(target, watch).await {
+                    Ok(items) => items,
+                    Err(_) if engine.reconnects() && !turns.is_closed() => {
+                        executor.timer(RETRY).await;
+                        continue;
+                    }
+                    Err(_) => return,
+                };
+                drop(ended.take());
+                let mut resync = false;
+                loop {
+                    let item = match select(items.next(), executor.timer(LISTENER_CHECK)).await {
+                        Either::Left((item, _)) => item,
+                        Either::Right(((), _)) => {
+                            if turns.is_closed() {
+                                return;
+                            }
+                            continue;
+                        }
+                    };
+                    let heard = match item {
+                        Some(Item::Snapshot { at, state }) => hearing.snapshot(at, state),
+                        Some(Item::Events { last, events, .. }) => hearing.events(last, &events),
+                        Some(Item::Resync) => {
+                            resync = true;
+                            break;
+                        }
+                        None => break,
+                    };
+                    for turn in heard {
+                        if turns.send(turn).await.is_err() {
+                            return;
+                        }
+                    }
+                }
+                if !resync {
+                    return;
+                }
+                ended = Some(items);
+            }
+        })
+        .detach();
+    received
+}
+
+/// A turns watcher's mirror of the session.
+#[derive(Default)]
+struct Hearing {
+    state: Option<SessionState>,
+    cursor: Option<Cursor>,
+    /// Where the next turn's prompt can start: the rows' end when the session last went idle,
+    /// lowered by rows rewritten since.
+    floor: usize,
+}
+
+impl Hearing {
+    fn snapshot(&mut self, at: Cursor, state: SessionState) -> Vec<SessionTurn> {
+        self.cursor = Some(at);
+        let heard = if running(&state) {
+            (!self.state.as_ref().is_some_and(running)).then(|| SessionTurn::Started {
+                message: prompt_from(&state, state.first_row),
+            })
+        } else {
+            self.floor = end(&state);
+            match &self.state {
+                // First sight: the live rows may hold what the store did not yet.
+                None => Some(SessionTurn::Between {
+                    rows: Some((state.first_row, rows_from(&state, state.first_row))),
+                    usage_limit: None,
+                }),
+                // A gap the watch could not replay: what changed meanwhile.
+                Some(before) => {
+                    let rows =
+                        first_change(before, &state).map(|start| (start, rows_from(&state, start)));
+                    let usage_limit = (before.usage_limit != state.usage_limit)
+                        .then(|| state.usage_limit.clone());
+                    (rows.is_some() || usage_limit.is_some())
+                        .then_some(SessionTurn::Between { rows, usage_limit })
+                }
+            }
+        };
+        self.state = Some(state);
+        heard.into_iter().collect()
+    }
+
+    fn events(&mut self, last: u64, events: &[SessionEvent]) -> Vec<SessionTurn> {
+        if let Some(cursor) = self.cursor.as_mut() {
+            cursor.seq = last;
+        }
+        let Some(state) = self.state.as_mut() else {
+            return Vec::new();
+        };
+        let mut heard = Vec::new();
+        let mut dirty: Option<usize> = None;
+        let mut usage_limit: Option<Option<Limit>> = None;
+        let mut started = false;
+        for event in events {
+            let was = running(state);
+            if !was {
+                match event {
+                    SessionEvent::Rows { start, .. } | SessionEvent::Append { row: start, .. } => {
+                        dirty = Some(dirty.map_or(*start, |at| at.min(*start)));
+                        self.floor = self.floor.min(*start);
+                    }
+                    SessionEvent::UsageLimit(limit) => usage_limit = Some(limit.clone()),
+                    _ => {}
+                }
+            }
+            apply(state, event);
+            match (was, running(state)) {
+                (false, true) => {
+                    if let Some(limit) = usage_limit.take() {
+                        heard.push(SessionTurn::Between {
+                            rows: None,
+                            usage_limit: Some(limit),
+                        });
+                    }
+                    // The rows the turn rewrites reach the view through the turn.
+                    dirty = None;
+                    started = true;
+                }
+                (true, false) => {
+                    if std::mem::take(&mut started) {
+                        heard.push(SessionTurn::Started {
+                            message: prompt_from(state, self.floor),
+                        });
+                    }
+                    self.floor = end(state);
+                }
+                _ => {}
+            }
+        }
+        if started {
+            heard.push(SessionTurn::Started {
+                message: prompt_from(state, self.floor),
+            });
+        }
+        if dirty.is_some() || usage_limit.is_some() {
+            let rows = dirty.map(|start| {
+                let start = start.max(state.first_row);
+                (start, rows_from(state, start))
+            });
+            heard.push(SessionTurn::Between { rows, usage_limit });
+        }
+        heard
+    }
+}
+
+fn running(state: &SessionState) -> bool {
+    state.turn.as_ref().is_some_and(|turn| !turn.finished)
+}
+
+fn end(state: &SessionState) -> usize {
+    state.first_row + state.rows.len()
+}
+
+/// The id on the last prompt from transcript index `floor` on.
+fn prompt_from(state: &SessionState, floor: usize) -> Option<MessageId> {
+    let skip = floor.saturating_sub(state.first_row);
+    state
+        .rows
+        .iter()
+        .skip(skip)
+        .rev()
+        .find(|row| row.first && row.is_prompt())
+        .and_then(|row| row.id)
+        .map(MessageId)
+}
+
+/// The rows from transcript index `start` on, without the live prompt ids.
+fn rows_from(state: &SessionState, start: usize) -> Vec<Row> {
+    let skip = start.saturating_sub(state.first_row).min(state.rows.len());
+    state.rows[skip..]
+        .iter()
+        .cloned()
+        .map(|mut row| {
+            row.id = None;
+            row
+        })
+        .collect()
+}
+
+fn row_at(state: &SessionState, at: usize) -> Option<&Row> {
+    at.checked_sub(state.first_row)
+        .and_then(|index| state.rows.get(index))
+}
+
+/// The first transcript index whose row differs between `before` and `now`.
+fn first_change(before: &SessionState, now: &SessionState) -> Option<usize> {
+    let start = before.first_row.max(now.first_row);
+    (start..end(before).max(end(now))).find(|&at| row_at(before, at) != row_at(now, at))
+}
+
 /// What a workspace watcher receives: the whole workspace, or what changed since.
 pub(crate) type WorkspaceUpdate = WatchUpdate<WorkspaceState, WorkspaceEvent>;
 
@@ -1191,6 +1681,7 @@ pub(crate) type WorkspaceUpdate = WatchUpdate<WorkspaceState, WorkspaceEvent>;
 /// serving it).
 async fn resume<W: Watch>(
     engine: Arc<EngineClient>,
+    target: Option<EngineId>,
     params: impl Fn(Option<Cursor>) -> W::Params,
     updates: async_channel::Sender<WatchUpdate<W::State, W::Event>>,
 ) where
@@ -1202,7 +1693,7 @@ async fn resume<W: Watch>(
     // live between them instead of reloading.
     let mut ended = None;
     loop {
-        let mut items = match engine.watch::<W>(params(cursor)).await {
+        let mut items = match engine.watch::<W>(target.as_ref(), params(cursor)).await {
             Ok(items) => items,
             // The engine is starting, or restarting: ask again while someone listens.
             Err(_) if engine.reconnects() && !updates.is_closed() => {
@@ -1250,13 +1741,14 @@ pub(crate) fn watch_workspace(
     engine: &Engine,
     _: &mut App,
 ) -> async_channel::Receiver<WorkspaceUpdate> {
-    let engine = engine.0.clone();
+    let (target, engine) = (engine.target.clone(), engine.client.clone());
     let (updates, received) = async_channel::unbounded();
     engine
         .executor
         .clone()
         .spawn(resume::<WatchWorkspace>(
             engine,
+            target,
             |since| WatchWorkspace { since },
             updates,
         ))
@@ -1268,7 +1760,7 @@ pub(crate) fn watch_workspace(
 #[cfg(test)]
 pub(crate) fn create_for_test(engine: &Engine, provider: &str, cwd: &str, _: &mut App) -> Session {
     use onicode_protocol::workspace::{CreateSession, NewSession};
-    let created = futures::executor::block_on(engine.0.direct().workspace.create_session(
+    let created = futures::executor::block_on(engine.client.direct().workspace.create_session(
         Some(OpId::new()),
         CreateSession {
             session: SessionId::new(),
@@ -1286,7 +1778,7 @@ pub(crate) fn create_for_test(engine: &Engine, provider: &str, cwd: &str, _: &mu
 /// One beat of `engine`'s schedulers at `now`, in a test's virtual time.
 #[cfg(test)]
 pub(crate) fn tick(engine: &Engine, now: u64, _: &mut App) -> Result<(), String> {
-    engine.0.direct().tick(now)
+    engine.client.direct().tick(now)
 }
 
 /// Every call `engine` was asked, by name with its routed params.
@@ -1296,7 +1788,7 @@ pub(crate) fn calls_for_test(
     _: &mut App,
 ) -> Vec<(&'static str, serde_json::Value)> {
     engine
-        .0
+        .client
         .calls
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -1311,17 +1803,19 @@ mod tests {
 
     fn turn(row: i64) -> Arc<Turn> {
         Arc::new(Turn {
+            target: None,
             row,
             viewer: Mutex::new(Viewer::default()),
             nudge: Notify::new(),
             cancel: Arc::new(AtomicBool::new(false)),
             finished: AtomicBool::new(false),
+            message: None,
         })
     }
 
     #[gpui::test]
     fn a_steer_that_fails_before_it_leaves_shows_at_once(cx: &mut gpui::TestAppContext) {
-        let engine = cx.update(Engine::memory).0;
+        let engine = cx.update(Engine::memory).client;
         let session = SessionId::new();
         let turn = turn(1);
         let (updates, received) = async_channel::bounded(1);
@@ -1358,6 +1852,29 @@ mod tests {
         );
         assert!(!update.finished, "the turn runs on");
         drop(relayed);
+    }
+
+    /// What names another engine goes to the app's own engine named for it: one it cannot reach
+    /// answers that it is offline, and is not reachable, while the app's own engine, by no name
+    /// or by its own, always is.
+    #[gpui::test]
+    fn another_engine_is_reached_through_the_apps_own(cx: &mut gpui::TestAppContext) {
+        let engine = cx.update(Engine::memory);
+        let own = engine.client.direct().identity.id();
+        assert!(engine.client.reachable(None));
+        assert!(engine.client.reachable(Some(&own)));
+        let away = engine.on(EngineId("elsewhere".into()));
+        assert!(!away.client.reachable(away.target.as_ref()));
+        let asked = futures::executor::block_on(away.call::<onicode_protocol::engine::EngineInfo>(
+            None,
+            onicode_protocol::engine::EngineInfo {},
+        ));
+        let error = asked.expect_err("nothing reaches that engine");
+        assert!(error.contains("offline"), "{error}");
+        let calls = cx.update(|cx| calls_for_test(&engine, cx));
+        let (name, params) = calls.last().expect("the call was made");
+        assert_eq!(*name, "EngineInfo");
+        assert_eq!(params["engine"], "elsewhere");
     }
 
     fn snapshot(epoch: u64, turn: Option<session::TurnState>) -> Item<SessionState, SessionEvent> {

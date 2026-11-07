@@ -13,8 +13,11 @@
 #
 # A release profile takes packaging/macos/Info.plist, any other Info-dev.plist (its data dir
 # under the target dir). Signing is ad hoc unless ONICODE_NATIVE_SIGNING_IDENTITY names a
-# Developer ID; nested code is signed first, the engine under the fixed identifier
-# "<app id>.engine", so TCC's requirement for it never names a binary's hash.
+# Developer ID (a name or its SHA-1, found in ONICODE_NATIVE_SIGNING_KEYCHAIN when that is set),
+# which adds the hardened runtime, a secure timestamp and packaging/macos/Onicode.entitlements.
+# Nested code is signed first, the engine under the fixed identifier "<app id>.engine", so TCC's
+# requirement for it never names a binary's hash. The bundle is verified before the script ends.
+# scripts/release/bundle-macos.sh runs this for a release; CI's mac job runs it on its dev build.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
@@ -65,6 +68,10 @@ fi
 app_id="$(plutil -extract CFBundleIdentifier raw "$bundle/Contents/Info.plist")"
 app_name="$(plutil -extract CFBundleName raw "$bundle/Contents/Info.plist")"
 
+licenses="$resources/licenses"
+mkdir -p "$licenses"
+cp LICENSE THIRD_PARTY_NOTICES.md "$licenses/"
+
 icns="$resources/onicode.icns"
 if [[ ! -f "$icns" || packaging/macos/icon-1024.png -nt "$icns" ]]; then
   iconset="$(mktemp -d)/onicode.iconset"
@@ -86,10 +93,20 @@ identity="${ONICODE_NATIVE_SIGNING_IDENTITY:--}"
 signing=(--force --sign "$identity")
 if [[ "$identity" != - ]]; then
   signing+=(--options runtime --timestamp --entitlements packaging/macos/Onicode.entitlements)
+  if [[ -n "${ONICODE_NATIVE_SIGNING_KEYCHAIN:-}" ]]; then
+    signing+=(--keychain "$ONICODE_NATIVE_SIGNING_KEYCHAIN")
+  fi
 fi
 codesign "${signing[@]}" --identifier "$app_id.engine" "$macos/Onicode Engine"
 if [[ -x "$desktopd_binary" ]]; then
   desktop_helper_sign "$bundle" "$app_id" "$identity" "${signing[@]:3}"
 fi
 codesign "${signing[@]}" "$bundle"
+
+codesign --verify --strict --deep "$bundle"
+engine_id="$(codesign --display "$macos/Onicode Engine" 2>&1 | sed -n 's/^Identifier=//p')"
+if [[ "$engine_id" != "$app_id.engine" ]]; then
+  echo "The engine is signed as ${engine_id:-nothing}, not $app_id.engine." >&2
+  exit 1
+fi
 printf 'App: %s\n' "$bundle"

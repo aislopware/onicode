@@ -31,7 +31,7 @@ upstream = "longbridge/gpui-fast"
 branch = "main"
 fork = "aislopware/gpui-fast"
 checkout = "forks/gpui-fast"
-base = "4a4a89af7c7fd3f9999218d6abdeb66116fd6d49"
+base = "146073d52d5e16c0bafacaa82413f81a80a44e50"
 base_date = "2026-11-06"
 every_minutes = 0
 

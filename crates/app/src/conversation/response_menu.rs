@@ -38,7 +38,7 @@ impl Conversation {
             .unwrap_or_default();
         let harnesses = remote
             .is_none()
-            .then(|| crate::engine_client::local(cx).call::<Harnesses>(None, Harnesses {}));
+            .then(|| self.engine.call::<Harnesses>(None, Harnesses {}));
         let work = cx.background_executor().spawn(async move {
             if let Some(project) = remote {
                 return onicode_core::catalog::remote_catalog(&project).map(|mut catalog| {
@@ -232,7 +232,7 @@ impl Conversation {
         }
         let account = menu.profiles.get(&provider).cloned().unwrap_or_default().id;
         let request = self.response_request;
-        let read = crate::engine_client::local(cx).call::<Catalog>(
+        let read = self.engine.call::<Catalog>(
             None,
             Catalog {
                 provider,

@@ -7,6 +7,16 @@
 //! #31292, whose resume reused its op and so never came back after a restart). One the provider
 //! never spoke in is armed again, the copy of its prompt dropped, and sent anew under a fresh op;
 //! one the provider spoke in is never sent again.
+//!
+//! A resume refused before its prompt was saved (the provider's CLI is missing, the folder is
+//! gone, the account signed out) is not retried silently on every beat. The conversation says so
+//! in an error row, as monocode shows any turn that failed, with the reason and when the engine
+//! tries again; each later refusal rewrites that one row. The waits double from 30 s up to
+//! 15 min, and once the next try would fall past one limit window (5 h) after the reset, the
+//! engine stops: the limit stays for the banner, disarmed, and the row says to choose Resume.
+//! The waits are counted from the scheduler beat that sent the resume, so the clock is the
+//! beat's (tests run it in virtual time); only this run remembers them, and a restart tries at
+//! once.
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -25,6 +35,18 @@ use crate::turn::{Update, locked};
 pub(crate) const CONTINUE: &str = "Continue from where you left off.";
 /// The store key the resumes in flight are kept under.
 pub(crate) const RESUMES: &str = "engine-usage-resumes";
+/// The wait after a first refused resume (ms): the next beat.
+const RETRY_FIRST: i64 = 30_000;
+/// The longest wait between refused resumes (ms).
+const RETRY_MAX: i64 = 15 * 60_000;
+/// How long after its reset a refused resume is tried again (ms): one usage window, the
+/// five hours of Claude's and Codex's session windows. Past it the next window's limit, not
+/// this one, is what the conversation waits on.
+const LIMIT_WINDOW: i64 = 5 * 60 * 60_000;
+/// How the error row a refused resume leaves begins.
+const REFUSED: &str = "Could not resume after the usage limit";
+/// How much of a refusal's reason its row shows.
+const REASON_CHARS: usize = 400;
 
 /// A resume in flight.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,8 +59,83 @@ pub(crate) struct Resuming {
     started: bool,
 }
 
-/// The resumes in flight, by the session's store row.
-pub(crate) type Resumes = BTreeMap<i64, Resuming>;
+/// The resumes refused in a row for one armed limit. Only this run keeps them.
+#[derive(Clone, Debug)]
+struct Refused {
+    /// The reset of the limit whose resumes were refused: another limit starts afresh.
+    resets_at: Option<i64>,
+    /// How many were refused in a row.
+    count: u32,
+    /// When the next may be sent (Unix ms).
+    retry_at: i64,
+}
+
+/// The usage-limit resumes: the ones in flight by the session's store row, as the store keeps
+/// them, and the refusals this run has seen.
+#[derive(Debug, Default)]
+pub(crate) struct Resumes {
+    flight: BTreeMap<i64, Resuming>,
+    refused: BTreeMap<i64, Refused>,
+    /// The latest beat (Unix ms): a refusal between beats counts its wait from it.
+    beat: i64,
+}
+
+impl Resumes {
+    /// Whether the refusals of `row`'s resumes of `limit` hold the next one back at `now`.
+    fn held_back(&mut self, row: i64, limit: &Limit, now: i64) -> bool {
+        match self.refused.get(&row) {
+            Some(refused) if refused.resets_at != limit.resets_at => {
+                self.refused.remove(&row);
+                false
+            }
+            Some(refused) => now < refused.retry_at,
+            None => false,
+        }
+    }
+}
+
+/// The wait after the `count`th refusal in a row: 30 s, doubling, at most 15 min.
+fn retry_wait(count: u32) -> i64 {
+    let doublings = count.saturating_sub(1).min(5);
+    (RETRY_FIRST << doublings).min(RETRY_MAX)
+}
+
+/// `wait` (ms) as the error row says it.
+fn spoken_wait(wait: i64) -> String {
+    if wait < 60_000 {
+        format!("{} s", wait / 1_000)
+    } else {
+        format!("{} min", wait / 60_000)
+    }
+}
+
+/// The error row a refused resume leaves: why, and what the engine does next (`retry`, a wait
+/// in ms, or `None` once it stopped).
+fn refused_text(reason: &str, retry: Option<i64>) -> String {
+    // One line, short enough that the row stays one row (`ROW_BYTES`).
+    let reason = reason.lines().next().unwrap_or_default();
+    let reason = match reason.char_indices().nth(REASON_CHARS) {
+        Some((end, _)) => &reason[..end],
+        None => reason,
+    };
+    let reason = reason.trim().trim_end_matches('.');
+    let mut text = REFUSED.to_owned();
+    // A refusal the turn gave no reason for ends as "Ready".
+    if !reason.is_empty() && reason != "Ready" {
+        text.push_str(": ");
+        text.push_str(reason);
+    }
+    text.push_str(". ");
+    match retry {
+        Some(wait) => {
+            text.push_str("Trying again in ");
+            text.push_str(&spoken_wait(wait));
+            text.push('.');
+        }
+        None => text.push_str("Automatic resume stopped; choose Resume to try again."),
+    }
+    text
+}
 
 fn ms(now: u64) -> i64 {
     i64::try_from(now).unwrap_or(i64::MAX)
@@ -103,10 +200,11 @@ impl SessionHub {
             Some(resumes) => resumes,
             None => self.recover(&mut inner)?,
         };
+        resumes.beat = ms(now);
         let armed = locked(&self.store).and_then(|store| store.armed_usage_limits());
         let mut failed = armed.as_ref().err().cloned();
         for row in armed.unwrap_or_default() {
-            if resumes.contains_key(&row) {
+            if resumes.flight.contains_key(&row) {
                 continue;
             }
             if let Err(error) = self.resume(&mut inner, &mut resumes, row, now) {
@@ -124,11 +222,11 @@ impl SessionHub {
     fn recover(&self, inner: &mut Inner) -> Result<Resumes, String> {
         let raw = locked(&self.store)?.setting(RESUMES)?;
         let Some(raw) = raw else {
-            return Ok(Resumes::new());
+            return Ok(Resumes::default());
         };
-        let held: Resumes = serde_json::from_str(&raw)
+        let held: BTreeMap<i64, Resuming> = serde_json::from_str(&raw)
             .map_err(|error| format!("Cannot read the usage-limit resumes: {error}"))?;
-        let mut unsettled = Resumes::new();
+        let mut unsettled = BTreeMap::new();
         for (row, resuming) in held {
             // A turn this run already started in the session continued it.
             let running = inner
@@ -159,7 +257,10 @@ impl SessionHub {
         }
         // Held in memory too, so this run neither sends them nor writes over them.
         self.keep(&unsettled)?;
-        Ok(unsettled)
+        Ok(Resumes {
+            flight: unsettled,
+            ..Resumes::default()
+        })
     }
 
     /// Arms again the limit of an earlier run's resume of `row` the provider never had, dropping
@@ -187,7 +288,8 @@ impl SessionHub {
         Ok(Some(copy))
     }
 
-    /// Resumes session `row` if its limit is armed and due at `now`.
+    /// Resumes session `row` if its limit is armed and due at `now`, and no refusal holds it
+    /// back.
     fn resume(
         self: &Arc<Self>,
         inner: &mut Inner,
@@ -231,7 +333,7 @@ impl SessionHub {
                 .sessions
                 .get(&session)
                 .is_some_and(|live| live.turn.is_some());
-        if !limit.resume_due(ms(now), busy) {
+        if !limit.resume_due(ms(now), busy) || resumes.held_back(row, &limit, ms(now)) {
             if !events.is_empty()
                 && let Some(live) = inner.sessions.get_mut(&session)
             {
@@ -252,7 +354,7 @@ impl SessionHub {
             }
             let at = live.topic.state().first_row + live.topic.state().rows.len();
             // Kept before the limit is cleared: a stop between the two finds it to send again.
-            resumes.insert(
+            resumes.flight.insert(
                 row,
                 Resuming {
                     limit: limit.clone(),
@@ -260,16 +362,16 @@ impl SessionHub {
                     started: false,
                 },
             );
-            if let Err(error) = self.keep(resumes) {
-                resumes.remove(&row);
+            if let Err(error) = self.keep(&resumes.flight) {
+                resumes.flight.remove(&row);
                 return Err(error);
             }
             settings.usage_limit = None;
             if let Err(error) =
                 locked(&self.store).and_then(|store| store.save_agent_settings(row, &settings))
             {
-                resumes.remove(&row);
-                let _ = self.keep(resumes);
+                resumes.flight.remove(&row);
+                let _ = self.keep(&resumes.flight);
                 return Err(error);
             }
             events.push(SessionEvent::UsageLimit(None));
@@ -297,10 +399,11 @@ impl SessionHub {
                 Ok(())
             }
             Err(error) => {
-                if let Some(event) = self.rearm(resumes, row)
+                let events = self.refuse(resumes, row, &error);
+                if !events.is_empty()
                     && let Some(live) = inner.sessions.get_mut(&session)
                 {
-                    publish(live, vec![event]);
+                    publish(live, events);
                 }
                 // Loaded for the resume alone: nothing holds it now.
                 if inner
@@ -316,35 +419,92 @@ impl SessionHub {
     }
 
     /// Writes the resumes in flight to the store.
-    fn keep(&self, resumes: &Resumes) -> Result<(), String> {
+    fn keep(&self, flight: &BTreeMap<i64, Resuming>) -> Result<(), String> {
         let store = locked(&self.store)?;
-        if resumes.is_empty() {
+        if flight.is_empty() {
             store.delete_setting(RESUMES)
         } else {
-            let raw = serde_json::to_string(resumes).map_err(|error| error.to_string())?;
+            let raw = serde_json::to_string(flight).map_err(|error| error.to_string())?;
             store.save_setting(RESUMES, &raw)
         }
     }
 
-    /// Puts back the limit of the resume of `row`, which never reached the provider, and forgets
-    /// the resume: the next beat sends it under a new op.
-    fn rearm(&self, resumes: &mut Resumes, row: i64) -> Option<SessionEvent> {
-        let resuming = resumes.remove(&row)?;
-        let armed = locked(&self.store).and_then(|store| {
+    /// The resume of `row` was refused before its prompt was saved, for `reason`. Its limit is
+    /// put back and the conversation's error row says why and when the engine tries again (an
+    /// earlier refusal's row rewritten, while nothing came after it); once the next try would
+    /// fall past the limit window, the limit is put back disarmed and the row says the engine
+    /// stopped. Returns what the session's watchers are told.
+    fn refuse(&self, resumes: &mut Resumes, row: i64, reason: &str) -> Vec<SessionEvent> {
+        let Some(resuming) = resumes.flight.remove(&row) else {
+            return Vec::new();
+        };
+        let limit = resuming.limit;
+        let last = resumes
+            .refused
+            .get(&row)
+            .filter(|refused| refused.resets_at == limit.resets_at);
+        let count = last.map_or(1, |refused| refused.count.saturating_add(1));
+        let wait = retry_wait(count);
+        let retry_at = resumes.beat.saturating_add(wait);
+        let stop = limit
+            .resets_at
+            .is_some_and(|reset| retry_at > reset.saturating_add(LIMIT_WINDOW));
+        let sent_at = u64::try_from(resumes.beat).ok();
+        let written = locked(&self.store).and_then(|mut store| {
             let Some(mut settings) = store.agent_settings(row)? else {
                 return Ok(None);
             };
-            if settings.usage_limit.is_some() {
-                return Ok(None);
+            let rows = store.load(row)?.rows;
+            // An earlier refusal's row, while nothing came after it, is rewritten.
+            let at = match rows.last() {
+                Some(last) if last.role == "error" && last.text.starts_with(REFUSED) => {
+                    rows.len() - 1
+                }
+                _ => rows.len(),
+            };
+            let error = Row {
+                role: "error".into(),
+                text: refused_text(reason, (!stop).then_some(wait)),
+                first: true,
+                sent_at,
+                id: None,
+            };
+            store.write_rows(row, at, std::slice::from_ref(&error))?;
+            let mut held = limit.clone();
+            held.resume_at_reset = !stop;
+            // A limit the engine holds now is a later turn's: it stays as it is.
+            let put = settings.usage_limit.is_none();
+            if put {
+                settings.usage_limit = Some(held.clone());
+                store.save_agent_settings(row, &settings)?;
             }
-            settings.usage_limit = Some(resuming.limit.clone());
-            store.save_agent_settings(row, &settings)?;
-            Ok(Some(SessionEvent::UsageLimit(Some(resuming.limit))))
+            Ok(Some((at, error, put.then_some(held))))
         });
         // A failed write leaves the stored resume for the next engine run to recover.
-        let event = armed.ok()?;
-        let _ = self.keep(resumes);
-        event
+        let Ok(Some((at, error, held))) = written else {
+            return Vec::new();
+        };
+        if stop {
+            resumes.refused.remove(&row);
+        } else {
+            resumes.refused.insert(
+                row,
+                Refused {
+                    resets_at: limit.resets_at,
+                    count,
+                    retry_at,
+                },
+            );
+        }
+        let _ = self.keep(&resumes.flight);
+        let mut events = vec![SessionEvent::Rows {
+            start: at,
+            rows: vec![error],
+        }];
+        if let Some(held) = held {
+            events.push(SessionEvent::UsageLimit(Some(held)));
+        }
+        events
     }
 
     /// The provider spoke in the resume of `row`: it is never sent again.
@@ -352,29 +512,40 @@ impl SessionHub {
         let Some(resumes) = resumes.as_mut() else {
             return;
         };
-        let Some(resuming) = resumes.get_mut(&row).filter(|resuming| !resuming.started) else {
+        let Some(resuming) = resumes
+            .flight
+            .get_mut(&row)
+            .filter(|resuming| !resuming.started)
+        else {
             return;
         };
         resuming.started = true;
-        let _ = self.keep(resumes);
+        resumes.refused.remove(&row);
+        let _ = self.keep(&resumes.flight);
     }
 
-    /// The resume's turn ended. One whose prompt never got in (refused before it was saved) is
-    /// armed again unless it was stopped; any other is done.
+    /// The resume's turn ended. One whose prompt never got in (refused before it was saved, for
+    /// `reason`, the turn's last status) is put back unless it was stopped (`refuse`); any other
+    /// is done.
     pub(super) fn resume_ended(
         &self,
         resumes: &mut Option<Resumes>,
         row: i64,
         delivered: bool,
         stopped: bool,
-    ) -> Option<SessionEvent> {
-        let resumes = resumes.as_mut()?;
+        reason: &str,
+    ) -> Vec<SessionEvent> {
+        let Some(resumes) = resumes.as_mut() else {
+            return Vec::new();
+        };
         if !delivered && !stopped {
-            return self.rearm(resumes, row);
+            return self.refuse(resumes, row, reason);
         }
-        resumes.remove(&row)?;
-        let _ = self.keep(resumes);
-        None
+        resumes.refused.remove(&row);
+        if resumes.flight.remove(&row).is_some() {
+            let _ = self.keep(&resumes.flight);
+        }
+        Vec::new()
     }
 
     /// A turn of `row` ended at `limit`: the engine holds it until a turn continues past it.
@@ -421,3 +592,6 @@ impl SessionHub {
         Ok(Some(SessionEvent::UsageLimit(None)))
     }
 }
+
+#[cfg(test)]
+mod tests;

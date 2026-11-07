@@ -19,7 +19,7 @@ fn legacy(path: &Path) -> Result<Snapshot, String> {
 }
 
 /// The sidecar's newest `user_version`.
-const LATEST: i64 = 2;
+const LATEST: i64 = 3;
 
 /// Brings a writable sidecar from version 1 to [`LATEST`], one step per version, each in its own
 /// writer transaction so a second window waiting on the lock sees the step already done.
@@ -39,6 +39,15 @@ fn migrate(conn: &Connection) -> Result<(), String> {
                    receipt TEXT NOT NULL, at INTEGER NOT NULL);
                  CREATE INDEX ops_at ON ops(at);
                  PRAGMA user_version=2;",
+            ))?,
+            // 3: the forwarding engine's outbox of calls for an engine that was offline
+            // (engine.md "Authority").
+            2 => sql(tx.execute_batch(
+                "CREATE TABLE outbox(n INTEGER PRIMARY KEY AUTOINCREMENT,
+                   op TEXT NOT NULL UNIQUE, engine TEXT NOT NULL, method TEXT NOT NULL,
+                   params TEXT NOT NULL, at INTEGER NOT NULL);
+                 CREATE INDEX outbox_engine ON outbox(engine, n);
+                 PRAGMA user_version=3;",
             ))?,
             _ => return Ok(()),
         }

@@ -36,6 +36,10 @@ pub(crate) struct Runner {
     _runtime: rquickjs::Runtime,
     anchor: AnchorSlot,
     started: Instant,
+    /// The physics tick the shared pulse last moved the runner to. Render
+    /// steps to it and reads no clock, so a frame that draws the runner again
+    /// from the last one shows what building it afresh would.
+    tick: u64,
     busy: bool,
     name: &'static str,
     color: u32,
@@ -52,12 +56,12 @@ impl Runner {
         context
             .with(|cx| cx.eval::<(), _>(include_str!("../assets/settings-arcade.js")))
             .expect("runner physics");
-        let _ = cx;
         Self {
             context,
             _runtime: runtime,
             anchor: Default::default(),
-            started: Instant::now(),
+            started: cx.frame_time(),
+            tick: 0,
             busy: false,
             name: "invader",
             color: 0x459cf7,
@@ -78,8 +82,14 @@ impl Runner {
             self.busy = busy;
             self.name = name;
             self.color = color;
+            self.tick = self.tick_at(cx.frame_time());
             cx.notify();
         }
+    }
+
+    /// The physics tick at `now`.
+    fn tick_at(&self, now: Instant) -> u64 {
+        (now.saturating_duration_since(self.started).as_secs_f64() * 1000. / TICK_MS) as u64
     }
 }
 impl Runner {
@@ -102,10 +112,10 @@ impl Render for Runner {
         let obstacle=self.transcript.read(cx).jump_bounds().filter(|b|b.right()>bounds.left()&&b.left()<bounds.right()&&b.bottom().as_f32()>=top-48.&&b.top().as_f32()<=top+12.).map(|b|serde_json::json!({"left":(b.left()-bounds.left()).as_f32(),"right":(b.right()-bounds.left()).as_f32(),"height":(top-b.top().as_f32()+10.).max(28.)}));
         let reduced = cx.reduce_motion();
         // Reading the transcript re-renders this view on every streamed
-        // token. Physics advance on a fixed tick instead, so those extra
+        // token. Physics advance on the pulse's tick instead, so those extra
         // renders repaint the same frame rather than nudging the runner
         // forward at uneven intervals.
-        let tick = (self.started.elapsed().as_secs_f64() * 1000. / TICK_MS) as u64;
+        let tick = self.tick;
         let result = (self.stepped != Some(tick)).then(|| {
             self.context.with(|cx| {
                 let o: rquickjs::Object = cx.globals().get("NativeArcade")?;
@@ -133,7 +143,14 @@ impl Render for Runner {
         // It covers ground quickly, so it needs the full 30fps to read as
         // running rather than hopping.
         if self.busy || self.frame.active {
-            crate::pulse::request(crate::pulse::Rate::Smooth, window, cx);
+            let view = cx.weak_entity();
+            crate::pulse::request_frame(crate::pulse::Rate::Smooth, window, cx, move |cx| {
+                view.update(cx, |this, cx| {
+                    this.tick = this.tick_at(cx.frame_time());
+                    cx.notify();
+                })
+                .ok();
+            });
         }
         let frame = self.frame.clone();
         let color: gpui::Hsla = gpui::rgb(self.color).into();

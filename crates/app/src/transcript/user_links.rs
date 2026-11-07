@@ -327,9 +327,14 @@ impl TranscriptView {
         let pr = work.kind == "pr";
         let (status_icon, status_label, status_ink) = status(pr, item.as_ref());
         let summary = plain_text_summary(details.as_ref().map_or("", |d| d.body.as_str()));
+        // The label ages on the shared clock, which notifies this view as it
+        // moves; started here once, as no constructor of the transcript has
+        // the app at hand.
+        crate::inbox::start_relative_clock(cx);
+        let now = crate::inbox::RelativeNow::read(window, cx);
         let updated = item
             .as_ref()
-            .map(|item| crate::inbox::relative_time(&item.updated_at))
+            .map(|item| crate::inbox::relative_time(&item.updated_at, &now))
             .unwrap_or_default();
         let author = details
             .as_ref()
@@ -848,9 +853,11 @@ mod tests {
         cx.executor().advance_clock(HOVER_OPEN_DELAY);
         cx.run_until_parked();
         window
-            .update(cx, |view, window, cx| {
+            .update(cx, |view, _, cx| {
                 assert_eq!(view.work_item_cards.loads[&key(&work)], Load::Ready);
-                assert!(view.work_item_card(window, cx).is_some());
+                // The card builds only while the transcript draws (its label reads the
+                // drawing view's clock): open, it shows on the next frame.
+                assert!(view.work_item_cards.open.is_some());
                 let item = peek_item(&key(&work));
                 assert_eq!(status(true, item.as_ref()).1, "Merged");
                 view.hide_work_item_card_after_delay(cx);

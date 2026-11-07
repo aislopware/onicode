@@ -19,7 +19,7 @@ use onicode_protocol::work::{
     ReadInboxThread, RunInboxAction,
 };
 use onicode_protocol::{OpId, inbox as model};
-pub(crate) use ui::relative_time;
+pub(crate) use ui::{RelativeNow, relative_time, start_relative_clock};
 
 use crate::diff_view::{DiffEvent, DiffView};
 use crate::engine_client::{Engine, call};
@@ -174,6 +174,7 @@ impl Inbox {
         if !projects.contains(&cwd) {
             projects.push(cwd.clone());
         }
+        start_relative_clock(cx);
         let ui_state = crate::ui_state::shared(cx);
         let mut state: ViewState = ui_state
             .get(STATE_KEY)

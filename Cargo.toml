@@ -233,8 +233,8 @@ parking_lot = "0.12.5"
 # `all`: binding a socket to the tailnet's interface (`bind_device_by_index_v4`/`_v6`).
 socket2 = { version = "0.6.5", features = ["all"] }
 # Tailscale's LocalAPI is HTTP/1.1 over a Unix socket or loopback TCP.
-hyper = "1.11"
-hyper-util = "0.1.20"
+hyper = "1.12"
+hyper-util = "0.1.21"
 http-body-util = "0.1.5"
 # Property and model tests; the version noq-proto's tests already lock.
 proptest = "1.12"
@@ -266,13 +266,16 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # atlas clear, group fades, whole blurs ordered as monocode's marker, cached views snapped from their bounds,
 # first runs shaped at next_up; its FORK.md "Onicode"), so the app draws as monocode's patched GPUI snapshot did
 # (docs/onicode/golden.md).
-gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "cf2c296ad4e6f7065ddd3a122e41ea7cebf27567", default-features = false }
-gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "cf2c296ad4e6f7065ddd3a122e41ea7cebf27567", default-features = false }
+gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "45fac4d15825cc687eb5a206852e82399420862f", default-features = false }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "45fac4d15825cc687eb5a206852e82399420862f", default-features = false }
 # The headless Metal renderer, the CoreText text system and the GPU memory snapshot.
-gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "cf2c296ad4e6f7065ddd3a122e41ea7cebf27567" }
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "45fac4d15825cc687eb5a206852e82399420862f" }
 
 # storage
-rusqlite = { version = "0.40.2", features = ["bundled", "hooks"], default-features = false }
+# `bundled`: one SQLite on every platform, not whichever the OS ships. `hooks`: a search a newer
+# keystroke cancelled interrupts its query (`progress_handler`). No statement cache: the store
+# prepares per call.
+rusqlite = { version = "0.41.1", features = ["bundled", "hooks"], default-features = false }
 
 # misc
 # Global allocator on macOS only: libmalloc retains the churn high-water mark
@@ -294,7 +297,8 @@ sha2 = "0.11.1"
 # A digest as lowercase hex: digest 0.11's output no longer formats with `{:x}`, and p256 already
 # locks base16ct.
 base16ct = { version = "1.0.0", features = ["alloc"] }
-notify = "7"
+# The engine's Files and Git watches; the default backend, FSEvents, on macOS.
+notify = "8.2.1"
 # Terminal emulation (docs/onicode/decisions/terminal.md): aislopware/libghostty-rs, which pins the
 # aislopware/ghostty commit whose libghostty-vt it builds. Pinned by rev: the engine's host and the
 # app's mirror must run the same snapshot format.
@@ -303,9 +307,13 @@ libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "41
 pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1"
 unicode-width = "0.2"
-# Packaged GUI apps do not inherit shell proxy variables; honor the macOS
-# system proxy for provider usage probes and other HTTP clients.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream", "system-proxy"] }
+# The updater's HTTP client (onicode-update), HTTP/1.1 only. `rustls-no-provider`: rustls checked by
+# the platform verifier (the system's trust store, so a managed Mac's own roots are honored) on ring,
+# the provider core's rustls and quinn already link, rather than reqwest's default aws-lc-rs, a second
+# crypto library; onicode-update installs ring. `stream`: downloads are read as they arrive.
+# `system-proxy`: packaged GUI apps do not inherit shell proxy variables, so the macOS system proxy
+# is honored.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls-no-provider", "stream", "system-proxy"] }
 
 [profile.release]
 # Distribution profile (scripts/package-linux.sh): thin LTO buys most of fat

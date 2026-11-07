@@ -14,6 +14,10 @@ use tokio::sync::mpsc;
 
 /// Frames a call may have queued each way before its reader catches up.
 const QUEUE: usize = 64;
+/// Bytes a call's stream may hold queued ahead of QUIC before its writer waits: past this a slow
+/// reader holds back the serving side (a watch's queue then overflows to `Resync` at the engine,
+/// engine.md "Backpressure") instead of the stream's queue growing without bound.
+pub const BACKLOG: usize = 256 << 10;
 
 /// Opens an RPC stream per call on a link.
 #[derive(Clone, Debug)]
@@ -43,13 +47,16 @@ impl StreamCarrier for PeerCarrier {
 
 /// The string-frame duplex over one stream: what is sent on the returned sender goes out as
 /// frames, and the stream's frames arrive on the receiver. The sender's last clone dropped
-/// finishes the stream; the stream's end, or an unreadable frame, ends the receiver.
+/// finishes the stream; the stream's end, or an unreadable frame, ends the receiver. The writer
+/// keeps at most [`BACKLOG`] bytes queued on the stream, so QUIC's flow control reaches the
+/// sender of what goes out.
 #[must_use]
 pub fn duplex(tx: StreamTx, mut rx: StreamRx) -> Duplex {
     let (out, mut outgoing) = mpsc::channel::<String>(QUEUE);
     let (incoming, inbound) = mpsc::channel::<String>(QUEUE);
     tokio::spawn(async move {
         while let Some(frame) = outgoing.recv().await {
+            tx.room(BACKLOG).await;
             if tx.send_frame(frame.as_bytes()).is_err() {
                 return;
             }

@@ -220,7 +220,8 @@ impl Accounts {
             .into_any_element()
     }
 
-    pub(crate) fn settings_rows(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    /// Each provider's accounts, their usage read at `now` (Unix ms).
+    pub(crate) fn settings_rows(&mut self, now: i64, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mut rows = Vec::new();
         for kind in accounts::PROVIDERS {
             let accounts = self.book.list(kind);
@@ -445,7 +446,7 @@ impl Accounts {
                                     ),
                             ),
                     )
-                    .child(self.meters(kind, &id))
+                    .child(self.meters(kind, &id, now))
                     .child(controls);
                 body = body.child(row);
             }
@@ -477,7 +478,7 @@ impl Accounts {
         rows
     }
 
-    fn meters(&self, kind: Kind, id: &str) -> AnyElement {
+    fn meters(&self, kind: Kind, id: &str, now: i64) -> AnyElement {
         let key = Key::new(kind, self.profile(id), None);
         let Some(snapshot) = self.usage.get(&key).and_then(|s| s.snapshot.as_ref()) else {
             return div().into_any_element();
@@ -487,7 +488,7 @@ impl Accounts {
             .items_center()
             .gap_3()
             .children(snapshot.windows.iter().map(|w| {
-                let used = if w.resets_at.is_some_and(|at| at <= usage::now_ms()) {
+                let used = if w.resets_at.is_some_and(|at| at <= now) {
                     Some(0.)
                 } else {
                     w.used_percent
@@ -587,9 +588,9 @@ impl Accounts {
         &self,
         kind: Kind,
         selected: &str,
-        project: &str,
-        session: Option<i64>,
+        (project, session): (&str, Option<i64>),
         on_back: impl Fn(&mut Window, &mut App) + 'static,
+        now: i64,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let adding = self
@@ -599,7 +600,6 @@ impl Accounts {
         if adding {
             return self.editor_row(cx);
         }
-        let now = usage::now_ms();
         let mut rows = div()
             .id("provider-account-choices")
             .role(Role::Group)

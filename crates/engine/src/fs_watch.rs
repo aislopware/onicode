@@ -170,13 +170,18 @@ impl FsWatch {
         })
         .ok()
         .and_then(|mut watcher| {
+            // Every root in one batch: FSEvents restarts its stream once, at the commit, where a
+            // `watch` per root restarts it per root. The commit reports a stream that failed to
+            // start, so a root nothing watches polls instead.
+            let mut paths = watcher.paths_mut();
             let mut watching = false;
             for root in roots {
-                if root.exists() && watcher.watch(root, RecursiveMode::Recursive).is_ok() {
+                if root.exists() && paths.add(root, RecursiveMode::Recursive).is_ok() {
                     watching = true;
                 }
             }
-            watching.then_some(watcher)
+            let started = paths.commit().is_ok();
+            (watching && started).then_some(watcher)
         });
         let watched = watcher.is_some();
         let _ = std::thread::Builder::new()

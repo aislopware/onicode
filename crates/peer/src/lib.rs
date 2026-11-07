@@ -8,7 +8,8 @@
 //!   notifications and confirmed by a probe of each.
 //! * [`PeerLinks`]: one link per device: dials deduplicated (both ends keep the link the smaller
 //!   device-id dialled), redialled with backoff, kept alive on the control stream, with the path
-//!   each takes; RPC calls, streams and datagrams to a device by its id.
+//!   each takes; RPC calls, streams and datagrams to a device by its id, and subscriptions that
+//!   resume from their consumer's place across a lost link.
 //! * [`carrier`]: the existing RPC envelopes over one QUIC stream per call.
 //! * [`EngineList`]: the tailnet as engines the person listed, for a node with no `LocalAPI` (iOS).
 //! * [`path`]: the OS's reports of a usable network path, which cut the links' backoffs short.
@@ -32,7 +33,8 @@ pub use directory::{Peer, PeerDirectory};
 pub use endpoint::{PeerConfig, PeerEndpoint, PeerSession, Sockets, SystemSockets};
 pub use engine_list::EngineList;
 pub use links::{
-    LinkInfo, LinkState, LinksConfig, PathReport, PeerLinks, PeerSubscription, StreamHandler,
+    LinkInfo, LinkState, LinksConfig, PathReport, PeerLinks, PeerSubscription, Resume,
+    StreamHandler,
 };
 use onicode_net::NetError;
 use onicode_tailnet::LocalApiError;

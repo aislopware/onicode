@@ -487,6 +487,10 @@ fn http_client() -> anyhow::Result<reqwest::Client> {
 }
 
 fn http_client_with_timeouts(connect: Duration, read: Duration) -> anyhow::Result<reqwest::Client> {
+    // reqwest's rustls carries no crypto provider (`rustls-no-provider`) and takes the process
+    // default when the client is built: ring, which the rest of onicode already links. An `Err`
+    // only says a default is installed already.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     reqwest::Client::builder()
         .connect_timeout(connect)
         // Inactivity timeout, not a total download cap: slow progressing
@@ -1617,8 +1621,8 @@ pub struct Updater {
     /// a fresh look at the wall clock.
     wake_tx: Arc<watch::Sender<u64>>,
     forced: Arc<AtomicBool>,
-    /// Set by `onicode headless`: this process is the installed service and may
-    /// restart itself into a newer installed binary.
+    /// Set by the engine (`onicode-engine`): this process is the installed service
+    /// and may restart itself into a newer installed binary.
     service: Arc<AtomicBool>,
     /// Flips to true exactly once; the check loop selects against it so
     /// cancellation lands at any await point (no tokio-util in this crate).
@@ -1714,9 +1718,9 @@ impl Updater {
             .send_modify(|epoch| *epoch = epoch.wrapping_add(1));
     }
 
-    /// Called by `onicode headless`: when this process is the installed engine
-    /// service and something else installs a newer binary, restart into it at
-    /// the next quiet moment. A hand-started `onicode headless` is left alone —
+    /// Called by the engine (`onicode-engine`): when this process is the installed
+    /// engine service and something else installs a newer binary, restart into it
+    /// at the next quiet moment. A hand-started `onicode-engine` is left alone —
     /// restarting the service unit would start a second engine beside it.
     pub fn restart_when_superseded(&self) {
         if !running_as_installed_service() {

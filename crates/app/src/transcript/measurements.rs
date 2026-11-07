@@ -43,17 +43,30 @@ impl Measurements {
         self.rows.clear();
     }
 
-    /// Heights depend on the viewport. Prompt widths are natural text widths
+    /// Every row lays out inside the `max_w(COLUMN)` column, so a retained
+    /// height depends on the column's width alone, not the viewport's: a pane
+    /// sliding beside a viewport wider than the column keeps every retained
+    /// height, where clearing them re-measured the whole follow window (80
+    /// rows) on each frame of the slide. Prompt widths are natural text widths
     /// and the bubble's `max_w` and flex shrinking handle narrow windows.
-    fn viewport_changed(&mut self) {
+    fn resize(&mut self, viewport: gpui::Size<Pixels>) {
         self.rows.clear();
-        self.retained.clear();
+        if column_width(self.viewport) != column_width(viewport) {
+            self.retained.clear();
+        }
+        self.viewport = viewport;
     }
 
     pub(super) fn clear(&mut self) {
-        self.viewport_changed();
+        self.rows.clear();
+        self.retained.clear();
         self.prompt_widths.clear();
     }
+}
+
+/// The width a row's content lays out at in a viewport this size.
+fn column_width(viewport: gpui::Size<Pixels>) -> Pixels {
+    viewport.width.min(px(COLUMN))
 }
 
 pub(super) fn prompt_fingerprint(rows: &[UiRow], attachments: &[attachments::Attachment]) -> u64 {
@@ -182,8 +195,7 @@ impl TranscriptView {
             self.measurements.clear();
         }
         if self.measurements.viewport != self.viewport.size {
-            self.measurements.viewport_changed();
-            self.measurements.viewport = self.viewport.size;
+            self.measurements.resize(self.viewport.size);
         }
         self.measurements.rows.clear();
         // GPUI has no paint-only notify, so every frame that renders the transcript may have
@@ -205,8 +217,7 @@ impl TranscriptView {
     ) -> Pixels {
         // The viewport probe can discover a resize after render's follow pass.
         if self.measurements.viewport != self.viewport.size {
-            self.measurements.viewport_changed();
-            self.measurements.viewport = self.viewport.size;
+            self.measurements.resize(self.viewport.size);
         }
         if let Some(height) = self.measurements.rows.get(&ix) {
             return *height;
@@ -499,7 +510,10 @@ mod tests {
                     ))),
                     ..Default::default()
                 },
-                |_, cx| {
+                |window, cx| {
+                    // These tests count the measuring renders do; the retained
+                    // check's frames from scratch run every render again.
+                    window.set_check_retained(None);
                     let transcript = cx.new(|cx| {
                         let mut view = TranscriptView::new();
                         view.visible = false;
@@ -762,6 +776,34 @@ mod tests {
             assert_eq!(
                 view.measurements.fresh_prompt_widths, fresh,
                 "a resize must not measure prompt widths again"
+            );
+        });
+    }
+
+    /// A pane sliding beside the transcript narrows its viewport on every
+    /// frame; while the viewport stays wider than the column, no row's layout
+    /// changes, so no retained height is measured again.
+    #[gpui::test]
+    fn retained_row_measurements_survive_resizes_that_keep_the_column(cx: &mut TestAppContext) {
+        let window = chat(cx);
+        let (ix, height) = probe(window, cx, |view, window, cx| {
+            view.motions.clear();
+            view.begin_measurements(window, cx);
+            let ix = answer(view);
+            (ix, view.measure_row_height(ix, window, cx))
+        });
+        for width in [880., 860., 845.] {
+            cx.simulate_window_resize(window.into(), size(px(width), px(600.)));
+            render(window, cx);
+        }
+        probe(window, cx, move |view, window, cx| {
+            assert!(view.viewport.size.width > px(COLUMN));
+            view.begin_measurements(window, cx);
+            let before = view.measurements.fresh;
+            assert_eq!(view.measure_row_height(ix, window, cx), height);
+            assert_eq!(
+                view.measurements.fresh, before,
+                "a resize that keeps the column must not lay rows out again"
             );
         });
     }

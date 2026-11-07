@@ -80,6 +80,7 @@ impl Focusable for Notes {
 
 impl Notes {
     pub(crate) fn new(engine: Engine, cx: &mut Context<Self>) -> Self {
+        crate::inbox::start_relative_clock(cx);
         let query = cx.new(|cx| Input::field("Filter notes", "Filter notes", content(0.4), cx));
         query.update(cx, |input, _| input.set_font_size(12.));
         let title = cx.new(|cx| {
@@ -885,7 +886,8 @@ impl Notes {
         .into_any_element()
     }
 
-    fn detail(&mut self, note: Note, cx: &mut Context<Self>) -> AnyElement {
+    fn detail(&mut self, note: Note, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let now = crate::inbox::RelativeNow::read(window, cx);
         let body = note.body.clone();
         let source = note.source_session_id.clone();
         let can_add = !body.trim().is_empty();
@@ -1200,7 +1202,10 @@ impl Notes {
                                 div()
                                     .text_size(px(12.))
                                     .text_color(content(0.5))
-                                    .child(format!("Updated {}", relative_time(note.updated_at))),
+                                    .child(format!(
+                                        "Updated {}",
+                                        relative_time(note.updated_at, &now)
+                                    )),
                             )
                             .child(tags)
                             .child(actions),
@@ -1237,6 +1242,7 @@ impl gpui::Render for Notes {
             .filter(|note| note.matches(&query))
             .cloned()
             .collect();
+        let now = crate::inbox::RelativeNow::read(window, cx);
         let list = div().relative().w(px(self.list_width)).h_full().flex_shrink_0().min_h_0().flex().flex_col().border_r_1().border_color(content(0.07))
             .child(div().h(px(36.)).flex_shrink_0().px_2().flex().items_center().gap_1().border_b_1().border_color(content(0.07)).child(icon("search", 12.))
                 .child(div().flex_1().min_w_0().child(self.query.clone()))
@@ -1250,7 +1256,7 @@ impl gpui::Render for Notes {
                     div().id(("saved-note", ix)).role(Role::Button).aria_label(note.title.clone()).aria_selected(active).mb(px(2.)).px(px(10.)).py_2().rounded_md().text_color(content(0.8)).hover(|style| style.bg(content(0.05))).when(active, |d| d.bg(content(0.1)))
                         .child(div().flex().items_center().gap_2().text_size(px(11.)).text_color(content(0.45))
                             .child(div().flex_1().truncate().when_some(note.project_name(), |d, name| d.child(div().flex().items_center().gap_1p5().child(self.project_mark(note.source_cwd.as_deref().unwrap_or(""), 12.)).child(name))))
-                            .child(relative_time(note.updated_at)))
+                            .child(relative_time(note.updated_at, &now)))
                         .child(div().mt_1().truncate().text_size(px(13.)).font_weight(FontWeight::SEMIBOLD).text_color(content(1.)).child(note.title.clone()))
                         .when(!preview.is_empty(), |d| d.child(div().mt_1().truncate().text_size(px(12.)).text_color(content(0.45)).child(preview)))
                         .when(!note.tags.is_empty(), |d| d.child(div().mt_1p5().flex().items_center().gap_1().overflow_hidden()
@@ -1261,7 +1267,7 @@ impl gpui::Render for Notes {
             .child(div().id("resize-notes-list").role(Role::Splitter).aria_label("Resize notes list").absolute().top_0().bottom_0().right(px(-3.)).w(px(6.)).cursor(CursorStyle::ResizeLeftRight).hover(|style| style.bg(content(0.1)))
                 .on_mouse_down(MouseButton::Left, cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| { if event.click_count == 2 { this.list_width = 280.; } else { this.resize = Some((event.position.x.as_f32(), this.list_width)); } cx.notify(); })));
         let detail = if let Some(note) = self.draft(cx) {
-            self.detail(note, cx)
+            self.detail(note, window, cx)
         } else {
             div()
                 .flex_1()
@@ -1376,8 +1382,11 @@ impl gpui::Render for Notes {
 fn project_name(path: &str) -> String {
     onicode_protocol::files::leaf_name(path)
 }
-fn relative_time(at: i64) -> String {
-    let seconds = (onicode_protocol::time::now_ms() as i64 - at).max(0) / 1000;
+/// How long ago `at`, in Unix milliseconds, was, against the shared
+/// [`crate::inbox::RelativeNow`] so the label moves on as it ages.
+fn relative_time(at: i64, now: &crate::inbox::RelativeNow) -> String {
+    // Under a minute reads "now" until the minute is up.
+    let seconds = (-now.until(at, 15_000)).max(0) / 1000;
     match seconds {
         0..60 => "now".into(),
         60..3600 => format!("{}m", seconds / 60),

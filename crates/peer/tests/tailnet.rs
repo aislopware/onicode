@@ -472,7 +472,7 @@ impl RpcService for Service {
                 ))))
             }
             "Tick" => Ok(RpcReply::Stream(Box::pin(futures::stream::unfold(
-                0_u64,
+                params.as_u64().unwrap_or(0),
                 |n| async move {
                     tokio::time::sleep(Duration::from_secs(1)).await;
                     Some((serde_json::Value::from(n), n + 1))
@@ -608,4 +608,60 @@ async fn a_subscription_outlives_the_duplicate_link_it_rode() {
         Some(&serde_json::json!(1)),
         "the kept link ticks on"
     );
+}
+
+/// A resuming subscription outlives a lost link: the peer sleeps past the silence limit, the
+/// link ends, and once the peer wakes the subscription starts again from the number after the
+/// last one its consumer took, never from the start and never repeating one.
+#[tokio::test(start_paused = true)]
+async fn a_resuming_subscription_picks_up_after_a_lost_link() {
+    const SEED: u64 = 44;
+    let _seed = report_seed("a_resuming_subscription_picks_up_after_a_lost_link", SEED);
+    let tailnet = SimTailnet::new(Faults::CLEAR, SEED);
+    let mac = tailnet.add(NodeSpec::owned("mac", USER));
+    let laptop = tailnet.add(NodeSpec::owned("laptop", USER));
+    let mac_engine = engine(&tailnet, mac, "dev-mac", SEED).await;
+    let served = LinksConfig {
+        service: Some(Arc::new(Service)),
+        ..LinksConfig::default()
+    };
+    let _laptop_engine = engine_with(
+        &tailnet,
+        tailnet.local_api(laptop),
+        "dev-laptop",
+        SEED + 1,
+        served,
+    )
+    .await;
+    let watching = mac_engine.watch();
+    mac_engine.directory.refresh().await.unwrap();
+
+    let mut ticks = mac_engine
+        .links
+        .subscribe("dev-laptop", "Tick", serde_json::json!(0))
+        .await
+        .unwrap()
+        .resuming(Box::new(|item, params| {
+            *params = serde_json::json!(item.as_u64().unwrap_or(0) + 1);
+            true
+        }));
+    let mut seen = Vec::new();
+    while seen.len() < 3 {
+        seen.push(ticks.recv().await.unwrap().as_u64().unwrap());
+    }
+
+    tailnet.set_asleep(laptop, true);
+    let dropped = |e: &Engine| e.links.state("dev-laptop") != LinkState::Live;
+    assert!(until(&mac_engine, Duration::from_secs(40), dropped).await);
+    tailnet.set_asleep(laptop, false);
+    while seen.len() < 8 {
+        let tick = tokio::time::timeout(Duration::from_secs(120), ticks.recv())
+            .await
+            .expect("ticks come back")
+            .expect("the subscription carries on");
+        seen.push(tick.as_u64().unwrap());
+    }
+    let expected: Vec<u64> = (0..8).collect();
+    assert_eq!(seen, expected, "no restart, no repeat, no gap");
+    watching.abort();
 }

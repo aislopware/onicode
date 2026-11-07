@@ -1,6 +1,7 @@
 //! The protocol's ids. An [`EngineId`] is the tailnet device id bound at admission; the rest are
 //! UUIDv7, minted by whoever creates the thing (usually the viewer), so a new chat, a sent prompt
-//! or a queued message has its final id before any byte leaves.
+//! or a queued message has its final id before any byte leaves. A session or a project on any
+//! engine is named by its engine and its own id or path: [`SessionKey`] and [`ProjectRef`].
 use std::fmt;
 use std::str::FromStr;
 
@@ -8,13 +9,65 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// An engine: the tailnet device id its link was admitted under (`transport.md`), the same string
-/// `onicode-peer` keys its directory and links by.
+/// `onicode-peer` keys its directory and links by. An engine on the tailnet takes its node's
+/// stable id; one that never joined it keeps the id it last had, else its host name.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct EngineId(pub String);
 
 impl fmt::Display for EngineId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
+    }
+}
+
+/// A session on any engine: the engine that hosts it and the session's own id there.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SessionKey {
+    pub engine: EngineId,
+    pub session: SessionId,
+}
+
+impl SessionKey {
+    /// `body` on its way to the session's engine, under `op` when it mutates.
+    #[must_use]
+    pub fn routed<T>(&self, op: Option<OpId>, body: T) -> crate::Routed<T> {
+        crate::Routed {
+            engine: Some(self.engine.clone()),
+            op,
+            body,
+        }
+    }
+}
+
+impl fmt::Display for SessionKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}/{}", self.engine, self.session)
+    }
+}
+
+/// A project on any engine: the engine whose disk holds it and the path there, as that engine
+/// spells it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ProjectRef {
+    pub engine: EngineId,
+    pub path: String,
+}
+
+impl ProjectRef {
+    /// `body` on its way to the project's engine, under `op` when it mutates.
+    #[must_use]
+    pub fn routed<T>(&self, op: Option<OpId>, body: T) -> crate::Routed<T> {
+        crate::Routed {
+            engine: Some(self.engine.clone()),
+            op,
+            body,
+        }
+    }
+}
+
+impl fmt::Display for ProjectRef {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}:{}", self.engine, self.path)
     }
 }
 
@@ -100,5 +153,21 @@ mod tests {
             serde_json::to_string(&engine).unwrap(),
             "\"nTailnetDevice\""
         );
+    }
+
+    #[test]
+    fn a_key_routes_to_its_engine() {
+        let key = SessionKey {
+            engine: EngineId("nMac".into()),
+            session: SessionId::new(),
+        };
+        let routed = key.routed(None, 7);
+        assert_eq!(routed.engine, Some(EngineId("nMac".into())));
+        assert_eq!(routed.body, 7);
+        let project = ProjectRef {
+            engine: EngineId("nMac".into()),
+            path: "/code".into(),
+        };
+        assert_eq!(project.to_string(), "nMac:/code");
     }
 }

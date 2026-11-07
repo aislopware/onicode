@@ -595,7 +595,9 @@ mod native_tests {
                     ))),
                     ..Default::default()
                 },
-                |_, cx| {
+                |window, cx| {
+                    // It counts renders; the retained check's frame from scratch renders again.
+                    window.set_check_retained(None);
                     cx.new(|cx| {
                         let transcript = cx.new(|_| TranscriptView::new());
                         let mut history = Transcript::default();

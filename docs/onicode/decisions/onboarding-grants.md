@@ -71,9 +71,9 @@ How the checklist behaves:
   (`BundleProgram`, `AssociatedBundleIdentifiers`), so it shows under Onicode in Background App Activity and
   in the privacy lists as "Onicode Desktop".
 - It is signed inside out with its fixed identifier before the engine and the app. Releases are signed by
-  better-update with team UK58J62H8L's Developer ID. `scripts/run-macos-dev.sh` takes
-  `ONICODE_DEV_CODESIGN_IDENTITY`, else the one valid Developer ID of that team, and stops when there is none
-  or several unless `ONICODE_DEV_ADHOC=1`: a flip between identities silently drops every grant.
+  better-update with team UK58J62H8L's Developer ID (`scripts/release/bundle-macos.sh`). A dev bundle
+  (`scripts/native/bundle-native-macos.sh`) is ad hoc unless `ONICODE_NATIVE_SIGNING_IDENTITY` names a
+  Developer ID; keep one choice per machine, because a flip between identities silently drops every grant.
 - A running process reads Screen Recording once. desktopd's report is `Grants::fresh`: what it sees plus what
   a copy of itself started with `--probe-grants` sees. While a guide is open, `restart_when_granted` exits
   with status 75 once the copy sees a grant desktopd can't, and launchd's `KeepAlive` starts it again.

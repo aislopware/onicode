@@ -20,12 +20,18 @@ futures.workspace = true
 # The instance lock (`flock`), stopping an engine of another build (`kill`), the peer's uid.
 libc.workspace = true
 # The Files and Git watches' platform file watch (FSEvents on macOS).
-notify = "8.2"
+notify.workspace = true
 onicode-core.workspace = true
 # A viewer's link starts the engine beside the app, detached.
 onicode-launch.workspace = true
+# The engine on the tailnet (`peers`): its QUIC endpoint, peers' hellos and the stream heads.
+onicode-net.workspace = true
+# Its endpoint, directory and links: forwarded calls and watches (`router`), and `WatchMachines`.
+onicode-peer.workspace = true
 onicode-protocol.workspace = true
 onicode-rpc.workspace = true
+# The system Tailscale daemon the engine joins the tailnet through.
+onicode-tailnet.workspace = true
 # The Terminal group's host terminal, PTY and login shell.
 onicode-term.workspace = true
 serde.workspace = true
@@ -35,7 +41,22 @@ serde_json.workspace = true
 tokio = { workspace = true, features = ["sync", "net", "rt-multi-thread", "time", "signal"] }
 uuid.workspace = true
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# The engine's own banners while no viewer presents its alerts (`alerts::SystemBanners`).
+objc2.workspace = true
+objc2-foundation = { workspace = true, features = ["NSArray", "NSBundle", "NSString"] }
+objc2-user-notifications = { workspace = true, features = [
+    "block2",
+    "UNNotificationContent",
+    "UNNotificationRequest",
+    "UNNotificationSound",
+    "UNNotificationTrigger",
+    "UNUserNotificationCenter",
+] }
+
 [dev-dependencies]
+# Engines, an app and a phone on a simulated tailnet, in virtual time (`tests/peers.rs`).
+onicode-net-sim.workspace = true
 proptest.workspace = true
 tempfile.workspace = true
 # `rt` and `macros`: the service's tests drive `memory_client` on a current-thread runtime;

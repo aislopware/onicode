@@ -2026,6 +2026,7 @@ mod tests {
     fn project_rail_and_transcript_stay_cached_during_independent_updates(cx: &mut TestAppContext) {
         cx.update(|cx| cx.set_reduce_motion(true));
         let (window, _, active) = super::super::tests::window(cx);
+        super::super::tests::counting_renders(cx, window);
         let visual = &mut VisualTestContext::from_window(window.into(), cx);
         visual.simulate_resize(size(px(1500.), px(900.)));
         window

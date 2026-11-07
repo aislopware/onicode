@@ -221,12 +221,15 @@ pub(crate) fn pointer(bounds: Bounds<Pixels>, window: &Window) -> Option<(f32, f
 }
 
 /// A chart canvas that repaints as the pointer moves over it and leaves.
-pub(crate) fn hoverable(id: gpui::SharedString) -> gpui::Stateful<gpui::Div> {
+/// The chart reads the pointer while it paints, so only `view`, the visual
+/// drawing it, is built again; the rest of the window is drawn from the last
+/// frame.
+pub(crate) fn hoverable(id: gpui::SharedString, view: gpui::EntityId) -> gpui::Stateful<gpui::Div> {
     use gpui::{InteractiveElement, StatefulInteractiveElement, div};
     div()
         .id(id)
-        .on_mouse_move(|_, window, _| window.refresh())
-        .on_hover(|_, window, _| window.refresh())
+        .on_mouse_move(move |_, _, cx| cx.notify(view))
+        .on_hover(move |_, _, cx| cx.notify(view))
 }
 
 /// The details card next to a hovered point: a title, then one row per

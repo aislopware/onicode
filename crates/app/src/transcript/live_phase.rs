@@ -164,7 +164,9 @@ fn edge_fade(
             .changed
             .is_some_and(|at| now.duration_since(at).as_secs_f32() < 0.16)
         {
-            window.on_next_frame(|window, _| window.refresh());
+            // Only the transcript drawing this fade eases it: build that view
+            // again next frame, not the whole window.
+            window.request_animation_frame();
         }
         let (top, bottom) = edges.frame;
         crate::mask::mask_fade_y(px(top), px(bottom))

@@ -130,7 +130,7 @@ impl Viewer {
 
 fn setting() -> impl Strategy<Value = EngineSetting> {
     prop_oneof![
-        any::<bool>().prop_map(EngineSetting::KeepAwake),
+        any::<bool>().prop_map(EngineSetting::KeepAwakeWhileAgentsRun),
         any::<bool>().prop_map(EngineSetting::ClaudeHooks),
         (0..6_u32).prop_map(EngineSetting::IdleAgents),
         prop::option::of("[a-c]").prop_map(EngineSetting::DefaultProvider),
@@ -310,7 +310,7 @@ fn monocode_store() -> Database {
             "theme": "dark",
             "idle_agents": 5,
             "claude_hooks": false,
-            "keep_awake": true,
+            "keep_awake_while_agents_run": false,
             "binary_paths": { "claude": "/opt/claude" },
             "hidden_providers": ["pi"],
             "background_model": { "provider": "codex", "model": "gpt-5.6-luna" },
@@ -342,7 +342,7 @@ fn monocode_preferences_move_once() {
     let moved = hub.current();
     assert_eq!(moved.idle_agents, 5);
     assert!(!moved.claude_hooks);
-    assert!(moved.keep_awake);
+    assert!(!moved.keep_awake_while_agents_run);
     assert_eq!(
         moved.binary_paths.get("claude").map(String::as_str),
         Some("/opt/claude")

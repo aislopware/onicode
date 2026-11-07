@@ -9,7 +9,8 @@ use onicode_protocol::agent::{
 };
 use onicode_protocol::context::Usage;
 use onicode_protocol::engine::{
-    EngineDetails, EngineInfo, Hello, StopEngine, UpdateEngine, UpdateStarted,
+    EngineDetails, EngineInfo, EngineLoad, Hello, LinkPath, Load, Machine, MachineEvent,
+    MachineKind, MachineLink, Machines, StopEngine, UpdateEngine, UpdateStarted, WatchMachines,
 };
 use onicode_protocol::follow_up::{Message, State};
 use onicode_protocol::provider::{BackgroundTask, Kind, NativeCommand, NativeSubcommand};
@@ -33,7 +34,8 @@ use onicode_protocol::workspace::{
     WorkspaceEvent, WorkspaceState,
 };
 use onicode_protocol::{
-    Cursor, EngineId, Item, MessageId, OpId, Outcome, Rejection, Routed, SessionId, TerminalId,
+    Cursor, EngineId, Item, MessageId, OpId, Outcome, ProjectRef, Rejection, Routed, SessionId,
+    SessionKey, TerminalId,
 };
 use proptest::collection::{hash_map, vec};
 use proptest::option;
@@ -77,6 +79,68 @@ fn terminal_id() -> impl Strategy<Value = TerminalId> {
 
 fn engine_id() -> impl Strategy<Value = EngineId> {
     text().prop_map(EngineId)
+}
+
+fn link_path() -> impl Strategy<Value = LinkPath> {
+    prop_oneof![
+        text().prop_map(LinkPath::Direct),
+        text().prop_map(LinkPath::PeerRelay),
+        text().prop_map(LinkPath::Derp),
+        Just(LinkPath::Idle),
+    ]
+}
+
+fn machine_link() -> impl Strategy<Value = MachineLink> {
+    prop_oneof![
+        Just(MachineLink::Here),
+        Just(MachineLink::Live),
+        Just(MachineLink::Dialing),
+        Just(MachineLink::Found),
+        (text(), any::<u64>()).prop_map(|(reason, retry_in_ms)| MachineLink::Offline {
+            reason,
+            retry_in_ms
+        }),
+    ]
+}
+
+fn machine() -> impl Strategy<Value = Machine> {
+    (
+        (
+            engine_id(),
+            text(),
+            prop_oneof![
+                Just(MachineKind::This),
+                Just(MachineKind::Engine),
+                Just(MachineKind::Viewer)
+            ],
+            machine_link(),
+            option::of(link_path()),
+        ),
+        (
+            option::of(any::<u64>()),
+            text(),
+            option::of(any::<u32>()),
+            any::<bool>(),
+            option::of(any::<u32>()),
+        ),
+    )
+        .prop_map(
+            |(
+                (engine, name, kind, link, path),
+                (rtt_us, version, protocol, owner, live_agents),
+            )| Machine {
+                engine,
+                name,
+                kind,
+                link,
+                path,
+                rtt_us,
+                version,
+                protocol,
+                owner,
+                live_agents,
+            },
+        )
 }
 
 fn cursor() -> impl Strategy<Value = Cursor> {
@@ -676,6 +740,49 @@ proptest! {
     fn engine_info(engine in engine_id(), name in text(), version in text(), protocol in any::<u32>()) {
         round_trips(&EngineInfo {})?;
         round_trips(&EngineDetails { engine, name, version, protocol })?;
+    }
+
+    #[test]
+    fn keys(engine in engine_id(), session in session_id(), path in text()) {
+        round_trips(&SessionKey { engine: engine.clone(), session })?;
+        round_trips(&ProjectRef { engine, path })?;
+    }
+
+    #[test]
+    fn machines(
+        list in vec(machine(), 0..4),
+        changed in machine(),
+        gone in engine_id(),
+        since in option::of(cursor()),
+        live_agents in any::<u32>(),
+    ) {
+        round_trips(&WatchMachines { since })?;
+        round_trips(&Machines { machines: list })?;
+        round_trips(&MachineEvent::Changed(changed))?;
+        round_trips(&MachineEvent::Gone(gone))?;
+        round_trips(&EngineLoad {})?;
+        round_trips(&Load { live_agents })?;
+    }
+
+    /// The list a viewer folds from events is sorted and holds each machine once, whatever order
+    /// the events came in.
+    #[test]
+    fn machines_fold_to_one_sorted_list(events in vec(
+        prop_oneof![
+            machine().prop_map(MachineEvent::Changed),
+            engine_id().prop_map(MachineEvent::Gone),
+        ],
+        0..24,
+    )) {
+        let mut machines = Machines::default();
+        for event in &events {
+            machines.apply(event);
+        }
+        let engines: Vec<_> = machines.machines.iter().map(|m| m.engine.clone()).collect();
+        let mut sorted = engines.clone();
+        sorted.sort();
+        sorted.dedup();
+        prop_assert_eq!(engines, sorted);
     }
 
     #[test]

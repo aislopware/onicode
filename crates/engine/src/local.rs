@@ -1,19 +1,25 @@
 //! One engine: every hub over one store the engine opens itself, served as one
-//! [`EngineService`]. The `onicode-engine` process holds one and serves it on its socket
-//! ([`crate::host`]); tests hold one in process and speak the protocol to its service. A viewer
-//! never touches the store.
+//! [`EngineService`] behind the [`Router`] that forwards what names another engine. The
+//! `onicode-engine` process holds one and serves it on its socket ([`crate::host`]) and to its
+//! peers on the tailnet ([`Local::join`]); tests hold one in process and speak the protocol to its
+//! service. A viewer never touches the store.
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use onicode_core::store::Store;
 use tokio::sync::Notify;
 
 use crate::accounts::{AccountsHub, AccountsService, AgentProbe, CliProbe};
+use crate::alerts::{AlertsHub, AlertsService, SystemBanners};
 use crate::app_access::{AppAccessHub, AppAccessService};
 use crate::files::{FilesHub, FilesService};
 use crate::git::{CheckoutHub, GitService};
+use crate::machines::{MachinesHub, MachinesService};
+use crate::outbox::Outbox;
+use crate::peers::{Identity, Peers};
+use crate::router::{Peering, Router};
 use crate::service::{EngineGroup, EngineService};
-use crate::session::{SessionHub, SessionService, Spawn};
+use crate::session::{Runner, SessionHub, SessionService, Spawn};
 use crate::settings::{SettingsHub, SettingsService};
 use crate::settings_pages::SettingsPagesService;
 use crate::terminal::{TerminalHub, TerminalService};
@@ -38,6 +44,8 @@ pub struct Options {
     pub trackers: Option<Arc<dyn Trackers>>,
     /// The `gh` linked activity asks; `None` runs the CLI.
     pub gh: Option<Arc<dyn Gh>>,
+    /// Runs each turn; `None` runs the provider (`turn::run_turn`). Tests script it.
+    pub runner: Option<Runner>,
 }
 
 /// The schedulers an engine runs on its own clock, beaten every 30 s by whoever runs it (tests
@@ -69,11 +77,21 @@ pub struct Local {
     pub settings: Arc<SettingsHub>,
     pub work: Arc<WorkHub>,
     pub app_access: Arc<AppAccessHub>,
+    /// What needs the owner, and the banners it posts.
+    pub alerts: Arc<AlertsHub>,
     /// Every terminal's shell. A quiet engine starts none.
     pub terminal: Arc<TerminalHub>,
-    pub service: Arc<EngineService>,
+    /// The machines this engine knows (`WatchMachines`).
+    pub machines: Arc<MachinesHub>,
+    /// Who this engine is: its id and its machine's name.
+    pub identity: Arc<Identity>,
+    /// Every group, routed: what its viewers and peers reach.
+    pub service: Arc<Router>,
     /// Told when a viewer stops the engine (`StopEngine`).
     stop: Arc<Notify>,
+    /// The engine's place on the tailnet, once it joined, and the task that follows it into the
+    /// machines list.
+    peers: Mutex<Option<(Arc<Peers>, tokio::task::AbortHandle)>>,
 }
 
 impl Local {
@@ -94,7 +112,17 @@ impl Local {
 
     fn over(store: Database, spawn: Arc<dyn Spawn>, options: Options) -> Result<Self, String> {
         let settings = SettingsHub::new(store.clone())?;
-        let session = SessionHub::new(store.clone(), spawn.clone());
+        let session = match options.runner {
+            Some(runner) => SessionHub::with_runner(store.clone(), spawn.clone(), runner),
+            None => SessionHub::new(store.clone(), spawn.clone()),
+        };
+        let identity = Identity::of(
+            crate::turn::locked(&store)?
+                .data_dir()
+                .map(Path::to_path_buf)
+                .as_deref(),
+        );
+        let machines = MachinesHub::new(identity.clone(), session.clone());
         let workspace = match options.chores {
             Some(chores) => WorkspaceHub::with_chores(store.clone(), spawn.clone(), chores),
             None => WorkspaceHub::new(store.clone(), spawn.clone()),
@@ -129,6 +157,7 @@ impl Local {
             TerminalHub::new(spawn.clone())
         };
         let app_access = AppAccessHub::new(store.clone(), workspace.clone(), spawn);
+        let alerts = AlertsHub::new(Arc::new(SystemBanners));
         let stop = Arc::new(Notify::new());
         let service = EngineService::new(
             SessionService::new(session.clone()),
@@ -142,7 +171,18 @@ impl Local {
         .with(Arc::new(WorkService::new(work.clone())))
         .with(Arc::new(AppAccessService::new(app_access.clone())))
         .with(Arc::new(TerminalService::new(terminal.clone())))
-        .with(Arc::new(EngineGroup::new(session.clone(), stop.clone())));
+        .with(Arc::new(MachinesService::new(machines.clone())))
+        .with(Arc::new(AlertsService::new(alerts.clone())))
+        .with(Arc::new(EngineGroup::new(
+            session.clone(),
+            identity.clone(),
+            stop.clone(),
+        )));
+        let router = Router::new(
+            Arc::new(service),
+            identity.clone(),
+            Outbox::new(store.clone()),
+        );
         Ok(Self {
             store,
             session,
@@ -153,10 +193,51 @@ impl Local {
             settings,
             work,
             app_access,
+            alerts,
             terminal,
-            service: Arc::new(service),
+            machines,
+            identity,
+            service: Arc::new(router),
             stop,
+            peers: Mutex::new(None),
         })
+    }
+
+    /// Takes this engine's place on the tailnet through `peers`: its id becomes the tailnet's,
+    /// what names another engine is forwarded over them, the outbox delivers, and the machines
+    /// list follows them. Runs inside a tokio runtime. An engine joins once; `peers` built from
+    /// [`Self::peer_service`].
+    pub fn join(&self, peers: Peers) {
+        let peers = Arc::new(peers);
+        self.identity
+            .set(peers.id().clone(), peers.name().to_owned());
+        let peering: Arc<dyn Peering> = peers.clone();
+        self.service.attach(&peering);
+        let following = tokio::spawn(self.machines.clone().follow(Arc::downgrade(&peers)));
+        let previous = self
+            .peers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .replace((peers, following.abort_handle()));
+        if let Some((_, task)) = previous {
+            task.abort();
+        }
+    }
+
+    /// What the engine serves its peers: the same routed service its viewers reach.
+    #[must_use]
+    pub fn peer_service(&self) -> Arc<dyn onicode_rpc::RpcService> {
+        self.service.clone()
+    }
+
+    /// The engine's place on the tailnet, once it joined.
+    #[must_use]
+    pub fn peers(&self) -> Option<Arc<Peers>> {
+        self.peers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+            .map(|(peers, _)| peers.clone())
     }
 
     /// Resolves once a viewer stopped the engine with `StopEngine`.
@@ -228,5 +309,20 @@ impl Local {
     #[must_use]
     pub fn is(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.store, &other.store)
+    }
+}
+
+impl Drop for Local {
+    /// Leaves the tailnet with the engine: its links close, and the machines list stops following
+    /// them.
+    fn drop(&mut self) {
+        if let Some((_, task)) = self
+            .peers
+            .get_mut()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take()
+        {
+            task.abort();
+        }
     }
 }

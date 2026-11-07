@@ -810,6 +810,7 @@ impl VisualView {
                 *height,
                 self.motion,
                 format!("visual-chart-{key}").into(),
+                cx.entity_id(),
             ),
             Node::Gauge {
                 label,
@@ -837,6 +838,7 @@ impl VisualView {
                 value.clone(),
                 self.motion,
                 format!("visual-donut-{key}").into(),
+                cx.entity_id(),
             ),
             Node::Heatmap {
                 values,
@@ -850,6 +852,7 @@ impl VisualView {
                 *token,
                 self.motion,
                 format!("visual-heatmap-{key}").into(),
+                cx.entity_id(),
             ),
             Node::Progress {
                 label,
@@ -1094,10 +1097,23 @@ impl Render for VisualView {
             .child(
                 canvas(
                     move |bounds, _, cx| {
-                        let old = (width.get() / 180.).floor();
-                        width.set(bounds.size.width.as_f32());
-                        if old != (width.get() / 180.).floor() {
-                            let _ = entity.update(cx, |this, cx| this.changed(cx));
+                        // Render lays grids and tables out at the width measured
+                        // here, a frame late. A notify while drawing asks for no
+                        // frame, so the view hears of a new width once this frame
+                        // is drawn; a new grid column count also remeasures its row.
+                        let new = bounds.size.width.as_f32();
+                        let old = width.replace(new);
+                        if old != new {
+                            let columns = (old / 180.).floor() != (new / 180.).floor();
+                            cx.defer(move |cx| {
+                                let _ = entity.update(cx, |this, cx| {
+                                    if columns {
+                                        this.changed(cx);
+                                    } else {
+                                        cx.notify();
+                                    }
+                                });
+                            });
                         }
                     },
                     |_, _, _, _| {},

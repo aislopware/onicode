@@ -612,8 +612,10 @@ impl WorkspaceHub {
         let (reply, answer) = futures::channel::oneshot::channel();
         self.spawn.spawn(Box::pin(async move {
             let found = match reader {
-                Some(reader) => reader.search_sessions(&body.query, cancel),
-                None => locked(&store).and_then(|store| store.search_sessions(&body.query, cancel)),
+                Some(mut reader) => reader.search_sessions(&body.query, cancel),
+                None => {
+                    locked(&store).and_then(|mut store| store.search_sessions(&body.query, cancel))
+                }
             };
             let _ = reply.send(found);
         }));

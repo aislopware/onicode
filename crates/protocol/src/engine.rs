@@ -1,10 +1,11 @@
-//! The Engine group: greeting, describing, updating and stopping an engine, and naming the
-//! sessions the app still knows by row. [`Hello`], [`EngineInfo`] and [`UpdateEngine`] are
-//! frozen: their shapes never change and use only primitives and [`EngineId`], so engines on
-//! different [`PROTOCOL`](crate::PROTOCOL)s can still greet each other and offer an update.
+//! The Engine group: greeting, describing, updating and stopping an engine, naming the sessions
+//! the app still knows by row, and the machines the engine reaches over the tailnet
+//! ([`WatchMachines`]). [`Hello`], [`EngineInfo`] and [`UpdateEngine`] are frozen: their shapes
+//! never change and use only primitives and [`EngineId`], so engines on different
+//! [`PROTOCOL`](crate::PROTOCOL)s can still greet each other and offer an update.
 use serde::{Deserialize, Serialize};
 
-use crate::{Call, EngineId, Outcome, SessionId};
+use crate::{Call, Cursor, EngineId, Outcome, SessionId, Watch};
 
 /// The first call on every connection, sent by the side that opened it and answered with the
 /// other side's own. Frozen.
@@ -94,4 +95,162 @@ impl Call for ResolveSession {
     type Reply = Option<SessionId>;
 
     const NAME: &'static str = "ResolveSession";
+}
+
+/// How busy an engine is: what the machines list shows beside it. Asked of a peer's engine by the
+/// engine that lists it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EngineLoad {}
+
+impl Call for EngineLoad {
+    type Params = Self;
+    type Reply = Load;
+
+    const NAME: &'static str = "EngineLoad";
+}
+
+/// [`EngineLoad`]'s reply.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Load {
+    /// The sessions with a turn running now.
+    pub live_agents: u32,
+}
+
+/// Watch the machines this engine knows: itself, every engine the tailnet has, and every device
+/// linked to it now (a phone), with how each link travels. The app's own engine answers it; it is
+/// not forwarded in practice, since only the local engine knows its own links.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WatchMachines {
+    pub since: Option<Cursor>,
+}
+
+impl Watch for WatchMachines {
+    type Event = MachineEvent;
+    type Params = Self;
+    type State = Machines;
+
+    const NAME: &'static str = "WatchMachines";
+}
+
+/// Every machine, sorted by [`Machine::engine`], so the list reads the same however its events
+/// arrived.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Machines {
+    pub machines: Vec<Machine>,
+}
+
+impl Machines {
+    /// Applies `event`: a machine replaced or added in its place, or one gone.
+    pub fn apply(&mut self, event: &MachineEvent) {
+        match event {
+            MachineEvent::Changed(machine) => {
+                match self
+                    .machines
+                    .binary_search_by(|held| held.engine.cmp(&machine.engine))
+                {
+                    Ok(at) => self.machines[at] = machine.clone(),
+                    Err(at) => self.machines.insert(at, machine.clone()),
+                }
+            }
+            MachineEvent::Gone(engine) => {
+                if let Ok(at) = self
+                    .machines
+                    .binary_search_by(|held| held.engine.cmp(engine))
+                {
+                    self.machines.remove(at);
+                }
+            }
+        }
+    }
+
+    /// The machine `engine`, if listed.
+    #[must_use]
+    pub fn get(&self, engine: &EngineId) -> Option<&Machine> {
+        self.machines
+            .binary_search_by(|held| held.engine.cmp(engine))
+            .ok()
+            .and_then(|at| self.machines.get(at))
+    }
+}
+
+/// What changed in [`Machines`].
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MachineEvent {
+    /// The machine as it is now, new or changed.
+    Changed(Machine),
+    /// The machine is no longer listed: off the tailnet, or a phone that unlinked.
+    Gone(EngineId),
+}
+
+impl MachineEvent {
+    /// The machine the event is about.
+    #[must_use]
+    pub const fn engine(&self) -> &EngineId {
+        match self {
+            Self::Changed(machine) => &machine.engine,
+            Self::Gone(engine) => engine,
+        }
+    }
+}
+
+/// One machine of the list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Machine {
+    pub engine: EngineId,
+    /// Its tailnet name, or its host name for this engine off the tailnet.
+    pub name: String,
+    pub kind: MachineKind,
+    pub link: MachineLink,
+    /// How the link travels, as this engine's tailnet daemon reports it.
+    pub path: Option<LinkPath>,
+    /// The link's smoothed round trip, in microseconds.
+    pub rtt_us: Option<u64>,
+    /// Its build, as its hello names it.
+    pub version: String,
+    /// Its [`PROTOCOL`](crate::PROTOCOL); `None` when its hello did not say. One that differs from
+    /// this engine's is answered only the frozen calls: "Needs update".
+    pub protocol: Option<u32>,
+    /// The same tailnet user's machine, rather than a node granted to it.
+    pub owner: bool,
+    /// Sessions with a turn running, as it last said; `None` until it answers.
+    pub live_agents: Option<u32>,
+}
+
+/// What a machine is to this engine.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MachineKind {
+    /// This engine.
+    This,
+    /// Another engine.
+    Engine,
+    /// A phone or another viewer that serves nothing, linked to this engine now.
+    Viewer,
+}
+
+/// Where this engine's link to a machine stands.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MachineLink {
+    /// This engine itself.
+    Here,
+    /// Linked now.
+    Live,
+    /// Being dialled.
+    Dialing,
+    /// Found on the tailnet, not linked: dialled when something is sent to it.
+    Found,
+    /// Not reachable; the next dial is due in `retry_in_ms`.
+    Offline { reason: String, retry_in_ms: u64 },
+}
+
+/// How a link travels.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LinkPath {
+    /// Straight over UDP, to this address.
+    Direct(String),
+    /// Through another node acting as a relay.
+    PeerRelay(String),
+    /// Through a DERP server in this region.
+    Derp(String),
+    /// Nothing flowed lately, so the daemon has chosen no path.
+    Idle,
 }

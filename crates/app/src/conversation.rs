@@ -11,6 +11,7 @@ mod composer_shelf;
 mod edit_last_turn;
 mod follow_up;
 pub(crate) mod git_actions;
+mod heard;
 mod history;
 mod mobile;
 mod model_controls;
@@ -191,8 +192,9 @@ pub(crate) struct Conversation {
     catalog: Vec<Model>,
     catalog_epoch: u64,
     account_switching: bool,
-    /// Follows the engine's hold on the usage limit the banner shows (`sync_usage_limit`).
-    _usage_clock: gpui::Task<()>,
+    /// The session's watch: the turns the engine runs that this view did not send, and what it
+    /// changes between turns, the usage limit the banner shows among it (`heard.rs`).
+    heard: heard::State,
     approvals: std::collections::VecDeque<Approval>,
     approval_ui: approvals::State,
     questions:
@@ -246,6 +248,19 @@ pub(crate) struct Conversation {
     response_events: Option<Subscription>,
     response_menu: Option<ResponseMenu>,
     response_request: Option<(usize, onicode_protocol::response::TransferKind, Instant)>,
+}
+/// What a turn's updates are merged against (`Conversation::follow_turn`).
+struct Following {
+    /// The view's turn they belong to: updates of an older one are dropped.
+    generation: u64,
+    /// The provider and account the turn runs on: what it reports of them applies only while the
+    /// view still has them selected.
+    source_provider: String,
+    source_account: String,
+    /// What names a new checkout's branch, empty when the view does not name it.
+    worktree_message: String,
+    /// The model the turn runs, until it names its own.
+    turn_model_id: Option<String>,
 }
 /// What a mutating call came to, as the views report it.
 pub(super) fn applied(reply: Result<Outcome, String>) -> Result<(), String> {
@@ -594,19 +609,6 @@ impl Conversation {
                     .selected(Kind::from_id(&summary.provider), &summary.cwd)
             })
             .unwrap_or_default();
-        let usage_clock = cx.spawn(async move |this, cx| {
-            loop {
-                cx.background_executor()
-                    .timer(std::time::Duration::from_secs(30))
-                    .await;
-                if this
-                    .update(cx, |this, cx| this.sync_usage_limit(cx))
-                    .is_err()
-                {
-                    break;
-                }
-            }
-        });
         perf_prompt(cx);
         Self {
             editing_last_turn: Default::default(),
@@ -666,7 +668,7 @@ impl Conversation {
             catalog: Vec::new(),
             catalog_epoch: 0,
             account_switching: false,
-            _usage_clock: usage_clock,
+            heard: heard::State::default(),
             approvals: Default::default(),
             approval_ui: Default::default(),
             questions: Default::default(),
@@ -821,6 +823,7 @@ impl Conversation {
                             .update(cx, |v, cx| v.install_prepared_history(history, cx));
                         this.status = "Ready".into();
                         this.loaded = true;
+                        this.hear_session(cx);
                         if let Some((row, query)) = this.pending_search.take() {
                             this.reveal_search(row, query, cx);
                         }
@@ -1175,7 +1178,7 @@ impl Conversation {
         }
         self.approvals.clear();
         self.questions.clear();
-        let mut turn_model_id = settings
+        let turn_model_id = settings
             .turn_model
             .as_ref()
             .and_then(|turn| turn.model_id.clone())
@@ -1222,8 +1225,56 @@ impl Conversation {
             ));
             rx
         };
+        if let Some(message) = self
+            .controls
+            .as_ref()
+            .and_then(crate::engine_client::TurnControls::message)
+        {
+            self.remember_own_turn(message);
+        }
+        self.hear_session(cx);
+        self.follow_turn(
+            None,
+            rx,
+            Following {
+                generation,
+                source_provider,
+                source_account,
+                worktree_message,
+                turn_model_id,
+            },
+            cx,
+        );
+        cx.emit(SessionChanged);
+        cx.notify();
+    }
+
+    /// Merges a turn's updates as they arrive, one per beat: the turn this view sent, or one the
+    /// engine runs that the view joined (`heard.rs`), whose `first` update arrived already.
+    fn follow_turn(
+        &mut self,
+        first: Option<onicode_engine::turn::Update>,
+        rx: async_channel::Receiver<onicode_engine::turn::Update>,
+        following: Following,
+        cx: &mut Context<Self>,
+    ) {
+        let Following {
+            generation,
+            source_provider,
+            source_account,
+            worktree_message,
+            mut turn_model_id,
+        } = following;
         cx.spawn(async move |this, cx| {
-            while let Ok(update) = rx.recv().await {
+            let mut first = first;
+            loop {
+                let update = match first.take() {
+                    Some(update) => update,
+                    None => match rx.recv().await {
+                        Ok(update) => update,
+                        Err(_) => break,
+                    },
+                };
                 // Land each update on the spinners' 30Hz beat: the reply then
                 // redraws in their frames instead of adding frames of its own.
                 if !update.finished {
@@ -1512,6 +1563,8 @@ impl Conversation {
                             this.save_settings(cx);
                             this.refresh_git(cx);
                             this.run_history_actions(cx);
+                            // What the session's watch reported while this turn ran.
+                            this.take_deferred_heard(cx);
                             cx.emit(SessionChanged);
                         } else if incoming_notification_input
                             || needed_approval != this.needs_approval()
@@ -1528,8 +1581,6 @@ impl Conversation {
             }
         })
         .detach();
-        cx.emit(SessionChanged);
-        cx.notify();
     }
 
     fn begin_turn(&mut self, cx: &mut Context<Self>) {
@@ -1820,7 +1871,7 @@ impl Conversation {
             .or(self.branch.clone())
             .unwrap_or_else(|| "HEAD".into());
         let session = self.summary.id;
-        let work = crate::engine_client::local(cx).call::<CreateWorktree>(
+        let work = self.engine.call::<CreateWorktree>(
             Some(OpId::new()),
             CreateWorktree {
                 checkout: cwd,

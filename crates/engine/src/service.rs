@@ -6,7 +6,7 @@ use onicode_protocol::engine::{
     EngineDetails, EngineInfo, Hello, ResolveSession, StopEngine, UpdateEngine, UpdateStarted,
 };
 use onicode_protocol::files::StopSearch;
-use onicode_protocol::{Call, EngineId, OpId, Outcome, PROTOCOL, Routed};
+use onicode_protocol::{Call, OpId, Outcome, PROTOCOL, Routed};
 use onicode_rpc::{RpcError, RpcReply, RpcService, parse_params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -14,6 +14,7 @@ use tokio::sync::Notify;
 
 use crate::files::FilesService;
 use crate::git::GitService;
+use crate::peers::Identity;
 use crate::session::{SessionHub, SessionService};
 use crate::workspace::WorkspaceService;
 
@@ -31,14 +32,20 @@ pub trait Group: RpcService {
 /// sessions the app still names by row.
 pub struct EngineGroup {
     session: Arc<SessionHub>,
+    identity: Arc<Identity>,
     stop: Arc<Notify>,
 }
 
 impl EngineGroup {
-    /// The group over `session`'s rows, telling `stop` when a viewer stops the engine.
+    /// The group over `session`'s rows, as the engine `identity` names, telling `stop` when a
+    /// viewer stops the engine.
     #[must_use]
-    pub fn new(session: Arc<SessionHub>, stop: Arc<Notify>) -> Self {
-        Self { session, stop }
+    pub fn new(session: Arc<SessionHub>, identity: Arc<Identity>, stop: Arc<Notify>) -> Self {
+        Self {
+            session,
+            identity,
+            stop,
+        }
     }
 }
 
@@ -49,28 +56,6 @@ pub fn hello() -> Hello {
         protocol: PROTOCOL,
         version: VERSION.into(),
         capabilities: Vec::new(),
-    }
-}
-
-/// The machine's name, as its host name says; the tailnet's device name replaces it with peers
-/// (engine.md, migration step 9).
-fn machine_name() -> String {
-    let mut name = [0u8; 256];
-    // SAFETY: `gethostname` writes at most `name.len()` bytes into the buffer it is given.
-    let written = unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len()) };
-    if written != 0 {
-        return "This Mac".into();
-    }
-    let end = name
-        .iter()
-        .position(|byte| *byte == 0)
-        .unwrap_or(name.len());
-    let host = String::from_utf8_lossy(name.get(..end).unwrap_or_default()).into_owned();
-    let host = host.strip_suffix(".local").unwrap_or(&host).to_owned();
-    if host.is_empty() {
-        "This Mac".into()
-    } else {
-        host
     }
 }
 
@@ -98,10 +83,9 @@ impl RpcService for EngineGroup {
         }
         if method == EngineInfo::NAME {
             routed::<EngineInfo>(params)?;
-            let name = machine_name();
             return RpcReply::value(&EngineDetails {
-                engine: EngineId(name.clone()),
-                name,
+                engine: self.identity.id(),
+                name: self.identity.name(),
                 version: VERSION.into(),
                 protocol: PROTOCOL,
             });
@@ -189,7 +173,7 @@ pub(crate) fn routed<T: DeserializeOwned>(
 ) -> Result<(Option<OpId>, T), RpcError> {
     let routed: Routed<T> = parse_params(params)?;
     if routed.engine.is_some() {
-        // Forwarding to other engines arrives with peers (engine.md, migration step 9).
+        // The router serves a group only what it found to be this engine's (`router.rs`).
         return Err(RpcError::Failed(
             "This engine serves only its own calls".into(),
         ));

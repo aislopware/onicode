@@ -527,7 +527,7 @@ checksum = "2af50177e190e07a26ab74f8b1efbfe2ef87da2116221318cb1c2e82baf7de06"
 [[package]]
 name = "bench_metrics"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "anyhow",
  "criterion",
@@ -942,7 +942,7 @@ dependencies = [
 [[package]]
 name = "collections"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "gpui_util",
  "indexmap",
@@ -1393,7 +1393,7 @@ dependencies = [
 [[package]]
 name = "derive_refineable"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2195,7 +2195,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.2"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2265,7 +2265,7 @@ dependencies = [
 [[package]]
 name = "gpui_apple"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "anyhow",
  "async-task",
@@ -2304,7 +2304,7 @@ dependencies = [
 [[package]]
 name = "gpui_ios"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2335,7 +2335,7 @@ dependencies = [
 [[package]]
 name = "gpui_linux"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2362,7 +2362,7 @@ dependencies = [
 [[package]]
 name = "gpui_macos"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "accesskit",
  "accesskit_macos",
@@ -2403,7 +2403,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -2414,7 +2414,7 @@ dependencies = [
 [[package]]
 name = "gpui_platform"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -2430,7 +2430,7 @@ dependencies = [
 [[package]]
 name = "gpui_shared_string"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "schemars",
  "serde",
@@ -2440,7 +2440,7 @@ dependencies = [
 [[package]]
 name = "gpui_util"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "anyhow",
  "log",
@@ -2450,7 +2450,7 @@ dependencies = [
 [[package]]
 name = "gpui_web"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "anyhow",
  "async-channel",
@@ -2478,7 +2478,7 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -2504,7 +2504,7 @@ dependencies = [
 [[package]]
 name = "gpui_windows"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "accesskit",
  "accesskit_windows",
@@ -2717,7 +2717,7 @@ dependencies = [
 [[package]]
 name = "http_client"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2788,7 +2788,6 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots",
 ]
 
 [[package]]
@@ -3405,9 +3404,9 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.38.2"
+version = "0.39.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1d20bef17f513b9b3004532233187769cd072d790971f4e4da0e346eb6401e8"
+checksum = "14a5f01b87b92705d07b433c06f96cbc764637d81a0bffb5734ce17cf0f9a2b3"
 dependencies = [
  "cc",
  "pkg-config",
@@ -4832,10 +4831,17 @@ dependencies = [
  "futures",
  "libc",
  "notify",
+ "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
+ "objc2-user-notifications",
  "onicode-core",
  "onicode-launch",
+ "onicode-net",
+ "onicode-net-sim",
+ "onicode-peer",
  "onicode-protocol",
  "onicode-rpc",
+ "onicode-tailnet",
  "onicode-term",
  "proptest",
  "serde",
@@ -5035,6 +5041,7 @@ dependencies = [
  "futures",
  "libc",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -5082,6 +5089,12 @@ name = "oorandom"
 version = "11.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
+
+[[package]]
+name = "openssl-probe"
+version = "0.2.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "option-ext"
@@ -6029,7 +6042,7 @@ dependencies = [
 [[package]]
 name = "refineable"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "derive_refineable",
 ]
@@ -6080,11 +6093,11 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "reqwest"
-version = "0.12.28"
+version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
+checksum = "16a1cfa75cc186dd73d5818e510e042e40927bccc9c236b061cea97e1eb08029"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "futures-core",
  "futures-util",
@@ -6098,12 +6111,9 @@ dependencies = [
  "log",
  "percent-encoding",
  "pin-project-lite",
- "quinn",
  "rustls",
  "rustls-pki-types",
- "serde",
- "serde_json",
- "serde_urlencoded",
+ "rustls-platform-verifier",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -6116,7 +6126,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
- "webpki-roots",
 ]
 
 [[package]]
@@ -6216,9 +6225,9 @@ dependencies = [
 
 [[package]]
 name = "rusqlite"
-version = "0.40.2"
+version = "0.41.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23f2a97da3e3873c73cb2a2e71b35c40ff95e0b1eefa8d72d8499a6928c3b5b3"
+checksum = "da9bba6f3506135e120a6586df05be18b48d18896600646a4bec8f993d91a594"
 dependencies = [
  "bitflags 2.13.2",
  "fallible-iterator",
@@ -6292,6 +6301,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "rustls-native-certs"
+version = "0.8.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4a073f5dc7469f984c52ad2752b63b0807745133b6de880b7b64c1ac4c48aec4"
+dependencies = [
+ "openssl-probe",
+ "rustls-pki-types",
+ "schannel",
+ "security-framework",
+]
+
+[[package]]
 name = "rustls-pki-types"
 version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6300,6 +6321,33 @@ dependencies = [
  "web-time",
  "zeroize",
 ]
+
+[[package]]
+name = "rustls-platform-verifier"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1167586491e2b18b8bfbb293e8180ec17c201c4f076d7cb3070ca964e7598f98"
+dependencies = [
+ "core-foundation 0.10.1",
+ "core-foundation-sys",
+ "jni",
+ "log",
+ "once_cell",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-platform-verifier-android",
+ "rustls-webpki",
+ "security-framework",
+ "security-framework-sys",
+ "webpki-root-certs",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "rustls-platform-verifier-android"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eec689c0bc40ff2458a5977b6619cb718087084a18e02a131c599b62d05e1a5f"
 
 [[package]]
 name = "rustls-webpki"
@@ -6346,9 +6394,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "schannel"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cb23c424d8ee841bb4d813677ca237e2a610067d594fec130f87d6093495ab5"
+dependencies = [
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "scheduler"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "async-task",
  "backtrace",
@@ -6883,7 +6940,7 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 [[package]]
 name = "sum_tree"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "heapless",
  "rayon",
@@ -8048,9 +8105,9 @@ dependencies = [
 
 [[package]]
 name = "wasm-streams"
-version = "0.4.2"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15053d8d85c7eccdbefef60f06769760a563c7f0a9d6902a13d35c7800b0ad65"
+checksum = "9d1ec4f6517c9e11ae630e200b2b65d193279042e28edd4a2cda233e46670bbb"
 dependencies = [
  "futures-util",
  "js-sys",
@@ -8089,6 +8146,15 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "webpki-root-certs"
+version = "1.0.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e49d0e65abc00c142e8f9428da991da9f1a250c39be97459901eb12b9b49f62a"
+dependencies = [
+ "rustls-pki-types",
 ]
 
 [[package]]
@@ -9216,7 +9282,7 @@ dependencies = [
 [[package]]
 name = "ztracing"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 dependencies = [
  "tracing",
  "ztracing_macro",
@@ -9225,7 +9291,7 @@ dependencies = [
 [[package]]
 name = "ztracing_macro"
 version = "0.1.0"
-source = "git+https://github.com/aislopware/gpui-fast?rev=cf2c296ad4e6f7065ddd3a122e41ea7cebf27567#cf2c296ad4e6f7065ddd3a122e41ea7cebf27567"
+source = "git+https://github.com/aislopware/gpui-fast?rev=45fac4d15825cc687eb5a206852e82399420862f#45fac4d15825cc687eb5a206852e82399420862f"
 
 [[package]]
 name = "zune-core"

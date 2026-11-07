@@ -29,6 +29,8 @@ pub(super) struct State {
     pub file_error: Entity<FileActionError>,
     pub reminder_error: Option<String>,
     pub github: Entity<GithubActivity>,
+    /// The engine's agent alerts, posted here while the app runs.
+    pub(super) agent_alerts: crate::notifications::agent_alerts::AgentAlerts,
     linked: HashMap<i64, Entity<LinkedActivity>>,
     linked_cleanup: HashMap<i64, Cleanup>,
     linked_seen_ready: bool,
@@ -41,6 +43,9 @@ pub(super) struct State {
     permission_probe: Option<Receiver<Permission>>,
     announcements: approvals::InputAnnouncements,
     responding: HashSet<i64>,
+    /// What each chat last told the shell [`Shell::sync_notices`] reads of it
+    /// ([`notice_inputs`]).
+    watched: HashMap<i64, NoticeInputs>,
     sequence: u64,
     badge: usize,
     sounds_enabled: bool,
@@ -48,6 +53,23 @@ pub(super) struct State {
     poll: Option<gpui::Task<()>>,
     /// How many notification mute and resume times had passed at the last poll.
     rule_times_passed: usize,
+}
+
+/// Whether a chat is responding, and the requests it waits on: what
+/// [`Shell::sync_notices`] turns into notices.
+pub(super) type NoticeInputs = (bool, Vec<String>);
+
+/// What `chat` shows [`Shell::sync_notices`] now.
+pub(super) fn notice_inputs(chat: &Conversation, cx: &App) -> NoticeInputs {
+    let requests = if chat.needs_approval() {
+        chat.pending_notification_inputs(cx)
+            .into_iter()
+            .map(|input| input.request_id)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    (chat.responding(), requests)
 }
 
 impl State {
@@ -71,6 +93,7 @@ impl State {
             updater: updater::shared(cx),
             file_error: cx.new(|_| FileActionError::new()),
             reminder_error: None,
+            agent_alerts: crate::notifications::agent_alerts::AgentAlerts::new(&engine),
             github: cx.new(|_| GithubActivity::new(engine, HashMap::new())),
             linked: HashMap::new(),
             linked_cleanup: HashMap::new(),
@@ -84,6 +107,7 @@ impl State {
             permission_probe: None,
             announcements: Default::default(),
             responding: HashSet::new(),
+            watched: HashMap::new(),
             sequence: 0,
             badge: 0,
             sounds_enabled: workspace.preferences.sounds,
@@ -323,6 +347,7 @@ impl Shell {
                             this.open_notice_target(target, cx);
                         }
                         this.poll_linked_activity(cx);
+                        this.sync_agent_alerts(cx);
                         // Scheduled mutes expire without a preference change;
                         // redraw when one does, not on every tick.
                         let passed = this
@@ -427,6 +452,29 @@ impl Shell {
         })
     }
 
+    /// Notes what a chat shows [`Self::sync_notices`] ([`notice_inputs`]).
+    /// The shell reconciles notices as it renders, and a chat notifies only
+    /// itself, so the observer of each chat notifies the shell when what it
+    /// shows moved from what was noted: a turn began or ended, or the
+    /// approvals and questions it waits on changed. Its frame then shows the
+    /// badge, the announcement and the finish without waiting on anything
+    /// else. The observer compares read-only first, so a streaming chat's
+    /// every frame updates nothing.
+    pub(super) fn note_notice_inputs(&mut self, id: i64, seen: NoticeInputs) {
+        self.notification_state.watched.insert(id, seen);
+    }
+
+    /// The chats [`Self::sync_notices`] last found responding.
+    #[cfg(test)]
+    pub(super) fn responding_notices(&self) -> &HashSet<i64> {
+        &self.notification_state.responding
+    }
+
+    /// What [`Self::note_notice_inputs`] last noted of a chat.
+    pub(super) fn notice_seen(&self, id: i64) -> Option<&NoticeInputs> {
+        self.notification_state.watched.get(&id)
+    }
+
     pub(super) fn sync_notices(&mut self, window: &Window, cx: &mut Context<Self>) {
         let now = onicode_protocol::time::now_ms();
         // This runs on every Shell frame; borrow the preferences below instead
@@ -479,6 +527,10 @@ impl Shell {
         self.notification_state
             .responding
             .retain(|id| live_ids.contains(id));
+        let sessions = &self.sessions;
+        self.notification_state
+            .watched
+            .retain(|id, _| sessions.contains_key(id));
         for id in quiet {
             self.mobile_turn_ended(id);
         }
@@ -560,6 +612,28 @@ impl Shell {
                 cx,
             )
         });
+        self.sync_agent_alerts(cx);
+    }
+
+    /// Tells the engine's alerts what the window shows and what the owner allows, and posts
+    /// what they raised since.
+    fn sync_agent_alerts(&mut self, cx: &mut Context<Self>) {
+        let now = onicode_protocol::time::now_ms();
+        let prefs = &self.workspace.preferences;
+        let policy = crate::notifications::agent_alerts::Policy {
+            enabled: prefs.notifications,
+            sound: prefs.sounds,
+            permission: self.notification_state.permission,
+            window_focused: self.window_active,
+            on_screen: self
+                .workspace
+                .active
+                .filter(|id| self.notice_session_visible(*id)),
+            allows: &|project, category| {
+                prefs.allows_project_notification(project, category, Some(now), now)
+            },
+        };
+        self.notification_state.agent_alerts.sync(&policy, cx);
     }
 
     pub(super) fn deliver_session_notice(
@@ -628,6 +702,10 @@ impl Shell {
             {
                 crate::sound::play(cue);
             }
+            return;
+        }
+        // The engine's alerts post what agents need and finish (`sync_agent_alerts`).
+        if category != "reminders" {
             return;
         }
         self.notification_state.sequence = self.notification_state.sequence.wrapping_add(1);

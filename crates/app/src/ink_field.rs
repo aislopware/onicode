@@ -2,6 +2,12 @@
 //! field that drifts, curls and fades; holding charges a vortex that pulls
 //! the ink into a spiral, and letting go bursts it outward as a shockwave.
 //! Painted on the charts' 3px Bayer grid so it reads as the same halftone.
+//!
+//! The field moves on the shared pulse: each tick steps it and notifies the
+//! view, and painting only draws what the last step left. A frame that draws
+//! the field again from the last one (gpui-fast's retained views) therefore
+//! shows what painting it afresh would, and an input that changes what is
+//! drawn (a press, a release) notifies at once.
 use std::cell::RefCell;
 use std::f32::consts::PI;
 use std::rc::Rc;
@@ -60,6 +66,8 @@ impl Ripple {
 struct Press {
     x: f32,
     y: f32,
+    /// Where the pointer is now: the vortex moves there on the next step.
+    aim: (f32, f32),
     held: f32,
 }
 impl Press {
@@ -156,8 +164,7 @@ impl Sim {
         }
         self.pointer = Some((x, y, now));
         if let Some(press) = &mut self.press {
-            press.x = x;
-            press.y = y;
+            press.aim = (x, y);
         }
         woke
     }
@@ -165,13 +172,19 @@ impl Sim {
     fn pressed(&mut self, at: Point<Pixels>) -> bool {
         let woke = self.quiet();
         let (x, y) = self.local(at);
-        self.press = Some(Press { x, y, held: 0. });
+        self.press = Some(Press {
+            x,
+            y,
+            aim: (x, y),
+            held: 0.,
+        });
         woke
     }
 
-    fn released(&mut self) {
+    /// Bursts a held press. Returns whether there was one.
+    fn released(&mut self) -> bool {
         let Some(press) = self.press.take() else {
-            return;
+            return false;
         };
         let charge = press.charge();
         let strength = 0.3 + 0.7 * charge;
@@ -190,6 +203,7 @@ impl Sim {
                 strength: strength * 0.55,
             });
         }
+        true
     }
 
     fn left(&mut self) {
@@ -226,16 +240,20 @@ impl Sim {
         }
     }
 
-    fn step(&mut self) {
-        let now = Instant::now();
-        let dt = self
-            .last
-            .map_or(0., |last| now.duration_since(last).as_secs_f32().min(0.05));
+    /// Advances the field to `now`. Returns whether anything painted moved.
+    fn step(&mut self, now: Instant) -> bool {
+        let dt = self.last.map_or(0., |last| {
+            now.saturating_duration_since(last).as_secs_f32().min(0.05)
+        });
         self.last = Some(now);
         if self.cols == 0 || self.quiet() || dt == 0. {
-            return;
+            return false;
         }
         self.time += dt;
+        // A held vortex follows the pointer, a tick at a time like the ink.
+        if let Some(press) = &mut self.press {
+            (press.x, press.y) = press.aim;
+        }
 
         // Trails: ink thickens with speed and inherits the pointer's motion.
         for s in std::mem::take(&mut self.splats) {
@@ -353,11 +371,12 @@ impl Sim {
             }
         }
         self.peak = peak;
+        true
     }
 
+    /// Draws the field as the last step left it, sized to `bounds`.
     fn paint(&mut self, bounds: Bounds<Pixels>, window: &mut Window) {
         self.resize(bounds);
-        self.step();
         if self.quiet() {
             return;
         }
@@ -449,35 +468,55 @@ impl InkField {
             sim: Default::default(),
         }
     }
+
+    /// A press or a release changes what is drawn (the vortex's orb, the
+    /// burst's first ring) at once; a field it woke takes its first step now,
+    /// as the pulse would have.
+    fn pressed(&mut self, at: Point<Pixels>, cx: &mut Context<Self>) {
+        let mut sim = self.sim.borrow_mut();
+        if sim.pressed(at) {
+            sim.step(cx.frame_time());
+        }
+        cx.notify();
+    }
+
+    fn released(&mut self, cx: &mut Context<Self>) {
+        if self.sim.borrow_mut().released() {
+            cx.notify();
+        }
+    }
 }
+
 impl Render for InkField {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let sim = self.sim.clone();
+        let view = cx.entity().downgrade();
         div()
             .id("empty-session-ink")
             .absolute()
             .inset_0()
             .overflow_hidden()
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
-                if this.sim.borrow_mut().moved(event.position) {
+                // Trails land on the next step; only waking the field draws.
+                let mut sim = this.sim.borrow_mut();
+                if sim.moved(event.position) {
+                    sim.step(cx.frame_time());
                     cx.notify();
                 }
             }))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, _, cx| {
-                    if this.sim.borrow_mut().pressed(event.position) {
-                        cx.notify();
-                    }
+                    this.pressed(event.position, cx);
                 }),
             )
             .on_mouse_up(
                 MouseButton::Left,
-                cx.listener(|this, _: &MouseUpEvent, _, _| this.sim.borrow_mut().released()),
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.released(cx)),
             )
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|this, _: &MouseUpEvent, _, _| this.sim.borrow_mut().released()),
+                cx.listener(|this, _: &MouseUpEvent, _, cx| this.released(cx)),
             )
             .on_hover(cx.listener(|this, hovered: &bool, _, _| {
                 if !hovered {
@@ -492,8 +531,22 @@ impl Render for InkField {
                         sim.paint(bounds, window);
                         // Painting initializes the greeting ripple. Lease the
                         // clock afterwards, including on the very first frame.
+                        // Each tick steps the field and notifies only if it
+                        // moved, so a field gone quiet lets the lease lapse.
                         if !sim.quiet() {
-                            crate::pulse::request(crate::pulse::Rate::Smooth, window, cx);
+                            crate::pulse::request_frame(
+                                crate::pulse::Rate::Smooth,
+                                window,
+                                cx,
+                                move |cx| {
+                                    view.update(cx, |this, cx| {
+                                        if this.sim.borrow_mut().step(cx.frame_time()) {
+                                            cx.notify();
+                                        }
+                                    })
+                                    .ok();
+                                },
+                            );
                         }
                     },
                 )
@@ -520,9 +573,8 @@ mod tests {
         });
         cx.update(|_, cx| assert!(crate::pulse::running(cx)));
 
-        view.update(cx, |view, _| {
-            view.sim.borrow_mut().last = Some(Instant::now() - Duration::from_millis(33));
-        });
+        let now = cx.executor().now();
+        view.update(cx, |view, _| view.sim.borrow_mut().last = Some(now));
         cx.executor().advance_clock(Duration::from_millis(33));
         cx.run_until_parked();
         view.read_with(cx, |view, _| assert!(view.sim.borrow().time >= 0.03));
@@ -547,6 +599,80 @@ mod tests {
         cx.update(|_, cx| assert!(crate::pulse::running(cx)));
     }
 
+    /// The field shown inside a page that is drawn again for its own reasons.
+    struct Page {
+        ink: gpui::Entity<InkField>,
+        count: u32,
+    }
+    impl Render for Page {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div()
+                .relative()
+                .size(px(300.))
+                .child(format!("count {}", self.count))
+                .child(self.ink.clone())
+        }
+    }
+
+    /// The field is drawn again from the last frame whenever the page around
+    /// it is, between pulse ticks: what it shows then has to be what painting
+    /// it afresh shows, through presses, releases, moves and ticks, under
+    /// motion and under reduced motion (no pulse at all).
+    #[gpui::test]
+    fn a_field_drawn_again_from_the_last_frame_is_never_stale(cx: &mut gpui::TestAppContext) {
+        use std::time::Duration;
+
+        for reduce_motion in [false, true] {
+            cx.update(|cx| cx.set_reduce_motion(reduce_motion));
+            let (page, cx) = cx.add_window_view(|window, cx| {
+                window.set_check_retained(Some(gpui::RetainedCheck::Record));
+                Page {
+                    ink: cx.new(InkField::new),
+                    count: 0,
+                }
+            });
+            cx.run_until_parked();
+            let count_up = |cx: &mut gpui::VisualTestContext| {
+                page.update(cx, |page, cx| {
+                    page.count += 1;
+                    cx.notify();
+                });
+                cx.run_until_parked();
+                let reports = cx.update(|window, _| window.take_retained_check_reports());
+                assert_eq!(reports, Vec::<String>::new());
+            };
+            count_up(cx);
+            let at = point(px(150.), px(150.));
+            cx.simulate_mouse_move(at, None, gpui::Modifiers::default());
+            count_up(cx);
+            cx.simulate_mouse_down(at, MouseButton::Left, gpui::Modifiers::default());
+            let ink = page.read_with(cx, |page, _| page.ink.clone());
+            ink.read_with(cx, |ink, _| assert!(ink.sim.borrow().press.is_some()));
+            count_up(cx);
+            cx.simulate_mouse_move(
+                point(px(180.), px(160.)),
+                Some(MouseButton::Left),
+                gpui::Modifiers::default(),
+            );
+            count_up(cx);
+            cx.executor().advance_clock(Duration::from_millis(33));
+            cx.run_until_parked();
+            count_up(cx);
+            cx.simulate_mouse_up(at, MouseButton::Left, gpui::Modifiers::default());
+            ink.read_with(cx, |ink, _| {
+                let sim = ink.sim.borrow();
+                assert!(sim.press.is_none());
+                assert!(!sim.ripples.is_empty(), "the release bursts");
+            });
+            count_up(cx);
+            for _ in 0..4 {
+                cx.executor().advance_clock(Duration::from_millis(33));
+                cx.run_until_parked();
+                count_up(cx);
+            }
+        }
+    }
+
     #[gpui::test]
     fn reduced_motion_never_starts_the_ink_clock(cx: &mut gpui::TestAppContext) {
         cx.update(|cx| cx.set_reduce_motion(true));
@@ -568,14 +694,18 @@ mod tests {
         assert!(sim.quiet());
         sim.moved(point(px(100.), px(100.)));
         sim.moved(point(px(300.), px(120.)));
-        sim.last = Some(Instant::now() - std::time::Duration::from_millis(33));
-        sim.step();
+        let tick = std::time::Duration::from_millis(33);
+        let mut now = Instant::now();
+        sim.last = Some(now);
+        now += tick;
+        assert!(sim.step(now));
         assert!(sim.peak > 0.3);
         for _ in 0..400 {
-            sim.last = Some(Instant::now() - std::time::Duration::from_millis(33));
-            sim.step();
+            now += tick;
+            sim.step(now);
         }
         assert!(sim.quiet());
+        assert!(!sim.step(now + tick), "a quiet field has nothing to draw");
     }
 
     #[test]

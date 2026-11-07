@@ -1,8 +1,8 @@
 //! A Mac's desktop on this device: the client half of onicode's remote desktop, shared by the
 //! macOS app (`onicode-ui`) and iOS (`onicode-mobile`).
 //!
-//! The way in is two steps. The app asks the Mac's engine for the desktop
-//! (`onicode_rpc::methods::OPEN_DESKTOP`), which answers with a
+//! The way in is two steps. The app asks the Mac's engine for the desktop (the
+//! engine's `OpenDesktop` call), which answers with a
 //! [`onicode_desktop_link::broker::DesktopEndpoint`]: where the Mac's
 //! `onicode-desktopd` listens on the tailnet, and what it may do. [`DesktopClient::connect`] then
 //! dials desktopd directly, plaintext QUIC over the tailnet like every onicode link, and keeps

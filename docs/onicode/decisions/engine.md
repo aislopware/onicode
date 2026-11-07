@@ -13,9 +13,8 @@ viewers of engines over one protocol, `onicode-protocol`, carried by `onicode-rp
   the ring still covers gets the missed events. Anything else, including an engine restart (new epoch), gets a
   fresh snapshot. Settled rows are already in SQLite, so the ring holds only what a reconnect needs and is
   never persisted.
-- There are no replicas. Zeron's Loro docs, registry version vectors and mailboxes are not coming back. This
-  supersedes the replica parts of `topology.md`, `replica-sync.md` and `local-feel.md` ("Reads come from
-  replicas"). Trim those parts in the batch that lands step 9.
+- There are no replicas. Zeron's Loro docs, registry version vectors and mailboxes are not coming back;
+  `topology.md`, `replica-sync.md` and `local-feel.md` say so since step 9.
 - With its host offline, a remote session shows the viewer's last snapshot, read-only and marked offline;
   commands for it wait in the forwarding engine's durable `outbox` table.
 
@@ -268,7 +267,30 @@ settings it last saw in `viewer-cache.json`, so a launch draws from it while the
 launch waits (up to 10 s). Closing the window stops nothing: only the conversation's stop sends `Stop`, and a
 turn whose engine restarted under it ends saying so. The SSH remote and the phone host open their own
 connection to the store until steps 10 and 11. Debug fixtures are written with the engine stopped, under its
-lock. Keep-awake and alerts are the next batch.
+lock.
+
+**Step 9 as built.** The engine joins the tailnet through `onicode-peer` (`peers.rs`): a QUIC endpoint on the
+system Tailscale daemon that admits only what whois says the person owns, a directory and one link per device.
+It is off under `ONICODE_PEERS=0` (tests and the smoke test), and tries again every 5 s while the daemon is not
+running. Its `EngineId` is the tailnet node's stable id, kept in `device-id` for when the tailnet is down, and
+its hello's capabilities carry `protocol:N`. `router.rs` wraps the engine's service: what `Routed.engine` names
+elsewhere is forwarded over the link to that engine, one QUIC stream per call or watch, for every group alike.
+Only the app's own connections forward; a peer or an agent naming another engine is refused, so there is one
+hop. A peer on another `PROTOCOL` gets only the frozen calls, and a forward to one fails as needing an update. A
+forwarded watch is a `PeerSubscription` whose resume hook holds the viewer's cursor: when the link drops it
+waits for the next one and subscribes again with that cursor, so a cursor still in the host's ring costs one
+round trip and no snapshot, and a host that restarted answers with a fresh one. A terminal's snapshot still
+comes ahead of its history. Each carrier stream holds at most 256 KiB before it waits on QUIC flow control,
+so a slow viewer's backlog reaches the host's queue and only that viewer gets `Resync`. A mutating call for an
+engine that cannot be reached goes into the store's `outbox` table (`outbox.rs`) and its caller waits:
+deliveries run per engine, oldest first, across restarts of either side, and one whose reply is lost goes again
+under the same op, which the host's ledger answers with its first receipt. `WatchMachines` (`machines.rs`)
+lists this engine and every engine and viewer the directory knows, with link state, path (direct, peer relay,
+DERP), round trip, version, protocol and live agents (`EngineLoad`, asked every 5 s). `SessionKey` and
+`ProjectRef` name things elsewhere; the app's `Engine::on` aims calls, watches and turns at another engine
+through its own, and a turn for one that is offline is refused with a status saying so while the conversation
+keeps what it last saw. Zeron's `StreamRouter` is not ported: engines serve each other only RPC streams. The
+SSH remote's `remote://` paths stay until step 10 deletes them. `PROTOCOL` is 10.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,
