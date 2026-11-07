@@ -8,7 +8,7 @@ description = "The calls and watches onicode's viewers speak to engines: plain s
 
 [dependencies]
 # `files::Bytes`: file contents as one base64 string, not a JSON array of numbers.
-base64 = "0.22"
+base64 = "0.23.1"
 # The data types the UI renders, re-exported until step 6 of the engine plan moves them here.
 onicode-core.workspace = true
 serde.workspace = true

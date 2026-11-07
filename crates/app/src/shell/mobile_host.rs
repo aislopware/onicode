@@ -1369,7 +1369,7 @@ impl Shell {
                     .as_str()
                     .ok_or_else(|| format!("{name} has no contents"))?;
                 use base64::Engine;
-                let bytes = base64::engine::general_purpose::STANDARD
+                let bytes = onicode_core::b64::STANDARD
                     .decode(data)
                     .map_err(|_| format!("{name} could not be read"))?;
                 // Only the file name survives; a phone never picks the folder.
