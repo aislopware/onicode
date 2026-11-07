@@ -100,7 +100,7 @@ impl Element for RoundedClip {
 }
 
 /// What the last frame painted with the masks above, for tests.
-#[cfg(test)]
+#[cfg(all(test, target_os = "macos"))]
 pub(crate) mod probe {
     use gpui::Window;
 

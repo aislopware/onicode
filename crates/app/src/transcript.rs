@@ -164,7 +164,6 @@ const TOP_INSET: f32 = 20.;
 // Saved drafts are presentation rows, outside the provider transcript.
 const SAVED_DRAFT_START: usize = usize::MAX - 1;
 const BOTTOM_INSET: f32 = 40.;
-#[cfg(target_os = "macos")]
 const TOP_FADE: f32 = 24.;
 /// AgentTranscript.tsx's user bubble: `text-sm`, `max-w-[36rem]` and `px-3`.
 /// Measurement, line counting and render share these.
