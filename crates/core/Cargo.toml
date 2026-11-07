@@ -26,7 +26,7 @@ ureq = "3.5.1"
 # The OpenCode event stream's own TLS socket, on the provider and roots ureq uses.
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 webpki-roots = "1.0.11"
-similar = "2"
+similar.workspace = true
 unicode-width = "0.2"
 onicode-mobile-link = { path = "../mobile-link" }
 quinn = { version = "0.11", default-features = false, features = ["runtime-tokio", "rustls-ring"] }
