@@ -164,7 +164,7 @@ releases = false
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "23bdb9ef1cc39ddb21a3e077f97f580d50b8fc22"
+base = "4cb6945dc60ed03f567dc5daafd083e52308e82b"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = false
@@ -189,7 +189,7 @@ releases = true
 upstream = "sst/opencode"
 branch = "dev"
 paths = ["packages/"]
-base = "8b3ff60b6c0b3b05edb7d1308e7dbd124631eed6"
+base = "e8171f1ca5cf58ffe9a3d4355e0d26ec93e8a3eb"
 base_date = "2026-11-07"
 every_minutes = 60
 pulls = false
@@ -199,7 +199,7 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "a90c80840869a8cfb313ef181d7721997b86c8e5"
+base = "44ccf394573cabb95e1f751a59f9d76f6f79faf1"
 base_date = "2026-11-07"
 every_minutes = 60
 pulls = false
