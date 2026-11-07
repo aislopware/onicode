@@ -9,17 +9,20 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError, mpsc};
 
 use futures::future::BoxFuture;
 use futures::stream::BoxStream;
-use onicode_core::agent::{AccessMode, Control, Decision, Settings};
-use onicode_core::follow_up::{self, Message};
-use onicode_core::provider::Kind;
+use onicode_core::agent::{AccessMode, Control, Decision, Handoff, Settings};
+use onicode_core::follow_up::{self, Message, StateExt as _};
+use onicode_core::provider::{Event, Kind};
 use onicode_core::store::{EditSnapshot, Session, Store};
-use onicode_core::transcript::Transcript;
+use onicode_core::tool::{ToolCall, ToolState};
+use onicode_core::transcript::{Row, Transcript};
 use onicode_protocol::session::{
-    self, Answer, Btw, BtwAnswer, BtwThread, BtwThreads, Configure, Decide, EditLastTurn,
-    EditedTurn, KeepQuestionOpen, QueueChange, QueueEdit, ReadBtw, ReadSession, ReadTranscript,
-    RecallLastTurn, RecalledTurn, SaveBtw, SaveQueue, SendNow, SessionEvent, SessionRecord,
-    SessionState, Steer, SteerNow, Stop, StopBtw, TranscriptPage, Verdict, WatchSession,
+    self, Answer, Btw, BtwAnswer, BtwThread, BtwThreads, Compact, Compacted, Configure, Decide,
+    EditLastTurn, EditedTurn, Fork, KeepQuestionOpen, QueueChange, QueueEdit, ReadBtw, ReadSession,
+    ReadTranscript, RecallLastTurn, RecalledTurn, ResetThread, Rewind, SaveBtw, SaveQueue, SendNow,
+    SessionEvent, SessionRecord, SessionState, Steer, SteerNow, Stop, StopBtw, SwitchProvider,
+    TranscriptPage, Verdict, WatchSession,
 };
+use onicode_protocol::workspace::{CreateSession, NewSession};
 use onicode_protocol::{Item, MessageId, OpId, Outcome, Rejection, SessionId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
@@ -27,8 +30,11 @@ use tokio::sync::watch;
 use super::asides::{Aside, Asides, ProviderAsides, btw_prompt};
 use super::queue::SessionFeed;
 use super::split;
+use crate::accounts::AccountsHub;
 pub(crate) use crate::feed::Limits;
 use crate::feed::{self, Topic};
+use crate::ledger::Ledger;
+use crate::settings::SettingsHub;
 use crate::turn::{Database, Update, locked};
 use crate::workspace::WorkspaceHub;
 
@@ -150,6 +156,8 @@ struct Inner {
     rewinding: HashSet<SessionId>,
     /// Running by-the-way answers, by session and thread.
     btw: HashMap<(SessionId, String), Arc<AtomicBool>>,
+    /// Running compactions, by session: `Stop` stops one, and no turn starts meanwhile.
+    compacting: HashMap<SessionId, Arc<AtomicBool>>,
 }
 
 /// A session's by-the-way threads as the store keeps them (`btw:{row}`): with the desktop app's
@@ -182,6 +190,12 @@ pub struct SessionHub {
     inner: Mutex<Inner>,
     /// Told when a turn starts and ends, for the sessions' marks.
     workspace: OnceLock<Arc<WorkspaceHub>>,
+    /// Read as a turn starts: whether Claude Code runs the person's hooks.
+    settings: OnceLock<Arc<SettingsHub>>,
+    /// Told when a turn ends, for the usage its stream reported.
+    accounts: OnceLock<Arc<AccountsHub>>,
+    /// The ops of the calls whose reply is not a receipt (`Compact`, `Fork`).
+    ledger: Ledger,
 }
 
 fn run(job: TurnJob) {
@@ -225,7 +239,6 @@ impl SessionHub {
             let _ = store.prune_ops(now.saturating_sub(OP_RETENTION_MS));
         }
         Arc::new(Self {
-            store,
             spawn,
             runner,
             asides,
@@ -240,8 +253,13 @@ impl SessionHub {
                 recalled: HashMap::new(),
                 rewinding: HashSet::new(),
                 btw: HashMap::new(),
+                compacting: HashMap::new(),
             }),
             workspace: OnceLock::new(),
+            settings: OnceLock::new(),
+            accounts: OnceLock::new(),
+            ledger: Ledger::new(store.clone()),
+            store,
         })
     }
 
@@ -249,6 +267,29 @@ impl SessionHub {
     /// workspace's, then the store.
     pub fn attach(&self, workspace: Arc<WorkspaceHub>) {
         let _ = self.workspace.set(workspace);
+    }
+
+    /// Reads the engine settings as each turn starts. Lock order: the hub's state, then the
+    /// settings'.
+    pub fn attach_settings(&self, settings: Arc<SettingsHub>) {
+        let _ = self.settings.set(settings);
+    }
+
+    /// Tells `accounts` when each turn ends.
+    pub fn attach_accounts(&self, accounts: Arc<AccountsHub>) {
+        let _ = self.accounts.set(accounts);
+    }
+
+    /// Settings as the engine runs them: the account's home, and Claude Code's hooks as the
+    /// engine settings say.
+    fn engine_settings(&self, store: &Store, settings: &mut Settings) {
+        if settings.account.id != onicode_core::accounts::DEFAULT && settings.account.root.is_none()
+        {
+            settings.account.root = store.data_dir().map(Path::to_path_buf);
+        }
+        if let Some(hub) = self.settings.get() {
+            settings.disable_claude_hooks = !hub.current().claude_hooks;
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -303,10 +344,8 @@ impl SessionHub {
         if fresh.title != live.topic.state().title {
             events.push(SessionEvent::Title(fresh.title));
         }
-        if fresh.provider_id != live.topic.state().provider_id
-            && let Some(id) = fresh.provider_id
-        {
-            events.push(SessionEvent::ProviderId(id));
+        if fresh.provider_id != live.topic.state().provider_id {
+            events.push(SessionEvent::ProviderId(fresh.provider_id));
         }
         if serde_json::to_value(&fresh.settings).ok()
             != serde_json::to_value(&live.topic.state().settings).ok()
@@ -448,6 +487,9 @@ impl SessionHub {
         if inner.rewinding.contains(&body.session) {
             return Err("The last turn is being edited".into());
         }
+        if inner.compacting.contains_key(&body.session) {
+            return Err("Wait for the context compaction to finish".into());
+        }
         let Inner {
             sessions,
             ops,
@@ -490,6 +532,14 @@ impl SessionHub {
                 )
             }
         };
+        let mut settings = settings;
+        if let Some(hub) = self.settings.get() {
+            settings.disable_claude_hooks = !hub.current().claude_hooks;
+        }
+        let ended = (
+            Kind::from_id(&summary.provider),
+            settings.account.id.clone(),
+        );
         let resolve = resolve.take().ok_or("This call already started a turn")?;
         if let Some(op) = op {
             ops.inflight.insert(op, resolve.subscribe());
@@ -534,6 +584,9 @@ impl SessionHub {
                 hub.apply_update(session, turn_id, update);
             }
             hub.turn_closed(session, turn_id);
+            if let Some(accounts) = hub.accounts.get() {
+                accounts.turn_ended(ended.0, &ended.1);
+            }
         }));
         Ok(())
     }
@@ -908,7 +961,15 @@ impl SessionHub {
     /// `Stop`: cancels the running turn; its last update follows.
     pub async fn stop(&self, op: Option<OpId>, body: Stop) -> Result<Outcome, String> {
         self.once(op, |inner| {
-            let Inner { sessions, ops, .. } = inner;
+            let Inner {
+                sessions,
+                ops,
+                compacting,
+                ..
+            } = inner;
+            if let Some(compaction) = compacting.get(&body.session) {
+                compaction.store(true, Ordering::Relaxed);
+            }
             let mut live = sessions.get_mut(&body.session);
             if let Some(turn) = live.as_mut().and_then(|live| live.turn.as_mut()) {
                 turn.cancel.store(true, Ordering::Relaxed);
@@ -1475,6 +1536,347 @@ impl SessionHub {
             model: body.model.clone(),
             settings,
         })
+    }
+
+    /// `Rewind`: drops every turn from `turn` on; the session leaves its provider thread and its
+    /// next prompt carries the kept turns as a handoff brief.
+    pub async fn rewind_turns(&self, op: Option<OpId>, body: Rewind) -> Result<Outcome, String> {
+        let session = body.session;
+        let mut rewound = None;
+        let outcome = self
+            .once(op, |inner| {
+                let busy = inner.rewinding.contains(&session)
+                    || inner.compacting.contains_key(&session)
+                    || inner
+                        .sessions
+                        .get(&session)
+                        .is_some_and(|live| live.turn.is_some());
+                if busy {
+                    let outcome = Outcome::Rejected(Rejection::Denied(
+                        "Wait for the running turn to finish before rewinding".into(),
+                    ));
+                    return Ok(self.answered(inner, session, op, outcome, Vec::new()));
+                }
+                let row = {
+                    let store = locked(&self.store)?;
+                    match store.session_by_uid(session.0)? {
+                        Some(row)
+                            if store
+                                .load(row)?
+                                .rows
+                                .get(body.turn)
+                                .is_some_and(|prompt| prompt.role == "user") =>
+                        {
+                            store.rewind_to(row, body.turn)?;
+                            Some(row)
+                        }
+                        _ => None,
+                    }
+                };
+                let Some(row) = row else {
+                    let outcome = Outcome::Rejected(Rejection::Gone);
+                    return Ok(self.answered(inner, session, op, outcome, Vec::new()));
+                };
+                inner.recalled.remove(&session);
+                if let Some(live) = inner.sessions.get_mut(&session) {
+                    self.refresh(live)?;
+                    live.prompts.retain(|at, _| *at < body.turn);
+                }
+                rewound = Some(row);
+                Ok(self.answered(inner, session, op, Outcome::Applied, Vec::new()))
+            })
+            .await?;
+        if let (Some(row), Some(workspace)) = (rewound, self.workspace.get()) {
+            workspace.refresh_session(row);
+        }
+        Ok(outcome)
+    }
+
+    /// `Fork`: a new session `into` holding this one's turns before `turn`, created through the
+    /// workspace so every viewer sees it arrive.
+    pub async fn fork(&self, op: Option<OpId>, body: Fork) -> Result<Outcome, String> {
+        let workspace = self
+            .workspace
+            .get()
+            .cloned()
+            .ok_or("This engine keeps no workspace")?;
+        let source = {
+            let store = locked(&self.store)?;
+            match store.session_by_uid(body.session.0)? {
+                None => None,
+                Some(row) => {
+                    let summary = store
+                        .sessions()?
+                        .into_iter()
+                        .find(|summary| summary.id == row)
+                        .ok_or("Session no longer exists")?;
+                    let rows = store.load(row)?.rows;
+                    let settings = store.agent_settings(row)?.unwrap_or_default();
+                    Some((summary, rows, settings))
+                }
+            }
+        };
+        let Some((summary, mut rows, mut settings)) = source else {
+            return Ok(Outcome::Rejected(Rejection::Gone));
+        };
+        if rows
+            .get(body.turn)
+            .is_some_and(|prompt| prompt.role != "user")
+        {
+            return Ok(Outcome::Rejected(Rejection::Gone));
+        }
+        rows.truncate(body.turn);
+        settings.turns.retain(|&row, _| row < rows.len());
+        settings.pending_provider_switch = None;
+        settings.mono_message_id = None;
+        settings.handoff = (!rows.is_empty()).then(|| Handoff {
+            from: summary.provider.clone(),
+            brief: onicode_core::response::handoff(&rows),
+        });
+        let created = workspace
+            .create_session(
+                op,
+                CreateSession {
+                    session: body.into,
+                    provider: summary.provider.clone(),
+                    cwd: summary.cwd.clone(),
+                    title: Some(summary.title.clone()),
+                    start: NewSession::Settings(Box::new(settings)),
+                    started_by: None,
+                },
+            )
+            .await?;
+        if created.outcome != Outcome::Applied {
+            return Ok(created.outcome);
+        }
+        let row = {
+            let mut store = locked(&self.store)?;
+            let row = store
+                .session_by_uid(body.into.0)?
+                .ok_or("The forked session no longer exists")?;
+            if store.load(row)?.rows.is_empty() {
+                store.write_rows(row, 0, &rows)?;
+            }
+            row
+        };
+        workspace.refresh_session(row);
+        Ok(Outcome::Applied)
+    }
+
+    /// `SwitchProvider`: the stored provider (its thread let go when it changes), the thread to
+    /// bind, and the context meter to keep.
+    pub async fn switch_provider(
+        &self,
+        op: Option<OpId>,
+        body: SwitchProvider,
+    ) -> Result<Outcome, String> {
+        self.once(op, |inner| {
+            let SwitchProvider {
+                session,
+                provider,
+                thread,
+                context,
+            } = body;
+            if inner
+                .sessions
+                .get(&session)
+                .is_some_and(|live| live.turn.is_some())
+            {
+                let outcome = Outcome::Rejected(Rejection::Denied(
+                    "Wait for the running turn to finish before switching provider".into(),
+                ));
+                return Ok(self.answered(inner, session, op, outcome, Vec::new()));
+            }
+            let store = locked(&self.store)?;
+            let Some(row) = store.session_by_uid(session.0)? else {
+                drop(store);
+                let outcome = Outcome::Rejected(Rejection::Gone);
+                return Ok(self.answered(inner, session, op, outcome, Vec::new()));
+            };
+            store.change_provider(row, &provider)?;
+            if let Some(thread) = &thread {
+                store.provider_id(row, thread)?;
+            }
+            if let Some(context) = &context {
+                store.save_context_usage(row, context)?;
+            }
+            drop(store);
+            if let Some(live) = inner.sessions.get_mut(&session) {
+                self.refresh(live)?;
+            }
+            Ok(self.answered(inner, session, op, Outcome::Applied, Vec::new()))
+        })
+        .await
+    }
+
+    /// `ResetThread`: lets the session's provider thread go if it is still `expected`.
+    pub async fn reset_thread(
+        &self,
+        op: Option<OpId>,
+        body: ResetThread,
+    ) -> Result<Outcome, String> {
+        self.once(op, |inner| {
+            let store = locked(&self.store)?;
+            let outcome = match store.session_by_uid(body.session.0)? {
+                Some(row) => {
+                    store.reset_provider_id_if(row, body.expected.as_deref())?;
+                    Outcome::Applied
+                }
+                None => Outcome::Rejected(Rejection::Gone),
+            };
+            drop(store);
+            if let Some(live) = inner.sessions.get_mut(&body.session) {
+                self.refresh(live)?;
+            }
+            Ok(self.answered(inner, body.session, op, outcome, Vec::new()))
+        })
+        .await
+    }
+
+    /// `Compact`: the provider's own compaction of the thread's context, recorded as a
+    /// `contextCompaction` tool row. No turn starts meanwhile; `Stop` stops it.
+    pub async fn compact(
+        self: &Arc<Self>,
+        op: Option<OpId>,
+        body: Compact,
+    ) -> Result<Compacted, String> {
+        let hub = self.clone();
+        self.ledger
+            .once(op, async move { hub.compact_once(body).await })
+            .await
+    }
+
+    async fn compact_once(self: &Arc<Self>, body: Compact) -> Result<Compacted, String> {
+        let Compact {
+            session,
+            at,
+            tool,
+            model,
+            mut settings,
+        } = body;
+        let (row, summary, mut context) = {
+            let store = locked(&self.store)?;
+            let row = store
+                .session_by_uid(session.0)?
+                .ok_or("Session no longer exists")?;
+            let summary = store
+                .sessions()?
+                .into_iter()
+                .find(|summary| summary.id == row)
+                .ok_or("Session no longer exists")?;
+            self.engine_settings(&store, &mut settings);
+            (row, summary, store.context_usage(row)?.unwrap_or_default())
+        };
+        let kind = Kind::from_id(&summary.provider);
+        if summary.provider_id.is_none() {
+            return Err("Send a message before compacting this chat.".into());
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        {
+            let mut inner = self.lock();
+            let busy = inner.rewinding.contains(&session)
+                || inner.compacting.contains_key(&session)
+                || inner
+                    .sessions
+                    .get(&session)
+                    .is_some_and(|live| live.turn.is_some());
+            if busy {
+                return Err(
+                    "Wait for the current turn and queued messages before compacting context."
+                        .into(),
+                );
+            }
+            inner.compacting.insert(session, cancel.clone());
+        }
+        let mut call = ToolCall::new(&tool, "contextCompaction");
+        let mut compacted = Row {
+            role: "tool".into(),
+            text: serde_json::to_string(&call).map_err(|error| error.to_string())?,
+            first: true,
+            sent_at: Some(onicode_core::time::now_ms()),
+            id: None,
+        };
+        let written = locked(&self.store)
+            .and_then(|mut store| store.write_rows(row, at, std::slice::from_ref(&compacted)));
+        self.caught_up(session);
+        let account = settings.account.id.clone();
+        let aside = Aside {
+            kind,
+            cwd: settings
+                .worktree_cwd
+                .clone()
+                .unwrap_or_else(|| summary.cwd.clone())
+                .into(),
+            prompt: String::new(),
+            provider_id: summary.provider_id.clone(),
+            model,
+            settings,
+        };
+        let (reply, answer) = futures::channel::oneshot::channel();
+        let (asides, stop) = (self.asides.clone(), cancel.clone());
+        let started = context;
+        self.spawn.spawn(Box::pin(async move {
+            let mut context = started;
+            let mut commands = None;
+            let result = written.and_then(|()| {
+                asides.compact(aside, stop, &mut |events| {
+                    for event in events {
+                        match event {
+                            Event::Context { used, window } => context.merge(used, window),
+                            Event::Commands(discovered) => commands = Some(discovered),
+                            _ => {}
+                        }
+                    }
+                    Ok(())
+                })
+            });
+            let _ = reply.send((result, context, commands));
+        }));
+        let stopped = || "The engine stopped before this call finished".to_owned();
+        let (result, merged, commands) = answer
+            .await
+            .unwrap_or_else(|_| (Err(stopped()), context, None));
+        context = merged;
+        let result = result.and_then(|()| {
+            let store = locked(&self.store)?;
+            // Only while the session still runs on the provider and account it compacted.
+            if store.agent_settings(row)?.unwrap_or_default().account.id == account
+                && store
+                    .sessions()?
+                    .iter()
+                    .any(|current| current.id == row && current.provider == summary.provider)
+            {
+                store.save_context_usage(row, &context)?;
+            }
+            Ok(())
+        });
+        call.state = if cancel.load(Ordering::Relaxed) {
+            ToolState::Cancelled
+        } else if result.is_ok() {
+            ToolState::Completed
+        } else {
+            ToolState::Failed
+        };
+        call.output = result.as_ref().err().cloned().unwrap_or_default();
+        compacted.text = serde_json::to_string(&call).map_err(|error| error.to_string())?;
+        let saved = locked(&self.store)
+            .and_then(|mut store| store.write_rows(row, at, std::slice::from_ref(&compacted)));
+        self.lock().compacting.remove(&session);
+        self.caught_up(session);
+        Ok(Compacted {
+            row: compacted,
+            context,
+            commands,
+            error: result.and(saved).err(),
+        })
+    }
+
+    /// Catches a live session up with the store after a write outside a turn.
+    fn caught_up(&self, session: SessionId) {
+        let mut inner = self.lock();
+        if let Some(live) = inner.sessions.get_mut(&session) {
+            let _ = self.refresh(live);
+        }
     }
 
     /// `ReadBtw`: the session's by-the-way threads.

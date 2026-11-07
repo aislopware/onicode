@@ -7,10 +7,10 @@ use futures::future::{Either, select};
 use gpui::{
     AnyElement, App, Bounds, Corners, Hsla, Pixels, Point, Render, Window, point, rgb, size,
 };
-use onicode_core::transcript::{Row, Transcript};
 use onicode_protocol::session::{
     Btw as Ask, BtwAnswer, BtwThread as Thread, BtwThreads, ReadBtw, SaveBtw, SessionEvent, StopBtw,
 };
+use onicode_protocol::transcript::{Row, Transcript};
 use onicode_protocol::workspace::SaveResponseNote;
 
 use super::*;
@@ -75,8 +75,7 @@ pub(super) struct Target {
 }
 pub(super) struct Btw {
     session: i64,
-    store: Database,
-    /// The engine its answers run in, for stopping them when the sheet goes.
+    /// The engine its answers run in, and stop in when the sheet goes.
     engine: crate::engine_client::Engine,
     parent_input: Entity<input::Input>,
     input: Entity<input::Input>,
@@ -123,7 +122,7 @@ impl Drop for Btw {
 impl Btw {
     pub(super) fn new(
         session: i64,
-        store: Database,
+        engine: crate::engine_client::Engine,
         parent_input: Entity<input::Input>,
         home: AnchorSlot,
         target: Target,
@@ -144,7 +143,7 @@ impl Btw {
             view
         });
         let work = crate::engine_client::session_call::<ReadBtw>(
-            &store,
+            &engine,
             session,
             None,
             |session| ReadBtw { session },
@@ -181,8 +180,7 @@ impl Btw {
         .detach();
         Self {
             session,
-            engine: crate::engine_client::engine(&store, cx),
-            store,
+            engine,
             parent_input,
             input,
             transcript,
@@ -200,7 +198,7 @@ impl Btw {
             focus_pending: false,
             loading: true,
             error: None,
-            revision: onicode_core::time::now_ms(),
+            revision: onicode_protocol::time::now_ms(),
             pending_submit: None,
             running: HashSet::new(),
             models: None,
@@ -292,7 +290,7 @@ impl Btw {
                 morph.start = Some(now);
                 self.shown_at = Some(now);
                 if morph.opening && !morph.reversing {
-                    self.question_burst = Some((now, onicode_core::time::now_ms()));
+                    self.question_burst = Some((now, onicode_protocol::time::now_ms()));
                 }
             } else if self.overlay.get().is_some() {
                 // Nothing to grow out of (the composer is not on screen).
@@ -404,7 +402,7 @@ impl Btw {
                 }
                 self.parent_input.update(cx, |input, cx| {
                     input.set_text(
-                        onicode_core::composer::append_selection_quote(&input.content, text),
+                        onicode_protocol::composer::append_selection_quote(&input.content, text),
                         cx,
                     )
                 });
@@ -416,13 +414,13 @@ impl Btw {
                 selection,
             } => {
                 let turn = *turn;
-                let note = onicode_core::response::ResponseNote {
+                let note = onicode_protocol::response::ResponseNote {
                     id: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_nanos() as u64,
                     title: if *selection {
-                        onicode_core::notes::title(text)
+                        onicode_protocol::notes::title(text)
                     } else {
                         "Side question".into()
                     },
@@ -435,7 +433,7 @@ impl Btw {
                         .unwrap_or_else(|| self.target.cwd.clone()),
                 };
                 let saved = crate::engine_client::call::<SaveResponseNote>(
-                    &self.store,
+                    &self.engine,
                     Some(OpId::new()),
                     SaveResponseNote { note },
                     cx,
@@ -469,7 +467,7 @@ impl Btw {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let id = format!(
             "btw-{}-{}-{}",
-            onicode_core::time::now_ms(),
+            onicode_protocol::time::now_ms(),
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         );
@@ -527,13 +525,13 @@ impl Btw {
         self.revision = self
             .revision
             .saturating_add(1)
-            .max(onicode_core::time::now_ms());
+            .max(onicode_protocol::time::now_ms());
         let threads = BtwThreads {
             revision: self.revision,
             threads: self.threads.clone(),
         };
         let work = crate::engine_client::session_call::<SaveBtw>(
-            &self.store,
+            &self.engine,
             self.session,
             Some(OpId::new()),
             move |session| SaveBtw { session, threads },
@@ -600,9 +598,9 @@ impl Btw {
         transcript.begin("assistant");
         thread.rows = transcript.rows;
         self.running.insert(id.clone());
-        let events = crate::engine_client::session_events(&self.store, self.session, cx);
+        let events = crate::engine_client::session_events(&self.engine, self.session, cx);
         let answer = crate::engine_client::session_call::<Ask>(
-            &self.store,
+            &self.engine,
             self.session,
             Some(OpId::new()),
             move |session| Ask {
@@ -767,7 +765,7 @@ impl Btw {
                     })
             });
             let target = |effort: Option<String>| {
-                serde_json::to_string(&onicode_core::response::Target {
+                serde_json::to_string(&onicode_protocol::response::Target {
                     provider: provider.id().into(),
                     model: Some(model.id.clone()),
                     effort,
@@ -816,64 +814,75 @@ impl Btw {
             return;
         }
         let provider = Kind::from_id(&thread.provider);
-        let mut account = thread.account.clone();
-        if account.id != onicode_core::accounts::DEFAULT {
-            account.root = crate::accounts::get(cx).map(|center| center.read(cx).root.clone());
-        }
-        // Cached rows show at once; the fresh catalog replaces them.
-        let cached = catalog::cached_models_for(provider, &account);
-        let items = match cached {
-            Some(models) => self.model_items(Ok(models)),
-            None => vec![
-                MenuItem::Note(MODEL_NOTE.into()),
-                MenuItem::Note("Loading models…".into()),
-            ],
-        };
+        let account = thread.account.id.clone();
+        let items = vec![
+            MenuItem::Note(MODEL_NOTE.into()),
+            MenuItem::Note("Loading models…".into()),
+        ];
         let menu = cx.new(|cx| {
             Menu::new(provider.label(), items, window, cx)
                 .width(240.)
                 .style(MenuStyle::Settings)
         });
-        self.model_subscription = Some(cx.subscribe_in(
-            &menu,
-            window,
-            |this, _, event: &MenuEvent, window, cx| {
-                if let MenuEvent::Picked(id, _) = event
-                    && let Ok(target) = serde_json::from_str::<onicode_core::response::Target>(id)
-                    && let Some(thread) = this.active_mut()
-                    && thread.provider == target.provider
-                {
-                    thread.model = target.model;
-                    thread.effort = target.effort;
-                    thread.model_settings.extend(target.settings);
-                    this.save(cx);
-                    this.refresh(cx);
-                }
-                this.models = None;
-                window.focus(&this.input.focus_handle(cx), cx);
-                cx.notify();
-            },
-        ));
-        if !cfg!(test) {
-            let work = cx
-                .background_executor()
-                .spawn(async move { catalog::models_for(provider, &account) });
-            let weak_menu = menu.downgrade();
-            cx.spawn(async move |this, cx| {
-                let result = work.await;
-                let _ = this.update(cx, |this, cx| {
+        self.model_subscription =
+            Some(
+                cx.subscribe_in(&menu, window, |this, _, event: &MenuEvent, window, cx| {
+                    if let MenuEvent::Picked(id, _) = event
+                        && let Ok(target) =
+                            serde_json::from_str::<onicode_protocol::response::Target>(id)
+                        && let Some(thread) = this.active_mut()
+                        && thread.provider == target.provider
+                    {
+                        thread.model = target.model;
+                        thread.effort = target.effort;
+                        thread.model_settings.extend(target.settings);
+                        this.save(cx);
+                        this.refresh(cx);
+                    }
+                    this.models = None;
+                    window.focus(&this.input.focus_handle(cx), cx);
+                    cx.notify();
+                }),
+            );
+        // The engine's cached rows show first; the fresh catalog replaces them.
+        let reads: &'static [CatalogRead] = if cfg!(test) {
+            &[CatalogRead::Cached]
+        } else {
+            &[CatalogRead::Cached, CatalogRead::Fresh]
+        };
+        let engine = self.engine.clone();
+        let weak_menu = menu.downgrade();
+        cx.spawn(async move |this, cx| {
+            for &read in reads {
+                let body = Catalog {
+                    provider,
+                    account: account.clone(),
+                    read,
+                };
+                let result = match (read, engine.call::<Catalog>(None, body).await) {
+                    (_, Ok(Some(models))) => Ok(models),
+                    // Nothing cached yet: the fresh read answers.
+                    (CatalogRead::Cached, _) => continue,
+                    (_, Ok(None)) => Err(format!("{} returned no model catalog", provider.label())),
+                    (_, Err(error)) => Err(error),
+                };
+                let open = this.update(cx, |this, cx| {
                     // A closed or reopened menu keeps its own rows.
                     if this.models.as_ref().map(|m| m.downgrade()) != Some(weak_menu.clone()) {
-                        return;
+                        return false;
                     }
                     let items = this.model_items(result);
                     if let Some(menu) = &this.models {
                         menu.update(cx, |menu, cx| menu.set_items(items, cx));
                     }
+                    true
                 });
-            })
-            .detach();
-        }
+                if !open.unwrap_or(false) {
+                    return;
+                }
+            }
+        })
+        .detach();
         self.models = Some(menu);
         cx.notify();
     }
@@ -1776,7 +1785,7 @@ impl Conversation {
             let btw = cx.new(|cx| {
                 Btw::new(
                     self.summary.id,
-                    self.store.clone(),
+                    self.engine.clone(),
                     self.input.clone(),
                     self.btw_home.0.clone(),
                     target.clone(),
@@ -1867,11 +1876,9 @@ mod tests {
     }
     #[gpui::test]
     fn closing_the_conversation_stops_its_running_side_answers(cx: &mut gpui::TestAppContext) {
-        let store: Database = std::sync::Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(Path::new(":memory:")).unwrap(),
-        ));
+        let engine = cx.update(crate::engine_client::Engine::memory);
         let row = cx
-            .update(|cx| crate::engine_client::create_for_test(&store, "codex", "/project", cx))
+            .update(|cx| crate::engine_client::create_for_test(&engine, "codex", "/project", cx))
             .id;
         let target = Target {
             source_turn: 0,
@@ -1885,7 +1892,7 @@ mod tests {
             let parent = cx.new(input::Input::side_question);
             Btw::new(
                 row,
-                store.clone(),
+                engine.clone(),
                 parent,
                 AnchorSlot::default(),
                 target,
@@ -1899,7 +1906,7 @@ mod tests {
         drop(btw);
         cx.update(|_| {});
         cx.run_until_parked();
-        let calls = cx.update(|cx| crate::engine_client::calls_for_test(&store, cx));
+        let calls = cx.update(|cx| crate::engine_client::calls_for_test(&engine, cx));
         let stopped: Vec<_> = calls
             .iter()
             .filter(|(name, _)| *name == StopBtw::NAME)

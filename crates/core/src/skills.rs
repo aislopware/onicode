@@ -2,7 +2,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+pub use onicode_protocol::skills::{DiscoveredSkill, is_valid_skill_name, slug_name};
 
 use crate::scm::shell::dirs_home;
 fn expand_home(path: &str) -> PathBuf {
@@ -11,16 +11,6 @@ fn expand_home(path: &str) -> PathBuf {
 
 const MAX_SKILLS: usize = 5_000;
 const MAX_FRONTMATTER_BYTES: usize = 16 * 1024;
-
-#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct DiscoveredSkill {
-    pub name: String,
-    pub description: String,
-    pub path: String,
-    pub scope: String,
-    pub source: String,
-}
 
 struct DisabledFilter {
     normalized: HashSet<String>,
@@ -555,49 +545,6 @@ fn unquote(value: &str) -> String {
         }
     }
     value.to_string()
-}
-
-pub fn is_valid_skill_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 64 {
-        return false;
-    }
-    let mut prev_dash = true;
-    for (i, ch) in name.chars().enumerate() {
-        if ch.is_ascii_lowercase() || ch.is_ascii_digit() {
-            prev_dash = false;
-            continue;
-        }
-        if ch == '-' && i > 0 && !prev_dash {
-            prev_dash = true;
-            continue;
-        }
-        return false;
-    }
-    !prev_dash
-}
-
-pub fn slug_name(raw: &str) -> String {
-    let mut out = String::new();
-    let mut dash = false;
-    for ch in raw.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-            dash = false;
-        } else if !out.is_empty() && !dash {
-            out.push('-');
-            dash = true;
-        }
-    }
-    while out.ends_with('-') {
-        out.pop();
-    }
-    if out.len() > 64 {
-        out.truncate(64);
-        while out.ends_with('-') {
-            out.pop();
-        }
-    }
-    out
 }
 
 /// Create the same starter SKILL.md as React. Existing skills are never overwritten.

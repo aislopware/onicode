@@ -8,21 +8,11 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
-use serde::{Deserialize, Serialize};
-
-use super::Ignore;
+use super::{Ignore, ProjectFile};
 use crate::scm::shell::dirs_home;
 use crate::scm::{expand_home, git_cmd, path_to_js};
 const MAX_PROJECT_FILES: usize = 20_000;
 const MAX_WALK_DIRS: usize = 4_000;
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct ProjectFile {
-    pub name: String,
-    pub path: String,
-    pub relative: String,
-}
 
 /// Workspace files for Quick Open. Prefer `git ls-files` (gitignore-aware,
 /// index-backed); otherwise a bounded walk that never descends into vendor dirs.

@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -17,18 +18,22 @@ use futures::task::LocalSpawnExt;
 use futures::{FutureExt, StreamExt};
 use onicode_core::agent::{Approval, Decision, Question, Settings};
 use onicode_core::context::Usage;
-use onicode_core::provider::RewindError;
+use onicode_core::provider::{Event, RewindError};
+use onicode_core::session_groups::WorkItem;
+use onicode_core::session_title::{GeneratedTitle, TextModel, WorkItemHint};
 use onicode_core::store::Store;
+use onicode_core::tool::{ToolCall, ToolState};
 use onicode_core::transcript::{Row, Transcript};
 use onicode_protocol::session::{
-    self, Answer, Btw, BtwAnswer, BtwThread, BtwThreads, Configure, Decide, EditLastTurn,
-    EditedTurn, QueueChange, QueueEdit, ReadBtw, ReadSession, RecallLastTurn, SaveBtw, SaveQueue,
-    SendNow, SessionEvent, SessionState, SteerNow, Stop, Verdict, WatchSession,
+    self, Answer, Btw, BtwAnswer, BtwThread, BtwThreads, Compact, Compacted, Configure, Decide,
+    EditLastTurn, EditedTurn, Fork, QueueChange, QueueEdit, ReadBtw, ReadSession, RecallLastTurn,
+    ResetThread, Rewind, SaveBtw, SaveQueue, SendNow, SessionEvent, SessionState, SteerNow, Stop,
+    SwitchProvider, Verdict, WatchSession,
 };
 use onicode_protocol::{Cursor, Item, MessageId, OpId, Outcome, Rejection, SessionId};
 use proptest::prelude::*;
 
-use super::asides::{Aside, Asides, Sink};
+use super::asides::{Aside, Asides, Events, Sink};
 use super::hub::{Limits, Runner, SessionHub, Spawn, TurnJob};
 use super::model::SessionModel;
 use super::queue::SessionFeed;
@@ -36,6 +41,7 @@ use super::reduce::apply;
 use super::split::split;
 use super::{Expect, Viewer};
 use crate::turn::{Database, Update, locked};
+use crate::workspace::{Chores, WorkspaceHub};
 
 type Work = Arc<Mutex<Vec<BoxFuture<'static, ()>>>>;
 type Jobs = Arc<Mutex<Vec<TurnJob>>>;
@@ -64,6 +70,7 @@ fn scripted(jobs: &Jobs) -> Runner {
 struct Scripted {
     rewinds: AtomicUsize,
     asks: AtomicUsize,
+    compacts: AtomicUsize,
 }
 
 const ANSWER: [&str; 2] = ["The answer", " is 42."];
@@ -82,6 +89,23 @@ impl Asides for Scripted {
             text(piece.into())?;
         }
         Ok(())
+    }
+
+    fn compact(
+        &self,
+        aside: Aside,
+        cancel: Arc<AtomicBool>,
+        events: Events<'_>,
+    ) -> Result<(), String> {
+        assert!(aside.prompt.is_empty(), "a compaction sends no prompt");
+        self.compacts.fetch_add(1, Ordering::Relaxed);
+        if cancel.load(Ordering::Relaxed) {
+            return Err("Stopped".into());
+        }
+        events(vec![Event::Context {
+            used: Some(1_000),
+            window: Some(200_000),
+        }])
     }
 }
 
@@ -1837,4 +1861,389 @@ fn a_saved_queue_and_settings_read_back_and_older_settings_are_stale() {
     let state = watcher.state.as_ref().unwrap();
     assert_eq!(state.queue_rev, 3);
     assert_eq!(state.settings.model.as_deref(), Some("newer"));
+}
+
+/// A session with two answered turns on the provider thread `thread`.
+fn two_turns() -> Harness {
+    let harness = Harness::new(Limits::default());
+    let mut transcript = Transcript::default();
+    for (prompt, answer) in [("First", "One"), ("Second", "Two")] {
+        transcript.begin("user");
+        transcript.append(prompt);
+        transcript.begin("assistant");
+        transcript.append(answer);
+    }
+    let mut store = locked(&harness.store).unwrap();
+    store.provider_id(harness.id, "thread").unwrap();
+    store.write_rows(harness.id, 0, &transcript.rows).unwrap();
+    drop(store);
+    harness
+}
+
+/// Session `id`'s stored row texts and provider thread.
+fn stored(store: &Database, id: i64) -> (Vec<String>, Option<String>) {
+    let store = locked(store).unwrap();
+    let rows = store.load(id).unwrap().rows;
+    let thread = store
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|session| session.id == id)
+        .and_then(|session| session.provider_id);
+    (rows.into_iter().map(|row| row.text).collect(), thread)
+}
+
+fn kept() -> Vec<String> {
+    vec!["First".into(), "One".into()]
+}
+
+fn rewind(harness: &mut Harness, op: OpId, turn: usize) -> Slot {
+    let hub = harness.hub.clone();
+    let body = Rewind {
+        session: harness.session,
+        turn,
+    };
+    harness.call(async move { hub.rewind_turns(Some(op), body).await })
+}
+
+#[test]
+fn a_rewind_keeps_the_turns_before_and_hands_them_to_a_new_thread() {
+    let mut harness = two_turns();
+    let mut watcher = Client::join(&harness, usize::MAX);
+    assert_eq!(
+        *rewind(&mut harness, OpId::new(), 1).borrow(),
+        Some(Ok(Outcome::Rejected(Rejection::Gone))),
+        "an answer starts no turn"
+    );
+    let op = OpId::new();
+    assert_eq!(
+        *rewind(&mut harness, op, 2).borrow(),
+        Some(Ok(Outcome::Applied))
+    );
+    assert_eq!(stored(&harness.store, harness.id), (kept(), None));
+    let settings = locked(&harness.store)
+        .unwrap()
+        .agent_settings(harness.id)
+        .unwrap()
+        .unwrap();
+    let handoff = settings
+        .handoff
+        .expect("the next prompt carries the kept turns");
+    assert_eq!(handoff.from, "codex");
+    assert!(handoff.brief.contains("First"));
+    assert_eq!(
+        harness.asides.rewinds.load(Ordering::Relaxed),
+        0,
+        "never the provider's rewind"
+    );
+
+    watcher.pump(&harness);
+    let seen = watcher.state.as_ref().unwrap();
+    assert_eq!(seen.provider_id, None, "watchers see the thread go");
+    assert_eq!(
+        serde_json::to_value(seen).unwrap(),
+        serde_json::to_value(harness.state()).unwrap(),
+        "and the rewound session"
+    );
+
+    assert_eq!(
+        *rewind(&mut harness, op, 2).borrow(),
+        Some(Ok(Outcome::Applied)),
+        "a repeat gets the first receipt"
+    );
+    assert_eq!(stored(&harness.store, harness.id), (kept(), None));
+    assert_eq!(
+        *rewind(&mut harness, OpId::new(), 2).borrow(),
+        Some(Ok(Outcome::Rejected(Rejection::Gone))),
+        "the turn is gone"
+    );
+}
+
+#[test]
+fn a_running_turn_holds_off_rewinds_and_provider_switches() {
+    let mut harness = Harness::new(Limits::default());
+    running(&mut harness);
+    assert!(matches!(
+        &*rewind(&mut harness, OpId::new(), 0).borrow(),
+        Some(Ok(Outcome::Rejected(Rejection::Denied(_))))
+    ));
+    let switched = block_on(harness.hub.switch_provider(
+        Some(OpId::new()),
+        SwitchProvider {
+            session: harness.session,
+            provider: "claude".into(),
+            thread: None,
+            context: None,
+        },
+    ));
+    assert!(matches!(
+        switched,
+        Ok(Outcome::Rejected(Rejection::Denied(_)))
+    ));
+    assert_eq!(stored(&harness.store, harness.id).0, ["go"]);
+}
+
+/// Workspace chores that name nothing.
+struct NoChores;
+
+impl Chores for NoChores {
+    fn title(&self, _: TextModel, _: &Path, _: &str, _: Arc<AtomicBool>) -> Option<GeneratedTitle> {
+        None
+    }
+
+    fn work_item(&self, _: &str, _: &Path, _: Option<&WorkItemHint>) -> Option<WorkItem> {
+        None
+    }
+
+    fn branch(&self, _: TextModel, _: &Path, _: &str, _: Arc<AtomicBool>) -> Option<String> {
+        None
+    }
+}
+
+fn fork(harness: &mut Harness, op: OpId, turn: usize, into: SessionId) -> Slot {
+    let hub = harness.hub.clone();
+    let body = Fork {
+        session: harness.session,
+        turn,
+        into,
+    };
+    harness.call(async move { hub.fork(Some(op), body).await })
+}
+
+#[test]
+fn a_fork_starts_a_session_holding_the_turns_before() {
+    let mut harness = two_turns();
+    let workspace = WorkspaceHub::with_chores(
+        harness.store.clone(),
+        Arc::new(Queued(harness.work.clone())),
+        Arc::new(NoChores),
+    );
+    harness.hub.attach(workspace.clone());
+    let row_of = |harness: &Harness, into: SessionId| {
+        locked(&harness.store)
+            .unwrap()
+            .session_by_uid(into.0)
+            .unwrap()
+            .expect("the fork")
+    };
+    let into = SessionId::new();
+    let op = OpId::new();
+    assert_eq!(
+        *fork(&mut harness, op, 2, into).borrow(),
+        Some(Ok(Outcome::Applied))
+    );
+    let row = row_of(&harness, into);
+    assert_eq!(stored(&harness.store, row), (kept(), None));
+    assert_eq!(
+        stored(&harness.store, harness.id).0.len(),
+        4,
+        "the source keeps every turn"
+    );
+    let settings = locked(&harness.store)
+        .unwrap()
+        .agent_settings(row)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        settings.handoff.map(|handoff| handoff.from).as_deref(),
+        Some("codex")
+    );
+    assert!(
+        workspace
+            .snapshot()
+            .unwrap()
+            .1
+            .sessions
+            .iter()
+            .any(|session| session.id == into),
+        "viewers see it arrive"
+    );
+
+    assert_eq!(
+        *fork(&mut harness, op, 2, into).borrow(),
+        Some(Ok(Outcome::Applied)),
+        "a repeat gets the first receipt"
+    );
+    assert_eq!(locked(&harness.store).unwrap().sessions().unwrap().len(), 2);
+    assert_eq!(
+        stored(&harness.store, row),
+        (kept(), None),
+        "and copies nothing again"
+    );
+
+    assert_eq!(
+        *fork(&mut harness, OpId::new(), 1, SessionId::new()).borrow(),
+        Some(Ok(Outcome::Rejected(Rejection::Gone))),
+        "an answer starts no turn"
+    );
+    let whole = SessionId::new();
+    assert_eq!(
+        *fork(&mut harness, OpId::new(), 4, whole).borrow(),
+        Some(Ok(Outcome::Applied))
+    );
+    assert_eq!(
+        stored(&harness.store, row_of(&harness, whole)).0.len(),
+        4,
+        "past the end keeps every turn"
+    );
+}
+
+#[test]
+fn a_provider_switch_lets_the_old_thread_go_and_binds_the_new_one() {
+    let harness = two_turns();
+    let mut watcher = Client::join(&harness, usize::MAX);
+    let meter = Usage {
+        used: 10,
+        window: Some(100),
+    };
+    let switch = |provider: &str, thread: Option<&str>| {
+        block_on(harness.hub.switch_provider(
+            Some(OpId::new()),
+            SwitchProvider {
+                session: harness.session,
+                provider: provider.into(),
+                thread: thread.map(Into::into),
+                context: Some(meter),
+            },
+        ))
+    };
+    assert_eq!(switch("claude", None), Ok(Outcome::Applied));
+    assert_eq!(stored(&harness.store, harness.id).1, None);
+    watcher.pump(&harness);
+    let seen = watcher.state.as_ref().unwrap();
+    assert_eq!(
+        (seen.provider_id.as_deref(), seen.context),
+        (None, Some(meter))
+    );
+
+    assert_eq!(switch("codex", Some("back")), Ok(Outcome::Applied));
+    assert_eq!(
+        stored(&harness.store, harness.id).1.as_deref(),
+        Some("back")
+    );
+    let provider = locked(&harness.store)
+        .unwrap()
+        .sessions()
+        .unwrap()
+        .into_iter()
+        .find(|session| session.id == harness.id)
+        .map(|session| session.provider);
+    assert_eq!(provider.as_deref(), Some("codex"));
+    watcher.pump(&harness);
+    assert_eq!(
+        watcher.state.as_ref().unwrap().provider_id.as_deref(),
+        Some("back")
+    );
+}
+
+#[test]
+fn a_thread_reset_lets_go_only_of_the_expected_thread() {
+    let harness = two_turns();
+    let mut watcher = Client::join(&harness, usize::MAX);
+    let reset = |expected: &str| {
+        block_on(harness.hub.reset_thread(
+            Some(OpId::new()),
+            ResetThread {
+                session: harness.session,
+                expected: Some(expected.into()),
+            },
+        ))
+    };
+    assert_eq!(reset("other"), Ok(Outcome::Applied));
+    assert_eq!(
+        stored(&harness.store, harness.id).1.as_deref(),
+        Some("thread")
+    );
+    assert_eq!(reset("thread"), Ok(Outcome::Applied));
+    assert_eq!(stored(&harness.store, harness.id).1, None);
+    watcher.pump(&harness);
+    assert_eq!(watcher.state.as_ref().unwrap().provider_id, None);
+}
+
+fn compaction(session: SessionId) -> Compact {
+    Compact {
+        session,
+        at: 4,
+        tool: "compact-1".into(),
+        model: None,
+        settings: Settings::default(),
+    }
+}
+
+/// The tool call a compaction's row records.
+fn compaction_call(compacted: &Compacted) -> ToolCall {
+    serde_json::from_str(&compacted.row.text).unwrap()
+}
+
+#[test]
+fn a_compaction_runs_once_and_records_its_tool_row() {
+    let mut harness = two_turns();
+    let compact = |harness: &mut Harness, op: OpId| {
+        let hub = harness.hub.clone();
+        let body = compaction(harness.session);
+        let slot = harness.call(async move { hub.compact(Some(op), body).await });
+        slot.borrow_mut().take().unwrap()
+    };
+    let op = OpId::new();
+    let compacted = compact(&mut harness, op).unwrap();
+    assert_eq!(compacted.error, None);
+    let call = compaction_call(&compacted);
+    assert_eq!(call.name, "contextCompaction");
+    assert_eq!(call.state, ToolState::Completed);
+    let meter = Usage {
+        used: 1_000,
+        window: Some(200_000),
+    };
+    assert_eq!(compacted.context, meter);
+    assert_eq!(
+        locked(&harness.store)
+            .unwrap()
+            .context_usage(harness.id)
+            .unwrap(),
+        Some(meter)
+    );
+    assert_eq!(stored(&harness.store, harness.id).0.len(), 5);
+
+    assert_eq!(
+        compact(&mut harness, op),
+        Ok(compacted),
+        "a repeat gets the first reply"
+    );
+    assert_eq!(
+        harness.asides.compacts.load(Ordering::Relaxed),
+        1,
+        "and compacts nothing"
+    );
+
+    let mut threadless = Harness::new(Limits::default());
+    assert!(
+        compact(&mut threadless, OpId::new()).is_err(),
+        "nothing to compact yet"
+    );
+}
+
+#[test]
+fn a_stop_cancels_a_running_compaction() {
+    let mut harness = two_turns();
+    let hub = harness.hub.clone();
+    let session = harness.session;
+    let slot = Reply::<Compacted>::default();
+    let held = slot.clone();
+    harness
+        .pool
+        .spawner()
+        .spawn_local(async move {
+            *held.borrow_mut() = Some(hub.compact(None, compaction(session)).await);
+        })
+        .unwrap();
+    // The compaction waits on its provider work, which has not run yet.
+    harness.pool.run_until_stalled();
+    assert_eq!(
+        block_on(harness.hub.stop(None, Stop { session })),
+        Ok(Outcome::Applied)
+    );
+    harness.settle();
+    let compacted = slot.borrow_mut().take().unwrap().unwrap();
+    assert_eq!(compaction_call(&compacted).state, ToolState::Cancelled);
+    assert_eq!(compacted.error.as_deref(), Some("Stopped"));
 }

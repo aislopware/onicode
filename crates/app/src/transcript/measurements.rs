@@ -656,7 +656,7 @@ mod tests {
         let window = chat(cx);
         probe(window, cx, |view, window, cx| {
             view.visible = false;
-            let mut transcript = onicode_core::transcript::Transcript::default();
+            let mut transcript = onicode_protocol::transcript::Transcript::default();
             transcript.begin("user");
             transcript.append(&"An earlier prompt\n".repeat(13));
             transcript.begin("assistant");
@@ -728,7 +728,7 @@ mod tests {
     fn prompt_widths_survive_viewport_resizes(cx: &mut TestAppContext) {
         let window = chat(cx);
         let (prompt, width, viewport, fresh) = probe(window, cx, |view, window, cx| {
-            let mut transcript = onicode_core::transcript::Transcript::default();
+            let mut transcript = onicode_protocol::transcript::Transcript::default();
             let prompt = transcript.begin("user");
             transcript.append(&format!("A wide prompt line\n{}", "x\n".repeat(24)));
             transcript.begin("assistant");

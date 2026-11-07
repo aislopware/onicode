@@ -1,10 +1,10 @@
 //! Bounded file reads and atomic editor saves, extracted from Tauri's fs service.
 use std::io::Read;
 
-use super::*;
+pub use onicode_protocol::files::document::{MAX_LINE_BYTES, MAX_TEXT_BYTES, is_video_path};
+use serde::Deserialize;
 
-pub const MAX_TEXT_BYTES: usize = 2 * 1024 * 1024;
-pub const MAX_LINE_BYTES: usize = 16 * 1024;
+use super::*;
 const MAX_PREVIEW_BYTES: u64 = 32 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
@@ -167,7 +167,7 @@ fn read_remote_bytes(path: &Path) -> Result<Vec<u8>, String> {
     use base64::Engine;
     let encoded: String =
         super::remote::command("read_binary_file", serde_json::json!({"path":path}))?;
-    let bytes = base64::engine::general_purpose::STANDARD
+    let bytes = crate::b64::STANDARD
         .decode(encoded)
         .map_err(|error| format!("Invalid remote file content: {error}"))?;
     if bytes.len() > 10 * 1024 * 1024 {
@@ -258,27 +258,6 @@ fn document_from_bytes(
         bom,
         disk: bytes,
     }))
-}
-
-pub fn is_video_path(path: &Path) -> bool {
-    path.extension()
-        .and_then(|s| s.to_str())
-        .is_some_and(|ext| {
-            matches!(
-                ext.to_ascii_lowercase().as_str(),
-                "mp4"
-                    | "m4v"
-                    | "mov"
-                    | "webm"
-                    | "ogv"
-                    | "avi"
-                    | "mkv"
-                    | "mpg"
-                    | "mpeg"
-                    | "3gp"
-                    | "3g2"
-            )
-        })
 }
 
 impl TextDocument {

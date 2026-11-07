@@ -33,7 +33,7 @@ impl Shell {
                     kind,
                     crate::accounts::get(cx)
                         .map(|center| center.read(cx).selected(kind, &self.workspace.project).id)
-                        .unwrap_or_else(|| onicode_core::accounts::DEFAULT.into()),
+                        .unwrap_or_else(|| onicode_protocol::accounts::DEFAULT.into()),
                 )
             })
             .collect();
@@ -138,10 +138,9 @@ impl Shell {
                         .update(cx, |updater, cx| updater.check(true, cx));
                 }
                 SettingsEvent::CheckHarnessUpdates => {
-                    let hidden = this.workspace.preferences.hidden_providers.clone();
                     this.notification_state
                         .harness
-                        .update(cx, |notice, cx| notice.check_now(hidden, cx));
+                        .update(cx, |notice, cx| notice.check_now(cx));
                 }
                 SettingsEvent::Changed(prefs) => {
                     #[cfg(target_os = "linux")]
@@ -317,11 +316,7 @@ impl Shell {
             self.update_chat_visibility(cx);
             self.invalidate_chrome(cx);
         }
-        onicode_core::cli::initialize(&self.workspace.preferences.binary_paths);
-        self.keep_visible_idle_agents();
-        onicode_core::provider::configure_idle_agents(
-            self.workspace.preferences.idle_agents as usize,
-        );
+        self.keep_visible_idle_agents(cx);
         crate::settings::apply_keybindings(&self.workspace.preferences, cx);
         // After the keymap, so the menu shows rebound shortcuts.
         crate::app_menu::install(&self.workspace.preferences, cx);
@@ -411,7 +406,7 @@ impl Shell {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        use onicode_core::files::is_equal_or_inside;
+        use onicode_protocol::files::is_equal_or_inside;
         const IN_USE: &str =
             "This worktree is now in use. Close its terminals and stop its sessions first.";
         if self
@@ -568,7 +563,7 @@ mod tests {
             .update(visual, |shell, _, cx| {
                 shell.mobile.invite = Some(onicode_core::mobile::Invite {
                     url: format!("monocode://pair?invite={}", "q".repeat(500)),
-                    expires: onicode_core::time::now_ms() / 1000 + 900,
+                    expires: onicode_protocol::time::now_ms() / 1000 + 900,
                 });
                 // This notifies Settings alone. The root overlay must observe it.
                 shell.sync_settings(cx);
@@ -826,7 +821,7 @@ mod tests {
         window
             .update(visual, |shell, _, _| {
                 assert_eq!(shell.workspace.preferences.theme, "light");
-                let saved = shell.latest_state.lock().unwrap().clone();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored: Workspace = serde_json::from_str(&saved).unwrap();
                 assert_eq!(restored.preferences.theme, "light");
                 assert!(

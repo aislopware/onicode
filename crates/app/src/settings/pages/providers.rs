@@ -1,6 +1,6 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, SharedString, div, px};
-use onicode_core::provider::Kind;
+use onicode_protocol::provider::Kind;
 
 use crate::settings::widgets::{note, secondary_button};
 use crate::settings::{ModelChoice, SettingsView};
@@ -12,7 +12,7 @@ impl SettingsView {
             center.update(cx, |center, cx| {
                 center.mask_emails = p.mask_emails;
                 center.show_remaining = p.show_remaining_usage;
-                for kind in onicode_core::accounts::PROVIDERS {
+                for kind in onicode_protocol::accounts::PROVIDERS {
                     center.load_provider(kind, false, cx);
                 }
                 center.settings_rows(cx)
@@ -85,13 +85,13 @@ impl SettingsView {
             let project = if scope == "global" {
                 None
             } else {
-                p.project_providers.get(&scope)
+                p.engine.project_providers.get(&scope)
             };
             let selected = project
                 .and_then(|p| p.provider.as_deref())
-                .or(p.default_provider.as_deref())
+                .or(p.engine.default_provider.as_deref())
                 == Some(kind.id());
-            let globally_hidden = p.hidden_providers.iter().any(|id| id == kind.id());
+            let globally_hidden = p.engine.hidden_providers.iter().any(|id| id == kind.id());
             let locked = scope != "global" && globally_hidden;
             let visible = !globally_hidden
                 && !project.is_some_and(|p| p.hidden.iter().any(|id| id == kind.id()));
@@ -103,7 +103,7 @@ impl SettingsView {
                 .unwrap_or_default();
             let selected_model = project
                 .and_then(|p| p.models.get(kind.id()))
-                .or(p.default_models.get(kind.id()))
+                .or(p.engine.default_models.get(kind.id()))
                 .cloned()
                 .or_else(|| models.first().map(|m| m.0.clone()));
             let label = div()
@@ -176,10 +176,10 @@ impl SettingsView {
                             let scope = this.provider_scope.clone();
                             this.update(cx, |p| {
                                 if scope == "global" {
-                                    p.default_provider = Some(kind.id().into());
+                                    p.engine.default_provider = Some(kind.id().into());
                                 } else {
-                                    p.project_providers.entry(scope).or_default().provider =
-                                        Some(kind.id().into());
+                                    let project = p.engine.project_providers.entry(scope);
+                                    project.or_default().provider = Some(kind.id().into());
                                 }
                             })
                         }))
@@ -204,9 +204,10 @@ impl SettingsView {
                             let scope = this.provider_scope.clone();
                             this.update(cx, |p| {
                                 if scope == "global" {
-                                    p.default_models.insert(kind.id().into(), model);
+                                    p.engine.default_models.insert(kind.id().into(), model);
                                 } else {
-                                    p.project_providers
+                                    p.engine
+                                        .project_providers
                                         .entry(scope)
                                         .or_default()
                                         .models
@@ -243,9 +244,10 @@ impl SettingsView {
                                 let scope = this.provider_scope.clone();
                                 this.update(cx, |p| {
                                     let hidden = if scope == "global" {
-                                        &mut p.hidden_providers
+                                        &mut p.engine.hidden_providers
                                     } else {
-                                        &mut p.project_providers.entry(scope).or_default().hidden
+                                        let project = p.engine.project_providers.entry(scope);
+                                        &mut project.or_default().hidden
                                     };
                                     hidden.retain(|id| id != kind.id());
                                     if !on {
@@ -280,7 +282,7 @@ impl SettingsView {
         )];
         for kind in Kind::ALL {
             let installed = binaries.iter().any(|(k, p)| *k == kind && p.is_some());
-            if !installed || !onicode_core::session_title::supports(kind) {
+            if !installed || !onicode_protocol::session_title::supports(kind) {
                 continue;
             }
             match self.ctx.catalogs.get(kind.id()).filter(|m| !m.is_empty()) {
@@ -299,13 +301,14 @@ impl SettingsView {
             }
         }
         let background_value = p
+            .engine
             .background_model
             .as_ref()
             .map(|c| format!("{}:{}", c.provider, c.model.as_deref().unwrap_or_default()))
             .unwrap_or_else(|| "auto".into());
         if !background.iter().any(|(v, _, _)| *v == background_value) {
             // A saved pick whose catalog is not loaded keeps its own label.
-            let choice = p.background_model.clone().unwrap_or(ModelChoice {
+            let choice = p.engine.background_model.clone().unwrap_or(ModelChoice {
                 provider: String::new(),
                 model: None,
             });
@@ -333,7 +336,7 @@ impl SettingsView {
                 cx,
                 |this, value, cx| {
                     this.update(cx, |p| {
-                        p.background_model = value.split_once(':').map(|(provider, model)| {
+                        p.engine.background_model = value.split_once(':').map(|(provider, model)| {
                             ModelChoice {
                                 provider: provider.into(),
                                 model: (!model.is_empty()).then(|| model.into()),
@@ -344,8 +347,8 @@ impl SettingsView {
             )],
         )];
         let advanced=vec![
-            self.row(Some("idle-agents"),true,"Keep idle agents ready",Some("Keep up to this many idle agents running for faster follow-ups. Uses additional memory.".into()),vec![self.segmented("idle-agents","Keep idle agents ready",&p.idle_agents.to_string(),&[("0","None"),("1","1"),("2","2"),("3","3"),("5","5")],cx,|this,value,cx|if let Ok(value)=value.parse(){this.update(cx,|p|p.idle_agents=value)})]),
-            self.row(Some("claude-hooks"),false,"Claude Code hooks",Some("Run your configured Claude Code hooks. Changes apply on the next turn.".into()),vec![self.toggle("claude-hooks","Claude Code hooks",p.claude_hooks,false,cx,|this,on,cx|this.update(cx,|p|p.claude_hooks=on))]),];
+            self.row(Some("idle-agents"),true,"Keep idle agents ready",Some("Keep up to this many idle agents running for faster follow-ups. Uses additional memory.".into()),vec![self.segmented("idle-agents","Keep idle agents ready",&p.engine.idle_agents.to_string(),&[("0","None"),("1","1"),("2","2"),("3","3"),("5","5")],cx,|this,value,cx|if let Ok(value)=value.parse(){this.update(cx,|p|p.engine.idle_agents=value)})]),
+            self.row(Some("claude-hooks"),false,"Claude Code hooks",Some("Run your configured Claude Code hooks. Changes apply on the next turn.".into()),vec![self.toggle("claude-hooks","Claude Code hooks",p.engine.claude_hooks,false,cx,|this,on,cx|this.update(cx,|p|p.engine.claude_hooks=on))]),];
         vec![
             self.group(
                 Some("provider-accounts"),

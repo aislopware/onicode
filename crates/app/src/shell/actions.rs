@@ -322,7 +322,7 @@ impl Shell {
             id: dialog
                 .editing
                 .clone()
-                .unwrap_or_else(|| format!("{:x}", onicode_core::time::now_ms())),
+                .unwrap_or_else(|| format!("{:x}", onicode_protocol::time::now_ms())),
             name,
             command,
             icon: dialog.icon.to_owned(),

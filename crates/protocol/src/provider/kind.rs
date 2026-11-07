@@ -78,7 +78,8 @@ impl Kind {
         }
     }
 
-    pub(super) fn install_dirs(self) -> &'static [&'static str] {
+    /// Where the provider's installer puts its binary, under the home directory.
+    pub fn install_dirs(self) -> &'static [&'static str] {
         match self {
             Self::Grok => &[".grok/bin"],
             Self::OpenCode => &[".opencode/bin"],
@@ -102,6 +103,20 @@ impl Kind {
 
     pub fn subscription_usage(self) -> bool {
         matches!(self, Self::Codex | Self::Claude)
+    }
+
+    /// Whether a message typed mid-turn can steer the running turn.
+    pub fn can_steer(self) -> bool {
+        matches!(
+            self,
+            Self::Codex
+                | Self::Claude
+                | Self::Cursor
+                | Self::Pi
+                | Self::Omp
+                | Self::Hermes
+                | Self::OpenCode
+        )
     }
 
     /// The name shown when the binary is missing, matching the React harness map.

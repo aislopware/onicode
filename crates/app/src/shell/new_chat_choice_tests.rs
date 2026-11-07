@@ -1,4 +1,6 @@
 //! The new-chat resolver: each step of the order and hidden skipping.
+use onicode_protocol::engine_settings::EngineSettings;
+
 use super::new_chat_choice::*;
 use super::*;
 use crate::settings::{ModelChoice, Preferences};
@@ -21,7 +23,11 @@ fn project(
     models: &[(&str, &str)],
     hidden: &[&str],
 ) {
-    let p = prefs.project_providers.entry(cwd.into()).or_default();
+    let p = prefs
+        .engine
+        .project_providers
+        .entry(cwd.into())
+        .or_default();
     p.provider = provider.map(Into::into);
     p.models = models
         .iter()
@@ -43,9 +49,12 @@ fn nothing_set_starts_codex() {
 #[test]
 fn project_provider_beats_settings_and_recents() {
     let mut prefs = Preferences {
-        default_provider: Some("claude".into()),
-        default_models: [("grok".into(), "grok-default".into())].into(),
         recent_models: vec![recent("pi", Some("pi-1"))],
+        engine: EngineSettings {
+            default_provider: Some("claude".into()),
+            default_models: [("grok".into(), "grok-default".into())].into(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     project(
@@ -69,9 +78,12 @@ fn project_provider_beats_settings_and_recents() {
 #[test]
 fn settings_provider_beats_recents_and_takes_its_default_model() {
     let prefs = Preferences {
-        default_provider: Some("claude".into()),
-        default_models: [("claude".into(), "opus".into())].into(),
         recent_models: vec![recent("pi", Some("pi-1"))],
+        engine: EngineSettings {
+            default_provider: Some("claude".into()),
+            default_models: [("claude".into(), "opus".into())].into(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     assert_eq!(pick(&prefs, LOCAL), (Kind::Claude, Some("opus".into())));
@@ -85,6 +97,7 @@ fn last_choice_is_used_and_defaults_win_over_its_model() {
     };
     assert_eq!(pick(&prefs, LOCAL), (Kind::Claude, Some("opus".into())));
     prefs
+        .engine
         .default_models
         .insert("claude".into(), "sonnet".into());
     assert_eq!(pick(&prefs, LOCAL), (Kind::Claude, Some("sonnet".into())));
@@ -93,17 +106,20 @@ fn last_choice_is_used_and_defaults_win_over_its_model() {
 #[test]
 fn hidden_providers_are_skipped_step_by_step() {
     let mut prefs = Preferences {
-        default_provider: Some("claude".into()),
         recent_models: vec![recent("pi", Some("pi-1"))],
-        hidden_providers: vec!["claude".into(), "pi".into()],
+        engine: EngineSettings {
+            default_provider: Some("claude".into()),
+            hidden_providers: vec!["claude".into(), "pi".into()],
+            ..Default::default()
+        },
         ..Default::default()
     };
     assert_eq!(pick(&prefs, LOCAL), (Kind::Codex, None));
     // The first provider left when Codex is hidden too.
-    prefs.hidden_providers.push("codex".into());
+    prefs.engine.hidden_providers.push("codex".into());
     assert_eq!(pick(&prefs, LOCAL).0, Kind::Cursor);
     // Everything hidden falls back to Codex.
-    prefs.hidden_providers = Kind::ALL.iter().map(|k| k.id().into()).collect();
+    prefs.engine.hidden_providers = Kind::ALL.iter().map(|k| k.id().into()).collect();
     assert_eq!(pick(&prefs, LOCAL).0, Kind::Codex);
     // A project's own hidden list counts for that project.
     let mut prefs = Preferences {
@@ -118,8 +134,11 @@ fn hidden_providers_are_skipped_step_by_step() {
 #[test]
 fn remote_projects_ignore_the_hidden_list() {
     let prefs = Preferences {
-        default_provider: Some("claude".into()),
-        hidden_providers: vec!["claude".into()],
+        engine: EngineSettings {
+            default_provider: Some("claude".into()),
+            hidden_providers: vec!["claude".into()],
+            ..Default::default()
+        },
         ..Default::default()
     };
     assert_eq!(pick(&prefs, LOCAL).0, Kind::Codex);
@@ -129,7 +148,10 @@ fn remote_projects_ignore_the_hidden_list() {
 #[test]
 fn explicit_provider_takes_the_project_then_default_model() {
     let mut prefs = Preferences {
-        default_models: [("claude".into(), "sonnet".into())].into(),
+        engine: EngineSettings {
+            default_models: [("claude".into(), "sonnet".into())].into(),
+            ..Default::default()
+        },
         ..Default::default()
     };
     let c = NewChatChoice::explicit(&prefs, LOCAL, Kind::Claude);
@@ -152,9 +174,8 @@ fn created(shell: &Shell, cx: &App) -> (String, Option<String>) {
     let id = shell.workspace.active.expect("a new chat is active");
     let provider = shell.session_metadata(id, cx).summary.provider.clone();
     let model = shell
-        .store
-        .lock()
-        .unwrap()
+        .engine
+        .seed()
         .agent_settings(id)
         .unwrap()
         .and_then(|settings| settings.model);
@@ -168,7 +189,7 @@ fn ordinary_shell_new_chat_follows_the_last_choice(cx: &mut TestAppContext) {
         window
             .update(cx, |shell, _, cx| {
                 shell.workspace.preferences.recent_models = recents;
-                shell.workspace.preferences.hidden_providers =
+                shell.workspace.preferences.engine.hidden_providers =
                     hidden.iter().map(|id| id.to_string()).collect();
                 shell.new_chat(cx);
             })

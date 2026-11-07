@@ -554,12 +554,11 @@ impl MobileHost {
             }
             !inner.config.devices.is_empty()
         };
-        let entry = keyring::Entry::new("com.monocode.mobile", &keyring_account(&self.path))
-            .map_err(|e| e.to_string())?;
+        let entry = identity_entry(&keyring_account(&self.path)).map_err(|e| e.to_string())?;
         let identity = match entry.get_password() {
             Ok(value) => serde_json::from_str(&value)
                 .map_err(|_| "Saved desktop mobile identity is invalid")?,
-            Err(keyring::Error::NoEntry) => {
+            Err(keyring_core::Error::NoEntry) => {
                 if paired {
                     return Err("Desktop mobile identity is missing. Remove paired devices before creating a new identity.".into());
                 }
@@ -834,6 +833,19 @@ impl MobileHost {
 
 fn keyring_account(path: &Path) -> String {
     format!("desktop:{}", path.display())
+}
+
+/// The identity's entry: a generic password in the login keychain on macOS (where keyring 3 kept
+/// it too), the Credential Manager on Windows, the Secret Service over D-Bus on Linux.
+fn identity_entry(account: &str) -> keyring_core::Result<keyring_core::Entry> {
+    use keyring_core::api::CredentialStoreApi as _;
+    #[cfg(target_os = "macos")]
+    let store = apple_native_keyring_store::keychain::Store::new()?;
+    #[cfg(windows)]
+    let store = windows_native_keyring_store::Store::new()?;
+    #[cfg(target_os = "linux")]
+    let store = dbus_secret_service_keyring_store::Store::new()?;
+    store.build("com.monocode.mobile", account, None)
 }
 
 fn addresses(inner: &Inner) -> Vec<Address> {

@@ -51,7 +51,7 @@ pub(crate) enum Rail {
     /// Sessions this /operator thread started, newest first.
     Started(Vec<i64>),
     /// This orchestrator's agents.
-    Agents(onicode_core::orchestration::Summary),
+    Agents(onicode_protocol::orchestration::Summary),
 }
 
 /// `.zen-phase-step.orchestration-tree-step`: a step branching off the
@@ -662,7 +662,7 @@ impl Shell {
             git,
         ]
         .iter()
-        .any(|field| onicode_core::search::fuzzy(query, field).is_some())
+        .any(|field| onicode_protocol::search::fuzzy(query, field).is_some())
     }
 
     fn classic_session_status(
@@ -709,9 +709,9 @@ impl Shell {
                 .into_any_element()
         } else {
             status
-                .child(onicode_core::time::relative(
+                .child(onicode_protocol::time::relative(
                     session.summary.updated_at,
-                    onicode_core::time::now_ms(),
+                    onicode_protocol::time::now_ms(),
                 ))
                 .into_any_element()
         }
@@ -721,7 +721,7 @@ impl Shell {
     fn agents(
         &self,
         lead: i64,
-        summary: &onicode_core::orchestration::Summary,
+        summary: &onicode_protocol::orchestration::Summary,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let classic = self.workspace.classic_layout;
@@ -1031,7 +1031,7 @@ mod tests {
                 let mut ids = Vec::new();
                 for _ in 0..3 {
                     let summary = crate::engine_client::create_for_test(
-                        &shell.store,
+                        &shell.engine,
                         "codex",
                         &shell.workspace.project,
                         cx,
@@ -1046,9 +1046,9 @@ mod tests {
                 shell.started_by.insert(child, lead);
                 shell.orchestration_summaries.insert(
                     other,
-                    onicode_core::orchestration::Summary {
+                    onicode_protocol::orchestration::Summary {
                         live: false,
-                        tasks: vec![onicode_core::orchestration::SummaryTask {
+                        tasks: vec![onicode_protocol::orchestration::SummaryTask {
                             session: Some(worker),
                             title: "Write the tests".into(),
                             provider: "codex".into(),

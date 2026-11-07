@@ -215,6 +215,10 @@ pub fn dismiss(tag: &str) {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "opens the viewer's own System Settings"
+)]
 pub fn open_settings() -> Result<(), String> {
     let identifier = NSBundle::mainBundle()
         .bundleIdentifier()

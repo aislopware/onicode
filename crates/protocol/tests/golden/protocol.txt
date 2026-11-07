@@ -1,9 +1,9 @@
-protocol 6
+protocol 8
 call Hello agent params=e9de24ac3b14849e reply=e9de24ac3b14849e
 call EngineInfo agent params=fa64ac005d4e6ec1 reply=ea30e297db7e7c2b
 call UpdateEngine params=76bcbe41f03a0f3d reply=caf76c905cccc628
 call StopEngine params=39c80f9e7eb7e6d1 reply=5b317dbd01f7735e
-watch WatchSession params=b3a91d6f3c8fee85 state=4a6ef87ab7d0ff3c event=7023dc32b6d88016
+watch WatchSession params=b3a91d6f3c8fee85 state=4a6ef87ab7d0ff3c event=99783f742c24014d
 call Send agent params=1ca9fe7fc8323ff4 reply=5b317dbd01f7735e
 call Steer agent params=4ab5d5aa86f9dc18 reply=5b317dbd01f7735e
 call Stop params=9a1019327819ca0c reply=5b317dbd01f7735e
@@ -18,7 +18,9 @@ call EditLastTurn params=4180e5d276d57b2d reply=4fa8a78e2af5e9db
 call Rewind params=1be70895da08fcce reply=5b317dbd01f7735e
 call Fork params=56f21af28ec04cce reply=5b317dbd01f7735e
 call Btw params=eadb71278b764fe0 reply=5b9fc2ef7ef73925
-call SwitchProvider params=72f16152dc52ddcf reply=5b317dbd01f7735e
+call SwitchProvider params=0dabc5c83d22c46e reply=5b317dbd01f7735e
+call ResetThread params=ed060c72672ad4fe reply=5b317dbd01f7735e
+call Compact params=0f7bbba8a6b6e8e9 reply=790cbeff09c7f25d
 call ReadTranscript agent params=3bc9aae1e3ab77e8 reply=1e8999586d637174
 call ReadSession params=af2132e843624742 reply=c01818c38965b4ef
 call SaveQueue params=f3d9873e50e65fa2 reply=79bb5ba4cc377662
@@ -26,8 +28,8 @@ call RecallLastTurn params=0038a465956549e7 reply=8abdb0ba6963df02
 call ReadBtw params=742e993e5ca4058a reply=d1449d67460a9515
 call SaveBtw params=987fe0b09c3674d5 reply=5b317dbd01f7735e
 call StopBtw params=2252445fc3b3bd33 reply=5b317dbd01f7735e
-watch WatchWorkspace params=48cbed38d368cb66 state=0a5ea79ae655e0a4 event=6df64b2a66d5da5a
-call CreateSession agent params=c5b01069dd390a40 reply=1d25c12b7df2d9cf
+watch WatchWorkspace params=48cbed38d368cb66 state=7ddc92dc0999cebd event=b6bcaadccb981bfd
+call CreateSession agent params=c5b01069dd390a40 reply=5192f43e75cb9810
 call Rename agent params=7bba4bc956ecf4e7 reply=5b317dbd01f7735e
 call Archive agent params=5cb71f328d098dd0 reply=5b317dbd01f7735e
 call Pin params=80763b4950eb053a reply=5b317dbd01f7735e
@@ -46,9 +48,9 @@ call CreateNote params=6ab83f798ee75a43 reply=f2fd39f08d78c26c
 call UpsertNote agent params=92d6f357c77e471c reply=f2fd39f08d78c26c
 call DeleteNote params=764ff086d1d5edd7 reply=5b317dbd01f7735e
 call SaveResponseNote params=de91897051238b62 reply=5b317dbd01f7735e
-call PrepareAutomationRun params=13e09faaecf43c45 reply=1d25c12b7df2d9cf
+call PrepareAutomationRun params=13e09faaecf43c45 reply=5192f43e75cb9810
 call FinishAutomationRun params=296073f9f2c86a60 reply=5b317dbd01f7735e
-call ClaimInboxEvents params=1b1a7bde23c62d75 reply=5b317dbd01f7735e
+call ClaimInboxEvents params=2e4718339c22e6e7 reply=5b317dbd01f7735e
 watch WatchDir params=9fda57093f638e49 state=7a7f03f30c4f9014 event=6514bd2ecad10d80
 call ListDir agent params=9b460aabe54cf14f reply=a6690907e7622de1
 call Stat agent params=79f50cc6258ef95f reply=a075dbb3942dc540
@@ -63,6 +65,7 @@ call StopSearch agent params=1bfc56ca22d05258 reply=5b317dbd01f7735e
 call ListDrives params=377d25905b1564c3 reply=dc7229df361fe256
 call SearchHomeFolders params=b544d577d30c284d reply=44accd26aa668a15
 call SaveAttachments params=702e38c7daa26d0c reply=44accd26aa668a15
+call AdoptAttachments params=fad018496f35eef2 reply=44accd26aa668a15
 call SaveNoteImages params=7d06a2db986ce722 reply=1545dc39f8230474
 watch WatchGit params=bf8d8022ca89753b state=61b4e33a2ff54fec event=b55dd13518dd3c26
 call ReadStatus agent params=f042189fa0555ca0 reply=61b4e33a2ff54fec
@@ -93,6 +96,76 @@ call RemoveWorktree params=5bc8f69cf137b700 reply=fa23ea3d9200f9ba
 call ReadCheckpoint agent params=e09535587abbf40f reply=20ad3544bc1a9b8e
 call RestoreCheckpoint params=9e1f34f2f0606050 reply=20ad3544bc1a9b8e
 call ReadSessionChanges params=d71c7d5da3072015 reply=65590ad5b81e0f53
+watch WatchTerminal params=5c930ae77e9241b5 state=da7286dffc4bdf6d event=2724485002a61267
+call OpenTerminal params=33bf964521cd4032 reply=483d84556c30e62c
+call ListTerminals params=2532f7535c76d741 reply=adfa28205ffb6d61
+call ResizeTerminal params=731e3d25b3d21e80 reply=5b317dbd01f7735e
+call CloseTerminal params=91918568a5684d28 reply=5b317dbd01f7735e
+call TerminalInput params=7867814342186390 reply=5b317dbd01f7735e
+call ReadForeground params=27fe7a453007b002 reply=6fc7314745702fb1
+call StopForeground params=5c5fd11568dcab3e reply=5b317dbd01f7735e
+watch WatchAccounts params=54fb7c38c0d0211c state=be338e54d9f9259d event=2e25a01d3226288c
+call RefreshUsage params=4a819f296510e526 reply=5b317dbd01f7735e
+call RefreshSignIn params=beb162f2f881a44e reply=5b317dbd01f7735e
+call ConsumeUsageReset params=c183d008bef49954 reply=562bd149ab7449c4
+call Catalog params=3a6bffa790d9abf2 reply=d436918cf02a6bd1
+call Skills params=2500ce8866454510 reply=c2e81ef704eda708
+call CreateSkill params=a1322239b45d0d01 reply=562bd149ab7449c4
+call Commands params=3f70d51c2da8cf7d reply=54e679d07da9a9bb
+call AddAccount params=eff98260c826f339 reply=87750a24cd576466
+call RenameAccount params=b6c158d5d2f5a253 reply=5b317dbd01f7735e
+call RemoveAccount params=f8f2b264b781da52 reply=5b317dbd01f7735e
+call SelectAccount params=30fbaeb8f274fdf4 reply=5b317dbd01f7735e
+call Login params=be7fe0a0d5d22954 reply=5b317dbd01f7735e
+call CancelLogin params=8e2512356bde2101 reply=5b317dbd01f7735e
+call Logout params=9aea3852e44fb64a reply=5b317dbd01f7735e
+call McpServers params=e824de431db4e2e1 reply=9367ad467a5fa1f0
+call AddMcpServer params=a957ac57be95ec99 reply=5b317dbd01f7735e
+call RemoveMcpServer params=b393b1cec3c1dc96 reply=5b317dbd01f7735e
+call McpLogin params=6f5e1f273bff26dd reply=5b317dbd01f7735e
+call McpHealth params=3a8e100dd915afd5 reply=562bd149ab7449c4
+call Harnesses params=682daf85ab5bc6cd reply=3670062bbe7d6aec
+call InspectHarness params=2afd384f85155ead reply=72e3159818285828
+call HarnessUpdates params=b7bf3b3b1dee82f2 reply=239ada820ca262c9
+call RunHarnessUpdate params=3d7be1c1144d3a93 reply=562bd149ab7449c4
+call Generate params=cc7ad99533f564a1 reply=562bd149ab7449c4
+call StopGenerate params=021c9b868b2b1993 reply=5b317dbd01f7735e
+call KeepIdleAgents params=5f6d1eda03969a92 reply=5b317dbd01f7735e
+call TransferThread params=ae1c3c9e61e4c1be reply=dabc9bbc9da563e9
+call ForgetThread params=3dbe995a766bb2d2 reply=5b317dbd01f7735e
+watch WatchEngineSettings params=dee5fb3f1b5d31d4 state=8a3888d1aaf05ddc event=1fd4ad438e78848b
+call SetEngineSetting params=a3f08920905aa8f0 reply=5b317dbd01f7735e
+call TakeViewerState params=5ad6377def61d541 reply=435341ebebcb720f
+call InboxList params=45b241762811f558 reply=9995dd9903001388
+call ReadInboxDetails params=cbd56d1107fc8634 reply=c29a7856798cfad6
+call ReadInboxThread params=da385a50ab425a92 reply=8e41a1688254c674
+call ReadInboxDiff params=f9db0d81f273dcee reply=7661bc914f14a75e
+call ReadInboxChecks params=f87ced3bb3972412 reply=497144ff30418b57
+call PostInboxComment params=221ca4a4a6bc5c5c reply=562bd149ab7449c4
+call ConnectInbox params=48d91daae7cd68e9 reply=a65515e4273ebfce
+call RunInboxAction params=20a3c6ea90864e05 reply=25a76e33e49e8870
+call InboxMedia params=f59a67585f96a421 reply=562bd149ab7449c4
+call InboxAvatar params=d10af8df038abb01 reply=562bd149ab7449c4
+call ListAutomations params=dfb349e0fa46db9d reply=cb9e077b9f8c7221
+call AutomationRuns params=a2bb0a32ff26d4ad reply=009abc77561c7520
+call UpsertAutomation params=08f548edfe0ada2b reply=42db25f60373b60c
+call SetAutomationEnabled params=42576ea527766d64 reply=42db25f60373b60c
+call RunAutomationNow params=0d4d685e7368dff7 reply=de9c60790fd27b76
+call DeleteAutomation params=8c59bbfff45ae22f reply=5b317dbd01f7735e
+call HasEventAutomations params=5e6a0069ea2c78cd reply=dabc9bbc9da563e9
+call ProjectGroups params=24006968d69dda9d reply=a35e5a47fc59bbeb
+call LinkedActivity params=ed70650aa8e5b45a reply=f92de2f0b0f9522b
+call AgentProcesses params=decdc5878c5bfcf1 reply=43e75d83b7190d68
+call StopAgentTool params=d2ea6b3f6cee8fbb reply=5b317dbd01f7735e
+call ReadWorkItem params=7e76cdf86e9ebd28 reply=25a76e33e49e8870
+call ReadWorkItemDetails params=6d6167c7df366578 reply=c29a7856798cfad6
+call ReadAppReceipt params=cb8eefbdf3cef0d2 reply=6fc7314745702fb1
+call SaveAppReceipt params=2196f941273ab1df reply=5b317dbd01f7735e
+call AppModels params=4e92ffca3df05b0e reply=562bd149ab7449c4
+call StartAppSession params=d18044900842599f reply=15a7bc70432a46b7
+call ReadAppConversation params=28963189220674d1 reply=562bd149ab7449c4
+call AppNotes params=44c6630da5f17643 reply=562bd149ab7449c4
+call ReadWorktreeMarks params=1583b1d6f3a6a742 reply=12a5dc8c3991ab5a
 envelope Cursor shape=1779699f12cb9b5d
 envelope Item shape=49c3115eb783b829
 envelope Routed shape=4c28ec420f287c74

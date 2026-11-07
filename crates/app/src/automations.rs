@@ -1,21 +1,27 @@
 //! Native counterpart of AutomationsView: persisted list, example gallery,
 //! trigger editor and run history. All scheduling lives in monocode-core.
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
 
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, Role, SharedString,
     Subscription, Window, div, px, rgb,
 };
-use onicode_core::automations::{
-    self, Automation, AutomationRun, AutomationTrigger, AutomationUpsert, DueAutomationRun, Service,
+use onicode_core::automations;
+use onicode_protocol::OpId;
+use onicode_protocol::agents::{Catalog, CatalogRead};
+use onicode_protocol::automations::{
+    Automation, AutomationRun, AutomationTrigger, AutomationUpsert, DueAutomationRun,
 };
-use onicode_core::provider::Kind;
-use onicode_core::session_groups::Folder;
-use onicode_engine::turn::{Database, locked};
+use onicode_protocol::provider::Kind;
+use onicode_protocol::session_groups::Folder;
+use onicode_protocol::work::{
+    AutomationRuns, DeleteAutomation, ListAutomations, ProjectGroups, RunAutomationNow,
+    SetAutomationEnabled, UpsertAutomation,
+};
 use serde::Deserialize;
 
+use crate::engine_client::{Engine, call};
 use crate::input::{self, Input};
 use crate::pickers::{ModelList, ModelPicked, ProjectPicked, ProjectPicker, cached_model_name};
 use crate::popover::{Anchor, AnchorSlot, popover};
@@ -103,11 +109,10 @@ struct ChoiceMenu {
 }
 
 pub(crate) struct Automations {
-    service: Arc<Mutex<Service>>,
-    database: Option<Database>,
+    engine: Engine,
     cwd: String,
     projects: Vec<String>,
-    appearances: HashMap<String, onicode_core::project_appearance::ProjectAppearance>,
+    appearances: HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
     automations: Vec<Automation>,
     runs: Vec<AutomationRun>,
     selected: Option<String>,
@@ -128,7 +133,7 @@ pub(crate) struct Automations {
     folders: Vec<Folder>,
     choice: Option<ChoiceMenu>,
     models: Option<Entity<ModelList>>,
-    model_controls: Vec<onicode_core::catalog::ModelControl>,
+    model_controls: Vec<onicode_protocol::catalog::ModelControl>,
     project_picker: Option<Entity<ProjectPicker>>,
     picker_subscription: Option<Subscription>,
     project_anchor: AnchorSlot,
@@ -147,7 +152,7 @@ impl Focusable for Automations {
 }
 impl Automations {
     pub(crate) fn new(
-        service: Arc<Mutex<Service>>,
+        engine: Engine,
         cwd: String,
         projects: Vec<String>,
         cx: &mut Context<Self>,
@@ -156,8 +161,7 @@ impl Automations {
             cx.new(|cx| Input::field("Filter automations", "Filter automations", content(0.4), cx));
         let subscription = cx.subscribe(&filter, |_, _, _: &input::Changed, cx| cx.notify());
         let mut this = Self {
-            service,
-            database: None,
+            engine,
             cwd,
             projects,
             appearances: HashMap::new(),
@@ -194,17 +198,13 @@ impl Automations {
             request_generation: 0,
         };
         this.refresh(cx);
+        this.load_folders(cx);
         this
-    }
-
-    pub(crate) fn set_database(&mut self, database: Database, cx: &mut Context<Self>) {
-        self.database = Some(database);
-        self.load_folders(cx);
     }
 
     pub(crate) fn set_appearances(
         &mut self,
-        appearances: HashMap<String, onicode_core::project_appearance::ProjectAppearance>,
+        appearances: HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
         cx: &mut Context<Self>,
     ) {
         self.appearances = appearances;
@@ -254,19 +254,21 @@ impl Automations {
     }
 
     pub(crate) fn refresh(&mut self, cx: &mut Context<Self>) {
-        let service = self.service.clone();
+        let engine = self.engine.clone();
         let selected = self.selected.clone();
         let selected_for_work = selected.clone();
         let work = cx.background_executor().spawn(async move {
-            let mut service = service
-                .lock()
-                .map_err(|_| "Automations unavailable".to_string())?;
-            let list = service.list()?;
-            let runs = selected_for_work
-                .as_deref()
-                .map(|id| service.runs(id))
-                .transpose()?
-                .unwrap_or_default();
+            let list = engine
+                .call::<ListAutomations>(None, ListAutomations {})
+                .await?;
+            let runs = match selected_for_work {
+                Some(automation) => {
+                    engine
+                        .call::<AutomationRuns>(None, AutomationRuns { automation })
+                        .await?
+                }
+                None => Vec::new(),
+            };
             Ok::<_, String>((list, runs))
         });
         cx.spawn(async move |this, cx| {
@@ -300,18 +302,13 @@ impl Automations {
     }
 
     fn load_folders(&mut self, cx: &mut Context<Self>) {
-        let Some(database) = self.database.clone() else {
-            return;
-        };
         let cwd = self
             .editor
             .as_ref()
             .map(|e| e.draft.cwd.clone())
             .unwrap_or_else(|| self.cwd.clone());
         let expected = cwd.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { locked(&database)?.groups(&cwd) });
+        let work = call::<ProjectGroups>(&self.engine, None, ProjectGroups { project: cwd }, cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -331,7 +328,9 @@ impl Automations {
     }
 
     fn begin(&mut self, template: Option<Template>, cx: &mut Context<Self>) {
-        let preferences = cx.try_global::<crate::settings::Preferences>();
+        let preferences = cx
+            .try_global::<crate::settings::Preferences>()
+            .map(|preferences| &preferences.engine);
         let kind = preferences
             .and_then(|p| p.project_providers.get(&self.cwd))
             .and_then(|p| p.provider.as_deref())
@@ -390,14 +389,8 @@ impl Automations {
             input
         });
         let completion = cx.new(|cx| {
-            let completion =
-                crate::composer_completion::Completion::new(prompt.clone(), draft.cwd.clone(), cx)
-                    .inline_field();
-            if let Some(store) = &self.database {
-                completion.with_store(store.clone())
-            } else {
-                completion
-            }
+            crate::composer_completion::Completion::new(prompt.clone(), draft.cwd.clone(), cx)
+                .inline_field()
         });
         completion.update(cx, |completion, cx| {
             completion.set_provider(&draft.harness, cx)
@@ -519,7 +512,7 @@ impl Automations {
                 trigger.actor = fields.actor.read(cx).content.trim().to_string();
             }
         }
-        draft.sync_triggers(onicode_core::time::now_ms() as i64);
+        draft.sync_triggers(onicode_protocol::time::now_ms() as i64);
         Some(draft)
     }
 
@@ -532,13 +525,12 @@ impl Automations {
         };
         self.saving = true;
         self.error = None;
-        let service = self.service.clone();
-        let work = cx.background_executor().spawn(async move {
-            service
-                .lock()
-                .map_err(|_| "Automations unavailable".to_string())?
-                .upsert(draft)
-        });
+        let work = call::<UpsertAutomation>(
+            &self.engine,
+            Some(OpId::new()),
+            UpsertAutomation { automation: draft },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -559,13 +551,15 @@ impl Automations {
     }
 
     fn toggle(&mut self, id: String, enabled: bool, cx: &mut Context<Self>) {
-        let service = self.service.clone();
-        let work = cx.background_executor().spawn(async move {
-            service
-                .lock()
-                .map_err(|_| "Automations unavailable".to_string())?
-                .set_enabled(&id, enabled)
-        });
+        let work = call::<SetAutomationEnabled>(
+            &self.engine,
+            Some(OpId::new()),
+            SetAutomationEnabled {
+                automation: id,
+                enabled,
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -594,19 +588,17 @@ impl Automations {
             .selected
             .as_ref()
             .and_then(|id| self.automations.iter().find(|a| &a.id == id))
-            .cloned()
+            .map(|automation| automation.id.clone())
         else {
             return;
         };
         self.running = true;
-        let service = self.service.clone();
-        let work = cx.background_executor().spawn(async move {
-            let run = service
-                .lock()
-                .map_err(|_| "Automations unavailable".to_string())?
-                .run_now(&automation.id, onicode_core::time::now_ms() as i64)?;
-            Ok::<_, String>(DueAutomationRun { automation, run })
-        });
+        let work = call::<RunAutomationNow>(
+            &self.engine,
+            Some(OpId::new()),
+            RunAutomationNow { automation },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -643,19 +635,18 @@ impl Automations {
         let Some(id) = self.selected.clone() else {
             return;
         };
-        let service = self.service.clone();
-        let work = cx.background_executor().spawn(async move {
-            service
-                .lock()
-                .map_err(|_| "Automations unavailable".to_string())?
-                .delete(&id)
-        });
+        let work = call::<DeleteAutomation>(
+            &self.engine,
+            Some(OpId::new()),
+            DeleteAutomation { automation: id },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
                 this.confirm_delete = false;
                 match result {
-                    Ok(()) => {
+                    Ok(_) => {
                         this.editor = None;
                         this.selected = None;
                         this.gallery = true;
@@ -677,21 +668,29 @@ impl Automations {
             return;
         };
         let kind = Kind::from_id(&editor.draft.harness);
-        let model = onicode_core::store::native_model(&editor.draft.model, &editor.draft.harness)
-            .unwrap_or_default();
+        let model =
+            onicode_protocol::sessions::native_model(&editor.draft.model, &editor.draft.harness)
+                .unwrap_or_default();
         let profile = crate::accounts::get(cx)
             .map(|a| a.read(cx).selected(kind, &editor.draft.cwd))
             .unwrap_or_default();
-        let work = cx
-            .background_executor()
-            .spawn(async move { onicode_core::catalog::models_for(kind, &profile) });
+        let work = call::<Catalog>(
+            &self.engine,
+            None,
+            Catalog {
+                provider: kind,
+                account: profile.id,
+                read: CatalogRead::Fresh,
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
                 if this.request_generation != generation {
                     return;
                 }
-                if let Ok(models) = result
+                if let Ok(Some(models)) = result
                     && let Some(model) = models
                         .iter()
                         .find(|m| m.id == model)
@@ -707,7 +706,7 @@ impl Automations {
                         })
                     {
                         this.model_controls
-                            .push(onicode_core::catalog::ModelControl {
+                            .push(onicode_protocol::catalog::ModelControl {
                                 id: "reasoningEffort".into(),
                                 name: "Reasoning".into(),
                                 current: model
@@ -730,7 +729,7 @@ impl Automations {
                         let mut choices = vec![("default".into(), "Standard".into())];
                         choices.extend(model.tiers.clone());
                         this.model_controls
-                            .push(onicode_core::catalog::ModelControl {
+                            .push(onicode_protocol::catalog::ModelControl {
                                 id: "serviceTier".into(),
                                 name: "Speed".into(),
                                 current: "default".into(),
@@ -755,7 +754,10 @@ impl Automations {
         let picker = cx.new(|cx| {
             ModelList::new_for(
                 kind,
-                onicode_core::store::native_model(&editor.draft.model, &editor.draft.harness),
+                onicode_protocol::sessions::native_model(
+                    &editor.draft.model,
+                    &editor.draft.harness,
+                ),
                 &editor.draft.cwd,
                 profile,
                 cx,
@@ -766,14 +768,13 @@ impl Automations {
             window,
             |this, _, picked: &ModelPicked, window, cx| {
                 if let Some(editor) = &mut this.editor {
-                    let current = onicode_core::store::native_model(
+                    let current = onicode_protocol::sessions::native_model(
                         &editor.draft.model,
                         &editor.draft.harness,
                     );
-                    let picked_model = picked
-                        .1
-                        .as_deref()
-                        .and_then(|model| onicode_core::store::native_model(model, picked.0.id()));
+                    let picked_model = picked.1.as_deref().and_then(|model| {
+                        onicode_protocol::sessions::native_model(model, picked.0.id())
+                    });
                     if Kind::from_id(&editor.draft.harness) != picked.0 || current != picked_model {
                         editor.draft.harness = picked.0.id().into();
                         editor.draft.model = picked.1.clone().unwrap_or_default();
@@ -944,7 +945,8 @@ impl Render for Automations {
             let enabled = automation.enabled;
             let active = !self.gallery && self.selected.as_deref() == Some(&id);
             let kind = Kind::from_id(&automation.harness);
-            let model = onicode_core::store::native_model(&automation.model, &automation.harness);
+            let model =
+                onicode_protocol::sessions::native_model(&automation.model, &automation.harness);
             list = list.child(
                 div()
                     .id(SharedString::from(format!("automation-{id}")))

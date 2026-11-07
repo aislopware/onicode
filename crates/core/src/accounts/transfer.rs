@@ -1,7 +1,7 @@
 //! Exact native transcript copy, including Codex fork/subagent dependencies.
 use std::path::{Path, PathBuf};
 
-use super::Profile;
+use super::{Profile, ProfileExt as _};
 use crate::provider::Kind;
 mod codex;
 use codex::*;

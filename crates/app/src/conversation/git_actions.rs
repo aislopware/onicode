@@ -420,12 +420,10 @@ impl Conversation {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
     use gpui::TestAppContext;
-    use onicode_core::store::Store;
-    use onicode_core::tool::{ToolCall, ToolState};
-    use onicode_core::transcript::Row;
+    use onicode_protocol::tool::{ToolCall, ToolState};
+    use onicode_protocol::transcript::Row;
 
     use super::*;
 
@@ -451,6 +449,7 @@ mod tests {
             repo
         }
 
+        #[expect(clippy::disallowed_methods, reason = "a test builds its git fixture")]
         fn git(&self, args: &[&str]) {
             let result = std::process::Command::new("git")
                 .args([
@@ -487,11 +486,11 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let repo = Repo::new();
-        let mut store = Store::open(Path::new(":memory:")).unwrap();
-        let mut summary = store.create("codex", &repo.cwd()).unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut summary = engine.seed().create("codex", &repo.cwd()).unwrap();
         summary.provider = "fixture".into();
         summary.has_messages = true;
-        let other_summary = store.create("codex", &repo.cwd()).unwrap();
+        let other_summary = engine.seed().create("codex", &repo.cwd()).unwrap();
         let mut edit = ToolCall::new("edit", "Edit");
         edit.state = ToolState::Completed;
         edit.input =
@@ -503,7 +502,8 @@ mod tests {
             sent_at: None,
             id: None,
         };
-        store
+        engine
+            .seed()
             .write_rows(
                 summary.id,
                 0,
@@ -515,13 +515,12 @@ mod tests {
                 ],
             )
             .unwrap();
-        let store = Arc::new(Mutex::new(store));
         let window = cx.update(|cx| {
             input::bind(cx);
             crate::popover::bind(cx);
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, store.clone(), cx);
+                    let mut view = Conversation::new(summary, engine.clone(), cx);
                     view.load(cx);
                     view
                 })
@@ -587,7 +586,7 @@ mod tests {
         let other = window
             .update(visual, |_, _, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(other_summary, store, cx);
+                    let mut view = Conversation::new(other_summary, engine, cx);
                     view.loaded = true;
                     view.sync_review(cx);
                     view
@@ -653,8 +652,8 @@ mod tests {
     fn shell_edits_in_the_recorded_turns_offer_the_pill(cx: &mut TestAppContext) {
         let repo = Repo::new();
         std::fs::write(repo.0.join("own.rs"), "written by a shell command\n").unwrap();
-        let mut store = Store::open(Path::new(":memory:")).unwrap();
-        let mut summary = store.create("codex", &repo.cwd()).unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut summary = engine.seed().create("codex", &repo.cwd()).unwrap();
         summary.provider = "fixture".into();
         summary.has_messages = true;
         let row = |role: &str, text: &str| Row {
@@ -664,7 +663,8 @@ mod tests {
             sent_at: None,
             id: None,
         };
-        store
+        engine
+            .seed()
             .write_rows(
                 summary.id,
                 0,
@@ -676,7 +676,7 @@ mod tests {
             crate::popover::bind(cx);
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.load(cx);
                     view
                 })
@@ -689,7 +689,7 @@ mod tests {
             visual.debug_bounds("git-actions").is_some()
         };
         assert!(!shown(visual), "no Edit tool call names the file");
-        let file = onicode_core::checkpoint::CheckpointFile {
+        let file = onicode_protocol::checkpoint::CheckpointFile {
             path: repo.0.join("own.rs").to_string_lossy().into_owned(),
             relative: "own.rs".into(),
             status: "modified".into(),
@@ -712,9 +712,10 @@ mod tests {
 
     #[gpui::test]
     fn the_pill_requires_session_changes_and_sends_straight_away(cx: &mut TestAppContext) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
         // Fails after saving the turn, without launching a real provider.
-        let mut summary = store
+        let mut summary = engine
+            .seed()
             .create("codex", "/missing/git-action-project")
             .unwrap();
         summary.provider = "fixture".into();
@@ -723,7 +724,7 @@ mod tests {
             crate::popover::bind(cx);
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.summary.has_messages = true;
                     view
@@ -738,7 +739,7 @@ mod tests {
         };
         assert!(!shown(visual), "this session changed nothing");
 
-        let file = onicode_core::checkpoint::CheckpointFile {
+        let file = onicode_protocol::checkpoint::CheckpointFile {
             path: "/missing/git-action-project/a.rs".into(),
             relative: "a.rs".into(),
             status: "modified".into(),
@@ -790,15 +791,18 @@ mod tests {
 
     #[gpui::test]
     fn the_pill_moves_on_to_the_next_step(cx: &mut TestAppContext) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let mut summary = store.create("codex", "/missing/git-next-step").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut summary = engine
+            .seed()
+            .create("codex", "/missing/git-next-step")
+            .unwrap();
         summary.provider = "fixture".into();
         let window = cx.update(|cx| {
             input::bind(cx);
             crate::popover::bind(cx);
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.summary.has_messages = true;
                     view
@@ -810,7 +814,7 @@ mod tests {
         window
             .update(visual, |view, _, cx| {
                 cx.set_global(LastGitAction(GitAction::Stage));
-                view.session_git = onicode_core::git::SessionChanges {
+                view.session_git = onicode_protocol::git::SessionChanges {
                     staged: false,
                     unstaged: true,
                 };
@@ -848,15 +852,18 @@ mod tests {
 
     #[gpui::test]
     fn slash_commands_run_the_pills_actions(cx: &mut TestAppContext) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let mut summary = store.create("codex", "/missing/git-command").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let mut summary = engine
+            .seed()
+            .create("codex", "/missing/git-command")
+            .unwrap();
         summary.provider = "fixture".into();
         let window = cx.update(|cx| {
             input::bind(cx);
             crate::popover::bind(cx);
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.summary.has_messages = true;
                     view

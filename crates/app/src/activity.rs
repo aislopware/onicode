@@ -6,7 +6,7 @@ use gpui::{
     AnyElement, App, Bounds, ContentMask, Element, ElementId, GlobalElementId, InspectorElementId,
     LayoutId, Pixels, StyledText, Window, point,
 };
-use onicode_core::tool::{ToolCall, ToolState};
+use onicode_protocol::tool::{ToolCall, ToolState};
 
 /// Shade a fixed glyph layout. Animated StyledText highlights change font-run
 /// boundaries (and kerning/ligatures) as neighboring colors become equal.
@@ -167,7 +167,7 @@ pub(crate) fn summary(tools: &[ToolCall], live: bool) -> (String, &'static str) 
         }
         if let Some(step) = visual {
             chart_steps += 1;
-            if step == onicode_core::tool::VisualStep::Show {
+            if step == onicode_protocol::tool::VisualStep::Show {
                 charts += 1;
             }
             continue;

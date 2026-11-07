@@ -1,4 +1,4 @@
-use onicode_core::search::Target;
+use onicode_protocol::search::Target;
 
 use super::*;
 use crate::search::{Event, SearchView, Sources};
@@ -227,7 +227,7 @@ impl Shell {
             })
             .collect();
         let cwd = self.working_copy().to_owned();
-        let store = self.store.clone();
+        let engine = self.engine.clone();
         let projects = self.workspace.projects.clone();
         let recent = self
             .workspace
@@ -238,7 +238,7 @@ impl Shell {
         let view = cx.new(|cx| {
             SearchView::new(
                 cwd,
-                store,
+                engine,
                 Sources {
                     summaries,
                     live,
@@ -435,7 +435,7 @@ mod tests {
             .update(cx, |shell, w, cx| {
                 for _ in 0..10 {
                     let summary = crate::engine_client::create_for_test(
-                        &shell.store,
+                        &shell.engine,
                         "codex",
                         &shell.workspace.project,
                         cx,

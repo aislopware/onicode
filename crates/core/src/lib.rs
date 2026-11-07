@@ -1,19 +1,21 @@
-//! UI-independent services shared by the native migration and Tauri.
+//! The engine's IO: the store, the provider runs, the disk and the network. The data it reads and
+//! writes, and the pure helpers over it, live in `onicode-protocol`; each module here re-exports
+//! its protocol twin at the same path.
 pub mod accounts;
-pub mod agent;
 pub mod app_access;
 pub mod automations;
 pub mod catalog;
 pub mod checkpoint;
-pub mod context;
+pub mod cli;
+pub mod composer;
 pub mod desktop_preferences;
-pub mod diff;
 pub mod external_editor;
 pub mod files;
 pub mod follow_up;
 pub mod git;
 pub mod harness_updates;
 pub mod inbox;
+pub mod mcp;
 pub mod mobile;
 pub mod notes;
 pub mod process;
@@ -21,32 +23,19 @@ pub mod project_appearance;
 pub mod provider;
 pub mod remote;
 pub mod resources;
-pub mod response;
 pub mod scm;
-pub mod session_filters;
+pub mod search;
 pub mod session_groups;
 pub mod session_title;
+pub mod skills;
 pub mod store;
-pub mod time;
-pub mod tool;
 pub mod transcript;
 pub mod usage;
-pub mod user_links;
 pub mod visual;
 pub mod visual_bridge;
-
-pub mod composer;
-pub mod orchestration;
-pub mod skills;
-
-pub mod search;
-
-pub mod cli;
-pub mod mcp;
-
 pub mod worktree_management;
 
-/// A random 128-bit ID as 32 hex digits.
-pub fn new_id() -> String {
-    format!("{:032x}", rand::random::<u128>())
-}
+pub use onicode_protocol::{
+    agent, b64, context, diff, new_id, orchestration, response, session_filters, time, tool,
+    user_links,
+};

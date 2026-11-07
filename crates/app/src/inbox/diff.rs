@@ -2,8 +2,8 @@
 use std::sync::Arc;
 
 use gpui::SharedString;
-use onicode_core::diff::{Block, Line, LineKind};
-use onicode_core::inbox::Diff;
+use onicode_protocol::diff::{Block, Line, LineKind};
+use onicode_protocol::inbox::Diff;
 
 use crate::diff_view::DiffFile;
 

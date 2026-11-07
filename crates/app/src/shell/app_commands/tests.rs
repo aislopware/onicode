@@ -1,7 +1,7 @@
+#![expect(clippy::disallowed_methods, reason = "a test builds its git fixture")]
 use std::sync::mpsc;
 
 use gpui::{TestAppContext, WindowHandle};
-use onicode_core::store::Store;
 
 use super::*;
 
@@ -104,11 +104,7 @@ fn submitted_operator_access_survives_the_composer_reset(cx: &mut TestAppContext
     assert!(call(window, caller, "later", "sessions.list", json!({}), cx).is_ok());
     window
         .update(cx, |shell, _, cx| {
-            let saved = locked(&shell.store)
-                .unwrap()
-                .agent_settings(caller)
-                .unwrap()
-                .unwrap();
+            let saved = shell.engine.seed().agent_settings(caller).unwrap().unwrap();
             assert!(!saved.operator);
             assert!(saved.operator_enabled);
             shell.sessions[&caller].update(cx, |view, cx| {
@@ -236,7 +232,7 @@ fn operator_scopes_sessions_and_preserves_an_unsent_draft(cx: &mut TestAppContex
                 "keep my draft"
             );
             shell.sessions[&caller].update(cx, |v, _| {
-                v.settings.access = onicode_core::agent::AccessMode::ReadOnly
+                v.settings.access = onicode_protocol::agent::AccessMode::ReadOnly
             });
         })
         .unwrap();
@@ -272,7 +268,7 @@ fn operator_children_are_visible_durable_and_do_not_navigate_by_default(cx: &mut
             let view = shell.sessions[&child].read(cx);
             assert_eq!(
                 view.settings.access,
-                onicode_core::agent::AccessMode::ReadOnly
+                onicode_protocol::agent::AccessMode::ReadOnly
             );
             assert!(view.has_saved_draft());
             assert!(!view.busy);
@@ -284,7 +280,7 @@ fn operator_children_are_visible_durable_and_do_not_navigate_by_default(cx: &mut
             let started = started.expect("the engine lists the session the operator started");
             assert_eq!(started.started_by, Some(caller));
             // The draft is the session's follow-up queue, which the conversation still saves.
-            let db = locked(&shell.store).unwrap();
+            let db = shell.engine.seed();
             assert_eq!(
                 db.follow_ups(child).unwrap().draft.unwrap().text,
                 "Review this project"
@@ -497,7 +493,8 @@ fn operator_notes_and_conversation_paging_use_the_project_api(cx: &mut TestAppCo
 
 #[gpui::test]
 fn operator_creates_selects_and_validates_real_worktrees(cx: &mut TestAppContext) {
-    let root = std::env::temp_dir().join(format!("operator-worktrees-{}", onicode_core::new_id()));
+    let root =
+        std::env::temp_dir().join(format!("operator-worktrees-{}", onicode_protocol::new_id()));
     let project = root.join("project");
     std::fs::create_dir_all(&project).unwrap();
     let git = |args: &[&str]| {
@@ -525,13 +522,12 @@ fn operator_creates_selects_and_validates_real_worktrees(cx: &mut TestAppContext
         "Fixture",
     ]);
     let project = project.to_string_lossy().into_owned();
-    let store = Store::open(&root.join("native.db")).unwrap();
-    let caller = store.create("codex", &project).unwrap();
-    let store = Arc::new(Mutex::new(store));
+    let engine = cx.update(crate::engine_client::Engine::memory);
+    let caller = engine.seed().create("codex", &project).unwrap();
     let id = caller.id;
     let window = cx.update(|cx| {
         cx.open_window(Default::default(), |_, cx| {
-            cx.new(|cx| Shell::new(store, vec![caller], project.clone(), None, cx))
+            cx.new(|cx| Shell::new(engine, vec![caller], project.clone(), None, cx))
         })
         .unwrap()
     });
@@ -631,8 +627,9 @@ fn app_launch_submission_uses_the_saved_message_identity(cx: &mut TestAppContext
     let expected = window
         .update(cx, |shell, _, cx| {
             let view = shell.sessions[&child].clone();
-            let expected = locked(&shell.store)
-                .unwrap()
+            let expected = shell
+                .engine
+                .seed()
                 .follow_ups(child)
                 .unwrap()
                 .draft
@@ -650,7 +647,7 @@ fn app_launch_submission_uses_the_saved_message_identity(cx: &mut TestAppContext
     cx.run_until_parked();
     window
         .update(cx, |shell, _, cx| {
-            let state = locked(&shell.store).unwrap().follow_ups(child).unwrap();
+            let state = shell.engine.seed().follow_ups(child).unwrap();
             assert!(state.draft.is_none());
             assert_eq!(state.messages.len(), 1);
             assert_eq!(state.messages[0].id, expected);

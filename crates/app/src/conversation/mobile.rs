@@ -1,6 +1,6 @@
 //! A paired phone's view of and commands for this chat, through the same paths
 //! the composer and its pickers use.
-use onicode_core::agent::{Question, QuestionItem, QuestionOption};
+use onicode_protocol::agent::{Question, QuestionItem, QuestionOption};
 use serde_json::{Value, json};
 
 use super::*;
@@ -52,7 +52,7 @@ impl Conversation {
         }
         let kind = Kind::from_id(&self.summary.provider);
         if automatic != Some(false)
-            && self.settings.account.id != onicode_core::accounts::DEFAULT
+            && self.settings.account.id != onicode_protocol::accounts::DEFAULT
             && crate::accounts::get(cx)
                 .is_some_and(|center| !center.read(cx).book.exists(kind, &self.settings.account.id))
         {
@@ -420,14 +420,14 @@ pub(crate) fn usage_state(
     provider: &str,
     model: Option<&str>,
     settings: &Settings,
-    limit: Option<&onicode_core::usage::Limit>,
+    limit: Option<&onicode_protocol::usage::Limit>,
     busy: bool,
     remote: bool,
 ) -> serde_json::Value {
     let Some(limit) = limit else {
         return serde_json::Value::Null;
     };
-    let now = onicode_core::usage::now_ms();
+    let now = onicode_protocol::usage::now_ms();
     let waiting = limit.waiting(now);
     let supported = !remote && !settings.worktree_removed;
     // Match the desktop notice: automatic controls while waiting, manual
@@ -456,7 +456,8 @@ pub(crate) fn usage_state(
 
 #[cfg(test)]
 mod usage_tests {
-    use onicode_core::usage::{self, Limit};
+    use onicode_protocol::usage;
+    use onicode_protocol::usage::Limit;
 
     use super::*;
 
@@ -548,11 +549,9 @@ mod usage_tests {
     fn mobile_usage_rejects_removed_worktrees_and_changed_model_account_or_desktop_resume(
         cx: &mut gpui::TestAppContext,
     ) {
-        let store = Arc::new(std::sync::Mutex::new(
-            onicode_core::store::Store::open(std::path::Path::new(":memory:")).unwrap(),
-        ));
-        let summary = locked(&store).unwrap().create("codex", "/fixture").unwrap();
-        let view = cx.new(|cx| Conversation::new(summary, store, cx));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("codex", "/fixture").unwrap();
+        let view = cx.new(|cx| Conversation::new(summary, engine, cx));
         cx.run_until_parked();
         view.update(cx, |v, cx| {
             v.loaded = true;

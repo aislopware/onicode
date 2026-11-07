@@ -1,5 +1,5 @@
 //! Small public provider avatars. No provider credentials leave their adapter.
-use std::io::{Cursor, Read};
+use std::io::Cursor;
 use std::time::Duration;
 
 pub fn png(url: &str) -> Result<Vec<u8>, String> {
@@ -7,22 +7,23 @@ pub fn png(url: &str) -> Result<Vec<u8>, String> {
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err("Invalid avatar URL".into());
     }
-    let response = ureq::AgentBuilder::new()
-        .timeout(Duration::from_secs(8))
+    let response = ureq::get(url)
+        .config()
+        .timeout_global(Some(Duration::from_secs(8)))
         .build()
-        .get(url)
-        .set("User-Agent", "Onicode")
+        .header("User-Agent", "Onicode")
         .call()
         .map_err(|_| "Avatar unavailable".to_string())?;
-    let mut bytes = vec![];
-    response
-        .into_reader()
-        .take(2 * 1024 * 1024 + 1)
-        .read_to_end(&mut bytes)
-        .map_err(|_| "Avatar unavailable".to_string())?;
-    if bytes.len() > 2 * 1024 * 1024 {
-        return Err("Avatar is too large".into());
-    }
+    let bytes = match response
+        .into_body()
+        .into_with_config()
+        .limit(2 * 1024 * 1024)
+        .read_to_vec()
+    {
+        Ok(bytes) => bytes,
+        Err(ureq::Error::BodyExceedsLimit(_)) => return Err("Avatar is too large".into()),
+        Err(_) => return Err("Avatar unavailable".into()),
+    };
     let mut reader = image::ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
         .map_err(|_| "Invalid avatar".to_string())?;

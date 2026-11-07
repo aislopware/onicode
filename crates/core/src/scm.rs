@@ -11,10 +11,10 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use review::{
-    FileDiff, FileDiffVersion, MAX_TEXT_FILE_BYTES, commit_file_diff, commit_files, diff_files,
-    file_diff, file_diff_versions, review_index, stage_contents,
+    commit_file_diff, commit_files, diff_files, file_diff, file_diff_versions, review_index,
+    stage_contents,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
 pub(crate) use shell::{expand_home, path_to_js};
 
@@ -29,100 +29,11 @@ pub fn terminal_search_path() -> String {
 pub fn resolve_gui_binary(name: &str) -> Option<std::path::PathBuf> {
     shell::resolve_gui_binary(name)
 }
+pub use onicode_protocol::scm::{
+    ChangedFile, DiffIndex, DiffStats, FileDiff, FileDiffVersion, History, HistoryCommit,
+    HistoryRef, MAX_TEXT_FILE_BYTES, Pr, RangeContext, StagedContext,
+};
 pub use text::{commit_message_prompt, parse_commit_message, parse_pr_content, pr_content_prompt};
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct DiffStats {
-    pub files: i64,
-    pub additions: i64,
-    pub deletions: i64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ChangedFile {
-    pub path: String,
-    pub relative: String,
-    pub status: String,
-    pub additions: i64,
-    pub deletions: i64,
-    pub staged: bool,
-    pub unstaged: bool,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct DiffIndex {
-    pub branch: Option<String>,
-    pub head: Option<String>,
-    pub files: Vec<ChangedFile>,
-    pub additions: i64,
-    pub deletions: i64,
-    pub remote: Option<String>,
-    pub upstream: Option<String>,
-    pub default_branch: Option<String>,
-    pub ahead: i64,
-    pub behind: i64,
-    pub ahead_of_default: i64,
-    pub head_pushed: bool,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryRef {
-    pub name: String,
-    /// `"local"`, `"remote"`, or `"tag"`.
-    pub kind: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct HistoryCommit {
-    pub sha: String,
-    pub short_sha: String,
-    pub parents: Vec<String>,
-    pub author: String,
-    pub timestamp: i64,
-    pub subject: String,
-    pub refs: Vec<HistoryRef>,
-    pub head: bool,
-}
-
-/// Named `GitHistory` on the wire, beside the protocol's `History` call.
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename = "GitHistory", rename_all = "camelCase")]
-pub struct History {
-    pub head: Option<String>,
-    pub commits: Vec<HistoryCommit>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct StagedContext {
-    pub branch: Option<String>,
-    pub summary: String,
-    pub patch: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct RangeContext {
-    pub base: String,
-    pub head: String,
-    pub commit_summary: String,
-    pub diff_summary: String,
-    pub diff_patch: String,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct Pr {
-    pub number: i64,
-    pub title: String,
-    pub url: String,
-    pub state: String,
-}
 
 const HISTORY_DEFAULT: u32 = 200;
 const HISTORY_MAX: u32 = 500;

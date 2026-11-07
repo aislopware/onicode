@@ -1541,13 +1541,12 @@ fn basic_auth(token: &str) -> String {
 
 fn azure_get(config: &AzureDevOpsConfig, path: &str) -> Result<AzureResponse, String> {
     let url = format!("{}{}", config.url.trim_end_matches('/'), path);
-    let agent = azure_agent();
     read_azure_response(
-        agent
-            .get(&url)
-            .set("Authorization", &basic_auth(&config.token))
-            .set("Accept", "application/json")
-            .set("User-Agent", USER_AGENT)
+        azure_agent()
+            .get(url)
+            .header("Authorization", basic_auth(&config.token))
+            .header("Accept", "application/json")
+            .header("User-Agent", USER_AGENT)
             .call(),
     )
 }
@@ -1559,15 +1558,14 @@ fn azure_post_json(
 ) -> Result<AzureResponse, String> {
     let url = format!("{}{}", config.url.trim_end_matches('/'), path);
     let payload = serde_json::to_string(&body).map_err(|error| error.to_string())?;
-    let agent = azure_agent();
     read_azure_response(
-        agent
-            .post(&url)
-            .set("Authorization", &basic_auth(&config.token))
-            .set("Accept", "application/json")
-            .set("Content-Type", "application/json")
-            .set("User-Agent", USER_AGENT)
-            .send_string(&payload),
+        azure_agent()
+            .post(url)
+            .header("Authorization", basic_auth(&config.token))
+            .header("Accept", "application/json")
+            .header("Content-Type", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .send(payload),
     )
 }
 
@@ -1595,14 +1593,17 @@ fn azure_current_user_id(config: &AzureDevOpsConfig) -> Result<String, String> {
 }
 
 fn azure_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout(HTTP_TIMEOUT)
-        .redirects(0)
+    ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        .max_redirects(0)
+        // Azure DevOps explains a failure in the body.
+        .http_status_as_error(false)
         .build()
+        .into()
 }
 
 fn read_azure_response(
-    result: Result<ureq::Response, ureq::Error>,
+    result: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
 ) -> Result<AzureResponse, String> {
     let (bytes, status, truncated) = read_azure_bytes(result, None)?;
     let body = String::from_utf8(bytes)
@@ -1618,13 +1619,12 @@ fn read_azure_response(
 /// Raw-bytes variant for file content, which is not necessarily UTF-8 JSON.
 fn azure_get_bytes(config: &AzureDevOpsConfig, path: &str) -> Result<(Vec<u8>, bool), String> {
     let url = format!("{}{}", config.url.trim_end_matches('/'), path);
-    let agent = azure_agent();
     let (bytes, status, truncated) = read_azure_bytes(
-        agent
-            .get(&url)
-            .set("Authorization", &basic_auth(&config.token))
-            .set("Accept", "application/json")
-            .set("User-Agent", USER_AGENT)
+        azure_agent()
+            .get(url)
+            .header("Authorization", basic_auth(&config.token))
+            .header("Accept", "application/json")
+            .header("User-Agent", USER_AGENT)
             .call(),
         // One byte past the cap is enough to flag the content as too large
         // without buffering an unbounded blob.
@@ -1638,37 +1638,34 @@ fn azure_get_bytes(config: &AzureDevOpsConfig, path: &str) -> Result<(Vec<u8>, b
 }
 
 fn read_azure_bytes(
-    result: Result<ureq::Response, ureq::Error>,
+    result: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
     max_bytes: Option<usize>,
 ) -> Result<(Vec<u8>, u16, bool), String> {
-    let response = match result {
-        Ok(response) => response,
-        Err(ureq::Error::Status(401, _) | ureq::Error::Status(403, _)) => {
+    let Ok(response) = result else {
+        return Err("Could not reach Azure DevOps".into());
+    };
+    let status = response.status().as_u16();
+    match status {
+        401 | 403 => {
             return Err("Azure DevOps personal access token is invalid or lacks permission".into());
         }
-        Err(ureq::Error::Status(404, _)) => {
-            return Err("Azure DevOps did not find that item".into());
-        }
-        Err(ureq::Error::Status(status, response)) => {
-            let body = response.into_string().unwrap_or_default();
-            return Err(azure_http_error(status, &body));
-        }
-        Err(_) => return Err("Could not reach Azure DevOps".into()),
-    };
-    let status = response.status();
+        404 => return Err("Azure DevOps did not find that item".into()),
+        _ => {}
+    }
     let truncated = response
-        .header("x-ms-continuationtoken")
+        .headers()
+        .get("x-ms-continuationtoken")
+        .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .is_some_and(|value| !value.is_empty());
     let mut bytes = Vec::new();
-    let read_result = if let Some(max_bytes) = max_bytes {
-        response
-            .into_reader()
-            .take((max_bytes as u64).saturating_add(1))
-            .read_to_end(&mut bytes)
-    } else {
-        response.into_reader().read_to_end(&mut bytes)
-    };
+    // One byte past the cap is enough to flag the content as too large.
+    let limit = max_bytes.map_or(u64::MAX, |max| (max as u64).saturating_add(1));
+    let read_result = response
+        .into_body()
+        .into_reader()
+        .take(limit)
+        .read_to_end(&mut bytes);
     read_result.map_err(|_| "Azure DevOps returned an unreadable response".to_string())?;
     Ok((bytes, status, truncated))
 }

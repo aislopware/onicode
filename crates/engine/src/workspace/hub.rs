@@ -330,6 +330,11 @@ impl WorkspaceHub {
                 automation: None,
                 busy: false,
                 unread: false,
+                model: settings
+                    .as_ref()
+                    .and_then(|s| s.model.as_deref())
+                    .and_then(|model| onicode_core::store::native_model(model, &provider)),
+                hidden: false,
                 session: stored,
             };
             inner.unprompted.insert(row);
@@ -423,6 +428,17 @@ impl WorkspaceHub {
             Ok((Outcome::Applied, Outcome::Applied, events))
         })
         .await
+    }
+
+    /// Runs `f` on the automations service, opened over the store's database the first time:
+    /// the Work group edits the automations this hub schedules.
+    pub(crate) fn with_automations<R>(
+        &self,
+        f: impl FnOnce(&mut Service) -> Result<R, String>,
+    ) -> Result<R, String> {
+        let mut inner = self.lock();
+        let store = locked(&self.store)?;
+        f(service(&mut inner.automations, &store)?)
     }
 
     /// Session `row` was made or changed in the store by a path that does not go through the
@@ -884,6 +900,10 @@ impl WorkspaceHub {
                         automation: Some(due.automation.id.clone()),
                         busy: inner.busy.contains(&row),
                         unread: inner.unread.contains(&row),
+                        model: settings.model.as_deref().and_then(|model| {
+                            onicode_core::store::native_model(model, &stored.provider)
+                        }),
+                        hidden: false,
                         session: stored,
                     };
                     service(&mut inner.automations, store)?.update_run(
@@ -1150,14 +1170,15 @@ fn read_summary(store: &Store, inner: &Inner, row: i64) -> Option<SessionSummary
         .sessions
         .iter()
         .find(|known| known.session.id == row);
+    let settings = store.agent_settings(row).ok().flatten();
     Some(SessionSummary {
         id: SessionId(store.session_uid(row).unwrap_or_else(|_| row_uid(row))),
         key: persisted_key(store, row),
-        worktree: store
-            .agent_settings(row)
-            .ok()
-            .flatten()
-            .and_then(|settings| settings.worktree_cwd),
+        model: settings
+            .as_ref()
+            .and_then(|settings| settings.model.as_deref())
+            .and_then(|model| onicode_core::store::native_model(model, &session.provider)),
+        worktree: settings.and_then(|settings| settings.worktree_cwd),
         draft: store
             .draft_sessions()
             .is_ok_and(|drafts| drafts.contains(&row)),
@@ -1165,6 +1186,7 @@ fn read_summary(store: &Store, inner: &Inner, row: i64) -> Option<SessionSummary
         automation: previous.and_then(|known| known.automation.clone()),
         busy: inner.busy.contains(&row),
         unread: inner.unread.contains(&row),
+        hidden: previous.is_some_and(|known| known.hidden),
         session,
     })
 }
@@ -1244,9 +1266,7 @@ fn load(
     unread: &HashSet<i64>,
 ) -> Result<WorkspaceState, String> {
     let stored = store.sessions()?;
-    let worktrees = store.session_worktrees().unwrap_or_default();
-    let drafts = store.draft_sessions().unwrap_or_default();
-    let started = store.started_links().unwrap_or_default();
+    let metadata = store.session_sidebar_metadata(&[]);
     let automations = store.automation_session_ids().unwrap_or_default();
     let paths: BTreeSet<String> = stored.iter().map(|session| session.cwd.clone()).collect();
     let sessions = stored
@@ -1256,12 +1276,17 @@ fn load(
             SessionSummary {
                 id: SessionId(store.session_uid(row).unwrap_or_else(|_| row_uid(row))),
                 key: persisted_key(store, row),
-                worktree: worktrees.get(&row).cloned().flatten(),
-                draft: drafts.contains(&row),
-                started_by: started.get(&row).copied(),
+                worktree: metadata.worktrees.get(&row).cloned().flatten(),
+                draft: metadata.drafts.contains(&row),
+                started_by: metadata.started_by.get(&row).copied(),
                 automation: automations.get(&row).cloned(),
                 busy: busy.contains(&row),
                 unread: unread.contains(&row),
+                model: metadata
+                    .details
+                    .get(&row)
+                    .and_then(|details| details.model.clone()),
+                hidden: metadata.sidebar_hidden.contains(&row),
                 session,
             }
         })

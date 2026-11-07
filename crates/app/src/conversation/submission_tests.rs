@@ -1,15 +1,13 @@
-use std::sync::Mutex;
-
 use gpui::{TestAppContext, WindowHandle};
-use onicode_core::store::Store;
-use onicode_core::transcript::attachments;
+use onicode_protocol::transcript::attachments;
 
 use super::*;
 
 fn conversation(cx: &mut TestAppContext) -> WindowHandle<Conversation> {
-    let store = Store::open(Path::new(":memory:")).unwrap();
+    let engine = cx.update(crate::engine_client::Engine::memory);
     // Fail after saving the turn, without ever launching a real provider.
-    let mut summary = store
+    let mut summary = engine
+        .seed()
         .create("codex", "/missing/optimistic-send-project")
         .unwrap();
     summary.provider = "fixture".into();
@@ -17,7 +15,7 @@ fn conversation(cx: &mut TestAppContext) -> WindowHandle<Conversation> {
         input::bind(cx);
         cx.open_window(Default::default(), |_, cx| {
             cx.new(|cx| {
-                let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                let mut view = Conversation::new(summary, engine, cx);
                 view.loaded = true;
                 view
             })
@@ -69,12 +67,7 @@ fn send_paints_before_storage_and_keeps_one_message_after_startup_failure(cx: &m
                     std::slice::from_ref(&attachment)
                 );
                 assert!(
-                    locked(&view.store)
-                        .unwrap()
-                        .load(view.summary.id)
-                        .unwrap()
-                        .rows
-                        .is_empty(),
+                    view.engine.seed().rows(view.summary.id).unwrap().is_empty(),
                     "the bubble must exist before the background save runs"
                 );
                 rows[0].sent_at
@@ -96,14 +89,7 @@ fn send_paints_before_storage_and_keeps_one_message_after_startup_failure(cx: &m
                     "acceptance keeps the original send time"
                 );
                 assert_eq!(rows.last().unwrap().role, "error");
-                assert_eq!(
-                    rows,
-                    locked(&view.store)
-                        .unwrap()
-                        .load(view.summary.id)
-                        .unwrap()
-                        .rows
-                );
+                assert_eq!(rows, view.engine.seed().rows(view.summary.id).unwrap());
                 // A later send must append after the failed message, not replace it.
                 view.input
                     .update(cx, |input, cx| input.set_text("Try again".into(), cx));
@@ -129,14 +115,7 @@ fn send_paints_before_storage_and_keeps_one_message_after_startup_failure(cx: &m
                         .count(),
                     2
                 );
-                assert_eq!(
-                    rows,
-                    locked(&view.store)
-                        .unwrap()
-                        .load(view.summary.id)
-                        .unwrap()
-                        .rows
-                );
+                assert_eq!(rows, view.engine.seed().rows(view.summary.id).unwrap());
             })
             .unwrap();
     }
@@ -182,14 +161,7 @@ fn worktree_setup_shows_the_prompt_immediately_and_preserves_it_on_failure(
             let rows = view.transcript.read(cx).source_rows();
             assert_eq!(rows[0].text, "Start in a worktree");
             assert_eq!(rows.last().unwrap().role, "error");
-            assert_eq!(
-                rows,
-                locked(&view.store)
-                    .unwrap()
-                    .load(view.summary.id)
-                    .unwrap()
-                    .rows
-            );
+            assert_eq!(rows, view.engine.seed().rows(view.summary.id).unwrap());
         })
         .unwrap();
 }
@@ -226,14 +198,7 @@ fn stopping_before_the_worker_runs_keeps_the_optimistic_message(cx: &mut TestApp
                     1
                 );
                 assert_eq!(rows[0].text, "Keep this message");
-                assert_eq!(
-                    rows,
-                    locked(&view.store)
-                        .unwrap()
-                        .load(view.summary.id)
-                        .unwrap()
-                        .rows
-                );
+                assert_eq!(rows, view.engine.seed().rows(view.summary.id).unwrap());
             })
             .unwrap();
     }

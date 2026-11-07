@@ -167,11 +167,9 @@ impl Conversation {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
 
     use gpui::TestAppContext;
-    use onicode_core::store::Store;
-    use onicode_core::transcript::Row;
+    use onicode_protocol::transcript::Row;
 
     use super::*;
 
@@ -179,9 +177,9 @@ mod tests {
     fn history_eviction_keeps_live_state_and_pins_drafts_running_and_failed_saves(
         cx: &mut TestAppContext,
     ) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let session = store.create("codex", "/project").unwrap();
-        let chat = cx.new(|cx| Conversation::new(session, Arc::new(Mutex::new(store)), cx));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let session = engine.seed().create("codex", "/project").unwrap();
+        let chat = cx.new(|cx| Conversation::new(session, engine, cx));
         chat.update(cx, |chat, cx| {
             chat.loaded = true;
             chat.status = "Ready".into();
@@ -234,9 +232,9 @@ mod tests {
     fn hidden_mutations_wait_for_history_without_changing_settings_or_receipts(
         cx: &mut TestAppContext,
     ) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let session = store.create("codex", "/project").unwrap();
-        let chat = cx.new(|cx| Conversation::new(session, Arc::new(Mutex::new(store)), cx));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let session = engine.seed().create("codex", "/project").unwrap();
+        let chat = cx.new(|cx| Conversation::new(session, engine, cx));
         chat.update(cx, |chat, cx| {
             chat.loaded = true;
             chat.history_unloaded = true;
@@ -329,9 +327,9 @@ mod tests {
     fn restored_external_prompt_keeps_its_files_separate_from_new_composer_files(
         cx: &mut TestAppContext,
     ) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let session = store.create("codex", "/project").unwrap();
-        let chat = cx.new(|cx| Conversation::new(session, Arc::new(Mutex::new(store)), cx));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let session = engine.seed().create("codex", "/project").unwrap();
+        let chat = cx.new(|cx| Conversation::new(session, engine, cx));
         chat.update(cx, |chat, cx| {
             chat.loaded = true;
             chat.follow_ups.state.paused = true;

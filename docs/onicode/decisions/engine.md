@@ -198,6 +198,40 @@ phone bridge's Git, which goes with `mobile/` (step 11); the Settings → Worktr
 unpushed marks) and a session's worktree membership, which are store and settings reads (step 6); `.git/HEAD` read
 for the project menu's branch label. `PROTOCOL` is 6.
 
+**Step 6 as built.** Four groups join the call table. Agents (`agents.rs`) serves the account book, sign-in,
+usage, model catalogs, skills, native commands, MCP servers, the provider CLIs and their updates, one-off text
+(`Generate`, `StopGenerate`) and the idle agents, with `WatchAccounts` (the book, each account's sign-in and each
+usage read, an event replacing what it names). Engine settings (`engine_settings.rs`) serves `WatchEngineSettings`,
+`SetEngineSetting` (one typed key) and `TakeViewerState`. Work serves the Inbox, automations, linked activity,
+agent processes and `ReadWorkItem(Details)`; App access serves the Operator bridge's store reads; Settings pages
+serves `ReadWorktreeMarks`. Every hub publishes on the generic `Topic`, every mutating call runs once per `OpId`
+through the ledger, and the provider CLIs, `gh` and the trackers sit behind seams (`AgentProbe`, `Gh`,
+`Trackers`) that the tests script. Who an account is comes only from the CLIs' published doors: `claude auth
+status --json` (an `oauth_token` sign-in on the first-party API with no `subscriptionType`, a setup token, reads
+as "Claude subscription") and Codex's `account/read`; the engine never reads a credential file. A model's limits
+are optional field by field and a model is never dropped for them. Usage is polled at most once a minute unless
+forced, read again after a turn ends on a provider that reports it from turns, and a reset is claimed once.
+`Generate` runs the asked model, else the background model, then its `fallback` (the conversation's provider),
+then Claude Code, then Codex.
+The session group now serves `Rewind`, `Fork`, `SwitchProvider`, `ResetThread` and `Compact`. A rewind never asks
+the provider to rewind: it cuts the rows from the turn's prompt on (in both store layouts), lets the provider
+thread go and hands the next prompt the kept turns as a handoff brief; `Fork` does the same into a new session the
+workspace creates, so every viewer sees it arrive. `Compact` runs the provider's own compaction behind the
+`Asides` seam, records it as a `contextCompaction` tool row, holds off turns while it runs and stops on `Stop`.
+`ProviderId` carries `Option<String>`, so watchers see a thread let go.
+The preferences split in two (`ui-state.md`): the engine's part (`EngineSettings`) lives in the store under
+`engine-settings`, moved once from monocode's `workspace` key; the app's part lives in its own `ui.sqlite3`,
+handed over once by `TakeViewerState`. The app opens no engine database: `main.rs` opens an `Engine` over
+`onicode_engine::Local`, and `crates/app/clippy.toml` holds the boundary with `disallowed-types` (`Store`,
+`rusqlite::Connection`, `notify`) and `disallowed-methods` (`Store::open`, the provider runs and CLI lookups,
+`catalog::models_for`, `std::process::Command::new`). Each exception is an `#[expect]` naming why: `ui_state.rs`,
+test git fixtures, commands that act on the viewer's own Mac (screenshots, sounds, System Settings, the hang
+sampler), the terminal (step 7), the SSH remote (step 10) and the phone host and its Changes page (step 11).
+The app still depends on `onicode-core` for those files and for viewer-side work core holds beside its IO: image
+decoding and thumbnails, attachment checks, the visual runtime, the app bridge's socket, process teardown, the
+external editors, resource pressure, and a few path helpers (`worktree_management::default_root`,
+`files::document`, `git::naming`). Pure types come from `onicode_protocol`. `PROTOCOL` is 7.
+
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,
 `EngineInfo` and `UpdateEngine`, whose shapes are frozen, so the machines list can say "Needs update" and offer

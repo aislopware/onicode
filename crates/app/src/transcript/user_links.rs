@@ -1,13 +1,14 @@
 //! A prompt's GitHub issue or pull request link as a chip with a hover card,
 //! ported from src/features/sessions/ui/UserLinkPreview.tsx.
 use std::ops::Range;
-use std::path::Path;
+use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use gpui::{AnyElement, HighlightStyle, Hsla, StyledText, Task};
-use onicode_core::inbox::{Details, Item};
-use onicode_core::user_links::{GithubWorkItemLink, plain_text_summary};
+use onicode_protocol::inbox::{Details, Item};
+use onicode_protocol::user_links::{GithubWorkItemLink, plain_text_summary};
+use onicode_protocol::work::{ReadWorkItem, ReadWorkItemDetails};
 
 use super::*;
 use crate::popover::Align;
@@ -252,17 +253,29 @@ impl TranscriptView {
             .insert(key.clone(), Load::Loading);
         let cwd = self.file_link_base.clone().unwrap_or_else(|| ".".into());
         let (repo, kind, number) = (work.repo.clone(), work.kind, work.number as i64);
-        let executor = cx.background_executor().clone();
+        // `gh` runs in the engine, which holds the GitHub sign-in.
+        let engine = crate::engine_client::local(cx);
         let fetch_item = item.is_none().then(|| {
-            let (cwd, repo) = (cwd.clone(), repo.clone());
-            executor.spawn(async move {
-                onicode_core::inbox::github_work_item(Path::new(&cwd), &repo, kind, number)
-            })
+            engine.call::<ReadWorkItem>(
+                None,
+                ReadWorkItem {
+                    cwd: PathBuf::from(&cwd),
+                    repo: repo.clone(),
+                    kind: kind.to_owned(),
+                    number,
+                },
+            )
         });
         let fetch_details = details.is_none().then(|| {
-            executor.spawn(async move {
-                onicode_core::inbox::github_work_item_details(Path::new(&cwd), &repo, kind, number)
-            })
+            engine.call::<ReadWorkItemDetails>(
+                None,
+                ReadWorkItemDetails {
+                    cwd: PathBuf::from(&cwd),
+                    repo,
+                    kind: kind.to_owned(),
+                    number,
+                },
+            )
         });
         cx.spawn(async move |this, cx| {
             let item = match fetch_item {
@@ -663,7 +676,7 @@ fn status(pr: bool, item: Option<&Item>) -> (&'static str, &'static str, Hsla) {
     }
 }
 
-fn label_chip(label: &onicode_core::inbox::Label) -> gpui::Div {
+fn label_chip(label: &onicode_protocol::inbox::Label) -> gpui::Div {
     let hex = label.color.trim();
     let dot = (hex.len() == 6)
         .then(|| u32::from_str_radix(hex, 16).ok())
@@ -730,7 +743,7 @@ mod tests {
         });
         window
             .update(cx, |view, _, cx| {
-                let mut source = onicode_core::transcript::Transcript::default();
+                let mut source = onicode_protocol::transcript::Transcript::default();
                 source.begin("user");
                 source.append(&format!(
                     "{}see https://github.com/spacedriveapp/spacedrive for ideas",
@@ -796,7 +809,7 @@ mod tests {
             .join("\n");
         window
             .update(cx, |view, _, cx| {
-                let mut source = onicode_core::transcript::Transcript::default();
+                let mut source = onicode_protocol::transcript::Transcript::default();
                 source.begin("user");
                 source.append(&format!(
                     "hey lets review this pr\n\nhttps://github.com/acme/chip-test/pull/1142 its for the native one\n{tail}"

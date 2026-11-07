@@ -11,12 +11,121 @@
 //! File contents travel as one reply each, under the editor's caps: text up to 2 MB, a preview
 //! up to 32 MB, image bytes as base64 ([`Bytes`]) rather than a JSON array, and a poll that names
 //! the [`Read::unless`] digest it holds gets [`FileContents::Unchanged`] instead of the file.
-pub use onicode_core::files::{DirEntry, ProjectFile};
-pub use onicode_core::notes::NoteImageAsset;
-pub use onicode_core::search::project::{SearchMatch, SearchOptions, SearchResult};
+pub mod document;
+mod name;
+mod paths;
+
+use std::time::{SystemTime, UNIX_EPOCH};
+
+pub use name::{
+    NameIssue, NameIssueKind, Severity, leaf_name, validate_file_name, well_formed_file_name,
+};
+pub use paths::{
+    create_parent_of, dirs_touched_by_create, dirs_touched_by_move, display_path,
+    is_equal_or_inside, join_path, parent_path, path_key, rebase_path,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+pub use crate::notes::NoteImageAsset;
+pub use crate::search::project::{SearchMatch, SearchOptions, SearchResult};
 use crate::{Call, Cursor, Outcome, Watch};
+
+/// One entry of a directory listing.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DirEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub ignored: bool,
+}
+
+/// Case-insensitive order where digit runs compare by numeric value.
+pub fn compare_natural_names(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    let (mut i, mut j) = (0, 0);
+    while i < a.len() && j < b.len() {
+        if a[i].is_ascii_digit() && b[j].is_ascii_digit() {
+            let a_start = i;
+            let b_start = j;
+            while i < a.len() && a[i].is_ascii_digit() {
+                i += 1;
+            }
+            while j < b.len() && b[j].is_ascii_digit() {
+                j += 1;
+            }
+            let a_digits = &a[a_start..i];
+            let b_digits = &b[b_start..j];
+            let a_value = a_digits
+                .iter()
+                .position(|digit| *digit != b'0')
+                .map_or(&a_digits[a_digits.len()..], |start| &a_digits[start..]);
+            let b_value = b_digits
+                .iter()
+                .position(|digit| *digit != b'0')
+                .map_or(&b_digits[b_digits.len()..], |start| &b_digits[start..]);
+            let order = a_value
+                .len()
+                .cmp(&b_value.len())
+                .then_with(|| a_value.cmp(b_value));
+            if order != Ordering::Equal {
+                return order;
+            }
+        } else {
+            let order = a[i].to_ascii_lowercase().cmp(&b[j].to_ascii_lowercase());
+            if order != Ordering::Equal {
+                return order;
+            }
+            i += 1;
+            j += 1;
+        }
+    }
+    (a.len() - i).cmp(&(b.len() - j)).then_with(|| a.cmp(b))
+}
+
+fn split_stem_ext(name: &str) -> (&str, &str) {
+    match name.rfind('.') {
+        Some(i) if i > 0 => (&name[..i], &name[i..]),
+        _ => (name, ""),
+    }
+}
+
+/// The name a copy of `name` takes beside the names `taken` says are in use, as Finder names
+/// one: `name`, then `stem copy.ext`, then `stem copy 2.ext` and on. What the engine's copy picks,
+/// so a viewer can show the copy before it is made.
+pub fn unique_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
+    let (stem, ext) = split_stem_ext(name);
+    let mut n = 0u32;
+    loop {
+        let candidate = match n {
+            0 => name.to_string(),
+            1 => format!("{stem} copy{ext}"),
+            _ => format!("{stem} copy {n}{ext}"),
+        };
+        if !taken(&candidate) {
+            return candidate;
+        }
+        n += 1;
+        if n > 1000 {
+            let stamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            return format!("{stem} copy {stamp}{ext}");
+        }
+    }
+}
+
+/// A file of a project, as Quick Open lists it.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectFile {
+    pub name: String,
+    pub path: String,
+    pub relative: String,
+}
 
 /// Bytes on the wire as one base64 string: a JSON array of numbers costs four times as much to
 /// carry and far more to hold as a `serde_json::Value`.
@@ -26,7 +135,7 @@ pub struct Bytes(pub Vec<u8>);
 impl Serialize for Bytes {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use base64::Engine as _;
-        serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(&self.0))
+        serializer.serialize_str(&crate::b64::STANDARD.encode(&self.0))
     }
 }
 
@@ -34,7 +143,7 @@ impl<'de> Deserialize<'de> for Bytes {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         use base64::Engine as _;
         let text = String::deserialize(deserializer)?;
-        base64::engine::general_purpose::STANDARD
+        crate::b64::STANDARD
             .decode(text)
             .map(Self)
             .map_err(serde::de::Error::custom)
@@ -338,6 +447,18 @@ pub struct SaveAttachments {
 }
 files_call!(SaveAttachments, agent: false, reply: Vec<String>);
 
+/// Move the quick composer's staged files among `paths` into the attachments folder of the
+/// session stored at `session`, which the launch just created. Answers `paths` with each moved
+/// file at its new place; a path that is not one of `staged`, or lies outside the staging folder,
+/// stays where it is.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdoptAttachments {
+    pub session: i64,
+    pub paths: Vec<String>,
+    pub staged: Vec<String>,
+}
+files_call!(AdoptAttachments, agent: false, reply: Vec<String>);
+
 /// Copy image files into a note's assets. Answers the images it kept, or the first failure when
 /// it kept none.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -346,3 +467,16 @@ pub struct SaveNoteImages {
     pub paths: Vec<String>,
 }
 files_call!(SaveNoteImages, agent: false, reply: Vec<NoteImageAsset>);
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+
+    #[test]
+    fn split_stem_ext_keeps_dotfiles_whole() {
+        assert_eq!(split_stem_ext("foo.ts"), ("foo", ".ts"));
+        assert_eq!(split_stem_ext("foo.d.ts"), ("foo.d", ".ts"));
+        assert_eq!(split_stem_ext(".gitignore"), (".gitignore", ""));
+        assert_eq!(split_stem_ext("Makefile"), ("Makefile", ""));
+    }
+}

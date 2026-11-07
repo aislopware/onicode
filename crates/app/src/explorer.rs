@@ -15,10 +15,11 @@ use gpui::{
     MouseButton, MouseDownEvent, Point, PromptLevel, Role, SharedString, StyleRefinement,
     Subscription, Task, Window, actions, div, list, px, rgb,
 };
-use onicode_core::files::{self, DirEntry, NameIssueKind, Severity};
+use onicode_core::files;
 use onicode_protocol::OpId;
 use onicode_protocol::files::{
-    Create, DeletePath, Destination, DirEvent, Entries, Listing, Move, NewPath, Relisted, WatchDir,
+    Create, DeletePath, Destination, DirEntry, DirEvent, Entries, Listing, Move, NameIssueKind,
+    NewPath, Relisted, Severity, WatchDir,
 };
 
 use crate::engine_client::{self, WatchUpdate, Watching};
@@ -307,6 +308,31 @@ fn basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
+/// Shows `path` in Finder on the viewer's own Mac, or says why it cannot.
+pub(crate) fn reveal_path(path: &Path, cx: &App) -> Result<(), String> {
+    on_this_mac(path)?;
+    cx.reveal_path(path);
+    Ok(())
+}
+
+/// Opens `path` with its registered app on the viewer's own Mac, or says why it cannot.
+pub(crate) fn open_with_default_app(path: &Path, cx: &App) -> Result<(), String> {
+    on_this_mac(path)?;
+    cx.open_with_system(path);
+    Ok(())
+}
+
+/// A file on another machine, or one that is gone, has nothing to show here.
+fn on_this_mac(path: &Path) -> Result<(), String> {
+    if files::remote::is_remote(path) {
+        return Err("This isn’t available for projects on another machine yet.".into());
+    }
+    if !path.exists() {
+        return Err(format!("{}: No such file or directory", path.display()));
+    }
+    Ok(())
+}
+
 /// How a create, rename or move came back.
 fn landed(result: &Result<NewPath, String>) -> Landed<'_> {
     match result {
@@ -326,7 +352,7 @@ pub(crate) struct FileActionError(pub Option<String>);
 impl EventEmitter<FileActionError> for Explorer {}
 pub(crate) struct OpenSearchMatch {
     pub cwd: String,
-    pub matched: onicode_core::search::project::SearchMatch,
+    pub matched: onicode_protocol::search::project::SearchMatch,
     pub pin: bool,
 }
 impl EventEmitter<OpenSearchMatch> for Explorer {}
@@ -1434,10 +1460,8 @@ impl Explorer {
 
     /// Revealing opens Finder on this machine, not on an engine.
     fn reveal(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
-        let work = cx.background_executor().spawn(async move {
-            files::reveal_path(Path::new(&path)).map(|()| (None, Vec::new()))
-        });
-        self.run(None, work, Vec::new(), None, window, cx);
+        let revealed = reveal_path(Path::new(&path), cx).map(|()| (None, Vec::new()));
+        self.run(None, async move { revealed }, Vec::new(), None, window, cx);
     }
 
     fn open_menu(

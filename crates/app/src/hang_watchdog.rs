@@ -83,6 +83,10 @@ impl Watch {
     }
 }
 
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the hang report samples the viewer's own process"
+)]
 fn capture(directory: &Path) {
     let result = (|| -> std::io::Result<()> {
         std::fs::create_dir_all(directory)?;
@@ -186,8 +190,10 @@ mod tests {
 
     #[test]
     fn captures_private_stack_reports_and_keeps_only_five() {
-        let directory =
-            std::env::temp_dir().join(format!("onicode-watchdog-test-{}", onicode_core::new_id()));
+        let directory = std::env::temp_dir().join(format!(
+            "onicode-watchdog-test-{}",
+            onicode_protocol::new_id()
+        ));
         std::fs::create_dir_all(&directory).unwrap();
         for i in 0..MAX_REPORTS {
             std::fs::write(

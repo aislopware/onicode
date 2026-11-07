@@ -1,8 +1,8 @@
 use gpui::prelude::*;
 use gpui::{Role, SharedString, div, px};
-use onicode_core::agent::Settings;
-use onicode_core::response::{Target, TransferKind};
-use onicode_core::transcript::Row;
+use onicode_protocol::agent::Settings;
+use onicode_protocol::response::{Target, TransferKind};
+use onicode_protocol::transcript::Row;
 
 use crate::popover::AnchorSlot;
 use crate::theme::*;

@@ -10,11 +10,11 @@
 //! text, as the desktop shows them.
 use std::collections::HashMap;
 
-use onicode_core::agent::TurnInfo;
-use onicode_core::tool::tasks::{Panel, TaskStatus};
-use onicode_core::tool::{ToolCall, ToolState};
-use onicode_core::transcript::attachments::ROLE as ATTACHMENTS;
-use onicode_core::transcript::{Interjection, Row};
+use onicode_protocol::agent::TurnInfo;
+use onicode_protocol::tool::tasks::{Panel, TaskStatus};
+use onicode_protocol::tool::{ToolCall, ToolState};
+use onicode_protocol::transcript::attachments::ROLE as ATTACHMENTS;
+use onicode_protocol::transcript::{Interjection, Row};
 use serde_json::{Map, Value, json};
 
 use crate::transcript::{self as desk, attachments, phases};
@@ -228,7 +228,7 @@ fn notice(rows: &[Row], at: usize, end: usize) -> Option<Value> {
             .filter(|note| !note.text.trim().is_empty())
             .map(|note| json!({"type": "notice", "id": id, "text": note.text})),
         "visual" => {
-            let document = serde_json::from_str::<onicode_core::visual::VisualDocument>(&text)
+            let document = serde_json::from_str::<onicode_protocol::visual::VisualDocument>(&text)
                 .ok()
                 .filter(|document| document.validate().is_ok());
             // Drawn inline on the phone from its first render; its source and
@@ -558,7 +558,7 @@ fn agent_turn(source: &Source, run: Run, live: bool) -> Value {
         );
         out.insert(
             "copyText".into(),
-            onicode_core::response::prose(&rows[run.prompt..run.end]).into(),
+            onicode_protocol::response::prose(&rows[run.prompt..run.end]).into(),
         );
         put(&mut out, "durationMs", duration);
         if let Some(metrics) = info.and_then(|info| info.metrics).filter(|m| m.reported()) {
@@ -648,7 +648,7 @@ mod tests {
     }
     #[test]
     fn native_visuals_keep_a_readable_phone_fallback_outside_folded_work() {
-        let document = onicode_core::visual::VisualDocument {
+        let document = onicode_protocol::visual::VisualDocument {
             id: "phone-example".into(),
             title: "Capacity explorer".into(),
             source: "return () => visual.text('Example');".into(),

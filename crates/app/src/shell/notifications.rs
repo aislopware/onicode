@@ -36,7 +36,6 @@ pub(super) struct State {
     linked_revisions: HashMap<String, i64>,
     linked_primed: bool,
     linked_started_at: u64,
-    linked_seen_writes: Option<gpui::Task<()>>,
     pub(super) whats_new: Option<(Entity<WhatsNew>, Subscription, FocusHandle)>,
     permission: Permission,
     permission_probe: Option<Receiver<Permission>>,
@@ -52,11 +51,14 @@ pub(super) struct State {
 }
 
 impl State {
-    pub(super) fn new(workspace: &Workspace, store: Database, cx: &mut Context<Shell>) -> Self {
+    pub(super) fn new(
+        workspace: &Workspace,
+        engine: crate::engine_client::Engine,
+        cx: &mut Context<Shell>,
+    ) -> Self {
         Self {
             region: AnchorSlot::default(),
-            harness: cx
-                .new(|cx| HarnessUpdates::new(workspace.preferences.hidden_providers.clone(), cx)),
+            harness: cx.new(HarnessUpdates::new),
             approvals: cx.new(|_| ApprovalNotices::default()),
             reminders: cx.new(|_| reminders::View::default()),
             layout: cx.new(|_| {
@@ -66,18 +68,17 @@ impl State {
                 )
             }),
             installed: cx.new(|_| InstalledUpdateNotice::new(None)),
-            updater: updater::shared(store, cx),
+            updater: updater::shared(cx),
             file_error: cx.new(|_| FileActionError::new()),
             reminder_error: None,
-            github: cx.new(|_| GithubActivity::new(HashMap::new())),
+            github: cx.new(|_| GithubActivity::new(engine, HashMap::new())),
             linked: HashMap::new(),
             linked_cleanup: HashMap::new(),
             linked_seen_ready: false,
             linked_last_poll: None,
             linked_revisions: HashMap::new(),
             linked_primed: false,
-            linked_started_at: onicode_core::time::now_ms(),
-            linked_seen_writes: None,
+            linked_started_at: onicode_protocol::time::now_ms(),
             whats_new: None,
             permission: Permission::Unsupported,
             permission_probe: None,
@@ -272,28 +273,25 @@ impl Shell {
                 cx.notify();
             },
         ));
-        let store = self.store.clone();
         let work = cx.background_executor().spawn(async move {
-            let report =
-                onicode_update::channel::data_dir().and_then(onicode_update::transaction::report);
-            locked(&store).and_then(|store| {
-                app_update::consume_startup_notice(
-                    &store,
-                    report.as_ref(),
-                    onicode_update::app_version(),
-                )
-            })
+            onicode_update::channel::data_dir().and_then(onicode_update::transaction::report)
         });
         cx.spawn(async move |this, cx| {
-            if let Ok(Some(notice)) = work.await {
-                let _ = this.update(cx, |this, cx| {
-                    this.notification_state
-                        .installed
-                        .update(cx, |card, cx| card.set_notice(Some(notice), cx));
-                    this.invalidate_chrome(cx);
-                    cx.notify();
-                });
-            }
+            let report = work.await;
+            let _ = this.update(cx, |this, cx| {
+                let Some(notice) = app_update::consume_startup_notice(
+                    &this.ui_state,
+                    report.as_ref(),
+                    onicode_update::app_version(),
+                ) else {
+                    return;
+                };
+                this.notification_state
+                    .installed
+                    .update(cx, |card, cx| card.set_notice(Some(notice), cx));
+                this.invalidate_chrome(cx);
+                cx.notify();
+            });
         })
         .detach();
     }
@@ -330,7 +328,7 @@ impl Shell {
                         let passed = this
                             .workspace
                             .preferences
-                            .notification_times_passed(onicode_core::time::now_ms());
+                            .notification_times_passed(onicode_protocol::time::now_ms());
                         if passed != this.notification_state.rule_times_passed {
                             this.notification_state.rule_times_passed = passed;
                             if !this.notification_state.approvals.read(cx).is_empty()
@@ -430,7 +428,7 @@ impl Shell {
     }
 
     pub(super) fn sync_notices(&mut self, window: &Window, cx: &mut Context<Self>) {
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         // This runs on every Shell frame; borrow the preferences below instead
         // of cloning their JSON maps each time.
         let sounds = self.workspace.preferences.sounds;
@@ -608,7 +606,7 @@ impl Shell {
         cue: Option<crate::sound::Cue>,
         cx: &mut Context<Self>,
     ) {
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         let occurred = match target {
             Target::Session(_) => now,
             Target::Reminder { due_at, .. } => due_at,
@@ -659,7 +657,7 @@ impl Shell {
         cx.spawn(async move |this, cx| {
             let accepted = work.await;
             let _ = this.update(cx, |this, _| {
-                let now = onicode_core::time::now_ms();
+                let now = onicode_protocol::time::now_ms();
                 let prefs = &this.workspace.preferences;
                 if !accepted
                     && prefs.sounds
@@ -919,21 +917,7 @@ impl Shell {
             |this, _, event, cx| {
                 match event {
                     GithubActivityEvent::Acknowledged(seen) => {
-                        let seen = seen.clone();
-                        let store = this.store.clone();
-                        let previous = this.notification_state.linked_seen_writes.take();
-                        this.notification_state.linked_seen_writes =
-                            Some(cx.spawn(async move |_, cx| {
-                                if let Some(previous) = previous {
-                                    previous.await;
-                                }
-                                cx.background_executor()
-                                    .spawn(async move {
-                                        let _ = locked(&store)
-                                            .and_then(|s| github_activity::save_seen(&s, &seen));
-                                    })
-                                    .await;
-                            }));
+                        let _ = github_activity::save_seen(&this.ui_state, seen);
                     }
                     GithubActivityEvent::Changed => {
                         this.observe_linked_activity(cx);
@@ -943,14 +927,8 @@ impl Shell {
                 cx.notify();
             },
         ));
-        let store = self.store.clone();
-        let metadata = self.workspace.desktop_preferences_metadata.clone();
-        let work = cx.background_executor().spawn(async move {
-            locked(&store)
-                .and_then(|s| github_activity::load_seen_with_metadata(&s, metadata.as_ref()))
-        });
+        let seen = github_activity::load_seen(&self.ui_state);
         cx.spawn(async move |this, cx| {
-            let seen = work.await.unwrap_or_default();
             let _ = this.update(cx, |this, cx| {
                 this.notification_state
                     .github
@@ -1017,7 +995,7 @@ impl Shell {
                 &project,
                 category,
                 occurred,
-                onicode_core::time::now_ms(),
+                onicode_protocol::time::now_ms(),
             )
     }
 

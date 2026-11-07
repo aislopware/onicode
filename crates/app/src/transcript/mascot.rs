@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use gpui::prelude::*;
 use gpui::{AnyElement, canvas, div, px, rgb};
-use onicode_core::tool::ToolState;
+use onicode_protocol::tool::ToolState;
 
 use crate::theme::content;
 

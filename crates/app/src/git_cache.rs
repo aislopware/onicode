@@ -3,9 +3,8 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
 use gpui::{App, Task};
-use onicode_core::files::path_key;
-use onicode_core::git::Snapshot;
-use onicode_protocol::git::Refs;
+use onicode_protocol::files::path_key;
+use onicode_protocol::git::{GitSnapshot as Snapshot, Refs};
 
 const LIMIT: usize = 24;
 #[derive(Default)]
@@ -85,7 +84,7 @@ pub(crate) fn load(cwd: String, cx: &mut App) -> Task<Result<Snapshot, String>> 
 
 #[cfg(test)]
 mod tests {
-    use onicode_core::git::Worktree;
+    use onicode_protocol::git::Worktree;
 
     use super::*;
     #[test]

@@ -1,4 +1,5 @@
 //! RemoteSession.tsx's host observation and composer restrictions.
+use onicode_engine::turn::locked;
 use serde_json::{Value, json};
 
 use super::*;
@@ -61,6 +62,10 @@ impl Conversation {
         }
     }
 
+    #[expect(
+        clippy::disallowed_types,
+        reason = "the SSH remote goes in step 10 (engine.md)"
+    )]
     pub(super) fn refresh_remote_snapshot(&mut self, cx: &mut Context<Self>) {
         if self.remote_state.refreshing || self.busy || self.stopping {
             return;
@@ -68,7 +73,8 @@ impl Conversation {
         self.remote_state.refreshing = true;
         let initial = !self.loaded || self.history_unloaded;
         self.loading = initial;
-        let store = self.store.clone();
+        // The SSH remote's sessions still live in the viewer's store until step 10 deletes it.
+        let store = self.engine.legacy_store();
         let id = self.summary.id;
         let known = self.remote_state.snapshot.clone();
         if self.remote_state.client.is_none() {
@@ -217,7 +223,7 @@ impl Conversation {
         let draft = snapshot["session"]["blocks"]
             .as_array()
             .and_then(|blocks| blocks.iter().find(|b| b["draft"] == true))
-            .map(|block| onicode_core::follow_up::Message {
+            .map(|block| onicode_protocol::follow_up::Message {
                 id: block["id"].as_str().unwrap_or("").into(),
                 text: block["text"].as_str().unwrap_or("").into(),
                 at: self.transcript.read(cx).source_rows().len(),
@@ -323,7 +329,7 @@ impl Conversation {
             return;
         }
         let raw = self.input.read(cx).content.to_string();
-        let prompt = onicode_core::composer::consume_command(&raw, "draft")
+        let prompt = onicode_protocol::composer::consume_command(&raw, "draft")
             .unwrap_or(&raw)
             .to_owned();
         if prompt.trim().is_empty() && self.attachments.is_empty() {

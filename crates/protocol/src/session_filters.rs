@@ -3,7 +3,7 @@ use chrono::{Local, TimeZone};
 use serde::{Deserialize, Serialize};
 
 use crate::provider::Kind;
-use crate::store::Session;
+use crate::sessions::Session;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TimeFilter {
@@ -48,8 +48,10 @@ impl TimeFilter {
     }
 }
 
+/// Named `SessionStatusFilter` on the wire, beside the usage meter's `Status` and the inbox's
+/// `StatusFilter`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename = "SessionStatusFilter")]
 pub struct Status {
     pub working: bool,
     pub needs_approval: bool,
@@ -68,8 +70,9 @@ impl Status {
     }
 }
 
+/// Named `SessionFilters` on the wire, beside the inbox's `Filters`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename = "SessionFilters")]
 pub struct Filters {
     pub hidden_providers: Vec<String>,
     pub time: TimeFilter,

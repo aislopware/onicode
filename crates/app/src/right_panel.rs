@@ -173,7 +173,7 @@ pub(crate) fn format_integer(value: i64) -> String {
     if value < 0 { format!("-{out}") } else { out }
 }
 
-pub(crate) fn diff_stat_width(stats: Option<&onicode_core::scm::DiffStats>) -> f32 {
+pub(crate) fn diff_stat_width(stats: Option<&onicode_protocol::scm::DiffStats>) -> f32 {
     let added = format_integer(stats.map_or(0, |s| s.additions.max(0)));
     let deleted = format_integer(stats.map_or(0, |s| s.deletions.max(0)));
     // Tabular digits at 10px, the signs, a 6px gap and 6px padding per side.
@@ -187,7 +187,7 @@ pub(crate) fn diff_stat_scale(available: f32, natural: f32) -> f32 {
 }
 
 pub(crate) fn diff_stat(
-    stats: Option<&onicode_core::scm::DiffStats>,
+    stats: Option<&onicode_protocol::scm::DiffStats>,
     width: f32,
 ) -> Stateful<gpui::Div> {
     let added = format_integer(stats.map_or(0, |s| s.additions.max(0)));

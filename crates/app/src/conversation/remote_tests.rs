@@ -8,12 +8,12 @@ use serde_json::json;
 use super::*;
 
 fn conversation(cx: &mut TestAppContext) -> Entity<Conversation> {
-    let store = onicode_core::store::Store::open(Path::new(":memory:")).unwrap();
-    let mut summary = store.create("codex", "/test-project").unwrap();
+    let engine = cx.update(crate::engine_client::Engine::memory);
+    let mut summary = engine.seed().create("codex", "/test-project").unwrap();
     summary.cwd = "remote://remote-ui-tests/home/me/project".into();
     cx.update(|cx| {
         cx.new(|cx| {
-            let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+            let mut view = Conversation::new(summary, engine, cx);
             view.loaded = true;
             view.remote_state.online = true;
             view.remote_state.capabilities =
@@ -135,8 +135,10 @@ fn dropping_remote_conversation_does_not_cancel_its_host_turn(cx: &mut TestAppCo
 
 struct HostFixture {
     client: Arc<onicode_core::remote::Connections>,
-    store: Database,
-    summary: onicode_core::store::Session,
+    engine: crate::engine_client::Engine,
+    /// The engine's store, which the SSH remote still writes in the viewer's process.
+    store: onicode_engine::turn::Database,
+    summary: onicode_protocol::sessions::Session,
     requests: Arc<Mutex<Vec<serde_json::Value>>>,
     stop: Arc<AtomicBool>,
     server: Option<std::thread::JoinHandle<()>>,
@@ -147,7 +149,7 @@ struct HostFixture {
     rename_at: Arc<std::sync::atomic::AtomicUsize>,
 }
 impl HostFixture {
-    fn new(running: bool, saved_draft: bool) -> Self {
+    fn new(running: bool, saved_draft: bool, cx: &mut TestAppContext) -> Self {
         use std::io::{BufRead, Read, Write};
         let nonce = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -232,17 +234,23 @@ impl HostFixture {
         });
         let client = Arc::new(onicode_core::remote::Connections::new(&directory));
         client.connect(String::new(), url, "a".repeat(43)).unwrap();
-        let store = onicode_core::store::Store::open(Path::new(":memory:")).unwrap();
-        let project = store
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let store = engine.legacy_store();
+        let project = onicode_engine::turn::locked(&store)
+            .unwrap()
             .remember_remote_project(
                 &environment,
                 &json!({"id": "project", "cwd": "/home/me/project", "name": "project"}),
             )
             .unwrap();
-        let summary = store.register_remote_summary(&project, &initial).unwrap();
+        let summary = onicode_engine::turn::locked(&store)
+            .unwrap()
+            .register_remote_summary(&project, &initial)
+            .unwrap();
         Self {
             client,
-            store: Arc::new(Mutex::new(store)),
+            engine,
+            store,
             summary,
             requests,
             stop,
@@ -256,7 +264,7 @@ impl HostFixture {
     fn conversation(&self, cx: &mut TestAppContext) -> Entity<Conversation> {
         cx.update(|cx| {
             cx.new(|cx| {
-                let mut view = Conversation::new(self.summary.clone(), self.store.clone(), cx);
+                let mut view = Conversation::new(self.summary.clone(), self.engine.clone(), cx);
                 view.remote_state.client = Some(self.client.clone());
                 view.input.update(cx, |input, cx| {
                     input.set_text("Keep this next message".into(), cx)
@@ -301,7 +309,7 @@ impl Drop for HostFixture {
 
 #[gpui::test]
 fn snapshot_load_restores_host_draft_without_replacing_unsent_composer(cx: &mut TestAppContext) {
-    let host = HostFixture::new(false, true);
+    let host = HostFixture::new(false, true, cx);
     let view = host.conversation(cx);
     host.wait(&view, cx, true);
     cx.update(|cx| {
@@ -328,7 +336,7 @@ fn snapshot_load_restores_host_draft_without_replacing_unsent_composer(cx: &mut 
 /// scripts the turn: it renames the conversation on sync 3 and goes idle on 4.
 #[gpui::test]
 fn a_host_title_change_reaches_the_busy_view_without_a_rename_request(cx: &mut TestAppContext) {
-    let host = HostFixture::new(true, false);
+    let host = HostFixture::new(true, false, cx);
     host.idle_after.store(3, Ordering::Relaxed);
     host.rename_at.store(3, Ordering::Relaxed);
     let view = host.conversation(cx);
@@ -377,7 +385,7 @@ fn a_host_title_change_reaches_the_busy_view_without_a_rename_request(cx: &mut T
 
 #[gpui::test]
 fn opening_running_host_reattaches_without_dispatching_another_turn(cx: &mut TestAppContext) {
-    let host = HostFixture::new(true, false);
+    let host = HostFixture::new(true, false, cx);
     let view = host.conversation(cx);
     host.wait(&view, cx, true);
     cx.update(|cx| {
@@ -405,7 +413,7 @@ fn opening_running_host_reattaches_without_dispatching_another_turn(cx: &mut Tes
 fn explicit_retry_reuses_pending_command_and_preserves_new_composer_and_attachment(
     cx: &mut TestAppContext,
 ) {
-    let host = HostFixture::new(false, false);
+    let host = HostFixture::new(false, false, cx);
     let view = host.conversation(cx);
     host.wait(&view, cx, true);
     {

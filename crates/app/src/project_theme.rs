@@ -5,7 +5,7 @@ use gpui::{
     AnyElement, App, Context, EventEmitter, FocusHandle, Focusable, MouseButton, MouseDownEvent,
     MouseMoveEvent, Role, Window, div, px, rgb,
 };
-use onicode_core::project_appearance::{ProjectAppearance, ProjectTheme};
+use onicode_protocol::project_appearance::{ProjectAppearance, ProjectTheme};
 
 use crate::popover::AnchorSlot;
 use crate::project_settings::{Event, button};

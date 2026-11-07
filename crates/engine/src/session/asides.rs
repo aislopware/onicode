@@ -1,6 +1,6 @@
 //! The provider calls the hub makes beside a session's turns: rewinding the last turn for an
-//! edit, and answering a by-the-way question. A seam, so the hub's tests answer them without a
-//! provider.
+//! edit, answering a by-the-way question, and compacting the thread's context. A seam, so the hub's
+//! tests answer them without a provider.
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -47,7 +47,19 @@ pub trait Asides: Send + Sync + 'static {
 
     /// Answers a text-only question, handing each piece of the answer to `text`.
     fn ask(&self, aside: Aside, cancel: Arc<AtomicBool>, text: Sink<'_>) -> Result<(), String>;
+
+    /// Compacts the provider thread's context (`provider::compact`), handing its events to
+    /// `events`.
+    fn compact(
+        &self,
+        aside: Aside,
+        cancel: Arc<AtomicBool>,
+        events: Events<'_>,
+    ) -> Result<(), String>;
 }
+
+/// What a compaction's events are handed to; an error stops it.
+pub type Events<'a> = &'a mut dyn FnMut(Vec<Event>) -> Result<(), String>;
 
 /// The real asides: the session's provider.
 pub struct ProviderAsides;
@@ -73,6 +85,15 @@ impl Asides for ProviderAsides {
             }
             Ok(())
         })
+    }
+
+    fn compact(
+        &self,
+        aside: Aside,
+        cancel: Arc<AtomicBool>,
+        events: Events<'_>,
+    ) -> Result<(), String> {
+        provider::compact(aside.request()?, cancel, events)
     }
 }
 

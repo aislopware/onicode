@@ -3,8 +3,8 @@ use std::path::Path;
 
 use gpui::prelude::*;
 use gpui::{AnyElement, FontWeight, div, px};
-use onicode_core::provider::Kind;
-use onicode_core::store::{Session, SessionPreviewData};
+use onicode_protocol::provider::Kind;
+use onicode_protocol::sessions::{Session, SessionPreviewData};
 
 use crate::pickers::cached_model_name;
 use crate::theme::*;
@@ -16,7 +16,7 @@ pub(super) fn render(
 ) -> AnyElement {
     let model = data
         .and_then(|data| data.model.as_deref())
-        .and_then(|model| onicode_core::store::native_model(model, &summary.provider));
+        .and_then(|model| onicode_protocol::sessions::native_model(model, &summary.provider));
     let name = cached_model_name(Kind::from_id(&summary.provider), model.as_deref());
     let worktree = data.and_then(|data| data.worktree_cwd.as_deref());
     let cwd = worktree.unwrap_or(&summary.cwd);
@@ -65,9 +65,9 @@ pub(super) fn render(
                         .child(if done {
                             "Done".to_owned()
                         } else {
-                            onicode_core::time::relative(
+                            onicode_protocol::time::relative(
                                 summary.updated_at,
-                                onicode_core::time::now_ms(),
+                                onicode_protocol::time::now_ms(),
                             )
                         }),
                 ),
@@ -80,8 +80,11 @@ pub(super) fn render(
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(content(1.))
                 .child(
-                    onicode_core::session_title::display_title(&summary.title, &summary.provider)
-                        .replace('\n', " "),
+                    onicode_protocol::session_title::display_title(
+                        &summary.title,
+                        &summary.provider,
+                    )
+                    .replace('\n', " "),
                 ),
         )
         .child(

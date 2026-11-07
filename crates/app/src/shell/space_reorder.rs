@@ -230,7 +230,7 @@ mod tests {
         Modifiers, MouseButton, TestAppContext, VisualTestContext, WindowHandle, point, px, size,
     };
 
-    use super::super::{MenuTarget, locked};
+    use super::super::MenuTarget;
     use crate::workspace::Workspace;
 
     const PROJECTS: [&str; 7] = [
@@ -302,7 +302,7 @@ mod tests {
                     shell.workspace.project, "/work/a",
                     "letting go of a drag is not a click"
                 );
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap().unwrap();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored = Workspace::restore(Some(&saved), &[], "/work/a");
                 assert_eq!(restored.projects, shell.workspace.projects);
             })
@@ -393,7 +393,7 @@ mod tests {
         assert_eq!(projects(window, visual)[5], "/work/c");
         window
             .update(visual, |shell, _, _| {
-                let saved = locked(&shell.store).unwrap().ui_state().unwrap().unwrap();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored = Workspace::restore(Some(&saved), &[], "/work/c");
                 assert_eq!(restored.projects, shell.workspace.projects);
             })

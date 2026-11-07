@@ -30,7 +30,7 @@ impl Attachment {
             || mime.starts_with("image/")
             || path
                 .as_ref()
-                .is_some_and(|path| onicode_core::composer::image_mime(path).is_some());
+                .is_some_and(|path| onicode_protocol::composer::image_mime(path).is_some());
         let data = match value["data"].take() {
             serde_json::Value::String(data) if !data.is_empty() => Some(Arc::from(data)),
             _ => path
@@ -56,7 +56,7 @@ impl Attachment {
     }
 
     pub(super) fn from_paths(paths: &[PathBuf]) -> Arc<[Self]> {
-        let value = onicode_core::transcript::attachments::from_paths(paths);
+        let value = onicode_protocol::transcript::attachments::from_paths(paths);
         value
             .as_array()
             .into_iter()
@@ -70,7 +70,7 @@ impl Attachment {
 pub(crate) fn message(rows: &[Row], end: usize, text: &str) -> (Option<String>, Arc<[Attachment]>) {
     if let Some(manifest) = rows
         .get(end)
-        .filter(|row| row.role == onicode_core::transcript::attachments::ROLE)
+        .filter(|row| row.role == onicode_protocol::transcript::attachments::ROLE)
     {
         let files: Vec<serde_json::Value> =
             serde_json::from_str(&manifest.text).unwrap_or_default();
@@ -79,7 +79,7 @@ pub(crate) fn message(rows: &[Row], end: usize, text: &str) -> (Option<String>, 
             files.into_iter().map(Attachment::from_value).collect(),
         );
     }
-    let (body, paths) = onicode_core::transcript::attachments::legacy_tail(text);
+    let (body, paths) = onicode_protocol::transcript::attachments::legacy_tail(text);
     (
         (!paths.is_empty()).then(|| body.to_owned()),
         Attachment::from_paths(&paths),

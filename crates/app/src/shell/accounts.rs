@@ -149,33 +149,33 @@ impl Shell {
 mod tests {
     use super::*;
 
-    fn account_switch(cx: &mut gpui::TestAppContext, carry: bool, cold: bool, limited: bool) {
-        use onicode_core::accounts::Profile;
-        use onicode_core::transcript::Row;
+    /// Gives the accounts center `book`, in the engine's store and as its watch would say it.
+    fn script_book(shell: &Shell, book: &onicode_protocol::accounts::Book, cx: &mut App) {
+        shell.engine.seed().save_provider_accounts(book).unwrap();
+        crate::accounts::get(cx).unwrap().update(cx, |center, cx| {
+            center.script(
+                onicode_protocol::agents::AccountsState {
+                    book: book.clone(),
+                    ..Default::default()
+                },
+                cx,
+            );
+        });
+    }
+
+    /// The engine in memory holds no provider thread to move, so the switch hands the session
+    /// off; carrying a thread across accounts is the engine's `TransferThread`, tested there.
+    fn account_switch(cx: &mut gpui::TestAppContext, cold: bool, limited: bool) {
+        use onicode_protocol::transcript::Row;
         let (window, _, id) = crate::shell::tests::window(cx);
-        let (target, destination, original_count, active, tab_count) = window
+        let (target, original_count, active, tab_count) = window
             .update(cx, |shell, _, cx| {
                 let center = crate::accounts::get(cx).unwrap();
-                let (source, target) = center.update(cx, |center, _| {
-                    (
-                        center.book.add(Kind::Claude, "Limited").unwrap(),
-                        center.book.add(Kind::Claude, "Available").unwrap(),
-                    )
-                });
-                let root = center.read(cx).root.clone();
-                let source = Profile::new(&source.id, &root);
-                let destination = Profile::new(&target.id, &root)
-                    .home(Kind::Claude)
-                    .unwrap()
-                    .join("projects/-fixture/saved-thread.jsonl");
-                if carry {
-                    let transcript = source
-                        .home(Kind::Claude)
-                        .unwrap()
-                        .join("projects/-fixture/saved-thread.jsonl");
-                    std::fs::create_dir_all(transcript.parent().unwrap()).unwrap();
-                    std::fs::write(transcript, "{\"conversation\":\"original\"}\n").unwrap();
-                }
+                let mut book = center.read(cx).book.clone();
+                let source = book.add(Kind::Claude, "Limited").unwrap();
+                let target = book.add(Kind::Claude, "Available").unwrap();
+                script_book(shell, &book, cx);
+                let source = center.read(cx).profile(&source.id);
                 let mut rows = vec![
                     Row {
                         role: "user".into(),
@@ -203,12 +203,9 @@ mod tests {
                         id: None,
                     });
                 }
-                {
-                    let mut store = locked(&shell.store).unwrap();
-                    store.save_provider_accounts(&center.read(cx).book).unwrap();
-                    store.provider_id(id, "saved-thread").unwrap();
-                    store.write_rows(id, 0, &rows).unwrap();
-                }
+                let seed = shell.engine.seed();
+                seed.provider_id(id, "saved-thread").unwrap();
+                seed.write_rows(id, 0, &rows).unwrap();
                 shell.sessions[&id].update(cx, |view, cx| {
                     let mut settings = view.settings.clone();
                     settings.account = source;
@@ -231,7 +228,6 @@ mod tests {
                 });
                 let state = (
                     target.id.clone(),
-                    destination,
                     shell.sessions.len(),
                     shell.workspace.active,
                     shell.workspace.tabs.len(),
@@ -265,54 +261,34 @@ mod tests {
                         .iter()
                         .any(|row| row.text == "The integration is partly implemented")
                 );
-                if carry {
-                    assert_eq!(view.summary.provider_id.as_deref(), Some("saved-thread"));
-                    assert!(view.settings.pending_provider_switch.is_none());
-                    assert!(view.settings.handoff.is_none());
-                    assert_eq!(
-                        std::fs::read_to_string(&destination).unwrap(),
-                        "{\"conversation\":\"original\"}\n"
-                    );
-                } else {
-                    assert!(view.summary.provider_id.is_none());
-                    let pending = view.settings.pending_provider_switch.as_ref().unwrap();
-                    assert_eq!(pending.skip_outgoing_recap, limited);
-                    assert_eq!(pending.provider_id.as_deref(), Some("saved-thread"));
-                    assert_ne!(pending.account.id, target);
-                }
+                assert!(view.summary.provider_id.is_none());
+                let pending = view.settings.pending_provider_switch.as_ref().unwrap();
+                assert_eq!(pending.skip_outgoing_recap, limited);
+                assert_eq!(pending.provider_id.as_deref(), Some("saved-thread"));
+                assert_ne!(pending.account.id, target);
             })
             .unwrap();
-    }
-
-    #[gpui::test]
-    fn footer_account_switch_carries_a_limited_session_in_place(cx: &mut gpui::TestAppContext) {
-        account_switch(cx, true, false, true);
     }
 
     #[gpui::test]
     fn footer_account_switch_restores_a_saved_limit_before_choosing_a_session(
         cx: &mut gpui::TestAppContext,
     ) {
-        account_switch(cx, true, true, true);
+        account_switch(cx, true, true);
     }
 
     #[gpui::test]
     fn footer_account_switch_keeps_the_local_session_when_native_history_is_missing(
         cx: &mut gpui::TestAppContext,
     ) {
-        account_switch(cx, false, false, true);
-    }
-
-    #[gpui::test]
-    fn footer_account_switch_carries_an_unlimited_session_in_place(cx: &mut gpui::TestAppContext) {
-        account_switch(cx, true, false, false);
+        account_switch(cx, false, true);
     }
 
     #[gpui::test]
     fn footer_account_switch_hands_off_an_unlimited_session_without_native_history(
         cx: &mut gpui::TestAppContext,
     ) {
-        account_switch(cx, false, false, false);
+        account_switch(cx, false, false);
     }
 
     #[gpui::test]
@@ -323,13 +299,9 @@ mod tests {
         let count = window
             .update(cx, |shell, _, cx| {
                 let center = crate::accounts::get(cx).unwrap();
-                let account = center.update(cx, |center, _| {
-                    center.book.add(Kind::Claude, "Work").unwrap()
-                });
-                locked(&shell.store)
-                    .unwrap()
-                    .save_provider_accounts(&center.read(cx).book)
-                    .unwrap();
+                let mut book = center.read(cx).book.clone();
+                let account = book.add(Kind::Claude, "Work").unwrap();
+                script_book(shell, &book, cx);
                 let count = shell.sessions.len();
                 shell.select_provider_account(
                     Kind::Claude,
@@ -343,7 +315,7 @@ mod tests {
                 shell.sessions[&id].update(cx, |v, _| v.summary.has_messages = true);
                 shell.select_provider_account(
                     Kind::Claude,
-                    onicode_core::accounts::DEFAULT,
+                    onicode_protocol::accounts::DEFAULT,
                     "/work/monocode",
                     Some(id),
                     cx,
@@ -355,7 +327,10 @@ mod tests {
         window
             .update(cx, |shell, _, cx| {
                 let view = shell.sessions[&id].read(cx);
-                assert_eq!(view.settings.account.id, onicode_core::accounts::DEFAULT);
+                assert_eq!(
+                    view.settings.account.id,
+                    onicode_protocol::accounts::DEFAULT
+                );
                 assert!(view.settings.usage_limit.is_none());
                 assert_eq!(shell.sessions.len(), count);
             })

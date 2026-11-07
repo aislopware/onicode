@@ -311,9 +311,12 @@ fn a_shell_that_cannot_start_says_why() {
     let mut viewer = Viewer::watch(&hub, terminal);
     viewer.until(|viewer| viewer.mirror.is_some());
     assert!(
+        // The notice wraps at the terminal's width.
         viewer
             .text()
-            .replace('\n', "")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
             .contains("Could not start the shell (fake-shell): boom"),
         "{}",
         viewer.text()

@@ -8,12 +8,11 @@ description = "The terminal core on libghostty-vt: the engine's host terminal ov
 
 [dependencies]
 libghostty-vt.workspace = true
-# The hangup a closing shell and a stopped job expect.
+# The PTY (openpty, the controlling terminal, its size and foreground group) and the hangup a
+# closing shell and a stopped job expect.
 libc.workspace = true
 # The input and size types the engine encodes and the viewers send.
 onicode-protocol.workspace = true
-# The PTY and the login shell on it, behind the `pty::Spawner` seam.
-portable-pty.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

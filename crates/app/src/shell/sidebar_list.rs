@@ -2,7 +2,7 @@
 use std::cell::{Cell, RefCell};
 
 use gpui::{ListAlignment, ListState, list};
-use onicode_core::session_groups::Entry;
+use onicode_protocol::session_groups::Entry;
 
 use super::*;
 
@@ -225,7 +225,7 @@ impl Shell {
     /// invalidates it; individual cards still read live metadata each render.
     pub(super) fn refresh_sidebar_structure(&mut self, cx: &mut Context<Self>) {
         let scope = self.sidebar_scope();
-        let minute = onicode_core::time::now_ms() / 60_000;
+        let minute = onicode_protocol::time::now_ms() / 60_000;
         if self.sidebar_list.structure_dirty.replace(false)
             || self.sidebar_list.scope != scope
             || self.sidebar_list.indexed_minute != minute
@@ -281,7 +281,7 @@ impl Shell {
             return;
         }
         let groups = self.project_groups();
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         let mut rows = vec![Row::Navigation];
         let mut folders = false;
         for entry in entries {
@@ -884,8 +884,8 @@ mod tests {
     use super::age_label;
 
     /// A reply saved in a session's transcript, so the store lists it with messages.
-    fn saved_answer() -> onicode_core::transcript::Row {
-        onicode_core::transcript::Row {
+    fn saved_answer() -> onicode_protocol::transcript::Row {
+        onicode_protocol::transcript::Row {
             role: "assistant".into(),
             text: "A saved answer".into(),
             first: true,
@@ -996,7 +996,7 @@ mod tests {
             .update(cx, |shell, _, cx| {
                 shell.session_details.insert(
                     id,
-                    onicode_core::store::MobileSessionMetadata {
+                    onicode_protocol::sessions::MobileSessionMetadata {
                         model: Some("gpt-6.1-sol".into()),
                         branch: Some("feature/session-cards".into()),
                         ..Default::default()
@@ -1049,7 +1049,7 @@ mod tests {
                 .update(visual, |shell, _, _| {
                     assert_eq!(shell.sessions.len(), loaded);
                     assert!(!shell.sessions.contains_key(&id));
-                    let saved = shell.latest_state.lock().unwrap().clone();
+                    let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                     let restored = Workspace::restore(Some(&saved), &[], "/work/monocode");
                     assert!(!restored.compact_session_cards);
                 })
@@ -1142,7 +1142,7 @@ mod tests {
                 ] {
                     assert_eq!(menu.toggle_state(id), Some(false));
                 }
-                let saved = shell.latest_state.lock().unwrap().clone();
+                let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                 let restored = Workspace::restore(Some(&saved), &[], "/work/monocode");
                 assert!(!restored.sidebar_search_visible);
                 assert!(!restored.sidebar_notes_visible);
@@ -1202,7 +1202,7 @@ mod tests {
                     }
                     let menu = shell.menu.as_ref().unwrap().menu.read(cx);
                     assert_eq!(menu.toggle_state("sidebar-activity"), Some(false));
-                    let saved = shell.latest_state.lock().unwrap().clone();
+                    let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                     let restored = Workspace::restore(Some(&saved), &[], "/work/monocode");
                     assert!(!restored.sidebar_activity_visible);
                 })
@@ -1213,7 +1213,7 @@ mod tests {
             assert!(visual.debug_bounds("sidebar-activity-card").is_some());
             window
                 .update(visual, |shell, _, _| {
-                    let saved = shell.latest_state.lock().unwrap().clone();
+                    let saved = shell.ui_state.get(crate::ui_state::WORKSPACE).unwrap();
                     let restored = Workspace::restore(Some(&saved), &[], "/work/monocode");
                     assert!(restored.sidebar_activity_visible);
                 })
@@ -1332,8 +1332,8 @@ mod tests {
                 shell.save_groups(
                     "save folders",
                     "/work/many-sessions".into(),
-                    onicode_core::session_groups::Groups {
-                        folders: vec![onicode_core::session_groups::Folder {
+                    onicode_protocol::session_groups::Groups {
+                        folders: vec![onicode_protocol::session_groups::Folder {
                             id: "large-folder".into(),
                             name: "All history".into(),
                             session_ids: members,

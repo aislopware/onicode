@@ -4,7 +4,6 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 
 use onicode_protocol::terminal::TerminalSize;
-use portable_pty::{CommandBuilder, MasterPty, PtySize};
 
 /// The program a new PTY runs and its environment, on top of the engine's own.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -60,91 +59,159 @@ pub fn hang_up_group(pgrp: i32) {
     let _ = pgrp;
 }
 
-/// Login shells on the platform's PTYs, through portable-pty.
+/// Login shells on the platform's PTYs: `openpty`, then the program as a session leader whose
+/// controlling terminal is the PTY.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct NativePty;
 
-fn pty_size(size: TerminalSize) -> PtySize {
-    PtySize {
-        rows: size.rows.max(1),
-        cols: size.cols.max(2),
-        pixel_width: size.cell_width.saturating_mul(size.cols),
-        pixel_height: size.cell_height.saturating_mul(size.rows),
+#[cfg(unix)]
+impl Spawner for NativePty {
+    fn spawn(&self, spec: &Spec, size: TerminalSize) -> Result<Spawned, String> {
+        native::spawn(spec, size)
     }
 }
 
+#[cfg(not(unix))]
 impl Spawner for NativePty {
-    fn spawn(&self, spec: &Spec, size: TerminalSize) -> Result<Spawned, String> {
-        let pair = portable_pty::native_pty_system()
-            .openpty(pty_size(size))
-            .map_err(|error| error.to_string())?;
-        let mut command = CommandBuilder::new(&spec.program);
-        command.args(&spec.args);
-        command.cwd(&spec.cwd);
+    fn spawn(&self, _: &Spec, _: TerminalSize) -> Result<Spawned, String> {
+        Err("Terminals need a Unix host".into())
+    }
+}
+
+#[cfg(unix)]
+mod native {
+    use std::fs::File;
+    use std::io;
+    use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
+    use std::os::unix::process::CommandExt;
+    use std::process::{Command, Stdio};
+
+    use onicode_protocol::terminal::TerminalSize;
+
+    use super::{Process, Spawned, Spec};
+
+    fn winsize(size: TerminalSize) -> libc::winsize {
+        libc::winsize {
+            ws_row: size.rows.max(1),
+            ws_col: size.cols.max(2),
+            ws_xpixel: size.cell_width.saturating_mul(size.cols),
+            ws_ypixel: size.cell_height.saturating_mul(size.rows),
+        }
+    }
+
+    fn failed(what: &str) -> String {
+        format!("{what}: {}", io::Error::last_os_error())
+    }
+
+    pub(super) fn spawn(spec: &Spec, size: TerminalSize) -> Result<Spawned, String> {
+        let (mut master, mut slave) = (-1, -1);
+        let mut window = winsize(size);
+        // SAFETY: `openpty` writes two descriptors into the out parameters; a null name and
+        // termios take the defaults.
+        let opened = unsafe {
+            libc::openpty(
+                &raw mut master,
+                &raw mut slave,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                &raw mut window,
+            )
+        };
+        if opened != 0 {
+            return Err(failed("Cannot open a PTY"));
+        }
+        // SAFETY: `openpty` succeeded, so both descriptors are open and owned by nothing else.
+        let (master, slave) =
+            unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) };
+        // SAFETY: setting close-on-exec on a descriptor we own: the shell never inherits the
+        // master.
+        unsafe {
+            libc::fcntl(master.as_raw_fd(), libc::F_SETFD, libc::FD_CLOEXEC);
+        }
+        let side = |fd: &OwnedFd| fd.try_clone().map_err(|error| error.to_string());
+        let mut command = Command::new(&spec.program);
+        command.args(&spec.args).current_dir(&spec.cwd);
         for key in &spec.unset {
             command.env_remove(key);
         }
         for (key, value) in &spec.env {
             command.env(key, value);
         }
-        let mut child = pair
-            .slave
-            .spawn_command(command)
-            .map_err(|error| error.to_string())?;
-        // The shell holds the only slave end now: the reader sees the end when it exits.
-        drop(pair.slave);
-        let output = pair
-            .master
-            .try_clone_reader()
-            .map_err(|error| error.to_string())?;
-        let input = pair
-            .master
-            .take_writer()
-            .map_err(|error| error.to_string())?;
-        let pid = child.process_id().and_then(|pid| i32::try_from(pid).ok());
+        command
+            .stdin(Stdio::from(side(&slave)?))
+            .stdout(Stdio::from(side(&slave)?))
+            .stderr(Stdio::from(slave));
+        // SAFETY: between fork and exec only async-signal-safe calls run: signal, setsid and
+        // ioctl.
+        unsafe {
+            command.pre_exec(|| {
+                for signal in [
+                    libc::SIGCHLD,
+                    libc::SIGHUP,
+                    libc::SIGINT,
+                    libc::SIGQUIT,
+                    libc::SIGTERM,
+                    libc::SIGALRM,
+                ] {
+                    libc::signal(signal, libc::SIG_DFL);
+                }
+                if libc::setsid() == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                // stdin is the PTY's slave: it becomes this new session's controlling terminal.
+                #[cfg(target_vendor = "apple")]
+                let request = libc::c_ulong::from(libc::TIOCSCTTY);
+                #[cfg(not(target_vendor = "apple"))]
+                let request = libc::TIOCSCTTY;
+                if libc::ioctl(0, request, 0) == -1 {
+                    return Err(io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("Could not start {}: {error}", spec.program))?;
+        // The shell holds the only slave ends now: the reader sees the end when it exits.
+        drop(command);
+        let output = File::from(side(&master)?);
+        let input = File::from(side(&master)?);
+        let pid = i32::try_from(child.id()).ok();
         Ok(Spawned {
-            process: Box::new(NativeProcess {
-                master: pair.master,
-                pid,
-            }),
-            output,
-            input,
-            wait: Box::new(move || match child.wait() {
-                Ok(status) if status.signal().is_none() => i32::try_from(status.exit_code()).ok(),
-                _ => None,
-            }),
+            process: Box::new(NativeProcess { master, pid }),
+            output: Box::new(output),
+            input: Box::new(input),
+            wait: Box::new(move || child.wait().ok().and_then(|status| status.code())),
         })
     }
-}
 
-struct NativeProcess {
-    master: Box<dyn MasterPty + Send>,
-    pid: Option<i32>,
-}
-
-impl Process for NativeProcess {
-    fn resize(&self, size: TerminalSize) {
-        let _ = self.master.resize(pty_size(size));
+    struct NativeProcess {
+        master: OwnedFd,
+        pid: Option<i32>,
     }
 
-    #[cfg(unix)]
-    fn foreground(&self) -> Option<i32> {
-        let pgrp = self.master.process_group_leader()?;
-        (pgrp > 0 && Some(pgrp) != self.pid).then_some(pgrp)
-    }
-
-    #[cfg(not(unix))]
-    fn foreground(&self) -> Option<i32> {
-        None
-    }
-
-    fn hangup(&self) {
-        #[cfg(unix)]
-        if let Some(pid) = self.pid.filter(|pid| *pid > 1) {
-            // SAFETY: `kill` takes any pid and signal number; an exited shell fails harmlessly.
+    impl Process for NativeProcess {
+        fn resize(&self, size: TerminalSize) {
+            let window = winsize(size);
+            // SAFETY: TIOCSWINSZ reads one `winsize` from the pointer, on a descriptor we own.
             unsafe {
-                libc::kill(pid, libc::SIGHUP);
-                libc::kill(-pid, libc::SIGHUP);
+                libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &raw const window);
+            }
+        }
+
+        fn foreground(&self) -> Option<i32> {
+            // SAFETY: `tcgetpgrp` only reads the terminal's foreground group.
+            let pgrp = unsafe { libc::tcgetpgrp(self.master.as_raw_fd()) };
+            (pgrp > 0 && Some(pgrp) != self.pid).then_some(pgrp)
+        }
+
+        fn hangup(&self) {
+            if let Some(pid) = self.pid.filter(|pid| *pid > 1) {
+                // SAFETY: `kill` takes any pid and signal number; an exited shell fails harmlessly.
+                unsafe {
+                    libc::kill(pid, libc::SIGHUP);
+                    libc::kill(-pid, libc::SIGHUP);
+                }
             }
         }
     }

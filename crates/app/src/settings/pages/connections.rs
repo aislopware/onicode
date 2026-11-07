@@ -320,7 +320,7 @@ impl SettingsView {
         let generation = self.connections.generation;
         let work = cx.background_executor().spawn(async move {
             let machines = remote.list()?;
-            let providers: Vec<_> = onicode_core::provider::Kind::ALL
+            let providers: Vec<_> = onicode_protocol::provider::Kind::ALL
                 .into_iter()
                 .map(|p| p.id())
                 .collect();

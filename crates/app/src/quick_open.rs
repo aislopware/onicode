@@ -3,9 +3,8 @@ use gpui::prelude::*;
 use gpui::{
     Context, Entity, EventEmitter, FocusHandle, Focusable, Role, Subscription, Window, div, px,
 };
-use onicode_core::composer;
-use onicode_core::files::ProjectFile;
-use onicode_protocol::files::SearchPaths;
+use onicode_protocol::composer;
+use onicode_protocol::files::{ProjectFile, SearchPaths};
 
 use crate::theme::*;
 use crate::{engine_client, input};
@@ -101,7 +100,7 @@ impl QuickOpen {
         });
         // Closing Quick Open stops its listing.
         let engine = engine_client::local(cx);
-        let listing_id = onicode_core::new_id();
+        let listing_id = onicode_protocol::new_id();
         let listing = engine.call::<SearchPaths>(
             None,
             SearchPaths {

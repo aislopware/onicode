@@ -531,12 +531,7 @@ impl gpui::Render for MediaPreview {
                                 .bg(content(0.1))
                                 .child("Reveal")
                                 .on_click(cx.listener(|this, _, _, cx| {
-                                    let path = PathBuf::from(&this.path);
-                                    cx.background_executor()
-                                        .spawn(async move {
-                                            let _ = onicode_core::files::reveal_path(&path);
-                                        })
-                                        .detach();
+                                    let _ = reveal_path(Path::new(&this.path), cx);
                                 })),
                         )
                         .child(

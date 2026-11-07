@@ -11,7 +11,7 @@
 //! and the store's draft mark follows its saved queue; an update about anything else, or one
 //! that leaves those fields as they were, never puts back an older value, so nothing on the
 //! sidebar flickers or loses its mark when a snapshot or an event lands.
-use onicode_core::agent::Settings;
+use onicode_protocol::agent::Settings;
 use onicode_protocol::workspace::{
     CreateSession, NewSession, SessionSummary, WorkspaceEvent, WorkspaceState,
 };
@@ -97,8 +97,58 @@ macro_rules! follow {
     }};
 }
 
+/// What the sidebar shows of the engine's workspace before the mirror's first snapshot: the
+/// engine's workspace as the window opens, in the shell's own maps.
+pub(super) fn sidebar_metadata(
+    state: WorkspaceState,
+) -> onicode_protocol::sessions::SessionSidebarMetadata {
+    let mut metadata = onicode_protocol::sessions::SessionSidebarMetadata::default();
+    for summary in state.sessions {
+        let row = summary.session.id;
+        if summary.draft {
+            metadata.drafts.insert(row);
+        }
+        if summary.hidden {
+            metadata.sidebar_hidden.insert(row);
+        }
+        if let Some(lead) = summary.started_by {
+            metadata.started_by.insert(row, lead);
+        }
+        if summary.model.is_some() {
+            metadata
+                .details
+                .insert(row, saved_details(summary.model, summary.worktree.clone()));
+        }
+        metadata.worktrees.insert(row, summary.worktree);
+    }
+    metadata.groups = state
+        .projects
+        .into_iter()
+        .map(|project| (project.path, project.groups))
+        .collect();
+    metadata.orchestrations = state
+        .orchestrations
+        .into_iter()
+        .map(|lead| (lead.lead, lead.summary))
+        .collect();
+    metadata.reminders = state.reminders;
+    metadata
+}
+
+/// What the sidebar shows of a session no conversation is loaded for.
+fn saved_details(
+    model: Option<String>,
+    worktree_cwd: Option<String>,
+) -> onicode_protocol::sessions::MobileSessionMetadata {
+    onicode_protocol::sessions::MobileSessionMetadata {
+        model,
+        worktree_cwd,
+        ..Default::default()
+    }
+}
+
 /// Every reminder occurrence still waiting to fire.
-fn armed(reminders: &[onicode_core::store::Reminder]) -> HashSet<(i64, u64)> {
+fn armed(reminders: &[onicode_protocol::sessions::Reminder]) -> HashSet<(i64, u64)> {
     reminders
         .iter()
         .filter(|reminder| reminder.fired_at.is_none())
@@ -109,7 +159,7 @@ fn armed(reminders: &[onicode_core::store::Reminder]) -> HashSet<(i64, u64)> {
 impl Shell {
     /// Starts mirroring the engine's workspace.
     pub(super) fn mirror_workspace(&mut self, cx: &mut Context<Self>) {
-        let updates = engine_client::watch_workspace(&self.store, cx);
+        let updates = engine_client::watch_workspace(&self.engine, cx);
         self.mirror._watch = Some(cx.spawn(async move |this, cx| {
             while let Ok(update) = updates.recv().await {
                 if this
@@ -299,6 +349,32 @@ impl Shell {
                     .session_automations
                     .insert(row, automation.clone());
             }
+            // The saved model and the hidden mark when the engine's value of them moved; a
+            // session new to the mirror only adds them, since the shell may have set them first.
+            let model = match prior {
+                Some(prior) if prior.model != summary.model => Some(summary.model.clone()),
+                None if summary.model.is_some() => Some(summary.model.clone()),
+                _ => None,
+            };
+            if let Some(model) = model {
+                self.session_details
+                    .entry(row)
+                    .or_insert_with(|| saved_details(None, summary.worktree.clone()))
+                    .model = model;
+            }
+            match prior {
+                Some(prior) if prior.hidden != summary.hidden => {
+                    if summary.hidden {
+                        self.sidebar_hidden_sessions.insert(row);
+                    } else {
+                        self.sidebar_hidden_sessions.remove(&row);
+                    }
+                }
+                None if summary.hidden => {
+                    self.sidebar_hidden_sessions.insert(row);
+                }
+                _ => {}
+            }
         }
     }
 
@@ -388,7 +464,7 @@ impl Shell {
                 previous.await;
             }
             let Ok(call) = this.update(cx, |this, cx| {
-                engine_client::call::<C>(&this.store, Some(op), body, cx)
+                engine_client::call::<C>(&this.engine, Some(op), body, cx)
             }) else {
                 return;
             };
@@ -454,7 +530,7 @@ impl Shell {
             start,
             started_by: None,
         };
-        let call = engine_client::call::<CreateSession>(&self.store, Some(OpId::new()), body, cx);
+        let call = engine_client::call::<CreateSession>(&self.engine, Some(OpId::new()), body, cx);
         cx.spawn(async move |_, _| {
             let created = call.await?;
             match created.outcome {
@@ -479,14 +555,14 @@ impl Shell {
         C::Params: Send + 'static,
         C::Reply: Send + 'static,
     {
-        engine_client::call::<C>(&self.store, None, body, cx)
+        engine_client::call::<C>(&self.engine, None, body, cx)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use gpui::TestAppContext;
-    use onicode_core::follow_up::{Message, State};
+    use onicode_protocol::follow_up::{Message, State};
     use onicode_protocol::session::SaveQueue;
     use onicode_protocol::workspace::{Pin, Rename};
 
@@ -504,7 +580,7 @@ mod tests {
             ..State::default()
         };
         engine_client::session_call::<SaveQueue>(
-            &shell.store,
+            &shell.engine,
             row,
             Some(OpId::new()),
             move |session| SaveQueue { session, queue },

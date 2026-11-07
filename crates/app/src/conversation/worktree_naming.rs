@@ -25,7 +25,7 @@ impl Conversation {
             model: self.background_text_model(cx),
         };
         let named =
-            crate::engine_client::call::<NameWorktree>(&self.store, Some(OpId::new()), body, cx);
+            crate::engine_client::call::<NameWorktree>(&self.engine, Some(OpId::new()), body, cx);
         cx.spawn(async move |this, cx| {
             let named = named.await;
             let _ = this.update(cx, |this, cx| {

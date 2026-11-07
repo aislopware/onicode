@@ -339,6 +339,7 @@ mod tests {
     use super::*;
 
     /// Lines of text; a line ending in `\` wraps onto the next. `_` pads a wide `W`.
+    #[derive(Debug)]
     struct Text {
         columns: u16,
         lines: Vec<(Vec<char>, bool)>,

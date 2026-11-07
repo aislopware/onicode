@@ -53,7 +53,7 @@ pub fn apply(state: &mut SessionState, event: &SessionEvent) {
         }
         SessionEvent::Settings(settings) => state.settings = (**settings).clone(),
         SessionEvent::Title(title) => state.title.clone_from(title),
-        SessionEvent::ProviderId(id) => state.provider_id = Some(id.clone()),
+        SessionEvent::ProviderId(id) => state.provider_id.clone_from(id),
         SessionEvent::Model(model) => state.model = Some(model.clone()),
         SessionEvent::Worktree(cwd) => state.worktree = Some(cwd.clone()),
         SessionEvent::Context(usage) => state.context = Some(*usage),

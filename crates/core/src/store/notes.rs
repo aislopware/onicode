@@ -1,5 +1,5 @@
 //! Desktop-compatible note persistence, deliberately separate from session handles.
-use std::path::{Component, Path, PathBuf};
+use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -570,36 +570,6 @@ impl Store {
             name,
             markdown_path: format!("/note-assets/{note_id}/{filename}"),
         })
-    }
-
-    pub fn note_image_path(&self, asset: &str) -> Result<PathBuf, String> {
-        let path = Path::new(asset.strip_prefix('/').ok_or("Invalid note image path")?);
-        let parts = path
-            .components()
-            .map(|part| match part {
-                Component::Normal(value) => value.to_str(),
-                _ => None,
-            })
-            .collect::<Option<Vec<_>>>()
-            .ok_or("Invalid note image path")?;
-        if parts.len() != 3 || parts[0] != "note-assets" {
-            return Err("Invalid note image path".into());
-        }
-        valid_id(parts[1])?;
-        if !parts[2]
-            .bytes()
-            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, b'-' | b'_' | b'.'))
-        {
-            return Err("Invalid note image path".into());
-        }
-        let path = self
-            .data_dir()
-            .ok_or("Note image storage is unavailable")?
-            .join(path);
-        if !path.is_file() {
-            return Err("Note image was not found".into());
-        }
-        Ok(path)
     }
 }
 

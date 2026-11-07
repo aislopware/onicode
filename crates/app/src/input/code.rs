@@ -693,7 +693,7 @@ impl Input {
         text: &str,
         cx: &mut Context<Self>,
     ) -> bool {
-        use onicode_core::files::document::{MAX_LINE_BYTES, MAX_TEXT_BYTES};
+        use onicode_protocol::files::document::{MAX_LINE_BYTES, MAX_TEXT_BYTES};
         if self.content.len() - range.len() + text.len() > MAX_TEXT_BYTES {
             cx.emit(Rejected("Edit exceeds the 2 MB file limit."));
             return false;
@@ -2468,7 +2468,7 @@ mod tests {
             .unwrap();
     }
     fn document_limit() -> usize {
-        onicode_core::files::document::MAX_LINE_BYTES + 1
+        onicode_protocol::files::document::MAX_LINE_BYTES + 1
     }
 }
 

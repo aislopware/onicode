@@ -2,8 +2,8 @@
 //! line follows its Git steps; once it settles, a card read from the commands
 //! it ran leads its Markdown reply.
 use gpui::{AnyElement, Div};
-use onicode_core::git::CommitFile;
-use onicode_core::git::report::{self, Report, Run, Step};
+use onicode_protocol::git::report::{Report, Run, Step};
+use onicode_protocol::git::{CommitFile, report};
 
 use super::*;
 use crate::conversation::git_actions::GitAction;

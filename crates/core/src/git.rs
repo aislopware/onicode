@@ -2,39 +2,13 @@
 //! these operations never force a checkout, stash, or discard changes.
 pub mod naming;
 mod remote;
-pub mod report;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use serde::{Deserialize, Serialize};
+pub use onicode_protocol::git::{
+    Branch, CommitFile, GitSnapshot as Snapshot, SessionChanges, Worktree, report,
+};
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Branch {
-    pub name: String,
-    pub remote: Option<String>,
-}
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Worktree {
-    pub path: String,
-    pub branch: Option<String>,
-    pub head: String,
-    pub main: bool,
-    pub missing: bool,
-}
-/// Named `GitSnapshot` on the wire: the protocol's items have snapshots of their own.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename = "GitSnapshot")]
-pub struct Snapshot {
-    pub current: Option<String>,
-    pub detached: bool,
-    pub linked: bool,
-    pub branches: Vec<Branch>,
-    pub worktrees: Vec<Worktree>,
-    /// The listed path of the worktree the snapshot was read in, compared with symlinks resolved
-    /// (a worktree reached through a link is still the current one), as the pickers mark it.
-    pub here: Option<String>,
-}
 pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
     if crate::files::remote::is_remote(cwd) {
         return Err("This isn’t available for projects on another machine yet.".into());
@@ -52,19 +26,6 @@ pub(crate) fn git(cwd: &Path, args: &[&str]) -> Result<String, String> {
         return Err(String::from_utf8_lossy(&out.stderr).trim().to_owned());
     }
     String::from_utf8(out.stdout).map_err(|e| e.to_string())
-}
-/// Where a session's own paths stand against `HEAD`.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SessionChanges {
-    /// Some of the changes are in the index.
-    pub staged: bool,
-    /// Some of the changes, or untracked files, are only in the working tree.
-    pub unstaged: bool,
-}
-impl SessionChanges {
-    pub fn uncommitted(self) -> bool {
-        self.staged || self.unstaged
-    }
 }
 /// Whether any of `paths` has uncommitted changes, staged or not. Paths
 /// outside the checkout count as clean. Never takes Git's index lock.
@@ -135,14 +96,6 @@ pub fn unpushed(cwd: &Path, commit: &str) -> bool {
             &["--no-optional-locks", "branch", "-r", "--contains", commit],
         )
         .is_ok_and(|out| out.trim().is_empty())
-}
-/// One file of a commit, as `git show --numstat` counts it.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CommitFile {
-    pub path: String,
-    /// `None` for binary files.
-    pub additions: Option<u64>,
-    pub deletions: Option<u64>,
 }
 /// The files `commit` changed against its first parent.
 pub fn commit_files(cwd: &Path, commit: &str) -> Result<Vec<CommitFile>, String> {

@@ -1,8 +1,16 @@
 //! The desktop idle policy spares every conversation currently on screen.
+use onicode_protocol::agents::KeepIdleAgents;
+
 use super::*;
 
+/// The conversations the engine was last told to spare, so a frame that shows the same ones
+/// sends nothing.
+#[derive(Default)]
+struct Kept(Vec<i64>);
+impl gpui::Global for Kept {}
+
 impl Shell {
-    pub(crate) fn keep_visible_idle_agents(&self) {
+    pub(crate) fn keep_visible_idle_agents(&self, cx: &mut App) {
         let mut ids = Vec::new();
         if !self.app_view_open()
             && let Some(tab) = self.workspace.active_tab()
@@ -18,6 +26,13 @@ impl Shell {
         if let Some(preview) = &self.session_preview {
             ids.push(preview.id);
         }
-        onicode_core::provider::keep_idle_agents(ids);
+        if cx.default_global::<Kept>().0 == ids {
+            return;
+        }
+        cx.set_global(Kept(ids.clone()));
+        let keep = self
+            .engine
+            .call::<KeepIdleAgents>(None, KeepIdleAgents { rows: ids });
+        cx.background_executor().spawn(keep).detach();
     }
 }

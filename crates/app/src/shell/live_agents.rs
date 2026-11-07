@@ -101,7 +101,7 @@ impl Shell {
         self.live_marks
             .retain(|id, _| shown && agents.iter().any(|a| a.id == *id && !a.done));
         let ticking = shown && agents.iter().any(|a| !a.done && a.started_at.is_some());
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         self.live_next_change = agents
             .iter()
             .filter(|a| !a.done)
@@ -139,7 +139,7 @@ impl Shell {
         let count = agents.len();
         let extra = count.saturating_sub(LIVE_AGENT_CAP);
         let expanded = self.live_agents_expanded;
-        let now = onicode_core::time::now_ms();
+        let now = onicode_protocol::time::now_ms();
         let cards: Vec<_> = agents
             .into_iter()
             .take(if expanded { count } else { LIVE_AGENT_CAP })

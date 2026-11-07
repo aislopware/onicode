@@ -1,8 +1,9 @@
 //! Session-scoped attachment previews. A host attachment path is never a
 //! desktop filesystem path, even when both machines happen to use `/Users`.
 use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
+
+use crate::b64::STANDARD;
 
 const PREFIX: &str = "remote-attachment://";
 const MAX_ATTACHMENT_BYTES: usize = 20 * 1024 * 1024;

@@ -1,10 +1,9 @@
 //! Notes use shared Markdown rendering with their desktop image asset paths.
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::time::Instant;
 
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, ImageSource, Render, Role, Window, div, px};
-use onicode_engine::turn::{Database, locked};
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
 use crate::markdown::{self, MarkdownRow, Part, Tone};
@@ -20,7 +19,8 @@ pub(super) struct Preview {
     rows: Vec<Row>,
 }
 impl Preview {
-    pub(super) fn new(text: &str, cwd: &str, store: &Database) -> Self {
+    /// `data_dir` is the engine's, which keeps the note images.
+    pub(super) fn new(text: &str, cwd: &str, data_dir: Option<&Path>) -> Self {
         let mut spans = Vec::new();
         let mut open = None;
         for (event, range) in Parser::new_ext(text, Options::all()).into_offset_iter() {
@@ -45,8 +45,9 @@ impl Preview {
             }
             append_markdown(&mut rows, &text[at..span.start], cwd);
             let source = if url.starts_with("/note-assets/") {
-                locked(store)
-                    .and_then(|store| store.note_image_path(&url))
+                data_dir
+                    .ok_or_else(|| "Note image storage is unavailable".to_owned())
+                    .and_then(|dir| image_path(dir, &url))
                     .map(ImageSource::from)
             } else if url.starts_with("https://")
                 || url.starts_with("http://")
@@ -71,6 +72,40 @@ impl Preview {
         Self { rows }
     }
 }
+/// The file a `/note-assets/<note>/<file>` image names in the engine's `data_dir`.
+fn image_path(data_dir: &Path, asset: &str) -> Result<PathBuf, String> {
+    const INVALID: &str = "Invalid note image path";
+    let path = Path::new(asset.strip_prefix('/').ok_or(INVALID)?);
+    let parts = path
+        .components()
+        .map(|part| match part {
+            Component::Normal(value) => value.to_str(),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or(INVALID)?;
+    let [folder, note, file] = parts.as_slice() else {
+        return Err(INVALID.into());
+    };
+    if *folder != "note-assets" || note.len() > 200 {
+        return Err(INVALID.into());
+    }
+    if !named(note, b"-_") || !named(file, b"-_.") {
+        return Err(INVALID.into());
+    }
+    let path = data_dir.join(path);
+    if !path.is_file() {
+        return Err("Note image was not found".into());
+    }
+    Ok(path)
+}
+
+/// Whether `text` is ASCII letters, digits and `extra`, and not empty.
+fn named(text: &str, extra: &[u8]) -> bool {
+    let allowed = |ch: u8| ch.is_ascii_alphanumeric() || extra.contains(&ch);
+    !text.is_empty() && text.bytes().all(allowed)
+}
+
 fn append_markdown(rows: &mut Vec<Row>, text: &str, cwd: &str) {
     for block in &markdown_model::parse_full_hard_breaks(text).blocks {
         for mut row in markdown::rows(&block.block) {

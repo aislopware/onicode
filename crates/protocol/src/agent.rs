@@ -208,7 +208,7 @@ pub struct Approval {
     pub detail: String,
     pub can_remember: bool,
 }
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Decision {
     Steer(crate::follow_up::Message),
     Allow,
@@ -238,6 +238,7 @@ pub struct Question {
     pub items: Vec<QuestionItem>,
     pub auto_resolve_at: Option<u64>,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Control {
     pub id: String,
     pub decision: Decision,

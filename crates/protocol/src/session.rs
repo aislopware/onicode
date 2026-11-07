@@ -59,7 +59,8 @@ pub enum SessionEvent {
     Settings(Box<Settings>),
     /// A title the host set.
     Title(String),
-    ProviderId(String),
+    /// The provider thread the session continues; `None` once it let its thread go.
+    ProviderId(Option<String>),
     Model(String),
     /// The worktree the session now runs in.
     Worktree(String),
@@ -341,7 +342,11 @@ pub struct EditedTurn {
     pub provider_id: Option<String>,
 }
 
-/// Drop every turn from `turn` on.
+/// Drop every turn from `turn` (a transcript row index where a prompt starts) on. When the dropped
+/// turn is the provider thread's last and the provider rewinds natively (Codex, Pi), its thread
+/// rewinds too; otherwise the session leaves its provider thread, and its next prompt starts a new
+/// one carrying the kept turns as a handoff brief. `Rejected(Gone)` when `turn` is past the end or
+/// not a prompt, `Denied` while a turn runs.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Rewind {
     pub session: SessionId,
@@ -349,7 +354,10 @@ pub struct Rewind {
 }
 session_call!(Rewind, agent: false, reply: Outcome);
 
-/// A new session `into` holding this one's turns up to and including `turn`.
+/// A new session `into` (the viewer's id), in the same project on the same provider, account and
+/// settings, holding this one's turns before `turn` (a transcript row index where a prompt starts;
+/// past the end keeps every turn). It starts with no provider thread: its next prompt carries the
+/// kept turns as a handoff brief. The new session arrives in the workspace like any other.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fork {
     pub session: SessionId,
@@ -433,15 +441,50 @@ pub struct StopBtw {
 }
 session_call!(StopBtw, agent: false, reply: Outcome);
 
-/// Hand the session to another provider, account or model.
+/// Hand the session to `provider`: its provider thread is let go, or with `thread`, bound to that
+/// one (switching back to the provider a pending switch came from). `context` is the context
+/// meter to keep for the new model. The composer's own settings (the pending switch, the handoff
+/// brief, the account and model) follow in a [`Configure`]. Publishes `ProviderId`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SwitchProvider {
     pub session: SessionId,
     pub provider: String,
-    pub account: String,
-    pub model: Option<String>,
+    pub thread: Option<String>,
+    pub context: Option<context::Usage>,
 }
 session_call!(SwitchProvider, agent: false, reply: Outcome);
+
+/// Let the session's provider thread go, if it is still `expected`: the account it ran on changed
+/// and the thread could not move with it. Publishes `ProviderId`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResetThread {
+    pub session: SessionId,
+    pub expected: Option<String>,
+}
+session_call!(ResetThread, agent: false, reply: Outcome);
+
+/// Compact the provider thread's context: the provider's own compaction, recorded as a
+/// `contextCompaction` tool row at `at` under the tool id `tool`. `settings` are the composer's
+/// (the engine sets the account's home and Claude hooks itself). [`Stop`] stops it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Compact {
+    pub session: SessionId,
+    pub at: usize,
+    pub tool: String,
+    pub model: Option<String>,
+    pub settings: Settings,
+}
+session_call!(Compact, agent: false, reply: Compacted);
+
+/// What a [`Compact`] came to: the tool row as it ended (completed, failed or cancelled), the
+/// context meter after it, the commands the provider announced, and why it failed.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Compacted {
+    pub row: Row,
+    pub context: context::Usage,
+    pub commands: Option<Vec<NativeCommand>>,
+    pub error: Option<String>,
+}
 
 /// Read `turns` turns before `before_turn` (the latest when `None`).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

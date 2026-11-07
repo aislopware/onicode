@@ -260,46 +260,49 @@ fn jira_authorization(config: &JiraConfig) -> String {
 }
 
 fn jira_get(config: &JiraConfig, path: &str) -> Result<Value, String> {
-    let agent = ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build();
-    let result = agent
-        .get(&format!("{}{path}", config.site))
-        .set("Authorization", &jira_authorization(config))
-        .set("Accept", "application/json")
+    let result = jira_agent()
+        .get(format!("{}{path}", config.site))
+        .header("Authorization", jira_authorization(config))
+        .header("Accept", "application/json")
         .call();
     read_jira_response(result)
 }
 
 fn jira_post(config: &JiraConfig, path: &str, body: &Value) -> Result<Value, String> {
-    let agent = ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build();
     let payload = serde_json::to_string(body).map_err(|error| error.to_string())?;
-    let result = agent
-        .post(&format!("{}{path}", config.site))
-        .set("Authorization", &jira_authorization(config))
-        .set("Accept", "application/json")
-        .set("Content-Type", "application/json")
-        .send_string(&payload);
+    let result = jira_agent()
+        .post(format!("{}{path}", config.site))
+        .header("Authorization", jira_authorization(config))
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .send(payload);
     read_jira_response(result)
 }
 
-fn read_jira_response(result: Result<ureq::Response, ureq::Error>) -> Result<Value, String> {
-    let response = match result {
-        Ok(response) => response,
-        Err(ureq::Error::Status(401, _)) => {
-            return Err("Jira email or API token is invalid".into());
-        }
-        Err(ureq::Error::Status(status, response)) => {
-            let body = response.into_string().unwrap_or_default();
-            return Err(jira_http_error(status, &body));
-        }
-        Err(_) => return Err("Could not reach Jira".into()),
+fn jira_agent() -> ureq::Agent {
+    ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        // Jira explains a failure in the body.
+        .http_status_as_error(false)
+        .build()
+        .into()
+}
+
+fn read_jira_response(
+    result: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
+) -> Result<Value, String> {
+    let Ok(mut response) = result else {
+        return Err("Could not reach Jira".into());
     };
-    let status = response.status();
-    let body = response
-        .into_string()
-        .map_err(|_| "Jira returned an unreadable response".to_string())?;
-    if !(200..300).contains(&status) {
-        return Err(jira_http_error(status, &body));
+    let status = response.status().as_u16();
+    if status == 401 {
+        return Err("Jira email or API token is invalid".into());
     }
+    let body = response.body_mut().read_to_string();
+    if !(200..300).contains(&status) {
+        return Err(jira_http_error(status, &body.unwrap_or_default()));
+    }
+    let body = body.map_err(|_| "Jira returned an unreadable response".to_string())?;
     serde_json::from_str(&body).map_err(|_| "Jira returned invalid JSON".to_string())
 }
 

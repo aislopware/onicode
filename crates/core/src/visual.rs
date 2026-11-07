@@ -3,16 +3,12 @@
 //! Programs are JavaScript function bodies that return a synchronous render
 //! function. The only application capability is the frozen `visual` component
 //! API; there is no filesystem, network, shell, DOM, or module loader.
-mod model;
 use std::cell::Cell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-pub use model::*;
+pub use onicode_protocol::visual::*;
 use rquickjs::{Context, Function, Object, Persistent, Runtime};
-
-/// Conservative per-interpreter bound for transcript cache accounting.
-pub const MEMORY_LIMIT_BYTES: usize = 16 * 1024 * 1024;
 const TREE_BYTES: usize = 1024 * 1024;
 const CALL_DEADLINE: Duration = Duration::from_millis(60);
 

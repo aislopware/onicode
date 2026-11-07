@@ -13,8 +13,9 @@ impl SettingsView {
         let scope = e.scope.clone();
         let error = e.error.clone();
         let raw = name.read(cx).content.to_string();
-        let valid =
-            onicode_core::skills::is_valid_skill_name(&onicode_core::skills::slug_name(&raw));
+        let valid = onicode_protocol::skills::is_valid_skill_name(
+            &onicode_protocol::skills::slug_name(&raw),
+        );
         let project = !self.selected_project.is_empty() && self.selected_project != "~";
         name.update(cx, |i, _| i.set_read_only(busy));
         div()
@@ -351,7 +352,7 @@ impl SettingsView {
             for (ix, skill) in skills.into_iter().enumerate() {
                 let path = skill.path.clone();
                 let skill_path = path.display().to_string();
-                let enabled = !self.prefs.disabled_skill_paths.contains(&skill_path);
+                let enabled = !self.prefs.engine.disabled_skill_paths.contains(&skill_path);
                 let preview = path.clone();
                 let copy = path.clone();
                 let reveal = path.clone();
@@ -425,9 +426,13 @@ impl SettingsView {
                                     cx,
                                     move |this, on, cx| {
                                         this.update(cx, |p| {
-                                            p.disabled_skill_paths.retain(|p| p != &skill_path);
+                                            p.engine
+                                                .disabled_skill_paths
+                                                .retain(|p| p != &skill_path);
                                             if !on {
-                                                p.disabled_skill_paths.push(skill_path.clone());
+                                                p.engine
+                                                    .disabled_skill_paths
+                                                    .push(skill_path.clone());
                                             }
                                         })
                                     },
@@ -574,6 +579,7 @@ impl SettingsView {
         {
             let source = self
                 .prefs
+                .engine
                 .skill_source_paths
                 .contains(&skill.path.display().to_string());
             let document = self
@@ -727,9 +733,9 @@ impl SettingsView {
                                 if let Some(path) = &this.skill_preview {
                                     let path = path.display().to_string();
                                     this.update(cx, |p| {
-                                        p.skill_source_paths.retain(|s| s != &path);
+                                        p.engine.skill_source_paths.retain(|s| s != &path);
                                         if value {
-                                            p.skill_source_paths.push(path);
+                                            p.engine.skill_source_paths.push(path);
                                         }
                                     });
                                 }

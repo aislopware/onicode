@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+pub use onicode_protocol::mcp::McpConnection;
 use serde_json::Value;
 
 use crate::scm::shell::dirs_home;
@@ -418,17 +418,6 @@ fn write_json_config(
     result.map_err(|e| e.to_string())
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct McpConnection {
-    pub provider: String,
-    pub name: String,
-    pub scope: String,
-    pub config_path: String,
-    pub transport: String,
-    pub enabled: bool,
-}
-
 pub fn mcp_discover(cwd: String) -> Result<Vec<McpConnection>, String> {
     {
         let home = dirs_home().ok_or("Home directory not found")?;
@@ -619,7 +608,7 @@ fn add_toml_file(connections: &mut Vec<McpConnection>, provider: &str, scope: &s
     let Some(raw) = std::fs::read_to_string(path).ok() else {
         return;
     };
-    let Some(config) = toml::from_str::<toml::Value>(&raw).ok() else {
+    let Some(config) = toml::from_str::<toml::Table>(&raw).ok() else {
         return;
     };
     let Some(servers) = config.get("mcp_servers").and_then(toml::Value::as_table) else {
@@ -1297,7 +1286,7 @@ mod tests {
         )
         .unwrap();
         let codex_raw = std::fs::read_to_string(home.join(".codex/config.toml")).unwrap();
-        let codex_config: toml::Value = toml::from_str(&codex_raw).unwrap();
+        let codex_config: toml::Table = toml::from_str(&codex_raw).unwrap();
         assert!(codex_config.get("mcp_servers").is_some());
         std::fs::write(home.join(".config/opencode/opencode.jsonc"), "{\"mcp\": {\"servers\": {\"four\": {\"type\": \"remote\", \"url\": \"https://example.com\",},},}}").unwrap();
         let found = discover(&home, &project, None, &desktop, None);
@@ -1413,6 +1402,36 @@ mod tests {
                 .unwrap()
                 .enabled
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// TOML 1.1 lets an inline table span lines and end in a comma; Codex accepts it, so a
+    /// config written that way still lists its servers.
+    #[test]
+    fn discovery_reads_toml_1_1_inline_tables() {
+        let root =
+            std::env::temp_dir().join(format!("onicode-mcp-toml11-{}", rand::random::<u128>()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.toml");
+        std::fs::write(
+            &path,
+            "mcp_servers = {\n  docs = { url = 'https://example.com', enabled = false },\n  local = { command = 'node' },\n}\n",
+        )
+        .unwrap();
+        let mut found = Vec::new();
+        add_toml_file(&mut found, "codex", "user", &path);
+        found.sort_by(|a, b| a.name.cmp(&b.name));
+        let seen: Vec<_> = found
+            .iter()
+            .map(|server| {
+                (
+                    server.name.as_str(),
+                    server.transport.as_str(),
+                    server.enabled,
+                )
+            })
+            .collect();
+        assert_eq!(seen, [("docs", "http", false), ("local", "stdio", true)]);
         std::fs::remove_dir_all(root).unwrap();
     }
 

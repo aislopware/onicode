@@ -866,7 +866,7 @@ mod tests {
             .update(cx, |shell, w, cx| {
                 shell.toggle_right_panel(w, cx);
                 shell.git.update(cx, |git, cx| {
-                    git.stats = Some(onicode_core::scm::DiffStats {
+                    git.stats = Some(onicode_protocol::scm::DiffStats {
                         files: 550,
                         additions: 246_137,
                         deletions: 11_081,

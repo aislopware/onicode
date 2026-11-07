@@ -1,13 +1,8 @@
 //! Bounded hover-card metadata. Never read transcripts or discover agent state.
+pub use onicode_protocol::sessions::SessionPreviewData;
 use rusqlite::OptionalExtension;
 
 use super::Store;
-
-#[derive(Clone, Debug, Default)]
-pub struct SessionPreviewData {
-    pub model: Option<String>,
-    pub worktree_cwd: Option<String>,
-}
 
 impl Store {
     pub fn session_preview(&self, id: i64) -> Result<SessionPreviewData, String> {

@@ -5,9 +5,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::StreamExt;
 use onicode_protocol::session::{
-    self, Answer, Btw, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueEdit, ReadBtw,
-    ReadSession, ReadTranscript, RecallLastTurn, Rewind, SaveBtw, SaveQueue, SendNow, Steer,
-    SteerNow, Stop, StopBtw, SwitchProvider, WatchSession,
+    self, Answer, Btw, Compact, Configure, Decide, EditLastTurn, Fork, KeepQuestionOpen, QueueEdit,
+    ReadBtw, ReadSession, ReadTranscript, RecallLastTurn, ResetThread, Rewind, SaveBtw, SaveQueue,
+    SendNow, Steer, SteerNow, Stop, StopBtw, SwitchProvider, WatchSession,
 };
 use onicode_protocol::{Call, Routed, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService, parse_params};
@@ -133,13 +133,25 @@ impl RpcService for SessionService {
             let (_, body) = routed::<ReadTranscript>(params)?;
             return reply(hub.read_transcript(&body));
         }
-        // No code of theirs moves before their own steps: rewinding to and forking from any turn
-        // come with the history view's calls (engine.md, migration step 5), and a provider switch
-        // with the accounts and catalog (step 6).
-        if [Rewind::NAME, Fork::NAME, SwitchProvider::NAME].contains(&method) {
-            return Err(RpcError::Failed(format!(
-                "{method} is not served by the engine yet"
-            )));
+        if method == Rewind::NAME {
+            let (op, body) = routed::<Rewind>(params)?;
+            return reply(hub.rewind_turns(op, body).await);
+        }
+        if method == Fork::NAME {
+            let (op, body) = routed::<Fork>(params)?;
+            return reply(hub.fork(op, body).await);
+        }
+        if method == SwitchProvider::NAME {
+            let (op, body) = routed::<SwitchProvider>(params)?;
+            return reply(hub.switch_provider(op, body).await);
+        }
+        if method == ResetThread::NAME {
+            let (op, body) = routed::<ResetThread>(params)?;
+            return reply(hub.reset_thread(op, body).await);
+        }
+        if method == Compact::NAME {
+            let (op, body) = routed::<Compact>(params)?;
+            return reply(hub.compact(op, body).await);
         }
         Err(RpcError::UnknownMethod(method.into()))
     }

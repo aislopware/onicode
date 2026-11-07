@@ -107,6 +107,10 @@ fn pick_mono(installed: &[String], system: impl FnOnce() -> Option<String>) -> O
 
 /// What fontconfig maps the `monospace` alias to, as WebKitGTK does.
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[expect(
+    clippy::disallowed_methods,
+    reason = "asks this machine's fontconfig for the viewer's monospace font"
+)]
 fn system_mono() -> Option<String> {
     let output = std::process::Command::new("fc-match")
         .args(["-f", "%{family[0]}", "monospace"])

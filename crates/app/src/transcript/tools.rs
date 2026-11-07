@@ -1,7 +1,7 @@
 //! Compact semantic tool captions with clickable file targets.
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Div, Role, div, px, rgb};
-use onicode_core::tool::{CommandStep, ToolCall, ToolState};
+use onicode_protocol::tool::{CommandStep, ToolCall, ToolState};
 
 use super::{TranscriptView, tasks};
 use crate::theme::*;
@@ -552,7 +552,7 @@ impl TranscriptView {
 #[cfg(test)]
 mod tests {
     use gpui::{TestAppContext, point};
-    use onicode_core::transcript::Row;
+    use onicode_protocol::transcript::Row;
 
     use super::*;
     use crate::transcript::Body;

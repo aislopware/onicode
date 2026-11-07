@@ -1,5 +1,5 @@
 //! Visuals are persistent transcript messages with lazily created native views.
-use onicode_core::visual::VisualDocument;
+use onicode_protocol::visual::VisualDocument;
 
 use super::*;
 use crate::visuals::{VisualChanged, VisualView};
@@ -204,7 +204,7 @@ mod tests {
         let mut rows = vec![row("user", "Show the results".into())];
         let tool = ToolCall::new("read", "Read");
         rows.push(row("tool", serde_json::to_string(&tool).unwrap()));
-        let mut visual = onicode_core::transcript::Transcript::default();
+        let mut visual = onicode_protocol::transcript::Transcript::default();
         visual.begin("visual");
         visual.append(&serde_json::to_string(&doc).unwrap());
         rows.extend(visual.rows);
@@ -256,7 +256,7 @@ mod tests {
             assert!(!view.visuals.contains_key(&0));
             assert_eq!(
                 view.history_weight() - initial,
-                RETAINED_VISUALS * onicode_core::visual::MEMORY_LIMIT_BYTES,
+                RETAINED_VISUALS * onicode_protocol::visual::MEMORY_LIMIT_BYTES,
             );
             view.replace_history(Vec::new(), cx);
             assert!(view.visuals.is_empty());

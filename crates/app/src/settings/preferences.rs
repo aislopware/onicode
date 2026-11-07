@@ -1,8 +1,15 @@
 //! App-wide preferences the Settings pages edit. Defaults are the React
 //! app's (`settings.ts`, `appearance.ts`, `displayPrefs.ts`, `sounds.ts`).
+//!
+//! The app's own look and layout are saved with the workspace in its `ui.sqlite3`. What the engine
+//! does on its own behalf (providers, models, skills, idle agents, hooks) is the engine's: the
+//! Settings pages edit it in [`Preferences::engine`], which the shell mirrors from the engine and
+//! sends back to it, key by key (`shell/engine_settings_mirror.rs`).
 use std::collections::HashMap;
 
-use onicode_core::provider::Kind;
+use onicode_protocol::engine_settings::EngineSettings;
+pub(crate) use onicode_protocol::engine_settings::ModelChoice;
+use onicode_protocol::provider::Kind;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -77,26 +84,12 @@ pub(crate) struct Preferences {
     // Providers
     pub show_remaining_usage: bool,
     pub mask_emails: bool,
-    pub idle_agents: u32,
-    pub claude_hooks: bool,
-    /// Experimental: report Onicode instead of `sdk-cli` as Claude's entrypoint.
-    pub binary_paths: HashMap<String, String>,
-    pub disabled_skill_paths: Vec<String>,
-    pub skill_source_paths: Vec<String>,
-    pub default_provider: Option<String>,
-    pub default_models: HashMap<String, String>,
-    pub hidden_providers: Vec<String>,
-    pub project_providers: HashMap<String, ProviderDefaults>,
     pub favorite_models: Vec<ModelChoice>,
     pub recent_models: Vec<ModelChoice>,
     pub model_picker_tab: Option<String>,
-    /// The last access mode picked in a composer; new chats start with it.
-    pub default_access: Option<String>,
-    /// Last explicit effort choice for each provider, shared across projects.
-    pub provider_efforts: HashMap<String, String>,
-    /// The model for session titles, branch names, commit messages and pull
-    /// requests; `None` lets each use its own harness's quick model.
-    pub background_model: Option<ModelChoice>,
+    /// The engine's settings as the shell mirrors them: never saved with the workspace.
+    #[serde(skip)]
+    pub engine: EngineSettings,
     /// The macOS menu-bar status item that opens the quick composer.
     pub menu_bar_icon: bool,
     // Archive
@@ -163,21 +156,10 @@ impl Default for Preferences {
             empty_session: "ink".into(),
             show_remaining_usage: false,
             mask_emails: true,
-            idle_agents: 3,
-            claude_hooks: true,
-            binary_paths: HashMap::new(),
-            disabled_skill_paths: Vec::new(),
-            skill_source_paths: Vec::new(),
-            default_provider: None,
-            default_models: HashMap::new(),
-            hidden_providers: Vec::new(),
-            project_providers: HashMap::new(),
             favorite_models: Vec::new(),
             recent_models: Vec::new(),
             model_picker_tab: None,
-            default_access: None,
-            provider_efforts: HashMap::new(),
-            background_model: None,
+            engine: EngineSettings::default(),
             menu_bar_icon: true,
             show_archived: false,
             keybindings: HashMap::new(),
@@ -209,8 +191,8 @@ impl Preferences {
     }
 
     /// The color settings a project copies when it gets its own theme.
-    pub(crate) fn project_theme(&self) -> onicode_core::project_appearance::ProjectTheme {
-        onicode_core::project_appearance::ProjectTheme {
+    pub(crate) fn project_theme(&self) -> onicode_protocol::project_appearance::ProjectTheme {
+        onicode_protocol::project_appearance::ProjectTheme {
             workspace_theme: self.workspace_theme.clone(),
             accent_color: self.accent_color.clone(),
             hue: self.theme_hue,
@@ -253,36 +235,17 @@ impl Preferences {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub(crate) struct ProviderDefaults {
-    pub provider: Option<String>,
-    pub models: HashMap<String, String>,
-    pub hidden: Vec<String>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct ModelChoice {
-    pub provider: String,
-    pub model: Option<String>,
-}
-
 impl gpui::Global for Preferences {}
 impl Preferences {
     /// The background model picked in Settings, if any.
     pub(crate) fn background_text_model(&self) -> Option<(Kind, Option<String>)> {
-        let choice = self.background_model.as_ref()?;
+        let choice = self.engine.background_model.as_ref()?;
         Some((Kind::parse(&choice.provider)?, choice.model.clone()))
     }
 
+    /// The providers `project`'s pickers leave out.
     pub(crate) fn hidden_for(&self, project: &str) -> Vec<String> {
-        let mut hidden = self.hidden_providers.clone();
-        if let Some(settings) = self.project_providers.get(project) {
-            hidden.extend(settings.hidden.clone());
-        }
-        hidden.sort();
-        hidden.dedup();
-        hidden
+        self.engine.hidden_for(project)
     }
 }
 
@@ -321,5 +284,24 @@ mod decoration_tests {
         assert!(!restored.wayland_window_decorations);
         restored.restore_appearance();
         assert!(restored.wayland_window_decorations);
+    }
+
+    #[test]
+    fn engine_settings_stay_out_of_the_saved_preferences() {
+        let mut prefs = Preferences::default();
+        prefs.engine.idle_agents = 1;
+        prefs.engine.default_provider = Some("claude".into());
+        let saved = serde_json::to_value(&prefs).unwrap();
+        assert!(saved.get("engine").is_none());
+        assert!(saved.get("idle_agents").is_none());
+        // monocode saved them with the preferences; the engine took them, the app leaves them.
+        let restored: Preferences =
+            serde_json::from_str(r#"{"idle_agents":1,"default_provider":"claude","sounds":false}"#)
+                .unwrap();
+        assert_eq!(
+            restored.engine,
+            onicode_protocol::engine_settings::EngineSettings::default()
+        );
+        assert!(!restored.sounds);
     }
 }

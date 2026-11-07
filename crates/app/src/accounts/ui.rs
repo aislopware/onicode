@@ -1116,14 +1116,7 @@ impl Accounts {
             signin.cancel.store(true, Ordering::Relaxed);
             if !signin.complete {
                 self.working = false;
-                if signin.adding.is_some() {
-                    cx.background_executor()
-                        .spawn(async move {
-                            accounts::stop_processes(signin.kind, &signin.profile);
-                            let _ = signin.profile.remove_credentials(signin.kind);
-                        })
-                        .detach();
-                }
+                self.abandon(&signin, cx);
             }
         }
         if let Some(editor) = &self.editor {

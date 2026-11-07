@@ -13,9 +13,9 @@ use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 use gpui::{Context, EventEmitter, Task};
-use onicode_core::scm::{DiffIndex, DiffStats};
 use onicode_protocol::OpId;
 use onicode_protocol::git::{Covered, GitEvent, GitStatus, ReadStatus, WatchGit};
+use onicode_protocol::scm::{DiffIndex, DiffStats};
 
 use crate::engine_client::{self, WatchUpdate, Watching};
 
@@ -496,15 +496,12 @@ fn stats_of(index: &DiffIndex) -> DiffStats {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::sync::atomic::{AtomicU64, Ordering};
-    use std::sync::{Arc, Mutex};
 
     use gpui::{AppContext as _, Entity, TestAppContext};
-    use onicode_core::scm::ChangedFile;
-    use onicode_core::store::Store;
     use onicode_protocol::Call as _;
     use onicode_protocol::git::{Stage, StageTarget, Unstage};
+    use onicode_protocol::scm::ChangedFile;
 
     use super::*;
     fn file(path: &str, status: &str) -> ChangedFile {
@@ -577,6 +574,7 @@ mod tests {
             repo
         }
 
+        #[expect(clippy::disallowed_methods, reason = "a test builds its git fixture")]
         fn git(&self, args: &[&str]) {
             let result = std::process::Command::new("git")
                 .args([
@@ -639,10 +637,10 @@ mod tests {
     ) {
         let repo = Repo::new();
         let cwd = repo.cwd();
-        let store = Arc::new(Mutex::new(Store::open(Path::new(":memory:")).unwrap()));
-        cx.update(|cx| engine_client::set_local(&store, cx));
+        let engine = cx.update(engine_client::Engine::memory);
+        cx.update(|cx| engine_client::set_local(&engine, cx));
         let reads = |cx: &mut TestAppContext| {
-            cx.update(|cx| engine_client::calls_for_test(&store, cx))
+            cx.update(|cx| engine_client::calls_for_test(&engine, cx))
                 .iter()
                 .filter(|(name, _)| *name == ReadStatus::NAME)
                 .count()

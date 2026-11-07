@@ -292,35 +292,31 @@ fn linear_authorization(token: &str) -> String {
 
 fn graphql_with_token(token: &str, query: &str, variables: Value) -> Result<Value, String> {
     let authorization = linear_authorization(token);
-    let agent = ureq::AgentBuilder::new().timeout(HTTP_TIMEOUT).build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        // Linear explains a failure in the body.
+        .http_status_as_error(false)
+        .build()
+        .into();
     let payload = serde_json::to_string(&json!({ "query": query, "variables": variables }))
         .map_err(|error| error.to_string())?;
-    let result = agent
+    let Ok(mut response) = agent
         .post(LINEAR_API)
-        .set("Authorization", &authorization)
-        .set("Content-Type", "application/json")
-        .send_string(&payload);
-    let response = match result {
-        Ok(response) => response,
-        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
-            return Err("Linear API key is invalid".into());
-        }
-        Err(ureq::Error::Status(status, response)) => {
-            let body = response.into_string().unwrap_or_default();
-            return Err(linear_http_error(status, &body));
-        }
-        Err(_) => return Err("Could not reach Linear".into()),
+        .header("Authorization", authorization)
+        .header("Content-Type", "application/json")
+        .send(payload)
+    else {
+        return Err("Could not reach Linear".into());
     };
-    let status = response.status();
-    let body = response
-        .into_string()
-        .map_err(|_| "Linear returned an unreadable response".to_string())?;
+    let status = response.status().as_u16();
     if status == 401 || status == 403 {
         return Err("Linear API key is invalid".into());
     }
+    let body = response.body_mut().read_to_string();
     if !(200..300).contains(&status) {
-        return Err(linear_http_error(status, &body));
+        return Err(linear_http_error(status, &body.unwrap_or_default()));
     }
+    let body = body.map_err(|_| "Linear returned an unreadable response".to_string())?;
     parse_graphql_data(&body)
 }
 

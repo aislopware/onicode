@@ -1,0 +1,8 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 7a45c3b77c351419450886f5c7883e96e5264b286c115b4199ddad57bcac008f # shrinks to steps = [Join, Join, Set { setting: KeepAwake(false), op: Some(0) }, Pump { viewer: 1372336673915412944 }, Rejoin { viewer: 10809090732220262418, pick: 5156305038344386856 }, Join, Pump { viewer: 11420527706922235046 }]
+cc e20a9203a30a748e30ce02dd3a11cda8dec8322dd2682e4c8e6b24f7b9827023 # shrinks to steps = [Set { setting: KeepAwake(false), op: None }, Join, Set { setting: KeepAwake(false), op: Some(0) }, Pump { viewer: 0 }, Rejoin { viewer: 0, pick: 6941082435485028646 }]

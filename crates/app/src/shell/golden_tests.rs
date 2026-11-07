@@ -21,9 +21,8 @@ use gpui::{
     WindowBackgroundAppearance, WindowHandle, point, size,
 };
 use image::{Rgba, RgbaImage};
-use onicode_core::project_appearance::{Background, Effect};
-use onicode_core::store::Store;
-use onicode_core::transcript::{Row, Transcript};
+use onicode_protocol::project_appearance::{Background, Effect};
+use onicode_protocol::transcript::{Row, Transcript};
 
 use super::*;
 use crate::project_background::ProjectBackground;
@@ -410,7 +409,8 @@ impl Fixture {
         edit: impl FnOnce(&mut Workspace),
         overlay: Option<fn() -> AnyElement>,
     ) -> Self {
-        let mut store = Store::open(Path::new(":memory:")).expect("in-memory store");
+        let engine = cx.update(Engine::memory);
+        let store = engine.seed();
         let mut tabs = Vec::new();
         for (provider, title) in TABS {
             let id = store.create(provider, PROJECT).expect("session").id;
@@ -440,9 +440,8 @@ impl Fixture {
         state.open(active);
         edit(&mut state);
         let saved = serde_json::to_string(&state).expect("workspace state");
-        let store = Arc::new(Mutex::new(store));
         let window = open(cx, window_size, move |_, cx| {
-            let shell = cx.new(|cx| Shell::new(store, summaries, PROJECT.into(), Some(saved), cx));
+            let shell = cx.new(|cx| Shell::new(engine, summaries, PROJECT.into(), Some(saved), cx));
             cx.new(|_| Stage { shell, overlay })
         });
         let shell = window
@@ -622,7 +621,7 @@ fn draft() {
         fixture.with_shell(cx, |shell, _, cx| {
             let transcript = shell.sessions[&active].read(cx).transcript.clone();
             transcript.update(cx, |transcript, cx| {
-                let draft = onicode_core::follow_up::Message {
+                let draft = onicode_protocol::follow_up::Message {
                     id: "golden-draft".into(),
                     text: "Record the golden images before the stack switch.".into(),
                     at: usize::MAX,

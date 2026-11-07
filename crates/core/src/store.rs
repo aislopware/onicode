@@ -13,41 +13,19 @@ mod session_preview;
 pub use session_preview::SessionPreviewData;
 mod edit;
 mod engine_ledger;
+mod rewind;
 mod shared;
 mod side_threads;
 mod thread_files;
 use std::path::Path;
 
 pub use edit::EditSnapshot;
-pub use monocode_import::{ImportReport, monocode_database, native_model};
+pub use monocode_import::{ImportReport, monocode_database};
+pub use onicode_protocol::sessions::{Reminder, Session, native_model};
 use rusqlite::{Connection, params};
 pub use side_threads::DesktopSideThread;
 
 use crate::transcript::{Row, Transcript};
-
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Session {
-    pub id: i64,
-    pub title: String,
-    pub provider: String,
-    pub cwd: String,
-    pub provider_id: Option<String>,
-    pub has_messages: bool,
-    /// Unix milliseconds; zero means an older session has no recorded time.
-    pub updated_at: u64,
-    pub archived: bool,
-    pub pinned: bool,
-    pub work_item: Option<crate::session_groups::WorkItem>,
-}
-
-/// A session's pending or delivered reminder.
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct Reminder {
-    pub session_id: i64,
-    /// Unix milliseconds.
-    pub due_at: u64,
-    pub fired_at: Option<u64>,
-}
 
 pub struct Store {
     conn: Connection,
@@ -228,6 +206,18 @@ impl Store {
         }
 
         self.conn.execute("INSERT INTO native_settings(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", params![key,value])
+            .map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    /// Forgets the setting under `key`; a key never set is fine.
+    pub fn delete_setting(&self, key: &str) -> Result<(), String> {
+        if self.shared.is_some() {
+            return self.shared_delete_setting(key);
+        }
+
+        self.conn
+            .execute("DELETE FROM native_settings WHERE key=?1", [key])
             .map_err(|e| e.to_string())?;
         Ok(())
     }

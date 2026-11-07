@@ -13,8 +13,9 @@ use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, FocusHandle, Focusable, HighlightStyle, Role,
     ScrollHandle, StyledText, Subscription, Task, Window, div, point, px, rgb,
 };
-use onicode_core::search::project::{self, SearchMatch, SearchOptions};
 use onicode_protocol::files::SearchContent;
+use onicode_protocol::search::project;
+use onicode_protocol::search::project::{SearchMatch, SearchOptions};
 
 use crate::engine_client;
 use crate::file_icons::file_type_icon;
@@ -219,7 +220,7 @@ impl ProjectSearch {
     fn start(&mut self, mut options: SearchOptions, cx: &mut Context<Self>) {
         self.loading = true;
         self.stop_running();
-        let id = onicode_core::new_id();
+        let id = onicode_protocol::new_id();
         options.search_id.clone_from(&id);
         self.running = Some(id.clone());
         let check = self.cancel.clone();

@@ -12,8 +12,10 @@ fn image_lightbox_opens_from_composer_and_sent_images_and_restores_focus(cx: &mu
     });
     let (window, _, active) = super::tests::window(cx);
     let visual = &mut VisualTestContext::from_window(window.into(), cx);
-    let path =
-        std::env::temp_dir().join(format!("onicode-lightbox-{}.png", onicode_core::new_id()));
+    let path = std::env::temp_dir().join(format!(
+        "onicode-lightbox-{}.png",
+        onicode_protocol::new_id()
+    ));
     std::fs::write(&path, base64::engine::general_purpose::STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=").unwrap()).unwrap();
     let input = window
         .update(visual, |shell, window, cx| {
@@ -75,8 +77,8 @@ fn image_lightbox_opens_from_composer_and_sent_images_and_restores_focus(cx: &mu
         });
         let transcript = shell.sessions[&active].read(cx).transcript.clone();
         transcript.update(cx, |view, cx| view.patch(0, vec![
-            onicode_core::transcript::Row { role: "user".into(), text: "Look at this".into(), first: true, sent_at: None, id: None },
-            onicode_core::transcript::Row { role: onicode_core::transcript::attachments::ROLE.into(), text: serde_json::json!([{"kind":"image", "name":"Persisted image", "mimeType":"image/svg+xml", "data":data}]).to_string(), first: true, sent_at: None, id: None },
+            onicode_protocol::transcript::Row { role: "user".into(), text: "Look at this".into(), first: true, sent_at: None, id: None },
+            onicode_protocol::transcript::Row { role: onicode_protocol::transcript::attachments::ROLE.into(), text: serde_json::json!([{"kind":"image", "name":"Persisted image", "mimeType":"image/svg+xml", "data":data}]).to_string(), first: true, sent_at: None, id: None },
         ], cx));
     }).unwrap();
     visual.refresh().unwrap();

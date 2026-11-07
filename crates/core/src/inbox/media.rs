@@ -1,5 +1,4 @@
 //! Inbox attachment fetching, preserving the original host and redirect policy.
-use std::io::Read;
 use std::time::Duration;
 
 const MAX_PREVIEW_BYTES: u64 = 25 * 1024 * 1024;
@@ -23,10 +22,12 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, String> {
     } else {
         None
     };
-    let agent = ureq::AgentBuilder::new()
-        .timeout(HTTP_TIMEOUT)
-        .redirects(0)
-        .build();
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        // Each hop is checked against the allowed hosts here, so ureq follows none.
+        .max_redirects(0)
+        .build()
+        .into();
 
     for _ in 0..MAX_REDIRECTS {
         if !is_allowed_media_target(&current) {
@@ -34,25 +35,23 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, String> {
         }
         let mut request = agent
             .get(&current.url)
-            .set("Accept", "image/*,video/*,*/*;q=0.1")
-            .set("User-Agent", USER_AGENT);
+            .header("Accept", "image/*,video/*,*/*;q=0.1")
+            .header("User-Agent", USER_AGENT);
         if let Some(token) = token.as_ref() {
             if github_auth_host(&current.host) {
-                request = request.set("Authorization", &format!("Bearer {token}"));
+                request = request.header("Authorization", format!("Bearer {token}"));
             }
         }
-        // ureq with redirects(0) returns 3xx as Ok, not Err(Status).
+        // With max_redirects(0) ureq returns a 3xx as the response; 4xx and 5xx are errors.
         let response = match request.call() {
             Ok(response) => response,
-            Err(ureq::Error::Status(status, response)) if is_redirect(status) => response,
-            Err(ureq::Error::Status(status, _)) => {
+            Err(ureq::Error::StatusCode(status)) => {
                 return Err(format!("Media request failed ({status})"));
             }
             Err(_) => return Err("Could not fetch media".into()),
         };
-        if is_redirect(response.status()) {
-            let location = response
-                .header("Location")
+        if is_redirect(response.status().as_u16()) {
+            let location = header(&response, "Location")
                 .ok_or_else(|| "Media redirect is missing a Location header".to_string())?
                 .to_string();
             current = redirect_target(&current.url, &location)?;
@@ -63,12 +62,19 @@ pub fn fetch(url: &str) -> Result<Vec<u8>, String> {
     Err("Too many media redirects".into())
 }
 
-fn read_media_body(response: ureq::Response) -> Result<Vec<u8>, String> {
-    let status = response.status();
+fn header<'a>(response: &'a ureq::http::Response<ureq::Body>, name: &str) -> Option<&'a str> {
+    response
+        .headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+}
+
+fn read_media_body(response: ureq::http::Response<ureq::Body>) -> Result<Vec<u8>, String> {
+    let status = response.status().as_u16();
     if !(200..300).contains(&status) {
         return Err(format!("Media request failed ({status})"));
     }
-    if let Some(content_type) = response.header("Content-Type") {
+    if let Some(content_type) = header(&response, "Content-Type") {
         let mime = content_type
             .split(';')
             .next()
@@ -83,29 +89,23 @@ fn read_media_body(response: ureq::Response) -> Result<Vec<u8>, String> {
             return Err("That URL is not image or video media".into());
         }
     }
-    if let Some(length) = response
-        .header("Content-Length")
-        .and_then(|value| value.parse::<u64>().ok())
+    if response
+        .body()
+        .content_length()
+        .is_some_and(|length| length > MAX_PREVIEW_BYTES)
     {
-        if length > MAX_PREVIEW_BYTES {
-            return Err(too_large());
-        }
+        return Err(too_large());
     }
-    let mut reader = response.into_reader();
-    let mut bytes = Vec::new();
-    let mut buf = [0u8; 16 * 1024];
-    loop {
-        let n = reader
-            .read(&mut buf)
-            .map_err(|_| "Could not read media".to_string())?;
-        if n == 0 {
-            break;
-        }
-        if bytes.len() + n > MAX_PREVIEW_BYTES as usize {
-            return Err(too_large());
-        }
-        bytes.extend_from_slice(&buf[..n]);
-    }
+    let bytes = match response
+        .into_body()
+        .into_with_config()
+        .limit(MAX_PREVIEW_BYTES)
+        .read_to_vec()
+    {
+        Ok(bytes) => bytes,
+        Err(ureq::Error::BodyExceedsLimit(_)) => return Err(too_large()),
+        Err(_) => return Err("Could not read media".into()),
+    };
     if bytes.is_empty() {
         return Err("Media response was empty".into());
     }

@@ -75,14 +75,7 @@ mod tests {
             .update(cx, |shell, _, cx| {
                 assert!(shell.sessions[&first].read(cx).summary.archived);
                 assert!(!shell.workspace.open_sessions().contains(&first));
-                assert!(
-                    !locked(&shell.store)
-                        .unwrap()
-                        .load(first)
-                        .unwrap()
-                        .rows
-                        .is_empty()
-                );
+                assert!(!shell.engine.seed().rows(first).unwrap().is_empty());
                 assert!(!shell.sessions[&other].read(cx).summary.archived);
                 shell
                     .workspace

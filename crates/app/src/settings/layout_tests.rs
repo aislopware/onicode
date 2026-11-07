@@ -119,7 +119,7 @@ fn skills_document_has_its_own_full_height_pane_and_compact_actions(cx: &mut Tes
     visual.run_until_parked();
     window
         .update(visual, |view, _, _| {
-            assert_eq!(view.prefs.skill_source_paths.len(), 1)
+            assert_eq!(view.prefs.engine.skill_source_paths.len(), 1)
         })
         .unwrap();
     visual.simulate_resize(size(px(700.), px(800.)));

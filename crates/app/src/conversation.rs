@@ -35,17 +35,18 @@ use gpui::{
 pub(crate) use mobile::{
     Waiting as MobileWaiting, mobile_access_modes, usage_state as mobile_usage_state,
 };
-use onicode_core::agent::{AccessMode, Approval, Control, Decision, Settings};
-use onicode_core::catalog::{self, Model};
-use onicode_core::provider::Kind;
-use onicode_core::store::Session;
-use onicode_engine::turn::{Database, locked};
+use onicode_protocol::agent::{AccessMode, Approval, Control, Decision, Settings};
+use onicode_protocol::agents::{Catalog, CatalogRead};
+use onicode_protocol::catalog::Model;
 use onicode_protocol::git::{CreateWorktree, NewWorktree};
-use onicode_protocol::session::{Configure, ReadSession, ReadTranscript};
+use onicode_protocol::provider::Kind;
+use onicode_protocol::session::{Configure, ReadSession, ReadTranscript, SwitchProvider};
+use onicode_protocol::sessions::Session;
 use onicode_protocol::workspace::{Rename, SaveResponseNote};
-use onicode_protocol::{Call, OpId, Outcome, Rejection, SessionId};
+use onicode_protocol::{Call, OpId, Outcome, Rejection, SessionId, catalog};
 
 use crate::composer_motion::ComposerMotion;
+use crate::engine_client::Engine;
 use crate::git_picker::{GitPicker, Mode as GitMode, Picked as GitPicked};
 use crate::input;
 use crate::pickers::{
@@ -135,7 +136,7 @@ pub(crate) struct Conversation {
     pub(crate) summary: Session,
     remote_state: remote::State,
     remote_plans: remote_plans::State,
-    store: Database,
+    engine: Engine,
     pub(crate) transcript: Entity<TranscriptView>,
     pub(crate) review: Entity<crate::session_review::SessionReview>,
     _review_events: Subscription,
@@ -164,7 +165,7 @@ pub(crate) struct Conversation {
     /// The running turn's policy, independent of the next composer's mode.
     pub(crate) app_read_only: bool,
     planning_orchestration: bool,
-    pub(crate) orchestration_plan: Option<onicode_core::orchestration::Plan>,
+    pub(crate) orchestration_plan: Option<onicode_protocol::orchestration::Plan>,
     orchestration_error: Option<String>,
     pub(crate) orchestration_progress: Option<String>,
     status: String,
@@ -185,7 +186,7 @@ pub(crate) struct Conversation {
     pub(crate) settings: Settings,
     pub(crate) submission_generation: u64,
     controls_ui: model_controls::ModelControlsState,
-    project_appearance: onicode_core::project_appearance::ProjectAppearance,
+    project_appearance: onicode_protocol::project_appearance::ProjectAppearance,
     classic_layout: bool,
     catalog: Vec<Model>,
     catalog_epoch: u64,
@@ -199,11 +200,11 @@ pub(crate) struct Conversation {
     question_overlay: crate::questions::Overlay,
     controls: Option<crate::engine_client::TurnControls>,
     branch: Option<String>,
-    git: Option<onicode_core::git::Snapshot>,
+    git: Option<onicode_protocol::git::GitSnapshot>,
     git_picker: Option<Entity<GitPicker>>,
     git_events: Option<Subscription>,
     preparing_worktree: bool,
-    context: Option<onicode_core::context::Usage>,
+    context: Option<onicode_protocol::context::Usage>,
     context_hovered: bool,
     /// The submit button's morph between square and labelled pill.
     send_morph: std::cell::RefCell<crate::send_morph::Morph>,
@@ -219,7 +220,7 @@ pub(crate) struct Conversation {
     /// Files this session's edit tools changed, across its whole history.
     session_edits: Vec<String>,
     /// Where `session_edits` stand in Git: uncommitted ones show the pill.
-    session_git: onicode_core::git::SessionChanges,
+    session_git: onicode_protocol::git::SessionChanges,
     /// The session's latest action commit is on no remote yet: the pill offers Push.
     session_unpushed: bool,
     session_edits_generation: u64,
@@ -244,7 +245,7 @@ pub(crate) struct Conversation {
     _alternate_submission: Subscription,
     response_events: Option<Subscription>,
     response_menu: Option<ResponseMenu>,
-    response_request: Option<(usize, onicode_core::response::TransferKind, Instant)>,
+    response_request: Option<(usize, onicode_protocol::response::TransferKind, Instant)>,
 }
 /// What a mutating call came to, as the views report it.
 pub(super) fn applied(reply: Result<Outcome, String>) -> Result<(), String> {
@@ -322,7 +323,7 @@ impl Conversation {
 
     pub(crate) fn set_project_appearance(
         &mut self,
-        appearance: onicode_core::project_appearance::ProjectAppearance,
+        appearance: onicode_protocol::project_appearance::ProjectAppearance,
         cx: &mut Context<Self>,
     ) {
         if self.project_appearance != appearance {
@@ -452,9 +453,9 @@ impl Conversation {
                             } else if self.loading {
                                 "Loading…".to_owned()
                             } else {
-                                onicode_core::time::relative(
+                                onicode_protocol::time::relative(
                                     self.summary.updated_at,
-                                    onicode_core::time::now_ms(),
+                                    onicode_protocol::time::now_ms(),
                                 )
                             }),
                     ),
@@ -490,7 +491,7 @@ impl Conversation {
             .into_any_element()
     }
 
-    pub(crate) fn new(summary: Session, store: Database, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(summary: Session, engine: Engine, cx: &mut Context<Self>) -> Self {
         let input = cx.new(input::Input::session_composer);
         // A new tab shows its folder's checkout from the first frame; the
         // load below confirms it rather than popping it in.
@@ -499,7 +500,7 @@ impl Conversation {
             .flatten();
         let completion = cx.new(|cx| {
             crate::composer_completion::Completion::new(input.clone(), summary.cwd.clone(), cx)
-                .with_store(store.clone())
+                .with_engine(engine.clone())
         });
         completion.update(cx, |completion, cx| {
             completion.set_provider(&summary.provider, cx)
@@ -519,7 +520,7 @@ impl Conversation {
         });
         let draft_observation = cx.observe(&input, |this, input, cx| {
             let content = input.read(cx).content.clone();
-            let folder = onicode_core::composer::consume_command(&content, "add-to-folder");
+            let folder = onicode_protocol::composer::consume_command(&content, "add-to-folder");
             if folder.is_none() {
                 this.folder_selected = false;
             }
@@ -611,7 +612,7 @@ impl Conversation {
             btw: None,
             btw_home: (AnchorSlot::default(), 1.),
             _btw_observer: None,
-            store,
+            engine,
             submission_generation: 0,
             controls_ui: model_controls::ModelControlsState::default(),
             transcript,
@@ -796,7 +797,7 @@ impl Conversation {
                 {
                     if !this.summary.has_messages
                         && settings.revision == 0
-                        && settings.account.id == onicode_core::accounts::DEFAULT
+                        && settings.account.id == onicode_protocol::accounts::DEFAULT
                     {
                         settings.account = crate::accounts::get(cx)
                             .map(|center| {
@@ -914,7 +915,7 @@ impl Conversation {
             return;
         }
         if !self.folder_selected
-            && onicode_core::composer::consume_command(
+            && onicode_protocol::composer::consume_command(
                 &self.input.read(cx).content,
                 "add-to-folder",
             )
@@ -935,7 +936,7 @@ impl Conversation {
             .input
             .update(cx, |i, cx| i.take(cx))
             .unwrap_or_default();
-        let raw = onicode_core::composer::consume_command(&raw, "add-to-folder")
+        let raw = onicode_protocol::composer::consume_command(&raw, "add-to-folder")
             .map(str::to_owned)
             .unwrap_or(raw);
         self.folder_selected = false;
@@ -1057,7 +1058,7 @@ impl Conversation {
             return;
         }
         let kind = Kind::from_id(&self.summary.provider);
-        if self.settings.account.id != onicode_core::accounts::DEFAULT
+        if self.settings.account.id != onicode_protocol::accounts::DEFAULT
             && crate::accounts::get(cx)
                 .is_some_and(|center| !center.read(cx).book.exists(kind, &self.settings.account.id))
         {
@@ -1100,7 +1101,6 @@ impl Conversation {
         .into();
         self.cancel = Arc::new(AtomicBool::new(false));
         let summary = self.summary.clone();
-        let store = self.store.clone();
         let cancel = self.cancel.clone();
         // Composer modes reset after Send; the thread grant and running turn's
         // access policy must outlive that reset and edits to the next draft.
@@ -1117,14 +1117,14 @@ impl Conversation {
                     .or_insert_with(|| control.current.clone());
             }
         }
-        settings.turn_model = Some(onicode_core::agent::TurnInfo {
+        settings.turn_model = Some(onicode_protocol::agent::TurnInfo {
             provider: self.summary.provider.clone(),
             model: model_label.to_string(),
             model_id: self
                 .model_info()
                 .map(|model| model.id.clone())
                 .or(self.model.clone()),
-            started_at: Some(onicode_core::time::now_ms()),
+            started_at: Some(onicode_protocol::time::now_ms()),
             ..Default::default()
         });
         if !self.is_remote() && settings.prepared_prompt.is_none() {
@@ -1133,9 +1133,6 @@ impl Conversation {
                 settings.prepared_prompt = Some(prepared);
             }
         }
-        settings.disable_claude_hooks = cx
-            .try_global::<crate::settings::Preferences>()
-            .is_some_and(|p| !p.claude_hooks);
         settings.model = self.model.clone();
         settings.environment.extend(self.app_environment.clone());
         if settings.remote_action.as_ref().is_none_or(|action| {
@@ -1188,6 +1185,11 @@ impl Conversation {
             .then(|| self.remote_state.client.clone())
             .flatten();
         let rx = if remote_client.is_some() || summary.cwd.starts_with("remote://") {
+            // The SSH runner reads the hooks setting itself; the engine sets it for its own turns.
+            settings.disable_claude_hooks = cx
+                .try_global::<crate::settings::Preferences>()
+                .is_some_and(|p| !p.engine.claude_hooks);
+            let store = self.engine.legacy_store();
             let (controls, control_rx) = std::sync::mpsc::channel();
             self.controls = Some(controls.into());
             let (tx, rx) = async_channel::bounded(8);
@@ -1210,7 +1212,13 @@ impl Conversation {
             // what arrives folds into the next update instead of queueing behind it.
             let (tx, rx) = async_channel::bounded(1);
             self.controls = Some(crate::engine_client::start_turn(
-                &store, summary, prompt, settings, cancel, tx, cx,
+                &self.engine,
+                summary,
+                prompt,
+                settings,
+                cancel,
+                tx,
+                cx,
             ));
             rx
         };
@@ -1442,7 +1450,7 @@ impl Conversation {
                                 this.settings.remote_action = None;
                                 this.remote_state.refreshing = false;
                             }
-                            this.summary.updated_at = onicode_core::time::now_ms();
+                            this.summary.updated_at = onicode_protocol::time::now_ms();
                             this.busy = false;
                             this.stopping = false;
                             this.clear_background();
@@ -1535,7 +1543,7 @@ impl Conversation {
         self.review
             .update(cx, |review, cx| review.set_busy(true, cx));
         self.follow_ups.ready = false;
-        self.summary.updated_at = onicode_core::time::now_ms();
+        self.summary.updated_at = onicode_protocol::time::now_ms();
         self.transcript.update(cx, |v, cx| v.streaming(true, cx));
         self.summary.has_messages = true;
     }
@@ -1610,7 +1618,7 @@ impl Conversation {
         }
         self.input.update(cx, |i, cx| {
             i.set_text(
-                onicode_core::composer::append_selection_quote(&i.content, text),
+                onicode_protocol::composer::append_selection_quote(&i.content, text),
                 cx,
             );
         });
@@ -1636,7 +1644,7 @@ impl Conversation {
                 selection,
             } => {
                 let turn = *turn;
-                let note = onicode_core::response::ResponseNote {
+                let note = onicode_protocol::response::ResponseNote {
                     id: std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
@@ -1644,7 +1652,7 @@ impl Conversation {
                     title: {
                         let title = self.display_title();
                         if *selection || title.trim().is_empty() || title == "New session" {
-                            onicode_core::notes::title(text)
+                            onicode_protocol::notes::title(text)
                         } else {
                             title
                         }
@@ -1655,7 +1663,7 @@ impl Conversation {
                     source_cwd: self.summary.cwd.clone(),
                 };
                 let saved = crate::engine_client::call::<SaveResponseNote>(
-                    &self.store,
+                    &self.engine,
                     Some(OpId::new()),
                     SaveResponseNote { note },
                     cx,
@@ -1697,11 +1705,11 @@ impl Conversation {
     fn finish_response_target(
         &mut self,
         turn: usize,
-        kind: onicode_core::response::TransferKind,
+        kind: onicode_protocol::response::TransferKind,
         id: &str,
         cx: &mut Context<Self>,
     ) {
-        let Ok(target) = serde_json::from_str::<onicode_core::response::Target>(id) else {
+        let Ok(target) = serde_json::from_str::<onicode_protocol::response::Target>(id) else {
             return;
         };
         let from = self
@@ -1907,8 +1915,8 @@ impl Conversation {
             return false;
         }
         self.settings.worktree_removed = false;
-        self.settings.worktree_cwd = (onicode_core::files::path_key(path)
-            != onicode_core::files::path_key(&self.summary.cwd))
+        self.settings.worktree_cwd = (onicode_protocol::files::path_key(path)
+            != onicode_protocol::files::path_key(&self.summary.cwd))
         .then(|| path.to_owned());
         self.settings.new_worktree = false;
         self.save_settings(cx);
@@ -1924,15 +1932,23 @@ impl Conversation {
         self.attach_account(cx);
         self.catalog_epoch += 1;
         let epoch = self.catalog_epoch;
-        let account = self.settings.account.clone();
-        let work = cx.background_executor().spawn({
-            let remote_project = self.is_remote().then(|| self.summary.cwd.clone());
-            async move {
-                if let Some(project) = remote_project {
-                    onicode_core::catalog::remote_models(&project, kind.id())
-                } else {
-                    catalog::models_for(kind, &account)
-                }
+        let account = self.settings.account.id.clone();
+        let remote_project = self.is_remote().then(|| self.summary.cwd.clone());
+        let engine = self.engine.clone();
+        let work = cx.background_executor().spawn(async move {
+            match remote_project {
+                Some(project) => crate::runtime::remote::remote_models(&project, kind),
+                None => engine
+                    .call::<Catalog>(
+                        None,
+                        Catalog {
+                            provider: kind,
+                            account,
+                            read: CatalogRead::Fresh,
+                        },
+                    )
+                    .await?
+                    .ok_or_else(|| format!("{} returned no model catalog", kind.label())),
             }
         });
         cx.spawn(async move |this, cx| {
@@ -2019,11 +2035,11 @@ impl Conversation {
                         title,
                         expected: None,
                     };
-                    crate::engine_client::call::<Rename>(&this.store, Some(OpId::new()), body, cx)
+                    crate::engine_client::call::<Rename>(&this.engine, Some(OpId::new()), body, cx)
                         .detach();
                 }
                 if this.is_remote() {
-                    let store = this.store.clone();
+                    let store = this.engine.legacy_store();
                     cx.background_executor()
                         .spawn(async move {
                             let _ = crate::runtime::remote::configure_saved(store, id);
@@ -2047,7 +2063,7 @@ impl Conversation {
         C::Params: Send + 'static,
         C::Reply: Send + 'static,
     {
-        crate::engine_client::session_call::<C>(&self.store, self.summary.id, op, body, cx)
+        crate::engine_client::session_call::<C>(&self.engine, self.summary.id, op, body, cx)
     }
 
     fn menu_choice(&mut self, id: &str, cx: &mut Context<Self>) {
@@ -2156,9 +2172,12 @@ impl Conversation {
         if cx.has_global::<crate::settings::Preferences>() {
             cx.update_global::<crate::settings::Preferences, _>(|prefs, _| {
                 if effort.is_empty() {
-                    prefs.provider_efforts.remove(&provider);
+                    prefs.engine.provider_efforts.remove(&provider);
                 } else {
-                    prefs.provider_efforts.insert(provider, effort.to_owned());
+                    prefs
+                        .engine
+                        .provider_efforts
+                        .insert(provider, effort.to_owned());
                 }
             });
         }
@@ -2309,6 +2328,8 @@ impl Conversation {
                 picked.1
             );
         }
+        // `Some` once the provider changed: the provider thread to bind, if any.
+        let mut switched_thread: Option<Option<String>> = None;
         if self.summary.provider != picked.0.id() {
             let reverting = self
                 .settings
@@ -2318,21 +2339,13 @@ impl Conversation {
             let restored = reverting
                 .then(|| self.settings.pending_provider_switch.clone())
                 .flatten();
-            let changed = locked(&self.store).and_then(|store| {
-                store.change_provider(self.summary.id, picked.0.id())?;
-                if let Some(id) = restored
+            // The engine switches the stored provider below; the composer shows the switch in
+            // this frame, and a refusal comes back as the status, as a failed store write did.
+            switched_thread = Some(
+                restored
                     .as_ref()
-                    .and_then(|pending| pending.provider_id.as_deref())
-                {
-                    store.provider_id(self.summary.id, id)?;
-                }
-                Ok(())
-            });
-            if let Err(error) = changed {
-                self.status = error;
-                cx.notify();
-                return false;
-            }
+                    .and_then(|pending| pending.provider_id.clone()),
+            );
             if let Some(pending) = restored {
                 self.settings.account = pending.account;
                 self.summary.provider_id = pending.provider_id;
@@ -2348,7 +2361,7 @@ impl Conversation {
                         .any(|row| row.is_prompt());
                 if has_history && self.settings.pending_provider_switch.is_none() {
                     self.settings.pending_provider_switch =
-                        Some(onicode_core::agent::ProviderSwitch {
+                        Some(onicode_protocol::agent::ProviderSwitch {
                             from: self.summary.provider.clone(),
                             model_label: self.model_label().to_string(),
                             cwd: self.execution_cwd().to_owned(),
@@ -2368,9 +2381,9 @@ impl Conversation {
                     .unwrap_or_default();
                 self.summary.provider_id = None;
                 if let Some(pending) = &self.settings.pending_provider_switch {
-                    self.settings.handoff = Some(onicode_core::agent::Handoff {
+                    self.settings.handoff = Some(onicode_protocol::agent::Handoff {
                         from: pending.from.clone(),
-                        brief: onicode_core::response::handoff(
+                        brief: onicode_protocol::response::handoff(
                             self.transcript.read(cx).source_rows(),
                         ),
                     });
@@ -2389,16 +2402,35 @@ impl Conversation {
         if let Some(context) = &mut self.context {
             context.window = None;
         }
-        let store = self.store.clone();
-        let id = self.summary.id;
-        let context = self.context;
-        cx.background_executor()
-            .spawn(async move {
-                if let Some(context) = context {
-                    let _ = locked(&store).and_then(|s| s.save_context_usage(id, &context));
-                }
+        // The stored provider and context meter follow the pick, as monocode wrote them here.
+        if switched_thread.is_some() || self.context.is_some() {
+            let provider = self.summary.provider.clone();
+            let thread = switched_thread.flatten();
+            let context = self.context;
+            let switched = self.session_call::<SwitchProvider>(
+                Some(OpId::new()),
+                move |session| SwitchProvider {
+                    session,
+                    provider,
+                    thread,
+                    context,
+                },
+                cx,
+            );
+            cx.spawn(async move |this, cx| {
+                let error = match switched.await {
+                    Ok(Outcome::Applied) => return,
+                    Ok(Outcome::Rejected(Rejection::Denied(reason))) => reason,
+                    Ok(Outcome::Rejected(rejection)) => format!("{rejection:?}"),
+                    Err(error) => error,
+                };
+                let _ = this.update(cx, |this, cx| {
+                    this.status = error;
+                    cx.notify();
+                });
             })
             .detach();
+        }
         self.resolved_model = None;
         self.settings.effort = preferred_effort(&self.summary.provider, cx);
         self.settings.fast = false;
@@ -2834,7 +2866,7 @@ impl Conversation {
             self.runner = Some(cx.new(|cx| crate::composer_runner::Runner::new(transcript, cx)));
         }
         let runner = self.runner.clone()?;
-        let name = onicode_core::project_appearance::MASCOTS
+        let name = onicode_protocol::project_appearance::MASCOTS
             [self.project_appearance.mascot(&self.summary.cwd)];
         let color = self.project_appearance.color(&self.summary.cwd);
         runner.update(cx, |r, cx| r.configure(self.busy, name, color, cx));
@@ -3195,8 +3227,8 @@ impl Conversation {
         let detail = self.context.map(|usage| {
             format!(
                 "{} / {} tokens",
-                onicode_core::context::format_tokens(usage.used),
-                onicode_core::context::format_tokens(usage.window.unwrap_or(0))
+                onicode_protocol::context::format_tokens(usage.used),
+                onicode_protocol::context::format_tokens(usage.window.unwrap_or(0))
             )
         });
         div()
@@ -3522,7 +3554,7 @@ fn perf_prompt(cx: &mut Context<Conversation>) {
             if this.summary.has_messages {
                 return;
             }
-            let claude = onicode_core::provider::Kind::Claude.id();
+            let claude = onicode_protocol::provider::Kind::Claude.id();
             if this.summary.provider != claude {
                 this.summary.provider = claude.into();
                 this.summary.provider_id = None;
@@ -3541,14 +3573,14 @@ fn perf_prompt(cx: &mut Context<Conversation>) {
 /// The access mode the last composer pick left as the default for new chats.
 pub(crate) fn default_access(cx: &gpui::App) -> AccessMode {
     cx.try_global::<crate::settings::Preferences>()
-        .and_then(|prefs| prefs.default_access.as_deref())
+        .and_then(|prefs| prefs.engine.default_access.as_deref())
         .map(AccessMode::from_id)
         .unwrap_or_default()
 }
 pub(crate) fn remember_access(mode: AccessMode, cx: &mut gpui::App) {
     if cx.has_global::<crate::settings::Preferences>() {
         cx.update_global::<crate::settings::Preferences, _>(|prefs, _| {
-            prefs.default_access = Some(mode.id().into());
+            prefs.engine.default_access = Some(mode.id().into());
         });
     }
 }
@@ -3560,7 +3592,7 @@ fn is_effort_key(key: &str) -> bool {
 }
 pub(crate) fn preferred_effort(provider: &str, cx: &gpui::App) -> Option<String> {
     cx.try_global::<crate::settings::Preferences>()
-        .and_then(|prefs| prefs.provider_efforts.get(provider).cloned())
+        .and_then(|prefs| prefs.engine.provider_efforts.get(provider).cloned())
 }
 pub(crate) fn effort_name(value: &str) -> String {
     match value {
@@ -3588,20 +3620,17 @@ fn model_control_toggle(control: &catalog::ModelControl) -> bool {
 
 #[cfg(test)]
 mod composer_motion_tests {
-    use std::sync::Mutex;
     use std::time::Duration;
 
     use gpui::{
         Bounds, EntityInputHandler, TestAppContext, WindowBounds, WindowOptions, point, size,
     };
-    use onicode_core::store::Store;
 
     use super::*;
 
     fn window(cx: &mut TestAppContext, width: f32) -> gpui::WindowHandle<Conversation> {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("codex", "/work/monocode").unwrap();
-        let store = Arc::new(Mutex::new(store));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("codex", "/work/monocode").unwrap();
         let window = cx.update(|cx| {
             cx.open_window(
                 WindowOptions {
@@ -3611,7 +3640,7 @@ mod composer_motion_tests {
                     ))),
                     ..Default::default()
                 },
-                |_, cx| cx.new(|cx| Conversation::new(summary, store, cx)),
+                |_, cx| cx.new(|cx| Conversation::new(summary, engine, cx)),
             )
             .unwrap()
         });
@@ -4148,10 +4177,8 @@ mod tests {
 
 #[cfg(test)]
 mod menu_tests {
-    use std::sync::Mutex;
 
     use gpui::{TestAppContext, WindowHandle, point};
-    use onicode_core::store::Store;
 
     use super::*;
     #[gpui::test]
@@ -4175,6 +4202,7 @@ mod menu_tests {
                     default: true,
                     tiers: Vec::new(),
                     controls: Vec::new(),
+                    limits: Default::default(),
                 }];
                 cx.set_global(crate::settings::Preferences::default());
                 cx.notify();
@@ -4230,6 +4258,7 @@ mod menu_tests {
                     default: true,
                     tiers: Vec::new(),
                     controls: Vec::new(),
+                    limits: Default::default(),
                 });
                 assert_eq!(view.model_label(), "GPT-6.1 Sol");
                 assert_eq!(view.trigger_effort_label().as_deref(), Some("Extra High"));
@@ -4293,14 +4322,14 @@ mod menu_tests {
                     transcript.patch(
                         0,
                         vec![
-                            onicode_core::transcript::Row {
+                            onicode_protocol::transcript::Row {
                                 role: "user".into(),
                                 text: "Review the footer".into(),
                                 first: true,
                                 sent_at: None,
                                 id: None,
                             },
-                            onicode_core::transcript::Row {
+                            onicode_protocol::transcript::Row {
                                 role: "assistant".into(),
                                 text: "The footer is ready.".into(),
                                 first: true,
@@ -4327,10 +4356,11 @@ mod menu_tests {
                         current: "1m".into(),
                         choices: vec![("1m".into(), "1M".into())],
                     }],
+                    limits: Default::default(),
                 };
                 view.make_response_menu(
                     1,
-                    onicode_core::response::TransferKind::Handoff,
+                    onicode_protocol::response::TransferKind::Handoff,
                     AnchorSlot::default(),
                     Some(vec![(Kind::Codex, Some(Ok(vec![model])))]),
                     window,
@@ -4359,7 +4389,7 @@ mod menu_tests {
             Some("/work/isolated-copy")
         );
         assert_eq!(
-            onicode_core::response::request(&result.turn),
+            onicode_protocol::response::request(&result.turn),
             "Review the footer"
         );
     }
@@ -4368,18 +4398,17 @@ mod menu_tests {
     fn new_tab_shows_its_folders_branch_at_once_and_no_loading_status(cx: &mut TestAppContext) {
         crate::git_cache::remember(
             "/work/remembered",
-            &onicode_core::git::Snapshot {
+            &onicode_protocol::git::GitSnapshot {
                 current: Some("main".into()),
                 ..Default::default()
             },
         );
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("codex", "/work/remembered").unwrap();
-        let store = Arc::new(Mutex::new(store));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("codex", "/work/remembered").unwrap();
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut c = Conversation::new(summary, store, cx);
+                    let mut c = Conversation::new(summary, engine, cx);
                     // The first frame of a tab whose history is still loading.
                     c.loading = true;
                     c
@@ -4410,14 +4439,13 @@ mod menu_tests {
 
     #[gpui::test]
     fn picked_access_becomes_the_default_for_new_chats(cx: &mut TestAppContext) {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let first = store.create("codex", "/work").unwrap();
-        let second = store.create("codex", "/work").unwrap();
-        let store = Arc::new(Mutex::new(store));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let first = engine.seed().create("codex", "/work").unwrap();
+        let second = engine.seed().create("codex", "/work").unwrap();
         cx.update(|cx| cx.set_global(crate::settings::Preferences::default()));
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| Conversation::new(first, store.clone(), cx))
+                cx.new(|cx| Conversation::new(first, engine.clone(), cx))
             })
             .unwrap()
         });
@@ -4430,11 +4458,12 @@ mod menu_tests {
         cx.update(|cx| {
             assert_eq!(
                 cx.global::<crate::settings::Preferences>()
+                    .engine
                     .default_access
                     .as_deref(),
                 Some("auto")
             );
-            let next = cx.new(|cx| Conversation::new(second, store, cx));
+            let next = cx.new(|cx| Conversation::new(second, engine, cx));
             assert_eq!(next.read(cx).settings.access, AccessMode::Auto);
         });
     }
@@ -4456,16 +4485,14 @@ mod menu_tests {
                 c.apply_model_pick(&ModelPicked(Kind::Codex, Some("gpt-6.1-sol".into())), cx);
                 assert_eq!(c.settings.effort.as_deref(), Some("xhigh"));
                 c.menu_choice("access:auto", cx);
-                let encoded =
-                    serde_json::to_string(cx.global::<crate::settings::Preferences>()).unwrap();
-                let restored: crate::settings::Preferences =
-                    serde_json::from_str(&encoded).unwrap();
-                assert_eq!(restored.provider_efforts["claude"], "medium");
-                assert_eq!(restored.provider_efforts["codex"], "xhigh");
-                assert_eq!(restored.default_access.as_deref(), Some("auto"));
-                let store = Store::open(Path::new(":memory:")).unwrap();
-                let summary = store.create("codex", "/different/project").unwrap();
-                let next = cx.new(|cx| Conversation::new(summary, Arc::new(Mutex::new(store)), cx));
+                // Engine settings: the shell sends each changed key as `SetEngineSetting`.
+                let held = &cx.global::<crate::settings::Preferences>().engine;
+                assert_eq!(held.provider_efforts["claude"], "medium");
+                assert_eq!(held.provider_efforts["codex"], "xhigh");
+                assert_eq!(held.default_access.as_deref(), Some("auto"));
+                let engine = crate::engine_client::Engine::memory(cx);
+                let summary = engine.seed().create("codex", "/different/project").unwrap();
+                let next = cx.new(|cx| Conversation::new(summary, engine, cx));
                 assert_eq!(next.read(cx).settings.effort.as_deref(), Some("xhigh"));
                 assert_eq!(next.read(cx).settings.access, AccessMode::Auto);
             })
@@ -4473,14 +4500,13 @@ mod menu_tests {
     }
 
     fn conversation(cx: &mut TestAppContext) -> WindowHandle<Conversation> {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("claude", "/work/monocode").unwrap();
-        let store = Arc::new(Mutex::new(store));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("claude", "/work/monocode").unwrap();
         let window = cx.update(|cx| {
             input::bind(cx);
             crate::popover::bind(cx);
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| Conversation::new(summary, store, cx))
+                cx.new(|cx| Conversation::new(summary, engine, cx))
             })
             .unwrap()
         });
@@ -4506,7 +4532,7 @@ mod menu_tests {
     fn workspace_existing_worktrees_open_as_a_submenu_and_preserve_the_draft(
         cx: &mut TestAppContext,
     ) {
-        use onicode_core::git::{Snapshot, Worktree};
+        use onicode_protocol::git::{GitSnapshot as Snapshot, Worktree};
         cx.update(|cx| {
             input::bind(cx);
             crate::popover::bind(cx);
@@ -4550,12 +4576,11 @@ mod menu_tests {
                 ..Default::default()
             },
         );
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("claude", cwd).unwrap();
-        let store = Arc::new(Mutex::new(store));
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("claude", cwd).unwrap();
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
-                cx.new(|cx| Conversation::new(summary, store, cx))
+                cx.new(|cx| Conversation::new(summary, engine, cx))
             })
             .unwrap()
         });
@@ -4648,8 +4673,8 @@ mod menu_tests {
                 assert_eq!(c.input.read(cx).content.as_ref(), "Keep my unsent draft");
                 assert!(c.input.focus_handle(cx).is_focused(w));
                 assert_eq!(
-                    locked(&c.store)
-                        .unwrap()
+                    c.engine
+                        .seed()
                         .agent_settings(c.summary.id)
                         .unwrap()
                         .unwrap()
@@ -4749,8 +4774,9 @@ mod menu_tests {
             cx.run_until_parked();
             window
                 .update(cx, |view, _, cx| {
-                    let saved = locked(&view.store)
-                        .unwrap()
+                    let saved = view
+                        .engine
+                        .seed()
                         .agent_settings(view.summary.id)
                         .unwrap()
                         .unwrap();

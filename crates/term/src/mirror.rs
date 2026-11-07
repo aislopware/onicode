@@ -550,7 +550,7 @@ impl Mirror {
         frame
     }
 
-    /// The viewport as text, a line per row with trailing blanks trimmed.
+    /// The viewport as text, a line per row with trailing blanks and empty rows trimmed.
     #[must_use]
     pub fn text(&self) -> String {
         let (cols, rows) = self.size();
@@ -570,6 +570,8 @@ impl Mirror {
             })
             .collect::<Vec<_>>()
             .join("\n")
+            .trim_end_matches('\n')
+            .to_owned()
     }
 }
 

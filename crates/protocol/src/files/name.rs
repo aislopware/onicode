@@ -1,8 +1,6 @@
 //! Unix file-name checks for the explorer, ported from fileName.ts.
 use serde::{Deserialize, Serialize};
 
-use crate::scm::text::{js_len, js_space};
-
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum NameIssueKind {
@@ -96,6 +94,15 @@ pub fn validate_file_name(raw: &str, siblings: &[String]) -> Option<NameIssue> {
 /// Last path segment of `raw`, or empty.
 pub fn leaf_name(raw: &str) -> String {
     path_segments(raw).pop().unwrap_or_default()
+}
+
+/// JavaScript `\s`: Unicode white space plus the BOM.
+fn js_space(ch: char) -> bool {
+    ch.is_whitespace() || ch == '\u{feff}'
+}
+
+fn js_len(text: &str) -> usize {
+    text.encode_utf16().count()
 }
 
 #[cfg(test)]

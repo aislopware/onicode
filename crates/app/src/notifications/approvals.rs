@@ -4,7 +4,7 @@ use std::time::SystemTime;
 
 use gpui::prelude::*;
 use gpui::{Context, EventEmitter, Role, div, px};
-use onicode_core::agent::Decision;
+use onicode_protocol::agent::Decision;
 
 use crate::theme::*;
 

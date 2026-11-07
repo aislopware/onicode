@@ -15,15 +15,18 @@ use gpui::{
     AnyElement, App, Context, Entity, EventEmitter, FontWeight, Hsla, PromptLevel, Role,
     SharedString, Subscription, Task, Window, div, px, rgb, uniform_list,
 };
-use onicode_core::agent::{AccessMode, Settings};
-use onicode_core::provider::{self, Event, Kind, Request};
-use onicode_core::scm;
+use onicode_core::provider::{Event, Request};
+use onicode_core::{provider, scm};
 use onicode_protocol::OpId;
+use onicode_protocol::accounts::Profile;
+use onicode_protocol::agent::{AccessMode, Settings};
+use onicode_protocol::agents::{Generate, StopGenerate};
 use onicode_protocol::git::{
     self as git_calls, ChangedFile, Commit, CommitContext, Covered, CreatePr, DiffIndex, Discard,
-    HeadMessage, Pr, PrContext, PrStatus, Pull, Push, RangeContext, Stage, StageTarget,
-    StagedContext, Unstage,
+    HeadMessage, Pr, PrContext, PrStatus, Pull, Push, RangeContext, Stage, StageTarget, Unstage,
 };
+use onicode_protocol::provider::Kind;
+use onicode_protocol::session_title::TextModel;
 use serde::{Deserialize, Serialize};
 
 use crate::engine_client::{self, Engine};
@@ -228,7 +231,8 @@ pub(crate) struct Changes {
     pr: Option<Pr>,
     pr_branch: Option<String>,
     pr_request: u64,
-    generate_cancel: Option<Arc<AtomicBool>>,
+    /// The engine's commit message run, by its request id.
+    generating: Option<String>,
     staged_open: bool,
     changes_open: bool,
     view: ChangesView,
@@ -266,7 +270,7 @@ impl Changes {
             pr: None,
             pr_branch: None,
             pr_request: 0,
-            generate_cancel: None,
+            generating: None,
             staged_open: true,
             changes_open: true,
             view: ChangesView::List,
@@ -318,7 +322,7 @@ impl Changes {
         if project != self.cwd {
             // Checkouts don't share drafts or in-flight generation.
             self.cwd = project;
-            self.cancel_generate();
+            self.cancel_generate(cx);
             self.amend = None;
             self.pr = None;
             self.pr_branch = None;
@@ -739,9 +743,15 @@ impl Changes {
         );
     }
 
-    fn cancel_generate(&mut self) {
-        if let Some(cancel) = self.generate_cancel.take() {
-            cancel.store(true, Ordering::SeqCst);
+    fn cancel_generate(&mut self, cx: &mut App) {
+        if let Some(request) = self.generating.take() {
+            let (engine, _) = self.engine(cx);
+            let stop = engine.call::<StopGenerate>(Some(OpId::new()), StopGenerate { request });
+            cx.background_executor()
+                .spawn(async move {
+                    let _ = stop.await;
+                })
+                .detach();
             if self.busy.as_deref() == Some("generate") {
                 self.busy = None;
             }
@@ -749,47 +759,42 @@ impl Changes {
     }
 
     /// pickTextHarness: the background model picked in Settings, else the
-    /// conversation's provider when installed, else Claude Code, then Codex.
-    fn text_harness(&self, cx: &App) -> Option<TextHarness> {
-        let chosen = cx
+    /// conversation's provider; the engine falls back to the conversation's
+    /// provider, Claude Code, then Codex, when that one is not installed.
+    fn text_model(&self, cx: &App) -> TextChoice {
+        let (kind, model) = cx
             .try_global::<crate::settings::Preferences>()
-            .and_then(|p| p.background_text_model());
-        pick_text_harness(self.text_provider, chosen)
+            .and_then(|p| p.background_text_model())
+            .unwrap_or((self.text_provider, None));
+        let model = TextModel {
+            kind,
+            model,
+            account: Profile::default(),
+        };
+        (model, self.text_provider)
     }
 
     fn generate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let has_files = self.index(cx).is_some_and(|i| !i.files.is_empty());
-        if !has_files || self.busy.is_some() || self.generate_cancel.is_some() {
+        if !has_files || self.busy.is_some() || self.generating.is_some() {
             return;
         }
-        let Some(harness) = self.text_harness(cx) else {
-            Self::fail(
-                "No provider CLI is installed to write a commit message.".into(),
-                window,
-                cx,
-            );
-            return;
-        };
-        let cancel = Arc::new(AtomicBool::new(false));
-        self.generate_cancel = Some(cancel.clone());
+        let request = onicode_protocol::new_id();
+        self.generating = Some(request.clone());
         self.busy = Some("generate".into());
         cx.notify();
+        let model = self.text_model(cx);
         let (engine, checkout) = self.engine(cx);
-        let cwd = PathBuf::from(&checkout);
-        let context = engine.call::<CommitContext>(None, CommitContext { checkout });
-        let flag = cancel.clone();
-        // The engine reads what is staged; the provider writes from it here.
-        let work = cx.background_executor().spawn(async move {
-            let context = context.await?;
-            write_commit_message(harness, cwd, &context, flag)
-        });
+        let work = write_commit_message(engine, checkout, request.clone(), model);
+        let work = cx.background_executor().spawn(work);
         cx.spawn_in(window, async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if cancel.load(Ordering::SeqCst) {
+                // Stopped, or the panel moved to another checkout.
+                if this.generating.as_ref() != Some(&request) {
                     return;
                 }
-                this.generate_cancel = None;
+                this.generating = None;
                 this.busy = None;
                 match result {
                     Ok(message) => this.message.update(cx, |m, cx| m.set_text(message, cx)),
@@ -894,7 +899,7 @@ impl Changes {
     ) {
         let message = self.message.read(cx).content.to_string();
         let amend = self.amend.is_some();
-        let pr = create_pr.then(|| self.text_harness(cx));
+        let pr = create_pr.then(|| self.text_model(cx));
         let (engine, checkout) = self.engine(cx);
         let work = engine.call::<Commit>(
             Some(OpId::new()),
@@ -913,8 +918,8 @@ impl Changes {
                 this.amend = None;
                 this.message
                     .update(cx, |m, cx| m.set_text(String::new(), cx));
-                if let Some(harness) = pr {
-                    this.open_created_pr(harness, window, cx);
+                if let Some(model) = pr {
+                    this.open_created_pr(model, window, cx);
                 }
             },
             window,
@@ -923,18 +928,13 @@ impl Changes {
     }
 
     /// generatePrContent, `gh pr create`, then the browser.
-    fn open_created_pr(
-        &mut self,
-        harness: Option<TextHarness>,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    fn open_created_pr(&mut self, model: TextChoice, window: &mut Window, cx: &mut Context<Self>) {
         self.busy = Some("pr".into());
         cx.notify();
         let (engine, checkout) = self.engine(cx);
         let work = cx
             .background_executor()
-            .spawn(create_pull_request(engine, checkout, harness));
+            .spawn(create_pull_request(engine, checkout, model));
         cx.spawn_in(window, async move |this, cx| {
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| {
@@ -976,7 +976,7 @@ impl Changes {
                     .unwrap_or_default()
             )
         });
-        let harness = self.text_harness(cx);
+        let model = self.text_model(cx);
         cx.spawn_in(window, async move |this, cx| {
             if let Some(question) = question {
                 let Ok(ask) = this.update_in(cx, |_, window, cx| {
@@ -996,12 +996,12 @@ impl Changes {
                         "pr".into(),
                         None,
                         work,
-                        move |this, window, cx| this.open_created_pr(harness, window, cx),
+                        move |this, window, cx| this.open_created_pr(model, window, cx),
                         window,
                         cx,
                     );
                 } else {
-                    this.open_created_pr(harness, window, cx);
+                    this.open_created_pr(model, window, cx);
                 }
             });
         })
@@ -1279,7 +1279,7 @@ impl Changes {
                             .when(generating || can_generate, |d| {
                                 d.on_click(cx.listener(move |this, _, window, cx| {
                                     if generating {
-                                        this.cancel_generate();
+                                        this.cancel_generate(cx);
                                         cx.notify();
                                     } else {
                                         this.generate(window, cx);
@@ -1934,49 +1934,44 @@ impl Changes {
     }
 }
 
-/// A provider CLI and model for one-off text, `None` for its default model.
-pub(crate) type TextHarness = (Kind, PathBuf, Option<String>);
+/// generateCommitMessage through the engine: it reads the staged changes and
+/// runs `model` on them, read-only. [`StopGenerate`] under `request` stops it.
+/// The model a text job asks for, and the provider it falls back to first.
+type TextChoice = (TextModel, Kind);
 
-/// pickTextHarness: `chosen` (the background model picked in Settings) when
-/// installed, else `preferred`, then Claude Code, then Codex on their default
-/// models.
-pub(crate) fn pick_text_harness(
-    preferred: Kind,
-    chosen: Option<(Kind, Option<String>)>,
-) -> Option<TextHarness> {
-    chosen
-        .and_then(|(kind, model)| provider::resolve(kind).map(|binary| (kind, binary, model)))
-        .or_else(|| {
-            [preferred, Kind::Claude, Kind::Codex]
-                .into_iter()
-                .find_map(|kind| provider::resolve(kind).map(|binary| (kind, binary, None)))
-        })
+async fn write_commit_message(
+    engine: Engine,
+    checkout: String,
+    request: String,
+    (model, fallback): TextChoice,
+) -> Result<String, String> {
+    let context = engine
+        .call::<CommitContext>(
+            None,
+            CommitContext {
+                checkout: checkout.clone(),
+            },
+        )
+        .await?;
+    let kind = model.kind;
+    let generate = Generate {
+        request,
+        cwd: checkout,
+        prompt: scm::commit_message_prompt(
+            context.branch.as_deref(),
+            &context.summary,
+            &context.patch,
+        ),
+        model: Some(model),
+        fallback: Some(fallback),
+    };
+    let output = engine.call::<Generate>(None, generate).await?;
+    commit_message(kind, &output)
 }
 
-/// generateCommitMessage: a message for the staged changes, written by a
-/// read-only turn of `kind`. Blocking. The phone's Changes page reads the
-/// staged changes in place; the desktop's panel asks its engine.
-pub(crate) fn generate_commit_message(
-    harness: TextHarness,
-    cwd: PathBuf,
-    cancel: Arc<AtomicBool>,
-) -> Result<String, String> {
-    let context = scm::staged_context(&cwd)?;
-    write_commit_message(harness, cwd, &context, cancel)
-}
-
-/// The provider's commit message for `context`, the staged changes. Blocking.
-fn write_commit_message(
-    harness: TextHarness,
-    cwd: PathBuf,
-    context: &StagedContext,
-    cancel: Arc<AtomicBool>,
-) -> Result<String, String> {
-    let kind = harness.0;
-    let prompt =
-        scm::commit_message_prompt(context.branch.as_deref(), &context.summary, &context.patch);
-    let output = text_prompt(harness, cwd, prompt, cancel)?;
-    scm::parse_commit_message(&output).ok_or_else(|| {
+/// The commit message in `output`, what `kind` replied.
+fn commit_message(kind: Kind, output: &str) -> Result<String, String> {
+    scm::parse_commit_message(output).ok_or_else(|| {
         let snippet: String = output
             .split_whitespace()
             .collect::<Vec<_>>()
@@ -1995,25 +1990,13 @@ fn write_commit_message(
     })
 }
 
-/// generatePrContent, falling back to the commits, then `gh pr create`; the
-/// new pull request's URL. Blocking. The phone's Changes page runs Git in
-/// place; the desktop's panel goes through [`create_pull_request`].
-pub(crate) fn create_pr_blocking(
-    harness: Option<TextHarness>,
-    cwd: &std::path::Path,
-) -> Result<String, String> {
-    let range = scm::range_context(cwd)?;
-    let (title, body) = write_pr_content(harness, cwd.to_path_buf(), &range);
-    scm::pr_create(cwd, &title, &body, &range.base, &range.head)
-}
-
-/// generatePrContent through the engine: it reads the branch's range, the
-/// provider writes the title and body here (off the main thread), and the
-/// engine opens the pull request. The new pull request's URL.
+/// generatePrContent through the engine: it reads the branch's range, runs
+/// `model` for the title and body, and opens the pull request. The new pull
+/// request's URL.
 async fn create_pull_request(
     engine: Engine,
     checkout: String,
-    harness: Option<TextHarness>,
+    (model, fallback): TextChoice,
 ) -> Result<String, String> {
     let range = engine
         .call::<PrContext>(
@@ -2023,8 +2006,19 @@ async fn create_pull_request(
             },
         )
         .await?;
-    let cwd = PathBuf::from(&checkout);
-    let (title, body) = write_pr_content(harness, cwd, &range);
+    let generate = Generate {
+        request: onicode_protocol::new_id(),
+        cwd: checkout.clone(),
+        prompt: scm::pr_content_prompt(&range),
+        model: Some(model),
+        fallback: Some(fallback),
+    };
+    let parsed = engine
+        .call::<Generate>(None, generate)
+        .await
+        .ok()
+        .and_then(|output| scm::parse_pr_content(&output));
+    let (title, body) = pr_content(parsed, &range);
     let create = CreatePr {
         checkout,
         title,
@@ -2035,23 +2029,9 @@ async fn create_pull_request(
     engine.call::<CreatePr>(Some(OpId::new()), create).await
 }
 
-/// The provider's pull request title and body for `range`, else its first
-/// commit and its commits. Blocking.
-fn write_pr_content(
-    harness: Option<TextHarness>,
-    cwd: PathBuf,
-    range: &RangeContext,
-) -> (String, String) {
-    let parsed = harness.and_then(|harness| {
-        let output = text_prompt(
-            harness,
-            cwd,
-            scm::pr_content_prompt(range),
-            Arc::new(AtomicBool::new(false)),
-        )
-        .ok()?;
-        scm::parse_pr_content(&output)
-    });
+/// The written pull request title and body, else `range`'s first commit and
+/// its commits.
+fn pr_content(parsed: Option<(String, String)>, range: &RangeContext) -> (String, String) {
     let first = range.commit_summary.lines().next().unwrap_or("").trim();
     let title = parsed
         .as_ref()
@@ -2066,8 +2046,74 @@ fn write_pr_content(
     (title, body)
 }
 
+// The phone's Changes page runs Git and the provider in place, in the viewer's
+// process, until the phone host goes (engine.md, "Boundary", step 11).
+
+/// A provider CLI and model for one-off text, `None` for its default model.
+pub(crate) type TextHarness = (Kind, PathBuf, Option<String>);
+
+/// pickTextHarness: `chosen` (the background model picked in Settings) when
+/// installed, else `preferred`, then Claude Code, then Codex on their default
+/// models.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the phone's Changes page runs here until the phone host goes in step 11"
+)]
+pub(crate) fn pick_text_harness(
+    preferred: Kind,
+    chosen: Option<(Kind, Option<String>)>,
+) -> Option<TextHarness> {
+    chosen
+        .and_then(|(kind, model)| provider::resolve(kind).map(|binary| (kind, binary, model)))
+        .or_else(|| {
+            [preferred, Kind::Claude, Kind::Codex]
+                .into_iter()
+                .find_map(|kind| provider::resolve(kind).map(|binary| (kind, binary, None)))
+        })
+}
+
+/// generateCommitMessage: a message for the staged changes, written by a
+/// read-only turn of `kind`. Blocking: the phone's Changes page.
+pub(crate) fn generate_commit_message(
+    harness: TextHarness,
+    cwd: PathBuf,
+    cancel: Arc<AtomicBool>,
+) -> Result<String, String> {
+    let context = scm::staged_context(&cwd)?;
+    let kind = harness.0;
+    let prompt =
+        scm::commit_message_prompt(context.branch.as_deref(), &context.summary, &context.patch);
+    let output = text_prompt(harness, cwd, prompt, cancel)?;
+    commit_message(kind, &output)
+}
+
+/// generatePrContent, falling back to the commits, then `gh pr create`; the
+/// new pull request's URL. Blocking: the phone's Changes page.
+pub(crate) fn create_pr_blocking(
+    harness: Option<TextHarness>,
+    cwd: &std::path::Path,
+) -> Result<String, String> {
+    let range = scm::range_context(cwd)?;
+    let parsed = harness.and_then(|harness| {
+        let output = text_prompt(
+            harness,
+            cwd.to_path_buf(),
+            scm::pr_content_prompt(&range),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .ok()?;
+        scm::parse_pr_content(&output)
+    });
+    let (title, body) = pr_content(parsed, &range);
+    scm::pr_create(cwd, &title, &body, &range.base, &range.head)
+}
+
 /// A read-only one-shot turn, as the React text harness runs: the final
 /// assistant message's text.
+#[expect(
+    clippy::disallowed_methods,
+    reason = "the phone's Changes page runs here until the phone host goes in step 11"
+)]
 fn text_prompt(
     (kind, binary, model): TextHarness,
     cwd: PathBuf,

@@ -12,14 +12,17 @@ use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, ListAlignment,
     ListState, Pixels, Subscription, px,
 };
-use onicode_core::inbox::{
-    self as model, Checks, Details, Diff, Item, Service, Snapshot, Thread, ViewState,
+use onicode_protocol::inbox::{Checks, Details, Diff, Item, Snapshot, Thread, ViewState};
+use onicode_protocol::sessions::Session;
+use onicode_protocol::work::{
+    ConnectInbox, InboxList, PostInboxComment, ReadInboxChecks, ReadInboxDetails, ReadInboxDiff,
+    ReadInboxThread, RunInboxAction,
 };
-use onicode_core::store::Session;
-use onicode_engine::turn::{Database, locked};
+use onicode_protocol::{OpId, inbox as model};
 pub(crate) use ui::relative_time;
 
 use crate::diff_view::{DiffEvent, DiffView};
+use crate::engine_client::{Engine, call};
 use crate::input::{self, Input};
 use crate::popover::AnchorSlot;
 use crate::theme::*;
@@ -38,12 +41,17 @@ enum Tab {
     Checks,
 }
 
+/// Where the viewer keeps the Inbox's source, filters, read marks and width.
+const STATE_KEY: &str = "native-inbox-state";
+
 pub(crate) struct Inbox {
-    store: Database,
-    service: Service,
+    engine: Engine,
+    ui_state: crate::ui_state::UiState,
+    /// The checkout the Inbox was opened from: its trackers' calls run there.
+    cwd: PathBuf,
     projects: Vec<PathBuf>,
     appearances:
-        std::collections::HashMap<String, onicode_core::project_appearance::ProjectAppearance>,
+        std::collections::HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
     state: ViewState,
     snapshot: Snapshot,
     sessions: Vec<Session>,
@@ -148,16 +156,16 @@ impl Inbox {
     }
 
     pub(crate) fn new(
-        store: Database,
+        engine: Engine,
         projects: Vec<PathBuf>,
         cwd: PathBuf,
         cx: &mut Context<Self>,
     ) -> Self {
-        Self::new_inner(store, projects, cwd, true, cx)
+        Self::new_inner(engine, projects, cwd, true, cx)
     }
 
     fn new_inner(
-        store: Database,
+        engine: Engine,
         mut projects: Vec<PathBuf>,
         cwd: PathBuf,
         poll: bool,
@@ -166,16 +174,11 @@ impl Inbox {
         if !projects.contains(&cwd) {
             projects.push(cwd.clone());
         }
-        let (mut state, data_dir) = locked(&store)
-            .map(|db| {
-                (
-                    ViewState::load(&db),
-                    db.data_dir()
-                        .map(PathBuf::from)
-                        .unwrap_or_else(|| cwd.clone()),
-                )
-            })
-            .unwrap_or_else(|_| (ViewState::default(), cwd.clone()));
+        let ui_state = crate::ui_state::shared(cx);
+        let mut state: ViewState = ui_state
+            .get(STATE_KEY)
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
         state.filters.hidden_projects = other_projects(&projects, &cwd);
         let search = cx.new(|cx| Input::field("Filter inbox", "Filter inbox", content(0.4), cx));
         let comment = cx.new(Input::inbox_comment);
@@ -243,11 +246,9 @@ impl Inbox {
             .detach();
         }
         Self {
-            service: Service {
-                data_dir,
-                cwd: cwd.clone(),
-            },
-            store,
+            engine,
+            ui_state,
+            cwd: cwd.clone(),
             projects,
             appearances: Default::default(),
             state,
@@ -325,14 +326,14 @@ impl Inbox {
         if !projects.contains(&cwd) {
             projects.push(cwd.clone());
         }
-        if self.projects != projects || self.service.cwd != cwd {
-            let switched = self.service.cwd != cwd;
+        if self.projects != projects || self.cwd != cwd {
+            let switched = self.cwd != cwd;
             if switched {
                 self.state.filters.hidden_projects = other_projects(&projects, &cwd);
                 self.save();
             }
             self.projects = projects;
-            self.service.cwd = cwd.clone();
+            self.cwd = cwd.clone();
             self.start_project = cwd;
             if switched {
                 let visible = self.visible_items(cx);
@@ -357,7 +358,7 @@ impl Inbox {
         &mut self,
         appearances: std::collections::HashMap<
             String,
-            onicode_core::project_appearance::ProjectAppearance,
+            onicode_protocol::project_appearance::ProjectAppearance,
         >,
         cx: &mut Context<Self>,
     ) {
@@ -428,20 +429,41 @@ impl Inbox {
         self.last_refresh = Instant::now();
         self.generation += 1;
         let generation = self.generation;
-        let service = self.service.clone();
-        let state = self.state.clone();
-        let projects = self.projects.clone();
         let scope = self.fetch_scope();
-        let store = self.store.clone();
-        let task = cx.background_executor().spawn(async move {
-            let snapshot = service.list(&projects, &state);
-            let sessions = locked(&store)
-                .and_then(|db| db.sessions())
-                .unwrap_or_default();
-            (snapshot, sessions)
-        });
+        let task = call::<InboxList>(
+            &self.engine,
+            None,
+            InboxList {
+                cwd: self.cwd.clone(),
+                projects: self.projects.clone(),
+                state: self.state.clone(),
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
-            let (mut snapshot, sessions) = task.await;
+            let (mut snapshot, sessions) = match task.await {
+                Ok(listing) => (
+                    Snapshot {
+                        items: listing.items,
+                        errors: listing.errors,
+                        connections: listing.connections,
+                        linear_teams: listing.linear_teams,
+                        jira_projects: listing.jira_projects,
+                    },
+                    Some(listing.sessions),
+                ),
+                // An engine that cannot answer fails every tracker: their last rows stay.
+                Err(error) => (
+                    Snapshot {
+                        errors: model::PROVIDERS
+                            .iter()
+                            .map(|provider| ((*provider).to_owned(), error.clone()))
+                            .collect(),
+                        ..Snapshot::default()
+                    },
+                    None,
+                ),
+            };
             let _ = this.update(cx, |this, cx| {
                 if this.generation != generation {
                     return;
@@ -468,7 +490,9 @@ impl Inbox {
                     .sort_by_key(|item| std::cmp::Reverse(item.updated_ms()));
                 this.state.seen.seed(&snapshot.items);
                 this.snapshot = snapshot;
-                this.sessions = sessions;
+                if let Some(sessions) = sessions {
+                    this.sessions = sessions;
+                }
                 if this.active
                     && let Some(item) = this.item()
                 {
@@ -519,13 +543,14 @@ impl Inbox {
         format!(
             "{}:{}",
             self.state.fetch_scope(&self.projects),
-            onicode_core::files::path_key(&self.service.cwd.to_string_lossy())
+            onicode_protocol::files::path_key(&self.cwd.to_string_lossy())
         )
     }
 
     fn save(&mut self) {
-        if let Err(error) = locked(&self.store).and_then(|db| self.state.save(&db)) {
-            self.error = Some(error);
+        match serde_json::to_string(&self.state) {
+            Ok(raw) => self.ui_state.set(STATE_KEY, raw),
+            Err(error) => self.error = Some(error.to_string()),
         }
     }
 
@@ -638,12 +663,26 @@ impl Inbox {
             self.document = None;
             self.comments.clear();
         }
-        let service = self.service.clone();
-        let task = cx
-            .background_executor()
-            .spawn(async move { (service.details(&item), service.thread(&item)) });
+        let details = call::<ReadInboxDetails>(
+            &self.engine,
+            None,
+            ReadInboxDetails {
+                cwd: self.cwd.clone(),
+                item: item.clone(),
+            },
+            cx,
+        );
+        let thread = call::<ReadInboxThread>(
+            &self.engine,
+            None,
+            ReadInboxThread {
+                cwd: self.cwd.clone(),
+                item,
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
-            let (details, thread) = task.await;
+            let (details, thread) = (details.await, thread.await);
             let _ = this.update(cx, |this, cx| {
                 if this.detail_generation != generation {
                     return;
@@ -736,15 +775,22 @@ impl Inbox {
         self.extra_request += 1;
         let request = self.extra_request;
         let key = item.key();
-        let service = self.service.clone();
+        let engine = self.engine.clone();
+        let cwd = self.cwd.clone();
         let task = cx.background_executor().spawn(async move {
             if tab == Tab::Code {
-                service.diff(&item).map(|diff| {
-                    let files = diff::models(&diff);
-                    (Some((diff, files)), None)
-                })
+                engine
+                    .call::<ReadInboxDiff>(None, ReadInboxDiff { cwd, item })
+                    .await
+                    .map(|diff| {
+                        let files = diff::models(&diff);
+                        (Some((diff, files)), None)
+                    })
             } else {
-                service.checks(&item).map(|checks| (None, Some(checks)))
+                engine
+                    .call::<ReadInboxChecks>(None, ReadInboxChecks { cwd, item })
+                    .await
+                    .map(|checks| (None, Some(checks)))
             }
         });
         cx.spawn(async move |this, cx| {
@@ -797,11 +843,18 @@ impl Inbox {
         self.posting = true;
         self.post_error = None;
         let key = item.key();
-        let service = self.service.clone();
         let reply = self.reply.as_ref().map(|r| r.0.clone()).unwrap_or_default();
-        let task = cx
-            .background_executor()
-            .spawn(async move { service.comment(&item, body, reply) });
+        let task = call::<PostInboxComment>(
+            &self.engine,
+            Some(OpId::new()),
+            PostInboxComment {
+                cwd: self.cwd.clone(),
+                item,
+                body,
+                reply_to: reply,
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -905,11 +958,18 @@ impl Inbox {
         }
         self.connecting = true;
         self.connect_error = None;
-        let service = self.service.clone();
-        let source = provider.clone();
-        let task = cx
-            .background_executor()
-            .spawn(async move { service.connect(&source, url, email, token) });
+        let task = call::<ConnectInbox>(
+            &self.engine,
+            Some(OpId::new()),
+            ConnectInbox {
+                cwd: self.cwd.clone(),
+                provider: provider.clone(),
+                url,
+                email,
+                token,
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {
@@ -942,12 +1002,18 @@ impl Inbox {
         };
         self.acting = true;
         self.action_error = None;
-        let service = self.service.clone();
         let key = item.key();
         let merging = matches!(action.as_str(), "merge" | "squash" | "rebase");
-        let task = cx
-            .background_executor()
-            .spawn(async move { service.action(&item, &action) });
+        let task = call::<RunInboxAction>(
+            &self.engine,
+            Some(OpId::new()),
+            RunInboxAction {
+                cwd: self.cwd.clone(),
+                item,
+                action,
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = task.await;
             let _ = this.update(cx, |this, cx| {

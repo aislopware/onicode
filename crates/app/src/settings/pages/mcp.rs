@@ -1,5 +1,7 @@
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, SharedString, div, px};
+use onicode_protocol::OpId;
+use onicode_protocol::agents::{McpHealth, McpLogin, RemoveMcpServer};
 
 use crate::settings::SettingsView;
 use crate::settings::management::Target;
@@ -196,7 +198,7 @@ impl SettingsView {
                                                 if server.provider == "claude_desktop" {
                                                     "Claude Desktop"
                                                 } else {
-                                                    onicode_core::provider::Kind::from_id(
+                                                    onicode_protocol::provider::Kind::from_id(
                                                         &server.provider,
                                                     )
                                                     .label()
@@ -311,9 +313,9 @@ impl SettingsView {
     pub(crate) fn refresh_mcp_health(&mut self, cx: &mut Context<Self>) {
         let cwd = self.selected_project.clone();
         let expected = cwd.clone();
-        let work = cx
-            .background_executor()
-            .spawn(async move { onicode_core::mcp::claude_health(&cwd) });
+        let health =
+            crate::engine_client::local(cx).call::<McpHealth>(None, McpHealth { project: cwd });
+        let work = cx.background_executor().spawn(health);
         self.mcp_health = Some(cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -392,12 +394,24 @@ impl SettingsView {
         self.mcp_busy = true;
         let cwd = self.selected_project.clone();
         let expected = cwd.clone();
+        let engine = crate::engine_client::local(cx);
         let work = cx.background_executor().spawn(async move {
-            if remove {
-                onicode_core::mcp::remove(&cwd, &server.name, &server.scope)
+            let op = Some(OpId::new());
+            crate::accounts::applied(if remove {
+                let remove = RemoveMcpServer {
+                    project: cwd,
+                    name: server.name,
+                    scope: server.scope,
+                };
+                engine.call::<RemoveMcpServer>(op, remove).await
             } else {
-                onicode_core::mcp::login(&cwd, &server.provider, &server.name)
-            }
+                let login = McpLogin {
+                    project: cwd,
+                    provider: server.provider,
+                    name: server.name,
+                };
+                engine.call::<McpLogin>(op, login).await
+            })
         });
         cx.spawn(async move |this, cx| {
             let result = work.await;

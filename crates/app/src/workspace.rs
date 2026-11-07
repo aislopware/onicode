@@ -137,8 +137,9 @@ pub(crate) struct Workspace {
     pub classic_sidebar_tab_order: Vec<String>,
     pub new_layout_prompt_dismissed: bool,
     pub preferences: crate::settings::Preferences,
-    pub session_filters: onicode_core::session_filters::Filters,
-    pub project_appearance: HashMap<String, onicode_core::project_appearance::ProjectAppearance>,
+    pub session_filters: onicode_protocol::session_filters::Filters,
+    pub project_appearance:
+        HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
     /// Last desktop source values, used to reconcile subsequent desktop changes
     /// while retaining deliberate native project and preference edits.
     pub desktop_project_preferences: Option<serde_json::Value>,

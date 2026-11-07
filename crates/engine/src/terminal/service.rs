@@ -12,7 +12,7 @@ use onicode_protocol::{Call, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService};
 
 use super::hub::TerminalHub;
-use crate::service::{reply, routed};
+use crate::service::{Group, reply, routed};
 
 pub struct TerminalService {
     hub: Arc<TerminalHub>,
@@ -37,10 +37,8 @@ const METHODS: [&str; 8] = [
     StopForeground::NAME,
 ];
 
-impl TerminalService {
-    /// Whether `method` is one of the Terminal group's.
-    #[must_use]
-    pub fn serves(method: &str) -> bool {
+impl Group for TerminalService {
+    fn serves(&self, method: &str) -> bool {
         METHODS.contains(&method)
     }
 }

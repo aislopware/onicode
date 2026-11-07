@@ -4,8 +4,10 @@ use std::collections::HashMap;
 
 use gpui::prelude::*;
 use gpui::{Context, EventEmitter, Render, Role, Window, div, px};
-use onicode_core::harness_updates::{self, Update};
-use onicode_core::provider::Kind;
+use onicode_protocol::agents::{
+    HarnessUpdate as Update, HarnessUpdates as FindUpdates, RunHarnessUpdate,
+};
+use onicode_protocol::provider::Kind;
 
 use crate::theme::*;
 
@@ -27,16 +29,16 @@ pub(crate) struct HarnessUpdates {
 }
 impl EventEmitter<HarnessUpdatesEvent> for HarnessUpdates {}
 impl HarnessUpdates {
-    pub(crate) fn new(hidden: Vec<String>, cx: &mut Context<Self>) -> Self {
+    /// Starts with the launch check: the engine answers only its run's first one, so a window
+    /// opened later stays quiet.
+    pub(crate) fn new(cx: &mut Context<Self>) -> Self {
         let mut this = Self {
             updates: Vec::new(),
             rows: HashMap::new(),
             checking: false,
             generation: 0,
         };
-        if harness_updates::claim_launch_check() {
-            this.check_now(hidden, cx);
-        }
+        this.check(true, cx);
         this
     }
 
@@ -49,18 +51,23 @@ impl HarnessUpdates {
     }
 
     /// Explicit refresh is permitted after the launch claim or a dismissal.
-    pub(crate) fn check_now(&mut self, hidden: Vec<String>, cx: &mut Context<Self>) {
+    pub(crate) fn check_now(&mut self, cx: &mut Context<Self>) {
+        self.check(false, cx);
+    }
+
+    /// Asks the engine which CLIs have newer releases; it leaves out the hidden providers.
+    fn check(&mut self, launch: bool, cx: &mut Context<Self>) {
         if self.checking || self.busy() {
             return;
         }
         self.checking = true;
         self.generation += 1;
         let generation = self.generation;
-        let work = cx
-            .background_executor()
-            .spawn(async move { harness_updates::find_updates(&hidden) });
+        let find =
+            crate::engine_client::local(cx).call::<FindUpdates>(None, FindUpdates { launch });
+        let work = cx.background_executor().spawn(find);
         cx.spawn(async move |this, cx| {
-            let updates = work.await;
+            let updates = work.await.unwrap_or_default();
             let _ = this.update(cx, |this, cx| {
                 if this.generation != generation {
                     return;
@@ -88,6 +95,7 @@ impl HarnessUpdates {
     }
 
     fn start(&mut self, targets: Vec<Update>, cx: &mut Context<Self>) {
+        let engine = crate::engine_client::local(cx);
         for update in targets {
             let kind = update.harness;
             if matches!(
@@ -97,9 +105,11 @@ impl HarnessUpdates {
                 continue;
             }
             self.rows.insert(kind, RowState::Updating);
-            let work = cx
-                .background_executor()
-                .spawn(async move { harness_updates::run_update(&update) });
+            let run = engine.call::<RunHarnessUpdate>(
+                Some(onicode_protocol::OpId::new()),
+                RunHarnessUpdate { update },
+            );
+            let work = cx.background_executor().spawn(run);
             cx.spawn(async move |this, cx| {
                 let result = work.await;
                 let _ = this.update(cx, |this, cx| {

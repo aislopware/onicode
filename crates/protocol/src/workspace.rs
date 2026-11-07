@@ -39,6 +39,11 @@ pub struct SessionSummary {
     pub busy: bool,
     /// A turn finished since a viewer last showed the session ([`MarkSeen`]).
     pub unread: bool,
+    /// The model its saved settings name, as the provider's native id: what the sidebar shows of
+    /// a session no viewer has opened.
+    pub model: Option<String>,
+    /// The store keeps it off the sidebar (an operator's hidden child session).
+    pub hidden: bool,
 }
 
 /// A project the engine has sessions or folders in.

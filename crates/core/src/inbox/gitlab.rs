@@ -335,7 +335,7 @@ fn gitlab_mr_diff_for(
     match gitlab_get_request(config, &path).call() {
         // Older self-hosted GitLab versions expose /changes but not /diffs.
         // Match the HTTP status so permission and transport errors still surface.
-        Err(ureq::Error::Status(404, _)) => {
+        Ok(response) if response.status() == 404 => {
             let path = format!("{}/changes", item_path(repo, "pr", number));
             let response = gitlab_get(config, &path)?;
             let changes = response
@@ -770,14 +770,16 @@ fn gitlab_get(config: &GitlabConfig, path: &str) -> Result<GitlabResponse, Strin
     read_gitlab_response(gitlab_get_request(config, path).call())
 }
 
-fn gitlab_get_request(config: &GitlabConfig, path: &str) -> ureq::Request {
+fn gitlab_get_request(
+    config: &GitlabConfig,
+    path: &str,
+) -> ureq::RequestBuilder<ureq::typestate::WithoutBody> {
     let url = format!("{}/api/v4{}", config.url.trim_end_matches('/'), path);
-    let agent = gitlab_agent();
-    agent
-        .get(&url)
-        .set("PRIVATE-TOKEN", &config.token)
-        .set("Accept", "application/json")
-        .set("User-Agent", USER_AGENT)
+    gitlab_agent()
+        .get(url)
+        .header("PRIVATE-TOKEN", &config.token)
+        .header("Accept", "application/json")
+        .header("User-Agent", USER_AGENT)
 }
 
 fn gitlab_post_form(
@@ -786,49 +788,47 @@ fn gitlab_post_form(
     fields: &[(&str, &str)],
 ) -> Result<GitlabResponse, String> {
     let url = format!("{}/api/v4{}", config.url.trim_end_matches('/'), path);
-    let agent = gitlab_agent();
     read_gitlab_response(
-        agent
-            .post(&url)
-            .set("PRIVATE-TOKEN", &config.token)
-            .set("Accept", "application/json")
-            .set("User-Agent", USER_AGENT)
-            .send_form(fields),
+        gitlab_agent()
+            .post(url)
+            .header("PRIVATE-TOKEN", &config.token)
+            .header("Accept", "application/json")
+            .header("User-Agent", USER_AGENT)
+            .send_form(fields.iter().copied()),
     )
 }
 
 fn gitlab_agent() -> ureq::Agent {
-    ureq::AgentBuilder::new()
-        .timeout(HTTP_TIMEOUT)
-        .redirects(0)
+    ureq::Agent::config_builder()
+        .timeout_global(Some(HTTP_TIMEOUT))
+        .max_redirects(0)
+        // GitLab explains a failure in the body.
+        .http_status_as_error(false)
         .build()
+        .into()
 }
 
 fn read_gitlab_response(
-    result: Result<ureq::Response, ureq::Error>,
+    result: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
 ) -> Result<GitlabResponse, String> {
-    let response = match result {
-        Ok(response) => response,
-        Err(ureq::Error::Status(401, _)) | Err(ureq::Error::Status(403, _)) => {
-            return Err("GitLab access token is invalid or lacks permission".into());
-        }
-        Err(ureq::Error::Status(status, response)) => {
-            let body = response.into_string().unwrap_or_default();
-            return Err(gitlab_http_error(status, &body));
-        }
-        Err(_) => return Err("Could not reach GitLab".into()),
+    let Ok(mut response) = result else {
+        return Err("Could not reach GitLab".into());
     };
-    let status = response.status();
+    let status = response.status().as_u16();
+    if status == 401 || status == 403 {
+        return Err("GitLab access token is invalid or lacks permission".into());
+    }
     let has_next_page = response
-        .header("X-Next-Page")
+        .headers()
+        .get("X-Next-Page")
+        .and_then(|value| value.to_str().ok())
         .map(str::trim)
         .is_some_and(|value| !value.is_empty());
-    let body = response
-        .into_string()
-        .map_err(|_| "GitLab returned an unreadable response".to_string())?;
+    let body = response.body_mut().read_to_string();
     if !(200..300).contains(&status) {
-        return Err(gitlab_http_error(status, &body));
+        return Err(gitlab_http_error(status, &body.unwrap_or_default()));
     }
+    let body = body.map_err(|_| "GitLab returned an unreadable response".to_string())?;
     let value =
         serde_json::from_str(&body).map_err(|_| "GitLab returned invalid JSON".to_string())?;
     Ok(GitlabResponse {

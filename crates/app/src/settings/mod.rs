@@ -225,7 +225,7 @@ pub(crate) struct SettingsView {
     recording_error: Option<String>,
     management: Option<management::Editor>,
     management_generation: u64,
-    binary_anchors: RefCell<HashMap<onicode_core::provider::Kind, AnchorSlot>>,
+    binary_anchors: RefCell<HashMap<onicode_protocol::provider::Kind, AnchorSlot>>,
     mcp_show_all: bool,
     mcp_remove_scopes: HashMap<String, String>,
     mcp_busy: bool,
@@ -417,16 +417,15 @@ impl SettingsView {
             && let Some(center) = crate::accounts::get(cx)
         {
             center.update(cx, |center, cx| {
-                for kind in onicode_core::accounts::PROVIDERS {
+                for kind in onicode_protocol::accounts::PROVIDERS {
                     center.load_provider(kind, true, cx);
                 }
             });
         }
         let cwd = self.selected_project.clone();
         self.discovery_loading = true;
-        let work = cx
-            .background_executor()
-            .spawn(async move { data::discover(&cwd) });
+        let engine = crate::engine_client::local(cx);
+        let work = cx.background_executor().spawn(data::discover(engine, cwd));
         self.discovery_task = Some(cx.spawn(async move |this, cx| {
             let data = work.await;
             let _ = this.update(cx, |this, cx| {

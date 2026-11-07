@@ -1,5 +1,5 @@
 //! Plain URLs in a line of text: the web build's WebLinksAddon pattern,
-//! `(https?|HTTPS?)://[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~\[\]`()<>]`, matched as a regex
+//! `` (https?|HTTPS?)://[^\s"'!*(){}|\\^<>`]*[^\s"':,.!?{}|\\^~\[\]`()<>] ``, matched as a regex
 //! engine would (leftmost, greedy, then backing off until the last character may end a URL), and
 //! without one, since the line is short and the pattern fixed.
 

@@ -490,7 +490,7 @@ fn session_event() -> impl Strategy<Value = SessionEvent> {
         (any::<u64>(), queue()).prop_map(|(rev, state)| SessionEvent::Queue { rev, state }),
         settings().prop_map(|settings| SessionEvent::Settings(Box::new(settings))),
         text().prop_map(SessionEvent::Title),
-        text().prop_map(SessionEvent::ProviderId),
+        option::of(text()).prop_map(SessionEvent::ProviderId),
         text().prop_map(SessionEvent::Model),
         text().prop_map(SessionEvent::Worktree),
         usage().prop_map(SessionEvent::Context),
@@ -726,11 +726,13 @@ proptest! {
         into in session_id(),
         turn in any::<usize>(),
         provider in text(),
-        account in text(),
-        model in option::of(text()),
+        thread in option::of(text()),
+        used in any::<u64>(),
+        window in option::of(any::<u64>()),
     ) {
         round_trips(&Fork { session, turn, into })?;
-        round_trips(&SwitchProvider { session, provider, account, model })?;
+        let context = Some(Usage { used, window });
+        round_trips(&SwitchProvider { session, provider, thread, context })?;
     }
 
     #[test]
@@ -903,9 +905,19 @@ fn summary() -> impl Strategy<Value = SessionSummary> {
         option::of(text()),
         any::<bool>(),
         any::<bool>(),
+        (option::of(text()), any::<bool>()),
     )
         .prop_map(
-            |((id, session, key), worktree, draft, started_by, automation, busy, unread)| {
+            |(
+                (id, session, key),
+                worktree,
+                draft,
+                started_by,
+                automation,
+                busy,
+                unread,
+                (model, hidden),
+            )| {
                 SessionSummary {
                     id,
                     session,
@@ -916,6 +928,8 @@ fn summary() -> impl Strategy<Value = SessionSummary> {
                     automation,
                     busy,
                     unread,
+                    model,
+                    hidden,
                 }
             },
         )

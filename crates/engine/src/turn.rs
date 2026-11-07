@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use onicode_core::agent::{Approval, Control, Settings};
 use onicode_core::provider::{self, Event, Kind, Request};
 use onicode_core::store::{Session, Store};
-use onicode_core::transcript::{Row, Transcript};
+use onicode_core::transcript::{AttachFiles, Row, Transcript};
 #[cfg(all(test, unix))]
 mod follow_up_tests;
 mod handoff;

@@ -7,7 +7,7 @@ use gpui::{
     Animation, AnimationExt, AnyElement, App, Context, Entity, EntityId, EventEmitter, FocusHandle,
     Focusable, Hsla, MouseButton, Role, Subscription, Window, canvas, div, px,
 };
-use onicode_core::agent::Question;
+use onicode_protocol::agent::Question;
 
 use crate::input;
 use crate::theme::*;
@@ -428,7 +428,7 @@ impl QuestionCard {
         let total = self.request.items.len();
         let step = self.step;
         let countdown = self.request.auto_resolve_at.map(|deadline| {
-            let remaining = deadline.saturating_sub(onicode_core::time::now_ms());
+            let remaining = deadline.saturating_sub(onicode_protocol::time::now_ms());
             if remaining > 60_000 {
                 "Optional".to_owned()
             } else {
@@ -823,7 +823,7 @@ mod tests {
     use std::rc::Rc;
 
     use gpui::{TestAppContext, VisualTestContext};
-    use onicode_core::agent::{QuestionItem, QuestionOption};
+    use onicode_protocol::agent::{QuestionItem, QuestionOption};
 
     use super::*;
 

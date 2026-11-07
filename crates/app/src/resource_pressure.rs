@@ -8,7 +8,9 @@ use gpui::{
     AnyElement, Context, EventEmitter, FocusHandle, FontWeight, Role, ScrollHandle, SharedString,
     Task, Window, div, px, rgb,
 };
-use onicode_core::resources::{self, OwnedProcess, Pressure, Sample};
+use onicode_core::resources::{self, Pressure, Sample};
+use onicode_protocol::OpId;
+use onicode_protocol::work::{AgentProcess, AgentProcesses, StopAgentTool};
 
 use crate::popover::AnchorSlot;
 use crate::right_panel::spinner;
@@ -33,7 +35,7 @@ pub(crate) struct ResourceMonitor {
     pressure: Pressure,
     open: bool,
     classic: bool,
-    processes: Vec<OwnedProcess>,
+    processes: Vec<AgentProcess>,
     loading: bool,
     error: Option<String>,
     stop_error: Option<String>,
@@ -202,11 +204,12 @@ impl ResourceMonitor {
 
     /// Lists owned processes now, then every 3s while the dialog is open.
     fn refresh(&mut self, cx: &mut Context<Self>) {
+        let engine = crate::engine_client::local(cx);
         self.refresh = Some(cx.spawn(async move |this, cx| {
             loop {
                 let rows = cx
                     .background_executor()
-                    .spawn(async { resources::processes() })
+                    .spawn(engine.call::<AgentProcesses>(None, AgentProcesses {}))
                     .await;
                 if this
                     .update(cx, |this, cx| {
@@ -242,9 +245,12 @@ impl ResourceMonitor {
         self.stop_error = None;
         self.stopping = Some(identity.clone());
         // A user's stop request must not wait behind the next listing.
-        let work = cx
-            .background_executor()
-            .spawn(async move { resources::stop_tool(pid, &identity) });
+        let work = crate::engine_client::call::<StopAgentTool>(
+            &crate::engine_client::local(cx),
+            Some(OpId::new()),
+            StopAgentTool { pid, identity },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -269,7 +275,7 @@ impl ResourceMonitor {
     ) -> AnyElement {
         let active = self.pressure.active;
         let reasons = self.reasons();
-        let mut groups: Vec<(i64, Vec<&OwnedProcess>)> = Vec::new();
+        let mut groups: Vec<(i64, Vec<&AgentProcess>)> = Vec::new();
         for process in &self.processes {
             match groups.iter_mut().find(|(id, _)| *id == process.session) {
                 Some((_, rows)) => rows.push(process),
@@ -470,7 +476,7 @@ impl ResourceMonitor {
         &self,
         ix: usize,
         id: i64,
-        rows: &[&OwnedProcess],
+        rows: &[&AgentProcess],
         session: Option<&SessionInfo>,
         busy: bool,
         cx: &mut Context<Self>,
@@ -615,7 +621,7 @@ impl ResourceMonitor {
 
     fn process_row(
         &self,
-        process: &OwnedProcess,
+        process: &AgentProcess,
         title: &SharedString,
         has_session: bool,
         busy: bool,
@@ -754,8 +760,8 @@ fn red(alpha: f32) -> gpui::Hsla {
 
 /// Keep controls under the pointer while CPU usage changes between polls:
 /// known processes keep their place and sessions keep their order.
-fn stable_order(previous: &[OwnedProcess], rows: Vec<OwnedProcess>) -> Vec<OwnedProcess> {
-    let mut remaining: Vec<Option<OwnedProcess>> = rows.into_iter().map(Some).collect();
+fn stable_order(previous: &[AgentProcess], rows: Vec<AgentProcess>) -> Vec<AgentProcess> {
+    let mut remaining: Vec<Option<AgentProcess>> = rows.into_iter().map(Some).collect();
     let mut ordered = Vec::new();
     for old in previous {
         if let Some(row) = remaining
@@ -800,8 +806,8 @@ mod tests {
 
     use super::*;
 
-    fn row(pid: u32, session: i64, cpu: f64) -> OwnedProcess {
-        OwnedProcess {
+    fn row(pid: u32, session: i64, cpu: f64) -> AgentProcess {
+        AgentProcess {
             pid,
             identity: pid.to_string(),
             session,

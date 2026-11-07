@@ -5,26 +5,10 @@ use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use super::Profile;
+use super::{AuthAction, Profile, ProfileExt as _, login_arguments};
 use crate::process;
 use crate::provider::{self, Kind};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AuthAction {
-    SignIn,
-    SignOut,
-}
-pub fn arguments(kind: Kind, action: AuthAction) -> Option<&'static [&'static str]> {
-    match (kind, action) {
-        (Kind::Claude | Kind::Devin, AuthAction::SignIn) => Some(&["auth", "login"]),
-        (Kind::Claude | Kind::Devin, AuthAction::SignOut) => Some(&["auth", "logout"]),
-        (Kind::Codex | Kind::Cursor, AuthAction::SignIn) => Some(&["login"]),
-        (Kind::Codex | Kind::Cursor, AuthAction::SignOut) => Some(&["logout"]),
-        (Kind::Grok, AuthAction::SignIn) => Some(&["login", "--oauth"]),
-        (Kind::Fx, AuthAction::SignIn) => Some(&["login", "vercel"]),
-        _ => None,
-    }
-}
 /// The CLI opens its browser and owns credential writes. Never relay its URLs,
 /// OAuth codes or tokens to logs, clipboard, or the native account metadata.
 pub fn authenticate(
@@ -33,7 +17,7 @@ pub fn authenticate(
     action: AuthAction,
     cancel: Arc<AtomicBool>,
 ) -> Result<(), String> {
-    let args = arguments(kind, action)
+    let args = login_arguments(kind, action)
         .ok_or("This provider does not offer a single browser sign-in flow")?;
     let binary =
         provider::resolve(kind).ok_or_else(|| format!("{} CLI not installed", kind.label()))?;
@@ -145,18 +129,18 @@ mod tests {
     #[test]
     fn browser_auth_commands_and_error_details_match_the_provider_flow() {
         assert_eq!(
-            arguments(Kind::Claude, AuthAction::SignIn),
+            login_arguments(Kind::Claude, AuthAction::SignIn),
             Some(["auth", "login"].as_slice())
         );
         assert_eq!(
-            arguments(Kind::Codex, AuthAction::SignOut),
+            login_arguments(Kind::Codex, AuthAction::SignOut),
             Some(["logout"].as_slice())
         );
         assert_eq!(
-            arguments(Kind::Grok, AuthAction::SignIn),
+            login_arguments(Kind::Grok, AuthAction::SignIn),
             Some(["login", "--oauth"].as_slice())
         );
-        assert!(arguments(Kind::Pi, AuthAction::SignIn).is_none());
+        assert!(login_arguments(Kind::Pi, AuthAction::SignIn).is_none());
         assert_eq!(
             safe_detail("first line\n Complete at https://example.test/?code=private\n"),
             "Complete at sign-in link"

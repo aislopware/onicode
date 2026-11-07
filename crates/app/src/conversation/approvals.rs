@@ -138,17 +138,15 @@ fn approval_button(id: &'static str, label: &'static str) -> gpui::Stateful<gpui
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
     use std::time::Duration;
 
     use gpui::{TestAppContext, VisualTestContext, WindowHandle};
-    use onicode_core::store::Store;
 
     use super::*;
 
     fn conversation(cx: &mut TestAppContext) -> WindowHandle<Conversation> {
-        let store = Store::open(Path::new(":memory:")).unwrap();
-        let summary = store.create("codex", "/tmp").unwrap();
+        let engine = cx.update(crate::engine_client::Engine::memory);
+        let summary = engine.seed().create("codex", "/tmp").unwrap();
         cx.update(|cx| {
             input::bind(cx);
             cx.set_global(crate::settings::Preferences {
@@ -158,7 +156,7 @@ mod tests {
             });
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
-                    let mut view = Conversation::new(summary, Arc::new(Mutex::new(store)), cx);
+                    let mut view = Conversation::new(summary, engine, cx);
                     view.loaded = true;
                     view.summary.has_messages = true;
                     view.busy = true;

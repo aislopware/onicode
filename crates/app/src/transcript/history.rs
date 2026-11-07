@@ -54,12 +54,12 @@ impl TranscriptView {
     }
 
     /// Saved turn receipts, keyed by row.
-    pub(crate) fn set_turns(&mut self, turns: HashMap<usize, onicode_core::agent::TurnInfo>) {
+    pub(crate) fn set_turns(&mut self, turns: HashMap<usize, onicode_protocol::agent::TurnInfo>) {
         self.turns = turns;
     }
 
     /// The turn receipts, keyed by row, as settings save them.
-    pub(crate) fn window_turns(&self) -> HashMap<usize, onicode_core::agent::TurnInfo> {
+    pub(crate) fn window_turns(&self) -> HashMap<usize, onicode_protocol::agent::TurnInfo> {
         self.turns.clone()
     }
 
@@ -117,7 +117,7 @@ impl TranscriptView {
             .saturating_add(
                 self.visuals
                     .len()
-                    .saturating_mul(onicode_core::visual::MEMORY_LIMIT_BYTES),
+                    .saturating_mul(onicode_protocol::visual::MEMORY_LIMIT_BYTES),
             )
     }
 

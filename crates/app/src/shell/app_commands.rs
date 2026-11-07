@@ -1,8 +1,11 @@
 //! Operator's project actions.
-use onicode_core::agent::Settings;
 use onicode_core::app_access as app;
 use onicode_core::app_access::bridge::{Call, Server};
 use onicode_protocol::OpId;
+use onicode_protocol::agent::Settings;
+use onicode_protocol::app_access::{
+    AppModels, AppNotes, ReadAppConversation, ReadAppReceipt, SaveAppReceipt, StartAppSession,
+};
 use onicode_protocol::git::{CreateWorktree, NewWorktree, Refs};
 use serde_json::{Value, json};
 
@@ -15,7 +18,7 @@ type Placement = Option<(i64, Edge)>;
 enum Effect {
     None,
     Start(Box<(Session, Settings, bool, bool, Placement)>),
-    Groups(String, onicode_core::session_groups::Groups),
+    Groups(String, onicode_protocol::session_groups::Groups),
     Archive(i64),
 }
 impl Shell {
@@ -66,15 +69,20 @@ impl Shell {
             (call.session, call.request_id.clone()),
             (fingerprint.clone(), result.clone()),
         );
-        let store = self.store.clone();
-        let key = app::receipt_key(call.session, &call.request_id);
         let receipt = json!([fingerprint, result]).to_string();
         // A successful reply is sent only after its receipt reaches durable storage.
-        let saved = cx
-            .background_executor()
-            .spawn(async move { locked(&store)?.save_setting(&key, &receipt) });
+        let saved = crate::engine_client::call::<SaveAppReceipt>(
+            &self.engine,
+            Some(OpId::new()),
+            SaveAppReceipt {
+                session: call.session,
+                request: call.request_id.clone(),
+                receipt,
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
-            let saved = saved.await;
+            let saved = saved.await.map(|_| ());
             let _ = this.update(cx, |this, _| {
                 this.app_pending
                     .remove(&(call.session, call.request_id.clone()));
@@ -84,12 +92,14 @@ impl Shell {
         .detach();
     }
 
-    fn app_background<F>(&mut self, call: Call, work: F, cx: &mut Context<Self>)
-    where
-        F: FnOnce(Database) -> Result<(Value, Effect), String> + Send + 'static,
-    {
-        let store = self.store.clone();
-        let work = cx.background_executor().spawn(async move { work(store) });
+    /// Answers `call` with the engine's JSON reply, which has no effect to show.
+    fn app_engine_reply(
+        &mut self,
+        call: Call,
+        reply: gpui::Task<Result<String, String>>,
+        cx: &mut Context<Self>,
+    ) {
+        let work = cx.spawn(async move |_, _| Ok((json_reply(reply.await?)?, Effect::None)));
         self.app_settle(call, work, cx);
     }
 
@@ -109,7 +119,6 @@ impl Shell {
                         Effect::Start(start) => {
                             let (summary, settings, draft, reveal, placement) = *start;
                             let id = summary.id;
-                            crate::engine_client::refresh_session(&this.store, id, cx);
                             this.draft_sessions.insert(id);
                             this.sidebar_hidden_sessions.remove(&id);
                             this.session_worktrees
@@ -172,15 +181,15 @@ impl Shell {
             .get("project")
             .and_then(Value::as_str)
             .is_some_and(|p| {
-                onicode_core::files::path_key(p)
-                    != onicode_core::files::path_key(&caller.summary.cwd)
+                onicode_protocol::files::path_key(p)
+                    != onicode_protocol::files::path_key(&caller.summary.cwd)
             })
         {
             return Err("Operator can only access this thread's project.".into());
         }
         if (caller.app_read_only
             || caller.settings.plan
-            || caller.settings.access == onicode_core::agent::AccessMode::ReadOnly)
+            || caller.settings.access == onicode_protocol::agent::AccessMode::ReadOnly)
             && !matches!(
                 call.action.as_str(),
                 "models.list"
@@ -222,19 +231,24 @@ impl Shell {
             self.dispatch_app_call(call, window, cx);
             return;
         }
-        let receipt_key = app::receipt_key(call.session, &call.request_id);
-        let store = self.store.clone();
-        let work = cx.background_executor().spawn(async move {
-            locked(&store)?
-                .setting(&receipt_key)?
-                .map(|raw| {
-                    serde_json::from_str::<(String, Result<Value, String>)>(&raw)
-                        .map_err(|e| e.to_string())
-                })
-                .transpose()
-        });
+        let work = crate::engine_client::call::<ReadAppReceipt>(
+            &self.engine,
+            None,
+            ReadAppReceipt {
+                session: call.session,
+                request: call.request_id.clone(),
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
-            let saved = work.await;
+            let saved = work.await.and_then(|receipt| {
+                receipt
+                    .map(|raw| {
+                        serde_json::from_str::<(String, Result<Value, String>)>(&raw)
+                            .map_err(|e| e.to_string())
+                    })
+                    .transpose()
+            });
             let _ = this.update_in(cx, |this, window, cx| match saved {
                 Ok(Some((hash, result))) => {
                     this.app_pending
@@ -260,12 +274,14 @@ impl Shell {
         project: &str,
         manage: bool,
     ) -> Result<i64, String> {
-        let id = session_id(input, "sessionId", &self.store)?;
+        let id = session_id(input, "sessionId", &self.mirror)?;
         let summary = self
             .session_summaries
             .get(&id)
             .ok_or("Session was not found in this project")?;
-        if onicode_core::files::path_key(&summary.cwd) != onicode_core::files::path_key(project) {
+        if onicode_protocol::files::path_key(&summary.cwd)
+            != onicode_protocol::files::path_key(project)
+        {
             return Err("Session is outside this project.".into());
         }
         if manage && (id == caller || self.orchestration_worker(id)) {
@@ -288,7 +304,7 @@ impl Shell {
             _ => return Err("placement must be tab, right or down".into()),
         };
         let id = if input.get("besideSessionId").is_some() {
-            session_id(input, "besideSessionId", &self.store)?
+            session_id(input, "besideSessionId", &self.mirror)?
         } else {
             caller
         };
@@ -357,11 +373,13 @@ impl Shell {
                         (kind, profile)
                     })
                     .collect();
-                self.app_background(
-                    call,
-                    move |_| Ok((app::models_catalog(profiles)?, Effect::None)),
+                let reply = crate::engine_client::call::<AppModels>(
+                    &self.engine,
+                    None,
+                    AppModels { profiles },
                     cx,
                 );
+                self.app_engine_reply(call, reply, cx);
                 return;
             }
             "sessions.start" => {
@@ -385,30 +403,35 @@ impl Shell {
                         return;
                     }
                 };
-                let caller = call.session;
-                let request = call.request_id.clone();
-                let fingerprint = app::fingerprint(&action, &input);
-                self.app_background(call,move|store| {
-                    let models=if input.get("model").is_some() || input.get("modelSettings").is_some() || input.get("effort").is_some() {
-                        onicode_core::catalog::models_for(kind,&settings.account)?
-                    }else{onicode_core::catalog::cached_models_for(kind,&settings.account).unwrap_or_default()};
-                    let mut settings=app::launch_settings(&input,&provider,settings,kind,&models)?;
-                    settings.revision=0;
-                    let title=app::optional_text(&input,"title",160)?.unwrap_or_else(||prompt.chars().take(160).collect());
-                    let mut store=locked(&store)?;
-                    let (mut summary,fresh)=store.create_app_session(caller,&request,&fingerprint,kind.id(),&project)?;
-                    if fresh {
-                        if let Err(error)=app::launch_checkout(&input,&project,summary.id,&mut settings) {let _=store.delete(summary.id);return Err(error);}
-                        store.title(summary.id,&title)?;summary.title=title;
-                        store.configure_agent(summary.id,kind.id(),&settings)?;
-                        store.save_started_link(summary.id,caller)?;
-                        store.prepare_app_prompt(summary.id,&request,&prompt)?;
-                        summary.has_messages=true;
-                    }
-                    let draft=input["draft"].as_bool().unwrap_or(false);let reveal=input["reveal"].as_bool().unwrap_or(false);
-                    let value=json!({"id":summary.id,"sessionId":summary.id,"cwd":project,"harness":kind.id(),"model":settings.model,"submitted":!draft,"draft":draft,"accepted":true});
-                    Ok((value,if fresh {Effect::Start(Box::new((summary,settings,draft,reveal,placement)))}else{Effect::None}))
-                },cx);
+                let started = crate::engine_client::call::<StartAppSession>(
+                    &self.engine,
+                    Some(OpId::new()),
+                    StartAppSession {
+                        caller: call.session,
+                        request: call.request_id.clone(),
+                        fingerprint: app::fingerprint(&action, &input),
+                        input: input.to_string(),
+                        provider,
+                        kind,
+                        project,
+                        prompt,
+                        settings,
+                    },
+                    cx,
+                );
+                let draft = input["draft"].as_bool().unwrap_or(false);
+                let reveal = input["reveal"].as_bool().unwrap_or(false);
+                let work = cx.spawn(async move |_, _| {
+                    let started = started.await?;
+                    let effect = match started.started {
+                        Some((summary, settings)) => {
+                            Effect::Start(Box::new((summary, settings, draft, reveal, placement)))
+                        }
+                        None => Effect::None,
+                    };
+                    Ok((json_reply(started.value)?, effect))
+                });
+                self.app_settle(call, work, cx);
                 return;
             }
             "sessions.read" => match self.app_target(&input, call.session, &project, false) {
@@ -419,16 +442,18 @@ impl Shell {
                         .get(&id)
                         .is_some_and(|v| v.read(cx).has_saved_draft())
                         || self.draft_sessions.contains(&id);
-                    self.app_background(
-                        call,
-                        move |store| {
-                            Ok((
-                                locked(&store)?.app_conversation(id, &input, busy, draft)?,
-                                Effect::None,
-                            ))
+                    let reply = crate::engine_client::call::<ReadAppConversation>(
+                        &self.engine,
+                        None,
+                        ReadAppConversation {
+                            session: id,
+                            input: input.to_string(),
+                            busy,
+                            draft,
                         },
                         cx,
                     );
+                    self.app_engine_reply(call, reply, cx);
                     return;
                 }
                 Err(e) => Err(e),
@@ -477,7 +502,7 @@ impl Shell {
                             view.update(cx, |v, cx| v.stop_app_session(cx));
                             let archived =
                                 crate::engine_client::call::<onicode_protocol::workspace::Archive>(
-                                    &self.store,
+                                    &self.engine,
                                     Some(onicode_protocol::OpId::new()),
                                     onicode_protocol::workspace::Archive {
                                         session: id,
@@ -531,25 +556,19 @@ impl Shell {
                 }
             }
             "notes.list" | "notes.read" | "notes.write" => {
-                let caller = call.session;
-                let request = call.request_id.clone();
-                self.app_background(
-                    call,
-                    move |store| {
-                        Ok((
-                            app::notes_action(
-                                &*locked(&store)?,
-                                caller,
-                                &request,
-                                &action,
-                                &input,
-                                &[project],
-                            )?,
-                            Effect::None,
-                        ))
+                let reply = crate::engine_client::call::<AppNotes>(
+                    &self.engine,
+                    mutating(&action).then(OpId::new),
+                    AppNotes {
+                        caller: call.session,
+                        request: call.request_id.clone(),
+                        action,
+                        input: input.to_string(),
+                        projects: vec![project],
                     },
                     cx,
                 );
+                self.app_engine_reply(call, reply, cx);
                 return;
             }
             "folders.list" => Ok(
@@ -569,7 +588,7 @@ impl Shell {
                             } else {
                                 let folder = if let Some(name) = name {
                                     let folder = groups
-                                        .create_folder(&[id], onicode_core::new_id())
+                                        .create_folder(&[id], onicode_protocol::new_id())
                                         .unwrap();
                                     groups.rename_folder(&folder, &name);
                                     folder
@@ -584,7 +603,7 @@ impl Shell {
                                     let saved = crate::engine_client::call::<
                                         onicode_protocol::workspace::SaveGroups,
                                     >(
-                                        &self.store,
+                                        &self.engine,
                                         Some(onicode_protocol::OpId::new()),
                                         onicode_protocol::workspace::SaveGroups {
                                             project: project.clone(),
@@ -657,12 +676,24 @@ fn mutating(action: &str) -> bool {
             | "worktrees.list"
     )
 }
-fn worktree_json(tree: &onicode_core::git::Worktree) -> Value {
+fn worktree_json(tree: &onicode_protocol::git::Worktree) -> Value {
     json!({"path":tree.path,"branch":tree.branch,"head":tree.head,"main":tree.main,"missing":tree.missing})
 }
-fn session_id(input: &Value, key: &str, store: &Database) -> Result<i64, String> {
+/// An engine reply's JSON.
+fn json_reply(text: String) -> Result<Value, String> {
+    serde_json::from_str(&text).map_err(|error| error.to_string())
+}
+/// The session an action names, by the id the store keeps it under for other tools or by row.
+fn session_id(
+    input: &Value,
+    key: &str,
+    mirror: &super::workspace_mirror::Mirror,
+) -> Result<i64, String> {
     match input.get(key) {
-        Some(Value::String(id)) => locked(store)?.resolve_session_id(id),
+        Some(Value::String(id)) => mirror.row_for_key(id).map_or_else(
+            || id.parse::<i64>().map_err(|_| "Unknown session ID".into()),
+            Ok,
+        ),
         Some(value) => value.as_i64().ok_or_else(|| format!("Provide {key}")),
         None => Err(format!("Provide {key}")),
     }

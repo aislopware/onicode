@@ -17,15 +17,7 @@ impl Surface {
         match self {
             Self::Inbox => shell.open_inbox(window, cx),
             Self::Notes => shell.open_notes(window, cx),
-            Self::Automations => {
-                // An empty in-memory service keeps this navigation test
-                // independent of asynchronous service initialization.
-                shell.automation_state.service = Some(Arc::new(Mutex::new(
-                    onicode_core::automations::Service::open(std::path::Path::new(":memory:"))
-                        .unwrap(),
-                )));
-                shell.open_automations(window, cx);
-            }
+            Self::Automations => shell.open_automations(window, cx),
             Self::Search => shell.open_app_search(window, cx),
         }
     }

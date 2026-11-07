@@ -2,8 +2,9 @@
 //! overlapping file scopes gate dispatch (the engine's `orchestration::Run`); approvals stay in
 //! each worker's chat. Workers are created with `CreateSession`, and the lead's summary is kept
 //! with `SaveOrchestration`.
-use onicode_core::orchestration::{self, Plan};
 use onicode_engine::workspace::orchestration::{Run, check_scope};
+use onicode_protocol::orchestration;
+use onicode_protocol::orchestration::Plan;
 use onicode_protocol::workspace::{NewSession, SaveOrchestration};
 
 use super::*;
@@ -214,9 +215,9 @@ impl Shell {
 #[cfg(test)]
 mod tests {
     use gpui::TestAppContext;
-    use onicode_core::agent::Settings;
-    use onicode_core::orchestration::Task;
     use onicode_engine::workspace::orchestration::TaskState;
+    use onicode_protocol::agent::Settings;
+    use onicode_protocol::orchestration::Task;
 
     use super::*;
     #[gpui::test]
