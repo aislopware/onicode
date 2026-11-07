@@ -13,8 +13,7 @@ Reads come from the host's watches: a snapshot at a cursor, then every event, re
 drop, the snapshots last seen kept on disk so a first frame never waits; file trees as host-pushed listings,
 as in Zed; per-device catalogs and recently opened files cached on disk and revalidated in the background. Links to
 every known engine are dialled at start and on foreground, kept alive at 1 s pings while something live is on
-screen, and reset on wake or a path change. The terminal keeps a mosh-style predictor that the host always
-overrides. It trusts the first key at a shell-marked prompt and holds predictions back on a fast link.
+screen, and reset on wake or a path change. The terminal paints only what the host echoed (`terminal.md`).
 
 Each target is stated in round trips plus a constant, or as zero network events before the echo. Seeded
 virtual-time scenarios in `onicode-latency` over `onicode-net-sim` profiles (LAN to DERP, loss, roam, sleep)

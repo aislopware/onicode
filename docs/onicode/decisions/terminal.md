@@ -25,14 +25,12 @@ A viewer's mirror is display-only, with its PTY writes and effects off. It takes
 stream says so, so a window resize shows one frame late, but the mirror never diverges from the host. The element
 paints the mirror's dirty rows from libghostty's render state and keeps shaped rows by row id.
 
-Over a slow link the viewer predicts local echo (`predict.rs`, from mosh's rules). Typed characters are painted
-where the echo will land, with the same cell drawing and the program's current pen, and the cursor is moved past
-them. Trust is earned per run of typing: a run's first character waits for the host to echo it. Trust is lost when
-output confirms nothing the run is waiting on. The host always wins: an unconfirmed prediction behind a confirmed
-one, or one past its echo deadline, wipes them all. Predictions apply only on the primary screen, with the cursor
-visible and the view at the live bottom. They show only while the measured echo time (keystroke to the output that
-confirms it) is above 30 ms, and stop again below 15 ms. A password prompt never echoes, so it never shows a
-character, and the engine on the same machine never shows a prediction.
+The viewer paints only what the host echoed; there is no local echo prediction. A mosh-style predictor was built
+and deleted (2026-11-07, owner ruling: features that are error-prone and extremely complex go). Guessing where an
+echo lands needs heuristics the host cannot confirm: without an input acknowledgement from the host, an earlier
+key's echo can look like the confirmation of a later one, and a 50,000-case property run kept finding a key typed
+at a `Password:` prompt painted, and a fast link measured as slow from queued bursts. Over a tailnet, echo is one
+round trip, usually tens of milliseconds, so the gain did not pay for the risk.
 
 Selection keeps alacritty 0.26's rules (`select.rs`): half-cell sides, separators for double-click, brackets, and
 logical lines. libghostty only paints and copies the selection. A synchronized update a program leaves open shows

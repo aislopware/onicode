@@ -1,9 +1,8 @@
 //! Port of TerminalView.tsx: a login shell the engine hosts (`docs/onicode/decisions/terminal.md`),
 //! mirrored here by libghostty and painted as a grid of cell-snapped text runs. Keys, paste and
 //! the wheel go to the engine, which encodes them from its own terminal's modes; output comes back
-//! through the terminal's watch. On a slow link the local echo predictor paints typed characters
-//! ahead of their echo, in place, as the echo will paint them. A program's OSC 7501 status shows
-//! on the terminal's tab with the session marks.
+//! through the terminal's watch. A program's OSC 7501 status shows on the terminal's tab with the
+//! session marks.
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -27,7 +26,6 @@ use onicode_protocol::terminal::{
 };
 use onicode_term::label::command_label;
 use onicode_term::mirror::{CellColor, CursorShape, Link, Mirror, RowId};
-use onicode_term::predict::Predictor;
 use onicode_term::select::{Kind, Point as GridPoint, Side};
 use onicode_term::{keys, mirror, palette};
 
@@ -164,10 +162,6 @@ pub(crate) struct Terminal {
     look: Option<Look>,
     /// Ends a synchronized update the program left open.
     sync: Option<Task<()>>,
-    /// Local echo on a slow link.
-    predictor: Predictor,
-    /// Withdraws predictions the host never confirmed.
-    predict_expiry: Option<Task<()>>,
     /// What the program in it reports (OSC 7501).
     pub(crate) status: Option<ProgramStatus>,
     /// The tab has been on screen since the status last changed: a done check clears.
@@ -241,8 +235,6 @@ impl Terminal {
             rows: HashMap::new(),
             look: None,
             sync: None,
-            predictor: Predictor::default(),
-            predict_expiry: None,
             status: None,
             status_seen: true,
             mark: cx.new(|_| SessionMark::tab(String::new())),
@@ -348,7 +340,6 @@ impl Terminal {
     /// What the engine's terminal did: a snapshot to start over from (its screen first, its
     /// history right behind), or what it did since.
     fn apply(&mut self, update: WatchUpdate<TerminalState, HostEvent>, cx: &mut Context<Self>) {
-        let mut output = false;
         match update {
             WatchUpdate::Snapshot(state) => {
                 let TerminalState {
@@ -359,7 +350,6 @@ impl Terminal {
                 } = *state;
                 self.mirror = Mirror::attach(&screen.0, size);
                 self.rows.clear();
-                self.predictor.reset();
                 self.set_status(status, cx);
                 if exited {
                     self.finish(cx);
@@ -370,11 +360,9 @@ impl Terminal {
                     match event {
                         HostEvent::Output(bytes) => {
                             self.mirror.feed(&bytes.0);
-                            output = true;
                         }
                         HostEvent::Resized(size) => {
                             self.mirror.resize(size);
-                            self.predictor.reset();
                         }
                         HostEvent::History(bytes) => {
                             self.mirror.history(&bytes.0);
@@ -389,11 +377,7 @@ impl Terminal {
                 }
             }
         }
-        if output {
-            self.predictor.output(&self.mirror, Instant::now());
-        }
         self.schedule_sync(cx);
-        self.schedule_expiry(cx);
         cx.notify();
     }
 
@@ -449,28 +433,6 @@ impl Terminal {
             )
             .into_any_element(),
         }
-    }
-
-    /// Withdraws predictions the host has not confirmed by their deadline.
-    fn schedule_expiry(&mut self, cx: &mut Context<Self>) {
-        let Some(deadline) = self.predictor.next_deadline() else {
-            self.predict_expiry = None;
-            return;
-        };
-        if self.predict_expiry.is_some() {
-            return;
-        }
-        let wait = deadline.saturating_duration_since(Instant::now());
-        self.predict_expiry = Some(cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(wait).await;
-            let _ = this.update(cx, |this, cx| {
-                this.predict_expiry = None;
-                if this.predictor.expire(Instant::now()) {
-                    cx.notify();
-                }
-                this.schedule_expiry(cx);
-            });
-        }));
     }
 
     /// Shows a synchronized update the program left open once its deadline passes.
@@ -532,9 +494,7 @@ impl Terminal {
         self.stop_selection();
         self.mirror.scroll_to_bottom();
         self.mirror.clear_selection();
-        self.predictor.typed(&input, &self.mirror, Instant::now());
         self.send(Outgoing::Input(input));
-        self.schedule_expiry(cx);
         cx.notify();
     }
 
@@ -768,7 +728,6 @@ impl Terminal {
                 row: u16::try_from(row).unwrap_or(u16::MAX),
                 col: u16::try_from(col).unwrap_or(u16::MAX),
             };
-            self.predictor.typed(&wheel, &self.mirror, Instant::now());
             self.send(Outgoing::Input(wheel));
         } else if self.mirror.scroll(lines) {
             cx.notify();
@@ -939,8 +898,7 @@ impl Element for Grid {
                 t.rows.clear();
                 t.look = Some(look);
             }
-            let overlay = t.predictor.overlay(&t.mirror);
-            let frame = t.mirror.frame_with(&overlay, |id| t.rows.contains_key(&id));
+            let frame = t.mirror.frame(|id| t.rows.contains_key(&id));
             (frame, link, std::mem::take(&mut t.rows), !t.status_seen)
         });
         if unseen && window.is_window_active() {

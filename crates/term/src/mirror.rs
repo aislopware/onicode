@@ -12,8 +12,7 @@
 //!
 //! A mirror starts from the renderable prefix of the host's snapshot ([`Mirror::attach`]) and
 //! paints at once; the history after it ([`Mirror::history`]) swaps in the whole snapshot with
-//! the output since replayed. A frame can carry the local echo predictor's cells
-//! ([`crate::predict`]), painted as the cells the echo will write.
+//! the output since replayed.
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -24,12 +23,11 @@ use libghostty_vt::render::{CellIteration, CellIterator, Cursor, Dirty, RowItera
 use libghostty_vt::screen::{CellContentTag, CellWide, GridRef, Screen};
 use libghostty_vt::selection::Selection as Range;
 use libghostty_vt::snapshot::Decoder;
-use libghostty_vt::style::{Palette, PaletteIndex, RgbColor, Style, StyleColor, Underline};
+use libghostty_vt::style::{Palette, PaletteIndex, RgbColor, StyleColor, Underline};
 use libghostty_vt::terminal::{CursorStyle, Mode, PointCoordinate, PointSpace, ScrollViewport};
 use libghostty_vt::{RenderState, Terminal};
 use onicode_protocol::terminal::TerminalSize;
 
-use crate::predict::{Overlay, Surface};
 use crate::select::{self, Grid, Kind, Point, Selection, Side};
 use crate::{links, palette};
 
@@ -225,8 +223,6 @@ pub struct Mirror {
     selection: Option<Selection>,
     /// Set from [`Self::attach`] until the history arrives.
     restore: Option<Restore>,
-    /// Rows the last frame painted predictions on: the next one repaints them.
-    overlaid: HashSet<RowId>,
 }
 
 impl std::fmt::Debug for Mirror {
@@ -357,7 +353,6 @@ impl Mirror {
             foreground: None,
             selection: None,
             restore: None,
-            overlaid: HashSet::new(),
         };
         mirror.capture();
         mirror
@@ -632,18 +627,7 @@ impl Mirror {
     /// The frame to paint. Rows come with cells when they changed since the last frame or
     /// `cached` has nothing for their id; a view repaints those and reuses its cache for the
     /// rest.
-    pub fn frame(&mut self, cached: impl FnMut(RowId) -> bool) -> Frame {
-        self.frame_with(&Overlay::default(), cached)
-    }
-
-    /// [`Self::frame`] with the predictor's cells painted in place, in the pen the program
-    /// prints with now, as its echo will paint them, and the cursor past them. A row that
-    /// carried predictions comes with cells again in the next frame.
-    pub fn frame_with(
-        &mut self,
-        overlay: &Overlay,
-        mut cached: impl FnMut(RowId) -> bool,
-    ) -> Frame {
+    pub fn frame(&mut self, mut cached: impl FnMut(RowId) -> bool) -> Frame {
         let foreground = match (self.term.fg_color(), self.term.default_fg_color()) {
             (Ok(Some(color)), Ok(default)) if Some(color) != default => Some(palette::hex(color)),
             _ => None,
@@ -651,33 +635,17 @@ impl Mirror {
         let recolored = foreground != self.foreground;
         self.foreground = foreground;
         let top = self.screen_point(0, 0).map_or(0, |at| at.line);
-        let pen = if overlay.cells.is_empty() {
-            None
-        } else {
-            self.term.cursor_style().ok()
-        };
         let mut side = lock(&self.render);
         side.full |= recolored;
-        let predicted = Predicted {
-            overlay,
-            pen: pen.as_ref(),
-            previous: &self.overlaid,
-        };
-        let (mut frame, overlaid) =
-            read_frame(&mut side, &self.default_palette, &predicted, &mut cached).unwrap_or_else(
-                |_| {
-                    let frame = Frame {
-                        full: true,
-                        rows: Vec::new(),
-                        cursor: None,
-                        foreground: None,
-                        top: 0,
-                    };
-                    (frame, HashSet::new())
-                },
-            );
+        let mut frame =
+            read_frame(&mut side, &self.default_palette, &mut cached).unwrap_or_else(|_| Frame {
+                full: true,
+                rows: Vec::new(),
+                cursor: None,
+                foreground: None,
+                top: 0,
+            });
         drop(side);
-        self.overlaid = overlaid;
         frame.foreground = foreground;
         frame.top = top;
         frame
@@ -706,51 +674,6 @@ impl Mirror {
             .trim_end_matches('\n')
             .to_owned()
     }
-}
-
-impl Surface for Mirror {
-    fn columns(&self) -> usize {
-        usize::from(self.size().0)
-    }
-
-    fn typing_cursor(&self) -> Option<(usize, usize)> {
-        let primary = self
-            .term
-            .active_screen()
-            .is_ok_and(|screen| screen == Screen::Primary);
-        let visible = self.term.is_cursor_visible().unwrap_or(false);
-        if !(primary && visible) {
-            return None;
-        }
-        Some((
-            usize::from(self.term.cursor_y().ok()?),
-            usize::from(self.term.cursor_x().ok()?),
-        ))
-    }
-
-    fn char_at(&self, row: usize, col: usize) -> Option<char> {
-        let point = libghostty_vt::terminal::Point::Active(PointCoordinate {
-            x: u16::try_from(col).ok()?,
-            y: u32::try_from(row).ok()?,
-        });
-        let cell = self.term.grid_ref(point).ok()?.cell().ok()?;
-        if !cell.has_text().ok()? {
-            return Some(' ');
-        }
-        char::from_u32(cell.codepoint().ok()?)
-    }
-
-    fn at_bottom(&self) -> bool {
-        self.display_offset() == 0
-    }
-}
-
-/// The predictor's cells for one frame, the pen they paint in, and the rows the last frame
-/// painted predictions on.
-struct Predicted<'a> {
-    overlay: &'a Overlay,
-    pen: Option<&'a Style>,
-    previous: &'a HashSet<RowId>,
 }
 
 /// The grid in screen space, as [`select`] reads it.
@@ -831,13 +754,12 @@ fn shape(style: CursorStyle) -> CursorShape {
 }
 
 /// Reads the captured render state, handing out (and clearing) what changed since the last
-/// frame, with the predicted cells spliced in; also the rows that carry predictions.
+/// frame.
 fn read_frame(
     side: &mut RenderSide,
     defaults: &Palette,
-    predicted: &Predicted<'_>,
     cached: &mut dyn FnMut(RowId) -> bool,
-) -> libghostty_vt::error::Result<(Frame, HashSet<RowId>)> {
+) -> libghostty_vt::error::Result<Frame> {
     let RenderSide {
         state,
         rows,
@@ -854,94 +776,29 @@ fn read_frame(
         rows: Vec::with_capacity(usize::from(snapshot.rows()?)),
         cursor: cursor.and_then(|cursor| {
             let at = cursor.viewport.filter(|_| cursor.visible)?;
-            let (row, col) = predicted
-                .overlay
-                .cursor
-                .unwrap_or((usize::from(at.y), usize::from(at.x)));
             Some(FrameCursor {
-                row,
-                col,
+                row: usize::from(at.y),
+                col: usize::from(at.x),
                 shape: shape(cursor.visual_style),
             })
         }),
         foreground: None,
         top: 0,
     };
-    let mut overlaid = HashSet::new();
     let mut iteration = rows.update(&snapshot)?;
-    let mut line = 0;
     while let Some(row) = iteration.next() {
         let id = row.id()?;
-        let here: Vec<(usize, char)> = predicted
-            .overlay
-            .cells
-            .iter()
-            .filter(|cell| cell.0 == line)
-            .map(|cell| (cell.1, cell.2))
-            .collect();
-        let repaint = !here.is_empty() || predicted.previous.contains(&id);
-        let painted = if frame.full || repaint || dirty.contains(&id) || !cached(id) {
+        let painted = if frame.full || dirty.contains(&id) || !cached(id) {
             let mut iteration = cells.update(row)?;
-            let mut row = read_cells(&mut iteration, &colors.palette, defaults)?;
-            for (col, ch) in &here {
-                if let Some(cell) = row.get_mut(*col) {
-                    *cell = predicted_cell(*ch, *cell, predicted.pen, &colors.palette, defaults);
-                }
-            }
-            Some(row)
+            Some(read_cells(&mut iteration, &colors.palette, defaults)?)
         } else {
             None
         };
-        if !here.is_empty() {
-            overlaid.insert(id);
-        }
         frame.rows.push(FrameRow { id, cells: painted });
-        line += 1;
     }
     dirty.clear();
     *full = false;
-    Ok((frame, overlaid))
-}
-
-/// A predicted character as its echo will paint it: in the program's current pen, over the
-/// cell's selection.
-fn predicted_cell(
-    ch: char,
-    under: Cell,
-    pen: Option<&Style>,
-    active: &[RgbColor; 256],
-    defaults: &Palette,
-) -> Cell {
-    let blank = Cell {
-        ch,
-        fg: CellColor::Default,
-        bg: CellColor::Default,
-        bold: false,
-        dim: false,
-        italic: false,
-        underline: false,
-        strike: false,
-        inverse: false,
-        hidden: false,
-        wide: false,
-        spacer: false,
-        selected: under.selected,
-    };
-    let Some(pen) = pen else {
-        return blank;
-    };
-    Cell {
-        fg: color(pen.fg_color, active, defaults),
-        bg: color(pen.bg_color, active, defaults),
-        bold: pen.bold,
-        dim: pen.faint,
-        italic: pen.italic,
-        underline: pen.underline != Underline::None,
-        strike: pen.strikethrough,
-        inverse: pen.inverse,
-        hidden: pen.invisible,
-        ..blank
-    }
+    Ok(frame)
 }
 
 fn color(color: StyleColor, active: &[RgbColor; 256], defaults: &Palette) -> CellColor {
@@ -1262,38 +1119,5 @@ mod tests {
             whole.select_all();
             prop_assert_eq!(parts.selection_text(), whole.selection_text());
         }
-    }
-
-    #[test]
-    fn predicted_cells_paint_in_the_programs_pen_and_leave_no_trace() {
-        let mut m = mirror(10, 2, b"$ \x1b[31m");
-        let _ = m.frame(|_| false);
-        let overlay = Overlay {
-            cells: vec![(0, 2, 'x')],
-            cursor: Some((0, 3)),
-        };
-        let frame = m.frame_with(&overlay, |_| true);
-        let row = frame.rows[0]
-            .cells
-            .as_ref()
-            .expect("the predicted row repaints");
-        assert_eq!((row[2].ch, row[2].fg), ('x', CellColor::Indexed(1)));
-        assert_eq!(frame.cursor.map(|c| (c.row, c.col)), Some((0, 3)));
-        let frame = m.frame(|_| true);
-        let row = frame.rows[0]
-            .cells
-            .as_ref()
-            .expect("and again once it goes");
-        assert_eq!(row[2].ch, ' ');
-        assert_eq!(frame.cursor.map(|c| (c.row, c.col)), Some((0, 2)));
-    }
-
-    #[test]
-    fn the_predictor_reads_the_live_screen() {
-        let mut m = mirror(6, 2, b"ab");
-        assert_eq!(m.typing_cursor(), Some((0, 2)));
-        assert_eq!((m.char_at(0, 1), m.char_at(0, 4)), (Some('b'), Some(' ')));
-        m.feed(b"\x1b[?25l");
-        assert_eq!(m.typing_cursor(), None);
     }
 }
