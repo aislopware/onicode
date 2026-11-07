@@ -52,22 +52,31 @@ pub fn instant() -> Instant {
     tokio::time::Instant::now().into_std()
 }
 
-/// The data directory: `$ONICODE_DATA_DIR`, else `~/.onicode`.
+/// The data directory, the one the app and its engine keep (the app's `data_dir`), so the
+/// engine finds the control socket and the engine's `device-id` there: `$ONICODE_DATA_DIR`, else
+/// `~/Library/Application Support/Onicode`, or `Onicode Development` for a development build,
+/// whose app is built in the same profile.
 #[must_use]
 pub fn data_dir() -> PathBuf {
     data_dir_from(
         std::env::var_os("ONICODE_DATA_DIR").map(PathBuf::from),
         std::env::var_os("HOME").map(PathBuf::from),
+        cfg!(debug_assertions),
     )
 }
 
-/// [`data_dir`] from the two variables it reads.
+/// [`data_dir`] from the two variables it reads, for a development build when `development`.
 #[must_use]
-pub fn data_dir_from(dir: Option<PathBuf>, home: Option<PathBuf>) -> PathBuf {
+pub fn data_dir_from(dir: Option<PathBuf>, home: Option<PathBuf>, development: bool) -> PathBuf {
     dir.filter(|d| !d.as_os_str().is_empty())
         .unwrap_or_else(|| {
             home.unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join(".onicode")
+                .join("Library/Application Support")
+                .join(if development {
+                    "Onicode Development"
+                } else {
+                    "Onicode"
+                })
         })
 }
 
@@ -125,18 +134,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_data_dir_is_the_variable_else_home() {
+    fn the_data_dir_is_the_variable_else_the_apps() {
         assert_eq!(
-            data_dir_from(Some("/d".into()), Some("/h".into())),
+            data_dir_from(Some("/d".into()), Some("/h".into()), false),
             PathBuf::from("/d")
         );
         assert_eq!(
-            data_dir_from(Some(String::new().into()), Some("/h".into())),
-            PathBuf::from("/h/.onicode")
+            data_dir_from(Some(String::new().into()), Some("/h".into()), false),
+            PathBuf::from("/h/Library/Application Support/Onicode")
         );
         assert_eq!(
-            data_dir_from(None, Some("/h".into())),
-            PathBuf::from("/h/.onicode")
+            data_dir_from(None, Some("/h".into()), true),
+            PathBuf::from("/h/Library/Application Support/Onicode Development")
         );
     }
 

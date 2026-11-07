@@ -85,8 +85,38 @@ pub(crate) fn bind(cx: &mut App) {
 #[action(namespace = file_editor, no_json)]
 pub(crate) struct OpenPath(pub String);
 
-/// File links may include a one-based line and column (`:12:4` or `#L12`).
+/// File links may include a one-based line and column (`:12:4` or `#L12`). Beside a `cwd` on
+/// another engine (`peer://`), a path names that engine's disk: an absolute one and a relative
+/// one alike come back as a URI on that engine, never as a path on this Mac.
 pub(crate) fn file_location(raw: &str, cwd: &str) -> (String, Option<(usize, usize)>) {
+    let (path, location) = located(raw);
+    let resolve = |path: &str, cwd: &str| {
+        document::resolve_path(std::path::Path::new(path), std::path::Path::new(cwd))
+            .to_string_lossy()
+            .into_owned()
+    };
+    let path = match (
+        onicode_protocol::ProjectRef::parse_uri(&path),
+        onicode_protocol::ProjectRef::parse_uri(cwd),
+    ) {
+        (Some(peer), _) => onicode_protocol::ProjectRef {
+            path: resolve(&peer.path, "/"),
+            engine: peer.engine,
+        }
+        .uri(),
+        (None, Some(project)) => onicode_protocol::ProjectRef {
+            path: resolve(&path, &project.path),
+            engine: project.engine,
+        }
+        .uri(),
+        (None, None) => resolve(&path, cwd),
+    };
+    (path, location)
+}
+
+/// The path a file link names and its one-based line and column, percent-decoded as a
+/// `file://` URL is; a `peer://` path keeps its escaped engine id.
+fn located(raw: &str) -> (String, Option<(usize, usize)>) {
     let mut path = raw.strip_prefix("file://").unwrap_or(raw).to_owned();
     let mut location = None;
     if let Some((file, line)) = path.rsplit_once("#L")
@@ -107,7 +137,9 @@ pub(crate) fn file_location(raw: &str, cwd: &str) -> (String, Option<(usize, usi
             path = prefix.into();
         }
     }
-    if raw.starts_with("file://") || raw.contains('%') {
+    if (raw.starts_with("file://") || raw.contains('%'))
+        && onicode_protocol::ProjectRef::parse_uri(&path).is_none()
+    {
         let bytes = path.as_bytes();
         let mut decoded = Vec::new();
         let mut at = 0;
@@ -126,8 +158,7 @@ pub(crate) fn file_location(raw: &str, cwd: &str) -> (String, Option<(usize, usi
         }
         path = String::from_utf8_lossy(&decoded).into_owned();
     }
-    let path = document::resolve_path(std::path::Path::new(&path), std::path::Path::new(cwd));
-    (path.to_string_lossy().into_owned(), location)
+    (path, location)
 }
 
 pub(crate) enum FileEvent {
@@ -1429,6 +1460,41 @@ mod tests {
         assert_eq!(
             file_location("/tmp/a.rs:0", "/project"),
             ("/tmp/a.rs".into(), Some((1, 1)))
+        );
+    }
+
+    /// In a session on another engine, every path a transcript names is on that engine: an
+    /// absolute one, a relative one and one already spelled as its URI all open there, never as
+    /// a path on this Mac, and the escaped engine id survives.
+    #[test]
+    fn a_peer_sessions_paths_open_on_its_engine() {
+        let cwd = "peer://nStudio/Users/me/app";
+        assert_eq!(
+            file_location("/Users/me/app/src/main.rs:12:4", cwd),
+            (
+                "peer://nStudio/Users/me/app/src/main.rs".into(),
+                Some((12, 4))
+            )
+        );
+        assert_eq!(
+            file_location("src/../README.md#L3", cwd),
+            ("peer://nStudio/Users/me/app/README.md".into(), Some((3, 1)))
+        );
+        assert_eq!(
+            file_location("file:///Users/me/app/my%20file.rs", cwd),
+            ("peer://nStudio/Users/me/app/my file.rs".into(), None)
+        );
+        assert_eq!(
+            file_location("peer://n%2FMac/srv/./a.rs:7", "/project"),
+            ("peer://n%2FMac/srv/a.rs".into(), Some((7, 1)))
+        );
+        assert_eq!(
+            crate::engine_client::app_path_beside(cwd, "/Users/me/.onicode/a.png"),
+            "peer://nStudio/Users/me/.onicode/a.png"
+        );
+        assert_eq!(
+            crate::engine_client::app_path_beside("/project", "/tmp/a.png"),
+            "/tmp/a.png"
         );
     }
 

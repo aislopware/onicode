@@ -105,10 +105,21 @@ objc2-user-notifications = "0.3"
 # libmalloc keeps freed large spans dirty, so startup and image churn stayed
 # resident. mimalloc 3 retains churn the same way; the v2 feature pins 2.x.
 mimalloc = { version = "0.1", default-features = false, features = ["v2"] }
+# The desktop view (`src/desktop`): the session with a Mac's desktopd, the decoded
+# `CVPixelBuffer`s it puts up on a `VideoLayer`, and this Mac's grants guide.
+onicode-desktop-client.workspace = true
+onicode-desktop-link.workspace = true
+onicode-desktop-media.workspace = true
+onicode-desktop-proto.workspace = true
+onicode-grants.workspace = true
+objc2-core-video.workspace = true
+parking_lot.workspace = true
 
 [target.'cfg(target_os = "macos")'.dev-dependencies]
 gpui_apple = { workspace = true, features = ["font-kit", "test-support", "runtime_shaders"] }
 # Golden images (src/shell/golden_tests.rs): the headless Metal renderer, and PNG files.
 gpui_platform = { workspace = true, features = ["test-support"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
-parking_lot.workspace = true
+# The desktop view's tests: blank `CVPixelBuffer`s for the glass, and the letterbox's properties.
+objc2-core-foundation.workspace = true
+proptest.workspace = true

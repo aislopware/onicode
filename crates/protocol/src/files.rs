@@ -1,6 +1,7 @@
 //! The Files group: one directory's listing as the engine's file watch sees it ([`WatchDir`]),
 //! and the calls that read, write and search the engine's disk. The mutating calls ([`Write`],
-//! [`Create`], [`Move`], [`DeletePath`], [`SaveAttachments`] and [`SaveNoteImages`]) travel with an
+//! [`Create`], [`Move`], [`ImportFiles`], [`DeletePath`], [`SaveAttachments`] and
+//! [`SaveNoteImages`]) travel with an
 //! [`OpId`](crate::OpId) in their [`Routed`](crate::Routed): a repeat of the op is answered with
 //! the first reply and changes nothing again. A call that changes a watched directory relists it
 //! before it replies, and its reply names, for each watched directory it touched, the scan of the
@@ -357,6 +358,28 @@ pub struct Move {
     pub to: Destination,
 }
 files_call!(Move, agent: false, reply: NewPath);
+
+/// One file or folder of an [`ImportFiles`] item, by its path under the item.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportEntry {
+    /// `/`-separated under the item; empty for the item itself.
+    pub path: String,
+    /// A file's bytes; `None` for a folder.
+    pub bytes: Option<Bytes>,
+}
+
+/// Copy a file or folder from the viewer's own disk into the folder `into`, named `name` or,
+/// when that is taken, renamed as Finder does (as [`Destination::CopyInto`]): what Finder drops
+/// into a project on another engine, whose disk the viewer cannot copy from. Each folder comes
+/// before what it holds; a copy that fails partway leaves nothing behind. Answers where the item
+/// landed and the listings that cover it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportFiles {
+    pub into: String,
+    pub name: String,
+    pub entries: Vec<ImportEntry>,
+}
+files_call!(ImportFiles, agent: false, reply: NewPath);
 
 /// Delete a file, or a folder and everything in it. Named apart from the Workspace group's
 /// `Delete`, which deletes a session.

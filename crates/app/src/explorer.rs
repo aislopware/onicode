@@ -18,8 +18,8 @@ use gpui::{
 use onicode_core::files;
 use onicode_protocol::OpId;
 use onicode_protocol::files::{
-    Create, DeletePath, Destination, DirEntry, DirEvent, Entries, Listing, Move, NameIssueKind,
-    NewPath, Relisted, Severity, WatchDir,
+    Bytes, Create, DeletePath, Destination, DirEntry, DirEvent, Entries, ImportEntry, ImportFiles,
+    Listing, Move, NameIssueKind, NewPath, Relisted, Severity, WatchDir,
 };
 
 use crate::engine_client::{self, Engine, WatchUpdate, Watching};
@@ -322,12 +322,69 @@ pub(crate) fn open_with_default_app(path: &Path, cx: &App) -> Result<(), String>
     Ok(())
 }
 
-/// A file that is gone has nothing to show here.
+/// A file that is gone, or one on another engine, has nothing to show here.
 fn on_this_mac(path: &Path) -> Result<(), String> {
+    if path
+        .to_str()
+        .is_some_and(|path| onicode_protocol::ProjectRef::parse_uri(path).is_some())
+    {
+        return Err("Files on another machine stay on it.".into());
+    }
     if !path.exists() {
         return Err(format!("{}: No such file or directory", path.display()));
     }
     Ok(())
+}
+
+/// How much one Finder item copied into a project on another engine may hold: what one call
+/// carries over the tailnet (64 MB a frame), less the third base64 adds.
+const IMPORT_LIMIT: u64 = 40 << 20;
+
+/// `from`, on this Mac, read whole as an [`ImportFiles`] item: the item itself, then each
+/// folder before what it holds. Refused past [`IMPORT_LIMIT`].
+fn import_entries(from: &Path) -> Result<Vec<ImportEntry>, String> {
+    fn walk(
+        at: &Path,
+        relative: String,
+        entries: &mut Vec<ImportEntry>,
+        total: &mut u64,
+    ) -> Result<(), String> {
+        let meta = std::fs::metadata(at).map_err(|error| format!("{}: {error}", at.display()))?;
+        if !meta.is_dir() {
+            *total = total.saturating_add(meta.len());
+            if *total > IMPORT_LIMIT {
+                return Err("Too large to copy to another machine (over 40 MB).".into());
+            }
+            let bytes = std::fs::read(at).map_err(|error| format!("{}: {error}", at.display()))?;
+            entries.push(ImportEntry {
+                path: relative,
+                bytes: Some(Bytes(bytes)),
+            });
+            return Ok(());
+        }
+        entries.push(ImportEntry {
+            path: relative.clone(),
+            bytes: None,
+        });
+        let mut children: Vec<_> = std::fs::read_dir(at)
+            .map_err(|error| format!("{}: {error}", at.display()))?
+            .filter_map(Result::ok)
+            .collect();
+        children.sort_by_key(std::fs::DirEntry::file_name);
+        for child in children {
+            let name = child.file_name().to_string_lossy().into_owned();
+            let under = if relative.is_empty() {
+                name
+            } else {
+                format!("{relative}/{name}")
+            };
+            walk(&child.path(), under, entries, total)?;
+        }
+        Ok(())
+    }
+    let mut entries = Vec::new();
+    walk(from, String::new(), &mut entries, &mut 0)?;
+    Ok(entries)
 }
 
 /// `listed`, as `engine` named its folders, in the app's spelling.
@@ -1441,22 +1498,46 @@ impl Explorer {
             self.echo(op, vec![echo], cx);
             copies.push((op, from));
         }
-        // Finder's files are this Mac's; a project on another engine is copied into there.
+        // Finder's files are this Mac's: the app's own engine copies them, and another engine,
+        // which cannot read this disk, is handed their bytes.
         let engine = self.engine(cx);
         let into = engine.path_of(&dest);
         cx.spawn_in(window, async move |this, cx| {
             let mut created = None;
             for (at, (op, from)) in copies.iter().enumerate() {
-                let result = engine
-                    .call::<Move>(
-                        Some(*op),
-                        Move {
-                            from: from.clone(),
-                            to: Destination::CopyInto(into.clone()),
-                        },
-                    )
-                    .await
-                    .map(|moved| respell_new_path(&engine, moved));
+                let result = if engine.target().is_some() {
+                    let source = PathBuf::from(from);
+                    let read = cx
+                        .background_executor()
+                        .spawn(async move { import_entries(&source) })
+                        .await;
+                    match read {
+                        Ok(entries) => {
+                            engine
+                                .call::<ImportFiles>(
+                                    Some(*op),
+                                    ImportFiles {
+                                        into: into.clone(),
+                                        name: basename(from).to_owned(),
+                                        entries,
+                                    },
+                                )
+                                .await
+                        }
+                        Err(error) => Err(error),
+                    }
+                } else {
+                    engine
+                        .call::<Move>(
+                            Some(*op),
+                            Move {
+                                from: from.clone(),
+                                to: Destination::CopyInto(into.clone()),
+                            },
+                        )
+                        .await
+                }
+                .map(|moved| respell_new_path(&engine, moved));
                 let failed = this.update_in(cx, |this, _, cx| {
                     this.settle(*op, landed(&result), cx);
                     match result {
@@ -2538,5 +2619,57 @@ mod tests {
             !folder.0.join("n copy.md").exists(),
             "copies stop at the first failure"
         );
+    }
+
+    /// Finder's files dropped into a project on another engine go to it with their bytes, each
+    /// folder before what it holds, since that engine cannot read this Mac's disk: nothing asks
+    /// it to copy a path of this Mac. One it cannot take says why, and leaves no echo.
+    #[gpui::test]
+    fn finder_files_dropped_on_another_machine_carry_their_bytes(cx: &mut TestAppContext) {
+        let outside = Folder::new(&[]);
+        std::fs::create_dir(outside.0.join("docs")).unwrap();
+        std::fs::write(outside.0.join("docs/a.txt"), "hello").unwrap();
+        let root = "peer://nStudio/srv/app".to_owned();
+        let (explorer, cx) = cx.add_window_view(|window, cx| {
+            let git = cx.new(|cx| ProjectGit::new(root.clone(), cx));
+            Explorer::new(git, window, cx)
+        });
+        explorer.update(cx, |explorer, cx| explorer.set_enabled(true, cx));
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            explorer.update(cx, |explorer, cx| {
+                explorer.copy_external(vec![outside.0.join("docs")], root.clone(), window, cx);
+            });
+        });
+        cx.run_until_parked();
+        let calls = cx.update(|_, cx| engine_client::calls_for_test(&engine_client::local(cx), cx));
+        assert!(calls.iter().all(|(name, _)| *name != "Move"));
+        let (_, import) = calls
+            .iter()
+            .find(|(name, _)| *name == "ImportFiles")
+            .expect("the bytes go to the project's engine");
+        assert_eq!(import["engine"], "nStudio");
+        let body: ImportFiles = serde_json::from_value(import["body"].clone()).unwrap();
+        assert_eq!(
+            (body.into.as_str(), body.name.as_str()),
+            ("/srv/app", "docs")
+        );
+        assert_eq!(
+            body.entries,
+            vec![
+                ImportEntry {
+                    path: String::new(),
+                    bytes: None,
+                },
+                ImportEntry {
+                    path: "a.txt".into(),
+                    bytes: Some(Bytes(b"hello".to_vec())),
+                },
+            ]
+        );
+        explorer.read_with(cx, |explorer, _| {
+            // The studio is away: the import waits in the engine's outbox until it answers.
+            assert!(explorer.op_error.is_none(), "{:?}", explorer.op_error);
+        });
     }
 }

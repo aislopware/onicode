@@ -10,9 +10,9 @@ use futures::stream::BoxStream;
 use onicode_core::files::{self, DirEntry, document};
 use onicode_protocol::files::{
     AdoptAttachments, Bytes, Create, DeletePath, Deleted, DirEvent, Drive, Entries, FileContents,
-    ImageFile, ListDir, Listing, Move, NewPath, NoteImageAsset, PathKind, PathList, PathStat, Read,
-    Relisted, SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths,
-    SearchResult, Stat, TextEncoding, TextFile, WatchDir, Write, Written,
+    ImageFile, ImportFiles, ListDir, Listing, Move, NewPath, NoteImageAsset, PathKind, PathList,
+    PathStat, Read, Relisted, SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders,
+    SearchPaths, SearchResult, Stat, TextEncoding, TextFile, WatchDir, Write, Written,
 };
 use onicode_protocol::{Cursor, Item, OpId};
 
@@ -646,6 +646,23 @@ impl FilesHub {
             .await
     }
 
+    /// `ImportFiles`: a file or folder the viewer copies in from its own disk.
+    pub async fn import(&self, op: Option<OpId>, body: ImportFiles) -> Result<NewPath, String> {
+        let hub = self.me.clone();
+        self.ledger
+            .once(
+                op,
+                self.blocking(move || {
+                    let path = import(&body)?;
+                    let listed = hub
+                        .upgrade()
+                        .map_or_else(Vec::new, |hub| hub.relist(std::slice::from_ref(&body.into)));
+                    Ok(NewPath { path, listed })
+                }),
+            )
+            .await
+    }
+
     /// `DeletePath`.
     pub async fn delete(&self, op: Option<OpId>, body: DeletePath) -> Result<Deleted, String> {
         let hub = self.me.clone();
@@ -873,6 +890,54 @@ fn read(path: &Path, unless: Option<u64>) -> Result<FileContents, String> {
         },
         document::Document::Unsupported(reason) => FileContents::Unsupported(reason),
     })
+}
+
+/// Writes `body`'s item into its folder under its name, or the name Finder gives a copy when
+/// that is taken, each folder before what it holds. A copy that fails partway is removed whole.
+fn import(body: &ImportFiles) -> Result<String, String> {
+    let into = Path::new(&body.into);
+    if !into.is_dir() {
+        return Err(format!("{} is not a folder", into.display()));
+    }
+    let leaf = Path::new(&body.name);
+    if !matches!(
+        leaf.components().collect::<Vec<_>>().as_slice(),
+        [std::path::Component::Normal(_)]
+    ) {
+        return Err(format!("{} is not a file name", body.name));
+    }
+    if body.entries.is_empty() {
+        return Err("Nothing to copy".into());
+    }
+    let name = files::unique_name(&body.name, |taken| into.join(taken).exists());
+    let root = into.join(name);
+    let written = body.entries.iter().try_for_each(|entry| {
+        let relative = Path::new(&entry.path);
+        if !relative
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err(format!("{} is outside the copied folder", entry.path));
+        }
+        let at = root.join(relative);
+        let made = match &entry.bytes {
+            None => std::fs::create_dir_all(&at),
+            Some(bytes) => at
+                .parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::write(&at, &bytes.0)),
+        };
+        made.map_err(|error| format!("{}: {error}", at.display()))
+    });
+    if let Err(error) = written {
+        let _ = if root.is_dir() {
+            std::fs::remove_dir_all(&root)
+        } else {
+            std::fs::remove_file(&root)
+        };
+        return Err(error);
+    }
+    Ok(root.to_string_lossy().into_owned())
 }
 
 /// The editor's save: refused when the file on disk is no longer the one read as

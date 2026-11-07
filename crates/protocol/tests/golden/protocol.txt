@@ -1,4 +1,4 @@
-protocol 10
+protocol 11
 call Hello agent params=e9de24ac3b14849e reply=e9de24ac3b14849e
 call EngineInfo agent params=fa64ac005d4e6ec1 reply=ea30e297db7e7c2b
 call UpdateEngine params=76bcbe41f03a0f3d reply=caf76c905cccc628
@@ -61,6 +61,7 @@ call Read agent params=66292cc1fa40b023 reply=c78cb08487a90af4
 call Write params=e06e7abd1d05019f reply=39969ceb33cc553e
 call Create params=fc63d10982253ed9 reply=0dab42e254bc24c6
 call Move params=a06c0f28c648e436 reply=0dab42e254bc24c6
+call ImportFiles params=8b9b7a301ee02e54 reply=0dab42e254bc24c6
 call DeletePath params=dafd51e67df620fb reply=82d85212491030fe
 call SearchPaths agent params=45ae1ed456e610a9 reply=149c969c21cad89e
 call SearchContent agent params=b4cc8c2235fdf9a9 reply=c6783d524cb8d281
@@ -171,6 +172,9 @@ call AppNotes params=44c6630da5f17643 reply=562bd149ab7449c4
 call ReadWorktreeMarks params=1583b1d6f3a6a742 reply=12a5dc8c3991ab5a
 watch WatchAlerts params=38e8710f646c3d78 state=0e31d2ac03d66c4d event=0fb8cca1c2fdadad
 call SetViewportFocus params=4bd88ed40b33d30d reply=5b317dbd01f7735e
+call OpenDesktop params=78de4e276534124d reply=c1cc399dcc37080a
+call DesktopGrants params=87772ab417b853f5 reply=dba267003d8402ae
+call DesktopOpenGuide params=50dfbc58e9727d25 reply=ff1807e4020488fb
 envelope Cursor shape=1779699f12cb9b5d
 envelope Item shape=49c3115eb783b829
 envelope Routed shape=4c28ec420f287c74

@@ -34,14 +34,16 @@ impl Target {
         {
             return Some(Self::Web(url.into()));
         }
+        let peer = |path: &str| onicode_protocol::ProjectRef::parse_uri(path).is_some();
         if url.is_empty()
             || url.starts_with(['#', '?'])
-            || (url.contains("://") && !url.starts_with("file://"))
+            || (url.contains("://") && !url.starts_with("file://") && !peer(url))
         {
             return None;
         }
+        // In a session on another engine, the path comes back as its URI there.
         let (path, location) = crate::file_editor::file_location(url, base.unwrap_or(""));
-        if !Path::new(&path).is_absolute() {
+        if !Path::new(&path).is_absolute() && !peer(&path) {
             return None;
         }
         Some(Self::File {
@@ -143,8 +145,12 @@ impl TranscriptView {
                 );
                 window.dispatch_action(Box::new(crate::file_editor::OpenPath(target)), cx);
             }
+            // A file on another engine is copied as that engine names it, as its agent does.
             ("copy-path", Target::File { path, .. }) => {
-                cx.write_to_clipboard(ClipboardItem::new_string(path.clone()))
+                cx.write_to_clipboard(ClipboardItem::new_string(
+                    onicode_protocol::ProjectRef::parse_uri(path)
+                        .map_or_else(|| path.clone(), |peer| peer.path),
+                ))
             }
             ("copy-relative-path", Target::File { path, base, .. }) => cx.write_to_clipboard(
                 ClipboardItem::new_string(files::display_path(path, base.as_deref())),

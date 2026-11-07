@@ -109,50 +109,88 @@ pub(super) async fn discover(engine: Engine, cwd: String) -> Discovery {
         Err(e) => data.mcp_error = Some(e),
     }
     if !cwd.is_empty() {
-        let refs = engine.call::<Refs>(
-            None,
-            Refs {
-                checkout: cwd.clone(),
-            },
-        );
-        match refs.await {
-            Ok(s) => {
-                if let Some(main) = s.worktrees.first() {
-                    data.worktrees.main = main.path.clone();
-                    data.worktrees.default_root =
-                        onicode_core::worktree_management::default_root(Path::new(&main.path));
-                }
-                data.worktrees.branches = s.branches;
-                let trees: Vec<_> = s.worktrees.into_iter().filter(|t| !t.main).collect();
-                let marks = engine
-                    .call::<ReadWorktreeMarks>(
-                        None,
-                        ReadWorktreeMarks {
-                            checkout: cwd,
-                            trees: trees.clone(),
-                        },
-                    )
-                    .await
-                    .unwrap_or_default();
-                data.worktrees.trees = trees
-                    .into_iter()
-                    .map(|tree| {
-                        let mark = marks
-                            .iter()
-                            .find(|mark| mark.path == tree.path)
-                            .cloned()
-                            .unwrap_or_default();
-                        Tree {
-                            tree,
-                            locked: mark.locked,
-                            dirty: mark.dirty,
-                            unpushed: mark.unpushed,
-                        }
-                    })
-                    .collect();
-            }
-            Err(e) => data.worktrees.error = Some(e),
-        }
+        data.worktrees = worktrees(&engine, &cwd).await;
     }
     data
+}
+
+/// The Worktrees page for the project `cwd`, read through the engine that holds it (a project
+/// on another machine's), its paths in the app's spelling.
+async fn worktrees(engine: &Engine, cwd: &str) -> ResultTrees {
+    let (engine, checkout) = engine.for_path(cwd);
+    let snapshot = match engine
+        .call::<Refs>(
+            None,
+            Refs {
+                checkout: checkout.clone(),
+            },
+        )
+        .await
+    {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            return ResultTrees {
+                error: Some(error),
+                ..ResultTrees::default()
+            };
+        }
+    };
+    let mut found = ResultTrees::default();
+    if let Some(main) = snapshot.worktrees.first() {
+        found.main = engine.app_path(&main.path);
+        // Shown as the machine that makes them names it.
+        found.default_root = onicode_core::worktree_management::default_root(Path::new(&main.path));
+    }
+    found.branches = snapshot.branches;
+    let trees: Vec<_> = snapshot.worktrees.into_iter().filter(|t| !t.main).collect();
+    let marks = engine
+        .call::<ReadWorktreeMarks>(
+            None,
+            ReadWorktreeMarks {
+                checkout,
+                trees: trees.clone(),
+            },
+        )
+        .await
+        .unwrap_or_default();
+    found.trees = trees
+        .into_iter()
+        .map(|mut tree| {
+            let mark = marks
+                .iter()
+                .find(|mark| mark.path == tree.path)
+                .cloned()
+                .unwrap_or_default();
+            tree.path = engine.app_path(&tree.path);
+            Tree {
+                tree,
+                locked: mark.locked,
+                dirty: mark.dirty,
+                unpushed: mark.unpushed,
+            }
+        })
+        .collect();
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A project on another machine lists its worktrees through that machine's engine, by the
+    /// path it names the checkout by; one that cannot be reached says why on the page.
+    #[gpui::test]
+    fn a_peer_projects_worktrees_are_read_on_its_machine(cx: &mut gpui::TestAppContext) {
+        let engine = cx.update(Engine::memory);
+        let found = futures::executor::block_on(worktrees(&engine, "peer://nStudio/Users/me/app"));
+        let error = found.error.unwrap_or_default();
+        assert!(error.contains("offline"), "{error}");
+        let calls = cx.update(|cx| crate::engine_client::calls_for_test(&engine, cx));
+        let (_, refs) = calls
+            .iter()
+            .find(|(name, _)| *name == "Refs")
+            .expect("the studio is asked");
+        assert_eq!(refs["engine"], "nStudio");
+        assert_eq!(refs["body"]["checkout"], "/Users/me/app");
+    }
 }

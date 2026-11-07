@@ -332,7 +332,8 @@ impl Shell {
                 shell.groups.insert(project.clone(), groups.clone());
             })
         };
-        self.workspace_write::<SaveGroups>(what, SaveGroups { project, groups }, Some(echo), cx);
+        let (engine, body) = self.groups_call(&project, groups);
+        self.workspace_write_on::<SaveGroups>(&engine, what, body, Some(echo), cx);
     }
 
     /// The project's sidebar entries, reminders first.
@@ -542,7 +543,7 @@ impl Shell {
                 let text = if action == "copy-harness-session-id" {
                     summary.provider_id
                 } else {
-                    self.mirror.key(summary.id)
+                    self.session_key(summary.id)
                 };
                 if let Some(text) = text {
                     cx.write_to_clipboard(ClipboardItem::new_string(text));
@@ -560,20 +561,8 @@ impl Shell {
                 });
                 // Each engine pins its own sessions, by the rows it stores them at; the echo
                 // rides the first call and marks them all.
-                let mut by_engine: Vec<(Engine, Vec<i64>)> = Vec::new();
-                for id in &ids {
-                    let engine = self.session_engine(*id);
-                    let row = engine.row(*id);
-                    match by_engine
-                        .iter_mut()
-                        .find(|(held, _)| held.target() == engine.target())
-                    {
-                        Some((_, rows)) => rows.push(row),
-                        None => by_engine.push((engine, vec![row])),
-                    }
-                }
                 let mut echo: Option<super::workspace_mirror::Echo> = Some(echo);
-                for (engine, sessions) in by_engine {
+                for (engine, sessions) in self.split_by_engine(&ids) {
                     self.workspace_write_on::<Pin>(
                         &engine,
                         "pin the session",
@@ -614,15 +603,20 @@ impl Shell {
                     }));
                 });
                 self.update_groups(cx, |groups| groups.reminders_collapsed = false);
-                self.workspace_write::<SetReminder>(
-                    "set the reminder",
-                    SetReminder {
-                        sessions: ids,
-                        change: ReminderChange::At(due_at),
-                    },
-                    Some(echo),
-                    cx,
-                );
+                // Each engine keeps its own sessions' reminders; the echo rides the first call.
+                let mut echo: Option<super::workspace_mirror::Echo> = Some(echo);
+                for (engine, sessions) in self.split_by_engine(&ids) {
+                    self.workspace_write_on::<SetReminder>(
+                        &engine,
+                        "set the reminder",
+                        SetReminder {
+                            sessions,
+                            change: ReminderChange::At(due_at),
+                        },
+                        echo.take(),
+                        cx,
+                    );
+                }
             }
             "folder-new" => {
                 let folder = format!(
@@ -1695,10 +1689,12 @@ impl Shell {
         let echo = Box::new(move |shell: &mut Self, cx: &mut Context<Self>| {
             shell.mark_session(id, cx, |summary| summary.work_item.clone_from(&linked));
         });
-        self.workspace_write::<SetWorkItem>(
+        let engine = self.session_engine(id);
+        self.workspace_write_on::<SetWorkItem>(
+            &engine,
             "link the session",
             SetWorkItem {
-                session: id,
+                session: engine.row(id),
                 item,
                 if_unlinked: false,
             },

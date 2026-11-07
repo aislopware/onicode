@@ -66,6 +66,11 @@ impl SettingsView {
                     .children(trees.into_iter().enumerate().map(|(ix, tree)| {
                         let t = &tree.tree;
                         let path = std::path::PathBuf::from(&t.path);
+                        // A worktree on another machine reads as that machine names it, and
+                        // Finder cannot show it.
+                        let peer = onicode_protocol::ProjectRef::parse_uri(&t.path);
+                        let remote = peer.is_some();
+                        let shown_path = peer.map_or_else(|| t.path.clone(), |peer| peer.path);
                         let count = self
                             .ctx
                             .sessions
@@ -112,7 +117,7 @@ impl SettingsView {
                                             .mt_1()
                                             .text_size(px(11.))
                                             .text_color(content(0.4))
-                                            .child(t.path.clone()),
+                                            .child(shown_path),
                                     )
                                     .child(
                                         div()
@@ -163,10 +168,14 @@ impl SettingsView {
                                     SharedString::from(format!("reveal-tree-{ix}")),
                                     format!("Reveal {}", t.branch.as_deref().unwrap_or("worktree")),
                                     false,
-                                    t.missing,
+                                    t.missing || remote,
                                 )
                                 .child(icon("folder-open", 16.))
-                                .on_click(move |_, _, cx| cx.reveal_path(&path)),
+                                .on_click(move |_, _, cx| {
+                                    if !remote {
+                                        cx.reveal_path(&path);
+                                    }
+                                }),
                             )
                             .child(
                                 secondary_button(

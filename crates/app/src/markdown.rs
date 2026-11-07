@@ -679,7 +679,9 @@ pub(crate) fn resolve_file_links(row: &mut MarkdownRow, base: &str) {
             if let Some(target) = target
                 && !target.starts_with('#')
                 && !target.starts_with("mailto:")
-                && (!target.contains("://") || target.starts_with("file://"))
+                && (!target.contains("://")
+                    || target.starts_with("file://")
+                    || onicode_protocol::ProjectRef::parse_uri(&target).is_some())
             {
                 let (path, location) = crate::file_editor::file_location(&target, base);
                 run.style.link = Some(location.map_or_else(
@@ -703,7 +705,11 @@ pub(crate) fn resolve_file_links(row: &mut MarkdownRow, base: &str) {
 fn open_link(url: &str, window: &mut Window, cx: &mut App) {
     if url.starts_with("https://") || url.starts_with("http://") || url.starts_with("mailto:") {
         cx.open_url(url);
-    } else if !url.starts_with('#') && (!url.contains("://") || url.starts_with("file://")) {
+    } else if !url.starts_with('#')
+        && (!url.contains("://")
+            || url.starts_with("file://")
+            || onicode_protocol::ProjectRef::parse_uri(url).is_some())
+    {
         window.dispatch_action(Box::new(crate::file_editor::OpenPath(url.into())), cx);
     }
 }

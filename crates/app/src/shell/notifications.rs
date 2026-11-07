@@ -795,9 +795,11 @@ impl Shell {
                 .reminders
                 .retain(|r| !(r.session_id == id && r.due_at == expected));
         });
-        self.workspace_call::<SetReminder>(
+        let engine = self.session_engine(id);
+        self.workspace_call_on::<SetReminder>(
+            &engine,
             SetReminder {
-                sessions: vec![id],
+                sessions: vec![engine.row(id)],
                 change: ReminderChange::Clear {
                     expected: Some(expected),
                 },
@@ -828,9 +830,11 @@ impl Shell {
         }
         // The engine moves the occurrence only while it is still the one due at `expected`;
         // the mirror then shows whichever it holds.
-        self.workspace_call::<SetReminder>(
+        let engine = self.session_engine(id);
+        self.workspace_call_on::<SetReminder>(
+            &engine,
             SetReminder {
-                sessions: vec![id],
+                sessions: vec![engine.row(id)],
                 change: ReminderChange::Snooze { expected, due_at },
             },
             None,

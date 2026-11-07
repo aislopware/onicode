@@ -1,8 +1,10 @@
 //! The focused sidebar's Machines section (`layout-gaps.md` §3), in the slot monocode's Monos
 //! held, with its `section_label` and `icon_button` header: every other engine on the tailnet,
 //! its `internet` glyph tinted by how the link stands, its name and its running agents. A row
-//! opens "Open folder on a machine" on that machine; the `+` opens Settings → Connections' add
-//! card. Viewers (phones) serve nothing and are not listed, nor is this machine.
+//! opens "Open folder on a machine" on that machine; its context menu has that and, on macOS,
+//! "Open desktop", the Mac's whole display in a window of its own (`crate::desktop`). The `+`
+//! opens Settings → Connections' add card. Viewers (phones) serve nothing and are not listed,
+//! nor is this machine.
 //!
 //! The shell follows `WatchMachines` here and keeps only what the section draws, so the
 //! sidebar is told, and remeasured, only when a row it shows changes: round trips move every
@@ -235,11 +237,79 @@ impl Shell {
                             .text_color(content(0.5))
                             .child(agents.to_string())
                     }))
+                    .on_mouse_down(
+                        MouseButton::Right,
+                        cx.listener({
+                            let engine = engine.clone();
+                            move |this, event: &MouseDownEvent, window, cx| {
+                                this.open_menu(
+                                    MenuTarget::Machine(engine.clone()),
+                                    Anchor::Point(event.position),
+                                    window,
+                                    cx,
+                                );
+                            }
+                        }),
+                    )
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.open_peer_project(Some(engine.clone()), window, cx);
                     }))
             }))
             .into_any_element()
+    }
+
+    /// A Machines row's context menu: open a folder there, and on macOS open its desktop.
+    pub(super) fn machine_menu(
+        &self,
+        engine: &EngineId,
+    ) -> (SharedString, Vec<MenuItem>, f32, MenuStyle) {
+        let name = self
+            .machines
+            .rows
+            .iter()
+            .find(|row| row.engine == *engine)
+            .map_or_else(|| engine.0.clone(), |row| row.name.clone());
+        let mut items: Vec<MenuItem> = vec![
+            MenuAction::new("open-folder", "Open folder…")
+                .icon("folder-add")
+                .into(),
+        ];
+        if cfg!(target_os = "macos") {
+            items.push(
+                MenuAction::new("open-desktop", "Open desktop")
+                    .icon("app-window")
+                    .into(),
+            );
+        }
+        (
+            format!("Machine actions for {name}").into(),
+            items,
+            200.,
+            MenuStyle::Explorer,
+        )
+    }
+
+    pub(super) fn run_machine_menu(
+        &mut self,
+        engine: EngineId,
+        action: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match action {
+            "open-folder" => self.open_peer_project(Some(engine), window, cx),
+            #[cfg(target_os = "macos")]
+            "open-desktop" => {
+                let name = self
+                    .machines
+                    .rows
+                    .iter()
+                    .find(|row| row.engine == engine)
+                    .map_or_else(|| engine.0.clone(), |row| row.name.clone());
+                crate::desktop::open_window(engine, name, cx);
+            }
+            _ => {}
+        }
     }
 }
 

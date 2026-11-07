@@ -90,13 +90,6 @@ pub(crate) enum Origin {
 }
 
 impl Origin {
-    fn of(file: &Attachment) -> Option<Self> {
-        file.data
-            .clone()
-            .map(Self::Embedded)
-            .or_else(|| file.path.clone().map(Self::Path))
-    }
-
     fn same(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Embedded(a), Self::Embedded(b)) => Arc::ptr_eq(a, b),
@@ -137,9 +130,20 @@ impl Photo {
             "image/tiff" => gpui::ImageFormat::Tiff,
             _ => gpui::ImageFormat::Png,
         };
+        // A file of a session on another engine is read through that engine.
+        let peer = match &origin {
+            Origin::Path(path) => path
+                .to_str()
+                .filter(|path| onicode_protocol::ProjectRef::parse_uri(path).is_some())
+                .map(|path| crate::engine_client::read_file(path, cx)),
+            Origin::Embedded(_) => None,
+        };
         let read = origin.clone();
         let work = cx.background_executor().spawn(async move {
-            let bytes = read.read()?;
+            let bytes = match peer {
+                Some(peer) => peer.await?.0,
+                None => read.read()?,
+            };
             Ok::<_, String>(
                 match onicode_core::composer::thumbnail_bgra(&bytes, THUMBNAIL_SIDE) {
                     Ok(pixels) => Ok(Arc::new(gpui::RenderImage::new(vec![image::Frame::new(
@@ -254,7 +258,20 @@ impl TranscriptView {
         ix: usize,
         cx: &mut Context<Self>,
     ) -> gpui::Stateful<gpui::Div> {
-        let photo = if let Some(origin) = Origin::of(file) {
+        // A session on another engine keeps its attachments there: their paths are its own.
+        let path = file.path.as_ref().map(|path| {
+            let path = path.to_string_lossy();
+            PathBuf::from(self.file_link_base.as_deref().map_or_else(
+                || path.clone().into_owned(),
+                |base| crate::engine_client::app_path_beside(base, &path),
+            ))
+        });
+        let photo = if let Some(origin) = file
+            .data
+            .clone()
+            .map(Origin::Embedded)
+            .or_else(|| path.clone().map(Origin::Path))
+        {
             let key = format!("{key}-{ix}");
             let cached = self
                 .attachment_images
@@ -297,7 +314,14 @@ impl TranscriptView {
                 data: data.clone(),
                 mime: file.mime.clone(),
             })
-            .or_else(|| file.path.clone().map(crate::image_lightbox::Source::Path));
+            .or_else(|| {
+                path.map(|path| match path.to_str() {
+                    Some(peer) if onicode_protocol::ProjectRef::parse_uri(peer).is_some() => {
+                        crate::image_lightbox::Source::Peer(peer.to_owned())
+                    }
+                    _ => crate::image_lightbox::Source::Path(path),
+                })
+            });
         let alt = file.name.clone();
         div()
             .id(SharedString::from(format!("attachment-{key}-{ix}")))
@@ -327,7 +351,7 @@ impl TranscriptView {
 #[cfg(test)]
 mod tests {
     use gpui::{
-        Context, ImageSource, ImgResourceLoader, IntoElement, Render, Resource, Styled,
+        AppContext, Context, ImageSource, ImgResourceLoader, IntoElement, Render, Resource, Styled,
         TestAppContext, Window, img, px,
     };
 
@@ -337,6 +361,27 @@ mod tests {
         fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
             img(self.0.clone()).size(px(2.))
         }
+    }
+
+    /// An attachment of a session on another engine is read through that engine, by the path
+    /// that engine keeps it at, never from this Mac's disk.
+    #[gpui::test]
+    fn a_peer_sessions_attachment_is_read_through_its_engine(cx: &mut TestAppContext) {
+        let origin = super::Origin::Path("peer://nStudio/Users/me/.onicode/a.png".into());
+        let photo = cx.new(|cx| super::Photo::new(origin, "image/png".into(), cx));
+        cx.run_until_parked();
+        let calls = cx.update(|cx| {
+            crate::engine_client::calls_for_test(&crate::engine_client::local(cx), cx)
+        });
+        let (_, read) = calls
+            .iter()
+            .find(|(name, _)| *name == "Read")
+            .expect("read through the session's engine");
+        assert_eq!(read["engine"], "nStudio");
+        assert_eq!(read["body"]["path"], "/Users/me/.onicode/a.png");
+        photo.read_with(cx, |photo, _| {
+            assert!(photo.source.is_none(), "the studio cannot be reached");
+        });
     }
 
     #[gpui::test]

@@ -2,7 +2,8 @@
 //! and every engine and viewer on the tailnet, with how each link travels. "Add machine" opens a
 //! card that says how a Mac joins: there is nothing to type, since admission is tailnet whois.
 //! The directory has no lasting forget (a machine leaves the list when it leaves the tailnet),
-//! so a row has no remove button.
+//! so a row has no remove button. On macOS an engine's row opens its Mac's desktop in a window
+//! of its own (`crate::desktop`).
 use gpui::prelude::*;
 use gpui::{AnyElement, Context, Div, FontWeight, SharedString, Task, div, px};
 use onicode_protocol::engine::{
@@ -74,6 +75,33 @@ fn status(machine: &Machine) -> String {
         _ => {}
     }
     status
+}
+
+/// "Open desktop" on a row whose machine is an engine: its Mac's whole display in a window of
+/// its own.
+#[cfg(target_os = "macos")]
+fn desktop_button(machine: &Machine) -> Option<AnyElement> {
+    if !matches!(machine.kind, MachineKind::Engine | MachineKind::This) {
+        return None;
+    }
+    let (engine, name) = (machine.engine.clone(), machine.name.clone());
+    Some(
+        secondary_button(
+            SharedString::from(format!("open-desktop-{}", machine.engine)),
+            format!("Open {name}'s desktop"),
+            false,
+            false,
+        )
+        .child("Open desktop")
+        .on_click(move |_, _, cx| crate::desktop::open_window(engine.clone(), name.clone(), cx))
+        .into_any_element(),
+    )
+}
+
+/// Remote desktop views Macs from a Mac only.
+#[cfg(not(target_os = "macos"))]
+fn desktop_button(_machine: &Machine) -> Option<AnyElement> {
+    None
 }
 
 impl SettingsView {
@@ -206,7 +234,8 @@ impl SettingsView {
                                 )
                                 .child(paragraph(detail(machine)).mt_1())
                                 .child(paragraph(status(machine)).mt_1().text_color(content(0.5))),
-                        ),
+                        )
+                        .children(desktop_button(machine)),
                 ),
             );
         }

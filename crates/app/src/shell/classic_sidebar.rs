@@ -813,7 +813,7 @@ impl Shell {
         self.close_menu(cx);
         self.close_preview(cx);
         let project = self.workspace.project.clone();
-        let ids = self
+        let ids: Vec<i64> = self
             .order
             .iter()
             .copied()
@@ -844,32 +844,15 @@ impl Shell {
             })
             .collect();
         let focused = self.worktree_focus.get(&project).cloned();
-        let view = cx.new(|cx| {
-            WorktreeSwitcher::new(
-                project.clone(),
-                focused,
-                sessions,
-                ids,
-                self.engine.clone(),
-                cx,
-            )
-        });
+        let memberships = self.worktree_memberships(&ids);
+        if let Ok(paths) = &memberships {
+            self.apply_worktree_memberships(paths.clone(), cx);
+        }
+        let view =
+            cx.new(|cx| WorktreeSwitcher::new(project.clone(), focused, sessions, memberships, cx));
         let observed_project = project.clone();
         let events = cx.subscribe_in(&view, window, move |this, _, event: &Event, window, cx| {
             match event {
-                Event::Metadata(paths) => {
-                    for (id, path) in paths {
-                        this.session_worktrees.insert(*id, path.clone());
-                        if let Some(session) = this.sessions.get(id) {
-                            let path = session.update(cx, |session, cx| {
-                                session.restore_worktree(path.clone(), None, cx)
-                            });
-                            this.session_worktrees.insert(*id, path);
-                        }
-                    }
-                    this.sync_git(cx);
-                    this.invalidate_chrome(cx);
-                }
                 Event::Selected(focus) if this.workspace.project == observed_project => {
                     this.classic_worktree_picker = None;
                     this.select_worktree(focus.clone(), window, cx);

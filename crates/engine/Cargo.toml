@@ -22,6 +22,8 @@ libc.workspace = true
 # The Files and Git watches' platform file watch (FSEvents on macOS).
 notify.workspace = true
 onicode-core.workspace = true
+# The Desktop group (`desktop`): desktopd's control socket and its broker answers.
+onicode-desktop-link.workspace = true
 # A viewer's link starts the engine beside the app, detached.
 onicode-launch.workspace = true
 # The engine on the tailnet (`peers`): its QUIC endpoint, peers' hellos and the stream heads.
@@ -42,6 +44,8 @@ tokio = { workspace = true, features = ["sync", "net", "rt-multi-thread", "time"
 uuid.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+# The Desktop group: desktopd's launchd label (`bundle::helper_id`) and System Settings at a pane.
+onicode-grants.workspace = true
 # The engine's own banners while no viewer presents its alerts (`alerts::SystemBanners`).
 objc2.workspace = true
 objc2-foundation = { workspace = true, features = ["NSArray", "NSBundle", "NSString"] }

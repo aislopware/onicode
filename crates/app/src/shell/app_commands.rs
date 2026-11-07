@@ -597,17 +597,14 @@ impl Shell {
                                 } else {
                                     groups.add_to_folder(&folder, id);
                                     let name = groups.folder(&folder).unwrap().name.clone();
-                                    let saved = crate::engine_client::call::<
-                                        onicode_protocol::workspace::SaveGroups,
-                                    >(
-                                        &self.engine,
-                                        Some(onicode_protocol::OpId::new()),
-                                        onicode_protocol::workspace::SaveGroups {
-                                            project: project.clone(),
-                                            groups: groups.clone(),
-                                        },
-                                        cx,
-                                    );
+                                    // A peer project's folders are its engine's.
+                                    let (engine, body) = self.groups_call(&project, groups.clone());
+                                    let saved =
+                                        crate::engine_client::call::<
+                                            onicode_protocol::workspace::SaveGroups,
+                                        >(
+                                            &engine, Some(onicode_protocol::OpId::new()), body, cx
+                                        );
                                     let work = cx.spawn(async move |_, _| {
                                         saved.await?;
                                         Ok::<_, String>((

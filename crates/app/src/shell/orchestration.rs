@@ -113,9 +113,19 @@ impl Shell {
         // The sidebar lists the lead's agents from this, during and after the run.
         if self.orchestration_summaries.get(&lead) != Some(&summary) {
             self.orchestration_summaries.insert(lead, summary.clone());
-            self.workspace_write::<SaveOrchestration>(
+            // The lead's engine keeps it, naming the lead and its workers by its own rows.
+            let engine = self.session_engine(lead);
+            let mut saved = summary;
+            for task in &mut saved.tasks {
+                task.session = task.session.map(|worker| engine.row(worker));
+            }
+            self.workspace_write_on::<SaveOrchestration>(
+                &engine,
                 "save the orchestration",
-                SaveOrchestration { lead, summary },
+                SaveOrchestration {
+                    lead: engine.row(lead),
+                    summary: saved,
+                },
                 None,
                 cx,
             );

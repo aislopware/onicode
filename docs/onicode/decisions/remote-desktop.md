@@ -44,9 +44,14 @@ agent with its own QUIC endpoint on the tailnet at port 7434, admitted by whois 
 (`Grants::fresh`, never a prompt and no ScreenCaptureKit call before Screen Recording reads true), refuses sessions
 naming the panes that are off, and restarts itself for launchd once a guide it was told about sees them on. The engine
 captures nothing: it brokers. `OpenDesktop`, `DesktopGrants` and `DesktopOpenGuide` are forwardable RPCs that the Mac's
-engine answers by asking desktopd on a Unix socket in its data directory (`crates/engine/src/desktop.rs`), starting
-it with `launchctl kickstart` on the label made from the app's bundle id; a client then dials desktopd itself, so
-no frame takes a second hop and a desktopd restart never touches agent sessions. The session around slopty's screen
+engine answers by asking desktopd on a Unix socket in its data directory (the protocol's Desktop group, served by
+`crates/engine/src/desktop.rs`), starting it with `launchctl kickstart` on the label made from the app's bundle id.
+The first desktop asked of a Mac registers the agent with `SMAppService` from the engine, whose main bundle is the
+app's (no onboarding step does it any more); an agent the person turned off in Login Items stays off and the engine
+opens that pane for them. A client then dials desktopd itself, so no frame takes a second hop and a desktopd restart never touches agent sessions.
+desktopd keeps its data where the app and its engine do (`~/Library/Application Support/Onicode`, `Onicode
+Development` for a development build, or `$ONICODE_DATA_DIR`), so the engine finds its socket and desktopd's hello
+carries the engine's `device-id`. The session around slopty's screen
 protocol is `onicode-desktop-link`: a join and a welcome, the grants, numbered input that also goes as a datagram
 copy on channel 4 and is applied once and in order whichever copy arrives first, and the seat. The seat is what
 onicode adds to slopty's multi-client ruling, which keeps one capture and encode per viewer so each client adapts to its
@@ -54,8 +59,11 @@ own path: any number of viewers, one controller, whose input alone reaches the M
 and taking them needs the owner's tailnet grant. `onicode-desktop-client` (`crates/desktop-client`) is
 slopty-client's screen path for both apps: routing with a backlog for datagrams that beat `Opened`, a reassembler and
 decode thread per stripe lane, the stitch, reports and clock probes, sound, the letterbox fit, and redial. The macOS
-view (`crates/ui/src/desktop`) presents each decoded picture on a gpui-fast `VideoLayer` from the decode thread, so a
-picture waits on no GPUI frame, and shows the Mac's pointer as the system cursor; it opens from a Mac in the devices
-settings. The iPhone shows the same decoded pictures on an `AVSampleBufferDisplayLayer` through `crates/mobile`'s
-`DesktopViewer`. Window, region and crop streams, zoom, drag in and out, the paste chord's clipboard push and
-input-source sync are not ported; the curtain is refused until its platform half exists.
+view (`crates/app/src/desktop`) presents each decoded picture on a gpui-fast `VideoLayer` from the decode thread, so a
+picture waits on no GPUI frame, and shows the Mac's pointer as the system cursor. It opens in a window of its own from
+a machine: "Open desktop" in a Machines row's context menu in the sidebar, or the button on an engine's row in Settings
+→ Connections (this Mac's own included, to look at and to turn its grants on). Its chrome is the old viewer's (the
+seat badge, the display and sound, curtain and stats toggles, the notices), drawn with the app's own buttons and
+floating surface over a dark stage. The iPhone viewer comes back with the iOS client, last in the plan. Window, region and crop streams, zoom, drag in and out, the paste chord's clipboard push, the
+clipboard following a focused desktop window (`one-machine.md`) and input-source sync are not ported; the curtain is
+refused until its platform half exists.

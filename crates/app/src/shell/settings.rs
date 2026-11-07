@@ -379,12 +379,14 @@ impl Shell {
             );
             return;
         }
-        let engine = crate::engine_client::local(cx);
+        // A project on another machine removes its worktree there, as that engine names it.
+        let (engine, checkout) = self.engine.for_path(&cwd);
+        let tree = engine.path_of(&path);
         let preflight = engine.call::<RemoveWorktree>(
             Some(OpId::new()),
             RemoveWorktree {
-                checkout: cwd.clone(),
-                path: path.clone(),
+                checkout: checkout.clone(),
+                path: tree.clone(),
                 preflight: true,
                 delete_sessions,
             },
@@ -428,8 +430,8 @@ impl Shell {
                 .call::<RemoveWorktree>(
                     Some(OpId::new()),
                     RemoveWorktree {
-                        checkout: cwd,
-                        path: path.clone(),
+                        checkout,
+                        path: tree,
                         preflight: false,
                         delete_sessions,
                     },
@@ -437,7 +439,17 @@ impl Shell {
                 .await;
             let _ = this.update(cx, |this, cx| {
                 let result = result.map(|removed| {
-                    for (summary, settings) in removed.detached {
+                    for (mut summary, mut settings) in removed.detached {
+                        // Another engine's sessions under the app's rows and spelling.
+                        if engine.target().is_some() {
+                            let Some(row) = this.peer_row_of(&engine, summary.id) else {
+                                continue;
+                            };
+                            summary.id = row;
+                            summary.cwd = engine.app_path(&summary.cwd);
+                            settings.worktree_cwd =
+                                settings.worktree_cwd.map(|cwd| engine.app_path(&cwd));
+                        }
                         this.session_summaries.insert(summary.id, summary.clone());
                         this.session_worktrees
                             .insert(summary.id, settings.worktree_cwd.clone());

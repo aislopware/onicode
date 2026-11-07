@@ -19,9 +19,9 @@ use onicode_protocol::engine::{
     UpdateEngine, WatchMachines,
 };
 use onicode_protocol::files::{
-    AdoptAttachments, Create, DeletePath, Destination, Entries, ListDir, ListDrives, Move,
-    PathKind, Read, SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths,
-    Stat, StopSearch, WatchDir, Write,
+    AdoptAttachments, Create, DeletePath, Destination, Entries, ImportFiles, ListDir, ListDrives,
+    Move, PathKind, Read, SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders,
+    SearchPaths, Stat, StopSearch, WatchDir, Write,
 };
 use onicode_protocol::git::{
     Branches, ChangeSet, Commit, CommitContext, CommitFiles, CreateBranch, CreatePr,
@@ -293,6 +293,7 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<Write>();
     shapes.call::<Create>();
     shapes.call::<Move>();
+    shapes.call::<ImportFiles>();
     shapes.call::<DeletePath>();
     shapes.call::<SearchPaths>();
     shapes.call::<SearchContent>();
@@ -411,6 +412,10 @@ fn shapes() -> (Vec<Method>, String) {
     // Alerts.
     shapes.watch::<onicode_protocol::alerts::WatchAlerts>();
     shapes.call::<onicode_protocol::alerts::SetViewportFocus>();
+    // Desktop.
+    shapes.call::<onicode_protocol::desktop::OpenDesktop>();
+    shapes.call::<onicode_protocol::desktop::DesktopGrants>();
+    shapes.call::<onicode_protocol::desktop::DesktopOpenGuide>();
     // What every call and watch travels in.
     shapes.envelope::<Cursor>("Cursor");
     shapes.envelope::<Item<(), ()>>("Item");
@@ -451,6 +456,8 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<onicode_protocol::alerts::Need>();
     shapes.variants::<onicode_protocol::alerts::Subject>();
     shapes.variants::<onicode_protocol::alerts::OnScreen>();
+    shapes.variants::<onicode_protocol::desktop::Pane>();
+    shapes.variants::<std::net::SocketAddr>();
     shapes.table()
 }
 

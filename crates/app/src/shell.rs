@@ -382,6 +382,8 @@ pub(crate) enum MenuTarget {
     Actions,
     /// The title strip's new-tab button, when terminals open in the title bar.
     NewTab,
+    /// A Machines row's context menu.
+    Machine(onicode_protocol::EngineId),
 }
 pub(crate) struct ShellMenu {
     pub(crate) target: MenuTarget,
@@ -5269,6 +5271,7 @@ impl Shell {
                 200.,
                 MenuStyle::Explorer,
             ),
+            MenuTarget::Machine(engine) => self.machine_menu(engine),
             MenuTarget::NewTab => (
                 "New tab".into(),
                 vec![
@@ -5665,6 +5668,7 @@ impl Shell {
             MenuTarget::TerminalTab(ix) => self.run_terminal_tab_menu(ix, action, window, cx),
             MenuTarget::RunningTerminals => self.run_running_terminals_menu(action, window, cx),
             MenuTarget::Actions => self.run_actions_menu(action, window, cx),
+            MenuTarget::Machine(engine) => self.run_machine_menu(engine, action, window, cx),
             MenuTarget::NewTab => match action {
                 "terminal" => self.new_title_terminal(window, cx),
                 _ => self.new_chat(cx),

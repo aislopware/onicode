@@ -477,10 +477,12 @@ impl Shell {
                 Ok((mut summary, _)) => {
                     let id = summary.id;
                     summary.work_item = Some(work_item.clone());
-                    this.workspace_write::<onicode_protocol::workspace::SetWorkItem>(
+                    let engine = this.session_engine(id);
+                    this.workspace_write_on::<onicode_protocol::workspace::SetWorkItem>(
+                        &engine,
                         "link the session",
                         onicode_protocol::workspace::SetWorkItem {
-                            session: id,
+                            session: engine.row(id),
                             item: Some(work_item),
                             if_unlinked: false,
                         },

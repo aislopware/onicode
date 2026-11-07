@@ -1184,9 +1184,45 @@ pub(crate) fn peer_row(key: &SessionKey) -> i64 {
 }
 
 /// Whether the app names `id` a session on another engine ([`peer_row`]).
-#[cfg(test)]
 pub(crate) fn is_peer_row(id: i64) -> bool {
     id >= PEER_ROWS
+}
+
+/// `path`, as the engine serving `base` (a project or checkout, as the app spells it) named it,
+/// in the app's spelling: beside a `peer://` base, an absolute path of that engine becomes its
+/// URI ([`Engine::app_path`]); anything else stays as it is. What a peer session's transcript
+/// names (a tool's file, a link, an attachment) is a path on that session's engine.
+pub(crate) fn app_path_beside(base: &str, path: &str) -> String {
+    match ProjectRef::parse_uri(base) {
+        Some(project) if path.starts_with('/') => ProjectRef {
+            engine: project.engine,
+            path: path.to_owned(),
+        }
+        .uri(),
+        _ => path.to_owned(),
+    }
+}
+
+/// The bytes of the file at `path` (as the app spells it) as its engine reads them for a
+/// preview (`Read`), with an image's format (`png`, `jpeg`…): how a view shows a file it cannot
+/// open from this Mac's disk, such as an attachment of a session on another engine.
+pub(crate) fn read_file(
+    path: &str,
+    cx: &mut App,
+) -> impl Future<Output = Result<(Vec<u8>, Option<String>), String>> + Send + 'static + use<> {
+    use onicode_protocol::files::{FileContents, Read};
+    let (engine, path) = for_project(path, cx);
+    let read = engine.call::<Read>(None, Read { path, unless: None });
+    async move {
+        match read.await? {
+            FileContents::Image(image) => Ok((image.bytes.0, Some(image.format))),
+            FileContents::Text(text) => Ok((text.text.into_bytes(), None)),
+            FileContents::Unsupported(reason) => Err(reason),
+            FileContents::Unchanged | FileContents::Video { .. } => {
+                Err("This file cannot be previewed".into())
+            }
+        }
+    }
 }
 
 /// What a watcher receives: the whole state, or what changed since.

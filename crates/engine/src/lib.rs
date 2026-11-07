@@ -13,6 +13,7 @@
 pub mod accounts;
 pub mod alerts;
 pub mod app_access;
+pub mod desktop;
 mod feed;
 pub mod files;
 mod fs_watch;

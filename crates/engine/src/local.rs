@@ -12,6 +12,7 @@ use tokio::sync::Notify;
 use crate::accounts::{AccountsHub, AccountsService, AgentProbe, CliProbe};
 use crate::alerts::{AlertsHub, AlertsService, SystemBanners};
 use crate::app_access::{AppAccessHub, AppAccessService};
+use crate::desktop::DesktopService;
 use crate::files::{FilesHub, FilesService};
 use crate::git::{CheckoutHub, GitService};
 use crate::machines::{MachinesHub, MachinesService};
@@ -116,12 +117,10 @@ impl Local {
             Some(runner) => SessionHub::with_runner(store.clone(), spawn.clone(), runner),
             None => SessionHub::new(store.clone(), spawn.clone()),
         };
-        let identity = Identity::of(
-            crate::turn::locked(&store)?
-                .data_dir()
-                .map(Path::to_path_buf)
-                .as_deref(),
-        );
+        let data_dir = crate::turn::locked(&store)?
+            .data_dir()
+            .map(Path::to_path_buf);
+        let identity = Identity::of(data_dir.as_deref());
         let machines = MachinesHub::new(identity.clone(), session.clone());
         let workspace = match options.chores {
             Some(chores) => WorkspaceHub::with_chores(store.clone(), spawn.clone(), chores),
@@ -173,6 +172,7 @@ impl Local {
         .with(Arc::new(TerminalService::new(terminal.clone())))
         .with(Arc::new(MachinesService::new(machines.clone())))
         .with(Arc::new(AlertsService::new(alerts.clone())))
+        .with(Arc::new(DesktopService::new(data_dir, identity.clone())))
         .with(Arc::new(EngineGroup::new(
             session.clone(),
             identity.clone(),

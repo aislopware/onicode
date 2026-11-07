@@ -15,7 +15,7 @@ use onicode_protocol::agent::Settings;
 use onicode_protocol::workspace::{
     CreateSession, NewSession, SessionSummary, WorkspaceEvent, WorkspaceState,
 };
-use onicode_protocol::{Call, OpId, Outcome, Rejection, SessionId};
+use onicode_protocol::{Call, EngineId, OpId, Outcome, Rejection, SessionId};
 
 use super::*;
 use crate::engine_client::{self, WorkspaceUpdate};
@@ -26,6 +26,9 @@ pub(super) type Echo = Box<dyn Fn(&mut Shell, &mut Context<Shell>)>;
 struct Echoed {
     op: OpId,
     echo: Echo,
+    /// The engine the call went to: `None` for the app's own; its workspace watch brings the
+    /// receipt.
+    engine: Option<EngineId>,
     /// The call has answered; a snapshot already holds its effect.
     settled: bool,
     /// The sessions the echo marks: shown as the engine holds them again if it refuses the call.
@@ -61,6 +64,46 @@ impl Mirror {
     /// The session at `row` as the engine holds it.
     pub(super) fn session(&self, row: i64) -> Option<Session> {
         self.summary(row).map(|summary| summary.session.clone())
+    }
+
+    /// The worktree the engine holds the session at `row` in; `Err` until its workspace arrives.
+    pub(super) fn worktree(&self, row: i64) -> Result<Option<String>, String> {
+        if self.state.is_none() {
+            return Err("The engine has not answered yet".into());
+        }
+        Ok(self
+            .summary(row)
+            .and_then(|summary| summary.worktree.clone()))
+    }
+
+    /// Takes the echoes of calls made to `engine` that a snapshot of it holds (`settled`) or,
+    /// with `all`, every one: the sessions they marked, to show as that engine holds them.
+    pub(super) fn settle_echoes(&mut self, engine: Option<&EngineId>, all: bool) -> HashSet<i64> {
+        let mut rows = HashSet::new();
+        self.echoes.retain(|echoed| {
+            let done = echoed.engine.as_ref() == engine && (all || echoed.settled);
+            if done {
+                rows.extend(echoed.rows.iter().copied());
+            }
+            !done
+        });
+        rows
+    }
+
+    /// Takes the echoes of the calls `receipts` answer: the sessions marked by those the engine
+    /// refused, to show as it holds them.
+    pub(super) fn receipts(&mut self, receipts: &[(OpId, Outcome)]) -> HashSet<i64> {
+        let mut rows = HashSet::new();
+        self.echoes.retain(|echoed| {
+            let Some((_, outcome)) = receipts.iter().find(|(op, _)| *op == echoed.op) else {
+                return true;
+            };
+            if matches!(outcome, Outcome::Rejected(_)) {
+                rows.extend(echoed.rows.iter().copied());
+            }
+            false
+        });
+        rows
     }
 
     /// The engine's workspace as it last arrived, for a test to assert on.
@@ -148,7 +191,7 @@ fn saved_details(
 }
 
 /// Every reminder occurrence still waiting to fire.
-fn armed(reminders: &[onicode_protocol::sessions::Reminder]) -> HashSet<(i64, u64)> {
+pub(super) fn armed(reminders: &[onicode_protocol::sessions::Reminder]) -> HashSet<(i64, u64)> {
     reminders
         .iter()
         .filter(|reminder| reminder.fired_at.is_none())
@@ -204,12 +247,8 @@ impl Shell {
                 removed.extend(known.into_keys());
                 due.extend(state.automations.iter().cloned());
                 // The snapshot holds what became of every answered call: its sessions show it.
-                self.mirror.echoes.retain(|echoed| {
-                    if echoed.settled {
-                        before.extend(echoed.rows.iter().map(|row| (*row, None)));
-                    }
-                    !echoed.settled
-                });
+                let settled = self.mirror.settle_echoes(None, false);
+                before.extend(settled.into_iter().map(|row| (row, None)));
                 self.mirror.state = Some(*state);
             }
             WorkspaceUpdate::Events(events) => {
@@ -238,15 +277,8 @@ impl Shell {
             }
         }
         // An echo the engine refused leaves its sessions as the engine holds them, whole.
-        self.mirror.echoes.retain(|echoed| {
-            let Some((_, outcome)) = receipts.iter().find(|(op, _)| *op == echoed.op) else {
-                return true;
-            };
-            if matches!(outcome, Outcome::Rejected(_)) {
-                before.extend(echoed.rows.iter().map(|row| (*row, None)));
-            }
-            false
-        });
+        let refused = self.mirror.receipts(&receipts);
+        before.extend(refused.into_iter().map(|row| (row, None)));
         self.show_sessions(&before, cx);
         self.show_workspace(cx);
         for row in removed {
@@ -378,33 +410,39 @@ impl Shell {
         }
     }
 
-    /// Lays the sessions at `rows` over the shell's maps whole as the engine holds them, then
-    /// the rest of the workspace: what an echo the engine refused leaves behind.
-    fn reshow_workspace(&mut self, rows: HashSet<i64>, cx: &mut Context<Self>) {
-        let before = rows.into_iter().map(|row| (row, None)).collect();
+    /// Lays the sessions at `rows` over the shell's maps whole as their engines hold them (the
+    /// app's own, or the machine a peer session is on), then the rest of the workspaces: what an
+    /// echo an engine refused leaves behind.
+    pub(super) fn reshow_workspace(&mut self, rows: HashSet<i64>, cx: &mut Context<Self>) {
+        let (peers, own): (HashSet<i64>, HashSet<i64>) = rows
+            .into_iter()
+            .partition(|row| self.peer_summary(*row).is_some());
+        let before = own.into_iter().map(|row| (row, None)).collect();
         self.show_sessions(&before, cx);
+        self.reshow_peer_sessions(peers, cx);
         self.show_workspace(cx);
     }
 
-    /// Lays the engine's folders, reminders, orchestration summaries and note count over the
-    /// shell's maps, then the echoes still in flight.
-    fn show_workspace(&mut self, cx: &mut Context<Self>) {
-        let Some(state) = self.mirror.state.as_ref() else {
-            return;
-        };
-        for project in &state.projects {
-            self.groups
-                .insert(project.path.clone(), project.groups.clone());
+    /// Lays the engines' folders, reminders, orchestration summaries and note count over the
+    /// shell's maps (the app's own engine's, then each followed machine's in its projects), then
+    /// the echoes still in flight.
+    pub(super) fn show_workspace(&mut self, cx: &mut Context<Self>) {
+        if let Some(state) = self.mirror.state.as_ref() {
+            for project in &state.projects {
+                self.groups
+                    .insert(project.path.clone(), project.groups.clone());
+            }
+            self.reminders.clone_from(&state.reminders);
+            for lead in &state.orchestrations {
+                self.orchestration_summaries
+                    .insert(lead.lead, lead.summary.clone());
+            }
+            if self.note_count != Some(state.notes) {
+                self.note_count = Some(state.notes);
+                self.notify_sidebar(cx);
+            }
         }
-        self.reminders.clone_from(&state.reminders);
-        for lead in &state.orchestrations {
-            self.orchestration_summaries
-                .insert(lead.lead, lead.summary.clone());
-        }
-        if self.note_count != Some(state.notes) {
-            self.note_count = Some(state.notes);
-            self.notify_sidebar(cx);
-        }
+        self.show_peer_workspaces();
         let echoes = std::mem::take(&mut self.mirror.echoes);
         for echoed in &echoes {
             (echoed.echo)(self, cx);
@@ -463,6 +501,25 @@ impl Shell {
         C::Params: Send + 'static,
         C::Reply: Send + 'static,
     {
+        self.workspace_send::<C>(engine, body, echo, |_| false, cx, settle);
+    }
+
+    /// Makes the call: its echo shows now and over every update until the receipt of its op
+    /// arrives on its engine's workspace watch. A call that fails, or that `refused` says the
+    /// engine turned down, takes its echo back at once: what it marked shows as its engine holds
+    /// it.
+    fn workspace_send<C: Call + 'static>(
+        &mut self,
+        engine: &Engine,
+        body: C::Params,
+        echo: Option<Echo>,
+        refused: impl FnOnce(&C::Reply) -> bool + 'static,
+        cx: &mut Context<Self>,
+        settle: impl FnOnce(&mut Self, Result<C::Reply, String>, &mut Context<Self>) + 'static,
+    ) where
+        C::Params: Send + 'static,
+        C::Reply: Send + 'static,
+    {
         let engine = engine.clone();
         let op = OpId::new();
         if let Some(echo) = echo {
@@ -472,13 +529,13 @@ impl Shell {
             self.mirror.echoes.push(Echoed {
                 op,
                 echo,
+                engine: engine.target().cloned(),
                 settled: false,
                 rows,
             });
         }
         // Another engine's call neither waits behind the app's own engine's writes nor holds
-        // them up while that engine is offline, and its effect arrives on that engine's
-        // workspace watch, so its echo goes with the reply.
+        // them up while that engine is offline.
         let peer = engine.target().is_some();
         let previous = if peer { None } else { self.group_writes.take() };
         let write = cx.spawn(async move |this, cx| {
@@ -492,7 +549,11 @@ impl Shell {
             };
             let reply = call.await;
             let _ = this.update(cx, |this, cx| {
-                if reply.is_err() {
+                let refused = match &reply {
+                    Ok(reply) => refused(reply),
+                    Err(_) => true,
+                };
+                if refused {
                     let mut rows = HashSet::new();
                     this.mirror.echoes.retain(|echoed| {
                         let refused = echoed.op == op;
@@ -502,8 +563,6 @@ impl Shell {
                         !refused
                     });
                     this.reshow_workspace(rows, cx);
-                } else if peer {
-                    this.mirror.echoes.retain(|echoed| echoed.op != op);
                 } else if let Some(echoed) =
                     this.mirror.echoes.iter_mut().find(|echoed| echoed.op == op)
                 {
@@ -548,12 +607,20 @@ impl Shell {
     ) where
         C::Params: Send + 'static,
     {
-        self.workspace_call_on::<C>(engine, body, echo, cx, move |this, reply, _| match reply {
-            Err(error) | Ok(Outcome::Rejected(Rejection::Denied(error))) => {
-                this.error = Some(format!("Could not {what}: {error}"));
-            }
-            Ok(_) => {}
-        });
+        let refused = |reply: &Outcome| matches!(reply, Outcome::Rejected(_));
+        self.workspace_send::<C>(
+            engine,
+            body,
+            echo,
+            refused,
+            cx,
+            move |this, reply, _| match reply {
+                Err(error) | Ok(Outcome::Rejected(Rejection::Denied(error))) => {
+                    this.error = Some(format!("Could not {what}: {error}"));
+                }
+                Ok(_) => {}
+            },
+        );
     }
 
     /// Creates a session in the engine under a new id, answering with its stored summary and,

@@ -14,6 +14,7 @@ pub mod agents;
 pub mod alerts;
 pub mod app_access;
 pub mod b64;
+pub mod desktop;
 pub mod engine;
 pub mod engine_settings;
 pub mod files;
@@ -30,7 +31,7 @@ pub use ids::{EngineId, MessageId, OpId, ProjectRef, SessionId, SessionKey, Term
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 10;
+pub const PROTOCOL: u32 = 11;
 
 /// One request and its reply.
 pub trait Call {
@@ -209,6 +210,7 @@ pub const METHODS: &[Method] = &[
     call::<files::Write>(),
     call::<files::Create>(),
     call::<files::Move>(),
+    call::<files::ImportFiles>(),
     call::<files::DeletePath>(),
     call::<files::SearchPaths>(),
     call::<files::SearchContent>(),
@@ -327,6 +329,10 @@ pub const METHODS: &[Method] = &[
     // Alerts.
     watch::<alerts::WatchAlerts>(),
     call::<alerts::SetViewportFocus>(),
+    // Desktop.
+    call::<desktop::OpenDesktop>(),
+    call::<desktop::DesktopGrants>(),
+    call::<desktop::DesktopOpenGuide>(),
 ];
 
 /// The row of [`METHODS`] named `name`.

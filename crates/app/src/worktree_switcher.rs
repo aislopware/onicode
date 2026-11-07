@@ -30,7 +30,6 @@ pub(crate) struct TabSession {
 }
 pub(crate) enum Event {
     Selected(Option<WorktreeFocus>),
-    Metadata(Vec<(i64, Option<String>)>),
     Dismissed,
 }
 #[derive(Clone)]
@@ -86,6 +85,10 @@ fn rows(cwd: &str, state: Option<&Snapshot>, query: &str) -> Vec<Row> {
     rows
 }
 fn pretty_path(path: &str) -> String {
+    // A worktree on another machine reads as that machine names it.
+    if let Some(peer) = onicode_protocol::ProjectRef::parse_uri(path) {
+        return peer.path;
+    }
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from)
         && let Ok(rest) = Path::new(path).strip_prefix(home)
     {
@@ -133,12 +136,14 @@ pub(crate) struct WorktreeSwitcher {
 }
 impl EventEmitter<Event> for WorktreeSwitcher {}
 impl WorktreeSwitcher {
+    /// The flyout for the project `cwd`. `memberships` is the worktree each of the project's
+    /// sessions works in, as the engine that holds it last showed it (the shell's mirror of
+    /// that engine's workspace, another machine's for a project there), or why it is not known.
     pub(crate) fn new(
         cwd: String,
         focused: Option<WorktreeFocus>,
         sessions: Vec<TabSession>,
-        ids: Vec<i64>,
-        engine: crate::engine_client::Engine,
+        memberships: Result<HashMap<i64, Option<String>>, String>,
         cx: &mut Context<Self>,
     ) -> Self {
         let search = cx.new(|cx| {
@@ -158,7 +163,7 @@ impl WorktreeSwitcher {
             cx.notify();
         });
         let state = crate::git_cache::get(&cwd);
-        let tabs = tab_stats(&sessions, None, &cwd);
+        let tabs = tab_stats(&sessions, memberships.as_ref().ok(), &cwd);
         let work = crate::git_cache::load(cwd.clone(), cx);
         cx.spawn(async move |this, cx| {
             let result = work.await;
@@ -174,39 +179,6 @@ impl WorktreeSwitcher {
             });
         })
         .detach();
-        // Session membership is metadata, not a reason to load every agent's
-        // settings (which restores full desktop transcripts and turn receipts).
-        // It must also never hold up the independent Git list.
-        if !ids.is_empty() {
-            let work = cx.background_executor().spawn(async move {
-                let paths: HashMap<i64, Option<String>> = engine
-                    .workspace_now()?
-                    .sessions
-                    .into_iter()
-                    .map(|summary| (summary.session.id, summary.worktree))
-                    .collect();
-                Ok::<_, String>(
-                    ids.into_iter()
-                        .map(|id| (id, paths.get(&id).cloned().flatten()))
-                        .collect::<Vec<_>>(),
-                )
-            });
-            cx.spawn(async move |this, cx| {
-                let result = work.await;
-                let _ = this.update(cx, |this, cx| {
-                    match result {
-                        Ok(paths) => {
-                            let workspaces: HashMap<_, _> = paths.iter().cloned().collect();
-                            this.tabs = tab_stats(&sessions, Some(&workspaces), &this.cwd);
-                            cx.emit(Event::Metadata(paths));
-                        }
-                        Err(error) => this.error = Some(error),
-                    }
-                    cx.notify();
-                });
-            })
-            .detach();
-        }
         Self {
             cwd,
             focused,
@@ -216,7 +188,7 @@ impl WorktreeSwitcher {
             scroll: ScrollHandle::new(),
             creating: false,
             load_error: None,
-            error: None,
+            error: memberships.err(),
             tabs,
             _changed: changed,
         }
@@ -634,7 +606,7 @@ mod tests {
         assert!(rows("/repo/project", Some(&state), "new-copy").is_empty());
     }
     #[gpui::test]
-    fn cached_worktrees_show_before_metadata_and_membership_never_loads_full_settings(
+    fn cached_worktrees_show_at_once_and_membership_never_loads_full_settings(
         cx: &mut TestAppContext,
     ) {
         let cwd = "/nonexistent/monocode-cached-worktree-menu";
@@ -672,6 +644,14 @@ mod tests {
         )
         .unwrap();
         assert!(seed.agent_settings(session.id).is_err());
+        // The shell hands the switcher what its mirror of the engine's workspace holds.
+        let memberships = engine
+            .workspace_now()
+            .unwrap()
+            .sessions
+            .into_iter()
+            .map(|summary| (summary.session.id, summary.worktree))
+            .collect();
         let view = cx.new(|cx| {
             WorktreeSwitcher::new(
                 cwd.into(),
@@ -683,14 +663,13 @@ mod tests {
                     workspace: None,
                     busy: true,
                 }],
-                vec![session.id],
-                engine,
+                Ok(memberships),
                 cx,
             )
         });
         view.update(cx, |view, _| {
             assert_eq!(rows(cwd, view.state.as_ref(), "").len(), 3);
-            assert_eq!(view.tabs[&path_key(cwd)].tabs.len(), 1);
+            assert_eq!(view.tabs[&path_key(&feature)].tabs.len(), 1);
         });
         cx.run_until_parked();
         view.update(cx, |view, _| {
@@ -732,7 +711,6 @@ mod tests {
     #[gpui::test]
     fn search_keyboard_selection_and_create_footer_match_the_flyout(cx: &mut TestAppContext) {
         cx.update(input::bind);
-        let engine = cx.update(crate::engine_client::Engine::memory);
         let window = cx.update(|cx| {
             cx.open_window(Default::default(), |_, cx| {
                 cx.new(|cx| {
@@ -743,8 +721,7 @@ mod tests {
                             branch: Some("feature".into()),
                         }),
                         Vec::new(),
-                        Vec::new(),
-                        engine,
+                        Ok(HashMap::new()),
                         cx,
                     )
                 })

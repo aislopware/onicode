@@ -28,6 +28,9 @@ mod composer_motion;
 mod composer_runner;
 mod context_meter;
 mod conversation;
+// A Mac's whole display in a window of its own (remote-desktop.md): macOS only.
+#[cfg(target_os = "macos")]
+mod desktop;
 #[cfg(debug_assertions)]
 mod dev_reload;
 mod diff_view;

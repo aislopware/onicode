@@ -13,7 +13,9 @@ use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use onicode_core::files::DirEntry;
 use onicode_core::store::Store;
-use onicode_protocol::files::{DeletePath, DirEvent, Entries, Listing, Relisted, WatchDir};
+use onicode_protocol::files::{
+    Bytes, DeletePath, DirEvent, Entries, ImportEntry, ImportFiles, Listing, Relisted, WatchDir,
+};
 use onicode_protocol::{Cursor, Item, OpId};
 use proptest::prelude::*;
 
@@ -544,6 +546,78 @@ fn a_repeated_delete_is_one_delete_and_its_listing_comes_first() {
     // A fresh op deletes it.
     block_on(hub.delete(Some(OpId::new()), delete)).unwrap();
     assert!(!file.exists());
+}
+
+/// A folder a viewer copies in from its own disk lands whole, beside what is there under the
+/// name Finder gives a copy; a repeat of its op copies nothing again; one with a path outside
+/// the item, or one that fails partway, leaves nothing behind.
+#[test]
+fn an_imported_folder_lands_whole_once_and_a_bad_one_leaves_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let into = dir.path().to_string_lossy().into_owned();
+    std::fs::create_dir(dir.path().join("assets")).unwrap();
+    let hub = FilesHub::build(
+        store(),
+        Arc::new(ThreadSpawn),
+        Arc::new(DiskProbe),
+        Limits::default(),
+        false,
+        0,
+    );
+    let entry = |path: &str, bytes: Option<&[u8]>| ImportEntry {
+        path: path.into(),
+        bytes: bytes.map(|bytes| Bytes(bytes.to_vec())),
+    };
+    let body = ImportFiles {
+        into: into.clone(),
+        name: "assets".into(),
+        entries: vec![
+            entry("", None),
+            entry("logo.png", Some(b"\x89PNG")),
+            entry("icons", None),
+            entry("icons/a.svg", Some(b"<svg/>")),
+        ],
+    };
+    let op = OpId::new();
+    let landed = block_on(hub.import(Some(op), body.clone())).unwrap();
+    let copy = dir.path().join("assets copy");
+    assert_eq!(landed.path, copy.to_string_lossy());
+    assert_eq!(std::fs::read(copy.join("logo.png")).unwrap(), b"\x89PNG");
+    assert_eq!(
+        std::fs::read_to_string(copy.join("icons/a.svg")).unwrap(),
+        "<svg/>"
+    );
+    let repeat = block_on(hub.import(Some(op), body.clone())).unwrap();
+    assert_eq!(repeat, landed);
+    assert!(!dir.path().join("assets copy 2").exists(), "copied once");
+
+    let escaping = ImportFiles {
+        name: "notes".into(),
+        entries: vec![entry("", None), entry("../outside.txt", Some(b"no"))],
+        ..body.clone()
+    };
+    let error = block_on(hub.import(Some(OpId::new()), escaping)).unwrap_err();
+    assert!(error.contains("outside the copied folder"), "{error}");
+    assert!(!dir.path().join("notes").exists());
+    assert!(!dir.path().join("outside.txt").exists());
+
+    // A file where a folder must go fails partway: the part already written goes too.
+    let broken = ImportFiles {
+        name: "half".into(),
+        entries: vec![
+            entry("", None),
+            entry("a", Some(b"file")),
+            entry("a/b.txt", Some(b"under a file")),
+        ],
+        ..body.clone()
+    };
+    assert!(block_on(hub.import(Some(OpId::new()), broken)).is_err());
+    assert!(!dir.path().join("half").exists());
+    let named = ImportFiles {
+        name: "../up".into(),
+        ..body
+    };
+    assert!(block_on(hub.import(Some(OpId::new()), named)).is_err());
 }
 
 #[test]

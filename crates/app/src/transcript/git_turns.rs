@@ -452,13 +452,12 @@ impl TranscriptView {
             let name = std::path::Path::new(&file.path)
                 .file_name()
                 .map_or_else(|| file.path.clone(), |n| n.to_string_lossy().into_owned());
+            // In a session on another engine, the file opens on that engine.
             let path = base.as_deref().map_or_else(
                 || file.path.clone(),
                 |base| {
-                    std::path::Path::new(base)
-                        .join(&file.path)
-                        .to_string_lossy()
-                        .into_owned()
+                    let joined = std::path::Path::new(base).join(&file.path);
+                    crate::engine_client::app_path_beside(base, &joined.to_string_lossy())
                 },
             );
             div()

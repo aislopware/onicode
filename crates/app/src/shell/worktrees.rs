@@ -54,6 +54,49 @@ impl Shell {
         self.worktree_returns.insert((project, path), id);
     }
 
+    /// The worktree each of `ids` works in, as the engine holding it last showed it: the
+    /// mirror of the app's own engine's workspace, or the followed workspace of the machine a
+    /// peer session is on (its worktree in the app's spelling). `Err` while that workspace has
+    /// not arrived.
+    pub(super) fn worktree_memberships(
+        &self,
+        ids: &[i64],
+    ) -> Result<HashMap<i64, Option<String>>, String> {
+        ids.iter()
+            .map(|id| {
+                let worktree = match self.peer_summary(*id) {
+                    Some(peer) => peer.map(|(engine, summary)| {
+                        summary
+                            .and_then(|summary| summary.worktree.as_deref())
+                            .map(|worktree| engine.app_path(worktree))
+                    })?,
+                    None => self.mirror.worktree(*id)?,
+                };
+                Ok((*id, worktree))
+            })
+            .collect()
+    }
+
+    /// Lays the worktrees the engines hold for the sessions over the shell's map and their open
+    /// conversations, as a flyout opening reads them.
+    pub(super) fn apply_worktree_memberships(
+        &mut self,
+        paths: HashMap<i64, Option<String>>,
+        cx: &mut Context<Self>,
+    ) {
+        for (id, path) in paths {
+            self.session_worktrees.insert(id, path.clone());
+            if let Some(session) = self.sessions.get(&id) {
+                let path =
+                    session.update(cx, |session, cx| session.restore_worktree(path, None, cx));
+                self.session_worktrees.insert(id, path);
+            }
+        }
+        self.sync_git(cx);
+        self.invalidate_chrome(cx);
+        cx.notify();
+    }
+
     pub(super) fn worktree_flyout(
         &self,
         events: &mut Vec<Subscription>,
@@ -61,7 +104,7 @@ impl Shell {
         cx: &mut Context<Self>,
     ) -> Flyout {
         let project = self.workspace.project.clone();
-        let ids = self
+        let ids: Vec<i64> = self
             .order
             .iter()
             .copied()
@@ -92,32 +135,18 @@ impl Shell {
             })
             .collect();
         let focus = self.worktree_focus.get(&project).cloned();
-        let view = cx.new(|cx| {
-            WorktreeSwitcher::new(
-                project.clone(),
-                focus,
-                sessions,
-                ids,
-                self.engine.clone(),
-                cx,
-            )
-        });
+        let memberships = self.worktree_memberships(&ids);
+        if let Ok(paths) = &memberships {
+            let paths = paths.clone();
+            cx.defer_in(window, move |this, _, cx| {
+                this.apply_worktree_memberships(paths, cx);
+            });
+        }
+        let view =
+            cx.new(|cx| WorktreeSwitcher::new(project.clone(), focus, sessions, memberships, cx));
         events.push(
             cx.subscribe_in(&view, window, move |this, _, event: &Event, window, cx| {
                 match event {
-                    Event::Metadata(paths) => {
-                        for (id, path) in paths {
-                            this.session_worktrees.insert(*id, path.clone());
-                            if let Some(session) = this.sessions.get(id) {
-                                let path = session.update(cx, |session, cx| {
-                                    session.restore_worktree(path.clone(), None, cx)
-                                });
-                                this.session_worktrees.insert(*id, path);
-                            }
-                        }
-                        this.sync_git(cx);
-                        this.invalidate_chrome(cx);
-                    }
                     Event::Selected(focus) if this.workspace.project == project => {
                         this.close_menu(cx);
                         this.select_worktree(focus.clone(), window, cx);

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
+use futures::FutureExt as _;
 use gpui::prelude::*;
 use gpui::{
     App, Bounds, BoxShadow, Context, CursorStyle, Entity, EventEmitter, FocusHandle, Image,
@@ -15,7 +16,12 @@ use crate::theme::{black, icon, white};
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum Source {
     Path(PathBuf),
-    Embedded { data: Arc<str>, mime: SharedString },
+    /// A file on another engine (`peer://`), read through it.
+    Peer(String),
+    Embedded {
+        data: Arc<str>,
+        mime: SharedString,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, gpui::Action)]
@@ -121,12 +127,43 @@ impl ImageLightbox {
         let restore = window.focused(cx);
         let focus = cx.focus_handle();
         window.focus(&focus, cx);
-        if let Source::Embedded { data, mime } = &open.source {
-            let data = data.clone();
-            let format = ImageFormat::from_mime_type(mime).unwrap_or(ImageFormat::Png);
+        let bytes = match &open.source {
+            Source::Embedded { data, mime } => {
+                let data = data.clone();
+                let format = ImageFormat::from_mime_type(mime).unwrap_or(ImageFormat::Png);
+                Some(
+                    async move {
+                        let bytes = onicode_core::composer::decode_image_data(&data).ok()?;
+                        Some((format, bytes))
+                    }
+                    .boxed(),
+                )
+            }
+            Source::Peer(path) => {
+                let read = crate::engine_client::read_file(path, cx);
+                Some(
+                    async move {
+                        let (bytes, format) = read.await.ok()?;
+                        let format = match format.as_deref() {
+                            // The engine reads an SVG as text.
+                            None => ImageFormat::Svg,
+                            Some("jpeg") => ImageFormat::Jpeg,
+                            Some("gif") => ImageFormat::Gif,
+                            Some("webp") => ImageFormat::Webp,
+                            Some("bmp") => ImageFormat::Bmp,
+                            Some(_) => ImageFormat::Png,
+                        };
+                        Some((format, bytes))
+                    }
+                    .boxed(),
+                )
+            }
+            Source::Path(_) => None,
+        };
+        if let Some(bytes) = bytes {
             let renderer = cx.svg_renderer();
             let work = cx.background_executor().spawn(async move {
-                let bytes = onicode_core::composer::decode_image_data(&data).ok()?;
+                let (format, bytes) = bytes.await?;
                 Image::from_bytes(format, bytes)
                     .to_image_data(renderer)
                     .ok()

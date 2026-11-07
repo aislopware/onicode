@@ -5,8 +5,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::StreamExt;
 use onicode_protocol::files::{
-    AdoptAttachments, Create, DeletePath, ListDir, ListDrives, Move, Read, SaveAttachments,
-    SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, Stat, WatchDir, Write,
+    AdoptAttachments, Create, DeletePath, ImportFiles, ListDir, ListDrives, Move, Read,
+    SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths, Stat, WatchDir,
+    Write,
 };
 use onicode_protocol::{Call, Watch};
 use onicode_rpc::{RpcError, RpcReply, RpcService};
@@ -31,7 +32,7 @@ impl FilesService {
 }
 
 /// Every method this service serves.
-const METHODS: [&str; 15] = [
+const METHODS: [&str; 16] = [
     WatchDir::NAME,
     ListDir::NAME,
     Stat::NAME,
@@ -39,6 +40,7 @@ const METHODS: [&str; 15] = [
     Write::NAME,
     Create::NAME,
     Move::NAME,
+    ImportFiles::NAME,
     DeletePath::NAME,
     SearchPaths::NAME,
     SearchContent::NAME,
@@ -94,6 +96,10 @@ impl RpcService for FilesService {
             Move::NAME => {
                 let (op, body) = routed(params)?;
                 reply(hub.relocate(op, body).await)
+            }
+            ImportFiles::NAME => {
+                let (op, body) = routed(params)?;
+                reply(hub.import(op, body).await)
             }
             DeletePath::NAME => {
                 let (op, body) = routed(params)?;

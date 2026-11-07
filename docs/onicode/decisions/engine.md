@@ -67,13 +67,14 @@ first port is a translation, not a redesign.
 | Engine | `WatchMachines` (local engine only: directory, link path, versions, live-agent counts) | `Hello`, `EngineInfo`, `UpdateEngine`, `StopEngine` |
 | Workspace | `WatchWorkspace` (session summaries with marks, projects, folders and groups, reminders, unread) | `CreateSession`, `Rename`, `Archive`, `Pin`, `Delete`, `SetWorkItem`, `SetReminder`, `SaveGroups`, `SearchSessions`, notes |
 | Session | `WatchSession {session, since, window_turns}` | `Send`, `Steer`, `Stop`, `Decide {approval, answer}`, `Answer`, `KeepQuestionOpen`, `QueueEdit {id, base_rev, edit}`, `SendNow`, `SteerNow`, `Configure`, `EditLastTurn`, `Rewind`, `Fork`, `Btw`, `SwitchProvider`, `ReadTranscript {before_turn, turns}` |
-| Files | `WatchDir {root, path}` (listings with a scan id) | `ListDir`, `Stat`, `Read`, `Write`, `Create`, `Move`, `DeletePath`, `SearchPaths`, `SearchContent`, `ListDrives`, `SearchHomeFolders`, `SaveAttachments`, `SaveNoteImages` |
+| Files | `WatchDir {root, path}` (listings with a scan id) | `ListDir`, `Stat`, `Read`, `Write`, `Create`, `Move`, `ImportFiles`, `DeletePath`, `SearchPaths`, `SearchContent`, `ListDrives`, `SearchHomeFolders`, `SaveAttachments`, `SaveNoteImages` |
 | Git | `WatchGit {checkout}` (status and branch, from the engine's fs watch) | `ReadStatus`, `Diff`, `FileDiff`, `Branches`, `Refs`, `History`, `Switch`, `CreateBranch`, `Stage`, `Unstage`, `Discard`, `Commit`, `Push`, `Pull`, `Sync`, `HeadMessage`, `CommitContext`, `PrContext`, `PrStatus`, `CreatePr`, `Worktrees`, `CreateWorktree`, `RemoveWorktree`, `ReadCheckpoint`, `RestoreCheckpoint`, `ReadSessionChanges` |
 | Terminal | `WatchTerminal {terminal, viewer, since}` (a libghostty snapshot of the host's screen through READY, its scrollback as an unnumbered `History` right after it, then output, resizes, clipboard writes, OSC 7501 `Status` and exit; `terminal.md`) | `OpenTerminal {terminal, viewer, cwd, size, colors}`, `ListTerminals` (with each terminal's status), `ResizeTerminal {viewer}`, `CloseTerminal`, `TerminalInput {viewer, Key, Text, Paste, Wheel}`, `ReadForeground`, `StopForeground`. The PTY takes the size of the viewer that typed last. |
 | Agents | `WatchAccounts` (accounts with usage from the streams) | `Catalog`, `Skills`, `Commands`, `AddAccount`, `Login`, `Logout`, `SetProviderEnabled`, MCP servers, `HarnessUpdates` |
 | Engine settings | `WatchEngineSettings` | `SetEngineSetting` (typed keys: keep-awake, worktree defaults, title generation, hooks) |
 | Work | `WatchAutomations`, `WatchInbox` | automation upsert, delete and run now; inbox sources and refresh; `LinkWorkItem` |
 | Alerts | `WatchAlerts` (`alerts.md`) | `SetViewportFocus` |
+| Desktop | none | `OpenDesktop`, `DesktopGrants`, `DesktopOpenGuide`: the engine brokers its Mac's desktopd and carries no media (`remote-desktop.md`) |
 
 Rules:
 - An approval answered on two devices is decided by whichever answer reaches the host first. The other gets
@@ -169,8 +170,8 @@ viewer keeps its echo until it holds a listing or status at that scan, so a read
 after the reply never flashes the old state, and a watched checkout is never read again for a call (an unwatched
 one is read once). Git runs in two lanes the caller picks: a foreground lane of 8 slots for what a person waits on
 (calls and the watch's burst reads) and a background lane of 2 for pull-request discovery and repair reads, so a
-background flood never holds a foreground slot. Mutating calls (`Write`, `Create`, `Move`, `DeletePath`,
-`SaveAttachments`, `SaveNoteImages`, and every Git call that changes a checkout, a branch, a worktree or a
+background flood never holds a foreground slot. Mutating calls (`Write`, `Create`, `Move`, `ImportFiles`,
+`DeletePath`, `SaveAttachments`, `SaveNoteImages`, and every Git call that changes a checkout, a branch, a worktree or a
 checkpoint) run once per `OpId` through a ledger over the store's `ops` table; a failure is not recorded, so its
 retry runs again. Reads come back whole in one reply: `Read` carries the file's FNV-1a digest, answers `Unchanged`
 when the viewer's digest still matches (the editor's 2 s poll then moves no bytes), returns images as base64 and
@@ -321,8 +322,12 @@ rows and the panes' negative ids. `Engine::adopt` tells the client which row and
 there, so session calls, turns and the row-bearing workspace calls (`Engine::row`) reach it; its
 conversation is handed `Engine::on(peer)`. Each followed workspace is kept in `viewer-cache.json` beside
 the app's own, so an offline engine's rows show as last seen across launches, and a turn for one is
-refused with the status its engine gives. Folders, reminders and orchestration in a peer project stay on
-that engine: its sessions show ungrouped. "Open folder on a machine" is monocode's modal again
+refused with the status its engine gives. A peer project's folders, its sessions' reminders and orchestration
+summaries are that engine's too: the shell lays them over its maps in the app's spelling (URI, app rows) and
+announces a reminder that engine fires, and every change to them, as to a pin, title or link, is a call to that
+engine naming its own rows (`Shell::split_by_engine`, `groups_call`). Its echo stays until the receipt arrives on
+that engine's watch; a call that fails (the engine offline) or that it refuses takes the echo back at once and
+says "Could not …", for the app's own engine as for any other. "Open folder on a machine" is monocode's modal again
 (`shell/peer_projects.rs`), its machine chips from `WatchMachines`, its folders from the peer's `ListDir`
 (which now reads `~` as the engine's home) and, for a typed name, `SearchHomeFolders`; it checks the
 folder with `Stat` and adds the project's URI. Its entries are back in the sidebar project menu, the
@@ -333,8 +338,21 @@ agents; a row opens the modal on that machine and `+` opens Connections' add car
 the machine and sign in to the same tailnet; it appears here."). The shell keeps only what the section
 draws, so a round trip moving every few seconds never redraws the sidebar. A peer project shows the
 `internet` tile and the pickers' globe. Connections has no "Forget": the directory's `forget` lasts only
-until the next refresh, and a machine leaves the list when it leaves the tailnet. No protocol shape
-changed; `PROTOCOL` stays 10.
+until the next refresh, and a machine leaves the list when it leaves the tailnet.
+
+The rest of "remote feels like local": the worktree switcher reads a peer session's worktree from that
+machine's followed workspace, and Settings → Worktrees lists, marks and removes a peer project's worktrees
+through its engine (shown as that machine names them; Reveal is off). Every path a peer session's transcript
+names (tool rows, file links, code fences, commit cards) resolves on that engine: `file_editor::file_location`
+spells it as the session's `peer://` URI, absolute or relative, and its image attachments are read through
+that engine (`engine_client::read_file`, the lightbox's `Source::Peer`). Finder's files dropped into a peer
+project's explorer cannot be copied by path, so the app reads them and hands the bytes to `ImportFiles`
+(`{into, name, entries}`, each folder before what it holds, renamed as a Finder copy when taken, removed whole if
+it fails partway), up to 40 MB an item, under the tailnet's 64 MB frame; `PROTOCOL` is 11. Still local-only in
+a peer project: files dropped into a peer session's composer (local paths its agent cannot read) and its pasted
+images' composer chips, the orchestration worker's scope check (it canonicalizes on this Mac's disk, so a
+peer checkout's workers fail it), project-scoped skills and MCP servers (the app's own engine's), and starting
+an inbox item there.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,
