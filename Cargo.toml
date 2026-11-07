@@ -269,14 +269,14 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # (docs/onicode/golden.md). Since 2026-11-07 it also carries rune's idle ideas: a frame drawn the same as the one
 # shown is not presented, debug churn warnings, and the motion gate for tests (docs/onicode/decisions/rendering.md);
 # and fast::app_init, so gpui-kit sets itself up for every App, test apps included.
-gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "f9cf83520a39af19721327d359873a60badbf3cf", default-features = false }
-gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "f9cf83520a39af19721327d359873a60badbf3cf", default-features = false }
+gpui = { git = "https://github.com/aislopware/gpui-fast", rev = "9016cf1cd12dfbd0f4cc71cf0fffeba3efab6762", default-features = false }
+gpui_platform = { git = "https://github.com/aislopware/gpui-fast", rev = "9016cf1cd12dfbd0f4cc71cf0fffeba3efab6762", default-features = false }
 # The headless Metal renderer, the CoreText text system and the GPU memory snapshot.
-gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "f9cf83520a39af19721327d359873a60badbf3cf" }
+gpui_apple = { git = "https://github.com/aislopware/gpui-fast", rev = "9016cf1cd12dfbd0f4cc71cf0fffeba3efab6762" }
 
 # The component library (docs/onicode/decisions/rendering.md): aislopware's gpui-kit fork on the same
 # gpui-fast rev, wearing monocode's look; monocode's widgets move onto it one primitive at a time.
-gpui-component = { git = "https://github.com/aislopware/gpui-kit", rev = "931542bec1cf4390a42b12b18844abf0ca391085" }
+gpui-component = { git = "https://github.com/aislopware/gpui-kit", rev = "aec4857542ed85ac5319aaf8862a5d60bcc5777e" }
 
 # storage
 # `bundled`: one SQLite on every platform, not whichever the OS ships. `hooks`: a search a newer
@@ -307,7 +307,7 @@ notify = "8.2.1"
 # Terminal emulation (docs/onicode/decisions/terminal.md): aislopware/libghostty-rs, which pins the
 # aislopware/ghostty commit whose libghostty-vt it builds. Pinned by rev: the engine's host and the
 # app's mirror must run the same snapshot format.
-libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "42946d984cb6f249ce371f5adf2dd3e4c3d1b603" }
+libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "13b082ea37146f80000933042467c7e892376bf0" }
 # Markdown parsing only: no HTML writer, no CLI options.
 pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1"

@@ -94,10 +94,18 @@ What moved in the kit (2026-11-07):
 
 Popups move in and out, as Base UI's are mounted through their ending style (owner, 2026-11-07: Base UI wins over
 monocode wherever it does better).
-- A closing popover stays drawn until its exit ends. Reopening it on the way out turns the motion around.
-- The popover comes out of its trigger and goes back into it with a 150 ms fade and an 8 pt slide, the same as the
-  dropdowns' entry.
-- It is driven by `Popover::motion` and `PopoverState::motion_progress`, through gpui-base's `Presence`.
+- Every popup (popover, dropdown menu, select, combobox, date picker, hover card, context menu) stays drawn until
+  its exit ends. Reopening it on the way out turns the motion around; a context menu opened in place of another
+  starts over.
+- One motion, `popup_motion`: a 150 ms ease-out fade and an 8 pt slide out of the trigger's edge and back into it.
+  A context menu and a select item lying over its trigger have no side, so they only fade.
+- The shadow ramps by the cube of the fade, a menu's too, so it never shows through the fading panel (GPUI has no
+  group opacity).
+- A closing popup is inert: the pointer passes through it (gpui-fast's `fast::inert`, Base UI's
+  `pointer-events: none` on a closing positioner). A press during the fade reaches what lies beneath and never picks
+  an item of the menu on its way out.
+- It is driven by gpui-base's `Presence`: `Popover::motion` with `PopoverState::motion_progress`,
+  `HoverCard::motion`, and the kit's `dropdown_popup` for the dropdowns.
 
 ## Retained mode
 gpui-fast redraws a view only when something it read changed: an entity, a global, a list or scroll state, or the

@@ -42,8 +42,8 @@ upstream = "longbridge/gpui-kit"
 branch = "main"
 fork = "aislopware/gpui-kit"
 checkout = "forks/gpui-kit"
-base = "a5bda4aa82318e5f4e67111face6886da3d477c9"
-base_date = "2026-11-07"
+base = "e36451269751415a5cd23bd1b982b3c96b9aa19d"
+base_date = "2026-11-08"
 every_minutes = 0
 
 # gpui-fast imports zed through its vendor procedure; zed merges hundreds of PRs a week, so only
@@ -74,8 +74,8 @@ upstream = "ghostty-org/ghostty"
 branch = "main"
 fork = "aislopware/ghostty"
 checkout = "forks/ghostty"
-base = "8265e74cd3945c56d59aba3917ff01af33ba3e78"
-base_date = "2026-11-07"
+base = "27ffca0dd67177d1f069ea7f910362e5d871613d"
+base_date = "2026-11-08"
 every_minutes = 0
 paths = [
     "src/terminal/",
@@ -156,8 +156,8 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "5fd9bfa2ec89e6325d6435d95066336d93369d69"
-base_date = "2026-11-07"
+base = "59f0326b8a12f360736e5ca29a09fad29ad73d71"
+base_date = "2026-11-08"
 every_minutes = 0
 pulls = true
 releases = false
@@ -178,8 +178,8 @@ releases = true
 [t3code]
 upstream = "pingdotgg/t3code"
 branch = "main"
-base = "e455200077ce60806a01c8f28435b58860dcfc74"
-base_date = "2026-11-07"
+base = "25bf84ab07f53f141c20239c63e383823a9d5ea0"
+base_date = "2026-11-08"
 every_minutes = 0
 pulls = false
 releases = true
@@ -213,8 +213,8 @@ releases = true
 [codex]
 upstream = "openai/codex"
 branch = "main"
-base = "57a808a3920f05f2d4b9eab2d0493e1df136ae6b"
-base_date = "2026-11-07"
+base = "57e64682f8ef83c09cc868c39010733dd6760805"
+base_date = "2026-11-08"
 every_minutes = 60
 pulls = false
 releases = true

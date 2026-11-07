@@ -1737,6 +1737,38 @@ mod tests {
         }
     }
 
+    /// A view size the mirror shows from a snapshot of its own, rebuilt once the host takes it,
+    /// keeps the soft wraps the host's terminal has: a row cloned into the wider page a column
+    /// growth makes used to lose its wrap (fixed in aislopware/ghostty), so a wrapped line copied
+    /// as two. The shrunk case of the proptest above.
+    #[test]
+    fn a_view_size_rebuilt_from_its_own_snapshot_keeps_the_hosts_soft_wraps() {
+        let mut host = host(10, 4);
+        let snapshot = host.snapshot().expect("a snapshot");
+        let (prefix, history) = crate::snapshot::split(snapshot.clone());
+        let mut mirror = Mirror::attach(&prefix, size(10, 4));
+        let mut truth = Mirror::from_snapshot(&snapshot).expect("it decodes");
+        mirror.relayout(size(6, 2));
+        mirror.history(&history);
+        for viewer in [&mut mirror, &mut truth] {
+            viewer.feed(b"\x1b[?1049h");
+            viewer.resize(size(6, 2));
+        }
+        // From the alternate screen at the host's size, the view takes a wider one of its own.
+        mirror.relayout(size(7, 2));
+        assert!(mirror.ahead());
+        for viewer in [&mut mirror, &mut truth] {
+            // Seven columns of output wrap at the host's six.
+            viewer.feed(b"  a a  ");
+            viewer.resize(size(7, 2));
+        }
+        assert!(!mirror.ahead());
+        mirror.select_all();
+        truth.select_all();
+        assert_eq!(truth.selection_text().as_deref(), Some("  a a"));
+        assert_eq!(mirror.selection_text(), truth.selection_text());
+    }
+
     /// The host's PTY takes `to`, and its stream says so when that changed it.
     fn take(host: &mut Host, to: TerminalSize, stream: &mut VecDeque<Item>) {
         if host.size() != to {

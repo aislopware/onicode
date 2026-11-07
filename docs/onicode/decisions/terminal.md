@@ -88,4 +88,7 @@ approval or finish a turn.
 
 Zig never enters the dev loop. CI builds `libghostty-vt.a` per target from the pinned fork commit, and
 libghostty-rs downloads it by sha256 from `prebuilt.toml`. The ghostty fork is a slim patch queue on upstream
-`main`.
+`main`. A bug the mirror's proptests find in libghostty-vt is fixed there, at the root, with a Zig test beside the
+mirror's own deterministic one: a row cloned whole into a wider page used to lose its soft wrap, so a viewer that
+rebuilt its terminal from a snapshot (pages of exact capacity) and replayed a column growth split wrapped lines the
+host kept whole (2026-11-08).
