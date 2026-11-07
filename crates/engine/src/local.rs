@@ -15,6 +15,7 @@ use crate::service::EngineService;
 use crate::session::{SessionHub, SessionService, Spawn};
 use crate::settings::{SettingsHub, SettingsService};
 use crate::settings_pages::SettingsPagesService;
+use crate::terminal::{TerminalHub, TerminalService};
 use crate::testing::Seed;
 use crate::turn::Database;
 use crate::work::{CliGh, CoreTrackers, Gh, Trackers, WorkHub, WorkService};
@@ -67,6 +68,8 @@ pub struct Local {
     pub settings: Arc<SettingsHub>,
     pub work: Arc<WorkHub>,
     pub app_access: Arc<AppAccessHub>,
+    /// Every terminal's shell. A quiet engine starts none.
+    pub terminal: Arc<TerminalHub>,
     pub service: Arc<EngineService>,
 }
 
@@ -117,6 +120,11 @@ impl Local {
             options.gh.unwrap_or_else(|| Arc::new(CliGh)),
             spawn.clone(),
         );
+        let terminal = if options.quiet {
+            TerminalHub::quiet(spawn.clone())
+        } else {
+            TerminalHub::new(spawn.clone())
+        };
         let app_access = AppAccessHub::new(store.clone(), workspace.clone(), spawn);
         let service = EngineService::new(
             SessionService::new(session.clone()),
@@ -128,7 +136,8 @@ impl Local {
         .with(Arc::new(SettingsService::new(settings.clone())))
         .with(Arc::new(SettingsPagesService::new(git.clone())))
         .with(Arc::new(WorkService::new(work.clone())))
-        .with(Arc::new(AppAccessService::new(app_access.clone())));
+        .with(Arc::new(AppAccessService::new(app_access.clone())))
+        .with(Arc::new(TerminalService::new(terminal.clone())));
         Ok(Self {
             store,
             session,
@@ -139,6 +148,7 @@ impl Local {
             settings,
             work,
             app_access,
+            terminal,
             service: Arc::new(service),
         })
     }

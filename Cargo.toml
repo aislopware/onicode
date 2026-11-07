@@ -7,6 +7,8 @@ members = [
     # The engine and the protocol its viewers speak (docs/onicode/decisions/engine.md).
     "crates/engine",
     "crates/protocol",
+    # The terminal core: the engine's host terminal and the mirror the app paints.
+    "crates/term",
     # Temporary: monocode's phone link, replaced by the tailnet engine protocol (M4, M10).
     "crates/mobile-link",
     "crates/rpc",
@@ -49,6 +51,7 @@ onicode-rpc = { path = "crates/rpc" }
 # The engine and the protocol its viewers speak (docs/onicode/decisions/engine.md).
 onicode-engine = { path = "crates/engine" }
 onicode-protocol = { path = "crates/protocol" }
+onicode-term = { path = "crates/term" }
 
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }
@@ -223,7 +226,7 @@ noq-proto = { version = "1.4.0", default-features = false }
 bytes = "1.12"
 # Held at 0.12: 0.13 measured slower with two to four threads on one lock (two threads, 200k short
 # critical sections each: 18 ms against 5.7 ms for a Mutex), faster only from eight threads up, and
-# would sit beside the 0.12 that tokio, gpui and alacritty_terminal lock.
+# would sit beside the 0.12 that tokio and gpui lock.
 parking_lot = "0.12.5"
 # `all`: binding a socket to the tailnet's interface (`bind_device_by_index_v4`/`_v6`).
 socket2 = { version = "0.6.5", features = ["all"] }
@@ -291,7 +294,10 @@ sha2 = "0.11.1"
 # locks base16ct.
 base16ct = { version = "1.0.0", features = ["alloc"] }
 notify = "7"
-alacritty_terminal = "0.26"
+# Terminal emulation (docs/onicode/decisions/terminal.md): aislopware/libghostty-rs, which pins the
+# aislopware/ghostty commit whose libghostty-vt it builds. Pinned by rev: the engine's host and the
+# app's mirror must run the same snapshot format.
+libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "3825a106b3d50d89c10dd0fdedc5e00907a66255" }
 # Markdown parsing only: no HTML writer, no CLI options.
 pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1"

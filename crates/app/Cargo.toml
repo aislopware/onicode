@@ -32,8 +32,9 @@ async-channel = "2"
 base64 = "0.23.1"
 # Attachment chips build their thumbnail sprites directly.
 image = { version = "0.25", default-features = false }
-# The terminal dock: PTY, VT parser and grid (as Zed's terminal uses).
-alacritty_terminal = "0.26"
+# The terminal dock's mirror of the engine's terminal, its keys, links and labels.
+onicode-term.workspace = true
+# The memory log's `proc_pid_rusage`.
 libc = "0.2"
 rquickjs = "0.14.0"
 # The file editor's native syntax: incremental parses, highlights, folds and

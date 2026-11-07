@@ -72,6 +72,8 @@ extend-exclude = [
     "README.*.md",
     # Spanish markdown-preview fixtures.
     "scripts/fixtures/markdown-preview/*.mmd",
+    # ghostty's terminfo source: capability names (kend, ...), not words.
+    "crates/term/assets/terminal/xterm-ghostty.terminfo",
     "Cargo.lock",
     "package-lock.json",
     "*.svg",

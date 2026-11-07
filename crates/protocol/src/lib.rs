@@ -20,6 +20,7 @@ pub mod git;
 mod ids;
 pub mod session;
 pub mod settings_pages;
+pub mod terminal;
 pub mod work;
 pub mod workspace;
 
@@ -28,7 +29,7 @@ pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 7;
+pub const PROTOCOL: u32 = 8;
 
 /// One request and its reply.
 pub trait Call {
@@ -241,6 +242,15 @@ pub const METHODS: &[Method] = &[
     call::<git::ReadCheckpoint>(),
     call::<git::RestoreCheckpoint>(),
     call::<git::ReadSessionChanges>(),
+    // Terminal.
+    watch::<terminal::WatchTerminal>(),
+    call::<terminal::OpenTerminal>(),
+    call::<terminal::ListTerminals>(),
+    call::<terminal::ResizeTerminal>(),
+    call::<terminal::CloseTerminal>(),
+    call::<terminal::TerminalInput>(),
+    call::<terminal::ReadForeground>(),
+    call::<terminal::StopForeground>(),
     // Agents.
     watch::<agents::WatchAccounts>(),
     call::<agents::RefreshUsage>(),
