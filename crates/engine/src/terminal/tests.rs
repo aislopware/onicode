@@ -8,9 +8,9 @@ use futures::StreamExt;
 use futures::executor::block_on;
 use futures::stream::BoxStream;
 use onicode_protocol::terminal::{
-    Bytes, CloseTerminal, Input, InputKind, Key, OpenTerminal, ProgramState, ResizeTerminal,
-    TerminalColors, TerminalEvent, TerminalInput, TerminalSize, TerminalState, TerminalSummary,
-    ViewerId, WatchTerminal,
+    Bytes, CloseTerminal, HISTORY_PENDING, Input, InputKind, Key, OpenTerminal, ProgramState,
+    ResizeTerminal, TerminalColors, TerminalEvent, TerminalInput, TerminalSize, TerminalState,
+    TerminalSummary, ViewerId, WatchTerminal,
 };
 use onicode_protocol::{Cursor, Item, TerminalId};
 use onicode_term::mirror::Mirror;
@@ -190,37 +190,51 @@ impl Viewer {
     /// Takes items until `done` holds.
     fn until(&mut self, done: impl Fn(&Self) -> bool) {
         while !done(self) {
-            match block_on(self.stream.next()).expect("the watch goes on") {
-                Item::Snapshot { at, state } => {
-                    self.cursor = Some(at);
-                    self.snapshots += 1;
-                    self.mirror = Some(Mirror::attach(&state.screen.0, state.size));
-                    self.state = Some(state);
-                }
-                Item::Events {
-                    first,
-                    last,
-                    events,
-                } => {
-                    if let Some(cursor) = &mut self.cursor {
-                        assert_eq!(first, cursor.seq + 1, "no gap and no repeat");
-                        cursor.seq = last;
-                    }
-                    let mirror = self.mirror.as_mut().expect("a snapshot first");
-                    for event in events {
-                        match &event {
-                            TerminalEvent::Output(bytes) => mirror.feed(&bytes.0),
-                            TerminalEvent::Resized(size) => mirror.resize(*size),
-                            TerminalEvent::History(bytes) => mirror.history(&bytes.0),
-                            TerminalEvent::Clipboard(_)
-                            | TerminalEvent::Exited { .. }
-                            | TerminalEvent::Status(_) => {}
-                        }
-                        self.events.push(event);
-                    }
-                }
-                Item::Resync => panic!("a viewer that keeps up never resyncs"),
+            self.step();
+        }
+    }
+
+    /// Takes the next `items` items.
+    fn take(&mut self, items: usize) {
+        for _ in 0..items {
+            self.step();
+        }
+    }
+
+    /// Takes the next item, holding the cursor as the app and a forwarding engine hold it.
+    fn step(&mut self) {
+        match block_on(self.stream.next()).expect("the watch goes on") {
+            Item::Snapshot { at, state } => {
+                self.cursor = Some(at);
+                self.snapshots += 1;
+                self.mirror = Some(Mirror::attach(&state.screen.0, state.size));
+                self.state = Some(state);
             }
+            Item::Events {
+                first,
+                last,
+                events,
+            } => {
+                if let Some(cursor) = &mut self.cursor {
+                    if cursor.seq != HISTORY_PENDING {
+                        assert_eq!(first, cursor.seq + 1, "no gap and no repeat");
+                    }
+                    cursor.seq = last;
+                }
+                let mirror = self.mirror.as_mut().expect("a snapshot first");
+                for event in events {
+                    match &event {
+                        TerminalEvent::Output(bytes) => mirror.feed(&bytes.0),
+                        TerminalEvent::Resized(size) => mirror.resize(*size),
+                        TerminalEvent::History(bytes) => mirror.history(&bytes.0),
+                        TerminalEvent::Clipboard(_)
+                        | TerminalEvent::Exited { .. }
+                        | TerminalEvent::Status(_) => {}
+                    }
+                    self.events.push(event);
+                }
+            }
+            Item::Resync => panic!("a viewer that keeps up never resyncs"),
         }
     }
 
@@ -427,6 +441,11 @@ fn a_watcher_paints_the_prefix_then_takes_the_history() {
         "the first item paints without the history"
     );
     assert!(mirror.text().contains("line 39"));
+    assert_eq!(
+        late.cursor.unwrap().seq,
+        HISTORY_PENDING,
+        "nothing resumes from a screen without its history"
+    );
     late.until(|viewer| {
         viewer
             .events
@@ -434,6 +453,7 @@ fn a_watcher_paints_the_prefix_then_takes_the_history() {
             .any(|event| matches!(event, TerminalEvent::History(_)))
     });
     assert!(!late.mirror.as_ref().unwrap().awaiting_history());
+    assert_ne!(late.cursor.unwrap().seq, HISTORY_PENDING);
     shell.write(b"after");
     first.shows("after");
     late.shows("after");
@@ -466,7 +486,7 @@ fn the_pty_takes_the_size_of_the_viewer_that_typed_last() {
             viewer,
             size,
         })
-        .unwrap();
+        .unwrap()
     };
     let type_as = |viewer| {
         let input = Input::Text("x".into());
@@ -477,9 +497,13 @@ fn the_pty_takes_the_size_of_the_viewer_that_typed_last() {
         })
         .unwrap();
     };
-    resize(me(), wide);
+    assert_eq!(resize(me(), wide), wide, "a sole viewer's size wins");
     type_as(me());
-    resize(phone, narrow);
+    assert_eq!(
+        resize(phone, narrow),
+        wide,
+        "the phone has not typed: the reply names the size the PTY kept"
+    );
     assert_eq!(
         size_of(&hub, terminal),
         Some(wide),
@@ -612,5 +636,41 @@ proptest! {
         drain_into(&mut topic, slow, &mut late);
         prop_assert_eq!(joined(late), joined(sent.clone()));
         prop_assert_eq!(joined(quick), joined(sent));
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(16))]
+
+    /// A link that drops right after a joining watch's screen, before its history, or right
+    /// after the history, and comes back from the cursor its viewer held, ends with the whole
+    /// terminal, scrollback included, never with a screen whose history went missing.
+    #[test]
+    fn a_watch_cut_at_the_snapshot_boundary_resumes_to_the_whole_terminal(
+        lines in 0usize..60,
+        cut in 1usize..=2,
+    ) {
+        let pipes = Arc::new(Pipes::default());
+        let hub = hub(&pipes);
+        let terminal = TerminalId::new();
+        open(&hub, terminal);
+        let mut shell = pipes.shell();
+        let mut first = Viewer::watch(&hub, terminal);
+        let output: String = (0..lines).map(|n| format!("line {n}\r\n")).collect();
+        shell.write(format!("{output}ready").as_bytes());
+        first.shows("ready");
+        let mut late = Viewer::watch(&hub, terminal);
+        late.take(cut);
+        late.rewatch(&hub, terminal);
+        shell.write(b"\r\nafter");
+        first.shows("after");
+        late.shows("after");
+        prop_assert!(!late.mirror.as_ref().unwrap().awaiting_history());
+        prop_assert_eq!(late.snapshots, if cut == 1 { 2 } else { 1 });
+        for viewer in [&mut first, &mut late] {
+            viewer.mirror.as_mut().unwrap().select_all();
+        }
+        let all = |viewer: &Viewer| viewer.mirror.as_ref().unwrap().selection_text();
+        prop_assert_eq!(all(&late), all(&first));
     }
 }

@@ -5357,9 +5357,13 @@ impl Shell {
                     .get(&self.workspace.project)
                     .and_then(|focus| focus.branch.clone())
                     .or_else(|| {
-                        crate::conversation::git_branch(std::path::Path::new(
-                            &self.workspace.project,
-                        ))
+                        let project = &self.workspace.project;
+                        if onicode_protocol::ProjectRef::parse_uri(project).is_some() {
+                            // Another machine's checkout: its HEAD as its engine last said.
+                            crate::git_cache::get(project).and_then(|state| state.current)
+                        } else {
+                            crate::conversation::git_branch(std::path::Path::new(project))
+                        }
                     });
                 let worktree = MenuAction::new("switch-worktree", "Switch worktree")
                     .icon("folder-tree")
@@ -5492,11 +5496,14 @@ impl Shell {
                             .into(),
                     );
                 }
+                // Finder and this Mac's editors open only this Mac's folders.
+                let elsewhere = onicode_protocol::ProjectRef::parse_uri(path).is_some();
                 items.extend([
                     MenuAction::new("reveal", REVEAL_LABEL)
                         .icon("folder-open")
+                        .disabled(elsewhere)
                         .into(),
-                    self.external_editor_menu().into(),
+                    self.external_editor_menu().disabled(elsewhere).into(),
                     MenuItem::Separator,
                     self.project_notification_menu(path).into(),
                     MenuItem::Separator,

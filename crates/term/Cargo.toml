@@ -13,6 +13,8 @@ libghostty-vt.workspace = true
 libc.workspace = true
 # The input and size types the engine encodes and the viewers send.
 onicode-protocol.workspace = true
+# Find in the scrollback: the file editor's query semantics on Rust regexes.
+regex = "1"
 
 [dev-dependencies]
 proptest.workspace = true

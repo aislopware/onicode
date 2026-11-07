@@ -4,8 +4,9 @@
 //! [`host::Host`], the one libghostty terminal that answers the program's queries and encodes the
 //! viewers' input against its modes and keeps the program's OSC 7501 records ([`program`]). A
 //! viewer attaches with the host's snapshot, its renderable prefix first ([`snapshot`]), and then
-//! follows its output; its [`mirror::Mirror`] replays both with PTY write-back off and hands the
-//! view rows to paint.
+//! follows its output; its [`mirror::Mirror`] replays both with PTY write-back off, lays itself out
+//! at the view's size ahead of the host's word, finds text in its own scrollback ([`search`]) and
+//! hands the view rows to paint.
 pub mod host;
 pub mod keys;
 pub mod label;
@@ -14,6 +15,7 @@ pub mod mirror;
 pub mod palette;
 pub mod program;
 pub mod pty;
+pub mod search;
 pub mod select;
 pub mod shell;
 pub mod snapshot;
@@ -23,6 +25,10 @@ use libghostty_vt::terminal::CursorStyle;
 
 /// TerminalView's `scrollback`, kept by the host and every mirror.
 pub const SCROLLBACK_LINES: usize = 2000;
+
+/// The longest unfinished escape sequence a snapshot can carry. A snapshot taken inside a longer
+/// one (a huge image upload) waits for the next feed.
+const MAX_CONTINUATION_BYTES: usize = 16 << 20;
 
 /// What the host and every mirror start with: TerminalView's scrollback, palette and blinking
 /// beam. A program changes these for itself; these are what a reset returns to.

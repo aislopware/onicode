@@ -2,8 +2,8 @@
 //! their own as soon as its offer lands, and [`serve_streams`] answers the other end's fetches.
 //!
 //! A fetch opens a [`StreamKind::File`] stream named by [`Fetch::name`] and sends nothing after
-//! its head. The origin answers a type with its bytes, raw, and a file with [`FileEntry`] frames,
-//! each entry a JSON frame and its bytes in frames after it; then it finishes the stream. A
+//! its head. The origin answers a type with its bytes, raw, and a file with a [`FileEntry`] JSON
+//! frame and the file's bytes in frames after it; then it finishes the stream. A
 //! refused fetch is a reset ([`REFUSED`]). These streams never touch the control stream, so a big
 //! copy holds up no input or cursor, and they are sent at the file kind's priority, behind the
 //! picture's datagrams.
@@ -18,7 +18,7 @@ use onicode_net::stream::frame;
 use onicode_net::{Link, StreamHead, StreamKind, StreamRx, StreamTx};
 use tokio::io::AsyncWriteExt as _;
 
-use crate::files::{CHUNK, Packed, landing, pack};
+use crate::files::{CHUNK, entry_of, landing, read_chunks};
 use crate::session::{Line, Served, Session};
 use crate::sync::{FILES_MAX, SEND_MAX};
 
@@ -93,61 +93,54 @@ impl Line for LinkLine {
     }
 }
 
-/// Reads [`FileEntry`] frames off `rx` into `into`, no more than [`FILES_MAX`] in all; the local
-/// path of the copy's top entry.
+/// Reads a [`FileEntry`] and its bytes off `rx` into `into`, no more than [`FILES_MAX`]; the
+/// local path of the copy.
 async fn unpack(rx: &mut StreamRx, into: &Path) -> Result<PathBuf, String> {
-    let mut root: Option<String> = None;
-    let mut total = 0_u64;
-    while let Some(head) = rx.frame().await.map_err(|e| e.to_string())? {
-        let entry: FileEntry = serde_json::from_slice(&head).map_err(|e| e.to_string())?;
-        let at = landing(into, root.as_deref(), &entry)
-            .ok_or_else(|| format!("{} would land outside the copy", entry.path))?;
-        if root.is_none() {
-            root = entry.path.split('/').next().map(str::to_owned);
-        }
-        let Some(size) = entry.size else {
-            tokio::fs::create_dir_all(&at)
-                .await
-                .map_err(|e| format!("{}: {e}", at.display()))?;
-            continue;
-        };
-        total = total.saturating_add(size);
-        if total > FILES_MAX {
-            rx.stop(REFUSED);
-            return Err("the copy is past the cap".to_owned());
-        }
-        let mut file = tokio::fs::File::create(&at)
-            .await
-            .map_err(|e| format!("{}: {e}", at.display()))?;
-        let mut left = size;
-        while left > 0 {
-            let chunk = rx
-                .frame()
-                .await
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("{} ended early", entry.path))?;
-            let len = u64::try_from(chunk.len()).unwrap_or(u64::MAX);
-            if len > left {
-                return Err(format!("{} is longer than it said", entry.path));
-            }
-            file.write_all(&chunk)
-                .await
-                .map_err(|e| format!("{}: {e}", at.display()))?;
-            left -= len;
-        }
-        file.flush()
-            .await
-            .map_err(|e| format!("{}: {e}", at.display()))?;
-        if entry.exec {
-            use std::os::unix::fs::PermissionsExt as _;
-            let perms = std::fs::Permissions::from_mode(0o755);
-            tokio::fs::set_permissions(&at, perms)
-                .await
-                .map_err(|e| format!("{}: {e}", at.display()))?;
-        }
+    let head = rx
+        .frame()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "the copy held nothing".to_owned())?;
+    let entry: FileEntry = serde_json::from_slice(&head).map_err(|e| e.to_string())?;
+    let at = landing(into, &entry)
+        .ok_or_else(|| format!("{} would land outside the copy", entry.name))?;
+    if entry.size > FILES_MAX {
+        rx.stop(REFUSED);
+        return Err("the copy is past the cap".to_owned());
     }
-    root.map(|root| into.join(root))
-        .ok_or_else(|| "the copy held nothing".to_owned())
+    let mut file = tokio::fs::File::create(&at)
+        .await
+        .map_err(|e| format!("{}: {e}", at.display()))?;
+    let mut left = entry.size;
+    while left > 0 {
+        let chunk = rx
+            .frame()
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("{} ended early", entry.name))?;
+        let len = u64::try_from(chunk.len()).unwrap_or(u64::MAX);
+        if len > left {
+            return Err(format!("{} is longer than it said", entry.name));
+        }
+        file.write_all(&chunk)
+            .await
+            .map_err(|e| format!("{}: {e}", at.display()))?;
+        left -= len;
+    }
+    file.flush()
+        .await
+        .map_err(|e| format!("{}: {e}", at.display()))?;
+    if rx.frame().await.map_err(|e| e.to_string())?.is_some() {
+        return Err(format!("{} is longer than it said", entry.name));
+    }
+    if entry.exec {
+        use std::os::unix::fs::PermissionsExt as _;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        tokio::fs::set_permissions(&at, perms)
+            .await
+            .map_err(|e| format!("{}: {e}", at.display()))?;
+    }
+    Ok(at)
 }
 
 /// Answers every fetch the other end opens on `link` from `session`, each stream on a task of
@@ -189,35 +182,36 @@ async fn serve_stream(tx: StreamTx, mut rx: StreamRx, session: Weak<Session>) {
             }
             tx.finish();
         }
-        Some(Served::Path(path)) => serve_tree(tx, path).await,
+        Some(Served::Path(path)) => serve_file(tx, path).await,
         None => tx.reset(REFUSED),
     }
 }
 
-/// Sends the file at `path` as entries, read on a blocking thread that waits for
-/// room on the link between frames.
-async fn serve_tree(tx: StreamTx, path: PathBuf) {
+/// Sends the regular file at `path` as its [`FileEntry`] and bytes, read on a blocking thread
+/// that waits for room on the link between frames.
+async fn serve_file(tx: StreamTx, path: PathBuf) {
     let runtime = tokio::runtime::Handle::current();
     let sent = tokio::task::spawn_blocking(move || {
-        let packed = {
-            let mut sink = |piece: Packed| {
-                let payload = match piece {
-                    Packed::Entry(entry) => serde_json::to_vec(&entry).unwrap_or_default(),
-                    Packed::Bytes(bytes) => bytes,
-                };
-                let Ok(framed) = frame(&payload) else {
-                    return false;
-                };
-                runtime.block_on(tx.room(WINDOW));
-                if tx.is_closed() {
-                    return false;
-                }
-                tx.send(framed);
-                true
+        let mut send = |payload: Vec<u8>| {
+            let Ok(framed) = frame(&payload) else {
+                return false;
             };
-            pack(&path, &mut sink)
+            runtime.block_on(tx.room(WINDOW));
+            if tx.is_closed() {
+                return false;
+            }
+            tx.send(framed);
+            true
         };
-        (tx, packed)
+        let sent = entry_of(&path).and_then(|entry| {
+            let head = serde_json::to_vec(&entry).map_err(std::io::Error::other)?;
+            if send(head) {
+                read_chunks(&path, entry.size, &mut send)
+            } else {
+                Ok(())
+            }
+        });
+        (tx, sent)
     })
     .await;
     match sent {

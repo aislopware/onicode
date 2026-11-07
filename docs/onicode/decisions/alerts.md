@@ -40,9 +40,25 @@ deny, reply or stop from the notification. There is no relay and no push service
   monocode's preferences: the Notifications switch, Sounds, and each project's mutes ("Agent approvals and
   questions", "Agent finished"). Its own monocode banners for those two categories are gone; the chime
   for a chat on screen stays.
-- Until the app says it presents (or once its reports go stale, as when it quit), the engine posts plain
-  banners itself under the app's identity, without buttons, as the app's last report allowed. A click on
-  either opens the chat in the app.
+- The app watches the alerts of its own engine and of every other engine whose projects the window shows,
+  and reports to each one. A chat on another engine is posted under the row the app names it by
+  (`peer_row`), so a click opens it here, and its buttons call the engine that raised it. A button pressed
+  before an engine's first snapshot arrived (a press that launched the app) waits for it, up to 30 s.
+- Until the app says it presents (or once its reports go stale), the engine posts plain banners itself
+  under the app's identity, without buttons, as the app's last report allowed. As the app quits it tells
+  every engine at once that it neither shows nor posts anything, so the engine's banners take over then,
+  not 20 s later. A click on either opens the chat in the app.
+
+## Project mutes: the engine applies them
+- The engine is the one authority on mutes: an alert a mute holds back is raised to no viewer and posted
+  as no banner, so every device and the engine's own banners agree. The mutes ride in each
+  `SetViewportFocus` (`Mutes`), in that engine's own paths: repository projects with the folders each goes
+  by first, then folders muted on their own, so the first project naming a folder decides, as monocode's
+  `knownNotificationProjectId` does. A rule is monocode's: off for a category, or muted until a time; an
+  alert rings when its rule is on, the time has passed, and it occurred after that time.
+- Each viewport's mutes are kept with when it reported them, whether or not it is focused or presents,
+  and an alert must be allowed by every viewport that reported within 20 s of the latest report. A folder
+  that is not a project (empty, `/`, `~`, the home folder, or inside an `.app`) never rings.
 
 ## Actions
 - An approval gets Approve, Deny and Stop. A question with one single-choice item gets Approve when an
@@ -60,5 +76,7 @@ deny, reply or stop from the notification. There is no relay and no push service
 
 ## Known gaps
 - Whether the engine binary inside the bundle may post under the app's identity must be checked on a Mac.
-- The engine's own banners ignore project mutes; the app applies them.
+- Mutes live in the engine's memory, from the reports; an engine that restarts with no viewer has none
+  until one reports. Their storage is still the app's preferences, not the engine's settings, so a phone
+  reports none of its own and only a Mac's mutes apply.
 - Time Sensitive needs an entitlement the apps do not carry yet, so a question arrives at the active level.

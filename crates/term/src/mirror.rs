@@ -13,6 +13,17 @@
 //! A mirror starts from the renderable prefix of the host's snapshot ([`Mirror::attach`]) and
 //! paints at once; the history after it ([`Mirror::history`]) swaps in the whole snapshot with
 //! the output since replayed.
+//!
+//! The mirror shows the view's own size the moment the view takes it ([`Mirror::relayout`]),
+//! before the host's PTY has, and keeps what it needs to come back to the host's terminal exactly:
+//! the snapshot it started from (or one of its own) and every step of the host's since. When the
+//! host takes that size the shown terminal is the host's, rebuilt from that replay only when
+//! output crossed the resize on the way; when the host keeps another viewer's size, the host's
+//! terminal shows again. Nothing about the host is guessed: what shows is either the host's
+//! terminal or the host's terminal laid out at the view's size, until the host says which.
+//!
+//! Find runs over the mirror's own scrollback ([`crate::search`]): the grid is read once per
+//! change and every query typed meanwhile matches the same lines.
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -28,11 +39,13 @@ use libghostty_vt::terminal::{CursorStyle, Mode, PointCoordinate, PointSpace, Sc
 use libghostty_vt::{RenderState, Terminal};
 use onicode_protocol::terminal::TerminalSize;
 
+use crate::search::{self, Found, Query};
 use crate::select::{self, Grid, Kind, Point, Selection, Side};
 use crate::{links, palette};
 
-/// Output a mirror replays onto its whole snapshot when the history arrives. Past this the
-/// history is given up and the mirror keeps the screen and the output since.
+/// Output a mirror keeps to replay onto the snapshot it rebuilds from. Past this a history still
+/// to come is given up (the mirror keeps the screen and the output since), and a view size still
+/// waiting for the host starts over from a snapshot of the host's terminal as it is then.
 const MAX_REPLAY_BYTES: usize = 8 << 20;
 
 /// A synchronized update the program never ends shows after this (alacritty's
@@ -199,17 +212,128 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// What changed a mirror after its snapshot's prefix, to replay onto the whole snapshot.
+/// What the host did after the snapshot a mirror can rebuild from, to replay onto it.
 enum Step {
     Feed(Vec<u8>),
     Resize(TerminalSize),
 }
 
-/// A snapshot's prefix, waiting for its history.
-struct Restore {
-    screen: Vec<u8>,
-    since: Vec<Step>,
+/// The host's terminal as the mirror can rebuild it: a snapshot (only its prefix through READY
+/// while the history is still to come) and every step the host took since.
+struct Replay {
+    snapshot: Vec<u8>,
+    whole: bool,
+    steps: Vec<Step>,
     bytes: usize,
+}
+
+impl Replay {
+    const fn new(snapshot: Vec<u8>, whole: bool) -> Self {
+        Self {
+            snapshot,
+            whole,
+            steps: Vec::new(),
+            bytes: 0,
+        }
+    }
+
+    /// The host's terminal now: the snapshot with every step replayed. `None` when the snapshot
+    /// does not decode.
+    fn truth(&self) -> Option<Terminal<'static, 'static>> {
+        let mut term = decode(&self.snapshot, self.whole)?;
+        crate::configure(&mut term);
+        for step in &self.steps {
+            match step {
+                Step::Feed(bytes) => term.vt_write(bytes),
+                Step::Resize(size) => resize_term(&mut term, *size),
+            }
+        }
+        Some(term)
+    }
+}
+
+/// A terminal from a host snapshot, whole or through READY. It keeps an unfinished escape
+/// sequence the snapshot carried, so the mirror can be snapshotted in turn.
+fn decode(bytes: &[u8], whole: bool) -> Option<Terminal<'static, 'static>> {
+    let mut decoder = Decoder::new_buf(bytes).ok()?;
+    let _ = decoder.set_retain_continuation(true);
+    let _ = decoder.set_max_continuation_bytes(crate::MAX_CONTINUATION_BYTES);
+    if whole {
+        decoder.decode().ok()
+    } else {
+        decoder
+            .ready()
+            .ok()
+            .map(libghostty_vt::snapshot::IncrementalDecoder::into_terminal)
+    }
+}
+
+fn resize_term(term: &mut Terminal<'static, 'static>, size: TerminalSize) {
+    let _ = term.resize(
+        size.cols.max(2),
+        size.rows.max(1),
+        u32::from(size.cell_width.max(1)),
+        u32::from(size.cell_height.max(1)),
+    );
+}
+
+/// The view's own size, shown before the host has taken it.
+struct Local {
+    size: TerminalSize,
+    /// What the shown terminal went through since the replay's snapshot.
+    shown: Vec<Shown>,
+}
+
+#[derive(Clone, Copy)]
+enum Shown {
+    /// The host's step of that index.
+    Host(usize),
+    /// A size of the view's own.
+    Size(TerminalSize),
+}
+
+/// The shown terminal went through exactly what the host's did, so it is the host's.
+fn same(shown: &[Shown], steps: &[Step]) -> bool {
+    shown.len() == steps.len()
+        && shown
+            .iter()
+            .zip(steps)
+            .enumerate()
+            .all(|(at, pair)| match pair {
+                (Shown::Host(index), _) => *index == at,
+                (Shown::Size(size), Step::Resize(host)) => size == host,
+                (Shown::Size(_), Step::Feed(_)) => false,
+            })
+}
+
+/// The find panel's query over the mirror.
+struct Search {
+    query: Query,
+    /// The grid's logical lines as last read; `None` once the grid changed since.
+    lines: Option<Vec<search::Line>>,
+    found: Vec<Found>,
+    current: Option<usize>,
+    invalid: bool,
+}
+
+/// Where a find stands, for the panel.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Finding {
+    pub current: Option<usize>,
+    pub total: usize,
+    /// The query is a regular expression that does not parse.
+    pub invalid: bool,
+    /// The grid changed since the matches were found: [`Mirror::refresh_find`] finds them again.
+    pub stale: bool,
+}
+
+/// The match a find starts on: the last one that begins above the bottom of the view, else the
+/// first.
+fn nearest(found: &[Found], bottom: u32) -> Option<usize> {
+    found
+        .iter()
+        .rposition(|hit| hit.start.line <= bottom)
+        .or_else(|| (!found.is_empty()).then_some(0))
 }
 
 /// A viewer's libghostty terminal, fed the host's snapshot and output.
@@ -221,8 +345,16 @@ pub struct Mirror {
     /// The OSC 10 foreground the last frame painted with.
     foreground: Option<u32>,
     selection: Option<Selection>,
-    /// Set from [`Self::attach`] until the history arrives.
-    restore: Option<Restore>,
+    /// The size the host's stream last gave.
+    host_size: Option<TerminalSize>,
+    /// What the shown terminal is rebuilt from, while the snapshot's history is still to come or
+    /// the view's own size waits for the host.
+    replay: Option<Replay>,
+    /// The view's own size, shown ahead of the host's word ([`Self::relayout`]).
+    local: Option<Local>,
+    search: Option<Search>,
+    /// Counts changes to the matches and the current one.
+    found_epoch: u64,
 }
 
 impl std::fmt::Debug for Mirror {
@@ -249,8 +381,7 @@ impl Mirror {
     /// one.
     #[must_use]
     pub fn from_snapshot(bytes: &[u8]) -> Option<Self> {
-        let term = Decoder::new_buf(bytes).ok()?.decode().ok()?;
-        Some(Self::wrap(term))
+        Some(Self::wrap(decode(bytes, true)?))
     }
 
     /// The host's terminal from its snapshot's renderable prefix (through READY), to paint at
@@ -258,73 +389,198 @@ impl Mirror {
     /// when the bytes are empty or not a snapshot.
     #[must_use]
     pub fn attach(screen: &[u8], size: TerminalSize) -> Self {
-        let term = Decoder::new_buf(screen)
-            .ok()
-            .and_then(|decoder| decoder.ready().ok())
-            .map(libghostty_vt::snapshot::IncrementalDecoder::into_terminal);
-        let Some(term) = term else {
+        let Some(term) = decode(screen, false) else {
             return Self::new(size);
         };
         let mut mirror = Self::wrap(term);
-        mirror.restore = Some(Restore {
-            screen: screen.to_vec(),
-            since: Vec::new(),
-            bytes: 0,
-        });
+        mirror.host_size = Some(size);
+        mirror.replay = Some(Replay::new(screen.to_vec(), false));
         mirror
     }
 
     /// The rest of the snapshot [`Self::attach`] started from. The mirror becomes the whole
-    /// snapshot with the output and resizes since replayed, scrolled back as far as it was; a
-    /// history that does not decode leaves it as it is.
+    /// snapshot with the output and resizes since replayed, scrolled back as far as it was and
+    /// still at the view's own size if that waits for the host; a history that does not decode
+    /// leaves it as it is.
     pub fn history(&mut self, history: &[u8]) {
-        let Some(Restore {
-            mut screen, since, ..
-        }) = self.restore.take()
-        else {
+        let Some(replay) = self.replay.as_mut().filter(|replay| !replay.whole) else {
             return;
         };
-        screen.extend_from_slice(history);
-        let Some(mut whole) = Self::from_snapshot(&screen) else {
-            return;
-        };
-        for step in since {
-            match step {
-                Step::Feed(bytes) => whole.feed(&bytes),
-                Step::Resize(size) => whole.resize(size),
-            }
+        replay.snapshot.extend_from_slice(history);
+        replay.whole = true;
+        if !self.rebuild() {
+            self.replay = None;
+            self.local = None;
         }
-        let back = self.display_offset();
-        if back > 0 {
-            whole.scroll(i32::try_from(back).unwrap_or(i32::MAX));
-        }
-        *self = whole;
     }
 
     /// Older scrollback is still to come.
     #[must_use]
-    pub const fn awaiting_history(&self) -> bool {
-        self.restore.is_some()
+    pub fn awaiting_history(&self) -> bool {
+        self.replay.as_ref().is_some_and(|replay| !replay.whole)
     }
 
-    /// Keeps a step to replay when the history arrives.
-    fn remember(&mut self, step: Step) {
-        let Some(restore) = &mut self.restore else {
+    /// Shows the view's own size before the host has taken it, so a window resize relays the
+    /// grid out in the same frame. The host's stream settles it: when the host takes this size,
+    /// the shown terminal is the host's (rebuilt from the snapshot it started from if output
+    /// crossed the resize on the way); when the host keeps another size ([`Self::settle`]), the
+    /// host's terminal shows again. Back at the host's size, the host's terminal shows at once.
+    pub fn relayout(&mut self, size: TerminalSize) {
+        if self.host_size == Some(size) {
+            self.settle_local();
+            return;
+        }
+        if let Some(local) = &mut self.local {
+            if local.size != size {
+                local.size = size;
+                local.shown.push(Shown::Size(size));
+                self.apply_size(size);
+            }
+            return;
+        }
+        if self.replay.is_none() {
+            let mut snapshot = Vec::new();
+            if self.term.encode_snapshot(&mut snapshot).is_err() {
+                // Nothing to come back to: the mirror waits for the host's word.
+                return;
+            }
+            self.replay = Some(Replay::new(snapshot, true));
+        }
+        self.show_local(size);
+    }
+
+    /// The host answered the view's resize to `requested` with the PTY's size after it, or
+    /// `None` when the call failed. A size the host did not take stops showing.
+    pub fn settle(&mut self, requested: TerminalSize, pty: Option<TerminalSize>) {
+        if pty != Some(requested)
+            && self
+                .local
+                .as_ref()
+                .is_some_and(|local| local.size == requested)
+        {
+            self.settle_local();
+        }
+    }
+
+    /// The view's own size shows, and the host has yet to take it.
+    #[must_use]
+    pub const fn ahead(&self) -> bool {
+        self.local.is_some()
+    }
+
+    /// Shows `size` from the replay's terminal as it is now, which the shown one must be.
+    fn show_local(&mut self, size: TerminalSize) {
+        let steps = self.replay.as_ref().map_or(0, |replay| replay.steps.len());
+        let mut shown: Vec<Shown> = (0..steps).map(Shown::Host).collect();
+        shown.push(Shown::Size(size));
+        self.local = Some(Local { size, shown });
+        self.apply_size(size);
+    }
+
+    /// The view's own size stops waiting: the shown terminal becomes the host's, rebuilt from
+    /// the replay unless it went through exactly what the host's did.
+    fn settle_local(&mut self) {
+        let Some(local) = self.local.take() else {
             return;
         };
-        restore.bytes += match &step {
+        let exact = self
+            .replay
+            .as_ref()
+            .is_some_and(|replay| same(&local.shown, &replay.steps));
+        if !exact && !self.rebuild() {
+            self.replay = None;
+            return;
+        }
+        if self.replay.as_ref().is_some_and(|replay| replay.whole) {
+            self.replay = None;
+        }
+    }
+
+    /// Shows the host's terminal as the replay rebuilds it, at the view's own size if that still
+    /// waits for the host. The replay goes once it has nothing more to wait for. False when its
+    /// snapshot does not decode.
+    fn rebuild(&mut self) -> bool {
+        let Some(truth) = self.replay.as_ref().and_then(Replay::truth) else {
+            return false;
+        };
+        let local = self.local.take().map(|local| local.size);
+        self.replace(truth);
+        match local {
+            Some(size) => self.show_local(size),
+            None => {
+                if self.replay.as_ref().is_some_and(|replay| replay.whole) {
+                    self.replay = None;
+                }
+            }
+        }
+        true
+    }
+
+    /// Swaps in `term`, keeping what the view set: scroll position, selection and find.
+    fn replace(&mut self, term: Terminal<'static, 'static>) {
+        let back = self.display_offset();
+        let mut next = Self::wrap(term);
+        next.host_size = self.host_size;
+        next.replay = self.replay.take();
+        next.local = self.local.take();
+        next.search = self.search.take();
+        next.found_epoch = self.found_epoch;
+        next.selection = self.selection.take();
+        if back > 0 {
+            next.scroll(i32::try_from(back).unwrap_or(i32::MAX));
+        }
+        *self = next;
+        self.show_selection();
+        self.stale_search();
+    }
+
+    /// Keeps a host step to replay.
+    fn remember(&mut self, step: Step) {
+        let Some(replay) = &mut self.replay else {
+            return;
+        };
+        let feed = matches!(step, Step::Feed(_));
+        replay.bytes += match &step {
             Step::Feed(bytes) => bytes.len(),
             Step::Resize(_) => 0,
         };
-        if restore.bytes > MAX_REPLAY_BYTES {
-            self.restore = None;
-        } else {
-            restore.since.push(step);
+        let index = replay.steps.len();
+        replay.steps.push(step);
+        let over = replay.bytes > MAX_REPLAY_BYTES;
+        if feed && let Some(local) = &mut self.local {
+            local.shown.push(Shown::Host(index));
         }
+        if over {
+            self.overflow();
+        }
+    }
+
+    /// The output since the replay's snapshot passed what a mirror keeps. A history still to
+    /// come is given up (the screen and the output since stay), and a view size still waiting
+    /// starts over from the host's terminal now.
+    fn overflow(&mut self) {
+        let Some(size) = self.local.as_ref().map(|local| local.size) else {
+            self.replay = None;
+            return;
+        };
+        self.local = None;
+        if !self.rebuild() {
+            self.replay = None;
+            return;
+        }
+        let mut snapshot = Vec::new();
+        if self.term.encode_snapshot(&mut snapshot).is_err() {
+            self.replay = None;
+            return;
+        }
+        self.replay = Some(Replay::new(snapshot, true));
+        self.show_local(size);
     }
 
     fn wrap(mut term: Terminal<'static, 'static>) -> Self {
         crate::configure(&mut term);
+        // The view's own size snapshots the mirror, which may be inside an escape sequence.
+        let _ = term.set_continuation_max_bytes(crate::MAX_CONTINUATION_BYTES);
         let render = Arc::new(Mutex::new(
             RenderSide::new().unwrap_or_else(|_| crate::oom()),
         ));
@@ -352,7 +608,11 @@ impl Mirror {
             default_palette,
             foreground: None,
             selection: None,
-            restore: None,
+            host_size: None,
+            replay: None,
+            local: None,
+            search: None,
+            found_epoch: 0,
         };
         mirror.capture();
         mirror
@@ -378,7 +638,8 @@ impl Mirror {
     pub fn feed(&mut self, bytes: &[u8]) {
         self.term.vt_write(bytes);
         self.capture();
-        if self.restore.is_some() {
+        self.stale_search();
+        if self.replay.is_some() {
             self.remember(Step::Feed(bytes.to_vec()));
         }
     }
@@ -400,16 +661,22 @@ impl Mirror {
         true
     }
 
-    /// The PTY took a new size.
+    /// The host's PTY took a new size here in its stream. While the view's own size shows, the
+    /// shown terminal keeps it, and the host taking that same size settles it.
     pub fn resize(&mut self, size: TerminalSize) {
-        let _ = self.term.resize(
-            size.cols.max(2),
-            size.rows.max(1),
-            u32::from(size.cell_width.max(1)),
-            u32::from(size.cell_height.max(1)),
-        );
-        self.show_selection();
+        self.host_size = Some(size);
         self.remember(Step::Resize(size));
+        match &self.local {
+            Some(local) if local.size == size => self.settle_local(),
+            Some(_) => {}
+            None => self.apply_size(size),
+        }
+    }
+
+    fn apply_size(&mut self, size: TerminalSize) {
+        resize_term(&mut self.term, size);
+        self.show_selection();
+        self.stale_search();
     }
 
     /// Columns and rows.
@@ -493,6 +760,152 @@ impl Mirror {
             line: at.y,
             col: at.x,
         })
+    }
+
+    /// The screen lines the view shows, top and bottom.
+    fn viewport_lines(&self) -> (u32, u32) {
+        let top = self.screen_point(0, 0).map_or(0, |at| at.line);
+        let rows = u32::from(self.size().1).max(1);
+        (top, top + rows - 1)
+    }
+
+    fn stale_search(&mut self) {
+        if let Some(open) = &mut self.search {
+            open.lines = None;
+        }
+    }
+
+    /// Finds `query` in the scrollback and on the screen, and scrolls to the match nearest the
+    /// bottom of the view.
+    pub fn find(&mut self, query: Query) {
+        let lines = self
+            .search
+            .take()
+            .and_then(|open| open.lines)
+            .unwrap_or_else(|| search::lines(&View(&self.term)));
+        let found = search::find(&lines, &query);
+        let (_, bottom) = self.viewport_lines();
+        let current = found.as_deref().and_then(|found| nearest(found, bottom));
+        self.search = Some(Search {
+            query,
+            lines: Some(lines),
+            invalid: found.is_none(),
+            found: found.unwrap_or_default(),
+            current,
+        });
+        self.found_epoch += 1;
+        self.reveal();
+    }
+
+    /// Steps to the next match down, or up with `backwards`, round the ends, and scrolls to it.
+    pub fn find_step(&mut self, backwards: bool) {
+        let Some(open) = &mut self.search else {
+            return;
+        };
+        let total = open.found.len();
+        if total == 0 {
+            return;
+        }
+        open.current = Some(match open.current {
+            None if backwards => total - 1,
+            None => 0,
+            Some(at) if backwards => (at + total - 1) % total,
+            Some(at) => (at + 1) % total,
+        });
+        self.found_epoch += 1;
+        self.reveal();
+    }
+
+    /// Finds the query again over a grid that changed since, keeping the current match where it
+    /// was, without scrolling; true when the matches changed.
+    pub fn refresh_find(&mut self) -> bool {
+        let (_, bottom) = self.viewport_lines();
+        let Some(open) = &mut self.search else {
+            return false;
+        };
+        if open.lines.is_some() {
+            return false;
+        }
+        let lines = search::lines(&View(&self.term));
+        let found = search::find(&lines, &open.query).unwrap_or_default();
+        let was = open.current.and_then(|at| open.found.get(at)).copied();
+        let current = match was {
+            Some(was) => found.iter().position(|hit| *hit == was).or_else(|| {
+                let after = found.partition_point(|hit| *hit < was);
+                found.len().checked_sub(1).map(|last| after.min(last))
+            }),
+            None => nearest(&found, bottom),
+        };
+        open.lines = Some(lines);
+        let changed = found != open.found || current != open.current;
+        open.found = found;
+        open.current = current;
+        if changed {
+            self.found_epoch += 1;
+        }
+        changed
+    }
+
+    /// Closes the find: no matches show.
+    pub fn end_find(&mut self) {
+        if self.search.take().is_some() {
+            self.found_epoch += 1;
+        }
+    }
+
+    /// Where the open find stands.
+    #[must_use]
+    pub fn finding(&self) -> Option<Finding> {
+        self.search.as_ref().map(|open| Finding {
+            current: open.current,
+            total: open.found.len(),
+            invalid: open.invalid,
+            stale: open.lines.is_none(),
+        })
+    }
+
+    /// The matches on the screen lines `top..top + rows`, each with whether it is the current
+    /// one.
+    #[must_use]
+    pub fn found_in(&self, top: u32, rows: u32) -> Vec<(Found, bool)> {
+        let Some(open) = &self.search else {
+            return Vec::new();
+        };
+        let bottom = top.saturating_add(rows);
+        let first = open.found.partition_point(|hit| hit.end.line < top);
+        open.found
+            .iter()
+            .enumerate()
+            .skip(first)
+            .take_while(|(_, hit)| hit.start.line < bottom)
+            .map(|(at, hit)| (*hit, open.current == Some(at)))
+            .collect()
+    }
+
+    /// Changes whenever the matches or the current one do, for a view caching painted rows.
+    #[must_use]
+    pub const fn found_epoch(&self) -> u64 {
+        self.found_epoch
+    }
+
+    /// Scrolls the current match into the middle of the view, unless it shows already.
+    fn reveal(&mut self) {
+        let hit = self
+            .search
+            .as_ref()
+            .and_then(|open| open.found.get(open.current?))
+            .copied();
+        let Some(hit) = hit else {
+            return;
+        };
+        let (top, bottom) = self.viewport_lines();
+        if hit.start.line >= top && hit.end.line <= bottom {
+            return;
+        }
+        let half = (bottom - top).div_ceil(2);
+        let target = hit.start.line.saturating_sub(half);
+        let lines = i64::from(top) - i64::from(target);
+        self.scroll(i32::try_from(lines).unwrap_or(0));
     }
 
     /// Starts a selection at a viewport cell; a click selects nothing until it is dragged, a
@@ -742,6 +1155,23 @@ impl Grid for View<'_> {
             .and_then(|row| row.is_wrapped().ok())
             .unwrap_or(false)
     }
+
+    /// One grid read per cell, for a find reading the whole scrollback.
+    fn glyph(&self, at: Point) -> Option<char> {
+        let fields = self
+            .cell(at)
+            .and_then(|cell| cell.cell().ok())
+            .and_then(|cell| cell.fields().ok());
+        match fields {
+            Some(fields) if matches!(fields.wide, CellWide::SpacerTail | CellWide::SpacerHead) => {
+                None
+            }
+            Some(fields) if fields.has_text() => {
+                Some(char::from_u32(fields.codepoint).unwrap_or(' '))
+            }
+            _ => Some(' '),
+        }
+    }
 }
 
 fn shape(style: CursorStyle) -> CursorShape {
@@ -860,6 +1290,8 @@ fn read_cells(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::VecDeque;
+
     use onicode_protocol::terminal::TerminalColors;
     use proptest::prelude::*;
 
@@ -1118,6 +1550,223 @@ mod tests {
             parts.select_all();
             whole.select_all();
             prop_assert_eq!(parts.selection_text(), whole.selection_text());
+        }
+    }
+
+    #[test]
+    fn find_shows_the_nearest_match_and_steps_round_the_ends() {
+        let output: String = (0..30).map(|n| format!("line {n:02}\r\n")).collect();
+        let mut m = mirror(12, 4, output.as_bytes());
+        let query = |text: &str| Query {
+            text: text.to_owned(),
+            ..Query::default()
+        };
+        m.find(query("LINE 0"));
+        let finding = m.finding().unwrap();
+        assert_eq!((finding.total, finding.current), (10, Some(9)));
+        assert!(m.display_offset() > 0, "scrolled up to the nearest match");
+        assert!(m.text().contains("line 09"));
+        m.find_step(false);
+        assert_eq!(m.finding().unwrap().current, Some(0), "round the bottom");
+        assert!(m.display_offset() > 0, "scrolled up to it");
+        assert!(m.text().contains("line 00"));
+        let top = m.screen_point(0, 0).unwrap().line;
+        let shown = m.found_in(top, 4);
+        assert!(
+            shown
+                .iter()
+                .any(|(hit, current)| *current && hit.start.line == 0)
+        );
+        m.find_step(true);
+        assert_eq!(m.finding().unwrap().current, Some(9));
+        m.feed(b"line 0x\r\n");
+        assert!(m.finding().unwrap().stale);
+        let epoch = m.found_epoch();
+        assert!(m.refresh_find());
+        assert!(m.found_epoch() > epoch);
+        let finding = m.finding().unwrap();
+        assert_eq!(
+            (finding.total, finding.current, finding.stale),
+            (11, Some(9), false)
+        );
+        m.find(Query {
+            text: "line 0[".into(),
+            regex: true,
+            ..Query::default()
+        });
+        assert!(m.finding().unwrap().invalid);
+        m.end_find();
+        assert_eq!(m.finding(), None);
+        assert!(m.found_in(0, 40).is_empty());
+    }
+
+    #[test]
+    fn a_relayout_shows_at_once_and_the_hosts_resize_settles_it() {
+        let mut host = host(12, 4);
+        host.feed(b"hello");
+        let snapshot = host.snapshot().unwrap();
+        let mut m = Mirror::attach(&snapshot, size(12, 4));
+        m.history(&[]);
+        m.relayout(size(20, 6));
+        assert_eq!(m.size(), (20, 6), "the view's size shows in the same frame");
+        assert!(m.ahead());
+        // Output the host wrote before it took the size reaches the mirror after.
+        m.feed(b" world");
+        m.resize(size(20, 6));
+        assert!(!m.ahead(), "the host took it");
+        let mut truth = Mirror::from_snapshot(&snapshot).unwrap();
+        truth.feed(b" world");
+        truth.resize(size(20, 6));
+        assert_eq!(m.text(), truth.text());
+        assert_eq!(cells(&mut m), cells(&mut truth));
+        // Another viewer typed last: the host keeps its size, and so does the mirror.
+        m.relayout(size(30, 8));
+        m.settle(size(30, 8), Some(size(20, 6)));
+        assert!(!m.ahead());
+        assert_eq!(m.size(), (20, 6));
+        // Back at the host's size while ahead: the host's terminal at once.
+        m.relayout(size(16, 5));
+        m.relayout(size(20, 6));
+        assert!(!m.ahead());
+        assert_eq!(m.text(), truth.text());
+    }
+
+    /// One step of a host, its stream and a viewer that lays its mirror out ahead of the host.
+    #[derive(Clone, Debug)]
+    enum Op {
+        /// The program writes.
+        Output(Vec<u8>),
+        /// The view takes a size of its own and asks the host for it.
+        Relayout(u16, u16),
+        /// The host answers the oldest resize asked: it takes it, or keeps its size because
+        /// another viewer typed last.
+        Answer(bool),
+        /// Another viewer's size wins.
+        Other(u16, u16),
+        /// The next item of the host's stream reaches the mirror.
+        Deliver,
+        /// The next answer reaches the mirror.
+        Reply,
+    }
+
+    fn op() -> impl Strategy<Value = Op> {
+        prop_oneof![
+            3 => output().prop_map(Op::Output),
+            2 => (6u16..14, 2u16..6).prop_map(|(cols, rows)| Op::Relayout(cols, rows)),
+            2 => any::<bool>().prop_map(Op::Answer),
+            1 => (6u16..14, 2u16..6).prop_map(|(cols, rows)| Op::Other(cols, rows)),
+            4 => Just(Op::Deliver),
+            2 => Just(Op::Reply),
+        ]
+    }
+
+    /// What the host's stream carries to the mirror.
+    enum Item {
+        History(Vec<u8>),
+        Output(Vec<u8>),
+        Resized(TerminalSize),
+    }
+
+    /// The stream's next item reaches the mirror, and the viewer that only follows the host.
+    fn deliver(item: Item, mirror: &mut Mirror, truth: &mut Mirror) {
+        match item {
+            Item::History(bytes) => mirror.history(&bytes),
+            Item::Output(bytes) => {
+                mirror.feed(&bytes);
+                truth.feed(&bytes);
+            }
+            Item::Resized(size) => {
+                mirror.resize(size);
+                truth.resize(size);
+            }
+        }
+    }
+
+    /// The host's PTY takes `to`, and its stream says so when that changed it.
+    fn take(host: &mut Host, to: TerminalSize, stream: &mut VecDeque<Item>) {
+        if host.size() != to {
+            host.resize(to);
+            stream.push_back(Item::Resized(to));
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(64))]
+
+        /// A mirror that lays itself out at the view's size before the host has, whatever output
+        /// crosses the resizes on the way and whoever's size wins, holds the host's terminal
+        /// exactly whenever it is not ahead, and is never ahead once the host has answered and
+        /// its stream has arrived.
+        #[test]
+        fn a_mirror_ahead_of_the_host_comes_back_to_the_hosts_terminal(
+            lines in 0usize..30,
+            ops in proptest::collection::vec(op(), 0..40),
+        ) {
+            let mut host = host(10, 4);
+            for n in 0..lines {
+                host.feed(format!("line {n}\r\n").as_bytes());
+            }
+            let snapshot = host.snapshot().expect("a snapshot");
+            let (prefix, history) = crate::snapshot::split(snapshot.clone());
+            let mut mirror = Mirror::attach(&prefix, size(10, 4));
+            // What a viewer that only ever followed the host holds, fed as the stream arrives.
+            let mut truth = Mirror::from_snapshot(&snapshot).expect("it decodes");
+            let mut stream = VecDeque::from([Item::History(history)]);
+            let mut asked = VecDeque::new();
+            let mut answers = VecDeque::new();
+            for op in &ops {
+                match op {
+                    Op::Output(bytes) => {
+                        host.feed(bytes);
+                        stream.push_back(Item::Output(bytes.clone()));
+                    }
+                    Op::Relayout(cols, rows) => {
+                        mirror.relayout(size(*cols, *rows));
+                        prop_assert_eq!(mirror.size(), (*cols, *rows), "at once");
+                        asked.push_back(size(*cols, *rows));
+                    }
+                    Op::Answer(takes) => {
+                        if let Some(requested) = asked.pop_front() {
+                            if *takes {
+                                take(&mut host, requested, &mut stream);
+                            }
+                            answers.push_back((requested, host.size()));
+                        }
+                    }
+                    Op::Other(cols, rows) => take(&mut host, size(*cols, *rows), &mut stream),
+                    Op::Deliver => {
+                        if let Some(item) = stream.pop_front() {
+                            deliver(item, &mut mirror, &mut truth);
+                        }
+                    }
+                    Op::Reply => {
+                        if let Some((requested, pty)) = answers.pop_front() {
+                            mirror.settle(requested, Some(pty));
+                        }
+                    }
+                }
+                if !mirror.ahead() && !mirror.awaiting_history() {
+                    prop_assert_eq!(mirror.text(), truth.text(), "after {:?}", op);
+                }
+            }
+            while let Some(requested) = asked.pop_front() {
+                take(&mut host, requested, &mut stream);
+                answers.push_back((requested, host.size()));
+            }
+            while let Some(item) = stream.pop_front() {
+                deliver(item, &mut mirror, &mut truth);
+            }
+            while let Some((requested, pty)) = answers.pop_front() {
+                mirror.settle(requested, Some(pty));
+            }
+            prop_assert!(!mirror.ahead(), "the host answered and its stream arrived");
+            prop_assert_eq!(mirror.size(), truth.size());
+            prop_assert_eq!(mirror.text(), truth.text());
+            prop_assert_eq!(mirror.frame(|_| false).cursor, truth.frame(|_| false).cursor);
+            prop_assert_eq!(cells(&mut mirror), cells(&mut truth));
+            mirror.select_all();
+            truth.select_all();
+            prop_assert_eq!(mirror.selection_text(), truth.selection_text());
         }
     }
 }

@@ -158,7 +158,7 @@ pub struct Alert {
     pub title: String,
     /// Plain text. A terminal program's words are its own and untrusted.
     pub body: String,
-    /// The folder it runs in, which a viewer's project mutes go by.
+    /// The folder it runs in, which the project mutes go by.
     pub project: Option<String>,
     /// Unix ms.
     pub raised_at: u64,
@@ -333,7 +333,9 @@ pub enum OnScreen {
 /// viewer repeats it while it lives (every 5 s) and a viewer that went away holds nothing back.
 /// A chat on screen in a focused window never alerts, and showing it marks it seen for every
 /// device. While no viewer presents, the engine posts plain banners itself, as the last report's
-/// `banners` and `sound` say.
+/// `banners` and `sound` say. The engine alone applies project mutes: an alert that the `mutes`
+/// of any viewport reporting within 20 s of the latest report hold back is raised to no viewer
+/// and posted as no banner, so mutes stand while their viewer is away.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SetViewportFocus {
     /// The viewport's own id, minted once per run.
@@ -346,6 +348,93 @@ pub struct SetViewportFocus {
     pub banners: bool,
     /// Banners play a sound.
     pub sound: bool,
+    /// The owner's project mutes for this engine's projects, in this engine's paths.
+    pub mutes: Mutes,
+}
+
+/// When a project's alerts of one category may ring: one of monocode's project notification
+/// rules (`notificationPreferences.ts`), as the viewer resolved it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MuteRule {
+    /// The category is on for the project, and the project is not muted until resumed.
+    pub enabled: bool,
+    /// The last muted moment (Unix ms): nothing that happened at or before it rings, and nothing
+    /// rings until it has passed. A mute until a time ends a millisecond before it.
+    pub after: u64,
+}
+
+impl Default for MuteRule {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            after: 0,
+        }
+    }
+}
+
+impl MuteRule {
+    /// Whether something that happened at `occurred_at` may ring at `now`.
+    #[must_use]
+    pub fn allows(self, occurred_at: u64, now: u64) -> bool {
+        self.enabled && now > self.after && occurred_at > self.after
+    }
+}
+
+/// One project's mutes: the folders it goes by (a repository's checkouts share one project) and
+/// a rule for each category of agent alert.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectMute {
+    /// As the engine the report goes to names them.
+    pub paths: Vec<String>,
+    /// "Agent approvals and questions": [`AlertKind::NeedsYou`].
+    pub needs_you: MuteRule,
+    /// "Agent finished": every other kind.
+    pub finished: MuteRule,
+}
+
+/// The project mutes a viewer holds. The first project naming a folder decides for it; a folder
+/// no project names is not muted.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Mutes {
+    pub projects: Vec<ProjectMute>,
+}
+
+impl Mutes {
+    /// Whether an alert of `kind` about work in `folder` may ring at `now`, on a machine whose
+    /// home folder is `home`. Work outside any project (the home folder, the root, inside an app
+    /// bundle) never rings, as monocode's project notifications never did.
+    #[must_use]
+    pub fn allows(&self, folder: &str, kind: AlertKind, home: Option<&str>, now: u64) -> bool {
+        if !is_project(folder, home) {
+            return false;
+        }
+        let key = crate::files::path_key(folder);
+        let Some(project) = self.projects.iter().find(|project| {
+            project
+                .paths
+                .iter()
+                .any(|path| crate::files::path_key(path) == key)
+        }) else {
+            return true;
+        };
+        let rule = match kind {
+            AlertKind::NeedsYou => project.needs_you,
+            AlertKind::Failed | AlertKind::Finished | AlertKind::Stalled => project.finished,
+        };
+        rule.allows(now, now)
+    }
+}
+
+/// Whether `folder` is a project as monocode's notification preferences tell one: not empty,
+/// not the root, not the home folder (`home`, or `~`), not inside an app bundle.
+#[must_use]
+pub fn is_project(folder: &str, home: Option<&str>) -> bool {
+    let key = crate::files::path_key(folder);
+    !folder.is_empty()
+        && key != "/"
+        && key != "~"
+        && !folder.contains(".app/")
+        && home.is_none_or(|home| crate::files::path_key(home) != key)
 }
 
 impl Call for SetViewportFocus {

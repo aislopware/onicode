@@ -2,7 +2,9 @@
 //! mirrored here by libghostty and painted as a grid of cell-snapped text runs. Keys, paste and
 //! the wheel go to the engine, which encodes them from its own terminal's modes; output comes back
 //! through the terminal's watch. A program's OSC 7501 status shows on the terminal's tab with the
-//! session marks.
+//! session marks. A window resize relays the mirror out at the view's own size in the same frame,
+//! and the engine's answer settles it (`docs/onicode/decisions/local-feel.md`); Find searches the
+//! mirror's scrollback (`find`).
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -26,6 +28,7 @@ use onicode_protocol::terminal::{
 };
 use onicode_term::label::command_label;
 use onicode_term::mirror::{CellColor, CursorShape, Link, Mirror, RowId};
+use onicode_term::search::Found;
 use onicode_term::select::{Kind, Point as GridPoint, Side};
 use onicode_term::{keys, mirror, palette};
 
@@ -34,10 +37,25 @@ use crate::session_mark::{SessionMark, State as MarkState};
 use crate::theme::*;
 
 mod context_menu;
+mod find;
 
 actions!(
     terminal,
-    [SendTab, SendBackTab, SendEscape, Copy, Paste, SelectAll]
+    [
+        SendTab,
+        SendBackTab,
+        SendEscape,
+        Copy,
+        Paste,
+        SelectAll,
+        Find,
+        FindNext,
+        FindPrevious,
+        DismissFind,
+        MatchCase,
+        WholeWord,
+        Regex
+    ]
 );
 
 pub(crate) fn bind(cx: &mut App) {
@@ -50,6 +68,23 @@ pub(crate) fn bind(cx: &mut App) {
         KeyBinding::new(os_keys!("cmd-c", "ctrl-shift-c"), Copy, c),
         KeyBinding::new(os_keys!("cmd-v", "ctrl-shift-v"), Paste, c),
         KeyBinding::new(os_keys!("cmd-a", "ctrl-shift-a"), SelectAll, c),
+        // Find leaves ctrl-f and ctrl-g to the shell off macOS.
+        KeyBinding::new(os_keys!("cmd-f", "ctrl-shift-f"), Find, c),
+        KeyBinding::new(os_keys!("cmd-g", "ctrl-shift-g"), FindNext, c),
+        KeyBinding::new(os_keys!("cmd-shift-g", "ctrl-shift-alt-g"), FindPrevious, c),
+    ]);
+    // The find panel's query field, as the file editor binds its own.
+    let f = Some("TerminalFind");
+    cx.bind_keys([
+        KeyBinding::new(os_keys!("cmd-f", "ctrl-shift-f"), Find, f),
+        KeyBinding::new("escape", DismissFind, f),
+        KeyBinding::new("f3", FindNext, f),
+        KeyBinding::new("shift-f3", FindPrevious, f),
+        KeyBinding::new(os_keys!("cmd-g", "ctrl-g"), FindNext, f),
+        KeyBinding::new(os_keys!("cmd-shift-g", "ctrl-shift-g"), FindPrevious, f),
+        KeyBinding::new("alt-c", MatchCase, f),
+        KeyBinding::new("alt-w", WholeWord, f),
+        KeyBinding::new("alt-r", Regex, f),
     ]);
 }
 
@@ -103,6 +138,8 @@ struct Hosted {
     id: TerminalId,
     outbox: async_channel::Sender<Outgoing>,
     _watch: Task<()>,
+    /// Brings the engine's answers to the view's resizes back to the view.
+    _settle: Task<()>,
 }
 
 /// What a cached row was shaped with; a change reshapes every row.
@@ -114,6 +151,8 @@ struct Look {
     foreground: Hsla,
     selection: Hsla,
     link: Option<(GridPoint, GridPoint)>,
+    /// The mirror's [`Mirror::found_epoch`]: the find's matches as the rows were filled.
+    found: u64,
 }
 
 /// A row shaped for paint: its filled spans and text runs by column, under a
@@ -147,6 +186,15 @@ pub(crate) struct Terminal {
     pub exited: bool,
     /// The grid the view last asked the engine for.
     size: TerminalSize,
+    /// The mirror's size is the engine's to give: the view shows its own ahead of the engine's
+    /// word and the engine's answer settles it. Off in tests without an engine, where the view's
+    /// size is the mirror's.
+    follows_host: bool,
+    /// The size the view asked the engine for that it has not answered yet; a fresh snapshot
+    /// shows it again.
+    unanswered: Option<TerminalSize>,
+    /// The open find panel.
+    find: Option<find::Find>,
     geometry: Rc<Cell<Option<Geometry>>>,
     selecting: bool,
     selection_pointer: Option<gpui::Point<gpui::Pixels>>,
@@ -182,6 +230,7 @@ impl Terminal {
         // GPUI's deterministic test scheduler runs no engine threads; UI tests run the terminal
         // without a shell behind it.
         let hosted = (!cfg!(test)).then(|| Self::host(&cwd, cx));
+        let follows_host = hosted.is_some();
         // TerminalView's 1s foreground poll; a hidden dock has no title to paint.
         let poll = cx.spawn(async move |this, cx| {
             loop {
@@ -223,7 +272,10 @@ impl Terminal {
             cwd,
             foreground: None,
             exited: false,
+            follows_host,
             size: START,
+            unanswered: None,
+            find: None,
             geometry: Rc::default(),
             selecting: false,
             selection_pointer: None,
@@ -249,6 +301,10 @@ impl Terminal {
         let id = TerminalId::new();
         let (outbox, queued) = async_channel::unbounded::<Outgoing>();
         let (opened, on_open) = async_channel::bounded::<()>(1);
+        // Each resize asked for and the PTY's size the engine answered with (`None`: the call
+        // failed).
+        let (answers, answered) =
+            async_channel::unbounded::<(TerminalSize, Option<TerminalSize>)>();
         let open = OpenTerminal {
             terminal: id,
             viewer: viewer(),
@@ -266,7 +322,15 @@ impl Terminal {
                 }
                 drop(opened);
                 // What failed is the engine's to say: the terminal's watch shows it.
-                while let Ok(outgoing) = queued.recv().await {
+                let mut held = None;
+                loop {
+                    let outgoing = match held.take() {
+                        Some(outgoing) => outgoing,
+                        None => match queued.recv().await {
+                            Ok(outgoing) => outgoing,
+                            Err(_) => break,
+                        },
+                    };
                     let terminal = id;
                     let viewer = viewer();
                     match outgoing {
@@ -278,13 +342,25 @@ impl Terminal {
                             };
                             let _ = caller.call::<TerminalInput>(None, input).await;
                         }
-                        Outgoing::Resize(size) => {
+                        Outgoing::Resize(mut size) => {
+                            // A window being dragged queues a size per frame; only the last
+                            // queued is asked for, and the view waits on that one's answer.
+                            while let Ok(next) = queued.try_recv() {
+                                match next {
+                                    Outgoing::Resize(later) => size = later,
+                                    other => {
+                                        held = Some(other);
+                                        break;
+                                    }
+                                }
+                            }
                             let resize = ResizeTerminal {
                                 terminal,
                                 viewer,
                                 size,
                             };
-                            let _ = caller.call::<ResizeTerminal>(None, resize).await;
+                            let pty = caller.call::<ResizeTerminal>(None, resize).await.ok();
+                            let _ = answers.try_send((size, pty));
                         }
                         Outgoing::StopForeground => {
                             let _ = caller
@@ -329,11 +405,22 @@ impl Terminal {
                 }
             }
         });
+        let settle = cx.spawn(async move |this, cx| {
+            while let Ok((requested, pty)) = answered.recv().await {
+                if this
+                    .update(cx, |this, cx| this.settled(requested, pty, cx))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
         Hosted {
             engine,
             id,
             outbox,
             _watch: watch,
+            _settle: settle,
         }
     }
 
@@ -350,6 +437,12 @@ impl Terminal {
                 } = *state;
                 self.mirror = Mirror::attach(&screen.0, size);
                 self.rows.clear();
+                // The engine's terminal as it is now, at its size; the view's own size still
+                // waits for the engine's answer.
+                if let Some(size) = self.unanswered {
+                    self.mirror.relayout(size);
+                }
+                self.run_find(cx);
                 self.set_status(status, cx);
                 if exited {
                     self.finish(cx);
@@ -378,6 +471,24 @@ impl Terminal {
             }
         }
         self.schedule_sync(cx);
+        self.schedule_find_refresh(cx);
+        cx.notify();
+    }
+
+    /// The engine answered the view's resize to `requested` with the PTY's size after it, or
+    /// `None` when the call failed. A size the PTY did not take stops showing; one it took
+    /// settles when the resize reaches the watch.
+    fn settled(
+        &mut self,
+        requested: TerminalSize,
+        pty: Option<TerminalSize>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.unanswered == Some(requested) {
+            self.unanswered = None;
+        }
+        self.mirror.settle(requested, pty);
+        self.schedule_find_refresh(cx);
         cx.notify();
     }
 
@@ -509,8 +620,9 @@ impl Terminal {
         }
     }
 
-    /// Fit the grid to the painted area; the engine's PTY and terminal learn the new size, and
-    /// this mirror takes it where the engine's output does.
+    /// Fit the grid to the painted area. The mirror shows the size at once, ahead of the engine,
+    /// whose PTY and terminal learn it; the engine's answer and the resize in its output settle
+    /// it, the engine's own terminal showing again if the PTY keeps another viewer's size.
     fn resize(&mut self, columns: usize, lines: usize, cell: Size<gpui::Pixels>) {
         let next = TerminalSize {
             cols: u16::try_from(columns).unwrap_or(u16::MAX),
@@ -522,7 +634,9 @@ impl Terminal {
             return;
         }
         self.size = next;
-        if self.hosted.is_some() {
+        if self.follows_host {
+            self.mirror.relayout(next);
+            self.unanswered = Some(next);
             self.send(Outgoing::Resize(next));
         } else {
             self.mirror.resize(next);
@@ -744,11 +858,13 @@ impl Drop for Terminal {
 impl Render for Terminal {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let focused = self.focus.is_focused(window);
-        div()
+        let surface = div()
             .id("terminal")
             .key_context("Terminal")
             .track_focus(&self.focus)
-            .size_full()
+            .flex_1()
+            .min_h_0()
+            .w_full()
             .cursor(gpui::CursorStyle::IBeam)
             .on_mouse_move(cx.listener(|this, event: &MouseMoveEvent, _, cx| {
                 if this.hover != Some(event.position) {
@@ -774,6 +890,9 @@ impl Render for Terminal {
             .on_action(cx.listener(|this, _: &Copy, _, cx| this.copy(cx)))
             .on_action(cx.listener(|this, _: &Paste, _, cx| this.paste(cx)))
             .on_action(cx.listener(|this, _: &SelectAll, _, cx| this.select_all(cx)))
+            .on_action(cx.listener(|this, _: &Find, window, cx| this.open_find(window, cx)))
+            .on_action(cx.listener(|this, _: &FindNext, _, cx| this.step_find(false, cx)))
+            .on_action(cx.listener(|this, _: &FindPrevious, _, cx| this.step_find(true, cx)))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event: &MouseDownEvent, window, cx| {
@@ -790,7 +909,13 @@ impl Render for Terminal {
                 terminal: cx.entity(),
                 focused,
             })
-            .children(self.editing_menu(cx))
+            .children(self.editing_menu(cx));
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .children(self.find_panel(cx))
+            .child(surface)
     }
 }
 
@@ -882,8 +1007,10 @@ impl Element for Grid {
             (((bounds.size.width - px(PADDING * 2.)) / cell_width).floor() as usize).max(2);
         let lines = (((bounds.size.height - px(PADDING)) / line_height).floor() as usize).max(1);
         let cell = size(cell_width, line_height);
-        let (frame, link, mut cached, unseen) = self.terminal.update(cx, |t, _| {
+        let (frame, link, found, mut cached, unseen) = self.terminal.update(cx, |t, cx| {
             t.resize(columns, lines, cell);
+            // A relayout rewraps what the open find matched.
+            t.schedule_find_refresh(cx);
             t.geometry.set(Some(Geometry { origin, cell }));
             let link = t.hover.and_then(|position| t.link_at(position));
             let look = Look {
@@ -893,13 +1020,23 @@ impl Element for Grid {
                 foreground: content(1.),
                 selection: selection_fill(),
                 link: link.as_ref().map(|link| (link.start, link.end)),
+                found: t.mirror.found_epoch(),
             };
             if t.look.as_ref() != Some(&look) {
                 t.rows.clear();
                 t.look = Some(look);
             }
             let frame = t.mirror.frame(|id| t.rows.contains_key(&id));
-            (frame, link, std::mem::take(&mut t.rows), !t.status_seen)
+            let found = t
+                .mirror
+                .found_in(frame.top, u32::try_from(lines).unwrap_or(u32::MAX));
+            (
+                frame,
+                link,
+                found,
+                std::mem::take(&mut t.rows),
+                !t.status_seen,
+            )
         });
         if unseen && window.is_window_active() {
             let terminal = self.terminal.clone();
@@ -926,7 +1063,7 @@ impl Element for Grid {
             let shaped = match row.cells {
                 Some(cells) => {
                     let screen_line = frame.top + u32::try_from(line).unwrap_or(u32::MAX);
-                    let pens = pens(&cells, screen_line, link.as_ref(), foreground);
+                    let pens = pens(&cells, screen_line, link.as_ref(), &found, foreground);
                     shape_row(&pens, &base, &text_system, font_size, cell_width)
                 }
                 None => match cached.remove(&row.id) {
@@ -1049,9 +1186,16 @@ impl Element for Grid {
 }
 
 /// A row's cells as monocode painted them: inverse swaps the colours (the chat surface stands in
-/// for a transparent background), dim fades the text, a selection fills the cell and a hovered
-/// link underlines it. Wide characters' padding paints nothing.
-fn pens(cells: &[mirror::Cell], line: u32, link: Option<&Link>, foreground: Hsla) -> Vec<Painting> {
+/// for a transparent background), dim fades the text, a find's match fills the cell as the file
+/// editor's do, a selection fills it over that and a hovered link underlines it. Wide
+/// characters' padding paints nothing.
+fn pens(
+    cells: &[mirror::Cell],
+    line: u32,
+    link: Option<&Link>,
+    found: &[(Found, bool)],
+    foreground: Hsla,
+) -> Vec<Painting> {
     let resolve = |color: CellColor| -> Hsla {
         match color {
             CellColor::Default => foreground,
@@ -1077,14 +1221,17 @@ fn pens(cells: &[mirror::Cell], line: u32, link: Option<&Link>, foreground: Hsla
         if cell.dim {
             fg.a *= 0.66;
         }
-        if cell.selected {
-            bg = Some(selection_fill());
-        }
-        let c = if cell.hidden { ' ' } else { cell.ch };
         let at = GridPoint {
             line,
             col: u16::try_from(column).unwrap_or(u16::MAX),
         };
+        if let Some((_, current)) = found.iter().find(|(hit, _)| hit.contains(at)) {
+            bg = Some(find::found_fill(*current));
+        }
+        if cell.selected {
+            bg = Some(selection_fill());
+        }
+        let c = if cell.hidden { ' ' } else { cell.ch };
         row.push((
             column,
             c,
@@ -1256,6 +1403,7 @@ fn default_title(cwd: &str) -> String {
 #[cfg(test)]
 mod tests {
     use gpui::{AppContext, Modifiers};
+    use onicode_protocol::terminal::Bytes;
 
     use super::*;
 
@@ -1366,7 +1514,7 @@ mod tests {
             let frame = terminal.mirror.frame(|_| false);
             let cells = frame.rows[0].cells.clone().unwrap();
             let foreground = content(1.);
-            let row = pens(&cells, frame.top, None, foreground);
+            let row = pens(&cells, frame.top, None, &[], foreground);
             // Inverse on the default colours: the chat surface on the text colour.
             assert_eq!(row[0].2.fg, Hsla::from(rgb(CHAT)));
             assert_eq!(row[0].3, Some(foreground));
@@ -1375,7 +1523,118 @@ mod tests {
             assert_eq!(row[1].2.fg, red);
             assert_eq!(row[1].3, None);
             assert_eq!(row[2].1, ' ');
+            // A find's matches fill as the file editor's, the current one as the selection.
+            let hit = Found {
+                start: p(frame.top, 1),
+                end: p(frame.top, 2),
+            };
+            let row = pens(&cells, frame.top, None, &[(hit, false)], foreground);
+            assert_eq!(row[0].3, Some(foreground));
+            assert_eq!(row[1].3, Some(find::found_fill(false)));
+            assert_eq!(row[2].3, Some(find::found_fill(false)));
+            let row = pens(&cells, frame.top, None, &[(hit, true)], foreground);
+            assert_eq!(row[1].3, Some(selection_fill()));
         });
+    }
+
+    /// Draws a frame as the platform's frame loop would.
+    fn frame(cx: &mut gpui::TestAppContext, window: gpui::WindowHandle<Terminal>) {
+        cx.update_window(window.into(), |_, w, cx| {
+            w.simulate_next_frame(cx);
+            w.draw(cx).clear(cx);
+        })
+        .unwrap();
+    }
+
+    /// The engine's terminal's events, as its watch delivers them.
+    fn events(events: Vec<HostEvent>) -> WatchUpdate<TerminalState, HostEvent> {
+        WatchUpdate::Events(events)
+    }
+
+    /// The mirror's columns and rows are the size's.
+    fn shows(terminal: &Terminal, size: TerminalSize) -> bool {
+        terminal.mirror.size() == (size.cols, size.rows)
+    }
+
+    #[gpui::test]
+    fn a_window_resize_relays_the_grid_out_in_the_same_frame(cx: &mut gpui::TestAppContext) {
+        let window = cx.update(|cx| {
+            cx.open_window(Default::default(), |_, cx| {
+                cx.new(|cx| Terminal::new("/tmp".into(), cx))
+            })
+            .unwrap()
+        });
+        // As with an engine behind it, the mirror's size is the engine's to give.
+        window
+            .update(cx, |terminal, _, _| terminal.follows_host = true)
+            .unwrap();
+        frame(cx, window);
+
+        // The frame that sees the new window size paints the grid at it, ahead of the engine.
+        cx.simulate_window_resize(window.into(), size(px(420.), px(260.)));
+        frame(cx, window);
+        let asked = window
+            .update(cx, |terminal, _, _| {
+                let asked = terminal.size;
+                assert!(shows(terminal, asked), "relaid out in the same frame");
+                assert!(terminal.mirror.ahead());
+                assert_eq!(terminal.unanswered, Some(asked));
+                asked
+            })
+            .unwrap();
+
+        // Output that crossed the resize on its way, then the engine taking the size, settle it
+        // to the engine's terminal.
+        window
+            .update(cx, |terminal, _, cx| {
+                terminal.settled(asked, Some(asked), cx);
+                assert!(
+                    terminal.mirror.ahead(),
+                    "the watch has yet to reach the resize"
+                );
+                assert_eq!(terminal.unanswered, None);
+                let output = HostEvent::Output(Bytes(b"hi".to_vec()));
+                terminal.apply(events(vec![output, HostEvent::Resized(asked)]), cx);
+                assert!(!terminal.mirror.ahead());
+                assert!(shows(terminal, asked));
+                terminal.mirror.select_all();
+                let text = terminal.mirror.selection_text().unwrap();
+                assert!(text.contains("hi"), "{text}");
+                terminal.mirror.clear_selection();
+            })
+            .unwrap();
+        frame(cx, window);
+
+        // A size the PTY does not take, as another viewer typed last, gives the engine's grid
+        // back.
+        cx.simulate_window_resize(window.into(), size(px(600.), px(400.)));
+        frame(cx, window);
+        window
+            .update(cx, |terminal, _, cx| {
+                let wanted = terminal.size;
+                assert_ne!((wanted.cols, wanted.rows), (asked.cols, asked.rows));
+                assert!(shows(terminal, wanted), "relaid out in the same frame");
+                terminal.settled(wanted, Some(asked), cx);
+                assert!(!terminal.mirror.ahead());
+                assert!(shows(terminal, asked), "the PTY's grid shows again");
+                assert_eq!(terminal.unanswered, None);
+                terminal.mirror.select_all();
+                let text = terminal.mirror.selection_text().unwrap();
+                assert!(text.contains("hi"), "{text}");
+                terminal.mirror.clear_selection();
+            })
+            .unwrap();
+
+        // Later frames at the same window size keep the engine's grid: nothing is guessed.
+        cx.executor().advance_clock(Duration::from_secs(1));
+        cx.run_until_parked();
+        frame(cx, window);
+        window
+            .update(cx, |terminal, _, _| {
+                assert!(!terminal.mirror.ahead());
+                assert!(shows(terminal, asked));
+            })
+            .unwrap();
     }
 
     #[test]

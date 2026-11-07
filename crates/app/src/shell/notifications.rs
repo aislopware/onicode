@@ -93,7 +93,15 @@ impl State {
             updater: updater::shared(cx),
             file_error: cx.new(|_| FileActionError::new()),
             reminder_error: None,
-            agent_alerts: crate::notifications::agent_alerts::AgentAlerts::new(&engine),
+            agent_alerts: {
+                // As the app quits, the engines hear this window posts nothing more, so their
+                // own banners take over at once.
+                cx.on_app_quit(|shell: &mut Shell, _| {
+                    shell.notification_state.agent_alerts.closing()
+                })
+                .detach();
+                crate::notifications::agent_alerts::AgentAlerts::new(&engine)
+            },
             github: cx.new(|_| GithubActivity::new(engine, HashMap::new())),
             linked: HashMap::new(),
             linked_cleanup: HashMap::new(),
@@ -590,23 +598,27 @@ impl Shell {
         self.sync_agent_alerts(cx);
     }
 
-    /// Tells the engine's alerts what the window shows and what the owner allows, and posts
-    /// what they raised since.
+    /// Tells the engines' alerts what the window shows and what the owner muted, and posts
+    /// what they raised since: the app's own engine's, and every other engine's whose projects
+    /// the window shows.
     fn sync_agent_alerts(&mut self, cx: &mut Context<Self>) {
-        let now = onicode_protocol::time::now_ms();
         let prefs = &self.workspace.preferences;
+        let on_screen = self
+            .workspace
+            .active
+            .filter(|id| self.notice_session_visible(*id))
+            .map(|id| {
+                let engine = self.session_engine(id);
+                (engine.target().cloned(), engine.row(id))
+            });
         let policy = crate::notifications::agent_alerts::Policy {
             enabled: prefs.notifications,
             sound: prefs.sounds,
             permission: self.notification_state.permission,
             window_focused: self.window_active,
-            on_screen: self
-                .workspace
-                .active
-                .filter(|id| self.notice_session_visible(*id)),
-            allows: &|project, category| {
-                prefs.allows_project_notification(project, category, Some(now), now)
-            },
+            on_screen,
+            peers: self.followed_peers(),
+            mutes: crate::notifications::agent_alerts::mutes(prefs),
         };
         self.notification_state.agent_alerts.sync(&policy, cx);
     }

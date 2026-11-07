@@ -26,31 +26,14 @@ pub(crate) const CATEGORIES: [(&str, &str); 5] = [
     ("reminders", "Reminders"),
 ];
 fn path_key(path: &str) -> String {
-    let windows =
-        path.as_bytes().get(1) == Some(&b':') || path.starts_with("\\\\") || path.starts_with("//");
-    let normalized = if windows {
-        path.replace('\\', "/")
-    } else {
-        path.to_owned()
-    };
-    let normalized = normalized.trim_end_matches('/');
-    if normalized.is_empty() {
-        return "/".into();
-    }
-    if windows {
-        normalized.to_lowercase()
-    } else {
-        normalized.into()
-    }
+    onicode_protocol::files::path_key(path)
 }
 fn looks_like_project(path: &str) -> bool {
     let key = path_key(path);
     !path.is_empty()
         && key != "/"
         && key != "~"
-        && !(key.len() == 2 && key.ends_with(':'))
         && !path.contains(".app/")
-        && !path.contains(".app\\")
         && std::env::var("HOME")
             .ok()
             .is_none_or(|home| path_key(&home) != key)

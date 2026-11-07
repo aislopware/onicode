@@ -22,7 +22,7 @@ use onicode_desktop_link::broker::DesktopEndpoint;
 use onicode_desktop_link::order::Numberer;
 use onicode_desktop_link::{Clip, Down, HostGrants, Pane, Seat, Up, WIRE};
 use onicode_desktop_proto::DisplayId;
-use onicode_desktop_proto::clipboard::PasteAccess;
+use onicode_desktop_proto::clipboard::{PasteAccess, Withheld};
 use onicode_desktop_proto::screen::{
     CaptureTarget, CursorShape, CurtainState, DisplayInfo, DisplayKey, DisplayShape, OpenAsk,
     Quality, ScreenEvent, ScreenFailure, ScreenInput, ScreenRequest, SourceState, StreamId,
@@ -156,6 +156,19 @@ pub struct SessionState {
     /// Whether the Mac may read its pasteboard unasked (Paste from Other Apps for Onicode
     /// Desktop), as it last said while its clipboard followed this window; `None` before.
     pub paste: Option<PasteAccess>,
+    /// The newest copy that stays on its Mac past the clipboard's caps, this device's or the
+    /// Mac's, while it is that end's newest copy; `None` once a copy within them follows.
+    pub clipboard_kept: Option<KeptCopy>,
+}
+
+/// A copy that stays on its Mac, whole or in part, for being past the clipboard's caps (16 MiB
+/// of bytes, 16 MiB of files) or naming a folder.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct KeptCopy {
+    /// It was copied on this device; else on the Mac.
+    pub here: bool,
+    /// The size of what stays, in bytes; `None` for a folder.
+    pub size: Option<u64>,
 }
 
 impl SessionState {
@@ -171,6 +184,7 @@ impl SessionState {
             failure: None,
             input_refused: false,
             paste: None,
+            clipboard_kept: None,
         }
     }
 
@@ -218,6 +232,10 @@ pub(crate) struct Book {
     pub(crate) wanted: Vec<Want>,
     /// `ScreenEvent::Display` comes before its `Opened`.
     made: HashMap<StreamId, (DisplayKey, VirtualDisplay)>,
+    /// This device's newest copy, while it stays here past the caps.
+    kept_here: Option<Withheld>,
+    /// The Mac's newest copy, while it stays there past the caps, as the Mac last said.
+    kept_there: Option<Withheld>,
 }
 
 impl Book {
@@ -226,7 +244,26 @@ impl Book {
             state: SessionState::new(endpoint),
             wanted: Vec::new(),
             made: HashMap::new(),
+            kept_here: None,
+            kept_there: None,
         }
+    }
+
+    /// Whether this device's newest copy stays here past the caps, as its clipboard says.
+    pub(crate) fn kept_here(&mut self, withheld: Option<Withheld>) {
+        self.kept_here = withheld;
+        self.kept();
+    }
+
+    /// The state's copy that stays home: the later of this device's and the Mac's.
+    fn kept(&mut self) {
+        let here = self.kept_here.map(|held| (held.at, true, held.size));
+        let there = self.kept_there.map(|held| (held.at, false, held.size));
+        self.state.clipboard_kept = match (here, there) {
+            (Some(here), Some(there)) => Some(if there.0 > here.0 { there } else { here }),
+            (here, there) => here.or(there),
+        }
+        .map(|(_, here, size)| KeptCopy { here, size });
     }
 
     /// The link dropped: nothing is open over it any more.
@@ -238,6 +275,9 @@ impl Book {
         self.state.streams.clear();
         self.state.curtain = None;
         self.state.paste = None;
+        // The Mac says again once it follows over the next link.
+        self.kept_there = None;
+        self.kept();
     }
 
     /// A view asked for `open`: the request to send, or `None` when it is wanted already. A
@@ -304,6 +344,11 @@ impl Book {
             }
             Down::Clip(Clip::Access(access)) => {
                 state.paste = Some(access);
+                Vec::new()
+            }
+            Down::Clip(Clip::Withheld(withheld)) => {
+                self.kept_there = withheld;
+                self.kept();
                 Vec::new()
             }
             Down::Clip(clip) => vec![Effect::Clip(clip)],
@@ -512,6 +557,7 @@ impl<D: VideoDecode> DesktopSession<D> {
             runtime: runtime.clone(),
             clipboard: None,
             clipboard_focused: false,
+            withheld: None,
         };
         drop(runtime.spawn(task.run()));
         Self {
@@ -629,6 +675,17 @@ struct Task<D: VideoDecode> {
     clipboard: Option<onicode_clipboard::Hub>,
     /// The window has focus: the clipboard follows the Mac while it does.
     clipboard_focused: bool,
+    /// Whether this device's newest copy stays here past the caps, from its clipboard.
+    withheld: Option<watch::Receiver<Option<Withheld>>>,
+}
+
+/// The next change of whether this device's newest copy stays here; `false` once its clipboard
+/// is gone, and never while the session follows none.
+async fn withheld_changed(withheld: &mut Option<watch::Receiver<Option<Withheld>>>) -> bool {
+    match withheld {
+        Some(withheld) => withheld.changed().await.is_ok(),
+        None => std::future::pending().await,
+    }
 }
 
 /// One link's own state. Stream ids are the link's, so each link routes on a router of its
@@ -700,6 +757,25 @@ impl<D: VideoDecode> Task<D> {
         self.publish();
     }
 
+    /// Follows `hub`, this device's clipboard, or none.
+    fn set_clipboard(&mut self, hub: Option<onicode_clipboard::Hub>) {
+        self.withheld = hub.as_ref().map(|hub| hub.clipboard().withheld());
+        self.clipboard = hub;
+        self.take_withheld();
+    }
+
+    /// Takes in whether this device's newest copy stays here, while the window has focus: the
+    /// clipboard follows this session then, so a copy that stays is one the Mac did not get.
+    fn take_withheld(&mut self) {
+        let Some(withheld) = self.withheld.as_mut() else {
+            return;
+        };
+        let now = *withheld.borrow_and_update();
+        if self.clipboard_focused {
+            self.book.kept_here(now);
+        }
+    }
+
     fn close(&mut self, reason: String) {
         self.book.unlinked();
         self.screens.lock().clear();
@@ -723,8 +799,11 @@ impl<D: VideoDecode> Task<D> {
             } => self.want_shape(stream, width, height, scale),
             Command::Control(take) => self.join.control = take,
             Command::Sound(on) => self.join.sound = on,
-            Command::Clipboard(hub) => self.clipboard = hub,
-            Command::ClipboardFocus(focused) => self.clipboard_focused = focused,
+            Command::Clipboard(hub) => self.set_clipboard(hub),
+            Command::ClipboardFocus(focused) => {
+                self.clipboard_focused = focused;
+                self.take_withheld();
+            }
             Command::Input(..) | Command::Curtain(_) => {}
             Command::Shutdown => return Some("shut down".into()),
         }
@@ -833,6 +912,14 @@ impl<D: VideoDecode> Task<D> {
                         if let Some(ended) = self.command(linked, command) {
                             return ended;
                         }
+                    }
+                    self.publish();
+                }
+                changed = withheld_changed(&mut self.withheld) => {
+                    if changed {
+                        self.take_withheld();
+                    } else {
+                        self.withheld = None;
                     }
                     self.publish();
                 }
@@ -990,7 +1077,7 @@ impl<D: VideoDecode> Task<D> {
             }
             Command::Curtain(on) => Up::Screen(ScreenRequest::Curtain { on }),
             Command::Clipboard(hub) => {
-                self.clipboard = hub;
+                self.set_clipboard(hub);
                 if let Some(old) = linked.clip.take() {
                     let _told = old.focus(false);
                 }
@@ -1002,6 +1089,7 @@ impl<D: VideoDecode> Task<D> {
                     return None;
                 }
                 self.clipboard_focused = focused;
+                self.take_withheld();
                 return self.clipboard_focus(linked);
             }
             Command::Shutdown => return Some(Ended::Closed("shut down".into())),

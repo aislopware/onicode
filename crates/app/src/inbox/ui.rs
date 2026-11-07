@@ -2792,6 +2792,73 @@ mod tests {
             })
             .unwrap();
     }
+    /// A project on another Mac is listed through the repositories its engine reads there:
+    /// asked of that engine once, then handed to this engine's listing with the project as the
+    /// app spells it; while that engine is away the local projects still list.
+    #[gpui::test]
+    fn a_peer_project_is_listed_through_the_repositories_its_engine_reads(cx: &mut TestAppContext) {
+        let window = fixture(cx);
+        let here = PathBuf::from("/work/a");
+        let api = PathBuf::from("peer://nStudio/Users/me/api");
+        let calls = |window: WindowHandle<Fixture>, cx: &mut TestAppContext| {
+            window
+                .update(cx, |fixture, _, cx| {
+                    let engine = fixture.inbox.read(cx).engine.clone();
+                    crate::engine_client::calls_for_test(&engine, cx)
+                })
+                .unwrap()
+        };
+        window
+            .update(cx, |fixture, _, cx| {
+                fixture.inbox.update(cx, |inbox, cx| {
+                    inbox.set_context(vec![here.clone(), api.clone()], here.clone(), cx);
+                });
+            })
+            .unwrap();
+        cx.run_until_parked();
+        let first = calls(window, cx);
+        let (_, asked) = first
+            .iter()
+            .find(|(name, _)| *name == "InboxRepos")
+            .expect("the studio is asked for its checkout's repositories");
+        assert_eq!(asked["engine"], "nStudio");
+        assert_eq!(asked["body"]["project"], "/Users/me/api");
+        let (_, listed) = first
+            .iter()
+            .rfind(|(name, _)| *name == "InboxList")
+            .expect("a listing");
+        assert_eq!(listed["engine"], serde_json::Value::Null);
+        assert_eq!(listed["body"]["projects"], serde_json::json!(["/work/a"]));
+        assert_eq!(
+            listed["body"]["elsewhere"],
+            serde_json::json!([]),
+            "the studio is away"
+        );
+
+        // Once the studio has answered, its repositories ride along without asking again.
+        window
+            .update(cx, |fixture, _, cx| {
+                fixture.inbox.update(cx, |inbox, cx| {
+                    inbox
+                        .peer_repos
+                        .insert(api.clone(), vec!["acme/api".into()]);
+                    inbox.refresh(cx);
+                });
+            })
+            .unwrap();
+        cx.run_until_parked();
+        let second = calls(window, cx);
+        let fresh = &second[first.len()..];
+        assert!(fresh.iter().all(|(name, _)| *name != "InboxRepos"));
+        let (_, listed) = fresh
+            .iter()
+            .rfind(|(name, _)| *name == "InboxList")
+            .expect("a listing");
+        assert_eq!(
+            listed["body"]["elsewhere"],
+            serde_json::json!([{"project": "peer://nStudio/Users/me/api", "repos": ["acme/api"]}])
+        );
+    }
     #[gpui::test]
     fn long_discussion_materializes_only_viewport_comments_and_reply_focus_reaches_composer(
         cx: &mut TestAppContext,

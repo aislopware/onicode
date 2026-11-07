@@ -81,6 +81,8 @@ Announce and fetch:
   the cap stays home; the app's next-ranked type may still go.
 - Regular files of 16 MiB or less in all are fetched into a cache folder before the copy is written. Bigger
   files and folders stay home.
+- A copy that stays home past the caps is said where the owner is looking: the desktop window shows one line
+  naming which Mac kept it and why, until a copy within the caps follows (`remote-desktop.md`).
 
 Loops and focus:
 - A received item is written with onicode's origin type and `currentHostOnly`. Its `changeCount` is

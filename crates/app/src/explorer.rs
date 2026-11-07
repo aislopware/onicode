@@ -320,6 +320,12 @@ pub(crate) fn open_with_default_app(path: &Path, cx: &App) -> Result<(), String>
     Ok(())
 }
 
+/// `path` as its own machine names it, for the clipboard: a file of another engine loses its
+/// `peer://` scheme and engine, so it pastes into that machine's terminal or agent as a path.
+fn copied_path(path: &str) -> String {
+    onicode_protocol::ProjectRef::parse_uri(path).map_or_else(|| path.to_owned(), |file| file.path)
+}
+
 /// A file that is gone, or one on another engine, has nothing to show here.
 fn on_this_mac(path: &Path) -> Result<(), String> {
     if path
@@ -1615,6 +1621,8 @@ impl Explorer {
                 && (paste_parent == c.path || paste_parent.starts_with(&format!("{}/", c.path)))
         });
         let root = target.root;
+        // Finder shows only this Mac's files.
+        let elsewhere = onicode_protocol::ProjectRef::parse_uri(&target.path).is_some();
         let items: Vec<MenuItem> = vec![
             MenuAction::new("new-file", "New File").into(),
             MenuAction::new("new-folder", "New Folder").into(),
@@ -1650,7 +1658,9 @@ impl Explorer {
                 .danger()
                 .into(),
             MenuItem::Separator,
-            MenuAction::new("reveal", REVEAL_LABEL).into(),
+            MenuAction::new("reveal", REVEAL_LABEL)
+                .disabled(elsewhere)
+                .into(),
         ];
         self.menu = None;
         let menu = cx.new(|cx| Menu::new("File actions", items, window, cx));
@@ -1692,7 +1702,9 @@ impl Explorer {
             }
             "paste" => self.paste(target.path, window, cx),
             "duplicate" => self.duplicate(target.path, window, cx),
-            "copy-path" => cx.write_to_clipboard(ClipboardItem::new_string(target.path)),
+            "copy-path" => {
+                cx.write_to_clipboard(ClipboardItem::new_string(copied_path(&target.path)));
+            }
             "copy-relative-path" => cx.write_to_clipboard(ClipboardItem::new_string(
                 files::display_path(&target.path, Some(&self.cwd)),
             )),
@@ -2181,7 +2193,7 @@ impl Render for Explorer {
             }))
             .on_action(cx.listener(|this, _: &CopyPath, _, cx| {
                 let (path, _) = this.current();
-                cx.write_to_clipboard(ClipboardItem::new_string(path));
+                cx.write_to_clipboard(ClipboardItem::new_string(copied_path(&path)));
             }))
             .on_mouse_down(
                 MouseButton::Right,
@@ -2367,6 +2379,22 @@ mod tests {
     use gpui::{TestAppContext, VisualTestContext};
 
     use super::*;
+
+    /// Copy Path gives a path the machine that holds the file can use: another engine's file
+    /// as that engine names it, never as its `peer://` URI.
+    #[test]
+    fn a_copied_path_is_spelled_as_its_machine_names_it() {
+        assert_eq!(copied_path("/code/a.rs"), "/code/a.rs");
+        let on = |path: &str| {
+            onicode_protocol::ProjectRef {
+                engine: onicode_protocol::EngineId("nMac".into()),
+                path: path.into(),
+            }
+            .uri()
+        };
+        assert_eq!(copied_path(&on("/code/a.rs")), "/code/a.rs");
+        assert_eq!(copied_path(&on("~/notes.md")), "~/notes.md");
+    }
 
     /// What another engine answers names its own paths; the explorer keeps them as the app
     /// spells that engine's project, and the app's own engine's paths stay as they are.

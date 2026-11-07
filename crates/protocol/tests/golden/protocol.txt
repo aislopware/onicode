@@ -1,4 +1,4 @@
-protocol 13
+protocol 14
 call Hello agent params=e9de24ac3b14849e reply=e9de24ac3b14849e
 call EngineInfo agent params=fa64ac005d4e6ec1 reply=ea30e297db7e7c2b
 call UpdateEngine params=76bcbe41f03a0f3d reply=caf76c905cccc628
@@ -102,7 +102,7 @@ call ReadSessionChanges params=d71c7d5da3072015 reply=65590ad5b81e0f53
 watch WatchTerminal params=1964b46e05ecf27c state=86e0d0b0d88e82ac event=de96d766871d9a1e
 call OpenTerminal params=5a2a1f2eb13d34d1 reply=7f1413ca67169f9d
 call ListTerminals params=2532f7535c76d741 reply=7a39528007ac5562
-call ResizeTerminal params=01d7d91f0683fb07 reply=5b317dbd01f7735e
+call ResizeTerminal params=01d7d91f0683fb07 reply=2b7d2288ffa29560
 call CloseTerminal params=91918568a5684d28 reply=5b317dbd01f7735e
 call TerminalInput params=4d21d5249e718507 reply=5b317dbd01f7735e
 call ReadForeground params=27fe7a453007b002 reply=6fc7314745702fb1
@@ -138,7 +138,8 @@ call TransferThread params=ae1c3c9e61e4c1be reply=dabc9bbc9da563e9
 call ForgetThread params=3dbe995a766bb2d2 reply=5b317dbd01f7735e
 watch WatchEngineSettings params=dee5fb3f1b5d31d4 state=98fb9fb91b3a9f97 event=b9564c696d81da53
 call SetEngineSetting params=1240aaf24281eeb0 reply=5b317dbd01f7735e
-call InboxList params=3ab2b5db4fc1f7d6 reply=3bdfed6f63b71216
+call InboxList params=935dea6ab128f026 reply=3bdfed6f63b71216
+call InboxRepos params=9cffcbdb9639025f reply=44accd26aa668a15
 call ReadInboxDetails params=025a74311fd9f6e3 reply=c29a7856798cfad6
 call ReadInboxThread params=5d2e56ab48a8b2ef reply=8e41a1688254c674
 call ReadInboxDiff params=be1ab739851c6b59 reply=7661bc914f14a75e
@@ -160,7 +161,7 @@ call ReadWorkItem params=7e76cdf86e9ebd28 reply=61ff683a3a5b6d1d
 call ReadWorkItemDetails params=6d6167c7df366578 reply=c29a7856798cfad6
 call ReadWorktreeMarks params=1583b1d6f3a6a742 reply=12a5dc8c3991ab5a
 watch WatchAlerts params=38e8710f646c3d78 state=0e31d2ac03d66c4d event=0fb8cca1c2fdadad
-call SetViewportFocus params=4bd88ed40b33d30d reply=5b317dbd01f7735e
+call SetViewportFocus params=a52ea7971fb86315 reply=5b317dbd01f7735e
 call OpenDesktop params=78de4e276534124d reply=c1cc399dcc37080a
 call DesktopGrants params=87772ab417b853f5 reply=dba267003d8402ae
 call DesktopOpenGuide params=d874d166cc8636f2 reply=ff1807e4020488fb

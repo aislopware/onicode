@@ -315,6 +315,8 @@ struct Snapshot {
     input_refused: bool,
     /// Whether the Mac may read its clipboard unasked, as it said while following this window.
     paste: Option<onicode_clipboard::PasteAccess>,
+    /// The newest copy that stays on its Mac past the clipboard's caps.
+    clipboard_kept: Option<onicode_desktop_client::KeptCopy>,
 }
 
 impl Snapshot {
@@ -347,6 +349,7 @@ impl Snapshot {
             failure: state.failure.clone(),
             input_refused: state.input_refused,
             paste: state.paste,
+            clipboard_kept: state.clipboard_kept,
         }
     }
 }
@@ -1744,6 +1747,9 @@ impl DesktopView {
                     )
                     .into_any_element(),
             );
+        }
+        if let Some(text) = clipboard::kept_banner(self.snap.clipboard_kept, &host) {
+            banners.push(banner("desktop-clipboard-kept", text).into_any_element());
         }
         if self.grab_refused == Some(Refused::NeedsAccessibility) {
             banners.push(

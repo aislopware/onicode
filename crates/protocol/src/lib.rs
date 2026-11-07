@@ -30,7 +30,7 @@ pub use ids::{EngineId, MessageId, OpId, ProjectRef, SessionId, SessionKey, Term
 /// The protocol's version. Peers with different values answer each other only the calls whose
 /// shapes are frozen: [`engine::Hello`], [`engine::EngineInfo`] and [`engine::UpdateEngine`].
 /// Separate from net's `WIRE`, so a mismatch can still say "Needs update".
-pub const PROTOCOL: u32 = 13;
+pub const PROTOCOL: u32 = 14;
 
 /// One request and its reply.
 pub trait Call {
@@ -292,6 +292,7 @@ pub const METHODS: &[Method] = &[
     call::<engine_settings::SetEngineSetting>(),
     // Work.
     call::<work::InboxList>(),
+    call::<work::InboxRepos>(),
     call::<work::ReadInboxDetails>(),
     call::<work::ReadInboxThread>(),
     call::<work::ReadInboxDiff>(),

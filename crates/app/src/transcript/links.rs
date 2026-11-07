@@ -59,16 +59,20 @@ impl Target {
                 MenuAction::new("open-web", "Open Link").into(),
                 MenuAction::new("copy-link", "Copy Link Address").into(),
             ],
-            Self::File { base, .. } => {
+            Self::File { path, base, .. } => {
                 let reveal = if cfg!(target_os = "macos") {
                     "Reveal in Finder"
                 } else {
                     "Open Containing Folder"
                 };
+                // This Mac's apps and Finder open only this Mac's files.
+                let elsewhere = onicode_protocol::ProjectRef::parse_uri(path).is_some();
                 let mut items = vec![
                     MenuAction::new("open-monocode", "Open in Onicode").into(),
-                    MenuAction::new("open-default", "Open in Default App").into(),
-                    MenuAction::new("reveal", reveal).into(),
+                    MenuAction::new("open-default", "Open in Default App")
+                        .disabled(elsewhere)
+                        .into(),
+                    MenuAction::new("reveal", reveal).disabled(elsewhere).into(),
                     MenuItem::Separator,
                     MenuAction::new("copy-path", "Copy Path").into(),
                 ];

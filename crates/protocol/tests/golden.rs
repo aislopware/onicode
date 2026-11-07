@@ -376,6 +376,7 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<engine_settings::SetEngineSetting>();
     // Work.
     shapes.call::<onicode_protocol::work::InboxList>();
+    shapes.call::<onicode_protocol::work::InboxRepos>();
     shapes.call::<onicode_protocol::work::ReadInboxDetails>();
     shapes.call::<onicode_protocol::work::ReadInboxThread>();
     shapes.call::<onicode_protocol::work::ReadInboxDiff>();

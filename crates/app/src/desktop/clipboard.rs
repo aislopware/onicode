@@ -12,8 +12,10 @@
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 
-use onicode_clipboard::{ClipboardSettings, Hub, HubConfig, MacBoard, PasteAccess, SystemClock};
-use onicode_desktop_client::DesktopSession;
+use onicode_clipboard::{
+    ClipboardSettings, Hub, HubConfig, MacBoard, PasteAccess, SEND_MAX, SystemClock,
+};
+use onicode_desktop_client::{DesktopSession, KeptCopy};
 
 /// The app's one hub on the general pasteboard.
 static HUB: OnceLock<Hub> = OnceLock::new();
@@ -70,9 +72,50 @@ pub(super) fn paste_banner(paste: Option<PasteAccess>, host: &str) -> Option<Str
     }
 }
 
+/// The line that says a copy did not travel for being past the clipboard's caps, while it is
+/// its Mac's newest copy; `None` once a copy within them follows.
+pub(super) fn kept_banner(kept: Option<KeptCopy>, host: &str) -> Option<String> {
+    let kept = kept?;
+    let cap = SEND_MAX >> 20;
+    Some(match (kept.here, kept.size) {
+        (true, Some(size)) => format!(
+            "Your {} MB copy stays on this Mac: the clipboard carries up to {cap} MB to {host}.",
+            size.div_ceil(1 << 20)
+        ),
+        (true, None) => {
+            format!("Folders you copy stay on this Mac: the clipboard carries files to {host}.")
+        }
+        (false, Some(size)) => format!(
+            "The {} MB copy on {host} stays there: the clipboard carries up to {cap} MB.",
+            size.div_ceil(1 << 20)
+        ),
+        (false, None) => {
+            format!("Folders copied on {host} stay there: the clipboard carries files.")
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_copy_past_the_cap_says_where_it_stays_and_why() {
+        assert_eq!(kept_banner(None, "mac-studio"), None);
+        let said = |here, size| {
+            kept_banner(Some(KeptCopy { here, size }), "mac-studio").expect("a notice")
+        };
+        assert_eq!(
+            said(true, Some((20 << 20) + 1)),
+            "Your 21 MB copy stays on this Mac: the clipboard carries up to 16 MB to mac-studio."
+        );
+        assert_eq!(
+            said(false, Some(17 << 20)),
+            "The 17 MB copy on mac-studio stays there: the clipboard carries up to 16 MB."
+        );
+        assert!(said(true, None).starts_with("Folders you copy stay on this Mac"));
+        assert!(said(false, None).contains("on mac-studio stay there"));
+    }
 
     #[test]
     fn the_banner_shows_until_the_host_allows() {

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::automations::{Automation, AutomationRun, AutomationUpsert, DueAutomationRun};
 use crate::files::Bytes;
-use crate::inbox::{Checks, Details, Diff, Item, Status, Thread, ViewState};
+use crate::inbox::{Checks, Details, Diff, Item, ProjectRepos, Status, Thread, ViewState};
 use crate::sessions::{Groups, Session, WorkItem};
 use crate::{Call, Outcome};
 
@@ -31,10 +31,14 @@ macro_rules! work_call {
 
 /// List the GitHub items of `projects`, as `state`'s filters ask. `cwd` is the
 /// checkout `gh` runs in, and goes first when two checkouts share a repository.
+/// `elsewhere` are projects other engines hold, with the repositories each said it checks out
+/// ([`InboxRepos`]): their items are fetched here as a local project's are, each item naming
+/// its project as the viewer spelled it.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct InboxList {
     pub cwd: PathBuf,
     pub projects: Vec<PathBuf>,
+    pub elsewhere: Vec<ProjectRepos>,
     pub state: ViewState,
 }
 
@@ -48,6 +52,15 @@ pub struct InboxListing {
     pub sessions: Vec<Session>,
 }
 work_call!(InboxList, reply: InboxListing);
+
+/// The GitHub repositories the checkout at `project` belongs to (its own, then the one it was
+/// forked from), read with `gh` where the checkout is: what a viewer hands another engine's
+/// [`InboxList`] as `elsewhere` for a project this engine holds.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct InboxRepos {
+    pub project: PathBuf,
+}
+work_call!(InboxRepos, reply: Vec<String>);
 
 /// An item's description and review state.
 #[derive(Clone, Debug, Serialize, Deserialize)]

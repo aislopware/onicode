@@ -5,11 +5,14 @@
 //! watcher that joins gets a snapshot as of exactly the cursor it starts from and then the bytes
 //! after it; the topic's ring is the output ring a returning watcher resumes from. A watcher gets
 //! its snapshot in two items, the renderable prefix and then the history behind it, so a far
-//! viewer paints before a long scrollback has crossed the link.
+//! viewer paints before a long scrollback has crossed the link. The prefix's cursor cannot be
+//! resumed from until the history has arrived ([`HISTORY_PENDING`]): a link that drops between the
+//! two brings a whole new snapshot, never a screen without its scrollback.
 //!
-//! The PTY takes the size of the viewer that typed last ([`viewers`]). The program's OSC 7501
-//! status rides the topic as [`TerminalEvent::Status`], and every change of any terminal's goes
-//! out on [`TerminalHub::statuses`] for whatever alerts on it.
+//! The PTY takes the size of the viewer that typed last ([`viewers`]), and a resize answers with
+//! the size the PTY has after it. The program's OSC 7501 status rides the topic as
+//! [`TerminalEvent::Status`], and every change of any terminal's goes out on
+//! [`TerminalHub::statuses`] for whatever alerts on it.
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak, mpsc};
@@ -18,11 +21,11 @@ use std::time::Duration;
 use futures::StreamExt;
 use futures::stream::BoxStream;
 use onicode_protocol::terminal::{
-    Bytes, CloseTerminal, OpenTerminal, ProgramStatus, ReadForeground, ResizeTerminal,
-    StopForeground, TerminalEvent, TerminalInput, TerminalSize, TerminalState, TerminalSummary,
-    WatchTerminal,
+    Bytes, CloseTerminal, HISTORY_PENDING, OpenTerminal, ProgramStatus, ReadForeground,
+    ResizeTerminal, StopForeground, TerminalEvent, TerminalInput, TerminalSize, TerminalState,
+    TerminalSummary, WatchTerminal,
 };
-use onicode_protocol::{Item, Outcome, TerminalId};
+use onicode_protocol::{Cursor, Item, Outcome, TerminalId};
 use onicode_term::host::Host;
 use onicode_term::pty::{self, NativePty, Process, Spawned, Spawner, Spec};
 use onicode_term::{label, shell, snapshot};
@@ -457,14 +460,15 @@ impl TerminalHub {
     }
 
     /// `ResizeTerminal`: the viewer's grid, which the PTY, the host and every watcher take, in
-    /// that order in the stream, when the PTY follows that viewer.
-    pub fn resize(&self, params: ResizeTerminal) -> Result<Outcome, String> {
+    /// that order in the stream, when the PTY follows that viewer. Answers the PTY's size after
+    /// it, so the viewer knows whether its own size won.
+    pub fn resize(&self, params: ResizeTerminal) -> Result<TerminalSize, String> {
         let live = self.get(params.terminal)?;
         let mut live = lock(&live);
         if let Some(size) = live.viewers.sized(params.viewer, params.size) {
             live.apply_size(size);
         }
-        Ok(Outcome::Applied)
+        Ok(live.host.size())
     }
 
     /// `CloseTerminal`: hangs up the shell and its job, and forgets the terminal.
@@ -513,7 +517,10 @@ impl TerminalHub {
 }
 
 /// A snapshot item as two: the snapshot through READY, which paints, and its history in an
-/// `Events` item that covers no numbers, so the cursor, the ring and resuming see one snapshot.
+/// `Events` item that covers no numbers, so the ring and resuming see one snapshot. The first
+/// item's cursor holds [`HISTORY_PENDING`] and the second's `last` the snapshot's own number:
+/// whoever resumes this watch (the app, or an engine forwarding it to another over the tailnet)
+/// resumes from the snapshot only once its history has come, and starts over before that.
 fn split_snapshot(
     item: Item<TerminalState, TerminalEvent>,
 ) -> Vec<Item<TerminalState, TerminalEvent>> {
@@ -525,8 +532,12 @@ fn split_snapshot(
     }
     let (prefix, history) = snapshot::split(std::mem::take(&mut state.screen.0));
     state.screen = Bytes(prefix);
+    let pending = Cursor {
+        epoch: at.epoch,
+        seq: HISTORY_PENDING,
+    };
     vec![
-        Item::Snapshot { at, state },
+        Item::Snapshot { at: pending, state },
         Item::Events {
             first: at.seq + 1,
             last: at.seq,

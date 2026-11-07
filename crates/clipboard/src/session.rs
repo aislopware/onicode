@@ -5,6 +5,8 @@
 //! ([`Session::focus`], which tells the host with [`Clip::Focus`]); the host hears it
 //! ([`Session::heard`]) and tells back whether it may read its pasteboard without a prompt
 //! ([`Clip::Access`]), again whenever that changes: until it may, the host's copies stay there.
+//! It also tells whether its newest copy stays there past the caps ([`Clip::Withheld`]), so the
+//! viewer can say why a copy did not arrive.
 //! While it follows, each end's copies go to the other as offers, and the other end's offers are
 //! taken here, newest wins: what did not ride inline is fetched at once through the session the
 //! offer came on ([`Line`]); a fetch from the other end is served only for the offer this session
@@ -256,8 +258,8 @@ impl Session {
                     }
                 });
             }
-            // The viewer reads it from the session's state; nothing to do with it here.
-            Clip::Access(_) => {}
+            // The viewer reads these from the session's state; nothing to do with them here.
+            Clip::Access(_) | Clip::Withheld(_) => {}
         }
     }
 
@@ -280,7 +282,8 @@ impl Session {
     }
 
     /// Start following the other end, or stop. A host that follows because the viewer said so
-    /// (`told`) tells it its pasteboard access, now and on every change.
+    /// (`told`) tells it its pasteboard access and whether its newest copy stays home past the
+    /// caps, now and on every change.
     fn follow(&self, on: bool, told: bool) {
         let clipboard = &self.hub.clipboard;
         let mut following = self.shared.following.lock();
@@ -296,12 +299,34 @@ impl Session {
         let line = Arc::clone(&self.line);
         let shared = Arc::downgrade(&self.shared);
         let access = told.then(|| clipboard.clone());
+        let mut withheld = told.then(|| clipboard.withheld());
         *following = Some(self.hub.runtime.spawn(async move {
             let mut told_access: Option<PasteAccess> = None;
             let mut every = tokio::time::interval(ACCESS_EVERY);
             every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            // Said as following starts, then on every change.
+            let mut tell_withheld = withheld.is_some();
             loop {
+                if tell_withheld && let Some(held) = withheld.as_mut() {
+                    tell_withheld = false;
+                    let now = *held.borrow_and_update();
+                    if !line.say(Clip::Withheld(now)) {
+                        return;
+                    }
+                }
                 tokio::select! {
+                    changed = async {
+                        match withheld.as_mut() {
+                            Some(held) => held.changed().await.is_ok(),
+                            None => std::future::pending().await,
+                        }
+                    } => {
+                        if changed {
+                            tell_withheld = true;
+                        } else {
+                            withheld = None;
+                        }
+                    }
                     offer = offers.next() => {
                         let Some(offer) = offer else { return };
                         let Some(shared) = shared.upgrade() else { return };

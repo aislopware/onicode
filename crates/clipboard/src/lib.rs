@@ -32,6 +32,7 @@ pub use board::{Board, Capped, Held, Item};
 pub use mac::MacBoard;
 pub use onicode_desktop_proto::clipboard::{
     Clip, ClipboardItem, ClipboardOffer, ClipboardType, Fetch, INLINE_MAX, Inline, PasteAccess,
+    Withheld,
 };
 pub use session::{ACCESS_EVERY, Hub, HubConfig, Line, Served, Session};
 pub use sync::{

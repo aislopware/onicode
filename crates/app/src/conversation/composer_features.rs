@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use onicode_protocol::files::{Bytes, NewAttachment, SaveAttachments};
+use onicode_protocol::files::{Bytes, FileContents, NewAttachment, Read, SaveAttachments};
 
 use super::*;
 
@@ -198,7 +198,11 @@ impl Conversation {
         }
         let incoming = std::mem::take(&mut self.pending_attachments);
         self.attaching = true;
-        let work = if self.engine.target().is_some() {
+        let elsewhere = incoming.iter().any(|path| {
+            path.to_str()
+                .is_some_and(|path| onicode_protocol::ProjectRef::parse_uri(path).is_some())
+        });
+        let work = if self.engine.target().is_some() || elsewhere {
             self.carry_attachments(incoming, cx)
         } else {
             let mut all = self.attachments.clone();
@@ -217,11 +221,12 @@ impl Conversation {
         cx.notify();
     }
 
-    /// `incoming`, for a session on another engine, which cannot read this Mac's disk, as that
-    /// engine names them: a file of that engine already (its project's explorer drags one in)
-    /// as it is; one from this Mac read here, its bytes kept with the conversation there under
-    /// its own name (`SaveAttachments`), which checks them against the composer's limits beside
-    /// the attachments it holds. A file of a third engine is refused.
+    /// `incoming`, for a session whose engine cannot read every one of them, as that engine
+    /// names them: a file of that engine already (its project's explorer drags one in) as it
+    /// is; one from this Mac, or from a third engine (read through it as a preview reads it:
+    /// text or an image), carried as its bytes, kept with the conversation there under its own
+    /// name (`SaveAttachments`), which checks them against the composer's limits beside the
+    /// attachments it holds.
     fn carry_attachments(
         &self,
         incoming: Vec<PathBuf>,
@@ -243,7 +248,33 @@ impl Conversation {
                 let spelled = path.to_string_lossy().into_owned();
                 match onicode_protocol::ProjectRef::parse_uri(&spelled) {
                     Some(file) if Some(&file.engine) == engine.target() => there.push(file.path),
-                    Some(_) => return Err("Files on another machine stay on it.".to_owned()),
+                    None if engine.target().is_none() => there.push(spelled),
+                    Some(file) => {
+                        let name = std::path::Path::new(&file.path)
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .ok_or_else(|| format!("{spelled} is not a file."))?;
+                        let read = engine
+                            .on(file.engine)
+                            .call::<Read>(
+                                None,
+                                Read {
+                                    path: file.path,
+                                    unless: None,
+                                },
+                            )
+                            .await?;
+                        let bytes = carried(read, &name)?;
+                        total += bytes.len() as u64;
+                        if total > MAX_EMBED_BYTES {
+                            return Err("Attachments must total 20 MB or less.".to_owned());
+                        }
+                        files.push(NewAttachment {
+                            bytes: Bytes(bytes),
+                            extension: String::new(),
+                            name: Some(name),
+                        });
+                    }
                     None => {
                         let shown = path.display();
                         let meta = path.metadata().map_err(|e| format!("{shown}: {e}"))?;
@@ -483,6 +514,19 @@ impl Conversation {
     }
 }
 
+/// The bytes a file of a third engine is attached with, as that engine read it for a preview:
+/// a text file's text or an image's bytes; anything else says why it stays there.
+fn carried(read: FileContents, name: &str) -> Result<Vec<u8>, String> {
+    match read {
+        FileContents::Image(image) => Ok(image.bytes.0),
+        FileContents::Text(text) => Ok(text.text.into_bytes()),
+        FileContents::Unsupported(reason) => Err(format!("{name}: {reason}")),
+        FileContents::Unchanged | FileContents::Video { .. } => Err(format!(
+            "{name} can be attached only to a chat on the machine that holds it."
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use onicode_protocol::{EngineId, SessionId, SessionKey};
@@ -544,5 +588,53 @@ mod tests {
             assert!(error.contains("offline"), "{error}");
         });
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A file of a third machine, dragged from its project into a chat on another, is read
+    /// through the machine that holds it, as a preview reads it, before its bytes go to the
+    /// chat's; while that machine is away nothing is attached and the composer says why.
+    #[gpui::test]
+    fn a_file_of_a_third_machine_is_read_where_it_is(cx: &mut gpui::TestAppContext) {
+        let local = cx.update(crate::engine_client::Engine::memory);
+        let studio = local.on(EngineId("nStudio".into()));
+        let key = SessionKey {
+            engine: EngineId("nStudio".into()),
+            session: SessionId::new(),
+        };
+        let row = crate::engine_client::peer_row(&key);
+        studio.adopt(row, 7, key.session);
+        let summary = Session {
+            id: row,
+            title: "On the studio".into(),
+            provider: "codex".into(),
+            cwd: "peer://nStudio/Users/me/app".into(),
+            provider_id: None,
+            has_messages: false,
+            updated_at: 1,
+            archived: false,
+            pinned: false,
+            work_item: None,
+        };
+        let view = cx.new(|cx| Conversation::new(summary, studio, cx));
+        view.update(cx, |view, cx| {
+            let laptop = PathBuf::from("peer://nLaptop/Users/me/notes.md");
+            view.add_attachments(vec![laptop], cx);
+        });
+        cx.run_until_parked();
+        let calls = cx.update(|cx| crate::engine_client::calls_for_test(&local, cx));
+        let (_, read) = calls
+            .iter()
+            .find(|(name, params)| *name == "Read" && params["engine"] == "nLaptop")
+            .expect("the file is read on the laptop");
+        assert_eq!(read["body"]["path"], "/Users/me/notes.md");
+        assert!(
+            calls.iter().all(|(name, _)| *name != "SaveAttachments"),
+            "nothing reaches the studio while the laptop is away"
+        );
+        view.read_with(cx, |view, _| {
+            assert!(view.attachments.is_empty(), "{:?}", view.attachments);
+            let error = view.attachment_error.clone().unwrap_or_default();
+            assert!(error.contains("offline"), "{error}");
+        });
     }
 }

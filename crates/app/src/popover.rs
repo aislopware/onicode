@@ -1340,8 +1340,8 @@ impl Menu {
                     .items_center()
                     .gap_3()
                     .rounded(px(8.))
-                    // Not 13px: `truncate` clips to the line box, and Windows'
-                    // Segoe UI lost the bottom of g/y/p at the font's own size.
+                    // Not 13px: `truncate` clips to the line box, and a line box at
+                    // the font's own size can lose the bottom of g/y/p.
                     .line_height(px(16.))
                     .map(|d| {
                         if action.description.is_some() {

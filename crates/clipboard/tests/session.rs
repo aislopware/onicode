@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use onicode_clipboard::types::{CONCEALED_TYPE, ORIGIN_TYPE};
 use onicode_clipboard::{
     Board as _, Clip, ClipboardSettings, Clock, Fetch, Held, Hub, HubConfig, Item, Key, Line, POLL,
-    PasteAccess, Served, Session,
+    PasteAccess, SEND_MAX, Served, Session, Withheld,
 };
 use parking_lot::Mutex;
 
@@ -248,7 +248,7 @@ async fn the_clipboard_follows_the_focused_window_both_ways() {
                 .iter()
                 .filter_map(|clip| match clip {
                     Clip::Offer(offer) => Some(Key::of(offer)),
-                    Clip::Focus { .. } | Clip::Access(_) => None,
+                    Clip::Focus { .. } | Clip::Access(_) | Clip::Withheld(_) => None,
                 })
                 .collect::<Vec<_>>()
         })
@@ -275,4 +275,54 @@ async fn the_clipboard_follows_the_focused_window_both_ways() {
     tokio::time::sleep(POLL * 6).await;
     assert_eq!((viewer.line.offers(), host.line.offers()), before);
     assert_eq!(host.hub.clipboard().followed(), None);
+}
+
+/// What the host told the viewer of copies that stay there, in order.
+fn withheld_told(line: &FakeLine) -> Vec<Option<Withheld>> {
+    line.said
+        .lock()
+        .iter()
+        .filter_map(|clip| match clip {
+            Clip::Withheld(withheld) => Some(*withheld),
+            Clip::Focus { .. } | Clip::Access(_) | Clip::Offer(_) => None,
+        })
+        .collect()
+}
+
+/// A copy on the host past the caps never travels, and the host tells the viewer it stays
+/// there, so the viewer's window can say why the paste did not change; the next copy within the
+/// caps takes that back. The viewer, which shows the notice itself, tells the host nothing.
+#[tokio::test(start_paused = true)]
+async fn the_host_says_when_its_copy_is_past_the_cap() {
+    let pair = Pair::new();
+    let (viewer, host) = (&pair.viewer, &pair.host);
+    assert!(viewer.session.focus(true));
+    settle(|| !withheld_told(&host.line).is_empty()).await;
+    assert_eq!(
+        withheld_told(&host.line),
+        [None],
+        "said as following starts"
+    );
+
+    let huge = vec![7_u8; usize::try_from(SEND_MAX).unwrap() + 1];
+    copy(&host.board, &[(PNG, &huge)]);
+    settle(|| withheld_told(&host.line).len() == 2).await;
+    assert_eq!(
+        withheld_told(&host.line),
+        [
+            None,
+            Some(Withheld {
+                at: 1_000,
+                size: Some(SEND_MAX + 1)
+            })
+        ]
+    );
+    assert_eq!(host.line.offers(), 0, "nothing of it travels");
+    assert!(viewer.board.items().is_empty());
+
+    copy(&host.board, &[(TEXT, b"small")]);
+    settle(|| viewer.board.data(0, TEXT).is_some()).await;
+    settle(|| withheld_told(&host.line).len() == 3).await;
+    assert_eq!(withheld_told(&host.line).last(), Some(&None));
+    assert!(withheld_told(&viewer.line).is_empty());
 }

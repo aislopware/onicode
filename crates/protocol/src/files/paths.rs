@@ -1,33 +1,8 @@
-//! Display-path helpers ported from paths.ts and fileTree.ts. Paths use `/`;
-//! Windows drive and UNC paths compare without case.
+//! Display-path helpers ported from paths.ts and fileTree.ts. Paths are POSIX (macOS and iOS
+//! only, `docs/onicode/decisions/platform.md`): `/` separates, and a backslash is part of a name.
 use super::name::path_segments;
 
-fn is_drive(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
-}
-
-fn starts_with_drive(path: &str) -> bool {
-    let bytes = path.as_bytes();
-    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
-}
-
-fn windows_path(path: &str) -> bool {
-    (starts_with_drive(path) && matches!(path.as_bytes().get(2), Some(b'\\' | b'/')))
-        || path.starts_with("\\\\")
-        || path.starts_with("//")
-}
-
-fn slash(path: &str) -> String {
-    if windows_path(path) {
-        path.replace('\\', "/")
-    } else {
-        path.to_string()
-    }
-}
-
 fn trim_slash(path: &str) -> String {
-    let path = slash(path);
     let trimmed = path.trim_end_matches('/');
     if trimmed.is_empty() {
         "/".into()
@@ -36,16 +11,9 @@ fn trim_slash(path: &str) -> String {
     }
 }
 
-/// Stable comparison key for Windows paths without changing their display case.
+/// The key two spellings of one path compare by: the path without its trailing slashes.
 pub fn path_key(path: &str) -> String {
-    let normalized = trim_slash(path);
-    let drive =
-        starts_with_drive(&normalized) && matches!(normalized.as_bytes().get(2), None | Some(b'/'));
-    if drive || normalized.starts_with("//") {
-        normalized.to_lowercase()
-    } else {
-        normalized
-    }
+    trim_slash(path)
 }
 
 /// Text after the first `chars` characters.
@@ -57,23 +25,10 @@ fn skip_chars(text: &str, chars: usize) -> &str {
 
 pub fn parent_path(path: &str) -> String {
     let trimmed = trim_slash(path);
-    if let Some(rest) = trimmed.strip_prefix("//") {
-        let parts: Vec<&str> = rest.split('/').collect();
-        if parts.len() == 2 && parts.iter().all(|part| !part.is_empty()) {
-            return trimmed;
-        }
+    match trimmed.rfind('/').filter(|i| *i > 0) {
+        Some(i) => trimmed[..i].to_string(),
+        None => "/".into(),
     }
-    if is_drive(&trimmed) {
-        return format!("{trimmed}/");
-    }
-    let Some(i) = trimmed.rfind('/').filter(|i| *i > 0) else {
-        return "/".into();
-    };
-    let parent = &trimmed[..i];
-    if is_drive(parent) {
-        return format!("{parent}/");
-    }
-    parent.to_string()
 }
 
 /// `path` with its `from` prefix replaced by `to`; unrelated paths are unchanged.
@@ -84,16 +39,12 @@ pub fn rebase_path(path: &str, from: &str, to: &str) -> String {
     let key = path_key(&normalized);
     let source_key = path_key(&source);
     if key == source_key {
-        return if is_drive(&dest) {
-            format!("{dest}/")
-        } else {
-            dest
-        };
+        return dest;
     }
     if key.starts_with(&format!("{source_key}/")) {
         return format!("{dest}{}", skip_chars(&normalized, source.chars().count()));
     }
-    slash(path)
+    path.to_string()
 }
 
 pub fn is_equal_or_inside(path: &str, root: &str) -> bool {
@@ -104,9 +55,8 @@ pub fn is_equal_or_inside(path: &str, root: &str) -> bool {
 
 pub fn join_path(parent: &str, relative: &str) -> String {
     let mut out = trim_slash(parent);
-    let windows = windows_path(parent);
     let parts = relative
-        .split(|ch| ch == '/' || (windows && ch == '\\'))
+        .split('/')
         .filter(|part| !part.is_empty() && *part != ".");
     for part in parts {
         if part == ".." {
@@ -184,31 +134,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn preserves_backslashes_in_absolute_unix_filenames() {
-        assert_eq!(slash("/tmp/a\\b.txt"), "/tmp/a\\b.txt");
+    fn a_backslash_is_part_of_a_name() {
         assert_eq!(join_path("/tmp", "a\\b.txt"), "/tmp/a\\b.txt");
         assert_eq!(parent_path("/tmp/a\\b.txt"), "/tmp");
-    }
-
-    #[test]
-    fn normalizes_windows_separators() {
-        assert_eq!(slash("C:\\Users\\me\\code"), "C:/Users/me/code");
-    }
-
-    #[test]
-    fn preserves_windows_filesystem_roots() {
-        assert_eq!(parent_path("//server/share"), "//server/share");
-        assert_eq!(rebase_path("C:/old", "C:/old", "D:/"), "D:/");
-    }
-
-    #[test]
-    fn walks_windows_drive_paths() {
-        assert_eq!(parent_path("C:/Users/me/code"), "C:/Users/me");
-        assert_eq!(parent_path("C:/Users"), "C:/");
-        assert_eq!(parent_path("C:/"), "C:/");
-        assert_eq!(join_path("C:/Users/me", "code/app"), "C:/Users/me/code/app");
-        assert_eq!(join_path("C:/Users/me/code", ".."), "C:/Users/me");
-        assert_eq!(join_path("C:/", "Users"), "C:/Users");
+        assert!(!is_equal_or_inside("/tmp/a\\b", "/tmp/a"));
     }
 
     #[test]
@@ -218,36 +147,6 @@ mod tests {
         assert_eq!(parent_path("/"), "/");
         assert_eq!(join_path("/", "a/./b"), "/a/b");
         assert_eq!(join_path("/a/b", "../c"), "/a/c");
-    }
-
-    #[test]
-    fn treats_backslash_and_slash_as_the_same_path() {
-        assert!(is_equal_or_inside(
-            "C:\\Users\\me\\app\\src",
-            "C:/Users/me/app"
-        ));
-        assert!(is_equal_or_inside("C:/Users/me", "C:/"));
-        assert_eq!(
-            rebase_path("C:\\Users\\me\\app\\src\\a.ts", "C:/Users/me/app", "D:/x"),
-            "D:/x/src/a.ts"
-        );
-        assert_eq!(
-            display_path("C:\\Users\\me\\app\\src\\a.ts", Some("C:/Users/me/app")),
-            "src/a.ts"
-        );
-    }
-
-    #[test]
-    fn compares_windows_paths_without_case() {
-        assert!(is_equal_or_inside("c:/USERS/me/App/src", "C:/Users/ME/app"));
-        assert_eq!(
-            rebase_path("c:/USERS/me/App/src/a.ts", "C:/Users/ME/app", "D:/x"),
-            "D:/x/src/a.ts"
-        );
-        assert_eq!(
-            display_path("c:/USERS/me/App/src/a.ts", Some("C:/Users/ME/app")),
-            "src/a.ts"
-        );
     }
 
     #[test]
@@ -263,14 +162,6 @@ mod tests {
         assert_eq!(display_path("/other/a.ts", Some("/repo")), "/other/a.ts");
         assert_eq!(display_path("/repo/a.ts", Some("~")), "/repo/a.ts");
         assert_eq!(display_path("/repo/a.ts", None), "/repo/a.ts");
-    }
-
-    #[test]
-    fn windows_paths_keep_their_drive_roots_and_case_insensitive_keys() {
-        assert_eq!(parent_path("C:/code"), "C:/");
-        assert_eq!(join_path("C:/code", "src\\main.rs"), "C:/code/src/main.rs");
-        assert!(is_equal_or_inside("c:/CODE/src", "C:/code"));
-        assert!(!is_equal_or_inside("D:/code/src", "C:/code"));
     }
 
     #[test]

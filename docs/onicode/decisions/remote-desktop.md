@@ -84,7 +84,7 @@ the keep-awake power assertion), `onicode-desktop-input` (injection by key posit
 `onicode-desktop-vdisplay` (virtual displays at the client's size). Their names and API shapes stay slopty's, so the
 host and client orchestration ports line up against them. Whole displays only: window capture, AX window picking,
 regions, crops and drags are not ported, and the rarely used features the Scope deletes went with their tests,
-protocol variants and dependencies (the session wire, `onicode_desktop_link::WIRE`, is 4). Tests that touch a device
+protocol variants and dependencies (the session wire, `onicode_desktop_link::WIRE`, is 5). Tests that touch a device
 are opt-in, one variable per kind (`ONICODE_VT_TESTS`, `ONICODE_AUDIO_LIVE`, `ONICODE_DESKTOP_LIVE`,
 `ONICODE_INPUT_LIVE`, `ONICODE_VDISPLAY_LIVE`, in `onicode-desktop-testkit`), because a hosted runner's paravirtual
 encoder hangs a process and the rest prompt, play sound, move the pointer or rearrange the owner's screens.
@@ -144,7 +144,13 @@ did not ride inline as soon as the offer lands, on streams of its own (`clip/<se
 (`FETCH_DEADLINE`) and unless a newer copy came meanwhile, so a paste never waits on the link. The caps:
 `SEND_MAX`, 16 MiB of bytes a copy (a type past what is left stays home and the app's next-ranked type may still
 go, so a screenshot's TIFF stays while its PNG travels), and `FILES_MAX`, 16 MiB of regular files in all (bigger
-files and folders keep their items home). A fetch for a copy the origin no longer holds is reset with the
+files and folders keep their items home). A copy that stays home past them is said, not only logged: the
+`Clipboard` holds whether its newest copy stays (`Clipboard::withheld`, its size, `None` for a folder), the host
+tells the viewer on following and on every change (`Clip::Withheld`), and `onicode-desktop-client`'s
+`SessionState::clipboard_kept` holds the later of the two ends' until a copy within the caps follows there (this
+device's only while the window is focused, when its copies go to that Mac). The window shows it as one line among
+its notices ("Your 21 MB copy stays on this Mac: the clipboard carries up to 16 MB to …").
+A fetch for a copy the origin no longer holds is reset with the
 `REFUSED` code. Writes carry the origin type and
 `currentHostOnly` and remember their `changeCount`, so nothing echoes; the newest `(at, origin, seq)` wins on both
 Macs; concealed and transient copies never leave (a marker on any item keeps the whole copy home) and

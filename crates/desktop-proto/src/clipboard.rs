@@ -5,8 +5,8 @@
 //! at once, so a paste never waits on the link. Items up to [`INLINE_MAX`] ride inside the offer.
 //! The rest is fetched as soon as the offer lands, on a stream of its own, never on the control
 //! stream, so a big picture holds up no input or cursor: the fetcher opens a file stream named by
-//! [`Fetch::name`] and reads the bytes back raw (a type), or as [`FileEntry`] frames (a copied
-//! file). A refused fetch is a reset stream ([`REFUSED`]). How much travels is capped by
+//! [`Fetch::name`] and reads the bytes back raw (a type), or as a [`FileEntry`] and its bytes (a
+//! copied file). A refused fetch is a reset stream ([`REFUSED`]). How much travels is capped by
 //! `onicode-clipboard`.
 //!
 //! Ported from onicode's peer clipboard (`git show f01736b3^:crates/proto/src/clipboard.rs`),
@@ -126,6 +126,21 @@ pub enum Clip {
     /// Whether the sender may read its pasteboard without a prompt, when following starts and
     /// whenever it changes. Sent by the host, so the viewer can say why copies there stay there.
     Access(PasteAccess),
+    /// Whether the sender's newest copy stays on its Mac, whole or in part, for being past the
+    /// clipboard's caps; `None` once a newer copy is within them. Sent by the host when following
+    /// starts and whenever it changes, so the viewer can say why a copy there did not arrive.
+    Withheld(Option<Withheld>),
+}
+
+/// A copy that stays on its Mac, whole or in part, for being past the clipboard's caps
+/// (`onicode-clipboard`'s `SEND_MAX` of bytes and `FILES_MAX` of files), or for naming a folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Withheld {
+    /// When it was copied, epoch milliseconds on its Mac.
+    pub at: i64,
+    /// The size of what stays, in bytes; `None` for a folder, whose size is not read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
 }
 
 /// One fetch from an offer's origin, named on the stream that carries it.
@@ -140,7 +155,7 @@ pub enum Fetch {
         /// The type.
         uti: String,
     },
-    /// The file one item names, as [`FileEntry`] frames: `clipfiles/<seq>/<item>`.
+    /// The file one item names, as a [`FileEntry`] and its bytes: `clipfiles/<seq>/<item>`.
     Files {
         /// The offer.
         seq: u64,
@@ -186,15 +201,14 @@ impl Fetch {
     }
 }
 
-/// One entry of a copied file on a [`Fetch::Files`] stream: a frame of its own, as JSON,
-/// and for a file its bytes after it, in frames that add up to `size`.
+/// The head of a copied file on a [`Fetch::Files`] stream: a frame of its own, as JSON, then
+/// the file's bytes in frames that add up to `size`. Only a regular file travels, never a folder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileEntry {
-    /// Its path under the copy, `/`-separated, starting with the copied item's own name.
-    pub path: String,
-    /// A file's size; `None` for a folder.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub size: Option<u64>,
+    /// The file's own name: one path component.
+    pub name: String,
+    /// Its size in bytes.
+    pub size: u64,
     /// A file anyone may run.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub exec: bool,

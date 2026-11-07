@@ -15,8 +15,8 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use futures::stream::BoxStream;
 use onicode_protocol::agent::{Approval, Question, QuestionOption};
 use onicode_protocol::alerts::{
-    self, Alert, AlertKind, AlertsEvent, AlertsState, Need, OnScreen, SetViewportFocus, Subject,
-    WatchAlerts,
+    self, Alert, AlertKind, AlertsEvent, AlertsState, Mutes, Need, OnScreen, SetViewportFocus,
+    Subject, WatchAlerts,
 };
 use onicode_protocol::provider::Kind;
 use onicode_protocol::session::{SessionEvent, SessionState};
@@ -334,6 +334,11 @@ struct Inner {
     terminals: HashMap<TerminalId, Term>,
     reports: HashMap<String, Report>,
     prefs: Prefs,
+    /// Each viewport's project mutes, by its id, with when it last reported them. Kept whether
+    /// or not the viewport is focused or presents: they are the owner's word.
+    mutes: HashMap<String, (u64, Mutes)>,
+    /// This machine's home folder: work there is in no project, and never rings.
+    home: Option<String>,
     seen: Vec<i64>,
     /// The alerts the engine posted as its own banners.
     posted: HashSet<String>,
@@ -437,6 +442,26 @@ impl Inner {
 
     fn presenting(&self) -> bool {
         self.reports.values().any(|report| report.presents)
+    }
+
+    /// Whether the project mutes let `alert` ring at `now`: those of every viewport that
+    /// reported within [`REPORT_TTL_MS`] of the latest report, any of them holding it back, so
+    /// the mutes stand while the viewers that set them are away and two viewers never undo each
+    /// other's. The engine is the only judge: no viewer and no banner of its own ever shows a
+    /// muted alert.
+    fn allows(&self, alert: &Alert, now: u64) -> bool {
+        let Some(folder) = alert.project.as_deref() else {
+            return true;
+        };
+        let home = self.home.as_deref();
+        let Some(newest) = self.mutes.values().map(|(at, _)| *at).max() else {
+            return Mutes::default().allows(folder, alert.kind, home, now);
+        };
+        let floor = newest.saturating_sub(REPORT_TTL_MS);
+        self.mutes
+            .values()
+            .filter(|(at, _)| *at > floor || *at == newest)
+            .all(|(_, mutes)| mutes.allows(folder, alert.kind, home, now))
     }
 
     fn alert(&self, key: Key, kind: AlertKind, now: u64) -> Option<Alert> {
@@ -599,6 +624,15 @@ impl AlertsHub {
     }
 
     pub(crate) fn with(banners: Arc<dyn Banners>, limits: Limits) -> Arc<Self> {
+        Self::at_home(banners, limits, std::env::var("HOME").ok())
+    }
+
+    /// A hub on a machine whose home folder is `home`.
+    pub(crate) fn at_home(
+        banners: Arc<dyn Banners>,
+        limits: Limits,
+        home: Option<String>,
+    ) -> Arc<Self> {
         let epoch = onicode_core::time::now_ms().wrapping_shl(16) | 7;
         Arc::new(Self {
             inner: Mutex::new(Inner {
@@ -610,6 +644,8 @@ impl AlertsHub {
                     banners: true,
                     sound: true,
                 },
+                mutes: HashMap::new(),
+                home,
                 seen: Vec::new(),
                 posted: HashSet::new(),
                 topic: Topic::new(epoch, AlertsState::default(), limits),
@@ -654,6 +690,13 @@ impl AlertsHub {
                 banners: report.banners,
                 sound: report.sound,
             };
+            inner
+                .mutes
+                .insert(report.viewport.clone(), (now, report.mutes));
+            let newest = inner.mutes.values().map(|(at, _)| *at).max().unwrap_or(now);
+            inner
+                .mutes
+                .retain(|_, (at, _)| *at == newest || newest.saturating_sub(*at) < REPORT_TTL_MS);
             if report.focused || report.presents {
                 inner.reports.insert(
                     report.viewport,
@@ -844,6 +887,14 @@ impl AlertsHub {
                         let Some(alert) = inner.alert(key, kind, now) else {
                             continue;
                         };
+                        if !inner.allows(&alert, now) {
+                            // Muted: what showed under its id goes, and this never shows.
+                            if inner.posted.remove(&alert.id) {
+                                withdrawals.push(alert.id.clone());
+                            }
+                            events.push(AlertsEvent::Withdrawn(alert.id));
+                            continue;
+                        }
                         if own {
                             inner.posted.insert(alert.id.clone());
                             posts.push(alert.clone());

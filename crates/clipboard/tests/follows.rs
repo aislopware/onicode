@@ -16,7 +16,7 @@ use onicode_clipboard::types::{
 };
 use onicode_clipboard::{
     Board as _, Clipboard, ClipboardOffer, ClipboardSettings, Clock, Config, FETCH_DEADLINE,
-    FILES_MAX, Held, Inline, Item, Key, PasteAccess, Peers, Received, SEND_MAX,
+    FILES_MAX, Held, Inline, Item, Key, PasteAccess, Peers, Received, SEND_MAX, Withheld,
 };
 use parking_lot::Mutex;
 use proptest::prelude::*;
@@ -310,6 +310,12 @@ async fn what_is_past_the_caps_stays_home() {
         .map(|t| t.uti.as_str())
         .collect();
     assert_eq!(types, [PNG, TEXT], "the TIFF stays, the PNG goes");
+    let mut withheld = a.clip.withheld();
+    assert_eq!(
+        *withheld.borrow_and_update(),
+        None,
+        "the picture went whole"
+    );
     assert_eq!(b.clip.receive((*offer).clone()), Received::Fetching);
     settle(|| b.board.data(0, PNG).is_some()).await;
     assert_eq!(b.board.data(0, PNG), Some(png));
@@ -320,6 +326,17 @@ async fn what_is_past_the_caps_stays_home() {
         a.clip.look(),
         None,
         "nothing within the cap: nothing announced"
+    );
+    assert!(
+        withheld.has_changed().unwrap(),
+        "the copy that stays is said"
+    );
+    assert_eq!(
+        *withheld.borrow_and_update(),
+        Some(Withheld {
+            at: 1_000,
+            size: Some(SEND_MAX + 1)
+        })
     );
 
     let dir = tempfile::tempdir().unwrap();
@@ -332,6 +349,7 @@ async fn what_is_past_the_caps_stays_home() {
     std::fs::write(&small, b"small").unwrap();
     let folder = dir.path().join("folder");
     std::fs::create_dir(&folder).unwrap();
+    let mut said = Vec::new();
     for files in [vec![big, small.clone()], vec![folder, small]] {
         let urls: Vec<String> = files
             .iter()
@@ -344,8 +362,31 @@ async fn what_is_past_the_caps_stays_home() {
         let items: Vec<&[(&str, &[u8])]> = reps.iter().map(|rep| &rep[..]).collect();
         copy(&a.board, &items);
         assert_eq!(a.clip.look(), None, "files that stay keep their items home");
+        said.push(withheld.borrow_and_update().and_then(|held| held.size));
     }
+    assert_eq!(
+        said,
+        [Some(FILES_MAX + 1 + 5), None],
+        "the files' size together; a folder's is not read"
+    );
     assert_eq!(mesh.net.files.load(Ordering::Relaxed), 0);
+
+    // A copy within the caps ends it, and so does the other Mac's copy written here.
+    copy(&a.board, &[&[(TEXT, b"small")]]);
+    assert!(a.clip.look().is_some());
+    assert_eq!(*withheld.borrow_and_update(), None);
+    copy(&a.board, &[&[(PNG, &vec![5; cap + 1])]]);
+    assert_eq!(a.clip.look(), None);
+    assert!(withheld.borrow_and_update().is_some());
+    mesh.clock.0.fetch_add(1_000, Ordering::Relaxed);
+    copy(&b.board, &[&[(TEXT, b"from b")]]);
+    let from_b = b.clip.look().unwrap();
+    assert_eq!(a.clip.receive((*from_b).clone()), Received::Applied);
+    assert_eq!(
+        *withheld.borrow_and_update(),
+        None,
+        "the newest copy here is b's"
+    );
 }
 
 /// A password manager's copy, a transient one and Universal Clipboard's never leave; an

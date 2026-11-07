@@ -184,6 +184,11 @@ impl Shell {
         )
     }
 
+    /// Every other engine the shell follows: those its `peer://` projects name.
+    pub(super) fn followed_peers(&self) -> Vec<EngineId> {
+        self.peers.followed.keys().cloned().collect()
+    }
+
     /// Names `engine` the holder of the session the app names `row`: one the shell created
     /// there, ahead of that engine's workspace event for it.
     pub(super) fn peers_adopt(&mut self, row: i64, engine: EngineId) {

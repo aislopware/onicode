@@ -40,6 +40,30 @@ fn repo_checkouts<'a>(
     }
     checkouts
 }
+/// The repositories to fetch and the project each is fetched for: `projects` this engine holds,
+/// their repositories read with `local`, and the projects other engines hold, with the
+/// repositories those engines read for them, never asked for here.
+fn listed(
+    projects: &[PathBuf],
+    elsewhere: &[ProjectRepos],
+    cwd: &Path,
+    mut local: impl FnMut(&Path) -> Option<Vec<String>>,
+) -> Vec<(PathBuf, String)> {
+    let all: Vec<PathBuf> = projects
+        .iter()
+        .chain(elsewhere.iter().map(|project| &project.project))
+        .cloned()
+        .collect();
+    repo_checkouts(&all, cwd, |project| {
+        match elsewhere.iter().find(|other| other.project == project) {
+            Some(other) => Some(other.repos.clone()),
+            None => local(project),
+        }
+    })
+    .into_iter()
+    .map(|(project, repo)| (project.clone(), repo))
+    .collect()
+}
 fn convert<T: Serialize, U: DeserializeOwned>(value: T) -> Result<U, String> {
     serde_json::from_value(serde_json::to_value(value).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
@@ -50,7 +74,7 @@ impl Service {
         let installed = crate::scm::resolve_gui_binary("gh").is_some();
         let authenticated = installed
             && run_gh(
-                &self.cwd,
+                &gh_root(&self.cwd),
                 &["auth", "status", "--active", "--hostname", "github.com"],
                 true,
             )
@@ -62,7 +86,13 @@ impl Service {
         }
     }
 
-    pub fn list(&self, projects: &[PathBuf], state: &ViewState) -> Snapshot {
+    /// The items of `projects`, and of the projects `elsewhere` other engines hold.
+    pub fn list(
+        &self,
+        projects: &[PathBuf],
+        elsewhere: &[ProjectRepos],
+        state: &ViewState,
+    ) -> Snapshot {
         let mut snapshot = Snapshot {
             connection: self.status(),
             ..Snapshot::default()
@@ -70,7 +100,7 @@ impl Service {
         if !snapshot.connection.connected {
             return snapshot;
         }
-        match self.items(projects, state) {
+        match self.items(projects, elsewhere, state) {
             Ok(items) => snapshot.items = items,
             Err(error) => snapshot.error = Some(error),
         }
@@ -84,21 +114,28 @@ impl Service {
         snapshot
     }
 
-    /// The issues and pull requests of every repository `projects` check out, each fetched once.
-    fn items(&self, projects: &[PathBuf], state: &ViewState) -> Result<Vec<Item>, String> {
+    /// The issues and pull requests of every repository `projects` and `elsewhere` check out,
+    /// each fetched once. Every `gh` call names its repository, so one for a project of another
+    /// engine runs from this engine's home.
+    fn items(
+        &self,
+        projects: &[PathBuf],
+        elsewhere: &[ProjectRepos],
+        state: &ViewState,
+    ) -> Result<Vec<Item>, String> {
         let limit = if state.filters.fetch_state() == "all" {
             100
         } else {
             40
         };
         let mut items = Vec::new();
-        let checkouts = repo_checkouts(projects, &self.cwd, |project| {
+        let checkouts = listed(projects, elsewhere, &self.cwd, |project| {
             github::git_github_repositories_for(project).ok()
         });
         for (project, repo) in checkouts {
             for kind in ["issue", "pr"] {
                 let rows: Vec<Item> = convert(github::git_github_work_items_for(
-                    project,
+                    &gh_root(&project),
                     &repo,
                     kind,
                     state.filters.assigned_to_me,
@@ -117,24 +154,27 @@ impl Service {
 
     pub fn details(&self, item: &Item) -> Result<Details, String> {
         convert(github::git_github_work_item_details_for(
-            self.project(item),
+            &self.project(item),
             &item.repo,
             &item.kind,
             item.number,
         )?)
     }
 
-    fn project<'a>(&'a self, item: &'a Item) -> &'a Path {
-        if item.project_path.is_empty() {
+    /// Where `gh` runs for `item`: its project, or the Inbox's checkout, or this engine's home
+    /// when neither is a folder here (a project of another engine); every call names the
+    /// repository.
+    fn project(&self, item: &Item) -> PathBuf {
+        gh_root(if item.project_path.is_empty() {
             &self.cwd
         } else {
             Path::new(&item.project_path)
-        }
+        })
     }
 
     pub fn thread(&self, item: &Item) -> Result<Thread, String> {
         convert(github::git_github_work_item_thread_for(
-            self.project(item),
+            &self.project(item),
             &item.repo,
             &item.kind,
             item.number,
@@ -143,7 +183,7 @@ impl Service {
 
     pub fn comment(&self, item: &Item, body: String, reply_to: String) -> Result<String, String> {
         github::git_github_work_item_comment_for(
-            self.project(item),
+            &self.project(item),
             &item.repo,
             &item.kind,
             item.number,
@@ -154,7 +194,7 @@ impl Service {
 
     pub fn diff(&self, item: &Item) -> Result<Diff, String> {
         convert(github::git_github_pr_diff_for(
-            self.project(item),
+            &self.project(item),
             &item.repo,
             item.number,
             false,
@@ -163,7 +203,7 @@ impl Service {
 
     pub fn checks(&self, item: &Item) -> Result<Checks, String> {
         convert(github::git_github_pr_checks_for(
-            self.project(item),
+            &self.project(item),
             &item.repo,
             item.number,
         )?)
@@ -171,7 +211,7 @@ impl Service {
 
     pub fn action(&self, item: &Item, action: &str) -> Result<Item, String> {
         let mut updated: Item = convert(github::git_github_pr_action_for(
-            self.project(item),
+            &self.project(item),
             &item.repo,
             item.number,
             action,
@@ -179,6 +219,15 @@ impl Service {
         updated.project_path = item.project_path.clone();
         Ok(updated)
     }
+}
+/// The GitHub repositories the checkout at `project` belongs to: its own, then the one it was
+/// forked from (`work::InboxRepos`).
+///
+/// # Errors
+///
+/// What `gh` said when it could not read them.
+pub fn repositories(project: &Path) -> Result<Vec<String>, String> {
+    github::git_github_repositories_for(&crate::scm::expand_home(project))
 }
 pub(super) fn run_git(root: &Path, args: &[&str]) -> Result<String, String> {
     run_command("git", root, args, true)
@@ -351,6 +400,49 @@ mod notification_tests {
         assert_eq!(github.key(), "acme/app:issue:12");
         github.repo.clear();
         assert_eq!(github.key(), "https://github.com/acme/app/pull/12/");
+    }
+
+    #[test]
+    fn a_peer_projects_repositories_are_what_its_engine_said() {
+        let here = PathBuf::from("/work/app");
+        let api = PathBuf::from("peer://nStudio/Users/me/api");
+        let app = PathBuf::from("peer://nStudio/Users/me/app");
+        let elsewhere = [
+            ProjectRepos {
+                project: api.clone(),
+                repos: vec!["acme/api".into(), "upstream/api".into()],
+            },
+            ProjectRepos {
+                project: app.clone(),
+                repos: vec!["Acme/App".into()],
+            },
+        ];
+        let mut asked = Vec::new();
+        let checkouts = listed(std::slice::from_ref(&here), &elsewhere, &here, |project| {
+            asked.push(project.to_path_buf());
+            Some(vec!["acme/app".to_owned()])
+        });
+        assert_eq!(
+            asked,
+            std::slice::from_ref(&here),
+            "only this engine's projects are read here"
+        );
+        assert_eq!(
+            checkouts,
+            [
+                (here.clone(), "acme/app".to_owned()),
+                (api.clone(), "acme/api".to_owned()),
+                (api.clone(), "upstream/api".to_owned()),
+            ],
+            "a repository both Macs check out is fetched once"
+        );
+        // From the other Mac's checkout of it, its rows are that project's.
+        let checkouts = listed(std::slice::from_ref(&here), &elsewhere, &app, |_| {
+            Some(vec!["acme/app".to_owned()])
+        });
+        assert_eq!(checkouts.len(), 3);
+        assert!(checkouts.contains(&(app.clone(), "Acme/App".to_owned())));
+        assert!(!checkouts.iter().any(|(project, _)| *project == here));
     }
 
     #[test]

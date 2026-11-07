@@ -1,6 +1,6 @@
-//! Files on the clipboard: a copied file travels as [`FileEntry`] frames on a stream of its own
-//! and lands in a cache folder of the offer's before the copy is written; the written URL names
-//! the local copy. Only regular files of [`crate::FILES_MAX`] or less in all travel.
+//! Files on the clipboard: a copied file travels as a [`FileEntry`] and its bytes on a stream of
+//! its own and lands in a cache folder of the offer's before the copy is written; the written URL
+//! names the local copy. Only regular files of [`crate::FILES_MAX`] or less in all travel.
 //!
 //! The origin serves only what its newest offer names ([`crate::Clipboard::serve_file`]), so a
 //! fetch can reach no other path on that Mac.
@@ -69,80 +69,42 @@ pub(crate) fn file_size(url: &[u8]) -> Option<u64> {
     meta.is_file().then_some(meta.len())
 }
 
-/// What [`pack`] hands its sink: an entry, or the next bytes of the file it opened.
-#[derive(Debug, PartialEq, Eq)]
-pub enum Packed {
-    /// An entry, its file's bytes (if any) following.
-    Entry(FileEntry),
-    /// The next bytes of the entry before.
-    Bytes(Vec<u8>),
-}
-
-/// Walks the file or folder at `root` into `sink`, folders before what they hold, names in order;
-/// stops early when `sink` says `false`. A file's bytes add up to the size its entry says, even
-/// when it changes meanwhile. Links inside a folder are left out: they could name anything on
-/// this Mac.
+/// The head of the regular file at `path`, for a fetch.
 ///
 /// # Errors
 ///
-/// `root` or a file under it could not be read, or a file shrank as it was read.
-pub fn pack(root: &Path, sink: &mut dyn FnMut(Packed) -> bool) -> std::io::Result<()> {
-    let name = root
+/// `path` is not a regular file, has no name, or could not be read.
+pub fn entry_of(path: &Path) -> std::io::Result<FileEntry> {
+    let meta = std::fs::metadata(path)?;
+    if !meta.is_file() {
+        return Err(std::io::Error::other("only a regular file travels"));
+    }
+    let name = path
         .file_name()
         .ok_or_else(|| std::io::Error::other("the copy has no name"))?
         .to_string_lossy()
         .into_owned();
-    let meta = std::fs::metadata(root)?;
-    let mut going = true;
-    pack_one(root, &name, &meta, sink, &mut going)
+    Ok(FileEntry {
+        name,
+        size: meta.len(),
+        exec: executable(&meta),
+    })
 }
 
-fn pack_one(
+/// Reads the first `size` bytes of the file at `path` into `sink`, [`CHUNK`] at a time; stops
+/// early when `sink` says `false`. The bytes add up to `size` even when the file grows meanwhile.
+///
+/// # Errors
+///
+/// The file could not be read, or it shrank as it was read.
+pub fn read_chunks(
     path: &Path,
-    name: &str,
-    meta: &std::fs::Metadata,
-    sink: &mut dyn FnMut(Packed) -> bool,
-    going: &mut bool,
+    size: u64,
+    sink: &mut dyn FnMut(Vec<u8>) -> bool,
 ) -> std::io::Result<()> {
-    if !*going {
-        return Ok(());
-    }
-    if meta.is_dir() {
-        *going = sink(Packed::Entry(FileEntry {
-            path: name.to_owned(),
-            size: None,
-            exec: false,
-        }));
-        let mut children: Vec<_> = std::fs::read_dir(path)?
-            .filter_map(Result::ok)
-            .map(|entry| entry.file_name())
-            .collect();
-        children.sort();
-        for child in children {
-            let at = path.join(&child);
-            let Ok(meta) = std::fs::symlink_metadata(&at) else {
-                continue;
-            };
-            if meta.file_type().is_symlink() {
-                continue;
-            }
-            let named = format!("{name}/{}", child.to_string_lossy());
-            pack_one(&at, &named, &meta, sink, going)?;
-        }
-        return Ok(());
-    }
-    if !meta.is_file() {
-        return Ok(());
-    }
-    let size = meta.len();
-    *going = sink(Packed::Entry(FileEntry {
-        path: name.to_owned(),
-        size: Some(size),
-        exec: executable(meta),
-    }));
     let mut file = File::open(path)?.take(size);
     let mut left = size;
-    while *going && left > 0 {
+    while left > 0 {
         let mut chunk = vec![0; usize::try_from(left).unwrap_or(CHUNK).min(CHUNK)];
         let read = file.read(&mut chunk)?;
         if read == 0 {
@@ -153,7 +115,9 @@ fn pack_one(
         }
         chunk.truncate(read);
         left = left.saturating_sub(u64::try_from(read).unwrap_or(u64::MAX));
-        *going = sink(Packed::Bytes(chunk));
+        if !sink(chunk) {
+            break;
+        }
     }
     Ok(())
 }
@@ -163,23 +127,15 @@ fn executable(meta: &std::fs::Metadata) -> bool {
     meta.permissions().mode() & 0o111 != 0
 }
 
-/// Where `entry` lands under `into`, if its path is a plain relative one under `root` (the
-/// copy's own name, which the first entry sets): no `..`, no root, no prefix.
+/// Where `entry` lands under `into`, if its name is one plain path component: no `/`, no `..`,
+/// no root.
 #[must_use]
-pub fn landing(into: &Path, root: Option<&str>, entry: &FileEntry) -> Option<PathBuf> {
-    let path = Path::new(&entry.path);
-    let mut parts = path.components();
-    let first = match parts.next()? {
-        Component::Normal(first) => first.to_str()?,
-        _ => return None,
-    };
-    if root.is_some_and(|root| root != first) {
-        return None;
+pub fn landing(into: &Path, entry: &FileEntry) -> Option<PathBuf> {
+    let mut parts = Path::new(&entry.name).components();
+    match (parts.next(), parts.next()) {
+        (Some(Component::Normal(name)), None) => Some(into.join(name)),
+        _ => None,
     }
-    if !parts.all(|part| matches!(part, Component::Normal(_))) {
-        return None;
-    }
-    Some(into.join(path))
 }
 
 /// Fetches the file each of `items` of `origin`'s offer `seq` names into `dir`, one folder per
@@ -230,55 +186,33 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_packs_in_order_and_lands_only_under_itself() {
+    fn a_file_reads_whole_and_lands_only_under_its_cache() {
         let dir = tempfile::tempdir().unwrap();
-        let root = dir.path().join("notes");
-        std::fs::create_dir_all(root.join("b")).unwrap();
-        std::fs::write(root.join("a.txt"), b"one").unwrap();
-        std::fs::write(root.join("b/c.txt"), vec![7; CHUNK + 1]).unwrap();
-        let mut packed = Vec::new();
-        pack(&root, &mut |piece| {
-            packed.push(piece);
+        let file = dir.path().join("notes.txt");
+        std::fs::write(&file, vec![7; CHUNK + 1]).unwrap();
+        let entry = entry_of(&file).unwrap();
+        assert_eq!(
+            (entry.name.as_str(), entry.size),
+            ("notes.txt", CHUNK as u64 + 1)
+        );
+        let mut chunks = Vec::new();
+        read_chunks(&file, entry.size, &mut |chunk| {
+            chunks.push(chunk.len());
             true
         })
         .unwrap();
-        let entries: Vec<(String, Option<u64>)> = packed
-            .iter()
-            .filter_map(|piece| match piece {
-                Packed::Entry(entry) => Some((entry.path.clone(), entry.size)),
-                Packed::Bytes(_) => None,
-            })
-            .collect();
-        assert_eq!(
-            entries,
-            [
-                ("notes".to_owned(), None),
-                ("notes/a.txt".to_owned(), Some(3)),
-                ("notes/b".to_owned(), None),
-                ("notes/b/c.txt".to_owned(), Some(CHUNK as u64 + 1)),
-            ]
-        );
-        let bytes: usize = packed
-            .iter()
-            .map(|piece| match piece {
-                Packed::Bytes(bytes) => bytes.len(),
-                Packed::Entry(_) => 0,
-            })
-            .sum();
-        assert_eq!(bytes, 3 + CHUNK + 1);
+        assert_eq!(chunks, [CHUNK, 1]);
+        assert!(entry_of(dir.path()).is_err(), "a folder never travels");
 
         let into = Path::new("/cache/0");
-        let entry = |path: &str| FileEntry {
-            path: path.into(),
-            size: None,
+        let named = |name: &str| FileEntry {
+            name: name.into(),
+            size: 0,
             exec: false,
         };
-        assert_eq!(
-            landing(into, Some("notes"), &entry("notes/b/c.txt")),
-            Some(into.join("notes/b/c.txt"))
-        );
-        for bad in ["/etc/passwd", "notes/../../x", "other/x", "", "./notes"] {
-            assert_eq!(landing(into, Some("notes"), &entry(bad)), None, "{bad}");
+        assert_eq!(landing(into, &named("a.txt")), Some(into.join("a.txt")));
+        for bad in ["/etc/passwd", "../x", "a/b", "", ".", ".."] {
+            assert_eq!(landing(into, &named(bad)), None, "{bad}");
         }
     }
 

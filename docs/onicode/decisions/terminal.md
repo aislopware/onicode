@@ -13,17 +13,45 @@ the topic's ring gets a fresh snapshot.
 
 The snapshot comes in two items. First the part through libghostty's READY record, which is enough to paint. Then
 the older scrollback, as a `History` event in an `Events` item that covers no sequence numbers. A long history
-therefore never delays a remote viewer's first frame, and the cursor, the ring and resuming still see one snapshot.
-The mirror paints the first part at once. When the history arrives it decodes the whole snapshot, replays the
-output and resizes it took in the meantime, and keeps its scroll position.
+therefore never delays a remote viewer's first frame. The mirror paints the first part at once. When the history
+arrives it decodes the whole snapshot, replays the output and resizes it took in the meantime, and keeps its scroll
+position.
+
+The two items must not be split by a dropped link. The first item's cursor used to be the real one, so a watch cut
+between the items resumed from the ring and the history was lost for good: the mirror kept waiting for it and
+buffered output up to its cap. The first item now carries `HISTORY_PENDING` (`u64::MAX`) as its sequence number,
+which is past any ring's head, so resuming from it always gets a fresh snapshot. The history item's
+`Events { last: at.seq }` is what moves the cursor to the real point. Both generic resumers (the app's watch and the
+peer hop's) need no special case for this.
 
 Each viewer sends a `ViewerId` with its watch, input and resizes, minted once per app run. The PTY takes the size
-of the viewer that typed last. Until someone types, or after every viewer that typed has stopped watching, the
-viewer that sized it last wins. A sole viewer therefore behaves as if it were alone.
+of the viewer that typed last, among the viewers that gave a size. Until someone types, or after every viewer that
+typed has stopped watching, the viewer that sized it last wins. A sole viewer therefore behaves as if it were alone.
+The rule is deterministic (`hub/viewers.rs`): every resize, input and watch takes the next tick of one per-terminal
+clock, so no two acts tie; viewers sit in a `BTreeMap`; and when more than 16 are known, the one forgotten is the
+one that acted longest ago (not-watching first), never the one the PTY follows. Nothing depends on viewer ids or on
+map order, which a property test checks by renaming the viewers. `ResizeTerminal` replies with the PTY's size after
+the call, so a viewer learns at once whether its size was taken.
 
-A viewer's mirror is display-only, with its PTY writes and effects off. It takes a new size only when the host's
-stream says so, so a window resize shows one frame late, but the mirror never diverges from the host. The element
-paints the mirror's dirty rows from libghostty's render state and keeps shaped rows by row id.
+A viewer's mirror is display-only, with its PTY writes and effects off, and never diverges from the host. A window
+resize still relays the grid out in the same frame: `Mirror::relayout` shows the view's own size at once and keeps
+a replay base (the snapshot it started from, or its own encode, plus every output and resize the host sent since).
+When the host's stream reaches a resize to that size, the mirror becomes the host's terminal: it keeps what it
+shows if it went through exactly the host's steps, and otherwise rebuilds from the base. When the resize reply
+names another size (another viewer typed last), the host's terminal shows again. Nothing about the host is
+guessed: until the host answers, the mirror shows the host's own output at the view's width, and the stream
+decides. Queued resizes coalesce into the last one, and a fresh snapshot shows the view's size again only while
+its request is unanswered. The element paints the mirror's dirty rows from libghostty's render state and keeps
+shaped rows by row id.
+
+Find (cmd-F) searches the scrollback and the screen on the viewer's own mirror, so it answers in the same frame
+whether the shell is local or on another Mac. The panel is the file editor's Find row without Replace: match case,
+whole word and regular expression, previous and next, and the "n of m" count. The query has the same semantics as
+the editor's, on Rust regexes (`search.rs`). The grid is read as logical lines, with soft-wrapped rows joined, so a
+match can run across a wrap but never across a hard line break, and wide characters' padding is not text. Matches
+fill their cells in the editor's match colour, and the current one in the selection colour. Output that arrives
+while the panel is open is searched again after 100 ms, and the current match stays where it was. libghostty's own
+search was not used: it is byte-exact, with ASCII-only case folding and no regular expressions.
 
 The viewer paints only what the host echoed; there is no local echo prediction. A mosh-style predictor was built
 and deleted (2026-11-07, owner ruling: features that are error-prone and extremely complex go). Guessing where an
@@ -40,8 +68,9 @@ Shells get `TERM=xterm-ghostty` from the bundled terminfo, or `xterm-256color` w
 fish also get onicode's shell integration, which marks prompts and commands (OSC 133) and reports the working
 directory (OSC 7).
 
-Programs report their status with OSC 7501 (program status, rev 0.4). Claude Code and Codex both use it. Only the
-host registers for these reports, so only the host answers the support query, and it keeps the records whether or
+Programs report their status with OSC 7501 (program status, rev 0.4). Claude Code and Codex both use it. monocode
+upstream has no handler for it, so this support is onicode's own, rechecked against the spec and its emitters on
+2026-11-07. Only the host registers for these reports, so only the host answers the support query, and it keeps the records whether or
 not anyone is watching (`program.rs`). The records follow the spec:
 
 - There is one record per id, and each report replaces its record whole.

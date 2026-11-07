@@ -10,8 +10,8 @@ use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use onicode_protocol::agent::{Approval, Question, QuestionItem, QuestionOption};
 use onicode_protocol::alerts::{
-    self, Alert, AlertAction, AlertKind, AlertsEvent, AlertsState, Need, OnScreen,
-    SetViewportFocus, Subject, WatchAlerts,
+    self, Alert, AlertAction, AlertKind, AlertsEvent, AlertsState, MuteRule, Mutes, Need, OnScreen,
+    ProjectMute, SetViewportFocus, Subject, WatchAlerts,
 };
 use onicode_protocol::session::{SessionEvent, SessionState, TurnState};
 use onicode_protocol::sessions::Session;
@@ -439,6 +439,7 @@ fn report(
         presents,
         banners: true,
         sound: false,
+        mutes: Mutes::default(),
     }
 }
 
@@ -727,4 +728,160 @@ fn stopped_failed_and_side_chats() {
         viewer.pump(),
         vec![AlertsEvent::Withdrawn(alerts::session_alert_id(row))]
     );
+}
+
+/// The folders the mutes test runs chats in: a repository's two checkouts, a folder of its own,
+/// one no mute names, and the home folder.
+const FOLDERS: [&str; 5] = [
+    "/work/onicode",
+    "/work/onicode-wt",
+    "/work/site",
+    "/work/other",
+    "/Users/me",
+];
+
+fn mute_rule() -> impl Strategy<Value = MuteRule> {
+    (
+        any::<bool>(),
+        prop_oneof![Just(0), Just(T0 - 1), Just(T0 + 60_000), Just(u64::MAX),],
+    )
+        .prop_map(|(enabled, after)| MuteRule { enabled, after })
+}
+
+/// A repository with both checkouts, then the first checkout and the folder of its own, each
+/// muted alone: the repository decides for its checkout.
+fn mutes() -> impl Strategy<Value = Mutes> {
+    proptest::collection::vec((mute_rule(), mute_rule()), 3).prop_map(|rules| {
+        let paths = [
+            vec![FOLDERS[0].to_owned(), format!("{}/", FOLDERS[1])],
+            vec![FOLDERS[0].to_owned()],
+            vec![FOLDERS[2].to_owned()],
+        ];
+        Mutes {
+            projects: paths
+                .into_iter()
+                .zip(rules)
+                .map(|(paths, (needs_you, finished))| ProjectMute {
+                    paths,
+                    needs_you,
+                    finished,
+                })
+                .collect(),
+        }
+    })
+}
+
+fn summary_in(row: i64, id: SessionId, cwd: &str, busy: bool, unread: bool) -> SessionSummary {
+    let mut summary = summary(row, id, busy, unread);
+    summary.session.cwd = cwd.into();
+    summary
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(256))]
+
+    /// The engine alone applies the project mutes. An alert rings, to every viewer and as the
+    /// engine's own banner, exactly when the mutes allow it at its raise: the mutes of every
+    /// fresh report (a viewer holding none never loosens another's), or the last report's once
+    /// none is fresh. What a mute holds back never shows anywhere, and work outside a project
+    /// never rings.
+    #[test]
+    fn the_engine_alone_applies_project_mutes(
+        mutes in mutes(),
+        folder in 0..FOLDERS.len(),
+        asks in any::<bool>(),
+        presents in any::<bool>(),
+        stale in any::<bool>(),
+        second in any::<bool>(),
+        late in 0u64..120_000,
+    ) {
+        let banners = Arc::new(Recorded::default());
+        let hub = AlertsHub::at_home(banners.clone(), Limits::default(), Some("/Users/me".into()));
+        let mut viewer = Viewer::join(&hub);
+        let (id, row) = (SessionId::new(), 3);
+        let cwd = FOLDERS[folder];
+        let start = T0 + late;
+        hub.workspace(
+            Item::Snapshot {
+                at: onicode_protocol::Cursor::default(),
+                state: WorkspaceState {
+                    sessions: vec![summary_in(row, id, cwd, false, false)],
+                    ..WorkspaceState::default()
+                },
+            },
+            start,
+        );
+        // The report goes stale before the raise, or stands at it; a second viewer without
+        // mutes may stand beside it.
+        let reported = if stale { start - 30_000 } else { start };
+        hub.set_focus(
+            SetViewportFocus {
+                mutes: mutes.clone(),
+                ..report("app", false, None, presents)
+            },
+            reported,
+        );
+        if second && !stale {
+            hub.set_focus(report("phone", false, None, true), reported);
+        }
+        hub.workspace(
+            events(vec![WorkspaceEvent::Session(Box::new(summary_in(row, id, cwd, true, false)))]),
+            start,
+        );
+        hub.session(
+            row,
+            Item::Snapshot {
+                at: onicode_protocol::Cursor::default(),
+                state: SessionState::default(),
+            },
+            start,
+        );
+        let kind = if asks {
+            hub.session(
+                row,
+                session_events(vec![
+                    SessionEvent::Approval(Approval {
+                        id: "a1".into(),
+                        title: "Run cargo test".into(),
+                        detail: String::new(),
+                        can_remember: true,
+                    }),
+                    status("Waiting for approval", false),
+                ]),
+                start,
+            );
+            AlertKind::NeedsYou
+        } else {
+            hub.session(row, session_events(vec![status("Ready", true)]), start);
+            hub.workspace(
+                events(vec![WorkspaceEvent::Session(Box::new(summary_in(row, id, cwd, false, true)))]),
+                start,
+            );
+            hub.turn_ended(row, start);
+            AlertKind::Finished
+        };
+        hub.step(start);
+        let raised_at = start + HOLD_MS;
+        hub.step(raised_at);
+        let allowed = mutes.allows(cwd, kind, Some("/Users/me"), raised_at);
+        let rung: Vec<AlertKind> = viewer
+            .pump()
+            .into_iter()
+            .filter_map(|event| match event {
+                AlertsEvent::Raised(alert) => Some(alert.kind),
+                AlertsEvent::Withdrawn(_) => None,
+            })
+            .collect();
+        prop_assert_eq!(rung.clone(), if allowed { vec![kind] } else { Vec::new() });
+        prop_assert_eq!(hub.current().alerts.len(), usize::from(allowed));
+        let presenting = (presents || second) && !stale;
+        prop_assert_eq!(
+            banners.posted.lock().unwrap().len(),
+            usize::from(allowed && !presenting),
+            "the engine's own banner follows the same mutes"
+        );
+        if folder == FOLDERS.len() - 1 {
+            prop_assert!(rung.is_empty(), "the home folder is no project");
+        }
+    }
 }

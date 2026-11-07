@@ -4,17 +4,17 @@
 //! item exactly when it changed after the session last saw it, reading an unchanged item's feeds
 //! once.
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::executor::block_on;
 use onicode_core::automations::AutomationUpsert;
-use onicode_core::inbox::{Checks, Details, Diff, Item, Snapshot, Thread, ViewState};
+use onicode_core::inbox::{Checks, Details, Diff, Item, ProjectRepos, Snapshot, Thread, ViewState};
 use onicode_core::store::Store;
 use onicode_protocol::sessions::{Session, WorkItem};
 use onicode_protocol::work::{
-    DeleteAutomation, InboxList, LinkedActivity, RunAutomationNow, RunInboxAction,
+    DeleteAutomation, InboxList, InboxRepos, LinkedActivity, RunAutomationNow, RunInboxAction,
     SetAutomationEnabled, UpsertAutomation,
 };
 use onicode_protocol::{OpId, Outcome};
@@ -29,23 +29,36 @@ fn store() -> Database {
     Arc::new(Mutex::new(Store::in_memory().unwrap()))
 }
 
-/// An Inbox that lists one item per project and counts the actions it runs.
+/// One `list` call: where it ran, this engine's projects, the peers' repositories and whether it
+/// asked for items assigned to me.
+type Listed = (PathBuf, Vec<PathBuf>, Vec<ProjectRepos>, bool);
+
+/// An Inbox that lists one item per project, says each checkout belongs to the repository of
+/// its folder's name, and counts the actions it runs.
 #[derive(Default)]
 struct Scripted {
-    listed: Mutex<Vec<(PathBuf, Vec<PathBuf>, bool)>>,
+    listed: Mutex<Vec<Listed>>,
     actions: AtomicUsize,
 }
 
 impl Trackers for Scripted {
-    fn list(&self, at: &Place, projects: &[PathBuf], state: &ViewState) -> Snapshot {
+    fn list(
+        &self,
+        at: &Place,
+        projects: &[PathBuf],
+        elsewhere: &[ProjectRepos],
+        state: &ViewState,
+    ) -> Snapshot {
         self.listed.lock().unwrap().push((
             at.cwd.clone(),
             projects.to_vec(),
+            elsewhere.to_vec(),
             state.filters.assigned_to_me,
         ));
         Snapshot {
             items: projects
                 .iter()
+                .chain(elsewhere.iter().map(|other| &other.project))
                 .map(|project| Item {
                     project_path: project.to_string_lossy().into_owned(),
                     ..Item::default()
@@ -53,6 +66,11 @@ impl Trackers for Scripted {
                 .collect(),
             ..Snapshot::default()
         }
+    }
+
+    fn repos(&self, project: &Path) -> Result<Vec<String>, String> {
+        let name = project.file_name().ok_or("not a checkout")?;
+        Ok(vec![format!("acme/{}", name.to_string_lossy())])
     }
 
     fn details(&self, _: &Place, _: &Item) -> Result<Details, String> {
@@ -178,6 +196,7 @@ fn the_inbox_lists_what_the_viewer_names_with_the_engines_sessions() {
     let listing = block_on(hub.inbox_list(InboxList {
         cwd: "/a".into(),
         projects: vec!["/a".into(), "/b".into()],
+        elsewhere: Vec::new(),
         state,
     }))
     .unwrap();
@@ -188,8 +207,54 @@ fn the_inbox_lists_what_the_viewer_names_with_the_engines_sessions() {
         vec![(
             PathBuf::from("/a"),
             vec![PathBuf::from("/a"), PathBuf::from("/b")],
+            Vec::new(),
             true
         )]
+    );
+}
+
+/// A project on another Mac: its engine says which repositories the checkout belongs to, and
+/// the viewer's engine lists their items beside its own, each naming the project as the viewer
+/// spells it.
+#[test]
+fn a_peer_project_is_listed_through_the_repositories_its_engine_reads() {
+    let peer_store = store();
+    let peer_trackers = Arc::new(Scripted::default());
+    let peer = hub(
+        &peer_store,
+        peer_trackers,
+        Arc::new(Hub::new(UPDATED, true)),
+    );
+    let repos = block_on(peer.inbox_repos(InboxRepos {
+        project: "/Users/me/api".into(),
+    }))
+    .unwrap();
+    assert_eq!(repos, ["acme/api"]);
+
+    let store = store();
+    let trackers = Arc::new(Scripted::default());
+    let hub = hub(&store, trackers.clone(), Arc::new(Hub::new(UPDATED, true)));
+    let project = PathBuf::from("peer://nStudio/Users/me/api");
+    let elsewhere = vec![ProjectRepos {
+        project: project.clone(),
+        repos,
+    }];
+    let listing = block_on(hub.inbox_list(InboxList {
+        cwd: project.clone(),
+        projects: vec!["/a".into()],
+        elsewhere: elsewhere.clone(),
+        state: ViewState::default(),
+    }))
+    .unwrap();
+    let projects: Vec<&str> = listing
+        .items
+        .iter()
+        .map(|item| item.project_path.as_str())
+        .collect();
+    assert_eq!(projects, ["/a", "peer://nStudio/Users/me/api"]);
+    assert_eq!(
+        *trackers.listed.lock().unwrap(),
+        vec![(project, vec![PathBuf::from("/a")], elsewhere, false)]
     );
 }
 

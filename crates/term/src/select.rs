@@ -46,6 +46,10 @@ pub trait Grid {
     fn spacer(&self, at: Point) -> bool;
     /// The line continues on the next (soft wrap).
     fn wrapped(&self, line: u32) -> bool;
+    /// The cell's character as text reads it: `None` for a wide character's padding.
+    fn glyph(&self, at: Point) -> Option<char> {
+        (!self.spacer(at)).then(|| self.char_at(at))
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

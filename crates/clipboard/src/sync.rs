@@ -7,8 +7,10 @@
 //!   ones inline, and the bytes of the rest read now and held for the other Mac to take. Nothing
 //!   leaves that carries a privacy marker, that Universal Clipboard brought, that onicode wrote
 //!   itself (the origin marker, and the count its own write left), or that is past the caps
-//!   ([`SEND_MAX`] of bytes, [`FILES_MAX`] of regular files). Where reading the board would prompt
-//!   (Paste from Other Apps not Allow), nothing is read and copies stay on their Mac.
+//!   ([`SEND_MAX`] of bytes, [`FILES_MAX`] of regular files). A copy that stays here, whole or in
+//!   part, past the caps is said ([`Clipboard::withheld`]), so the person hears why it did not
+//!   arrive. Where reading the board would prompt (Paste from Other Apps not Allow), nothing is
+//!   read and copies stay on their Mac.
 //! - **Applying.** The other Mac's offer that is newer by `(at, origin, seq)` than everything
 //!   applied or announced here is taken at once. One of inline types alone is written straight
 //!   away; otherwise its other bytes and its files are fetched from the origin first, within
@@ -28,7 +30,7 @@ use async_trait::async_trait;
 use bytes::Bytes;
 use futures::stream::BoxStream;
 use onicode_desktop_proto::clipboard::{
-    ClipboardItem, ClipboardOffer, ClipboardType, INLINE_MAX, Inline, PasteAccess,
+    ClipboardItem, ClipboardOffer, ClipboardType, INLINE_MAX, Inline, PasteAccess, Withheld,
 };
 use parking_lot::Mutex;
 use tokio::runtime::Handle;
@@ -209,6 +211,8 @@ struct Inner {
     settings: watch::Sender<ClipboardSettings>,
     /// How many subscriptions are open.
     listeners: watch::Sender<usize>,
+    /// Whether this Mac's newest copy stays here past the caps.
+    withheld: watch::Sender<Option<Withheld>>,
 }
 
 #[derive(Default)]
@@ -254,6 +258,7 @@ impl Clipboard {
             follow: watch::Sender::new(None),
             settings: watch::Sender::new(config.settings),
             listeners: watch::Sender::new(0),
+            withheld: watch::Sender::new(None),
         }))
     }
 
@@ -318,6 +323,23 @@ impl Clipboard {
     #[must_use]
     pub fn announced(&self) -> Option<Arc<ClipboardOffer>> {
         self.0.offers.borrow().clone()
+    }
+
+    /// Whether this Mac's newest copy stays here, whole or in part, for being past the caps or
+    /// naming a folder: set when a look reads such a copy, `None` once a newer copy here is within
+    /// them or the other Mac's copy is written here. Each change wakes the receiver.
+    #[must_use]
+    pub fn withheld(&self) -> watch::Receiver<Option<Withheld>> {
+        self.0.withheld.subscribe()
+    }
+
+    /// Says whether the newest copy here stays here.
+    fn set_withheld(&self, withheld: Option<Withheld>) {
+        self.0.withheld.send_if_modified(|held| {
+            let changed = *held != withheld;
+            *held = withheld;
+            changed
+        });
     }
 
     /// This Mac's offers, as `subscriber` (the other Mac's device id; `None` for a reader of
@@ -401,7 +423,7 @@ impl Clipboard {
                 return None;
             }
         }
-        let read = read_board(&*inner.board, settings)?;
+        let read = read_board(&*inner.board, settings);
         let mut state = inner.state.lock();
         // The board moved while it was read (the other Mac's offer landed, or another copy): the
         // next look reads it again, unless it was this Mac's own write.
@@ -409,6 +431,16 @@ impl Clipboard {
             state.seen = None;
             return None;
         }
+        // A private copy stays home on purpose: it is no copy past the caps.
+        let withheld = read.as_ref().and_then(|read| read.withheld);
+        if let Some(size) = withheld {
+            tracing::debug!(?size, "a copy past the clipboard's caps stays home");
+        }
+        self.set_withheld(withheld.map(|size| Withheld {
+            at: inner.clock.now_ms(),
+            size,
+        }));
+        let read = read.filter(|read| !read.items.is_empty())?;
         state.seq = state.seq.saturating_add(1);
         let floor = state
             .newest
@@ -502,6 +534,8 @@ impl Clipboard {
         state.own = Some(count);
         state.seen = Some(count);
         drop(state);
+        // The newest copy here is the other Mac's now.
+        self.set_withheld(None);
         tracing::debug!(origin = %key.origin, seq = key.seq, "clipboard applied");
         self.keep_only(dir);
         Received::Applied
@@ -615,13 +649,17 @@ struct Read {
     items: Vec<ClipboardItem>,
     /// Per offer item: each type offered and its bytes.
     held: Vec<Vec<(String, Bytes)>>,
+    /// An item stays home past the caps: the size of what stays, `None` for a folder.
+    withheld: Option<Option<u64>>,
 }
 
-/// What may leave of the board's contents, read now; `None` when nothing may.
+/// What may leave of the board's contents, read now, and what stays past the caps; `None` when
+/// a privacy marker keeps it all home.
 ///
 /// A privacy marker keeps the whole copy home, whichever item it sits on: a password manager
 /// may write it as an item of its own. Items that name files leave only when the files do
-/// ([`files_travel`]), and each type only while the copy is within [`SEND_MAX`].
+/// ([`files_kept`]), and each type only while the copy is within [`SEND_MAX`]; an item none of
+/// whose types is within it stays home, and says so.
 fn read_board(board: &dyn Board, settings: ClipboardSettings) -> Option<Read> {
     let all = board.items();
     let marked = |kind: &str| all.iter().flatten().any(|t| t == kind);
@@ -633,15 +671,19 @@ fn read_board(board: &dyn Board, settings: ClipboardSettings) -> Option<Read> {
     {
         return None;
     }
-    let files = files_travel(board, &all);
+    let kept_files = files_kept(board, &all);
     let mut left = SEND_MAX;
-    let mut read = Read::default();
+    let mut read = Read {
+        withheld: kept_files,
+        ..Read::default()
+    };
     for (n, kinds) in all.iter().enumerate() {
-        if !files && kinds.iter().any(|t| t == FILE_URL_TYPE) {
+        if kept_files.is_some() && kinds.iter().any(|t| t == FILE_URL_TYPE) {
             continue;
         }
         let mut types = Vec::new();
         let mut held: Vec<(String, Bytes)> = Vec::new();
+        let mut too_big: Option<u64> = None;
         for uti in kinds.iter().filter(|t| carried(t)) {
             if held.iter().any(|(t, _)| t == uti) {
                 continue;
@@ -650,6 +692,7 @@ fn read_board(board: &dyn Board, settings: ClipboardSettings) -> Option<Read> {
                 Some(Capped::Data(bytes)) => bytes,
                 Some(Capped::TooBig(size)) => {
                     tracing::debug!(uti, size, "a type past the clipboard's cap stays home");
+                    too_big = Some(too_big.map_or(size, |seen| seen.max(size)));
                     continue;
                 }
                 None => continue,
@@ -671,25 +714,30 @@ fn read_board(board: &dyn Board, settings: ClipboardSettings) -> Option<Read> {
         if !types.is_empty() {
             read.items.push(ClipboardItem { types });
             read.held.push(held);
+        } else if let Some(size) = too_big {
+            // Nothing of this item is within the cap: it stays home.
+            let stays = read.withheld.flatten().map_or(size, |seen| seen.max(size));
+            read.withheld = Some(Some(stays));
         }
     }
-    (!read.items.is_empty()).then_some(read)
+    Some(read)
 }
 
-/// Whether the files the copy on `board` names travel: each a regular file, together no more
-/// than [`FILES_MAX`]. A folder's size needs a walk, so a copy with one stays home.
-fn files_travel(board: &dyn Board, all: &[Vec<String>]) -> bool {
+/// Whether the files the copy on `board` names stay home: `None` when they travel (each a
+/// regular file, together no more than [`FILES_MAX`], or none named), else their size together,
+/// `None` within for a folder, whose size needs a walk, so a copy with one stays home.
+fn files_kept(board: &dyn Board, all: &[Vec<String>]) -> Option<Option<u64>> {
     let mut total = 0_u64;
     for (n, kinds) in all.iter().enumerate() {
         if !kinds.iter().any(|t| t == FILE_URL_TYPE) {
             continue;
         }
         let Some(size) = board.data(n, FILE_URL_TYPE).and_then(|url| file_size(&url)) else {
-            return false;
+            return Some(None);
         };
         total = total.saturating_add(size);
     }
-    total <= FILES_MAX
+    (total > FILES_MAX).then_some(Some(total))
 }
 
 /// Whether the files `offer` names may be fetched: each a regular file of known size, together

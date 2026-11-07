@@ -3,8 +3,9 @@
 use std::net::SocketAddr;
 
 use onicode_desktop_link::broker::DesktopEndpoint;
-use onicode_desktop_link::{Down, HostGrants, Pane, Seat, WIRE};
+use onicode_desktop_link::{Clip, Down, HostGrants, Pane, Seat, WIRE};
 use onicode_desktop_proto::DisplayId;
+use onicode_desktop_proto::clipboard::Withheld;
 use onicode_desktop_proto::input::{Mods, MouseButton};
 use onicode_desktop_proto::screen::{
     CaptureTarget, DisplayInfo, DisplayKey, DisplayShape, OpenAsk, Quality, ScreenEvent,
@@ -13,7 +14,7 @@ use onicode_desktop_proto::screen::{
 use pretty_assertions::assert_eq;
 use proptest::prelude::*;
 
-use super::{Book, Command, Effect, Open, Phase, coalesce};
+use super::{Book, Command, Effect, KeptCopy, Open, Phase, coalesce};
 
 fn endpoint() -> DesktopEndpoint {
     DesktopEndpoint {
@@ -291,6 +292,54 @@ fn refused_input_shows_until_the_controls_are_ours() {
     }));
     assert!(!book.state.input_refused);
     assert!(book.state.seat.you);
+}
+
+/// A copy past the clipboard's caps shows until a copy within them follows on its Mac: the
+/// later of this device's and the Mac's, and the Mac's only while its link stands.
+#[test]
+fn a_copy_past_the_cap_shows_until_one_within_follows() {
+    let mut book = Book::new(&endpoint());
+    let _ = book.down(welcome(Seat::default()));
+    assert_eq!(book.state.clipboard_kept, None);
+    let there = |at, size| Down::Clip(Clip::Withheld(Some(Withheld { at, size })));
+
+    assert_eq!(book.down(there(1_000, Some(20 << 20))), Vec::new());
+    assert_eq!(
+        book.state.clipboard_kept,
+        Some(KeptCopy {
+            here: false,
+            size: Some(20 << 20)
+        })
+    );
+    book.kept_here(Some(Withheld {
+        at: 2_000,
+        size: None,
+    }));
+    assert_eq!(
+        book.state.clipboard_kept,
+        Some(KeptCopy {
+            here: true,
+            size: None
+        }),
+        "the later copy: a folder here"
+    );
+    let _ = book.down(there(3_000, Some(17 << 20)));
+    assert_eq!(book.state.clipboard_kept.map(|kept| kept.here), Some(false));
+    let _ = book.down(Down::Clip(Clip::Withheld(None)));
+    assert_eq!(
+        book.state.clipboard_kept.map(|kept| kept.here),
+        Some(true),
+        "the Mac's next copy went: this device's still stays"
+    );
+    book.kept_here(None);
+    assert_eq!(book.state.clipboard_kept, None);
+
+    let _ = book.down(there(4_000, Some(18 << 20)));
+    book.unlinked();
+    assert_eq!(
+        book.state.clipboard_kept, None,
+        "the Mac says again over the next link"
+    );
 }
 
 /// A Mac on another session wire is not joined.

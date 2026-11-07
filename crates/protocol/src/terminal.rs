@@ -11,8 +11,10 @@
 //! in order, and the engine encodes them from its terminal's modes at that instant.
 //!
 //! Every call that sizes or types names its [`ViewerId`]: the PTY takes the size of the viewer
-//! that typed last. A program's OSC 7501 reports reach viewers as a [`ProgramStatus`], display
-//! evidence only: a terminal's report never resolves an approval or finishes a native turn.
+//! that typed last, and a resize answers with the size the PTY has after it, so a viewer knows
+//! whether its own size won. A program's OSC 7501 reports reach viewers as a [`ProgramStatus`],
+//! display evidence only: a terminal's report never resolves an approval or finishes a native
+//! turn.
 use std::fmt;
 
 use serde::{Deserialize, Serialize};
@@ -108,6 +110,9 @@ impl Call for ListTerminals {
 
 /// The viewer's grid. The PTY takes it when this viewer typed last, or when nobody watching has
 /// typed; every watcher's mirror reflows at the same byte, through [`TerminalEvent::Resized`].
+/// The reply is the PTY's size after the call: this one when the PTY took it, else the size of
+/// the viewer it follows. A viewer showing its own size ahead of the host's word goes back to the
+/// host's grid when the reply names another.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResizeTerminal {
     pub terminal: TerminalId,
@@ -117,7 +122,7 @@ pub struct ResizeTerminal {
 
 impl Call for ResizeTerminal {
     type Params = Self;
-    type Reply = Outcome;
+    type Reply = TerminalSize;
 
     const NAME: &'static str = "ResizeTerminal";
 }
@@ -230,15 +235,22 @@ impl Watch for WatchTerminal {
     const NAME: &'static str = "WatchTerminal";
 }
 
+/// The `seq` of a snapshot item's cursor while its [`TerminalEvent::History`] is still to come.
+/// No stream reaches it, so a watch resumed from it starts over with a whole new snapshot instead
+/// of resuming past a history it never got; the `History` item's `last` then moves the cursor to
+/// the snapshot's own number.
+pub const HISTORY_PENDING: u64 = u64::MAX;
+
 /// A terminal as a watcher starts from.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalState {
     pub size: TerminalSize,
     /// libghostty's snapshot of the terminal as of the cursor, through its READY record: the
     /// screen, modes and parser state, enough to paint. The older scrollback follows at once as
-    /// [`TerminalEvent::History`], so a big history never holds back the first frame. Empty when
-    /// the engine could not take one (output stopped inside an escape sequence longer than
-    /// libghostty keeps): the viewer starts from a blank grid, and no history follows.
+    /// [`TerminalEvent::History`], so a big history never holds back the first frame, and until
+    /// it has, the item's cursor holds [`HISTORY_PENDING`]. Empty when the engine could not take
+    /// one (output stopped inside an escape sequence longer than libghostty keeps): the viewer
+    /// starts from a blank grid, no history follows and the cursor is the snapshot's own.
     pub screen: Bytes,
     pub exited: bool,
     pub status: Option<ProgramStatus>,
@@ -258,7 +270,8 @@ pub enum TerminalEvent {
     Exited { code: Option<i32> },
     /// The rest of the snapshot just before it, after its READY record: the older scrollback.
     /// It is not numbered: it comes alone, right after the snapshot, in an `Events` item that
-    /// covers no numbers (`last == first - 1`), and never from the ring.
+    /// covers no numbers (`last == first - 1`, the snapshot's own number), and never from the
+    /// ring. Its `last` makes the snapshot's cursor resumable ([`HISTORY_PENDING`]).
     History(Bytes),
     /// What the program reports changed (OSC 7501): the most urgent record now, or none.
     Status(Option<ProgramStatus>),

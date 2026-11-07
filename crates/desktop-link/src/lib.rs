@@ -45,8 +45,11 @@ pub mod order;
 /// the clipboard came ([`Up::Clip`], [`Down::Clip`] and its fetch streams). 3: H.264 is gone,
 /// video is HEVC only. 4: a stream's focus is gone (the engines no longer favour a focused
 /// stream), and so is the sound report (no audio copies to size); a clipboard offer's bytes past
-/// the inline ones are fetched as soon as it lands.
-pub const WIRE: u32 = 4;
+/// the inline ones are fetched as soon as it lands. 5: a copied file travels alone, as one
+/// [`onicode_desktop_proto::clipboard::FileEntry`] with its name and size, never a folder's tree,
+/// and the host says when its newest copy stays there past the caps
+/// ([`onicode_desktop_proto::clipboard::Clip::Withheld`]).
+pub const WIRE: u32 = 5;
 
 /// desktopd's UDP port on every tailnet address: the engine's port (`onicode_net::transport::
 /// PORT`, 7433) plus one.

@@ -372,6 +372,26 @@ behind, and a push when the upstream moved to HEAD. That `TurnGit` rides in the 
 sent in `TurnFinished` and saved with the receipt) and the card renders only it, so a locale, an alias or a
 wrapper script cannot change what it shows. `PROTOCOL` is 13.
 
+The engine applies project mutes itself (`alerts.md`): `SetViewportFocus` carries the viewport's `Mutes` in
+that engine's paths, and the app watches and reports to every engine whose projects the window shows. The
+Inbox lists a peer project's items: the app asks the engine that holds it for the repositories its checkout
+belongs to (`InboxRepos`, asked once per project) and hands them to its own engine's `InboxList` as
+`elsewhere`; every `gh` call names its repository, so one for a peer project runs from the home folder
+(`gh_root`), as GitHub's connection check does when the Inbox's checkout is a peer's. `PROTOCOL` is 14.
+
+What else works over peers, and what cannot. A note mentioned in any chat is the owner's, from this Mac's
+engine (the Notes view's), its body sent with the prompt. Copy Path copies a peer file as its machine names it.
+The header's branch for a peer project is its checkout's HEAD as its engine last answered (`git_cache`). A file
+of a third engine is attached through `Read`, as a preview reads it (text or an image), and carried as its
+bytes; anything else stays on its machine. These stay on this Mac, shown but disabled for a peer path: Reveal in
+Finder and Open in Default App (link menu, explorer, project menu) and Open in editor, since Finder, Launch
+Services and this Mac's editors open only this Mac's files, and MCP's Show config, which is Reveal. A video
+plays only from this Mac, since AVPlayer plays a local path (a peer's would need its bytes streamed); the
+buttons of the file editor's error state (Reveal, Open externally) do nothing for a peer file. Two are not done: an automation in a peer project is refused (the
+app's engine schedules it and checks the folder on its own disk; it belongs on the engine that holds the
+project, with the Automations view listing and editing each engine's), and a link to a folder opens as a file,
+here and on a peer alike (it wants a `Stat` and the explorer opened at the folder).
+
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,
 `EngineInfo` and `UpdateEngine`, whose shapes are frozen, so the machines list can say "Needs update" and offer

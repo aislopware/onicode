@@ -13,7 +13,10 @@ Reads come from the host's watches: a snapshot at a cursor, then every event, re
 drop, the snapshots last seen kept on disk so a first frame never waits; file trees as host-pushed listings,
 as in Zed; per-device catalogs and recently opened files cached on disk and revalidated in the background. Links to
 every known engine are dialled at start and on foreground, kept alive at 1 s pings while something live is on
-screen, and reset on wake or a path change. The terminal paints only what the host echoed (`terminal.md`).
+screen, and reset on wake or a path change. The terminal paints only what the host echoed (`terminal.md`). What
+is the viewer's own stays local: a window resize relays the terminal's mirror out in the same frame, and the
+host's resize reply and stream settle it without guessing the host's state. Find in the scrollback runs on the
+mirror with no round trip.
 
 Each target is stated in round trips plus a constant, or as zero network events before the echo. Seeded
 virtual-time scenarios in `onicode-latency` over `onicode-net-sim` profiles (LAN to DERP, loss, roam, sleep)

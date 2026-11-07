@@ -508,8 +508,10 @@ impl Completion {
                 search: id.clone(),
             },
         );
+        // The owner's notes are this Mac's, the ones the Notes view shows, in a chat on any
+        // engine: `prepare_prompt` sends a mentioned note's body with the prompt.
+        let notes = crate::engine_client::local(cx).call::<ListNotes>(None, ListNotes {});
         // The engine leaves out the skills Settings disabled.
-        let notes = self.engine.call::<ListNotes>(None, ListNotes {});
         let skills = self.engine.call::<Skills>(
             None,
             Skills {

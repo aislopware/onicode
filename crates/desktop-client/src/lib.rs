@@ -54,7 +54,7 @@ pub use onicode_desktop_link::broker::DesktopEndpoint;
 pub use onicode_desktop_link::{HostGrants, Pane, Seat};
 pub use router::ScreenRouter;
 pub use screen::{CursorState, Present, Presentable, ScreenHandle, ScreenStats, Stitched};
-pub use session::{DesktopSession, Join, Open, Phase, SessionState, StreamView};
+pub use session::{DesktopSession, Join, KeptCopy, Open, Phase, SessionState, StreamView};
 
 /// Now, on tokio's clock: the system's, or a test's paused one, so a stream's timers and its
 /// stamps agree in virtual time. Off a runtime (a platform decoder's own thread), the system's.

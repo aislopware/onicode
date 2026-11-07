@@ -12,13 +12,15 @@ use gpui::{
     App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, ListAlignment,
     ListState, Pixels, Subscription, px,
 };
-use onicode_protocol::inbox::{Checks, Details, Diff, Item, Snapshot, Thread, ViewState};
+use onicode_protocol::inbox::{
+    Checks, Details, Diff, Item, ProjectRepos, Snapshot, Thread, ViewState,
+};
 use onicode_protocol::sessions::Session;
 use onicode_protocol::work::{
-    InboxList, PostInboxComment, ReadInboxChecks, ReadInboxDetails, ReadInboxDiff, ReadInboxThread,
-    RunInboxAction,
+    InboxList, InboxRepos, PostInboxComment, ReadInboxChecks, ReadInboxDetails, ReadInboxDiff,
+    ReadInboxThread, RunInboxAction,
 };
-use onicode_protocol::{OpId, inbox as model};
+use onicode_protocol::{OpId, ProjectRef, inbox as model};
 pub(crate) use ui::{RelativeNow, relative_time, start_relative_clock};
 
 use crate::diff_view::{DiffEvent, DiffView};
@@ -50,6 +52,9 @@ pub(crate) struct Inbox {
     /// The checkout the Inbox was opened from: its `gh` calls run there.
     cwd: PathBuf,
     projects: Vec<PathBuf>,
+    /// The repositories each project on another engine checks out, as that engine said
+    /// (`InboxRepos`): asked once per project, again only after a failed ask.
+    peer_repos: std::collections::HashMap<PathBuf, Vec<String>>,
     appearances:
         std::collections::HashMap<String, onicode_protocol::project_appearance::ProjectAppearance>,
     state: ViewState,
@@ -246,6 +251,7 @@ impl Inbox {
             ui_state,
             cwd: cwd.clone(),
             projects,
+            peer_repos: Default::default(),
             appearances: Default::default(),
             state,
             snapshot: Snapshot::default(),
@@ -324,6 +330,8 @@ impl Inbox {
                 self.state.filters.hidden_projects = other_projects(&projects, &cwd);
                 self.save();
             }
+            self.peer_repos
+                .retain(|project, _| projects.contains(project));
             self.projects = projects;
             self.cwd = cwd.clone();
             self.start_project = cwd;
@@ -405,18 +413,69 @@ impl Inbox {
         self.generation += 1;
         let generation = self.generation;
         let scope = self.fetch_scope();
-        let task = call::<InboxList>(
-            &self.engine,
-            None,
-            InboxList {
-                cwd: self.cwd.clone(),
-                projects: self.projects.clone(),
-                state: self.state.clone(),
-            },
-            cx,
-        );
+        // A project on another engine is listed here through the repositories that engine
+        // reads in its checkout; every `gh` call for its items runs on this one.
+        let (local, peers): (Vec<PathBuf>, Vec<PathBuf>) = self
+            .projects
+            .iter()
+            .cloned()
+            .partition(|project| ProjectRef::parse_uri(&project.to_string_lossy()).is_none());
+        let known: Vec<ProjectRepos> = peers
+            .iter()
+            .filter_map(|project| {
+                let repos = self.peer_repos.get(project)?.clone();
+                Some(ProjectRepos {
+                    project: project.clone(),
+                    repos,
+                })
+            })
+            .collect();
+        let lookups: Vec<_> = peers
+            .into_iter()
+            .filter(|project| !self.peer_repos.contains_key(project))
+            .map(|project| {
+                let (engine, folder) = self.engine.for_path(&project.to_string_lossy());
+                let call = engine.call::<InboxRepos>(
+                    None,
+                    InboxRepos {
+                        project: folder.into(),
+                    },
+                );
+                async move {
+                    Some(ProjectRepos {
+                        project,
+                        repos: call.await.ok()?,
+                    })
+                }
+            })
+            .collect();
+        let engine = self.engine.clone();
+        let mut body = InboxList {
+            cwd: self.cwd.clone(),
+            projects: local,
+            elsewhere: known,
+            state: self.state.clone(),
+        };
+        let task = cx.background_executor().spawn(async move {
+            let found: Vec<ProjectRepos> = futures::future::join_all(lookups)
+                .await
+                .into_iter()
+                .flatten()
+                .collect();
+            body.elsewhere.extend(found.iter().cloned());
+            (engine.call::<InboxList>(None, body).await, found)
+        });
         cx.spawn(async move |this, cx| {
-            let (mut snapshot, sessions) = match task.await {
+            let (listing, found) = task.await;
+            let _ = this.update(cx, |this, _| {
+                this.peer_repos.extend(
+                    found
+                        .into_iter()
+                        .filter(|other| this.projects.contains(&other.project))
+                        .map(|other| (other.project, other.repos)),
+                );
+            });
+            let (mut snapshot, sessions) = match listing {
                 Ok(listing) => (
                     Snapshot {
                         items: listing.items,

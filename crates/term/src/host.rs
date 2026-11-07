@@ -23,10 +23,6 @@ use onicode_protocol::terminal::{
 use crate::program::{self, Change, Programs, Report};
 use crate::{keys, palette};
 
-/// The longest unfinished escape sequence a snapshot can carry. A snapshot taken inside a longer
-/// one (a huge image upload) waits for the next feed.
-const MAX_CONTINUATION_BYTES: usize = 16 << 20;
-
 /// Replies the program can queue between drains. A program flooding queries loses the rest
 /// instead of growing this.
 const MAX_PENDING_PTY: usize = 64 << 10;
@@ -76,7 +72,7 @@ impl Host {
             Terminal::new(size.cols.max(2), size.rows.max(1)).unwrap_or_else(|_| crate::oom());
         crate::configure(&mut term);
         // Snapshots may land inside an escape sequence.
-        let _ = term.set_continuation_max_bytes(MAX_CONTINUATION_BYTES);
+        let _ = term.set_continuation_max_bytes(crate::MAX_CONTINUATION_BYTES);
         let _ = term.set_terminfo_name(terminfo);
         let _ = term.set_default_fg_color(Some(palette::rgb(colors.foreground)));
         let _ = term.set_default_bg_color(Some(palette::rgb(colors.background)));

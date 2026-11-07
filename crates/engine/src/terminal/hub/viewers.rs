@@ -1,60 +1,69 @@
 //! Whose size a terminal's PTY takes when several viewers watch it (a Mac and an iPhone): the
-//! viewer that typed last. Until anyone has typed, or once every viewer that typed has stopped
-//! watching, it is the viewer that sized it last. A viewer is known from its first resize, input
-//! or watch until its last watch ends; a sole viewer's resizes all apply, as if it were alone.
-use std::collections::HashMap;
+//! viewer that typed last, among those that gave a size. Until anyone has typed, or once every
+//! viewer that typed has stopped watching, it is the viewer that sized it last. A viewer is known
+//! from its first resize, input or watch until its last watch ends; a sole viewer's resizes all
+//! apply, as if it were alone.
+//!
+//! The rule is deterministic: it reads only the order in which the host took the viewers' acts.
+//! Every act (a resize, an input, a watch) takes the next tick of one clock, so no two acts tie,
+//! and nothing depends on a viewer's id or on map order, not even which viewer is forgotten when
+//! too many are known. Every viewer sees the outcome: the PTY's size is in the stream, and a
+//! resize answers with it.
+use std::collections::BTreeMap;
 
 use onicode_protocol::terminal::{TerminalSize, ViewerId};
 
-/// Viewers one terminal remembers. One that never watched (a resize before its watch) is the
-/// first to go past this.
+/// Viewers one terminal remembers. Past this, the viewer that acted longest ago among those not
+/// watching (else among all, never the one the PTY follows) is forgotten.
 const MAX_VIEWERS: usize = 16;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Viewer {
     size: Option<TerminalSize>,
     watches: usize,
-    /// When it last typed and last sized, by the terminal's own clock; 0 is never.
+    /// When it last typed, last sized and last acted at all, by the terminal's own clock; 0 is
+    /// never.
     typed: u64,
     sized: u64,
+    acted: u64,
 }
 
 /// One terminal's viewers.
 #[derive(Debug, Default)]
 pub(crate) struct Viewers {
-    viewers: HashMap<ViewerId, Viewer>,
+    viewers: BTreeMap<ViewerId, Viewer>,
     clock: u64,
 }
 
 impl Viewers {
-    fn tick(&mut self) -> u64 {
+    /// The next tick, and `viewer` known and marked as acting at it.
+    fn act(&mut self, viewer: ViewerId) -> (u64, &mut Viewer) {
         self.clock += 1;
-        self.clock
-    }
-
-    fn entry(&mut self, viewer: ViewerId) -> &mut Viewer {
+        let now = self.clock;
         if !self.viewers.contains_key(&viewer) && self.viewers.len() >= MAX_VIEWERS {
             let owner = self.owner();
             let stale = self
                 .viewers
                 .iter()
                 .filter(|(id, _)| Some(**id) != owner)
-                .min_by_key(|(_, v)| (v.watches > 0, v.typed.max(v.sized)))
+                .min_by_key(|(_, v)| (v.watches > 0, v.acted))
                 .map(|(id, _)| *id);
             if let Some(stale) = stale {
                 self.viewers.remove(&stale);
             }
         }
-        self.viewers.entry(viewer).or_default()
+        let entry = self.viewers.entry(viewer).or_default();
+        entry.acted = now;
+        (now, entry)
     }
 
-    /// The viewer whose size the PTY follows: the one that typed last, else the one that sized
-    /// it last.
+    /// The viewer whose size the PTY follows: the one with a size that typed last, else the one
+    /// that sized it last.
     fn owner(&self) -> Option<ViewerId> {
         let typist = self
             .viewers
             .iter()
-            .filter(|(_, v)| v.typed > 0)
+            .filter(|(_, v)| v.typed > 0 && v.size.is_some())
             .max_by_key(|(_, v)| v.typed);
         let sizer = || {
             self.viewers
@@ -72,8 +81,7 @@ impl Viewers {
 
     /// `viewer`'s grid; the size to apply when the PTY follows it.
     pub(crate) fn sized(&mut self, viewer: ViewerId, size: TerminalSize) -> Option<TerminalSize> {
-        let now = self.tick();
-        let entry = self.entry(viewer);
+        let (now, entry) = self.act(viewer);
         entry.size = Some(size);
         entry.sized = now;
         (self.owner() == Some(viewer)).then_some(size)
@@ -81,14 +89,14 @@ impl Viewers {
 
     /// `viewer` sent input: it becomes the typist, and the PTY takes its size.
     pub(crate) fn typed(&mut self, viewer: ViewerId) -> Option<TerminalSize> {
-        let now = self.tick();
-        self.entry(viewer).typed = now;
+        let (now, entry) = self.act(viewer);
+        entry.typed = now;
         self.size()
     }
 
     /// `viewer` started a watch.
     pub(crate) fn joined(&mut self, viewer: ViewerId) {
-        self.entry(viewer).watches += 1;
+        self.act(viewer).1.watches += 1;
     }
 
     /// One of `viewer`'s watches ended; with its last, it is forgotten, and the size to apply
@@ -106,7 +114,8 @@ impl Viewers {
 
 #[cfg(test)]
 mod tests {
-    //! The typist rule against a model that replays the whole history of who did what.
+    //! The typist rule against a model that replays the whole history of who did what, and
+    //! metamorphically: renaming the viewers never changes a size the PTY takes.
     use proptest::prelude::*;
     use uuid::Uuid;
 
@@ -133,13 +142,34 @@ mod tests {
         Leave(usize),
     }
 
-    fn op() -> impl Strategy<Value = Op> {
+    /// An act of one of `viewers` viewers.
+    fn op_among(viewers: usize) -> impl Strategy<Value = Op> {
         prop_oneof![
-            (0usize..4, 20u16..30).prop_map(|(v, cols)| Op::Size(v, cols)),
-            (0usize..4).prop_map(Op::Type),
-            (0usize..4).prop_map(Op::Join),
-            (0usize..4).prop_map(Op::Leave),
+            (0..viewers, 20u16..30).prop_map(|(v, cols)| Op::Size(v, cols)),
+            (0..viewers).prop_map(Op::Type),
+            (0..viewers).prop_map(Op::Join),
+            (0..viewers).prop_map(Op::Leave),
         ]
+    }
+
+    fn op() -> impl Strategy<Value = Op> {
+        op_among(4)
+    }
+
+    /// The size each act makes the PTY take, if any, with viewer `v` named `name(v)`.
+    fn applied(ops: &[Op], name: impl Fn(usize) -> ViewerId) -> Vec<Option<TerminalSize>> {
+        let mut viewers = Viewers::default();
+        ops.iter()
+            .map(|op| match op {
+                Op::Size(v, cols) => viewers.sized(name(*v), size(*cols)),
+                Op::Type(v) => viewers.typed(name(*v)),
+                Op::Join(v) => {
+                    viewers.joined(name(*v));
+                    None
+                }
+                Op::Leave(v) => viewers.left(name(*v)),
+            })
+            .collect()
     }
 
     /// The PTY's size after `history`, read straight from it: the latest size of the viewer that
@@ -185,7 +215,7 @@ mod tests {
             .enumerate()
             .rev()
             .find_map(|(at, op)| match op {
-                Op::Type(v) if known(*v, at) => Some(*v),
+                Op::Type(v) if known(*v, at) && last_size(*v).is_some() => Some(*v),
                 _ => None,
             });
         let owner = typist.or_else(|| {
@@ -202,6 +232,17 @@ mod tests {
     }
 
     proptest! {
+        /// More viewers than a terminal remembers, so some are forgotten: the sizes the PTY
+        /// takes are the same whatever the viewers' ids, since only the order of their acts
+        /// counts.
+        #[test]
+        fn renaming_the_viewers_changes_no_size(
+            ops in proptest::collection::vec(op_among(MAX_VIEWERS + 6), 0..120),
+            names in Just((0..MAX_VIEWERS + 6).collect::<Vec<usize>>()).prop_shuffle(),
+        ) {
+            prop_assert_eq!(applied(&ops, viewer), applied(&ops, |v| viewer(names[v])));
+        }
+
         /// Whatever viewers do, in any order, the PTY ends at the size the history says.
         #[test]
         fn the_pty_follows_the_typist(ops in proptest::collection::vec(op(), 0..60)) {

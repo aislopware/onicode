@@ -8,6 +8,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::session_groups::WorkItem;
 
+/// A project another engine holds, as the viewer spells it (`peer://…`), and the GitHub
+/// repositories that engine said it checks out (`work::InboxRepos`).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProjectRepos {
+    pub project: PathBuf,
+    pub repos: Vec<String>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase", rename = "InboxLabel")]
 pub struct Label {

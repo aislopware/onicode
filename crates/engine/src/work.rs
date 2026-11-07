@@ -2,17 +2,17 @@
 //! GitHub items, the automations the workspace hub schedules, and the GitHub activity of the
 //! items sessions link to. Every network and `gh` call runs here, off the caller's thread, behind
 //! the [`Trackers`] and [`Gh`] seams the tests script.
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use onicode_core::automations::{Automation, AutomationRun, DueAutomationRun};
-use onicode_core::inbox::{Checks, Details, Diff, Item, Snapshot, Thread, ViewState};
+use onicode_core::inbox::{Checks, Details, Diff, Item, ProjectRepos, Snapshot, Thread, ViewState};
 use onicode_protocol::files::Bytes;
 use onicode_protocol::sessions::Groups;
 use onicode_protocol::work::{
     AutomationRuns, DeleteAutomation, HasEventAutomations, InboxAvatar, InboxList, InboxListing,
-    InboxMedia, LinkedActivity, LinkedCard, ListAutomations, PostInboxComment, ProjectGroups,
-    ReadInboxChecks, ReadInboxDetails, ReadInboxDiff, ReadInboxThread, ReadWorkItem,
+    InboxMedia, InboxRepos, LinkedActivity, LinkedCard, ListAutomations, PostInboxComment,
+    ProjectGroups, ReadInboxChecks, ReadInboxDetails, ReadInboxDiff, ReadInboxThread, ReadWorkItem,
     ReadWorkItemDetails, RunAutomationNow, RunInboxAction, SetAutomationEnabled, UpsertAutomation,
 };
 use onicode_protocol::{Call, OpId, Outcome};
@@ -36,7 +36,16 @@ pub type Place = onicode_core::inbox::Service;
 /// GitHub behind the Inbox and the media its items link to. A seam, so the tests script them
 /// with no network or `gh`.
 pub trait Trackers: Send + Sync + 'static {
-    fn list(&self, at: &Place, projects: &[PathBuf], state: &ViewState) -> Snapshot;
+    /// The items of `projects`, and of the projects other engines hold (`elsewhere`).
+    fn list(
+        &self,
+        at: &Place,
+        projects: &[PathBuf],
+        elsewhere: &[ProjectRepos],
+        state: &ViewState,
+    ) -> Snapshot;
+    /// The GitHub repositories the checkout at `project` belongs to.
+    fn repos(&self, project: &Path) -> Result<Vec<String>, String>;
     fn details(&self, at: &Place, item: &Item) -> Result<Details, String>;
     fn thread(&self, at: &Place, item: &Item) -> Result<Thread, String>;
     fn diff(&self, at: &Place, item: &Item) -> Result<Diff, String>;
@@ -62,8 +71,12 @@ pub struct OfflineTrackers;
 const OFFLINE: &str = "The Inbox is offline in this engine";
 
 impl Trackers for OfflineTrackers {
-    fn list(&self, _: &Place, _: &[PathBuf], _: &ViewState) -> Snapshot {
+    fn list(&self, _: &Place, _: &[PathBuf], _: &[ProjectRepos], _: &ViewState) -> Snapshot {
         Snapshot::default()
+    }
+
+    fn repos(&self, _: &Path) -> Result<Vec<String>, String> {
+        Err(OFFLINE.into())
     }
 
     fn details(&self, _: &Place, _: &Item) -> Result<Details, String> {
@@ -112,8 +125,18 @@ impl Gh for OfflineGh {
 pub struct CoreTrackers;
 
 impl Trackers for CoreTrackers {
-    fn list(&self, at: &Place, projects: &[PathBuf], state: &ViewState) -> Snapshot {
-        at.list(projects, state)
+    fn list(
+        &self,
+        at: &Place,
+        projects: &[PathBuf],
+        elsewhere: &[ProjectRepos],
+        state: &ViewState,
+    ) -> Snapshot {
+        at.list(projects, elsewhere, state)
+    }
+
+    fn repos(&self, project: &Path) -> Result<Vec<String>, String> {
+        onicode_core::inbox::repositories(project)
     }
 
     fn details(&self, at: &Place, item: &Item) -> Result<Details, String> {
@@ -233,11 +256,12 @@ impl WorkHub {
         let InboxList {
             cwd,
             projects,
+            elsewhere,
             state,
         } = body;
         let snapshot = self
             .tracker(cwd, move |trackers, at| {
-                Ok(trackers.list(at, &projects, &state))
+                Ok(trackers.list(at, &projects, &elsewhere, &state))
             })
             .await?;
         let sessions = locked(&self.store)?.sessions().unwrap_or_default();
@@ -247,6 +271,12 @@ impl WorkHub {
             connection: snapshot.connection,
             sessions,
         })
+    }
+
+    /// `InboxRepos`: what another engine's Inbox lists for a project this engine holds.
+    pub async fn inbox_repos(&self, body: InboxRepos) -> Result<Vec<String>, String> {
+        let trackers = self.trackers.clone();
+        self.blocking(move || trackers.repos(&body.project)).await
     }
 
     pub async fn details(&self, body: ReadInboxDetails) -> Result<Details, String> {
@@ -451,8 +481,9 @@ impl WorkService {
     }
 }
 
-const METHODS: [&str; 20] = [
+const METHODS: [&str; 21] = [
     InboxList::NAME,
+    InboxRepos::NAME,
     ReadInboxDetails::NAME,
     ReadInboxThread::NAME,
     ReadInboxDiff::NAME,
@@ -488,6 +519,10 @@ impl RpcService for WorkService {
             InboxList::NAME => {
                 let (_, body) = routed(params)?;
                 reply(hub.inbox_list(body).await)
+            }
+            InboxRepos::NAME => {
+                let (_, body) = routed(params)?;
+                reply(hub.inbox_repos(body).await)
             }
             ReadInboxDetails::NAME => {
                 let (_, body) = routed(params)?;
