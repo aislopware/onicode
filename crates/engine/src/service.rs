@@ -9,6 +9,7 @@ use serde::de::DeserializeOwned;
 use crate::files::FilesService;
 use crate::git::GitService;
 use crate::session::SessionService;
+use crate::terminal::TerminalService;
 use crate::workspace::WorkspaceService;
 
 pub struct EngineService {
@@ -16,6 +17,7 @@ pub struct EngineService {
     workspace: WorkspaceService,
     files: FilesService,
     git: GitService,
+    terminal: TerminalService,
 }
 
 impl EngineService {
@@ -25,12 +27,14 @@ impl EngineService {
         workspace: WorkspaceService,
         files: FilesService,
         git: GitService,
+        terminal: TerminalService,
     ) -> Self {
         Self {
             session,
             workspace,
             files,
             git,
+            terminal,
         }
     }
 }
@@ -51,6 +55,8 @@ impl RpcService for EngineService {
             self.files.handle(method, params).await
         } else if GitService::serves(method) {
             self.git.handle(method, params).await
+        } else if TerminalService::serves(method) {
+            self.terminal.handle(method, params).await
         } else {
             self.session.handle(method, params).await
         }

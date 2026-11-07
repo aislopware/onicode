@@ -7,6 +7,8 @@ members = [
     # The engine and the protocol its viewers speak (docs/onicode/decisions/engine.md).
     "crates/engine",
     "crates/protocol",
+    # The terminal core: the engine's host terminal and the mirror the app paints.
+    "crates/term",
     # Temporary: monocode's phone link, replaced by the tailnet engine protocol (M4, M10).
     "crates/mobile-link",
     "crates/rpc",
@@ -49,6 +51,7 @@ onicode-rpc = { path = "crates/rpc" }
 # The engine and the protocol its viewers speak (docs/onicode/decisions/engine.md).
 onicode-engine = { path = "crates/engine" }
 onicode-protocol = { path = "crates/protocol" }
+onicode-term = { path = "crates/term" }
 
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }
@@ -284,7 +287,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
 notify = "7"
-alacritty_terminal = "0.26"
+# Terminal emulation (docs/onicode/decisions/terminal.md): aislopware/libghostty-rs, which pins the
+# aislopware/ghostty commit whose libghostty-vt it builds. Pinned by rev: the engine's host and the
+# app's mirror must run the same snapshot format.
+libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "eabfb4130a7a056859b5c86dc860c4a2d1d8604b" }
+portable-pty = "0.9"
 pulldown-cmark = "0.12"
 unicode-segmentation = "1"
 unicode-width = "0.2"

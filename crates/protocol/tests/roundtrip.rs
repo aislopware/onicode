@@ -1386,3 +1386,95 @@ proptest! {
         round_trips(&RestoreCheckpoint { session, cwd: checkout, restore, path: Some(path) })?;
     }
 }
+
+fn terminal_size() -> impl Strategy<Value = onicode_protocol::terminal::TerminalSize> {
+    (any::<u16>(), any::<u16>(), any::<u16>(), any::<u16>()).prop_map(
+        |(cols, rows, cell_width, cell_height)| onicode_protocol::terminal::TerminalSize {
+            cols,
+            rows,
+            cell_width,
+            cell_height,
+        },
+    )
+}
+
+fn terminal_input() -> impl Strategy<Value = onicode_protocol::terminal::Input> {
+    use onicode_protocol::terminal::{Input, Key};
+    prop_oneof![
+        (text(), option::of(text()), any::<[bool; 4]>()).prop_map(|(key, key_char, mods)| {
+            Input::Key(Key {
+                key,
+                key_char,
+                shift: mods[0],
+                alt: mods[1],
+                control: mods[2],
+                platform: mods[3],
+            })
+        }),
+        text().prop_map(Input::Text),
+        text().prop_map(Input::Paste),
+        (any::<bool>(), any::<u32>(), any::<u16>(), any::<u16>()).prop_map(
+            |(up, lines, row, col)| Input::Wheel {
+                up,
+                lines,
+                row,
+                col
+            }
+        ),
+    ]
+}
+
+fn terminal_event() -> impl Strategy<Value = onicode_protocol::terminal::TerminalEvent> {
+    use onicode_protocol::terminal::{Bytes, TerminalEvent};
+    prop_oneof![
+        vec(any::<u8>(), 0..64).prop_map(|bytes| TerminalEvent::Output(Bytes(bytes))),
+        terminal_size().prop_map(TerminalEvent::Resized),
+        text().prop_map(TerminalEvent::Clipboard),
+        option::of(any::<i32>()).prop_map(|code| TerminalEvent::Exited { code }),
+    ]
+}
+
+proptest! {
+    #[test]
+    fn terminals(
+        terminal in terminal_id(),
+        size in terminal_size(),
+        cwd in text(),
+        colors in any::<[u32; 3]>(),
+        input in terminal_input(),
+        event in terminal_event(),
+        screen in vec(any::<u8>(), 0..256),
+        exited in any::<bool>(),
+        at in cursor(),
+        since in option::of(cursor()),
+        label in option::of(text()),
+    ) {
+        use onicode_protocol::terminal::{
+            Bytes, CloseTerminal, ListTerminals, OpenTerminal, ReadForeground, ResizeTerminal,
+            StopForeground, TerminalColors, TerminalEvent, TerminalInput, TerminalState,
+            TerminalSummary, WatchTerminal,
+        };
+        let colors = TerminalColors {
+            foreground: colors[0],
+            background: colors[1],
+            cursor: colors[2],
+        };
+        round_trips(&OpenTerminal { terminal, cwd: cwd.clone(), size, colors })?;
+        round_trips(&vec![TerminalSummary { terminal, cwd, exited }])?;
+        round_trips(&ListTerminals {})?;
+        round_trips(&ResizeTerminal { terminal, size })?;
+        round_trips(&CloseTerminal { terminal })?;
+        round_trips(&TerminalInput { terminal, input })?;
+        round_trips(&ReadForeground { terminal })?;
+        round_trips(&label)?;
+        round_trips(&StopForeground { terminal })?;
+        round_trips(&WatchTerminal { terminal, since })?;
+        let state = TerminalState { size, screen: Bytes(screen), exited };
+        round_trips(&Item::<TerminalState, TerminalEvent>::Snapshot { at, state })?;
+        round_trips(&Item::<TerminalState, TerminalEvent>::Events {
+            first: 1,
+            last: 1,
+            events: vec![event],
+        })?;
+    }
+}

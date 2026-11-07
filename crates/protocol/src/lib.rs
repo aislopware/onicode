@@ -15,6 +15,7 @@ pub mod files;
 pub mod git;
 mod ids;
 pub mod session;
+pub mod terminal;
 pub mod workspace;
 
 pub use ids::{EngineId, MessageId, OpId, SessionId, TerminalId};
@@ -232,6 +233,15 @@ pub const METHODS: &[Method] = &[
     call::<git::ReadCheckpoint>(),
     call::<git::RestoreCheckpoint>(),
     call::<git::ReadSessionChanges>(),
+    // Terminal.
+    watch::<terminal::WatchTerminal>(),
+    call::<terminal::OpenTerminal>(),
+    call::<terminal::ListTerminals>(),
+    call::<terminal::ResizeTerminal>(),
+    call::<terminal::CloseTerminal>(),
+    call::<terminal::TerminalInput>(),
+    call::<terminal::ReadForeground>(),
+    call::<terminal::StopForeground>(),
 ];
 
 /// The row of [`METHODS`] named `name`.

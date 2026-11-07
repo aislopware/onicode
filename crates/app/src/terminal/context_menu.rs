@@ -19,11 +19,7 @@ impl Terminal {
         self.stop_selection();
         self.pressed_link = None;
         window.focus(&self.focus, cx);
-        let selected = self
-            .term
-            .lock()
-            .selection_to_string()
-            .is_some_and(|s| !s.is_empty());
+        let selected = self.mirror.selection_text().is_some();
         let clipboard = cx
             .read_from_clipboard()
             .and_then(|item| item.text())
@@ -93,7 +89,7 @@ mod tests {
         });
         window
             .update(cx, |terminal, _, cx| {
-                write_note(&terminal.term, "terminal selection");
+                terminal.mirror.feed(b"terminal selection");
                 terminal.select_all(cx);
             })
             .unwrap();
@@ -117,9 +113,8 @@ mod tests {
                 assert!(!terminal.selecting);
                 assert!(
                     terminal
-                        .term
-                        .lock()
-                        .selection_to_string()
+                        .mirror
+                        .selection_text()
                         .unwrap()
                         .contains("terminal selection")
                 );

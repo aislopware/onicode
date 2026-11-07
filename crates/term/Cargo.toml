@@ -1,0 +1,19 @@
+[package]
+name = "onicode-term"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The terminal core on libghostty-vt: the engine's host terminal over a PTY, and the mirror a viewer paints (docs/onicode/decisions/terminal.md)"
+
+[dependencies]
+libghostty-vt.workspace = true
+# The hangup a closing shell and a stopped job expect.
+libc.workspace = true
+# The input and size types the engine encodes and the viewers send.
+onicode-protocol.workspace = true
+# The PTY and the login shell on it, behind the `pty::Spawner` seam.
+portable-pty.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

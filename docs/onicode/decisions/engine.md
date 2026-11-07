@@ -70,7 +70,7 @@ first port is a translation, not a redesign.
 | Session | `WatchSession {session, since, window_turns}` | `Send`, `Steer`, `Stop`, `Decide {approval, answer}`, `Answer`, `KeepQuestionOpen`, `QueueEdit {id, base_rev, edit}`, `SendNow`, `SteerNow`, `Configure`, `EditLastTurn`, `Rewind`, `Fork`, `Btw`, `SwitchProvider`, `ReadTranscript {before_turn, turns}` |
 | Files | `WatchDir {root, path}` (listings with a scan id) | `ListDir`, `Stat`, `Read`, `Write`, `Create`, `Move`, `DeletePath`, `SearchPaths`, `SearchContent`, `ListDrives`, `SearchHomeFolders`, `SaveAttachments`, `SaveNoteImages` |
 | Git | `WatchGit {checkout}` (status and branch, from the engine's fs watch) | `ReadStatus`, `Diff`, `FileDiff`, `Branches`, `Refs`, `History`, `Switch`, `CreateBranch`, `Stage`, `Unstage`, `Discard`, `Commit`, `Push`, `Pull`, `Sync`, `HeadMessage`, `CommitContext`, `PrContext`, `PrStatus`, `CreatePr`, `Worktrees`, `CreateWorktree`, `RemoveWorktree`, `ReadCheckpoint`, `RestoreCheckpoint`, `ReadSessionChanges` |
-| Terminal | a `StreamKind::Terminal` stream per attach (`terminal.md`, `topology.md`) | `OpenTerminal {cwd, size}`, `ListTerminals`, `Resize`, `CloseTerminal` |
+| Terminal | `WatchTerminal {terminal, since}` (a libghostty snapshot of the host's screen, then its output, resizes, clipboard writes and exit; `terminal.md`) | `OpenTerminal {terminal, cwd, size, colors}`, `ListTerminals`, `ResizeTerminal`, `CloseTerminal`, `TerminalInput {Key, Text, Paste, Wheel}`, `ReadForeground`, `StopForeground` |
 | Agents | `WatchAccounts` (accounts with usage from the streams) | `Catalog`, `Skills`, `Commands`, `AddAccount`, `Login`, `Logout`, `SetProviderEnabled`, MCP servers, `HarnessUpdates` |
 | Engine settings | `WatchEngineSettings` | `SetEngineSetting` (typed keys: keep-awake, worktree defaults, title generation, hooks) |
 | Work | `WatchAutomations`, `WatchInbox` | automation upsert, delete and run now; inbox sources and refresh; `LinkWorkItem` |
@@ -250,7 +250,7 @@ ratchets down; wall-clock numbers run as Mac benches.
 - **Inbox:** the polling in `inbox.rs`. **Filesystem and git:** `fs_watch.rs`, the git command side of
   `git_status.rs` and `git_cache.rs`, and checkpoint runs in `session_review.rs`.
 - **Search:** the search back ends behind `project_search.rs` and `search.rs`.
-- **Terminals:** the PTY and `EventLoop` in `terminal.rs`. **Agent bridges:** `visual-mcp` and `app_access`
+- **Terminals:** the PTY and shell in `terminal.rs` (moved: `crates/term` and `TerminalHub`). **Agent bridges:** `visual-mcp` and `app_access`
   from `main.rs`.
 
 These are deleted: `runtime/remote.rs`, `conversation/{remote,remote_plans,mobile}.rs`,
@@ -283,8 +283,10 @@ after it.
    used by the explorer, editor, changes, diff, review, history and worktree switcher.
 6. Engine settings, accounts, catalog, skills, MCP and usage. Split the preferences, then add the clippy
    boundary. The app stops opening SQLite and stops depending on `onicode-core`.
-7. Terminal hosts move into the engine and the app attaches over a `Terminal` stream. alacritty stays as the
-   mirror's parser until the libghostty lane (`terminal.md`).
+7. Terminal hosts move into the engine, on libghostty-vt (`terminal.md`). `crates/term` holds the PTY, the
+   login shell, and the host terminal that answers queries and encodes snapshots. The engine's `TerminalHub`
+   publishes each shell's output on a feed topic, whose ring is the output ring. The app's terminal view is a
+   libghostty mirror of `WatchTerminal` and sends keys, paste and the wheel as `TerminalInput`. alacritty is gone.
 8. Out of process: the `onicode-engine` binary, the instance lock, a Unix socket in the `0700` data dir
    (`getpeereid` plus the `ipc_auth` tokens, full or agent), launch through `onicode-launch`, and
    connect-or-launch with resume in the app. Turns survive the window; keep-awake and alerts follow.

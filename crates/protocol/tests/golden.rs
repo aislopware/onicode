@@ -34,6 +34,10 @@ use onicode_protocol::session::{
     ReadBtw, ReadSession, ReadTranscript, RecallLastTurn, Rewind, SaveBtw, SaveQueue, Send,
     SendNow, Steer, SteerNow, Stop, StopBtw, SwitchProvider, Verdict, WatchSession,
 };
+use onicode_protocol::terminal::{
+    CloseTerminal, Input, ListTerminals, OpenTerminal, ReadForeground, ResizeTerminal,
+    StopForeground, TerminalEvent, TerminalInput, WatchTerminal,
+};
 use onicode_protocol::transcript::Row;
 use onicode_protocol::workspace::{
     Archive, ClaimInboxEvents, CreateNote, CreateSession, Delete, DeleteNote, FinishAutomationRun,
@@ -317,6 +321,15 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<ReadCheckpoint>();
     shapes.call::<RestoreCheckpoint>();
     shapes.call::<ReadSessionChanges>();
+    // Terminal.
+    shapes.watch::<WatchTerminal>();
+    shapes.call::<OpenTerminal>();
+    shapes.call::<ListTerminals>();
+    shapes.call::<ResizeTerminal>();
+    shapes.call::<CloseTerminal>();
+    shapes.call::<TerminalInput>();
+    shapes.call::<ReadForeground>();
+    shapes.call::<StopForeground>();
     // What every call and watch travels in.
     shapes.envelope::<Cursor>("Cursor");
     shapes.envelope::<Item<(), ()>>("Item");
@@ -336,6 +349,8 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<StageTarget>();
     shapes.variants::<NewWorktree>();
     shapes.variants::<Restore>();
+    shapes.variants::<Input>();
+    shapes.variants::<TerminalEvent>();
     shapes.table()
 }
 

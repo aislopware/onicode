@@ -6,7 +6,8 @@
 //! [`watch_workspace`] and change it with [`call`]; the engine's own clock drives its reminder and
 //! automation schedulers. The explorer, editor, Changes, review, history and worktree views read
 //! and change files and checkouts through the app's own engine ([`local`]): its calls, and its
-//! `WatchDir` and `WatchGit` watches through [`Engine::watch`].
+//! `WatchDir` and `WatchGit` watches through [`Engine::watch`]. The terminal dock's terminals are
+//! the app's own engine's too: its shells run there, and each view mirrors its `WatchTerminal`.
 use std::future::Future;
 use std::pin::pin;
 use std::sync::atomic::AtomicBool;
@@ -24,6 +25,7 @@ use onicode_engine::git::{CheckoutHub, GitService};
 use onicode_engine::session::{
     Expect, SessionHub, SessionService, Spawn, Staged, StagedTurn, Viewer,
 };
+use onicode_engine::terminal::{TerminalHub, TerminalService};
 use onicode_engine::turn::{Database, Update};
 use onicode_engine::workspace::{WorkspaceHub, WorkspaceService};
 use onicode_protocol::session::{
@@ -120,6 +122,8 @@ pub(crate) struct EngineClient {
     /// Held for the engine's lifetime: the Files and Git groups' hubs, served through `link`.
     _files: Arc<FilesHub>,
     _git: Arc<CheckoutHub>,
+    /// The Terminal group's hub: every terminal's shell, served through `link`.
+    _terminals: Arc<TerminalHub>,
     link: Link,
     executor: BackgroundExecutor,
     /// Every call made, by name with its routed params, for a test to assert on.
@@ -172,6 +176,11 @@ impl EngineClient {
         #[cfg(not(test))]
         let workspace = WorkspaceHub::new(store.clone(), spawn.clone());
         hub.attach(workspace.clone());
+        // Tests start no shell: a terminal view in a test runs without one.
+        #[cfg(test)]
+        let terminals = TerminalHub::quiet(spawn.clone());
+        #[cfg(not(test))]
+        let terminals = TerminalHub::new(spawn.clone());
         // Tests watch no disk: a listing or a status changes only through the engine's calls.
         #[cfg(test)]
         let (files, git) = (
@@ -189,6 +198,7 @@ impl EngineClient {
             WorkspaceService::new(workspace.clone()),
             FilesService::new(files.clone()),
             GitService::new(git.clone()),
+            TerminalService::new(terminals.clone()),
         ));
         let runtime = if cfg!(test) { None } else { RUNTIME.as_ref() };
         let link = match runtime {
@@ -220,6 +230,7 @@ impl EngineClient {
             workspace,
             _files: files,
             _git: git,
+            _terminals: terminals,
             link,
             executor,
             #[cfg(test)]
