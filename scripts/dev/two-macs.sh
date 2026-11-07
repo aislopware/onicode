@@ -25,11 +25,23 @@ EOF
 }
 trap cleanup EXIT
 
-# Stripped and compressed: a debug engine is ~75 MB, and the other Mac may sit on a slow link.
+# Stripped and compressed: a debug engine is ~75 MB, and the other Mac may sit on a slow, flaky
+# link, so the copy resumes where a dropped connection left it.
 stripped=$(mktemp -d)
 trap 'cleanup; rm -rf "${stripped}"' EXIT
 strip -S -x -o "${stripped}/onicode-engine" "${engine}"
-scp -C -q -o ServerAliveInterval=5 "${stripped}/onicode-engine" "${host}:${remote}/onicode-engine"
+copied=false
+for _ in 1 2 3 4 5 6; do
+  if rsync -z --partial --timeout=30 -e 'ssh -o ServerAliveInterval=5' \
+    "${stripped}/onicode-engine" "${host}:${remote}/onicode-engine"; then
+    copied=true
+    break
+  fi
+done
+"${copied}" || {
+  echo "could not copy the engine to ${host}" >&2
+  exit 1
+}
 on_host "${remote}" <<'EOF'
 mkdir -p "$1/data" "$1/home"
 HOME="$1/home" ONICODE_PEERS=1 nohup "$1/onicode-engine" --data-dir "$1/data" \
