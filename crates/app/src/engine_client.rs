@@ -1189,12 +1189,14 @@ pub(crate) fn is_peer_row(id: i64) -> bool {
 }
 
 /// `path`, as the engine serving `base` (a project or checkout, as the app spells it) named it,
-/// in the app's spelling: beside a `peer://` base, an absolute path of that engine becomes its
-/// URI ([`Engine::app_path`]); anything else stays as it is. What a peer session's transcript
-/// names (a tool's file, a link, an attachment) is a path on that session's engine.
+/// in the app's spelling: beside a `peer://` base, an absolute path of that engine, or one under
+/// its home (`~/…`, which it reads under its own), becomes its URI ([`Engine::app_path`]);
+/// anything else stays as it is. What a peer session's transcript names (a tool's file, a link,
+/// an attachment) is a path on that session's engine.
 pub(crate) fn app_path_beside(base: &str, path: &str) -> String {
+    let named = path.starts_with('/') || path == "~" || path.starts_with("~/");
     match ProjectRef::parse_uri(base) {
-        Some(project) if path.starts_with('/') => ProjectRef {
+        Some(project) if named => ProjectRef {
             engine: project.engine,
             path: path.to_owned(),
         }
@@ -1988,6 +1990,7 @@ pub(crate) fn create_for_test(engine: &Engine, provider: &str, cwd: &str, _: &mu
             title: None,
             start: NewSession::Bare,
             started_by: None,
+            scope: Vec::new(),
         },
     ))
     .expect("the engine creates the session");

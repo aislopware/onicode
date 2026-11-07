@@ -1253,11 +1253,12 @@ proptest! {
         title in option::of(text()),
         start in new_session(),
         started_by in option::of(any::<i64>()),
+        scope in vec(text(), 0..3),
         outcome in outcome(),
         created in option::of(summary()),
         settings in option::of(settings()),
     ) {
-        round_trips(&CreateSession { session, provider, cwd, title, start, started_by })?;
+        round_trips(&CreateSession { session, provider, cwd, title, start, started_by, scope })?;
         round_trips(&Created {
             outcome,
             session: created.map(Box::new),
@@ -1451,7 +1452,14 @@ proptest! {
         let attachments = SaveAttachments {
             session: Some(7),
             kept: Vec::new(),
-            images: vec![NewAttachment { bytes: Bytes(bytes.clone()), extension: "png".into() }],
+            images: vec![
+                NewAttachment { bytes: Bytes(bytes.clone()), extension: "png".into(), name: None },
+                NewAttachment {
+                    bytes: Bytes(bytes.clone()),
+                    extension: String::new(),
+                    name: Some("notes 2.md".into()),
+                },
+            ],
         };
         round_trips(&attachments)?;
         // Bytes travel as one base64 string, never an array of numbers.

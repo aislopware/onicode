@@ -16,7 +16,6 @@ use crate::theme::*;
 
 pub(crate) const RADIUS: f32 = 16.;
 /// Backdrop blur behind the card, in points.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 const BLUR: f32 = 24.;
 const ENTER: Duration = Duration::from_millis(200);
 const RISE: f32 = 6.;
@@ -85,17 +84,11 @@ pub(crate) fn surface(radius: f32) -> impl IntoElement {
     canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
             let quad = if light {
                 gpui::fill(bounds, opaque)
             } else {
                 window.paint_backdrop_blur_whole(bounds, gpui::Corners::all(px(radius)), px(BLUR));
                 gpui::fill(bounds, tint)
-            };
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            let quad = {
-                let _ = (light, tint);
-                gpui::fill(bounds, opaque)
             };
             window.paint_quad(quad.corner_radii(px(radius)));
         },

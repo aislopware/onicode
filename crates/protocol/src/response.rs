@@ -30,7 +30,6 @@ pub struct ResponseNote {
 }
 pub use crate::time::now_ms;
 pub fn local_clock(epoch_ms: u64) -> String {
-    #[cfg(unix)]
     {
         let time = (epoch_ms / 1000) as libc::time_t;
         let mut local = std::mem::MaybeUninit::<libc::tm>::uninit();

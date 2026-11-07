@@ -13,7 +13,7 @@ const MAX_SKILLS: usize = 5_000;
 const MAX_FRONTMATTER_BYTES: usize = 16 * 1024;
 
 struct DisabledFilter {
-    normalized: HashSet<String>,
+    exact: HashSet<String>,
     canonical: HashSet<PathBuf>,
 }
 
@@ -23,23 +23,16 @@ impl DisabledFilter {
         if paths.is_empty() {
             return None;
         }
-        let normalized = paths
-            .iter()
-            .map(|p| normalize_path_for_compare(p))
-            .collect();
+        let exact = paths.iter().cloned().collect();
         let canonical = paths
             .iter()
             .filter_map(|p| std::fs::canonicalize(expand_home(p)).ok())
             .collect();
-        Some(Self {
-            normalized,
-            canonical,
-        })
+        Some(Self { exact, canonical })
     }
 
     fn is_disabled(&self, path: &str) -> bool {
-        let normalized = normalize_path_for_compare(path);
-        if self.normalized.contains(&normalized) {
+        if self.exact.contains(path) {
             return true;
         }
         if !self.canonical.is_empty() {
@@ -51,23 +44,6 @@ impl DisabledFilter {
         }
         false
     }
-}
-
-#[cfg(windows)]
-fn normalize_path_for_compare(path: &str) -> String {
-    let mut s = path.replace('\\', "/");
-    if let Some(stripped) = s.strip_prefix("//?/") {
-        s = stripped.to_string();
-    }
-    while s.contains("//") {
-        s = s.replace("//", "/");
-    }
-    s.to_lowercase()
-}
-
-#[cfg(not(windows))]
-fn normalize_path_for_compare(path: &str) -> String {
-    path.to_string()
 }
 
 /// Skills visible for the open project: `.agents/skills` first, then native
@@ -169,16 +145,6 @@ pub(crate) fn list_skills_from(
             add_root(root, "user", "antigravity");
         }
         add_root(home.join(".config/devin/skills"), "user", "devin");
-        // Windows keeps Devin's user config under %APPDATA% instead.
-        #[cfg(windows)]
-        add_root(
-            std::env::var_os("APPDATA")
-                .map(PathBuf::from)
-                .unwrap_or_else(|| home.join("AppData/Roaming"))
-                .join("devin/skills"),
-            "user",
-            "devin",
-        );
         add_root(project.join(".devin/skills"), "project", "devin");
         for (root, scope, namespace) in claude_plugin_skill_roots(home, project) {
             add_namespaced_root(
@@ -329,8 +295,7 @@ fn plugin_setting(path: &Path, plugin_id: &str) -> Option<bool> {
 }
 
 fn managed_plugin_setting(plugin_id: &str) -> Option<bool> {
-    let root = managed_settings_root()?;
-    managed_plugin_setting_from_root(&root, plugin_id)
+    managed_plugin_setting_from_root(Path::new(MANAGED_SETTINGS_ROOT), plugin_id)
 }
 
 fn managed_plugin_setting_from_root(root: &Path, plugin_id: &str) -> Option<bool> {
@@ -359,22 +324,8 @@ fn managed_plugin_setting_from_root(root: &Path, plugin_id: &str) -> Option<bool
     value
 }
 
-fn managed_settings_root() -> Option<PathBuf> {
-    #[cfg(target_os = "macos")]
-    {
-        return Some(PathBuf::from("/Library/Application Support/ClaudeCode"));
-    }
-    #[cfg(any(target_os = "linux", target_os = "android"))]
-    {
-        return Some(PathBuf::from("/etc/claude-code"));
-    }
-    #[cfg(target_os = "windows")]
-    {
-        return Some(PathBuf::from(r"C:\Program Files\ClaudeCode"));
-    }
-    #[allow(unreachable_code)]
-    None
-}
+/// Where Claude Code reads the machine's managed settings.
+const MANAGED_SETTINGS_ROOT: &str = "/Library/Application Support/ClaudeCode";
 
 fn path_is_within(path: &Path, root: &Path) -> bool {
     let Ok(path) = std::fs::canonicalize(path) else {
@@ -1202,36 +1153,6 @@ mod tests {
         assert_eq!(review.path, project_skill_path);
     }
 
-    #[cfg(windows)]
-    #[test]
-    fn disabled_skill_matching_handles_windows_separators_and_case() {
-        let project = tmp("proj-sep");
-        let home = tmp("home-sep");
-        write_skill(
-            &project.0.join(".agents/skills"),
-            "fmt",
-            "---\nname: fmt\ndescription: Project fmt\n---\n",
-        );
-        write_skill(
-            &home.0.join(".agents/skills"),
-            "fmt",
-            "---\nname: fmt\ndescription: Personal fmt\n---\n",
-        );
-
-        // Windows: verify both backslash separator handling and case-insensitivity
-        let raw_project_path = project
-            .0
-            .join(".agents/skills/fmt/SKILL.md")
-            .to_string_lossy()
-            .replace('/', "\\")
-            .to_uppercase();
-        let skills = list_skills_from(&project.0, Some(&home.0), Some(&[raw_project_path]));
-        let fmt = skills.iter().find(|s| s.name == "fmt").unwrap();
-        assert_eq!(fmt.description, "Personal fmt");
-        assert_eq!(fmt.scope, "user");
-    }
-
-    #[cfg(unix)]
     #[test]
     fn disabled_skill_matching_preserves_distinct_unix_paths_with_backslashes() {
         let project = tmp("proj-unix-bs");

@@ -3682,7 +3682,6 @@ mod composer_motion_tests {
                                             <= 2.
                                 })
                                 .expect("the composer paints React's content-3% surface");
-                            #[cfg(any(target_os = "macos", target_os = "windows"))]
                             assert!(
                                 window.painted_scene().backdrop_blurs().iter().any(|blur| {
                                     blur.bounds == surface.bounds
@@ -3690,8 +3689,6 @@ mod composer_motion_tests {
                                 }),
                                 "the composer surface is frosted"
                             );
-                            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                            let _ = surface;
                             assert!(window.painted_quads().iter().any(|quad| {
                                 quad.border_color == content(0.2)
                                     && (quad.bounds.size.width.0 / scale
@@ -3969,7 +3966,6 @@ fn composer_surface(radius: f32) -> impl IntoElement {
     canvas(
         |_, _, _| {},
         move |bounds, _, window, _| {
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
             if blur > 0. {
                 window.paint_backdrop_blur_whole(
                     bounds,
@@ -3977,8 +3973,6 @@ fn composer_surface(radius: f32) -> impl IntoElement {
                     px(blur),
                 );
             }
-            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-            let _ = blur;
             window.paint_quad(gpui::fill(bounds, fill).corner_radii(px(radius - 1.)));
         },
     )

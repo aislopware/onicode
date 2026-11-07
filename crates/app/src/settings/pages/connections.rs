@@ -98,12 +98,6 @@ fn desktop_button(machine: &Machine) -> Option<AnyElement> {
     )
 }
 
-/// Remote desktop views Macs from a Mac only.
-#[cfg(not(target_os = "macos"))]
-fn desktop_button(_machine: &Machine) -> Option<AnyElement> {
-    None
-}
-
 impl SettingsView {
     /// Follows the engine's machines while the page shows.
     pub(in crate::settings) fn watch_connections(&mut self, cx: &mut Context<Self>) {

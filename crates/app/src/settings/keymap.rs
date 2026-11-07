@@ -7,13 +7,7 @@ use gpui::{App, Global, KeyBinding, OperatingSystem};
 use super::Preferences;
 
 /// The system keystrokes are spelled for, parsed and printed: the one the app is built for.
-pub(crate) const HOST_OS: OperatingSystem = if cfg!(target_os = "macos") {
-    OperatingSystem::Mac
-} else if cfg!(target_os = "windows") {
-    OperatingSystem::Windows
-} else {
-    OperatingSystem::Linux
-};
+pub(crate) const HOST_OS: OperatingSystem = OperatingSystem::Mac;
 struct Defaults {
     bindings: Vec<KeyBinding>,
     applied: HashMap<String, Option<String>>,

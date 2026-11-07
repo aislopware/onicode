@@ -620,6 +620,62 @@ fn an_imported_folder_lands_whole_once_and_a_bad_one_leaves_nothing() {
     assert!(block_on(hub.import(Some(OpId::new()), named)).is_err());
 }
 
+/// A file a viewer attaches from its own disk keeps its name, each in a folder of its own so
+/// two of one name both stay, beside a pasted image named by its format; a name that is no file
+/// name writes nothing.
+#[test]
+fn an_attached_file_keeps_its_name_and_a_bad_name_is_refused() {
+    use onicode_protocol::files::{NewAttachment, SaveAttachments};
+    let hub = FilesHub::build(
+        store(),
+        Arc::new(ThreadSpawn),
+        Arc::new(DiskProbe),
+        Limits::default(),
+        false,
+        0,
+    );
+    let file = |name: Option<&str>, bytes: &[u8]| NewAttachment {
+        bytes: Bytes(bytes.to_vec()),
+        extension: "png".into(),
+        name: name.map(str::to_owned),
+    };
+    let body = SaveAttachments {
+        session: None,
+        kept: Vec::new(),
+        images: vec![
+            file(Some("notes.md"), b"first"),
+            file(Some("notes.md"), b"second"),
+            file(None, b"\x89PNG"),
+        ],
+    };
+    let saved = block_on(hub.save_attachments(Some(OpId::new()), body)).unwrap();
+    assert_eq!(saved.len(), 3);
+    let (first, second) = (Path::new(&saved[0]), Path::new(&saved[1]));
+    assert_eq!(first.file_name().unwrap(), "notes.md");
+    assert_eq!(second.file_name().unwrap(), "notes.md");
+    assert_ne!(first, second, "both stay");
+    assert_eq!(std::fs::read(first).unwrap(), b"first");
+    assert_eq!(std::fs::read(second).unwrap(), b"second");
+    let pasted = Path::new(&saved[2]).file_name().unwrap().to_string_lossy();
+    assert!(
+        pasted.starts_with("pasted-") && pasted.ends_with(".png"),
+        "{pasted}"
+    );
+    for name in ["../up.md", "a/b.md", "..", ""] {
+        let bad = SaveAttachments {
+            session: None,
+            kept: Vec::new(),
+            images: vec![file(Some(name), b"no")],
+        };
+        let error = block_on(hub.save_attachments(Some(OpId::new()), bad)).unwrap_err();
+        assert!(error.contains("not a file name"), "{name}: {error}");
+    }
+    for path in &saved[..2] {
+        std::fs::remove_dir_all(Path::new(path).parent().unwrap()).unwrap();
+    }
+    std::fs::remove_file(&saved[2]).unwrap();
+}
+
 #[test]
 fn a_listing_read_before_a_change_never_follows_it() {
     let harness = Harness::new(Limits::default());

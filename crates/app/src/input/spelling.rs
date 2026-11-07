@@ -14,7 +14,3 @@ pub(super) fn correction(word: &str) -> Option<String> {
         corrected.map(|s| s.to_string()).filter(|s| s != word)
     }
 }
-#[cfg(not(target_os = "macos"))]
-pub(super) fn correction(_word: &str) -> Option<String> {
-    None
-}

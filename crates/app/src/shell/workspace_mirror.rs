@@ -624,17 +624,28 @@ impl Shell {
     }
 
     /// Creates a session in the engine under a new id, answering with its stored summary and,
-    /// unless it starts `Bare`, the settings it starts with.
+    /// unless it starts `Bare`, the settings it starts with, in the app's spelling. A project on
+    /// another machine creates it there, its checkout named as that machine names it. `scope`
+    /// is an orchestrated worker's files: the engine holding its checkout refuses the session
+    /// when one escapes it (empty for every other session).
     pub(super) fn create_in_engine(
         &mut self,
         provider: &str,
         cwd: &str,
         title: Option<String>,
-        start: NewSession,
+        mut start: NewSession,
+        scope: Vec<String>,
         cx: &mut Context<Self>,
     ) -> gpui::Task<Result<(Session, Option<Settings>), String>> {
-        // A project on another machine creates the session there.
         let (engine, cwd) = self.engine.for_path(cwd);
+        let checkout = match &mut start {
+            NewSession::Settings(settings) => settings.worktree_cwd.as_mut(),
+            NewSession::Defaults(defaults) => defaults.worktree_cwd.as_mut(),
+            NewSession::Bare => None,
+        };
+        if let Some(checkout) = checkout {
+            *checkout = engine.path_of(checkout);
+        }
         let body = CreateSession {
             session: SessionId::new(),
             provider: provider.to_owned(),
@@ -642,6 +653,7 @@ impl Shell {
             title,
             start,
             started_by: None,
+            scope,
         };
         let call = engine_client::call::<CreateSession>(&engine, Some(OpId::new()), body, cx);
         cx.spawn(async move |this, cx| {
@@ -664,7 +676,14 @@ impl Shell {
                 }
                 None => summary.session,
             };
-            Ok((session, created.settings.map(|settings| *settings)))
+            let settings = created.settings.map(|settings| {
+                let mut settings = *settings;
+                settings.worktree_cwd = settings
+                    .worktree_cwd
+                    .map(|checkout| engine.app_path(&checkout));
+                settings
+            });
+            Ok((session, settings))
         })
     }
 }

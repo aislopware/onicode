@@ -513,6 +513,7 @@ async fn the_outbox_delivers_exactly_once_after_the_host_returns() {
             title: None,
             start: NewSession::Bare,
             started_by: None,
+            scope: Vec::new(),
         };
         tokio::spawn(async move {
             app.call(CreateSession::NAME, routed(Some(&engine), Some(op), body))
@@ -661,6 +662,7 @@ async fn remote_receipts_and_resumes_cost_one_round_trip() {
         title: None,
         start: NewSession::Bare,
         started_by: None,
+        scope: Vec::new(),
     };
     let asked = Instant::now();
     app.call(

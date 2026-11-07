@@ -270,7 +270,7 @@ impl SettingsView {
                 cx.notify();
             }),
             cx.subscribe(&search, |this, _, _: &input::Submitted, cx| {
-                let results = model::search(&this.search_query, cx.compositor_name());
+                let results = model::search(&this.search_query);
                 if let Some(result) = results.get(this.search_active).cloned() {
                     this.go(result, cx);
                 }
@@ -622,7 +622,7 @@ impl SettingsView {
         if self.search_query.trim().is_empty() {
             return false;
         }
-        let count = model::search(&self.search_query, cx.compositor_name()).len();
+        let count = model::search(&self.search_query).len();
         let last = count.saturating_sub(1);
         self.search_active = self.search_active.saturating_add_signed(delta).min(last);
         cx.notify();
@@ -637,7 +637,7 @@ impl SettingsView {
     /// The settings search: atop the settings nav, or in the header while
     /// the nav is collapsed.
     pub(crate) fn search_field(&mut self, in_nav: bool, cx: &mut Context<Self>) -> AnyElement {
-        let results = model::search(&self.search_query, cx.compositor_name());
+        let results = model::search(&self.search_query);
         let open = !self.search_query.trim().is_empty();
         let weak = cx.weak_entity();
         if self.search_in_nav != Some(in_nav) {

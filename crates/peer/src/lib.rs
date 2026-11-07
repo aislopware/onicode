@@ -22,7 +22,6 @@ pub mod carrier;
 pub mod directory;
 pub mod endpoint;
 pub mod engine_list;
-#[cfg(unix)]
 #[allow(unsafe_code)]
 mod iface;
 pub mod links;

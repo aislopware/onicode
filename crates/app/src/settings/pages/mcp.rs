@@ -213,7 +213,19 @@ impl SettingsView {
                                             .truncate()
                                             .text_size(px(11.))
                                             .text_color(content(0.35))
-                                            .child(server.path.display().to_string()),
+                                            // As the machine that holds it names it.
+                                            .child(
+                                                server
+                                                    .path
+                                                    .to_str()
+                                                    .and_then(
+                                                        onicode_protocol::ProjectRef::parse_uri,
+                                                    )
+                                                    .map_or_else(
+                                                        || server.path.display().to_string(),
+                                                        |peer| peer.path,
+                                                    ),
+                                            ),
                                     ),
                             );
                         if server.provider != "claude_desktop"
@@ -290,15 +302,23 @@ impl SettingsView {
                             );
                         } else {
                             let path = server.path;
+                            // A configuration on another machine: Finder cannot show it.
+                            let remote = path.to_str().is_some_and(|path| {
+                                onicode_protocol::ProjectRef::parse_uri(path).is_some()
+                            });
                             row = row.child(
                                 secondary_button(
                                     SharedString::from(format!("mcp-show-{ix}")),
                                     "Show config",
                                     false,
-                                    false,
+                                    remote,
                                 )
                                 .child("Show config")
-                                .on_click(move |_, _, cx| cx.reveal_path(&path)),
+                                .on_click(move |_, _, cx| {
+                                    if !remote {
+                                        cx.reveal_path(&path);
+                                    }
+                                }),
                             );
                         }
                         row
@@ -313,8 +333,9 @@ impl SettingsView {
     pub(crate) fn refresh_mcp_health(&mut self, cx: &mut Context<Self>) {
         let cwd = self.selected_project.clone();
         let expected = cwd.clone();
-        let health =
-            crate::engine_client::local(cx).call::<McpHealth>(None, McpHealth { project: cwd });
+        // A project on another machine's servers are checked there.
+        let (engine, project) = crate::engine_client::for_project(&cwd, cx);
+        let health = engine.call::<McpHealth>(None, McpHealth { project });
         let work = cx.background_executor().spawn(health);
         self.mcp_health = Some(cx.spawn(async move |this, cx| {
             let result = work.await;
@@ -392,9 +413,9 @@ impl SettingsView {
             return;
         }
         self.mcp_busy = true;
-        let cwd = self.selected_project.clone();
-        let expected = cwd.clone();
-        let engine = crate::engine_client::local(cx);
+        let expected = self.selected_project.clone();
+        // A project on another machine's servers are configured there.
+        let (engine, cwd) = crate::engine_client::for_project(&expected, cx);
         let work = cx.background_executor().spawn(async move {
             let op = Some(OpId::new());
             crate::accounts::applied(if remove {

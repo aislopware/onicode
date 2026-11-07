@@ -138,6 +138,7 @@ fn the_engine_binary_serves_a_turn() {
                     title: None,
                     start: NewSession::Bare,
                     started_by: None,
+                    scope: Vec::new(),
                 },
             )
             .await

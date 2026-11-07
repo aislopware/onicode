@@ -146,9 +146,6 @@ impl Kind {
             Self::Hermes => {
                 Some("Install from hermes-agent.nousresearch.com, then run hermes model")
             }
-            #[cfg(windows)]
-            Self::Devin => Some("irm https://static.devin.ai/cli/setup.ps1 | iex"),
-            #[cfg(not(windows))]
             Self::Devin => Some("curl -fsSL https://cli.devin.ai/install.sh | bash"),
             Self::Codex | Self::Claude | Self::Cursor | Self::OpenCode | Self::Antigravity => None,
         }

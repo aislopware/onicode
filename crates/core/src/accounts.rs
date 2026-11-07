@@ -69,7 +69,6 @@ impl ProfileExt for Profile {
         };
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("Could not create the account directory: {e}"))?;
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))
@@ -116,7 +115,5 @@ impl ProfileExt for Profile {
 }
 
 pub fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
+    std::env::var_os("HOME").map(PathBuf::from)
 }

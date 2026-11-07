@@ -163,6 +163,11 @@ pub struct CreateSession {
     pub start: NewSession,
     /// The session an operator thread starts it from.
     pub started_by: Option<i64>,
+    /// The files an orchestrated worker's assignment names, under its checkout (the start's
+    /// `worktree_cwd`, else `cwd`). The engine whose disk holds them checks that none escapes it,
+    /// existing symlinked parents included, and refuses the session (`Denied`) when one does:
+    /// a project on another machine is checked there. Empty for every other session.
+    pub scope: Vec<String>,
 }
 workspace_call!(CreateSession, agent: true, reply: Created);
 

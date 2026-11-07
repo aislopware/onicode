@@ -1690,6 +1690,7 @@ impl SessionHub {
                     title: Some(summary.title.clone()),
                     start: NewSession::Settings(Box::new(settings)),
                     started_by: None,
+                    scope: Vec::new(),
                 },
             )
             .await?;

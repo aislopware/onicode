@@ -39,22 +39,14 @@ pub trait Sockets: Send + Sync {
     fn endpoint(&self, local: SocketAddr, seed: Option<u64>) -> io::Result<noq::Endpoint>;
 }
 
-/// The OS's UDP sockets, each bound to the interface that holds its address (on macOS that
-/// binding must hold; on Linux it is best effort, since the address already pins the route
-/// there).
+/// The OS's UDP sockets, each bound to the interface that holds its address.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SystemSockets;
 
 impl Sockets for SystemSockets {
     fn endpoint(&self, local: SocketAddr, seed: Option<u64>) -> io::Result<noq::Endpoint> {
         let socket = transport::udp_socket(local)?;
-        #[cfg(unix)]
-        if let Err(e) = crate::iface::bind_to_interface(&socket, local.ip()) {
-            if cfg!(any(target_os = "macos", target_os = "ios")) {
-                return Err(e);
-            }
-            tracing::debug!(%local, error = %e, "socket left unbound to an interface");
-        }
+        crate::iface::bind_to_interface(&socket, local.ip())?;
         socket.bind(&local.into())?;
         transport::endpoint_on_udp(socket.into(), true, seed)
     }

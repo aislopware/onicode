@@ -23,25 +23,6 @@ pub(crate) fn tab_label(text: impl Into<SharedString>) -> impl IntoElement {
                 None,
             );
             let overflow = line.width() > bounds.size.width && bounds.size.width > px(0.);
-            #[cfg(not(target_os = "macos"))]
-            let line = if overflow {
-                // Other backends use the same measured ramp at glyph centres.
-                let runs = text
-                    .char_indices()
-                    .map(|(ix, ch)| {
-                        let mut run = run.clone();
-                        let x = (line.x_for_index(ix) + line.x_for_index(ix + ch.len_utf8())) / 2.;
-                        run.len = ch.len_utf8();
-                        run.color.a *= ((bounds.size.width - x) / px(40.)).clamp(0., 1.);
-                        run
-                    })
-                    .collect::<Vec<_>>();
-                window
-                    .text_system()
-                    .shape_line(text.clone(), font_size, &runs, None)
-            } else {
-                line
-            };
             (line, overflow)
         },
         |bounds, (line, overflow), window, cx| {
@@ -66,8 +47,6 @@ pub(crate) fn tab_label(text: impl Into<SharedString>) -> impl IntoElement {
                     window.with_group_fade(bounds, fade, paint);
                     return;
                 }
-                #[cfg(not(target_os = "macos"))]
-                let _ = overflow;
                 paint(window);
             });
         },

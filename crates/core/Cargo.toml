@@ -32,8 +32,6 @@ uuid = { version = "1", features = ["v7", "serde"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
 rquickjs = "0.14.0"
 tempfile = "3"
-
-[target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
 [dev-dependencies]

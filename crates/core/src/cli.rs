@@ -125,7 +125,7 @@ pub fn inspect(kind: Kind, path: Option<&str>) -> Result<Inspection, String> {
     Ok(Inspection { path, version })
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
 

@@ -266,7 +266,6 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let path = root.join("source.rs");
         std::fs::write(&path, b"\xef\xbb\xbffn main() {}\r\n").unwrap();
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -280,7 +279,6 @@ mod tests {
             std::fs::read(&path).unwrap(),
             "\u{feff}// 🙂\r\n".as_bytes()
         );
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(

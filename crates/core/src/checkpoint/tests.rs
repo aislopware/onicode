@@ -358,13 +358,7 @@ fn shared_turns_with_different_edits_do_not_claim_each_others_files() {
     f.store.begin_turn("a", f.cwd(), "first").unwrap();
     f.store.begin_turn("b", f.cwd(), "second").unwrap();
     f.write("a.txt", "edited by a\n");
-    // Windows strips trailing spaces from file names, so only the leading
-    // space can be exercised there.
-    let literal = if cfg!(windows) {
-        " literal name .txt"
-    } else {
-        " literal name .txt "
-    };
+    let literal = " literal name .txt ";
     f.write(literal, "edited by b\n");
     f.store.capture("a", f.cwd(), &["a.txt".into()]).unwrap();
     f.store
@@ -522,11 +516,7 @@ fn records_empty_binary_and_unusual_paths_without_the_old_file_limit() {
         f.write(&format!("new/{index}.txt"), "");
     }
     f.write("binary.bin", "\0binary");
-    let path = if cfg!(windows) {
-        "café name.txt"
-    } else {
-        "café\tname\n.txt"
-    };
+    let path = "café\tname\n.txt";
     f.write(path, "new\n");
     f.store.finish_turn("session", f.cwd(), "first").unwrap();
     let status = f.store.status("session", f.cwd()).unwrap();
@@ -831,7 +821,6 @@ fn linked_worktrees_have_independent_recordings_and_indexes() {
     );
 }
 
-#[cfg(unix)]
 #[test]
 fn preserves_literal_paths_and_records_modes_and_symlinks_safely() {
     use std::os::unix::fs::{PermissionsExt, symlink};
@@ -959,7 +948,6 @@ fn set_past_mtime(path: &Path) {
         .unwrap();
 }
 
-#[cfg(unix)]
 fn count_clean_filter(repo: &Path, counter: &Path) {
     let clean = format!("sh -c 'echo tick >> {}; cat'", counter.display());
     run_git(repo, &["config", "filter.count.clean", &clean]).unwrap();
@@ -967,14 +955,12 @@ fn count_clean_filter(repo: &Path, counter: &Path) {
     std::fs::write(repo.join(".gitattributes"), "*.big filter=count\n").unwrap();
 }
 
-#[cfg(unix)]
 fn ticks(counter: &Path) -> usize {
     std::fs::read_to_string(counter)
         .map(|text| text.lines().count())
         .unwrap_or(0)
 }
 
-#[cfg(unix)]
 #[test]
 fn reuses_one_private_index_and_its_stat_cache_across_turns() {
     let f = Fixture::new();
@@ -1044,7 +1030,6 @@ fn records_committed_files_that_the_ignore_rules_match() {
     assert_eq!(diff.current, "first\nsecond\n");
 }
 
-#[cfg(unix)]
 #[test]
 fn head_advances_and_branch_switches_reuse_the_index() {
     let f = Fixture::new();
@@ -1224,7 +1209,6 @@ fn rebuilds_a_missing_or_truncated_private_index_once() {
     assert_eq!(run_git(&f.repo, &["rev-parse", "HEAD"]).unwrap(), head);
 }
 
-#[cfg(unix)]
 #[test]
 fn records_nested_unusual_paths_and_symlinks_with_a_persistent_index() {
     use std::os::unix::fs::{PermissionsExt, symlink};
@@ -1352,7 +1336,6 @@ fn a_capture_guard_held_elsewhere_times_out() {
     assert!(error.contains("Another Onicode instance"), "{error}");
 }
 
-#[cfg(unix)]
 #[test]
 fn a_file_named_index_does_not_rebuild_the_index() {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};

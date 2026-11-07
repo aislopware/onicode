@@ -657,7 +657,6 @@ impl Render for QuestionCard {
                 canvas(
                     |_, _, _| {},
                     move |bounds, _, window, _| {
-                        #[cfg(any(target_os = "macos", target_os = "windows"))]
                         if blur > 0. {
                             window.paint_backdrop_blur_whole(
                                 bounds,
@@ -665,8 +664,6 @@ impl Render for QuestionCard {
                                 px(blur),
                             );
                         }
-                        #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                        let _ = blur;
                         window.paint_quad(gpui::fill(bounds, fill).corner_radii(px(RADIUS - 1.)));
                     },
                 )

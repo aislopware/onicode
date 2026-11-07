@@ -13,9 +13,7 @@ use jsonc::strip_jsonc_comments;
 use serde_json::{Value, json};
 pub(crate) mod jsonc;
 fn dirs_home() -> Option<String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .ok()
+    std::env::var("HOME").ok()
 }
 
 pub(crate) const ASK_EDITS_RULE: &str = "Write(**)";
@@ -35,13 +33,12 @@ pub(super) fn supervised_args() -> Result<Vec<String>, String> {
 pub(super) fn api_key() -> Option<String> {
     let home = dirs_home()?;
     let mut candidates = Vec::new();
-    for key in ["APPDATA", "XDG_DATA_HOME", "XDG_CONFIG_HOME"] {
+    for key in ["XDG_DATA_HOME", "XDG_CONFIG_HOME"] {
         if let Some(dir) = std::env::var_os(key) {
             candidates.push(PathBuf::from(dir).join("devin/credentials.toml"));
         }
     }
     for path in [
-        "AppData/Roaming/devin/credentials.toml",
         ".local/share/devin/credentials.toml",
         ".config/devin/credentials.toml",
     ] {
@@ -584,12 +581,8 @@ fn user_config_path() -> Option<PathBuf> {
             .filter(|value| !value.is_empty())
             .map(PathBuf::from)
     };
-    let dir = if cfg!(windows) {
-        env("APPDATA")
-    } else {
-        env("XDG_CONFIG_HOME")
-            .or_else(|| dirs_home().map(|home| PathBuf::from(home).join(".config")))
-    }?;
+    let dir = env("XDG_CONFIG_HOME")
+        .or_else(|| dirs_home().map(|home| PathBuf::from(home).join(".config")))?;
     Some(dir.join("devin").join("config.json"))
 }
 
@@ -652,7 +645,6 @@ fn write_once(dir: &Path, contents: &str) -> Result<PathBuf, String> {
     // The copy can hold whatever the user keeps in config.json: owner-only.
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
-    #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);

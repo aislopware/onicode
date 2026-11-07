@@ -52,11 +52,7 @@ pub(super) struct State {
 pub(super) fn configure(command: &mut Command, request: &Request) -> Result<(), String> {
     let settings = &request.settings;
     match request.kind {
-        Kind::Antigravity => {
-            if cfg!(target_os = "linux") {
-                command.arg("--uid=");
-            }
-        }
+        Kind::Antigravity => {}
         Kind::Grok => {
             command.arg("--no-auto-update");
             if settings.plan || settings.access == AccessMode::ReadOnly {

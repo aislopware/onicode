@@ -1218,7 +1218,6 @@ async fn the_service_serves_a_turn_over_rpc() {
 }
 
 /// The real turn runner against a mock provider: the hub's seam is the turn's.
-#[cfg(unix)]
 #[test]
 fn a_real_turn_runs_through_the_hub() {
     use std::os::unix::fs::PermissionsExt;

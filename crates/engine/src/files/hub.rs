@@ -573,9 +573,12 @@ impl FilesHub {
             .await
     }
 
-    /// `Stat`.
+    /// `Stat`. A path of `~`, or under `~/`, is read under this engine's home, as `Read` and
+    /// `Write` read it: a viewer on another machine names a file a transcript spells under `~`
+    /// without knowing where this engine's home is.
     pub async fn stat(&self, body: Stat) -> Result<PathStat, String> {
-        self.blocking(move || Ok(stat(Path::new(&body.path)))).await
+        self.blocking(move || Ok(stat(&home_relative(&body.path))))
+            .await
     }
 
     /// `Read`.
@@ -1050,8 +1053,9 @@ fn home_folders(query: &str, limit: u32) -> Vec<String> {
 /// there for the session a launch creates ([`AdoptAttachments`]).
 const QUICK_COMPOSER_STAGING: &str = "onicode-quick-composer";
 
-/// Writes pasted images into the session's attachments folder (or the quick composer's staging
-/// folder), under the composer's limits when a session holds them.
+/// Writes pasted images and the viewer's files into the session's attachments folder (or the
+/// quick composer's staging folder), under the composer's limits when a session holds them. A
+/// named file keeps its name, in a folder of its own; a name that is no file name is refused.
 fn save_attachments(store: &Database, body: SaveAttachments) -> Result<Vec<String>, String> {
     use onicode_core::composer::{MAX_ATTACHMENTS, MAX_EMBED_BYTES, validate_attachments};
     let SaveAttachments {
@@ -1080,11 +1084,22 @@ fn save_attachments(store: &Database, body: SaveAttachments) -> Result<Vec<Strin
     std::fs::create_dir_all(&root).map_err(|error| error.to_string())?;
     let mut created = Vec::new();
     for image in images {
-        let path = root.join(format!(
-            "pasted-{}.{}",
-            onicode_core::new_id(),
-            image.extension
-        ));
+        let path = match &image.name {
+            Some(name) => {
+                let file = Path::new(name)
+                    .file_name()
+                    .filter(|file| file.len() == name.len())
+                    .ok_or_else(|| format!("{name} is not a file name."))?;
+                let folder = root.join(onicode_core::new_id());
+                std::fs::create_dir_all(&folder).map_err(|error| error.to_string())?;
+                folder.join(file)
+            }
+            None => root.join(format!(
+                "pasted-{}.{}",
+                onicode_core::new_id(),
+                image.extension
+            )),
+        };
         std::fs::write(&path, &image.bytes.0).map_err(|error| error.to_string())?;
         created.push(path);
     }

@@ -127,7 +127,6 @@ impl Shell {
                 is_resizable: false,
                 is_minimizable: false,
                 window_background: crate::theme::window_backdrop(true),
-                app_id: Some("dev.aislopware.onicode.quick-composer".into()),
                 ..Default::default()
             },
             move |window, cx| {
@@ -193,11 +192,18 @@ impl Shell {
             &choice.cwd,
             None,
             onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+            Vec::new(),
             cx,
         );
         let staged = choice.staged_attachments;
+        // A project on another machine cannot adopt files from this Mac's staging folder: its
+        // conversation carries their bytes there as it attaches them (`quick_attach`).
+        let peer = onicode_protocol::ProjectRef::parse_uri(&choice.cwd).is_some();
         let work = cx.spawn(async move |_, cx| {
             let (summary, _) = created.await?;
+            if peer {
+                return Ok::<_, String>((summary, settings, attachments));
+            }
             let id = summary.id;
             // The pasted files move into the session's attachments folder.
             let strings = |paths: Vec<std::path::PathBuf>| -> Vec<String> {

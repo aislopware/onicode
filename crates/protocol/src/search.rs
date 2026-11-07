@@ -126,7 +126,6 @@ pub fn project_name(path: &str) -> String {
 }
 fn pretty_path(path: &str) -> String {
     std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
         .and_then(|home| {
             std::path::Path::new(path)
                 .strip_prefix(home)

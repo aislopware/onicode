@@ -1,8 +1,9 @@
 //! Orchestrator's reviewed plans create real native sessions. Dependencies and
 //! overlapping file scopes gate dispatch (the engine's `orchestration::Run`); approvals stay in
-//! each worker's chat. Workers are created with `CreateSession`, and the lead's summary is kept
-//! with `SaveOrchestration`.
-use onicode_engine::workspace::orchestration::{Run, check_scope};
+//! each worker's chat. Workers are created with `CreateSession`, whose engine (the one holding
+//! the checkout, another machine's for a peer project) refuses a worker whose files escape it,
+//! and the lead's summary is kept with `SaveOrchestration`.
+use onicode_engine::workspace::orchestration::Run;
 use onicode_protocol::orchestration;
 use onicode_protocol::orchestration::Plan;
 use onicode_protocol::workspace::{NewSession, SaveOrchestration};
@@ -164,33 +165,18 @@ impl Shell {
             let mut settings = job.settings;
             settings.worktree_cwd = Some(job.cwd.clone());
             let prompt = orchestration::worker_prompt(&job.task, &job.reports);
-            let files = job.task.files.clone();
-            let cwd = job.cwd.clone();
-            let provider = job.provider.clone();
-            let title = format!("Agent · {}", job.task.title);
-            let project = project.clone();
+            // The worker's checkout is the lead's; its engine checks that no file escapes it,
+            // existing symlinked parents included.
+            let work = self.create_in_engine(
+                &job.provider,
+                &project,
+                Some(format!("Agent · {}", job.task.title)),
+                NewSession::Settings(Box::new(settings.clone())),
+                job.task.files.clone(),
+                cx,
+            );
             cx.spawn(async move |this, cx| {
-                // Existing symlink parents must not redirect an assignment outside the checkout.
-                let scope = cx
-                    .background_spawn(async move { check_scope(&cwd, &files) })
-                    .await;
-                let created = match scope {
-                    Ok(()) => {
-                        let Ok(work) = this.update(cx, |this, cx| {
-                            this.create_in_engine(
-                                &provider,
-                                &project,
-                                Some(title),
-                                NewSession::Settings(Box::new(settings.clone())),
-                                cx,
-                            )
-                        }) else {
-                            return;
-                        };
-                        work.await
-                    }
-                    Err(error) => Err(error),
-                };
+                let created = work.await;
                 let _ = this.update(cx, |this, cx| {
                     match created {
                         Ok((summary, _)) => {
@@ -230,6 +216,57 @@ mod tests {
     use onicode_protocol::orchestration::Task;
 
     use super::*;
+
+    /// A lead in a project on another machine starts its workers there: each `CreateSession`
+    /// names that engine, the project and checkout as it names them, and the worker's files for
+    /// it to check on its own disk; nothing is checked against this Mac's.
+    #[gpui::test]
+    fn a_peer_leads_workers_are_created_and_checked_on_its_engine(cx: &mut TestAppContext) {
+        let (window, _, lead) = crate::shell::tests::window(cx);
+        window
+            .update(cx, |shell, _, cx| {
+                let project = onicode_protocol::ProjectRef {
+                    engine: onicode_protocol::EngineId("nStudio".into()),
+                    path: "/Users/me/app".into(),
+                }
+                .uri();
+                shell.sessions[&lead].update(cx, |v, cx| {
+                    v.install_transfer(Settings::default(), None, cx);
+                    v.summary.cwd = project;
+                });
+                let plan = Plan {
+                    title: "Review".into(),
+                    summary: String::new(),
+                    tasks: vec![Task {
+                        id: "task-0".into(),
+                        title: "Assignment".into(),
+                        prompt: "Inspect and report".into(),
+                        files: vec!["src/main.rs".into()],
+                        depends_on: Vec::new(),
+                    }],
+                };
+                shell.start_orchestration(lead, plan, cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        let calls = window
+            .update(cx, |shell, _, cx| {
+                crate::engine_client::calls_for_test(&shell.engine, cx)
+            })
+            .unwrap();
+        let (_, created) = calls
+            .iter()
+            .find(|(name, _)| *name == "CreateSession")
+            .expect("the worker is created on the studio");
+        assert_eq!(created["engine"], "nStudio");
+        assert_eq!(created["body"]["cwd"], "/Users/me/app");
+        assert_eq!(
+            created["body"]["start"]["Settings"]["worktree_cwd"], "/Users/me/app",
+            "the checkout as the studio names it"
+        );
+        assert_eq!(created["body"]["scope"], serde_json::json!(["src/main.rs"]));
+    }
+
     #[gpui::test]
     fn reviewed_dispatch_caps_workers_serializes_scopes_and_stops_before_launch(
         cx: &mut TestAppContext,

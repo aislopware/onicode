@@ -32,7 +32,7 @@ impl Shell {
             .flex()
             .items_center()
             .pl(px(inset))
-            .pr(px(12. + self.window_controls))
+            .pr(px(12.))
             .gap_2()
             .child(
                 icon(

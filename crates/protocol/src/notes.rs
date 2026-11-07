@@ -179,9 +179,7 @@ pub fn free_slug(title: &str, taken: impl Fn(&str) -> bool) -> String {
 
 /// Whether notes may scope to `cwd` on this machine: [`is_project_in`] with this user's home.
 pub fn is_project(cwd: &str) -> bool {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(std::path::PathBuf::from);
+    let home = std::env::var_os("HOME").map(std::path::PathBuf::from);
     is_project_in(cwd, home.as_deref())
 }
 

@@ -37,7 +37,7 @@ pub(crate) fn play(cue: Cue) {
         onicode_core::process::configure_child(&mut command);
         let _ = command.status();
     });
-    #[cfg(any(not(target_os = "macos"), test))]
+    #[cfg(test)]
     let _ = cue;
 }
 #[cfg(any(target_os = "macos", test))]

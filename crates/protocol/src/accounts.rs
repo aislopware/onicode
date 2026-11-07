@@ -238,9 +238,5 @@ fn project_key(project: &str) -> String {
     let key = project.trim().replace('\\', "/");
     let key = key.trim_end_matches('/');
     let key = if key.is_empty() { "~" } else { key };
-    if cfg!(windows) {
-        key.to_lowercase()
-    } else {
-        key.into()
-    }
+    key.into()
 }

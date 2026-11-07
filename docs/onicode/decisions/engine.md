@@ -312,8 +312,8 @@ and the path is absolute, as engines name folders); plain paths are the app's ow
 `engine_client::for_project`, turns either spelling into the engine that serves it (`Engine::on` for a
 peer) and the path as that engine names it, and every view that reads or changes a project's files,
 checkouts, terminals, searches or worktrees goes through it; `Engine::app_path` spells what an engine
-answers back in the app's way. Settings, MCP, accounts, the inbox, harness updates and resource pressure
-stay on the app's own engine. The app's engine lists only its own sessions, so the shell follows the
+answers back in the app's way. Settings, accounts, the inbox, harness updates and resource pressure stay
+on the app's own engine; a project's skills and MCP servers are its engine's (below). The app's engine lists only its own sessions, so the shell follows the
 workspace of every engine a `peer://` project names (`shell/peer_sessions.rs`) and lays that project's
 sessions over its maps like its own. The shell keys sessions by row, and two engines' rows collide, so a
 peer session is named by a row of the app's own, `peer_row(SessionKey)`: FNV-1a over the engine and
@@ -348,11 +348,24 @@ spells it as the session's `peer://` URI, absolute or relative, and its image at
 that engine (`engine_client::read_file`, the lightbox's `Source::Peer`). Finder's files dropped into a peer
 project's explorer cannot be copied by path, so the app reads them and hands the bytes to `ImportFiles`
 (`{into, name, entries}`, each folder before what it holds, renamed as a Finder copy when taken, removed whole if
-it fails partway), up to 40 MB an item, under the tailnet's 64 MB frame; `PROTOCOL` is 11. Still local-only in
-a peer project: files dropped into a peer session's composer (local paths its agent cannot read) and its pasted
-images' composer chips, the orchestration worker's scope check (it canonicalizes on this Mac's disk, so a
-peer checkout's workers fail it), project-scoped skills and MCP servers (the app's own engine's), and starting
-an inbox item there.
+it fails partway), up to 40 MB an item, under the tailnet's 64 MB frame. A peer session's composer holds its
+attachments as that engine names them: a file from this Mac (dropped, chosen, pasted as a path or handed on by the
+quick composer, whose staging folder a peer project does not adopt from) is read here and its bytes go to
+`SaveAttachments`, whose `NewAttachment` now carries a file's `name` (kept, in a folder of its own); a file of that
+engine already, dragged from its project's explorer, is named as it names it; the engine checks the composer's
+limits against everything the composer holds, and its chips and lightbox read through it. An orchestrated
+worker's files travel in `CreateSession`'s `scope`, and the engine holding the checkout runs the symlink-aware
+check on its own disk before it creates the worker (`Denied` with the file that escapes); `create_in_engine`
+names a start's `worktree_cwd` as that engine does and spells the settings it answers in the app's way.
+Settings' Skills and MCP pages, the composer's skills and MCP picker, MCP health, sign-in, adding and removing a
+server and creating a skill ask the project's engine (that machine's personal and project skills and servers,
+which its agents use); a peer skill's preview is read through it, its path shows as that machine names it,
+Reveal is off, and the picker also leaves out what this app's Settings hid by the skill's URI. Starting an inbox
+item looks for the project folder with `Stat` on the engine that holds it and creates the session there, saying
+what that engine answered. A path under `~` in a peer session's transcript (a link, a tool's file, a code fence,
+an attachment) stays home-relative, `peer://<engine>/~/…` (a macOS root holds no folder `~`, so no absolute path
+reads that way), and that engine reads it under its own home: `Read` and `Write` expand `~` as they did, and
+`Stat` now does too. `PROTOCOL` is 12.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,

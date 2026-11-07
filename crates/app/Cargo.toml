@@ -108,6 +108,8 @@ mimalloc = { version = "0.1", default-features = false, features = ["v2"] }
 # The desktop view (`src/desktop`): the session with a Mac's desktopd, the decoded
 # `CVPixelBuffer`s it puts up on a `VideoLayer`, and this Mac's grants guide.
 onicode-desktop-client.workspace = true
+# This Mac's clipboard in a desktop session while its window is key (`src/desktop/clipboard.rs`).
+onicode-clipboard.workspace = true
 onicode-desktop-link.workspace = true
 onicode-desktop-media.workspace = true
 onicode-desktop-proto.workspace = true

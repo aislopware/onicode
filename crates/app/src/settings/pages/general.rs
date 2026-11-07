@@ -181,22 +181,6 @@ impl SettingsView {
                 |this, v, cx| this.update(cx, |p| p.set_terminal_placement(v)),
             )],
         ));
-        if cfg!(target_os = "windows") {
-            workspace.push(self.row(
-                Some("close-to-tray"),
-                false,
-                "Close to tray",
-                Some("Closing a window hides it to the system tray instead of quitting, so running agents keep going. Reopen from the tray icon, and quit for real from its menu. Turn this off to have close end the window.".into()),
-                vec![self.toggle(
-                    "close-to-tray",
-                    "Close to tray",
-                    p.close_to_tray,
-                    false,
-                    cx,
-                    |this, on, cx| this.update(cx, |p| p.close_to_tray = on),
-                )],
-            ));
-        }
         if cfg!(target_os = "macos") {
             workspace.push(self.row(
                 Some("menu-bar-icon"),

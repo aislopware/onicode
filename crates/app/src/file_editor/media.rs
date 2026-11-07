@@ -175,8 +175,6 @@ impl MediaPreview {
                     .await;
                 if this
                     .update(cx, |this, cx| {
-                        #[cfg(not(target_os = "macos"))]
-                        let _ = (this, cx);
                         #[cfg(target_os = "macos")]
                         if this.visible
                             && let Some(video) = &this.video
@@ -340,8 +338,6 @@ impl MediaPreview {
 }
 impl gpui::Render for MediaPreview {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        #[cfg(not(target_os = "macos"))]
-        let _ = &window;
         let is_image = self.image.is_some();
         #[cfg(target_os = "macos")]
         if self.failed
@@ -554,20 +550,10 @@ impl gpui::Render for MediaPreview {
                 )
                 .into_any_element()
         } else {
-            #[cfg(target_os = "macos")]
-            {
-                self.video
-                    .as_ref()
-                    .map(|v| v.element())
-                    .unwrap_or_else(|| div().into_any_element())
-            }
-            #[cfg(not(target_os = "macos"))]
-            {
-                div()
-                    .flex_1()
-                    .child("Video playback is unavailable on this platform")
-                    .into_any_element()
-            }
+            self.video
+                .as_ref()
+                .map(|v| v.element())
+                .unwrap_or_else(|| div().into_any_element())
         };
         let footer = div()
             .h(px(32.))

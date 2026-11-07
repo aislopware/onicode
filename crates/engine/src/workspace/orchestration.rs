@@ -296,8 +296,8 @@ impl Run {
 }
 
 /// Checks that none of `files` escapes the checkout at `cwd`, existing symlinked parents
-/// included.
-pub fn check_scope(cwd: &str, files: &[String]) -> Result<(), String> {
+/// included: `CreateSession` asks it of a worker on the disk that holds its checkout.
+pub(crate) fn check_scope(cwd: &str, files: &[String]) -> Result<(), String> {
     let root = Path::new(cwd).canonicalize().map_err(|e| e.to_string())?;
     for file in files {
         let mut path = root.join(file);

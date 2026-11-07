@@ -154,13 +154,27 @@ impl SettingsView {
         self.skill_documents.clear();
         self.skill_preview_generation += 1;
         let generation = self.skill_preview_generation;
+        // A skill of a project on another machine is read through that machine's engine.
+        let peer = path
+            .to_str()
+            .filter(|path| onicode_protocol::ProjectRef::parse_uri(path).is_some())
+            .map(|path| crate::engine_client::read_file(path, cx));
         let work = cx.background_executor().spawn(async move {
-            let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
-            if size > 8 * 1024 * 1024 {
-                return Err("SKILL.md is too large to preview.".into());
-            }
-            std::fs::read_to_string(path)
-                .map(super::super::skill_document::DocumentData::new)
+            let text = match peer {
+                Some(read) => match read.await {
+                    Ok((bytes, None)) => String::from_utf8(bytes).map_err(|e| e.to_string()),
+                    Ok((_, Some(_))) => Err("not a text file".to_owned()),
+                    Err(error) => Err(error),
+                },
+                None => {
+                    let size = std::fs::metadata(&path).map_err(|e| e.to_string())?.len();
+                    if size > 8 * 1024 * 1024 {
+                        return Err("SKILL.md is too large to preview.".into());
+                    }
+                    std::fs::read_to_string(path).map_err(|e| e.to_string())
+                }
+            };
+            text.map(super::super::skill_document::DocumentData::new)
                 .map_err(|e| format!("Could not read SKILL.md. {e}"))
         });
         self.skill_preview_task = Some(cx.spawn(async move |this, cx| {
@@ -356,6 +370,13 @@ impl SettingsView {
                 let preview = path.clone();
                 let copy = path.clone();
                 let reveal = path.clone();
+                // A skill on another machine reads as that machine names it, and Finder
+                // cannot show it.
+                let peer = path
+                    .to_str()
+                    .and_then(onicode_protocol::ProjectRef::parse_uri);
+                let remote = peer.is_some();
+                let shown_path = peer.map_or_else(|| path.display().to_string(), |peer| peer.path);
                 let name = skill.name.clone();
                 rows.push(
                     div()
@@ -461,7 +482,7 @@ impl SettingsView {
                                         .truncate()
                                         .text_size(px(11.))
                                         .text_color(content(0.35))
-                                        .child(path.display().to_string()),
+                                        .child(shown_path),
                                 )
                                 .child(
                                     icon_action(
@@ -508,10 +529,16 @@ impl SettingsView {
                                         20.,
                                         12.,
                                         0.4,
-                                        false,
+                                        remote,
                                     )
                                     .debug_selector(|| "skill-reveal-action".into())
-                                    .on_click(move |_, _, cx| cx.reveal_path(&reveal)),
+                                    .on_click(
+                                        move |_, _, cx| {
+                                            if !remote {
+                                                cx.reveal_path(&reveal);
+                                            }
+                                        },
+                                    ),
                                 ),
                         )
                         .into_any_element(),

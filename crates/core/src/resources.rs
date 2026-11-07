@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 
 use crate::process::{self, Agent};
 
-#[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn mach_host_self() -> u32;
 }
@@ -109,7 +108,6 @@ struct Process {
 }
 
 /// Kernel process birth time prevents PID reuse from authorizing a stop.
-#[cfg(target_os = "macos")]
 pub fn identity(pid: u32) -> Option<String> {
     unsafe {
         let mut info: libc::proc_bsdinfo = std::mem::zeroed();
@@ -130,14 +128,9 @@ pub fn identity(pid: u32) -> Option<String> {
         ))
     }
 }
-#[cfg(not(target_os = "macos"))]
-pub fn identity(_pid: u32) -> Option<String> {
-    None
-}
 
 /// System CPU since the previous call, and the kernel's memory pressure level.
 pub fn usage() -> Usage {
-    #[cfg(target_os = "macos")]
     unsafe {
         use std::sync::{Mutex, OnceLock};
         static CPU: Mutex<Option<[u32; 4]>> = Mutex::new(None);
@@ -181,8 +174,6 @@ pub fn usage() -> Usage {
             memory_pressure: ok.then_some(pressure),
         }
     }
-    #[cfg(not(target_os = "macos"))]
-    Usage::default()
 }
 
 fn process_snapshot() -> Result<HashMap<u32, Process>, String> {
@@ -296,7 +287,6 @@ fn validate_tool<'a>(
 
 // A ps snapshot is for display, not authority to signal a PID. Walk current
 // kernel parent links as well, so a reused descendant PID cannot be targeted.
-#[cfg(target_os = "macos")]
 fn live_descendant(pid: u32, ancestor: u32, stamp: &str) -> bool {
     let mut current = pid;
     let mut seen = HashSet::new();
@@ -320,10 +310,6 @@ fn live_descendant(pid: u32, ancestor: u32, stamp: &str) -> bool {
             current = info.pbi_ppid;
         }
     }
-    false
-}
-#[cfg(not(target_os = "macos"))]
-fn live_descendant(_pid: u32, _ancestor: u32, _stamp: &str) -> bool {
     false
 }
 
@@ -363,7 +349,6 @@ fn stop_tool_in(pid: u32, stamp: &str, roots: &[Agent]) -> Result<(), String> {
             Some((candidate, birth))
         })
         .collect();
-    #[cfg(unix)]
     for (pid, stamp) in &targets {
         if identity(*pid).as_ref() == Some(stamp) {
             unsafe {
@@ -374,9 +359,6 @@ fn stop_tool_in(pid: u32, stamp: &str, roots: &[Agent]) -> Result<(), String> {
     // Escalation belongs to this explicit stop request; recheck birth times.
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(2));
-        #[cfg(not(unix))]
-        let _ = targets;
-        #[cfg(unix)]
         for (pid, stamp) in targets {
             if identity(pid).as_ref() == Some(&stamp) {
                 unsafe {
@@ -467,7 +449,6 @@ mod tests {
         );
     }
 
-    #[cfg(target_os = "macos")]
     #[test]
     fn stopping_a_tool_preserves_its_agent_and_sibling() {
         struct Child(std::process::Child);
@@ -499,7 +480,6 @@ mod tests {
         assert_eq!(identity(root_pid), root.identity);
     }
 
-    #[cfg(unix)]
     #[test]
     fn owned_children_are_listed_under_their_session() {
         let mut child = Command::new("/bin/sleep").arg("30").spawn().unwrap();

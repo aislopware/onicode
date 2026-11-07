@@ -129,6 +129,5 @@ pub struct DiskVersion {
     pub len: u64,
     pub modified: Option<SystemTime>,
     pub created: Option<SystemTime>,
-    #[cfg(unix)]
     pub identity: (u64, u64, i64, i64),
 }

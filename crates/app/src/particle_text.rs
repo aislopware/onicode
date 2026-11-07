@@ -462,50 +462,5 @@ fn paint_text(
                 None => paint(window),
             }
         }
-        #[cfg(not(target_os = "macos"))]
-        {
-            // Device-pixel strips retain the soft edge on other renderers,
-            // including inside a glyph (never recolor/re-shape font runs).
-            if let Some((start, end)) = mask {
-                let scale = window.scale_factor();
-                let count = (f32::from(bounds.size.width) * scale).ceil() as usize;
-                for x in 0..count {
-                    let left = x as f32 / scale;
-                    let alpha = ((end - left - 0.5 / scale) / (end - start)).clamp(0., 1.);
-                    if alpha <= 0. {
-                        continue;
-                    }
-                    let strip = Bounds::new(
-                        bounds.origin + point(px(left), px(0.)),
-                        gpui::size(px(1. / scale), bounds.size.height),
-                    );
-                    window.with_content_mask(Some(ContentMask { bounds: strip }), |window| {
-                        gpui::Style {
-                            opacity: Some(alpha),
-                            ..Default::default()
-                        }
-                        .paint(strip, window, cx, |window, cx| {
-                            let _ = line.paint(
-                                bounds.origin,
-                                bounds.size.height,
-                                TextAlign::Left,
-                                None,
-                                window,
-                                cx,
-                            );
-                        });
-                    });
-                }
-            } else {
-                let _ = line.paint(
-                    bounds.origin,
-                    bounds.size.height,
-                    TextAlign::Left,
-                    None,
-                    window,
-                    cx,
-                );
-            }
-        }
     });
 }

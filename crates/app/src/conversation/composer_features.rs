@@ -210,10 +210,12 @@ impl Conversation {
             return true;
         }
         self.attaching = true;
-        // The engine keeps them with the conversation, so deleting it removes them.
+        // The engine keeps them with the conversation, so deleting it removes them. No op id:
+        // the composer needs the saved paths back now, so a machine that is away answers that it
+        // is offline instead of holding the call in the outbox the way a sent prompt waits.
         let save = crate::engine_client::call::<SaveAttachments>(
             &self.engine,
-            Some(OpId::new()),
+            None,
             SaveAttachments {
                 session: Some(self.engine.row(self.summary.id)),
                 kept: self
@@ -226,6 +228,7 @@ impl Conversation {
                     .map(|image| NewAttachment {
                         bytes: Bytes(image.bytes().to_vec()),
                         extension: image.format().extension().to_owned(),
+                        name: None,
                     })
                     .collect(),
             },
@@ -256,12 +259,16 @@ impl Conversation {
             return;
         }
         let incoming = std::mem::take(&mut self.pending_attachments);
-        let mut all = self.attachments.clone();
-        all.extend(incoming.iter().cloned());
         self.attaching = true;
-        let work = cx.background_executor().spawn(async move {
-            onicode_core::composer::validate_attachments(&all).map(|_| incoming)
-        });
+        let work = if self.engine.target().is_some() {
+            self.carry_attachments(incoming, cx)
+        } else {
+            let mut all = self.attachments.clone();
+            all.extend(incoming.iter().cloned());
+            cx.background_executor().spawn(async move {
+                onicode_core::composer::validate_attachments(&all).map(|_| incoming)
+            })
+        };
         cx.spawn(async move |this, cx| {
             let result = work.await;
             let _ = this.update(cx, |this, cx| {
@@ -270,6 +277,70 @@ impl Conversation {
         })
         .detach();
         cx.notify();
+    }
+
+    /// `incoming`, for a session on another engine, which cannot read this Mac's disk, as that
+    /// engine names them: a file of that engine already (its project's explorer drags one in)
+    /// as it is; one from this Mac read here, its bytes kept with the conversation there under
+    /// its own name (`SaveAttachments`), which checks them against the composer's limits beside
+    /// the attachments it holds. A file of a third engine is refused.
+    fn carry_attachments(
+        &self,
+        incoming: Vec<PathBuf>,
+        cx: &mut Context<Self>,
+    ) -> gpui::Task<Result<Vec<PathBuf>, String>> {
+        use onicode_core::composer::MAX_EMBED_BYTES;
+        let engine = self.engine.clone();
+        let session = engine.row(self.summary.id);
+        let kept: Vec<String> = self
+            .attachments
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect();
+        cx.background_executor().spawn(async move {
+            let mut there = Vec::new();
+            let mut files = Vec::new();
+            let mut total = 0;
+            for path in incoming {
+                let spelled = path.to_string_lossy().into_owned();
+                match onicode_protocol::ProjectRef::parse_uri(&spelled) {
+                    Some(file) if Some(&file.engine) == engine.target() => there.push(file.path),
+                    Some(_) => return Err("Files on another machine stay on it.".to_owned()),
+                    None => {
+                        let shown = path.display();
+                        let meta = path.metadata().map_err(|e| format!("{shown}: {e}"))?;
+                        if !meta.is_file() {
+                            return Err(format!("{shown} is not a file."));
+                        }
+                        total += meta.len();
+                        if total > MAX_EMBED_BYTES {
+                            return Err("Attachments must total 20 MB or less.".to_owned());
+                        }
+                        let name = path
+                            .file_name()
+                            .map(|name| name.to_string_lossy().into_owned())
+                            .ok_or_else(|| format!("{shown} is not a file."))?;
+                        let bytes = std::fs::read(&path).map_err(|e| format!("{shown}: {e}"))?;
+                        files.push(NewAttachment {
+                            bytes: Bytes(bytes),
+                            extension: String::new(),
+                            name: Some(name),
+                        });
+                    }
+                }
+            }
+            // No op id, as for a pasted image: an away machine is said, not waited for.
+            let save = engine.call::<SaveAttachments>(
+                None,
+                SaveAttachments {
+                    session: Some(session),
+                    kept: kept.into_iter().chain(there.iter().cloned()).collect(),
+                    images: files,
+                },
+            );
+            let saved = save.await?;
+            Ok(there.into_iter().chain(saved).map(PathBuf::from).collect())
+        })
     }
 
     fn finish_attachment_read(
@@ -303,11 +374,14 @@ impl Conversation {
         if self.attachments.is_empty() && self.attachment_error.is_none() && !self.attaching {
             return None;
         }
+        // A session on another engine keeps its attachments there: they are read through it.
+        let engine = self.engine.clone();
+        let shown = move |path: &PathBuf| engine.app_path(&path.to_string_lossy());
         for path in &self.attachments {
             if let Some(mime) = onicode_protocol::composer::image_mime(path)
                 && !self.attachment_photos.contains_key(path)
             {
-                let origin = crate::transcript::attachments::Origin::Path(path.clone());
+                let origin = crate::transcript::attachments::Origin::Path(shown(path).into());
                 let photo = cx
                     .new(|cx| crate::transcript::attachments::Photo::new(origin, mime.into(), cx));
                 self.attachment_photos.insert(path.clone(), photo);
@@ -366,8 +440,15 @@ impl Conversation {
                             }
                         }));
                     if image {
+                        let spelled = shown(path);
+                        let source = if onicode_protocol::ProjectRef::parse_uri(&spelled).is_some()
+                        {
+                            crate::image_lightbox::Source::Peer(spelled)
+                        } else {
+                            crate::image_lightbox::Source::Path(path.clone())
+                        };
                         let preview = crate::image_lightbox::Open {
-                            source: crate::image_lightbox::Source::Path(path.clone()),
+                            source,
                             alt: label.clone().into(),
                         };
                         return div()
@@ -624,5 +705,69 @@ impl Conversation {
                 );
         }
         Some(card.into_any_element())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use onicode_protocol::{EngineId, SessionId, SessionKey};
+    use serde_json::json;
+
+    use super::*;
+
+    /// A file attached from this Mac to a session on another machine reaches that machine as
+    /// its bytes under its own name, kept with the conversation there beside what the composer
+    /// holds, where a file of that machine already is named as it names it. While the machine
+    /// is away nothing is attached and the composer says why.
+    #[gpui::test]
+    fn a_file_attached_to_a_peer_session_carries_its_bytes(cx: &mut gpui::TestAppContext) {
+        let local = cx.update(crate::engine_client::Engine::memory);
+        let studio = local.on(EngineId("nStudio".into()));
+        let key = SessionKey {
+            engine: EngineId("nStudio".into()),
+            session: SessionId::new(),
+        };
+        let row = crate::engine_client::peer_row(&key);
+        studio.adopt(row, 7, key.session);
+        let summary = Session {
+            id: row,
+            title: "On the studio".into(),
+            provider: "codex".into(),
+            cwd: "peer://nStudio/Users/me/app".into(),
+            provider_id: None,
+            has_messages: false,
+            updated_at: 1,
+            archived: false,
+            pinned: false,
+            work_item: None,
+        };
+        let view = cx.new(|cx| Conversation::new(summary, studio, cx));
+        let dir = std::env::temp_dir().join(format!("onicode-attach-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("notes.md");
+        std::fs::write(&file, "# Notes").unwrap();
+        view.update(cx, |view, cx| {
+            let there = PathBuf::from("peer://nStudio/Users/me/app/README.md");
+            view.add_attachments(vec![file.clone(), there], cx);
+        });
+        cx.run_until_parked();
+        let calls = cx.update(|cx| crate::engine_client::calls_for_test(&local, cx));
+        let (_, save) = calls
+            .iter()
+            .find(|(name, _)| *name == "SaveAttachments")
+            .expect("the bytes go to the studio");
+        assert_eq!(save["engine"], "nStudio");
+        assert_eq!(save["body"]["session"], 7, "the row the studio keeps it at");
+        assert_eq!(save["body"]["kept"], json!(["/Users/me/app/README.md"]));
+        let body: SaveAttachments = serde_json::from_value(save["body"].clone()).unwrap();
+        assert_eq!(body.images.len(), 1);
+        assert_eq!(body.images[0].name.as_deref(), Some("notes.md"));
+        assert_eq!(body.images[0].bytes.0, b"# Notes");
+        view.read_with(cx, |view, _| {
+            assert!(view.attachments.is_empty(), "{:?}", view.attachments);
+            let error = view.attachment_error.clone().unwrap_or_default();
+            assert!(error.contains("offline"), "{error}");
+        });
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

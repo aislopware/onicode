@@ -169,64 +169,6 @@ fn sidebar_faded(rows: impl IntoElement, state: ListState, top_fade: bool) -> im
     .group()
 }
 
-/// Without Metal's fade, the background painted over the rows' edges.
-#[cfg(not(target_os = "macos"))]
-fn sidebar_edge_wash(state: ListState, top_fade: bool, inset: bool) -> impl IntoElement {
-    gpui::canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let (top_height, bottom_height) = sidebar_fade_heights(&state, top_fade, bounds);
-            let background = if inset {
-                shell_fill().blend(inset_chrome_wash())
-            } else {
-                shell_fill()
-            };
-            // Without a mask the fade paints the background over the
-            // rows. Over Windows' glass that becomes an opaque band,
-            // so a translucent background keeps the list's hard edge.
-            if cfg!(target_os = "windows") && background.a < 1. {
-                return;
-            }
-            for (at_top, height) in [(true, top_height), (false, bottom_height)] {
-                if height <= px(0.) {
-                    continue;
-                }
-                let band = gpui::Bounds::new(
-                    gpui::point(
-                        bounds.left(),
-                        if at_top {
-                            bounds.top()
-                        } else {
-                            bounds.bottom() - height
-                        },
-                    ),
-                    gpui::size(bounds.size.width, height),
-                );
-                for y in 0..height.as_f32().ceil() as usize {
-                    let mut color = background;
-                    color.a = (1. - (y as f32 + 0.5) / height.as_f32()).clamp(0., 1.);
-                    let y = if at_top {
-                        band.top() + px(y as f32)
-                    } else {
-                        band.bottom() - px(y as f32 + 1.)
-                    };
-                    window.paint_quad(gpui::fill(
-                        gpui::Bounds::new(
-                            gpui::point(band.left(), y),
-                            gpui::size(band.size.width, px(1.)),
-                        ),
-                        color,
-                    ));
-                }
-            }
-        },
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
-}
-
 impl Shell {
     /// Session membership/order changes independently of scroll position and
     /// hover state. Keep the expensive project index until a data notification
@@ -446,7 +388,7 @@ impl Shell {
     }
 
     pub(super) fn virtual_sidebar(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let sidebar = div()
+        div()
             .id("sidebar-scroll")
             .debug_selector(|| "sidebar-sessions".into())
             .relative()
@@ -465,14 +407,8 @@ impl Shell {
                 .size_full(),
                 self.sidebar_list.state.clone(),
                 !self.workspace.classic_layout,
-            ));
-        #[cfg(not(target_os = "macos"))]
-        let sidebar = sidebar.child(sidebar_edge_wash(
-            self.sidebar_list.state.clone(),
-            !self.workspace.classic_layout,
-            !self.workspace.boxy_layout(),
-        ));
-        sidebar.into_any()
+            ))
+            .into_any()
     }
 
     fn sidebar_list_row(

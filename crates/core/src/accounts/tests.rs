@@ -64,7 +64,6 @@ fn isolated_profiles_override_environment_and_cannot_escape_their_root() {
                 .map(Path::as_os_str)
         );
         assert_eq!(env[std::ffi::OsStr::new(secret)], None);
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(
@@ -118,7 +117,6 @@ fn removing_a_private_codex_profile_preserves_other_accounts() {
     assert!(second.home(Kind::Codex).unwrap().join("auth.json").exists());
 }
 
-#[cfg(unix)]
 #[test]
 fn account_cli_login_models_usage_reset_and_text_jobs_share_the_same_private_home() {
     use std::os::unix::fs::PermissionsExt;

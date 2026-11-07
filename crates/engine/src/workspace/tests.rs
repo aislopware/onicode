@@ -152,6 +152,7 @@ impl Harness {
                 title,
                 start: NewSession::Bare,
                 started_by: None,
+                scope: Vec::new(),
             },
         ))
         .unwrap()
@@ -656,6 +657,7 @@ fn a_created_session_keeps_the_viewers_id() {
             title: None,
             start: NewSession::Bare,
             started_by: None,
+            scope: Vec::new(),
         },
     ))
     .unwrap();
@@ -665,6 +667,55 @@ fn a_created_session_keeps_the_viewers_id() {
     assert_eq!(
         store.session_by_uid(id.0).unwrap(),
         Some(summary.session.id)
+    );
+}
+
+/// An orchestrated worker is checked on the disk that holds its checkout: one whose files stay
+/// inside is created there, and one whose file escapes through a symlinked folder is refused
+/// with the reason, creating nothing.
+#[test]
+fn a_worker_whose_files_escape_its_checkout_is_refused_on_its_engine() {
+    let dir = tempfile::tempdir().unwrap();
+    let checkout = dir.path().join("app");
+    std::fs::create_dir_all(checkout.join("src")).unwrap();
+    std::os::unix::fs::symlink(dir.path(), checkout.join("out")).unwrap();
+    let harness = Harness::new(Limits::default());
+    let worker = |files: &[&str]| CreateSession {
+        session: SessionId::new(),
+        provider: "codex".into(),
+        cwd: PROJECT.into(),
+        title: None,
+        start: NewSession::Settings(Box::new(onicode_core::agent::Settings {
+            worktree_cwd: Some(checkout.to_string_lossy().into_owned()),
+            ..Default::default()
+        })),
+        started_by: None,
+        scope: files.iter().map(|file| (*file).to_owned()).collect(),
+    };
+    let inside = block_on(
+        harness
+            .hub
+            .create_session(Some(OpId::new()), worker(&["src/main.rs", "docs"])),
+    )
+    .unwrap();
+    assert_eq!(inside.outcome, Outcome::Applied);
+    let escaping = block_on(
+        harness
+            .hub
+            .create_session(Some(OpId::new()), worker(&["out/secret.txt"])),
+    )
+    .unwrap();
+    match escaping.outcome {
+        Outcome::Rejected(Rejection::Denied(reason)) => {
+            assert!(reason.contains("out/secret.txt"), "{reason}");
+        }
+        other => panic!("refused, not {other:?}"),
+    }
+    assert!(escaping.session.is_none());
+    assert_eq!(
+        harness.state().sessions.len(),
+        1,
+        "nothing more was created"
     );
 }
 
@@ -1103,6 +1154,7 @@ fn a_new_worktree_is_named_and_a_deleted_session_gets_no_late_name() {
                 title: None,
                 start: NewSession::Bare,
                 started_by: None,
+                scope: Vec::new(),
             },
         ))
         .unwrap();

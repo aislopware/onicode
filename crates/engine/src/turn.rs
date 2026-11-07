@@ -8,14 +8,14 @@ use onicode_core::agent::{Approval, Control, Settings};
 use onicode_core::provider::{self, Event, Kind, Request};
 use onicode_core::store::{Session, Store};
 use onicode_core::transcript::{AttachFiles, Row, Transcript};
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod follow_up_tests;
 mod handoff;
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod handoff_tests;
 mod persistence;
 mod visual_discovery;
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod visual_tests;
 use persistence::PendingSave;
 pub type Database = Arc<Mutex<Store>>;

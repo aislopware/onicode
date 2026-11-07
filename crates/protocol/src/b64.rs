@@ -1,14 +1,10 @@
 //! Standard base64 (padded) for bulk payloads: image attachments, file contents and upload
-//! chunks. Every Apple target has NEON, where base64's NEON engine encodes about 2.4× and decodes
-//! about 2.1× as fast as its scalar one (8 MB, M-series); other targets keep the scalar engine.
-//! Both read and write the same text, so either end may use either.
+//! chunks. Every target is Apple silicon, which always has NEON, where base64's NEON engine
+//! encodes about 2.4× and decodes about 2.1× as fast as its scalar one (8 MB, M-series). Both
+//! read and write the same text as the scalar engine, which the tests hold it to.
 
-#[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
 pub const STANDARD: base64::engine::Neon =
     base64::engine::Neon::standard(base64::engine::general_purpose::PAD);
-
-#[cfg(not(all(target_arch = "aarch64", target_feature = "neon")))]
-pub const STANDARD: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
 #[cfg(test)]
 mod tests {

@@ -8,15 +8,7 @@ use serde_json::Value;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Permission {
     Prompt,
-    #[cfg_attr(
-        not(target_os = "macos"),
-        expect(dead_code, reason = "only the macOS notification center grants")
-    )]
     Granted,
-    #[cfg_attr(
-        not(target_os = "macos"),
-        expect(dead_code, reason = "only the macOS notification center denies")
-    )]
     Denied,
     Unsupported,
 }
@@ -99,10 +91,6 @@ impl Target {
         }
     }
 
-    #[cfg_attr(
-        not(target_os = "macos"),
-        expect(dead_code, reason = "only macOS reports which notification was opened")
-    )]
     pub fn from_tag(tag: &str) -> Option<Self> {
         // An agent alert, posted by the app or by the engine while the app was closed.
         if let Some(row) = onicode_protocol::alerts::alert_row(tag) {

@@ -286,13 +286,34 @@ impl WorkspaceHub {
         .await
     }
 
-    /// `CreateSession`: a session under the viewer's id, with its starting settings.
+    /// `CreateSession`: a session under the viewer's id, with its starting settings. A worker
+    /// whose assignment's files escape its checkout on this disk is refused (`Denied`).
     pub async fn create_session(
         &self,
         op: Option<OpId>,
         body: CreateSession,
     ) -> Result<Created, String> {
+        // Read off the disk before the workspace is locked.
+        let escapes = if body.scope.is_empty() {
+            None
+        } else {
+            let checkout = match &body.start {
+                NewSession::Settings(settings) => settings.worktree_cwd.clone(),
+                NewSession::Defaults(defaults) => defaults.worktree_cwd.clone(),
+                NewSession::Bare => None,
+            }
+            .unwrap_or_else(|| body.cwd.clone());
+            super::orchestration::check_scope(&checkout, &body.scope).err()
+        };
         self.mutate(op, move |inner, store| {
+            if let Some(reason) = escapes {
+                let refused = Created {
+                    outcome: Outcome::Rejected(Rejection::Denied(reason.clone())),
+                    session: None,
+                    settings: None,
+                };
+                return Ok(rejected(refused, Rejection::Denied(reason)));
+            }
             let CreateSession {
                 session,
                 provider,
@@ -300,6 +321,7 @@ impl WorkspaceHub {
                 title,
                 start,
                 started_by,
+                scope: _,
             } = body;
             let mut stored = store.create(&provider, &cwd)?;
             let row = stored.id;

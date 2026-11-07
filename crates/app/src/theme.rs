@@ -201,16 +201,13 @@ impl Tokens {
     }
 }
 
-/// Platforms whose compositor blurs the desktop behind the window: macOS
-/// vibrancy and Windows Acrylic. Linux blur is compositor-dependent, so it
-/// stays opaque rather than exposing the raw desktop.
-pub(crate) const GLASS_PLATFORM: bool = cfg!(any(target_os = "macos", target_os = "windows"));
+/// The window paints glass over macOS vibrancy unless the theme is light.
 pub(crate) fn window_glass(p: &crate::settings::Preferences, system_light: bool) -> bool {
-    GLASS_PLATFORM && p.theme != "light" && !(p.theme == "system" && system_light)
+    p.theme != "light" && !(p.theme == "system" && system_light)
 }
 /// What the compositor puts behind a window that does or doesn't paint glass.
 pub(crate) fn window_backdrop(glass: bool) -> gpui::WindowBackgroundAppearance {
-    if glass && GLASS_PLATFORM {
+    if glass {
         gpui::WindowBackgroundAppearance::Blurred
     } else {
         gpui::WindowBackgroundAppearance::Opaque
@@ -369,22 +366,14 @@ pub(crate) fn shell_fill() -> Hsla {
     if let Some(fill) = TOKENS.with(|t| t.borrow().as_ref().map(|t| t.shell)) {
         return fill;
     }
-    if GLASS_PLATFORM {
-        // #0d0d0d at 80%, with the stylesheet's #ebebeb 5% wash above it.
-        rgba(0x1b1b1bcf).into()
-    } else {
-        rgb(0x181818).into()
-    }
+    // #0d0d0d at 80%, with the stylesheet's #ebebeb 5% wash above it.
+    rgba(0x1b1b1bcf).into()
 }
 pub(crate) fn pane_fill() -> Hsla {
     if let Some(fill) = TOKENS.with(|t| t.borrow().as_ref().map(|t| t.pane)) {
         return fill;
     }
-    if GLASS_PLATFORM {
-        rgba(0x06060666).into()
-    } else {
-        rgb(CHAT).into()
-    }
+    rgba(0x06060666).into()
 }
 /// `--color-background-base`: the theme's opaque surface, also the ink on
 /// solid `bg-content` buttons.

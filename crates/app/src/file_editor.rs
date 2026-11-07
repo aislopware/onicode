@@ -87,7 +87,8 @@ pub(crate) struct OpenPath(pub String);
 
 /// File links may include a one-based line and column (`:12:4` or `#L12`). Beside a `cwd` on
 /// another engine (`peer://`), a path names that engine's disk: an absolute one and a relative
-/// one alike come back as a URI on that engine, never as a path on this Mac.
+/// one alike come back as a URI on that engine, never as a path on this Mac, and one under `~`
+/// stays under `~` for that engine to read under its own home, never this Mac's.
 pub(crate) fn file_location(raw: &str, cwd: &str) -> (String, Option<(usize, usize)>) {
     let (path, location) = located(raw);
     let resolve = |path: &str, cwd: &str| {
@@ -95,17 +96,23 @@ pub(crate) fn file_location(raw: &str, cwd: &str) -> (String, Option<(usize, usi
             .to_string_lossy()
             .into_owned()
     };
+    // A path of another engine: `~` is its home, which only it can read.
+    let resolve_there = |path: &str, cwd: &str| match path.strip_prefix('~') {
+        Some("") => "~".to_owned(),
+        Some(under) if under.starts_with('/') => format!("~{}", resolve(under, "/")),
+        _ => resolve(path, cwd),
+    };
     let path = match (
         onicode_protocol::ProjectRef::parse_uri(&path),
         onicode_protocol::ProjectRef::parse_uri(cwd),
     ) {
         (Some(peer), _) => onicode_protocol::ProjectRef {
-            path: resolve(&peer.path, "/"),
+            path: resolve_there(&peer.path, "/"),
             engine: peer.engine,
         }
         .uri(),
         (None, Some(project)) => onicode_protocol::ProjectRef {
-            path: resolve(&path, &project.path),
+            path: resolve_there(&path, &project.path),
             engine: project.engine,
         }
         .uri(),
@@ -1488,6 +1495,24 @@ mod tests {
             file_location("peer://n%2FMac/srv/./a.rs:7", "/project"),
             ("peer://n%2FMac/srv/a.rs".into(), Some((7, 1)))
         );
+        // `~` is that engine's home: it stays for the engine to read under its own, and a
+        // link that already names it there opens there again.
+        let home = file_location("~/notes/../notes.md:3", cwd);
+        assert_eq!(home, ("peer://nStudio/~/notes.md".into(), Some((3, 1))));
+        assert_eq!(
+            file_location(&home.0, "/project"),
+            ("peer://nStudio/~/notes.md".into(), None)
+        );
+        assert_eq!(file_location("~", cwd), ("peer://nStudio/~".into(), None));
+        assert_eq!(
+            onicode_protocol::ProjectRef::parse_uri(&home.0).map(|peer| peer.path),
+            Some("~/notes.md".into()),
+            "what the studio reads under its home"
+        );
+        assert!(
+            !file_location("~/notes.md", "/project").0.starts_with('~'),
+            "a session of this Mac reads its own home"
+        );
         assert_eq!(
             crate::engine_client::app_path_beside(cwd, "/Users/me/.onicode/a.png"),
             "peer://nStudio/Users/me/.onicode/a.png"
@@ -1495,6 +1520,10 @@ mod tests {
         assert_eq!(
             crate::engine_client::app_path_beside("/project", "/tmp/a.png"),
             "/tmp/a.png"
+        );
+        assert_eq!(
+            crate::engine_client::app_path_beside(cwd, "~/Desktop/a.png"),
+            "peer://nStudio/~/Desktop/a.png"
         );
     }
 

@@ -184,9 +184,4 @@ impl MainThreadCpu {
         };
         Some(time(info.user_time) + time(info.system_time))
     }
-
-    #[cfg(not(target_os = "macos"))]
-    fn used(&self) -> Option<Duration> {
-        None
-    }
 }

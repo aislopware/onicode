@@ -318,20 +318,12 @@ impl Shell {
                     canvas(
                         |_, _, _| {},
                         move |bounds, _, window, _| {
-                            #[cfg(any(target_os = "macos", target_os = "windows"))]
-                            let quad = {
-                                window.paint_backdrop_blur_whole(
-                                    bounds,
-                                    gpui::Corners::all(px(10.)),
-                                    px(blur),
-                                );
-                                gpui::fill(bounds, content(0.05))
-                            };
-                            #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                            let quad = {
-                                let _ = blur;
-                                gpui::fill(bounds, shell_fill())
-                            };
+                            window.paint_backdrop_blur_whole(
+                                bounds,
+                                gpui::Corners::all(px(10.)),
+                                px(blur),
+                            );
+                            let quad = gpui::fill(bounds, content(0.05));
                             window.paint_quad(quad.corner_radii(px(10.)));
                         },
                     )

@@ -503,7 +503,7 @@ impl QuickComposer {
         self.shown = false;
         #[cfg(all(target_os = "macos", not(test)))]
         crate::traffic_lights::hide(window);
-        #[cfg(any(not(target_os = "macos"), test))]
+        #[cfg(test)]
         window.remove_window();
         cx.notify();
     }
@@ -781,6 +781,7 @@ impl QuickComposer {
                     .map(|image| NewAttachment {
                         bytes: Bytes(image.bytes().to_vec()),
                         extension: image.format().extension().to_owned(),
+                        name: None,
                     })
                     .collect(),
             },
@@ -924,9 +925,9 @@ impl QuickComposer {
         let height = height.clamp(1., MAX_HEIGHT);
         #[cfg(all(target_os = "macos", not(test)))]
         crate::traffic_lights::fit_height(window, cx, height as f64);
-        #[cfg(any(not(target_os = "macos"), test))]
+        #[cfg(test)]
         let _ = cx;
-        #[cfg(any(not(target_os = "macos"), test))]
+        #[cfg(test)]
         {
             let size = window.bounds().size;
             if (f32::from(size.height) - height).abs() > 0.5 {

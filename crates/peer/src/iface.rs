@@ -2,7 +2,7 @@
 //!
 //! A socket bound to a tailnet address alone may still be routed out of another interface on
 //! macOS (a VPN or a Wi-Fi route that wins the lookup); bound to Tailscale's interface as well
-//! (`IP_BOUND_IF`, `SO_BINDTOIFINDEX` on Linux), it sends and takes packets on the tunnel only.
+//! (`IP_BOUND_IF`), it sends and takes packets on the tunnel only.
 
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -111,30 +111,11 @@ pub fn bind_to_interface(socket: &socket2::Socket, ip: IpAddr) -> io::Result<()>
     bind_index(socket, ip, index)
 }
 
-#[cfg(any(
-    target_os = "macos",
-    target_os = "ios",
-    target_os = "linux",
-    target_os = "android"
-))]
 fn bind_index(socket: &socket2::Socket, ip: IpAddr, index: NonZeroU32) -> io::Result<()> {
     match ip {
         IpAddr::V4(_) => socket.bind_device_by_index_v4(Some(index)),
         IpAddr::V6(_) => socket.bind_device_by_index_v6(Some(index)),
     }
-}
-
-#[cfg(not(any(
-    target_os = "macos",
-    target_os = "ios",
-    target_os = "linux",
-    target_os = "android"
-)))]
-fn bind_index(_socket: &socket2::Socket, _ip: IpAddr, _index: NonZeroU32) -> io::Result<()> {
-    Err(io::Error::new(
-        io::ErrorKind::Unsupported,
-        "binding to an interface",
-    ))
 }
 
 #[cfg(test)]

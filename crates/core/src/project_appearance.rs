@@ -77,21 +77,6 @@ pub fn background_texture(source: RgbaImage, effect: Effect) -> RgbaImage {
     }
 }
 
-/// Backends without the Metal layer compositor bake Haze into the source;
-/// their cover crop and opacity mask still follow the current view immediately.
-pub fn software_background_texture(
-    source: &RgbaImage,
-    effect: Effect,
-    empty: bool,
-    preview: bool,
-) -> RgbaImage {
-    if effect == Effect::GradientBlur {
-        effect_pixels(source, effect, empty, preview, 1.)
-    } else {
-        background_texture(source.clone(), effect)
-    }
-}
-
 /// React processes texture effects at the artwork's resolution, then the view
 /// cover-crops the result and applies its own fade. CSS blur uses view pixels.
 pub fn render_background(

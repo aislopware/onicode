@@ -21,24 +21,19 @@ impl Banners for NoBanners {
     fn withdraw(&self, _id: &str) {}
 }
 
-/// The machine's notification center. On macOS the engine, which ships inside the app bundle,
-/// posts under the app's identity and permission; anywhere else, and outside a bundle (a test,
-/// `cargo run`), it posts nothing.
+/// The machine's notification center. The engine, which ships inside the app bundle, posts under
+/// the app's identity and permission; outside a bundle (a test, `cargo run`) it posts nothing.
 pub struct SystemBanners;
 
 impl Banners for SystemBanners {
     fn post(&self, alert: &Alert, sound: bool) {
         #[cfg(target_os = "macos")]
         macos::post(&alert.id, &alert.title, &alert.body, sound);
-        #[cfg(not(target_os = "macos"))]
-        let _ = (alert, sound);
     }
 
     fn withdraw(&self, id: &str) {
         #[cfg(target_os = "macos")]
         macos::withdraw(id);
-        #[cfg(not(target_os = "macos"))]
-        let _ = id;
     }
 }
 

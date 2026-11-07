@@ -59,12 +59,20 @@ const PEER_SCHEME: &str = "peer://";
 impl ProjectRef {
     /// The app's spelling of the project, or of a path inside it: `peer://`, the engine id with
     /// `%` and `/` escaped (`%25`, `%2F`) so any id reads back whole, then the path, which is
-    /// absolute as every engine names its folders. A project on the app's own engine is spelled
-    /// as its plain path instead, which never starts with the scheme.
+    /// absolute as every engine names its folders. A path under that engine's home (`~`,
+    /// `~/notes.md`), which a transcript of a session there may name, follows a `/` and is read
+    /// under its home by that engine; a macOS root holds no folder named `~`, so no absolute path
+    /// reads that way. A project on the app's own engine is spelled as its plain path instead,
+    /// which never starts with the scheme.
     #[must_use]
     pub fn uri(&self) -> String {
         let engine = self.engine.0.replace('%', "%25").replace('/', "%2F");
-        format!("{PEER_SCHEME}{engine}{}", self.path)
+        let slash = if is_home_relative(&self.path) {
+            "/"
+        } else {
+            ""
+        };
+        format!("{PEER_SCHEME}{engine}{slash}{}", self.path)
     }
 
     /// The project (or path inside one) `text` spells with [`Self::uri`]; `None` for a plain
@@ -76,9 +84,10 @@ impl ProjectRef {
         if engine.is_empty() {
             return None;
         }
+        let home = &path[1..];
         Some(Self {
             engine: EngineId(engine.replace("%2F", "/").replace("%25", "%")),
-            path: path.to_owned(),
+            path: if is_home_relative(home) { home } else { path }.to_owned(),
         })
     }
 
@@ -91,6 +100,11 @@ impl ProjectRef {
             body,
         }
     }
+}
+
+/// Whether `path` names its engine's home or a path under it: `~`, or `~/` and the rest.
+fn is_home_relative(path: &str) -> bool {
+    path == "~" || path.starts_with("~/")
 }
 
 impl fmt::Display for ProjectRef {
@@ -214,6 +228,18 @@ mod tests {
         };
         assert_eq!(odd.uri(), "peer://Me%2F50%25 Mac/");
         assert_eq!(ProjectRef::parse_uri(&odd.uri()), Some(odd));
+        // A path under that engine's home stays for it to read under its own.
+        let home = ProjectRef {
+            engine: EngineId("nMacStudio".into()),
+            path: "~/notes.md".into(),
+        };
+        assert_eq!(home.uri(), "peer://nMacStudio/~/notes.md");
+        assert_eq!(ProjectRef::parse_uri(&home.uri()), Some(home));
+        assert_eq!(
+            ProjectRef::parse_uri("peer://nMacStudio/~notes").map(|p| p.path),
+            Some("/~notes".into()),
+            "only `~` itself names the home"
+        );
         for plain in [
             "/Users/me/code",
             "~",
@@ -233,13 +259,22 @@ mod tests {
 
         proptest! {
             /// Every engine id and absolute path, spaces and any script included, reads back
-            /// whole.
+            /// whole: all but one under a root folder named `~`, which a macOS root never holds.
             #[test]
             fn round_trips(engine in "\\PC{1,24}", path in "(/[^/]{0,12}){1,6}") {
+                prop_assume!(path != "/~" && !path.starts_with("/~/"));
                 let project = ProjectRef { engine: EngineId(engine), path };
                 let uri = project.uri();
                 prop_assert!(uri.starts_with(PEER_SCHEME));
                 prop_assert_eq!(ProjectRef::parse_uri(&uri), Some(project));
+            }
+
+            /// A path under an engine's home, `~` itself included, reads back whole, never as
+            /// an absolute path.
+            #[test]
+            fn home_paths_round_trip(engine in "\\PC{1,24}", rest in "(/[^/]{1,12}){0,4}") {
+                let project = ProjectRef { engine: EngineId(engine), path: format!("~{rest}") };
+                prop_assert_eq!(ProjectRef::parse_uri(&project.uri()), Some(project));
             }
 
             /// A path inside a project is the project's URI and the rest of the path.

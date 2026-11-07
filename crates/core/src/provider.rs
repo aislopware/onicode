@@ -55,7 +55,7 @@ mod questions;
 mod rewind;
 mod tasks;
 pub use rewind::{RewindError, rewind_last_turn};
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod text_tests;
 
 const BATCH_BYTES: usize = 64 * 1024;
@@ -144,7 +144,7 @@ pub fn resolve_auto(kind: Kind) -> Option<PathBuf> {
     .filter(|p| !p.as_os_str().is_empty())
     .map(|p| p.join(kind.binary_name()))
     .collect();
-    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+    if let Some(home) = std::env::var_os("HOME") {
         let home = PathBuf::from(home);
         for dir in kind.install_dirs().iter().copied().chain([
             ".local/bin",
@@ -174,15 +174,8 @@ pub fn resolve_auto(kind: Kind) -> Option<PathBuf> {
             });
             candidates.extend(versions.into_iter().rev());
         }
-        #[cfg(windows)]
-        candidates.push(home.join("AppData/Roaming/npm").join(kind.binary_name()));
     }
-    for dir in [
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/snap/bin",
-    ] {
+    for dir in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"] {
         candidates.push(Path::new(dir).join(kind.binary_name()));
     }
     if matches!(kind, Kind::Cursor | Kind::Pi) {
@@ -197,16 +190,9 @@ pub fn resolve_auto(kind: Kind) -> Option<PathBuf> {
             .collect();
         candidates.extend(paths);
     }
-    candidates.into_iter().find_map(|p| {
-        #[cfg(windows)]
-        for ext in ["exe", "cmd", "bat", "com"] {
-            let candidate = p.with_extension(ext);
-            if executable(&candidate) && discovery::matches(kind, &candidate) {
-                return Some(candidate);
-            }
-        }
-        (executable(&p) && discovery::matches(kind, &p)).then_some(p)
-    })
+    candidates
+        .into_iter()
+        .find(|p| executable(p) && discovery::matches(kind, p))
 }
 fn executable(path: &Path) -> bool {
     let Ok(meta) = path.metadata() else {
@@ -215,15 +201,8 @@ fn executable(path: &Path) -> bool {
     if !meta.is_file() {
         return false;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        meta.permissions().mode() & 0o111 != 0
-    }
-    #[cfg(not(unix))]
-    {
-        true
-    }
+    use std::os::unix::fs::PermissionsExt;
+    meta.permissions().mode() & 0o111 != 0
 }
 
 /// On resume, Claude Code replays a background-task notification from the
@@ -1363,7 +1342,6 @@ pub fn run_text(mut request: Request, cancel: Arc<AtomicBool>) -> Result<String,
 pub(crate) fn catalog_for(kind: Kind, account: crate::accounts::Profile) -> Result<Value, String> {
     let binary = resolve(kind).ok_or_else(|| kind.unavailable_hint())?;
     let cwd = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .unwrap_or(std::env::current_dir().map_err(|e| e.to_string())?);
     run_process(
@@ -1417,7 +1395,6 @@ fn run_operation(
         && request.provider_id.is_none()
         && !request.settings.text_only)
         .then(lifecycle::claude_session_id);
-    #[cfg(unix)]
     if std::env::var_os("ONICODE_NATIVE_TRACE").is_some() {
         unsafe {
             let mut signals = std::mem::zeroed();
@@ -2231,7 +2208,7 @@ mod tests {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod process_tests {
     use std::os::unix::fs::PermissionsExt;
 

@@ -295,7 +295,6 @@ const MENU_TRAVEL: f32 = 8.;
 const SUBMENU_GAP: f32 = 4.;
 const RADIUS: f32 = 12.;
 // GlassBackdrop's backdrop-blur-xl.
-#[cfg(any(target_os = "macos", target_os = "windows"))]
 const BLUR: f32 = 24.;
 
 fn entrance(elapsed: f32, reduced: bool) -> f32 {
@@ -571,17 +570,11 @@ pub(crate) fn paint_glass(
 ) {
     let opaque = crate::theme::floating_fill();
     let light = crate::theme::is_light();
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let quad = if light {
         gpui::fill(bounds, opaque)
     } else {
         window.paint_backdrop_blur_whole(bounds, corners, px(BLUR));
         gpui::fill(bounds, tint)
-    };
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let quad = {
-        let _ = (light, tint);
-        gpui::fill(bounds, opaque)
     };
     window.paint_quad(quad.corner_radii(corners));
 }

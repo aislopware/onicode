@@ -397,6 +397,7 @@ impl Shell {
             &cwd,
             title,
             onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+            Vec::new(),
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -458,20 +459,40 @@ impl Shell {
         };
         self.navigation_revision += 1;
         let revision = self.navigation_revision;
-        if !std::path::Path::new(&cwd).is_dir() {
-            self.error = Some("Choose a project folder before starting work on this item".into());
-            cx.notify();
-            return;
-        }
-        let work = self.create_in_engine(
-            kind.id(),
-            &cwd,
-            Some(format!("{} · {}", item.reference(), item.title)),
-            onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
-            cx,
+        // The folder is looked for on the engine that holds it: another machine's for a peer
+        // project, where the session is created too.
+        let (engine, folder) = self.engine.for_path(&cwd);
+        let found = engine.call::<onicode_protocol::files::Stat>(
+            None,
+            onicode_protocol::files::Stat { path: folder },
         );
         let work_item = item.work_item();
+        let title = format!("{} · {}", item.reference(), item.title);
         cx.spawn(async move |this, cx| {
+            let refused = match cx.background_spawn(found).await {
+                Ok(stat) if stat.kind == onicode_protocol::files::PathKind::Dir => None,
+                Ok(_) => Some("Choose a project folder before starting work on this item".into()),
+                Err(error) => Some(error),
+            };
+            if let Some(error) = refused {
+                let _ = this.update(cx, |this, cx| {
+                    this.error = Some(error);
+                    cx.notify();
+                });
+                return;
+            }
+            let Ok(work) = this.update(cx, |this, cx| {
+                this.create_in_engine(
+                    kind.id(),
+                    &cwd,
+                    Some(title),
+                    onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+                    Vec::new(),
+                    cx,
+                )
+            }) else {
+                return;
+            };
             let result = work.await;
             let _ = this.update_in(cx, |this, window, cx| match result {
                 Ok((mut summary, _)) => {
@@ -504,5 +525,60 @@ impl Shell {
             });
         })
         .detach();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gpui::TestAppContext;
+
+    /// Starting an inbox item in a project on another machine looks for its folder on that
+    /// machine, where its session is created, and says what that machine answered; a folder this
+    /// Mac lacks is still refused for a local project.
+    #[gpui::test]
+    fn an_inbox_item_in_a_peer_project_starts_on_its_engine(cx: &mut TestAppContext) {
+        let (window, _, _) = crate::shell::tests::window(cx);
+        let item = |project: &str| onicode_protocol::inbox::Item {
+            title: "Fix the build".into(),
+            project_path: project.into(),
+            ..Default::default()
+        };
+        window
+            .update(cx, |shell, _, cx| {
+                shell.start_inbox_session(item("peer://nStudio/Users/me/app"), "Fix".into(), cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        let calls = window
+            .update(cx, |shell, _, cx| {
+                crate::engine_client::calls_for_test(&shell.engine, cx)
+            })
+            .unwrap();
+        let (_, stat) = calls
+            .iter()
+            .find(|(name, _)| *name == "Stat")
+            .expect("the folder is looked for on the studio");
+        assert_eq!(stat["engine"], "nStudio");
+        assert_eq!(stat["body"]["path"], "/Users/me/app");
+        assert!(
+            calls.iter().all(|(name, _)| *name != "CreateSession"),
+            "nothing is created while the studio is away"
+        );
+        window
+            .update(cx, |shell, _, cx| {
+                let error = shell.error.take().unwrap_or_default();
+                assert!(error.contains("offline"), "{error}");
+                shell.start_inbox_session(item("/no/such/onicode/folder"), "Fix".into(), cx);
+            })
+            .unwrap();
+        cx.run_until_parked();
+        window
+            .update(cx, |shell, _, _| {
+                assert_eq!(
+                    shell.error.as_deref(),
+                    Some("Choose a project folder before starting work on this item")
+                );
+            })
+            .unwrap();
     }
 }

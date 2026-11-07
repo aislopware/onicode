@@ -24,10 +24,6 @@ const FADE: Duration = Duration::from_millis(240);
 struct Key {
     path: String,
     effect: Effect,
-    #[cfg(not(target_os = "macos"))]
-    empty: bool,
-    #[cfg(not(target_os = "macos"))]
-    preview: bool,
 }
 
 #[derive(Clone)]
@@ -91,17 +87,6 @@ async fn prepare_texture(
     let source = read_image(Path::new(&request.key.path))?;
     #[cfg(target_os = "macos")]
     let mut pixels = background_texture(source, request.key.effect);
-    #[cfg(not(target_os = "macos"))]
-    let mut pixels = {
-        let pixels = onicode_core::project_appearance::software_background_texture(
-            &source,
-            request.key.effect,
-            request.key.empty,
-            request.key.preview,
-        );
-        drop(source);
-        pixels
-    };
     // Effects run at the artwork's resolution, as React's do; only the
     // finished texture is resampled.
     if let Some((width, height)) = covering_size(pixels.dimensions(), screen) {
@@ -252,28 +237,6 @@ impl ProjectBackground {
                 } else {
                     window.end_layer_mask();
                 }
-                #[cfg(not(target_os = "macos"))]
-                if !begin {
-                    // Other backends have an opaque chat surface. Reveal that
-                    // surface with the same view-relative stops while it resizes.
-                    use onicode_protocol::project_appearance::background_fade;
-
-                    use crate::theme::CHAT;
-                    let _ = (preview, &clip, opacity);
-                    let height = bounds.size.height.as_f32().ceil() as usize;
-                    for y in 0..height {
-                        let mut color: gpui::Hsla = gpui::rgb(CHAT).into();
-                        color.a =
-                            1. - background_fade((y as f32 + 0.5) / height as f32, empty, haze);
-                        window.paint_quad(gpui::fill(
-                            Bounds::new(
-                                gpui::point(bounds.left(), bounds.top() + px(y as f32)),
-                                gpui::size(bounds.size.width, px(1.)),
-                            ),
-                            color,
-                        ));
-                    }
-                }
             },
         )
         .absolute()
@@ -316,10 +279,6 @@ impl Render for ProjectBackground {
         let key = Key {
             path: settings.path.clone(),
             effect: settings.effect,
-            #[cfg(not(target_os = "macos"))]
-            empty: settings.effect != Effect::GradientBlur || self.empty,
-            #[cfg(not(target_os = "macos"))]
-            preview: settings.effect == Effect::GradientBlur && self.preview,
         };
         if self.key.as_ref() != Some(&key) || self.loading {
             self.prepare(key, window, cx);
@@ -347,18 +306,7 @@ impl Render for ProjectBackground {
                             .left_0()
                             .w_full()
                             .aspect_ratio(aspect)
-                            .child(img(image).size_full().object_fit(ObjectFit::Cover).when(
-                                cfg!(not(target_os = "macos")),
-                                |image| {
-                                    image.opacity(opacity).rounded(px(if self.preview {
-                                        11.
-                                    } else if self.clip.is_some() {
-                                        9.
-                                    } else {
-                                        0.
-                                    }))
-                                },
-                            )),
+                            .child(img(image).size_full().object_fit(ObjectFit::Cover)),
                     )
                     .child(self.mask(false, &settings, opacity))
             })
@@ -545,10 +493,6 @@ mod tests {
                         key: Some(Key {
                             path: "prepared-artwork".into(),
                             effect: Effect::Dither,
-                            #[cfg(not(target_os = "macos"))]
-                            empty: true,
-                            #[cfg(not(target_os = "macos"))]
-                            preview: false,
                         }),
                         image: Some(image.clone()),
                         ..Default::default()

@@ -51,7 +51,6 @@ pub(super) struct Wire {
     _registration: Option<process::Registration>,
     _account: Option<crate::accounts::Tracked>,
 }
-#[cfg(unix)]
 fn spawn_process(command: &mut Command) -> std::io::Result<std::process::Child> {
     const ATTEMPTS: u32 = 5;
     for attempt in 1..ATTEMPTS {
@@ -62,11 +61,6 @@ fn spawn_process(command: &mut Command) -> std::io::Result<std::process::Child> 
             settled => return settled,
         }
     }
-    command.spawn()
-}
-
-#[cfg(not(unix))]
-fn spawn_process(command: &mut Command) -> std::io::Result<std::process::Child> {
     command.spawn()
 }
 
@@ -152,7 +146,6 @@ impl Drop for Wire {
     /// Close stdin and let the provider exit on its own before any signal, on
     /// a background thread: `process::retire_pid` explains why a hard kill can
     /// sign Claude out. Pool locks and turn completion never wait on this.
-    #[cfg(unix)]
     fn drop(&mut self) {
         self.stdin.sender.take();
         // Disconnect before joining so a bounded stdout sender cannot deadlock.
@@ -173,24 +166,6 @@ impl Drop for Wire {
             });
             drop(held);
         });
-    }
-
-    #[cfg(not(unix))]
-    fn drop(&mut self) {
-        process::terminate(&mut self.child);
-        self.stdin.sender.take();
-        if let Some(writer) = self.writer.take() {
-            let _ = writer.join();
-        }
-        // Disconnect before joining so a bounded stdout sender cannot deadlock.
-        let (_, empty) = mpsc::channel();
-        drop(std::mem::replace(&mut self.rx, empty));
-        if let Some(t) = self.reader.take() {
-            let _ = t.join();
-        }
-        if let Some(t) = self.stderr_reader.take() {
-            let _ = t.join();
-        }
     }
 }
 pub(super) struct Parked {
@@ -559,7 +534,7 @@ pub(super) fn discard_session(request: &Request) {
     });
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use std::os::unix::fs::PermissionsExt;
 

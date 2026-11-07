@@ -416,7 +416,6 @@ impl Render for ImageLightbox {
                 canvas(
                     |_, _, _| {},
                     |bounds, _, window, _| {
-                        #[cfg(any(target_os = "macos", target_os = "windows"))]
                         window.paint_backdrop_blur_whole(bounds, gpui::Corners::default(), px(4.));
                         window.paint_quad(gpui::fill(bounds, black(0.85)));
                     },
@@ -489,14 +488,11 @@ impl Render for ImageLightbox {
                         canvas(
                             |_, _, _| {},
                             |bounds, _, window, _| {
-                                #[cfg(any(target_os = "macos", target_os = "windows"))]
                                 window.paint_backdrop_blur_whole(
                                     bounds,
                                     gpui::Corners::all(px(18.)),
                                     px(12.),
                                 );
-                                #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-                                let _ = (bounds, window);
                             },
                         )
                         .absolute()

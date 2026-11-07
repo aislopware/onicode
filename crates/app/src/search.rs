@@ -530,10 +530,6 @@ fn empty_state() -> AnyElement {
                                     canvas(
                                         |_, _, _| (),
                                         |bounds, _, window, _| {
-                                            #[cfg(any(
-                                                target_os = "macos",
-                                                target_os = "windows"
-                                            ))]
                                             window.paint_backdrop_blur_whole(
                                                 bounds,
                                                 gpui::Corners::all(px(16.)),
@@ -825,17 +821,17 @@ impl SearchView {
     }
 }
 impl Render for SearchView {
-    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if self.panel {
             self.render_panel(cx).into_any_element()
         } else {
-            self.render_page(window, cx).into_any_element()
+            self.render_page(cx).into_any_element()
         }
     }
 }
 impl SearchView {
     /// The original page: a title-strip field, scope tabs and full-height rows.
-    fn render_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_page(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let rows: Vec<_> = self
             .hits
             .iter()
@@ -973,12 +969,7 @@ impl SearchView {
                     .border_b_1()
                     .border_color(stroke)
                     .pl(px(self.original_header.unwrap_or(12.)))
-                    .pr(px(12.
-                        + if self.original_header.is_some() {
-                            crate::shell::client_controls_width(window)
-                        } else {
-                            0.
-                        }))
+                    .pr(px(12.))
                     .flex()
                     .items_center()
                     .gap_2()

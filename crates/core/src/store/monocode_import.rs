@@ -14,21 +14,9 @@ use crate::transcript::Transcript;
 
 /// Tauri's application-data location, keyed by its bundle identifier.
 pub fn monocode_database() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    let base = crate::accounts::home()
+    crate::accounts::home()
         .unwrap_or_default()
-        .join("Library/Application Support");
-    #[cfg(windows)]
-    let base = PathBuf::from(std::env::var_os("APPDATA").unwrap_or_default());
-    #[cfg(not(any(target_os = "macos", windows)))]
-    let base = std::env::var_os("XDG_DATA_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            crate::accounts::home()
-                .unwrap_or_default()
-                .join(".local/share")
-        });
-    base.join("com.monocode.desktop/monocode.db")
+        .join("Library/Application Support/com.monocode.desktop/monocode.db")
 }
 
 #[derive(Debug, Default)]

@@ -256,7 +256,6 @@ impl SettingsView {
                     | "quick-composer"
                     | "working-agents"
                     | "action-opens-terminal"
-                    | "close-to-tray"
                     | "main-pane-glass"
                     | "show-excluded-files"
                     | "anchor-prompts"

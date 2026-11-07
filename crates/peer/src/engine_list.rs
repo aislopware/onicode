@@ -250,14 +250,8 @@ async fn resolve(host: &str) -> Vec<IpAddr> {
     ips
 }
 
-#[cfg(unix)]
 fn system_addrs() -> io::Result<Vec<IpAddr>> {
     crate::iface::tailnet_addrs()
-}
-
-#[cfg(not(unix))]
-fn system_addrs() -> io::Result<Vec<IpAddr>> {
-    Ok(Vec::new())
 }
 
 #[cfg(test)]

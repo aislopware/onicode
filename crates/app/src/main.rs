@@ -1,8 +1,3 @@
-#![cfg_attr(
-    all(target_os = "windows", not(debug_assertions)),
-    windows_subsystem = "windows"
-)]
-
 /// A keystroke as macOS spells it or as the other desktops do, as the `&'static str`
 /// `KeyBinding::new` takes: `os_keys!("cmd-n", "ctrl-n")`.
 macro_rules! os_keys {
@@ -310,7 +305,6 @@ fn main() {
             explorer::bind(cx);
             history::bind(cx);
             diff_view::bind(cx);
-            fonts::init(cx);
             terminal::bind(cx);
             cx.bind_keys([KeyBinding::new(os_keys!("cmd-q", "ctrl-q"), Quit, None)]);
             shell::bind_keys(cx);
@@ -334,21 +328,13 @@ fn main() {
                 WindowOptions {
                     window_bounds: Some(bounds),
                     window_min_size: Some(size(px(820.), px(520.))),
-                    window_decorations: workspace
-                        .preferences
-                        .wayland_decorations(cx.compositor_name()),
-                    // Linux desktops match this to the .desktop file's
-                    // StartupWMClass to show the app icon.
-                    app_id: Some("dev.aislopware.onicode".into()),
                     window_background: theme::window_backdrop(true),
                     // GPUI owns the custom chrome. AppKit must not reinterpret
                     // its controls as native titlebar double-click/drag gestures.
                     app_owns_titlebar_drag: cfg!(target_os = "macos"),
                     titlebar: Some(TitlebarOptions {
                         title: Some("Onicode".into()),
-                        // Windows also drops its caption: the app's drag areas
-                        // hit-test as the caption and the frame still resizes.
-                        appears_transparent: cfg!(any(target_os = "macos", target_os = "windows")),
+                        appears_transparent: cfg!(target_os = "macos"),
                         traffic_light_position: if cfg!(target_os = "macos") {
                             // Original macOS chrome: 12 pt left inset, with
                             // 14 pt native buttons centered in the 40 pt bar.
@@ -491,6 +477,7 @@ fn launch(
                 title: None,
                 start: NewSession::Bare,
                 started_by: None,
+                scope: Vec::new(),
             },
         ));
         match created.map(|created| created.session) {

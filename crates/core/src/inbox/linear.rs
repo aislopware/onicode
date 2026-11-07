@@ -670,23 +670,16 @@ fn delete_token(app: &Path) -> Result<(), String> {
 }
 
 fn write_secret_file(path: &std::path::Path, token: &str) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        use std::io::Write;
-        use std::os::unix::fs::OpenOptionsExt;
-        let mut file = fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(path)
-            .map_err(|error| error.to_string())?;
-        file.write_all(token.as_bytes())
-            .map_err(|error| error.to_string())?;
-        Ok(())
-    }
-    #[cfg(not(unix))]
-    {
-        fs::write(path, token).map_err(|error| error.to_string())
-    }
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .map_err(|error| error.to_string())?;
+    file.write_all(token.as_bytes())
+        .map_err(|error| error.to_string())?;
+    Ok(())
 }

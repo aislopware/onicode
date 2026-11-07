@@ -302,6 +302,7 @@ fn create(dir: &Path) -> CreateSession {
         title: None,
         start: NewSession::Bare,
         started_by: None,
+        scope: Vec::new(),
     }
 }
 

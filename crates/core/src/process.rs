@@ -4,41 +4,27 @@ use std::process::Command;
 /// Apply scheduling hints before exec so descendants inherit them.
 /// Best effort: a refused hint must not prevent a provider from launching.
 pub fn configure_child(command: &mut Command) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // Only system calls here: the post-fork child must not allocate or lock.
-        unsafe {
-            command.pre_exec(|| {
-                // A GUI executor's worker may block signals. exec preserves
-                // that mask; Tokio-based provider children then never receive
-                // SIGCHLD and their command sessions never finish. Give the
-                // provider the ordinary process mask before it starts.
-                let mut signals = std::mem::zeroed();
-                libc::sigemptyset(&mut signals);
-                if libc::sigprocmask(libc::SIG_SETMASK, &signals, std::ptr::null_mut()) != 0 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                let priority = libc::getpriority(libc::PRIO_PROCESS, 0).max(10);
-                libc::setpriority(libc::PRIO_PROCESS, 0, priority);
-                #[cfg(target_os = "macos")]
-                setiopolicy_np(0, 0, 3); // DISK, PROCESS, THROTTLE
-                Ok(())
-            });
-        }
+    use std::os::unix::process::CommandExt;
+    // Only system calls here: the post-fork child must not allocate or lock.
+    unsafe {
+        command.pre_exec(|| {
+            // A GUI executor's worker may block signals. exec preserves
+            // that mask; Tokio-based provider children then never receive
+            // SIGCHLD and their command sessions never finish. Give the
+            // provider the ordinary process mask before it starts.
+            let mut signals = std::mem::zeroed();
+            libc::sigemptyset(&mut signals);
+            if libc::sigprocmask(libc::SIG_SETMASK, &signals, std::ptr::null_mut()) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            let priority = libc::getpriority(libc::PRIO_PROCESS, 0).max(10);
+            libc::setpriority(libc::PRIO_PROCESS, 0, priority);
+            #[cfg(target_os = "macos")]
+            setiopolicy_np(0, 0, 3); // DISK, PROCESS, THROTTLE
+            Ok(())
+        });
     }
-    // A GUI-subsystem parent gives every console child (git, gh) its own
-    // visible console window unless asked not to.
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
-    let _ = command;
 }
-
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 #[cfg(target_os = "macos")]
 unsafe extern "C" {
@@ -49,41 +35,22 @@ unsafe extern "C" {
 pub fn isolate(command: &mut Command) {
     configure_child(command);
     command.env("ONICODE_HARNESS_PARENT", std::process::id().to_string());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(CREATE_NO_WINDOW | 0x0000_0200);
-    }
+    use std::os::unix::process::CommandExt;
+    command.process_group(0);
 }
 
 /// Called only by the provider worker. Always reap the immediate child.
 pub fn terminate(child: &mut std::process::Child) {
-    #[cfg(unix)]
     unsafe {
         libc::kill(-(child.id() as i32), libc::SIGKILL);
-    }
-    #[cfg(windows)]
-    {
-        let mut kill = Command::new("taskkill");
-        kill.args(["/PID", &child.id().to_string(), "/T", "/F"]);
-        use std::os::windows::process::CommandExt;
-        kill.creation_flags(CREATE_NO_WINDOW);
-        let _ = kill.status();
     }
     let _ = child.kill();
     let _ = child.wait();
 }
 
 /// How long a provider whose stdin was closed may take to exit by itself.
-#[cfg(unix)]
 const EXIT_GRACE: std::time::Duration = std::time::Duration::from_millis(1500);
 /// How long the group leader may take to shut down after SIGTERM.
-#[cfg(unix)]
 const TERM_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// Stop a provider child without cutting off a credential write, on a
@@ -96,20 +63,14 @@ const TERM_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
 /// only (Claude shuts down cleanly on it), and SIGKILL the group last.
 pub fn retire(mut child: std::process::Child) {
     drop(child.stdin.take());
-    #[cfg(unix)]
-    {
-        let pid = child.id();
-        // std never reaps a dropped Child; `retire_pid` waits for it below.
-        drop(child);
-        std::thread::spawn(move || retire_pid(pid, || {}));
-    }
-    #[cfg(not(unix))]
-    std::thread::spawn(move || terminate(&mut child));
+    let pid = child.id();
+    // std never reaps a dropped Child; `retire_pid` waits for it below.
+    drop(child);
+    std::thread::spawn(move || retire_pid(pid, || {}));
 }
 
 /// Blocking form of [`retire`] for a child whose `Child` value cannot be
 /// moved. `after` runs once the process is gone (to join pipe readers).
-#[cfg(unix)]
 pub(crate) fn retire_pid(pid: u32, after: impl FnOnce()) {
     let pid = pid as libc::pid_t;
     let exited = |within: std::time::Duration| {
@@ -230,29 +191,17 @@ pub fn shutdown_all() {
             .copied()
             .collect()
     };
-    #[cfg(unix)]
-    {
-        for pid in registered() {
-            unsafe { libc::kill(pid as i32, libc::SIGTERM) };
-        }
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
-        while !registered().is_empty() && std::time::Instant::now() < deadline {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-        }
+    for pid in registered() {
+        unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    while !registered().is_empty() && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));
     }
     let pids = registered();
     for pid in pids {
-        #[cfg(unix)]
         unsafe {
             libc::kill(-(pid as i32), libc::SIGKILL);
-        }
-        #[cfg(windows)]
-        {
-            let mut c = Command::new("taskkill");
-            c.args(["/PID", &pid.to_string(), "/T", "/F"]);
-            use std::os::windows::process::CommandExt;
-            c.creation_flags(CREATE_NO_WINDOW);
-            let _ = c.status();
         }
     }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(1);
@@ -277,7 +226,7 @@ pub fn git() -> Command {
     command
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use std::process::{Command, Stdio};
     use std::time::{Duration, Instant};
@@ -362,23 +311,6 @@ mod tests {
                 String::from_utf8_lossy(&output.stdout)
             );
         }
-    }
-}
-
-#[cfg(all(test, windows))]
-mod windows_tests {
-    use super::*;
-
-    #[test]
-    fn background_children_keep_piped_output_and_exit_status() {
-        let mut command = Command::new("cmd.exe");
-        command.args(["/D", "/C", "(echo stdout)&(echo stderr 1>&2)&exit /b 7"]);
-        configure_child(&mut command);
-
-        let output = command.output().expect("background command should run");
-        assert_eq!(output.status.code(), Some(7));
-        assert!(String::from_utf8_lossy(&output.stdout).contains("stdout"));
-        assert!(String::from_utf8_lossy(&output.stderr).contains("stderr"));
     }
 }
 

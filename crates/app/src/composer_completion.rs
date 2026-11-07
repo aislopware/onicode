@@ -232,7 +232,8 @@ impl Completion {
         self.cancel.store(true, Ordering::Relaxed);
         self.stop_listing();
         self.generation += 1;
-        self.engine = self.engine.for_path(cwd).0;
+        // The engine that holds the new folder: back to the app's own for a plain path.
+        self.engine = engine_client::for_project(cwd, cx).0;
         self.cwd = cwd.into();
         self.skills.clear();
         self.native_commands.clear();
@@ -541,9 +542,15 @@ impl Completion {
             .engine
             .call::<McpServers>(None, McpServers { project: cwd });
         let engine = self.engine.clone();
+        // Settings hides a skill of a project on another machine by the app's spelling of its
+        // path; that machine's engine leaves out only what its own settings hide.
+        let hidden = self.disabled_paths.clone();
         let work = cx.background_executor().spawn(async move {
             let notes = notes.await.unwrap_or_default();
-            let skills = skills.await.unwrap_or_default();
+            let mut skills = skills.await.unwrap_or_default();
+            if engine.target().is_some() {
+                skills.retain(|skill| !hidden.contains(&engine.app_path(&skill.path)));
+            }
             let files = listing.await.map(|listed| {
                 let mut files = listed.files;
                 for file in &mut files {

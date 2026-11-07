@@ -13,6 +13,8 @@ base64 = "0.23.1"
 onicode-desktop-link.workspace = true
 # Timestamps the inbox, reminders and usage meters parse, and the local day the filters start at.
 chrono.workspace = true
+# `response::local_clock`: the local wall clock without a time-zone database of our own.
+libc.workspace = true
 # Searches, links, version strings and the provider text the transcript parses.
 regex = "1"
 serde.workspace = true
@@ -27,10 +29,6 @@ url = "2"
 # `v4`: random ids (accounts, notes, automations); `v7`: ids minted by whoever creates the thing
 # sort by when they were minted.
 uuid = { workspace = true, features = ["v7"] }
-
-[target.'cfg(unix)'.dependencies]
-# `response::local_clock`: the local wall clock without a time-zone database of our own.
-libc.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

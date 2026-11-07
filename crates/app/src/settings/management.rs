@@ -265,7 +265,8 @@ impl SettingsView {
             cx.background_executor()
                 .spawn(async move { create.await.map(|_| ()) })
         } else {
-            let engine = crate::engine_client::local(cx);
+            // A project on another machine takes its servers and skills there.
+            let (engine, cwd) = crate::engine_client::for_project(&cwd, cx);
             cx.background_executor().spawn(async move {
                 match target {
                     Target::Mcp => {

@@ -119,6 +119,7 @@ impl Shell {
             &cwd,
             None,
             onicode_protocol::workspace::NewSession::Settings(Box::new(settings.clone())),
+            Vec::new(),
             cx,
         );
         cx.spawn(async move |this, cx| {

@@ -43,8 +43,6 @@ const SHIFT: &str = if cfg!(target_os = "macos") {
 };
 const REVEAL_LABEL: &str = if cfg!(target_os = "macos") {
     "Reveal in Finder"
-} else if cfg!(target_os = "windows") {
-    "Reveal in File Explorer"
 } else {
     "Open Containing Folder"
 };

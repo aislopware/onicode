@@ -485,7 +485,6 @@ impl Store {
         root: &Path,
         except: &str,
     ) -> Result<Vec<(PathBuf, TurnReview)>, String> {
-        let root = review_comparison_path(root);
         let mut active = Vec::new();
         if !self.root.exists() {
             return Ok(active);
@@ -496,14 +495,14 @@ impl Store {
                 continue;
             }
             if let Some(review) = read_review(&entry.path())? {
-                let other = review_comparison_path(Path::new(&review.cwd));
+                let other = Path::new(&review.cwd);
                 // A turn whose process exited never finishes; it must not
                 // mark this checkout's later turns as shared.
                 let running = review
                     .active
                     .as_ref()
                     .is_some_and(|turn| turn.owner.as_ref().is_some_and(TurnOwner::running));
-                if running && (root.starts_with(&other) || other.starts_with(&root)) {
+                if running && (root.starts_with(other) || other.starts_with(root)) {
                     active.push((entry.path(), review));
                 }
             }
@@ -727,16 +726,6 @@ impl Store {
     }
 }
 
-fn review_comparison_path(path: &Path) -> PathBuf {
-    // path_to_js replaces Windows separators, including in canonical verbatim
-    // paths. Restore native separators before comparing path components.
-    if cfg!(windows) {
-        PathBuf::from(path.to_string_lossy().replace('/', "\\"))
-    } else {
-        path.to_path_buf()
-    }
-}
-
 fn completed_turn(review: &TurnReview) -> Result<&RecordedTurn, String> {
     let turn = review
         .active
@@ -804,7 +793,6 @@ fn launch_id() -> &'static str {
     LAUNCH.get_or_init(new_turn_id)
 }
 
-#[cfg(unix)]
 fn process_running(pid: u32) -> bool {
     let Ok(pid) = libc::pid_t::try_from(pid) else {
         return false;
@@ -812,12 +800,6 @@ fn process_running(pid: u32) -> bool {
     // Signal 0 only checks that the process exists.
     let found = unsafe { libc::kill(pid, 0) } == 0;
     found || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
-}
-
-/// Without a cheap check, another process's turn stays shared.
-#[cfg(not(unix))]
-fn process_running(_pid: u32) -> bool {
-    true
 }
 
 #[derive(Serialize, Deserialize)]
@@ -888,11 +870,6 @@ fn resolve_edit_path(workspace: &Path, root: &Path, path: &str) -> Result<String
 
 fn git_command(root: &Path, args: &[&str]) -> Command {
     let mut command = crate::process::git();
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-    }
     command
         .args(["--no-pager", "-C"])
         .arg(root)
@@ -1054,7 +1031,6 @@ fn bump_generation(indexes: &Path, key: &str, generation: u64) -> Result<u64, St
     file.sync_all().map_err(|e| e.to_string())?;
     drop(file);
     std::fs::rename(&staged, &path).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
     std::fs::File::open(indexes)
         .and_then(|dir| dir.sync_all())
         .map_err(|e| e.to_string())?;
@@ -1574,7 +1550,6 @@ fn write_json(path: &Path, value: &impl Serialize) -> Result<(), String> {
     file.sync_all().map_err(|e| e.to_string())?;
     drop(file);
     std::fs::rename(tmp, path).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
     std::fs::File::open(parent)
         .and_then(|dir| dir.sync_all())
         .map_err(|e| e.to_string())?;
@@ -1627,18 +1602,12 @@ fn path_contains_symlink(root: &Path, relative: &str) -> bool {
     false
 }
 
-#[cfg(unix)]
 fn file_mode(path: &Path) -> Option<u32> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::symlink_metadata(path)
         .ok()
         .filter(|meta| meta.is_file() && !meta.file_type().is_symlink())
         .map(|meta| meta.permissions().mode() & 0o777)
-}
-
-#[cfg(not(unix))]
-fn file_mode(_path: &Path) -> Option<u32> {
-    None
 }
 
 fn state_is_binary(state: &FileState) -> bool {

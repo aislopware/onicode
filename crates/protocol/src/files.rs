@@ -450,18 +450,24 @@ pub struct SearchHomeFolders {
 }
 files_call!(SearchHomeFolders, agent: false, reply: Vec<String>);
 
-/// A pasted image to keep as an attachment.
+/// A file to keep as an attachment: a pasted image, or a file from the viewer's own disk that
+/// a session on another engine cannot read there.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct NewAttachment {
     pub bytes: Bytes,
-    /// Without the dot: `png`, `jpg`…
+    /// A pasted image's format, without the dot (`png`, `jpg`…): it is kept as
+    /// `pasted-<id>.<extension>`.
     pub extension: String,
+    /// A file's own name, which it keeps (in a folder of its own, so two of one name both
+    /// stay); `None` for a pasted image.
+    pub name: Option<String>,
 }
 
-/// Keep pasted images as attachments of the session stored at `session` (in its own folder, so
-/// deleting the session removes them; `kept` are the composer's attachments already, and
-/// together they stay within 20 files and 20 MB), or, with no session yet, in the quick
-/// composer's staging folder, which a new session adopts its files from.
+/// Keep pasted images and the viewer's files as attachments of the session stored at `session`
+/// (in its own folder, so deleting the session removes them; `kept` are the composer's
+/// attachments already, and together they stay within 20 files and 20 MB), or, with no session
+/// yet, in the quick composer's staging folder, which a new session adopts its files from.
+/// Answers where each new one landed, in order.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SaveAttachments {
     pub session: Option<i64>,

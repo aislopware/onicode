@@ -126,15 +126,13 @@ pub(super) fn live_phase(
                 })
                 .child(body),
         );
-    let phase = div()
+    div()
         .relative()
         .w_full()
         .min_w_0()
         .max_h(max_height)
-        .child(gpui::edge_fade_by(scroller, edge_fade(scroll, enabled)).group());
-    #[cfg(not(target_os = "macos"))]
-    let phase = phase.child(edge_wash(scroll));
-    phase.into_any_element()
+        .child(gpui::edge_fade_by(scroller, edge_fade(scroll, enabled)).group())
+        .into_any_element()
 }
 
 /// The fade over the scroller's edges, as tall as content lies past each: read after the scroller
@@ -171,45 +169,6 @@ fn edge_fade(
         let (top, bottom) = edges.frame;
         crate::mask::mask_fade_y(px(top), px(bottom))
     }
-}
-
-/// Without Metal's fade, the chat surface painted over the scroller's edges, as the transcript's
-/// fallback, with the phase's edge lengths.
-#[cfg(not(target_os = "macos"))]
-fn edge_wash(scroll: &LiveScroll) -> AnyElement {
-    let edges = scroll.edges.clone();
-    gpui::canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let (top, bottom) = edges.borrow().frame;
-            window.paint_layer(bounds, |window| {
-                for (at_top, height) in [(true, top), (false, bottom)] {
-                    let height = height.min(bounds.size.height.as_f32());
-                    for y in 0..height.ceil() as usize {
-                        let mut color: gpui::Hsla = gpui::rgb(crate::theme::CHAT).into();
-                        color.a = (1. - (y as f32 + 0.5) / height).clamp(0., 1.);
-                        let origin = gpui::point(
-                            bounds.left(),
-                            if at_top {
-                                bounds.top() + px(y as f32)
-                            } else {
-                                bounds.bottom() - px(y as f32 + 1.)
-                            },
-                        );
-                        window.paint_quad(gpui::fill(
-                            Bounds::new(origin, gpui::size(bounds.size.width, px(1.))),
-                            color,
-                        ));
-                    }
-                }
-            });
-        },
-    )
-    .absolute()
-    .top_0()
-    .left_0()
-    .size_full()
-    .into_any_element()
 }
 
 #[cfg(test)]

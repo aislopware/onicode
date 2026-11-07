@@ -1,24 +1,15 @@
-//! The OS's network path, on Apple platforms through `NWPathMonitor` (Network.framework's
-//! plain C surface and one block).
+//! The OS's network path, through `NWPathMonitor` (Network.framework's plain C surface and one
+//! block).
 //!
 //! Each report of a usable path calls back: an interface handover (Wi-Fi to a hotspot, a VPN up
 //! or down) arrives as one, and a link that died with the old path is worth dialling at once on
-//! the new one rather than after its backoff ([`crate::PeerLinks::follow_path`]). Elsewhere
-//! nothing reports, and the links' own liveness and redial carry the recovery.
+//! the new one rather than after its backoff ([`crate::PeerLinks::follow_path`]).
 
 /// Calls `on_usable` on every report of a usable path, for the life of the process.
-#[cfg(any(target_os = "macos", target_os = "ios"))]
 pub fn watch(on_usable: Box<dyn Fn() + Send + Sync>) {
     apple::start(on_usable);
 }
 
-/// Calls `on_usable` on every report of a usable path: never, on a platform without a monitor.
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
-pub fn watch(on_usable: Box<dyn Fn() + Send + Sync>) {
-    drop(on_usable);
-}
-
-#[cfg(any(target_os = "macos", target_os = "ios"))]
 #[allow(unsafe_code)]
 mod apple {
     use std::ffi::{c_char, c_void};

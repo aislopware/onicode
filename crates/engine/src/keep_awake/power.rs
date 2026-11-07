@@ -1,31 +1,10 @@
-//! The machine's power assertion: IOKit's `PreventUserIdleSystemSleep` on macOS, nothing
-//! elsewhere.
+//! The machine's power assertion: IOKit's `PreventUserIdleSystemSleep`.
 use super::PowerAssertion;
 
 /// This machine's assertion. Only the engine process takes it; tests use their own.
 #[must_use]
 pub fn system() -> Box<dyn PowerAssertion> {
-    #[cfg(target_os = "macos")]
-    {
-        Box::new(macos::Assertion::default())
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        Box::new(Unsupported)
-    }
-}
-
-/// Where no assertion exists: always refused.
-#[cfg(not(target_os = "macos"))]
-struct Unsupported;
-
-#[cfg(not(target_os = "macos"))]
-impl PowerAssertion for Unsupported {
-    fn take(&mut self, _reason: &str) -> bool {
-        false
-    }
-
-    fn release(&mut self) {}
+    Box::new(macos::Assertion::default())
 }
 
 #[cfg(target_os = "macos")]

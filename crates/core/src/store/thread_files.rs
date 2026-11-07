@@ -313,7 +313,6 @@ mod tests {
         assert!(original.exists(), "parent escape moved the original");
     }
 
-    #[cfg(unix)]
     #[test]
     fn adopting_symlink_escape_preserves_original() {
         let temp = tempfile::tempdir().unwrap();

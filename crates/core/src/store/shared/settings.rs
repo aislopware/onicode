@@ -72,7 +72,6 @@ pub(super) fn open(
         // Match the old metadata file's permissions before storing any values.
         let mut options = std::fs::OpenOptions::new();
         options.write(true).create_new(true);
-        #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
             options.mode(0o600);
@@ -181,7 +180,6 @@ mod tests {
             reopened.setting("operator-app-receipt:1:request").unwrap(),
             Some(receipt)
         );
-        #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
             assert_eq!(
