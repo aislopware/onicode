@@ -630,7 +630,7 @@ pub(crate) fn new_id() -> String {
         let _ = source.read_exact(&mut random);
     }
     hasher.update(random);
-    format!("{:x}", hasher.finalize())[..32].to_owned()
+    base16ct::lower::encode_string(&hasher.finalize()[..16])
 }
 
 /// Record the update, durably, before anyone's told it was accepted. The next

@@ -282,7 +282,11 @@ thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 chrono = { version = "0.4", features = ["serde"] }
-sha2 = "0.10"
+# Digests; sha2 0.11 is the one p256 already locks.
+sha2 = "0.11.1"
+# A digest as lowercase hex: digest 0.11's output no longer formats with `{:x}`, and p256 already
+# locks base16ct.
+base16ct = { version = "1.0.0", features = ["alloc"] }
 notify = "7"
 alacritty_terminal = "0.26"
 pulldown-cmark = "0.12"

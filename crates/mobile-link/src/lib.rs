@@ -90,10 +90,7 @@ pub fn decode(value: &str) -> LinkResult<Vec<u8>> {
         .map_err(|_| "Invalid identity encoding".into())
 }
 pub fn fingerprint(certificate: &[u8]) -> String {
-    Sha256::digest(certificate)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    base16ct::lower::encode_string(&Sha256::digest(certificate))
 }
 pub fn now() -> u64 {
     SystemTime::now()

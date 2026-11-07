@@ -22,7 +22,7 @@ pub struct ConversationDeepLink {
 pub fn workspace_locator_of(scope: &str, identity: &str) -> String {
     let mut hash = Sha256::new();
     hash.update(format!("{scope}\0{identity}"));
-    format!("{:x}", hash.finalize())[..16].to_string()
+    base16ct::lower::encode_string(&hash.finalize()[..8])
 }
 
 pub fn conversation_link(chat_id: &str, workspace: &str) -> String {

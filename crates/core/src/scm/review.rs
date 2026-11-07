@@ -141,7 +141,7 @@ pub fn file_diff_versions(
                         file.relative
                     ),
                     FileDiffVersion {
-                        index: format!("{:x}", Sha256::digest(bytes)),
+                        index: base16ct::lower::encode_string(&Sha256::digest(bytes)),
                         head: snapshot.head.clone(),
                         disk: None,
                     },

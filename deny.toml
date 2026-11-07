@@ -97,7 +97,7 @@ skip = [
     { crate = "read-fonts@0.37.0", reason = "via harfrust, skrifa" },
     { crate = "roxmltree@0.20.0", reason = "via fontconfig-parser" },
     { crate = "rustc-hash@1.1.0", reason = "via naga, wgpu-core" },
-    { crate = "sha2@0.10.9", reason = "via onicode-client, onicode-engine, onicode-harness and more" },
+    { crate = "sha2@0.10.9", reason = "via dbus-secret-service (keyring, Linux) and oo7 (gpui_linux)" },
     { crate = "skrifa@0.40.0", reason = "via cosmic-text" },
     { crate = "spin@0.9.9", reason = "via flume, heapless" },
     { crate = "syn@2.0.119", reason = "via arg_enum_proc_macro, asn1-rs-derive, asn1-rs-impl and more" },
