@@ -104,7 +104,7 @@ fi
 codesign "${signing[@]}" "$bundle"
 
 codesign --verify --strict --deep "$bundle"
-engine_id="$(codesign --display "$macos/Onicode Engine" 2>&1 | sed -n 's/^Identifier=//p')"
+engine_id="$(codesign --display --verbose "$macos/Onicode Engine" 2>&1 | sed -n 's/^Identifier=//p')"
 if [[ "$engine_id" != "$app_id.engine" ]]; then
   echo "The engine is signed as ${engine_id:-nothing}, not $app_id.engine." >&2
   exit 1
