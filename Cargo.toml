@@ -289,7 +289,8 @@ sha2 = "0.11.1"
 base16ct = { version = "1.0.0", features = ["alloc"] }
 notify = "7"
 alacritty_terminal = "0.26"
-pulldown-cmark = "0.12"
+# Markdown parsing only: no HTML writer, no CLI options.
+pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1"
 unicode-width = "0.2"
 # Packaged GUI apps do not inherit shell proxy variables; honor the macOS

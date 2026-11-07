@@ -20,7 +20,7 @@ futures.workspace = true
 onicode-update = { path = "../update" }
 tokio.workspace = true
 log = "0.4"
-pulldown-cmark = "0.13.5"
+pulldown-cmark.workspace = true
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 syntect = { version = "5.3", default-features = false, features = ["parsing", "default-syntaxes", "regex-fancy"] }
 gpui.workspace = true
