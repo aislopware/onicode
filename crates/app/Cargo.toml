@@ -113,4 +113,4 @@ gpui_apple = { workspace = true, features = ["font-kit", "test-support", "runtim
 # Golden images (src/shell/golden_tests.rs): the headless Metal renderer, and PNG files.
 gpui_platform = { workspace = true, features = ["test-support"] }
 image = { version = "0.25", default-features = false, features = ["png"] }
-parking_lot = "0.12"
+parking_lot.workspace = true
