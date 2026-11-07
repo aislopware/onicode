@@ -47,6 +47,12 @@ The forks under aislopware (gpui-fast, gpui-kit, ghostty, libghostty-rs) serve o
 remote, never to upstream. There are no integration branches. The pre-onicode default branches are kept as
 `archive/*-pre-onicode` tags.
 
+Adopting an upstream change into a fork means merging upstream into the fork's `main`, so the fork never lacks
+an upstream commit; reading it and moving `base` alone leaves the fork behind. Where the fork already did the
+same work, the merge keeps one version and says which. ghostty is the exception: it is a patch queue rebased
+onto upstream `main`, and the commit a prebuilt libghostty-vt was built from keeps a `pin/*` tag. `watch.py`
+reports each fork's lag every round it changes, and `status` prints it.
+
 ## Studying references
 
 `sources.toml` also lists references: Claude Code, its Agent SDKs, Claude's desktop apps, t3code, Amp, Zed's ACP

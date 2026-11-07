@@ -11,8 +11,10 @@ references it studies (peers that drive coding agents, Claude Code and its SDKs)
 also report GitHub releases (`releases`), RSS items (`feed`), release-notes headings (`page`) or
 npm versions (`npm`), whose published artifacts are studied with REA (docs/onicode/upstream.md).
 A head move is named only when the commits since the last look touch the source's `paths`, a pull
-request only when its files do. Nothing is applied: changes are read and ported by intent
-(docs/onicode/upstream.md), and `base` moves in the adopting commit. What a round saw is kept in
+request only when its files do. A source with a `fork` also reports how many upstream commits the
+fork's `main` lacks, whenever that number changes, so a fork never drifts behind unnoticed. Nothing
+is applied: changes are read and ported by intent (docs/onicode/upstream.md), and `base` moves in
+the adopting commit. What a round saw is kept in
 ~/.cache/onicode/upstream-watch.json, so a restart does not announce it again; the first round
 for a source only records. An upstream that does not answer is skipped for the round.
 """
@@ -219,6 +221,26 @@ def pull_lines(name: str, src: dict, seen_pulls: dict[str, dict], prs: dict[str,
     return lines
 
 
+def fork_lag(src: dict) -> int | None:
+    """Count the upstream commits missing from the fork's `main`; None when GitHub does not answer."""
+    owner, repo = src["upstream"].split("/")
+    data = gh_json("api", f"repos/{src['fork']}/compare/main...{owner}:{repo}:{src['branch']}")
+    return None if data is None else int(data.get("ahead_by", 0))
+
+
+def fork_lines(name: str, src: dict, seen: dict) -> list[str]:
+    """Report the fork's lag behind upstream when it changed since the last look."""
+    if "fork" not in src:
+        return []
+    lag = fork_lag(src)
+    if lag is None or lag == seen.get("fork_lag"):
+        return []
+    seen["fork_lag"] = lag
+    if lag == 0:
+        return [f"{name}: fork {src['fork']} main has every upstream commit"]
+    return [f"{name}: fork {src['fork']} main lacks {lag} upstream commits: merge them into the fork's main"]
+
+
 def one_round(state: dict, now: float) -> list[str]:
     """Look at every source that is due and report what moved; updates `state`."""
     lines = []
@@ -242,6 +264,7 @@ def one_round(state: dict, now: float) -> list[str]:
                 if tag not in seen["releases"]
             ]
         lines += head_lines(name, src, seen.get("head"), new)
+        lines += fork_lines(name, src, seen)
         if "pulls" in seen:
             lines += pull_lines(name, src, seen["pulls"], prs)
         seen.update(head=new, pulls=prs, releases=tags, at=now)
@@ -265,6 +288,28 @@ def cmd_loop(args: argparse.Namespace) -> int:
         time.sleep(args.interval)
 
 
+def print_past_base(name: str, src: dict, new: str, *, verbose: bool) -> None:
+    """Print how far upstream's head `new` is past the source's base, commit by commit when verbose."""
+    if new == src["base"]:
+        print(f"{name}: current at {new[:9]}")
+        return
+    diff = compare(src, src["base"], new)
+    if diff is None:
+        print(f"{name}: {src['base'][:9]}..{new[:9]} (compare failed)")
+        return
+    commits, files = diff
+    hits = relevant(files, src.get("paths", []))
+    print(
+        f"{name}: {len(commits)} commits past base {src['base'][:9]} ({src.get('base_date', '?')}), "
+        f"{len(hits)}/{len(files)} files relevant, head {new[:9]}"
+    )
+    if verbose:
+        for c in commits:
+            print(f"  {c['sha'][:9]} {c['commit']['message'].splitlines()[0]}")
+        for f in hits:
+            print(f"    {f}")
+
+
 def cmd_status(args: argparse.Namespace) -> int:
     """Print how far each source is past its base."""
     for name, src in sources().items():
@@ -278,24 +323,10 @@ def cmd_status(args: argparse.Namespace) -> int:
         if new is None:
             print(f"{name}: upstream did not answer")
             continue
-        if new == src["base"]:
-            print(f"{name}: current at {new[:9]}")
-            continue
-        diff = compare(src, src["base"], new)
-        if diff is None:
-            print(f"{name}: {src['base'][:9]}..{new[:9]} (compare failed)")
-            continue
-        commits, files = diff
-        hits = relevant(files, src.get("paths", []))
-        print(
-            f"{name}: {len(commits)} commits past base {src['base'][:9]} ({src.get('base_date', '?')}), "
-            f"{len(hits)}/{len(files)} files relevant, head {new[:9]}"
-        )
-        if args.name:
-            for c in commits:
-                print(f"  {c['sha'][:9]} {c['commit']['message'].splitlines()[0]}")
-            for f in hits:
-                print(f"    {f}")
+        if "fork" in src:
+            lag = fork_lag(src)
+            print(f"{name}: fork main lacks {'?' if lag is None else lag} upstream commits")
+        print_past_base(name, src, new, verbose=bool(args.name))
     return 0
 
 
