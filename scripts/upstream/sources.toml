@@ -165,7 +165,7 @@ every_minutes = 0
 [rune]
 upstream = "anomalyco/rune"
 branch = "dev"
-base = "a8ca769b944598e179f33cc6843629b90e6ca831"
+base = "ccb4823f55749dfa667891ef7f8427017e960056"
 base_date = "2026-11-07"
 every_minutes = 0
 pulls = true
