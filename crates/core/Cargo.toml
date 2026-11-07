@@ -20,7 +20,8 @@ base16ct.workspace = true
 rand = "0.10.3"
 regex = "1"
 zstd = "0.14.3"
-toml = "0.8"
+# Codex's config.toml under TOML 1.1; parse only, nothing writes TOML.
+toml = { version = "1.2.1", default-features = false, features = ["std", "serde", "parse"] }
 ureq = "2.12"
 webpki-roots = "0.26.11"
 similar = "2"
