@@ -4636,7 +4636,7 @@ dependencies = [
  "onicode-mobile-link",
  "proptest",
  "quinn",
- "rand 0.9.5",
+ "rand 0.10.3",
  "regex",
  "rquickjs",
  "rusqlite",

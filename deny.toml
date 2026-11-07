@@ -90,7 +90,7 @@ skip = [
     { crate = "pollster@0.2.5", reason = "via postage" },
     { crate = "quick-error@1.2.3", reason = "via rusty-fork" },
     { crate = "rand@0.8.8", reason = "via loro-internal, loro_fractional_index, phf_generator and more" },
-    { crate = "rand@0.9.5", reason = "via gpui, num-bigint-dig, proptest" },
+    { crate = "rand@0.9.5", reason = "via gpui, scheduler, num-bigint-dig" },
     { crate = "rand_chacha@0.3.1", reason = "via rand" },
     { crate = "rand_core@0.6.4", reason = "via crypto-bigint, crypto-common, elliptic-curve and more" },
     { crate = "rand_core@0.9.5", reason = "via rand, rand_chacha, rand_xorshift" },
