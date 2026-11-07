@@ -227,9 +227,9 @@ pub enum ScreenInput {
         time_us: u32,
     },
     /// A key by its position on the keyboard, never by its character: the worker posts the
-    /// position and its own keyboard layout, the client's when it took it
-    /// ([`Self::KeyboardSource`]), makes the character, composing dead keys and input methods
-    /// in the remote app (`docs/decisions/input.md`, "Keys go by position").
+    /// position and its own keyboard layout makes the character, composing dead keys and input
+    /// methods in the remote app (`docs/decisions/input.md`, "Keys go by position"). A ⌘ chord
+    /// is the key at the same place, which is the same shortcut while both Macs run one layout.
     Key {
         /// Physical key.
         code: KeyCode,
@@ -237,12 +237,6 @@ pub enum ScreenInput {
         action: KeyAction,
         /// Modifiers, with their side when the client knows it.
         mods: Mods,
-        /// For a ⌘ or ⌃ chord while the worker is not under the client's input source: the
-        /// character the client's layout puts on the key, ignoring every modifier but Shift,
-        /// lowercased. The worker presses the key that types it under its current layout, else
-        /// `code`, so ⌘Z means undo whichever layouts the two run (`docs/decisions/input.md`,
-        /// "A shortcut goes by its character").
-        chord: Option<String>,
     },
     /// A trackpad pinch, for the app under the pointer (`NSEventTypeMagnify`): the worker posts
     /// it as the trackpad would (`docs/decisions/input.md`, "Trackpad gestures reach the remote
@@ -260,13 +254,6 @@ pub enum ScreenInput {
         /// When the client read it: see [`Self::time_us`].
         time_us: u32,
     },
-    /// Text the client composed and committed: an input method's or a dead key's result while
-    /// the worker has not taken the client's input source, dictation, "Type the clipboard".
-    /// The worker types it as it stands, whatever its own layout.
-    Text {
-        /// The text; any length, the worker splits it.
-        text: String,
-    },
     /// Caps Lock's state on the client: the worker sets its own lock to it. Sent when the tile
     /// takes the keyboard and whenever it changes, never as a key.
     Lock {
@@ -281,23 +268,6 @@ pub enum ScreenInput {
         /// Pressed, or let go.
         down: bool,
     },
-    /// The client's keyboard input source (a TIS id, `com.apple.keylayout.French`): the worker
-    /// selects it, so positions mean what they mean on the client. The stream's claim on it
-    /// lasts until [`Self::KeyboardReleased`] or the stream's end; the worker is under the
-    /// newest claim still held, by any stream of any client, and the source goes back to the
-    /// worker's own when none is, unless the person at the worker picked one by hand since.
-    /// Answered with [`ScreenEvent::KeyboardSource`]. Sent in the input's order, and the stream
-    /// holds the keys and text after it, and whatever follows a held one, until the switch is
-    /// answered (at once for the source the worker already has, at most 150 ms otherwise), so
-    /// they are read under it.
-    KeyboardSource {
-        /// The input source id.
-        source: String,
-    },
-    /// The client's tile has gone a while without the keyboard: this stream's claim from
-    /// [`Self::KeyboardSource`] goes, as at the stream's end. A later `KeyboardSource` claims
-    /// anew.
-    KeyboardReleased,
     /// A trackpad rotation, for the app under the pointer (`NSEventTypeRotate`).
     Rotate {
         /// The change in angle since the last event of the rotation, degrees, anticlockwise
@@ -340,18 +310,6 @@ pub enum ScreenInput {
         /// Sent to the remote app.
         remote: bool,
     },
-    /// The press of the chord the client reads as paste (⌘V or ⇧⌘V under the person's own
-    /// layout), as a [`Self::Key`] press of `code` with `mods`. The client decides it by the
-    /// character it typed, so a Dvorak ⌘V is one and a Dvorak ⌘K at the US V is not; the
-    /// worker, which cannot know the client's layout, posts it only once the client's
-    /// clipboard, offered on the control stream just ahead of it, is on its pasteboard. Its
-    /// release goes as a [`Self::Key`].
-    PasteChord {
-        /// Physical key, as a [`Self::Key`]'s.
-        code: KeyCode,
-        /// Modifiers, as a [`Self::Key`]'s.
-        mods: Mods,
-    },
 }
 
 /// Which way a [`ScreenInput::Swipe`] went.
@@ -386,7 +344,7 @@ impl ScreenInput {
     /// Whether this input applies only in its turn. A move sets where the pointer is, so a
     /// newer one may overtake an older one that has not arrived; everything else is an event
     /// the target sees once, in order (a key, a button, a scroll's delta, a pinch's or a
-    /// rotation's, a tap, a swipe, text, the input source the keys after it are read under).
+    /// rotation's, a tap, a swipe).
     #[must_use]
     pub const fn in_order(&self) -> bool {
         !matches!(self, Self::Move { .. })
@@ -410,14 +368,6 @@ impl ScreenInput {
             | Self::Rotate { time_us, .. } => Some(*time_us),
             _ => None,
         }
-    }
-
-    /// Whether this is the paste chord ([`Self::PasteChord`]): it must find the client's
-    /// clipboard on the worker's pasteboard, so nothing may carry it ahead of the offer the
-    /// control stream sent before it.
-    #[must_use]
-    pub const fn is_paste_chord(&self) -> bool {
-        matches!(self, Self::PasteChord { .. })
     }
 }
 
@@ -512,11 +462,10 @@ pub enum ScreenRequest {
     /// while it plays (`docs/decisions/audio.md`, "One sound per worker on a client, not one
     /// per stream").
     SoundReport(SoundReport),
-    /// Draw the curtain over the worker's Mac, or let it go (`docs/decisions/video.md`, "The
-    /// curtain"): its own screens show a shield, and its own keyboard and pointer are held off,
-    /// for as long as any client linked holds it. A client that goes lets go of it, and the Mac
-    /// locks when the last one goes that way; letting go on the person's word does not lock.
-    /// Answered with [`ScreenEvent::Curtain`].
+    /// Draw the curtain over the worker's Mac, or let it go: its physical screens show a black
+    /// shield that no capture shows, for as long as the controller holds it. Only the
+    /// controller may draw it; it lifts when the controller lets go of it or of the controls,
+    /// or goes. Answered, to every client, with [`ScreenEvent::Curtain`].
     Curtain {
         /// Hold it, or let it go.
         on: bool,
@@ -644,27 +593,6 @@ pub enum ScreenEvent {
         /// The display it got.
         display: VirtualDisplay,
     },
-    /// The answer to [`ScreenInput::KeyboardSource`]: whether the worker now types under the
-    /// client's input source. Until it has, the client composes text itself and sends it as
-    /// [`ScreenInput::Text`]. Sent again unasked whenever that changes: another client's
-    /// stream took the worker's source (`applied: false`), or gave it back.
-    KeyboardSource {
-        /// Stream.
-        stream: StreamId,
-        /// The input source asked for.
-        source: String,
-        /// The worker selected it.
-        applied: bool,
-    },
-    /// The text field that has the keyboard in the stream's target, read after the client's
-    /// typing and clicks; sent when it changes. `None` when no text field has it, or the
-    /// worker cannot read one.
-    Field {
-        /// Stream.
-        stream: StreamId,
-        /// The field.
-        field: Option<TextField>,
-    },
     /// An [`ScreenRequest::Open`] or [`ScreenRequest::OpenDisplay`] that made no stream. It
     /// names what was asked, since the client learns a stream's id only from its `Opened`.
     OpenFailed {
@@ -692,11 +620,12 @@ pub enum CurtainState {
     Up {
         /// The clients holding it.
         holders: u32,
-        /// Its own keyboard and pointer are held off; `false` when the worker could not hold
-        /// them (no Accessibility), while its screens are still covered.
+        /// Its own keyboard and pointer are held off too; `false` while only its screens are
+        /// covered.
         input_held: bool,
     },
-    /// The worker could not draw it, in its words: no Mac, or no way to cover its screens.
+    /// The worker would not draw it, in its words: no screens to cover, a client that does not
+    /// hold the controls, or a shield the window server refused.
     Refused {
         /// Why.
         why: String,
@@ -721,33 +650,6 @@ pub enum ScreenFailure {
     NotPermitted,
     /// What was asked for is not there any more: the display went.
     Gone,
-    /// The worker has no screen to stream (a Linux machine).
-    Unsupported,
     /// Anything else, in the worker's words.
     Failed(String),
-}
-
-/// A text field that has the keyboard on the worker ([`ScreenEvent::Field`]).
-#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
-pub struct TextField {
-    /// Where its caret is, in stream pixels: what a client's input method hangs its candidate
-    /// window under while the client composes. `None` when the field does not say.
-    pub caret: Option<Caret>,
-    /// It is a password field (`AXSecureTextField`): a client keeps what is typed from other
-    /// programs on its own machine (secure keyboard entry) while it has the keyboard.
-    pub secure: bool,
-}
-
-/// A caret's box in stream pixels: its top left corner and its size (a thin bar as tall as the
-/// line).
-#[derive(Clone, Copy, PartialEq, Debug, Serialize, Deserialize)]
-pub struct Caret {
-    /// Left edge.
-    pub x: f32,
-    /// Top edge.
-    pub y: f32,
-    /// Width; 0 for an insertion point.
-    pub width: f32,
-    /// Height, the line's.
-    pub height: f32,
 }

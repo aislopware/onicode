@@ -13,7 +13,7 @@
 //! The encode block's own energy (`Energy Model`, `AVE0`) reads 0 mJ over any span on an M1 Max
 //! running macOS 27.0, and its power state (`SoC Stats`, `AVEMSR`) is `ACT` all the time, idle
 //! or not, so neither is offered. Everything here counts every process on the Mac:
-//! read an idle span first and take it off. Off macOS, [`Soc::open`] is `None`.
+//! read an idle span first and take it off.
 
 use std::time::Duration;
 
@@ -71,7 +71,6 @@ pub struct Rates {
 
 pub use imp::{Reading, Soc};
 
-#[cfg(target_os = "macos")]
 mod imp {
     use std::ffi::c_void;
     use std::ptr::{self, NonNull};
@@ -355,51 +354,7 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::Span;
-
-    /// No `IOReport` off macOS.
-    #[derive(Debug)]
-    #[expect(
-        missing_copy_implementations,
-        reason = "the same type as on macOS, where it holds IOReport handles"
-    )]
-    pub struct Soc;
-
-    /// No `IOReport` off macOS.
-    #[derive(Debug)]
-    #[expect(
-        missing_copy_implementations,
-        reason = "the same type as on macOS, where it holds IOReport handles"
-    )]
-    pub struct Reading;
-
-    impl Soc {
-        /// Always `None` off macOS.
-        #[must_use]
-        pub const fn open() -> Option<Self> {
-            None
-        }
-
-        /// Never reached: there is no [`Soc`] off macOS.
-        #[must_use]
-        pub const fn read(&self) -> Option<Reading> {
-            None
-        }
-    }
-
-    impl Reading {
-        /// Never reached: there is no [`Soc`] off macOS.
-        #[must_use]
-        pub const fn since(&self, _before: &Self) -> Option<Span> {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
-#[cfg(target_os = "macos")]
 mod tests {
     use super::*;
 

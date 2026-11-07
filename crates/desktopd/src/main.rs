@@ -41,7 +41,6 @@ fn all_granted() -> HostGrants {
 }
 
 fn main() -> ExitCode {
-    #[cfg(target_os = "macos")]
     if let Some(code) = answer_grants() {
         return code;
     }
@@ -53,7 +52,6 @@ fn main() -> ExitCode {
         .with_writer(std::io::stderr)
         .init();
     let args: Vec<String> = std::env::args().skip(1).collect();
-    #[cfg(target_os = "macos")]
     if args.first().map(String::as_str) == Some(onicode_desktopd::holder::HOLDER_ARG) {
         return holder_main(&args);
     }
@@ -66,7 +64,6 @@ fn main() -> ExitCode {
 }
 
 /// Answers a probe or a request from the app's checklist, when the arguments ask for one.
-#[cfg(target_os = "macos")]
 fn answer_grants() -> Option<ExitCode> {
     let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
     match grants::GrantsCommand::parse(&args) {
@@ -105,9 +102,8 @@ fn doctor() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// Serve, on a Mac: the made displays and the main queue on the main thread, the runtime on a
+/// Serve: the made displays and the main queue on the main thread, the runtime on a
 /// thread beside it, ending the process when it ends.
-#[cfg(target_os = "macos")]
 fn serve(data_dir: PathBuf, synthetic: bool) -> ExitCode {
     use onicode_desktopd::holder;
 
@@ -129,10 +125,11 @@ fn serve(data_dir: PathBuf, synthetic: bool) -> ExitCode {
                             data_dir,
                             None,
                             all_granted,
+                            false,
                         )
                         .await
                     } else {
-                        run::<Native, holder::Remote>(data_dir, made, grants::current).await
+                        run::<Native, holder::Remote>(data_dir, made, grants::current, true).await
                     }
                 })
             });
@@ -156,28 +153,6 @@ fn serve(data_dir: PathBuf, synthetic: bool) -> ExitCode {
     sized::park_main()
 }
 
-/// Serve, off a Mac: nothing to capture, but the socket and the endpoint answer.
-#[cfg(not(target_os = "macos"))]
-fn serve(data_dir: PathBuf, synthetic: bool) -> ExitCode {
-    let ended = runtime().map(|runtime| {
-        runtime.block_on(async move {
-            if synthetic {
-                run::<onicode_desktopd::synthetic::Drawn, sized::Cg>(data_dir, None, all_granted)
-                    .await
-            } else {
-                run::<Native, sized::Cg>(data_dir, None, grants::current).await
-            }
-        })
-    });
-    match ended {
-        Ok(Ok(())) => ExitCode::SUCCESS,
-        Ok(Err(e)) | Err(e) => {
-            tracing::error!(error = %e, "desktopd ends");
-            ExitCode::FAILURE
-        }
-    }
-}
-
 fn runtime() -> Result<tokio::runtime::Runtime, String> {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -189,7 +164,6 @@ fn runtime() -> Result<tokio::runtime::Runtime, String> {
 /// Have the made displays held by the display holder, its socket and list in the data
 /// directory, and take those it holds from the desktopd before ([`onicode_desktopd::holder`]);
 /// once more a little later, for those a holder that had to go is still making again.
-#[cfg(target_os = "macos")]
 fn hold_displays(made: &Displays<onicode_desktopd::holder::Remote>, data_dir: &std::path::Path) {
     use onicode_desktopd::holder;
 
@@ -216,11 +190,13 @@ fn hold_displays(made: &Displays<onicode_desktopd::holder::Remote>, data_dir: &s
 }
 
 /// desktopd's life: the grants, the control socket, the endpoint once the tailnet is up, and
-/// every client on it.
+/// every client on it; with `clipboard`, the Mac's general pasteboard follows the owner's focused
+/// viewer (never for drawn displays, which have no person's pasteboard to follow).
 async fn run<P: Platform, F: Factory>(
     data_dir: PathBuf,
     made: Option<Displays<F>>,
     read_grants: fn() -> HostGrants,
+    clipboard: bool,
 ) -> Result<(), String> {
     let grants = grants::follow(read_grants);
     let host = Host::<P, F>::new(onicode_desktopd::host_name(), grants, made);
@@ -234,6 +210,9 @@ async fn run<P: Platform, F: Factory>(
     ));
     tracing::info!(socket = %socket.display(), grants = ?host.grants(), "desktopd serving");
     let device_id = onicode_desktopd::device_id(&data_dir);
+    if clipboard && let Some(hub) = onicode_desktopd::clipboard::general(&device_id) {
+        host.set_clipboard(hub);
+    }
     let tailnet: Arc<dyn onicode_tailnet::Tailnet> = Arc::new(onicode_tailnet::Relooking::system());
     let endpoint = loop {
         match session::bind(
@@ -276,9 +255,8 @@ fn handler<P: Platform, F: Factory>(
 }
 
 /// desktopd is about to exit to be started again: let go of every key and button its clients
-/// hold down, and close their links so they hear it.
+/// hold down, lift the curtain, and close their links so they hear it.
 fn before_exit<P: Platform, F: Factory>(host: &Host<P, F>) {
-    #[cfg(target_os = "macos")]
     if !onicode_desktop_input::let_go_everywhere(Duration::from_millis(200)) {
         tracing::warn!("some held input was not let go of before the restart");
     }
@@ -288,7 +266,6 @@ fn before_exit<P: Platform, F: Factory>(host: &Host<P, F>) {
 /// The display holder's whole life (`onicode-desktopd --display-holder <socket> <list>`): its
 /// displays on the main thread, desktopds served from a thread beside it, until it is alone for
 /// [`onicode_desktopd::holder::ALONE_FOR`] or asked to quit.
-#[cfg(target_os = "macos")]
 fn holder_main(args: &[String]) -> ExitCode {
     use onicode_desktopd::holder::{self, Ended, Holder};
     use onicode_desktopd::sized::Main;

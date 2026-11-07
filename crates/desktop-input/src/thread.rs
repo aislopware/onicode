@@ -319,7 +319,6 @@ mod tests {
             code,
             action,
             mods: Mods::SUPER,
-            chord: None,
         }
     }
 
@@ -627,7 +626,6 @@ mod tests {
                 Event::Mouse { kind, at, .. } => Some((kind, at.x)),
                 Event::Key { .. }
                 | Event::Scroll { .. }
-                | Event::Text { .. }
                 | Event::Media { .. }
                 | Event::Gesture { .. } => None,
             })

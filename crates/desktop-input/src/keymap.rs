@@ -1,9 +1,8 @@
 //! W3C key codes → macOS virtual key codes (`kVK_*`, ANSI layout positions).
 //!
 //! Virtual key codes name *positions*: a `KeyCode::A` press lands as whatever the host's
-//! keyboard layout puts there, which is the client's own once the host has taken its input
-//! source (`crate::sources`). The table is `onicode-desktop-proto`'s, shared with the client that
-//! reads positions off its keyboard.
+//! keyboard layout puts there. The table is `onicode-desktop-proto`'s, shared with the client
+//! that reads positions off its keyboard.
 
 use objc2_core_graphics::CGKeyCode;
 use onicode_desktop_proto::input::KeyCode;

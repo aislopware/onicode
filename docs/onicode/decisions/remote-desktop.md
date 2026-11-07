@@ -4,6 +4,41 @@ Remote desktop streams whole displays from a Mac host to Mac and iOS clients. Pe
 and neither are other host or client platforms: one host platform keeps capture, encode, input injection and
 virtual displays on one set of APIs, and that is where the owner uses it.
 
+## Scope: what people use, finished to a premium bar
+
+Ruled 2026-11-07 by the owner: build the features people need and use often, delete the rarely used ones, and
+make each one that stays feel like sitting at the other Mac. No vendor publishes usage telemetry, so the ruling
+reads public trackers by votes (Moonlight, RustDesk), vendor defaults and priorities (Jump Desktop, Apple Screen
+Sharing's High Performance mode, Parsec, Screens 5) and reviews of Mac to Mac use (study of 2026-11-07, sources
+in `.research/remote-desktop-usage.md`).
+
+Kept and finished:
+- Whole displays, one picked at a time among the Mac's displays; HEVC with long-term references, two stripes,
+  parity and NACK, rate and chroma control, 4:4:4 for text, the present-on-arrival pacer.
+- **A display made at the viewer's size**, Retina, and resized with the window: the most asked-for picture
+  feature (Moonlight's second issue, Jump's second performance tip, Apple's Dynamic Resolution). The made display
+  and its holder persist between visits. Opening a physical display stays one click away.
+- **The Mac's shortcuts while the window has focus and holds control**: ⌘Tab, ⌘Space, Mission Control and the
+  rest reach the Mac, as Jump does by default for a Mac host. ⌘⌥⎋ and ⌃⌘Q stay local.
+- **The clipboard follows the window**: while a desktop window has focus, text, rich text, images and files
+  copied on either side paste on the other, lazily, never sending items password managers mark concealed or
+  transient (onicode's own clipboard design, `one-machine.md`, restored for the desktop session).
+- **Sessions that stay up**: redial after a drop without a second capture, the host kept awake while a viewer
+  is joined, and the locked or login-window state, a refused open and refused input said in the window.
+- Sound from the Mac (a toggle; never on for this Mac's own desktop), the Mac's cursor as the system cursor,
+  trackpad scroll with momentum and gestures.
+- Many viewers, one controller: watching an agent's Mac without taking it (observe-only) is a core use.
+- **The curtain**: the Mac's physical displays go dark while a controller holds it, by shield windows that the
+  capture excludes, as Apple's High Performance mode blanks the host.
+- The stats overlay, with the round trip, behind its toggle: what diagnoses a slow path.
+
+Deleted, rarely used: keyboard input-source sync and the host's layout table (⌘ shortcuts fall back to the key
+position, which is right for the same layout on both Macs), typed-text injection, the paste chord (the clipboard
+replaces it), focused-field detection, still screenshots. Never built: microphone, recording, window, region and
+crop streams, zoom, wake from sleep, chat and share links, pen pressure, HDR, gamepads, manual frame-rate and
+bitrate controls (the rate control adapts on its own). Dragging files into the window waits: files move through
+the clipboard.
+
 The bar is Parsec measured on this Mac: about 33 ms p50 composite latency, 4:2:0 only, no FEC or NACK. Onicode
 targets glass-to-glass p50 at or under 25 ms and p99 at or under 45 ms at 1080p to 1440p60 on the tailnet,
 4:4:4 for text and 120 Hz. The host is `onicode-desktopd`, a Developer ID-signed launch agent that owns the
@@ -27,10 +62,12 @@ The libraries are slopty's, ported whole rather than phase by phase, since slopt
 `onicode-desktop-proto` (control types: displays, stream setup, screen input by key position, events, keys, the
 clipboard), `onicode-desktop-codec` (VideoToolbox low-latency HEVC with LTR and padded sizes, the decoder, two-stripe
 coding, the SPS conformance window, Opus), `onicode-desktop-capture` (ScreenCaptureKit display streams, the
-synthetic canvas, the window server's cursor), `onicode-desktop-input` (injection by key position, gestures, the
-pasteboard, input sources) and `onicode-desktop-vdisplay` (virtual displays at the client's size). Their names and
-API shapes stay slopty's, so the host and client orchestration ports line up against them. Whole displays only:
-window capture, AX window picking, regions, crops, drags and the curtain are not ported. Tests that touch a device
+synthetic canvas, the window server's cursor, the curtain's shield windows that the capture filter leaves out, and
+the keep-awake power assertion), `onicode-desktop-input` (injection by key position, the pointer and gestures) and
+`onicode-desktop-vdisplay` (virtual displays at the client's size). Their names and API shapes stay slopty's, so the
+host and client orchestration ports line up against them. Whole displays only: window capture, AX window picking,
+regions, crops and drags are not ported, and the rarely used features the Scope deletes went with their tests,
+protocol variants and dependencies (the session wire, `onicode_desktop_link::WIRE`, is 2). Tests that touch a device
 are opt-in, one variable per kind (`ONICODE_VT_TESTS`, `ONICODE_AUDIO_LIVE`, `ONICODE_DESKTOP_LIVE`,
 `ONICODE_INPUT_LIVE`, `ONICODE_VDISPLAY_LIVE`, in `onicode-desktop-testkit`), because a hosted runner's paravirtual
 encoder hangs a process and the rest prompt, play sound, move the pointer or rearrange the owner's screens.
@@ -39,7 +76,9 @@ The orchestration is ported in the same pass, around one whole-display stream. `
 (`crates/desktopd`) is slopty-worker's screen pipeline rewritten smaller: capture into a newest-wins mailbox, an
 encode thread, packetizing with parity, the audio lane ahead of video, the repair loop with LTR refreshes, rate,
 chroma and cadence control, stripes, the engines gate, sized virtual displays and their holder (now
-`onicode-desktopd --display-holder`), sound, and the drawn platform its tests run on. It is the helper app's launchd
+`onicode-desktopd --display-holder`), sound, the curtain (drawn only for the controller, lifted when it lets go of
+the controls, leaves or closes, and told to every viewer), the Mac kept awake by one IOKit power assertion while any
+viewer is joined, and the drawn platform its tests run on. It is the helper app's launchd
 agent with its own QUIC endpoint on the tailnet at port 7434, admitted by whois like any peer. It reads its own grants
 (`Grants::fresh`, never a prompt and no ScreenCaptureKit call before Screen Recording reads true), refuses sessions
 naming the panes that are off, and restarts itself for launchd once a guide it was told about sees them on. The engine
@@ -60,10 +99,41 @@ and taking them needs the owner's tailnet grant. `onicode-desktop-client` (`crat
 slopty-client's screen path for both apps: routing with a backlog for datagrams that beat `Opened`, a reassembler and
 decode thread per stripe lane, the stitch, reports and clock probes, sound, the letterbox fit, and redial. The macOS
 view (`crates/app/src/desktop`) presents each decoded picture on a gpui-fast `VideoLayer` from the decode thread, so a
-picture waits on no GPUI frame, and shows the Mac's pointer as the system cursor. It opens in a window of its own from
+picture waits on no GPUI frame, and shows the Mac's pointer as the system cursor. It shows a display the Mac makes at
+the window's content size in pixels at its backing scale, first in the display picker and opened by default, and
+resizes it with the window once the window holds still for 250 ms; the Mac's physical displays follow it in the picker,
+and a Mac that cannot make one streams its main display and the window says so. A redial opens nothing again: the
+session reopens what it had, so each display is asked once. While the window is key and holds the controls it turns
+the system's shortcuts off for itself (HIToolbox's symbolic hot-key mode, which needs Accessibility; the window says
+when it is off) and a local event monitor sends them to the Mac. It opens in a window of its own from
 a machine: "Open desktop" in a Machines row's context menu in the sidebar, or the button on an engine's row in Settings
 → Connections (this Mac's own included, to look at and to turn its grants on). Its chrome is the old viewer's (the
 seat badge, the display and sound, curtain and stats toggles, the notices), drawn with the app's own buttons and
-floating surface over a dark stage. The iPhone viewer comes back with the iOS client, last in the plan. Window, region and crop streams, zoom, drag in and out, the paste chord's clipboard push, the
-clipboard following a focused desktop window (`one-machine.md`) and input-source sync are not ported; the curtain is
-refused until its platform half exists.
+floating surface over a dark stage: a locked Mac or one at the login window and a refused open are notices, and the
+display made instead of the one asked for, refused input and a refused curtain are lines under the controls. The
+stats overlay carries the round trip of the clock probes. "Turn on" for this Mac's own grants opens the guide here and
+tells desktopd through the engine too, so it restarts once the grant is on. The iPhone viewer comes back with the iOS
+client, last in the plan.
+
+As built, the clipboard follows the window. `onicode-clipboard` (`crates/clipboard`) is onicode's clipboard design
+from `one-machine.md` restored for the desktop session: a `Hub` per Mac watches one pasteboard's `changeCount`, and
+a `Session` per desktop link follows the Mac at the other end while the viewer says its window is key and holds
+focus (`Clip::Focus`). Clips ride the control stream as `Up::Clip` and `Down::Clip` (`desktop-proto`'s
+`clipboard` module): an offer carries the origin, `seq`, `at` and each item's types with sizes, and items up to
+16 KiB inline. Anything bigger is written as a pasteboard item provider that opens a fetch stream to the origin,
+`clip/<seq>/<item>/<type>` for bytes and `clipfiles/<seq>/<item>` for files and folders, when something pastes it,
+with 3 s and 120 s deadlines; files of 16 MiB or less in all are fetched as soon as the offer lands. A fetch for a
+copy the origin no longer holds is reset with the `REFUSED` code. Writes carry the origin type and
+`currentHostOnly` and remember their `changeCount`, so nothing echoes; the newest `(at, origin, seq)` wins on both
+Macs; concealed and transient copies never leave (a marker on any item keeps the whole copy home) and
+auto-generated ones stay unless opted in. No history is kept: a cache folder holds the newest files only.
+desktopd (`crates/desktopd/src/clipboard.rs`, `session.rs`) gives a clipboard session to owner links only and
+watches the general pasteboard only while a focused viewer follows it; its main thread runs the run loop so item
+providers answer. It reports its Paste from Other Apps setting every 2 s (`Clip::Access`): until it is Allow, offers
+carry types alone and desktopd reads a copy's bytes only when the viewer pastes, so nothing prompts unasked, and
+denied, copies on the host stay there. The window shows a notice with the guide to that pane
+(`Pane::PasteFromOtherApps`) until it is Allow. The viewer side is `crates/app/src/desktop/clipboard.rs` (one hub
+on the app's general pasteboard, attached to each session that shows another Mac) and `onicode-desktop-client`,
+which holds the session and its fetch streams across redials. Tests run both ends on in-memory boards over a fake
+link on tokio's paused clock (`crates/clipboard/tests`); the `NSPasteboard` tests are opt-in
+(`ONICODE_PASTEBOARD_LIVE`) on uniquely named pasteboards.

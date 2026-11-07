@@ -77,10 +77,10 @@ fn a_wanted_display_is_opened_and_opened_again_after_a_drop() {
     let ask = book.open(Open::Display(DisplayId(2)), Quality::default());
     assert!(matches!(
         ask,
-        ScreenRequest::Open {
+        Some(ScreenRequest::Open {
             target: CaptureTarget::Display(DisplayId(2)),
             ..
-        }
+        })
     ));
     assert_eq!(
         book.down(opened(7, 2)),
@@ -99,6 +99,62 @@ fn a_wanted_display_is_opened_and_opened_again_after_a_drop() {
     assert_eq!(book.down(welcome(Seat::default())), vec![Effect::Reopen]);
     let _spawn = book.down(opened(1, 2));
     assert_eq!(book.wanted[0].stream, Some(StreamId(1)));
+}
+
+/// A view that asks again for a display already wanted, open or waiting on the next welcome,
+/// asks desktopd nothing: one want, one capture. A made display asked again at another shape
+/// keeps its one want, at the new shape.
+#[test]
+fn a_display_asked_twice_is_asked_of_desktopd_once() {
+    let mut book = Book::new(&endpoint());
+    let _ = book.down(welcome(Seat::default()));
+    assert!(
+        book.open(Open::Display(DisplayId(1)), Quality::default())
+            .is_some()
+    );
+    let _ = book.down(opened(4, 1));
+    book.unlinked();
+    assert_eq!(
+        book.open(Open::Display(DisplayId(1)), Quality::default()),
+        None,
+        "wanted already: the welcome opens it"
+    );
+    assert_eq!(book.wanted.len(), 1);
+    let key = DisplayKey([3; 16]);
+    let shape = |width| DisplayShape {
+        width,
+        height: 1600,
+        scale: 2.0,
+        refresh_hz: 120,
+    };
+    assert!(
+        book.open(
+            Open::Made {
+                key,
+                shape: shape(2560)
+            },
+            Quality::default()
+        )
+        .is_some()
+    );
+    assert_eq!(
+        book.open(
+            Open::Made {
+                key,
+                shape: shape(1920)
+            },
+            Quality::default()
+        ),
+        None
+    );
+    assert_eq!(book.wanted.len(), 2);
+    assert_eq!(
+        book.wanted[1].open,
+        Open::Made {
+            key,
+            shape: shape(1920)
+        }
+    );
 }
 
 /// A display made for this device: its `Display` event comes before `Opened`, and the stream
@@ -161,6 +217,10 @@ fn refusals_name_what_is_off_and_stop_wanting() {
     assert_eq!(book.state.failure, Some((asked, ScreenFailure::Gone)));
 
     let _ = book.open(Open::Display(DisplayId(1)), Quality::default());
+    assert_eq!(
+        book.state.failure, None,
+        "a new open clears the last refusal"
+    );
     let _ = book.down(opened(4, 1));
     assert_eq!(
         book.down(Down::Screen(ScreenEvent::Closed {
@@ -260,9 +320,7 @@ fn input(stream: u32, kind: u8, i: u16) -> Command {
             clicks: 1,
             mods: Mods::empty(),
         },
-        _ => ScreenInput::Text {
-            text: i.to_string(),
-        },
+        _ => ScreenInput::SmartMagnify { x, y: x },
     };
     Command::Input(StreamId(stream), input)
 }
@@ -276,7 +334,9 @@ fn shape(batch: &[Command]) -> Vec<(u32, bool, f32)> {
                 stream.0,
                 matches!(input, ScreenInput::Move { .. }),
                 match input {
-                    ScreenInput::Move { x, .. } | ScreenInput::Button { x, .. } => *x,
+                    ScreenInput::Move { x, .. }
+                    | ScreenInput::Button { x, .. }
+                    | ScreenInput::SmartMagnify { x, .. } => *x,
                     _ => -1.0,
                 },
             )),

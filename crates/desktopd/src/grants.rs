@@ -85,44 +85,35 @@ pub const fn privilege(pane: Pane) -> Privilege {
     match pane {
         Pane::ScreenRecording => Privilege::ScreenRecording,
         Pane::Accessibility => Privilege::Accessibility,
+        Pane::PasteFromOtherApps => Privilege::Pasteboard,
     }
 }
 
 /// The grants as of now, without a prompt: this process's, and when something is off, what a new
-/// process sees on top (`Grants::fresh`). None off a Mac.
+/// process sees on top (`Grants::fresh`).
 #[must_use]
 pub fn current() -> HostGrants {
-    #[cfg(target_os = "macos")]
-    {
-        host_grants(onicode_grants::Grants::fresh())
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        HostGrants::default()
-    }
+    host_grants(onicode_grants::Grants::fresh())
 }
 
 /// The guide to `pane` is open on this Mac's screen: wait for the grant, and once a new process
-/// sees it run `before_exit` and exit for launchd to start desktopd again. Off a Mac there is
-/// nothing to wait for.
+/// sees it run `before_exit` and exit for launchd to start desktopd again.
 ///
 /// # Errors
 ///
-/// The watch could not start, or off a Mac, in words for the engine.
+/// The watch could not start, in words for the engine.
 pub fn guide_open(pane: Pane, before_exit: impl FnOnce() + Send + 'static) -> Result<(), String> {
+    if pane == Pane::PasteFromOtherApps {
+        // Read again every few seconds by the clipboard (`crate::clipboard`): nothing to restart.
+        drop(before_exit);
+        tracing::info!("the guide to Paste from Other Apps is open");
+        return Ok(());
+    }
     let pane = privilege(pane).list_name();
     tracing::info!(pane, "the guide is open: restarting once the grant is on");
-    #[cfg(target_os = "macos")]
-    {
-        onicode_grants::restart_when_granted(WATCH_EVERY, WATCH_FOR, before_exit)
-            .map(drop)
-            .map_err(|e| format!("no watch for the grant: {e}"))
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        drop(before_exit);
-        Err("remote desktop hosts only on macOS".to_owned())
-    }
+    onicode_grants::restart_when_granted(WATCH_EVERY, WATCH_FOR, before_exit)
+        .map(drop)
+        .map_err(|e| format!("no watch for the grant: {e}"))
 }
 
 /// The grants, read now and every [`READ_EVERY`] by `read`, as a watch whose value changes only

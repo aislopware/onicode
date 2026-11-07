@@ -24,10 +24,6 @@ use crate::keyboard::nx;
 /// its own events from the person's at its desk ("ONIC").
 pub const ONICODE_EVENT: i64 = 0x4f4e_4943;
 
-/// `kVK_Space` (`<HIToolbox/Events.h>`): the key committed text rides on, as Chrome Remote
-/// Desktop's does. Never keycode 0, which some input methods read as the A key.
-const TEXT_CARRIER: CGKeyCode = 0x31;
-
 /// A media key's `data1`: the key in bits 16–31, its state in bits 8–15.
 #[must_use]
 pub const fn media_data1(key: MediaKey, down: bool) -> isize {
@@ -171,14 +167,6 @@ pub enum Event {
         modifier: bool,
         /// Auto-repeat.
         repeat: bool,
-    },
-    /// Committed text, at most [`crate::text::MOST_UNITS`] UTF-16 units, on the Space key's
-    /// press or release with `CGEventKeyboardSetUnicodeString`.
-    Text {
-        /// The text.
-        text: String,
-        /// The press (`true`) or the release.
-        down: bool,
     },
     /// A media key: a system-defined event (`NSSystemDefined`, subtype 8).
     Media {
@@ -424,18 +412,6 @@ pub fn build(
             }
             event
         }
-        Event::Text { text, down } => {
-            let event = CGEvent::new_keyboard_event(source, TEXT_CARRIER, *down)
-                .ok_or(InputError::Create)?;
-            let utf16: Vec<u16> = text.encode_utf16().collect();
-            let len = u64::try_from(utf16.len()).map_err(|_too_long| InputError::Create)?;
-            // SAFETY: `utf16` outlives the call and `len` is its exact length, as the function
-            // requires; the event copies the string.
-            unsafe {
-                CGEvent::keyboard_set_unicode_string(Some(&event), len, utf16.as_ptr());
-            }
-            event
-        }
         Event::Gesture {
             at,
             gesture,
@@ -634,7 +610,7 @@ mod hid {
 /// A fake backend for tests: fixed geometry, every post kept.
 ///
 /// Nothing here touches CoreGraphics or AppKit, so the injector's whole decision path —
-/// point mapping, drag tracking, gestures, Caps Lock, text — runs under `cargo nextest` with no
+/// point mapping, drag tracking, gestures, Caps Lock — runs under `cargo nextest` with no
 /// permissions and no side effects.
 #[derive(Debug, Default, Clone)]
 pub struct Recorder {
@@ -800,28 +776,6 @@ mod tests {
         assert_eq!(CGEvent::r#type(Some(&event)), CGEventType::FlagsChanged);
         let code = CGEvent::integer_value_field(Some(&event), CGEventField::KeyboardEventKeycode);
         assert_eq!(code, 0x3c, "the right shift key");
-    }
-
-    /// Committed text rides on the Space key's press and release, carrying the whole piece.
-    #[test]
-    fn text_rides_on_space_with_its_string() {
-        for (text, down) in [("tiếng Việt", true), ("日本語", false), ("🇻🇳", true)] {
-            let piece = Event::Text {
-                text: text.to_owned(),
-                down,
-            };
-            let event = build(&post(piece, CGEventFlags::empty()), None).unwrap();
-            let code =
-                CGEvent::integer_value_field(Some(&event), CGEventField::KeyboardEventKeycode);
-            assert_eq!(code, 0x31, "kVK_Space, never keycode 0");
-            let kind = if down {
-                CGEventType::KeyDown
-            } else {
-                CGEventType::KeyUp
-            };
-            assert_eq!(CGEvent::r#type(Some(&event)), kind);
-            assert_eq!(unicode(&event), text);
-        }
     }
 
     /// A media key is a system-defined event of subtype 8 whose `data1` names the key and its

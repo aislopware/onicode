@@ -26,10 +26,8 @@ use onicode_desktop_proto::DisplayId;
 use onicode_desktop_proto::screen::{
     CaptureTarget, DisplayKey, DisplayShape, NoVirtualDisplay, Quality, ScreenEvent, VirtualDisplay,
 };
-#[cfg(target_os = "macos")]
-pub use onicode_desktop_vdisplay::park_main;
 use onicode_desktop_vdisplay::{ClientKey, Request, plan};
-pub use onicode_desktop_vdisplay::{DisplayError, Enforced, Plan};
+pub use onicode_desktop_vdisplay::{DisplayError, Enforced, Plan, park_main};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::pipeline::{Opening, Pipeline, ScreenError};
@@ -610,17 +608,14 @@ impl Factory for Cg {
 }
 
 /// The main dispatch queue, holding the registry where only the main thread reaches it.
-#[cfg(target_os = "macos")]
 pub struct MainQueue<S>(Arc<dispatch2::MainThreadBound<std::cell::RefCell<S>>>);
 
-#[cfg(target_os = "macos")]
 impl<S> std::fmt::Debug for MainQueue<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MainQueue").finish_non_exhaustive()
     }
 }
 
-#[cfg(target_os = "macos")]
 impl<S: 'static> MainQueue<S> {
     /// The main queue, holding `state`; `None` off the main thread.
     #[must_use]
@@ -646,7 +641,6 @@ impl<S: 'static> MainQueue<S> {
     }
 }
 
-#[cfg(target_os = "macos")]
 impl<S: 'static> Main<S> for MainQueue<S> {
     fn run(&self, job: Job<S>) {
         dispatch2::DispatchQueue::main().exec_async(self.job(job));
@@ -673,7 +667,6 @@ impl<S: 'static> Main<S> for MainQueue<S> {
 ///
 /// `None` off the main thread or where no display can be made, and desktopd then answers
 /// every `OpenDisplay` with a physical display.
-#[cfg(target_os = "macos")]
 #[must_use]
 pub fn on_main_queue<F: Factory>(factory: F) -> Option<Displays<F>> {
     if !onicode_desktop_vdisplay::available() {

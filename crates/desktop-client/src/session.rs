@@ -20,12 +20,13 @@ use std::time::Duration;
 
 use onicode_desktop_link::broker::DesktopEndpoint;
 use onicode_desktop_link::order::Numberer;
-use onicode_desktop_link::{Down, HostGrants, Pane, Seat, Up, WIRE};
+use onicode_desktop_link::{Clip, Down, HostGrants, Pane, Seat, Up, WIRE};
 use onicode_desktop_proto::DisplayId;
+use onicode_desktop_proto::clipboard::PasteAccess;
 use onicode_desktop_proto::screen::{
     CaptureTarget, CursorShape, CurtainState, DisplayInfo, DisplayKey, DisplayShape, OpenAsk,
     Quality, ScreenEvent, ScreenFailure, ScreenInput, ScreenRequest, SourceState, StreamId,
-    TextField, VideoCodec, VirtualDisplay,
+    VideoCodec, VirtualDisplay,
 };
 use onicode_net::Link;
 use onicode_net::redial::Redial;
@@ -70,6 +71,16 @@ impl Open {
         match (self, asked) {
             (Self::Display(id), OpenAsk::Target(CaptureTarget::Display(asked))) => id == asked,
             (Self::Made { key, .. }, OpenAsk::Made(asked)) => key == asked,
+            _ => false,
+        }
+    }
+
+    /// Whether `other` asks for the same display: the same physical one, or one made under the
+    /// same key whatever its shape.
+    fn same(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Display(a), Self::Display(b)) => a == b,
+            (Self::Made { key: a, .. }, Self::Made { key: b, .. }) => a == b,
             _ => false,
         }
     }
@@ -119,11 +130,6 @@ pub struct StreamView {
     pub rate_bps: u32,
     /// For [`Open::Made`], the display made or why a physical one is streamed instead.
     pub made: Option<VirtualDisplay>,
-    /// The keyboard layout this device asked for is in force on the Mac.
-    pub keyboard_source_applied: bool,
-    /// The focused text field on the Mac, when it is one: where its caret is, and whether it
-    /// takes a password.
-    pub field: Option<TextField>,
 }
 
 /// Everything a view shows of a session.
@@ -143,10 +149,13 @@ pub struct SessionState {
     pub streams: Vec<StreamView>,
     /// The privacy curtain, once desktopd has said.
     pub curtain: Option<CurtainState>,
-    /// The newest open desktopd refused, and why.
+    /// The newest open desktopd refused, and why, until the next open is asked.
     pub failure: Option<(OpenAsk, ScreenFailure)>,
     /// desktopd refused this device's input since it last held the controls.
     pub input_refused: bool,
+    /// Whether the Mac may read its pasteboard unasked (Paste from Other Apps for Onicode
+    /// Desktop), as it last said while its clipboard followed this window; `None` before.
+    pub paste: Option<PasteAccess>,
 }
 
 impl SessionState {
@@ -161,6 +170,7 @@ impl SessionState {
             curtain: None,
             failure: None,
             input_refused: false,
+            paste: None,
         }
     }
 
@@ -187,6 +197,8 @@ pub(crate) enum Effect {
     Source { stream: StreamId, live: bool },
     /// The Mac speaks another session wire: stop.
     WrongWire(u32),
+    /// The Mac's clipboard said something: its copies.
+    Clip(Clip),
 }
 
 /// A display wanted open, and the stream it is open on over this link.
@@ -225,16 +237,25 @@ impl Book {
         self.made.clear();
         self.state.streams.clear();
         self.state.curtain = None;
+        self.state.paste = None;
     }
 
-    /// A view asked for `open`: the request to send.
-    pub(crate) fn open(&mut self, open: Open, quality: Quality) -> ScreenRequest {
+    /// A view asked for `open`: the request to send, or `None` when it is wanted already. A
+    /// display asked for twice is asked of desktopd once: the want it has is open over this
+    /// link or opens again on the next welcome, and a second would be a second capture.
+    pub(crate) fn open(&mut self, open: Open, quality: Quality) -> Option<ScreenRequest> {
+        self.state.failure = None;
+        if let Some(want) = self.wanted.iter_mut().find(|want| want.open.same(&open)) {
+            want.open = open;
+            want.quality = quality;
+            return None;
+        }
         self.wanted.push(Want {
             open,
             quality,
             stream: None,
         });
-        request(open, quality)
+        Some(request(open, quality))
     }
 
     /// A view let `stream` go.
@@ -281,6 +302,11 @@ impl Book {
                 state.input_refused = true;
                 Vec::new()
             }
+            Down::Clip(Clip::Access(access)) => {
+                state.paste = Some(access);
+                Vec::new()
+            }
+            Down::Clip(clip) => vec![Effect::Clip(clip)],
             Down::Screen(event) => self.screen(event),
         }
     }
@@ -321,8 +347,6 @@ impl Book {
                     source: SourceState::Live,
                     rate_bps: 0,
                     made: made.map(|(_, display)| display),
-                    keyboard_source_applied: false,
-                    field: None,
                 });
                 return vec![Effect::Spawn { stream, codec }];
             }
@@ -376,18 +400,6 @@ impl Book {
                     self.made.insert(stream, (key, display));
                 }
             }
-            ScreenEvent::KeyboardSource {
-                stream, applied, ..
-            } => {
-                if let Some(view) = state.view_mut(stream) {
-                    view.keyboard_source_applied = applied;
-                }
-            }
-            ScreenEvent::Field { stream, field } => {
-                if let Some(view) = state.view_mut(stream) {
-                    view.field = field;
-                }
-            }
             ScreenEvent::OpenFailed { asked, why } => {
                 if let Some(at) = self
                     .wanted
@@ -439,6 +451,8 @@ enum Command {
     Control(bool),
     Sound(bool),
     Curtain(bool),
+    Clipboard(Option<onicode_clipboard::Hub>),
+    ClipboardFocus(bool),
     Shutdown,
 }
 
@@ -497,6 +511,8 @@ impl<D: VideoDecode> DesktopSession<D> {
             state: state_tx,
             screens: Arc::clone(&screens),
             runtime: runtime.clone(),
+            clipboard: None,
+            clipboard_focused: false,
         };
         drop(runtime.spawn(task.run()));
         Self {
@@ -518,8 +534,10 @@ impl<D: VideoDecode> DesktopSession<D> {
         self.shared.state.clone()
     }
 
-    /// Open `open` at `quality`. Kept wanted across link drops until closed or refused; the
-    /// stream shows in [`SessionState::streams`] once desktopd opens it.
+    /// Open `open` at `quality`. Kept wanted across link drops until closed or refused, and
+    /// opened again by the session itself on each welcome, so a view asks once; the stream
+    /// shows in [`SessionState::streams`] once desktopd opens it. Asking again for a display
+    /// already wanted asks desktopd nothing.
     pub fn open(&self, open: Open, quality: Quality) {
         self.send(Command::Open(open, quality));
     }
@@ -571,6 +589,18 @@ impl<D: VideoDecode> DesktopSession<D> {
         self.send(Command::Curtain(on));
     }
 
+    /// Follow this device's clipboard `hub` with the Mac's while the window has focus
+    /// ([`Self::clipboard_focus`]); `None` keeps the clipboard out of the session.
+    pub fn clipboard(&self, hub: Option<onicode_clipboard::Hub>) {
+        self.send(Command::Clipboard(hub));
+    }
+
+    /// The window showing the Mac gained or lost focus: while it has it, the clipboard follows
+    /// the session both ways. Kept across link drops.
+    pub fn clipboard_focus(&self, focused: bool) {
+        self.send(Command::ClipboardFocus(focused));
+    }
+
     /// The stream `stream`'s pictures, while it is open.
     #[must_use]
     pub fn screen(&self, stream: StreamId) -> Option<ScreenHandle<D::Image>> {
@@ -601,6 +631,10 @@ struct Task<D: VideoDecode> {
     state: watch::Sender<Arc<SessionState>>,
     screens: Screens<D>,
     runtime: tokio::runtime::Handle,
+    /// This device's clipboard, when the session follows it.
+    clipboard: Option<onicode_clipboard::Hub>,
+    /// The window has focus: the clipboard follows the Mac while it does.
+    clipboard_focused: bool,
 }
 
 /// One link's own state. Stream ids are the link's, so each link routes on a router of its
@@ -608,9 +642,13 @@ struct Task<D: VideoDecode> {
 struct Linked {
     link: Link,
     router: ScreenRouter,
-    control: onicode_net::StreamTx,
+    control: Arc<onicode_net::StreamTx>,
     numberer: Numberer,
     sound: Option<Sound>,
+    /// The clipboard over this link, with the Mac's device at its other end.
+    clip: Option<Arc<onicode_clipboard::Session>>,
+    /// The Mac's device id, from its hello.
+    peer: String,
 }
 
 impl<D: VideoDecode> Task<D> {
@@ -691,6 +729,8 @@ impl<D: VideoDecode> Task<D> {
             } => self.want_shape(stream, width, height, scale),
             Command::Control(take) => self.join.control = take,
             Command::Sound(on) => self.join.sound = on,
+            Command::Clipboard(hub) => self.clipboard = hub,
+            Command::ClipboardFocus(focused) => self.clipboard_focused = focused,
             Command::Input(..) | Command::Focused(..) | Command::Curtain(_) => {}
             Command::Shutdown => return Some("shut down".into()),
         }
@@ -730,6 +770,7 @@ impl<D: VideoDecode> Task<D> {
     async fn linked(&mut self, session: onicode_net::hello::Session) -> Ended {
         let onicode_net::hello::Session {
             link,
+            peer,
             control_tx,
             control_rx,
             ..
@@ -743,10 +784,13 @@ impl<D: VideoDecode> Task<D> {
         let mut linked = Linked {
             link: link.clone(),
             router,
-            control: control_tx,
+            control: Arc::new(control_tx),
             numberer: Numberer::default(),
             sound: None,
+            clip: None,
+            peer: peer.device_id.clone(),
         };
+        linked.clip = self.clip_session(&linked);
         let join = Up::Join {
             wire: WIRE,
             name: self.join.name.clone(),
@@ -836,6 +880,17 @@ impl<D: VideoDecode> Task<D> {
                     if self.join.sound && linked.sound.is_none() {
                         linked.sound = Some(self.sound(linked));
                     }
+                    if self.clipboard_focused
+                        && let Some(clip) = &linked.clip
+                        && !clip.focus(true)
+                    {
+                        return Some(Ended::Dropped);
+                    }
+                }
+                Effect::Clip(clip) => {
+                    if let Some(session) = &linked.clip {
+                        session.heard(clip);
+                    }
                 }
                 Effect::Spawn { stream, codec } => {
                     // The one it replaces lets go of its route before the new one takes it.
@@ -867,6 +922,32 @@ impl<D: VideoDecode> Task<D> {
         None
     }
 
+    /// The clipboard over `linked`, when the session follows one: its clips go up on the
+    /// control stream, and the Mac's fetches are served until the link closes.
+    fn clip_session(&self, linked: &Linked) -> Option<Arc<onicode_clipboard::Session>> {
+        let hub = self.clipboard.as_ref()?;
+        let control = Arc::clone(&linked.control);
+        let line = onicode_clipboard::link::LinkLine::new(
+            linked.link.clone(),
+            Box::new(move |clip| link::send(&control, &Up::Clip(clip))),
+        );
+        let session = Arc::new(hub.session(linked.peer.clone(), line));
+        drop(self.runtime.spawn(onicode_clipboard::link::serve_streams(
+            linked.link.clone(),
+            Arc::downgrade(&session),
+        )));
+        Some(session)
+    }
+
+    /// Tell the Mac whether the window has focus, once welcomed. `Some` when the link is gone.
+    fn clipboard_focus(&self, linked: &Linked) -> Option<Ended> {
+        if self.book.state.phase != Phase::Joined {
+            return None;
+        }
+        let clip = linked.clip.as_ref()?;
+        (!clip.focus(self.clipboard_focused)).then_some(Ended::Dropped)
+    }
+
     fn sound(&self, linked: &Linked) -> Sound {
         Sound::spawn(
             &self.runtime,
@@ -880,7 +961,7 @@ impl<D: VideoDecode> Task<D> {
     /// Act on a view's ask over the link. `Some` when the session ends or the link is gone.
     fn command(&mut self, linked: &mut Linked, command: Command) -> Option<Ended> {
         let up = match command {
-            Command::Open(open, quality) => Up::Screen(self.book.open(open, quality)),
+            Command::Open(open, quality) => Up::Screen(self.book.open(open, quality)?),
             Command::Close(stream) => {
                 self.book.close(stream);
                 Up::Screen(ScreenRequest::Close(stream))
@@ -923,6 +1004,21 @@ impl<D: VideoDecode> Task<D> {
                 Up::Sound { on }
             }
             Command::Curtain(on) => Up::Screen(ScreenRequest::Curtain { on }),
+            Command::Clipboard(hub) => {
+                self.clipboard = hub;
+                if let Some(old) = linked.clip.take() {
+                    let _told = old.focus(false);
+                }
+                linked.clip = self.clip_session(linked);
+                return self.clipboard_focus(linked);
+            }
+            Command::ClipboardFocus(focused) => {
+                if focused == self.clipboard_focused {
+                    return None;
+                }
+                self.clipboard_focused = focused;
+                return self.clipboard_focus(linked);
+            }
             Command::Shutdown => return Some(Ended::Closed("shut down".into())),
         };
         (!link::send(&linked.control, &up)).then_some(Ended::Dropped)

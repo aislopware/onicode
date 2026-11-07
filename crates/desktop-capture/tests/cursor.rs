@@ -3,7 +3,6 @@
 //! cursor on screen for as long as it runs (well under a second) and needs a window session.
 
 #[cfg(test)]
-#[cfg(target_os = "macos")]
 mod tests {
     use std::io::{BufRead as _, BufReader};
     use std::process::{Command, Stdio};

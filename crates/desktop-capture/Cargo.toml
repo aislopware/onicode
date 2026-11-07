@@ -13,14 +13,13 @@ thiserror.workspace = true
 [target.'cfg(target_os = "macos")'.dependencies]
 block2.workspace = true
 dispatch2.workspace = true
-# `dlsym` for the window server's cursor calls (`cursor.rs`), `pid_t` for the focused field.
+# `dlsym` for the window server's cursor calls (`cursor.rs`).
 libc.workspace = true
 objc2.workspace = true
 # `block2` and `objc2-core-foundation` for the picture `tests/support/cursor_app.rs` draws; the
-# `NSCursor` the cursor test reads the old way.
-objc2-app-kit = { workspace = true, features = ["block2", "objc2-core-foundation"] }
-# The focused text field (`focus.rs`).
-objc2-application-services = { workspace = true, features = ["AXError", "AXUIElement", "AXValue"] }
+# `NSCursor` the cursor test reads the old way; `NSScreen` for the curtain's shield windows, one
+# over each screen (`shield`).
+objc2-app-kit = { workspace = true, features = ["block2", "objc2-core-foundation", "NSScreen"] }
 objc2-core-audio-types.workspace = true
 objc2-core-foundation.workspace = true
 # `CGDisplayStream` for the `kCGDisplayStreamYCbCrMatrix_*` values SCStream's colorMatrix takes,
@@ -30,6 +29,8 @@ objc2-core-graphics = { workspace = true, features = ["CGDisplayStream", "CGColo
 objc2-core-media.workspace = true
 objc2-core-video.workspace = true
 objc2-foundation.workspace = true
+# The power assertion that keeps the displays awake while a viewer watches (`awake`).
+objc2-io-kit = { workspace = true, features = ["pwr_mgt"] }
 objc2-screen-capture-kit.workspace = true
 onicode-desktop-codec.workspace = true
 parking_lot.workspace = true

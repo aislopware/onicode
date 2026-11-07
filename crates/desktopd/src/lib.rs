@@ -16,9 +16,14 @@
 //! - [`sized`] and [`holder`]: displays made for a client at its own size, held by a process of
 //!   their own so a restart of desktopd moves no window.
 //! - [`sound`]: a client's one sound, Opus in 10 ms packets with copies while the path loses.
-//! - [`curtain`]: the curtain over the Mac's own screens while clients drive it.
-//! - [`platform`]: the seams (capture, encoders, input, displays): macOS's ([`platform::Native`]),
-//!   a headless one elsewhere, and the drawn one of the tests ([`synthetic`]).
+//! - [`clipboard`]: the Mac's general pasteboard, followed by the owner's viewer while its window
+//!   has focus (`onicode-clipboard`), read unasked only once Paste from Other Apps allows it.
+//! - [`curtain`]: the curtain over the Mac's own screens while the controller drives it: a black
+//!   shield window over each display, left out of every capture, so the person at the Mac sees
+//!   black and the viewer the desktop.
+//! - [`platform`]: the seams (capture, encoders, input, the curtain's drapes, keeping the displays
+//!   awake while a viewer is joined, displays): macOS's ([`platform::Native`]) and the drawn one of
+//!   the tests ([`synthetic`]).
 //!
 //! Nothing here prompts for a grant: no `CGRequest*`, no Accessibility prompt, and no
 //! ScreenCaptureKit call before Screen Recording reads granted ([`grants`]), since listing
@@ -26,12 +31,11 @@
 
 #![deny(unsafe_code)]
 
-#[cfg(unix)]
+pub mod clipboard;
 pub mod ctl;
 pub mod curtain;
 pub mod engines;
 pub mod grants;
-#[cfg(unix)]
 pub mod holder;
 pub mod pipeline;
 pub mod platform;
@@ -110,18 +114,15 @@ pub fn bundle() -> Option<PathBuf> {
 /// What this Mac calls itself: its computer name, else its host name.
 #[must_use]
 pub fn host_name() -> String {
-    #[cfg(target_os = "macos")]
-    {
-        let named = std::process::Command::new("/usr/sbin/scutil")
-            .args(["--get", "ComputerName"])
-            .output()
-            .ok()
-            .filter(|out| out.status.success())
-            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
-            .filter(|name| !name.is_empty());
-        if let Some(name) = named {
-            return name;
-        }
+    let named = std::process::Command::new("/usr/sbin/scutil")
+        .args(["--get", "ComputerName"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+        .filter(|name| !name.is_empty());
+    if let Some(name) = named {
+        return name;
     }
     std::env::var("HOSTNAME")
         .ok()

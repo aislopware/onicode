@@ -12,6 +12,11 @@
 //! Every stream the client opens is its own capture and encode ([`Pipeline`]). Only the
 //! controller's input reaches the Mac ([`crate::seat`]); another client's first input after it
 //! lost or never held the controls is answered with one [`Down::NotController`].
+//!
+//! The Mac's displays are kept awake while any client is joined ([`Awake`]). The controller may
+//! draw the curtain ([`crate::curtain`]); every joined client hears where it stands, and before
+//! a drawn curtain shows, every running capture of every client resolves its filter again so the
+//! shield is left out of the picture ([`Pipeline::refilter`]).
 
 use std::collections::HashMap;
 use std::marker::PhantomData;
@@ -37,15 +42,19 @@ use onicode_tailnet::Tailnet;
 use parking_lot::Mutex;
 use tokio::sync::{mpsc, watch};
 
-use crate::curtain::Curtain;
+use crate::curtain::{Curtain, Moved};
 use crate::pipeline::{DatagramSink, Opening, PathSample, Pipeline, Refused, StreamEvent};
-use crate::platform::Platform;
+use crate::platform::{Awake, Platform};
 use crate::seat::{ClientId, Seats};
 use crate::sized::{self, Asked, Displays, Factory, Sized};
 use crate::sound::Sound;
 
 /// How long a link has to say [`Up::Join`] before it is closed.
 pub const JOIN_WITHIN: Duration = Duration::from_secs(10);
+
+/// How long a drawn curtain stays unseen while every running capture resolves its filter again
+/// to leave it out: one enumeration and one filter update take well under this.
+pub const SHOW_CURTAIN_AFTER: Duration = Duration::from_millis(250);
 
 /// Bind desktopd's endpoint on this node's tailnet addresses at [`PORT`].
 ///
@@ -123,7 +132,7 @@ fn path_sample(link: &Link) -> Option<PathSample> {
     })
 }
 
-/// desktopd's clients, their seat and the curtain.
+/// desktopd's clients, their seat, the curtain and the displays kept awake for them.
 pub struct Host<P: Platform, F: Factory = sized::Cg> {
     name: String,
     grants: watch::Receiver<HostGrants>,
@@ -133,8 +142,30 @@ pub struct Host<P: Platform, F: Factory = sized::Cg> {
     linked: AtomicU32,
     links: Mutex<HashMap<ClientId, Link>>,
     made: Option<Displays<F>>,
-    curtain: Curtain,
+    curtain: Curtain<P::Drapes>,
+    /// Bumped whenever the curtain is drawn or lifted: every joined client hears where it stands.
+    curtain_moved: watch::Sender<u64>,
+    /// Bumped when the windows every capture leaves out changed: each joined client's streams
+    /// resolve their filters again.
+    refilter: watch::Sender<u64>,
+    awake: Mutex<Awake>,
+    /// The Mac's clipboard, followed by the owner's focused viewer ([`Self::set_clipboard`]);
+    /// unset, the clipboard stays out of every session (tests, drawn displays).
+    clipboard: std::sync::OnceLock<onicode_clipboard::Hub>,
     platform: PhantomData<fn() -> P>,
+}
+
+/// A joined client's share of keeping the displays awake, let go when it is dropped.
+struct Joined<'a>(&'a Mutex<Awake>);
+
+impl Drop for Joined<'_> {
+    fn drop(&mut self) {
+        self.0.lock().leave();
+    }
+}
+
+fn bump(n: &mut u64) {
+    *n = n.wrapping_add(1);
 }
 
 impl<P: Platform, F: Factory> std::fmt::Debug for Host<P, F> {
@@ -169,7 +200,7 @@ struct Client<P: Platform> {
     id: ClientId,
     owner: bool,
     link: Link,
-    tx: StreamTx,
+    tx: Arc<StreamTx>,
     streams: HashMap<StreamId, Open<P>>,
     next_stream: u32,
     order: InputOrder,
@@ -177,6 +208,8 @@ struct Client<P: Platform> {
     /// It was told it does not hold the controls, since it last lost them.
     told_not_controller: bool,
     notes: mpsc::UnboundedSender<Note>,
+    /// The clipboard on this link: the owner's devices only.
+    clip: Option<Arc<onicode_clipboard::Session>>,
 }
 
 impl<P: Platform> Client<P> {
@@ -244,8 +277,46 @@ impl<P: Platform, F: Factory> Host<P, F> {
             links: Mutex::new(HashMap::new()),
             made,
             curtain: Curtain::default(),
+            curtain_moved: watch::Sender::new(0),
+            refilter: watch::Sender::new(0),
+            awake: Mutex::new(Awake::default()),
+            clipboard: std::sync::OnceLock::new(),
             platform: PhantomData,
         })
+    }
+
+    /// Follow the Mac's clipboard in the owner's sessions while their window has focus, from
+    /// now on; a second call is ignored.
+    pub fn set_clipboard(&self, hub: onicode_clipboard::Hub) {
+        let _set = self.clipboard.set(hub);
+    }
+
+    /// The clipboard on `link` with the owner's `device`, its clips sent on `tx`; `None` for
+    /// another's device, or with no clipboard set. Serves the device's fetches until the link
+    /// closes.
+    fn clipboard_session(
+        &self,
+        owner: bool,
+        device: &str,
+        link: &Link,
+        tx: &Arc<StreamTx>,
+    ) -> Option<Arc<onicode_clipboard::Session>> {
+        let hub = self.clipboard.get().filter(|_| owner)?;
+        let say_on = Arc::clone(tx);
+        let line = onicode_clipboard::link::LinkLine::new(
+            link.clone(),
+            Box::new(move |clip| {
+                say_on
+                    .send_frame(&onicode_desktop_link::encode(&Down::Clip(clip)))
+                    .is_ok()
+            }),
+        );
+        let session = Arc::new(hub.session(device.to_owned(), line));
+        tokio::spawn(onicode_clipboard::link::serve_streams(
+            link.clone(),
+            Arc::downgrade(&session),
+        ));
+        Some(session)
     }
 
     /// Clients linked now.
@@ -280,11 +351,26 @@ impl<P: Platform, F: Factory> Host<P, F> {
         }
     }
 
-    /// Close every link, before desktopd exits to be started again.
+    /// Close every link and lift the curtain, before desktopd exits to be started again. (A
+    /// desktopd that dies without this lifts it too: the window server removes a dead process's
+    /// windows.)
     pub fn close_all(&self) {
+        let _lifted = self.curtain.lift();
         for (_id, link) in self.links.lock().drain() {
             link.close(close::NORMAL, b"desktopd restarts");
         }
+    }
+
+    /// Where the curtain stands.
+    #[must_use]
+    pub fn curtain(&self) -> CurtainState {
+        self.curtain.state()
+    }
+
+    /// Viewers joined now: the displays are kept awake while there is one.
+    #[must_use]
+    pub fn joined(&self) -> u32 {
+        self.awake.lock().joined()
     }
 
     /// Serve every session `sessions` hands over, each on a task of its own, until it ends.
@@ -295,7 +381,29 @@ impl<P: Platform, F: Factory> Host<P, F> {
     }
 
     fn seat_moved(&self) {
-        self.seat_moved.send_modify(|n| *n = n.wrapping_add(1));
+        self.seat_moved.send_modify(bump);
+    }
+
+    /// The curtain moved: every joined client hears where it stands, and one just drawn shows
+    /// once every running capture has had [`SHOW_CURTAIN_AFTER`] to leave it out. Once it shows,
+    /// the captures resolve their filters once more, for an enumeration that listed only windows
+    /// on screen.
+    fn curtain_moved(self: &Arc<Self>, moved: Moved) {
+        match moved {
+            Moved::Same => return,
+            Moved::Raised { generation } => {
+                self.refilter.send_modify(bump);
+                let host = Arc::clone(self);
+                tokio::spawn(async move {
+                    tokio::time::sleep(SHOW_CURTAIN_AFTER).await;
+                    if host.curtain.show(generation) {
+                        host.refilter.send_modify(bump);
+                    }
+                });
+            }
+            Moved::Lowered => {}
+        }
+        self.curtain_moved.send_modify(bump);
     }
 
     /// Serve one link until it closes.
@@ -328,17 +436,21 @@ impl<P: Platform, F: Factory> Host<P, F> {
                 sound,
             }) if wire == WIRE => {
                 let (notes, noted) = mpsc::unbounded_channel();
+                let tx = Arc::new(control_tx);
+                let clip =
+                    self.clipboard_session(admitted.grant.owner, &peer.device_id, &link, &tx);
                 let client = Client::<P> {
                     id,
                     owner: admitted.grant.owner,
                     link: link.clone(),
-                    tx: control_tx,
+                    tx,
                     streams: HashMap::new(),
                     next_stream: 0,
                     order: InputOrder::default(),
                     sound: Sound::new(Arc::new(LinkSink(link.clone()))),
                     told_not_controller: false,
                     notes,
+                    clip,
                 };
                 client.sound.set(sound);
                 Arc::clone(&self)
@@ -364,7 +476,8 @@ impl<P: Platform, F: Factory> Host<P, F> {
             let _freed = self.seats.lock().leave(id);
             self.seat_moved();
         }
-        self.curtain.went(id);
+        let moved = self.curtain.went(id);
+        self.curtain_moved(moved);
         self.links.lock().remove(&id);
         self.linked.fetch_sub(1, Ordering::Relaxed);
         tracing::info!(client = id, "a client left");
@@ -392,6 +505,10 @@ impl<P: Platform, F: Factory> Host<P, F> {
         self.seat_moved();
         let mut seat = self.seat_moved.subscribe();
         seat.mark_unchanged();
+        let mut curtain = self.curtain_moved.subscribe();
+        curtain.mark_unchanged();
+        let mut refilter = self.refilter.subscribe();
+        refilter.mark_unchanged();
         let welcome = Down::Welcome {
             wire: WIRE,
             host: self.name.clone(),
@@ -400,6 +517,12 @@ impl<P: Platform, F: Factory> Host<P, F> {
             seat: self.seats.lock().view(client.id),
         };
         if !client.say(&welcome) {
+            return;
+        }
+        self.awake.lock().join(P::keep_awake);
+        let _joined = Joined(&self.awake);
+        let drawn = self.curtain.state();
+        if drawn != CurtainState::Down && !client.screen(ScreenEvent::Curtain(drawn)) {
             return;
         }
         let mut controlled = self.seats.lock().controls(client.id);
@@ -425,6 +548,9 @@ impl<P: Platform, F: Factory> Host<P, F> {
                             for open in client.streams.values() {
                                 open.pipeline.release_input();
                             }
+                            // The curtain is the controller's: it lifts with the controls.
+                            let moved = self.curtain.went(client.id);
+                            self.curtain_moved(moved);
                         }
                         if view.you != controlled {
                             client.told_not_controller = false;
@@ -440,6 +566,15 @@ impl<P: Platform, F: Factory> Host<P, F> {
                         let now = *grants.borrow_and_update();
                         client.say(&Down::Grants(now))
                     }
+                },
+                moved = curtain.changed() => {
+                    moved.is_ok() && client.screen(ScreenEvent::Curtain(self.curtain.state()))
+                },
+                asked = refilter.changed() => {
+                    if asked.is_ok() {
+                        Self::refilter(client.id, &client.streams).await;
+                    }
+                    asked.is_ok()
                 },
                 note = noted.recv() => match note {
                     Some(note) => self.note(&mut client, note).await,
@@ -458,6 +593,16 @@ impl<P: Platform, F: Factory> Host<P, F> {
             }
         }
         client.close_all().await;
+    }
+
+    /// Have each of client `id`'s `streams` resolve its display's filter again: the windows
+    /// every capture leaves out changed.
+    async fn refilter(id: ClientId, streams: &HashMap<StreamId, Open<P>>) {
+        for (stream, open) in streams {
+            if let Err(e) = open.pipeline.refilter().await {
+                tracing::warn!(client = id, %stream, error = %e, "a capture kept its old filter");
+            }
+        }
     }
 
     /// Hold the client at [`Down::NotPermitted`] until every grant is on; `false` when the link
@@ -503,7 +648,7 @@ impl<P: Platform, F: Factory> Host<P, F> {
     }
 
     /// One frame from the client; `false` to end the link.
-    async fn up(&self, client: &mut Client<P>, up: Up) -> bool {
+    async fn up(self: &Arc<Self>, client: &mut Client<P>, up: Up) -> bool {
         match up {
             Up::Join { .. } => true,
             Up::Screen(request) => self.request(client, request).await,
@@ -521,11 +666,17 @@ impl<P: Platform, F: Factory> Host<P, F> {
                 client.sound.set(on);
                 true
             }
+            Up::Clip(clip) => {
+                if let Some(session) = &client.clip {
+                    session.heard(clip);
+                }
+                true
+            }
         }
     }
 
     /// A numbered request, from the stream or a datagram copy: applied once, in order.
-    async fn numbered(&self, client: &mut Client<P>, numbered: Numbered) -> bool {
+    async fn numbered(self: &Arc<Self>, client: &mut Client<P>, numbered: Numbered) -> bool {
         if !client.order.take(&numbered) {
             return true;
         }
@@ -537,7 +688,7 @@ impl<P: Platform, F: Factory> Host<P, F> {
         clippy::too_many_lines,
         reason = "one arm per request, read top to bottom"
     )]
-    async fn request(&self, client: &mut Client<P>, request: ScreenRequest) -> bool {
+    async fn request(self: &Arc<Self>, client: &mut Client<P>, request: ScreenRequest) -> bool {
         match request {
             ScreenRequest::List => {
                 let event = if self.grants().screen_recording {
@@ -684,21 +835,35 @@ impl<P: Platform, F: Factory> Host<P, F> {
                 true
             }
             ScreenRequest::Curtain { on } => {
-                let state = if client.owner {
-                    self.curtain.hold(client.id, on)
+                let refused = if !on {
+                    None
+                } else if !client.owner {
+                    Some("only the owner's own devices draw the curtain")
+                } else if !self.seats.lock().controls(client.id) {
+                    Some("only the device in control draws the curtain")
                 } else {
-                    CurtainState::Refused {
-                        why: "only the owner's own devices draw the curtain".to_owned(),
-                    }
+                    None
                 };
-                client.screen(ScreenEvent::Curtain(state))
+                if let Some(why) = refused {
+                    return client.screen(ScreenEvent::Curtain(CurtainState::Refused {
+                        why: why.to_owned(),
+                    }));
+                }
+                match self.curtain.hold(client.id, on) {
+                    Ok(Moved::Same) => client.screen(ScreenEvent::Curtain(self.curtain.state())),
+                    Ok(moved) => {
+                        self.curtain_moved(moved);
+                        true
+                    }
+                    Err(why) => client.screen(ScreenEvent::Curtain(CurtainState::Refused { why })),
+                }
             }
         }
     }
 
     /// One datagram from the client.
     async fn datagram(
-        &self,
+        self: &Arc<Self>,
         client: &mut Client<P>,
         channel: u8,
         payload: &[u8],

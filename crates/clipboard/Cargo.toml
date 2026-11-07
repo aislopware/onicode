@@ -1,0 +1,40 @@
+[package]
+name = "onicode-clipboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "The clipboard that follows a remote desktop window: the pasteboard seam, offers announced on a change and fetched lazily on paste, private and loop-free, over the desktop link"
+
+[dependencies]
+async-trait.workspace = true
+bytes.workspace = true
+# `Hub`'s watcher and a session's forwarding.
+futures.workspace = true
+# The clipboard's messages and fetch names (`onicode_desktop_proto::clipboard`).
+onicode-desktop-proto.workspace = true
+# The desktop link a session's fetches ride (`link`).
+onicode-net.workspace = true
+parking_lot.workspace = true
+# A copied file's entries on its stream.
+serde_json.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# `serve_main_run_loop`: whether this is the main thread.
+libc.workspace = true
+objc2.workspace = true
+# NSPasteboard and its items' data providers (`MacBoard`).
+objc2-app-kit.workspace = true
+# The main run loop a waiting promise serves (`serve_main_run_loop`).
+objc2-core-foundation.workspace = true
+# A copied file named by reference resolved to its path (`MacBoard::data`).
+objc2-foundation = { workspace = true, features = ["NSURL"] }
+
+[dev-dependencies]
+# The opt-in for tests that touch a real (named) pasteboard.
+onicode-desktop-testkit.workspace = true
+proptest.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["test-util"] }

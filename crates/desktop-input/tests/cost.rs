@@ -5,7 +5,6 @@
 //! stall").
 
 #[cfg(test)]
-#[cfg(target_os = "macos")]
 #[expect(
     clippy::cast_precision_loss,
     reason = "measurement arithmetic on small counts"
@@ -93,7 +92,6 @@ mod tests {
                 Event::Mouse { at, kind, .. } => (Some(at), kind == CGEventType::LeftMouseUp),
                 Event::Key { .. }
                 | Event::Scroll { .. }
-                | Event::Text { .. }
                 | Event::Media { .. }
                 | Event::Gesture { .. } => (None, false),
             };
@@ -173,7 +171,6 @@ mod tests {
                 code: KeyCode::A,
                 action: KeyAction::Press,
                 mods: Mods::empty(),
-                chord: None,
             }));
             keys.push(started.elapsed().as_secs_f64() * 1e6);
             handed.push((Instant::now(), None));
@@ -181,7 +178,6 @@ mod tests {
                 code: KeyCode::A,
                 action: KeyAction::Release,
                 mods: Mods::empty(),
-                chord: None,
             }));
             pace(started, KEY_EVERY);
         }
@@ -436,53 +432,6 @@ mod tests {
             );
             per("move", false, false, false);
             per("move in a drag", false, true, false);
-        }
-    }
-
-    /// What a ⌘ chord's press and release cost the injector by position, by a character with no
-    /// layout read, and by a character the host's layout places (a read lock and a hash
-    /// lookup), with nothing built or posted (slopty's MEASUREMENTS.md, "a chord by its
-    /// character").
-    #[test]
-    #[ignore = "measurement"]
-    fn a_chord_s_cost_by_its_character() {
-        const N: u32 = 200_000;
-        let target = CaptureTarget::Display(DisplayId(1));
-        let per = |label: &str, chord: Option<&str>| {
-            let mut injector = Injector::with_backend(target, 1.0, Decide { clock: false });
-            let key = |action| ScreenInput::Key {
-                code: KeyCode::Z,
-                action,
-                mods: Mods::SUPER,
-                chord: chord.map(str::to_owned),
-            };
-            let (press, release) = (key(KeyAction::Press), key(KeyAction::Release));
-            let started = Instant::now();
-            for _ in 0..N {
-                injector
-                    .inject(std::hint::black_box(&press))
-                    .expect("taken");
-                injector
-                    .inject(std::hint::black_box(&release))
-                    .expect("taken");
-            }
-            let ns = started.elapsed().as_nanos() as f64 / f64::from(N);
-            eprintln!("{label}: {ns:.0} ns a press and its release");
-        };
-        for _ in 0..3 {
-            per("by position", None);
-            per("by character, no layout read", Some("z"));
-        }
-        // German QWERTZ's letters: `z` on Y's place.
-        let qwertz = (0_u16..50).map(|vk| match vk {
-            0x10 => (vk, Some('z'), Some('Z')),
-            0x06 => (vk, Some('y'), Some('Y')),
-            _ => (vk, char::from_u32(0x61 + u32::from(vk)), None),
-        });
-        onicode_desktop_input::chords::KeyLayout::system()
-            .set(onicode_desktop_input::chords::ChordTable::from_keys(qwertz));
-        for _ in 0..3 {
-            per("by character, placed by the layout", Some("z"));
         }
     }
 }

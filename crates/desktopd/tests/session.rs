@@ -1,7 +1,8 @@
 //! desktopd's sessions on the simulated tailnet, on the drawn platform: the grants gate, a
 //! client of another wire, and two of the owner's devices at once, one holding the controls,
 //! each with a stream of its own, where only the controller's input reaches the Mac and the
-//! other is told once that it does not hold them.
+//! other is told once that it does not hold them; and the curtain, which only the controller
+//! draws and every client hears.
 //!
 //! The drawn platform runs on the runtime, so each test runs on a paused clock: its streams, the
 //! network and every wait are virtual time, and its drawn Mac is its own
@@ -14,7 +15,7 @@ use std::time::Duration;
 
 use onicode_desktop_link::{Down, HostGrants, PORT, Pane, Up, WIRE};
 use onicode_desktop_proto::screen::{
-    CaptureTarget, Quality, ScreenEvent, ScreenInput, ScreenRequest,
+    CaptureTarget, CurtainState, Quality, ScreenEvent, ScreenInput, ScreenRequest,
 };
 use onicode_desktop_proto::{DisplayId, StreamId};
 use onicode_desktopd::session::{self, Host};
@@ -187,6 +188,10 @@ fn seat_of(down: &Down) -> Option<bool> {
         Down::Seat(seat) | Down::Welcome { seat, .. } => Some(seat.you),
         _other => None,
     }
+}
+
+fn curtain_told(down: &Down) -> bool {
+    matches!(down, Down::Screen(ScreenEvent::Curtain(_)))
 }
 
 /// Wait until the drawn injector was handed `input` on `display`.
@@ -367,4 +372,60 @@ async fn only_the_controller_drives_and_a_viewer_is_told_once() {
         "the new controller drives its display"
     );
     assert_eq!(mac.host.clients(), 2);
+}
+
+/// The controller draws the curtain and every joined client hears it; a viewer may not draw it;
+/// the controller letting go of the controls lifts it. The displays are kept awake while anyone
+/// is joined.
+#[tokio::test(start_paused = true)]
+async fn only_the_controller_draws_the_curtain_and_everyone_hears_it() {
+    const SEED: u64 = 74;
+    let _seed = report_seed(
+        "only_the_controller_draws_the_curtain_and_everyone_hears_it",
+        SEED,
+    );
+    let mac = mac(SEED, ALL).await;
+    assert_eq!(mac.host.joined(), 0);
+    let mut laptop = mac.client("laptop", SEED + 1).await;
+    laptop.join("laptop", true);
+    let _welcome = laptop.until(welcomed).await;
+    let mut phone = mac.client("phone", SEED + 2).await;
+    phone.join("phone", false);
+    let _welcome = phone.until(welcomed).await;
+    assert_eq!(mac.host.joined(), 2, "both keep the displays awake");
+    // A running capture, whose filter is resolved again before the curtain shows.
+    let _stream = laptop.open(1).await;
+
+    phone.screen(ScreenRequest::Curtain { on: true });
+    let (_before, refused) = phone.until(curtain_told).await;
+    assert!(
+        matches!(
+            refused,
+            Down::Screen(ScreenEvent::Curtain(CurtainState::Refused { .. }))
+        ),
+        "a viewer may not draw it: {refused:?}"
+    );
+    assert_eq!(mac.host.curtain(), CurtainState::Down);
+
+    laptop.screen(ScreenRequest::Curtain { on: true });
+    let up = Down::Screen(ScreenEvent::Curtain(CurtainState::Up {
+        holders: 1,
+        input_held: false,
+    }));
+    let (_before, told) = laptop.until(curtain_told).await;
+    assert_eq!(told, up, "the controller hears it drawn");
+    let (_before, told) = phone.until(curtain_told).await;
+    assert_eq!(told, up, "and so does the viewer");
+    // Past the moment it shows, it is still drawn.
+    tokio::time::sleep(session::SHOW_CURTAIN_AFTER * 2).await;
+    assert!(matches!(mac.host.curtain(), CurtainState::Up { .. }));
+
+    laptop.say(&Up::Control { take: false });
+    let down = Down::Screen(ScreenEvent::Curtain(CurtainState::Down));
+    let (_before, told) = laptop.until(curtain_told).await;
+    assert_eq!(told, down, "it lifts with the controls");
+    let (_before, told) = phone.until(curtain_told).await;
+    assert_eq!(told, down);
+    assert_eq!(mac.host.curtain(), CurtainState::Down);
+    assert_eq!(mac.host.joined(), 2);
 }

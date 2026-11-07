@@ -1,8 +1,7 @@
 //! A process as the kernel counts it: retired instructions, footprint, descriptors, threads.
 //!
-//! On macOS everything here reads `libproc` for a pid of the same user, which needs no root and
-//! no entitlement. On Linux the descriptors and threads come from `/proc` and the counters are
-//! `None`; elsewhere, iOS included (whose SDK has no `libproc`), each reader returns `None`.
+//! Everything here reads `libproc` for a pid of the same user, which needs no root and no
+//! entitlement.
 //!
 //! - Instructions and cycles (`ri_instructions`, `ri_cycles` of `rusage_info_v4`) are the
 //!   process's, all threads together. On a loaded machine they move by well under a percent where
@@ -32,13 +31,6 @@ pub struct Usage {
 }
 
 /// The counters of `pid`; `None` when it is gone or not ours to read.
-#[cfg_attr(
-    not(target_os = "macos"),
-    expect(
-        clippy::missing_const_for_fn,
-        reason = "const only where the reader is a stub"
-    )
-)]
 #[must_use]
 pub fn usage(pid: i32) -> Option<Usage> {
     imp::usage(pid)
@@ -68,7 +60,6 @@ pub fn threads(pid: i32) -> Option<u32> {
     imp::threads(pid)
 }
 
-#[cfg(target_os = "macos")]
 mod imp {
     use std::mem::MaybeUninit;
 
@@ -173,32 +164,7 @@ mod imp {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-mod imp {
-    use super::Usage;
-
-    pub(super) const fn usage(_pid: i32) -> Option<Usage> {
-        None
-    }
-
-    pub(super) fn open_fds(pid: i32) -> Option<u32> {
-        entries(pid, "fd")
-    }
-
-    pub(super) fn threads(pid: i32) -> Option<u32> {
-        entries(pid, "task")
-    }
-
-    /// How many entries `/proc/<pid>/<dir>` lists: one per descriptor in `fd`, one per thread
-    /// in `task`.
-    fn entries(pid: i32, dir: &str) -> Option<u32> {
-        let listed = std::fs::read_dir(format!("/proc/{pid}/{dir}")).ok()?;
-        u32::try_from(listed.count()).ok()
-    }
-}
-
 #[cfg(test)]
-#[cfg(target_os = "macos")]
 mod tests {
     use super::*;
 
@@ -257,28 +223,5 @@ mod tests {
         assert_eq!(usage(-1), None, "no such pid");
         assert_eq!(open_fds(-1), None, "no such pid");
         assert_eq!(threads(-1), None, "no such pid");
-    }
-}
-
-#[cfg(test)]
-#[cfg(target_os = "linux")]
-mod linux_tests {
-    use super::*;
-
-    /// The descriptors and threads come from `/proc`; the counters it has none of.
-    #[test]
-    fn this_process_reads_back_from_proc() {
-        let me = i32::try_from(std::process::id()).unwrap();
-        let fds = open_fds(me).unwrap();
-        let file = std::fs::File::open("/dev/null").unwrap();
-        assert_eq!(
-            open_fds(me).unwrap(),
-            fds + 1,
-            "one more file, one more descriptor"
-        );
-        drop(file);
-        assert!(threads(me).unwrap() >= 1, "at least the one running this");
-        assert_eq!(open_fds(-1), None, "no such pid");
-        assert_eq!(usage(me), None, "no counters read here");
     }
 }

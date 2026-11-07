@@ -10,12 +10,7 @@ use super::*;
 use crate::desktop::keys::{KeyKind, NativeKey};
 
 fn key(code: KeyCode, action: KeyAction, mods: Mods) -> ScreenInput {
-    ScreenInput::Key {
-        code,
-        action,
-        mods,
-        chord: None,
-    }
+    ScreenInput::Key { code, action, mods }
 }
 
 fn stroke(key: &str, modifiers: Modifiers) -> Keystroke {
@@ -38,12 +33,10 @@ const CMD: Modifiers = Modifiers {
     function: false,
 };
 
-/// A key goes by its place, not its character: AZERTY's A sits at the US Q, and ⌘ there is
-/// ⌘A by its character (the chord names it), which the Mac presses where its own layout
-/// types it. Before, the character "a" at the US A was read as ⌘Q on an AZERTY Mac: the app
-/// quit. Without ⌘ the key goes as its place, naming nothing.
+/// A key goes by its place, not its character, ⌘ or not: AZERTY's A sits at the US Q, and goes
+/// as the Q key, which the Mac's own layout types.
 #[test]
-fn a_key_goes_by_position_and_a_chord_by_its_character() {
+fn a_key_and_a_chord_go_by_position() {
     let mut input = Input::default();
     assert!(input.key_pressed(
         native(0x0c, KeyKind::Down, Mods::empty()),
@@ -71,13 +64,8 @@ fn a_key_goes_by_position_and_a_chord_by_its_character() {
         [
             key(KeyCode::Q, KeyAction::Press, Mods::empty()),
             key(KeyCode::Q, KeyAction::Release, Mods::empty()),
-            ScreenInput::Key {
-                code: KeyCode::A,
-                action: KeyAction::Press,
-                mods: Mods::SUPER,
-                chord: Some("a".to_owned()),
-            },
-            key(KeyCode::A, KeyAction::Release, Mods::SUPER),
+            key(KeyCode::Q, KeyAction::Press, Mods::SUPER),
+            key(KeyCode::Q, KeyAction::Release, Mods::SUPER),
             key(KeyCode::ArrowLeft, KeyAction::Press, Mods::SUPER),
         ]
     );
@@ -296,8 +284,6 @@ fn names_map_to_keys() {
     ] {
         assert_eq!(keys::key_code(name), code, "{name}");
     }
-    assert_eq!(keys::chord_char("Z").as_deref(), Some("z"));
-    assert_eq!(keys::chord_char("left"), None);
     assert_eq!(keys::mods(CMD), Mods::SUPER);
 }
 

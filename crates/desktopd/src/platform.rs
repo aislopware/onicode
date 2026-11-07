@@ -1,17 +1,18 @@
 //! The platform desktopd runs on, as the seams its streams use.
 //!
 //! The seams are capture (which also reads the cursor and the pointer), the video and audio
-//! encoders, input, and the display list. Each but the last is a trait of its desktop crate, and
+//! encoders, input, the curtain's drapes, keeping the displays awake, and the display list. Each
+//! of the first four is a trait of its desktop crate or of [`crate::curtain`], and
 //! a [`Platform`] names one implementation of each, so every call on the frame path is a direct
-//! one. [`Native`] is macOS's (`mac`) on a Mac and [`headless::Headless`] elsewhere, which
-//! streams nothing; the tests' is [`crate::synthetic::Drawn`].
+//! one. [`Native`] is macOS's (`mac`); the tests' is [`crate::synthetic::Drawn`].
 
 use onicode_desktop_capture::CaptureSource;
 use onicode_desktop_codec::{AudioEncoder, VideoEncoder};
 use onicode_desktop_input::InputSink;
 use onicode_desktop_proto::screen::DisplayInfo;
 
-#[cfg(target_os = "macos")]
+use crate::curtain::Drapes;
+
 pub mod mac;
 
 /// One implementation of each seam.
@@ -24,6 +25,8 @@ pub trait Platform: Send + Sync + 'static {
     type Audio: AudioEncoder;
     /// Input into the Mac.
     type Input: InputSink;
+    /// What draws the curtain over the Mac's own screens.
+    type Drapes: Drapes + Default;
 
     /// Every call into this platform's capture, encoders and input is cheap and never waits, and
     /// its capture runs on tokio's timers: a stream makes each call on its own tasks, with no
@@ -42,250 +45,95 @@ pub trait Platform: Send + Sync + 'static {
         false
     }
 
-    /// Keep the displays awake while a stream runs; dropping the answer lets go. `None` where
-    /// the platform holds nothing.
+    /// Keep the displays awake while a viewer is joined ([`Awake`]); dropping the answer lets
+    /// go. `None` where the platform holds nothing.
     fn keep_awake() -> Option<Box<dyn Send + Sync>> {
         None
     }
 }
 
+/// The displays kept awake while any viewer is joined: the platform's hold is taken with the
+/// first and let go with the last.
+#[derive(Default)]
+pub struct Awake {
+    joined: u32,
+    held: Option<Box<dyn Send + Sync>>,
+}
+
+impl std::fmt::Debug for Awake {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Awake")
+            .field("joined", &self.joined)
+            .field("held", &self.held.is_some())
+            .finish()
+    }
+}
+
+impl Awake {
+    /// A viewer joined: the first takes the hold `hold` makes.
+    pub fn join(&mut self, hold: impl FnOnce() -> Option<Box<dyn Send + Sync>>) {
+        self.joined = self.joined.saturating_add(1);
+        if self.joined == 1 {
+            self.held = hold();
+        }
+    }
+
+    /// A joined viewer left: the last lets go.
+    pub fn leave(&mut self) {
+        self.joined = self.joined.saturating_sub(1);
+        if self.joined == 0 {
+            self.held = None;
+        }
+    }
+
+    /// Viewers joined now.
+    #[must_use]
+    pub const fn joined(&self) -> u32 {
+        self.joined
+    }
+}
+
 /// The platform this build streams from.
-#[cfg(target_os = "macos")]
 pub type Native = mac::MacOs;
 
-/// The platform this build streams from: none, off a Mac.
-#[cfg(not(target_os = "macos"))]
-pub type Native = headless::Headless;
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
 
-/// A platform with no screen: every capture and encode is refused, so a stream never opens.
-pub mod headless {
-    use std::time::Instant;
+    use super::Awake;
 
-    use onicode_desktop_capture::{
-        AudioSink, CaptureConfig, CaptureError, CaptureSource, CapturedFrame, Heard, Rect,
-    };
-    use onicode_desktop_codec::{
-        AudioEncoder, CodecError, EncodedPacket, EncoderConfig, FrameOptions, VideoEncoder,
-    };
-    use onicode_desktop_input::{InputError, InputSink, PointerWatch};
-    use onicode_desktop_proto::screen::{CaptureTarget, CursorShape, DisplayInfo, ScreenInput};
+    /// A hold that counts itself while it lives.
+    struct Held(Arc<AtomicU32>);
 
-    use super::Platform;
-
-    /// No screen, no encoder, no input.
-    #[derive(Clone, Copy, Debug)]
-    pub enum Headless {}
-
-    impl Platform for Headless {
-        type Audio = NoAudio;
-        type Capture = NoCapture;
-        type Input = NoInput;
-        type Video = NoVideo;
-
-        fn displays() -> Vec<DisplayInfo> {
-            Vec::new()
+    impl Drop for Held {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::Relaxed);
         }
     }
 
-    /// A value that cannot be: the targets, streams and sounds of a capture that has none.
-    #[derive(Clone, Copy, Debug)]
-    pub enum Never {}
-
-    impl Never {
-        const fn absurd(self) -> ! {
-            match self {}
-        }
-    }
-
-    /// No capture.
-    #[derive(Clone, Copy, Debug)]
-    pub enum NoCapture {}
-
-    impl CaptureSource for NoCapture {
-        type Content = ();
-        type Image = ();
-        type Sound = Never;
-        type Stream = Never;
-        type Target = Never;
-
-        fn can_capture() -> bool {
-            false
-        }
-
-        fn enumerate(done: impl FnOnce(Result<(), CaptureError>) + Send + 'static) {
-            done(Err(CaptureError::Unsupported));
-        }
-
-        fn displays((): &()) -> Vec<DisplayInfo> {
-            Vec::new()
-        }
-
-        fn resolve((): &(), _kind: CaptureTarget) -> Result<Never, CaptureError> {
-            Err(CaptureError::Unsupported)
-        }
-
-        fn pixel_size(target: &Never) -> (u32, u32) {
-            target.absurd()
-        }
-
-        fn point_scale(target: &Never) -> f32 {
-            target.absurd()
-        }
-
-        fn start(
-            target: &Never,
-            _config: &CaptureConfig,
-            _sink: impl Fn(CapturedFrame<()>) + Send + Sync + 'static,
-            _on_stop: impl Fn(CaptureError) + Send + Sync + 'static,
-            _done: impl FnOnce(Result<(), CaptureError>) + Send + 'static,
-        ) -> Result<Never, CaptureError> {
-            target.absurd()
-        }
-
-        fn start_sound(
-            _heard: &Heard,
-            _sink: AudioSink,
-            _on_stop: impl Fn(CaptureError) + Send + Sync + 'static,
-            done: impl FnOnce(Result<Never, CaptureError>) + Send + 'static,
-        ) {
-            done(Err(CaptureError::Unsupported));
-        }
-
-        fn hear(
-            sound: &Never,
-            _heard: &Heard,
-            _done: impl FnOnce(Result<(), CaptureError>) + Send + 'static,
-        ) {
-            sound.absurd()
-        }
-
-        fn stop_sound(
-            sound: &Never,
-            _done: impl FnOnce(Result<(), CaptureError>) + Send + 'static,
-        ) {
-            sound.absurd()
-        }
-
-        fn update(
-            stream: &Never,
-            _config: &CaptureConfig,
-            _done: impl FnOnce(Result<(), CaptureError>) + Send + 'static,
-        ) {
-            stream.absurd()
-        }
-
-        fn retarget(
-            stream: &Never,
-            _target: &Never,
-            _done: impl FnOnce(Result<(), CaptureError>) + Send + 'static,
-        ) {
-            stream.absurd()
-        }
-
-        fn stop(stream: &Never, _done: impl FnOnce(Result<(), CaptureError>) + Send + 'static) {
-            stream.absurd()
-        }
-
-        fn now_us() -> u64 {
-            static START: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
-            u64::try_from(START.elapsed().as_micros()).unwrap_or(u64::MAX)
-        }
-
-        fn target_bounds(_target: CaptureTarget) -> Option<Rect> {
-            None
-        }
-
-        fn refresh_hz(_target: CaptureTarget) -> Option<f64> {
-            None
-        }
-
-        fn display_bounds(_id: u32) -> Rect {
-            Rect::default()
-        }
-
-        fn pointer_moves() -> u32 {
-            0
-        }
-
-        fn pointer_location() -> (f64, f64) {
-            (0.0, 0.0)
-        }
-
-        fn cursor_seed() -> Option<i32> {
-            None
-        }
-
-        fn cursor_shape() -> Option<CursorShape> {
-            None
-        }
-    }
-
-    /// No video encoder.
-    #[derive(Debug)]
-    pub enum NoVideo {}
-
-    impl VideoEncoder for NoVideo {
-        type Image = ();
-
-        fn new(
-            config: EncoderConfig,
-            _sink: impl Fn(EncodedPacket) + Send + Sync + 'static,
-        ) -> Result<Self, CodecError> {
-            Err(CodecError::Unsupported(config.codec))
-        }
-
-        fn encode(&self, (): &(), _pts_us: u64, _options: &FrameOptions) -> Result<(), CodecError> {
-            match *self {}
-        }
-
-        fn set_bitrate(&self, _bps: u32) -> Result<(), CodecError> {
-            match *self {}
-        }
-
-        fn set_frame_rate(&self, _fps: u16) -> Result<(), CodecError> {
-            match *self {}
-        }
-    }
-
-    /// No audio encoder.
-    #[derive(Debug)]
-    pub enum NoAudio {}
-
-    impl AudioEncoder for NoAudio {
-        fn new() -> Result<Self, CodecError> {
-            Err(CodecError::NoAudio)
-        }
-
-        fn push(&mut self, _samples: &[f32], _out: impl FnMut(&[u8])) -> Result<(), CodecError> {
-            match *self {}
-        }
-    }
-
-    /// No input: every event is refused.
-    #[derive(Debug, Default)]
-    pub struct NoInput(PointerWatch);
-
-    impl InputSink for NoInput {
-        fn new(_target: CaptureTarget, _scale: f64) -> Self {
-            Self::default()
-        }
-
-        fn set_scale(&mut self, _scale: f64) {}
-
-        fn set_bounds(&mut self, _bounds: Option<Rect>, _at: Instant) {}
-
-        fn inject(&mut self, _input: &ScreenInput) -> Result<(), InputError> {
-            Err(InputError::Unsupported)
-        }
-
-        fn focus(&mut self) -> Result<(), InputError> {
-            Err(InputError::Unsupported)
-        }
-
-        fn release_all(&mut self) {}
-
-        fn pointer(&self) -> PointerWatch {
-            self.0.clone()
-        }
+    /// The displays are held once while anyone is joined, and let go with the last to leave.
+    #[test]
+    fn the_displays_stay_awake_while_anyone_is_joined() {
+        let holds = Arc::new(AtomicU32::new(0));
+        let hold = || {
+            let holds = Arc::clone(&holds);
+            move || {
+                holds.fetch_add(1, Ordering::Relaxed);
+                Some(Box::new(Held(holds)) as Box<dyn Send + Sync>)
+            }
+        };
+        let mut awake = Awake::default();
+        awake.join(hold());
+        awake.join(hold());
+        assert_eq!(holds.load(Ordering::Relaxed), 1, "held once");
+        awake.leave();
+        assert_eq!(holds.load(Ordering::Relaxed), 1, "one still joined");
+        awake.leave();
+        assert_eq!(holds.load(Ordering::Relaxed), 0, "let go with the last");
+        awake.leave();
+        assert_eq!(awake.joined(), 0, "a stray leave never goes below none");
+        awake.join(hold());
+        assert_eq!(holds.load(Ordering::Relaxed), 1, "held again");
     }
 }

@@ -371,18 +371,35 @@ impl Viewer {
 }
 
 fn typed(tag: &str, i: u32) -> ScreenInput {
-    ScreenInput::Text {
-        text: format!("{tag}-{i}"),
+    ScreenInput::SmartMagnify {
+        x: mark(tag),
+        y: f32::from_bits(numbered(i)),
     }
 }
 
-/// What the drawn Mac was typed by `tag`, in order, and on which display.
-fn typed_so_far(tag: &str) -> Vec<(CaptureTarget, String)> {
-    let prefix = format!("{tag}-");
+/// `tag` as the x of the taps its inputs are: each tag its own, the same every time.
+fn mark(tag: &str) -> f32 {
+    let mark = tag.bytes().fold(0_u16, |mark, byte| {
+        mark.wrapping_mul(31).wrapping_add(u16::from(byte))
+    });
+    f32::from(mark)
+}
+
+/// Input `i` as the bits of the y its tap carries.
+fn numbered(i: u32) -> u32 {
+    f32::from(u16::try_from(i).unwrap_or(u16::MAX)).to_bits()
+}
+
+/// What the drawn Mac was tapped with by `tag`, in order, and on which display: each tap's y,
+/// as its bits.
+fn typed_so_far(tag: &str) -> Vec<(CaptureTarget, u32)> {
+    let mark = mark(tag).to_bits();
     synthetic::recorded()
         .into_iter()
         .filter_map(|(target, input)| match input {
-            ScreenInput::Text { text } if text.starts_with(&prefix) => Some((target, text)),
+            ScreenInput::SmartMagnify { x, y } if x.to_bits() == mark => {
+                Some((target, y.to_bits()))
+            }
             _other => None,
         })
         .collect()
@@ -402,7 +419,7 @@ async fn assert_typed(tag: &str, count: u32) {
     .await
     .unwrap_or_else(|_elapsed| typed_so_far(tag));
     let wanted: Vec<_> = (0..count)
-        .map(|i| (CaptureTarget::Display(DisplayId(1)), format!("{tag}-{i}")))
+        .map(|i| (CaptureTarget::Display(DisplayId(1)), numbered(i)))
         .collect();
     assert_eq!(
         typed, wanted,

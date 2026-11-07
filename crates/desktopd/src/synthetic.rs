@@ -44,6 +44,7 @@ pub enum Drawn {}
 impl Platform for Drawn {
     type Audio = Tally;
     type Capture = Pictures;
+    type Drapes = crate::curtain::Unseen;
     type Input = Recording;
     type Video = Fake;
 
@@ -674,7 +675,6 @@ impl InputSink for Recording {
 
     fn inject(&mut self, input: &ScreenInput) -> Result<(), InputError> {
         DESK.with_borrow_mut(|desk| desk.recorded.push((self.target, input.clone())));
-        #[cfg(target_os = "macos")]
         let _count = onicode_desktop_capture::synthetic::take_input();
         if let ScreenInput::Move { x, y } = input {
             let bounds = self.bounds.ok_or(InputError::NoBounds)?;
@@ -702,14 +702,13 @@ impl InputSink for Recording {
 }
 
 /// The capture crate's drawn canvas, coded by VideoToolbox: `--synthetic` on a Mac.
-#[cfg(target_os = "macos")]
 #[derive(Clone, Copy, Debug)]
 pub enum Canvas {}
 
-#[cfg(target_os = "macos")]
 impl Platform for Canvas {
     type Audio = onicode_desktop_codec::Opus;
     type Capture = onicode_desktop_capture::synthetic::Canvas;
+    type Drapes = crate::curtain::Unseen;
     type Input = Recording;
     type Video = onicode_desktop_codec::VideoToolbox;
 

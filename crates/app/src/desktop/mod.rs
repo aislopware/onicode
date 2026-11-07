@@ -17,16 +17,28 @@
 //! view draws is its own state, and every change to it notifies the view (retained mode): the
 //! overlay's figures are read into the view once a second while it shows.
 //!
+//! It shows a display the Mac makes at the window's size, Retina, by default
+//! ([`Open::Made`]), resized with the window once it settles; the display picker offers the
+//! Mac's physical displays beside it. A Mac that cannot make one streams a physical display,
+//! and the view says so.
+//!
 //! Only the device holding the controls ([`Seat`]) sends input: the seat badge says who holds
-//! them, with a "Take control" button. A Mac whose Screen Recording or Accessibility is off
-//! refuses the session; the view names the pane and the Mac, with a "Turn on" button that opens
-//! the guide on that Mac's screen: here through `onicode_grants::guide::show`, on
-//! another Mac through its engine (`DesktopOpenGuide`).
+//! them, with a "Take control" button. While the window is key and holds them, the system's
+//! shortcuts (⌘Tab, ⌘Space, Mission Control) go to the Mac too ([`shortcuts`]). A Mac whose
+//! Screen Recording or Accessibility is off refuses the session; the view names the pane and
+//! the Mac, with a "Turn on" button that opens the guide on that Mac's screen: here through
+//! `onicode_grants::guide::show`, on another Mac through its engine, and desktopd is told
+//! through the engine either way (`DesktopOpenGuide`) so it restarts once the grant is on. A
+//! locked Mac, a refused open, refused input and a refused curtain are said in the window.
+//!
+//! While the window is key, the clipboard follows the Mac both ways ([`clipboard`]).
 
+mod clipboard;
 mod glass;
 mod hud;
 mod input;
 mod keys;
+mod shortcuts;
 #[cfg(test)]
 mod tests;
 
@@ -52,7 +64,8 @@ use onicode_desktop_client::{
 };
 use onicode_desktop_link::{HostGrants, Pane, Seat};
 use onicode_desktop_proto::screen::{
-    Chroma, CursorShape, CurtainState, DisplayInfo, Quality, ScreenInput,
+    Chroma, CursorShape, CurtainState, DisplayInfo, DisplayKey, DisplayShape, NoVirtualDisplay,
+    OpenAsk, Quality, ScreenFailure, ScreenInput, SourceState, VirtualDisplay,
 };
 use onicode_desktop_proto::{DisplayId, StreamId};
 use onicode_protocol::EngineId;
@@ -63,6 +76,7 @@ use tokio::sync::watch;
 use self::glass::{Glass, Layer, Reported, Seam, Shape};
 use self::input::{Input, MOMENTUM_GAP, Placement, Scroll, proto_button};
 use self::keys::KeyPlatform;
+use self::shortcuts::{Refused, Shortcuts, Taken};
 use crate::engine_client::Engine;
 use crate::settings::widgets::{primary_button, secondary_button};
 use crate::theme::{content, floating_fill};
@@ -85,6 +99,10 @@ const GUIDE_POLL: Duration = Duration::from_secs(1);
 
 /// The overlay's figures refresh this often while it is shown.
 const HUD_EVERY: Duration = Duration::from_secs(1);
+
+/// A window resized holds still this long before the display made at its size follows: a drag
+/// of its edge asks the Mac once, at the size it ends on.
+const RESIZE_SETTLE: Duration = Duration::from_millis(250);
 
 /// The runtime the desktop links run on: their datagram routing, reassembly, reports and
 /// redials, apart from the engine link's one worker.
@@ -126,6 +144,12 @@ pub(crate) fn open_window(engine: EngineId, name: String, cx: &mut App) {
             .find(|machine| matches!(machine.kind, MachineKind::This))
     });
     let local = this.as_ref().is_some_and(|this| this.engine == engine);
+    // This device's key for the display a Mac makes for it, kept in its own data directory.
+    let key = own.data_dir().and_then(|dir| {
+        onicode_desktop_client::display::key(&dir)
+            .inspect_err(|error| log::warn!("no display key: {error}"))
+            .ok()
+    });
     let viewer = Viewer {
         id: this.as_ref().map_or_else(
             || kept_device_id(&own).unwrap_or_else(|| "onicode-viewer".to_owned()),
@@ -150,7 +174,7 @@ pub(crate) fn open_window(engine: EngineId, name: String, cx: &mut App) {
         ..WindowOptions::default()
     };
     let opened = cx.open_window(options, move |window, cx| {
-        cx.new(|cx| DesktopView::new(target, reach, viewer, window, cx))
+        cx.new(|cx| DesktopView::new(target, reach, viewer, key, window, cx))
     });
     if let Err(error) = opened {
         log::warn!("no window for the desktop: {error}");
@@ -170,8 +194,10 @@ fn kept_device_id(engine: &Engine) -> Option<String> {
 trait Link {
     /// The session's state as it changes; `None` for a link that has none (tests).
     fn state(&self) -> Option<watch::Receiver<Arc<SessionState>>>;
-    /// Stream `display`.
-    fn open(&self, display: DisplayId, quality: Quality);
+    /// Stream `open`: a physical display, or one made at this window's size.
+    fn open(&self, open: Open, quality: Quality);
+    /// The display made for `stream` is now this size, in pixels, at `scale`.
+    fn resize(&self, stream: StreamId, shape: DisplayShape);
     /// Stop streaming `stream`.
     fn close(&self, stream: StreamId);
     /// Input for `stream`.
@@ -186,6 +212,8 @@ trait Link {
     fn curtain(&self, on: bool);
     /// `stream`'s pictures and cursor.
     fn screen(&self, stream: StreamId) -> Option<ScreenHandle>;
+    /// The window is key, or stopped being: the clipboard follows the Mac while it is.
+    fn clipboard_focus(&self, _key: bool) {}
     /// End the session.
     fn shutdown(&self);
 }
@@ -195,8 +223,12 @@ impl Link for DesktopSession {
         Some(DesktopSession::state(self))
     }
 
-    fn open(&self, display: DisplayId, quality: Quality) {
-        DesktopSession::open(self, Open::Display(display), quality);
+    fn open(&self, open: Open, quality: Quality) {
+        DesktopSession::open(self, open, quality);
+    }
+
+    fn resize(&self, stream: StreamId, shape: DisplayShape) {
+        DesktopSession::resize(self, stream, shape.width, shape.height, Some(shape.scale));
     }
 
     fn close(&self, stream: StreamId) {
@@ -225,6 +257,10 @@ impl Link for DesktopSession {
 
     fn screen(&self, stream: StreamId) -> Option<ScreenHandle> {
         DesktopSession::screen(self, stream)
+    }
+
+    fn clipboard_focus(&self, key: bool) {
+        DesktopSession::clipboard_focus(self, key);
     }
 
     fn shutdown(&self) {
@@ -257,6 +293,10 @@ struct StreamSnap {
     size: (u32, u32),
     /// Bits a second the Mac sends.
     rate_bps: u64,
+    /// Whether its display draws: a locked Mac's, or one at the login window, does not.
+    source: SourceState,
+    /// For a display asked made: the one made, or the physical one shown instead and why.
+    made: Option<VirtualDisplay>,
 }
 
 /// What the view reads of the session's state, read in one place.
@@ -273,6 +313,14 @@ struct Snapshot {
     stream: Option<StreamSnap>,
     /// The curtain is drawn over the Mac's own screens.
     curtain: bool,
+    /// The Mac would not draw the curtain, in its words.
+    curtain_refused: Option<String>,
+    /// The newest open the Mac refused, and why.
+    failure: Option<(OpenAsk, ScreenFailure)>,
+    /// The Mac refused this device's input: it does not hold the controls.
+    input_refused: bool,
+    /// Whether the Mac may read its clipboard unasked, as it said while following this window.
+    paste: Option<onicode_clipboard::PasteAccess>,
 }
 
 impl Snapshot {
@@ -294,8 +342,17 @@ impl Snapshot {
                 stream: view.stream,
                 size: (view.width, view.height),
                 rate_bps: u64::from(view.rate_bps),
+                source: view.source,
+                made: view.made,
             }),
             curtain: matches!(state.curtain, Some(CurtainState::Up { .. })),
+            curtain_refused: match &state.curtain {
+                Some(CurtainState::Refused { why }) => Some(why.clone()),
+                _ => None,
+            },
+            failure: state.failure.clone(),
+            input_refused: state.input_refused,
+            paste: state.paste,
         }
     }
 }
@@ -309,6 +366,15 @@ enum Opening {
     Failed(SharedString),
     /// The session is up (or keeps trying on its own).
     Linked,
+}
+
+/// What the view shows.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Choice {
+    /// A display the Mac makes at this window's size.
+    Made,
+    /// One of the Mac's physical displays.
+    Display(DisplayId),
 }
 
 /// Makes the layer a stream's pictures go up on, in a native host.
@@ -374,6 +440,17 @@ struct HudLine {
     torn: u64,
 }
 
+/// What a view is made of, before it opens anything.
+struct Bare {
+    target: Target,
+    engine: Option<Engine>,
+    viewer: Viewer,
+    key: Option<DisplayKey>,
+    keyboard: Rc<dyn KeyPlatform>,
+    shortcuts: Rc<dyn Shortcuts>,
+    make_layer: MakeLayer,
+}
+
 /// A Mac's desktop.
 struct DesktopView {
     target: Target,
@@ -383,10 +460,23 @@ struct DesktopView {
     link: Option<Rc<dyn Link>>,
     opening: Opening,
     snap: Snapshot,
-    /// The display opened since the session was last welcomed.
-    asked: Option<DisplayId>,
-    /// The display the person picked; the first one until they pick.
-    chosen: Option<DisplayId>,
+    /// This device's key for the display a Mac makes for it; `None` when it has none, and the
+    /// view shows physical displays only.
+    key: Option<DisplayKey>,
+    /// What was asked of the session: it keeps it open across drops and opens it again on
+    /// each welcome, so it is asked once per choice.
+    asked: Option<Choice>,
+    /// What the person picked: the display made at the window's size until they pick.
+    chosen: Choice,
+    /// The display this window wants made: its content in pixels at its backing scale.
+    shape: Option<DisplayShape>,
+    /// The shape the made display was opened at: the session opens it at this again on each
+    /// welcome.
+    opened_shape: Option<DisplayShape>,
+    /// The shape the made display was last asked for.
+    sent_shape: Option<DisplayShape>,
+    /// A Mac that could not make a display at the window's size, in the person's words.
+    fell_back: Option<SharedString>,
     screen: Option<Screen>,
     input: Input,
     keyboard: Rc<dyn KeyPlatform>,
@@ -398,6 +488,14 @@ struct DesktopView {
     epoch: Instant,
     /// The view has the keyboard.
     focused: bool,
+    /// The window is key.
+    active: bool,
+    /// What takes the system's shortcuts for the Mac.
+    shortcuts: Rc<dyn Shortcuts>,
+    /// The system's shortcuts taken while the window is key and holds the controls.
+    grab: Option<Taken>,
+    /// Why they stayed this Mac's, the last time the view tried.
+    grab_refused: Option<Refused>,
     /// The overlay's line while it shows.
     hud: Option<HudLine>,
     sound: bool,
@@ -409,25 +507,33 @@ struct DesktopView {
     state_task: Option<Task<()>>,
     open_task: Option<Task<()>>,
     guide_task: Option<Task<()>>,
+    told_task: Option<Task<()>>,
+    resize_task: Option<Task<()>>,
+    taken_task: Option<Task<()>>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl DesktopView {
     /// A view of `target`'s desktop, whose engine is `engine`, that opens it at once as
-    /// `viewer`.
+    /// `viewer`, asking for a display made under `key`.
     fn new(
         target: Target,
         engine: Engine,
         viewer: Viewer,
+        key: Option<DisplayKey>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let mut view = Self::bare(
-            target,
-            Some(engine),
-            viewer,
-            Rc::new(keys::System),
-            Rc::new(video_layer),
+            Bare {
+                target,
+                engine: Some(engine),
+                viewer,
+                key,
+                keyboard: Rc::new(keys::System),
+                shortcuts: Rc::new(shortcuts::System),
+                make_layer: Rc::new(video_layer),
+            },
             window,
             cx,
         );
@@ -435,13 +541,14 @@ impl DesktopView {
         view
     }
 
-    /// A view on `link`, reading `keyboard` and putting pictures up through `make_layer`
-    /// (tests).
+    /// A view on `link`, reading `keyboard`, taking shortcuts through `shortcuts` and putting
+    /// pictures up through `make_layer` (tests).
     #[cfg(test)]
     fn linked_for_test(
         target: Target,
         link: Rc<dyn Link>,
         keyboard: Rc<dyn KeyPlatform>,
+        shortcuts: Rc<dyn Shortcuts>,
         make_layer: MakeLayer,
         window: &mut Window,
         cx: &mut Context<Self>,
@@ -450,20 +557,30 @@ impl DesktopView {
             id: "here-id".into(),
             name: "here".into(),
         };
-        let mut view = Self::bare(target, None, viewer, keyboard, make_layer, window, cx);
+        let bare = Bare {
+            target,
+            engine: None,
+            viewer,
+            key: Some(DisplayKey([7; 16])),
+            keyboard,
+            shortcuts,
+            make_layer,
+        };
+        let mut view = Self::bare(bare, window, cx);
         view.linked(Ok(link), cx);
         view
     }
 
-    fn bare(
-        target: Target,
-        engine: Option<Engine>,
-        viewer: Viewer,
-        keyboard: Rc<dyn KeyPlatform>,
-        make_layer: MakeLayer,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) -> Self {
+    fn bare(bare: Bare, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let Bare {
+            target,
+            engine,
+            viewer,
+            key,
+            keyboard,
+            shortcuts,
+            make_layer,
+        } = bare;
         let focus = cx.focus_handle();
         let subscriptions = vec![
             cx.on_focus_in(&focus, window, |view, _window, cx| {
@@ -473,12 +590,21 @@ impl DesktopView {
                 view.focus_changed(false, cx);
             }),
             cx.observe_window_activation(window, |view, window, cx| {
-                if !window.is_window_active() {
+                view.active = window.is_window_active();
+                if !view.active {
                     view.let_go(cx);
+                }
+                view.update_grab(cx);
+                view.follow_clipboard();
+            }),
+            cx.observe_window_bounds(window, |view, window, cx| {
+                if let Some(shape) = window_shape(window, cx) {
+                    view.reshape(shape, cx);
                 }
             }),
         ];
         window.focus(&focus, cx);
+        let shape = window_shape(window, cx);
         Self {
             target,
             engine,
@@ -486,8 +612,13 @@ impl DesktopView {
             link: None,
             opening: Opening::Asking,
             snap: Snapshot::default(),
+            key,
             asked: None,
-            chosen: None,
+            chosen: Choice::Made,
+            shape,
+            opened_shape: None,
+            sent_shape: None,
+            fell_back: None,
             screen: None,
             input: Input::default(),
             keyboard,
@@ -496,6 +627,10 @@ impl DesktopView {
             bounds: Rc::new(Cell::new(Bounds::default())),
             epoch: Instant::now(),
             focused: false,
+            active: window.is_window_active(),
+            shortcuts,
+            grab: None,
+            grab_refused: None,
             hud: None,
             sound: true,
             guide: None,
@@ -505,6 +640,9 @@ impl DesktopView {
             state_task: None,
             open_task: None,
             guide_task: None,
+            told_task: None,
+            resize_task: None,
+            taken_task: None,
             _subscriptions: subscriptions,
         }
     }
@@ -530,6 +668,7 @@ impl DesktopView {
             sound: self.sound && !self.target.local,
         };
         let me = self.viewer.id.clone();
+        let local = self.target.local;
         let ask = engine.call::<OpenDesktop>(None, OpenDesktop {});
         self.opening = Opening::Asking;
         cx.notify();
@@ -544,7 +683,10 @@ impl DesktopView {
                             .get_or_try_init(|| DesktopClient::bind(&me))
                             .await
                             .map_err(|error| format!("This Mac is not on the tailnet: {error}"))?;
-                        Ok::<_, String>(client.connect(endpoint, join))
+                        let session = client.connect(endpoint, join);
+                        let here = tokio::runtime::Handle::current();
+                        clipboard::attach(&session, &here, &me, local);
+                        Ok::<_, String>(session)
                     })
                     .await
                     .map_err(|error| error.to_string())?
@@ -577,6 +719,8 @@ impl DesktopView {
                     }));
                 }
                 self.link = Some(link);
+                // A new session starts unfocused: tell it where the window stands.
+                self.follow_clipboard();
             }
             Err(error) => self.opening = Opening::Failed(error.into()),
         }
@@ -593,16 +737,22 @@ impl DesktopView {
     fn shutdown(&mut self) {
         self.screen = None;
         self.state_task = None;
+        self.asked = None;
+        self.opened_shape = None;
+        self.sent_shape = None;
+        self.resize_task = None;
+        self.grab = None;
+        self.taken_task = None;
         if let Some(link) = self.link.take() {
             link.shutdown();
         }
     }
 
     /// The session's state changed.
+    ///
+    /// What was asked stays asked across drops and refusals: the session opens it again on each
+    /// welcome, so asking again would open it twice.
     fn observe(&mut self, snap: Snapshot, cx: &mut Context<Self>) {
-        if snap.stage != Stage::Joined {
-            self.asked = None;
-        }
         match &snap.stage {
             Stage::NotPermitted(missing) => {
                 if self.guide.is_some_and(|pane| !missing.contains(&pane)) {
@@ -619,6 +769,24 @@ impl DesktopView {
             && let Some(pane) = self.guide
         {
             onicode_grants::guide::report(!snap.grants.missing().contains(&pane));
+        }
+        // A display the Mac could not make at the window's size: its main display instead.
+        if self.asked == Some(Choice::Made)
+            && snap.failure != self.snap.failure
+            && let Some((OpenAsk::Made(_), why)) = &snap.failure
+            && let Some(main) = snap.displays.first()
+        {
+            let host = if snap.host.is_empty() {
+                &self.target.name
+            } else {
+                &snap.host
+            };
+            self.fell_back = Some(SharedString::from(format!(
+                "{host} could not make a display this size ({}), so this shows its main display.",
+                failure_reason(why)
+            )));
+            self.chosen = Choice::Display(main.id);
+            self.asked = None;
         }
         if snap.stage == Stage::Joined && snap.stream.is_none() && self.asked.is_none() {
             self.open_display(&snap.displays);
@@ -648,31 +816,44 @@ impl DesktopView {
         if took_controls {
             self.gestures();
         }
+        self.resize_made();
+        self.update_grab(cx);
         cx.notify();
     }
 
-    /// Stream the display the person picked, or the first.
+    /// Stream what the person picked: a display made at the window's size until they pick a
+    /// physical one, or the first physical one when this device has no key for one.
     fn open_display(&mut self, displays: &[DisplayInfo]) {
         let Some(link) = &self.link else {
             return;
         };
-        let display = self
-            .chosen
-            .and_then(|id| displays.iter().find(|d| d.id == id))
-            .or_else(|| displays.first());
-        let Some(display) = display else {
-            return;
-        };
-        link.open(display.id, quality_for(display));
-        self.asked = Some(display.id);
-    }
-
-    /// Show `display` instead.
-    fn choose_display(&mut self, display: DisplayId, cx: &mut Context<Self>) {
-        if self.asked == Some(display) {
+        if self.chosen == Choice::Made
+            && let (Some(key), Some(shape)) = (self.key, self.shape)
+        {
+            link.open(Open::Made { key, shape }, made_quality(shape));
+            self.asked = Some(Choice::Made);
+            self.opened_shape = Some(shape);
+            self.sent_shape = Some(shape);
             return;
         }
-        self.chosen = Some(display);
+        let picked = match self.chosen {
+            Choice::Display(id) => displays.iter().find(|d| d.id == id),
+            Choice::Made => None,
+        };
+        let Some(display) = picked.or_else(|| displays.first()) else {
+            return;
+        };
+        link.open(Open::Display(display.id), quality_for(display));
+        self.asked = Some(Choice::Display(display.id));
+    }
+
+    /// Show `choice` instead.
+    fn choose_display(&mut self, choice: Choice, cx: &mut Context<Self>) {
+        if self.asked == Some(choice) {
+            return;
+        }
+        self.chosen = choice;
+        self.fell_back = None;
         if let (Some(link), Some(screen)) = (&self.link, &self.screen) {
             link.close(screen.stream);
         }
@@ -683,9 +864,52 @@ impl DesktopView {
         cx.notify();
     }
 
+    /// Ask again for a display the Mac refused to open.
+    fn reopen(&mut self, cx: &mut Context<Self>) {
+        self.asked = None;
+        let displays = self.snap.displays.clone();
+        self.open_display(&displays);
+        cx.notify();
+    }
+
+    /// The window's size or screen changed: the display made at its size follows once it holds
+    /// still for [`RESIZE_SETTLE`] on the executor's clock.
+    fn reshape(&mut self, shape: DisplayShape, cx: &mut Context<Self>) {
+        if self.shape == Some(shape) {
+            return;
+        }
+        self.shape = Some(shape);
+        self.resize_task = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(RESIZE_SETTLE).await;
+            let _gone = this.update(cx, |view, _cx| {
+                view.resize_task = None;
+                view.resize_made();
+            });
+        }));
+    }
+
+    /// Ask the Mac to make the display shown the window's size, when it is one made for this
+    /// device and the size has moved on from what it was asked for.
+    fn resize_made(&mut self) {
+        if self.resize_task.is_some() || self.asked != Some(Choice::Made) {
+            return;
+        }
+        let (Some(link), Some(screen), Some(shape)) = (&self.link, &self.screen, self.shape) else {
+            return;
+        };
+        let made = self.snap.stream.and_then(|stream| stream.made);
+        if !matches!(made, Some(VirtualDisplay::Made(_))) || self.sent_shape == Some(shape) {
+            return;
+        }
+        link.resize(screen.stream, shape);
+        self.sent_shape = Some(shape);
+    }
+
     /// Show `stream`: its pictures to a glass of its own, its cursor to the system cursor.
     fn attach_screen(&mut self, stream: StreamSnap, cx: &mut Context<Self>) {
         self.screen = None;
+        // A made display opens at the shape it was opened at, on a redial too.
+        self.sent_shape = self.opened_shape;
         let glass = Glass::new();
         let handle = self
             .link
@@ -849,12 +1073,18 @@ impl DesktopView {
             return HudLine::default();
         };
         let stats = screen.handle.as_ref().map(ScreenHandle::stats);
-        let fps = self
-            .snap
-            .displays
-            .iter()
-            .find(|d| Some(d.id) == self.asked)
-            .map_or(60, |d| quality_for(d).fps);
+        let fps = match self.asked {
+            Some(Choice::Made) => self
+                .opened_shape
+                .map_or(60, |shape| made_quality(shape).fps),
+            Some(Choice::Display(id)) => self
+                .snap
+                .displays
+                .iter()
+                .find(|d| d.id == id)
+                .map_or(60, |d| quality_for(d).fps),
+            None => 60,
+        };
         let input = hud::HudInput {
             target_fps: fps,
             paint: screen.glass.rate(),
@@ -864,8 +1094,8 @@ impl DesktopView {
             mbps: hud::mbps(self.snap.stream.map_or(0, |s| s.rate_bps)),
             chroma: screen.shape.map(|shape| shape.chroma),
             loss: stats.as_ref().map(hud::Loss::of).unwrap_or_default(),
-            // The receiver counters carry no round trip yet.
-            rtt: None,
+            // The fastest round trip of the clock probes.
+            rtt: stats.as_ref().and_then(|s| s.clock).map(|clock| clock.rtt),
         };
         HudLine {
             figures: hud::summary(&input),
@@ -882,7 +1112,10 @@ impl DesktopView {
             && let Some(helper) = local_helper_bundle()
         {
             match onicode_grants::guide::show(grants_privilege(pane), &helper) {
-                Ok(()) => self.follow_guide(pane, cx),
+                Ok(()) => {
+                    self.follow_guide(pane, cx);
+                    self.tell_guide(pane, cx);
+                }
                 Err(error) => {
                     log::warn!("the grants guide did not open: {error:?}");
                     self.guide_error = Some("The guide did not open.".into());
@@ -912,6 +1145,21 @@ impl DesktopView {
         cx.notify();
     }
 
+    /// Tell desktopd, through this Mac's engine, that `pane`'s guide is open here, so it
+    /// restarts once the grant is on (macOS reads a grant at launch).
+    fn tell_guide(&mut self, pane: Pane, cx: &mut Context<Self>) {
+        let Some(engine) = self.engine.clone() else {
+            return;
+        };
+        let told = engine.call::<DesktopOpenGuide>(None, DesktopOpenGuide { pane });
+        self.told_task = Some(cx.spawn(async move |this, cx| {
+            if let Err(error) = told.await {
+                log::warn!("desktopd was not told of the grants guide: {error}");
+            }
+            let _gone = this.update(cx, |view, _cx| view.told_task = None);
+        }));
+    }
+
     /// While this Mac's guide is open, read desktopd's grants through the engine and hand each
     /// reading of `pane` to the guide, which walks to "granted" when it comes on. The session's
     /// own grants go to it too ([`Self::observe`]); this covers a desktopd that is restarting.
@@ -931,6 +1179,61 @@ impl DesktopView {
     }
 
     // Input.
+
+    /// Take the system's shortcuts while the window is key, has the keyboard and holds the
+    /// controls of another Mac's welcomed session; give them back otherwise.
+    fn update_grab(&mut self, cx: &mut Context<Self>) {
+        let wanted = self.active
+            && self.focused
+            && self.snap.seat.you
+            && !self.target.local
+            && self.snap.stage == Stage::Joined;
+        if !wanted {
+            self.grab = None;
+            self.taken_task = None;
+            self.grab_refused = None;
+            return;
+        }
+        if self.grab.is_some() {
+            return;
+        }
+        let (wake, mut woken) = tokio::sync::mpsc::unbounded_channel::<()>();
+        let wake: Box<dyn Fn()> = Box::new(move || {
+            let _closed = wake.send(());
+        });
+        match self.shortcuts.grab(wake) {
+            Ok(taken) => {
+                self.grab = Some(taken);
+                if self.grab_refused.take().is_some() {
+                    cx.notify();
+                }
+                self.taken_task = Some(cx.spawn(async move |this, cx| {
+                    while woken.recv().await.is_some() {
+                        if this.update(cx, |view, _cx| view.drain_taken()).is_err() {
+                            break;
+                        }
+                    }
+                }));
+            }
+            Err(refused) => {
+                if self.grab_refused != Some(refused) {
+                    self.grab_refused = Some(refused);
+                    cx.notify();
+                }
+            }
+        }
+    }
+
+    /// Send the shortcuts taken since the last time.
+    fn drain_taken(&mut self) {
+        let Some(grab) = &self.grab else {
+            return;
+        };
+        for key in grab.drain() {
+            self.input.taken_key(key);
+        }
+        self.flush();
+    }
 
     /// Send what the input made, when this device holds the controls.
     fn flush(&mut self) {
@@ -977,6 +1280,15 @@ impl DesktopView {
         }
         if let (Some(link), Some(screen)) = (&self.link, &self.screen) {
             link.focused(screen.stream, focused);
+        }
+        self.update_grab(cx);
+        self.follow_clipboard();
+    }
+
+    /// The clipboard follows the Mac while the window is key and the view has the keyboard.
+    fn follow_clipboard(&self) {
+        if let Some(link) = &self.link {
+            link.clipboard_focus(self.active && self.focused);
         }
     }
 
@@ -1324,20 +1636,25 @@ impl DesktopView {
     /// The display picker and the toggles.
     fn controls(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let showing = self.asked;
-        let displays: Vec<(DisplayId, String)> = self
-            .snap
-            .displays
-            .iter()
-            .enumerate()
-            .map(|(n, d)| (d.id, format!("Display {}", n.saturating_add(1))))
+        // The display made at the window's size first, then the Mac's own.
+        let made = self.key.map(|_| (Choice::Made, "Fit window".to_owned()));
+        let choices: Vec<(Choice, String)> = made
+            .into_iter()
+            .chain(self.snap.displays.iter().enumerate().map(|(n, d)| {
+                (
+                    Choice::Display(d.id),
+                    format!("Display {}", n.saturating_add(1)),
+                )
+            }))
             .collect();
-        let many = displays.len() > 1;
+        let many = choices.len() > 1;
         let mut bar = pill("desktop-controls");
         if many {
-            for (n, (id, label)) in displays.into_iter().enumerate() {
+            for (n, (choice, label)) in choices.into_iter().enumerate() {
                 bar = bar.child(
-                    toggle(("desktop-display", n), label, showing == Some(id))
-                        .on_click(cx.listener(move |view, _, _, cx| view.choose_display(id, cx))),
+                    toggle(("desktop-display", n), label, showing == Some(choice)).on_click(
+                        cx.listener(move |view, _, _, cx| view.choose_display(choice, cx)),
+                    ),
                 );
             }
         }
@@ -1387,13 +1704,107 @@ impl DesktopView {
         Some(pill)
     }
 
-    /// What stands in for the picture while there is none: opening, a refusal, a drop.
-    fn notice(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
-        let host = if self.snap.host.is_empty() {
+    /// What the Mac would not do, each in a line under the controls: make a display this size,
+    /// take this device's input, draw the curtain; and the shortcuts that stayed here.
+    fn banners(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        let host = self.host_name();
+        let banner = |id: &'static str, text: String| {
+            pill(id)
+                .debug_selector(move || id.to_owned())
+                .role(Role::Status)
+                .text_color(rgb(AMBER))
+                .child(div().child(SharedString::from(text)))
+        };
+        let mut banners = Vec::new();
+        let made_instead = match self.snap.stream.and_then(|stream| stream.made) {
+            Some(VirtualDisplay::Physical { why, .. }) if self.asked == Some(Choice::Made) => {
+                Some(format!(
+                    "{host} could not make a display this size ({}), so this shows its main display.",
+                    no_display_reason(why)
+                ))
+            }
+            _ => self.fell_back.as_ref().map(ToString::to_string),
+        };
+        if let Some(text) = made_instead {
+            banners.push(banner("desktop-made-fallback", text).into_any_element());
+        }
+        if self.snap.input_refused {
+            banners.push(
+                banner(
+                    "desktop-input-refused",
+                    format!("{host} refused your input: another device has control."),
+                )
+                .into_any_element(),
+            );
+        }
+        if let Some(why) = &self.snap.curtain_refused {
+            banners.push(
+                banner(
+                    "desktop-curtain-refused",
+                    format!("{host} did not draw the curtain: {why}"),
+                )
+                .into_any_element(),
+            );
+        }
+        if let Some(text) = clipboard::paste_banner(self.snap.paste, &host) {
+            banners.push(
+                banner("desktop-paste-access", text)
+                    .child(
+                        secondary_button("desktop-paste-turn-on", "Open Settings", false, false)
+                            .child("Open Settings")
+                            .on_click(cx.listener(|view, _, _, cx| {
+                                view.turn_on(Pane::PasteFromOtherApps, cx);
+                            })),
+                    )
+                    .into_any_element(),
+            );
+        }
+        if self.grab_refused == Some(Refused::NeedsAccessibility) {
+            banners.push(
+                banner(
+                    "desktop-shortcuts-refused",
+                    "⌘Tab, ⌘Space and Mission Control stay on this Mac until Onicode has \
+                     Accessibility."
+                        .to_owned(),
+                )
+                .child(
+                    secondary_button("desktop-shortcuts-turn-on", "Turn on", false, false)
+                        .child("Turn on")
+                        .on_click(cx.listener(|_view, _, _, _cx| {
+                            onicode_grants::open_settings(onicode_grants::Privilege::Accessibility);
+                        })),
+                )
+                .into_any_element(),
+            );
+        }
+        banners
+    }
+
+    /// What the Mac calls itself, or what this device calls it before it says.
+    fn host_name(&self) -> String {
+        if self.snap.host.is_empty() {
             self.target.name.clone()
         } else {
             self.snap.host.clone()
+        }
+    }
+
+    /// What stands in for the picture while there is none: opening, a refusal, a drop.
+    fn notice(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+        let host = self.host_name();
+        // A physical display the Mac would not open, and why.
+        let refused = match &self.snap.failure {
+            Some((OpenAsk::Target(_), why)) if self.snap.stream.is_none() => {
+                Some(failure_reason(why))
+            }
+            _ => None,
         };
+        // A display that does not draw: the Mac is locked, or at the login window.
+        let dark = self
+            .snap
+            .stream
+            .map(|stream| stream.source)
+            .filter(|source| matches!(source, SourceState::Locked | SourceState::Away));
         let card = || {
             div()
                 .id("desktop-notice")
@@ -1475,6 +1886,32 @@ impl DesktopView {
                 }
                 card
             }
+            (Opening::Linked, Stage::Joined) if refused.is_some() => card()
+                .role(Role::Alert)
+                .child(div().child(SharedString::from(format!(
+                    "{host} did not open the display"
+                ))))
+                .children(refused.map(muted))
+                .child(
+                    div().flex().child(
+                        secondary_button("desktop-reopen", "Try again", false, false)
+                            .debug_selector(|| "desktop-reopen".to_owned())
+                            .child("Try again")
+                            .on_click(cx.listener(|view, _, _, cx| view.reopen(cx))),
+                    ),
+                ),
+            (Opening::Linked, Stage::Joined) if dark.is_some() => card()
+                .role(Role::Status)
+                .child(
+                    div().child(SharedString::from(if dark == Some(SourceState::Locked) {
+                        format!("{host} is locked")
+                    } else {
+                        format!("{host} is at the login window")
+                    })),
+                )
+                .child(muted(
+                    "Its screen shows here again once someone signs in at it.".to_owned(),
+                )),
             (Opening::Linked, Stage::Joined)
                 if self.screen.as_ref().is_none_or(|s| s.shape.is_none()) =>
             {
@@ -1516,7 +1953,8 @@ impl Render for DesktopView {
                         .flex_col()
                         .gap(px(6.0))
                         .child(self.controls(cx))
-                        .children(self.hud_line()),
+                        .children(self.hud_line())
+                        .children(self.banners(cx)),
                 )
                 .child(self.seat_badge(cx))
         });
@@ -1615,11 +2053,79 @@ fn quality_for(display: &DisplayInfo) -> Quality {
     }
 }
 
+/// The quality a display made at the window's size is opened at: the window's screen's
+/// refresh, up to 120 frames a second, 60 when it is not known, and full colour asked for.
+fn made_quality(shape: DisplayShape) -> Quality {
+    let fps = if shape.refresh_hz == 0 {
+        60
+    } else {
+        shape.refresh_hz.clamp(30, 120)
+    };
+    Quality {
+        fps,
+        chroma: Chroma::Full,
+        ..Quality::default()
+    }
+}
+
+/// The display this window wants made: its content in pixels at its backing scale, and its
+/// screen's refresh; `None` while it has no size. The interface zoom shrinks the viewport by
+/// what it grows the scale factor, so their product is the content in pixels whatever it is.
+fn window_shape(window: &Window, cx: &App) -> Option<DisplayShape> {
+    let size = window.viewport_size();
+    let width = f32::from(size.width) * window.scale_factor();
+    let height = f32::from(size.height) * window.scale_factor();
+    let scale = window.scale_factor() / window.content_zoom();
+    if width < 1.0 || height < 1.0 {
+        return None;
+    }
+    let refresh = window.refresh_interval(cx).map_or(0.0, |every| {
+        let secs = every.as_secs_f64();
+        if secs > 0.0 {
+            (1.0 / secs).round()
+        } else {
+            0.0
+        }
+    });
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "positive window sizes in pixels and a clamped refresh"
+    )]
+    let shape = DisplayShape {
+        width: width.round() as u32,
+        height: height.round() as u32,
+        scale,
+        refresh_hz: refresh.clamp(0.0, 1000.0) as u16,
+    };
+    Some(shape)
+}
+
+/// Why the Mac refused an open, in the person's words.
+fn failure_reason(why: &ScreenFailure) -> String {
+    match why {
+        ScreenFailure::NotPermitted => "Screen Recording is off there".to_owned(),
+        ScreenFailure::Gone => "the display is gone".to_owned(),
+        ScreenFailure::Failed(words) => words.clone(),
+    }
+}
+
+/// Why the Mac streams a physical display where one at the window's size was asked for.
+const fn no_display_reason(why: NoVirtualDisplay) -> &'static str {
+    match why {
+        NoVirtualDisplay::Unavailable => "it cannot make displays",
+        NoVirtualDisplay::Refused => "macOS refused it",
+        NoVirtualDisplay::Unsettled => "it never settled at that size",
+        NoVirtualDisplay::Unlisted => "screen capture never listed it",
+    }
+}
+
 /// What the panel names a pane.
 const fn pane_name(pane: Pane) -> &'static str {
     match pane {
         Pane::ScreenRecording => "Screen Recording",
         Pane::Accessibility => "Accessibility",
+        Pane::PasteFromOtherApps => "Paste from Other Apps",
     }
 }
 
@@ -1633,6 +2139,7 @@ const fn pane_purpose(pane: Pane) -> &'static str {
     match pane {
         Pane::ScreenRecording => "Onicode Desktop needs it to show the Mac's screen.",
         Pane::Accessibility => "Onicode Desktop needs it to take your keyboard and pointer.",
+        Pane::PasteFromOtherApps => "Onicode Desktop needs it to send the Mac's copies unasked.",
     }
 }
 
@@ -1658,6 +2165,7 @@ const fn grants_privilege(pane: Pane) -> onicode_grants::Privilege {
     match pane {
         Pane::ScreenRecording => onicode_grants::Privilege::ScreenRecording,
         Pane::Accessibility => onicode_grants::Privilege::Accessibility,
+        Pane::PasteFromOtherApps => onicode_grants::Privilege::Pasteboard,
     }
 }
 

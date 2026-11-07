@@ -25,14 +25,11 @@ pub enum CaptureError {
     /// The stream stopped on its own (display unplugged, permission revoked).
     #[error("stream stopped: {0}")]
     Stopped(String),
-    /// A window this process leaves out of every display capture (`crate::leave_out`; the
-    /// curtain's shield, once the curtain is ported) is not in the enumeration a display was
-    /// resolved against: one taken before the window was made. Enumerate again rather than show it.
+    /// A window this process leaves out of every display capture (`crate::leave_out`, the
+    /// curtain's shield) is not in the enumeration a display was resolved against: one taken
+    /// before the window was made. Enumerate again rather than show it.
     #[error("window {0}, left out of every display capture, is not in this enumeration")]
     Unlisted(u32),
-    /// This platform has no screen capture.
-    #[error("screen capture is unsupported on this platform")]
-    Unsupported,
 }
 
 /// A rectangle in global display points (origin top-left, y down, as `CGWindow` reports).
@@ -72,18 +69,6 @@ impl Rect {
             && self.y < other.y + other.h
             && other.y < self.y + self.h
     }
-}
-
-/// The text field that has the keyboard on the Mac, as accessibility reads it.
-#[derive(Clone, Copy, PartialEq, Debug)]
-pub struct FocusedField {
-    /// The process whose field it is.
-    pub pid: i32,
-    /// The caret's box (the selection's start when text is selected), in global points;
-    /// `None` when the field does not say.
-    pub caret: Option<Rect>,
-    /// A password field (`kAXSecureTextFieldSubrole`).
-    pub secure: bool,
 }
 
 /// Pixel layout of captured frames.
@@ -184,16 +169,12 @@ impl Heard {
 }
 
 /// What a macOS frame carries: an `IOSurface`-backed pixel buffer.
-#[cfg(target_os = "macos")]
 pub type DefaultImage = onicode_desktop_codec::PixelBuffer;
-/// What a frame carries where no capture is implemented yet.
-#[cfg(not(target_os = "macos"))]
-pub type DefaultImage = ();
 
 /// A frame from the stream.
 #[derive(Debug)]
 pub struct CapturedFrame<I = DefaultImage> {
-    /// The picture; on macOS `IOSurface`-backed, handed straight to the encoder.
+    /// The picture; from a capture `IOSurface`-backed, handed straight to the encoder.
     pub image: I,
     /// Capture time on the host clock (`CMClockGetHostTimeClock`), microseconds: the
     /// sample's presentation timestamp.
@@ -335,13 +316,6 @@ pub trait CaptureSource: 'static {
     /// told, as on a platform with no screens of its own. Blocking: one window-server round
     /// trip.
     fn console() -> Option<Console> {
-        None
-    }
-
-    /// The text field that has the keyboard on this Mac, in the frontmost application;
-    /// `None` when no text field has it, the platform cannot tell, or accessibility is not
-    /// granted. Blocking: a few accessibility round trips to that application, each bounded.
-    fn focused_field() -> Option<FocusedField> {
         None
     }
 

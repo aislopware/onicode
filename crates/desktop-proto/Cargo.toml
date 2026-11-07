@@ -4,10 +4,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "Remote-desktop control types: displays, stream setup, screen input, events and keys"
+description = "Remote-desktop control types: displays, stream setup, screen input, events, keys and the clipboard's messages"
 
 [dependencies]
+# A clipboard offer's inline bytes as one base64 string (`clipboard::Inline`).
+base64 = "0.23.1"
 bitflags.workspace = true
 onicode-desktop-media.workspace = true
 serde.workspace = true
 serde_bytes.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

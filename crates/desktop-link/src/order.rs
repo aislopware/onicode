@@ -100,8 +100,8 @@ mod tests {
         #[expect(clippy::cast_precision_loss, reason = "small test numbers")]
         let x = i as f32;
         let input = if ordered {
-            ScreenInput::Text {
-                text: i.to_string(),
+            ScreenInput::Lock {
+                caps: i.is_multiple_of(2),
             }
         } else {
             ScreenInput::Move { x, y: x }

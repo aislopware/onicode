@@ -9,6 +9,8 @@ description = "A Mac's desktop on this device: the link to its onicode-desktopd,
 [dependencies]
 bytes.workspace = true
 futures.workspace = true
+# The clipboard over the session, while the window has focus.
+onicode-clipboard.workspace = true
 onicode-desktop-codec.workspace = true
 onicode-desktop-link.workspace = true
 onicode-desktop-media.workspace = true

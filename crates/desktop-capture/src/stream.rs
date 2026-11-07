@@ -85,9 +85,9 @@ static LEFT_OUT: parking_lot::RwLock<Vec<u32>> = parking_lot::RwLock::new(Vec::n
 
 /// Leave the windows numbered `windows` out of every display this process captures from now on.
 ///
-/// These will be the curtain's shield (slopty's `slopty_platform::curtain::Shield`, not ported
-/// yet), and they replace the ones left out before. A capture already running keeps its filter
-/// until it is resolved again.
+/// These are the curtain's shield ([`crate::Shield`]), and they replace the ones left out
+/// before. A capture already running keeps its filter until it is resolved again, which the
+/// curtain asks of every running capture before it shows the shield.
 ///
 /// Process-wide, because the windows are: whatever display a stream shows, this process's own
 /// shield is never what its client should see.
@@ -117,11 +117,6 @@ impl std::fmt::Debug for Target {
 }
 
 impl Target {
-    /// The content filter ScreenCaptureKit reads the target through.
-    pub(crate) fn filter(&self) -> &SCContentFilter {
-        &self.filter
-    }
-
     /// Resolve a target against a content snapshot. A display leaves out the windows this
     /// process put over the displays ([`leave_out`]).
     pub fn resolve(content: &Shareable, kind: CaptureTarget) -> Result<Self, CaptureError> {
@@ -129,8 +124,7 @@ impl Target {
         Self::resolve_excluding(content, kind, &left_out)
     }
 
-    /// Resolve a display, leaving out the windows numbered `excluded` (the curtain's shield, once
-    /// the curtain is ported).
+    /// Resolve a display, leaving out the windows numbered `excluded` (the curtain's shield).
     ///
     /// # Errors
     ///

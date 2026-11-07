@@ -10,15 +10,10 @@
 //! case something else set another. It says `ready pid=<pid>` once the cursor is set, and when
 //! its stdin closes it sets the arrow and leaves.
 
-#[cfg(target_os = "macos")]
 fn main() -> std::process::ExitCode {
     macos::run()
 }
 
-#[cfg(not(target_os = "macos"))]
-fn main() {}
-
-#[cfg(target_os = "macos")]
 mod macos {
     use std::ffi::{c_int, c_void};
     use std::io::Write as _;

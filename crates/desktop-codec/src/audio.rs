@@ -1576,7 +1576,7 @@ const OUTPUT_SUBTYPE: u32 = kAudioUnitSubType_DefaultOutput;
 /// The output unit's subtype on iOS: `kAudioUnitSubType_RemoteIO` ('rioc'), from
 /// `AudioToolbox/AUComponent.h`. It sits in the header's iOS-only branch, which the objc2
 /// bindings, generated from the macOS SDK, do not carry.
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "ios")]
 const OUTPUT_SUBTYPE: u32 = 0x7269_6f63;
 /// Frames the macOS output device is asked to render at a time: 2.7 ms at 48 kHz, where the Mac
 /// Studio's speakers run 512 (10.7 ms) unasked. A sample waits that buffer out before the DAC,

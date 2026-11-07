@@ -8,7 +8,6 @@
 //! few frames: move something on it while they run.
 
 #[cfg(test)]
-#[cfg(target_os = "macos")]
 #[expect(
     clippy::arithmetic_side_effects,
     clippy::cast_precision_loss,

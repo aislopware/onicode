@@ -4,9 +4,9 @@
 //! A key goes to the Mac as its position, never as the character this Mac's layout puts there:
 //! the Mac's own layout makes the character, so ⌘Q is the Q key on both Macs and a dead key
 //! composes in the remote app (slopty's ruling, "Keys go by position"). GPUI's keystroke names
-//! the character; the position is read off the `NSEvent` being dispatched ([`System`]). A ⌘ or
-//! ⌃ chord names its character too ([`chord_char`]), so the Mac presses the key its own layout
-//! types it with.
+//! the character; the position is read off the `NSEvent` being dispatched ([`System`]). A ⌘
+//! chord is the key at the same place too, which is the same shortcut while both Macs run one
+//! layout.
 
 use gpui::{Keystroke, Modifiers};
 use onicode_desktop_proto::input::{KeyAction, KeyCode, Mods};
@@ -215,44 +215,6 @@ pub(crate) fn code_of(native: Option<NativeKey>, keystroke: &Keystroke) -> (KeyC
         .unwrap_or_else(|| (key_code(&keystroke.key), mods(keystroke.modifiers)))
 }
 
-/// The character a chord's key names, as the wire carries it (`ScreenInput::Key::chord`): the
-/// key's own character, lowercased, when it is one character; a named key (`left`, `f1`) names
-/// none.
-#[must_use]
-pub(crate) fn chord_char(key: &str) -> Option<String> {
-    let mut chars = key.chars();
-    match (chars.next(), chars.next()) {
-        (Some(c), None) => Some(c.to_lowercase().collect()),
-        _ => None,
-    }
-}
-
-/// A key of the numeric keypad: its place is right whatever it types.
-#[must_use]
-pub(crate) const fn is_keypad(code: KeyCode) -> bool {
-    matches!(
-        code,
-        KeyCode::Numpad0
-            | KeyCode::Numpad1
-            | KeyCode::Numpad2
-            | KeyCode::Numpad3
-            | KeyCode::Numpad4
-            | KeyCode::Numpad5
-            | KeyCode::Numpad6
-            | KeyCode::Numpad7
-            | KeyCode::Numpad8
-            | KeyCode::Numpad9
-            | KeyCode::NumpadAdd
-            | KeyCode::NumpadSubtract
-            | KeyCode::NumpadMultiply
-            | KeyCode::NumpadDivide
-            | KeyCode::NumpadDecimal
-            | KeyCode::NumpadEqual
-            | KeyCode::NumpadEnter
-            | KeyCode::NumpadClear
-    )
-}
-
 /// ⌘⌥⎋ (force quit) and ⌃⌘Q (lock the screen): the ways out that stay on this Mac.
 #[must_use]
 pub(crate) fn stays_here(keystroke: &Keystroke) -> bool {
@@ -324,6 +286,8 @@ pub(crate) fn modifier_keys(was: Modifiers, now: Modifiers) -> Vec<(KeyCode, Key
     .collect()
 }
 
+pub(crate) use mac::mods_of;
+
 /// AppKit's side of the keyboard: the event being dispatched and Caps Lock.
 mod mac {
     use objc2::MainThreadMarker;
@@ -345,7 +309,7 @@ mod mac {
 
     /// An event's modifier flags as [`Mods`]: each modifier with the right side marked when
     /// only the right key holds it, Caps Lock and fn.
-    fn mods_of(flags: NSEventModifierFlags) -> Mods {
+    pub(crate) fn mods_of(flags: NSEventModifierFlags) -> Mods {
         let raw = flags.0;
         let mut mods = Mods::empty();
         for (flag, generic, left, right, right_mod) in [

@@ -89,9 +89,6 @@ pub enum CodecError {
         /// Where the bad length starts.
         offset: usize,
     },
-    /// The codec is not supported on this platform.
-    #[error("unsupported codec {0:?}")]
-    Unsupported(onicode_desktop_media::wire::VideoCodec),
     /// The encoder offers no 4:4:4 profile for this codec.
     #[error("no 4:4:4 encoder for {0:?}")]
     NoFullChroma(onicode_desktop_media::wire::VideoCodec),
@@ -119,9 +116,6 @@ pub enum CodecError {
     /// This encoder codes no stripes ([`VideoEncoder::stripe`]).
     #[error("this encoder codes no stripes")]
     NoStripes,
-    /// This platform has no audio encoder (`docs/decisions/platform.md`, "Linux seams").
-    #[error("no audio encoder on this platform")]
-    NoAudio,
     /// The process was started to open no `VideoToolbox` session ([`NO_VIDEOTOOLBOX`]), and
     /// `call` would have opened one.
     #[error("{call} refused: this process opens no VideoToolbox session (ONICODE_NO_VIDEOTOOLBOX)")]

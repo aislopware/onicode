@@ -1,5 +1,5 @@
 //! [`CaptureSource`] on macOS: ScreenCaptureKit for the frames, CoreGraphics for where displays
-//! are, the accessibility API for the focused field, and `NSCursor` for the pointer's picture.
+//! are, and `NSCursor` for the pointer's picture.
 //! Each function is the free function of the same job in this crate.
 
 use std::sync::Arc;
@@ -7,8 +7,7 @@ use std::sync::Arc;
 use onicode_desktop_proto::screen::{CaptureTarget, CursorShape, DisplayInfo};
 
 use crate::source::{
-    AudioSink, CaptureConfig, CaptureError, CaptureSource, CapturedFrame, Console, FocusedField,
-    Heard, Rect,
+    AudioSink, CaptureConfig, CaptureError, CaptureSource, CapturedFrame, Console, Heard, Rect,
 };
 use crate::{Capture, Shareable, Target, geometry};
 
@@ -130,10 +129,6 @@ impl CaptureSource for ScreenCaptureKit {
 
     fn console() -> Option<Console> {
         crate::console()
-    }
-
-    fn focused_field() -> Option<FocusedField> {
-        crate::focus::focused_field()
     }
 
     fn target_bounds(target: CaptureTarget) -> Option<Rect> {

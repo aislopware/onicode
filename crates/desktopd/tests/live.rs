@@ -2,8 +2,6 @@
 //! (`ONICODE_DESKTOP_LIVE=1`, and `--ignored`), and only once Screen Recording reads granted,
 //! since asking for shareable content without it would prompt.
 
-#![cfg(target_os = "macos")]
-
 use std::sync::Arc;
 use std::time::Duration;
 

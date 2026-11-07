@@ -7,7 +7,6 @@
 //! `ONICODE_INPUT_LIVE=1 cargo nextest run --test inject gestures --no-capture`.
 
 #[cfg(test)]
-#[cfg(target_os = "macos")]
 mod tests {
     use std::time::Duration;
 
@@ -73,7 +72,6 @@ mod tests {
 /// and the test's backend posts each event built as the real backend builds it to the app's pid
 /// instead of the HID tap, so nothing reaches the desktop of whoever is at the Mac.
 #[cfg(test)]
-#[cfg(target_os = "macos")]
 #[expect(
     clippy::cast_precision_loss,
     clippy::cast_possible_truncation,

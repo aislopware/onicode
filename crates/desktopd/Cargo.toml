@@ -18,6 +18,8 @@ path = "src/main.rs"
 bytes.workspace = true
 # `PathId`, for the congestion window a frame must fit (`session::LinkSink::cwnd`).
 noq.workspace = true
+# The Mac's clipboard in the owner's sessions (`clipboard`).
+onicode-clipboard.workspace = true
 onicode-desktop-capture.workspace = true
 onicode-desktop-codec.workspace = true
 onicode-desktop-input.workspace = true

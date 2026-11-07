@@ -19,7 +19,7 @@ pub const VT_TESTS: &str = "ONICODE_VT_TESTS";
 pub const AUDIO_LIVE: &str = "ONICODE_AUDIO_LIVE";
 /// `1` runs the tests that open ScreenCaptureKit or read the window server's cursor.
 pub const DESKTOP_LIVE: &str = "ONICODE_DESKTOP_LIVE";
-/// `1` runs the tests that post input events or change the input source.
+/// `1` runs the tests that post input events.
 pub const INPUT_LIVE: &str = "ONICODE_INPUT_LIVE";
 /// `1` runs the tests that create virtual displays.
 pub const VDISPLAY_LIVE: &str = "ONICODE_VDISPLAY_LIVE";

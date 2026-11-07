@@ -23,10 +23,14 @@
 //! - **Numbered input with datagram copies** ([`order`], [`copy`]): each input and quality change
 //!   carries a number, goes on the control stream and again as a datagram on [`copy::CHANNEL`];
 //!   desktopd applies whichever copy comes first, each once and in order.
+//! - **The clipboard** ([`Up::Clip`], [`Down::Clip`]): while the viewer's window has focus, copies
+//!   on either Mac are offered to the other on the control stream, and a paste fetches the bytes on
+//!   a file stream of its own (`onicode_desktop_proto::clipboard`, `onicode-clipboard`).
 
 #![forbid(unsafe_code)]
 
 use bytes::Bytes;
+pub use onicode_desktop_proto::clipboard::Clip;
 pub use onicode_desktop_proto::screen::{DisplayInfo, ScreenEvent, ScreenRequest};
 use serde::{Deserialize, Serialize};
 
@@ -36,8 +40,10 @@ pub mod ctl;
 pub mod order;
 
 /// The session wire's generation, said in [`Up::Join`] and [`Down::Welcome`]. Bumped with any
-/// change a peer of the last generation could misread; peers refuse every other.
-pub const WIRE: u32 = 1;
+/// change a peer of the last generation could misread; peers refuse every other. 2: typed text,
+/// the paste chord, input-source sync, the chord's character and the focused field are gone;
+/// the clipboard came ([`Up::Clip`], [`Down::Clip`] and its fetch streams).
+pub const WIRE: u32 = 2;
 
 /// desktopd's UDP port on every tailnet address: the engine's port (`onicode_net::transport::
 /// PORT`, 7433) plus one.
@@ -56,8 +62,12 @@ pub const MAX_FRAME: usize = 1 << 20;
 pub enum Pane {
     /// Screen & System Audio Recording: capture.
     ScreenRecording,
-    /// Accessibility: posting input, the cursor's picture, the focused field.
+    /// Accessibility: posting input and the cursor's picture.
     Accessibility,
+    /// Paste from Other Apps: reading the Mac's pasteboard unasked, so its copies reach the
+    /// viewer without a prompt there. Never in [`HostGrants::missing`]: a session runs without
+    /// it, and the clipboard says so ([`Clip::Access`]).
+    PasteFromOtherApps,
 }
 
 /// What desktopd may do on its Mac, as `onicode_grants::Grants` read it (preflight only,
@@ -133,6 +143,8 @@ pub enum Up {
         /// Hear it.
         on: bool,
     },
+    /// The clipboard: the window's focus, and this Mac's copies.
+    Clip(Clip),
 }
 
 /// desktopd → client, on the control stream.
@@ -167,6 +179,8 @@ pub enum Down {
     /// A numbered request was refused because this client does not hold the controls. Sent
     /// once per run of refused input, not per event.
     NotController,
+    /// The clipboard: the Mac's copies, and whether it may read them unasked.
+    Clip(Clip),
 }
 
 /// Errors reading a frame.
@@ -219,6 +233,7 @@ mod tests {
             Up::Screen(ScreenRequest::List),
             Up::Control { take: false },
             Up::Sound { on: true },
+            Up::Clip(Clip::Focus { focused: true }),
         ];
         for up in ups {
             assert_eq!(decode::<Up>(&encode(&up)).unwrap(), up);
@@ -245,6 +260,9 @@ mod tests {
                 missing: vec![Pane::ScreenRecording],
             },
             Down::NotController,
+            Down::Clip(Clip::Access(
+                onicode_desktop_proto::clipboard::PasteAccess::Denied,
+            )),
         ];
         for down in downs {
             assert_eq!(decode::<Down>(&encode(&down)).unwrap(), down);

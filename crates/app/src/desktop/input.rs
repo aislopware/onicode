@@ -142,9 +142,6 @@ pub(crate) struct Scroll {
 pub(crate) struct Input {
     /// Keys whose press went to the Mac and whose release has not.
     held: Vec<KeyCode>,
-    /// Chords sent by their character's place rather than their own: the key's own place, and
-    /// the key sent, so the release goes to the same key.
-    chorded: Vec<(KeyCode, KeyCode)>,
     /// The modifiers as GPUI last reported them.
     modifiers: Modifiers,
     /// Caps Lock's state as last sent.
@@ -226,42 +223,18 @@ impl Input {
             self.send(ScreenInput::Media { key, down: true });
             return true;
         }
-        let (code, chord) = self.chord_code(at, keystroke);
-        self.hold_key(code);
+        self.hold_key(at);
         let action = if repeat {
             KeyAction::Repeat
         } else {
             KeyAction::Press
         };
         self.send(ScreenInput::Key {
-            code,
+            code: at,
             action,
             mods,
-            chord,
         });
         true
-    }
-
-    /// The key a ⌘ or ⌃ chord at `at` goes as, and the character it names. The Mac types under
-    /// its own input source, not this one's, so the chord names the character this Mac's layout
-    /// put on the key and the Mac presses the key that types it under its own layout: ⌘Z on a
-    /// German keyboard is undo on a US Mac, and ⌘A on AZERTY stays ⌘A on an AZERTY one. The key
-    /// sent is the character's place on a US keyboard, where the Mac presses a character its
-    /// layout lacks. The keypad, and keys without ⌘ or ⌃, go by their own place and name
-    /// nothing.
-    fn chord_code(&mut self, at: KeyCode, keystroke: &Keystroke) -> (KeyCode, Option<String>) {
-        self.chorded.retain(|&(place, _)| place != at);
-        let m = keystroke.modifiers;
-        if !(m.platform || m.control) || keys::is_keypad(at) {
-            return (at, None);
-        }
-        let chord = keys::chord_char(&keystroke.key);
-        let by_character = keys::key_code(&keystroke.key);
-        if by_character == KeyCode::Unidentified || by_character == at {
-            return (at, chord);
-        }
-        self.chorded.push((at, by_character));
-        (by_character, chord)
     }
 
     /// `code` is down on the Mac until its release goes.
@@ -278,7 +251,6 @@ impl Input {
             code,
             action: KeyAction::Press,
             mods,
-            chord: None,
         });
     }
 
@@ -292,7 +264,6 @@ impl Input {
             code,
             action: KeyAction::Release,
             mods,
-            chord: None,
         });
         true
     }
@@ -309,9 +280,47 @@ impl Input {
             self.send(ScreenInput::Media { key, down: false });
             return true;
         }
-        let chorded = self.chorded.iter().position(|&(place, _)| place == at);
-        let code = chorded.map_or(at, |i| self.chorded.swap_remove(i).1);
-        self.release_key(code, mods)
+        self.release_key(at, mods)
+    }
+
+    /// A key the shortcut grab took off the app before GPUI saw it (`super::shortcuts`): it
+    /// goes to the Mac by its place with the modifiers it was pressed with. The Mission Control
+    /// key has no place, and goes as ⌃↑, Mission Control's shortcut on the Mac.
+    pub(crate) fn taken_key(&mut self, key: NativeKey) {
+        if key.vk == super::shortcuts::MISSION_CONTROL {
+            if key.kind == KeyKind::Down {
+                for action in [KeyAction::Press, KeyAction::Release] {
+                    self.send(ScreenInput::Key {
+                        code: KeyCode::ArrowUp,
+                        action,
+                        mods: Mods::CTRL,
+                    });
+                }
+            }
+            return;
+        }
+        let Some(code) = KeyCode::from_mac_vk(key.vk) else {
+            return;
+        };
+        match key.kind {
+            KeyKind::Down | KeyKind::Repeat => {
+                self.hold_key(code);
+                let action = if key.kind == KeyKind::Repeat {
+                    KeyAction::Repeat
+                } else {
+                    KeyAction::Press
+                };
+                self.send(ScreenInput::Key {
+                    code,
+                    action,
+                    mods: key.mods,
+                });
+            }
+            KeyKind::Up => {
+                self.release_key(code, key.mods);
+            }
+            KeyKind::Flags => {}
+        }
     }
 
     /// The modifier keys moved, or Caps Lock did: each modifier that went down or up goes as
@@ -580,10 +589,8 @@ impl Input {
                 code,
                 action: KeyAction::Release,
                 mods: Mods::empty(),
-                chord: None,
             });
         }
-        self.chorded.clear();
         self.modifiers = Modifiers::default();
         self.end_momentum(at, Mods::empty(), time_us);
         self.scrolling = Scrolling::Idle;

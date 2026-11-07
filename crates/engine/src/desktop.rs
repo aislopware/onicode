@@ -205,7 +205,6 @@ async fn exchange(data_dir: &Path, request: CtlRequest) -> Result<CtlReply, Stri
 }
 
 /// Asks launchd to start desktopd, the login item's agent.
-#[cfg(target_os = "macos")]
 async fn kickstart(data_dir: &Path) -> Result<(), String> {
     use std::os::unix::fs::MetadataExt as _;
 
@@ -238,7 +237,6 @@ async fn kickstart(data_dir: &Path) -> Result<(), String> {
 /// `Contents/Library/LaunchAgents` is found. Registering never prompts; macOS posts its own
 /// "background item added" notification. An agent the person turned off in Login Items is left
 /// off, and the settings pane is opened at it for the person at this Mac.
-#[cfg(target_os = "macos")]
 async fn ensure_registered(app_id: &str) -> Result<(), String> {
     use onicode_grants::agent::{self, Status};
 
@@ -261,32 +259,23 @@ async fn ensure_registered(app_id: &str) -> Result<(), String> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-async fn kickstart(_data_dir: &Path) -> Result<(), String> {
-    Err("Remote desktop hosts only on macOS".into())
-}
-
 /// Opens System Settings at `pane` on this Mac.
-#[cfg(target_os = "macos")]
 fn open_pane(pane: Pane) {
     use onicode_grants::Privilege;
     let privilege = match pane {
         Pane::ScreenRecording => Privilege::ScreenRecording,
         Pane::Accessibility => Privilege::Accessibility,
+        Pane::PasteFromOtherApps => Privilege::Pasteboard,
     };
     if !onicode_grants::open_settings(privilege) {
         eprintln!("onicode-engine: System Settings did not open at {privilege:?}");
     }
 }
 
-#[cfg(not(target_os = "macos"))]
-fn open_pane(_pane: Pane) {}
-
 /// The bundle id of the app this engine runs in, which names desktopd's launchd label
 /// (`onicode_grants::bundle::helper_id`): the enclosing `Onicode.app`'s, since the engine runs as
 /// its `Contents/MacOS/Onicode Engine`. `ONICODE_APP_BUNDLE_ID` names it for an engine run
 /// outside a bundle; a bare engine falls back to the release app's.
-#[cfg(target_os = "macos")]
 fn app_bundle_id() -> String {
     const RELEASE: &str = "dev.aislopware.onicode";
     if let Ok(id) = std::env::var("ONICODE_APP_BUNDLE_ID")

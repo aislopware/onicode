@@ -1,6 +1,6 @@
 //! The sizing policy: what a client asks for, and the display and mode that answer it.
 //!
-//! Pure arithmetic, so it runs and is tested on every platform.
+//! Pure arithmetic, so it is tested without making a display.
 
 /// The display's name in System Settings.
 pub const NAME: &str = "Onicode";

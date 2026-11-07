@@ -13,15 +13,10 @@
 //! between pages (`trackSwipeEventWithOptions:…`), one `track …` line for each step AppKit
 //! reports. It leaves when its stdin closes, so it never outlives the test.
 
-#[cfg(target_os = "macos")]
 fn main() -> std::process::ExitCode {
     macos::run()
 }
 
-#[cfg(not(target_os = "macos"))]
-fn main() {}
-
-#[cfg(target_os = "macos")]
 mod macos {
     use std::cell::Cell;
     use std::io::Write as _;

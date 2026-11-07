@@ -178,7 +178,6 @@ impl ScreenError {
                 ScreenFailure::NotPermitted
             }
             Self::NoDisplay | Self::Capture(CaptureError::NotFound(_)) => ScreenFailure::Gone,
-            Self::Capture(CaptureError::Unsupported) => ScreenFailure::Unsupported,
             other => ScreenFailure::Failed(other.to_string()),
         }
     }
@@ -727,7 +726,6 @@ fn retire<P: Platform>(old: Option<Arc<P::Video>>) {
 pub struct Pipeline<P: Platform> {
     shared: Arc<Shared<P>>,
     tasks: Vec<JoinHandle<()>>,
-    _awake: Option<Box<dyn Send + Sync>>,
 }
 
 impl<P: Platform> std::fmt::Debug for Pipeline<P> {
@@ -847,14 +845,7 @@ impl<P: Platform> Pipeline<P> {
             tokio::spawn(geometry_loop(Arc::clone(&shared))),
         ];
         tasks.extend(encoder);
-        Ok((
-            Self {
-                shared,
-                tasks,
-                _awake: P::keep_awake(),
-            },
-            opened,
-        ))
+        Ok((Self { shared, tasks }, opened))
     }
 
     /// The stream's id.
@@ -968,6 +959,35 @@ impl<P: Platform> Pipeline<P> {
         );
         self.shared.follow_bounds();
         self.shared.reconfigure().await
+    }
+
+    /// Resolve the stream's display again against a fresh enumeration and hand the capture the
+    /// new filter: the windows this process leaves out changed (the curtain's shield,
+    /// `onicode_desktop_capture::leave_out`), and a running capture keeps the filter it was
+    /// resolved with until then. Nothing else about the stream changes.
+    ///
+    /// # Errors
+    ///
+    /// When the display could not be resolved or the capture refused the filter; the capture
+    /// keeps its old one.
+    pub async fn refilter(&self) -> Result<(), ScreenError> {
+        let target = *self.shared.target.lock();
+        let content = enumerate::<P>().await?;
+        let resolved = Source::<P>::resolve(&content, target)?;
+        drop(content);
+        let retargeted = self.shared.capture.lock().as_ref().map(|running| {
+            let (tx, rx) = oneshot::channel();
+            Source::<P>::retarget(running, &resolved, move |done| {
+                let _gone = tx.send(done);
+            });
+            rx
+        });
+        if let Some(retargeted) = retargeted {
+            retargeted
+                .await
+                .unwrap_or_else(|_| Err(CaptureError::Stopped("never answered".to_owned())))?;
+        }
+        Ok(())
     }
 
     /// End the stream, waiting for its capture to stop.

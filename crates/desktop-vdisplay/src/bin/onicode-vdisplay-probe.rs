@@ -12,7 +12,6 @@ fn main() -> Result<(), String> {
     writeln!(std::io::stderr(), "{report}").map_err(|e| e.to_string())
 }
 
-#[cfg(target_os = "macos")]
 mod probe {
     use std::time::{Duration, Instant};
 
@@ -83,12 +82,5 @@ mod probe {
         // SAFETY: framework-provided constant string.
         let mode = unsafe { kCFRunLoopDefaultMode };
         CFRunLoop::run_in_mode(mode, 0.1, false);
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-mod probe {
-    pub fn run() -> Result<String, String> {
-        Err("virtual displays exist only on macOS".to_owned())
     }
 }

@@ -275,7 +275,6 @@ mod tests {
             (r.name.as_str(), r.samples, r.ops),
             ("testkit.self.spin", 20, 1_000)
         );
-        #[cfg(target_os = "macos")]
         if let Some(i) = r.instructions.filter(|i| i.max > 0) {
             assert!(
                 (1..100).contains(&i.p50),

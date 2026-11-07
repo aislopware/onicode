@@ -8,24 +8,21 @@
 //! process to be granted *Accessibility* (post-event access); `can_post` and `request_post`
 //! wrap the preflight and prompt.
 //!
-//! Keys go by position and carry no text: the host's layout makes the character, the client's
-//! own once the host has taken the client's input source ([`sources`]). Text the client
-//! composed itself goes as its own event, in pieces a key event can carry (`text`). Caps Lock
-//! is set as a lock, and media keys go to the system as system-defined events. Trackpad
-//! gestures (a pinch, a rotation, smart zoom, a swipe, and, while the view sends its gestures,
-//! the gesture a trackpad scroll comes with) have no public `CGEvent` constructor: they are
-//! built as the trackpad's are, from a blank event and the fields AppKit reads (`backend`). A
-//! press, its drags and its release carry one event number, as AppKit follows a drag by it.
+//! Keys go by position and carry no text: the host's own layout makes the character, so a ⌘
+//! shortcut is the key at the same place on both Macs. Caps Lock is set as a lock, and media
+//! keys go to the system as system-defined events. Trackpad gestures (a pinch, a rotation,
+//! smart zoom, a swipe, and, while the view sends its gestures, the gesture a trackpad scroll
+//! comes with) have no public `CGEvent` constructor: they are built as the trackpad's are, from
+//! a blank event and the fields AppKit reads (`backend`). A press, its drags and its release
+//! carry one event number, as AppKit follows a drag by it.
 //!
 //! [`InputSink`] is the host's input seam, compiled on every target; `CgEvents` is the macOS
 //! implementation: the stream's `Injector` on an `InputThread`, so no window-server call is
 //! made on the stream's task. The display's bounds come from the stream's geometry probe
 //! ([`InputSink::set_bounds`]), and where the input put the pointer goes back to the stream's
-//! cursor samples ([`PointerWatch`]). The clipboard is `onicode-clipboard`'s.
+//! cursor samples ([`PointerWatch`]).
 //!
-//! The keyboard pieces both ends share live here too: the host's input source by its TIS id
-//! (`input_source`, macOS), and the client's raw keys taken ahead of its text system with
-//! the modifier and media-key constants both ends read and write ([`keyboard`]).
+//! The modifier and media-key constants the host writes live in [`keyboard`].
 //!
 //! Ported from slopty's `slopty-input` and the keyboard half of `slopty-platform` (MIT, same
 //! authors). Window streams are gone: one stream is one whole display, so every event goes
@@ -38,28 +35,16 @@
     reason = "`unreachable_pub` is on, so an item shared from a private module is `pub(crate)`"
 )]
 
-#[cfg(target_os = "macos")]
 pub mod backend;
-pub mod chords;
-#[cfg(target_os = "macos")]
 mod injector;
-#[cfg(target_os = "macos")]
-pub mod input_source;
 pub mod keyboard;
-#[cfg(target_os = "macos")]
 pub mod keymap;
 mod pointer;
-pub mod sources;
-#[cfg(target_os = "macos")]
-pub mod text;
-#[cfg(target_os = "macos")]
 mod thread;
 
 use std::time::Instant;
 
-#[cfg(target_os = "macos")]
 pub use backend::{Backend, Event, Gesture, Post, Recorder, Route, System};
-#[cfg(target_os = "macos")]
 pub use injector::{
     CapsClaims, CapsKept, Injector, SharedCaps, can_post, flags_for, keep_caps, request_post,
     to_point,
@@ -67,7 +52,6 @@ pub use injector::{
 use onicode_desktop_capture::Rect;
 use onicode_desktop_proto::screen::{CaptureTarget, ScreenInput};
 pub use pointer::{Pointer, PointerChanges, PointerWatch};
-#[cfg(target_os = "macos")]
 pub use thread::{CgEvents, InputThread, let_go_everywhere};
 
 /// Raise the calling thread to the user-interactive QoS class: every click and key into the
@@ -79,7 +63,6 @@ pub use thread::{CgEvents, InputThread, let_go_everywhere};
 /// unclassed to 0.2–0.5 ms classed (slopty MEASUREMENTS, "the keystroke path under an all-core
 /// spin"). Never called on a thread that is already realtime (audio) or on the main thread of an
 /// app, which the system runs user-interactive already.
-#[cfg(target_os = "macos")]
 pub fn user_interactive_thread() {
     // SAFETY: `pthread_set_qos_class_self_np` (pthread/qos.h) changes only the calling thread's
     // own class, and a relative priority of 0 is within every class's range
@@ -91,10 +74,6 @@ pub fn user_interactive_thread() {
         tracing::warn!(error = refused, "user-interactive QoS refused");
     }
 }
-
-/// Raise the calling thread's QoS class: no classes off macOS.
-#[cfg(not(target_os = "macos"))]
-pub const fn user_interactive_thread() {}
 
 /// What went wrong posting an event.
 #[derive(Clone, Copy, thiserror::Error, Debug)]
@@ -108,9 +87,6 @@ pub enum InputError {
     /// The stream's input thread is gone.
     #[error("input thread stopped")]
     Stopped,
-    /// This platform injects no input: the host is a Mac.
-    #[error("input injection is unsupported on this platform")]
-    Unsupported,
 }
 
 /// Where a screen stream's client input goes: the host's input seam.

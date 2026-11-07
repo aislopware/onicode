@@ -7,7 +7,7 @@
 //! tells desktopd what arrived every [`REPORT_EVERY`], which sizes those copies.
 //!
 //! Ported from slopty's client `screen/sound.rs` (MIT, same authors). The player is
-//! `onicode_desktop_codec::audio`'s, Apple only; elsewhere the packets are counted and dropped.
+//! `onicode_desktop_codec::audio`'s.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -66,26 +66,18 @@ pub trait Playback: Send {
     fn stats(&self, stats: &mut SoundStats);
 }
 
-/// The platform's player: `onicode_desktop_codec::audio` on Apple platforms, none elsewhere.
+/// The platform's player: `onicode_desktop_codec::audio`'s; `None` when it cannot start.
 #[must_use]
 pub fn platform_player() -> Option<Box<dyn Playback>> {
-    #[cfg(target_vendor = "apple")]
-    {
-        match apple::Opus::new() {
-            Ok(playback) => Some(Box::new(playback)),
-            Err(e) => {
-                tracing::warn!(error = %e, "audio playback unavailable");
-                None
-            }
+    match apple::Opus::new() {
+        Ok(playback) => Some(Box::new(playback)),
+        Err(e) => {
+            tracing::warn!(error = %e, "audio playback unavailable");
+            None
         }
-    }
-    #[cfg(not(target_vendor = "apple"))]
-    {
-        None
     }
 }
 
-#[cfg(target_vendor = "apple")]
 mod apple {
     use std::time::Instant;
 

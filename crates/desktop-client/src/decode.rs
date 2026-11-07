@@ -78,22 +78,11 @@ pub trait VideoDecode: Send + 'static {
 }
 
 /// The picture this platform decodes to.
-#[cfg(target_vendor = "apple")]
 pub type Picture = onicode_desktop_codec::PixelBuffer;
 
-/// The picture this platform decodes to: none, it has no decoder.
-#[cfg(not(target_vendor = "apple"))]
-pub type Picture = NoPicture;
-
 /// The decoder this platform has.
-#[cfg(target_vendor = "apple")]
 pub type PlatformDecoder = VideoToolbox;
 
-/// The decoder this platform has: none.
-#[cfg(not(target_vendor = "apple"))]
-pub type PlatformDecoder = NoDecoder;
-
-#[cfg(target_vendor = "apple")]
 impl Image for onicode_desktop_codec::PixelBuffer {
     fn width(&self) -> usize {
         Self::width(self)
@@ -105,10 +94,8 @@ impl Image for onicode_desktop_codec::PixelBuffer {
 }
 
 /// VideoToolbox, through `onicode_desktop_codec::Decoder`.
-#[cfg(target_vendor = "apple")]
 pub struct VideoToolbox(onicode_desktop_codec::Decoder);
 
-#[cfg(target_vendor = "apple")]
 impl VideoDecode for VideoToolbox {
     type Image = onicode_desktop_codec::PixelBuffer;
 
@@ -142,40 +129,6 @@ impl VideoDecode for VideoToolbox {
 
     fn ready(&self) -> bool {
         self.0.ready()
-    }
-}
-
-/// No picture: this platform decodes none.
-#[derive(Clone, Copy, Debug)]
-pub enum NoPicture {}
-
-impl Image for NoPicture {
-    fn width(&self) -> usize {
-        match *self {}
-    }
-
-    fn height(&self) -> usize {
-        match *self {}
-    }
-}
-
-/// A decoder that refuses everything: a platform without one.
-#[derive(Debug)]
-pub struct NoDecoder;
-
-impl VideoDecode for NoDecoder {
-    type Image = NoPicture;
-
-    fn start(_codec: VideoCodec, _sink: OutcomeSink<NoPicture>) -> Self {
-        Self
-    }
-
-    fn decode(&mut self, _access_unit: &Bytes, _pts_us: u64) -> Result<(), Refused> {
-        Err(Refused { status: None })
-    }
-
-    fn ready(&self) -> bool {
-        false
     }
 }
 
