@@ -112,17 +112,6 @@ base_date = "2026-11-06"
 every_minutes = 0
 paths = ["noq-proto/", "noq-udp/"]
 
-# Patched in Cargo.toml for the symlinked-registry path fix; drop the fork when upstream has it.
-[askama]
-upstream = "askama-rs/askama"
-branch = "main"
-fork = "aislopware/askama"
-checkout = "forks/askama"
-base = "8986ac268af1cbb364e04cc0843811a3432ed4a7"
-base_date = "2026-11-07"
-every_minutes = 240
-paths = ["askama_derive/src/generator.rs", "askama_derive/src/generator/helpers/paths.rs"]
-
 # ---- References: peers and Claude Code itself, studied rather than built on. A change is read for what it
 # teaches (how they drive the agents, sync, render, recover) and ported to onicode where it is better; `base` is
 # the commit last studied. Agents are driven only through their published doors.
