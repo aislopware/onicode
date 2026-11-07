@@ -40,8 +40,8 @@ upstream = "longbridge/gpui-kit"
 branch = "main"
 fork = "aislopware/gpui-kit"
 checkout = "forks/gpui-kit"
-base = "48ac25b50c81ca5e34ec1631e3efabe22f4af64a"
-base_date = "2026-11-06"
+base = "803d5d861605edf62ca6fb3d43fe4dabbadc1f41"
+base_date = "2026-11-07"
 every_minutes = 0
 
 # gpui-fast imports zed through its vendor procedure; zed merges hundreds of PRs a week, so only
@@ -98,8 +98,8 @@ upstream = "Uzaaft/libghostty-rs"
 branch = "master"
 fork = "aislopware/libghostty-rs"
 checkout = "forks/libghostty-rs"
-base = "4230bfe2e00e081871b45ae14161d77c24304d50"
-base_date = "2026-11-06"
+base = "84373f8d48b8f0b794e259f74a71a52686616f5d"
+base_date = "2026-11-07"
 every_minutes = 0
 
 # Vendored with onicode's patches (the notes in vendor/noq-proto); a bump re-applies them by hand.
