@@ -9,7 +9,7 @@ pub use crate::orchestration::{Summary as Orchestration, SummaryTask};
 pub use crate::session_groups::{Folder, Groups, WorkItem};
 pub use crate::session_title::TextModel;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Session {
     pub id: i64,
     pub title: String,

@@ -1,10 +1,11 @@
-protocol 8
+protocol 9
 call Hello agent params=e9de24ac3b14849e reply=e9de24ac3b14849e
 call EngineInfo agent params=fa64ac005d4e6ec1 reply=ea30e297db7e7c2b
 call UpdateEngine params=76bcbe41f03a0f3d reply=caf76c905cccc628
 call StopEngine params=39c80f9e7eb7e6d1 reply=5b317dbd01f7735e
+call ResolveSession params=3779b8c7d0114412 reply=11e973ad549b520f
 watch WatchSession params=b3a91d6f3c8fee85 state=4a6ef87ab7d0ff3c event=99783f742c24014d
-call Send agent params=1ca9fe7fc8323ff4 reply=5b317dbd01f7735e
+call Send agent params=1f50f0ef3294995a reply=5b317dbd01f7735e
 call Steer agent params=4ab5d5aa86f9dc18 reply=5b317dbd01f7735e
 call Stop params=9a1019327819ca0c reply=5b317dbd01f7735e
 call Decide params=9e4d189cd7b3628c reply=5b317dbd01f7735e
@@ -96,12 +97,12 @@ call RemoveWorktree params=5bc8f69cf137b700 reply=fa23ea3d9200f9ba
 call ReadCheckpoint agent params=e09535587abbf40f reply=20ad3544bc1a9b8e
 call RestoreCheckpoint params=9e1f34f2f0606050 reply=20ad3544bc1a9b8e
 call ReadSessionChanges params=d71c7d5da3072015 reply=65590ad5b81e0f53
-watch WatchTerminal params=5c930ae77e9241b5 state=da7286dffc4bdf6d event=2724485002a61267
-call OpenTerminal params=33bf964521cd4032 reply=483d84556c30e62c
-call ListTerminals params=2532f7535c76d741 reply=adfa28205ffb6d61
-call ResizeTerminal params=731e3d25b3d21e80 reply=5b317dbd01f7735e
+watch WatchTerminal params=1964b46e05ecf27c state=86e0d0b0d88e82ac event=de96d766871d9a1e
+call OpenTerminal params=5a2a1f2eb13d34d1 reply=7f1413ca67169f9d
+call ListTerminals params=2532f7535c76d741 reply=7a39528007ac5562
+call ResizeTerminal params=01d7d91f0683fb07 reply=5b317dbd01f7735e
 call CloseTerminal params=91918568a5684d28 reply=5b317dbd01f7735e
-call TerminalInput params=7867814342186390 reply=5b317dbd01f7735e
+call TerminalInput params=4d21d5249e718507 reply=5b317dbd01f7735e
 call ReadForeground params=27fe7a453007b002 reply=6fc7314745702fb1
 call StopForeground params=5c5fd11568dcab3e reply=5b317dbd01f7735e
 watch WatchAccounts params=54fb7c38c0d0211c state=be338e54d9f9259d event=2e25a01d3226288c

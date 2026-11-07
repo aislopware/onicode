@@ -6,19 +6,18 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+# The engine's Unix socket (`net`), its connection tasks and timers.
 tokio.workspace = true
-tokio-tungstenite.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
-# OS CSPRNG for the localhost IPC bearer.
+# OS CSPRNG for the engine's socket tokens.
 getrandom = "0.4"
 
 [dev-dependencies]
+# `rpc_probe` greets the engine with the protocol's `Hello`.
+onicode-protocol.workspace = true
 tempfile.workspace = true
-
-# Deterministic stalled-transport deadlines.
-tokio = { workspace = true, features = ["test-util"] }

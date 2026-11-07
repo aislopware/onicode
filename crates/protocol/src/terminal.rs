@@ -3,16 +3,49 @@
 //! answers the program's queries and encodes the viewers' input from its modes.
 //!
 //! A viewer opens a terminal under a [`TerminalId`] it minted ([`OpenTerminal`]) and watches it
-//! ([`WatchTerminal`]): a libghostty snapshot of the screen and its scrollback, then the PTY's
-//! output byte for byte from there, which the viewer feeds to a mirror of its own with its replies
-//! to the program turned off. The cursor's `seq` numbers the stream's events, so a viewer that
-//! comes back while the engine's ring still holds what it missed gets those bytes instead of a new
-//! snapshot. Keys, paste and wheel go to the engine as [`TerminalInput`] calls, in order, and the
-//! engine encodes them from its terminal's modes at that instant.
+//! ([`WatchTerminal`]): a libghostty snapshot of the screen, its scrollback right behind it, then
+//! the PTY's output byte for byte from there, which the viewer feeds to a mirror of its own with
+//! its replies to the program turned off. The cursor's `seq` numbers the stream's events, so a
+//! viewer that comes back while the engine's ring still holds what it missed gets those bytes
+//! instead of a new snapshot. Keys, paste and wheel go to the engine as [`TerminalInput`] calls,
+//! in order, and the engine encodes them from its terminal's modes at that instant.
+//!
+//! Every call that sizes or types names its [`ViewerId`]: the PTY takes the size of the viewer
+//! that typed last. A program's OSC 7501 reports reach viewers as a [`ProgramStatus`], display
+//! evidence only: a terminal's report never resolves an approval or finishes a native turn.
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 pub use crate::files::Bytes;
 use crate::{Call, Cursor, Outcome, TerminalId, Watch};
+
+/// One viewer of an engine's terminals: an app run, another Mac, the iPhone. UUIDv7, minted by
+/// the viewer once per run, so the engine can tell two viewers of one terminal apart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct ViewerId(pub Uuid);
+
+impl ViewerId {
+    /// A fresh id. UUIDv7, so ids sort by when they were minted.
+    #[must_use]
+    pub fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+}
+
+impl Default for ViewerId {
+    /// A fresh id, as [`Self::new`].
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl fmt::Display for ViewerId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Display::fmt(&self.0, f)
+    }
+}
 
 /// The grid a viewer paints, in cells, and its cell size in pixels, which programs that ask in
 /// pixels are told.
@@ -32,12 +65,13 @@ pub struct TerminalColors {
     pub cursor: u32,
 }
 
-/// A login shell in `cwd` on a new PTY, under the viewer's `terminal` id. Opening an id the engine
-/// already hosts answers its summary and opens nothing. A shell that cannot start leaves a
-/// terminal that says why.
+/// A login shell in `cwd` on a new PTY of the opening viewer's `size`, under the viewer's
+/// `terminal` id. Opening an id the engine already hosts answers its summary and opens nothing. A
+/// shell that cannot start leaves a terminal that says why.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenTerminal {
     pub terminal: TerminalId,
+    pub viewer: ViewerId,
     pub cwd: String,
     pub size: TerminalSize,
     pub colors: TerminalColors,
@@ -57,6 +91,8 @@ pub struct TerminalSummary {
     pub cwd: String,
     /// The shell ended; the terminal stays until it is closed.
     pub exited: bool,
+    /// What the program in it last reported, the most urgent of its records.
+    pub status: Option<ProgramStatus>,
 }
 
 /// Every terminal the engine hosts.
@@ -70,11 +106,12 @@ impl Call for ListTerminals {
     const NAME: &'static str = "ListTerminals";
 }
 
-/// The PTY takes the viewer's grid. Every watcher's mirror reflows at the same byte, through
-/// [`TerminalEvent::Resized`].
+/// The viewer's grid. The PTY takes it when this viewer typed last, or when nobody watching has
+/// typed; every watcher's mirror reflows at the same byte, through [`TerminalEvent::Resized`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResizeTerminal {
     pub terminal: TerminalId,
+    pub viewer: ViewerId,
     pub size: TerminalSize,
 }
 
@@ -131,10 +168,12 @@ pub enum Input {
     },
 }
 
-/// One input for a terminal.
+/// One input for a terminal. The viewer that sends it becomes the typist: the PTY takes its size
+/// first, so a mouse report counts the grid that viewer sees.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalInput {
     pub terminal: TerminalId,
+    pub viewer: ViewerId,
     pub input: Input,
 }
 
@@ -172,10 +211,13 @@ impl Call for StopForeground {
     const NAME: &'static str = "StopForeground";
 }
 
-/// Watch a terminal: its snapshot, then its output from there.
+/// Watch a terminal: its snapshot, then its output from there. While a viewer watches, its size
+/// counts; when the typist's last watch ends, the PTY takes the size of the viewer that typed
+/// before it, else of the one that sized it last.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WatchTerminal {
     pub terminal: TerminalId,
+    pub viewer: ViewerId,
     /// The last cursor this viewer holds, to resume from.
     pub since: Option<Cursor>,
 }
@@ -192,11 +234,14 @@ impl Watch for WatchTerminal {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TerminalState {
     pub size: TerminalSize,
-    /// libghostty's snapshot of the terminal (screen, scrollback, modes and parser state) as of
-    /// the cursor. Empty when the engine could not take one (output stopped inside an escape
-    /// sequence longer than libghostty keeps): the viewer starts from a blank grid.
+    /// libghostty's snapshot of the terminal as of the cursor, through its READY record: the
+    /// screen, modes and parser state, enough to paint. The older scrollback follows at once as
+    /// [`TerminalEvent::History`], so a big history never holds back the first frame. Empty when
+    /// the engine could not take one (output stopped inside an escape sequence longer than
+    /// libghostty keeps): the viewer starts from a blank grid, and no history follows.
     pub screen: Bytes,
     pub exited: bool,
+    pub status: Option<ProgramStatus>,
 }
 
 /// What happened to a terminal, in PTY order.
@@ -211,4 +256,52 @@ pub enum TerminalEvent {
     /// The shell ended, with its status unless a signal ended it. The note the grid shows is in
     /// the output before it.
     Exited { code: Option<i32> },
+    /// The rest of the snapshot just before it, after its READY record: the older scrollback.
+    /// It is not numbered: it comes alone, right after the snapshot, in an `Events` item that
+    /// covers no numbers (`last == first - 1`), and never from the ring.
+    History(Bytes),
+    /// What the program reports changed (OSC 7501): the most urgent record now, or none.
+    Status(Option<ProgramStatus>),
+}
+
+/// The most urgent of a program's OSC 7501 records (blocked, then working, error, done, idle).
+/// Its text is the program's own and untrusted: free of control characters and of bidi
+/// overrides, and to be shown only as plain text, beside the terminal it came from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProgramStatus {
+    pub state: ProgramState,
+    /// What a blocked program needs.
+    pub kind: Option<InputKind>,
+    /// 0 to 100 while working or blocked; `None` is indeterminate.
+    pub progress: Option<u8>,
+    /// A stable name for the program (`claude-code`, `codex`), its own or its nearest
+    /// ancestor record's.
+    pub app: Option<String>,
+    pub title: Option<String>,
+    pub message: Option<String>,
+}
+
+/// What a program says it is doing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ProgramState {
+    /// At rest at its own prompt.
+    Idle,
+    Working,
+    /// Finished; the result is ready to look at.
+    Done,
+    /// Cannot go on until the user does something.
+    Blocked,
+    /// Failed and stopped.
+    Error,
+}
+
+/// What a blocked program needs from the user.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum InputKind {
+    /// Approval to do something.
+    Permission,
+    /// An answer to type.
+    Question,
+    /// A login, password or token.
+    Auth,
 }

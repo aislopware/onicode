@@ -1,32 +1,33 @@
-//! How a Onicode app starts its engine: the engine executable beside the app's
-//! ("Onicode Engine" in a macOS bundle, `onicode-engine` elsewhere), else the app
-//! binary's [`ENGINE_SUBCOMMAND`]; the environment it's given; detached, so
-//! it outlives the app. The engine's `managed` module, the command line
-//! (`onicode headless` and the other engine subcommands, run in the helper) and
-//! the zgx app all start it through here, without linking the engine.
+//! How the app starts its engine (engine.md, "Process"): the `onicode-engine` executable beside
+//! the app's own ("Onicode Engine" inside a macOS bundle), given the data dir, detached into a
+//! session of its own so it outlives the window. The app spawns it itself, so macOS attributes
+//! the engine's (and its agents') file access to the app: TCC stays the app's, and no Login
+//! Items approval is needed. Its standard error goes to `{data_dir}/engine.log`.
 
-use std::ffi::OsString;
+use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
-/// The app binary's subcommand that runs the background engine, for
-/// installs without a separate engine executable (development runs that only
-/// built the app).
-pub const ENGINE_SUBCOMMAND: &str = "engine";
-
-/// The separate engine executable's name next to the app's.
+/// The engine executable's names beside the app's, best first.
 #[cfg(target_os = "macos")]
 pub const ENGINE_EXECUTABLES: &[&str] = &["Onicode Engine", "onicode-engine"];
+/// The engine executable's names beside the app's, best first.
 #[cfg(not(target_os = "macos"))]
 pub const ENGINE_EXECUTABLES: &[&str] = &["onicode-engine"];
 
-/// Set on the background engine's environment by the app that started it.
+/// The flag that names the engine's data dir.
+pub const DATA_DIR_ARG: &str = "--data-dir";
+/// Set on the engine's environment by the app that started it.
 pub const MANAGED_ENV: &str = "ONICODE_MANAGED_ENGINE";
-/// The app to open for a clicked banner: its bundle on macOS, its
-/// executable elsewhere.
+/// The app to open for a clicked banner: its bundle on macOS, its executable elsewhere.
 pub const APP_ENV: &str = "ONICODE_APP";
+/// The engine's standard error, inside its data dir.
+pub const LOG_FILE: &str = "engine.log";
+/// A log past this size starts over at the next launch.
+const LOG_LIMIT: u64 = 4 << 20;
 
 /// The engine executable beside the app at `app_exe`, if there is one.
+#[must_use]
 pub fn engine_executable(app_exe: &Path) -> Option<PathBuf> {
     let dir = app_exe.parent().unwrap_or(Path::new("."));
     ENGINE_EXECUTABLES
@@ -35,22 +36,9 @@ pub fn engine_executable(app_exe: &Path) -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-/// The command that runs the background engine for the app at `app_exe`:
-/// the engine executable beside it, else the app binary's
-/// [`ENGINE_SUBCOMMAND`].
-pub fn engine_command(app_exe: &Path) -> Command {
-    match engine_executable(app_exe) {
-        Some(engine) => Command::new(engine),
-        None => {
-            let mut command = Command::new(app_exe);
-            command.arg(ENGINE_SUBCOMMAND);
-            command
-        }
-    }
-}
-
-/// What a clicked banner opens: the app bundle on macOS (the executable's
-/// enclosing `.app`), the executable elsewhere.
+/// What a clicked banner opens: the app bundle on macOS (the executable's enclosing `.app`),
+/// the executable elsewhere.
+#[must_use]
 pub fn app_path(app_exe: &Path) -> PathBuf {
     app_exe
         .ancestors()
@@ -59,37 +47,45 @@ pub fn app_path(app_exe: &Path) -> PathBuf {
         .to_path_buf()
 }
 
-/// What the background engine is started with.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LaunchConfig {
-    pub data_dir: PathBuf,
-    pub ipc_port: u16,
-    /// The release feed the engine's updater reads; empty leaves it off.
-    pub update_feed: String,
-}
-
-/// Start the background engine for `config`, detached from the app: its
-/// own session/process group, no inherited console or pipes, so the app
-/// exiting (or its terminal closing) leaves it running.
-pub fn launch(config: &LaunchConfig, app_exe: &Path) -> std::io::Result<Child> {
-    let mut command = engine_command(app_exe);
+/// Starts the engine at `engine` over `data_dir` for the app at `app_exe`, detached: a session
+/// of its own, no inherited console or pipes, so the app exiting (or its terminal closing)
+/// leaves it running. An engine already running there keeps its instance lock and the new one
+/// exits at once, so a race of launches leaves one engine.
+pub fn launch(data_dir: &Path, engine: &Path, app_exe: &Path) -> std::io::Result<Child> {
+    let mut command = Command::new(engine);
     command
+        .arg(DATA_DIR_ARG)
+        .arg(data_dir)
         .env(MANAGED_ENV, "1")
-        .env(APP_ENV, app_path(app_exe))
-        .env("ONICODE_DATA_DIR", &config.data_dir)
-        .env("ONICODE_IPC_PORT", config.ipc_port.to_string())
-        .env("ONICODE_UPDATE_FEED", &config.update_feed);
-    spawn_detached(&mut command)
+        .env(APP_ENV, app_path(app_exe));
+    spawn_detached(&mut command, log(data_dir).ok())
 }
 
-/// Spawn `command` so it survives its parent.
-pub fn spawn_detached(command: &mut Command) -> std::io::Result<Child> {
+/// The engine's log, appended to; one past [`LOG_LIMIT`] starts over.
+fn log(data_dir: &Path) -> std::io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt as _;
+    std::fs::create_dir_all(data_dir)?;
+    let path = data_dir.join(LOG_FILE);
+    let full = std::fs::metadata(&path).is_ok_and(|meta| meta.len() > LOG_LIMIT);
+    OpenOptions::new()
+        .create(true)
+        .append(!full)
+        .write(true)
+        .truncate(full)
+        .mode(0o600)
+        .open(path)
+}
+
+/// Spawns `command` so it survives its parent, its standard error into `log` when given.
+pub fn spawn_detached(command: &mut Command, log: Option<File>) -> std::io::Result<Child> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(log.map_or_else(Stdio::null, Stdio::from));
     use std::os::unix::process::CommandExt as _;
-    // A session of its own: no controlling terminal to hang up on it.
+    // A session of its own: no controlling terminal to hang up on it, and no process group the
+    // app's teardown signals.
+    // SAFETY: `setsid` is async-signal-safe and touches no memory of the parent.
     unsafe {
         command.pre_exec(|| {
             if libc::setsid() == -1 {
@@ -101,8 +97,8 @@ pub fn spawn_detached(command: &mut Command) -> std::io::Result<Child> {
     command.spawn()
 }
 
-/// Reap `child` whenever it exits, so a background engine that stops while
-/// the app runs never lingers as a zombie.
+/// Reaps `child` whenever it exits, so an engine that stops while the app runs (or a launch that
+/// lost the race for the lock) never lingers as a zombie.
 pub fn reap(mut child: Child) {
     let _ = std::thread::Builder::new()
         .name("engine-reaper".into())
@@ -111,52 +107,20 @@ pub fn reap(mut child: Child) {
         });
 }
 
-/// Become the engine helper beside the app at `app_exe`, given `args` (this
-/// process's own, `onicode headless`'s `headless` and on): the standard helper
-/// pattern for an app whose interface binary doesn't link the engine. The
-/// helper replaces this process (`exec`), so the pid, signals, standard
-/// streams and exit status are the helper's own — a service manager watching
-/// `onicode headless` watches the engine. Returns only when it couldn't start.
-pub fn exec_helper(app_exe: &Path, args: impl IntoIterator<Item = OsString>) -> std::io::Error {
-    let Some(helper) = engine_executable(app_exe) else {
-        return std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!(
-                "no engine beside {} ({})",
-                app_exe.display(),
-                ENGINE_EXECUTABLES.join(" or ")
-            ),
-        );
-    };
-    let mut command = Command::new(&helper);
-    command.args(args);
-    use std::os::unix::process::CommandExt as _;
-    command.exec()
-}
-
 #[cfg(test)]
 mod tests {
+    use std::os::unix::fs::PermissionsExt;
+
     use super::*;
 
     #[test]
-    fn engine_command_prefers_the_engine_beside_the_app() {
+    fn the_engine_is_found_beside_the_app() {
         let dir = tempfile::tempdir().unwrap();
         let app = dir.path().join("onicode");
         std::fs::write(&app, "").unwrap();
-        // Only the app: it runs the engine as a subcommand.
-        let command = engine_command(&app);
-        assert_eq!(command.get_program(), app.as_os_str());
-        assert_eq!(
-            command.get_args().collect::<Vec<_>>(),
-            vec![std::ffi::OsStr::new(ENGINE_SUBCOMMAND)]
-        );
         assert_eq!(engine_executable(&app), None);
-        // With the engine executable beside it, that runs instead.
         let engine = dir.path().join(ENGINE_EXECUTABLES[0]);
         std::fs::write(&engine, "").unwrap();
-        let command = engine_command(&app);
-        assert_eq!(command.get_program(), engine.as_os_str());
-        assert_eq!(command.get_args().count(), 0);
         assert_eq!(engine_executable(&app), Some(engine));
     }
 
@@ -174,11 +138,32 @@ mod tests {
         );
     }
 
+    /// The engine gets the data dir and the app's mark, and writes its standard error to the log
+    /// in the data dir.
     #[test]
-    fn a_missing_helper_is_an_error_not_a_hang() {
+    fn launch_hands_the_engine_its_data_dir_detached() {
         let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("data");
+        let engine = dir.path().join("onicode-engine");
+        let out = dir.path().join("out");
+        std::fs::write(
+            &engine,
+            format!(
+                "#!/bin/sh\nprintf '%s %s %s' \"$1\" \"$2\" \"$ONICODE_MANAGED_ENGINE\" > '{}'\necho starting >&2\n",
+                out.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&engine, std::fs::Permissions::from_mode(0o700)).unwrap();
         let app = dir.path().join("onicode");
-        let error = exec_helper(&app, [OsString::from("headless")]);
-        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        let status = launch(&data, &engine, &app).unwrap().wait().unwrap();
+        assert!(status.success());
+        let written = std::fs::read_to_string(&out).unwrap();
+        let fields: Vec<&str> = written.split(' ').collect();
+        assert_eq!(fields.first(), Some(&DATA_DIR_ARG));
+        assert_eq!(fields.get(1).copied(), data.to_str());
+        assert_eq!(fields.get(2), Some(&"1"));
+        let log = std::fs::read_to_string(data.join(LOG_FILE)).unwrap();
+        assert_eq!(log, "starting\n");
     }
 }

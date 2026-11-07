@@ -24,7 +24,7 @@
     <string>__VERSION__</string>
     <key>LSMinimumSystemVersion</key>
     <string>27.2</string>
-    <!-- Filled by scripts/run-macos-dev.sh. Keeping these in the bundle (not
+    <!-- Filled by scripts/native/bundle-native-macos.sh. Keeping these in the bundle (not
          only the parent shell) means macOS privacy's “Quit & Reopen” starts
          the same isolated development instance. -->
     <key>LSEnvironment</key>
@@ -33,8 +33,6 @@
         <string>0</string>
         <key>ONICODE_DATA_DIR</key>
         <string>__DATA_DIR__</string>
-        <key>ONICODE_IPC_PORT</key>
-        <string>__IPC_PORT__</string>
     </dict>
     <key>NSMicrophoneUsageDescription</key>
     <string>Onicode uses your microphone for on-device dictation and for voice sessions you start. Voice sessions stream your audio to OpenAI through your ChatGPT-authenticated Codex account.</string>

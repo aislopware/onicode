@@ -3,24 +3,44 @@
 //!
 //! Every byte the PTY writes is fed to the host and published under the terminal's one lock, so a
 //! watcher that joins gets a snapshot as of exactly the cursor it starts from and then the bytes
-//! after it; the topic's ring is the output ring a returning watcher resumes from.
+//! after it; the topic's ring is the output ring a returning watcher resumes from. A watcher gets
+//! its snapshot in two items, the renderable prefix and then the history behind it, so a far
+//! viewer paints before a long scrollback has crossed the link.
+//!
+//! The PTY takes the size of the viewer that typed last ([`viewers`]). The program's OSC 7501
+//! status rides the topic as [`TerminalEvent::Status`], and every change of any terminal's goes
+//! out on [`TerminalHub::statuses`] for whatever alerts on it.
 use std::collections::HashMap;
 use std::io::{ErrorKind, Read, Write};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak, mpsc};
 use std::time::Duration;
 
+use futures::StreamExt;
 use futures::stream::BoxStream;
 use onicode_protocol::terminal::{
-    Bytes, CloseTerminal, OpenTerminal, ReadForeground, ResizeTerminal, StopForeground,
-    TerminalEvent, TerminalInput, TerminalState, TerminalSummary, WatchTerminal,
+    Bytes, CloseTerminal, OpenTerminal, ProgramStatus, ReadForeground, ResizeTerminal,
+    StopForeground, TerminalEvent, TerminalInput, TerminalSize, TerminalState, TerminalSummary,
+    WatchTerminal,
 };
 use onicode_protocol::{Item, Outcome, TerminalId};
 use onicode_term::host::Host;
 use onicode_term::pty::{self, NativePty, Process, Spawned, Spawner, Spec};
-use onicode_term::{label, shell};
+use onicode_term::{label, shell, snapshot};
+use tokio::sync::broadcast;
 
 use crate::feed::{self, Feed, Limits, Pending, Topic};
 use crate::session::Spawn;
+
+mod viewers;
+
+use viewers::Viewers;
+
+/// Status changes a slow [`TerminalHub::statuses`] subscriber may fall behind by before it skips
+/// to the newest.
+const STATUS_BACKLOG: usize = 64;
+
+/// One terminal's program status changed: its id and its most urgent record now, or none.
+pub type StatusChange = (TerminalId, Option<ProgramStatus>);
 
 /// What the PTY is read in.
 const READ_BYTES: usize = 64 << 10;
@@ -40,34 +60,47 @@ impl Feed for TerminalFeed {
         match event {
             TerminalEvent::Resized(size) => state.size = *size,
             TerminalEvent::Exited { .. } => state.exited = true,
-            TerminalEvent::Output(_) | TerminalEvent::Clipboard(_) => {}
+            TerminalEvent::Status(status) => state.status.clone_from(status),
+            TerminalEvent::Output(_) | TerminalEvent::Clipboard(_) | TerminalEvent::History(_) => {}
         }
     }
 
     fn weight(event: &TerminalEvent) -> usize {
         16 + match event {
-            TerminalEvent::Output(bytes) => bytes.0.len(),
+            TerminalEvent::Output(bytes) | TerminalEvent::History(bytes) => bytes.0.len(),
             TerminalEvent::Clipboard(text) => text.len(),
+            TerminalEvent::Status(status) => status.as_ref().map_or(0, |status| {
+                [&status.app, &status.title, &status.message]
+                    .iter()
+                    .map(|text| text.as_ref().map_or(0, String::len))
+                    .sum::<usize>()
+            }),
             TerminalEvent::Resized(_) | TerminalEvent::Exited { .. } => 0,
         }
     }
 
     fn absorb(pending: &mut Pending<Self>, event: TerminalEvent) -> bool {
-        // Output joins the output just before it: one feed of both bytes is the same as two.
-        match event {
-            TerminalEvent::Output(more) => {
-                let Some(at) = pending.rposition(|_| true) else {
-                    return pending.append(TerminalEvent::Output(more));
-                };
-                match pending.event_mut(at) {
-                    TerminalEvent::Output(bytes) => bytes.0.extend_from_slice(&more.0),
-                    _ => return pending.append(TerminalEvent::Output(more)),
-                }
-                pending.reweigh(at);
-                false
+        // Output joins the output just before it: one feed of both bytes is the same as two. A
+        // status replaces the status just before it.
+        let Some(at) = pending.rposition(|_| true) else {
+            return pending.append(event);
+        };
+        let merged = match (pending.event_mut(at), &event) {
+            (TerminalEvent::Output(bytes), TerminalEvent::Output(more)) => {
+                bytes.0.extend_from_slice(&more.0);
+                true
             }
-            other => pending.append(other),
+            (TerminalEvent::Status(status), TerminalEvent::Status(newer)) => {
+                status.clone_from(newer);
+                true
+            }
+            _ => false,
+        };
+        if !merged {
+            return pending.append(event);
         }
+        pending.reweigh(at);
+        false
     }
 }
 
@@ -76,6 +109,7 @@ type Shell = dyn Fn(&str) -> (Spec, &'static str) + Send + Sync;
 
 /// One terminal: its host, its topic and the PTY behind them.
 struct Live {
+    id: TerminalId,
     host: Host,
     topic: Topic<TerminalFeed>,
     cwd: String,
@@ -84,6 +118,8 @@ struct Live {
     /// The writer thread's queue; dropped when the shell ends.
     writer: Option<mpsc::Sender<Vec<u8>>>,
     exited: bool,
+    viewers: Viewers,
+    statuses: broadcast::Sender<StatusChange>,
 }
 
 impl Live {
@@ -96,7 +132,28 @@ impl Live {
         }
         let mut events = vec![TerminalEvent::Output(Bytes(bytes.to_vec()))];
         events.extend(effects.clipboard.into_iter().map(TerminalEvent::Clipboard));
+        events.extend(effects.status.map(|status| self.status_changed(status)));
         self.topic.publish(events);
+    }
+
+    /// Tells the hub's status subscribers, and makes the event watchers get.
+    fn status_changed(&self, status: Option<ProgramStatus>) -> TerminalEvent {
+        // Nobody subscribed is no error.
+        let _ = self.statuses.send((self.id, status.clone()));
+        TerminalEvent::Status(status)
+    }
+
+    /// The PTY, the host and every watcher take `size`, in that order in the stream.
+    fn apply_size(&mut self, size: TerminalSize) {
+        if self.host.size() == size {
+            return;
+        }
+        if let Some(process) = &self.process {
+            process.resize(size);
+        }
+        self.host.resize(size);
+        let _ = self.host.take_effects();
+        self.topic.publish(vec![TerminalEvent::Resized(size)]);
     }
 
     fn write(&self, bytes: Vec<u8>) {
@@ -113,14 +170,16 @@ impl Live {
         let code_note = code.map(|code| format!(" ({code})")).unwrap_or_default();
         let note = format!("\r\n[process exited{code_note}]").into_bytes();
         self.host.feed(&note);
-        let _ = self.host.take_effects();
+        // Its program's working, blocked and idle records end with it.
+        self.host.exited();
+        let status = self.host.take_effects().status;
         self.exited = true;
         self.writer = None;
         self.process = None;
-        self.topic.publish(vec![
-            TerminalEvent::Output(Bytes(note)),
-            TerminalEvent::Exited { code },
-        ]);
+        let mut events = vec![TerminalEvent::Output(Bytes(note))];
+        events.extend(status.map(|status| self.status_changed(status)));
+        events.push(TerminalEvent::Exited { code });
+        self.topic.publish(events);
     }
 
     fn summary(&self, terminal: TerminalId) -> TerminalSummary {
@@ -128,6 +187,7 @@ impl Live {
             terminal,
             cwd: self.cwd.clone(),
             exited: self.exited,
+            status: self.host.status(),
         }
     }
 }
@@ -161,6 +221,7 @@ pub struct TerminalHub {
     /// When this engine run started (Unix ms): topic epochs are numbered from it.
     started: u64,
     inner: Mutex<Inner>,
+    statuses: broadcast::Sender<StatusChange>,
 }
 
 impl TerminalHub {
@@ -207,7 +268,15 @@ impl TerminalHub {
             limits,
             started,
             inner: Mutex::new(Inner::default()),
+            statuses: broadcast::channel(STATUS_BACKLOG).0,
         })
+    }
+
+    /// Every terminal's program status changes from now on, for the alerts a needs-input report
+    /// raises. A subscriber that falls more than a few dozen changes behind skips to the newest
+    /// (`RecvError::Lagged`); [`Self::list`] has every terminal's status now.
+    pub fn statuses(&self) -> broadcast::Receiver<StatusChange> {
+        self.statuses.subscribe()
     }
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
@@ -251,6 +320,7 @@ impl TerminalHub {
     fn start(&self, params: OpenTerminal) -> TerminalSummary {
         let OpenTerminal {
             terminal,
+            viewer,
             cwd,
             size,
             colors,
@@ -286,14 +356,21 @@ impl TerminalHub {
                 size,
                 screen: Bytes::default(),
                 exited: false,
+                status: None,
             };
+            let mut viewers = Viewers::default();
+            // The opener's grid is the PTY's.
+            let _ = viewers.sized(viewer, size);
             let live = Arc::new(Mutex::new(Live {
+                id: terminal,
                 host,
                 topic: Topic::new(epoch, state, self.limits),
                 cwd,
                 process: None,
                 writer: None,
                 exited: false,
+                viewers,
+                statuses: self.statuses.clone(),
             }));
             inner.terminals.insert(terminal, live.clone());
             live
@@ -320,35 +397,58 @@ impl TerminalHub {
         list
     }
 
-    /// `WatchTerminal`: the host's snapshot, then its output from there. After `Resync` the
-    /// stream ends; resubscribe with the last cursor.
+    /// `WatchTerminal`: the host's snapshot, its renderable prefix and then its history, then
+    /// its output from there. After `Resync` the stream ends; resubscribe with the last cursor.
+    /// While the watch lasts, its viewer's size counts toward the PTY's.
     pub fn watch(
         &self,
         params: WatchTerminal,
     ) -> Result<BoxStream<'static, Item<TerminalState, TerminalEvent>>, String> {
-        let live = self.get(params.terminal)?;
+        let WatchTerminal {
+            terminal,
+            viewer,
+            since,
+        } = params;
+        let live = self.get(terminal)?;
         let (id, notify) = {
             let mut guard = lock(&live);
-            let Live { host, topic, .. } = &mut *guard;
-            topic.join_with(params.since, |state| TerminalState {
+            let Live {
+                host,
+                topic,
+                viewers,
+                ..
+            } = &mut *guard;
+            viewers.joined(viewer);
+            topic.join_with(since, |state| TerminalState {
                 screen: Bytes(host.snapshot().unwrap_or_default()),
                 ..state.clone()
             })
         };
         let draining = live.clone();
-        Ok(feed::stream(
+        let items = feed::stream(
             notify,
             move || lock(&draining).topic.drain(id),
             move || {
-                lock(&live).topic.leave(id);
+                let mut live = lock(&live);
+                live.topic.leave(id);
+                if let Some(size) = live.viewers.left(viewer) {
+                    live.apply_size(size);
+                }
             },
-        ))
+        );
+        Ok(items
+            .flat_map(|item| futures::stream::iter(split_snapshot(item)))
+            .boxed())
     }
 
-    /// `TerminalInput`: encoded from the host's modes now, and written.
+    /// `TerminalInput`: its viewer becomes the typist, so the PTY takes its size first; then the
+    /// input is encoded from the host's modes now, and written.
     pub fn input(&self, params: TerminalInput) -> Result<Outcome, String> {
         let live = self.get(params.terminal)?;
-        let live = lock(&live);
+        let mut live = lock(&live);
+        if let Some(size) = live.viewers.typed(params.viewer) {
+            live.apply_size(size);
+        }
         let bytes = live.host.input(&params.input);
         if !bytes.is_empty() {
             live.write(bytes);
@@ -356,19 +456,13 @@ impl TerminalHub {
         Ok(Outcome::Applied)
     }
 
-    /// `ResizeTerminal`: the PTY, the host and every watcher take the new size, in that order in
-    /// the stream.
+    /// `ResizeTerminal`: the viewer's grid, which the PTY, the host and every watcher take, in
+    /// that order in the stream, when the PTY follows that viewer.
     pub fn resize(&self, params: ResizeTerminal) -> Result<Outcome, String> {
         let live = self.get(params.terminal)?;
         let mut live = lock(&live);
-        if live.host.size() != params.size {
-            if let Some(process) = &live.process {
-                process.resize(params.size);
-            }
-            live.host.resize(params.size);
-            let _ = live.host.take_effects();
-            live.topic
-                .publish(vec![TerminalEvent::Resized(params.size)]);
+        if let Some(size) = live.viewers.sized(params.viewer, params.size) {
+            live.apply_size(size);
         }
         Ok(Outcome::Applied)
     }
@@ -416,6 +510,29 @@ impl TerminalHub {
         }
         Ok(Outcome::Applied)
     }
+}
+
+/// A snapshot item as two: the snapshot through READY, which paints, and its history in an
+/// `Events` item that covers no numbers, so the cursor, the ring and resuming see one snapshot.
+fn split_snapshot(
+    item: Item<TerminalState, TerminalEvent>,
+) -> Vec<Item<TerminalState, TerminalEvent>> {
+    let Item::Snapshot { at, mut state } = item else {
+        return vec![item];
+    };
+    if state.screen.0.is_empty() {
+        return vec![Item::Snapshot { at, state }];
+    }
+    let (prefix, history) = snapshot::split(std::mem::take(&mut state.screen.0));
+    state.screen = Bytes(prefix);
+    vec![
+        Item::Snapshot { at, state },
+        Item::Events {
+            first: at.seq + 1,
+            last: at.seq,
+            events: vec![TerminalEvent::History(Bytes(history))],
+        },
+    ]
 }
 
 /// Starts the threads that read the PTY, write it and wait for the shell. They hold the terminal

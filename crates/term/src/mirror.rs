@@ -9,6 +9,11 @@
 //!
 //! Selection follows alacritty's rules ([`crate::select`]), anchored in screen space so it stays
 //! on its text as output scrolls; libghostty holds the resulting range, which paints and copies.
+//!
+//! A mirror starts from the renderable prefix of the host's snapshot ([`Mirror::attach`]) and
+//! paints at once; the history after it ([`Mirror::history`]) swaps in the whole snapshot with
+//! the output since replayed. A frame can carry the local echo predictor's cells
+//! ([`crate::predict`]), painted as the cells the echo will write.
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -19,13 +24,18 @@ use libghostty_vt::render::{CellIteration, CellIterator, Cursor, Dirty, RowItera
 use libghostty_vt::screen::{CellContentTag, CellWide, GridRef, Screen};
 use libghostty_vt::selection::Selection as Range;
 use libghostty_vt::snapshot::Decoder;
-use libghostty_vt::style::{Palette, PaletteIndex, RgbColor, StyleColor, Underline};
+use libghostty_vt::style::{Palette, PaletteIndex, RgbColor, Style, StyleColor, Underline};
 use libghostty_vt::terminal::{CursorStyle, Mode, PointCoordinate, PointSpace, ScrollViewport};
 use libghostty_vt::{RenderState, Terminal};
 use onicode_protocol::terminal::TerminalSize;
 
+use crate::predict::{Overlay, Surface};
 use crate::select::{self, Grid, Kind, Point, Selection, Side};
 use crate::{links, palette};
+
+/// Output a mirror replays onto its whole snapshot when the history arrives. Past this the
+/// history is given up and the mirror keeps the screen and the output since.
+const MAX_REPLAY_BYTES: usize = 8 << 20;
 
 /// A synchronized update the program never ends shows after this (alacritty's
 /// `SYNC_UPDATE_TIMEOUT`), so a crashed TUI cannot freeze the screen.
@@ -191,6 +201,20 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// What changed a mirror after its snapshot's prefix, to replay onto the whole snapshot.
+enum Step {
+    Feed(Vec<u8>),
+    Resize(TerminalSize),
+}
+
+/// A snapshot's prefix, waiting for its history.
+struct Restore {
+    screen: Vec<u8>,
+    since: Vec<Step>,
+    bytes: usize,
+}
+
+/// A viewer's libghostty terminal, fed the host's snapshot and output.
 pub struct Mirror {
     term: Terminal<'static, 'static>,
     render: Arc<Mutex<RenderSide>>,
@@ -199,6 +223,10 @@ pub struct Mirror {
     /// The OSC 10 foreground the last frame painted with.
     foreground: Option<u32>,
     selection: Option<Selection>,
+    /// Set from [`Self::attach`] until the history arrives.
+    restore: Option<Restore>,
+    /// Rows the last frame painted predictions on: the next one repaints them.
+    overlaid: HashSet<RowId>,
 }
 
 impl std::fmt::Debug for Mirror {
@@ -221,11 +249,82 @@ impl Mirror {
         mirror
     }
 
-    /// The host's terminal as its snapshot encodes it, or `None` when the bytes are not one.
+    /// The host's terminal as its whole snapshot encodes it, or `None` when the bytes are not
+    /// one.
     #[must_use]
     pub fn from_snapshot(bytes: &[u8]) -> Option<Self> {
         let term = Decoder::new_buf(bytes).ok()?.decode().ok()?;
         Some(Self::wrap(term))
+    }
+
+    /// The host's terminal from its snapshot's renderable prefix (through READY), to paint at
+    /// once; the older scrollback follows through [`Self::history`]. A blank terminal of `size`
+    /// when the bytes are empty or not a snapshot.
+    #[must_use]
+    pub fn attach(screen: &[u8], size: TerminalSize) -> Self {
+        let term = Decoder::new_buf(screen)
+            .ok()
+            .and_then(|decoder| decoder.ready().ok())
+            .map(libghostty_vt::snapshot::IncrementalDecoder::into_terminal);
+        let Some(term) = term else {
+            return Self::new(size);
+        };
+        let mut mirror = Self::wrap(term);
+        mirror.restore = Some(Restore {
+            screen: screen.to_vec(),
+            since: Vec::new(),
+            bytes: 0,
+        });
+        mirror
+    }
+
+    /// The rest of the snapshot [`Self::attach`] started from. The mirror becomes the whole
+    /// snapshot with the output and resizes since replayed, scrolled back as far as it was; a
+    /// history that does not decode leaves it as it is.
+    pub fn history(&mut self, history: &[u8]) {
+        let Some(Restore {
+            mut screen, since, ..
+        }) = self.restore.take()
+        else {
+            return;
+        };
+        screen.extend_from_slice(history);
+        let Some(mut whole) = Self::from_snapshot(&screen) else {
+            return;
+        };
+        for step in since {
+            match step {
+                Step::Feed(bytes) => whole.feed(&bytes),
+                Step::Resize(size) => whole.resize(size),
+            }
+        }
+        let back = self.display_offset();
+        if back > 0 {
+            whole.scroll(i32::try_from(back).unwrap_or(i32::MAX));
+        }
+        *self = whole;
+    }
+
+    /// Older scrollback is still to come.
+    #[must_use]
+    pub const fn awaiting_history(&self) -> bool {
+        self.restore.is_some()
+    }
+
+    /// Keeps a step to replay when the history arrives.
+    fn remember(&mut self, step: Step) {
+        let Some(restore) = &mut self.restore else {
+            return;
+        };
+        restore.bytes += match &step {
+            Step::Feed(bytes) => bytes.len(),
+            Step::Resize(_) => 0,
+        };
+        if restore.bytes > MAX_REPLAY_BYTES {
+            self.restore = None;
+        } else {
+            restore.since.push(step);
+        }
     }
 
     fn wrap(mut term: Terminal<'static, 'static>) -> Self {
@@ -257,6 +356,8 @@ impl Mirror {
             default_palette,
             foreground: None,
             selection: None,
+            restore: None,
+            overlaid: HashSet::new(),
         };
         mirror.capture();
         mirror
@@ -282,6 +383,9 @@ impl Mirror {
     pub fn feed(&mut self, bytes: &[u8]) {
         self.term.vt_write(bytes);
         self.capture();
+        if self.restore.is_some() {
+            self.remember(Step::Feed(bytes.to_vec()));
+        }
     }
 
     /// When the open synchronized update shows anyway.
@@ -310,6 +414,7 @@ impl Mirror {
             u32::from(size.cell_height.max(1)),
         );
         self.show_selection();
+        self.remember(Step::Resize(size));
     }
 
     /// Columns and rows.
@@ -527,7 +632,18 @@ impl Mirror {
     /// The frame to paint. Rows come with cells when they changed since the last frame or
     /// `cached` has nothing for their id; a view repaints those and reuses its cache for the
     /// rest.
-    pub fn frame(&mut self, mut cached: impl FnMut(RowId) -> bool) -> Frame {
+    pub fn frame(&mut self, cached: impl FnMut(RowId) -> bool) -> Frame {
+        self.frame_with(&Overlay::default(), cached)
+    }
+
+    /// [`Self::frame`] with the predictor's cells painted in place, in the pen the program
+    /// prints with now, as its echo will paint them, and the cursor past them. A row that
+    /// carried predictions comes with cells again in the next frame.
+    pub fn frame_with(
+        &mut self,
+        overlay: &Overlay,
+        mut cached: impl FnMut(RowId) -> bool,
+    ) -> Frame {
         let foreground = match (self.term.fg_color(), self.term.default_fg_color()) {
             (Ok(Some(color)), Ok(default)) if Some(color) != default => Some(palette::hex(color)),
             _ => None,
@@ -535,16 +651,33 @@ impl Mirror {
         let recolored = foreground != self.foreground;
         self.foreground = foreground;
         let top = self.screen_point(0, 0).map_or(0, |at| at.line);
+        let pen = if overlay.cells.is_empty() {
+            None
+        } else {
+            self.term.cursor_style().ok()
+        };
         let mut side = lock(&self.render);
         side.full |= recolored;
-        let mut frame =
-            read_frame(&mut side, &self.default_palette, &mut cached).unwrap_or(Frame {
-                full: true,
-                rows: Vec::new(),
-                cursor: None,
-                foreground: None,
-                top: 0,
-            });
+        let predicted = Predicted {
+            overlay,
+            pen: pen.as_ref(),
+            previous: &self.overlaid,
+        };
+        let (mut frame, overlaid) =
+            read_frame(&mut side, &self.default_palette, &predicted, &mut cached).unwrap_or_else(
+                |_| {
+                    let frame = Frame {
+                        full: true,
+                        rows: Vec::new(),
+                        cursor: None,
+                        foreground: None,
+                        top: 0,
+                    };
+                    (frame, HashSet::new())
+                },
+            );
+        drop(side);
+        self.overlaid = overlaid;
         frame.foreground = foreground;
         frame.top = top;
         frame
@@ -573,6 +706,51 @@ impl Mirror {
             .trim_end_matches('\n')
             .to_owned()
     }
+}
+
+impl Surface for Mirror {
+    fn columns(&self) -> usize {
+        usize::from(self.size().0)
+    }
+
+    fn typing_cursor(&self) -> Option<(usize, usize)> {
+        let primary = self
+            .term
+            .active_screen()
+            .is_ok_and(|screen| screen == Screen::Primary);
+        let visible = self.term.is_cursor_visible().unwrap_or(false);
+        if !(primary && visible) {
+            return None;
+        }
+        Some((
+            usize::from(self.term.cursor_y().ok()?),
+            usize::from(self.term.cursor_x().ok()?),
+        ))
+    }
+
+    fn char_at(&self, row: usize, col: usize) -> Option<char> {
+        let point = libghostty_vt::terminal::Point::Active(PointCoordinate {
+            x: u16::try_from(col).ok()?,
+            y: u32::try_from(row).ok()?,
+        });
+        let cell = self.term.grid_ref(point).ok()?.cell().ok()?;
+        if !cell.has_text().ok()? {
+            return Some(' ');
+        }
+        char::from_u32(cell.codepoint().ok()?)
+    }
+
+    fn at_bottom(&self) -> bool {
+        self.display_offset() == 0
+    }
+}
+
+/// The predictor's cells for one frame, the pen they paint in, and the rows the last frame
+/// painted predictions on.
+struct Predicted<'a> {
+    overlay: &'a Overlay,
+    pen: Option<&'a Style>,
+    previous: &'a HashSet<RowId>,
 }
 
 /// The grid in screen space, as [`select`] reads it.
@@ -653,12 +831,13 @@ fn shape(style: CursorStyle) -> CursorShape {
 }
 
 /// Reads the captured render state, handing out (and clearing) what changed since the last
-/// frame.
+/// frame, with the predicted cells spliced in; also the rows that carry predictions.
 fn read_frame(
     side: &mut RenderSide,
     defaults: &Palette,
+    predicted: &Predicted<'_>,
     cached: &mut dyn FnMut(RowId) -> bool,
-) -> libghostty_vt::error::Result<Frame> {
+) -> libghostty_vt::error::Result<(Frame, HashSet<RowId>)> {
     let RenderSide {
         state,
         rows,
@@ -675,29 +854,94 @@ fn read_frame(
         rows: Vec::with_capacity(usize::from(snapshot.rows()?)),
         cursor: cursor.and_then(|cursor| {
             let at = cursor.viewport.filter(|_| cursor.visible)?;
+            let (row, col) = predicted
+                .overlay
+                .cursor
+                .unwrap_or((usize::from(at.y), usize::from(at.x)));
             Some(FrameCursor {
-                row: usize::from(at.y),
-                col: usize::from(at.x),
+                row,
+                col,
                 shape: shape(cursor.visual_style),
             })
         }),
         foreground: None,
         top: 0,
     };
+    let mut overlaid = HashSet::new();
     let mut iteration = rows.update(&snapshot)?;
+    let mut line = 0;
     while let Some(row) = iteration.next() {
         let id = row.id()?;
-        let painted = if frame.full || dirty.contains(&id) || !cached(id) {
+        let here: Vec<(usize, char)> = predicted
+            .overlay
+            .cells
+            .iter()
+            .filter(|cell| cell.0 == line)
+            .map(|cell| (cell.1, cell.2))
+            .collect();
+        let repaint = !here.is_empty() || predicted.previous.contains(&id);
+        let painted = if frame.full || repaint || dirty.contains(&id) || !cached(id) {
             let mut iteration = cells.update(row)?;
-            Some(read_cells(&mut iteration, &colors.palette, defaults)?)
+            let mut row = read_cells(&mut iteration, &colors.palette, defaults)?;
+            for (col, ch) in &here {
+                if let Some(cell) = row.get_mut(*col) {
+                    *cell = predicted_cell(*ch, *cell, predicted.pen, &colors.palette, defaults);
+                }
+            }
+            Some(row)
         } else {
             None
         };
+        if !here.is_empty() {
+            overlaid.insert(id);
+        }
         frame.rows.push(FrameRow { id, cells: painted });
+        line += 1;
     }
     dirty.clear();
     *full = false;
-    Ok(frame)
+    Ok((frame, overlaid))
+}
+
+/// A predicted character as its echo will paint it: in the program's current pen, over the
+/// cell's selection.
+fn predicted_cell(
+    ch: char,
+    under: Cell,
+    pen: Option<&Style>,
+    active: &[RgbColor; 256],
+    defaults: &Palette,
+) -> Cell {
+    let blank = Cell {
+        ch,
+        fg: CellColor::Default,
+        bg: CellColor::Default,
+        bold: false,
+        dim: false,
+        italic: false,
+        underline: false,
+        strike: false,
+        inverse: false,
+        hidden: false,
+        wide: false,
+        spacer: false,
+        selected: under.selected,
+    };
+    let Some(pen) = pen else {
+        return blank;
+    };
+    Cell {
+        fg: color(pen.fg_color, active, defaults),
+        bg: color(pen.bg_color, active, defaults),
+        bold: pen.bold,
+        dim: pen.faint,
+        italic: pen.italic,
+        underline: pen.underline != Underline::None,
+        strike: pen.strikethrough,
+        inverse: pen.inverse,
+        hidden: pen.invisible,
+        ..blank
+    }
 }
 
 fn color(color: StyleColor, active: &[RgbColor; 256], defaults: &Palette) -> CellColor {
@@ -976,5 +1220,80 @@ mod tests {
             prop_assert_eq!(attached.frame(|_| false).cursor, whole.frame(|_| false).cursor);
             prop_assert_eq!(cells(&mut attached), cells(&mut whole));
         }
+
+        /// A viewer that paints from the snapshot's prefix, takes output (and a resize) before
+        /// the history arrives, then the history and the rest, holds what a viewer restored from
+        /// the whole snapshot holds, scrollback included.
+        #[test]
+        fn prefix_then_history_restores_the_whole_snapshot(
+            bytes in output(),
+            lines in 0usize..80,
+            split in any::<prop::sample::Index>(),
+            mid in any::<prop::sample::Index>(),
+            resized in any::<bool>(),
+        ) {
+            let mut host = host(12, 4);
+            for n in 0..lines {
+                host.feed(format!("line {n}\r\n").as_bytes());
+            }
+            let at = split.index(bytes.len() + 1);
+            host.feed(&bytes[..at]);
+            let snapshot = host.snapshot().expect("a snapshot");
+            let rest = &bytes[at..];
+            let cut = mid.index(rest.len() + 1);
+            let (prefix, history) = crate::snapshot::split(snapshot.clone());
+            let mut parts = Mirror::attach(&prefix, size(12, 4));
+            prop_assert!(parts.awaiting_history());
+            let mut whole = Mirror::from_snapshot(&snapshot).expect("it decodes");
+            for mirror in [&mut parts, &mut whole] {
+                mirror.feed(&rest[..cut]);
+                if resized {
+                    mirror.resize(size(9, 5));
+                }
+            }
+            parts.history(&history);
+            prop_assert!(!parts.awaiting_history());
+            parts.feed(&rest[cut..]);
+            whole.feed(&rest[cut..]);
+            prop_assert_eq!(parts.text(), whole.text());
+            prop_assert_eq!(parts.frame(|_| false).cursor, whole.frame(|_| false).cursor);
+            prop_assert_eq!(cells(&mut parts), cells(&mut whole));
+            parts.select_all();
+            whole.select_all();
+            prop_assert_eq!(parts.selection_text(), whole.selection_text());
+        }
+    }
+
+    #[test]
+    fn predicted_cells_paint_in_the_programs_pen_and_leave_no_trace() {
+        let mut m = mirror(10, 2, b"$ \x1b[31m");
+        let _ = m.frame(|_| false);
+        let overlay = Overlay {
+            cells: vec![(0, 2, 'x')],
+            cursor: Some((0, 3)),
+        };
+        let frame = m.frame_with(&overlay, |_| true);
+        let row = frame.rows[0]
+            .cells
+            .as_ref()
+            .expect("the predicted row repaints");
+        assert_eq!((row[2].ch, row[2].fg), ('x', CellColor::Indexed(1)));
+        assert_eq!(frame.cursor.map(|c| (c.row, c.col)), Some((0, 3)));
+        let frame = m.frame(|_| true);
+        let row = frame.rows[0]
+            .cells
+            .as_ref()
+            .expect("and again once it goes");
+        assert_eq!(row[2].ch, ' ');
+        assert_eq!(frame.cursor.map(|c| (c.row, c.col)), Some((0, 2)));
+    }
+
+    #[test]
+    fn the_predictor_reads_the_live_screen() {
+        let mut m = mirror(6, 2, b"ab");
+        assert_eq!(m.typing_cursor(), Some((0, 2)));
+        assert_eq!((m.char_at(0, 1), m.char_at(0, 4)), (Some('b'), Some(' ')));
+        m.feed(b"\x1b[?25l");
+        assert_eq!(m.typing_cursor(), None);
     }
 }

@@ -367,9 +367,6 @@ fn main() {
                     window.on_next_frame(|window, _| {
                         window.on_next_frame(|_, cx| app_menu::ready(cx));
                     });
-                    // Off the launch path: it lists every conversation folder.
-                    let cleanup = engine.clone();
-                    window.on_next_frame(move |_, _| cleanup.sweep());
                     let shell = cx.new(|cx| shell::Shell::new(engine, sessions, cwd, saved, cx));
                     shell.update(cx, |shell, cx| shell.focus_active(window, cx));
                     #[cfg(target_os = "macos")]
@@ -409,8 +406,27 @@ struct Fixtures {
     visual: bool,
 }
 
-/// Opens the engine and the app's own state, before the first frame as monocode opened its
-/// store, and finds the project and sessions the window opens on.
+impl Fixtures {
+    fn any(self) -> bool {
+        self.scroll || self.chat || self.visual
+    }
+}
+
+/// The project a saved workspace names.
+fn saved_project(saved: Option<&str>) -> Option<String> {
+    saved
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|state| {
+            state["project"]
+                .as_str()
+                .filter(|s| !s.is_empty())
+                .map(str::to_owned)
+        })
+}
+
+/// Reaches the engine (launching it in the background when none runs) and opens the app's own
+/// state, then finds the project and sessions the window opens on: from what the last launch
+/// kept, so the first frame never waits on the engine.
 fn launch(
     data: &std::path::Path,
     cwd: String,
@@ -418,13 +434,21 @@ fn launch(
     samples: Fixtures,
     cx: &mut App,
 ) -> Launch {
-    let engine = Engine::open(data, cx).unwrap_or_else(|error| {
-        eprintln!("{error}");
-        std::process::exit(1);
-    });
     let ui_state = ui_state::UiState::open(data).unwrap_or_else(|error| {
         eprintln!("{error}; the window's layout will not be kept.");
         ui_state::UiState::memory()
+    });
+    if samples.any() {
+        let project = saved_project(ui_state.get(ui_state::WORKSPACE).as_deref())
+            .filter(|_| !explicit_cwd)
+            .unwrap_or_else(|| cwd.clone());
+        if let Err(error) = seed_fixtures(data, &project, samples) {
+            eprintln!("Cannot add the fixtures: {error}");
+        }
+    }
+    let engine = Engine::connect(data, cx).unwrap_or_else(|error| {
+        eprintln!("{error}");
+        std::process::exit(1);
     });
     if let Err(error) = ui_state.adopt(&engine) {
         eprintln!("Cannot take the saved workspace from the engine: {error}");
@@ -444,15 +468,7 @@ fn launch(
             eprintln!("Cannot read the engine's sessions: {error}");
             Vec::new()
         });
-    let existing_project = saved
-        .as_deref()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-        .and_then(|state| {
-            state["project"]
-                .as_str()
-                .filter(|s| !s.is_empty())
-                .map(str::to_owned)
-        })
+    let existing_project = saved_project(saved.as_deref())
         .or_else(|| stored.iter().find(|s| !s.archived).map(|s| s.cwd.clone()));
     // Opened from the Dock or Finder, macOS starts the app in `/`. Resume the
     // saved project instead of deriving a project from an internal chat path.
@@ -467,17 +483,7 @@ fn launch(
             .find(|c| c != &cwd)
             .unwrap_or_else(|| std::env::var("HOME").unwrap_or(cwd))
     };
-    seed_fixtures(&engine, &cwd, samples);
-    let mut sessions = engine
-        .workspace_now()
-        .map(|state| {
-            state
-                .sessions
-                .into_iter()
-                .map(|summary| summary.session)
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let mut sessions = stored;
     if sessions.is_empty() {
         let created = futures::executor::block_on(engine.call::<CreateSession>(
             Some(OpId::new()),
@@ -496,8 +502,6 @@ fn launch(
             Err(error) => eprintln!("Cannot create the first session: {error}"),
         }
     }
-    // The schedulers start once the store holds the fixtures and the first session.
-    engine.run_schedulers();
     let metadata = sessions
         .iter()
         .map(|s| (s.id, s.cwd.clone()))
@@ -512,49 +516,37 @@ fn launch(
     }
 }
 
-/// Writes the debug builds' local samples through the engine's seam, and tells its workspace, so
-/// the sidebar lists them.
-fn seed_fixtures(engine: &Engine, cwd: &str, samples: Fixtures) {
-    let seed = engine.seed();
-    let mut rows = Vec::new();
-    if samples.scroll {
-        let s = seed.create("codex", cwd).expect("create fixture");
-        seed.title(s.id, "Scroll lab · 10,000 messages").unwrap();
-        let mut t = Transcript::default();
-        let started = Instant::now();
-        for i in 0..10_000 {
-            t.begin(if i % 2 == 0 { "user" } else { "assistant" });
-            t.append(&format!("Message {i:05} · Native transcript stress fixture.\nUnicode stays intact: 🙂 漢字 café. Scroll up while another session streams.\nThis message is local fixture data; sending resumes a new real provider conversation."));
+/// Writes the debug builds' local samples into the store in `data`, before the engine is
+/// reached: a running engine is stopped first, and the one launched next reads them.
+fn seed_fixtures(data: &std::path::Path, cwd: &str, samples: Fixtures) -> Result<(), String> {
+    onicode_engine::testing::Seed::offline(data, |seed| -> Result<(), String> {
+        if samples.scroll {
+            let s = seed.create("codex", cwd)?;
+            seed.title(s.id, "Scroll lab · 10,000 messages")?;
+            let mut t = Transcript::default();
+            let started = Instant::now();
+            for i in 0..10_000 {
+                t.begin(if i % 2 == 0 { "user" } else { "assistant" });
+                t.append(&format!("Message {i:05} · Native transcript stress fixture.\nUnicode stays intact: 🙂 漢字 café. Scroll up while another session streams.\nThis message is local fixture data; sending resumes a new real provider conversation."));
+            }
+            seed.write_rows(s.id, 0, &t.rows)?;
+            eprintln!("Seeded {} rows in {:?}", t.rows.len(), started.elapsed());
         }
-        seed.write_rows(s.id, 0, &t.rows).unwrap();
-        rows.push(s.id);
-        eprintln!("Seeded {} rows in {:?}", t.rows.len(), started.elapsed());
-    }
-    if samples.chat {
-        let s = seed.create("codex", cwd).expect("create chat fixture");
-        seed.title(s.id, "Native chat · Markdown and tools")
-            .unwrap();
-        seed.write_rows(s.id, 0, &fixtures::chat().rows).unwrap();
-        rows.push(s.id);
-    }
-    if samples.visual {
-        let s = seed.create("codex", cwd).expect("create visual fixture");
-        seed.title(s.id, "Native visuals · Controls, charts and 3D")
-            .unwrap();
-        seed.write_rows(s.id, 0, &fixtures::visuals().rows).unwrap();
-        rows.push(s.id);
-        let s = seed
-            .create("claude", cwd)
-            .expect("create visual story fixture");
-        seed.title(s.id, "Native visuals · Charts inside an answer")
-            .unwrap();
-        seed.write_rows(s.id, 0, &fixtures::visual_story().rows)
-            .unwrap();
-        rows.push(s.id);
-    }
-    for row in rows {
-        engine.refresh_now(row);
-    }
+        if samples.chat {
+            let s = seed.create("codex", cwd)?;
+            seed.title(s.id, "Native chat · Markdown and tools")?;
+            seed.write_rows(s.id, 0, &fixtures::chat().rows)?;
+        }
+        if samples.visual {
+            let s = seed.create("codex", cwd)?;
+            seed.title(s.id, "Native visuals · Controls, charts and 3D")?;
+            seed.write_rows(s.id, 0, &fixtures::visuals().rows)?;
+            let s = seed.create("claude", cwd)?;
+            seed.title(s.id, "Native visuals · Charts inside an answer")?;
+            seed.write_rows(s.id, 0, &fixtures::visual_story().rows)?;
+        }
+        Ok(())
+    })?
 }
 
 #[cfg(test)]

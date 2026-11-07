@@ -1,66 +1,102 @@
-//! Ad-hoc RPC probe: call or subscribe against a running engine's IPC socket.
+//! Calls a running engine over its socket, and times the round trip: the Mac bench behind the
+//! Local feel table's "receipt from the local engine, ≤ 1 ms p99 over the socket" (engine.md).
 //!
-//! Usage:
-//!   cargo run -p onicode-rpc --example rpc_probe -- ws://127.0.0.1:27801 LocalDevice '{}'
-//!   cargo run -p onicode-rpc --example rpc_probe -- ws://127.0.0.1:27801 WatchSessions '{}'
-//! --stream 3
+//! Usage: `rpc_probe <data dir> [method] [params] [--repeat N]`, run with
+//! `cargo run --release -p onicode-rpc --example rpc_probe --`.
 //!
-//! A stream gives up after 30 s without an item (`RPC_PROBE_TIMEOUT_SECS`
-//! overrides — a watcher meant to keep a chat viewed needs longer).
-//!
-//! The engine's IPC bearer comes from `$ONICODE_IPC_TOKEN`, `$ONICODE_IPC_TOKEN_FILE`,
-//! or `$ONICODE_DATA_DIR/ipc-token` (default `~/.onicode/ipc-token`) — point
-//! `ONICODE_DATA_DIR` at the probed engine's data dir.
+//! `Hello` goes first, as on every connection. With no method the probe times `EngineInfo`.
+//! Params are the call's body as JSON; the probe wraps them in a `Routed` for this engine. The
+//! full token comes from `<data dir>/ipc-token`.
 
-use onicode_rpc::{connect_ws, ipc_auth};
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
-fn data_dir() -> Option<std::path::PathBuf> {
-    std::env::var_os("ONICODE_DATA_DIR")
-        .map(std::path::PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME").map(|home| std::path::Path::new(&home).join(".onicode"))
-        })
+use onicode_protocol::engine::Hello;
+use onicode_protocol::{PROTOCOL, Routed};
+use onicode_rpc::{connect_unix, ipc_auth};
+
+fn routed(body: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({ "engine": null, "op": null, "body": body })
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
-    let [url, method, params, rest @ ..] = args.as_slice() else {
-        eprintln!("usage: rpc_probe <ws-url> <method> <params-json> [--stream [n]]");
+    let Some(dir) = args.first().map(PathBuf::from) else {
+        eprintln!("usage: rpc_probe <data dir> [method] [params-json] [--repeat N]");
         std::process::exit(2);
     };
-    let params: serde_json::Value = serde_json::from_str(params).expect("params json");
-    let token = ipc_auth::client_tokens(data_dir().as_deref())
-        .into_iter()
-        .next();
-    let client = connect_ws(url, token.as_deref()).await.expect("connect");
-    if rest.first().map(String::as_str) == Some("--stream") {
-        let count: usize = rest.get(1).and_then(|n| n.parse().ok()).unwrap_or(1);
-        let timeout = std::env::var("RPC_PROBE_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(30);
-        let mut rx = client.subscribe(method, params).await.expect("subscribe");
-        for _ in 0..count {
-            match tokio::time::timeout(std::time::Duration::from_secs(timeout), rx.recv()).await {
-                Ok(Some(item)) => println!("{item}"),
-                Ok(None) => {
-                    eprintln!("stream ended");
-                    break;
-                }
-                Err(_) => {
-                    eprintln!("timed out");
-                    break;
-                }
-            }
+    let mut positional = args.iter().skip(1).take_while(|arg| *arg != "--repeat");
+    let method = positional
+        .next()
+        .cloned()
+        .unwrap_or_else(|| "EngineInfo".into());
+    let params: serde_json::Value = match positional.next() {
+        Some(raw) => serde_json::from_str(raw).unwrap_or_else(|error| {
+            eprintln!("params are not JSON: {error}");
+            std::process::exit(2);
+        }),
+        None => serde_json::json!({}),
+    };
+    let repeat: usize = args
+        .iter()
+        .position(|arg| arg == "--repeat")
+        .and_then(|at| args.get(at + 1))
+        .and_then(|n| n.parse().ok())
+        .unwrap_or(1);
+    let Some(token) = ipc_auth::client_tokens(Some(&dir)).into_iter().next() else {
+        eprintln!("no engine has started in {}", dir.display());
+        std::process::exit(1);
+    };
+    let dialed = Instant::now();
+    let client = match connect_unix(&dir.join("engine.sock"), &token, None).await {
+        Ok(client) => client,
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
         }
-    } else {
-        match client.call(method, params).await {
-            Ok(value) => println!("{value}"),
-            Err(err) => {
-                eprintln!("error: {err}");
+    };
+    let hello = Routed {
+        engine: None,
+        op: None,
+        body: Hello {
+            protocol: PROTOCOL,
+            version: env!("CARGO_PKG_VERSION").into(),
+            capabilities: Vec::new(),
+        },
+    };
+    let hello = serde_json::to_value(hello).unwrap_or_default();
+    match client.call("Hello", hello).await {
+        Ok(reply) => eprintln!("Hello in {:?}: {reply}", dialed.elapsed()),
+        Err(error) => {
+            eprintln!("Hello failed: {error}");
+            std::process::exit(1);
+        }
+    }
+    let params = routed(params);
+    let mut times: Vec<Duration> = Vec::with_capacity(repeat);
+    let mut last = serde_json::Value::Null;
+    for _ in 0..repeat {
+        let started = Instant::now();
+        match client.call_ref(&method, &params).await {
+            Ok(reply) => last = reply,
+            Err(error) => {
+                eprintln!("{method} failed: {error}");
                 std::process::exit(1);
             }
         }
+        times.push(started.elapsed());
     }
+    println!("{last}");
+    times.sort_unstable();
+    let at = |q: f64| {
+        let index = ((times.len() as f64 - 1.0) * q).round() as usize;
+        times.get(index).copied().unwrap_or_default()
+    };
+    eprintln!(
+        "{method} x{repeat}: p50 {:?}, p99 {:?}, max {:?}",
+        at(0.5),
+        at(0.99),
+        at(1.0)
+    );
 }

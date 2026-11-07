@@ -1,87 +1,95 @@
 #!/usr/bin/env bash
-# Package an already-built native executable; do not build or launch the app.
-# Development bundles use separate data; release bundles use installed app data.
+# Assembles Onicode.app from executables cargo already built; builds and launches nothing.
+#
+#   scripts/native/bundle-native-macos.sh [profile] [target dir] [version]
+#
+# Build first: `cargo build --profile <profile> -p onicode -p onicode-engine` (and
+# `-p onicode-desktopd` for the desktop helper). The layout (docs/onicode/decisions/engine.md,
+# "Step 8 as built"):
+#
+#   Contents/MacOS/onicode          the app (CFBundleExecutable)
+#   Contents/MacOS/Onicode Engine   onicode-engine, which the app launches detached beside it
+#   Contents/Library/LoginItems/Onicode Desktop.app   desktopd, when it was built
+#
+# A release profile takes packaging/macos/Info.plist, any other Info-dev.plist (its data dir
+# under the target dir). Signing is ad hoc unless ONICODE_NATIVE_SIGNING_IDENTITY names a
+# Developer ID; nested code is signed first, the engine under the fixed identifier
+# "<app id>.engine", so TCC's requirement for it never names a binary's hash.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-os=$(uname -s)
+root="$(cd "$(dirname "$0")/../.." && pwd)"
+cd "$root"
+os="$(uname -s)"
 if [[ "$os" != Darwin ]]; then
-  echo 'macOS app bundles must be packaged on macOS.' >&2
+  echo 'macOS app bundles are assembled on macOS.' >&2
   exit 1
 fi
+# shellcheck source=scripts/dev/env.sh
+source scripts/dev/env.sh
+# shellcheck source=scripts/macos-desktop-helper.sh
+source scripts/macos-desktop-helper.sh
 
-native_profile="${1:-release}"
-native_target="${2:-${CARGO_TARGET_DIR:-crates/monocode-gpui/target}}/$native_profile"
-native_version="${3:-$(sed -n 's/^version = "\([^"]*\)".*/\1/p' crates/monocode-gpui/Cargo.toml)}"
-if [[ "$native_profile" = release ]]; then
-  native_data_mode="${4:-monocode-data}"
-else
-  native_data_mode="${4:-dev-data}"
-fi
-case "$native_data_mode" in
-  dev-data | monocode-data) ;;
-  *)
-    echo "Unknown data mode: $native_data_mode" >&2
+profile="${1:-release}"
+profile_dir="$profile"
+[[ "$profile" = dev ]] && profile_dir=debug
+target="${2:-$CARGO_TARGET_DIR}/$profile_dir"
+version="${3:-$(sed -n 's/^version = "\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)}"
+app_binary="$target/onicode"
+engine_binary="$target/onicode-engine"
+desktopd_binary="$target/onicode-desktopd"
+for binary in "$app_binary" "$engine_binary"; do
+  if [[ ! -x "$binary" ]]; then
+    echo "Missing $binary: build it with cargo first." >&2
     exit 1
-    ;;
-esac
-native_bundle="$native_target/Onicode.app"
-native_binary="$native_target/monocode-gpui"
-if [[ ! -f "$native_binary" ]]; then
-  echo "Missing native executable: $native_binary" >&2
-  echo 'Build it with cargo first, or use npm run native:build.' >&2
-  exit 1
+  fi
+done
+
+bundle="$target/Onicode.app"
+macos="$bundle/Contents/MacOS"
+resources="$bundle/Contents/Resources"
+mkdir -p "$macos" "$resources"
+# put <source> <name>: replaces the inode, so macOS never reuses an older signature's cache.
+put() {
+  install -m 755 "$1" "$macos/$2.next"
+  mv -f "$macos/$2.next" "$macos/$2"
+}
+put "$app_binary" onicode
+put "$engine_binary" "Onicode Engine"
+
+if [[ "$profile" = release ]]; then
+  sed "s/__VERSION__/$version/g" packaging/macos/Info.plist >"$bundle/Contents/Info.plist"
+else
+  data_dir="$target/onicode-data"
+  sed -e "s/__VERSION__/$version/g" -e "s|__DATA_DIR__|$data_dir|g" \
+    packaging/macos/Info-dev.plist >"$bundle/Contents/Info.plist"
+fi
+app_id="$(plutil -extract CFBundleIdentifier raw "$bundle/Contents/Info.plist")"
+app_name="$(plutil -extract CFBundleName raw "$bundle/Contents/Info.plist")"
+
+icns="$resources/onicode.icns"
+if [[ ! -f "$icns" || packaging/macos/icon-1024.png -nt "$icns" ]]; then
+  iconset="$(mktemp -d)/onicode.iconset"
+  mkdir -p "$iconset"
+  for size in 16 32 128 256 512; do
+    sips -z "$size" "$size" packaging/macos/icon-1024.png --out "$iconset/icon_${size}x${size}.png" >/dev/null
+    double=$((size * 2))
+    sips -z "$double" "$double" packaging/macos/icon-1024.png \
+      --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
+  done
+  iconutil -c icns "$iconset" -o "$icns"
 fi
 
-mkdir -p "$native_bundle/Contents/MacOS" "$native_bundle/Contents/Resources"
-# Replace the inode atomically so macOS does not reuse an older signature cache.
-cp "$native_binary" "$native_bundle/Contents/MacOS/monocode-gpui.next"
-mv -f "$native_bundle/Contents/MacOS/monocode-gpui.next" "$native_bundle/Contents/MacOS/monocode-gpui"
-cp src-tauri/icons/icon.icns "$native_bundle/Contents/Resources/monocode.icns"
-# macOS 26 draws the Liquid Glass icon from Assets.car; the .icns covers older releases.
-cp src-tauri/macos/Assets.car "$native_bundle/Contents/Resources/Assets.car"
-# Ship the app's attribution and the license texts for GPUI and embedded assets.
-# Add these before signing so the signature covers the notices too.
-native_licenses="$native_bundle/Contents/Resources/licenses"
-mkdir -p "$native_licenses"
-cp LICENSE NOTICE docs/native/LICENSE-GPUI-APACHE docs/native/LICENSE-MERMAID-MIT "$native_licenses/"
-cp crates/monocode-gpui/assets/hugeicons.LICENSE \
-  crates/monocode-gpui/assets/dark-plus.LICENSE \
-  crates/monocode-gpui/assets/native-editor.LICENSE.txt "$native_licenses/"
-cp crates/monocode-gpui/assets/material/LICENSE "$native_licenses/material-icons.LICENSE"
-rm -f "$native_licenses/Geist-OFL.txt"
-# Launch the binary itself: an exec'ing launcher changes the pid version, and macOS
-# then refuses the menu bar item. The app reads MonocodeDataMode from Info.plist.
-native_executable="onicode-gpui"
-native_short_version="${native_version%%-*}"
-native_build_version="$native_short_version"
-if [[ "$native_version" == *-preview.* ]]; then
-  native_build_version="${native_version##*-preview.}"
+if [[ -x "$desktopd_binary" ]]; then
+  desktop_helper_assemble "$root" "$bundle" "$desktopd_binary" "$app_id" "$version" "$app_name Desktop"
 fi
-rm -f "$native_bundle/Contents/MacOS/monocode-launcher"
-cat >"$native_bundle/Contents/Info.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-<key>CFBundleExecutable</key><string>$native_executable</string>
-<key>MonocodeDataMode</key><string>$native_data_mode</string>
-<key>CFBundleIdentifier</key><string>dev.aislopware.onicode</string>
-<key>CFBundleName</key><string>Onicode</string>
-<key>CFBundleDisplayName</key><string>Onicode</string>
-<key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>$native_short_version</string>
-<key>CFBundleVersion</key><string>$native_build_version</string>
-<key>MonocodeNativeVersion</key><string>$native_version</string>
-<key>CFBundleIconFile</key><string>monocode.icns</string>
-<key>CFBundleIconName</key><string>AppIcon</string>
-<key>NSPrincipalClass</key><string>NSApplication</string>
-<key>NSHighResolutionCapable</key><true/>
-</dict></plist>
-PLIST
-native_identity="${ONICODE_NATIVE_SIGNING_IDENTITY:--}"
-if [[ "$native_identity" = - ]]; then
-  codesign --force --sign - "$native_bundle"
-else
-  codesign --force --sign "$native_identity" --options runtime --timestamp \
-    --entitlements src-tauri/Entitlements.plist "$native_bundle"
+
+identity="${ONICODE_NATIVE_SIGNING_IDENTITY:--}"
+signing=(--force --sign "$identity")
+if [[ "$identity" != - ]]; then
+  signing+=(--options runtime --timestamp --entitlements packaging/macos/Onicode.entitlements)
 fi
-printf 'App: %s\n' "$native_bundle"
+codesign "${signing[@]}" --identifier "$app_id.engine" "$macos/Onicode Engine"
+if [[ -x "$desktopd_binary" ]]; then
+  desktop_helper_sign "$bundle" "$app_id" "$identity" "${signing[@]:3}"
+fi
+codesign "${signing[@]}" "$bundle"
+printf 'App: %s\n' "$bundle"

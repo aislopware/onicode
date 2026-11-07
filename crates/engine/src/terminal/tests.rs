@@ -8,8 +8,9 @@ use futures::StreamExt;
 use futures::executor::block_on;
 use futures::stream::BoxStream;
 use onicode_protocol::terminal::{
-    Bytes, CloseTerminal, Input, Key, OpenTerminal, ResizeTerminal, TerminalColors, TerminalEvent,
-    TerminalInput, TerminalSize, TerminalState, TerminalSummary, WatchTerminal,
+    Bytes, CloseTerminal, Input, InputKind, Key, OpenTerminal, ProgramState, ResizeTerminal,
+    TerminalColors, TerminalEvent, TerminalInput, TerminalSize, TerminalState, TerminalSummary,
+    ViewerId, WatchTerminal,
 };
 use onicode_protocol::{Cursor, Item, TerminalId};
 use onicode_term::mirror::Mirror;
@@ -126,9 +127,15 @@ fn hub(pipes: &Arc<Pipes>) -> Arc<TerminalHub> {
     )
 }
 
+/// The viewer every test opens, types and sizes as, unless it names another.
+fn me() -> ViewerId {
+    ViewerId(uuid::Uuid::from_u128(1))
+}
+
 fn open(hub: &Arc<TerminalHub>, terminal: TerminalId) -> TerminalSummary {
     block_on(hub.open(OpenTerminal {
         terminal,
+        viewer: me(),
         cwd: "/tmp".into(),
         size: SIZE,
         colors: TerminalColors::default(),
@@ -143,13 +150,19 @@ struct Viewer {
     cursor: Option<Cursor>,
     events: Vec<TerminalEvent>,
     snapshots: usize,
+    state: Option<TerminalState>,
 }
 
 impl Viewer {
     fn watch(hub: &TerminalHub, terminal: TerminalId) -> Self {
+        Self::watch_as(hub, terminal, me())
+    }
+
+    fn watch_as(hub: &TerminalHub, terminal: TerminalId, viewer: ViewerId) -> Self {
         let stream = hub
             .watch(WatchTerminal {
                 terminal,
+                viewer,
                 since: None,
             })
             .unwrap();
@@ -159,6 +172,7 @@ impl Viewer {
             cursor: None,
             events: Vec::new(),
             snapshots: 0,
+            state: None,
         }
     }
 
@@ -167,6 +181,7 @@ impl Viewer {
         self.stream = hub
             .watch(WatchTerminal {
                 terminal,
+                viewer: me(),
                 since: self.cursor,
             })
             .unwrap();
@@ -179,13 +194,16 @@ impl Viewer {
                 Item::Snapshot { at, state } => {
                     self.cursor = Some(at);
                     self.snapshots += 1;
-                    self.mirror = Some(
-                        Mirror::from_snapshot(&state.screen.0)
-                            .unwrap_or_else(|| Mirror::new(state.size)),
-                    );
+                    self.mirror = Some(Mirror::attach(&state.screen.0, state.size));
+                    self.state = Some(state);
                 }
-                Item::Events { last, events, .. } => {
+                Item::Events {
+                    first,
+                    last,
+                    events,
+                } => {
                     if let Some(cursor) = &mut self.cursor {
+                        assert_eq!(first, cursor.seq + 1, "no gap and no repeat");
                         cursor.seq = last;
                     }
                     let mirror = self.mirror.as_mut().expect("a snapshot first");
@@ -193,7 +211,10 @@ impl Viewer {
                         match &event {
                             TerminalEvent::Output(bytes) => mirror.feed(&bytes.0),
                             TerminalEvent::Resized(size) => mirror.resize(*size),
-                            TerminalEvent::Clipboard(_) | TerminalEvent::Exited { .. } => {}
+                            TerminalEvent::History(bytes) => mirror.history(&bytes.0),
+                            TerminalEvent::Clipboard(_)
+                            | TerminalEvent::Exited { .. }
+                            | TerminalEvent::Status(_) => {}
                         }
                         self.events.push(event);
                     }
@@ -240,7 +261,13 @@ fn input_is_encoded_from_the_hosts_modes() {
     let mut shell = pipes.shell();
     let mut viewer = Viewer::watch(&hub, terminal);
     let send = |input| {
-        hub.input(TerminalInput { terminal, input }).unwrap();
+        let viewer = me();
+        hub.input(TerminalInput {
+            terminal,
+            viewer,
+            input,
+        })
+        .unwrap();
     };
     send(Input::Paste("a\nb".into()));
     assert_eq!(shell.read(3), b"a\rb");
@@ -333,7 +360,13 @@ fn a_resize_reaches_the_pty_the_host_and_viewers_once() {
     let mut viewer = Viewer::watch(&hub, terminal);
     let size = TerminalSize { cols: 30, ..SIZE };
     for _ in 0..2 {
-        hub.resize(ResizeTerminal { terminal, size }).unwrap();
+        let viewer = me();
+        hub.resize(ResizeTerminal {
+            terminal,
+            viewer,
+            size,
+        })
+        .unwrap();
     }
     viewer.until(|viewer| viewer.events.contains(&TerminalEvent::Resized(size)));
     assert_eq!(*shell.sizes.lock().unwrap(), [size]);
@@ -355,6 +388,7 @@ fn opening_twice_spawns_once_and_closing_hangs_up() {
     assert!(hub.list().is_empty());
     let input = TerminalInput {
         terminal,
+        viewer: me(),
         input: Input::Text("x".into()),
     };
     assert!(hub.input(input).is_err());
@@ -367,21 +401,161 @@ fn a_quiet_hub_hosts_terminals_without_a_shell() {
     open(&hub, terminal);
     let input = TerminalInput {
         terminal,
+        viewer: me(),
         input: Input::Text("x".into()),
     };
     assert!(hub.input(input).is_ok());
     assert_eq!(hub.list().len(), 1);
 }
 
-/// Adjacent outputs joined, so two batchings of the same stream compare equal.
+#[test]
+fn a_watcher_paints_the_prefix_then_takes_the_history() {
+    let pipes = Arc::new(Pipes::default());
+    let hub = hub(&pipes);
+    let terminal = TerminalId::new();
+    open(&hub, terminal);
+    let mut shell = pipes.shell();
+    let mut first = Viewer::watch(&hub, terminal);
+    let lines: String = (0..40).map(|n| format!("line {n}\r\n")).collect();
+    shell.write(lines.as_bytes());
+    first.shows("line 39");
+    let mut late = Viewer::watch(&hub, terminal);
+    late.until(|viewer| viewer.mirror.is_some());
+    let mirror = late.mirror.as_ref().unwrap();
+    assert!(
+        mirror.awaiting_history(),
+        "the first item paints without the history"
+    );
+    assert!(mirror.text().contains("line 39"));
+    late.until(|viewer| {
+        viewer
+            .events
+            .iter()
+            .any(|event| matches!(event, TerminalEvent::History(_)))
+    });
+    assert!(!late.mirror.as_ref().unwrap().awaiting_history());
+    shell.write(b"after");
+    first.shows("after");
+    late.shows("after");
+    for viewer in [&mut first, &mut late] {
+        viewer.mirror.as_mut().unwrap().select_all();
+    }
+    let all = |viewer: &Viewer| viewer.mirror.as_ref().unwrap().selection_text();
+    assert!(
+        all(&late).unwrap().contains("line 0\n"),
+        "the history arrived"
+    );
+    assert_eq!(all(&late), all(&first));
+}
+
+#[test]
+fn the_pty_takes_the_size_of_the_viewer_that_typed_last() {
+    let pipes = Arc::new(Pipes::default());
+    let hub = hub(&pipes);
+    let terminal = TerminalId::new();
+    open(&hub, terminal);
+    let shell = pipes.shell();
+    let phone = ViewerId(uuid::Uuid::from_u128(2));
+    let mut mac = Viewer::watch(&hub, terminal);
+    let iphone = Viewer::watch_as(&hub, terminal, phone);
+    let wide = TerminalSize { cols: 30, ..SIZE };
+    let narrow = TerminalSize { cols: 12, ..SIZE };
+    let resize = |viewer, size| {
+        hub.resize(ResizeTerminal {
+            terminal,
+            viewer,
+            size,
+        })
+        .unwrap();
+    };
+    let type_as = |viewer| {
+        let input = Input::Text("x".into());
+        hub.input(TerminalInput {
+            terminal,
+            viewer,
+            input,
+        })
+        .unwrap();
+    };
+    resize(me(), wide);
+    type_as(me());
+    resize(phone, narrow);
+    assert_eq!(
+        size_of(&hub, terminal),
+        Some(wide),
+        "the phone has not typed"
+    );
+    type_as(phone);
+    assert_eq!(size_of(&hub, terminal), Some(narrow), "it typed: its size");
+    drop(iphone);
+    assert_eq!(
+        size_of(&hub, terminal),
+        Some(wide),
+        "the typist left: the Mac's again"
+    );
+    mac.until(|viewer| viewer.events.contains(&TerminalEvent::Resized(wide)));
+    assert_eq!(*shell.sizes.lock().unwrap(), [wide, narrow, wide]);
+}
+
+#[test]
+fn a_programs_status_reaches_watchers_the_list_and_subscribers() {
+    let pipes = Arc::new(Pipes::default());
+    let hub = hub(&pipes);
+    let terminal = TerminalId::new();
+    open(&hub, terminal);
+    let mut shell = pipes.shell();
+    let mut statuses = hub.statuses();
+    let mut viewer = Viewer::watch(&hub, terminal);
+    shell.write(b"\x1b]7501;state=blocked:kind=permission:app=codex:msg=aGk=\x1b\\ok");
+    viewer.shows("ok");
+    let reported = viewer.events.iter().find_map(|event| match event {
+        TerminalEvent::Status(status) => status.clone(),
+        _ => None,
+    });
+    let status = reported.expect("a status event");
+    assert_eq!(
+        (
+            status.state,
+            status.kind,
+            status.app.as_deref(),
+            status.message.as_deref()
+        ),
+        (
+            ProgramState::Blocked,
+            Some(InputKind::Permission),
+            Some("codex"),
+            Some("hi")
+        )
+    );
+    assert_eq!(hub.list()[0].status.as_ref(), Some(&status));
+    assert_eq!(
+        statuses.try_recv().unwrap(),
+        (terminal, Some(status.clone()))
+    );
+    let mut late = Viewer::watch(&hub, terminal);
+    late.until(|viewer| viewer.state.is_some());
+    assert_eq!(late.state.as_ref().unwrap().status.as_ref(), Some(&status));
+    // A new prompt ends a blocked record.
+    shell.write(b"\x1b]133;A\x07$ ");
+    viewer.until(|viewer| viewer.events.contains(&TerminalEvent::Status(None)));
+    assert_eq!(hub.list()[0].status, None);
+}
+
+/// Adjacent outputs joined and adjacent statuses down to the last, so two batchings of the same
+/// stream compare equal.
 fn joined(events: Vec<TerminalEvent>) -> Vec<TerminalEvent> {
     let mut out: Vec<TerminalEvent> = Vec::new();
     for event in events {
-        if let TerminalEvent::Output(more) = &event
-            && let Some(TerminalEvent::Output(last)) = out.last_mut()
-        {
-            last.0.extend_from_slice(&more.0);
-            continue;
+        match (out.last_mut(), &event) {
+            (Some(TerminalEvent::Output(last)), TerminalEvent::Output(more)) => {
+                last.0.extend_from_slice(&more.0);
+                continue;
+            }
+            (Some(TerminalEvent::Status(last)), TerminalEvent::Status(newer)) => {
+                last.clone_from(newer);
+                continue;
+            }
+            _ => {}
         }
         out.push(event);
     }
@@ -403,6 +577,16 @@ fn event() -> impl Strategy<Value = TerminalEvent> {
             .prop_map(|bytes| TerminalEvent::Output(Bytes(bytes))),
         1 => (1u16..4).prop_map(|cols| TerminalEvent::Resized(TerminalSize { cols, ..SIZE })),
         1 => "[a-z]{0,4}".prop_map(TerminalEvent::Clipboard),
+        1 => proptest::option::of(Just(ProgramState::Working)).prop_map(|state| {
+            TerminalEvent::Status(state.map(|state| onicode_protocol::terminal::ProgramStatus {
+                state,
+                kind: None,
+                progress: None,
+                app: None,
+                title: None,
+                message: None,
+            }))
+        }),
     ]
 }
 

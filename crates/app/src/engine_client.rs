@@ -1,70 +1,200 @@
-//! The app's link to its engine (engine.md, migration steps 3 to 6). The app runs one
-//! [`onicode_engine::Local`] in its own process until the engine runs on its own (step 8): the
-//! engine opens the store, and the app holds an [`Engine`] and speaks the protocol to it. A local
-//! turn runs in the engine's `SessionHub`: the conversation stages the turn's in-process context,
-//! watches the session and sends the prompt over `onicode-rpc`'s in-memory transport, and a
-//! `Viewer` folds what arrives back into one `turn::Update` per beat. SSH and legacy remote turns
-//! keep their own runners over [`Engine::legacy_store`]. The sidebar, history and workspace views
-//! read the engine's `WatchWorkspace` through [`watch_workspace`] and change it with [`call`]; the
-//! engine's own clock drives its reminder, automation and usage-limit resume schedulers. The
-//! explorer, editor, Changes, review, history and worktree views read and change files and
-//! checkouts through the app's own engine ([`local`]): its calls, and its `WatchDir` and
-//! `WatchGit` watches through [`Engine::watch`].
+//! The app's link to its engine (engine.md, "Local feel", migration step 8). The engine is its
+//! own process, `onicode-engine`, beside the app: the app reaches it on the socket in its data
+//! dir, launching it when nothing answers ([`onicode_engine::link`]), and speaks the protocol to
+//! it over one connection that every call and watch shares.
+//!
+//! The app's first frame never waits on the engine: the workspace and the engine settings are
+//! mirrored from their watches into `viewer-cache.json`, and a launch reads them from there
+//! ([`Engine::workspace_now`], [`Engine::settings_now`]); only a first launch, with nothing kept,
+//! waits for the engine's answer. A watch whose connection drops resumes with its cursor on the
+//! next one, and an engine that restarted meanwhile answers with a fresh snapshot. A call whose
+//! connection drops is sent again under the same op.
+//!
+//! A local turn runs in the engine: the conversation hands it the composer's context with the
+//! prompt (`Send.turn`), watches the session and folds what arrives back into one `turn::Update`
+//! per beat. The turn outlives the window; the conversation's stop sends `Stop`. SSH and legacy
+//! remote turns keep their own runners over [`Engine::legacy_store`]. The explorer, editor,
+//! Changes, review, history and worktree views read and change files and checkouts through the
+//! app's own engine ([`local`]).
+//!
+//! Tests run an engine in memory and call its service in place, on gpui's deterministic
+//! executors (`Engine::memory`, built only for tests).
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::pin;
-use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, LazyLock, Mutex, MutexGuard, PoisonError, mpsc};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Condvar, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError, Weak, mpsc};
+use std::time::Duration;
 
 use futures::future::{BoxFuture, Either, select};
 use futures::stream::BoxStream;
 use futures::{FutureExt, StreamExt};
 use gpui::{App, BackgroundExecutor, Global, Task};
-use onicode_engine::session::{Expect, Spawn, Staged, StagedTurn, Viewer};
+use onicode_engine::link::{SocketDoor, Timing};
+use onicode_engine::session::{Expect, Viewer};
 use onicode_engine::turn::{Database, Update};
-use onicode_engine::{EngineService, Local, Options};
 use onicode_protocol::agent::{Control, Decision, Settings};
-use onicode_protocol::engine_settings::EngineSettings;
+use onicode_protocol::engine::ResolveSession;
+use onicode_protocol::engine_settings::{EngineSettings, EngineSettingsEvent, WatchEngineSettings};
 use onicode_protocol::session::{
-    self, Answer, Decide, KeepQuestionOpen, SessionEvent, SessionState, SteerNow, Verdict,
-    WatchSession,
+    self, Answer, Decide, KeepQuestionOpen, SessionEvent, SessionState, SteerNow, Stop,
+    TurnContext, Verdict, WatchSession,
 };
 use onicode_protocol::sessions::Session;
 use onicode_protocol::workspace::{WatchWorkspace, WorkspaceEvent, WorkspaceState};
 use onicode_protocol::{Call, Cursor, Item, MessageId, OpId, Outcome, Routed, SessionId, Watch};
-use onicode_rpc::{RpcClient, RpcReply, RpcService};
+#[cfg(test)]
+use onicode_rpc::RpcService as _;
+use onicode_rpc::RpcSubscription;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Notify;
 
-/// The engine's tokio thread: it serves the in-memory transport.
+/// The link's tokio thread: it serves the engine socket's one connection.
 static RUNTIME: LazyLock<Option<tokio::runtime::Runtime>> = LazyLock::new(|| {
     tokio::runtime::Builder::new_multi_thread()
         .worker_threads(1)
-        .thread_name("onicode-engine")
+        .thread_name("onicode-link")
         .enable_all()
         .build()
         .ok()
 });
+
+/// What the app keeps of the engine's workspace and settings, beside its data.
+const VIEWER_CACHE: &str = "viewer-cache.json";
+/// How long a first launch, with nothing kept, waits for the engine's workspace.
+const FIRST_ANSWER: Duration = Duration::from_secs(10);
+/// How long the mirror lets changes gather before it writes them down.
+const CACHE_PAUSE: Duration = Duration::from_secs(2);
+/// How long a watch the engine could not take waits before it asks again.
+const RETRY: Duration = Duration::from_secs(1);
 
 /// The app's own engine: the one the shell opened, which [`local`] serves.
 struct LocalEngine(Engine);
 
 impl Global for LocalEngine {}
 
-/// Turns run on gpui's background threads, where the app ran them before the engine.
-struct GpuiSpawn(BackgroundExecutor);
+/// The workspace and engine settings as this viewer last saw them.
+#[derive(Default, Serialize, Deserialize)]
+struct Seen {
+    workspace: Option<WorkspaceState>,
+    settings: Option<EngineSettings>,
+}
 
-impl Spawn for GpuiSpawn {
-    fn spawn(&self, work: BoxFuture<'static, ()>) {
-        self.0.spawn(work).detach();
+/// [`Seen`], followed from the engine's watches and kept on disk, so a window's first frame
+/// draws what the last one showed while the engine starts.
+struct Mirror {
+    seen: Mutex<Seen>,
+    arrived: Condvar,
+    dirty: AtomicBool,
+    file: PathBuf,
+}
+
+impl Mirror {
+    /// What the last run kept in `file`; nothing when it is missing or unreadable.
+    fn load(file: PathBuf) -> Self {
+        let seen = std::fs::read(&file)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+            .unwrap_or_default();
+        Self {
+            seen: Mutex::new(seen),
+            arrived: Condvar::new(),
+            dirty: AtomicBool::new(false),
+            file,
+        }
+    }
+
+    fn update(&self, change: impl FnOnce(&mut Seen)) {
+        change(&mut self.seen.lock().unwrap_or_else(PoisonError::into_inner));
+        self.dirty.store(true, Ordering::Release);
+        self.arrived.notify_all();
+    }
+
+    /// What `pick` reads, waiting for the engine's first answer when nothing is kept yet.
+    fn now<T>(&self, pick: impl Fn(&Seen) -> Option<T>) -> Option<T> {
+        let seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+        let (seen, _) = self
+            .arrived
+            .wait_timeout_while(seen, FIRST_ANSWER, |seen| pick(seen).is_none())
+            .unwrap_or_else(PoisonError::into_inner);
+        pick(&seen)
+    }
+
+    /// Writes what changed since the last save, whole, through a temporary file.
+    fn save(&self) {
+        if !self.dirty.swap(false, Ordering::AcqRel) {
+            return;
+        }
+        let bytes = {
+            let seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
+            serde_json::to_vec(&*seen)
+        };
+        let Ok(bytes) = bytes else {
+            return;
+        };
+        let temporary = self.file.with_extension("json.tmp");
+        if let Err(error) =
+            std::fs::write(&temporary, bytes).and_then(|()| std::fs::rename(&temporary, &self.file))
+        {
+            eprintln!("Cannot keep the workspace for the next launch: {error}");
+        }
+    }
+}
+
+fn fold_workspace(seen: &mut Seen, update: WorkspaceUpdate) {
+    match update {
+        WatchUpdate::Snapshot(state) => seen.workspace = Some(*state),
+        WatchUpdate::Events(events) => {
+            if let Some(state) = seen.workspace.as_mut() {
+                for event in &events {
+                    onicode_engine::workspace::apply(state, event);
+                }
+            }
+        }
+    }
+}
+
+fn fold_settings(seen: &mut Seen, update: WatchUpdate<EngineSettings, EngineSettingsEvent>) {
+    match update {
+        WatchUpdate::Snapshot(settings) => seen.settings = Some(*settings),
+        WatchUpdate::Events(events) => {
+            if let Some(settings) = seen.settings.as_mut() {
+                for event in &events {
+                    if let EngineSettingsEvent::Set(setting) = event {
+                        settings.apply(setting);
+                    }
+                }
+            }
+        }
     }
 }
 
 enum Link {
-    /// Over `onicode-rpc`'s in-memory transport, served on the engine's tokio thread.
-    Rpc(Arc<RpcClient>),
-    /// The service's own dispatch, called in place: tests stay on gpui's deterministic
-    /// executors, and so does an app whose tokio thread could not start.
-    Direct(Arc<EngineService>),
+    /// The engine process, over its socket, served on the link's tokio thread.
+    Socket {
+        link: Arc<onicode_engine::link::Link>,
+        mirror: Arc<Mirror>,
+        dir: PathBuf,
+        /// The SSH remote's and the phone host's own connection to the store.
+        legacy: OnceLock<Database>,
+    },
+    /// An engine in memory, its service called in place: tests stay on gpui's deterministic
+    /// executors.
+    #[cfg(test)]
+    Direct(Box<onicode_engine::Local>),
+}
+
+/// Turns of a test's engine run on gpui's background threads.
+#[cfg(test)]
+struct GpuiSpawn(BackgroundExecutor);
+
+#[cfg(test)]
+impl onicode_engine::session::Spawn for GpuiSpawn {
+    fn spawn(&self, work: BoxFuture<'static, ()>) {
+        self.0.spawn(work).detach();
+    }
 }
 
 /// The chores of an app test's engine: no generated title or branch, and only the work item a
@@ -104,13 +234,11 @@ impl onicode_engine::workspace::Chores for TestChores {
     }
 }
 
-/// How often the engine's schedulers run: due reminders, automation runs and usage-limit resumes.
-const SCHEDULER_BEAT: std::time::Duration = std::time::Duration::from_secs(30);
-
 pub(crate) struct EngineClient {
-    local: Local,
     link: Link,
     executor: BackgroundExecutor,
+    /// Each stored session's engine id, as the engine named it; a session keeps its id.
+    sessions: Mutex<HashMap<i64, SessionId>>,
     /// Every call made, by name with its routed params, for a test to assert on.
     #[cfg(test)]
     calls: Mutex<Vec<(&'static str, serde_json::Value)>>,
@@ -139,48 +267,60 @@ fn refuse(viewer: &Mutex<Viewer>, reason: String) -> Option<Update> {
     viewer.take()
 }
 
-/// What runs an engine on gpui's background threads.
-fn spawner(cx: &App) -> Arc<dyn Spawn> {
-    Arc::new(GpuiSpawn(cx.background_executor().clone()))
+/// A subscription's items. One whose connection closed under it ends with `Resync`: the watcher
+/// resumes with its cursor on the next connection.
+fn items<S, E>(subscription: RpcSubscription) -> BoxStream<'static, Item<S, E>>
+where
+    S: DeserializeOwned + Send + 'static,
+    E: DeserializeOwned + Send + 'static,
+{
+    futures::stream::unfold(Some(subscription), |held| async move {
+        let mut subscription = held?;
+        loop {
+            match subscription.recv().await {
+                Some(value) => {
+                    if let Ok(item) = serde_json::from_value(value) {
+                        return Some((item, Some(subscription)));
+                    }
+                }
+                None if subscription.lost() => return Some((Item::Resync, None)),
+                None => return None,
+            }
+        }
+    })
+    .boxed()
+}
+
+/// A value of a test engine's stream, parsed; `None` skips one that is not an item.
+#[cfg(test)]
+fn parsed<T: DeserializeOwned>(value: serde_json::Value) -> futures::future::Ready<Option<T>> {
+    futures::future::ready(serde_json::from_value(value).ok())
 }
 
 impl EngineClient {
-    /// Serves `local`: over the in-memory transport when `transport` and its thread allow, else
-    /// through the service's own dispatch.
-    fn serve(local: Local, transport: bool, cx: &App) -> Arc<Self> {
-        let runtime = if transport { RUNTIME.as_ref() } else { None };
-        let link = match runtime {
-            Some(runtime) => {
-                let _entered = runtime.enter();
-                let service: Arc<dyn RpcService> = local.service.clone();
-                Link::Rpc(Arc::new(onicode_rpc::memory_client(service)))
-            }
-            None => Link::Direct(local.service.clone()),
-        };
+    fn new(link: Link, cx: &App) -> Arc<Self> {
         Arc::new(Self {
-            local,
             link,
             executor: cx.background_executor().clone(),
+            sessions: Mutex::default(),
             #[cfg(test)]
             calls: Mutex::default(),
         })
     }
 
-    /// The schedulers' clock: a beat now for what came due while the app was closed, then every
-    /// 30 seconds. Tests beat in virtual time instead (`tick`).
-    fn beat(&self) {
-        let clock = self.local.clock();
-        let timers = self.executor.clone();
-        self.executor
-            .spawn(async move {
-                loop {
-                    if let Err(error) = clock.tick(onicode_protocol::time::now_ms()) {
-                        eprintln!("The engine's schedulers could not run: {error}");
-                    }
-                    timers.timer(SCHEDULER_BEAT).await;
-                }
-            })
-            .detach();
+    /// Whether a watch the engine could not take is worth asking again: the engine may be
+    /// starting, or restarting.
+    fn reconnects(&self) -> bool {
+        matches!(self.link, Link::Socket { .. })
+    }
+
+    /// The test engine itself.
+    #[cfg(test)]
+    fn direct(&self) -> &onicode_engine::Local {
+        match &self.link {
+            Link::Direct(local) => local,
+            Link::Socket { .. } => panic!("a test's engine runs in memory"),
+        }
     }
 
     async fn call<C: Call>(&self, op: Option<OpId>, body: C::Params) -> Result<C::Reply, String> {
@@ -196,17 +336,18 @@ impl EngineClient {
             .unwrap_or_else(PoisonError::into_inner)
             .push((C::NAME, params.clone()));
         let reply = match &self.link {
-            Link::Rpc(client) => client
-                .call(C::NAME, params)
-                .await
-                .map_err(|error| error.to_string())?,
-            Link::Direct(service) => match service
+            Link::Socket { link, .. } => link.call(C::NAME, &params).await?,
+            #[cfg(test)]
+            Link::Direct(local) => match local
+                .service
                 .handle(C::NAME, params)
                 .await
                 .map_err(|error| error.to_string())?
             {
-                RpcReply::Value(value) => value,
-                RpcReply::Stream(_) => return Err(format!("{} answered with a stream", C::NAME)),
+                onicode_rpc::RpcReply::Value(value) => value,
+                onicode_rpc::RpcReply::Stream(_) => {
+                    return Err(format!("{} answered with a stream", C::NAME));
+                }
             },
         };
         serde_json::from_value(reply).map_err(|error| error.to_string())
@@ -226,33 +367,90 @@ impl EngineClient {
             body,
         })
         .map_err(|error| error.to_string())?;
-        let values = match &self.link {
-            Link::Rpc(client) => {
-                let subscription = client
-                    .subscribe_scoped(W::NAME, params)
-                    .await
-                    .map_err(|error| error.to_string())?;
-                futures::stream::unfold(subscription, |mut subscription| async move {
-                    let value = subscription.recv().await?;
-                    Some((value, subscription))
-                })
-                .boxed()
-            }
-            Link::Direct(service) => match service
+        match &self.link {
+            Link::Socket { link, .. } => Ok(items(link.subscribe(W::NAME, &params).await?)),
+            #[cfg(test)]
+            Link::Direct(local) => match local
+                .service
                 .handle(W::NAME, params)
                 .await
                 .map_err(|error| error.to_string())?
             {
-                RpcReply::Stream(values) => values,
-                RpcReply::Value(_) => {
-                    return Err(format!("{} answered with a value", W::NAME));
+                onicode_rpc::RpcReply::Stream(values) => Ok(values.filter_map(parsed).boxed()),
+                onicode_rpc::RpcReply::Value(_) => {
+                    Err(format!("{} answered with a value", W::NAME))
                 }
             },
-        };
-        Ok(values
-            .filter_map(|value| futures::future::ready(serde_json::from_value(value).ok()))
-            .boxed())
+        }
     }
+
+    /// The engine id of the session stored at `row`.
+    async fn session_id(&self, row: i64) -> Result<SessionId, String> {
+        if let Some(session) = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&row)
+        {
+            return Ok(*session);
+        }
+        let session = match &self.link {
+            Link::Socket { link, .. } => link
+                .ask::<ResolveSession>(None, ResolveSession { row })
+                .await?
+                .ok_or("Session no longer exists")?,
+            #[cfg(test)]
+            Link::Direct(local) => local.session.session_id(row)?,
+        };
+        self.sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(row, session);
+        Ok(session)
+    }
+}
+
+/// Follows watch `W` into the mirror with `fold`, for as long as the app runs.
+fn follow<W: Watch + 'static>(
+    engine: &Arc<EngineClient>,
+    mirror: &Arc<Mirror>,
+    params: impl Fn(Option<Cursor>) -> W::Params + Send + 'static,
+    fold: fn(&mut Seen, WatchUpdate<W::State, W::Event>),
+) where
+    W::Params: Send + 'static,
+    W::State: Send + 'static,
+    W::Event: Send + 'static,
+{
+    let (updates, received) = async_channel::unbounded();
+    engine
+        .executor
+        .spawn(resume::<W>(engine.clone(), params, updates))
+        .detach();
+    let mirror = mirror.clone();
+    engine
+        .executor
+        .spawn(async move {
+            while let Ok(update) = received.recv().await {
+                mirror.update(|seen| fold(seen, update));
+            }
+        })
+        .detach();
+}
+
+/// Writes the mirror down a pause after it changes, until it goes.
+fn keep(mirror: Weak<Mirror>, executor: BackgroundExecutor) {
+    let timers = executor.clone();
+    executor
+        .spawn(async move {
+            loop {
+                timers.timer(CACHE_PAUSE).await;
+                let Some(mirror) = mirror.upgrade() else {
+                    return;
+                };
+                mirror.save();
+            }
+        })
+        .detach();
 }
 
 /// How the conversation hands a running turn its approvals, answers and steers.
@@ -275,6 +473,12 @@ impl TurnControls {
             }
         }
     }
+
+    /// Whether the engine runs the turn: it outlives the conversation's view, and only an
+    /// explicit stop ends it.
+    pub(crate) fn is_engine(&self) -> bool {
+        matches!(self, Self::Engine(_))
+    }
 }
 
 impl From<mpsc::Sender<Control>> for TurnControls {
@@ -283,108 +487,152 @@ impl From<mpsc::Sender<Control>> for TurnControls {
     }
 }
 
+/// What a turn's controls and its forwarder share.
+struct Turn {
+    /// The session's stored row.
+    row: i64,
+    viewer: Mutex<Viewer>,
+    /// Wakes the forwarder to hand the conversation what the viewer holds now.
+    nudge: Notify,
+    /// The conversation's stop: set, the controls' drop stops the engine's turn.
+    cancel: Arc<AtomicBool>,
+    /// The forwarder saw the turn end.
+    finished: AtomicBool,
+}
+
+impl Turn {
+    fn stopped(&self) -> bool {
+        self.cancel.load(Ordering::Acquire)
+    }
+}
+
+/// A Session call for a turn, made once its session's engine id is known.
+type Ask = Box<
+    dyn FnOnce(Arc<EngineClient>, SessionId) -> BoxFuture<'static, Result<Outcome, String>> + Send,
+>;
+
 pub(crate) struct EngineControls {
     engine: Arc<EngineClient>,
-    session: SessionId,
-    viewer: Arc<Mutex<Viewer>>,
-    /// Wakes the turn's forwarder to hand the conversation what the viewer holds now.
-    nudge: Arc<Notify>,
+    turn: Arc<Turn>,
 }
 
 impl EngineControls {
     fn send(&self, control: Control) {
-        let session = self.session;
         let op = OpId::new();
-        let engine = self.engine.clone();
         let id = control.id;
-        let call: BoxFuture<'static, Result<Outcome, String>> = match control.decision {
+        let ask: Ask = match control.decision {
             Decision::Steer(message) => {
                 // The queued message is stored already: the engine takes it out of the queue by
                 // its id, and the receipt names it delivered or failed.
                 let Ok(queued) = message.id.parse::<MessageId>() else {
                     // Failed before it left: the conversation shows it now, not at the turn's
                     // next update.
-                    lock(&self.viewer).fail_steer(
+                    lock(&self.turn.viewer).fail_steer(
                         message.id,
                         "This message has no id the engine knows".to_owned(),
                     );
-                    self.nudge.notify_one();
+                    self.turn.nudge.notify_one();
                     return;
                 };
-                lock(&self.viewer).expect(op, Expect::Steer { id: message.id });
-                let body = SteerNow {
-                    session,
-                    id: queued,
-                };
-                async move { engine.call::<SteerNow>(Some(op), body).await }.boxed()
+                lock(&self.turn.viewer).expect(op, Expect::Steer { id: message.id });
+                Box::new(move |engine, session| {
+                    let body = SteerNow {
+                        session,
+                        id: queued,
+                    };
+                    async move { engine.call::<SteerNow>(Some(op), body).await }.boxed()
+                })
             }
-            Decision::Answer(answers) => {
+            Decision::Answer(answers) => Box::new(move |engine, session| {
                 let body = Answer {
                     session,
                     question: id,
                     answers,
                 };
                 async move { engine.call::<Answer>(Some(op), body).await }.boxed()
-            }
-            Decision::KeepOpen => {
+            }),
+            Decision::KeepOpen => Box::new(move |engine, session| {
                 let body = KeepQuestionOpen {
                     session,
                     question: id,
                 };
                 async move { engine.call::<KeepQuestionOpen>(Some(op), body).await }.boxed()
-            }
+            }),
             decision => {
                 let answer = match decision {
                     Decision::Allow => Verdict::Allow,
                     Decision::Session => Verdict::AllowForSession,
                     _ => Verdict::Deny,
                 };
-                let body = Decide {
-                    session,
-                    approval: id,
-                    answer,
-                };
-                async move { engine.call::<Decide>(Some(op), body).await }.boxed()
+                Box::new(move |engine, session| {
+                    let body = Decide {
+                        session,
+                        approval: id,
+                        answer,
+                    };
+                    async move { engine.call::<Decide>(Some(op), body).await }.boxed()
+                })
             }
         };
+        let engine = self.engine.clone();
+        let row = self.turn.row;
         self.engine
             .executor
             .spawn(async move {
                 // Applied or not, the turn's events say what became of it.
-                let _ = call.await;
+                if let Ok(session) = engine.session_id(row).await {
+                    let _ = ask(engine, session).await;
+                }
             })
             .detach();
     }
 }
 
-/// Runs `prompt` as a turn of `summary` in `engine`. Its updates arrive on `updates`, one per
-/// beat: the conversation merges them as it merged the turn's own.
+impl Drop for EngineControls {
+    /// The conversation let its controls go. Stopped by the person, the engine's turn stops
+    /// too; otherwise it runs on, past the conversation's view and the app's window.
+    fn drop(&mut self) {
+        if !self.turn.stopped() || self.turn.finished.load(Ordering::Acquire) {
+            return;
+        }
+        let engine = self.engine.clone();
+        let row = self.turn.row;
+        self.engine
+            .executor
+            .spawn(async move {
+                if let Ok(session) = engine.session_id(row).await {
+                    let _ = engine
+                        .call::<Stop>(Some(OpId::new()), Stop { session })
+                        .await;
+                }
+            })
+            .detach();
+    }
+}
+
+/// Runs `prompt` as a turn of `summary` in `engine`, under the composer's `settings`. Its updates
+/// arrive on `updates`, one per beat: the conversation merges them as it merged the turn's own.
 pub(crate) fn start_turn(
     engine: &Engine,
     summary: Session,
     prompt: String,
-    settings: Settings,
+    mut settings: Settings,
     cancel: Arc<AtomicBool>,
     updates: async_channel::Sender<Update>,
     _: &mut App,
 ) -> TurnControls {
     let engine = engine.0.clone();
-    let session = match engine.local.session.session_id(summary.id) {
-        Ok(session) => session,
-        Err(status) => {
-            let _ = updates.try_send(Update {
-                status,
-                finished: true,
-                ..Update::default()
-            });
-            return mpsc::channel::<Control>().0.into();
-        }
-    };
     let message = MessageId::new();
     let op = OpId::new();
-    let viewer = Arc::new(Mutex::new(Viewer::default()));
+    let turn = Arc::new(Turn {
+        row: summary.id,
+        viewer: Mutex::new(Viewer::default()),
+        nudge: Notify::new(),
+        cancel,
+        finished: AtomicBool::new(false),
+    });
     {
-        let mut viewer = lock(&viewer);
+        let mut viewer = lock(&turn.viewer);
         viewer.echo(message);
         viewer.expect(
             op,
@@ -393,42 +641,39 @@ pub(crate) fn start_turn(
             },
         );
     }
-    let send = session::Send {
+    // What the settings never save crosses beside them.
+    let attachments = std::mem::take(&mut settings.attachments);
+    let context = TurnContext {
+        prepared_prompt: settings.prepared_prompt.take(),
+        turn_model: settings.turn_model.take(),
+        environment: std::mem::take(&mut settings.environment),
+        queued: settings.mono_message_id.clone(),
+        internal: settings.internal_message,
+        summary,
+        settings,
+    };
+    let send = move |session| session::Send {
         session,
         message,
-        text: prompt.clone(),
-        attachments: settings.attachments.clone(),
+        text: prompt,
+        attachments,
+        turn: Some(Box::new(context)),
     };
-    engine.local.session.stage(
-        message,
-        Staged::Turn(Box::new(StagedTurn {
-            summary,
-            prompt,
-            settings,
-            cancel,
-        })),
-    );
     let forwarder = engine.clone();
-    let held = viewer.clone();
-    let nudge = Arc::new(Notify::new());
-    let nudged = nudge.clone();
+    let running = turn.clone();
     engine
         .executor
         .spawn(async move {
-            let turn = forward(forwarder, session, op, send, &held, &nudged, &updates).await;
-            if let Err(status) = turn
-                && let Some(update) = refuse(&held, status)
+            let ended = forward(forwarder, &running, op, send, &updates).await;
+            running.finished.store(true, Ordering::Release);
+            if let Err(status) = ended
+                && let Some(update) = refuse(&running.viewer, status)
             {
                 let _ = updates.send(update).await;
             }
         })
         .detach();
-    TurnControls::Engine(EngineControls {
-        engine,
-        session,
-        viewer,
-        nudge,
-    })
+    TurnControls::Engine(EngineControls { engine, turn })
 }
 
 enum Next {
@@ -455,58 +700,73 @@ fn watching(session: SessionId, since: Option<Cursor>) -> WatchSession {
 /// conversation stops listening.
 async fn forward(
     engine: Arc<EngineClient>,
-    session: SessionId,
+    turn: &Turn,
     op: OpId,
-    send: session::Send,
-    viewer: &Mutex<Viewer>,
-    nudge: &Notify,
+    send: impl FnOnce(SessionId) -> session::Send + Send,
     updates: &async_channel::Sender<Update>,
 ) -> Result<(), String> {
+    let session = engine.session_id(turn.row).await?;
+    // A turn stopped before it left is still sent: the engine keeps its prompt, and the stop
+    // that follows once it is taken (`relay`, `Next::Sent`) ends it with the update that
+    // settles the conversation.
     // Watch first: the turn's events follow the snapshot.
     let mut items = engine
         .watch::<WatchSession>(watching(session, None))
         .await?;
     let first = items.next().await.ok_or("The engine closed this session")?;
-    absorb(viewer, first);
+    absorb(&turn.viewer, first);
     let (refusal, refusals) = async_channel::bounded(1);
     let caller = engine.clone();
+    let body = send(session);
     engine
         .executor
         .spawn(async move {
             // Applied arrives with the turn's first update, a denial with its last; only a call
             // the engine could not take leaves the turn unstarted.
-            if let Err(error) = caller.call::<session::Send>(Some(op), send).await {
+            if let Err(error) = caller.call::<session::Send>(Some(op), body).await {
                 let _ = refusal.send(error).await;
             }
         })
         .detach();
-    relay(
-        &engine,
-        session,
-        items,
-        Some(refusals),
-        viewer,
-        nudge,
-        updates,
-    )
-    .await
+    relay(&engine, session, items, Some(refusals), turn, updates).await
+}
+
+/// Absorbs `item` into the turn's viewer, and says whether the turn finished. A snapshot from an
+/// engine run other than `epoch`'s that holds no turn, once the turn started, finishes it: the
+/// turn stopped with the engine that ran it.
+fn take_in(
+    viewer: &Mutex<Viewer>,
+    item: Item<SessionState, SessionEvent>,
+    epoch: Option<u64>,
+    started: bool,
+) -> bool {
+    let restarted = started
+        && matches!(&item, Item::Snapshot { at, state }
+            if Some(at.epoch) != epoch && state.turn.is_none());
+    let finished = absorb(viewer, item);
+    if restarted && !finished {
+        lock(viewer).refuse("The engine restarted, and this turn stopped with it".to_owned());
+        return true;
+    }
+    finished
 }
 
 /// Folds the session's `items` into one update per beat until the turn finishes or the
-/// conversation stops listening. `refused` names why the turn never started; a `nudge` hands on
-/// what the viewer holds without waiting for the session's next event.
+/// conversation stops listening. `refused` names why the turn never started; the turn's nudge
+/// hands on what the viewer holds without waiting for the session's next event.
 async fn relay(
     engine: &EngineClient,
     session: SessionId,
     mut items: Items,
     mut refused: Option<async_channel::Receiver<String>>,
-    viewer: &Mutex<Viewer>,
-    nudge: &Notify,
+    turn: &Turn,
     updates: &async_channel::Sender<Update>,
 ) -> Result<(), String> {
+    let viewer = &turn.viewer;
     let rewatch = |viewer: &Mutex<Viewer>| watching(session, cursor(viewer));
+    let epoch = cursor(viewer).map(|at| at.epoch);
     loop {
-        let nudged = pin!(nudge.notified());
+        let nudged = pin!(turn.nudge.notified());
         let beat = select(items.next(), nudged);
         let next = match &refused {
             Some(receiver) => match select(beat, pin!(receiver.recv())).await {
@@ -526,7 +786,7 @@ async fn relay(
                     items = engine.watch::<WatchSession>(rewatch(viewer)).await?;
                     continue;
                 }
-                Some(item) => absorb(viewer, item),
+                Some(item) => take_in(viewer, item, epoch, refused.is_none()),
                 None => return Err("The engine closed this session".into()),
             },
             Next::Refused(reason) => {
@@ -536,6 +796,12 @@ async fn relay(
             }
             Next::Sent => {
                 refused = None;
+                if turn.stopped() {
+                    // Stopped while the engine started it: a stop sent meanwhile found no turn.
+                    let _ = engine
+                        .call::<Stop>(Some(OpId::new()), Stop { session })
+                        .await;
+                }
                 continue;
             }
             Next::Nudged => false,
@@ -546,7 +812,7 @@ async fn relay(
                 items = engine.watch::<WatchSession>(rewatch(viewer)).await?;
                 continue;
             }
-            finished = absorb(viewer, item);
+            finished = take_in(viewer, item, epoch, refused.is_none());
         }
         if let Some(update) = take(viewer)
             && updates.send(update).await.is_err()
@@ -593,7 +859,7 @@ where
 {
     let engine = engine.0.clone();
     cx.background_executor().spawn(async move {
-        let session = engine.local.session.session_id(row)?;
+        let session = engine.session_id(row).await?;
         engine.call::<C>(op, body(session)).await
     })
 }
@@ -617,8 +883,8 @@ pub(crate) fn local(cx: &mut App) -> Engine {
     #[cfg(test)]
     let engine = Engine::memory(cx);
     #[cfg(not(test))]
-    let engine = match Local::memory(spawner(cx), Options::default()) {
-        Ok(local) => Engine(EngineClient::serve(local, true, cx)),
+    let engine = match Engine::connect(&crate::data_dir(), cx) {
+        Ok(engine) => engine,
         Err(error) => panic!("no engine can start: {error}"),
     };
     set_local(&engine, cx);
@@ -638,79 +904,114 @@ pub(crate) struct Watching<S, E> {
 }
 
 impl Engine {
-    /// The engine over the store in `data_dir`, created if missing: the app's own, opened before
-    /// its first frame as monocode opened its store. Its schedulers wait for
-    /// [`Engine::run_schedulers`].
-    pub(crate) fn open(data_dir: &Path, cx: &mut App) -> Result<Self, String> {
-        let local = Local::open(data_dir, spawner(cx), Options::default())?;
-        Ok(Self(EngineClient::serve(local, true, cx)))
-    }
-
-    /// Starts the schedulers' clock (due reminders, automation runs and usage-limit resumes),
-    /// once the launch has written what it writes.
-    pub(crate) fn run_schedulers(&self) {
-        self.0.beat();
-    }
-
-    /// Tells the engine that session `row` changed in the store behind it, at once: the debug
-    /// fixtures, written through [`Engine::seed`].
-    pub(crate) fn refresh_now(&self, row: i64) {
-        self.0.local.workspace.refresh_session(row);
+    /// The engine over `data_dir`: the `onicode-engine` beside this app, reached on its socket
+    /// and launched when nothing answers. Returns at once: the engine is reached in the
+    /// background, and the workspace and settings the last launch kept stand in until it answers.
+    pub(crate) fn connect(data_dir: &Path, cx: &mut App) -> Result<Self, String> {
+        let runtime = RUNTIME
+            .as_ref()
+            .ok_or("The engine link's thread could not start")?;
+        let app =
+            std::env::current_exe().map_err(|error| format!("Cannot find the app: {error}"))?;
+        let door = SocketDoor::new(data_dir, &app);
+        let link = onicode_engine::link::Link::new(
+            Arc::new(door),
+            runtime.handle().clone(),
+            Timing::default(),
+        );
+        let mirror = Arc::new(Mirror::load(data_dir.join(VIEWER_CACHE)));
+        let engine = EngineClient::new(
+            Link::Socket {
+                link,
+                mirror: mirror.clone(),
+                dir: data_dir.to_path_buf(),
+                legacy: OnceLock::new(),
+            },
+            cx,
+        );
+        follow::<WatchWorkspace>(
+            &engine,
+            &mirror,
+            |since| WatchWorkspace { since },
+            fold_workspace,
+        );
+        follow::<WatchEngineSettings>(
+            &engine,
+            &mirror,
+            |since| WatchEngineSettings { since },
+            fold_settings,
+        );
+        keep(Arc::downgrade(&mirror), engine.executor.clone());
+        Ok(Self(engine))
     }
 
     /// An engine over a store in memory for a test: no disk watched, no provider CLI, `gh` or
     /// network asked, and its schedulers beat only through `tick`.
     #[cfg(test)]
     pub(crate) fn memory(cx: &mut App) -> Self {
-        let options = Options {
-            quiet: true,
+        let options = onicode_engine::Options {
             chores: Some(Arc::new(TestChores)),
-            probe: Some(Arc::new(onicode_engine::accounts::OfflineProbe)),
-            trackers: Some(Arc::new(onicode_engine::work::OfflineTrackers)),
-            gh: Some(Arc::new(onicode_engine::work::OfflineGh)),
+            ..onicode_engine::testing::quiet()
         };
-        let local = Local::memory(spawner(cx), options).expect("an engine in memory opens");
-        Self(EngineClient::serve(local, false, cx))
+        let spawn = Arc::new(GpuiSpawn(cx.background_executor().clone()));
+        let local =
+            onicode_engine::Local::memory(spawn, options).expect("an engine in memory opens");
+        Self(EngineClient::new(Link::Direct(Box::new(local)), cx))
     }
 
-    /// Writes and reads the engine's store as typed calls: tests, and the debug fixtures.
+    /// Writes and reads a test engine's store as typed calls.
+    #[cfg(test)]
     pub(crate) fn seed(&self) -> onicode_engine::testing::Seed {
-        self.0.local.seed()
+        self.0.direct().seed()
     }
 
-    /// The store itself: the SSH remote and the phone host only; steps 10-11 delete them.
+    /// The store itself: the SSH remote and the phone host only; steps 10-11 delete them. The
+    /// app's own connection to the engine's store, opened on first use.
     pub(crate) fn legacy_store(&self) -> Database {
-        self.0.local.legacy_store()
+        match &self.0.link {
+            Link::Socket { dir, legacy, .. } => legacy
+                .get_or_init(|| {
+                    onicode_engine::Local::open_legacy_store(dir)
+                        .unwrap_or_else(|error| panic!("no store can open: {error}"))
+                })
+                .clone(),
+            #[cfg(test)]
+            Link::Direct(local) => local.legacy_store(),
+        }
     }
 
     /// The directory the engine keeps its data in, `None` for one in memory.
     pub(crate) fn data_dir(&self) -> Option<PathBuf> {
-        self.0.local.data_dir()
+        match &self.0.link {
+            Link::Socket { dir, .. } => Some(dir.clone()),
+            #[cfg(test)]
+            Link::Direct(local) => local.data_dir(),
+        }
     }
 
-    /// The workspace as the engine holds it now, for a window's first frame; the shell's mirror
-    /// follows it from there.
+    /// The workspace for a window's first frame: as the last launch kept it, or as the engine
+    /// holds it now. Only a first launch, with nothing kept, waits for the engine. The shell's
+    /// mirror follows it from there.
     pub(crate) fn workspace_now(&self) -> Result<WorkspaceState, String> {
-        self.0.local.workspace.snapshot().map(|(_, state)| state)
+        match &self.0.link {
+            Link::Socket { mirror, .. } => mirror
+                .now(|seen| seen.workspace.clone())
+                .ok_or_else(|| "The engine has not answered yet".to_owned()),
+            #[cfg(test)]
+            Link::Direct(local) => local.workspace.snapshot().map(|(_, state)| state),
+        }
     }
 
-    /// The engine settings as they are now, for a window's first frame; the shell's mirror
-    /// follows them from there.
+    /// The engine settings for a window's first frame, as [`Engine::workspace_now`]; the defaults
+    /// when the engine has not answered. The shell's mirror follows them from there.
     pub(crate) fn settings_now(&self) -> EngineSettings {
-        self.0.local.settings.current()
-    }
-
-    /// Removes the files of conversations deleted since the last sweep, off the main thread.
-    pub(crate) fn sweep(&self) {
-        let engine = self.0.clone();
-        self.0
-            .executor
-            .spawn(async move {
-                if let Err(error) = engine.local.sweep() {
-                    eprintln!("Cannot sweep deleted conversations: {error}");
-                }
-            })
-            .detach();
+        match &self.0.link {
+            Link::Socket { mirror, .. } => {
+                mirror.now(|seen| seen.settings.clone()).unwrap_or_default()
+            }
+            #[cfg(test)]
+            Link::Direct(local) => local.settings.current(),
+        }
     }
 
     /// Makes a call, as a future the caller awaits wherever it likes (a view's task, or the
@@ -731,8 +1032,9 @@ impl Engine {
     }
 
     /// Watches `W` from the params `params` makes for a cursor: a snapshot, then every batch of
-    /// events, resuming with its cursor whenever the engine drops it behind. Ends when the
-    /// returned [`Watching`] is dropped, or when the engine stops serving the watch.
+    /// events, resuming with its cursor whenever the engine drops it behind or the connection
+    /// drops. Ends when the returned [`Watching`] is dropped, or when the engine stops serving
+    /// the watch.
     pub(crate) fn watch<W: Watch + 'static>(
         &self,
         params: impl Fn(Option<Cursor>) -> W::Params + Send + 'static,
@@ -787,7 +1089,7 @@ impl Engine {
         self.0
             .executor
             .spawn(async move {
-                if let Ok(session) = engine.local.session.session_id(row) {
+                if let Ok(session) = engine.session_id(row).await {
                     let _ = engine.call::<C>(op, body(session)).await;
                 }
             })
@@ -796,11 +1098,11 @@ impl Engine {
 }
 
 /// How often a session event watcher checks whether its receiver is still there.
-const LISTENER_CHECK: std::time::Duration = std::time::Duration::from_secs(1);
+const LISTENER_CHECK: Duration = Duration::from_secs(1);
 
 /// The events of the session stored at `row` from now on, without its rows: a watch with no
-/// turns in its snapshot, resumed with its cursor whenever the engine drops it behind. Ends when
-/// the receiver goes or the engine stops serving the session.
+/// turns in its snapshot, resumed with its cursor whenever the engine drops it behind or the
+/// connection drops. Ends when the receiver goes or the engine stops serving the session.
 pub(crate) fn session_events(
     engine: &Engine,
     row: i64,
@@ -812,7 +1114,7 @@ pub(crate) fn session_events(
     executor
         .clone()
         .spawn(async move {
-            let Ok(session) = engine.local.session.session_id(row) else {
+            let Ok(session) = engine.session_id(row).await else {
                 return;
             };
             let mut since: Option<Cursor> = None;
@@ -825,8 +1127,13 @@ pub(crate) fn session_events(
                     since,
                     window_turns: 0,
                 };
-                let Ok(mut items) = engine.watch::<WatchSession>(watch).await else {
-                    return;
+                let mut items = match engine.watch::<WatchSession>(watch).await {
+                    Ok(items) => items,
+                    Err(_) if engine.reconnects() && !events.is_closed() => {
+                        executor.timer(RETRY).await;
+                        continue;
+                    }
+                    Err(_) => return,
                 };
                 drop(ended.take());
                 let mut resync = false;
@@ -878,8 +1185,10 @@ pub(crate) fn session_events(
 pub(crate) type WorkspaceUpdate = WatchUpdate<WorkspaceState, WorkspaceEvent>;
 
 /// Feeds `updates` from the watch `params` names for a cursor: a snapshot, then every non-empty
-/// batch of events, resubscribing with the last cursor after `Resync`. Ends when the receiver goes
-/// or a stream ends without `Resync` (the engine stopped serving it).
+/// batch of events, resubscribing with the last cursor after `Resync` (the engine dropped the
+/// watcher behind, or the connection dropped; an engine that restarted answers with a fresh
+/// snapshot). Ends when the receiver goes or a stream ends without `Resync` (the engine stopped
+/// serving it).
 async fn resume<W: Watch>(
     engine: Arc<EngineClient>,
     params: impl Fn(Option<Cursor>) -> W::Params,
@@ -893,8 +1202,14 @@ async fn resume<W: Watch>(
     // live between them instead of reloading.
     let mut ended = None;
     loop {
-        let Ok(mut items) = engine.watch::<W>(params(cursor)).await else {
-            return;
+        let mut items = match engine.watch::<W>(params(cursor)).await {
+            Ok(items) => items,
+            // The engine is starting, or restarting: ask again while someone listens.
+            Err(_) if engine.reconnects() && !updates.is_closed() => {
+                engine.executor.timer(RETRY).await;
+                continue;
+            }
+            Err(_) => return,
         };
         drop(ended.take());
         let mut resync = false;
@@ -953,7 +1268,7 @@ pub(crate) fn watch_workspace(
 #[cfg(test)]
 pub(crate) fn create_for_test(engine: &Engine, provider: &str, cwd: &str, _: &mut App) -> Session {
     use onicode_protocol::workspace::{CreateSession, NewSession};
-    let created = futures::executor::block_on(engine.0.local.workspace.create_session(
+    let created = futures::executor::block_on(engine.0.direct().workspace.create_session(
         Some(OpId::new()),
         CreateSession {
             session: SessionId::new(),
@@ -971,7 +1286,7 @@ pub(crate) fn create_for_test(engine: &Engine, provider: &str, cwd: &str, _: &mu
 /// One beat of `engine`'s schedulers at `now`, in a test's virtual time.
 #[cfg(test)]
 pub(crate) fn tick(engine: &Engine, now: u64, _: &mut App) -> Result<(), String> {
-    engine.0.local.tick(now)
+    engine.0.direct().tick(now)
 }
 
 /// Every call `engine` was asked, by name with its routed params.
@@ -994,39 +1309,34 @@ mod tests {
 
     use super::*;
 
+    fn turn(row: i64) -> Arc<Turn> {
+        Arc::new(Turn {
+            row,
+            viewer: Mutex::new(Viewer::default()),
+            nudge: Notify::new(),
+            cancel: Arc::new(AtomicBool::new(false)),
+            finished: AtomicBool::new(false),
+        })
+    }
+
     #[gpui::test]
     fn a_steer_that_fails_before_it_leaves_shows_at_once(cx: &mut gpui::TestAppContext) {
         let engine = cx.update(Engine::memory).0;
         let session = SessionId::new();
-        let viewer = Arc::new(Mutex::new(Viewer::default()));
-        let nudge = Arc::new(Notify::new());
+        let turn = turn(1);
         let (updates, received) = async_channel::bounded(1);
         // The turn started, and its session sends nothing more.
         let (_refusal, refusals) = async_channel::bounded::<String>(1);
         let relayed = {
-            let (engine, viewer, nudge) = (engine.clone(), viewer.clone(), nudge.clone());
+            let (engine, turn) = (engine.clone(), turn.clone());
             cx.executor().spawn(async move {
                 let items: Items = futures::stream::pending().boxed();
-                relay(
-                    &engine,
-                    session,
-                    items,
-                    Some(refusals),
-                    &viewer,
-                    &nudge,
-                    &updates,
-                )
-                .await
+                relay(&engine, session, items, Some(refusals), &turn, &updates).await
             })
         };
         cx.run_until_parked();
         assert!(received.try_recv().is_err(), "nothing to hand on yet");
-        let controls = EngineControls {
-            engine,
-            session,
-            viewer,
-            nudge,
-        };
+        let controls = EngineControls { engine, turn };
         controls.send(Control {
             id: "steer".into(),
             decision: Decision::Steer(Message {
@@ -1048,5 +1358,71 @@ mod tests {
         );
         assert!(!update.finished, "the turn runs on");
         drop(relayed);
+    }
+
+    fn snapshot(epoch: u64, turn: Option<session::TurnState>) -> Item<SessionState, SessionEvent> {
+        Item::Snapshot {
+            at: Cursor { epoch, seq: 0 },
+            state: SessionState {
+                turn,
+                ..SessionState::default()
+            },
+        }
+    }
+
+    /// An engine that restarted under a started turn answers with a snapshot of another epoch
+    /// and no turn: the turn finishes, saying why. The same snapshot before the turn started, or
+    /// from the same engine run, finishes nothing.
+    #[test]
+    fn a_turn_ends_when_its_engine_restarted() {
+        let running = Some(session::TurnState {
+            provider_turn_id: None,
+            ready: true,
+            finished: false,
+        });
+        let viewer = Mutex::new(Viewer::default());
+        assert!(!take_in(&viewer, snapshot(7, running.clone()), None, false));
+        assert!(
+            !take_in(&viewer, snapshot(7, None), Some(7), true),
+            "the same run"
+        );
+        assert!(
+            !take_in(&viewer, snapshot(9, None), Some(7), false),
+            "not started"
+        );
+        assert!(take_in(&viewer, snapshot(9, None), Some(7), true));
+        let update = take(&viewer).expect("the end is handed on");
+        assert!(update.finished);
+        assert!(update.status.contains("restarted"), "{}", update.status);
+        let restarted = Mutex::new(Viewer::default());
+        assert!(!take_in(&restarted, snapshot(7, None), None, false));
+        assert!(
+            !take_in(&restarted, snapshot(9, running), Some(7), true),
+            "a turn the new engine runs goes on"
+        );
+    }
+
+    /// The mirror keeps what it saw across launches, and one with nothing kept reads what
+    /// arrives.
+    #[test]
+    fn the_mirror_keeps_the_workspace_across_launches() {
+        let dir = std::env::temp_dir().join(format!("onicode-mirror-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(VIEWER_CACHE);
+        let mirror = Mirror::load(file.clone());
+        mirror.update(|seen| {
+            seen.settings = Some(EngineSettings {
+                idle_agents: 3,
+                ..EngineSettings::default()
+            });
+        });
+        mirror.save();
+        let next = Mirror::load(file);
+        let settings = next.now(|seen| seen.settings.clone()).unwrap();
+        assert_eq!(settings.idle_agents, 3);
+        let empty = Mirror::load(dir.join("missing.json"));
+        empty.update(|seen| seen.workspace = Some(WorkspaceState::default()));
+        assert!(empty.now(|seen| seen.workspace.clone()).is_some());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

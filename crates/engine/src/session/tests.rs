@@ -183,6 +183,7 @@ impl Harness {
             message,
             text: text.into(),
             attachments: Vec::new(),
+            turn: None,
         };
         self.pool
             .spawner()
@@ -1153,6 +1154,7 @@ async fn the_service_serves_a_turn_over_rpc() {
                 message,
                 text: "go".into(),
                 attachments: Vec::new(),
+                turn: None,
             },
         );
         async move { client.call(session::Send::NAME, params).await }
@@ -1222,8 +1224,9 @@ fn a_real_turn_runs_through_the_hub() {
     use std::os::unix::fs::PermissionsExt;
 
     use onicode_core::agent::TurnInfo;
+    use onicode_protocol::session::TurnContext;
 
-    use super::{Staged, StagedTurn, ThreadSpawn};
+    use super::ThreadSpawn;
     use crate::turn::{TurnInput, run_turn_using};
 
     let dir = tempfile::tempdir().unwrap();
@@ -1282,23 +1285,6 @@ for line in sys.stdin:
         panic!("a watch starts from a snapshot");
     };
     let message = MessageId::new();
-    hub.stage(
-        message,
-        Staged::Turn(Box::new(StagedTurn {
-            summary,
-            prompt: "Say hello".into(),
-            settings: Settings {
-                text_only: true,
-                turn_model: Some(TurnInfo {
-                    provider: "codex".into(),
-                    model: "Chosen Model".into(),
-                    ..TurnInfo::default()
-                }),
-                ..Settings::default()
-            },
-            cancel: Arc::new(AtomicBool::new(false)),
-        })),
-    );
     let receipt = block_on(hub.send(
         Some(OpId::new()),
         session::Send {
@@ -1306,6 +1292,20 @@ for line in sys.stdin:
             message,
             text: "Say hello".into(),
             attachments: Vec::new(),
+            turn: Some(Box::new(TurnContext {
+                summary,
+                // In process the whole struct crosses: no visual bridge for a text-only turn.
+                settings: Settings {
+                    text_only: true,
+                    ..Settings::default()
+                },
+                turn_model: Some(TurnInfo {
+                    provider: "codex".into(),
+                    model: "Chosen Model".into(),
+                    ..TurnInfo::default()
+                }),
+                ..TurnContext::default()
+            })),
         },
     ));
     assert_eq!(receipt, Ok(Outcome::Applied));

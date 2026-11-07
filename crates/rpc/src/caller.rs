@@ -2,27 +2,26 @@
 //!
 //! The engine serves three kinds of caller over the same [`crate::RpcService`]:
 //!
-//! - [`Caller::Local`]: this device's app or CLI, holding the full IPC token
-//!   (`{data_dir}/ipc-token`), or an in-process client. The default when nothing set one.
+//! - [`Caller::Local`]: this device's app, holding the full token (`{data_dir}/ipc-token`), or an
+//!   in-process client. The default when nothing set one.
 //! - [`Caller::Agent`]: a `onicode mcp` server the engine injected into an agent's run, holding the
-//!   agent-scoped token (`{data_dir}/ipc-token-agent`). It reaches only what the MCP tools need
-//!   ([`crate::agent_allowed`]); nothing that grants power.
+//!   agent-scoped token (`{data_dir}/ipc-token-agent`). It reaches only the calls the protocol
+//!   marks as an agent's (`Call::AGENT`); nothing that grants power.
 //! - [`Caller::Peer`]: another device, over a peer link ([`crate::serve_carried`]).
 //!
-//! The gates that matter are enforced by method at the transport guards
-//! themselves (the WS server's agent guard, the carrier's guard), so they
-//! never depend on this value surviving a hop. This task-local exists for
-//! finer checks and for the record: read it at dispatch entry, before any
-//! `tokio::spawn` (a spawned task starts with no caller, i.e. `Local`).
+//! The gates that matter are enforced by method where each connection is admitted (the engine's
+//! policy for a socket [`crate::Admission`], the carrier's guard), so they never depend on this
+//! value surviving a hop. This task-local exists for finer checks and for the record: read it at
+//! dispatch entry, before any `tokio::spawn` (a spawned task starts with no caller, i.e. `Local`).
 
 use std::future::Future;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Caller {
-    /// Full-token local IPC (the app, the CLI) or an in-process client.
+    /// The full token over the local socket (the app) or an in-process client.
     Local,
-    /// Local IPC with the agent-scoped token. `chat` is the chat the MCP
-    /// server says it serves (`x-onicode-chat`): claimed, for the record only.
+    /// The agent-scoped token over the local socket. `chat` is the chat the MCP server says it
+    /// serves: claimed, for the record only.
     Agent { chat: Option<String> },
     /// Another device over a peer link: `device` is the device-id its hello
     /// gave, `None` when the carrier was served without one.

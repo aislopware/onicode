@@ -145,14 +145,41 @@ macro_rules! session_call {
 }
 
 /// Send a prompt: it starts a turn, or queues behind the running one.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Send {
     pub session: SessionId,
     pub message: MessageId,
     pub text: String,
     pub attachments: Vec<PathBuf>,
+    /// What the viewer's composer prepared for the turn; `None` runs it under the session's
+    /// stored settings. The engine ignores it from an agent's scoped token.
+    #[serde(default)]
+    pub turn: Option<Box<TurnContext>>,
 }
 session_call!(Send, agent: true, reply: Outcome);
+
+/// A turn as the viewer's composer prepared it: the settings it runs under, which the viewer
+/// may not have saved yet, and the context those settings never save (`Settings`' transport-only
+/// fields). The composer stays in the viewer (engine.md, "Boundary"), so this is how its work
+/// reaches the engine that runs the turn.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TurnContext {
+    /// The session as the viewer holds it; its `id` must be the session's own row.
+    pub summary: crate::sessions::Session,
+    pub settings: Settings,
+    /// The prompt with the transport-only context (selected MCP servers, completions); the raw
+    /// text stays the transcript's and the queue's label.
+    pub prepared_prompt: Option<String>,
+    /// The model identity captured as the turn was submitted.
+    pub turn_model: Option<TurnInfo>,
+    /// Environment the viewer adds to the provider's run.
+    pub environment: HashMap<String, String>,
+    /// The queued message this turn sends, by its id.
+    pub queued: Option<String>,
+    /// A message the app sent on the person's behalf, shown as such.
+    pub internal: bool,
+}
 
 /// Steer the running turn with a message, without stopping it.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,10 +1,13 @@
 //! Port of TerminalView.tsx: a login shell the engine hosts (`docs/onicode/decisions/terminal.md`),
 //! mirrored here by libghostty and painted as a grid of cell-snapped text runs. Keys, paste and
 //! the wheel go to the engine, which encodes them from its own terminal's modes; output comes back
-//! through the terminal's watch.
+//! through the terminal's watch. On a slow link the local echo predictor paints typed characters
+//! ahead of their echo, in place, as the echo will paint them. A program's OSC 7501 status shows
+//! on the terminal's tab with the session marks.
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use gpui::prelude::*;
@@ -12,21 +15,24 @@ use gpui::{
     App, Bounds, ClipboardItem, Context, Element, ElementId, Entity, EventEmitter, FocusHandle,
     Focusable, Font, FontStyle, FontWeight, GlobalElementId, Hsla, InspectorElementId, KeyBinding,
     KeyDownEvent, Keystroke, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, ScrollDelta,
-    ScrollEvent, ShapedLine, SharedString, Size, StrikethroughStyle, Style, Task, TextAlign,
-    TextRun, UnderlineStyle, Window, WindowTextSystem, actions, div, point, px, rgb, size,
+    ScrollEvent, ShapedLine, SharedString, Size, StrikethroughStyle, Style, StyleRefinement, Task,
+    TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem, actions, div, point, px, rgb,
+    size,
 };
 use onicode_protocol::TerminalId;
 use onicode_protocol::terminal::{
-    CloseTerminal, Input, Key, OpenTerminal, ReadForeground, ResizeTerminal, StopForeground,
-    TerminalColors, TerminalEvent as HostEvent, TerminalInput, TerminalSize, TerminalState,
-    WatchTerminal,
+    CloseTerminal, Input, Key, OpenTerminal, ProgramState, ProgramStatus, ReadForeground,
+    ResizeTerminal, StopForeground, TerminalColors, TerminalEvent as HostEvent, TerminalInput,
+    TerminalSize, TerminalState, ViewerId, WatchTerminal,
 };
 use onicode_term::label::command_label;
 use onicode_term::mirror::{CellColor, CursorShape, Link, Mirror, RowId};
+use onicode_term::predict::Predictor;
 use onicode_term::select::{Kind, Point as GridPoint, Side};
 use onicode_term::{keys, mirror, palette};
 
 use crate::engine_client::{self, Engine, WatchUpdate};
+use crate::session_mark::{SessionMark, State as MarkState};
 use crate::theme::*;
 
 mod context_menu;
@@ -66,8 +72,15 @@ const OSC_COLORS: TerminalColors = TerminalColors {
 };
 
 pub(crate) enum TerminalEvent {
-    /// Title, foreground process or running state changed.
+    /// Title, foreground process, running state or program status changed.
     Changed,
+}
+
+/// This app run as a viewer of the engines' terminals: the PTY takes the size of the viewer
+/// that typed last.
+fn viewer() -> ViewerId {
+    static VIEWER: OnceLock<ViewerId> = OnceLock::new();
+    *VIEWER.get_or_init(ViewerId::new)
 }
 
 /// Where the grid was painted, for mapping the pointer to cells.
@@ -140,6 +153,16 @@ pub(crate) struct Terminal {
     look: Option<Look>,
     /// Ends a synchronized update the program left open.
     sync: Option<Task<()>>,
+    /// Local echo on a slow link.
+    predictor: Predictor,
+    /// Withdraws predictions the host never confirmed.
+    predict_expiry: Option<Task<()>>,
+    /// What the program in it reports (OSC 7501).
+    pub(crate) status: Option<ProgramStatus>,
+    /// The tab has been on screen since the status last changed: a done check clears.
+    status_seen: bool,
+    /// The tab's working, done or attention mark.
+    mark: Entity<SessionMark>,
     _poll: Task<()>,
 }
 impl EventEmitter<TerminalEvent> for Terminal {}
@@ -207,6 +230,11 @@ impl Terminal {
             rows: HashMap::new(),
             look: None,
             sync: None,
+            predictor: Predictor::default(),
+            predict_expiry: None,
+            status: None,
+            status_seen: true,
+            mark: cx.new(|_| SessionMark::tab(String::new())),
             _poll: poll,
         }
     }
@@ -219,6 +247,7 @@ impl Terminal {
         let (opened, on_open) = async_channel::bounded::<()>(1);
         let open = OpenTerminal {
             terminal: id,
+            viewer: viewer(),
             cwd: cwd.to_owned(),
             size: START,
             colors: OSC_COLORS,
@@ -235,16 +264,23 @@ impl Terminal {
                 // What failed is the engine's to say: the terminal's watch shows it.
                 while let Ok(outgoing) = queued.recv().await {
                     let terminal = id;
+                    let viewer = viewer();
                     match outgoing {
                         Outgoing::Input(input) => {
-                            let _ = caller
-                                .call::<TerminalInput>(None, TerminalInput { terminal, input })
-                                .await;
+                            let input = TerminalInput {
+                                terminal,
+                                viewer,
+                                input,
+                            };
+                            let _ = caller.call::<TerminalInput>(None, input).await;
                         }
                         Outgoing::Resize(size) => {
-                            let _ = caller
-                                .call::<ResizeTerminal>(None, ResizeTerminal { terminal, size })
-                                .await;
+                            let resize = ResizeTerminal {
+                                terminal,
+                                viewer,
+                                size,
+                            };
+                            let _ = caller.call::<ResizeTerminal>(None, resize).await;
                         }
                         Outgoing::StopForeground => {
                             let _ = caller
@@ -268,6 +304,7 @@ impl Terminal {
             }
             let watching = watcher.watch::<WatchTerminal>(move |since| WatchTerminal {
                 terminal: id,
+                viewer: viewer(),
                 since,
             });
             while let Ok(update) = watching.updates.recv().await {
@@ -296,32 +333,132 @@ impl Terminal {
         }
     }
 
-    /// What the engine's terminal did: a snapshot to start over from, or what it did since.
+    /// What the engine's terminal did: a snapshot to start over from (its screen first, its
+    /// history right behind), or what it did since.
     fn apply(&mut self, update: WatchUpdate<TerminalState, HostEvent>, cx: &mut Context<Self>) {
+        let mut output = false;
         match update {
             WatchUpdate::Snapshot(state) => {
-                self.mirror = Mirror::from_snapshot(&state.screen.0)
-                    .unwrap_or_else(|| Mirror::new(state.size));
+                let TerminalState {
+                    size,
+                    screen,
+                    exited,
+                    status,
+                } = *state;
+                self.mirror = Mirror::attach(&screen.0, size);
                 self.rows.clear();
-                if state.exited {
+                self.predictor.reset();
+                self.set_status(status, cx);
+                if exited {
                     self.finish(cx);
                 }
             }
             WatchUpdate::Events(events) => {
                 for event in events {
                     match event {
-                        HostEvent::Output(bytes) => self.mirror.feed(&bytes.0),
-                        HostEvent::Resized(size) => self.mirror.resize(size),
+                        HostEvent::Output(bytes) => {
+                            self.mirror.feed(&bytes.0);
+                            output = true;
+                        }
+                        HostEvent::Resized(size) => {
+                            self.mirror.resize(size);
+                            self.predictor.reset();
+                        }
+                        HostEvent::History(bytes) => {
+                            self.mirror.history(&bytes.0);
+                            self.rows.clear();
+                        }
                         HostEvent::Clipboard(text) => {
                             cx.write_to_clipboard(ClipboardItem::new_string(text));
                         }
+                        HostEvent::Status(status) => self.set_status(status, cx),
                         HostEvent::Exited { .. } => self.finish(cx),
                     }
                 }
             }
         }
+        if output {
+            self.predictor.output(&self.mirror, Instant::now());
+        }
         self.schedule_sync(cx);
+        self.schedule_expiry(cx);
         cx.notify();
+    }
+
+    /// The program's report changed. A new done check waits to be seen.
+    fn set_status(&mut self, status: Option<ProgramStatus>, cx: &mut Context<Self>) {
+        if status == self.status {
+            return;
+        }
+        let state = |status: &Option<ProgramStatus>| status.as_ref().map(|status| status.state);
+        if state(&status) != state(&self.status) {
+            self.status_seen = state(&status) != Some(ProgramState::Done);
+        }
+        self.status = status;
+        self.refresh_mark(cx);
+    }
+
+    /// The tab was on screen: a done check has been seen.
+    fn see_status(&mut self, cx: &mut Context<Self>) {
+        if !self.status_seen {
+            self.status_seen = true;
+            self.refresh_mark(cx);
+        }
+    }
+
+    /// The tab mark for the status: working spins, blocked asks for attention, done shows its
+    /// check until seen; anything else leaves the tab its tile.
+    fn mark_state(&self) -> MarkState {
+        match self.status.as_ref().map(|status| status.state) {
+            Some(ProgramState::Working) => MarkState::Working,
+            Some(ProgramState::Blocked) => MarkState::Attention,
+            Some(ProgramState::Done) if !self.status_seen => MarkState::Done,
+            _ => MarkState::Idle,
+        }
+    }
+
+    fn refresh_mark(&mut self, cx: &mut Context<Self>) {
+        let state = self.mark_state();
+        let provider = self.agent().unwrap_or_default();
+        self.mark
+            .update(cx, |mark, cx| mark.set(provider, state, cx));
+        cx.emit(TerminalEvent::Changed);
+    }
+
+    /// The terminal tab's tile: the agent CLI's or the prompt, or, while its program works,
+    /// waits on the user or has finished unseen, that mark on a neutral tile, as a pane's.
+    pub(crate) fn tab_tile(&self) -> gpui::AnyElement {
+        match self.mark_state() {
+            MarkState::Idle => crate::tab_tile::terminal_tile(self.agent()).into_any_element(),
+            _ => crate::tab_tile::neutral_tile(
+                self.mark
+                    .clone()
+                    .cached(StyleRefinement::default().size(px(14.))),
+            )
+            .into_any_element(),
+        }
+    }
+
+    /// Withdraws predictions the host has not confirmed by their deadline.
+    fn schedule_expiry(&mut self, cx: &mut Context<Self>) {
+        let Some(deadline) = self.predictor.next_deadline() else {
+            self.predict_expiry = None;
+            return;
+        };
+        if self.predict_expiry.is_some() {
+            return;
+        }
+        let wait = deadline.saturating_duration_since(Instant::now());
+        self.predict_expiry = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(wait).await;
+            let _ = this.update(cx, |this, cx| {
+                this.predict_expiry = None;
+                if this.predictor.expire(Instant::now()) {
+                    cx.notify();
+                }
+                this.schedule_expiry(cx);
+            });
+        }));
     }
 
     /// Shows a synchronized update the program left open once its deadline passes.
@@ -383,7 +520,9 @@ impl Terminal {
         self.stop_selection();
         self.mirror.scroll_to_bottom();
         self.mirror.clear_selection();
+        self.predictor.typed(&input, &self.mirror, Instant::now());
         self.send(Outgoing::Input(input));
+        self.schedule_expiry(cx);
         cx.notify();
     }
 
@@ -611,12 +750,14 @@ impl Terminal {
         // itself: the engine encodes which from its terminal's modes. The shell scrolls history.
         if modes.mouse || (modes.alt_screen && modes.alt_scroll) {
             let (row, col) = self.viewport_cell(event.position);
-            self.send(Outgoing::Input(Input::Wheel {
+            let wheel = Input::Wheel {
                 up: lines > 0,
                 lines: lines.unsigned_abs(),
                 row: u16::try_from(row).unwrap_or(u16::MAX),
                 col: u16::try_from(col).unwrap_or(u16::MAX),
-            }));
+            };
+            self.predictor.typed(&wheel, &self.mirror, Instant::now());
+            self.send(Outgoing::Input(wheel));
         } else if self.mirror.scroll(lines) {
             cx.notify();
         }
@@ -763,7 +904,7 @@ impl Element for Grid {
             (((bounds.size.width - px(PADDING * 2.)) / cell_width).floor() as usize).max(2);
         let lines = (((bounds.size.height - px(PADDING)) / line_height).floor() as usize).max(1);
         let cell = size(cell_width, line_height);
-        let (frame, link, mut cached) = self.terminal.update(cx, |t, _| {
+        let (frame, link, mut cached, unseen) = self.terminal.update(cx, |t, _| {
             t.resize(columns, lines, cell);
             t.geometry.set(Some(Geometry { origin, cell }));
             let link = t.hover.and_then(|position| t.link_at(position));
@@ -779,9 +920,14 @@ impl Element for Grid {
                 t.rows.clear();
                 t.look = Some(look);
             }
-            let frame = t.mirror.frame(|id| t.rows.contains_key(&id));
-            (frame, link, std::mem::take(&mut t.rows))
+            let overlay = t.predictor.overlay(&t.mirror);
+            let frame = t.mirror.frame_with(&overlay, |id| t.rows.contains_key(&id));
+            (frame, link, std::mem::take(&mut t.rows), !t.status_seen)
         });
+        if unseen && window.is_window_active() {
+            let terminal = self.terminal.clone();
+            cx.defer(move |cx| terminal.update(cx, |t, cx| t.see_status(cx)));
+        }
         if frame.full {
             cached.clear();
         }
@@ -1090,9 +1236,13 @@ pub(crate) fn agent_cli(label: &str) -> Option<&'static str> {
     onicode_core::provider::Kind::parse(name).map(|kind| kind.id())
 }
 impl Terminal {
-    /// The agent CLI holding this terminal, if any.
+    /// The agent CLI holding this terminal: by its foreground command, else by the app its
+    /// status report names.
     pub(crate) fn agent(&self) -> Option<&'static str> {
-        agent_cli(self.foreground.as_deref()?)
+        self.foreground.as_deref().and_then(agent_cli).or_else(|| {
+            let app = self.status.as_ref()?.app.as_deref()?;
+            agent_cli(app).or_else(|| agent_cli(app.strip_suffix("-code")?))
+        })
     }
 }
 
@@ -1250,6 +1400,40 @@ mod tests {
             key_char: Some("a".into()),
         };
         assert_eq!(keys::legacy(&key(&typed), false), Some(b"a".to_vec()));
+    }
+
+    #[gpui::test]
+    fn a_status_marks_the_tab_until_its_done_is_seen(cx: &mut gpui::TestAppContext) {
+        let view = cx.new(|cx| Terminal::new("/tmp".into(), cx));
+        view.update(cx, |terminal, cx| {
+            let report = |state| ProgramStatus {
+                state,
+                kind: None,
+                progress: None,
+                app: Some("claude-code".into()),
+                title: None,
+                message: None,
+            };
+            assert!(terminal.mark_state() == MarkState::Idle);
+            terminal.set_status(Some(report(ProgramState::Working)), cx);
+            assert!(terminal.mark_state() == MarkState::Working);
+            assert_eq!(
+                terminal.agent(),
+                Some("claude"),
+                "the report names the agent"
+            );
+            terminal.set_status(Some(report(ProgramState::Blocked)), cx);
+            assert!(terminal.mark_state() == MarkState::Attention);
+            terminal.set_status(Some(report(ProgramState::Done)), cx);
+            assert!(terminal.mark_state() == MarkState::Done);
+            terminal.see_status(cx);
+            assert!(
+                terminal.mark_state() == MarkState::Idle,
+                "seen: back to the tile"
+            );
+            terminal.set_status(None, cx);
+            assert_eq!(terminal.agent(), None);
+        });
     }
 
     #[test]

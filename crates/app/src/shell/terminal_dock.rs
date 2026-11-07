@@ -686,7 +686,7 @@ impl Shell {
                             .map(|(ix, terminal)| {
                                 let t = terminal.read(cx);
                                 let label: SharedString = t.title.clone().into();
-                                let agent = t.agent();
+                                let tile = t.tab_tile();
                                 let description =
                                     SharedString::from(format!("{} — {}", t.title, t.cwd));
                                 let active = ix == dock.active;
@@ -773,7 +773,7 @@ impl Shell {
                                                     d.text_color(content(0.5))
                                                 }
                                             })
-                                            .child(crate::tab_tile::terminal_tile(agent))
+                                            .child(tile)
                                             .child(
                                                 div()
                                                     .flex_1()

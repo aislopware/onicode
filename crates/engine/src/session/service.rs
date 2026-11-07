@@ -58,7 +58,12 @@ impl RpcService for SessionService {
             ));
         }
         if method == session::Send::NAME {
-            let (op, body) = routed::<session::Send>(params)?;
+            let (op, mut body) = routed::<session::Send>(params)?;
+            if matches!(onicode_rpc::caller(), onicode_rpc::Caller::Agent { .. }) {
+                // An agent's prompt runs under the session's own settings: a composer's context
+                // (its environment above all) is the person's to hand over.
+                body.turn = None;
+            }
             return reply(hub.send(op, body).await);
         }
         if method == Steer::NAME {

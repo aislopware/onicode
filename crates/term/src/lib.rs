@@ -2,18 +2,23 @@
 //!
 //! The engine hosts every terminal: a [`pty`] running the login shell [`shell`] builds, and a
 //! [`host::Host`], the one libghostty terminal that answers the program's queries and encodes the
-//! viewers' input against its modes. A viewer attaches with the host's snapshot and then follows
-//! its output; its [`mirror::Mirror`] replays both with PTY write-back off and hands the view rows
-//! to paint.
+//! viewers' input against its modes and keeps the program's OSC 7501 records ([`program`]). A
+//! viewer attaches with the host's snapshot, its renderable prefix first ([`snapshot`]), and then
+//! follows its output; its [`mirror::Mirror`] replays both with PTY write-back off and hands the
+//! view rows to paint, with the local echo predictor's guesses ([`predict`]) over them on a slow
+//! link.
 pub mod host;
 pub mod keys;
 pub mod label;
 pub mod links;
 pub mod mirror;
 pub mod palette;
+pub mod predict;
+pub mod program;
 pub mod pty;
 pub mod select;
 pub mod shell;
+pub mod snapshot;
 
 use libghostty_vt::Terminal;
 use libghostty_vt::terminal::CursorStyle;

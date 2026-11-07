@@ -70,7 +70,7 @@ first port is a translation, not a redesign.
 | Session | `WatchSession {session, since, window_turns}` | `Send`, `Steer`, `Stop`, `Decide {approval, answer}`, `Answer`, `KeepQuestionOpen`, `QueueEdit {id, base_rev, edit}`, `SendNow`, `SteerNow`, `Configure`, `EditLastTurn`, `Rewind`, `Fork`, `Btw`, `SwitchProvider`, `ReadTranscript {before_turn, turns}` |
 | Files | `WatchDir {root, path}` (listings with a scan id) | `ListDir`, `Stat`, `Read`, `Write`, `Create`, `Move`, `DeletePath`, `SearchPaths`, `SearchContent`, `ListDrives`, `SearchHomeFolders`, `SaveAttachments`, `SaveNoteImages` |
 | Git | `WatchGit {checkout}` (status and branch, from the engine's fs watch) | `ReadStatus`, `Diff`, `FileDiff`, `Branches`, `Refs`, `History`, `Switch`, `CreateBranch`, `Stage`, `Unstage`, `Discard`, `Commit`, `Push`, `Pull`, `Sync`, `HeadMessage`, `CommitContext`, `PrContext`, `PrStatus`, `CreatePr`, `Worktrees`, `CreateWorktree`, `RemoveWorktree`, `ReadCheckpoint`, `RestoreCheckpoint`, `ReadSessionChanges` |
-| Terminal | `WatchTerminal {terminal, since}` (a libghostty snapshot of the host's screen, then its output, resizes, clipboard writes and exit; `terminal.md`) | `OpenTerminal {terminal, cwd, size, colors}`, `ListTerminals`, `ResizeTerminal`, `CloseTerminal`, `TerminalInput {Key, Text, Paste, Wheel}`, `ReadForeground`, `StopForeground` |
+| Terminal | `WatchTerminal {terminal, viewer, since}` (a libghostty snapshot of the host's screen through READY, its scrollback as an unnumbered `History` right after it, then output, resizes, clipboard writes, OSC 7501 `Status` and exit; `terminal.md`) | `OpenTerminal {terminal, viewer, cwd, size, colors}`, `ListTerminals` (with each terminal's status), `ResizeTerminal {viewer}`, `CloseTerminal`, `TerminalInput {viewer, Key, Text, Paste, Wheel}`, `ReadForeground`, `StopForeground`. The PTY takes the size of the viewer that typed last. |
 | Agents | `WatchAccounts` (accounts with usage from the streams) | `Catalog`, `Skills`, `Commands`, `AddAccount`, `Login`, `Logout`, `SetProviderEnabled`, MCP servers, `HarnessUpdates` |
 | Engine settings | `WatchEngineSettings` | `SetEngineSetting` (typed keys: keep-awake, worktree defaults, title generation, hooks) |
 | Work | `WatchAutomations`, `WatchInbox` | automation upsert, delete and run now; inbox sources and refresh; `LinkWorkItem` |
@@ -242,6 +242,33 @@ The app still depends on `onicode-core` for those files and for viewer-side work
 decoding and thumbnails, attachment checks, the visual runtime, the app bridge's socket, process teardown, the
 external editors, resource pressure, and a few path helpers (`worktree_management::default_root`,
 `files::document`, `git::naming`). Pure types come from `onicode_protocol`. `PROTOCOL` is 7.
+
+**Step 8 as built.** `onicode-engine` (`crates/engine/src/bin`, `host.rs`) makes its data dir `0700`, takes
+`engine.lock` with `flock` and writes its pid, executable and the executable's build time into it, opens the
+store and hubs, publishes fresh tokens, removes any socket a crashed engine left and binds `engine.sock`
+(`0600`). An engine that loses the lock exits quietly, so two launches racing leave one engine. `onicode-rpc`
+is now only the transport: ndjson envelopes over the socket, one task per connection, every ready frame written
+in one write, and a gate of `getpeereid` (same uid) then a token line (`{"token","chat"}`, answered `full` or
+`agent`). The engine holds the policy: an agent's token reaches only `Call::AGENT` methods, and until a
+connection says `Hello` with this `PROTOCOL` only the frozen calls are answered. The engine beats its schedulers
+and sweeps deleted conversations itself; `StopEngine`, `SIGTERM` or `SIGINT` stop it, socket removed before the
+lock goes, agents with it. The WebSocket server, `onicode_rpc::methods` and the in-process app engine are
+deleted; `memory_client` serves tests only. The viewer side is `onicode_engine::link`: one connection shared by
+every call and watch, connected on first use. Dial; when nothing answers, launch once through `onicode-launch`
+(detached with `setsid`, its stderr in `engine.log`) and poll from 1 ms doubling to 50 ms for up to 5 s; greet
+with `Hello`. An engine can come up and die between two looks, so one still absent 500 ms after its launch is
+launched again, less often each time; a second engine racing a slow first one loses the lock and exits. An engine on another `PROTOCOL`, or not the build beside this app (the lock names another
+executable or build time), is sent `SIGTERM` and replaced, so a rebuilt dev app never talks to a stale engine.
+A call whose connection closes before its reply is sent again with the same params, so its `OpId` gets the
+first receipt; a watch whose connection closes reads as lost and the app resubscribes with its cursor, and an
+engine that restarted (epochs count from its start time) answers with a fresh snapshot. The composer's context
+crosses as `Send.turn` (`TurnContext`), replacing step 3's in-process staging, and the engine ignores it from an
+agent's token; `ResolveSession` names a stored row's `SessionId`. The app keeps the workspace and engine
+settings it last saw in `viewer-cache.json`, so a launch draws from it while the engine starts; only a first
+launch waits (up to 10 s). Closing the window stops nothing: only the conversation's stop sends `Stop`, and a
+turn whose engine restarted under it ends saying so. The SSH remote and the phone host open their own
+connection to the store until steps 10 and 11. Debug fixtures are written with the engine stopped, under its
+lock. Keep-awake and alerts are the next batch.
 
 **Versioning.** `Hello` is the first call on every connection and exchanges `{protocol, version, capabilities}`.
 There is no compatibility before release. A peer with a different `PROTOCOL` is answered only `Hello`,

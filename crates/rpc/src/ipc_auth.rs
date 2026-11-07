@@ -1,24 +1,16 @@
-//! Localhost IPC bearer — who may drive the engine over `ws://127.0.0.1:{port}`.
+//! The engine's local tokens: who may drive it over its Unix socket ([`crate::serve_unix`]).
 //!
-//! The Origin check in [`crate::serve_ws_listener`] keeps browser pages out, but
-//! any local process can open a TCP socket to the port. Every engine start that
-//! binds the port therefore mints a fresh 32-byte token, writes it to
-//! `{data_dir}/ipc-token` (owner-only, atomic replace), and the server refuses a
-//! WebSocket handshake without `Authorization: Bearer <token>`. Clients read the
-//! file at dial time, so they keep working across engine restarts.
+//! The socket sits in the owner-only data dir and every peer must run as the engine's own uid,
+//! but a process of that user is not yet the person: every engine start mints two fresh 32-byte
+//! tokens, writes them to `{data_dir}/ipc-token` and `{data_dir}/ipc-token-agent` (owner-only,
+//! atomic replace), and a connection's first line must carry one. Clients read the file at dial
+//! time, so they keep working across engine restarts.
 //!
-//! Client resolution order ([`client_tokens`]): the file named by
-//! `$ONICODE_IPC_TOKEN_FILE` alone when set (what the engine hands the `onicode
-//! mcp` servers it injects into agents), else `$ONICODE_IPC_TOKEN` (explicit
-//! value), then `{data_dir}/ipc-token`.
-//! In-process (in-memory) transports never see any of this.
-//!
-//! Two tokens, two authorities ([`crate::Caller`]): the full token
-//! (`ipc-token`) is the app's and the CLI's; the agent-scoped token
-//! (`ipc-token-agent`) is what the engine hands the `onicode mcp` servers it
-//! injects into agents' runs, and the server answers it only the methods
-//! [`crate::agent_allowed`] lists. A client given `$ONICODE_IPC_TOKEN_FILE`
-//! uses that file alone: it never falls back to the full token.
+//! Two tokens, two authorities ([`Scope`], [`crate::Caller`]): the full token is the app's; the
+//! agent-scoped token is what the engine hands the `onicode mcp` servers it injects into agents'
+//! runs, and the engine answers it only the calls its protocol marks as an agent's
+//! (`Call::AGENT`). A client given `$ONICODE_IPC_TOKEN_FILE` uses that file alone: it never falls
+//! back to the full token. In-process transports never see any of this.
 
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
@@ -31,9 +23,6 @@ pub const TOKEN_ENV: &str = "ONICODE_IPC_TOKEN";
 pub const TOKEN_FILE_ENV: &str = "ONICODE_IPC_TOKEN_FILE";
 /// File name of the agent-scoped token inside the engine's data dir.
 pub const AGENT_TOKEN_FILE_NAME: &str = "ipc-token-agent";
-/// Handshake header naming the chat an agent's MCP server serves: claimed,
-/// for the record only ([`crate::Caller::Agent`]).
-pub const CHAT_HEADER: &str = "x-onicode-chat";
 
 /// `{data_dir}/ipc-token`.
 pub fn token_path(data_dir: &Path) -> PathBuf {
@@ -50,6 +39,15 @@ pub fn agent_token_path(data_dir: &Path) -> PathBuf {
 pub struct IpcTokens {
     pub full: String,
     pub agent: String,
+}
+
+/// What a token grants.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Scope {
+    /// The app: every call.
+    Full,
+    /// An agent's `onicode mcp`: only the calls marked as an agent's.
+    Agent,
 }
 
 impl IpcTokens {
@@ -80,7 +78,7 @@ pub fn generate_token() -> io::Result<String> {
 }
 
 /// Mint a fresh token and publish it at `{data_dir}/ipc-token`. Called by the
-/// engine on every start that serves the IPC port; the previous token (and
+/// engine on every start that serves its socket; the previous token (and
 /// every client still holding it) stops working.
 pub fn issue_token(data_dir: &Path) -> io::Result<String> {
     let token = generate_token()?;
@@ -134,8 +132,8 @@ pub fn read_token(path: &Path) -> io::Result<Option<String>> {
 /// Every token a client should try, best first, deduplicated: the
 /// `$ONICODE_IPC_TOKEN_FILE` file alone when it's set (an agent's MCP server),
 /// else the `$ONICODE_IPC_TOKEN` value, then `{data_dir}/ipc-token`. Read at call time — after an
-/// engine restart the file already holds the new token. Empty when nothing is configured (an
-/// older engine that predates IPC auth still accepts a bare dial).
+/// engine restart the file already holds the new token. Empty when nothing is configured: no
+/// engine has started yet.
 pub fn client_tokens(data_dir: Option<&Path>) -> Vec<String> {
     let mut tokens: Vec<String> = Vec::new();
     let mut push = |token: Option<String>| {
@@ -180,38 +178,17 @@ fn read_logged(path: &Path) -> Option<String> {
     })
 }
 
-/// Which of `tokens` an `Authorization` header carries: `Some(false)` the
-/// full one, `Some(true)` the agent-scoped one, `None` neither.
-pub(crate) fn bearer_scope(tokens: &IpcTokens, header: Option<&[u8]>) -> Option<bool> {
-    // Both compared, always, in constant time.
-    let full = bearer_matches(&tokens.full, header);
-    let agent = bearer_matches(&tokens.agent, header);
+/// What `presented` grants against `tokens`, `None` for neither. Both compared, always, in
+/// constant time (the length is not secret: every token is 64 hex chars).
+pub(crate) fn token_scope(tokens: &IpcTokens, presented: &[u8]) -> Option<Scope> {
+    let presented = presented.trim_ascii();
+    let full = constant_time_eq(presented, tokens.full.as_bytes());
+    let agent = constant_time_eq(presented, tokens.agent.as_bytes());
     match (full, agent) {
-        (true, _) => Some(false),
-        (false, true) => Some(true),
+        (true, _) => Some(Scope::Full),
+        (false, true) => Some(Scope::Agent),
         _ => None,
     }
-}
-
-/// Does an `Authorization` header value carry exactly `expected` as its bearer?
-/// Constant-time over the token bytes (the length is not secret: every token
-/// is 64 hex chars).
-pub(crate) fn bearer_matches(expected: &str, header: Option<&[u8]>) -> bool {
-    let Some(header) = header else {
-        return false;
-    };
-    let Some(presented) = strip_bearer(header) else {
-        return false;
-    };
-    constant_time_eq(presented, expected.as_bytes())
-}
-
-fn strip_bearer(header: &[u8]) -> Option<&[u8]> {
-    const SCHEME: &[u8] = b"bearer ";
-    if header.len() < SCHEME.len() || !header[..SCHEME.len()].eq_ignore_ascii_case(SCHEME) {
-        return None;
-    }
-    Some(header[SCHEME.len()..].trim_ascii())
 }
 
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
@@ -297,28 +274,28 @@ mod tests {
     }
 
     #[test]
-    fn bearer_matching_is_exact() {
-        let token = "ab".repeat(32);
-        let header = format!("Bearer {token}");
-        assert!(bearer_matches(&token, Some(header.as_bytes())));
-        assert!(bearer_matches(
-            &token,
-            Some(format!("bearer  {token} ").as_bytes())
-        ));
-        assert!(!bearer_matches(&token, None));
-        assert!(!bearer_matches(&token, Some(token.as_bytes())));
-        assert!(!bearer_matches(&token, Some(b"Bearer ")));
-        assert!(!bearer_matches(
-            &token,
-            Some(format!("Bearer {}", "ab".repeat(31)).as_bytes())
-        ));
-        assert!(!bearer_matches(
-            &token,
-            Some(format!("Bearer {}cd", "ab".repeat(31)).as_bytes())
-        ));
-        assert!(!bearer_matches(
-            &token,
-            Some(format!("Basic {token}").as_bytes())
-        ));
+    fn token_matching_is_exact() {
+        let tokens = IpcTokens {
+            full: "ab".repeat(32),
+            agent: "cd".repeat(32),
+        };
+        assert_eq!(
+            token_scope(&tokens, "ab".repeat(32).as_bytes()),
+            Some(Scope::Full)
+        );
+        assert_eq!(
+            token_scope(&tokens, format!(" {} ", "cd".repeat(32)).as_bytes()),
+            Some(Scope::Agent)
+        );
+        assert_eq!(token_scope(&tokens, b""), None);
+        assert_eq!(token_scope(&tokens, "ab".repeat(31).as_bytes()), None);
+        assert_eq!(
+            token_scope(&tokens, format!("{}cd", "ab".repeat(31)).as_bytes()),
+            None
+        );
+        assert_eq!(
+            token_scope(&tokens, format!("Bearer {}", "ab".repeat(32)).as_bytes()),
+            None
+        );
     }
 }

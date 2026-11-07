@@ -18,7 +18,7 @@ use onicode_protocol::session::{
     Fork, KeepQuestionOpen, QueueChange, QueueEdit, ReadBtw, ReadSession, ReadTranscript,
     RecallLastTurn, RecalledTurn, Rewind, SaveBtw, SaveQueue, Send, SendNow, SessionEvent,
     SessionRecord, SessionState, Steer, SteerNow, Stop, StopBtw, SwitchProvider, TranscriptPage,
-    TurnState, Verdict, WatchSession,
+    TurnContext, TurnState, Verdict, WatchSession,
 };
 use onicode_protocol::sessions::{
     Folder, Groups, Orchestration, Reminder, Session, SummaryTask, TextModel, WorkItem,
@@ -606,14 +606,33 @@ fn queue_change() -> impl Strategy<Value = QueueChange> {
 }
 
 fn send() -> impl Strategy<Value = Send> {
-    (session_id(), message_id(), text(), paths()).prop_map(
-        |(session, message, text, attachments)| Send {
+    (
+        session_id(),
+        message_id(),
+        text(),
+        paths(),
+        option::of((
+            option::of(text()),
+            hash_map(text(), text(), 0..3),
+            option::of(text()),
+            any::<bool>(),
+        )),
+    )
+        .prop_map(|(session, message, text, attachments, turn)| Send {
             session,
             message,
             text,
             attachments,
-        },
-    )
+            turn: turn.map(|(prepared_prompt, environment, queued, internal)| {
+                Box::new(TurnContext {
+                    prepared_prompt,
+                    environment,
+                    queued,
+                    internal,
+                    ..TurnContext::default()
+                })
+            }),
+        })
 }
 
 proptest! {
@@ -688,7 +707,7 @@ proptest! {
 
     #[test]
     fn prompts(value in send(), turn in any::<usize>()) {
-        let Send { session, message, text, attachments } = value.clone();
+        let Send { session, message, text, attachments, .. } = value.clone();
         round_trips(&value)?;
         round_trips(&Steer { session, message, text: text.clone(), attachments: attachments.clone() })?;
         round_trips(&EditLastTurn { session, attachments, model: Some(text) })?;
@@ -1445,7 +1464,43 @@ fn terminal_event() -> impl Strategy<Value = onicode_protocol::terminal::Termina
         terminal_size().prop_map(TerminalEvent::Resized),
         text().prop_map(TerminalEvent::Clipboard),
         option::of(any::<i32>()).prop_map(|code| TerminalEvent::Exited { code }),
+        vec(any::<u8>(), 0..64).prop_map(|bytes| TerminalEvent::History(Bytes(bytes))),
+        option::of(program_status()).prop_map(TerminalEvent::Status),
     ]
+}
+
+fn program_status() -> impl Strategy<Value = onicode_protocol::terminal::ProgramStatus> {
+    use onicode_protocol::terminal::{InputKind, ProgramState, ProgramStatus};
+    let state = prop_oneof![
+        Just(ProgramState::Idle),
+        Just(ProgramState::Working),
+        Just(ProgramState::Done),
+        Just(ProgramState::Blocked),
+        Just(ProgramState::Error),
+    ];
+    let kind = option::of(prop_oneof![
+        Just(InputKind::Permission),
+        Just(InputKind::Question),
+        Just(InputKind::Auth),
+    ]);
+    (
+        state,
+        kind,
+        option::of(0u8..=100),
+        option::of(text()),
+        option::of(text()),
+        option::of(text()),
+    )
+        .prop_map(
+            |(state, kind, progress, app, title, message)| ProgramStatus {
+                state,
+                kind,
+                progress,
+                app,
+                title,
+                message,
+            },
+        )
 }
 
 proptest! {
@@ -1462,28 +1517,31 @@ proptest! {
         at in cursor(),
         since in option::of(cursor()),
         label in option::of(text()),
+        viewer in any::<u128>(),
+        status in option::of(program_status()),
     ) {
         use onicode_protocol::terminal::{
             Bytes, CloseTerminal, ListTerminals, OpenTerminal, ReadForeground, ResizeTerminal,
             StopForeground, TerminalColors, TerminalEvent, TerminalInput, TerminalState,
-            TerminalSummary, WatchTerminal,
+            TerminalSummary, ViewerId, WatchTerminal,
         };
+        let viewer = ViewerId(Uuid::from_u128(viewer));
         let colors = TerminalColors {
             foreground: colors[0],
             background: colors[1],
             cursor: colors[2],
         };
-        round_trips(&OpenTerminal { terminal, cwd: cwd.clone(), size, colors })?;
-        round_trips(&vec![TerminalSummary { terminal, cwd, exited }])?;
+        round_trips(&OpenTerminal { terminal, viewer, cwd: cwd.clone(), size, colors })?;
+        round_trips(&vec![TerminalSummary { terminal, cwd, exited, status: status.clone() }])?;
         round_trips(&ListTerminals {})?;
-        round_trips(&ResizeTerminal { terminal, size })?;
+        round_trips(&ResizeTerminal { terminal, viewer, size })?;
         round_trips(&CloseTerminal { terminal })?;
-        round_trips(&TerminalInput { terminal, input })?;
+        round_trips(&TerminalInput { terminal, viewer, input })?;
         round_trips(&ReadForeground { terminal })?;
         round_trips(&label)?;
         round_trips(&StopForeground { terminal })?;
-        round_trips(&WatchTerminal { terminal, since })?;
-        let state = TerminalState { size, screen: Bytes(screen), exited };
+        round_trips(&WatchTerminal { terminal, viewer, since })?;
+        let state = TerminalState { size, screen: Bytes(screen), exited, status };
         round_trips(&Item::<TerminalState, TerminalEvent>::Snapshot { at, state })?;
         round_trips(&Item::<TerminalState, TerminalEvent>::Events {
             first: 1,

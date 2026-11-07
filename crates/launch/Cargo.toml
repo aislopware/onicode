@@ -5,11 +5,11 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
-# How a Onicode app starts its engine helper: the executable beside the app,
-# the environment it's given, detached. Shared by the engine (managed.rs),
-# the command line (onicode-cli) and the zgx app, with no engine linked in.
+# How the app starts its engine: the executable beside the app, given the data dir, detached
+# (docs/onicode/decisions/engine.md, "Process").
 
 [dependencies]
+# `setsid`: the engine gets a session of its own.
 libc.workspace = true
 
 [dev-dependencies]

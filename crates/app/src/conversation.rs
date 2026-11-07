@@ -259,7 +259,12 @@ pub(super) fn applied(reply: Result<Outcome, String>) -> Result<(), String> {
 
 impl Drop for Conversation {
     fn drop(&mut self) {
-        if !self.summary.cwd.starts_with("remote://") {
+        // The engine's turn outlives the view (engine.md, "Process"); only a stop ends it.
+        let engine_turn = self
+            .controls
+            .as_ref()
+            .is_some_and(crate::engine_client::TurnControls::is_engine);
+        if !self.summary.cwd.starts_with("remote://") && !engine_turn {
             self.cancel.store(true, Ordering::Relaxed);
         }
     }

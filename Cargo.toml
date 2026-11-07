@@ -52,6 +52,8 @@ onicode-rpc = { path = "crates/rpc" }
 onicode-engine = { path = "crates/engine" }
 onicode-protocol = { path = "crates/protocol" }
 onicode-term = { path = "crates/term" }
+# How the app starts the engine beside it, detached.
+onicode-launch = { path = "crates/launch" }
 
 # Peer transport over the tailnet (.research/p2p-transport.md §5.1).
 onicode-net = { path = "crates/net" }
@@ -250,7 +252,6 @@ similar = "3.2.1"
 # async / net
 tokio = { version = "1", features = ["full"] }
 libc = "0.2"
-tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
 futures = "0.3"
 async-trait = "0.1"
 
@@ -297,7 +298,7 @@ notify = "7"
 # Terminal emulation (docs/onicode/decisions/terminal.md): aislopware/libghostty-rs, which pins the
 # aislopware/ghostty commit whose libghostty-vt it builds. Pinned by rev: the engine's host and the
 # app's mirror must run the same snapshot format.
-libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "3825a106b3d50d89c10dd0fdedc5e00907a66255" }
+libghostty-vt = { git = "https://github.com/aislopware/libghostty-rs", rev = "41ed872408fb5e419b4972b2ab8c32528c67129d" }
 # Markdown parsing only: no HTML writer, no CLI options.
 pulldown-cmark = { version = "0.13.6", default-features = false }
 unicode-segmentation = "1"

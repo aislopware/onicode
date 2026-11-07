@@ -20,7 +20,6 @@ ignore = [
     { id = "RUSTSEC-2025-0141", reason = "bincode via heed-types (fff-search's LMDB index); fff-search pins heed 0.22" },
     { id = "RUSTSEC-2024-0436", reason = "paste via metal (gpui, core-video): a proc macro with no runtime code" },
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser via fontdb (cosmic-text) and usvg (gpui); successor skrifa not yet adopted upstream" },
-    { id = "RUSTSEC-2026-0206", reason = "rustybuzz in onicode-text and via usvg; the port to its successor harfrust is tracked in the rendering lane" },
     { id = "RUSTSEC-2026-0370", reason = "zvariant via atspi (accesskit_unix): Linux accessibility only, Linux gets cursory support" },
     { id = "RUSTSEC-2026-0371", reason = "zbus_names via atspi (accesskit_unix): Linux accessibility only" },
     { id = "RUSTSEC-2026-0372", reason = "zvariant_derive via atspi (accesskit_unix): Linux accessibility only" },
@@ -89,10 +88,7 @@ skip = [
     { crate = "objc2@0.5.3", reason = "via accesskit_macos, objc2-app-kit, objc2-foundation" },
     { crate = "pollster@0.2.5", reason = "via postage" },
     { crate = "quick-error@1.2.3", reason = "via rusty-fork" },
-    { crate = "rand@0.8.8", reason = "via loro-internal, loro_fractional_index, phf_generator and more" },
     { crate = "rand@0.9.5", reason = "via gpui, scheduler, num-bigint-dig" },
-    { crate = "rand_chacha@0.3.1", reason = "via rand" },
-    { crate = "rand_core@0.6.4", reason = "via crypto-bigint, crypto-common, elliptic-curve and more" },
     { crate = "rand_core@0.9.5", reason = "via rand, rand_chacha, rand_xorshift" },
     { crate = "read-fonts@0.37.0", reason = "via harfrust, skrifa" },
     { crate = "roxmltree@0.20.0", reason = "via fontconfig-parser" },
@@ -109,7 +105,6 @@ skip = [
     { crate = "toml@0.8.23", reason = "via cbindgen, a build dependency of gpui_apple" },
     { crate = "toml_datetime@0.6.11", reason = "via toml, toml_edit" },
     { crate = "toml_edit@0.22.27", reason = "via toml" },
-    { crate = "webpki-roots@0.26.11", reason = "via tokio-tungstenite" },
     { crate = "winnow@0.7.15", reason = "via toml_edit" },
 ]
 

@@ -16,7 +16,7 @@ mod split;
 mod tests;
 mod viewer;
 
-pub use hub::{Runner, SessionHub, Spawn, Staged, StagedTurn, ThreadSpawn, TurnJob};
+pub use hub::{Runner, SessionHub, Spawn, ThreadSpawn, TurnJob};
 pub use reduce::apply;
 pub use service::SessionService;
 pub use viewer::{Expect, Viewer};

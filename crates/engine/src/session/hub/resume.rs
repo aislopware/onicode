@@ -283,6 +283,7 @@ impl SessionHub {
             message: MessageId::new(),
             text: CONTINUE.into(),
             attachments: Vec::new(),
+            turn: None,
         };
         match self.launch(inner, Some(OpId::new()), body, &mut Some(resolve)) {
             Ok(()) => {

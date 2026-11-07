@@ -24,10 +24,11 @@
     <string>__VERSION__</string>
     <key>CFBundleVersion</key>
     <string>__VERSION__</string>
-    <!-- The engine inside (Contents/MacOS/Onicode Engine). A running engine
-         restarts into this bundle's when it's newer than itself; a beta app
-         carries stable's engine, so its app version is no guide
-         (crates/update bundle_engine_version). -->
+    <!-- The engine inside (Contents/MacOS/Onicode Engine), which the app
+         launches detached. The app replaces a running engine that is not this
+         bundle's build; the updater reads this key for the engine's version,
+         since a beta app carries stable's engine and its app version is no
+         guide (crates/update bundle_engine_version). -->
     <key>OnicodeEngineVersion</key>
     <string>__VERSION__</string>
     <key>CFBundleURLTypes</key>

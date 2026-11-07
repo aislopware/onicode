@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use onicode_protocol::agent::AccessMode;
-use onicode_protocol::engine::{EngineInfo, Hello, StopEngine, UpdateEngine};
+use onicode_protocol::engine::{EngineInfo, Hello, ResolveSession, StopEngine, UpdateEngine};
 use onicode_protocol::files::{
     AdoptAttachments, Create, DeletePath, Destination, Entries, ListDir, ListDrives, Move,
     PathKind, Read, SaveAttachments, SaveNoteImages, SearchContent, SearchHomeFolders, SearchPaths,
@@ -36,8 +36,8 @@ use onicode_protocol::session::{
     WatchSession,
 };
 use onicode_protocol::terminal::{
-    CloseTerminal, Input, ListTerminals, OpenTerminal, ReadForeground, ResizeTerminal,
-    StopForeground, TerminalEvent, TerminalInput, WatchTerminal,
+    CloseTerminal, Input, InputKind, ListTerminals, OpenTerminal, ProgramState, ReadForeground,
+    ResizeTerminal, StopForeground, TerminalEvent, TerminalInput, ViewerId, WatchTerminal,
 };
 use onicode_protocol::transcript::Row;
 use onicode_protocol::workspace::{
@@ -77,6 +77,7 @@ impl Shapes {
         tracer
             .trace_value(&mut samples, &TerminalId::new())
             .unwrap();
+        tracer.trace_value(&mut samples, &ViewerId::new()).unwrap();
         // A row's echo id is a bare Uuid, so the row itself is the sample, every field set so none
         // is skipped.
         let row = Row {
@@ -228,6 +229,7 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.call::<EngineInfo>();
     shapes.call::<UpdateEngine>();
     shapes.call::<StopEngine>();
+    shapes.call::<ResolveSession>();
     // Session.
     shapes.watch::<WatchSession>();
     shapes.call::<Send>();
@@ -422,6 +424,8 @@ fn shapes() -> (Vec<Method>, String) {
     shapes.variants::<Restore>();
     shapes.variants::<Input>();
     shapes.variants::<TerminalEvent>();
+    shapes.variants::<ProgramState>();
+    shapes.variants::<InputKind>();
     shapes.variants::<agents::AccountsEvent>();
     shapes.variants::<agents::UsageRead>();
     shapes.variants::<agents::CatalogRead>();

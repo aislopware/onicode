@@ -4,7 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-description = "onicode's engine: the work behind every viewer, starting with the agent turn moved out of the app (docs/onicode/decisions/engine.md)"
+description = "onicode's engine: the work behind every viewer, one process per machine (docs/onicode/decisions/engine.md)"
+
+# The machine's engine process, shipped beside the app ("Onicode Engine" in the bundle).
+[[bin]]
+name = "onicode-engine"
+path = "src/bin/onicode-engine.rs"
 
 [dependencies]
 async-channel = "2"
@@ -12,21 +17,27 @@ async-channel = "2"
 async-trait.workspace = true
 # The hub's spawned work and its watch streams; `executor` drives `ThreadSpawn`.
 futures.workspace = true
+# The instance lock (`flock`), stopping an engine of another build (`kill`), the peer's uid.
+libc.workspace = true
 # The Files and Git watches' platform file watch (FSEvents on macOS).
 notify = "8.2"
 onicode-core.workspace = true
+# A viewer's link starts the engine beside the app, detached.
+onicode-launch.workspace = true
 onicode-protocol.workspace = true
 onicode-rpc.workspace = true
 # The Terminal group's host terminal, PTY and login shell.
 onicode-term.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-# Only `sync`: a watcher's wake-up and a deferred receipt, on whichever executor polls them.
-tokio = { workspace = true, features = ["sync"] }
+# `sync`: a watcher's wake-up and a deferred receipt, on whichever executor polls them. The rest
+# for the engine process and a viewer's link: the socket, its runtime, timers and signals.
+tokio = { workspace = true, features = ["sync", "net", "rt-multi-thread", "time", "signal"] }
 uuid.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
 tempfile.workspace = true
-# `rt` and `macros`: the service's tests drive `memory_client` on a current-thread runtime.
-tokio = { workspace = true, features = ["sync", "rt", "macros"] }
+# `rt` and `macros`: the service's tests drive `memory_client` on a current-thread runtime;
+# `test-util`: the link's model runs in paused, virtual time.
+tokio = { workspace = true, features = ["sync", "rt", "macros", "test-util"] }

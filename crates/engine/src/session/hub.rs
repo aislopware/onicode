@@ -20,7 +20,7 @@ use onicode_protocol::session::{
     EditLastTurn, EditedTurn, Fork, KeepQuestionOpen, QueueChange, QueueEdit, ReadBtw, ReadSession,
     ReadTranscript, RecallLastTurn, RecalledTurn, ResetThread, Rewind, SaveBtw, SaveQueue, SendNow,
     SessionEvent, SessionRecord, SessionState, Steer, SteerNow, Stop, StopBtw, SwitchProvider,
-    TranscriptPage, Verdict, WatchSession,
+    TranscriptPage, TurnContext, Verdict, WatchSession,
 };
 use onicode_protocol::workspace::{CreateSession, NewSession};
 use onicode_protocol::{Item, MessageId, OpId, Outcome, Rejection, SessionId};
@@ -80,22 +80,6 @@ pub struct TurnJob {
 /// Runs a turn to its end on the calling thread, publishing into `job.updates`.
 pub type Runner = Arc<dyn Fn(TurnJob) + Send + Sync>;
 
-/// A `Send` as the app prepared it in process: the turn context the protocol does not carry
-/// (`Settings`' transport-only fields: the prepared prompt, the turn's model identity, the
-/// environment, the queued message's id) and the app's stop flag. It goes when the composer,
-/// the catalog and the queue move into the engine.
-pub struct StagedTurn {
-    pub summary: Session,
-    pub prompt: String,
-    pub settings: Settings,
-    pub cancel: Arc<AtomicBool>,
-}
-
-/// What a viewer in process hands the hub under a `MessageId` before the call that names it.
-pub enum Staged {
-    Turn(Box<StagedTurn>),
-}
-
 /// A mutating call waiting on its receipt.
 struct Pending {
     op: Option<OpId>,
@@ -150,7 +134,6 @@ struct Ops {
 
 struct Inner {
     sessions: HashMap<SessionId, Live>,
-    staged: HashMap<MessageId, Staged>,
     ops: Ops,
     next_epoch: u64,
     next_turn: u64,
@@ -252,7 +235,6 @@ impl SessionHub {
             limits,
             inner: Mutex::new(Inner {
                 sessions: HashMap::new(),
-                staged: HashMap::new(),
                 ops: Ops::default(),
                 // This run's epochs: a cursor from an earlier run never matches.
                 next_epoch: now.wrapping_shl(16),
@@ -307,11 +289,6 @@ impl SessionHub {
     /// The protocol id of the store's session `id`.
     pub fn session_id(&self, id: i64) -> Result<SessionId, String> {
         locked(&self.store)?.session_uid(id).map(SessionId)
-    }
-
-    /// Hands the hub what goes with the call naming `message`.
-    pub fn stage(&self, message: MessageId, staged: Staged) {
-        self.lock().staged.insert(message, staged);
     }
 
     /// The session's live state, loading it from the store when it is not live.
@@ -488,10 +465,9 @@ impl SessionHub {
         self: &Arc<Self>,
         inner: &mut Inner,
         op: Option<OpId>,
-        body: session::Send,
+        mut body: session::Send,
         resolve: &mut Option<watch::Sender<Option<Outcome>>>,
     ) -> Result<(), String> {
-        let staged = inner.staged.remove(&body.message);
         if inner.rewinding.contains(&body.session) {
             return Err("The last turn is being edited".into());
         }
@@ -513,37 +489,45 @@ impl SessionHub {
             self.refresh(live)?;
         }
         live.fresh = false;
-        let (summary, prompt, settings, cancel) = match staged {
-            Some(Staged::Turn(turn)) => {
-                let StagedTurn {
-                    summary,
-                    prompt,
-                    settings,
-                    cancel,
-                } = *turn;
-                (summary, prompt, settings, cancel)
-            }
-            None => {
-                let store = locked(&self.store)?;
-                let summary = store
-                    .sessions()?
-                    .into_iter()
-                    .find(|summary| summary.id == live.id)
-                    .ok_or("Session no longer exists")?;
-                let mut settings = store.agent_settings(live.id)?.unwrap_or_default();
-                settings.attachments = body.attachments;
-                (
-                    summary,
-                    body.text,
-                    settings,
-                    Arc::new(AtomicBool::new(false)),
-                )
-            }
+        let (summary, mut settings) = {
+            let store = locked(&self.store)?;
+            let (summary, mut settings) = match body.turn.take() {
+                Some(turn) => {
+                    let TurnContext {
+                        summary,
+                        mut settings,
+                        prepared_prompt,
+                        turn_model,
+                        environment,
+                        queued,
+                        internal,
+                    } = *turn;
+                    if summary.id != live.id {
+                        return Err("The turn names another session".into());
+                    }
+                    settings.prepared_prompt = prepared_prompt;
+                    settings.turn_model = turn_model;
+                    settings.environment = environment;
+                    settings.mono_message_id = queued;
+                    settings.internal_message = internal;
+                    (summary, settings)
+                }
+                None => {
+                    let summary = store
+                        .sessions()?
+                        .into_iter()
+                        .find(|summary| summary.id == live.id)
+                        .ok_or("Session no longer exists")?;
+                    (summary, store.agent_settings(live.id)?.unwrap_or_default())
+                }
+            };
+            self.engine_settings(&store, &mut settings);
+            (summary, settings)
         };
-        let mut settings = settings;
-        if let Some(hub) = self.settings.get() {
-            settings.disable_claude_hooks = !hub.current().claude_hooks;
-        }
+        settings.attachments = std::mem::take(&mut body.attachments);
+        let prompt = std::mem::take(&mut body.text);
+        // The engine's own stop flag: `Stop` sets it, whichever viewer sends it.
+        let cancel = Arc::new(AtomicBool::new(false));
         let ended = (
             Kind::from_id(&summary.provider),
             settings.account.id.clone(),
@@ -756,19 +740,18 @@ impl SessionHub {
         } = next;
         let mut resolve = Some(resolve);
         let launched = self.queued_turn(row, &message).and_then(|turn| {
-            inner.staged.insert(id, Staged::Turn(Box::new(turn)));
             let body = session::Send {
                 session,
                 message: id,
                 text: message.text.clone(),
                 attachments: message.attachments.clone(),
+                turn: Some(Box::new(turn)),
             };
             self.launch(inner, op, body, &mut resolve)
         });
         let Err(error) = launched else {
             return;
         };
-        inner.staged.remove(&id);
         let outcome = Outcome::Rejected(Rejection::Denied(error.clone()));
         let events = self
             .requeue(row, *message, Some(error))
@@ -781,7 +764,7 @@ impl SessionHub {
 
     /// The turn that sends the queued `message`, as the app's queue sends one: its own mode,
     /// attachments and prepared prompt over the session's stored settings.
-    fn queued_turn(&self, row: i64, message: &Message) -> Result<StagedTurn, String> {
+    fn queued_turn(&self, row: i64, message: &Message) -> Result<TurnContext, String> {
         let store = locked(&self.store)?;
         let summary = store
             .sessions()?
@@ -793,21 +776,17 @@ impl SessionHub {
             settings.account.root = store.data_dir().map(Path::to_path_buf);
         }
         drop(store);
-        settings.attachments.clone_from(&message.attachments);
-        settings
-            .prepared_prompt
-            .clone_from(&message.prepared_prompt);
-        settings.mono_message_id = Some(message.id.clone());
         let mode = message.mode.as_deref();
         settings.orchestrator = mode == Some("orchestrator");
         settings.plan = mode == Some("plan") || settings.orchestrator;
         settings.operator = mode == Some("operator");
         settings.operator_enabled |= settings.operator;
-        Ok(StagedTurn {
+        Ok(TurnContext {
             summary,
-            prompt: message.text.clone(),
             settings,
-            cancel: Arc::new(AtomicBool::new(false)),
+            prepared_prompt: message.prepared_prompt.clone(),
+            queued: Some(message.id.clone()),
+            ..TurnContext::default()
         })
     }
 
@@ -1330,17 +1309,16 @@ impl SessionHub {
             if !running {
                 let mut resolve = Some(resolve);
                 let launched = self.queued_turn(row, &message).and_then(|turn| {
-                    inner.staged.insert(body.id, Staged::Turn(Box::new(turn)));
                     let send = session::Send {
                         session: body.session,
                         message: body.id,
                         text: message.text.clone(),
                         attachments: message.attachments.clone(),
+                        turn: Some(Box::new(turn)),
                     };
                     self.launch(inner, op, send, &mut resolve)
                 });
                 if let Err(error) = launched {
-                    inner.staged.remove(&body.id);
                     let events = self.requeue(row, message, Some(error.clone()));
                     if let Some(live) = inner.sessions.get_mut(&body.session) {
                         publish(live, events.into_iter().collect());

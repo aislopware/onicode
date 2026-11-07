@@ -1,16 +1,35 @@
 //! The seam a viewer's tests and debug fixtures write and read the engine's store through, as
 //! typed calls: the store itself never leaves the engine. Nothing here runs in a release viewer
-//! but the debug-only fixtures.
+//! but the debug-only fixtures, which write the store with no engine running ([`Seed::offline`]).
 use std::collections::HashSet;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use onicode_core::accounts::Book;
 use onicode_core::agent::Settings;
 use onicode_core::follow_up::State;
 use onicode_core::notes::Note;
-use onicode_core::store::Session;
+use onicode_core::store::{Session, Store};
 use onicode_core::transcript::Row;
 
+use crate::accounts::OfflineProbe;
+use crate::host::{InstanceLock, prepare_dir, stop_holder};
+use crate::local::{DATABASE, Options};
 use crate::turn::{Database, locked};
+use crate::work::{OfflineGh, OfflineTrackers};
+
+/// An engine's options for a test: no disk watched, and no provider CLI, tracker or `gh` asked.
+#[must_use]
+pub fn quiet() -> Options {
+    Options {
+        quiet: true,
+        chores: None,
+        probe: Some(Arc::new(OfflineProbe)),
+        trackers: Some(Arc::new(OfflineTrackers)),
+        gh: Some(Arc::new(OfflineGh)),
+    }
+}
 
 /// The engine's store, written and read one typed call at a time.
 #[derive(Clone)]
@@ -21,6 +40,24 @@ pub struct Seed {
 impl Seed {
     pub(crate) fn new(store: Database) -> Self {
         Self { store }
+    }
+
+    /// Hands `write` the store in `data_dir` with no engine running: the engine that runs is
+    /// stopped (its agents with it), and the instance lock is held meanwhile so none starts; the
+    /// next viewer to connect launches one that reads what `write` wrote. Debug fixtures only.
+    pub fn offline<T>(data_dir: &Path, write: impl FnOnce(&Self) -> T) -> Result<T, String> {
+        prepare_dir(data_dir)
+            .map_err(|error| format!("Cannot prepare {}: {error}", data_dir.display()))?;
+        if InstanceLock::held(data_dir) && !stop_holder(data_dir, Duration::from_secs(3)) {
+            return Err("The running engine did not stop".into());
+        }
+        let _lock = InstanceLock::wait(data_dir, Duration::from_secs(3))
+            .map_err(|error| format!("Cannot take the engine lock: {error}"))?
+            .ok_or("Another engine started meanwhile")?;
+        let path = data_dir.join(DATABASE);
+        let store = Store::open_monocode(&path)
+            .map_err(|error| format!("Cannot open {}: {error}", path.display()))?;
+        Ok(write(&Self::new(Arc::new(Mutex::new(store)))))
     }
 
     pub fn sessions(&self) -> Result<Vec<Session>, String> {

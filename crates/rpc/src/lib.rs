@@ -1,16 +1,17 @@
-//! onicode-rpc — the typed control plane (UiRpc / ControlRpc) over WebSocket, in-memory and
-//! per-call carrier (peer QUIC streams, `carrier`) transports.
+//! onicode-rpc: the envelopes every viewer speaks to an engine, over the engine's Unix socket
+//! ([`serve_unix`], [`connect_unix`]), a peer's per-call QUIC streams ([`CarrierClient`]) and an
+//! in-process pair for tests ([`memory_client`]).
 //!
-//! Framing: ndjson envelopes, one JSON object per WebSocket text message (or per line on
-//! byte transports), matching the shape of onicode's Effect RPC without the Effect runtime:
+//! Framing: ndjson envelopes, one JSON object per line (or per message on a carrier):
 //!
-//! - client → server: `{id, method, params}` to invoke, `{id, cancel: true}` to stop a stream;
-//! - server → client: `{id, ok}` / `{id, err}` for unary calls, `{id, item}`* then `{id, done:
+//! - client to server: `{id, method, params}` to invoke, `{id, cancel: true}` to stop a stream;
+//! - server to client: `{id, ok}` / `{id, err}` for unary calls, `{id, item}`* then `{id, done:
 //!   true}` (or `{id, err}`) for streams.
 //!
 //! The server dispatches into an [`RpcService`]; the [`RpcClient`] offers `call` and
-//! `subscribe`. Both ends run over any pair of string channels, so the in-memory transport
-//! ([`memory_client`]) exercises the exact same code path as the WebSocket one.
+//! `subscribe_scoped`. Both ends run over any pair of string channels, so every transport
+//! exercises the same code path. What a caller may call is the service's policy: this crate
+//! authenticates (the socket's uid and tokens, [`ipc_auth`]) and records who asked ([`Caller`]).
 
 use std::sync::Arc;
 
@@ -23,359 +24,14 @@ mod carrier;
 mod client;
 pub mod ipc_auth;
 mod server;
-mod ws;
+mod unix;
 
 pub use caller::{Caller, caller, with_caller};
 pub use carrier::{CarriedSubscription, CarrierClient, Duplex, StreamCarrier, serve_carried};
-pub use client::{RpcClient, RpcSubscription, connect_ipc, connect_ipc_as_agent, connect_ws};
-pub use server::{serve_connection, serve_ws_listener, serve_ws_listener_scoped};
-
-/// RPC method names — single source of truth for both ends.
-/// Full surface: docs/research/feature-inventory.md §2.
-pub mod methods {
-    pub const VOICE_CAPABILITIES_V2: &str = "VoiceCapabilitiesV2";
-    pub const PREPARE_VOICE_V2: &str = "PrepareVoiceV2";
-    pub const OWN_VOICE_V2: &str = "OwnVoiceV2";
-    pub const NEGOTIATE_VOICE_V2: &str = "NegotiateVoiceV2";
-    pub const CONFIRM_VOICE_MEDIA_V2: &str = "ConfirmVoiceMediaV2";
-    pub const REPORT_VOICE_MEDIA_V2: &str = "ReportVoiceMediaV2";
-    pub const STOP_VOICE_V2: &str = "StopVoiceV2";
-    pub const CANCEL_VOICE_ATTEMPT_V2: &str = "CancelVoiceAttemptV2";
-    pub const WATCH_PREVIEWS: &str = "WatchPreviews";
-    pub const LIST_HARNESSES: &str = "ListHarnesses";
-    pub const CANCEL_INSTALL: &str = "CancelInstall";
-    pub const INSTALL_HARNESS: &str = "InstallHarness";
-    /// The ACP registry's agents as the target device sees them (`{refresh?}`
-    /// → `{agents, fetchedAt, offline, platform}`), and adding (or
-    /// updating) and removing one there (`{id}`).
-    pub const LIST_ACP_REGISTRY: &str = "ListAcpRegistry";
-    pub const ADD_ACP_AGENT: &str = "AddAcpAgent";
-    pub const REMOVE_ACP_AGENT: &str = "RemoveAcpAgent";
-    /// An added agent's own environment on the target device (`{id}` →
-    /// `{env}`, `KEY=VALUE` a line; set with `{id, env}`): kept there,
-    /// owner-only, never synced.
-    pub const GET_ACP_AGENT_ENV: &str = "GetAcpAgentEnv";
-    pub const SET_ACP_AGENT_ENV: &str = "SetAcpAgentEnv";
-    /// An added agent's sign-in on the target device, asked of it without
-    /// signing in (`{id, refresh?}` → `{signedIn, account?, canSignOut,
-    /// methods}`), and signing it out there (`{id}`, ACP's `logout`).
-    pub const GET_ACP_AGENT_SIGN_IN: &str = "GetAcpAgentSignIn";
-    pub const SIGN_OUT_ACP_AGENT: &str = "SignOutAcpAgent";
-    /// One variable of an added agent's own environment on the target device
-    /// (`{id, var, value}`; an empty value forgets it): the key a sign-in
-    /// method reads from there. Replies `{ok}`; the value never comes back.
-    pub const SET_ACP_AGENT_KEY: &str = "SetAcpAgentKey";
-    /// An agent of your own on the target device (`{name, command, env}`),
-    /// run through the same generic ACP harness as the registry's.
-    pub const ADD_OWN_AGENT: &str = "AddOwnAgent";
-    /// Flip a harness's enablement on the target device (Settings → Providers);
-    /// replies with the device's fresh `ListHarnesses` catalog.
-    pub const GET_TITLE_SETTINGS: &str = "GetTitleSettings";
-    pub const SET_TITLE_SETTINGS: &str = "SetTitleSettings";
-    /// Which providers on this device run without their own subagents
-    /// (`{switchable, off}`; set with `{harness, enabled}`).
-    pub const GET_NATIVE_SUBAGENTS: &str = "GetNativeSubagents";
-    pub const SET_NATIVE_SUBAGENTS: &str = "SetNativeSubagents";
-    pub const SET_HARNESS_ENABLED: &str = "SetHarnessEnabled";
-    pub const LIST_MODELS: &str = "ListModels";
-    pub const LIST_SKILLS: &str = "ListSkills";
-    pub const LIST_COMMANDS: &str = "ListCommands";
-    pub const QUEUE_COMMAND: &str = "QueueCommand";
-    pub const TAKE_PROJECT_ACTION_SETUP: &str = "TakeProjectActionSetup";
-    /// User-driven delivery retry for a chat with unadopted queued sends:
-    /// follow the host again now, a drain pass, and a new attachment
-    /// delivery per pending command. Params `{chatId}`; IPC-only.
-    pub const RETRY_DELIVERY: &str = "RetryDelivery";
-    pub const FORK_SIDE_CHAT: &str = "ForkSideChat";
-    pub const WATCH_DOC_MESSAGES: &str = "WatchDocMessages";
-    /// Explicit user navigation, `{chatId}`. Opens the chat and follows its
-    /// host now; automatic subscriptions and retries must not call it.
-    pub const FOCUS_CHAT: &str = "FocusChat";
-    /// `{viewportId, focused, chatId?, presents}`: where the owner is in an app
-    /// window (alerts hold back for the chat on screen) and whether the app
-    /// presents agent alerts itself. Viewports repeat it; a report goes stale
-    /// after 45 s. `focused` and `presents` both false is the viewport leaving.
-    pub const SET_VIEWPORT_FOCUS: &str = "SetViewportFocus";
-    /// The agent alerts that should show now (`onicode_proto::alerts::AgentAlert[]`),
-    /// whole on every change. Desktop engines only; IPC-only.
-    pub const WATCH_ALERTS: &str = "WatchAlerts";
-    /// Messages typed while the agent was busy, held on the chat doc so every
-    /// device sees the same queue. `{ chatId }` → `{ items: QueuedMessage[] }`.
-    pub const WATCH_QUEUE: &str = "WatchQueue";
-    /// Append to the queue. `{ chatId, text, attachments?, holdForTurnEnd? }` → `{ id }`.
-    pub const QUEUE_MESSAGE: &str = "QueueMessage";
-    /// Retype a queued message; empty text deletes it.
-    /// `{ chatId, id, text }` → `{ changed }`.
-    pub const UPDATE_QUEUED_MESSAGE: &str = "UpdateQueuedMessage";
-    /// Acquire a host-authoritative edit lease for one queued row.
-    pub const BEGIN_QUEUED_MESSAGE_EDIT: &str = "BeginQueuedMessageEdit";
-    /// Renew an acquired queue edit lease.
-    pub const RENEW_QUEUED_MESSAGE_EDIT: &str = "RenewQueuedMessageEdit";
-    /// Commit, cancel, discard, or explicitly release an acquired edit.
-    pub const FINISH_QUEUED_MESSAGE_EDIT: &str = "FinishQueuedMessageEdit";
-    /// Reorder. `{ chatId, id, toIndex }` → `{ changed }`.
-    pub const MOVE_QUEUED_MESSAGE: &str = "MoveQueuedMessage";
-    pub const REMOVE_QUEUED_MESSAGE: &str = "RemoveQueuedMessage";
-    /// Interrupt whatever is running and send this one. `{ chatId, id }` → `{ sent }`.
-    pub const SEND_QUEUED_MESSAGE_NOW: &str = "SendQueuedMessageNow";
-    /// Steer this row into the live turn without interrupting it.
-    /// `{ chatId, id }` → `{ sent }`.
-    pub const STEER_QUEUED_MESSAGE_NOW: &str = "SteerQueuedMessageNow";
-    /// The path may have changed (window focus, app foregrounded): every peer
-    /// link's backoff ends and it redials now. No params; IPC-only.
-    pub const PROBE_SYNC: &str = "ProbeSync";
-    /// Live sync introspection (`onicode sync` / debug surfaces): whether the
-    /// registry caught up and with whom, and each open chat's host, whether it
-    /// is followed live, and its unacked writes. No params; IPC-only.
-    pub const SYNC_STATUS: &str = "SyncStatus";
-    /// Pushed peer-connectivity posture (`onicode_proto::Connectivity`):
-    /// current value first, then every change — the connection pill /
-    /// composer-honesty / queued-badge feed. No params; IPC-only.
-    pub const WATCH_CONNECTIVITY: &str = "WatchConnectivity";
-    /// In-flight queued-attachment transfers (`onicode_proto::TransferProgress`
-    /// list): current set first, then a fresh snapshot per landed chunk —
-    /// the sending thumbnail's percent-ring feed. No params; IPC-only.
-    pub const WATCH_UPLOADS: &str = "WatchUploads";
-    pub const WATCH_CHATS: &str = "WatchChats";
-    pub const WATCH_SIDEBAR_PREFERENCES: &str = "WatchSidebarPreferences";
-    pub const WATCH_DEVICES: &str = "WatchDevices";
-    pub const WATCH_SESSIONS: &str = "WatchSessions";
-    /// Spaces registry (device+folder pairs) from the workspace doc.
-    pub const WATCH_SPACES: &str = "WatchSpaces";
-    /// Entity mutations against the workspace doc (feature-inventory §2 DataRpc).
-    /// Params are tagged `{op: createChat|createSpace|renameSpace|setSpaceIcon|
-    /// deleteSpace|renameChat|setChatArchived|deleteChat|renameDevice|markChatSeen, …}`.
-    pub const MUTATE: &str = "Mutate";
-    /// This engine's identity → `{deviceId}` (IPC-only; never forwarded —
-    /// the answer is about whichever engine you are directly connected to).
-    pub const LOCAL_DEVICE: &str = "LocalDevice";
-    /// This engine runtime's fixed device and workspace identity.
-    pub const ENGINE_INFO: &str = "EngineInfo";
-    /// Readiness barrier for the engine runtime. The call completes once stores
-    /// and journals are assembled, or fails with the assembly error.
-    pub const ENGINE_READY: &str = "EngineReady";
-    /// Ask a headless IPC owner to drain its runtime and exit successfully.
-    /// Headed IPC owners do not implement this method: closing another app's
-    /// engine behind its windows would leave that process unusable.
-    pub const STOP_ENGINE: &str = "StopEngine";
-    // Repos / worktrees / folders (ControlRpc, forwardable).
-    pub const LIST_REPOS: &str = "ListRepos";
-    pub const ADD_REPO: &str = "AddRepo";
-    pub const CLONE_REPO: &str = "CloneRepo";
-    pub const CREATE_REPO: &str = "CreateRepo";
-    pub const LIST_BRANCHES: &str = "ListBranches";
-    pub const LIST_REFS: &str = "ListRefs";
-    pub const LIST_GIT_HISTORY: &str = "ListGitHistory";
-    /// Fuzzy commit-subject / SHA search over the complete public history.
-    pub const SEARCH_GIT_HISTORY: &str = "SearchGitHistory";
-    /// Resolve hosted profile images for a page of Git commit authors.
-    pub const RESOLVE_GIT_AVATARS: &str = "ResolveGitAvatars";
-    /// Update remote-tracking refs without changing HEAD, the index, or files.
-    pub const FETCH_ALL: &str = "FetchAll";
-    pub const SWITCH_REF: &str = "SwitchRef";
-    pub const LIST_FOLDERS: &str = "ListFolders";
-    pub const GET_WORKTREE_SETTINGS: &str = "GetWorktreeSettings";
-    pub const SET_WORKTREE_SETTINGS: &str = "SetWorktreeSettings";
-    /// The device's browse roots: home plus mounted drives/volumes.
-    pub const LIST_DRIVES: &str = "ListDrives";
-    /// Folders under the host's home by name (new-project picker).
-    pub const SEARCH_HOME_FOLDERS: &str = "SearchHomeFolders";
-    /// The new-project picker closed: drop the host's home index if unpinned.
-    pub const RELEASE_HOME_FOLDER_SEARCH: &str = "ReleaseHomeFolderSearch";
-    /// Fuzzy relative-path search rooted in a known chat or space checkout.
-    pub const SEARCH_FILES: &str = "SearchFiles";
-    // Device-local workspace filesystem operations. All are forwardable;
-    // WatchWorkspaceFiles is the only streaming method in this group.
-    pub const LIST_WORKSPACE_DIRECTORY: &str = "ListWorkspaceDirectory";
-    pub const SEARCH_WORKSPACE_FILES: &str = "SearchWorkspaceFiles";
-    /// Start or keep alive a workspace's search index (fire-and-forget warm).
-    pub const WARM_WORKSPACE_SEARCH: &str = "WarmWorkspaceSearch";
-    /// Plain-text search over a workspace's file contents.
-    pub const SEARCH_WORKSPACE_CONTENT: &str = "SearchWorkspaceContent";
-    pub const READ_WORKSPACE_IMAGE: &str = "ReadWorkspaceImage";
-    pub const READ_WORKSPACE_FILE: &str = "ReadWorkspaceFile";
-    pub const MOVE_WORKSPACE_ENTRY: &str = "MoveWorkspaceEntry";
-    pub const DELETE_WORKSPACE_ENTRY: &str = "DeleteWorkspaceEntry";
-    /// An empty file or folder at a new path (never replacing one).
-    pub const CREATE_WORKSPACE_ENTRY: &str = "CreateWorkspaceEntry";
-    pub const WRITE_WORKSPACE_FILE: &str = "WriteWorkspaceFile";
-    pub const WATCH_WORKSPACE_FILES: &str = "WatchWorkspaceFiles";
-    pub const CREATE_WORKTREE: &str = "CreateWorktree";
-    pub const DELETE_WORKTREE: &str = "DeleteWorktree";
-    // Project Actions are private state on the device that owns the project.
-    pub const LIST_PROJECT_ACTIONS: &str = "ListProjectActions";
-    pub const UPSERT_PROJECT_ACTION: &str = "UpsertProjectAction";
-    pub const DELETE_PROJECT_ACTION: &str = "DeleteProjectAction";
-    pub const RUN_PROJECT_ACTION: &str = "RunProjectAction";
-    // A chat's background processes (`Session::background_tasks`) live in
-    // its host's runtime: `{chatId, taskId}`, forwardable.
-    pub const STOP_BACKGROUND_TASK: &str = "StopBackgroundTask";
-    pub const READ_BACKGROUND_TASK_OUTPUT: &str = "ReadBackgroundTaskOutput";
-    /// `{chatId, toolId, offset}` → `ToolOutputChunk`: one command's whole
-    /// output, from the run journal of the device that ran it, redacted;
-    /// forwardable (target the chat's host).
-    pub const READ_TOOL_OUTPUT: &str = "ReadToolOutput";
-    // Terminals (ControlRpc, forwardable; SubscribeTerminal streams).
-    pub const OPEN_TERMINAL: &str = "OpenTerminal";
-    pub const SUBSCRIBE_TERMINAL: &str = "SubscribeTerminal";
-    pub const WRITE_TERMINAL: &str = "WriteTerminal";
-    pub const RESIZE_TERMINAL: &str = "ResizeTerminal";
-    pub const CLOSE_TERMINAL: &str = "CloseTerminal";
-    /// Whether closing a terminal would end a program running in it.
-    pub const TERMINAL_STATUS: &str = "TerminalStatus";
-    // Remote desktop (forwardable; the target Mac's engine brokers, desktopd streams).
-    /// `{}` → `onicode_desktop_link::broker::DesktopEndpoint`: start or find the Mac's
-    /// `onicode-desktopd` and say where it listens and what it may do. The client then dials
-    /// it directly; the engine carries no media.
-    pub const OPEN_DESKTOP: &str = "OpenDesktop";
-    /// `{}` → `onicode_desktop_link::broker::GrantsReply`: the Mac's Screen Recording and
-    /// Accessibility grants, read without prompting.
-    pub const DESKTOP_GRANTS: &str = "DesktopGrants";
-    /// `onicode_desktop_link::broker::OpenGuideParams` → `{ok}`: open the guide to a privacy
-    /// pane on the Mac's own screen, for the person sitting at it.
-    pub const DESKTOP_OPEN_GUIDE: &str = "DesktopOpenGuide";
-    /// Checkout-diff stream for the target device's chats (DataRpc,
-    /// forwardable — diffs are produced where the checkout lives).
-    pub const WATCH_CHECKOUT_DIFFS: &str = "WatchCheckoutDiffs";
-    pub const WATCH_WORKSPACE_GIT_STATUS: &str = "WatchWorkspaceGitStatus";
-    /// Current pull request for one checkout, resolved on the checkout's host device.
-    pub const WATCH_CHECKOUT_CHANGE_REQUEST: &str = "WatchCheckoutChangeRequest";
-    /// One page of a repository's open pull requests (`filter`, `after`
-    /// cursor), with the total count.
-    pub const LIST_CHANGE_REQUEST_PAGE: &str = "ListChangeRequestPage";
-    /// Resolve a selected checkout through local Git metadata only.
-    pub const GET_CHANGE_REQUEST_REPOSITORY: &str = "GetChangeRequestRepository";
-    pub const GET_CHANGE_REQUEST: &str = "GetChangeRequest";
-    pub const POST_CHANGE_REQUEST_COMMENT: &str = "PostChangeRequestComment";
-    /// `{url, path, line, side: "LEFT" | "RIGHT", commitId, body}` → the
-    /// comment: a new review thread on one line of the changes.
-    pub const POST_CHANGE_REQUEST_REVIEW_COMMENT: &str = "PostChangeRequestReviewComment";
-    /// `{url, thread, body}` → the comment: a reply in a review thread.
-    pub const REPLY_CHANGE_REQUEST_THREAD: &str = "ReplyChangeRequestThread";
-    /// `{url, thread, resolved}` → `{resolved}`: a review thread resolved or
-    /// opened again.
-    pub const RESOLVE_CHANGE_REQUEST_THREAD: &str = "ResolveChangeRequestThread";
-    pub const GET_CHANGE_REQUEST_DIFF: &str = "GetChangeRequestDiff";
-    pub const GET_CHECKOUT_DIFF: &str = "GetCheckoutDiff";
-    /// Permanently restore one chat-owned checkout to its current HEAD and
-    /// remove only its untracked, non-ignored paths.
-    pub const DISCARD_WORKING_TREE: &str = "DiscardWorkingTree";
-    pub const GET_CHECKOUT_FILE_DIFF_TEXT: &str = "GetCheckoutFileDiffText";
-    // Agent accounts (ControlRpc, forwardable — CLI logins are per-device).
-    pub const LIST_AGENT_ACCOUNTS: &str = "ListAgentAccounts";
-    pub const ACTIVATE_AGENT_ACCOUNT: &str = "ActivateAgentAccount";
-    pub const FORGET_AGENT_ACCOUNT: &str = "ForgetAgentAccount";
-    pub const START_AGENT_LOGIN: &str = "StartAgentLogin";
-    /// `{loginId, requesterDeviceId, path}`: replay a sign-in's browser
-    /// callback the requesting device caught on its own loopback (a phone
-    /// signing a computer's agent in). Answers `{status, location?}`.
-    pub const RELAY_AGENT_LOGIN_CALLBACK: &str = "RelayAgentLoginCallback";
-    pub const COMPLETE_AGENT_LOGIN: &str = "CompleteAgentLogin";
-    pub const POLL_AGENT_LOGIN: &str = "PollAgentLogin";
-    pub const CANCEL_AGENT_LOGIN: &str = "CancelAgentLogin";
-    pub const CONSUME_CODEX_RESET_CREDIT: &str = "ConsumeCodexResetCredit";
-    // Uploads / attachments (ControlRpc, forwardable — target the chat's host device).
-    pub const UPLOAD_CHUNK: &str = "UploadChunk";
-    pub const UPLOAD_COMMIT: &str = "UploadCommit";
-    pub const READ_ATTACHMENT_CHUNK: &str = "ReadAttachmentChunk";
-    /// One chunk of an image an agent's reply names in Markdown
-    /// (`![alt](path)`), read only from inside that chat's working folder.
-    pub const READ_CHAT_IMAGE_CHUNK: &str = "ReadChatImageChunk";
-    /// Store an agent's HTML page and show it inline in that chat's live
-    /// turn (`show_visual`). Local only: the calling agent runs on this device.
-    pub const PUBLISH_VISUAL: &str = "PublishVisual";
-    /// Store an image file an agent shows and fold it into that chat's live
-    /// turn as an image part (`show_image`). Local only, like `PublishVisual`.
-    pub const PUBLISH_IMAGE: &str = "PublishImage";
-    // Updates (ControlRpc, forwardable — a device reports/applies its own
-    // binary's update). Stream: current UpdateStatus, then every change.
-    pub const UPDATE_STATUS: &str = "UpdateStatus";
-    /// Download + apply the newest release on the target device (symlink-managed
-    /// installs; the service restart is scheduled after the reply flushes).
-    pub const APPLY_UPDATE: &str = "ApplyUpdate";
-    /// Device-local agent CLI update lifecycle. The stream emits the complete
-    /// ordered status list initially and after every transition.
-    pub const WATCH_HARNESS_UPDATES: &str = "WatchHarnessUpdates";
-    pub const CHECK_HARNESS_UPDATES: &str = "CheckHarnessUpdates";
-    pub const APPLY_HARNESS_UPDATE: &str = "ApplyHarnessUpdate";
-    pub const CANCEL_HARNESS_UPDATE: &str = "CancelHarnessUpdate";
-    pub const DISMISS_HARNESS_UPDATE: &str = "DismissHarnessUpdate";
-    pub const SET_HARNESS_UPDATE_POLICY: &str = "SetHarnessUpdatePolicy";
-    // One machine (docs/onicode/decisions/one-machine.md; payloads in
-    // `onicode_proto::files` and `onicode_proto::clipboard`). All forwardable.
-    /// One directory anywhere on the device (`ListPathRequest` → `PathListing`).
-    pub const LIST_PATH: &str = "ListPath";
-    /// Home, volumes and recent folders (`{}` → `PathRoots`).
-    pub const PATH_ROOTS: &str = "PathRoots";
-    /// Mkdir, rename or trash (`PathMutateRequest` → `{}`).
-    pub const PATH_MUTATE: &str = "PathMutate";
-    /// Copy paths between devices; the destination engine owns the job
-    /// (`StartTransferRequest` → `StartTransferReply`).
-    pub const START_TRANSFER: &str = "StartTransfer";
-    /// Destination to source: serve `xfer/<id>/...` streams for these paths
-    /// (`ServeTransferRequest` → `{}`).
-    pub const SERVE_TRANSFER: &str = "ServeTransfer";
-    /// Stream: the whole `TransferUpdate` list, then one update per change.
-    pub const WATCH_TRANSFERS: &str = "WatchTransfers";
-    /// Pause, resume or cancel (`ControlTransferRequest` → `{}`).
-    pub const CONTROL_TRANSFER: &str = "ControlTransfer";
-    /// Answer a conflict (`ResolveConflictRequest` → `{}`).
-    pub const RESOLVE_CONFLICT: &str = "ResolveConflict";
-    /// One type of a clipboard offer from its origin (`ClipboardFetchRequest`).
-    pub const CLIPBOARD_FETCH: &str = "ClipboardFetch";
-    /// Stream: `ClipboardOffer`s as this device's clipboard changes.
-    pub const WATCH_CLIPBOARD: &str = "WatchClipboard";
-    /// Read or set this device's clipboard settings
-    /// (`ClipboardSettingsRequest` → `ClipboardSettings`).
-    pub const CLIPBOARD_SETTINGS: &str = "ClipboardSettings";
-    /// A clipboard offer pushed to a peer (`ClipboardOffer`).
-    pub const CLIPBOARD_OFFER: &str = "ClipboardOffer";
-}
-
-/// The methods an agent's `onicode mcp` server may call with the
-/// agent-scoped IPC token: what its tools need and nothing that grants
-/// power. An allow-list, so a method added later stays the app's until
-/// it's listed here. Never here: updating (the engine's and harnesses'),
-/// terminals, files, agent logins, and a command's whole output
-/// (`ReadToolOutput`: an agent reads a chat as its doc keeps it).
-pub fn agent_allowed(method: &str) -> bool {
-    matches!(
-        method,
-        // Discovery.
-        methods::ENGINE_INFO
-            | methods::LOCAL_DEVICE
-            | methods::WATCH_DEVICES
-            | methods::WATCH_SPACES
-            | methods::WATCH_CHATS
-            | methods::WATCH_SESSIONS
-            | methods::WATCH_DOC_MESSAGES
-            | methods::LIST_HARNESSES
-            | methods::LIST_MODELS
-            | methods::LIST_AGENT_ACCOUNTS
-            // Chats: create, message, steer, archive (`Mutate`).
-            | methods::MUTATE
-            | methods::QUEUE_MESSAGE
-            | methods::QUEUE_COMMAND
-            // Showing the person something in the calling chat.
-            | methods::PUBLISH_VISUAL
-            | methods::PUBLISH_IMAGE
-    )
-}
-
-/// Stable capability error codes transported without provider stderr.
-pub mod capability_errors {
-    pub const PULL_REQUESTS_CLI_UNAVAILABLE: &str = "pull_requests.cli_unavailable";
-    pub const PULL_REQUESTS_AUTHENTICATION: &str = "pull_requests.authentication";
-    pub const PULL_REQUESTS_RATE_LIMITED: &str = "pull_requests.rate_limited";
-    pub const PULL_REQUESTS_TIMEOUT: &str = "pull_requests.timeout";
-    pub const PULL_REQUESTS_DECODE: &str = "pull_requests.decode";
-    pub const PULL_REQUESTS_COMMAND_FAILED: &str = "pull_requests.command_failed";
-    /// `ReadToolOutput`: the host's journal doesn't hold that command (an
-    /// old chat, or one whose journal is gone).
-    pub const TOOL_OUTPUT_UNAVAILABLE: &str = "tool_output.unavailable";
-    /// `ReadToolOutput`: the command has no result yet.
-    pub const TOOL_OUTPUT_NOT_FINISHED: &str = "tool_output.not_finished";
-}
+pub use client::{RpcClient, RpcSubscription};
+pub use ipc_auth::Scope;
+pub use server::serve_connection;
+pub use unix::{Admission, DialError, Gate, admits_uid, connect_unix, serve_unix};
 
 #[derive(Debug, thiserror::Error)]
 pub enum RpcError {
@@ -463,9 +119,8 @@ pub fn parse_params<T: serde::de::DeserializeOwned>(
     serde_json::from_value(params).map_err(|e| RpcError::BadParams(e.to_string()))
 }
 
-/// Spawn an in-memory server for `service` and return a connected client.
-/// Same envelopes, same dispatch loop as the WebSocket path — the in-process UI
-/// transport (ARCHITECTURE §1 "zero serialization shortcuts").
+/// Spawn an in-memory server for `service` and return a connected client: the same envelopes and
+/// dispatch loop as the socket, for tests that drive a service without one.
 pub fn memory_client(service: Arc<dyn RpcService>) -> RpcClient {
     let (client_out, server_in) = tokio::sync::mpsc::channel::<String>(256);
     let (server_out, client_in) = tokio::sync::mpsc::channel::<String>(256);
@@ -504,10 +159,7 @@ mod tests {
             method: &str,
             _params: serde_json::Value,
         ) -> Result<RpcReply, RpcError> {
-            if !matches!(
-                method,
-                methods::WATCH_CHECKOUT_CHANGE_REQUEST | methods::WATCH_HARNESS_UPDATES | "Silent"
-            ) {
+            if method != "Silent" {
                 return Err(RpcError::UnknownMethod(method.into()));
             }
             let guard = DropSignal(self.dropped.lock().unwrap().take());
@@ -516,15 +168,6 @@ mod tests {
                 drop(guard);
                 item
             });
-            if method == methods::WATCH_HARNESS_UPDATES {
-                // Update watches send an initial status snapshot, then may stay
-                // quiet indefinitely. Legacy peers do not send a readiness frame.
-                return Ok(RpcReply::Stream(
-                    futures::stream::once(async { serde_json::json!([]) })
-                        .chain(stream)
-                        .boxed(),
-                ));
-            }
             Ok(RpcReply::Stream(stream.boxed()))
         }
     }
@@ -546,9 +189,7 @@ mod tests {
                 }
                 "Never" => Ok(RpcReply::Stream(futures::stream::pending().boxed())),
                 "Boom" => Err(RpcError::Failed("boom".into())),
-                "Capability" => Err(RpcError::Capability(
-                    capability_errors::PULL_REQUESTS_AUTHENTICATION.into(),
-                )),
+                "Capability" => Err(RpcError::Capability("pull_requests.authentication".into())),
                 other => Err(RpcError::UnknownMethod(other.into())),
             }
         }
@@ -565,7 +206,7 @@ mod tests {
         assert_eq!(echoed, serde_json::json!({"x": 1}));
 
         let mut items = client
-            .subscribe("Count", serde_json::json!({"n": 3}))
+            .subscribe_scoped("Count", serde_json::json!({"n": 3}))
             .await
             .unwrap();
         let mut seen = Vec::new();
@@ -580,6 +221,7 @@ mod tests {
                 serde_json::json!(2)
             ]
         );
+        assert!(!items.lost(), "the server ended the stream");
 
         let err = client
             .call("Boom", serde_json::Value::Null)
@@ -593,52 +235,19 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             err,
-            RpcError::Capability(code)
-                if code == capability_errors::PULL_REQUESTS_AUTHENTICATION
+            RpcError::Capability(code) if code == "pull_requests.authentication"
         ));
     }
 
     #[tokio::test]
-    async fn checked_stream_acknowledges_support_and_preserves_unknown_method() {
+    async fn an_unknown_stream_ends_as_ended_not_lost() {
         let client = memory_client(Arc::new(TestService));
-
         let mut items = client
-            .subscribe_checked("Count", serde_json::json!({"n": 1}))
+            .subscribe_scoped("FutureStream", serde_json::Value::Null)
             .await
             .unwrap();
-        assert_eq!(items.recv().await, Some(serde_json::json!(0)));
         assert_eq!(items.recv().await, None);
-
-        let error = match client
-            .subscribe_checked("FutureStream", serde_json::Value::Null)
-            .await
-        {
-            Ok(_) => panic!("old service must reject unknown stream"),
-            Err(error) => error,
-        };
-        assert!(matches!(error, RpcError::UnknownMethod(method) if method == "FutureStream"));
-    }
-
-    #[tokio::test]
-    async fn dropping_checked_subscription_cancels_pending_server_stream() {
-        let (dropped_tx, dropped_rx) = tokio::sync::oneshot::channel();
-        let client = memory_client(Arc::new(CancelAwareService {
-            dropped: Mutex::new(Some(dropped_tx)),
-        }));
-        let stream = client
-            .subscribe_checked(
-                methods::WATCH_CHECKOUT_CHANGE_REQUEST,
-                serde_json::Value::Null,
-            )
-            .await
-            .unwrap();
-
-        drop(stream);
-
-        tokio::time::timeout(std::time::Duration::from_secs(1), dropped_rx)
-            .await
-            .expect("server stream cancelled")
-            .expect("drop signal");
+        assert!(!items.lost(), "the server answered it");
     }
 
     #[tokio::test]
@@ -666,42 +275,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn dropping_one_device_update_watch_preserves_the_other() {
-        let (first_tx, first_rx) = tokio::sync::oneshot::channel();
-        let (second_tx, mut second_rx) = tokio::sync::oneshot::channel();
-        let first = memory_client(Arc::new(CancelAwareService {
-            dropped: Mutex::new(Some(first_tx)),
-        }));
-        let second = memory_client(Arc::new(CancelAwareService {
-            dropped: Mutex::new(Some(second_tx)),
-        }));
-        let first_watch = first
-            .subscribe_checked(methods::WATCH_HARNESS_UPDATES, serde_json::Value::Null)
-            .await
-            .unwrap();
-        let second_watch = second
-            .subscribe_checked(methods::WATCH_HARNESS_UPDATES, serde_json::Value::Null)
-            .await
-            .unwrap();
-
-        drop(first_watch);
-        tokio::time::timeout(std::time::Duration::from_secs(1), first_rx)
-            .await
-            .expect("first device's quiet stream cancelled")
-            .expect("first drop signal");
-        assert!(matches!(
-            second_rx.try_recv(),
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
-        ));
-
-        drop(second_watch);
-        tokio::time::timeout(std::time::Duration::from_secs(1), second_rx)
-            .await
-            .expect("second device's quiet stream cancelled")
-            .expect("second drop signal");
-    }
-
-    #[tokio::test]
     async fn unary_null_reply_resolves_the_call() {
         let client = memory_client(Arc::new(TestService));
         let reply = tokio::time::timeout(
@@ -718,285 +291,15 @@ mod tests {
         assert_eq!(frame.ok, None);
     }
 
-    /// Serve `TestService` on an ephemeral port behind `token`.
-    async fn serve_test(token: &str) -> u16 {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        tokio::spawn(serve_ws_listener(
-            listener,
-            Arc::new(TestService),
-            token.to_string(),
-        ));
-        port
-    }
-
-    #[tokio::test]
-    async fn websocket_round_trip() {
-        let token = ipc_auth::generate_token().unwrap();
-        let port = serve_test(&token).await;
-
-        let client = connect_ws(&format!("ws://127.0.0.1:{port}"), Some(&token))
-            .await
-            .unwrap();
-        let echoed = client
-            .call("Echo", serde_json::json!("hello"))
-            .await
-            .unwrap();
-        assert_eq!(echoed, serde_json::json!("hello"));
-
-        let mut items = client
-            .subscribe("Count", serde_json::json!({"n": 2}))
-            .await
-            .unwrap();
-        assert_eq!(items.recv().await, Some(serde_json::json!(0)));
-        assert_eq!(items.recv().await, Some(serde_json::json!(1)));
-        assert_eq!(items.recv().await, None);
-    }
-
-    /// A reply past tungstenite's default 16 MiB frame cap (a long chat's
-    /// transcript watch) must arrive, not drop the connection.
-    #[tokio::test]
-    async fn websocket_carries_messages_past_the_default_frame_cap() {
-        let token = ipc_auth::generate_token().unwrap();
-        let port = serve_test(&token).await;
-        // Multi-byte chars so fragment boundaries land mid-codepoint.
-        let big = "é".repeat(9_500_000);
-
-        let client = connect_ws(&format!("ws://127.0.0.1:{port}"), Some(&token))
-            .await
-            .unwrap();
-        let echoed = client.call("Echo", serde_json::json!(big)).await.unwrap();
-        assert_eq!(echoed.as_str().map(str::len), Some(big.len()));
-        assert_eq!(client.close_reason(), None);
-
-        // A peer still on tungstenite's default limits (an older app build)
-        // reassembles the fragmented reply too.
-        use futures::{SinkExt, StreamExt};
-        use tokio_tungstenite::tungstenite::Message;
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        let mut req = format!("ws://127.0.0.1:{port}")
-            .into_client_request()
-            .unwrap();
-        req.headers_mut()
-            .insert("authorization", format!("Bearer {token}").parse().unwrap());
-        let (mut legacy, _) = tokio_tungstenite::connect_async(req).await.unwrap();
-        let request = serde_json::to_string(&ClientFrame {
-            id: 1,
-            method: Some("Echo".into()),
-            params: serde_json::json!(big),
-            cancel: false,
-        })
-        .unwrap();
-        // It sends one unfragmented frame past 16 MiB: the raised cap takes it.
-        assert!(request.len() > 16 << 20);
-        legacy.send(Message::Text(request)).await.unwrap();
-        let reply = loop {
-            match legacy.next().await.unwrap().unwrap() {
-                Message::Text(text) => break text,
-                _ => continue,
-            }
-        };
-        let frame: ServerFrame = serde_json::from_str(&reply).unwrap();
-        assert_eq!(
-            frame.ok.and_then(|v| v.as_str().map(str::len)),
-            Some(big.len())
-        );
-    }
-
-    /// Raw handshake status for a dial with the given headers (`None` = served).
-    async fn handshake_status(port: u16, headers: &[(&str, &str)]) -> Option<u16> {
-        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
-        let mut req = format!("ws://127.0.0.1:{port}")
-            .into_client_request()
-            .unwrap();
-        for (name, value) in headers {
-            req.headers_mut().insert(
-                tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(name.as_bytes())
-                    .unwrap(),
-                value.parse().unwrap(),
-            );
-        }
-        match tokio_tungstenite::connect_async(req).await {
-            Ok(_) => None,
-            Err(tokio_tungstenite::tungstenite::Error::Http(response)) => {
-                Some(response.status().as_u16())
-            }
-            Err(other) => panic!("unexpected handshake failure: {other}"),
-        }
-    }
-
-    #[tokio::test]
-    async fn handshake_with_origin_header_is_rejected() {
-        let token = ipc_auth::generate_token().unwrap();
-        let port = serve_test(&token).await;
-        let bearer = format!("Bearer {token}");
-
-        // A browser page opening ws://127.0.0.1:{port} always sends Origin;
-        // the server must refuse the handshake before serving any RPC — even
-        // when the bearer is right.
-        assert_eq!(
-            handshake_status(
-                port,
-                &[
-                    ("origin", "https://evil.example"),
-                    ("authorization", &bearer)
-                ]
-            )
-            .await,
-            Some(403),
-            "handshake carrying an Origin header must be rejected"
-        );
-
-        // A native viewport (no Origin) still connects and can call RPC — the
-        // reject must not be a blanket denial.
-        let client = connect_ws(&format!("ws://127.0.0.1:{port}"), Some(&token))
-            .await
-            .unwrap();
-        let echoed = client.call("Echo", serde_json::json!("ok")).await.unwrap();
-        assert_eq!(echoed, serde_json::json!("ok"));
-    }
-
-    /// Answers every method with the caller it ran as.
-    struct WhoAsked;
-    #[async_trait]
-    impl RpcService for WhoAsked {
-        async fn handle(
-            &self,
-            _method: &str,
-            _params: serde_json::Value,
-        ) -> Result<RpcReply, RpcError> {
-            Ok(RpcReply::Value(serde_json::json!(format!(
-                "{:?}",
-                crate::caller()
-            ))))
-        }
-    }
-
-    /// R6/R16: the agent-scoped token (what `onicode mcp` holds) reaches its
-    /// tools' methods as an agent, and nothing that decides, signs, updates
-    /// or hands out credentials; the full token still reaches everything.
-    #[tokio::test]
-    async fn the_agent_token_refuses_everything_that_grants_power() {
-        let tokens = ipc_auth::IpcTokens::generate().unwrap();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let port = listener.local_addr().unwrap().port();
-        tokio::spawn(serve_ws_listener_scoped(
-            listener,
-            Arc::new(WhoAsked),
-            tokens.clone(),
-        ));
-        let url = format!("ws://127.0.0.1:{port}");
-
-        let agent = connect_ws(&url, Some(&tokens.agent)).await.unwrap();
-        for method in [
-            methods::APPLY_UPDATE,
-            methods::START_AGENT_LOGIN,
-            methods::OPEN_TERMINAL,
-            methods::WRITE_TERMINAL,
-            methods::WRITE_WORKSPACE_FILE,
-            methods::READ_TOOL_OUTPUT,
-        ] {
-            assert!(!agent_allowed(method), "{method}");
-            match agent.call(method, serde_json::json!({})).await {
-                Err(RpcError::Failed(message)) => assert!(
-                    message.contains("isn't open to agents"),
-                    "{method}: {message}"
-                ),
-                other => panic!("an agent reached {method}: {other:?}"),
-            }
-        }
-        let asked = agent
-            .call(methods::LIST_HARNESSES, serde_json::json!({}))
-            .await
-            .unwrap();
-        assert!(asked.as_str().unwrap().starts_with("Agent"), "{asked}");
-
-        let app = connect_ws(&url, Some(&tokens.full)).await.unwrap();
-        for method in [methods::APPLY_UPDATE, methods::START_AGENT_LOGIN] {
-            let asked = app.call(method, serde_json::json!({})).await.unwrap();
-            assert_eq!(asked, serde_json::json!("Local"), "{method}");
-        }
-    }
-
-    #[tokio::test]
-    async fn handshake_requires_the_engine_bearer() {
-        let token = ipc_auth::generate_token().unwrap();
-        let port = serve_test(&token).await;
-
-        // Any local process can reach the port; without the token it gets 401.
-        assert_eq!(handshake_status(port, &[]).await, Some(401));
-        let wrong = format!("Bearer {}", ipc_auth::generate_token().unwrap());
-        assert_eq!(
-            handshake_status(port, &[("authorization", &wrong)]).await,
-            Some(401)
-        );
-        assert_eq!(
-            handshake_status(port, &[("authorization", &token)]).await,
-            Some(401),
-            "the Bearer scheme is required"
-        );
-        let url = format!("ws://127.0.0.1:{port}");
-        assert!(connect_ws(&url, None).await.is_err());
-        let error = match connect_ws(&url, Some("not-the-token")).await {
-            Ok(_) => panic!("a wrong token must not be served"),
-            Err(error) => error.to_string(),
-        };
-        assert!(error.contains("401"), "{error}");
-
-        // The right token is served.
-        let right = format!("Bearer {token}");
-        assert_eq!(
-            handshake_status(port, &[("authorization", &right)]).await,
-            None
-        );
-        let client = connect_ws(&url, Some(&token)).await.unwrap();
-        assert_eq!(
-            client.call("Echo", serde_json::json!(7)).await.unwrap(),
-            serde_json::json!(7)
-        );
-    }
-
-    #[tokio::test]
-    async fn connect_ipc_reads_the_published_token_at_dial_time() {
-        let dir = tempfile::tempdir().unwrap();
-        // Engine start #1.
-        let first = ipc_auth::issue_token(dir.path()).unwrap();
-        let first_port = serve_test(&first).await;
-        let client = connect_ipc(first_port, Some(dir.path())).await.unwrap();
-        assert_eq!(
-            client.call("Echo", serde_json::json!(1)).await.unwrap(),
-            serde_json::json!(1)
-        );
-
-        // Engine restart: a new token replaces the file. The next dial picks
-        // it up without any client-side configuration.
-        let second = ipc_auth::issue_token(dir.path()).unwrap();
-        let second_port = serve_test(&second).await;
-        let client = connect_ipc(second_port, Some(dir.path())).await.unwrap();
-        assert_eq!(
-            client.call("Echo", serde_json::json!(2)).await.unwrap(),
-            serde_json::json!(2)
-        );
-
-        // A client holding only the stale file is refused with a clear reason.
-        let stale = tempfile::tempdir().unwrap();
-        ipc_auth::write_token(&ipc_auth::token_path(stale.path()), &first).unwrap();
-        let error = match connect_ipc(second_port, Some(stale.path())).await {
-            Ok(_) => panic!("a rotated token must not be served"),
-            Err(error) => error.to_string(),
-        };
-        assert!(error.contains("rejected"), "{error}");
-    }
-
     #[tokio::test]
     async fn dropping_stream_receiver_cancels_server_side() {
         let client = memory_client(Arc::new(TestService));
         let items = client
-            .subscribe("Never", serde_json::Value::Null)
+            .subscribe_scoped("Never", serde_json::Value::Null)
             .await
             .unwrap();
         drop(items);
-        // The next unary call still works — the dead stream didn't wedge the connection.
+        // The next unary call still works: the dead stream didn't wedge the connection.
         let echoed = client.call("Echo", serde_json::json!(2)).await.unwrap();
         assert_eq!(echoed, serde_json::json!(2));
     }

@@ -1,17 +1,18 @@
-//! The engine a viewer runs in its own process until the engine runs on its own (engine.md,
-//! migration step 8): every hub over one store the engine opens itself, served as one
-//! [`EngineService`]. A viewer holds a [`Local`] and speaks the protocol to its service; it never
-//! touches the store.
+//! One engine: every hub over one store the engine opens itself, served as one
+//! [`EngineService`]. The `onicode-engine` process holds one and serves it on its socket
+//! ([`crate::host`]); tests hold one in process and speak the protocol to its service. A viewer
+//! never touches the store.
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use onicode_core::store::Store;
+use tokio::sync::Notify;
 
 use crate::accounts::{AccountsHub, AccountsService, AgentProbe, CliProbe};
 use crate::app_access::{AppAccessHub, AppAccessService};
 use crate::files::{FilesHub, FilesService};
 use crate::git::{CheckoutHub, GitService};
-use crate::service::EngineService;
+use crate::service::{EngineGroup, EngineService};
 use crate::session::{SessionHub, SessionService, Spawn};
 use crate::settings::{SettingsHub, SettingsService};
 use crate::settings_pages::SettingsPagesService;
@@ -71,6 +72,8 @@ pub struct Local {
     /// Every terminal's shell. A quiet engine starts none.
     pub terminal: Arc<TerminalHub>,
     pub service: Arc<EngineService>,
+    /// Told when a viewer stops the engine (`StopEngine`).
+    stop: Arc<Notify>,
 }
 
 impl Local {
@@ -126,6 +129,7 @@ impl Local {
             TerminalHub::new(spawn.clone())
         };
         let app_access = AppAccessHub::new(store.clone(), workspace.clone(), spawn);
+        let stop = Arc::new(Notify::new());
         let service = EngineService::new(
             SessionService::new(session.clone()),
             WorkspaceService::new(workspace.clone()),
@@ -137,7 +141,8 @@ impl Local {
         .with(Arc::new(SettingsPagesService::new(git.clone())))
         .with(Arc::new(WorkService::new(work.clone())))
         .with(Arc::new(AppAccessService::new(app_access.clone())))
-        .with(Arc::new(TerminalService::new(terminal.clone())));
+        .with(Arc::new(TerminalService::new(terminal.clone())))
+        .with(Arc::new(EngineGroup::new(session.clone(), stop.clone())));
         Ok(Self {
             store,
             session,
@@ -150,7 +155,13 @@ impl Local {
             app_access,
             terminal,
             service: Arc::new(service),
+            stop,
         })
+    }
+
+    /// Resolves once a viewer stopped the engine with `StopEngine`.
+    pub async fn stopped(&self) {
+        self.stop.notified().await;
     }
 
     /// The engine's schedulers, for the clock that beats them.
@@ -200,6 +211,17 @@ impl Local {
     #[must_use]
     pub fn legacy_store(&self) -> Database {
         self.store.clone()
+    }
+
+    /// A connection of the viewer's own to the store in `data_dir`, for the SSH remote and the
+    /// phone host only, whose runners write it from the app's process until steps 10 and 11
+    /// delete them. SQLite serializes it with the engine's writer; the engine reads what they
+    /// write from the store, as it did while both ran in one process.
+    pub fn open_legacy_store(data_dir: &Path) -> Result<Database, String> {
+        let path = data_dir.join(DATABASE);
+        Store::open_monocode(&path)
+            .map(|store| Arc::new(Mutex::new(store)))
+            .map_err(|error| format!("Cannot open {}: {error}", path.display()))
     }
 
     /// Whether `other` is this engine.
