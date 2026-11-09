@@ -106,7 +106,7 @@ The desktop app includes the `onicode` command-line tool. A new install sets it 
 on first launch; after an update, or any time, choose **Install** next to
 **onicode command** in **Settings → About**. On macOS and Linux it adds a `onicode` link
 in `~/.local/bin` (or `~/bin`). Open a new terminal afterwards. If the folder is not on your
-`PATH`, **Add to PATH** in the welcome setup or **Settings → About** adds one
+`PATH`, **Add to PATH** on the Welcome page or in **Settings → About** adds one
 line to your shell's startup file. **Remove** takes it off, and the app does not
 add it again. If you already have another `onicode`, it stays as it is.
 

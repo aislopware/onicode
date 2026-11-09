@@ -162,6 +162,25 @@ describe("searchSettings", () => {
     );
   });
 
+  it("finds the Welcome page only where a primary computer can open it", () => {
+    const availability = {
+      hasCloudPublicConfig: true,
+      hasEnvironment: true,
+      hasProviderSettingsEnvironment: true,
+      canManageLocalBackend: false,
+      isWslSettingsRowVisible: false,
+      hasThreadAutoSettlement: false,
+    };
+    const ids = (hasPrimaryEnvironment: boolean) =>
+      searchSettings(
+        "welcome page",
+        filterAvailableSettingsSearchItems({ ...availability, hasPrimaryEnvironment }),
+      ).map((item) => item.id);
+    // A client whose local environment is off has no primary computer to set up.
+    expect(ids(false)).not.toContain("welcome-page");
+    expect(ids(true)).toContain("welcome-page");
+  });
+
   it("finds keybinding commands by label, command id, and default key", () => {
     expect(searchSettings("toggle sidebar")[0]?.id).toBe("keybinding-sidebar.toggle");
     expect(searchSettings("sidebar.toggle")[0]?.id).toBe("keybinding-sidebar.toggle");
