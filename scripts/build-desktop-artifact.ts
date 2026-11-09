@@ -2551,7 +2551,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     const path = yield* Path.Path;
     const repoRoot = yield* RepoRoot;
     buildConfig.mac = {
-      target: target === "dmg" ? [target, "zip"] : [target],
+      // electron-builder writes app-update.yml only for zip or dmg targets, and the release
+      // build ships the unpacked .app that better-update notarizes and zips itself.
+      target: target === "dmg" || target === "dir" ? [target, "zip"] : [target],
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {

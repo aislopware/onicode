@@ -517,6 +517,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(yield* publish("mac", true), [
         { provider: "generic", url: "http://localhost:3012" },
       ]);
+      // Without a zip target electron-builder leaves app-update.yml out of the .app.
+      const macDir = yield* createBuildConfig("mac", "dir", "0.4.0", true, false, 3012, undefined);
+      assert.include((macDir.mac as { target: string[] }).target, "zip");
     }),
   );
 
