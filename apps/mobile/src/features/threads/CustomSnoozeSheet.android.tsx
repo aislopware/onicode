@@ -294,7 +294,10 @@ function SnoozeDateTimePicker(props: {
       is24Hour={props.is24Hour}
       showVariantToggle={false}
       elementColors={props.colors}
-      onDateSelected={props.onChange}
+      // Typed date input reports null until it parses; keep the last valid selection.
+      onDateSelected={(date) => {
+        if (date) props.onChange(date);
+      }}
     />
   );
 }

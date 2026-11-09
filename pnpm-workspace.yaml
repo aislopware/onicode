@@ -22,6 +22,8 @@ allowBuilds:
   node-pty: true
   # Ships N-API prebuilds; its install script only rebuilds from source.
   objc-js: false
+  # Its postinstall only prints a banner.
+  react-native-pdf-jsi: false
   "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-t3.18-497fbe63.tgz": true
   sharp: true
   utf-8-validate: false
@@ -82,10 +84,10 @@ overrides:
   micromark-extension-llm-math: 3.1.0
   micromark: 4.0.2
   mdast-util-to-hast: 13.2.1
-  expo-audio: 58.0.9
-  expo-network: 58.0.3
-  expo-sharing: 58.0.19
-  expo-widgets: 58.0.20
+  expo-audio: 58.0.11
+  expo-network: 58.0.4
+  expo-sharing: 58.0.22
+  expo-widgets: 58.0.27
   "@ff-labs/fff-node": 0.11.0
   "@legendapp/list": 3.7.2
   "@pierre/diffs": 1.6.4
@@ -94,16 +96,13 @@ overrides:
   "@react-navigation/native-stack": 7.21.0
   dbus-next: 0.10.2
   node-pty: 1.2.0-beta.18
-  react-native-gesture-handler: 3.3.0
+  react-native-gesture-handler: 3.5.0
   react-native-reanimated: 4.7.1
-  react-native-keyboard-controller: 1.22.8
-  react-native-pdf-jsi: 5.0.0
+  react-native-keyboard-controller: 1.23.0
   react-native-webview: 14.0.1
-  react-native-svg: 15.16.0
-  "@expo/ui": 58.0.20
-  "@expo/fingerprint": 0.21.5
+  react-native-svg: 15.16.1
   app-builder-lib: 26.18.1
-  expo-modules-core: 58.0.22
+  expo-modules-core: 58.0.30
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "catalog:"
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
@@ -128,9 +127,9 @@ overrides:
   "@effect/vitest": "catalog:"
   "@effect/vitest>vitest": "-"
   "@expo/dom-webview": 58.0.2
-  "@expo/metro-config": 58.0.14
-  expo-constants: 58.0.12
-  "expo-sharing>@expo/config-plugins": 58.0.9
+  "@expo/metro-config": 58.0.21
+  expo-constants: 58.0.15
+  "expo-sharing>@expo/config-plugins": 58.0.12
   "expo-sharing>@expo/config-types": 58.0.3
   # @pierre/trees pins @pierre/theming 1.0.0, whose peer range predates @pierre/theme 2.
   "@pierre/trees>@pierre/theming": 1.0.2
@@ -156,7 +155,7 @@ overrides:
   node-abi: 4.40.0
   # react-native-worklets peers on any version, so a fresh resolve takes the newest
   # one; React Native's CLI plugin wants exactly its own. Move with react-native.
-  "@react-native/metro-config": 0.88.0
+  "@react-native/metro-config": 0.88.1
   # The desktop app installs these without a lockfile when it packages them, so
   # pin the native passkey code that runs in its main process.
   "electron-webauthn>@electron-webauthn/macos": "catalog:"
@@ -190,13 +189,13 @@ patchedDependencies:
   micromark-extension-gfm-table@2.1.1: patches/micromark-extension-gfm-table@2.1.1.patch
   micromark@4.0.2: patches/micromark@4.0.2.patch
   mdast-util-to-hast@13.2.1: patches/mdast-util-to-hast@13.2.1.patch
-  expo-audio@58.0.9: patches/expo-audio@58.0.9.patch
-  expo-video@58.0.11: patches/expo-video@58.0.11.patch
-  expo-network@58.0.3: patches/expo-network@58.0.3.patch
+  expo-audio@58.0.11: patches/expo-audio@58.0.11.patch
+  expo-video@58.0.13: patches/expo-video@58.0.13.patch
+  expo-network@58.0.4: patches/expo-network@58.0.4.patch
   "@effect/vitest@4.1.2": patches/@effect__vitest@4.1.2.patch
-  "@expo/metro-config@58.0.14": patches/@expo__metro-config@58.0.14.patch
-  expo-sharing@58.0.19: patches/expo-sharing@58.0.19.patch
-  expo-widgets@58.0.20: patches/expo-widgets@58.0.20.patch
+  "@expo/metro-config@58.0.21": patches/@expo__metro-config@58.0.21.patch
+  expo-sharing@58.0.22: patches/expo-sharing@58.0.22.patch
+  expo-widgets@58.0.27: patches/expo-widgets@58.0.27.patch
   "@ff-labs/fff-node@0.11.0": patches/@ff-labs__fff-node@0.11.0.patch
   # Exports the dependency-light subpaths mobile and the web diff parser import, and keeps
   # measured wrapped-row heights above an edit (fileEditorVirtualization.test.ts).
@@ -206,26 +205,21 @@ patchedDependencies:
   "@react-navigation/native-stack@7.21.0": patches/@react-navigation%2Fnative-stack@7.21.0.patch
   dbus-next@0.10.2: patches/dbus-next@0.10.2.patch
   node-pty@1.2.0-beta.18: patches/node-pty@1.2.0-beta.18.patch
-  react-native-gesture-handler@3.3.0: patches/react-native-gesture-handler@3.3.0.patch
+  react-native-gesture-handler@3.5.0: patches/react-native-gesture-handler@3.5.0.patch
   # Screens v5 stack, split and tab screens leave at once, like legacy screens. Exiting animations
   # inside one otherwise hold its removal for a later mount, after its stack has moved on.
   react-native-reanimated@4.7.1: patches/react-native-reanimated@4.7.1.patch
-  react-native-keyboard-controller@1.22.8: patches/react-native-keyboard-controller@1.22.8.patch
-  react-native-pdf-jsi@5.0.0: patches/react-native-pdf-jsi@5.0.0.patch
+  react-native-keyboard-controller@1.23.0: patches/react-native-keyboard-controller@1.23.0.patch
   # Android: a nested WebView hands a vertical drag to its scrolling parent at the page's edge.
   react-native-webview@14.0.1: patches/react-native-webview@14.0.1.patch
-  "@expo/ui@58.0.20": patches/@expo__ui@58.0.20.patch
   # Android: a Compose host that requests layout in a mount (a new screen's app bar) is laid out
   # before that frame is drawn, instead of a frame later.
-  expo-modules-core@58.0.22: patches/expo-modules-core@58.0.22.patch
-  # Android: Maven-resolved gradle plugins (expo-widgets) have no sourceDir; without this
-  # skip, the fingerprint silently drops every Expo native module and OTAs reach stale binaries.
-  "@expo/fingerprint@0.21.5": patches/@expo__fingerprint@0.21.5.patch
+  expo-modules-core@58.0.30: patches/expo-modules-core@58.0.30.patch
   # Observe the owned host exit independently of descendants retaining its stdio.
   "@muse-code/sdk@1.4.14": patches/@muse-code__sdk@1.4.14.patch
   app-builder-lib@26.18.1: patches/app-builder-lib@26.18.1.patch
   # Android: a marker orient other than "auto" or a number (auto-start-reverse) no longer throws.
-  react-native-svg@15.16.0: patches/react-native-svg@15.16.0.patch
+  react-native-svg@15.16.1: patches/react-native-svg@15.16.1.patch
 
 # Unmet peers fail resolution, so a pin outside a dependency's peer range is
 # caught when the lockfile changes instead of scrolling past as a warning.

@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/expo/modules/sharing/SharingRecords.kt b/android/src/main/java/expo/modules/sharing/SharingRecords.kt
-index 1113a0adbb951081dea5214a711fe1dbb5a3e814..e89529a43258ae3bd6ec730c19453aed5e5efac4 100644
+index 1113a0a..e89529a 100644
 --- a/android/src/main/java/expo/modules/sharing/SharingRecords.kt
 +++ b/android/src/main/java/expo/modules/sharing/SharingRecords.kt
 @@ -51,7 +51,8 @@ enum class ContentType(val value: String) : Enumerable {
@@ -13,7 +13,7 @@ index 1113a0adbb951081dea5214a711fe1dbb5a3e814..e89529a43258ae3bd6ec730c19453aed
  
  @OptimizedRecord
 diff --git a/android/src/main/java/expo/modules/sharing/dataParsers/ResolvingShareIntentDataParser.kt b/android/src/main/java/expo/modules/sharing/dataParsers/ResolvingShareIntentDataParser.kt
-index 0a4c92e4b6459632933027827a86a4ec994ce72f..54ff2b5f44df740c9b971e409397e4a08a973717 100644
+index 0a4c92e..54ff2b5 100644
 --- a/android/src/main/java/expo/modules/sharing/dataParsers/ResolvingShareIntentDataParser.kt
 +++ b/android/src/main/java/expo/modules/sharing/dataParsers/ResolvingShareIntentDataParser.kt
 @@ -9,6 +9,7 @@ import java.io.File
@@ -61,7 +61,7 @@ index 0a4c92e4b6459632933027827a86a4ec994ce72f..54ff2b5f44df740c9b971e409397e4a0
        val cursor = resolver.query(uri, null, null, null, null)
        val name = cursor?.use { cursor ->
 diff --git a/android/src/main/java/expo/modules/sharing/dataParsers/SimpleShareIntentDataParser.kt b/android/src/main/java/expo/modules/sharing/dataParsers/SimpleShareIntentDataParser.kt
-index 3381c5fd207ebb4cd8e0301aac59d307939ff162..481cdb4bc64ea5ae49919071f686324f6d56d55c 100644
+index 3381c5f..88984c7 100644
 --- a/android/src/main/java/expo/modules/sharing/dataParsers/SimpleShareIntentDataParser.kt
 +++ b/android/src/main/java/expo/modules/sharing/dataParsers/SimpleShareIntentDataParser.kt
 @@ -3,6 +3,7 @@ package expo.modules.sharing
@@ -141,7 +141,7 @@ index 3381c5fd207ebb4cd8e0301aac59d307939ff162..481cdb4bc64ea5ae49919071f686324f
      }
    }
 diff --git a/build/Sharing.types.d.ts b/build/Sharing.types.d.ts
-index 74544e0728d5f845351693d8d90596abae42eaea..92bd2f53108ac717f1ef7292fe89aea05c676c5e 100644
+index 74544e0..92bd2f5 100644
 --- a/build/Sharing.types.d.ts
 +++ b/build/Sharing.types.d.ts
 @@ -100,6 +100,11 @@ export type SharePayload = {
@@ -157,7 +157,7 @@ index 74544e0728d5f845351693d8d90596abae42eaea..92bd2f53108ac717f1ef7292fe89aea0
  export type BaseResolvedSharePayload = SharePayload & {
      /**
 diff --git a/plugin/build/ios/xcode/addPbxGroup.js b/plugin/build/ios/xcode/addPbxGroup.js
-index 0867938bdc6df7aeba560cb84dc9c9156c842d95..6ff5be15de702c79cc932def1af68e4c801db48e 100644
+index 0867938..6ff5be1 100644
 --- a/plugin/build/ios/xcode/addPbxGroup.js
 +++ b/plugin/build/ios/xcode/addPbxGroup.js
 @@ -29,9 +29,23 @@ function addPbxGroup(xcodeProject, targetName, shareExtensionFiles, platformProj
@@ -187,7 +187,7 @@ index 0867938bdc6df7aeba560cb84dc9c9156c842d95..6ff5be15de702c79cc932def1af68e4c
      if (mainGroupUuid && sharedGroupUuid) {
          // @ts-expect-error: TODO(@kitten): This used to be untyped, and is failing now
 diff --git a/plugin/src/ios/xcode/addPbxGroup.ts b/plugin/src/ios/xcode/addPbxGroup.ts
-index 943c263c0cf58be595bfc9745c91827da81befec..3a99a1822beb25fea3835123b9a4ad7ac3b4f8d5 100644
+index 943c263..3a99a18 100644
 --- a/plugin/src/ios/xcode/addPbxGroup.ts
 +++ b/plugin/src/ios/xcode/addPbxGroup.ts
 @@ -19,14 +19,29 @@ export function addPbxGroup(
@@ -223,7 +223,7 @@ index 943c263c0cf58be595bfc9745c91827da81befec..3a99a1822beb25fea3835123b9a4ad7a
  
    if (mainGroupUuid && sharedGroupUuid) {
 diff --git a/src/Sharing.types.ts b/src/Sharing.types.ts
-index 18af320420e7c01a8ffbd7fa5347320409f905d8..3a52b70a20efbc588ad5ca974c38c951e5757c97 100644
+index 18af320..3a52b70 100644
 --- a/src/Sharing.types.ts
 +++ b/src/Sharing.types.ts
 @@ -108,6 +108,12 @@ export type SharePayload = {

@@ -1,8 +1,8 @@
 diff --git a/apple/Handlers/RNPanHandler.m b/apple/Handlers/RNPanHandler.m
-index e67d02c..4708f0f 100644
+index cb0666b..7f481d9 100644
 --- a/apple/Handlers/RNPanHandler.m
 +++ b/apple/Handlers/RNPanHandler.m
-@@ -31,6 +31,7 @@ @interface RNBetterPanGestureRecognizer : UIPanGestureRecognizer
+@@ -31,6 +31,7 @@
  @property (nonatomic) CGFloat failOffsetYStart;
  @property (nonatomic) CGFloat failOffsetYEnd;
  @property (nonatomic) CGFloat activateAfterLongPress;
@@ -10,7 +10,7 @@ index e67d02c..4708f0f 100644
  
  #if !TARGET_OS_OSX && !TARGET_OS_TV
  @property (atomic, readonly, strong) RNGHStylusData *stylusData;
-@@ -126,9 +127,14 @@ - (void)activateAfterLongPress
+@@ -133,9 +134,14 @@ static const NSTimeInterval pointerStoppedInterval = 0.04;
  
  - (void)interactionsBegan:(NSSet *)touches withEvent:(UIEvent *)event
  {
@@ -28,7 +28,7 @@ index e67d02c..4708f0f 100644
    }
  
    if (touches.count == 0) {
-@@ -476,6 +482,23 @@ - (void)updateConfig:(NSDictionary *)config
+@@ -501,6 +507,23 @@ static const NSTimeInterval pointerStoppedInterval = 0.04;
  
  - (BOOL)gestureRecognizerShouldBegin:(UIGestureRecognizer *)gestureRecognizer
  {
@@ -53,7 +53,7 @@ index e67d02c..4708f0f 100644
    BOOL shouldBegin = [super gestureRecognizerShouldBegin:gestureRecognizer];
    _lastState = savedState;
 diff --git a/lib/module/components/ReanimatedSwipeable/ReanimatedSwipeable.js b/lib/module/components/ReanimatedSwipeable/ReanimatedSwipeable.js
-index 5f2f759..c0b8237 100644
+index 30e6601..2d36194 100644
 --- a/lib/module/components/ReanimatedSwipeable/ReanimatedSwipeable.js
 +++ b/lib/module/components/ReanimatedSwipeable/ReanimatedSwipeable.js
 @@ -42,6 +42,8 @@ const Swipeable = props => {
@@ -65,7 +65,7 @@ index 5f2f759..c0b8237 100644
      friction = DEFAULT_FRICTION,
      overshootFriction = DEFAULT_OVERSHOOT_FRICTION,
      onSwipeableOpenStartDrag: onSwipeableOpenStartDragProp,
-@@ -293,8 +295,12 @@ const Swipeable = props => {
+@@ -312,8 +314,12 @@ const Swipeable = props => {
          toValue = -rightWidth.value;
        }
      }
@@ -79,7 +79,7 @@ index 5f2f759..c0b8237 100644
    const close = useCallback(() => {
      'worklet';
  
-@@ -340,6 +346,8 @@ const Swipeable = props => {
+@@ -359,6 +365,8 @@ const Swipeable = props => {
      enabled: enabled ?? true,
      enableTrackpadTwoFingerGesture: enableTrackpadTwoFingerGesture,
      activeOffsetX: [dragOffsetFromRight, dragOffsetFromLeft],
@@ -120,10 +120,10 @@ index e97b6db..de07f26 100644
  export interface SwipeableMethods {
      close: () => void;
 diff --git a/src/components/ReanimatedSwipeable/ReanimatedSwipeable.tsx b/src/components/ReanimatedSwipeable/ReanimatedSwipeable.tsx
-index b62da83..7d88839 100644
+index 2b3789a..0dcf61d 100644
 --- a/src/components/ReanimatedSwipeable/ReanimatedSwipeable.tsx
 +++ b/src/components/ReanimatedSwipeable/ReanimatedSwipeable.tsx
-@@ -77,6 +77,8 @@ const Swipeable = (props: SwipeableProps) => {
+@@ -80,6 +80,8 @@ const Swipeable = (props: SwipeableProps) => {
      enableTrackpadTwoFingerGesture = DEFAULT_ENABLE_TRACKING_TWO_FINGER_GESTURE,
      dragOffsetFromLeft = DEFAULT_DRAG_OFFSET,
      dragOffsetFromRight = -DEFAULT_DRAG_OFFSET,
@@ -132,7 +132,7 @@ index b62da83..7d88839 100644
      friction = DEFAULT_FRICTION,
      overshootFriction = DEFAULT_OVERSHOOT_FRICTION,
      onSwipeableOpenStartDrag: onSwipeableOpenStartDragProp,
-@@ -518,6 +520,11 @@ const Swipeable = (props: SwipeableProps) => {
+@@ -552,6 +554,11 @@ const Swipeable = (props: SwipeableProps) => {
          }
        }
  
@@ -144,7 +144,7 @@ index b62da83..7d88839 100644
        animateRow(toValue, velocityX / friction);
      },
      [
-@@ -529,6 +536,8 @@ const Swipeable = (props: SwipeableProps) => {
+@@ -563,6 +570,8 @@ const Swipeable = (props: SwipeableProps) => {
        rightWidth,
        rowState,
        userDrag,
@@ -153,7 +153,7 @@ index b62da83..7d88839 100644
      ]
    );
  
-@@ -606,6 +615,7 @@ const Swipeable = (props: SwipeableProps) => {
+@@ -640,6 +649,7 @@ const Swipeable = (props: SwipeableProps) => {
          typeof dragOffsetFromRight,
          typeof dragOffsetFromLeft,
        ],
@@ -161,7 +161,7 @@ index b62da83..7d88839 100644
        simultaneousWith,
        requireToFail,
        block,
-@@ -619,6 +629,7 @@ const Swipeable = (props: SwipeableProps) => {
+@@ -653,6 +663,7 @@ const Swipeable = (props: SwipeableProps) => {
        block,
        dragOffsetFromLeft,
        dragOffsetFromRight,

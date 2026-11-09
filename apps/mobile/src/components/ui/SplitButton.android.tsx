@@ -6,6 +6,8 @@ import {
   RNHostView,
   Row,
   SplitButtonLayout,
+  SplitButtonLeadingButton,
+  SplitButtonTrailingButton,
   Text,
 } from "@expo/ui/jetpack-compose";
 import {
@@ -90,39 +92,43 @@ export function SplitButton(props: SplitButtonProps) {
       style={{ width: "100%" }}
     >
       <SplitButtonLayout modifiers={[fillMaxWidth()]}>
-        <SplitButtonLayout.LeadingButton
-          enabled={enabled}
-          onClick={props.onPress}
-          colors={buttonColors}
-          modifiers={[
-            fillMaxWidth(),
-            defaultMinSize({ minHeight: 48 }),
-            semantics({ contentDescription: props.accessibilityLabel ?? props.label }),
-          ]}
-        >
-          {label}
+        <SplitButtonLayout.LeadingButton>
+          <SplitButtonLeadingButton
+            enabled={enabled}
+            onClick={props.onPress}
+            colors={buttonColors}
+            modifiers={[
+              fillMaxWidth(),
+              defaultMinSize({ minHeight: 48 }),
+              semantics({ contentDescription: props.accessibilityLabel ?? props.label }),
+            ]}
+          >
+            {label}
+          </SplitButtonLeadingButton>
         </SplitButtonLayout.LeadingButton>
-        <SplitButtonLayout.TrailingButton
-          checked={expanded}
-          onCheckedChange={setExpanded}
-          enabled={menuEnabled}
-          colors={trailingColors}
-          modifiers={[
-            defaultMinSize({ minWidth: 48, minHeight: 48 }),
-            semantics({ contentDescription: props.menuTitle }),
-          ]}
-        >
+        <SplitButtonLayout.TrailingButton>
           <DropdownMenu
             expanded={expanded && menuEnabled}
             onDismissRequest={() => setExpanded(false)}
             color={colors["--color-card-alt"]}
           >
             <DropdownMenu.Trigger>
-              <Icon
-                source={require("../../../assets/icons/chevron-down.xml")}
-                size={iconSize}
-                modifiers={[rotate(expanded ? 180 : 0)]}
-              />
+              <SplitButtonTrailingButton
+                checked={expanded}
+                onCheckedChange={setExpanded}
+                enabled={menuEnabled}
+                colors={trailingColors}
+                modifiers={[
+                  defaultMinSize({ minWidth: 48, minHeight: 48 }),
+                  semantics({ contentDescription: props.menuTitle }),
+                ]}
+              >
+                <Icon
+                  source={require("../../../assets/icons/chevron-down.xml")}
+                  size={iconSize}
+                  modifiers={[rotate(expanded ? 180 : 0)]}
+                />
+              </SplitButtonTrailingButton>
             </DropdownMenu.Trigger>
             <DropdownMenu.Items>
               <MenuPopupItems

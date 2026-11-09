@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/com/horcrux/svg/MarkerView.java b/android/src/main/java/com/horcrux/svg/MarkerView.java
-index 8c796236f9f4b58717ac3fbab65e33d11ba032f2..d886e13d2cd1390a396716ecf4a379205e6a8aeb 100644
+index 8c79623..d886e13 100644
 --- a/android/src/main/java/com/horcrux/svg/MarkerView.java
 +++ b/android/src/main/java/com/horcrux/svg/MarkerView.java
 @@ -114,6 +114,17 @@ class MarkerView extends GroupView {

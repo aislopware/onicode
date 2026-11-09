@@ -64,7 +64,7 @@ diff --git a/ios/LiveActivityFactory.swift b/ios/LiveActivityFactory.swift
 index 29e4f15..629e547 100644
 --- a/ios/LiveActivityFactory.swift
 +++ b/ios/LiveActivityFactory.swift
-@@ -14,7 +14,16 @@ final class LiveActivityFactory: SharedObject {
+@@ -14,11 +14,23 @@ final class LiveActivityFactory: SharedObject {
      WidgetsStorage.set(layout, forKey: "__expo_widgets_live_activity_\(name)_layout")
    }
  
@@ -81,7 +81,7 @@ index 29e4f15..629e547 100644
      guard ActivityAuthorizationInfo().areActivitiesEnabled else {
        throw LiveActivitiesNotSupportedException()
      }
-@@ -22,3 +31,6 @@ final class LiveActivityFactory: SharedObject {
+ 
 +    // A replacement started beside an ended card would leave both visible.
 +    dismissEnded()
 +
@@ -210,7 +210,7 @@ diff --git a/ios/WidgetsModule.swift b/ios/WidgetsModule.swift
 index 285136b..d36eac4 100644
 --- a/ios/WidgetsModule.swift
 +++ b/ios/WidgetsModule.swift
-@@ -97,4 +97,8 @@ public final class WidgetsModule: Module {
+@@ -97,6 +97,10 @@ public final class WidgetsModule: Module {
        Function("getInstances") { (liveActivity: LiveActivityFactory) in
          try liveActivity.getInstances()
        }
@@ -219,21 +219,25 @@ index 285136b..d36eac4 100644
 +        liveActivity.dismissEnded()
 +      }
      }
+ 
+     Class("LiveActivity", LiveActivity.self) {
 diff --git a/src/ExpoWidgets.ts b/src/ExpoWidgets.ts
 index db15000..6863dc9 100644
 --- a/src/ExpoWidgets.ts
 +++ b/src/ExpoWidgets.ts
-@@ -59,4 +59,5 @@ class LiveActivityFactoryStub {
+@@ -59,6 +59,7 @@ class LiveActivityFactoryStub {
    getInstances(): NativeLiveActivity[] {
      return [];
    }
 +  dismissEnded(): void {}
  }
+ 
+ class CustomNotificationStub {
 diff --git a/src/Widgets.ts b/src/Widgets.ts
 index 814b312..9818907 100644
 --- a/src/Widgets.ts
 +++ b/src/Widgets.ts
-@@ -213,4 +213,9 @@ export class LiveActivityFactory<T extends object = object> {
+@@ -213,6 +213,11 @@ export class LiveActivityFactory<T extends object = object> {
        .getInstances()
        .map((instance) => new LiveActivity<T>(instance));
    }
@@ -243,6 +247,8 @@ index 814b312..9818907 100644
 +    this.nativeLiveActivityFactory.dismissEnded();
 +  }
  }
+ 
+ /**
 diff --git a/src/Widgets.types.ts b/src/Widgets.types.ts
 index 690d069..c60dd79 100644
 --- a/src/Widgets.types.ts
@@ -258,9 +264,11 @@ index 690d069..c60dd79 100644
    /**
     * Whether the activity is displayed in a context with reduced luminance.
     * @platform iOS 16+
-@@ -337,4 +341,5 @@ export declare class NativeLiveActivityFactory extends SharedObject {
+@@ -337,6 +341,7 @@ export declare class NativeLiveActivityFactory extends SharedObject {
    constructor(name: string, layout: string);
    start(props?: string, url?: string, staleDate?: number): NativeLiveActivity;
    getInstances(): NativeLiveActivity[];
 +  dismissEnded(): void;
  }
+ 
+ export declare class NativeLiveActivity extends SharedObject<LiveActivityEvents> {
