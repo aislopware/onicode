@@ -1,11 +1,8 @@
-import { createClerkBridge } from "@clerk/electron";
 import * as NodeURL from "node:url";
-import { storage } from "@clerk/electron/storage";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 
 import { codexAuthDeliveryUrl, readCodexAuthHandoff } from "@onicode/shared/codexAuthHandoff";
@@ -15,45 +12,15 @@ import { providerAuthReturnUrl } from "@onicode/shared/providerAuthReturnUrl";
 import { promptLinkAppPath } from "@onicode/shared/promptLinks";
 import { readPairingAppLink } from "@onicode/shared/remote";
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { clerkFrontendApiHostnameFromPublishableKey } from "@onicode/shared/relayAuth";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopUserData from "./DesktopUserData.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
-import { openClerkTokenStorage } from "./ClerkTokenStore.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
 
-declare const __ONICODE_BUILD_CLERK_PUBLISHABLE_KEY__: string | undefined;
-
-export class DesktopClerkBridgeInitializationError extends Schema.TaggedError<DesktopClerkBridgeInitializationError>()(
-  "DesktopClerkBridgeInitializationError",
-  {
-    stateDir: Schema.String,
-    isDevelopment: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to initialize the desktop Clerk bridge for state directory "${this.stateDir}" (development: ${this.isDevelopment}).`;
-  }
-}
-
-export class DesktopClerkBridgeCleanupError extends Schema.TaggedError<DesktopClerkBridgeCleanupError>()(
-  "DesktopClerkBridgeCleanupError",
-  {
-    stateDir: Schema.String,
-    isDevelopment: Schema.Boolean,
-    cause: Schema.Defect(),
-  },
-) {
-  override get message(): string {
-    return `Failed to clean up the desktop Clerk bridge for state directory "${this.stateDir}" (development: ${this.isDevelopment}).`;
-  }
-}
-
-export class DesktopClerk extends Context.Service<
-  DesktopClerk,
+export class DesktopDeepLinks extends Context.Service<
+  DesktopDeepLinks,
   {
     readonly configure: Effect.Effect<
       void,
@@ -64,42 +31,7 @@ export class DesktopClerk extends Context.Service<
       | Scope.Scope
     >;
   }
->()("@onicode/desktop/app/DesktopClerk") {}
-
-function resolveDesktopClerkFrontendApiHostname(
-  publishableKey: string | undefined,
-): string | undefined {
-  const normalizedKey = publishableKey?.trim();
-  if (!normalizedKey) return undefined;
-
-  try {
-    return clerkFrontendApiHostnameFromPublishableKey(normalizedKey);
-  } catch {
-    return undefined;
-  }
-}
-
-export const desktopClerkFrontendApiHostname = resolveDesktopClerkFrontendApiHostname(
-  typeof __ONICODE_BUILD_CLERK_PUBLISHABLE_KEY__ === "undefined"
-    ? undefined
-    : __ONICODE_BUILD_CLERK_PUBLISHABLE_KEY__,
-);
-
-function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean, userDataPath: string) {
-  return createClerkBridge({
-    storage: openClerkTokenStorage(
-      stateDir,
-      (directory) => storage({ path: directory }),
-      userDataPath,
-    ),
-    manageSingleInstanceLock: false,
-    passkeys: true,
-    renderer: {
-      scheme: ElectronProtocol.getDesktopScheme(isDevelopment),
-      host: ElectronProtocol.DESKTOP_HOST,
-    },
-  });
-}
+>()("@onicode/desktop/app/DesktopDeepLinks") {}
 
 /** @public */
 export const make = Effect.gen(function* () {
@@ -107,11 +39,10 @@ export const make = Effect.gen(function* () {
   const electronApp = yield* ElectronApp.ElectronApp;
   const shell = yield* ElectronShell.ElectronShell;
 
-  // Must not yield: the bridge registers a scheme Electron rejects once ready.
   const userDataPath = yield* DesktopUserData.resolveUserDataPath(environment);
   yield* electronApp.setPath("userData", userDataPath);
 
-  // Clerk skips the profile lock on macOS. Interrupt before runtime construction because quit is asynchronous.
+  // Interrupt before runtime construction because quit is asynchronous.
   if (!(yield* electronApp.requestSingleInstanceLock)) {
     yield* electronApp.quit;
     return yield* Effect.interrupt;
@@ -134,30 +65,7 @@ export const make = Effect.gen(function* () {
     if (handleOpenUrl(url)) event.preventDefault();
   });
 
-  yield* Effect.acquireRelease(
-    Effect.try({
-      try: () =>
-        createDesktopClerkBridge(environment.stateDir, environment.isDevelopment, userDataPath),
-      catch: (cause) =>
-        new DesktopClerkBridgeInitializationError({
-          stateDir: environment.stateDir,
-          isDevelopment: environment.isDevelopment,
-          cause,
-        }),
-    }),
-    (bridge) =>
-      Effect.try({
-        try: () => bridge.cleanup(),
-        catch: (cause) =>
-          new DesktopClerkBridgeCleanupError({
-            stateDir: environment.stateDir,
-            isDevelopment: environment.isDevelopment,
-            cause,
-          }),
-      }).pipe(Effect.orDie),
-  );
-
-  return DesktopClerk.of({
+  return DesktopDeepLinks.of({
     configure: Effect.gen(function* () {
       const electronApp = yield* ElectronApp.ElectronApp;
       const electronWindow = yield* ElectronWindow.ElectronWindow;
@@ -182,7 +90,7 @@ export const make = Effect.gen(function* () {
               catch: () =>
                 new CodexAuthCallbackError({
                   detail:
-                    "Could not receive hosted web ChatGPT sign-in. Retry or use the redirect URL in the web app.",
+                    "Could not receive web ChatGPT sign-in. Retry or use the redirect URL in the web app.",
                 }),
             });
           }).pipe(
@@ -249,8 +157,8 @@ export const make = Effect.gen(function* () {
         );
       };
       for (const argv of pendingSecondInstances.splice(0)) handleSecondInstance(argv);
-    }).pipe(Effect.withSpan("desktop.clerk.configure")),
+    }).pipe(Effect.withSpan("desktop.deepLinks.configure")),
   });
 });
 
-export const layer = Layer.effect(DesktopClerk, make);
+export const layer = Layer.effect(DesktopDeepLinks, make);

@@ -4,13 +4,13 @@ import type {
   ThreadPullRequestLink,
 } from "@onicode/contracts";
 import { threadContextRecord } from "@onicode/shared/composerContextReferences";
-import { hostedThreadLink } from "@onicode/shared/threadLinks";
+import { formatThreadLink } from "@onicode/shared/threadLinks";
 
 import { resolveThreadCurrentPullRequestLink } from "./threadPullRequests.ts";
 
 export interface ThreadReferenceCopyTarget {
   readonly kind: "pull-request" | "thread";
-  /** The plain text: a PR URL, or a link that opens the thread from anywhere. */
+  /** The plain text: a PR URL, or a Markdown thread link Onicode opens. */
   readonly value: string;
   /** What a toast or palette row shows for the copy. */
   readonly description: string;
@@ -22,18 +22,17 @@ export interface ThreadReferenceCopyTarget {
 }
 
 /**
- * A link that opens the thread from anywhere, through `hostedAppUrl`, this build's hosted app. It
- * pastes back as a chip into any composer whose agent reads that thread's machine.
+ * A Markdown thread link that Onicode opens wherever the thread's machine is paired. It pastes back
+ * as a chip into any composer whose agent reads that machine.
  */
 export function threadChipCopyTarget(
   threadRef: ScopedThreadRef,
   title: string,
-  hostedAppUrl?: string,
 ): ThreadReferenceCopyTarget {
   const record = threadContextRecord(threadRef, title);
   return {
     kind: "thread",
-    value: hostedThreadLink(threadRef, hostedAppUrl),
+    value: formatThreadLink(threadRef, title),
     description: record.title,
     fragment: { version: 1, source: { environmentId: threadRef.environmentId }, records: [record] },
     clipboardTarget: "thread",
@@ -49,7 +48,6 @@ export function resolveThreadReferenceCopyTarget(input: {
   readonly openPanelPullRequestUrl?: string | null | undefined;
   readonly pullRequests?: ReadonlyArray<ThreadPullRequestLink> | undefined;
   readonly linkedPullRequestUrl?: string | null;
-  readonly hostedAppUrl?: string;
 }): ThreadReferenceCopyTarget | null {
   if (input.openPanelPullRequestUrl === null) return null;
   const pullRequestUrl =
@@ -65,5 +63,5 @@ export function resolveThreadReferenceCopyTarget(input: {
         successTitle: "PR link copied",
         failureTitle: "Failed to copy PR link",
       }
-    : threadChipCopyTarget(input.threadRef, input.title, input.hostedAppUrl);
+    : threadChipCopyTarget(input.threadRef, input.title);
 }

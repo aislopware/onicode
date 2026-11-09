@@ -133,7 +133,7 @@ describe("resolveWorkEntryToolPresentation", () => {
   });
   it.each([
     "mcp__onicode__preview_click",
-    "mcp__t3_code__preview_click",
+    "mcp__oni_code__preview_click",
     "mcp__onicode__preview_click",
     "Onicode-code.preview_click",
     "onicode · preview_click completed",

@@ -1,13 +1,12 @@
 import type { EnvironmentId } from "@onicode/contracts";
 import {
-  formatHostedThreadLink,
+  formatThreadLink,
   guessThreadLinkRef,
   threadLinkCandidates,
   type ThreadLink,
   unknownThreadLinkLabel,
 } from "@onicode/shared/threadLinks";
 
-import { configuredHostedAppUrl } from "../../hostedPairing";
 import { useThreadRefs, useThreadShell } from "../../state/entities";
 import { orchestrationEnvironment } from "../../state/orchestration";
 import { useEnvironmentQuery } from "../../state/query";
@@ -60,7 +59,7 @@ export function MarkdownThreadLink(props: {
     <ThreadContextChip
       record={{ ...ref, title }}
       projectId={resolved?.metadata.projectId ?? null}
-      copyMarkdown={formatHostedThreadLink(ref, title, configuredHostedAppUrl())}
+      copyMarkdown={formatThreadLink(ref, title)}
     />
   );
 }

@@ -96,7 +96,7 @@ describe("project snapshot readiness", () => {
     registry.dispose();
   });
 
-  it("allows a hosted client to load projects without a primary environment", () => {
+  it("allows a client without a local environment to load projects without a primary", () => {
     const { catalog, shells, ready, registry } = makeHarness(false);
     registry.set(catalog, catalogState([REMOTE]));
     expect(registry.get(ready)).toBe(false);

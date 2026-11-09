@@ -49,10 +49,6 @@ vi.mock(import("@onicode/client-runtime/state/session"), async (original) => {
     })) as never,
   };
 });
-vi.mock(import("../../cloud/publicConfig"), async (original) => ({
-  ...(await original()),
-  hasCloudPublicConfig: () => false,
-}));
 vi.mock(import("../../onboarding/firstRun"), async (original) => ({
   ...(await original()),
   completeOnboarding: state.completeOnboarding,

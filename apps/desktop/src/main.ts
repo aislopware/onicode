@@ -39,7 +39,7 @@ import * as DesktopAppActivation from "./app/DesktopAppActivation.ts";
 import * as DesktopWebLinks from "./app/DesktopWebLinks.ts";
 import * as DesktopAppIdentity from "./app/DesktopAppIdentity.ts";
 import * as DesktopConnectionCatalogStore from "./app/DesktopConnectionCatalogStore.ts";
-import * as DesktopClerk from "./app/DesktopClerk.ts";
+import * as DesktopDeepLinks from "./app/DesktopDeepLinks.ts";
 import * as DesktopCliCommand from "./app/DesktopCliCommand.ts";
 import * as DesktopApplicationMenu from "./window/DesktopApplicationMenu.ts";
 import * as DesktopAssets from "./app/DesktopAssets.ts";
@@ -226,8 +226,9 @@ const layerDesktopApplication = Layer.mergeAll(
   Layer.provideMerge(layerDesktopLocalEnvironmentAuth),
 );
 
-// Clerk resolves userData before Electron is ready, so it gets the synchronous FileSystem.
-const layerDesktopClerk = DesktopClerk.layer.pipe(
+// Deep links resolve userData and listen for launch links before Electron is ready, so they get
+// the synchronous FileSystem.
+const layerDesktopDeepLinks = DesktopDeepLinks.layer.pipe(
   Layer.provide(DesktopPreReadyFileSystem.layer),
   Layer.provideMerge(ElectronShell.layer),
   Layer.provideMerge(layerDesktopEnvironment),
@@ -242,10 +243,10 @@ const layerDesktopApplicationRuntime = layerDesktopApplication.pipe(
   Layer.provideMerge(layerElectron),
 );
 
-// Pre-ready setup and Clerk must not yield before Clerk registers its scheme.
-const layerDesktopRuntime = layerDesktopClerk.pipe(
-  Layer.flatMap((clerkContext) =>
-    layerDesktopApplicationRuntime.pipe(Layer.provideMerge(Layer.succeedContext(clerkContext))),
+// Pre-ready setup must not yield before userData is set and launch-link listeners register.
+const layerDesktopRuntime = layerDesktopDeepLinks.pipe(
+  Layer.flatMap((deepLinksContext) =>
+    layerDesktopApplicationRuntime.pipe(Layer.provideMerge(Layer.succeedContext(deepLinksContext))),
   ),
   Layer.provideMerge(DesktopPreReadyPlatform.layer),
 );
