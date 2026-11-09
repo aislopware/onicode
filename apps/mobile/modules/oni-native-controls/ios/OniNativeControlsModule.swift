@@ -285,7 +285,7 @@ public final class OniNativeControlsModule: Module {
       appContext?.utilities?.currentViewController() != nil
     else { throw URLError(.cannotLoadFromNetwork) }
     let file = OniNativeFilePresentation(identifier: identifier, sources: presentationSources,
-                                        sourceIdentifiers: sourceIdentifiers) { [weak self] error in
+                                         sourceIdentifiers: sourceIdentifiers) { [weak self] error in
       self?.filePresentation = nil
       if let error { promise.reject(error) } else { promise.resolve(nil) }
     }
