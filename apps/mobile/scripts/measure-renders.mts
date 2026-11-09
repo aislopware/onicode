@@ -85,7 +85,7 @@ const connectInspector = Effect.fn("measure.connectInspector")(function* (metro:
   const targets = yield* http
     .get(`${metro}/json/list`)
     .pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(InspectorTargets)));
-  const target = targets.find((entry) => entry.appId.startsWith("dev.onicode.app"));
+  const target = targets.find((entry) => entry.appId.startsWith("dev.aislopware.onicode"));
   if (!target)
     return yield* new MeasureError({ message: `No Onicode app is attached to Metro at ${metro}.` });
   // Expo closes inspector sockets unless Origin matches Metro's advertised URL; pass that URL as --metro.

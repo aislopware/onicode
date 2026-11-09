@@ -29,7 +29,7 @@ export class DeviceError extends Schema.TaggedError<DeviceError>()("DeviceError"
   message: Schema.String,
 }) {}
 
-export const APP_ID = "dev.onicode.app.dev";
+export const APP_ID = "dev.aislopware.onicode.dev";
 export const SCHEME = "onicode-dev";
 
 export interface ProbeState {

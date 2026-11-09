@@ -135,7 +135,7 @@ export const hashBundle = Effect.fn("hashBundle")(function* (root: string) {
 });
 type FileSystemError = import("effect/PlatformError").PlatformError;
 
-const bundleId = "dev.onicode.app.dev";
+const bundleId = "dev.aislopware.onicode.dev";
 const roots = Effect.gen(function* () {
   const path = yield* Path.Path;
   const repo = yield* path.fromFileUrl(new URL("../", import.meta.url));
@@ -1178,7 +1178,10 @@ const main = Command.make(
     const stamp = DateTime.formatIso(DateTime.makeUnsafe(started)).replaceAll(":", "-");
     const log = path.join(logs, `${stamp}-${platform}.log`);
     const result = yield* ensureClient(operations).pipe(
-      Effect.provideService(BuildLog, environment.ONICODE_NATIVE_CLIENT_VERBOSE === "1" ? null : log),
+      Effect.provideService(
+        BuildLog,
+        environment.ONICODE_NATIVE_CLIENT_VERBOSE === "1" ? null : log,
+      ),
       Effect.tapError(() => reportTelemetry(home, task, "failed", 0)),
     );
     if (result.installed && result.source)

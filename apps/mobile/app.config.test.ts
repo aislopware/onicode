@@ -15,17 +15,19 @@ async function loadConfig(variant: string | undefined) {
   return (await import("./app.config.ts")).default;
 }
 
-it.each(["prod", ""])("rejects APP_VARIANT=%j before selecting production IDs", async (value) => {
-  await expect(loadConfig(value)).rejects.toThrow(
-    "APP_VARIANT must be development, preview, or production.",
-  );
-});
+it.each(["prod", "preview", ""])(
+  "rejects APP_VARIANT=%j before selecting production IDs",
+  async (value) => {
+    await expect(loadConfig(value)).rejects.toThrow(
+      "APP_VARIANT must be development or production.",
+    );
+  },
+);
 
 it.each([
-  [undefined, "dev.onicode.app"],
-  ["development", "dev.onicode.app.dev"],
-  ["preview", "dev.onicode.app.preview"],
-  ["production", "dev.onicode.app"],
+  [undefined, "dev.aislopware.onicode"],
+  ["development", "dev.aislopware.onicode.dev"],
+  ["production", "dev.aislopware.onicode"],
 ])("keeps the iOS and Android identifiers for APP_VARIANT=%j", async (value, identifier) => {
   const config = await loadConfig(value);
   expect(config.ios?.bundleIdentifier).toBe(identifier);

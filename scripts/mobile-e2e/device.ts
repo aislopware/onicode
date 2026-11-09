@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 import type { Snapshot } from "./checks.ts";
 import type { Pose } from "./poses.ts";
 
-export const BUNDLE_ID = "dev.onicode.app.dev";
+export const BUNDLE_ID = "dev.aislopware.onicode.dev";
 
 export interface RunResult {
   readonly code: number;

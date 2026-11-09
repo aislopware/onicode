@@ -2,8 +2,11 @@ import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
 import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
+import serverPackageJson from "../server/package.json";
 
-type AppVariant = "development" | "preview" | "production";
+type AppVariant = "development" | "production";
+
+const BETTER_UPDATE_PROJECT_ID = "59625ece-aea5-49b4-8978-1f045f907d92";
 
 const repoEnv = loadRepoEnv();
 Object.assign(process.env, repoEnv);
@@ -12,9 +15,14 @@ process.env.EXPO_NO_TYPESCRIPT_SETUP = "1";
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
 const isIosPersonalTeamBuild = repoEnv.ONICODE_IOS_PERSONAL_TEAM === "1";
-const runtimeVersionPolicy =
-  process.env.MOBILE_VERSION_POLICY ??
-  (APP_VARIANT === "development" ? "appVersion" : "fingerprint");
+// Skip costly fingerprinting on dev launches; production OTAs require matching native projects.
+const runtimeVersionPolicy = APP_VARIANT === "development" ? "appVersion" : "fingerprint";
+
+// Desktop, server and mobile share one version. Store builds need a build number that only grows,
+// so it follows the version: 0.4.0 is 400, and every store build is a new version.
+const appVersion = serverPackageJson.version;
+const [major = 0, minor = 0, patch = 0] = appVersion.split(/[.-]/u).map(Number);
+const storeBuildNumber = major * 10_000 + minor * 100 + patch;
 
 const personalTeamBundleIdentifier = repoEnv.ONICODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
@@ -43,17 +51,6 @@ const DEVELOPMENT_ASSETS = {
   androidMonochromeIcon: "./assets/android-icon-mark.png",
 } as const;
 
-const PREVIEW_ASSETS = {
-  appIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.nightlyIosIconPng),
-  androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#FF2D55",
-  androidAdaptiveBackgroundImage: "./assets/android-icon-background-nightly.png",
-  androidSplashIcon: "./assets/android-splash-icon-nightly.png",
-  androidMonochromeIcon: "./assets/android-icon-mark.png",
-} as const;
-
 const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
@@ -69,22 +66,15 @@ const VARIANT_CONFIG = {
   development: {
     appName: "Onicode Dev",
     scheme: "onicode-dev",
-    iosBundleIdentifier: "dev.onicode.app.dev",
-    androidPackage: "dev.onicode.app.dev",
+    iosBundleIdentifier: "dev.aislopware.onicode.dev",
+    androidPackage: "dev.aislopware.onicode.dev",
     assets: DEVELOPMENT_ASSETS,
-  },
-  preview: {
-    appName: "Onicode Preview",
-    scheme: "onicode-preview",
-    iosBundleIdentifier: "dev.onicode.app.preview",
-    androidPackage: "dev.onicode.app.preview",
-    assets: PREVIEW_ASSETS,
   },
   production: {
     appName: "Onicode",
     scheme: "onicode",
-    iosBundleIdentifier: "dev.onicode.app",
-    androidPackage: "dev.onicode.app",
+    iosBundleIdentifier: "dev.aislopware.onicode",
+    androidPackage: "dev.aislopware.onicode",
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -92,13 +82,12 @@ const VARIANT_CONFIG = {
 function resolveAppVariant(value: string | undefined): AppVariant {
   switch (value) {
     case "development":
-    case "preview":
     case "production":
       return value;
     case undefined:
       return "production";
     default:
-      throw new Error("APP_VARIANT must be development, preview, or production.");
+      throw new Error("APP_VARIANT must be development or production.");
   }
 }
 
@@ -205,9 +194,8 @@ const config: ExpoConfig = {
   slug: "onicode",
   platforms: ["ios", "android"],
   scheme: variant.scheme,
-  version: repoEnv.ONICODE_MOBILE_VERSION ?? "2.2.0",
+  version: appVersion,
   runtimeVersion: {
-    // Skip costly fingerprinting on dev launches; preview and production OTAs require matching native projects.
     policy: runtimeVersionPolicy,
   },
   orientation: "portrait",
@@ -215,7 +203,7 @@ const config: ExpoConfig = {
   userInterfaceStyle: "automatic",
   updates: {
     enabled: repoEnv.ONICODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    url: `https://updates.jmango360.dev/manifest/${BETTER_UPDATE_PROJECT_ID}`,
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -224,8 +212,9 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: process.env.ONICODE_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
+    buildNumber: String(storeBuildNumber),
     // Avoid Personal Team fallback: it cannot sign App Groups.
-    appleTeamId: "ARK85ZXQ4Z",
+    appleTeamId: "UK58J62H8L",
     entitlements: {
       "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
     },
@@ -260,6 +249,7 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    versionCode: storeBuildNumber,
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
       ...(variant.assets.androidAdaptiveBackgroundImage
@@ -408,11 +398,10 @@ const config: ExpoConfig = {
       process.env.ONICODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
     ),
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
-    eas: {
-      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
+    betterUpdate: {
+      projectId: BETTER_UPDATE_PROJECT_ID,
     },
   },
-  owner: "aislopware",
   experiments: {
     // Metro only runs babel-plugin-react-compiler when this is set; see src/reactCompilerCoverage.test.ts.
     reactCompiler: true,
