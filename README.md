@@ -75,10 +75,14 @@ Docs live in [docs/](./docs).
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
 - [Run Onicode as a background service](./docs/user/background-service.md)
 
+## Fork of t3code
+
+Onicode is a fork of [t3code](https://github.com/pingdotgg/t3code) by T3 Tools Inc. Credit for the foundation goes to the t3code team. Onicode drops T3's hosted services (T3 Connect, the hosted web app, telemetry), reaches other devices over your network or Tailscale, and ships through its own update feeds. Fixes and features from t3code are still reviewed and ported one commit at a time ([how](./docs/operations/upstream-sync.md)).
+
 ## Contributing
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR. Report security issues privately as described in [SECURITY.md](./.github/SECURITY.md).
 
 ## License
 
-[MIT](./LICENSE)
+[MIT](./LICENSE), copyright aislopware and T3 Tools Inc.
