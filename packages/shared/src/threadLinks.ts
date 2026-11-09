@@ -8,7 +8,7 @@ const V2_PREFIX = `${THREAD_LINK_PROTOCOL}://v2/`;
 // Code comes first in the alternation so a link written inside a code span or fence is skipped.
 // A labeled link's destination may be angle-bracketed, as CommonMark allows: [label](<href>).
 const THREAD_LINK_OUTSIDE_CODE = new RegExp(
-  String.raw`(?<fence>(\`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(\`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\(<?(?<href>oni-thread:\/\/v[12]\/[^\s>)]+)>?\)|<(?<autolink>oni-thread:\/\/v[12]\/[^\s<>]+)>`,
+  String.raw`(?<fence>(\`{3,}|~{3,})[\s\S]*?(?:\2|$))|(?<span>(\`+)[^\n]*?\4)|\[(?<label>[^\]\n]*)\]\((?:<(?<angleHref>oni-thread:\/\/v[12]\/[^\s<>]+)>|(?<href>oni-thread:\/\/v[12]\/[^\s>)]+))\)|<(?<autolink>oni-thread:\/\/v[12]\/[^\s<>]+)>`,
   "g",
 );
 
@@ -90,7 +90,9 @@ const linkLabel = (label: string | undefined) =>
 /** Without a label, an autolink: clients show the thread's current title. */
 export function formatThreadLink(ref: ThreadLink, label?: string): string {
   const cleaned = linkLabel(label);
-  return cleaned ? `[${cleaned}](${threadLinkHref(ref)})` : `<${threadLinkHref(ref)}>`;
+  const href = threadLinkHref(ref);
+  const destination = /[()]/.test(href) ? `<${href}>` : href;
+  return cleaned ? `[${cleaned}](${destination})` : `<${href}>`;
 }
 
 export function hasThreadLinks(markdown: string): boolean {
@@ -106,7 +108,7 @@ export function threadLinkRefs(
   // Hermes' matchAll yields matches without `groups`; exec keeps them.
   const pattern = new RegExp(THREAD_LINK_OUTSIDE_CODE);
   for (let match = pattern.exec(markdown); match !== null; match = pattern.exec(markdown)) {
-    const href = match.groups?.href ?? match.groups?.autolink;
+    const href = match.groups?.angleHref ?? match.groups?.href ?? match.groups?.autolink;
     const link = href === undefined ? null : parseThreadLinkHref(href);
     if (link === null) continue;
     for (const ref of threadLinkCandidates(link, messageEnvironmentId)) {
@@ -132,8 +134,10 @@ export function replaceThreadLinks(
 ): string {
   if (!hasThreadLinks(markdown)) return markdown;
   return markdown.replace(THREAD_LINK_OUTSIDE_CODE, (source, ...args) => {
-    const groups = args.at(-1) as Partial<Record<"href" | "autolink" | "label", string>>;
-    const href = groups.href ?? groups.autolink;
+    const groups = args.at(-1) as Partial<
+      Record<"angleHref" | "href" | "autolink" | "label", string>
+    >;
+    const href = groups.angleHref ?? groups.href ?? groups.autolink;
     const link = href === undefined ? null : parseThreadLinkHref(href);
     return (link && replace(link, groups.label)) ?? source;
   });

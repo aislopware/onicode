@@ -217,7 +217,7 @@ it.effect(
       expect(belowCeiling.result).toMatchObject({
         projectId: belowCeiling.projectId,
         modelSelection: belowCeiling.modelSelection,
-        link: `<oni-thread://v2/environment/${belowCeiling.launched[0]?.threadId}>`,
+        link: `[Fix](oni-thread://v2/environment/${belowCeiling.launched[0]?.threadId})`,
       });
       expect(belowCeiling.launched[0]?.runtimeMode).toBe("approval-required");
       expect(belowCeiling.launched[0]?.initialMessage?.senderThreadId).toBeUndefined();

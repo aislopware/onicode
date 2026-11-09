@@ -131,11 +131,15 @@ export interface McpInvocationScope {
   readonly linkedEnvironments?: boolean;
 }
 
-/** Onicode renders `oni-thread://` links as thread chips. */
+/**
+ * Onicode renders `oni-thread://` links as thread chips. A known `title` labels the chip for
+ * clients that cannot load this environment's threads.
+ */
 export const threadLinkFor = (
   scope: Pick<McpInvocationScope, "environmentId">,
   threadId: ThreadId,
-): string => formatThreadLink({ environmentId: scope.environmentId, threadId });
+  title?: string,
+): string => formatThreadLink({ environmentId: scope.environmentId, threadId }, title);
 
 export class McpInvocationContext extends Context.Service<
   McpInvocationContext,
