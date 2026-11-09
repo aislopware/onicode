@@ -57,7 +57,7 @@ export function CompactBrandTitle(
         className="font-oni-medium text-foreground-muted"
         style={{ fontSize: 21 * scale, letterSpacing: -0.5 * scale }}
       >
-        Code
+        Onicode
       </Text>
       {showStage ? (
         <View

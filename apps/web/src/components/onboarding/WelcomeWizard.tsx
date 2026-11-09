@@ -245,7 +245,7 @@ export function WelcomeWizard({
             <div className="flex items-baseline gap-1.5" role="img" aria-label="Onicode">
               <OniWordmark className="h-4 w-auto shrink-0" aria-hidden />
               <span className="text-2xl font-medium tracking-tight text-muted-foreground">
-                Code
+                Onicode
               </span>
             </div>
           }
@@ -1806,7 +1806,8 @@ function CliPathSetup() {
       <p className="text-sm text-muted-foreground">
         {setup.added ? (
           <>
-            Added to {setup.file}. Open a new terminal to use <code className="font-mono">onicode</code>.
+            Added to {setup.file}. Open a new terminal to use{" "}
+            <code className="font-mono">onicode</code>.
           </>
         ) : (
           <>
