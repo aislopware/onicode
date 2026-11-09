@@ -546,6 +546,7 @@ export function ThreadTerminalStatusButton({
             data-testid={`sidebar-terminal-status-${threadRef.threadId}`}
             className={cn(
               "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm outline-none hover:opacity-80 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              // oxlint-disable-next-line shadcn/require-static-classes -- status colors come from data; the class lands on the rendered element
               status?.colorClass,
             )}
             onPointerDown={(event) => event.stopPropagation()}
@@ -618,6 +619,7 @@ function ThreadStatusLabel({
             <span
               role="img"
               aria-label={status.label}
+              // oxlint-disable-next-line shadcn/require-static-classes -- status colors come from data; the class lands on the rendered element
               className={`inline-flex size-3.5 shrink-0 items-center justify-center ${status.colorClass}`}
             />
           }
@@ -640,6 +642,7 @@ function ThreadStatusLabel({
           <span
             role="img"
             aria-label={status.label}
+            // oxlint-disable-next-line shadcn/require-static-classes -- status colors come from data; the class lands on the rendered element
             className={`inline-flex items-center gap-1 text-3xs ${status.colorClass}`}
           />
         }
@@ -729,6 +732,7 @@ export function ThreadRowLeadingStatus({ thread }: { thread: SidebarThreadSummar
             render={
               <span
                 aria-label={prStatus.tooltip}
+                // oxlint-disable-next-line shadcn/require-static-classes -- status colors come from data; the class lands on the rendered element
                 className={`inline-flex items-center justify-center ${prStatus.colorClass}`}
               />
             }
@@ -777,6 +781,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
               <span
                 role="img"
                 aria-label={terminalStatus.label}
+                // oxlint-disable-next-line shadcn/require-static-classes -- status colors come from data; the class lands on the rendered element
                 className={`inline-flex items-center justify-center ${terminalStatus.colorClass}`}
               />
             }

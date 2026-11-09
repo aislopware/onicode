@@ -1,6 +1,7 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Vite config runs before any Effect runtime.
 import * as NodeFSP from "node:fs/promises";
 
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import { playwright } from "vite-plus/test/browser-playwright";
@@ -13,7 +14,6 @@ import pdfjsPkg from "pdfjs-dist/package.json" with { type: "json" };
 
 import { loadRepoEnv } from "../../scripts/lib/public-config";
 import { thirdPartyLicensesPlugin } from "../../scripts/lib/third-party-licenses";
-import { tailwindPlugins } from "./vite/tailwind";
 import { warmBundledDevPlugin } from "./vite/warmBundledDev";
 
 const repoEnv = loadRepoEnv();
@@ -185,7 +185,7 @@ export default defineConfig(() => {
       }),
       tanstackRouter({ autoCodeSplitting: true }),
       react({ compiler: true }),
-      tailwindPlugins(bundledDev),
+      tailwindcss(),
       warmBundledDevPlugin(),
     ],
     optimizeDeps: {

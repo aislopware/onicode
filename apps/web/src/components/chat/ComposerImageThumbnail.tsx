@@ -39,7 +39,6 @@ export const ComposerImageThumbnail = memo(function ComposerImageThumbnail({
       cached === undefined
     ) {
       localUrl = URL.createObjectURL(file);
-      // oxlint-disable-next-line react/set-state-in-effect -- the blob URL is created and revoked by this effect
       setPreview({ file, src: localUrl });
     }
     if (cached === undefined) {

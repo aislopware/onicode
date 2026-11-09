@@ -1477,6 +1477,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                                 onClick={handleAcknowledgeWokeClick}
                                 className={cn(
                                   "inline-flex cursor-pointer items-center gap-1 rounded-sm font-medium outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                                  // oxlint-disable-next-line shadcn/require-static-classes -- status colors come from data; the class lands on the rendered element
                                   topStatus.className,
                                 )}
                               >

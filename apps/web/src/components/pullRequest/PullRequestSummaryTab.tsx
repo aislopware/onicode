@@ -756,7 +756,8 @@ export function PullRequestSummaryTab({
                               className={cn(
                                 "relative rounded-full hover:z-10",
                                 entry.outcome
-                                  ? pullRequestReviewOutcomeRingClassName(
+                                  ? // oxlint-disable-next-line shadcn/require-static-classes -- status colors come from data; the class lands on the rendered element
+                                    pullRequestReviewOutcomeRingClassName(
                                       entry.outcome,
                                       entry.stale,
                                     )

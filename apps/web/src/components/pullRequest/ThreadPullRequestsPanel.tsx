@@ -179,6 +179,7 @@ function LinkRowImpl({
         <PullRequestRowLines
           number={
             <Tooltip>
+              {/* oxlint-disable-next-line shadcn/require-static-classes -- shared with PullRequestListRow's number cell */}
               <TooltipTrigger render={<span className={PULL_REQUEST_ROW_NUMBER_CLASS} />}>
                 #{link.number}
               </TooltipTrigger>

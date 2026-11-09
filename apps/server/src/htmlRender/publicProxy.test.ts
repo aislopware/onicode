@@ -57,7 +57,7 @@ const connectThrough = (proxyPort: number, target: Buffer, version = 5) =>
     socket.on("error", () => {});
     let received = Buffer.alloc(0);
     socket.on("data", (chunk) => {
-      received = Buffer.concat([received, chunk]);
+      received = Buffer.concat([received, Buffer.from(chunk)]);
       if (received.length >= 12) resume(Effect.succeed({ code: received[3]!, socket }));
     });
     socket.on("close", () => resume(Effect.succeed({ code: received[3] ?? -1, socket })));

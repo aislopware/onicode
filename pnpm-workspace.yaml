@@ -38,10 +38,10 @@ catalog:
   "@noble/hashes": 1.8.0
   "@pierre/diffs": 1.6.1
   "@pierre/highlights": 0.2.0
-  "@tailwindcss/node": 4.3.3
-  "@tailwindcss/oxide": 4.3.3
-  "@tailwindcss/vite": 4.3.3
-  "@types/node": 24.12.4
+  "@tailwindcss/node": 4.3.5
+  "@tailwindcss/oxide": 4.3.5
+  "@tailwindcss/vite": 4.3.5
+  "@types/node": 26.6.6
   "@types/plist": 3.0.5
   "@types/react": ~19.3.0
   "@types/react-dom": ~19.3.0
@@ -54,11 +54,11 @@ catalog:
   plist: 3.1.1
   react: 19.3.0
   react-dom: 19.3.0
-  tailwindcss: 4.3.3
+  tailwindcss: 4.3.5
   tldts: 7.4.2
   undici: 8.12.4
-  vite: npm:@voidzero-dev/vite-plus-core@1.4.0
-  vite-plus: 1.4.0
+  vite: npm:@voidzero-dev/vite-plus-core@1.5.1
+  vite-plus: 1.5.1
   ws: 8.22.0
   yaml: ^2.9.0
   # Markdown pipeline: the server counts find matches with the same parser the
@@ -142,6 +142,9 @@ overrides:
   # version, and the workspaces' tailwindcss ^4 ranges drift into two 4.3.x copies of the family.
   "@tailwindcss/node": "catalog:"
   "@tailwindcss/oxide": "catalog:"
+  # Every platform we build on has a native oxide binary; since 4.3.5 the WASM fallback
+  # installs everywhere and ships bundled dependencies without license files.
+  "@tailwindcss/oxide>@tailwindcss/oxide-wasm32-wasi": "-"
   "@tailwindcss/vite": "catalog:"
   "@types/node": "catalog:"
   effect: "catalog:"
@@ -168,6 +171,10 @@ overrides:
   "ws@^8": "catalog:"
   vite: "catalog:"
   vite-plus: "catalog:"
+  # Vite+ 1.5.1 pins oxlint 1.91, whose react/immutability flags callback-local
+  # reassignments (fixed in oxc#28820). Drop these when Vite+ ships 1.92 or later.
+  "vite-plus>oxlint": 1.93.0
+  "vite-plus>@oxlint/plugins": 1.93.0
   yaml: "catalog:"
 
 packageExtensions:
@@ -239,6 +246,8 @@ peerDependencyRules:
 # pnpm 12 links agent skills that dependencies ship into .claude/skills once
 # approved. We curate our own skills, so deny these to keep installs quiet.
 permissions:
+  "@tanstack/react-router":
+    skills: false
   "@tanstack/router-plugin":
     skills: false
   drizzle-kit:
@@ -254,11 +263,43 @@ publicHoistPattern:
 
 minimumReleaseAgeExclude:
   - "@legendapp/list@3.7.2"
-  - "@effect/tsgo-darwin-arm64@0.67.1"
-  - "@effect/tsgo-darwin-x64@0.67.1"
-  - "@effect/tsgo-linux-arm64@0.67.1"
-  - "@effect/tsgo-linux-arm@0.67.1"
-  - "@effect/tsgo-linux-x64@0.67.1"
-  - "@effect/tsgo-win32-arm64@0.67.1"
-  - "@effect/tsgo-win32-x64@0.67.1"
-  - "@effect/tsgo@0.67.1"
+  - "@effect/tsgo-darwin-arm64@0.67.5"
+  - "@effect/tsgo-darwin-x64@0.67.5"
+  - "@effect/tsgo-linux-arm64@0.67.5"
+  - "@effect/tsgo-linux-arm@0.67.5"
+  - "@effect/tsgo-linux-x64@0.67.5"
+  - "@effect/tsgo-win32-arm64@0.67.5"
+  - "@effect/tsgo-win32-x64@0.67.5"
+  - "@effect/tsgo@0.67.5"
+  - "@vitejs/plugin-react@6.3.0"
+  - "@voidzero-dev/vite-plus-core@1.5.1"
+  - "@voidzero-dev/vite-plus-darwin-arm64@1.5.1"
+  - "@voidzero-dev/vite-plus-darwin-x64@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-arm64-gnu@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-arm64-musl@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-x64-gnu@1.5.1"
+  - "@voidzero-dev/vite-plus-linux-x64-musl@1.5.1"
+  - "@voidzero-dev/vite-plus-win32-arm64-msvc@1.5.1"
+  - "@voidzero-dev/vite-plus-win32-x64-msvc@1.5.1"
+  - vite-plus@1.5.1
+  - "@oxlint/binding-android-arm-eabi@1.93.0"
+  - "@oxlint/binding-android-arm64@1.93.0"
+  - "@oxlint/binding-darwin-arm64@1.93.0"
+  - "@oxlint/binding-darwin-x64@1.93.0"
+  - "@oxlint/binding-freebsd-x64@1.93.0"
+  - "@oxlint/binding-linux-arm-gnueabihf@1.93.0"
+  - "@oxlint/binding-linux-arm-musleabihf@1.93.0"
+  - "@oxlint/binding-linux-arm64-gnu@1.93.0"
+  - "@oxlint/binding-linux-arm64-musl@1.93.0"
+  - "@oxlint/binding-linux-ppc64-gnu@1.93.0"
+  - "@oxlint/binding-linux-riscv64-gnu@1.93.0"
+  - "@oxlint/binding-linux-riscv64-musl@1.93.0"
+  - "@oxlint/binding-linux-s390x-gnu@1.93.0"
+  - "@oxlint/binding-linux-x64-gnu@1.93.0"
+  - "@oxlint/binding-linux-x64-musl@1.93.0"
+  - "@oxlint/binding-openharmony-arm64@1.93.0"
+  - "@oxlint/binding-win32-arm64-msvc@1.93.0"
+  - "@oxlint/binding-win32-ia32-msvc@1.93.0"
+  - "@oxlint/binding-win32-x64-msvc@1.93.0"
+  - "@oxlint/plugins@1.93.0"
+  - oxlint@1.93.0

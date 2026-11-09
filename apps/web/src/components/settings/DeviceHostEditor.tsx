@@ -224,54 +224,54 @@ function DeviceHostEditorForm({
             </Button>
           </div>
           {results ? (
-            <CollapsiblePanel
-              render={<ul className="border-t border-border/60 divide-y divide-border/40" />}
-            >
-              {targets.map((target) => {
-                const result = results[target.environmentId];
-                if (!result) return null;
-                return (
-                  <li key={target.environmentId} className="px-3 py-2.5 text-xs">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="truncate font-medium">{target.label}</span>
-                      <span
-                        className={`flex shrink-0 items-center gap-1.5 ${result.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}
-                      >
-                        {result.status === "pending" ? (
-                          <>
-                            <Spinner size="xs" /> Checking…
-                          </>
-                        ) : result.status === "local" ? (
-                          <>
-                            <MonitorIcon className="size-3" /> Already available locally
-                          </>
-                        ) : result.status === "failed" ? (
-                          <>
-                            <XIcon className="size-3" /> Failed
-                          </>
-                        ) : (
-                          <>
-                            <CheckIcon className="size-3" /> Connected
-                          </>
-                        )}
-                      </span>
-                    </div>
-                    {result.status === "connected" ? (
-                      <div className="mt-1.5">
-                        <DeviceHostAvailability platforms={result.platforms} />
+            <CollapsiblePanel>
+              <ul className="border-t border-border/60 divide-y divide-border/40">
+                {targets.map((target) => {
+                  const result = results[target.environmentId];
+                  if (!result) return null;
+                  return (
+                    <li key={target.environmentId} className="px-3 py-2.5 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="truncate font-medium">{target.label}</span>
+                        <span
+                          className={`flex shrink-0 items-center gap-1.5 ${result.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}
+                        >
+                          {result.status === "pending" ? (
+                            <>
+                              <Spinner size="xs" /> Checking…
+                            </>
+                          ) : result.status === "local" ? (
+                            <>
+                              <MonitorIcon className="size-3" /> Already available locally
+                            </>
+                          ) : result.status === "failed" ? (
+                            <>
+                              <XIcon className="size-3" /> Failed
+                            </>
+                          ) : (
+                            <>
+                              <CheckIcon className="size-3" /> Connected
+                            </>
+                          )}
+                        </span>
                       </div>
-                    ) : null}
-                    {result.status === "failed" ? (
-                      <details className="mt-1.5 text-muted-foreground">
-                        <summary className="cursor-pointer">Show error</summary>
-                        <p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words">
-                          {result.error}
-                        </p>
-                      </details>
-                    ) : null}
-                  </li>
-                );
-              })}
+                      {result.status === "connected" ? (
+                        <div className="mt-1.5">
+                          <DeviceHostAvailability platforms={result.platforms} />
+                        </div>
+                      ) : null}
+                      {result.status === "failed" ? (
+                        <details className="mt-1.5 text-muted-foreground">
+                          <summary className="cursor-pointer">Show error</summary>
+                          <p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words">
+                            {result.error}
+                          </p>
+                        </details>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
             </CollapsiblePanel>
           ) : null}
         </Collapsible>

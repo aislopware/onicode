@@ -31,7 +31,7 @@ import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 const version = "1.2.3";
 const archiveName = `oni-${version}-linux-x64.tar.gz`;
 const archiveBytes = new TextEncoder().encode("not really a tarball");
-const archiveHex = (bytes: Uint8Array) =>
+const archiveHex = (bytes: Uint8Array<ArrayBuffer>) =>
   Effect.promise(() => crypto.subtle.digest("SHA-256", bytes)).pipe(
     Effect.map((digest) =>
       Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),

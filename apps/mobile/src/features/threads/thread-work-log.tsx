@@ -53,6 +53,7 @@ import { environmentThreadDetails, threadEnvironment } from "../../state/threads
 import { useAtomCommand } from "../../state/use-atom-command";
 import { toolActivityFaviconUrl } from "@onicode/shared/favicon";
 import { isJavaScriptReplTool } from "@onicode/shared/toolActivity";
+import { highlightedCodeNodes } from "./highlightedCodeNodes";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -810,23 +811,7 @@ function ToolCodeText({
   readonly theme: "light" | "dark";
 }) {
   const lines = useMarkdownCodeHighlight({ code, language, theme, enabled: true });
-  let offset = 0;
-  const highlighted = lines?.flatMap((line, lineIndex) => {
-    const separator = lineIndex > 0 ? "\n" : "";
-    offset += separator.length;
-    return [
-      separator,
-      ...line.map((token) => {
-        const start = offset;
-        offset += token.content.length;
-        return (
-          <Text key={start} style={token.color ? { color: token.color } : undefined}>
-            {token.content}
-          </Text>
-        );
-      }),
-    ];
-  });
+  const highlighted = lines ? highlightedCodeNodes(lines) : undefined;
   return (
     <Text selectable className="font-mono text-2xs leading-normal text-foreground">
       {highlighted ?? code}

@@ -1234,7 +1234,7 @@ export const layerQueryRunner: Layer.Layer<
           };
           const spawnProcess =
             options.spawnClaudeCodeProcess ??
-            ((spawnOptions: ClaudeSpawnOptions) => {
+            ((spawnOptions: ClaudeSpawnOptions): ClaudeSpawnedProcess => {
               if (platform !== "win32") {
                 // Node can report "exit" before it has read the stderr the CLI wrote.
                 let stderrDone = () => {};

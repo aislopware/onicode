@@ -2,6 +2,8 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   // Exported types are part of our contracts even before they have consumers.
   "rules": { "types": "off", "nsTypes": "off" },
+  // Effect schemas are values that serve as types, so the types rule above covers them too.
+  "preprocessor": "./scripts/knip-schemas.ts",
   // These executables are supplied by the OS or installed separately from npm.
   "ignoreBinaries": ["eas", "file", "mkfifo", "pkill", "pkg-config", "plutil", "sips"],
   "workspaces": {
@@ -17,7 +19,7 @@
       "vitest": { "entry": [".github/**/*.test.cjs"] },
     },
     "scripts": {
-      // Knip loads its preprocessor through a CLI option; native verification and
+      // Knip loads its preprocessor from this config; native verification and
       // worktree setup (from onicode.json) run directly. electron-builder loads the macOS
       // signer and the Linux afterPack hook by path, mobile-e2e.ts runs agent-device's CLI
       // by path, and mobile-behavior.ts spawns its runner by path.

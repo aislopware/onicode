@@ -146,14 +146,7 @@ export const ChatHeader = memo(function ChatHeader({
       document.fonts.removeEventListener("loadingdone", measure);
       stopObserving();
     };
-  }, [
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- Title, font and rename changes resize the breadcrumb text without resizing the list, so it re-measures.
-    activeProjectName,
-    activeThreadTitle,
-    parentThreadLink,
-    interfaceFont,
-    isRenamingTitle,
-  ]);
+  }, [activeProjectName, activeThreadTitle, parentThreadLink, interfaceFont, isRenamingTitle]);
   const renameCommittedRef = useRef(false);
   const startRename = () => {
     if (
@@ -214,7 +207,6 @@ export const ChatHeader = memo(function ChatHeader({
       clearTimeout(titleMenuTimerRef.current);
       titleMenuTimerRef.current = null;
     },
-    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- A pending title menu belongs to the thread that was clicked, so switching threads drops it.
     [activeThreadEnvironmentId, activeThreadId],
   );
   const openTitleMenuNow = () => {

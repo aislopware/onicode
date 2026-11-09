@@ -2369,66 +2369,81 @@ it("toggles a Mermaid attachment between diagram and source through the lazy pre
 });
 
 it("keeps a workspace PDF open across URL renewals and reloads it when the file changes", async () => {
+  assetUrlState.mockReset();
+  pdfOpens.length = 0;
   const { WorkspaceBrowserPreview } = await import("./FilePreviewPanel");
-  using _native = vi.spyOn(navigator, "pdfViewerEnabled", "get").mockReturnValue(true);
-  const original = URL.createObjectURL(new Blob(["%PDF-1.4"], { type: "application/pdf" }));
-  const edited = URL.createObjectURL(new Blob(["%PDF-1.4 edited"], { type: "application/pdf" }));
-  const preview = (mutation: string) => (
-    <WorkspaceBrowserPreview
-      environmentId={EnvironmentId.make("test")}
-      threadRef={{ environmentId: EnvironmentId.make("test"), threadId: ThreadId.make("test") }}
-      draft={false}
-      workspaceRoot="/repo"
-      absolutePath="/repo/planning.pdf"
-      title="Planning PDF"
-      workspaceMutationId={mutation}
-    />
+  const original = URL.createObjectURL(planningPdf());
+  const edited = URL.createObjectURL(
+    planningPdf(["Quarterly outlook", "Delivery milestones", "Updated budget"]),
   );
+  const preview = (mutation: string) => (
+    <div className="flex h-[600px] w-[320px]">
+      <WorkspaceBrowserPreview
+        environmentId={EnvironmentId.make("test")}
+        threadRef={{ environmentId: EnvironmentId.make("test"), threadId: ThreadId.make("test") }}
+        draft={false}
+        workspaceRoot="/repo"
+        absolutePath="/repo/planning.pdf"
+        title="Planning PDF"
+        workspaceMutationId={mutation}
+      />
+    </div>
+  );
+  const pdfRegion = (screen: Screen) =>
+    screen.container.querySelector('[role="region"][aria-label="Planning PDF"]');
   assetUrlState.mockReturnValue({
     _tag: "Success",
     url: `${original}#initial`,
-    expiresAt: 0,
+    expiresAt: Date.now() + 3_600_000,
     fileRevision: "one",
   });
   try {
+    const loaded = nextPdfLoad();
     await using screen = await render(preview("first"));
-    const opened = screen.container.querySelector("iframe");
-    expect(opened?.src.startsWith(original)).toBe(true);
+    await loaded;
+    const opened = pdfRegion(screen);
+    expect(opened).not.toBeNull();
 
     // An agent command renews the signed URL but leaves the file alone.
     assetUrlState.mockReturnValue({
       _tag: "Success",
       url: `${original}#renewed`,
-      expiresAt: 0,
+      expiresAt: Date.now() + 3_600_000,
       fileRevision: "one",
     });
     await screen.rerender(preview("second"));
     expect(assetUrlState).toHaveBeenLastCalledWith(expect.anything(), expect.anything(), "second");
-    expect(screen.container.querySelector("iframe")).toBe(opened);
+    expect(pdfRegion(screen)).toBe(opened);
 
+    const reloaded = nextPdfLoad();
     assetUrlState.mockReturnValue({
       _tag: "Success",
-      url: edited,
-      expiresAt: 0,
+      url: `${edited}#edited`,
+      expiresAt: Date.now() + 3_600_000,
       fileRevision: "two",
     });
     await screen.rerender(preview("third"));
-    const reloaded = screen.container.querySelector("iframe");
-    expect(reloaded).not.toBe(opened);
-    expect(reloaded?.src.startsWith(edited)).toBe(true);
+    await reloaded;
+    expect(pdfRegion(screen)).not.toBe(opened);
 
     // Servers without revisions hold the preview back until a fresh grant arrives.
     assetUrlState.mockReturnValue({
       _tag: "Success",
       url: `${edited}#stale`,
-      expiresAt: 0,
+      expiresAt: Date.now() + 3_600_000,
       waiting: true,
     });
     await screen.rerender(preview("fourth"));
-    expect(screen.container.querySelector("iframe")).toBeNull();
-    assetUrlState.mockReturnValue({ _tag: "Success", url: original, expiresAt: 0 });
+    expect(pdfRegion(screen)).toBeNull();
+    const restored = nextPdfLoad();
+    assetUrlState.mockReturnValue({
+      _tag: "Success",
+      url: `${original}#restored`,
+      expiresAt: Date.now() + 3_600_000,
+    });
     await screen.rerender(preview("fourth"));
-    expect(screen.container.querySelector("iframe")?.src.startsWith(original)).toBe(true);
+    await restored;
+    expect(pdfRegion(screen)).not.toBeNull();
   } finally {
     URL.revokeObjectURL(original);
     URL.revokeObjectURL(edited);
@@ -2483,7 +2498,6 @@ it("keeps a workspace PDF's page, offset and zoom when a new revision reloads it
   assetUrlState.mockReset();
   pdfOpens.length = 0;
   const { WorkspaceBrowserPreview } = await import("./FilePreviewPanel");
-  using _native = vi.spyOn(navigator, "pdfViewerEnabled", "get").mockReturnValue(false);
   const original = URL.createObjectURL(planningPdf());
   // A taller first page moves page 2, so only a page-relative restore lands on the same spot.
   const updated = URL.createObjectURL(

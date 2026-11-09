@@ -135,7 +135,7 @@ const targetLocator = (
         detail: { staleRef: true },
       });
     }
-    return page.locator(`aria-ref=${nativeRef}`);
+    return page.getByRef(nativeRef);
   }
   // Playwright's strict locators reject ambiguous controls rather than acting on row one.
   return page.locator(selector);
@@ -588,7 +588,8 @@ const capture = async (
   const unread = readers.flatMap((reader, i) => (after[i] ? [] : reader.frames));
   const filled = /^\s*- iframe (?:\[active\] )?\[ref=(\S+?)\].*:$/gm;
   for (const [, ref] of unread.length ? tree.matchAll(filled) : []) {
-    const iframe = await input.page.locator(`aria-ref=${ref}`).elementHandle({ timeout: 2_000 });
+    if (ref === undefined) continue;
+    const iframe = await input.page.getByRef(ref).elementHandle({ timeout: 2_000 });
     if (!iframe) throw pageChanged();
     const frame = await iframe.contentFrame();
     void iframe.dispose().catch(constVoid);

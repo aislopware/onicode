@@ -620,7 +620,8 @@ function ReviewVerdictEvent({
                       "font-medium lowercase",
                       stale
                         ? "text-muted-foreground opacity-70"
-                        : pullRequestReviewOutcomeToneClassName(outcome),
+                        : // oxlint-disable-next-line shadcn/require-static-classes -- status colors come from data; the class lands on the rendered element
+                          pullRequestReviewOutcomeToneClassName(outcome),
                     )}
                   />
                 }
