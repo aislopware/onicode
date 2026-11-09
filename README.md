@@ -1,109 +1,60 @@
 # Onicode
 
-Onicode is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/onicode-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=dev.onicode.app)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://github.com/aislopware/onicode).
+Onicode is a minimal GUI for coding agents. A server on your machine drives the agent CLIs you already use, and desktop, mobile and web clients connect to it, on the same machine or from anywhere on your network.
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, Onicode can control them.
 
-## "Wait, what are you selling me?"
+Onicode is open source and maintained by [aislopware](https://github.com/aislopware). It began as a fork of [t3code](https://github.com/pingdotgg/t3code).
 
-Nothing. We built Onicode because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+## Before you start
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+Install and authenticate at least one provider on the machine that runs the Onicode server:
 
-## Installation
+- Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
+- Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
+- Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
+- Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
+- OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
+- Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
+- fx: install [fx](https://fx.sh) and run `fx login` ([setup guide](./docs/user/providers-fx.md))
 
-> [!WARNING]
-> Onicode currently supports Codex, Claude, Cursor, Grok Build, OpenCode, Antigravity, and fx. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
-> - fx: install [fx](https://fx.sh) and run `fx login` on the machine running the Onicode server ([setup guide](./docs/user/providers-fx.md))
+## Install
 
 ### Command line
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.sh | sh
+npm install -g onicode
 ```
 
-On Windows, in PowerShell:
+Then run `onicode` to start the server and open the web app it serves. `onicode service install` keeps it running in the background, and `onicode --help` has the full reference.
 
-```powershell
-irm https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.ps1 | iex
-```
+### Desktop and mobile
 
-Then run `onicode` to start the server and open the local web app. `onicode service install` keeps it running in the background, `onicode update` moves to a newer release, and `onicode --help` has the full reference.
+The desktop app bundles the server. Desktop and mobile releases are published through Onicode's own update feeds, and installed apps update themselves from there. See [Install and first run](./docs/user/install.md) and [Remote access](./docs/user/remote-access.md) to connect a phone or another machine.
 
-To try it once without installing, run `npx onicode@latest`. It offers to install the `onicode` command for you.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/aislopware/onicode/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
+### From source
 
 ```bash
-winget install Onicode.Onicode
+git clone https://github.com/aislopware/onicode.git
+cd onicode
+vp i
+vp run dev
 ```
 
-#### Windows (`scoop`)
+Onicode uses [Vite+](https://viteplus.dev/guide/), so install the global `vp` command first:
 
 ```bash
-scoop install extras/onicode
+# macOS / Linux
+curl -fsSL https://vite.plus | bash
+# Windows (PowerShell)
+irm https://vite.plus/ps1 | iex
 ```
 
-#### macOS (Homebrew)
-
-```bash
-brew install --cask onicode
-```
-
-#### Debian, Ubuntu (`.deb`)
-
-Download the `.deb` from [GitHub Releases](https://github.com/aislopware/onicode/releases), then:
-
-```bash
-sudo apt install ./Onicode-*.deb
-```
-
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S onicode-bin
-```
-
-Nightly:
-
-```bash
-yay -S onicode-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-#### Nix (nixpkgs)
-
-```bash
-nix profile add github:NixOS/nixpkgs/nixos-unstable#onicode
-```
-
-The package is maintained in [nixpkgs](https://github.com/NixOS/nixpkgs/tree/nixos-unstable/pkgs/by-name/onicode/onicode)
-and includes the desktop app (`onicode-desktop`) and the `onicode` command.
-See [Nix installation](./docs/user/install.md#nix-nixpkgs) for NixOS configuration and updates.
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
+`vp run dev` starts the server and web app with state in the checkout's own `.onicode` directory. [Development](./docs/operations/development.md) covers ports, test data and the desktop and mobile apps. [docs/internals/overview.md](./docs/internals/overview.md) explains the architecture.
 
 ## Documentation
 
-Full docs live in [docs/](./docs). There's no docs site yet.
+Docs live in [docs/](./docs).
 
 - [FAQ](./docs/user/faq.md)
 - [Install and first run](./docs/user/install.md)
@@ -118,36 +69,10 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
 - [Run Onicode as a background service](./docs/user/background-service.md)
 
-Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
+## Contributing
 
-## If you REALLY want to contribute still.... read this first
+Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR. Report security issues privately as described in [SECURITY.md](./.github/SECURITY.md).
 
-### Install `vp`
+## License
 
-Onicode uses Vite+ so you'll need to install the global `vp` command-line tool.
-
-#### macOS / Linux
-
-```bash
-curl -fsSL https://vite.plus | bash
-```
-
-#### Windows
-
-```bash
-irm https://vite.plus/ps1 | iex
-```
-
-Checkout their getting started guide for more information: https://viteplus.dev/guide/
-
-### Install dependencies
-
-```bash
-vp i
-```
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
-
-Have a feature request? Start an [Ideas discussion](https://github.com/aislopware/onicode/discussions/categories/ideas).
-
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+[MIT](./LICENSE)
