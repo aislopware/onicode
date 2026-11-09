@@ -1,9 +1,8 @@
 # Brand icons
 
-The three Icon Composer projects are the source of truth for full application icons:
+The two Icon Composer projects are the source of truth for full application icons:
 
 - `dev/app-icon.icon`
-- `nightly/app-icon.icon`
 - `prod/app-icon.icon`
 
 Each project uses `text.svg` for the Onicode mark and `background.svg` when the background is a vector layer. Additional layers use semantic names that describe their role and placement.
@@ -23,10 +22,9 @@ After changing an Icon Composer project, open it in Icon Composer and export the
 - Size: `1024pt`
 - Scale: `1×`
 
-Save the three exports to:
+Save the two exports to:
 
 - `dev/app-icon.icon` -> `dev/blueprint-macos-1024.png`
-- `nightly/app-icon.icon` -> `nightly/nightly-macos-1024.png`
 - `prod/app-icon.icon` -> `prod/black-macos-1024.png`
 
 The result must be a 1024×1024 PNG with the classic macOS safe area: the opaque icon body is 824×824, inset 100 pixels on every side, with only the native Icon Composer shadow extending into the surrounding transparent canvas.
@@ -34,12 +32,11 @@ The result must be a 1024×1024 PNG with the classic macOS safe area: the opaque
 To have Codex perform the native exports, paste this prompt into a task opened at the repository root:
 
 ```text
-Use [@Computer](plugin://computer-use@openai-bundled) and the Icon Composer app to export the three macOS app icons in this repository.
+Use [@Computer](plugin://computer-use@openai-bundled) and the Icon Composer app to export the two macOS app icons in this repository.
 
 For each project below, use Platform: macOS pre-Tahoe, Appearance: Default, Size: 1024pt, and Scale: 1×, then save the PNG to the exact destination:
 
 - assets/dev/app-icon.icon -> assets/dev/blueprint-macos-1024.png
-- assets/nightly/app-icon.icon -> assets/nightly/nightly-macos-1024.png
 - assets/prod/app-icon.icon -> assets/prod/black-macos-1024.png
 
 Do not resize, composite, or otherwise post-process the exported PNGs.
@@ -58,8 +55,8 @@ is instead rendered from the same Icon Composer SVG sources by `vp run icons:exp
 
 - `apps/mobile/assets/android-icon-foreground.png`: the shared transparent wordmark, sized to stay
   inside the safe zone
-- `apps/mobile/assets/android-icon-background-dev.png` and `-nightly.png`: full-bleed variant
-  artwork (blueprint grid and annotations; night sky and clouds). Production uses a solid color.
+- `apps/mobile/assets/android-icon-background-dev.png`: the development client's full-bleed
+  blueprint grid and annotations. Production uses a solid color.
 - `apps/mobile/assets/android-splash-icon-*.png`: the two layers composed into one 288dp image, so
   the splash mask reproduces the launcher icon's framing.
 

@@ -38,8 +38,8 @@ import {
 const BOOT_SERVICE_NAME = "onicode";
 export const BOOT_SERVICE_UNIT_FILE = `${BOOT_SERVICE_NAME}.service`;
 // `.service` suffix keeps the label distinct from the desktop app's bundle id
-// (dev.onicode.app), so launchd and TCC records never collide.
-export const BOOT_SERVICE_LAUNCHD_LABEL = "dev.onicode.app.service";
+// (dev.aislopware.onicode), so launchd and TCC records never collide.
+export const BOOT_SERVICE_LAUNCHD_LABEL = "dev.aislopware.onicode.service";
 export const BOOT_SERVICE_PLIST_FILE = `${BOOT_SERVICE_LAUNCHD_LABEL}.plist`;
 const BOOT_SERVICE_UNIT_ENV = "ONICODE_BOOT_SERVICE_UNIT";
 export const BOOT_SERVICE_LOG_FILE = "boot-service.log";

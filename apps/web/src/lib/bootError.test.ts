@@ -21,7 +21,9 @@ const notOnPath = (launcherPath: string | null): DesktopCliCommandState => ({
 describe("resolveTriageCommand", () => {
   it("prefers onicode on PATH, then the desktop launcher", async () => {
     const onPath = { ...notOnPath("/home/me/.onicode/bin/onicode"), onPath: true };
-    await expect(resolveTriageCommand(desktopWith(async () => onPath))).resolves.toBe("onicode triage");
+    await expect(resolveTriageCommand(desktopWith(async () => onPath))).resolves.toBe(
+      "onicode triage",
+    );
     await expect(
       resolveTriageCommand(desktopWith(async () => notOnPath("/home/me/.onicode/bin/onicode"))),
     ).resolves.toBe("/home/me/.onicode/bin/onicode triage");
@@ -29,10 +31,14 @@ describe("resolveTriageCommand", () => {
 
   it("quotes launcher paths for the shell that runs them", async () => {
     await expect(
-      resolveTriageCommand(desktopWith(async () => notOnPath("/Users/O'Neil/.onicode/bin/onicode"))),
+      resolveTriageCommand(
+        desktopWith(async () => notOnPath("/Users/O'Neil/.onicode/bin/onicode")),
+      ),
     ).resolves.toBe(`'/Users/O'"'"'Neil/.onicode/bin/onicode' triage`);
     await expect(
-      resolveTriageCommand(desktopWith(async () => notOnPath("C:\\Users\\Me\\.onicode\\bin\\onicode.cmd"))),
+      resolveTriageCommand(
+        desktopWith(async () => notOnPath("C:\\Users\\Me\\.onicode\\bin\\onicode.cmd")),
+      ),
     ).resolves.toBe("C:\\Users\\Me\\.onicode\\bin\\onicode.cmd triage");
     await expect(
       resolveTriageCommand(
@@ -59,8 +65,8 @@ describe("resolveTriageCommand", () => {
 });
 
 const environment: BootErrorEnvironment = {
-  version: "0.1.3-nightly.20261026.3707",
-  channel: "nightly",
+  version: "0.1.3",
+  channel: "stable",
   surface: "web",
   platform: "MacIntel",
   userAgent: "Test",
@@ -83,7 +89,7 @@ describe("buildErrorReport", () => {
     expect(report).not.toContain("tail1234");
     expect(report).toContain("module: /assets/a.js\n    at /src/main.tsx:10:5");
     expect(report).toContain("Caused by: Error: /ws closed, main-a.js");
-    expect(report).toContain("Version: 0.1.3-nightly.20261026.3707");
+    expect(report).toContain("Version: 0.1.3");
   });
 
   it("keeps the header when a Firefox stack frame starts with the error name", () => {

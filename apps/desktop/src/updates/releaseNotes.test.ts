@@ -20,15 +20,13 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         "- @human made their first contribution in #8435",
         "**Full Changelog**: https://github.com/aislopware/onicode/compare/old...new",
       ].join("\n"),
-      "0.0.36-nightly.20260828.1213",
-      "nightly",
+      "0.0.36",
     );
 
     expect(result).toEqual({
       releaseNotes: [
         {
-          version: "0.0.36-nightly.20260828.1213",
-          releasedAt: "2026-08-28",
+          version: "0.0.36",
           items: [
             "fix(opencode): handle child approvals, stops, and model catalogs by @human in #8480",
             "fix(web): keep long task drawers usable on small screens by @human in #8313",
@@ -52,7 +50,6 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         "<h2>New Contributors</h2><ul><li>@human made their first contribution</li></ul>" +
         "<h2>Full Changelog</h2>",
       "1.2.3",
-      "latest",
     );
 
     expect(result).toEqual({
@@ -76,7 +73,6 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         "</details>",
       ].join("\n"),
       "1.2.4",
-      "latest",
       "2026-10-29T10:00:00.000Z",
     );
 
@@ -99,7 +95,6 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     const { releaseNotes } = normalizeDesktopUpdateReleaseNotes(
       summary + "\n<details><summary>Full changelog</summary>raw list</details>",
       "1.2.4",
-      "latest",
     );
     expect(releaseNotes).toEqual([
       {
@@ -123,7 +118,6 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         },
       ],
       "1.2.4",
-      "latest",
     );
 
     expect(result.releaseNotes).toEqual([
@@ -136,7 +130,6 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     const result = normalizeDesktopUpdateReleaseNotes(
       "- Older fix\n- Newer fix\n<details><summary>Logs</summary>\n- hidden\n</details>",
       "1.2.3",
-      "latest",
     );
 
     expect(result.releaseNotes).toEqual([
@@ -144,56 +137,20 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     ]);
   });
 
-  it("dates the offered release from the feed and older nightlies by their build day", () => {
+  it("dates only the offered release, from the feed", () => {
     const result = normalizeDesktopUpdateReleaseNotes(
       [
-        { version: "0.0.41-nightly.20260914.1707", note: "- Nightly change 2" },
-        { version: "0.0.41-nightly.20260913.1700", note: "- Nightly change 1" },
+        { version: "0.0.42", note: "- Change 2" },
+        { version: "0.0.41", note: "- Change 1" },
       ],
-      "0.0.41-nightly.20260914.1707",
-      "nightly",
+      "0.0.42",
       "2026-09-14T18:30:00.000Z",
     );
 
     expect(result.releaseNotes.map(({ releasedAt }) => releasedAt)).toEqual([
       "2026-09-14T18:30:00.000Z",
-      "2026-09-13",
+      undefined,
     ]);
-  });
-
-  it("drops releases from other trains before grouping on nightly", () => {
-    const releaseNotes = [
-      { version: "0.0.41-preview.20260914.1683", note: "- Maintainer test build" },
-      { version: "0.0.41-preview.20260913.1669", note: "- Maintainer test build" },
-      { version: "0.0.41-nightly.20260914.1707", note: "- Nightly change 2" },
-      { version: "0.0.41-nightly.20260914.1700", note: "- Nightly change 1" },
-    ];
-
-    const result = normalizeDesktopUpdateReleaseNotes(
-      releaseNotes,
-      "0.0.41-nightly.20260914.1707",
-      "nightly",
-    );
-
-    expect(result.releaseNotes.map(({ version }) => version)).toEqual([
-      "0.0.41-nightly.20260914.1707",
-      "0.0.41-nightly.20260914.1700",
-    ]);
-    expect(result.omittedReleaseCount).toBe(0);
-  });
-
-  // regression: #11753 prerelease entries leaked into a channel's update changelog
-  it("keeps only stable releases on the latest channel", () => {
-    const result = normalizeDesktopUpdateReleaseNotes(
-      [
-        { version: "0.0.42", note: "- Stable change" },
-        { version: "0.0.42-nightly.20260915.1710", note: "- Nightly change" },
-      ],
-      "0.0.42",
-      "latest",
-    );
-
-    expect(result.releaseNotes.map(({ version }) => version)).toEqual(["0.0.42"]);
   });
 
   it("counts valid groups before applying the six-release limit", () => {
@@ -208,7 +165,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
       { version: "1.3.2", note: "- Change 2" },
     ];
 
-    const result = normalizeDesktopUpdateReleaseNotes(releaseNotes, "1.3.9", "latest");
+    const result = normalizeDesktopUpdateReleaseNotes(releaseNotes, "1.3.9");
 
     expect(result.releaseNotes.map(({ version }) => version)).toEqual([
       "1.3.9",
@@ -232,7 +189,6 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         null,
       ],
       "1.2.3",
-      "latest",
     );
 
     expect(result).toEqual({
@@ -242,11 +198,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
   });
 
   it("does not throw on out-of-range numeric entities and keeps the literal", () => {
-    const result = normalizeDesktopUpdateReleaseNotes(
-      "- Broken entity &#9999999999;",
-      "1.0.0",
-      "latest",
-    );
+    const result = normalizeDesktopUpdateReleaseNotes("- Broken entity &#9999999999;", "1.0.0");
     expect(result).toEqual({
       releaseNotes: [{ version: "1.0.0", items: ["Broken entity &#9999999999;"], totalItems: 1 }],
       omittedReleaseCount: 0,
@@ -259,34 +211,32 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
     const result = normalizeDesktopUpdateReleaseNotes(
       [
         {
-          version: "0.1.3-nightly.20261024.3604",
-          note: fullChangelog("0.1.3-nightly.20261023.3592", "0.1.3-nightly.20261024.3604"),
+          version: "0.1.4",
+          note: fullChangelog("0.1.3", "0.1.4"),
         },
         {
-          version: "0.1.3-nightly.20261023.3592",
+          version: "0.1.3",
           note:
             "<h2>What's Changed</h2>\n<ul>\n" +
             '<li>fix(web): A by <a href="https://github.com/a">@a</a> in <a href="https://github.com/aislopware/onicode/pull/1">#1</a></li>\n' +
             '<li>fix(web): B by <a href="https://github.com/b">@b</a> in <a href="https://github.com/aislopware/onicode/pull/2">#2</a></li>\n' +
             "<li>Full Changelog: links open in the browser in #3</li>\n" +
             "</ul>\n" +
-            fullChangelog("0.1.3-nightly.20261023.3579", "0.1.3-nightly.20261023.3592"),
+            fullChangelog("0.1.2", "0.1.3"),
         },
       ],
-      "0.1.3-nightly.20261024.3604",
-      "nightly",
+      "0.1.4",
     );
 
     expect(result).toEqual({
       releaseNotes: [
         {
-          version: "0.1.3-nightly.20261023.3592",
+          version: "0.1.3",
           items: [
             "Full Changelog: links open in the browser in #3",
             "fix(web): B by @b in #2",
             "fix(web): A by @a in #1",
           ],
-          releasedAt: "2026-10-23",
           totalItems: 3,
         },
       ],

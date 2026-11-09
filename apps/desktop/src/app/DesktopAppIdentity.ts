@@ -55,7 +55,9 @@ export const make = Effect.gen(function* () {
       onSome: (value) =>
         decodeAppPackageMetadata(value).pipe(
           Effect.map((parsed) =>
-            Option.fromNullishOr(parsed.onicodeCommitHash).pipe(Option.flatMap(normalizeCommitHash)),
+            Option.fromNullishOr(parsed.onicodeCommitHash).pipe(
+              Option.flatMap(normalizeCommitHash),
+            ),
           ),
           Effect.orElseSucceed(() => Option.none<string>()),
         ),
@@ -93,7 +95,9 @@ export const make = Effect.gen(function* () {
     const commitHash = yield* resolveAboutCommitHash;
     // Electron strips spaces but keeps parentheses in its User-Agent token, breaking Turnstile in preview sessions.
     yield* electronApp.setName(
-      `${environment.branding.baseName} ${environment.branding.stageLabel}`,
+      [environment.branding.baseName, environment.branding.stageLabel]
+        .filter((part) => part !== null)
+        .join(" "),
     );
     yield* electronApp.setAboutPanelOptions({
       applicationName: environment.displayName,

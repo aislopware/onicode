@@ -5,9 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.sh | sh
 #
 # Environment:
-#   ONICODE_CHANNEL           release train to follow: stable, nightly, or preview
-#                            (default: stable; preview is a maintainers' test train)
-#   ONICODE_VERSION           exact version to install (overrides ONICODE_CHANNEL)
+#   ONICODE_VERSION           exact version to install (default: the latest release)
 #   ONICODE_HOME              Onicode home directory (default: ~/.onicode)
 #   ONICODE_INSTALL_BIN_DIR   where the `onicode` symlink goes (default: ~/.local/bin)
 #   ONICODE_RELEASE_BASE_URL  mirror for releases/download (default: GitHub)
@@ -158,44 +156,15 @@ else
   fail "sha256sum or shasum is required"
 fi
 
-channel="${ONICODE_CHANNEL:-stable}"
 version="${ONICODE_VERSION:-}"
 if [ -z "$version" ]; then
-  case "$channel" in
-    stable) tag_pattern='v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)' ;;
-    nightly | preview) tag_pattern="v\([0-9][^\"]*-${channel}\.[0-9]*\.[0-9]*\)" ;;
-    *) fail "ONICODE_CHANNEL must be stable, nightly, or preview" ;;
-  esac
   tmp_index="$(mktemp)"
-  if [ "$channel" = stable ]; then
-    # release.yml marks only plain stable releases latest. This is a github.com
-    # page, so it is not cut off by a page of newer nightlies or the API quota.
-    fetch "https://github.com/${repo}/releases/latest" "$tmp_index" application/json
-    version="$(sed -n "s/.*\"tag_name\": *\"${tag_pattern}\".*/\1/p" "$tmp_index" | head -n 1)"
-  else
-    page=1
-    while [ -z "$version" ] && [ "$page" -le 10 ]; do
-      fetch "https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}" "$tmp_index"
-      version="$(sed -n "s/.*\"tag_name\": *\"${tag_pattern}\".*/\1/p" "$tmp_index" | head -n 1)"
-      grep -q '"tag_name"' "$tmp_index" || break
-      page=$((page + 1))
-    done
-  fi
+  # A github.com page, so it is not subject to the API quota.
+  fetch "https://github.com/${repo}/releases/latest" "$tmp_index" application/json
+  version="$(sed -n 's/.*"tag_name": *"v\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' "$tmp_index" | head -n 1)"
   rm -f "$tmp_index"
-  [ -n "$version" ] || fail "could not find a ${channel} release; set ONICODE_VERSION"
+  [ -n "$version" ] || fail "could not find a release; set ONICODE_VERSION"
 fi
-case "$version" in
-  *-preview.*)
-    printf '%s\n' \
-      "onicode ${version} is a preview build." \
-      "  Preview builds are cut by maintainers from unreleased branches to exercise the release" \
-      "  pipeline. They can be broken, receive no fixes, and are never offered as updates." \
-      "  Set ONICODE_CHANNEL=stable (the default) for a supported build." >&2
-    if [ "$channel" != "preview" ] && [ -z "${ONICODE_VERSION:-}" ]; then
-      fail "refusing a preview build that was not explicitly requested"
-    fi
-    ;;
-esac
 
 stem="oni-${version}-${platform}-${arch}"
 archive="${stem}.tar.gz"

@@ -5,7 +5,6 @@ import { defineConfig, mergeConfig } from "vite-plus";
 
 import baseConfig from "../../vite.config.ts";
 import rootPackageJson from "../../package.json" with { type: "json" };
-import packageJson from "./package.json" with { type: "json" };
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
 
 // NSIS install time tracks file count, not bytes.
@@ -16,11 +15,8 @@ import {
 
 export { shouldBundleCliDependency };
 
-const cliBuildChannel = /^[^-+]+-(?:nightly|preview)\./.test(packageJson.version)
-  ? "nightly"
-  : "latest";
-// Official release workflows set the release channel; local builds and forks use "dev".
-const RELEASE_CHANNELS = ["stable", "nightly", "preview", "dev"];
+// Release builds set the release channel; local builds and forks use "dev".
+const RELEASE_CHANNELS = ["stable", "dev"];
 const releaseChannel = process.env.ONICODE_RELEASE_CHANNEL?.trim() || "dev";
 if (!RELEASE_CHANNELS.includes(releaseChannel)) {
   throw new Error(
@@ -124,7 +120,6 @@ export default mergeConfig(
         js: "#!/usr/bin/env node\n",
       },
       define: {
-        __ONICODE_BUILD_CHANNEL__: JSON.stringify(cliBuildChannel),
         __ONICODE_RELEASE_CHANNEL__: JSON.stringify(releaseChannel),
       },
     },

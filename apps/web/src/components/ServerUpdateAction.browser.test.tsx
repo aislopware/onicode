@@ -14,7 +14,6 @@ const testState = vi.hoisted(() => ({
   toast: vi.fn(),
   clipboard: vi.fn(),
   sessionAtom: null as unknown,
-  serverVersions: new Map<string, string>(),
 }));
 
 vi.mock(import("~/hooks/useCopyToClipboard"), async (original) => ({
@@ -39,13 +38,7 @@ vi.mock(import("~/state/session"), async (original) => {
 });
 vi.mock(import("~/state/entities"), async (original) => ({
   ...(await original()),
-  useServerConfigs: (() =>
-    new Map(
-      [...testState.serverVersions].map(([id, serverVersion]) => [
-        id,
-        { environment: { serverVersion } },
-      ]),
-    )) as never,
+  useServerConfigs: (() => new Map()) as never,
 }));
 vi.mock(import("~/state/use-atom-command"), async (original) => ({
   ...(await original()),
@@ -95,7 +88,6 @@ function setup(): Disposable {
   testState.updateServer.mockReset();
   testState.toast.mockReset();
   testState.clipboard.mockReset();
-  testState.serverVersions.clear();
   sessionAtom = Atom.make<SessionResult>(AsyncResult.success(currentSession));
   testState.sessionAtom = sessionAtom;
   resetConfirmDialogForTests();
@@ -223,18 +215,5 @@ describe("ServerUpdatesAction", () => {
       expect.objectContaining({ type: "success", title: "Office updated" }),
     );
     expect(button(screen, "Update all")!.disabled).toBe(false);
-  });
-
-  it("skips a machine whose update would cross Stable and Nightly", async () => {
-    using _state = setup();
-    testState.serverVersions.set("batch-a", "0.0.30-nightly.20261001.1");
-    testState.updateServer.mockResolvedValue(success());
-    await using screen = await mount();
-    await click(screen, "Update all");
-
-    expect(testState.updateServer).toHaveBeenCalledTimes(1);
-    expect(testState.toast).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "success", title: "Office updated" }),
-    );
   });
 });

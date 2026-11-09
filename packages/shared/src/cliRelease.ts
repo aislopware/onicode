@@ -1,8 +1,3 @@
-import * as Option from "effect/Option";
-import * as Schema from "effect/Schema";
-
-import { compareSemverVersions } from "./semver.ts";
-
 const CLI_RELEASE_REPOSITORY = "aislopware/onicode";
 export const CLI_RELEASES_PAGE_URL = `https://github.com/${CLI_RELEASE_REPOSITORY}/releases`;
 export const CLI_RELEASE_CHECKSUMS_FILE = "SHA256SUMS";
@@ -77,88 +72,32 @@ export function parseChecksums(text: string): ReadonlyMap<string, string> {
   return checksums;
 }
 
-export type CliReleaseChannel = "stable" | "nightly" | "preview";
-export const CLI_RELEASE_CHANNELS: ReadonlyArray<CliReleaseChannel> = [
-  "stable",
-  "nightly",
-  "preview",
-];
-
-export function cliReleaseChannelOf(version: string): CliReleaseChannel {
-  const channel = /^[^-+]+-(nightly|preview)\.\d{8}\.\d+$/.exec(version)?.[1];
-  return channel === "nightly" || channel === "preview" ? channel : "stable";
-}
-
-/** Whether updating between these versions crosses Stable and Nightly. Preview builds cross nothing.
- * Hosts refuse a crossing outside a track switch, which checks the database first. */
-export function crossesReleaseTrack(fromVersion: string, toVersion: string): boolean {
-  const from = cliReleaseChannelOf(fromVersion);
-  const to = cliReleaseChannelOf(toVersion);
-  return from !== to && from !== "preview" && to !== "preview";
-}
-
-/** The desktop update track a build belongs to. Preview builds have no feed and read as Stable. */
-export function desktopUpdateChannelOf(version: string): "latest" | "nightly" {
-  return cliReleaseChannelOf(version) === "nightly" ? "nightly" : "latest";
-}
-
 /**
  * The update feed file a desktop app on this platform reads, which an update mirror publishes at
  * its root beside the release's CLI archives.
  */
-export function updateFeedFileName(
-  channel: "latest" | "nightly",
-  platform: NodeJS.Platform,
-  arch: string,
-): string {
-  if (platform === "darwin") return `${channel}-mac.yml`;
-  if (platform === "linux")
-    return arch === "arm64" ? `${channel}-linux-arm64.yml` : `${channel}-linux.yml`;
-  return `${channel}.yml`;
+export function updateFeedFileName(platform: NodeJS.Platform, arch: string): string {
+  if (platform === "darwin") return "latest-mac.yml";
+  if (platform === "linux") return arch === "arm64" ? "latest-linux-arm64.yml" : "latest-linux.yml";
+  return "latest.yml";
 }
 
-/** Whether a track switch may install `found` after its database check cleared `checked`: any build
- * on the switch's track at least as new, since later releases only add migrations. */
-export function acceptsTrackSwitchRelease(
-  found: string,
-  channel: "latest" | "nightly",
-  checked: string,
-): boolean {
-  return (
-    cliReleaseChannelOf(found) === (channel === "nightly" ? "nightly" : "stable") &&
-    compareSemverVersions(found, checked) >= 0
-  );
-}
-
-/** Page until the channel matches; nightlies can push preview/stable releases past the first page. */
+/** Page until a release matches; prerelease tags can push it past the first page. */
 export function cliReleaseIndexPageUrl(page: number): string {
   return `https://api.github.com/repos/${CLI_RELEASE_REPOSITORY}/releases?per_page=100&page=${page}`;
 }
 
-/** Draft assets are not downloadable. */
+/** Draft assets are not downloadable, and prerelease tags are not releases. */
 export function newestCliReleaseVersion(
   releases: ReadonlyArray<{
     readonly tag_name: string;
     readonly draft?: boolean | undefined;
   }>,
-  channel: CliReleaseChannel,
 ): string | undefined {
   for (const release of releases) {
     if (release.draft) continue;
-    const version = /^v(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/.exec(release.tag_name)?.[1];
-    if (version === undefined) continue;
-    if (cliReleaseChannelOf(version) === channel) return version;
+    const version = /^v(\d+\.\d+\.\d+)$/.exec(release.tag_name)?.[1];
+    if (version !== undefined) return version;
   }
   return undefined;
-}
-
-const NpmReleaseMigrationManifest = Schema.Struct({
-  onicode: Schema.Struct({ databaseMigration: Schema.Int }),
-});
-const decodeNpmReleaseMigrationManifest = Schema.decodeUnknownOption(NpmReleaseMigrationManifest);
-
-/** Highest database migration a release's server knows, from its npm `onicode` manifest. */
-export function npmReleaseDatabaseMigration(manifest: unknown): number | undefined {
-  return Option.getOrUndefined(decodeNpmReleaseMigrationManifest(manifest))?.onicode
-    .databaseMigration;
 }

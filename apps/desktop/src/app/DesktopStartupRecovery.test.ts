@@ -20,11 +20,11 @@ import { createInitialDesktopUpdateState } from "../updates/updateMachine.ts";
 import { listen, resolveStartupRecoveryOffer } from "./DesktopStartupRecovery.ts";
 
 const updateState = (patch: Partial<DesktopUpdateState>): DesktopUpdateState => ({
-  ...createInitialDesktopUpdateState(
-    "0.1.3",
-    { hostArch: "arm64", appArch: "arm64", runningUnderArm64Translation: false },
-    "latest",
-  ),
+  ...createInitialDesktopUpdateState("0.1.3", {
+    hostArch: "arm64",
+    appArch: "arm64",
+    runningUnderArm64Translation: false,
+  }),
   enabled: true,
   ...patch,
 });

@@ -59,7 +59,7 @@ vi.mock("electron", async () => {
   }
   return {
     app: {
-      getPath: () => "/Applications/Onicode (Nightly).app/Contents/MacOS/Onicode",
+      getPath: () => "/Applications/Onicode.app/Contents/MacOS/Onicode",
     },
     nativeImage: { createFromPath: mocks.createFromPath },
     BrowserWindow: class extends MockWindow {},

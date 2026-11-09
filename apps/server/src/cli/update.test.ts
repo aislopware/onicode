@@ -45,7 +45,7 @@ const unrelatedLsof = ProcessRunner.ProcessRunner.of({
 
 afterEach(() => vi.restoreAllMocks());
 
-it.effect("authenticates each release page until the requested channel is found", () =>
+it.effect("authenticates each release page until a release is found", () =>
   Effect.gen(function* () {
     const pages: string[] = [];
     const httpClient = HttpClient.make((request) => {
@@ -56,10 +56,10 @@ it.effect("authenticates each release page until the requested channel is found"
       assert.equal(request.headers.authorization, "Bearer gh-token");
       const page = url.searchParams.get("page") ?? "";
       pages.push(page);
-      const tag_name = page === "1" ? "v1.2.4-preview.20260101.1" : "v1.2.3";
+      const tag_name = page === "1" ? "v1.2.4-beta.1" : "v1.2.3";
       return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json([{ tag_name }])));
     });
-    const version = yield* resolveNewestVersion("stable").pipe(
+    const version = yield* resolveNewestVersion().pipe(
       Effect.provideService(HostProcess.Environment, { GH_TOKEN: "gh-token" }),
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
@@ -75,13 +75,8 @@ it.effect("reads the newest version from the update feed file a mirror publishes
       organization: "Example Corp",
       feedUrl: "https://updates.example.com/onicode/?token=abc",
     };
-    const resolve = (
-      channel: "stable" | "nightly" | "preview",
-      platform: NodeJS.Platform,
-      arch: string,
-      feed: string,
-    ) =>
-      resolveMirrorVersion(mirror, channel).pipe(
+    const resolve = (platform: NodeJS.Platform, arch: string, feed: string) =>
+      resolveMirrorVersion(mirror).pipe(
         Effect.map((version): string => version),
         Effect.catchTags({ CliUpdateError: (error) => Effect.succeed(`error: ${error.reason}`) }),
         Effect.provideService(HostProcess.Platform, platform),
@@ -95,38 +90,29 @@ it.effect("reads the newest version from the update feed file a mirror publishes
         ),
       );
 
-    assert.equal(
-      yield* resolve("stable", "darwin", "arm64", "version: 1.4.0\nfiles: []\n"),
-      "1.4.0",
-    );
-    assert.equal(
-      yield* resolve("nightly", "linux", "arm64", "version: '1.5.0-nightly.20261101.2'\n"),
-      "1.5.0-nightly.20261101.2",
-    );
+    assert.equal(yield* resolve("darwin", "arm64", "version: 1.4.0\nfiles: []\n"), "1.4.0");
+    assert.equal(yield* resolve("linux", "arm64", "version: '1.5.0'\n"), "1.5.0");
     assert.deepStrictEqual(requested, [
       "https://updates.example.com/onicode/latest-mac.yml?token=abc",
-      "https://updates.example.com/onicode/nightly-linux-arm64.yml?token=abc",
+      "https://updates.example.com/onicode/latest-linux-arm64.yml?token=abc",
     ]);
-    // A feed for the wrong track is not trusted to mean the requested one.
     assert.include(
-      yield* resolve("stable", "win32", "x64", "version: 1.5.0-nightly.20261101.2\n"),
+      yield* resolve("win32", "x64", "version: not-a-version\n"),
       "Could not read latest.yml from Example Corp's update mirror.",
     );
-    assert.include(yield* resolve("preview", "win32", "x64", ""), "has no preview builds");
   }),
 );
 
 it.layer(NodeServices.layer)("onicode update under a managed policy", (it) => {
   const runWithPolicy = (
     updates: ManagedUpdatesPolicy,
-    input: { readonly channel?: "stable" | "nightly"; readonly requestedVersion?: string } = {},
+    input: { readonly requestedVersion?: string } = {},
     httpClient = HttpClient.make(() => Effect.die("unexpected release lookup")),
   ) =>
     runUpdate({
       baseDir: "/unused",
       logsDir: "/unused",
       serverRuntimeStatePath: "/unused",
-      channel: input.channel,
       requestedVersion: input.requestedVersion,
       allowDowngrade: false,
       assumeYes: true,
@@ -154,31 +140,12 @@ it.layer(NodeServices.layer)("onicode update under a managed policy", (it) => {
     }),
   );
 
-  it.effect("refuses nightly releases when the policy disallows them", () =>
-    Effect.gen(function* () {
-      const byChannel = yield* runWithPolicy(
-        { mode: "auto", allowNightly: false },
-        { channel: "nightly" },
-      );
-      const byVersion = yield* runWithPolicy(
-        { mode: "auto", allowNightly: false },
-        { channel: "stable", requestedVersion: "1.2.0-nightly.20261028.1" },
-      );
-      for (const error of [byChannel, byVersion]) {
-        assert.equal(
-          error.message,
-          "Example Corp manages Onicode updates. Only stable releases can be installed.",
-        );
-      }
-    }),
-  );
-
   it.effect("looks for updates on the policy's mirror, never the public releases", () =>
     Effect.gen(function* () {
       const requested: string[] = [];
       const error = yield* runWithPolicy(
         { mode: "auto", feedUrl: "https://updates.example.com/onicode" },
-        { channel: "stable" },
+        {},
         HttpClient.make((request) => {
           requested.push(new URL(request.url).origin);
           return Effect.succeed(
@@ -498,7 +465,6 @@ it.layer(NodeServices.layer)("onicode update with a background service", (it) =>
         baseDir,
         logsDir: baseDir,
         serverRuntimeStatePath: path.join(baseDir, "server-runtime.json"),
-        channel: undefined,
         requestedVersion: version,
         allowDowngrade: false,
         assumeYes: false,

@@ -222,7 +222,7 @@ export const installCommand = Command.make("install").pipe(
   Command.withHandler(() => installCli().pipe(Effect.flatMap(reportInstalled))),
 );
 
-/** Saying no lasts until the next minor release: `0.2` covers `0.2.5` and `0.2.6-nightly.…`. */
+/** Saying no lasts until the next minor release: `0.2` covers `0.2.5` and `0.2.6`. */
 const minorRelease = (version: string) => version.split(".").slice(0, 2).join(".");
 
 const SKIPPED_ARGUMENTS = new Set([

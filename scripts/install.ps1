@@ -4,9 +4,7 @@
 #   irm https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.ps1 | iex
 #
 # Environment:
-#   ONICODE_CHANNEL           release train to follow: stable, nightly, or preview
-#                            (default: stable; preview is a maintainers' test train)
-#   ONICODE_VERSION           exact version to install (overrides ONICODE_CHANNEL)
+#   ONICODE_VERSION           exact version to install (default: the latest release)
 #   ONICODE_HOME              Onicode home directory (default: ~\.onicode)
 #   ONICODE_INSTALL_BIN_DIR   where onicode.exe is linked (default: ~\.local\bin)
 #   ONICODE_RELEASE_BASE_URL  mirror for releases/download (default: GitHub)
@@ -126,36 +124,13 @@ $arch = switch ($rawArch) {
   default { Fail "unsupported architecture $rawArch" }
 }
 
-$channel = if ($env:ONICODE_CHANNEL) { $env:ONICODE_CHANNEL } else { "stable" }
 $version = $env:ONICODE_VERSION
 if (-not $version) {
-  $tagPattern = switch ($channel) {
-    "stable" { '^v\d+\.\d+\.\d+$' }
-    "nightly" { '^v\d+\.\d+\.\d+-nightly\.\d+\.\d+$' }
-    "preview" { '^v\d+\.\d+\.\d+-preview\.\d+\.\d+$' }
-    default { Fail "ONICODE_CHANNEL must be stable, nightly, or preview" }
-  }
-  if ($channel -eq "stable") {
-    # release.yml marks only plain stable releases latest. This is a github.com
-    # page, so it is not cut off by a page of newer nightlies or the API quota.
-    $release = Invoke-RestMethod -Uri "https://github.com/$repo/releases/latest" -Headers @{ "User-Agent" = "oni-install"; "Accept" = "application/json" }
-    $tag = ($release | Where-Object { $_.tag_name -match $tagPattern }).tag_name
-  } else {
-    $tag = $null
-    for ($page = 1; -not $tag -and $page -le 10; $page++) {
-      $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases?per_page=100&page=$page" -Headers @{ "User-Agent" = "oni-install" }
-      $tag = ($releases | Where-Object { -not $_.draft -and $_.tag_name -match $tagPattern } | Select-Object -First 1).tag_name
-      if (-not $releases) { break }
-    }
-  }
-  if (-not $tag) { Fail "could not find a $channel release; set ONICODE_VERSION" }
+  # A github.com page, so it is not subject to the API quota.
+  $release = Invoke-RestMethod -Uri "https://github.com/$repo/releases/latest" -Headers @{ "User-Agent" = "oni-install"; "Accept" = "application/json" }
+  $tag = ($release | Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+$' }).tag_name
+  if (-not $tag) { Fail "could not find a release; set ONICODE_VERSION" }
   $version = $tag.Substring(1)
-}
-if ($version -match '-preview\.') {
-  Write-Warning "onicode $version is a preview build. Preview builds are cut by maintainers from unreleased branches to exercise the release pipeline. They can be broken, receive no fixes, and are never offered as updates. Set ONICODE_CHANNEL=stable (the default) for a supported build."
-  if ($channel -ne "preview" -and -not $env:ONICODE_VERSION) {
-    Fail "refusing a preview build that was not explicitly requested"
-  }
 }
 
 $stem = "oni-$version-win32-$arch"

@@ -689,19 +689,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --stage-art-celeste-secondary: oklch(0.827395 0.126071 211.26);
     --stage-art-violet-highlight: oklch(0.895381 0.053248 286.447);
     --stage-art-grid-line: oklch(0.966822 0.01757 239.99);
-    --stage-night-base-top: oklch(0.283792 0.117327 297.201);
-    --stage-night-base-mid: oklch(0.227147 0.086086 277.99);
-    --stage-night-base-bottom: oklch(0.200528 0.055699 261.216);
-    --stage-night-top: var(--stage-night-base-top);
-    --stage-night-mid: var(--stage-night-base-mid);
-    --stage-night-bottom: var(--stage-night-base-bottom);
-    --stage-night-highlight: oklch(0.707246 0.157418 252.091);
-    --stage-night-secondary: oklch(0.600473 0.182225 277.296);
-    --stage-night-tertiary: oklch(0.62583 0.210886 305.994);
-    --stage-night-line: oklch(0.938794 0.029114 273.103);
-    --stage-night-glow-highlight: oklch(0.553749 0.176543 271.958);
-    --stage-night-glow-secondary: oklch(0.345571 0.117466 273.568);
-    --stage-night-sparkle: oklch(0.880867 0.057747 269.011);
 
     @variant dark {
       --stage-art-top: oklch(0.581473 0.149124 256.9);
@@ -781,13 +768,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --stage-art-secondary: oklch(0.80968 0.117071 158.817);
     --stage-art-tertiary: oklch(0.784102 0.108047 88.516);
     --stage-art-line: oklch(0.981098 0.027812 158.718);
-    --stage-night-top: oklch(0.45805 0.079616 160.092);
-    --stage-night-mid: oklch(0.368483 0.065631 162.719);
-    --stage-night-bottom: oklch(0.264797 0.044397 168.088);
-    --stage-night-highlight: oklch(0.912563 0.055173 158.974);
-    --stage-night-secondary: oklch(0.665652 0.109731 156.599);
-    --stage-night-tertiary: oklch(0.698651 0.103024 89.828);
-    --stage-night-line: oklch(0.945336 0.041923 157.222);
 
     @variant dark {
       --stage-art-top: oklch(0.58719 0.09869 157.426);
@@ -797,13 +777,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
       --stage-art-secondary: oklch(0.732591 0.120606 155.853);
       --stage-art-tertiary: oklch(0.716282 0.116547 80.563);
       --stage-art-line: oklch(0.961577 0.035285 157.03);
-      --stage-night-top: oklch(0.398632 0.065534 158.601);
-      --stage-night-mid: oklch(0.290561 0.049694 160.456);
-      --stage-night-bottom: oklch(0.210147 0.03173 169.818);
-      --stage-night-highlight: oklch(0.866303 0.057526 156.796);
-      --stage-night-secondary: oklch(0.586553 0.093722 157.365);
-      --stage-night-tertiary: oklch(0.6364 0.101769 82.985);
-      --stage-night-line: oklch(0.913292 0.035718 156.976);
     }
   }
 
@@ -835,13 +808,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --stage-art-secondary: oklch(0.815735 0.11904 53.659);
     --stage-art-tertiary: oklch(0.69361 0.159346 24.787);
     --stage-art-line: oklch(0.970313 0.02052 67.583);
-    --stage-night-top: oklch(0.470236 0.102322 39.355);
-    --stage-night-mid: oklch(0.345367 0.080697 33.217);
-    --stage-night-bottom: oklch(0.227386 0.056077 27.437);
-    --stage-night-highlight: oklch(0.903891 0.059281 56.181);
-    --stage-night-secondary: oklch(0.641705 0.126508 44.376);
-    --stage-night-tertiary: oklch(0.538694 0.129931 25.865);
-    --stage-night-line: oklch(0.926348 0.046029 58.73);
 
     @variant dark {
       --stage-art-top: oklch(0.597533 0.120694 43.455);
@@ -851,13 +817,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
       --stage-art-secondary: oklch(0.705592 0.137369 43.176);
       --stage-art-tertiary: oklch(0.629583 0.158322 24.088);
       --stage-art-line: oklch(0.945058 0.033906 58.824);
-      --stage-night-top: oklch(0.392352 0.081287 36.444);
-      --stage-night-mid: oklch(0.271305 0.056352 31.135);
-      --stage-night-bottom: oklch(0.182126 0.028154 27.774);
-      --stage-night-highlight: oklch(0.851007 0.061294 53.805);
-      --stage-night-secondary: oklch(0.560789 0.10645 42.953);
-      --stage-night-tertiary: oklch(0.476228 0.106656 24.165);
-      --stage-night-line: oklch(0.884931 0.046607 56.556);
     }
   }
 
@@ -881,28 +840,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     }
   }
 
-  :is(html[data-theme-id="t3-chat"], html[data-theme-id="ocean"], html[data-theme-id="iris"]) {
-    --stage-night-top: color-mix(in oklch, var(--stage-art-top) 38%, var(--stage-night-base-top));
-    --stage-night-mid: color-mix(in oklch, var(--stage-art-mid) 38%, var(--stage-night-base-mid));
-    --stage-night-bottom: color-mix(
-      in oklch,
-      var(--stage-art-bottom) 38%,
-      var(--stage-night-base-bottom)
-    );
-    --stage-night-highlight: var(--stage-art-highlight);
-    --stage-night-secondary: color-mix(
-      in oklch,
-      var(--stage-art-secondary) 55%,
-      var(--stage-night-mid)
-    );
-    --stage-night-tertiary: color-mix(
-      in oklch,
-      var(--stage-art-tertiary) 60%,
-      var(--stage-night-top)
-    );
-    --stage-night-line: color-mix(in oklch, var(--stage-art-line) 82%, oklch(1 0 0));
-  }
-
   :is(
     html[data-theme-id="t3-chat"],
     html[data-theme-id="grove"],
@@ -914,9 +851,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --stage-art-celeste-secondary: var(--stage-art-secondary);
     --stage-art-violet-highlight: var(--stage-art-highlight);
     --stage-art-grid-line: var(--stage-art-line);
-    --stage-night-glow-highlight: var(--stage-night-highlight);
-    --stage-night-glow-secondary: var(--stage-night-secondary);
-    --stage-night-sparkle: var(--stage-night-line);
   }
 
   @keyframes settings-search-target-pulse {

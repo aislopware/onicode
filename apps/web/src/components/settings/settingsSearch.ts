@@ -57,7 +57,6 @@ export interface SettingsSearchItem {
   readonly desktopOnly?: boolean;
   readonly macOnly?: boolean;
   readonly windowsOnly?: boolean;
-  readonly releaseChannelOnly?: boolean;
   readonly secretsFeatureOnly?: boolean;
   readonly environmentOnly?: boolean;
   readonly providerSettingsOnly?: boolean;
@@ -362,7 +361,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "environment-identification",
     title: "Environment identification",
     to: "/settings/appearance",
-    searchTerms: ["dev nightly latest channel artwork pill label hide none"],
+    searchTerms: ["dev artwork pill label hide none"],
     targetId: "appearance-interface",
   },
   {
@@ -834,13 +833,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Version",
     to: "/settings/about",
     searchTerms: ["about check for updates download install upgrade release"],
-  },
-  {
-    id: "update-track",
-    title: "Update track",
-    to: "/settings/about",
-    searchTerms: ["release channel stable latest nightly prerelease"],
-    releaseChannelOnly: true,
   },
   {
     id: "cli-command",
@@ -1428,7 +1420,6 @@ export function settingsForThisPlatform(
   return items.filter(
     (item) =>
       (isElectron || item.desktopOnly !== true) &&
-      (!item.releaseChannelOnly || isElectron) &&
       (!item.secretsFeatureOnly || isSecretsFeatureEnabled) &&
       (!item.macOnly || isMacPlatform(platform)) &&
       (!item.windowsOnly || isWindowsPlatform(platform)),

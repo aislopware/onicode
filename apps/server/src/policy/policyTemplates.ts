@@ -128,7 +128,7 @@ const policies = (): ReadonlyArray<Policy> => [
   {
     id: "Updates",
     title: "Updates",
-    help: "Off stops Onicode from checking for updates, for machines that receive Onicode through device management.\n\nA feed URL makes the desktop app update from your own mirror of the release feed instead of GitHub; it must be https. Unchecking nightly makes the nightly channel unavailable.\n\nDisabled or Not Configured: no restriction.",
+    help: "Off stops Onicode from checking for updates, for machines that receive Onicode through device management.\n\nA feed URL makes the desktop app update from your own mirror of the release feed; it must be https.\n\nDisabled or Not Configured: no restriction.",
     elements: [
       {
         kind: "enum",
@@ -141,12 +141,6 @@ const policies = (): ReadonlyArray<Policy> => [
         defaultItem: 0,
       },
       { kind: "text", name: "UpdatesFeedUrl", label: "Feed URL (optional)" },
-      {
-        kind: "checkbox",
-        name: "AllowNightly",
-        label: "Allow the nightly channel",
-        defaultChecked: true,
-      },
     ],
   },
   {
@@ -325,7 +319,7 @@ const nullPath = (
   return undefined;
 };
 
-/** A device configuration profile that installs `document` for `dev.onicode.app`. */
+/** A device configuration profile that installs `document` for `dev.aislopware.onicode`. */
 export function macosProfile(
   document: ManagedPolicyDocument,
   uuids: { readonly profile: string; readonly payload: string },
@@ -346,8 +340,8 @@ export function macosProfile(
     PayloadContent: [
       {
         PayloadDisplayName: "Onicode policy",
-        PayloadIdentifier: `dev.onicode.app.policy.${uuids.payload}`,
-        PayloadType: "dev.onicode.app",
+        PayloadIdentifier: `dev.aislopware.onicode.policy.${uuids.payload}`,
+        PayloadType: "dev.aislopware.onicode",
         PayloadUUID: uuids.payload,
         PayloadVersion: 1,
         ...document,
@@ -355,7 +349,7 @@ export function macosProfile(
     ],
     PayloadDescription: "Configures Onicode for every user on this Mac.",
     PayloadDisplayName: `Onicode policy for ${document.organization}`,
-    PayloadIdentifier: `dev.onicode.app.policy`,
+    PayloadIdentifier: `dev.aislopware.onicode.policy`,
     PayloadOrganization: document.organization,
     PayloadScope: "System",
     PayloadType: "Configuration",

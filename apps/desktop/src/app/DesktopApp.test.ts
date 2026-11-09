@@ -106,7 +106,6 @@ it.effect.each([false, true])(
             isDevelopment: false,
             isPackaged: true,
             configuredBackendPort: Option.some(3773),
-            defaultDesktopSettings: { serverExposureMode: "local-only" },
           } as unknown as DesktopEnvironment.DesktopEnvironment["Service"]),
           Effect.provideService(DesktopPreReadyPlatform.DesktopPreReadyElectronOptions, {
             linux: null,

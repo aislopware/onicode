@@ -116,10 +116,8 @@ export const make = Effect.gen(function* () {
         NodeFS.writeFileSync(
           NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName),
           renderUrlHandlerDesktopEntry({
-            displayName: resolveDesktopAppBranding({
-              isDevelopment: linux.isDevelopment,
-              appVersion: Electron.app.getVersion(),
-            }).displayName,
+            displayName: resolveDesktopAppBranding({ isDevelopment: linux.isDevelopment })
+              .displayName,
             execTarget:
               Option.getOrUndefined(
                 Option.orElse(

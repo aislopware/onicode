@@ -1,6 +1,5 @@
 import type {
   DesktopAppBranding,
-  DesktopAppStageLabel,
   DesktopRuntimeArch,
   DesktopRuntimeInfo,
 } from "@onicode/contracts";
@@ -11,11 +10,9 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
-import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "./DesktopConfig.ts";
 import { resolveLinuxDesktopEntryName } from "./DesktopEarlyElectronStartup.ts";
 import { resolveDesktopBaseDir, resolveDesktopStateDir } from "./DesktopStatePaths.ts";
-import { isNightlyDesktopVersion } from "../updates/updateChannels.ts";
 import type { OtlpProtocol } from "@onicode/shared/observability";
 
 export interface MakeDesktopEnvironmentInput {
@@ -78,7 +75,6 @@ export class DesktopEnvironment extends Context.Service<
     readonly linuxApplicationsDir: string;
     readonly desktopLauncherPath: Option.Option<string>;
     readonly appImagePath: Option.Option<string>;
-    readonly defaultDesktopSettings: DesktopAppSettings.DesktopSettings;
     readonly runtimeInfo: DesktopRuntimeInfo;
     readonly resolvePickFolderDefaultPath: (rawOptions: unknown) => Option.Option<string>;
     readonly resolveResourcePathCandidates: (fileName: string) => readonly string[];
@@ -87,27 +83,12 @@ export class DesktopEnvironment extends Context.Service<
 
 const APP_BASE_NAME = "Onicode";
 
-function resolveDesktopAppStageLabel(input: {
-  readonly isDevelopment: boolean;
-  readonly appVersion: string;
-}): DesktopAppStageLabel {
-  if (input.isDevelopment) {
-    return "Dev";
-  }
-
-  return isNightlyDesktopVersion(input.appVersion) ? "Nightly" : "Beta";
-}
-
 export function resolveDesktopAppBranding(input: {
   readonly isDevelopment: boolean;
-  readonly appVersion: string;
 }): DesktopAppBranding {
-  const stageLabel = resolveDesktopAppStageLabel(input);
-  return {
-    baseName: APP_BASE_NAME,
-    stageLabel,
-    displayName: `${APP_BASE_NAME} (${stageLabel})`,
-  };
+  return input.isDevelopment
+    ? { baseName: APP_BASE_NAME, stageLabel: "Dev", displayName: `${APP_BASE_NAME} (Dev)` }
+    : { baseName: APP_BASE_NAME, stageLabel: null, displayName: APP_BASE_NAME };
 }
 
 function normalizeDesktopArch(arch: string): DesktopRuntimeArch {
@@ -167,10 +148,7 @@ const make = Effect.fn("desktop.environment.make")(function* (
     input.isPackaged && input.platform === "win32"
       ? path.join(input.resourcesPath, "server.asar")
       : appRoot;
-  const branding = resolveDesktopAppBranding({
-    isDevelopment,
-    appVersion: input.appVersion,
-  });
+  const branding = resolveDesktopAppBranding({ isDevelopment });
   const displayName = branding.displayName;
   const stateDir = resolveDesktopStateDir({
     baseDir,
@@ -228,13 +206,12 @@ const make = Effect.fn("desktop.environment.make")(function* (
     branding,
     displayName,
     appUserModelId: Option.getOrElse(config.appUserModelIdOverride, () =>
-      isDevelopment ? "dev.onicode.app.dev" : "dev.onicode.app",
+      isDevelopment ? "dev.aislopware.onicode.dev" : "dev.aislopware.onicode",
     ),
     linuxDesktopEntryName: resolveLinuxDesktopEntryName(isDevelopment),
     linuxApplicationsDir,
     desktopLauncherPath: config.desktopLauncherPath,
     appImagePath: config.appImagePath,
-    defaultDesktopSettings: DesktopAppSettings.resolveDefaultDesktopSettings(input.appVersion),
     runtimeInfo: resolveDesktopRuntimeInfo({
       platform: input.platform,
       processArch: input.processArch,

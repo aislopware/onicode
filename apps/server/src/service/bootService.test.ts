@@ -497,7 +497,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
           platform === "linux"
             ? ["systemctl --user stop onicode.service", "systemctl --user restart onicode.service"]
             : [
-                "launchctl bootout --wait gui/501/dev.onicode.app.service",
+                "launchctl bootout --wait gui/501/dev.aislopware.onicode.service",
                 `launchctl bootstrap gui/501 ${plan.unitPath}`,
               ],
         );
@@ -847,7 +847,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
 
       expect(
         plan.unitPath.endsWith(
-          path.join("Library", "LaunchAgents", "dev.onicode.app.service.plist"),
+          path.join("Library", "LaunchAgents", "dev.aislopware.onicode.service.plist"),
         ),
       ).toBe(true);
       expect(yield* fs.readFileString(plan.unitPath)).toContain(
@@ -868,9 +868,9 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
       expect((yield* service.status).installed).toBe(false);
       expect(commands.some((command) => command.startsWith("systemctl "))).toBe(false);
       // launchd can take 90s to bootout; the runner's 60s default could let bootstrap race it.
-      expect(timeouts.get("launchctl bootout --wait gui/501/dev.onicode.app.service")).toEqual(
-        Duration.seconds(120),
-      );
+      expect(
+        timeouts.get("launchctl bootout --wait gui/501/dev.aislopware.onicode.service"),
+      ).toEqual(Duration.seconds(120));
     }),
   );
 
@@ -953,7 +953,7 @@ it.layer(NodeServices.layer)("boot service install", (it) => {
     Effect.gen(function* () {
       const { service, control } = yield* makeHarness("darwin");
       yield* service.install();
-      control.failCommand = "launchctl bootout --wait gui/501/dev.onicode.app.service";
+      control.failCommand = "launchctl bootout --wait gui/501/dev.aislopware.onicode.service";
 
       yield* service.install();
       expect((yield* service.status).current).toBe(true);

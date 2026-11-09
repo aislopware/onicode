@@ -19,7 +19,7 @@ const runtimeInfo = {
 describe("updateMachine", () => {
   it("preserves an already-downloaded update while checking the feed", () => {
     const downloadedState = {
-      ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+      ...createInitialDesktopUpdateState("1.0.0", runtimeInfo),
       enabled: true,
       status: "downloaded" as const,
       availableVersion: "1.1.0",
@@ -52,7 +52,7 @@ describe("updateMachine", () => {
   it("preserves available version on download failure for retry", () => {
     const state = reduceDesktopUpdateStateOnDownloadFailure(
       {
-        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo),
         enabled: true,
         status: "downloading",
         availableVersion: "1.1.0",
@@ -70,7 +70,7 @@ describe("updateMachine", () => {
   it("transitions to downloaded and then preserves install retry state", () => {
     const downloaded = reduceDesktopUpdateStateOnDownloadComplete(
       {
-        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo),
         enabled: true,
         status: "downloading",
         availableVersion: "1.1.0",
@@ -92,7 +92,7 @@ describe("updateMachine", () => {
   it("clears stale available state when no update is available", () => {
     const state = reduceDesktopUpdateStateOnNoUpdate(
       {
-        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo, "latest"),
+        ...createInitialDesktopUpdateState("1.0.0", runtimeInfo),
         enabled: true,
         status: "error",
         availableVersion: "1.1.0",

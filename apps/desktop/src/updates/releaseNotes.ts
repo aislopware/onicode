@@ -1,6 +1,4 @@
-import type { DesktopUpdateChannel, DesktopUpdateReleaseNote } from "@onicode/contracts";
-
-import { desktopUpdateChannelOf } from "@onicode/shared/cliRelease";
+import type { DesktopUpdateReleaseNote } from "@onicode/contracts";
 
 interface ElectronReleaseNoteInfo {
   readonly version: string;
@@ -157,39 +155,28 @@ function extractReleaseNoteItems(note: string | null | undefined): ExtractedRele
   return { items: items.toReversed(), totalItems };
 }
 
-// The update feed dates only the offered version; prerelease versions carry their UTC build day.
-const PRERELEASE_BUILD_DAY = /-(?:nightly|preview)\.(\d{4})(\d{2})(\d{2})\.\d+$/;
-
-function resolveReleasedAt(version: string, offeredVersion: string, releaseDate?: string) {
-  if (version === offeredVersion && releaseDate) return releaseDate;
-  const day = PRERELEASE_BUILD_DAY.exec(version);
-  return day ? `${day[1]}-${day[2]}-${day[3]}` : undefined;
-}
-
 interface NormalizedDesktopUpdateReleaseNotes {
   readonly releaseNotes: ReadonlyArray<DesktopUpdateReleaseNote>;
   readonly omittedReleaseCount: number;
 }
 
-/** fullChangelog includes all greater semvers, so preview cuts sort above nightlies of the same base version. */
 export function normalizeDesktopUpdateReleaseNotes(
   releaseNotes: unknown,
   fallbackVersion: string,
-  channel: DesktopUpdateChannel,
   releaseDate?: string,
 ): NormalizedDesktopUpdateReleaseNotes {
-  const rawNotes = (
+  const rawNotes =
     typeof releaseNotes === "string"
       ? [{ version: fallbackVersion, note: releaseNotes }]
       : Array.isArray(releaseNotes)
         ? releaseNotes.filter(isElectronReleaseNoteInfo)
-        : []
-  ).filter((entry) => desktopUpdateChannelOf(entry.version) === channel);
+        : [];
 
   const normalizedNotes = rawNotes.flatMap((entry) => {
     const note = extractReleaseNoteItems(entry.note);
     if (note.totalItems === 0 && !note.stats) return [];
-    const releasedAt = resolveReleasedAt(entry.version, fallbackVersion, releaseDate);
+    // The update feed dates only the offered version.
+    const releasedAt = entry.version === fallbackVersion ? releaseDate : undefined;
     return [
       {
         version: entry.version,

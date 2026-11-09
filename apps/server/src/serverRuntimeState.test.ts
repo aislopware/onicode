@@ -75,7 +75,7 @@ const startBesideBootService = Effect.fn("test.startBesideBootService")(function
   const [unitPath, unit] =
     input.platform === "darwin"
       ? [
-          path.join(root, "Library", "LaunchAgents", "dev.onicode.app.service.plist"),
+          path.join(root, "Library", "LaunchAgents", "dev.aislopware.onicode.service.plist"),
           renderBootServicePlist(plan, { homeDir: root, environmentPath: "" }),
         ]
       : [
@@ -339,7 +339,7 @@ describe("server ownership", () => {
               "launchctl print": { code: 113 },
               "launchctl print-disabled": {
                 code: 0,
-                stdout: '"dev.onicode.app.service" => false',
+                stdout: '"dev.aislopware.onicode.service" => false',
               },
             },
           },
@@ -452,7 +452,7 @@ describe("server ownership", () => {
               "launchctl print": { code: 113 },
               "launchctl print-disabled": {
                 code: 0,
-                stdout: '"dev.onicode.app.service" => disabled',
+                stdout: '"dev.aislopware.onicode.service" => disabled',
               },
             },
           },

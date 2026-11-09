@@ -8,10 +8,6 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-const nightlies = Array.from({ length: 100 }, (_, index) => ({
-  tag_name: `v1.2.4-nightly.20261020.${200 - index}`,
-}));
-
 describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home", () => {
   it("installs a relative home from a directory ending in a newline", async () => {
     const temporaryRoot = await NodeFSP.realpath(
@@ -64,12 +60,9 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
   });
 });
 
-// regression: #22490
-describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer channel lookup", () => {
-  it.each([
-    ["stable", "1.2.3"],
-    ["preview", "1.2.4-preview.20261019.50"],
-  ])("finds the newest %s release behind a full page of nightlies", async (channel, version) => {
+describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer release lookup", () => {
+  it("installs the release GitHub marks latest", async () => {
+    const version = "1.2.3";
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "oni-install-index-"));
     const target = NodePath.join(root, "home/runtime/versions", version);
     const server = NodeHttp.createServer((request, response) => {
@@ -77,14 +70,10 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
       const body =
         url.pathname === "/aislopware/onicode/releases/latest" &&
         request.headers.accept === "application/json"
-          ? { tag_name: "v1.2.3" }
-          : url.pathname === "/repos/aislopware/onicode/releases"
-            ? { "1": nightlies, "2": [{ tag_name: `v${version}` }, { tag_name: "v1.2.3" }] }[
-                url.searchParams.get("page") ?? ""
-              ]
-            : undefined;
+          ? { tag_name: `v${version}` }
+          : undefined;
       if (body === undefined) response.statusCode = 404;
-      // The API pretty-prints and the installer reads it line by line.
+      // GitHub pretty-prints and the installer reads it line by line.
       response.end(JSON.stringify(body ?? [], null, 2));
     });
     try {
@@ -107,7 +96,6 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer chan
             env: {
               ...process.env,
               ONICODE_VERSION: "",
-              ONICODE_CHANNEL: channel,
               ONICODE_HOME: NodePath.join(root, "home"),
               ONICODE_INSTALL_BIN_DIR: NodePath.join(root, "bin"),
               // A wrong version must fail here instead of downloading a real release.
@@ -153,7 +141,6 @@ async function installOver(input: {
     ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
     env: {
       ...process.env,
-      ONICODE_CHANNEL: "",
       ONICODE_VERSION: "1.2.3",
       ONICODE_HOME: input.home,
       ONICODE_INSTALL_BIN_DIR: input.binDir,

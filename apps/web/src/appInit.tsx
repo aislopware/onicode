@@ -21,8 +21,7 @@ import { startDesktopUpdateLaunchNotice } from "./components/sidebar/updateEvery
 import { startSlowRpcRequestToasts } from "./components/SlowRpcRequestToastCoordinator";
 import { startThreadNotifications } from "./components/ThreadNotificationCoordinator";
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
-import { APP_BASE_NAME, APP_DISPLAY_NAME, APP_STAGE_LABEL } from "./branding";
-import { resolveServerBackedAppDisplayName } from "./branding.logic";
+import { APP_DISPLAY_NAME } from "./branding";
 import { isElectron } from "./env";
 import {
   subscribeComposerDraftModelReconciliation,
@@ -48,7 +47,6 @@ import {
 import { startProviderAuthDelivery } from "./providerAuthDelivery";
 import { getRouter, type AppRouter } from "./router";
 import { appAtomRegistry } from "./rpc/atomRegistry";
-import { primaryServerConfigAtom } from "./state/server";
 import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
 import { startWorkspaceFocus } from "./lib/workspaceFocus";
@@ -117,21 +115,6 @@ function startClientAppearance(): void {
   apply();
 }
 
-function startDocumentTitle(): void {
-  appAtomRegistry.subscribe(
-    primaryServerConfigAtom,
-    (config) => {
-      document.title = resolveServerBackedAppDisplayName({
-        baseName: APP_BASE_NAME,
-        fallbackDisplayName: APP_DISPLAY_NAME,
-        fallbackStageLabel: APP_STAGE_LABEL,
-        primaryServerVersion: config?.environment.serverVersion ?? null,
-      });
-    },
-    { immediate: true },
-  );
-}
-
 /**
  * Each route paints its own surface, which the browser chrome samples once it is on screen.
  * onRendered only fires for a new href; onResolved also covers `router.invalidate()`, which
@@ -180,7 +163,7 @@ export function startAppServices(): AppRouter {
   installDesktopPasteAsText(window.desktopBridge, window);
 
   startClientAppearance();
-  startDocumentTitle();
+  document.title = APP_DISPLAY_NAME;
   startHostEnvironmentLookup();
   startEnvironmentThemeRepaint();
   startBrowserChromeThemeSync(router);

@@ -446,7 +446,6 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         const updates = {
           mode: "auto" as const,
           feedUrl: "https://updates.example/onicode",
-          allowNightly: false,
         };
         const policy = yield* loadFrom(JSON.stringify({ ...base, limits: { updates } }));
         const { feedUrl: _feedUrl, ...clientUpdates } = updates;

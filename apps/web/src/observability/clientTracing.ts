@@ -8,7 +8,7 @@ import { OtlpExporter, OtlpSerialization, OtlpTracer } from "effect/observabilit
 import { settleAsyncResult, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { safeErrorLogAttributes } from "@onicode/client-runtime/errors";
 import { resolvePrimaryEnvironmentHttpUrl } from "../environments/primary";
-import { releaseChannelOf, releaseResourceAttributes } from "@onicode/shared/releaseResource";
+import { releaseResourceAttributes } from "@onicode/shared/releaseResource";
 import * as ClientTracer from "./clientTracer";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
 import { isElectron } from "../env";
@@ -41,13 +41,8 @@ const browserResourceAttributes = (): Record<string, unknown> => {
   };
 };
 
-// PR previews can't mark themselves in APP_VERSION without breaking the version-skew check against the server.
 const RELEASE_CHANNEL =
-  import.meta.env.DEV || import.meta.env.VITE_RELEASE_CHANNEL === "dev"
-    ? "dev"
-    : import.meta.env.VITE_RELEASE_CHANNEL === "preview"
-      ? "preview"
-      : releaseChannelOf(APP_VERSION);
+  import.meta.env.DEV || import.meta.env.VITE_RELEASE_CHANNEL === "dev" ? "dev" : "stable";
 const CLIENT_TRACING_RESOURCE = {
   serviceName: "onicode-web",
   attributes: {

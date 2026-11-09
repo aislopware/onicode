@@ -20,8 +20,7 @@ import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
 import { type ReleaseChannel, releaseResourceAttributes } from "@onicode/shared/releaseResource";
 import packageJson from "../package.json" with { type: "json" };
 
-// Official release workflows set this channel; other builds report dev.
-// Unlike __ONICODE_BUILD_CHANNEL__, this is not the sign-in page's latest/nightly channel.
+// Release builds set this channel; other builds report dev.
 declare const __ONICODE_RELEASE_CHANNEL__: ReleaseChannel | undefined;
 export const releaseChannel: ReleaseChannel =
   typeof __ONICODE_RELEASE_CHANNEL__ === "undefined" ? "dev" : __ONICODE_RELEASE_CHANNEL__;

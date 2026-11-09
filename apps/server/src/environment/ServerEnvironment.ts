@@ -271,7 +271,6 @@ export const make = Effect.gen(function* () {
       oneTimeSchedules: true,
       freshContext: true,
       scheduledTaskThreadModes: true,
-      npmReleaseLookup: true,
       voiceTranscription: isSpeechPlatformSupported(hostPlatform, hostArchitecture, hostLibc),
       cloudVoiceTranscription: true,
       ...(serverSelfUpdate === null ? {} : { serverSelfUpdate }),
@@ -279,7 +278,7 @@ export const make = Effect.gen(function* () {
       ...(serverSelfUpdate === "boot-service" || desktopAppUpdate
         ? { serverSelfUpdateProgress: true }
         : {}),
-      ...(desktopAppUpdate ? { desktopAppUpdate: true, desktopAppChannelSwitch: true } : {}),
+      ...(desktopAppUpdate ? { desktopAppUpdate: true } : {}),
       serverBrowser: true,
       peerLinks: true,
       mcpModeLimitHeader: true,

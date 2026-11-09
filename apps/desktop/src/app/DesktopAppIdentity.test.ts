@@ -177,34 +177,34 @@ describe("DesktopAppIdentity", () => {
   );
 
   it.effect.each([
-    { stage: "Beta", environment: {} },
+    { runtimeName: "Onicode", displayName: "Onicode", environment: {} },
     {
-      stage: "Nightly",
-      environment: { appVersion: "0.0.43-nightly.20260929.2428" },
-    },
-    {
-      stage: "Dev",
+      runtimeName: "Onicode Dev",
+      displayName: "Onicode (Dev)",
       environment: { env: { VITE_DEV_SERVER_URL: "http://localhost:5173" } },
     },
-  ])("uses a valid native User-Agent product name for $stage", ({ stage, environment }) => {
-    const calls: ElectronAppCalls = {
-      setAboutPanelOptions: [],
-      setDockIcon: [],
-      setName: [],
-    };
+  ])(
+    "uses a valid native User-Agent product name for $displayName",
+    ({ runtimeName: expectedRuntimeName, displayName, environment }) => {
+      const calls: ElectronAppCalls = {
+        setAboutPanelOptions: [],
+        setDockIcon: [],
+        setName: [],
+      };
 
-    return withIdentity(
-      Effect.gen(function* () {
-        const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
-        yield* identity.configure;
+      return withIdentity(
+        Effect.gen(function* () {
+          const identity = yield* DesktopAppIdentity.DesktopAppIdentity;
+          yield* identity.configure;
 
-        const runtimeName = calls.setName[0];
-        assert.isDefined(runtimeName);
-        assert.equal(runtimeName, `Onicode ${stage}`);
-        assert.match(runtimeName.replaceAll(" ", ""), /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/);
-        assert.equal(calls.setAboutPanelOptions[0]?.applicationName, `Onicode (${stage})`);
-      }),
-      { calls, environment },
-    );
-  });
+          const runtimeName = calls.setName[0];
+          assert.isDefined(runtimeName);
+          assert.equal(runtimeName, expectedRuntimeName);
+          assert.match(runtimeName.replaceAll(" ", ""), /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/);
+          assert.equal(calls.setAboutPanelOptions[0]?.applicationName, displayName);
+        }),
+        { calls, environment },
+      );
+    },
+  );
 });

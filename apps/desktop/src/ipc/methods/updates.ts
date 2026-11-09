@@ -1,6 +1,5 @@
 import {
   DesktopUpdateActionResultSchema,
-  DesktopUpdateChannelSchema,
   DesktopUpdateCheckResultSchema,
   DesktopUpdateStateSchema,
 } from "@onicode/contracts";
@@ -18,19 +17,6 @@ export const getUpdateState = DesktopIpc.makeIpcMethod({
   handler: Effect.fn("desktop.ipc.updates.getState")(function* () {
     const updates = yield* DesktopUpdates.DesktopUpdates;
     return yield* updates.getState;
-  }),
-});
-
-export const setUpdateChannel = DesktopIpc.makeIpcMethod({
-  channel: IpcChannels.UPDATE_SET_CHANNEL_CHANNEL,
-  payload: Schema.Struct({
-    channel: DesktopUpdateChannelSchema,
-    minimumVersion: Schema.optional(Schema.String),
-  }),
-  result: DesktopUpdateStateSchema,
-  handler: Effect.fn("desktop.ipc.updates.setChannel")(function* ({ channel, minimumVersion }) {
-    const updates = yield* DesktopUpdates.DesktopUpdates;
-    return yield* updates.setChannel(channel, { minimumVersion });
   }),
 });
 

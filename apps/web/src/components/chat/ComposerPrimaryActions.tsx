@@ -6,7 +6,10 @@ import { useEnvironmentIdentificationMode } from "~/hooks/useSettings";
 import { formatContextWindowTokens } from "~/lib/contextWindow";
 import { cn, isMacPlatform } from "~/lib/utils";
 import { useShortcutModifierState } from "../../shortcutModifierState";
-import { StageBackdropButtonArt, useSidebarStageBackdropVariant } from "../SidebarStageBackdrop";
+import {
+  resolveSidebarStageBackdropVariant,
+  StageBackdropButtonArt,
+} from "../SidebarStageBackdrop";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -120,7 +123,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     }) === "queue";
   const alternateAction = alternateComposerDispatchAction(followUpBehavior);
   const isSendDisabled = !canOperateThread || sendDisabledReason !== null;
-  const stageBackdropVariant = useSidebarStageBackdropVariant(environmentIdentificationMode);
+  const stageBackdropVariant = resolveSidebarStageBackdropVariant(environmentIdentificationMode);
 
   const renderStopGenerationButton = (insidePendingAction: boolean) => (
     <Tooltip key="interrupt">
@@ -271,7 +274,7 @@ export const ComposerPrimaryActions = memo(function ComposerPrimaryActions({
     >
       {stageBackdropVariant ? (
         <span className="pointer-events-none absolute inset-0 -z-10" aria-hidden="true">
-          <StageBackdropButtonArt variant={stageBackdropVariant} />
+          <StageBackdropButtonArt />
         </span>
       ) : null}
       {isSendBusy ? (

@@ -1,7 +1,4 @@
-export type MobileStageLabel = "Beta" | "Dev" | "Nightly";
-
-export function resolveMobileStageLabel(appVariant: unknown): MobileStageLabel {
-  if (appVariant === "development") return "Dev";
-  if (appVariant === "preview") return "Nightly";
-  return "Beta";
+/** "Dev" on the development client; released builds carry no stage label. */
+export function resolveMobileStageLabel(appVariant: unknown): "Dev" | null {
+  return appVariant === "development" ? "Dev" : null;
 }

@@ -13,8 +13,6 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeEvents from "node:events";
 import * as NodeHttp from "node:http";
 
-import { npmReleaseDatabaseMigration } from "@onicode/shared/cliRelease";
-
 import { buildNpmLauncher } from "./build-npm-launcher.ts";
 
 const VERSION = "1.2.3";
@@ -125,7 +123,6 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         assert.deepStrictEqual(manifest.bin, { onicode: "./bin/onicode.mjs" });
         assert.isUndefined(manifest.dependencies);
         assert.isUndefined(manifest.optionalDependencies);
-        assert.isAbove(npmReleaseDatabaseMigration(manifest) ?? 0, 0);
 
         const installed = path.join(root, "installed");
         yield* fs.makeDirectory(installed);
@@ -229,7 +226,10 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         yield* fs.makeDirectory(staleDir, { recursive: true });
         yield* fs.writeFileString(path.join(staleDir, "onicode"), "");
         yield* fs.makeDirectory(peerDir);
-        yield* fs.writeFileString(path.join(peerDir, "onicode"), '#!/bin/sh\necho "peer $*"\nexit 7\n');
+        yield* fs.writeFileString(
+          path.join(peerDir, "onicode"),
+          '#!/bin/sh\necho "peer $*"\nexit 7\n',
+        );
         yield* fs.chmod(path.join(peerDir, "onicode"), 0o755);
         yield* fs.writeFileString(path.join(peerDir, ".install-complete"), `${VERSION}\n`);
         yield* fs.writeFileString(path.join(peerDir, "sidecar"), "peer sidecar");

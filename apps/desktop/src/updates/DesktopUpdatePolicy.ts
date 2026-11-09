@@ -20,7 +20,6 @@ import * as DesktopObservability from "../app/DesktopObservability.ts";
 export interface UpdatePolicy {
   readonly mode: ManagedUpdatesMode;
   readonly feedUrl: string | undefined;
-  readonly allowNightly: boolean;
   /** Why the updater is restricted, shown in place of update actions; `null` when unmanaged. */
   readonly message: string | null;
 }
@@ -32,7 +31,6 @@ export class DesktopUpdatePolicy extends Context.Service<DesktopUpdatePolicy, Up
 export const unmanagedUpdatePolicy: UpdatePolicy = {
   mode: "auto",
   feedUrl: undefined,
-  allowNightly: true,
   message: null,
 };
 
@@ -42,7 +40,6 @@ function resolveUpdatePolicy(document: ManagedPolicyDocument | undefined): Updat
   return {
     mode: updates.mode,
     feedUrl: updates.feedUrl,
-    allowNightly: updates.allowNightly ?? true,
     message: managedUpdatesMessage(document.organization),
   };
 }
@@ -62,7 +59,6 @@ const make = Effect.gen(function* () {
             source,
             mode: policy.mode,
             customFeed: policy.feedUrl !== undefined,
-            allowNightly: policy.allowNightly,
           }),
     ),
     Effect.map(({ policy }) => policy),
@@ -75,7 +71,6 @@ const make = Effect.gen(function* () {
           Effect.as<UpdatePolicy>({
             mode: "off",
             feedUrl: undefined,
-            allowNightly: false,
             message: `Updates are off because Onicode cannot use the managed policy at ${error.path}. Contact your administrator.`,
           }),
         ),

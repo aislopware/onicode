@@ -1,6 +1,5 @@
 import type {
   DesktopRuntimeInfo,
-  DesktopUpdateChannel,
   DesktopUpdateReleaseNote,
   DesktopUpdateState,
 } from "@onicode/contracts";
@@ -18,12 +17,10 @@ function getCanRetryAfterDownloadFailure(currentState: DesktopUpdateState): bool
 export function createInitialDesktopUpdateState(
   currentVersion: string,
   runtimeInfo: DesktopRuntimeInfo,
-  channel: DesktopUpdateChannel,
 ): DesktopUpdateState {
   return {
     enabled: false,
     status: "disabled",
-    channel,
     currentVersion,
     hostArch: runtimeInfo.hostArch,
     appArch: runtimeInfo.appArch,

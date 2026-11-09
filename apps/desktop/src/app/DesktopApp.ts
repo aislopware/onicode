@@ -234,7 +234,9 @@ const bootstrap = Effect.gen(function* () {
     },
   );
 
-  if (settings.serverExposureMode !== environment.defaultDesktopSettings.serverExposureMode) {
+  if (
+    settings.serverExposureMode !== DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS.serverExposureMode
+  ) {
     yield* logBootstrapInfo("bootstrap restoring persisted server exposure mode", {
       mode: settings.serverExposureMode,
     });

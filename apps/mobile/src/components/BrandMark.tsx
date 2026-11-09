@@ -4,15 +4,13 @@ import { View } from "react-native";
 
 import { AppText as Text } from "./ui/AppText";
 import { ONICODE_CODE_BRAND_MARK_SOURCE } from "./brandAssets";
+import { resolveMobileStageLabel } from "../lib/mobileBranding";
 
-const appVariant = Constants.expoConfig?.extra?.appVariant;
-const DEFAULT_STAGE_LABEL =
-  appVariant === "development" ? "Dev" : appVariant === "preview" ? "Preview" : "Beta";
+const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
 
-export function BrandMark(props: { readonly compact?: boolean; readonly stageLabel?: string }) {
+export function BrandMark(props: { readonly compact?: boolean }) {
   const compact = props.compact ?? false;
   const iconSize = compact ? 32 : 44;
-  const stageLabel = props.stageLabel ?? DEFAULT_STAGE_LABEL;
 
   return (
     <View className="flex-row items-center gap-3">
@@ -28,11 +26,13 @@ export function BrandMark(props: { readonly compact?: boolean; readonly stageLab
       <View className="gap-1">
         <View className="flex-row items-center gap-2">
           <Text className="text-lg font-oni-bold tracking-[-0.4px] text-foreground">Onicode</Text>
-          <View className="rounded-full bg-subtle px-2 py-1">
-            <Text className="text-3xs font-oni-bold tracking-[1.1px] uppercase text-foreground-muted">
-              {stageLabel}
-            </Text>
-          </View>
+          {stageLabel !== null ? (
+            <View className="rounded-full bg-subtle px-2 py-1">
+              <Text className="text-3xs font-oni-bold tracking-[1.1px] uppercase text-foreground-muted">
+                {stageLabel}
+              </Text>
+            </View>
+          ) : null}
         </View>
         {!compact ? (
           <Text className="text-xs font-medium text-foreground-muted">

@@ -25,7 +25,7 @@ the database.
 Its triage CLI version (called "Installed version" in older context files) is only
 the version of the `onicode` that ran `onicode triage`. It is often not the build the bug
 happened on: `npx onicode triage` runs whatever `onicode` npm resolves, while the user may
-run the desktop app, the background service, or a nightly. The server process line
+run the desktop app, the background service, or a source build. The server process line
 gives the local server's version when the server recorded one.
 
 ## 3. Check for a newer playbook
@@ -50,7 +50,7 @@ one subdirectory per commit hash:
     git clone --depth 1 --filter=blob:none --branch <release-tag> \
       https://github.com/aislopware/onicode <source-cache-dir>/<hash>
 
-If the tag does not exist (nightly builds), clone `main` instead, and treat file
+If the tag does not exist (source builds), clone `main` instead, and treat file
 and line references as approximate: the user's build may not match `main`
 exactly. If the target directory already exists from an earlier triage run,
 reuse it instead of cloning again. Before cloning, delete other entries in the

@@ -15,12 +15,8 @@ import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { OniWordmark } from "../OniWordmark";
-import {
-  resolveEnvironmentIdentificationPillLabel,
-  resolveSidebarStageBackdropVariant,
-  SidebarStageBackdrop,
-  useEnvironmentStageLabel,
-} from "../SidebarStageBackdrop";
+import { APP_STAGE_LABEL } from "../../branding";
+import { resolveSidebarStageBackdropVariant, SidebarStageBackdrop } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import {
@@ -45,16 +41,9 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
 }: {
   isElectron: boolean;
 }) {
-  const stageLabel = useEnvironmentStageLabel();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const backdropVariant = resolveSidebarStageBackdropVariant(
-    stageLabel,
-    environmentIdentificationMode,
-  );
-  const pillLabel =
-    environmentIdentificationMode === "pill"
-      ? resolveEnvironmentIdentificationPillLabel(stageLabel)
-      : null;
+  const backdropVariant = resolveSidebarStageBackdropVariant(environmentIdentificationMode);
+  const pillLabel = environmentIdentificationMode === "pill" ? APP_STAGE_LABEL : null;
 
   return (
     <div
@@ -63,7 +52,7 @@ export const SidebarChromeHeader = memo(function SidebarChromeHeader({
         isElectron && "drag-region",
       )}
     >
-      {backdropVariant ? <SidebarStageBackdrop variant={backdropVariant} /> : null}
+      {backdropVariant ? <SidebarStageBackdrop /> : null}
       <div className="relative top-[calc(var(--workspace-controls-top)-env(safe-area-inset-top))] z-10 ml-[calc(var(--workspace-controls-left)+1px-env(safe-area-inset-left))] flex shrink-0 items-center md:hidden">
         <SidebarTrigger
           variant={backdropVariant ? "media-navigation" : "ghost"}

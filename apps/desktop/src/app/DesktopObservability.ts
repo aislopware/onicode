@@ -9,7 +9,7 @@ import {
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as SharedObservability from "@onicode/shared/observability";
 import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
-import { releaseChannelOf, releaseResourceAttributes } from "@onicode/shared/releaseResource";
+import { releaseResourceAttributes } from "@onicode/shared/releaseResource";
 import {
   parsePersistedServerObservabilitySettings,
   type PersistedServerObservabilitySettings,
@@ -614,7 +614,7 @@ const layerTelemetry = Layer.unwrap(
         "onicode.desktop.mode": environment.isDevelopment ? "development" : "packaged",
         "service.instance.id": processServiceInstanceId(endpoints.resourceAttributes),
         ...releaseResourceAttributes(
-          environment.isDevelopment ? "dev" : releaseChannelOf(serviceVersion),
+          environment.isDevelopment ? "dev" : "stable",
           endpoints.resourceAttributes,
         ),
         "host.name": endpoints.resourceAttributes["host.name"] || (yield* HostProcess.Hostname),

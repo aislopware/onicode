@@ -18,7 +18,6 @@ function makeState(overrides: Partial<DesktopUpdateState> = {}): DesktopUpdateSt
   return {
     enabled: true,
     status: "idle",
-    channel: "latest",
     currentVersion: "1.2.3",
     hostArch: "arm64",
     appArch: "arm64",
@@ -130,24 +129,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("desktop app upda
 
       const retry = yield* service.run(() => Effect.void).pipe(Effect.flip);
       expect(retry.reason).not.toBe("A desktop app update is already in progress.");
-    }),
-  );
-
-  it.effect("succeeds without an install when a track switch finds the host current", () =>
-    Effect.gen(function* () {
-      const { service } = yield* makeHarness({
-        reports: (requestId) => [
-          report(requestId, makeState({ status: "up-to-date", currentVersion: "1.2.3" }), {
-            outcome: "up-to-date",
-          }),
-        ],
-      });
-      const trackSwitch = { channel: "latest" as const, targetVersion: "1.2.3" };
-
-      expect(yield* service.run(() => Effect.void, trackSwitch)).toEqual({
-        targetVersion: "1.2.3",
-        method: "desktop-app",
-      });
     }),
   );
 

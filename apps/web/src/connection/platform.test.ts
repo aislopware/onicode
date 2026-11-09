@@ -242,10 +242,10 @@ describe("desktop SSH pairing", () => {
 
   it.effect("blocks with both versions when a server on another build rejects pairing", () =>
     Effect.gen(function* () {
-      const error = yield* failPairing("0.0.46-nightly.20261004.2652", PAIRING_500);
+      const error = yield* failPairing("0.0.46", PAIRING_500);
 
       expect(error).toBeInstanceOf(ConnectionBlockedError);
-      expect(error.detail).toContain("0.0.46-nightly.20261004.2652");
+      expect(error.detail).toContain("0.0.46");
       expect(error.detail).toContain(APP_VERSION);
     }),
   );
@@ -255,7 +255,7 @@ describe("desktop SSH pairing", () => {
       expect(yield* failPairing(APP_VERSION, PAIRING_500)).toBeInstanceOf(ConnectionTransientError);
       expect(
         yield* failPairing(
-          "0.0.46-nightly.20261004.2652",
+          "0.0.46",
           "SSH remote API request failed during bootstrap-bearer-session.",
         ),
       ).toBeInstanceOf(ConnectionTransientError);

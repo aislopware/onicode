@@ -6,17 +6,11 @@ import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import { Argument, Command, Flag } from "effect/cli";
-import {
-  resolveWebAssetBrandForChannel,
-  resolveWebIconOverrides,
-  WEB_ASSET_CHANNELS,
-  type WebAssetBrand,
-} from "./lib/brand-assets.ts";
+import { Argument, Command } from "effect/cli";
+import { resolveWebIconOverrides, type WebAssetBrand } from "./lib/brand-assets.ts";
 
 const WEB_ASSET_BRANDS = [
   "development",
-  "nightly",
   "production",
 ] as const satisfies ReadonlyArray<WebAssetBrand>;
 
@@ -43,23 +37,14 @@ export const applyWebBrandAssetsCommand = Command.make(
       Argument.withDescription("Asset brand to copy into the hosted web output directory."),
       Argument.optional,
     ),
-    channel: Flag.Literals("channel", WEB_ASSET_CHANNELS).pipe(
-      Flag.withDescription("Hosted release channel to map to a web asset brand."),
-      Flag.optional,
-    ),
     targetDirectory: Argument.String("target-directory").pipe(
       Argument.withDescription("Output directory that contains the hosted web build assets."),
       Argument.optional,
     ),
   },
-  ({ brand, channel, targetDirectory }) =>
+  ({ brand, targetDirectory }) =>
     applyWebBrandAssets(
-      Option.getOrElse(brand, () =>
-        Option.match(channel, {
-          onNone: () => "production" as const,
-          onSome: resolveWebAssetBrandForChannel,
-        }),
-      ),
+      Option.getOrElse(brand, () => "production" as const),
       Option.getOrElse(targetDirectory, () => "apps/web/dist"),
     ),
 ).pipe(Command.withDescription("Copy web brand assets into a built hosted web app."));

@@ -29,7 +29,6 @@ import { RuntimeMode } from "./providerPolicy.ts";
 import { ProviderDriverKind, ProviderInstanceId } from "./providerInstance.ts";
 import { ServerProviderUsageLimits, UsageLimitSourceSnapshots } from "./providerUsageLimits.ts";
 import { ServerSettings } from "./settings.ts";
-import { DesktopUpdateChannelSchema } from "./ipc.ts";
 
 const KeybindingsMalformedConfigIssue = Schema.Struct({
   kind: Schema.Literal("keybindings.malformed-config"),
@@ -887,36 +886,9 @@ export class ServerProviderUpdateError extends Schema.TaggedError<ServerProvider
   }
 }
 
-export const ServerNpmReleaseInput = Schema.Struct({
-  spec: Schema.String.check(
-    Schema.isMaxLength(64),
-    Schema.isPattern(/^(?:latest|nightly|\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/),
-  ),
-});
-export type ServerNpmReleaseInput = typeof ServerNpmReleaseInput.Type;
-
-export const ServerNpmRelease = Schema.Struct({
-  version: Schema.String,
-  databaseMigration: Schema.optionalKey(Schema.Int),
-});
-export type ServerNpmRelease = typeof ServerNpmRelease.Type;
-
-export class ServerNpmReleaseError extends Schema.TaggedError<ServerNpmReleaseError>()(
-  "ServerNpmReleaseError",
-  { reason: Schema.String },
-) {
-  override get message(): string {
-    return `Could not check the configured npm registry: ${this.reason}`;
-  }
-}
-
 export const ServerSelfUpdateInput = Schema.Struct({
   /** Exact npm version, never a dist-tag, so server and client agree on the request. */
   targetVersion: TrimmedNonEmptyString,
-  /** Desktop-managed hosts move their app to this update track first. Sent only for a track switch. */
-  channel: Schema.optionalKey(DesktopUpdateChannelSchema),
-  /** The target release's highest migration; the host refuses to leave Nightly without it. */
-  targetDatabaseMigration: Schema.optionalKey(Schema.Int),
 });
 export type ServerSelfUpdateInput = typeof ServerSelfUpdateInput.Type;
 

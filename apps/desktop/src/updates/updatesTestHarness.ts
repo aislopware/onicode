@@ -12,7 +12,6 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdatePolicy from "./DesktopUpdatePolicy.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
@@ -24,8 +23,6 @@ export interface UpdatesHarnessOptions {
     void,
     ElectronUpdater.ElectronUpdaterCheckForUpdatesError
   >;
-  readonly beforeSetUpdateChannel?: Effect.Effect<void>;
-  readonly setUpdateChannelError?: DesktopAppSettings.DesktopSettingsWriteError;
   readonly setDisableDifferentialDownload?: Effect.Effect<void>;
   readonly downloadUpdate?: Effect.Effect<void>;
   readonly quitAndInstall?: Effect.Effect<void, ElectronUpdater.ElectronUpdaterQuitAndInstallError>;
@@ -39,19 +36,13 @@ export interface UpdatesHarnessOptions {
   readonly installRecord?: string | undefined;
   readonly policy?: DesktopUpdatePolicy.UpdatePolicy;
   readonly appVersion?: string;
-  /** Starts from in-memory settings with this track saved, as after a restart. */
-  readonly savedChannel?: DesktopAppSettings.DesktopSettings["updateChannel"];
-  /** Adds a WSL backend beside the primary, as on a Windows host with WSL enabled. */
-  readonly wslBackend?: boolean;
 }
 
 export function makeHarness(options: UpdatesHarnessOptions = {}) {
   let checkCount = 0;
   let quitAndInstallCount = 0;
   let downloadCount = 0;
-  let allowDowngrade = false;
-  const checkAllowedDowngrade: boolean[] = [];
-  let fullChangelog = false;
+  let allowDowngrade = true;
   const feedUrls: ElectronUpdater.ElectronUpdaterFeedUrl[] = [];
   const listeners = new Map<string, Set<(...args: readonly unknown[]) => void>>();
   const sentStates: DesktopUpdateState[] = [];
@@ -81,21 +72,13 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       }),
     setAutoDownload: () => Effect.void,
     setAutoInstallOnAppQuit: () => Effect.void,
-    setChannel: () => Effect.void,
-    setAllowPrerelease: () => Effect.void,
-    allowDowngrade: Effect.sync(() => allowDowngrade),
     setAllowDowngrade: (value) =>
       Effect.sync(() => {
         allowDowngrade = value;
       }),
-    setFullChangelog: (value) =>
-      Effect.sync(() => {
-        fullChangelog = value;
-      }),
     setDisableDifferentialDownload: () => options.setDisableDifferentialDownload ?? Effect.void,
     checkForUpdates: Effect.sync(() => {
       checkCount += 1;
-      checkAllowedDowngrade.push(allowDowngrade);
     }).pipe(Effect.andThen(options.checkForUpdates ?? Effect.void)),
     downloadUpdate: Effect.sync(() => {
       downloadCount += 1;
@@ -159,17 +142,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     waitForReady: () => Effect.succeed(true),
   };
   const layerBackend = DesktopBackendPool.layerTest(
-    options.backendInstances ??
-      (options.wslBackend
-        ? [
-            stubBackendInstance,
-            {
-              ...stubBackendInstance,
-              id: DesktopBackendPool.BackendInstanceId("wsl:Ubuntu"),
-              label: Effect.succeed("Ubuntu"),
-            },
-          ]
-        : [stubBackendInstance]),
+    options.backendInstances ?? [stubBackendInstance],
   );
 
   const layerEnvironment = DesktopEnvironment.layer({
@@ -195,46 +168,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
       ),
     ),
   );
-
-  let testSettings: DesktopAppSettings.DesktopSettings = {
-    ...DesktopAppSettings.DEFAULT_DESKTOP_SETTINGS,
-    ...(options.savedChannel === undefined
-      ? {}
-      : { updateChannel: options.savedChannel, updateChannelConfiguredByUser: true }),
-  };
-  const setUpdateChannelError = options.setUpdateChannelError;
-  const layerSettings =
-    setUpdateChannelError || options.beforeSetUpdateChannel || options.savedChannel
-      ? Layer.succeed(DesktopAppSettings.DesktopAppSettings, {
-          get: Effect.sync(() => testSettings),
-          load: Effect.sync(() => testSettings),
-          setMainWindowBounds: () => Effect.die("unexpected main window bounds update"),
-          setServerExposureMode: () => Effect.die("unexpected server exposure update"),
-          setTailscaleServe: () => Effect.die("unexpected Tailscale Serve update"),
-          setUpdateChannel: (channel) =>
-            setUpdateChannelError
-              ? Effect.fail(setUpdateChannelError)
-              : (options.beforeSetUpdateChannel ?? Effect.void).pipe(
-                  Effect.andThen(
-                    Effect.sync(() => {
-                      const changed = testSettings.updateChannel !== channel;
-                      testSettings = {
-                        ...testSettings,
-                        updateChannel: channel,
-                        updateChannelConfiguredByUser: true,
-                      };
-                      return { settings: testSettings, changed };
-                    }),
-                  ),
-                ),
-          setWslBackendEnabled: () => Effect.die("unexpected WSL backend toggle"),
-          setWslDistro: () => Effect.die("unexpected WSL distro change"),
-          setLocalEnvironmentEnabled: () => Effect.die("unexpected local environment toggle"),
-          setWslOnly: () => Effect.die("unexpected WSL-only toggle"),
-          applyWslWindowsFallback: Effect.die("unexpected WSL Windows fallback"),
-          applyWslWindowsFallbackInMemory: Effect.die("unexpected WSL Windows fallback"),
-        } satisfies DesktopAppSettings.DesktopAppSettings["Service"])
-      : DesktopAppSettings.layer;
 
   const installRecords = new Map<string, string>();
   let previousInstallRecord = options.installRecord;
@@ -276,7 +209,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     Layer.provideMerge(layerWindow),
     Layer.provideMerge(layerBackend),
     Layer.provideMerge(DesktopState.layer),
-    Layer.provideMerge(layerSettings),
     Layer.provideMerge(
       DesktopConfig.layerTest({
         ONICODE_HOME: `/tmp/oni-desktop-updates-test-${process.pid}`,
@@ -298,9 +230,6 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     previousInstallRecord: () => previousInstallRecord,
     downloadCount: () => downloadCount,
     feedUrls: (): ElectronUpdater.ElectronUpdaterFeedUrl[] => feedUrls,
-    fullChangelog: () => fullChangelog,
-    /** Whether each feed check could offer an older release, and the flag now. */
-    checkAllowedDowngrade,
     allowDowngrade: () => allowDowngrade,
     listenerCount: () =>
       Array.from(listeners.values()).reduce(

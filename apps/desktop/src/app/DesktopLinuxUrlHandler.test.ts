@@ -167,14 +167,14 @@ const emptyRecording = (): RecordedRegistration => ({
 describe("DesktopLinuxUrlHandler", () => {
   it("renders a scheme-handler desktop entry with freedesktop Exec quoting", () => {
     const entry = DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
-      displayName: "Onicode (Nightly)",
+      displayName: "Onicode (Dev)",
       execTarget: '/home/al ice/Apps/Onicode "100%" $HOME\\x.AppImage',
       scheme: "onicode",
       iconPath: "/home/al ice/icons/Onicode\\x.png",
     });
 
     assert.include(entry, "[Desktop Entry]");
-    assert.include(entry, "Name=Onicode (Nightly)");
+    assert.include(entry, "Name=Onicode (Dev)");
     assert.include(
       entry,
       'Exec="/home/al ice/Apps/Onicode \\\\"100%%\\\\" \\\\$HOME\\\\\\\\x.AppImage" %U',

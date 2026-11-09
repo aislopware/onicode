@@ -67,7 +67,9 @@ export const resolveServerInstallation = Effect.gen(function* () {
   const path = yield* Path.Path;
   const platform = yield* HostProcess.Platform;
   const entry = yield* fs.realPath(yield* resolveEntryPath);
-  const match = /^(.*)\/lib\/node_modules\/onicode\/(?:dist\/bin\.mjs|bin\/onicode\.mjs)$/.exec(entry);
+  const match = /^(.*)\/lib\/node_modules\/onicode\/(?:dist\/bin\.mjs|bin\/onicode\.mjs)$/.exec(
+    entry,
+  );
   if (!match) {
     const runner = detectCliRunner(entry);
     return runner === null
@@ -94,28 +96,13 @@ export const resolveServerInstallation = Effect.gen(function* () {
   return { kind: "npm-global", prefix } satisfies ServerInstallation;
 }).pipe(Effect.orElseSucceed(() => null));
 
-/** The original package spec is unavailable at startup; infer its channel from the version. */
-function suggestedPackageSpec(version: string): string {
-  const channel = /^[^-+]+-(nightly|preview)\./.exec(version)?.[1];
-  return channel === undefined ? "onicode" : `onicode@${channel}`;
-}
-
-function formatCliCommand(input: {
-  readonly subcommand: string;
-  readonly entryPath: string;
-  readonly version: string;
-}): string {
+function formatCliCommand(input: { readonly subcommand: string; readonly entryPath: string }) {
   const runner = detectCliRunner(input.entryPath);
-  if (runner === null) {
-    return `onicode ${input.subcommand}`;
-  }
-  return `${runner} ${suggestedPackageSpec(input.version)} ${input.subcommand}`;
+  return runner === null ? `onicode ${input.subcommand}` : `${runner} onicode ${input.subcommand}`;
 }
 
 export const resolveCliCommand = (subcommand: string) =>
-  Effect.map(resolveEntryPath, (entryPath) =>
-    formatCliCommand({ subcommand, entryPath, version: packageJson.version }),
-  );
+  Effect.map(resolveEntryPath, (entryPath) => formatCliCommand({ subcommand, entryPath }));
 
 const shellWord = (value: string) =>
   /^[\w@%+=:,./-]+$/.test(value) ? value : `'${value.replaceAll("'", `'"'"'`)}'`;

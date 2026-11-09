@@ -160,7 +160,7 @@ describe("DesktopPreReadyPlatform", () => {
         const identity = yield* Effect.promise(() => portalIdentity);
         assert.equal(identity.desktopName, "dev.onicode.Onicode.desktop");
         assert.include(identity.desktopEntry ?? "", "Exec=/Applications/current.AppImage %U");
-        assert.include(identity.desktopEntry ?? "", "Name=Onicode (Beta)");
+        assert.include(identity.desktopEntry ?? "", "Name=Onicode");
         assert.include(identity.desktopEntry ?? "", "MimeType=x-scheme-handler/onicode;");
         assert.include(
           identity.desktopEntry ?? "",
