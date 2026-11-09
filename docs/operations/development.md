@@ -272,7 +272,7 @@ Build on Linux because the browser-secret helper links against the host's libsec
 C/C++ build tools, libsecret development headers, pkg-config, and ImageMagick.
 Bytecode preparation also runs packaged Electron and requires GTK, NSS, ALSA, and GBM runtime libraries.
 Install Rust 1.95 or newer through [rustup](https://rust-lang.org/install), using the stable
-toolchain as release CI does.
+toolchain.
 
 Ubuntu 24.04 and Debian 13:
 
@@ -319,10 +319,9 @@ rustup target add aarch64-pc-windows-msvc
 ```
 
 NSIS is downloaded by electron-builder. WSL support additionally needs the Linux CLI archive
-passed as `--wsl-runtime`; see the
-[release runbook](./release.md#windows-payload-topology-and-update-validation).
+passed as `--wsl-runtime`.
 
 ### Signing
 
-Add `--signed` after configuring the platform credentials in the
-[release runbook](./release.md).
+On macOS, `--signed` signs with the Developer ID identity in your keychain that `CSC_NAME`
+names. Releases sign through better-update; see the [release runbook](./release.md).

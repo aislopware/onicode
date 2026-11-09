@@ -235,7 +235,7 @@ macOS app bundle example:
 ONICODE_OTLP_TRACES_URL=http://localhost:4318/v1/traces \
 ONICODE_OTLP_METRICS_URL=http://localhost:4318/v1/metrics \
 ONICODE_OTLP_LOGS_URL=http://localhost:4318/v1/logs \
-"/Applications/Onicode.app/Contents/MacOS/Onicode"
+"/Applications/Onicode.app/Contents/MacOS/onicode"
 ```
 
 Direct binary example:
@@ -631,14 +631,13 @@ process, both in `service.namespace` `onicode`. `OTEL_SERVICE_NAME` and a `servi
 `service.namespace` in `OTEL_RESOURCE_ATTRIBUTES` are ignored. Tell installations apart with other
 resource attributes, such as `OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=staging`.
 
-Each process reports its own build, not the one it talks to: the server, the desktop main process,
-the UI, and the mobile app each carry `onicode.release.channel` (`dev`, `stable`, `nightly`, or
-`preview`, from their own version; desktop PR builds count as `preview`, and a server not built by a
-release workflow reports `dev`) and `deployment.environment.name` (`development`, `production`, or
-`staging` for `preview`). On the server and the desktop main process either key in
-`OTEL_RESOURCE_ATTRIBUTES` wins. The UI and mobile app never read that variable: the UI takes its
-channel from `VITE_RELEASE_CHANNEL` when a build sets it, and the mobile app maps its build variant (`development`, `preview`, `production`), or
-reports `dev` from a development bundle.
+Each process reports its own build, not the one it talks to: the server, the desktop main process
+and the UI each carry `onicode.release.channel` (`stable` or `dev`) and `deployment.environment.name`
+(`production` or `development`). A server reports `stable` only when built with
+`ONICODE_RELEASE_CHANNEL=stable`, as release builds are; the desktop main process reports `dev` in
+development; the UI reports `dev` from a development bundle or one built with
+`VITE_RELEASE_CHANNEL=dev`. On the server and the desktop main process either key in
+`OTEL_RESOURCE_ATTRIBUTES` wins; the UI never reads that variable.
 
 Attributes specific to Onicode use the `onicode.` prefix. The UI runs as `onicode-web` in both a
 browser and the desktop window, since it is the same code, and `onicode.client.surface` is `desktop`

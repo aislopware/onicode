@@ -1,0 +1,31 @@
+{
+  "projectId": "59625ece-aea5-49b4-8978-1f045f907d92",
+  "projectType": "custom",
+  "build": {
+    "production": {
+      "environment": "production",
+      "env": {
+        "ONICODE_RELEASE_CHANNEL": "stable"
+      },
+      "macos": {
+        "artifact": "zip",
+        "notarize": true,
+        "entitlements": "apps/desktop/resources/entitlements.mac.plist"
+      },
+      "linux": {
+        "bundleIdentifier": "dev.aislopware.onicode"
+      },
+      "custom": {
+        "macos": {
+          "command": "pnpm exec node scripts/build-desktop-artifact.ts --platform mac --target dir --arch arm64 --signed --verbose",
+          "artifactPath": "release/mac-arm64/Onicode.app"
+        },
+        "linux": {
+          "cwd": "apps/desktop",
+          "command": "../../scripts/release/build-linux.sh",
+          "artifactPath": "../../release/linux/*.{AppImage,deb}"
+        }
+      }
+    }
+  }
+}

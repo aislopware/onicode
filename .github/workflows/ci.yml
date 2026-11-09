@@ -32,7 +32,6 @@ jobs:
       test_web: ${{ steps.detect.outputs.test_web }}
       test_server: ${{ steps.detect.outputs.test_server }}
       rust: ${{ steps.detect.outputs.rust }}
-      release_smoke: ${{ steps.detect.outputs.release_smoke }}
       mobile_native: ${{ steps.detect.outputs.mobile_native }}
     steps:
       # Only the package manifests the script reads to build the dependency graph.
@@ -288,12 +287,6 @@ jobs:
 
       - name: Ensure Electron runtime is installed
         run: vp run --filter @onicode/desktop ensure:electron
-
-      - name: Test preview artifact validation
-        run: python3 -B .github/scripts/stage-preview-bundle.test.py
-
-      - name: Test release checks
-        run: node --test .github/scripts/check-nightly-release.test.cjs
 
       - name: Finish installing browser secret helper build libraries
         timeout-minutes: 5
@@ -563,33 +556,6 @@ jobs:
       - name: Lint mobile native sources
         run: vp run lint:mobile
 
-  release_smoke:
-    permissions:
-      contents: read
-      id-token: write
-    name: Release Smoke
-    needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.release_smoke != 'false' }}
-    runs-on: blacksmith-8vcpu-ubuntu-2404
-    timeout-minutes: 10
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          sparse-checkout: |
-            /*
-            !/.repos/
-            !/apps/mobile/modules/oni-terminal/Vendor/**/*.a
-          sparse-checkout-cone-mode: false
-
-      - name: Setup Vite+
-        uses: ./.github/actions/setup-ci-deps
-        with:
-          task-cache-read-token: ${{ secrets.ONICODE_TASK_CACHE_READ_TOKEN }}
-
-      - name: Exercise release-only workflow steps
-        run: node scripts/release-smoke.ts
-
   # Branch protection requires this job by its name, `Check`. It fails when any
   # other job fails, is cancelled, or is skipped without a reason, so splitting
   # or resharding jobs needs no ruleset change. Add every new job to `needs`.
@@ -598,18 +564,7 @@ jobs:
   check:
     name: Check
     if: ${{ always() }}
-    needs:
-      [
-        changes,
-        lint,
-        build,
-        test,
-        test_web,
-        test_server,
-        rust,
-        mobile_native_static_analysis,
-        release_smoke,
-      ]
+    needs: [changes, lint, build, test, test_web, test_server, rust, mobile_native_static_analysis]
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 5
     steps:
