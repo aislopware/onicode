@@ -31,3 +31,5 @@ ea876cc4ac	take	fix(mobile): nested code blocks no longer overlap the next messa
 4df0c1302a	take	refactor: upgrade Legend List to 3.7.2 and drop our list workarounds (#28125)
 8f144827f6	take	fix(mobile): select file text across lines on Android (#31286)
 b87abfb200	take	fix(mobile): restore the sidebar toggle and drop the inspector toggle on iPhone Duo (#33213)
+60514be911	skip	subagent approval pushes go through AgentAwarenessRelay; Onicode removed the relay, and nothing else reads agent awareness
+c6ca605630	take	fix(deps): update vulnerable dependencies and lockfile resolutions (#33226)
