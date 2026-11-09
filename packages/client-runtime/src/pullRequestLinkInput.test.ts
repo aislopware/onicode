@@ -157,13 +157,13 @@ describe("resolveLinkPullRequestInput", () => {
 describe("parsePullRequestReference", () => {
   it("accepts legacy Azure DevOps pull request URLs", () => {
     expect(
-      parsePullRequestReference("https://acme.visualstudio.com/project/_git/t3code/pullrequest/42"),
-    ).toBe("https://acme.visualstudio.com/project/_git/t3code/pullrequest/42");
+      parsePullRequestReference("https://acme.visualstudio.com/project/_git/onicode/pullrequest/42"),
+    ).toBe("https://acme.visualstudio.com/project/_git/onicode/pullrequest/42");
     expect(
       parsePullRequestReference(
-        "https://acme.visualstudio.com/DefaultCollection/project/_git/t3code/pullrequest/42",
+        "https://acme.visualstudio.com/DefaultCollection/project/_git/onicode/pullrequest/42",
       ),
-    ).toBe("https://acme.visualstudio.com/DefaultCollection/project/_git/t3code/pullrequest/42");
+    ).toBe("https://acme.visualstudio.com/DefaultCollection/project/_git/onicode/pullrequest/42");
   });
 
   it.each([

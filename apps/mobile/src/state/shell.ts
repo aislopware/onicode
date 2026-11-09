@@ -4,9 +4,9 @@ import {
   createEnvironmentSnapshotAtom,
   EMPTY_SHELL_STATE,
   type EnvironmentShellState,
-} from "@t3tools/client-runtime/state/shell";
+} from "@onicode/client-runtime/state/shell";
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { Atom } from "effect/reactivity";
 

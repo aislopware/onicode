@@ -10,8 +10,8 @@ import {
   type SecretReference,
   type SecretRequestAnswerInput,
   type ThreadId,
-} from "@t3tools/contracts";
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+} from "@onicode/contracts";
+import * as SecretResolver from "@onicode/secret-provider-core/server/SecretResolver";
 
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -69,7 +69,7 @@ export class SecretRequests extends Context.Service<
       readonly value: string;
     }) => Effect.Effect<string, SecretRequestError>;
   }
->()("t3/secrets/SecretRequests") {}
+>()("onicode/secrets/SecretRequests") {}
 
 const make = Effect.gen(function* () {
   const store = yield* ServerSecretStore.ServerSecretStore;

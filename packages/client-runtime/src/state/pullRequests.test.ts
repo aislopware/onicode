@@ -10,7 +10,7 @@ import {
   WS_METHODS,
   type AuthSessionState,
   type PullRequestListInput,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Schema from "effect/Schema";
 import * as Deferred from "effect/Deferred";

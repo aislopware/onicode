@@ -29,13 +29,13 @@ import {
   type SecretReference,
   type ServerProvider,
   type ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import {
   type CustomModelDefinition,
   readCustomModelEntries,
   toCustomModelSetting,
-} from "@t3tools/shared/model";
+} from "@onicode/shared/model";
 import { cn } from "../../lib/utils";
 import { useCopyToClipboard } from "../../hooks/useCopyToClipboard";
 import { useStableCallback } from "../../hooks/useStableCallback";
@@ -49,13 +49,13 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { Switch } from "../ui/switch";
 import { ManagedControl, ManagedNotice } from "../ManagedPolicy";
 import { managedInstanceLocks, useManagedPolicy } from "../../state/managedPolicy";
-import { disallowedProviderMessage, isManagedDriverAllowed } from "@t3tools/contracts";
+import { disallowedProviderMessage, isManagedDriverAllowed } from "@onicode/contracts";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type {
   ProviderClientDefinition,
   ProviderEnvironmentField,
-} from "@t3tools/provider-core/client";
+} from "@onicode/provider-core/client";
 import {
   deriveProviderSettingsFields,
   ProviderSettingsForm,

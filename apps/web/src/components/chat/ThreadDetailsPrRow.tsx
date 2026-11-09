@@ -1,14 +1,14 @@
-import { resolvePullRequestDetailChecks } from "@t3tools/client-runtime/pull-request-checks";
+import { resolvePullRequestDetailChecks } from "@onicode/client-runtime/pull-request-checks";
 import {
   capitalizeTerm,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@onicode/client-runtime/source-control-clients";
 import { PullRequestChangeBreakdownRows } from "../pullRequest/PullRequestChangeBreakdownStat";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
-import { selectEnvironmentQueryData } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, ProjectId, PullRequestRef } from "@t3tools/contracts";
+import { selectEnvironmentQueryData } from "@onicode/client-runtime/state/runtime";
+import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
+import type { EnvironmentId, ProjectId, PullRequestRef } from "@onicode/contracts";
 import {
   ArrowUpRightIcon,
   EyeIcon,

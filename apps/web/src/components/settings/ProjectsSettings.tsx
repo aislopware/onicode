@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@onicode/contracts";
 import { LayersIcon } from "lucide-react";
 
 import { Button } from "../ui/button";

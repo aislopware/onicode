@@ -55,7 +55,7 @@ const babel: {
   ) => Promise<{ code?: string | null; map?: object | null } | null>;
 } = require("@babel/core");
 const babelConfig = require("./babel.config.js")({ cache: () => {} });
-const testPlatform = process.env.T3_MOBILE_TEST_PLATFORM === "android" ? "android" : "ios";
+const testPlatform = process.env.ONICODE_MOBILE_TEST_PLATFORM === "android" ? "android" : "ios";
 
 export default defineConfig({
   test: {

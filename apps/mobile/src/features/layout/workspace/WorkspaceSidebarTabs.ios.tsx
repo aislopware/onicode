@@ -17,7 +17,7 @@ const NativeSidebarTabBar = requireNativeView<
     onSelectionChange: (event: NativeSyntheticEvent<{ tab: string }>) => void;
     onCompose: () => void;
   }
->("T3NativeControls", "SidebarTabBar");
+>("OniNativeControls", "SidebarTabBar");
 
 export function WorkspaceSidebarTabs(props: {
   readonly onNewTask?: () => void;

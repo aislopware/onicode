@@ -13,10 +13,10 @@ import {
   type DesktopUpdateChannel,
   type DesktopUpdateStatusReport,
   type ResourceTelemetrySourceStatus,
-} from "@t3tools/contracts";
-import { resolveServerBackgroundActivitySettings } from "@t3tools/shared/backgroundActivitySettings";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { applyShellEnvironment } from "@t3tools/shared/shell";
+} from "@onicode/contracts";
+import { resolveServerBackgroundActivitySettings } from "@onicode/shared/backgroundActivitySettings";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { applyShellEnvironment } from "@onicode/shared/shell";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -206,7 +206,7 @@ export class DesktopTelemetryReceiver extends Context.Service<
       Scope.Scope
     >;
   }
->()("t3/resourceTelemetry/DesktopTelemetryReceiver") {}
+>()("onicode/resourceTelemetry/DesktopTelemetryReceiver") {}
 
 class DesktopShellCertificatesUpdateFailed extends Schema.TaggedError<DesktopShellCertificatesUpdateFailed>()(
   "DesktopShellCertificatesUpdateFailed",
@@ -268,7 +268,7 @@ export function makeApplyDesktopShellEnvironmentSnapshot(
         ),
       );
     }
-    if (message.discovered) delete environment.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING;
+    if (message.discovered) delete environment.ONICODE_DESKTOP_SHELL_DISCOVERY_PENDING;
   });
 }
 

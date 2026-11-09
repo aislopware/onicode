@@ -6,7 +6,7 @@ import { Atom } from "effect/reactivity";
 
 import type { DraftComposerImageAttachment } from "./composerImages";
 
-const PREVIEW_CACHE_DIRECTORY = "t3-composer-previews";
+const PREVIEW_CACHE_DIRECTORY = "oni-composer-previews";
 
 async function materializeDataUrlPreview(id: string, dataUrl: string): Promise<string | null> {
   const comma = dataUrl.indexOf(",");

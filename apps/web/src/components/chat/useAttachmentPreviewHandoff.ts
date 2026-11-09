@@ -1,4 +1,4 @@
-import { type EnvironmentId, type MessageId, type ThreadId } from "@t3tools/contracts";
+import { type EnvironmentId, type MessageId, type ThreadId } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { type Dispatch, type SetStateAction, useEffect } from "react";
 import { selectHandoffImageResources } from "../../session-logic";
@@ -37,7 +37,7 @@ export function useAttachmentPreviewHandoff(input: AttachmentPreviewHandoffInput
   const handoffByMessageId = input.handoff;
 
   // Blob URLs are a browser resource owned per thread; leaving the thread or the view ends them.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- revokes the thread's blob preview URLs when the thread changes or the view unmounts
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- revokes the thread's blob preview URLs when the thread changes or the view unmounts
   useEffect(() => () => blobPreviews.revokeThread(threadId), [blobPreviews, threadId]);
 
   const serverAttachmentResources = selectHandoffImageResources(

@@ -1,4 +1,4 @@
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@onicode/contracts";
 import { MessageCircle, Trash2 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
@@ -67,7 +67,7 @@ export function DiffCommentAnnotation({
   const trimmedText = displayedText.trim();
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the draft textarea on the next animation frame after mount
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- focuses the draft textarea on the next animation frame after mount
   useLayoutEffect(() => {
     if (kind !== "draft" || !focusOnMount) return;
     const frame = window.requestAnimationFrame(() => {

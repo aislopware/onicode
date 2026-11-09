@@ -37,7 +37,7 @@ export async function runCliCommand() {
     attachConsoleStdin();
     const importStart = performance.now();
     const { runCli } = await import("./binCli.ts");
-    if (process.env.T3CODE_STARTUP_PROFILE_DIR) {
+    if (process.env.ONICODE_STARTUP_PROFILE_DIR) {
       performance.measure("server.import.binCli", { start: importStart });
     }
     runCli();

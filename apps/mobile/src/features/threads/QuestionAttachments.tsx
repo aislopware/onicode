@@ -1,11 +1,11 @@
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import * as Dialog from "../../components/ui/Dialog";
 import { TextInputWrapper } from "expo-paste-input";
 import { AppTextInput as TextInput } from "../../components/ui/AppText";
 import { useNativePaste } from "../../lib/useNativePaste";
 import { convertPastedImagesToAttachments } from "../../lib/composerImages";
-import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS, type UserInputQuestion } from "@t3tools/contracts";
+import { PROVIDER_SEND_TURN_MAX_ATTACHMENTS, type UserInputQuestion } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { View, type TextInputInstance } from "react-native";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
@@ -50,7 +50,7 @@ export function QuestionAttachments(props: {
   // The caller keys this component by request and question, so unmounting ends any open
   // picker's scope.
   const pickerScope = useRef<{ active: boolean }>({ active: false });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens a scope that native picker and paste callbacks check, and closes it on unmount
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- opens a scope that native picker and paste callbacks check, and closes it on unmount
   useEffect(() => {
     const scope = { active: true };
     pickerScope.current = scope;
@@ -62,7 +62,7 @@ export function QuestionAttachments(props: {
   const releaseFocus = useEffectEvent(() => {
     if (focusedRef.current) onInputFocusChange?.(false);
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases keyboard ownership on unmount, since an unmounted native input never emits blur
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- releases keyboard ownership on unmount, since an unmounted native input never emits blur
   useEffect(() => () => releaseFocus(), []);
   // A controlled value makes Fabric rebuild the native text on every keystroke, which discards
   // iOS's pending autocorrection. The input owns its text; the only outside write is an option
@@ -70,7 +70,7 @@ export function QuestionAttachments(props: {
   const inputRef = useRef<TextInputInstance>(null);
   const [initialText] = useState(props.value);
   const nativeText = useRef(props.value);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes an option selection's cleared draft into the uncontrolled native input
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- pushes an option selection's cleared draft into the uncontrolled native input
   useEffect(() => {
     if (props.value !== "" || nativeText.current === "") return;
     nativeText.current = "";

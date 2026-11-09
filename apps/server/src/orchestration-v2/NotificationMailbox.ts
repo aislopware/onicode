@@ -3,7 +3,7 @@ import {
   type MessageId,
   type OrchestrationV2ConversationMessage,
   type OrchestrationV2ThreadProjection,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 export function isBufferedProviderNotification(
   message: OrchestrationV2ConversationMessage,

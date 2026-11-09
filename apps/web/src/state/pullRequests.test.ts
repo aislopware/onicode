@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@onicode/contracts";
 import {
   EnvironmentId,
   ProjectId,
@@ -6,7 +6,7 @@ import {
   type PullRequestListInput,
   type PullRequestListResult,
   type PullRequestSummary,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -217,7 +217,7 @@ describe("pull request list answers across a reload", () => {
       provider: SourceControlProviderKind.make("github"),
       host: "github.com",
       projectId: ProjectId.make("project-1"),
-      projectTitle: "t3code",
+      projectTitle: "onicode",
       repository: "pingdotgg/t3code",
       number,
       title: `Pull request ${number}`,
@@ -249,7 +249,7 @@ describe("pull request list answers across a reload", () => {
           detail: null,
         },
       ],
-      errors: [{ projectId: ProjectId.make("project-1"), projectTitle: "t3code", message: "boom" }],
+      errors: [{ projectId: ProjectId.make("project-1"), projectTitle: "onicode", message: "boom" }],
       truncated: true,
       nextCursors: { "pingdotgg/t3code": "cursor-1" },
     }) as PullRequestListResult;
@@ -458,13 +458,13 @@ describe("pull request list answers across a reload", () => {
 
   it("removes the composite snapshots it replaced", () => {
     const storage = makeStorage();
-    storage.held.set("t3.pullRequests.list:env-local,env-remote", "{}");
-    storage.held.set("t3.pullRequests.list:env-local", "{}");
-    storage.held.set("t3.other", "kept");
+    storage.held.set("onicode.pullRequests.list:env-local,env-remote", "{}");
+    storage.held.set("onicode.pullRequests.list:env-local", "{}");
+    storage.held.set("onicode.other", "kept");
     rememberPullRequestListAnswer(storage, { environmentId: local, input }, answer([]));
     expect(
-      [...storage.held.keys()].filter((key) => key.startsWith("t3.pullRequests.list:")),
+      [...storage.held.keys()].filter((key) => key.startsWith("onicode.pullRequests.list:")),
     ).toEqual([]);
-    expect(storage.held.get("t3.other")).toBe("kept");
+    expect(storage.held.get("onicode.other")).toBe("kept");
   });
 });

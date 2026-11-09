@@ -8,12 +8,12 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
@@ -68,7 +68,7 @@ const setup = Effect.gen(function* () {
     commandId: CommandId.make("open-guest-share"),
     threadId,
     shareId,
-    host: "env.t3.test",
+    host: "env.onicode.test",
     expiresAt: DateTime.formatIso(DateTime.add(yield* DateTime.now, { hours: 24 })),
   });
   return orchestrator;

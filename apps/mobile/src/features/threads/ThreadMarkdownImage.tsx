@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { MISSING_FILE_ACCESS_MESSAGE } from "@t3tools/client-runtime/state/assets";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+import { MISSING_FILE_ACCESS_MESSAGE } from "@onicode/client-runtime/state/assets";
+import type { AssetResource, EnvironmentId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";

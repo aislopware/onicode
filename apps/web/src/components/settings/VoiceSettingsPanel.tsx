@@ -7,9 +7,9 @@ import {
   selectEnvironmentSpeechModel,
   updateEnvironmentSpeechAcceleration,
   updateEnvironmentSpeechModelUnloadTimeout,
-} from "@t3tools/client-runtime/voice-input";
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { openRouterIcon } from "@t3tools/client-runtime/provider-clients";
+} from "@onicode/client-runtime/voice-input";
+import type { PreparedConnection } from "@onicode/client-runtime/connection";
+import { openRouterIcon } from "@onicode/client-runtime/provider-clients";
 import {
   AuthSettingsWriteScope,
   CLOUD_SPEECH_LABELS,
@@ -24,10 +24,10 @@ import {
   type SpeechCustomWords,
   type SpeechModelUnloadTimeout,
   type VoiceShortcutMode,
-} from "@t3tools/contracts";
-import { createModelSelection } from "@t3tools/shared/model";
-import { resolveSpeechPostProcessingModelSelection } from "@t3tools/shared/serverSettings";
-import { cloudSpeechLanguages } from "@t3tools/shared/speech";
+} from "@onicode/contracts";
+import { createModelSelection } from "@onicode/shared/model";
+import { resolveSpeechPostProcessingModelSelection } from "@onicode/shared/serverSettings";
+import { cloudSpeechLanguages } from "@onicode/shared/speech";
 import {
   AudioLinesIcon,
   CheckIcon,
@@ -596,7 +596,7 @@ function useVoiceModels(prepared: PreparedConnection | null) {
       }
     },
   );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the environment's model catalog when its connection becomes available
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- loads the environment's model catalog when its connection becomes available
   useEffect(() => {
     epoch.current += 1;
     if (prepared) void refresh(prepared, "foreground");
@@ -607,7 +607,7 @@ function useVoiceModels(prepared: PreparedConnection | null) {
   const downloading =
     requestedDownload !== null ||
     models.some((model) => model.state === "downloading" || model.state === "verifying");
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polls progress while a local request or the environment reports an active download
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- polls progress while a local request or the environment reports an active download
   useEffect(() => {
     if (!prepared || !downloading) return;
     let cancelled = false;
@@ -977,7 +977,7 @@ function TranscriptionTest(props: {
   const draft = transcript ?? "";
   const [showTranscript, setShowTranscript] = useState(false);
   const draftRef = useRef(draft);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the committed draft to the asynchronous transcription controller
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes the committed draft to the asynchronous transcription controller
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
@@ -1113,7 +1113,7 @@ export function VoiceSettingsPanel() {
       setMicrophones([]);
     }
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to microphone device changes while settings are open
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to microphone device changes while settings are open
   useEffect(() => {
     queueMicrotask(() => void refreshMicrophones());
     const mediaDevices = navigator.mediaDevices;

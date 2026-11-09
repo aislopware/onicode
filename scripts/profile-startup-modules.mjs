@@ -9,7 +9,7 @@ export function profileStartupModules(session, events, threadId) {
   const loaded = new Map();
   const compiling = new Map();
   const evaluating = new Map();
-  const registryKey = "__t3codeStartupModuleProfiler";
+  const registryKey = "__onicodeStartupModuleProfiler";
   const previousRegistry = globalThis[registryKey];
   const previousModuleRegistry = NodeModule.default[registryKey];
   const restorers = [];

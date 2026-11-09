@@ -1,7 +1,7 @@
-import type { ThreadStructureVisibleTurnItem } from "@t3tools/client-runtime/state/shell";
-import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { RunId, ScopedThreadRef, ThreadId, TurnItemId } from "@t3tools/contracts";
+import type { ThreadStructureVisibleTurnItem } from "@onicode/client-runtime/state/shell";
+import { turnItemDetailRevision } from "@onicode/client-runtime/work-log/item-detail";
+import { scopedThreadKey } from "@onicode/client-runtime/environment";
+import type { RunId, ScopedThreadRef, ThreadId, TurnItemId } from "@onicode/contracts";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 
@@ -167,7 +167,7 @@ export const useDiffPanelStore = create<DiffPanelStoreState>()(
         }),
     }),
     {
-      name: "t3code:diff-panel-state:v1",
+      name: "onicode:diff-panel-state:v1",
       version: 2,
       storage: createJSONStorage(() =>
         resolveStorage(typeof window !== "undefined" ? window.localStorage : undefined),

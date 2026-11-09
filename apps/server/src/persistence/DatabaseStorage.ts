@@ -1,4 +1,4 @@
-import { DatabaseReclaimError, type DatabaseStorageStatus } from "@t3tools/contracts";
+import { DatabaseReclaimError, type DatabaseStorageStatus } from "@onicode/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -33,11 +33,11 @@ export class DatabaseStorage extends Context.Service<
     /** Checks free space, then stops the server; its shutdown runs the offline repair. */
     readonly requestReclaim: Effect.Effect<void, DatabaseReclaimError>;
   }
->()("t3/persistence/DatabaseStorage") {}
+>()("onicode/persistence/DatabaseStorage") {}
 
 /** Stops this server so its desktop app or background service starts it again; null when run by hand. */
 export const ServerRestart = Context.Reference<Effect.Effect<void> | null>(
-  "t3/persistence/DatabaseStorage/ServerRestart",
+  "onicode/persistence/DatabaseStorage/ServerRestart",
   { defaultValue: () => null },
 );
 
@@ -56,7 +56,7 @@ const make = Effect.gen(function* () {
     yield* fs.readFileString(reclaimFiles.failure).pipe(Effect.option),
   );
 
-  // The notice shows host-shell quoting verbatim; desktop needs its launcher because t3 is absent from PATH.
+  // The notice shows host-shell quoting verbatim; desktop needs its launcher because onicode is absent from PATH.
   const { command: compactCommand } = yield* resolveHostCliCommand("doctor", [
     "--base-dir",
     config.baseDir,
@@ -187,7 +187,7 @@ const make = Effect.gen(function* () {
   const requestReclaim = Effect.gen(function* () {
     if (restart === null || !doctorTargetsThisDatabase) {
       return yield* new DatabaseReclaimError({
-        reason: `Stop T3 Code on this machine, then run: ${compactCommand}`,
+        reason: `Stop Onicode on this machine, then run: ${compactCommand}`,
       });
     }
     // Only databases without automatic shrinking need it; a stale dialog can ask after another client's repair.

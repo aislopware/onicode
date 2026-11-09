@@ -7,9 +7,9 @@ import {
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2TurnItem,
   type ThreadId as ThreadIdType,
-} from "@t3tools/contracts";
-import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
-import { pendingBackgroundTurnItems } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
+} from "@onicode/contracts";
+import { boundedSnapshotProjection } from "@onicode/shared/orchestrationV2BoundedSnapshot";
+import { pendingBackgroundTurnItems } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

@@ -3,7 +3,7 @@ import {
   WINDOWS_POLICY_GROUPS,
   WINDOWS_POLICY_LISTS,
   WINDOWS_POLICY_VALUES,
-} from "@t3tools/shared/managedPolicyFile";
+} from "@onicode/shared/managedPolicyFile";
 
 import { macosProfile, windowsAdmx } from "./policyTemplates.ts";
 
@@ -13,7 +13,7 @@ it("gives every registry value the Windows reader accepts a Group Policy control
     assert.include(admx, `valueName="${name}"`);
   }
   for (const key of Object.keys(WINDOWS_POLICY_LISTS)) {
-    assert.include(admx, `key="SOFTWARE\\Policies\\T3Tools\\T3Code\\${key}"`);
+    assert.include(admx, `key="SOFTWARE\\Policies\\Onicode\\Onicode\\${key}"`);
   }
   for (const name of Object.keys(WINDOWS_POLICY_GROUPS)) {
     assert.include(admx, `valueName="${name}"`);

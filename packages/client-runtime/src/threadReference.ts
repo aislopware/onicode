@@ -2,9 +2,9 @@ import type {
   ComposerContextClipboardFragment,
   ScopedThreadRef,
   ThreadPullRequestLink,
-} from "@t3tools/contracts";
-import { threadContextRecord } from "@t3tools/shared/composerContextReferences";
-import { hostedThreadLink } from "@t3tools/shared/threadLinks";
+} from "@onicode/contracts";
+import { threadContextRecord } from "@onicode/shared/composerContextReferences";
+import { hostedThreadLink } from "@onicode/shared/threadLinks";
 
 import { resolveThreadCurrentPullRequestLink } from "./threadPullRequests.ts";
 
@@ -14,7 +14,7 @@ export interface ThreadReferenceCopyTarget {
   readonly value: string;
   /** What a toast or palette row shows for the copy. */
   readonly description: string;
-  /** T3's clipboard format, which pastes a thread back into a composer as a chip. */
+  /** Onicode's clipboard format, which pastes a thread back into a composer as a chip. */
   readonly fragment?: ComposerContextClipboardFragment;
   readonly clipboardTarget: string;
   readonly successTitle: string;

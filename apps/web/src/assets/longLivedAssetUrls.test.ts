@@ -1,4 +1,4 @@
-import { EnvironmentId, type AssetResource } from "@t3tools/contracts";
+import { EnvironmentId, type AssetResource } from "@onicode/contracts";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 

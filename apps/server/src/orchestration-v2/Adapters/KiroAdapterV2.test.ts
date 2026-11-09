@@ -15,9 +15,9 @@ import {
   type RuntimeMode,
   type RuntimeRequestId,
   ThreadId,
-} from "@t3tools/contracts";
-import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
-import { htmlRenderFromToolItem } from "@t3tools/shared/toolOutput";
+} from "@onicode/contracts";
+import { resolveSelfInvocation } from "@onicode/shared/nodeRuntime";
+import { htmlRenderFromToolItem } from "@onicode/shared/toolOutput";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -33,15 +33,15 @@ import * as TestClock from "effect/testing/TestClock";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as TestProviderHost from "@onicode/provider-testing/TestProviderHost";
+import type * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
 import {
   type ProviderAdapterV2Error,
   type ProviderAdapterV2Event,
   ProviderAdapterV2RuntimePolicy,
-} from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@onicode/provider-core/server/ProviderAdapter";
 import {
   decodeAcpReplayTranscript,
   makeAcpReplayCompletenessAssertion,
@@ -50,16 +50,16 @@ import {
 import {
   makeProviderReplayGate,
   type ProviderReplayGate,
-} from "@t3tools/provider-testing/replayGate";
-import { readProviderReplayTranscript } from "@t3tools/provider-testing/replayTranscript";
-import { KiroSettings } from "@t3tools/provider-kiro/settings";
+} from "@onicode/provider-testing/replayGate";
+import { readProviderReplayTranscript } from "@onicode/provider-testing/replayTranscript";
+import { KiroSettings } from "@onicode/provider-kiro/settings";
 import {
   KIRO_PROVIDER,
   kiroApprovalOptions,
   kiroAutopilotValue,
   kiroPermissionDisposition,
   makeKiroAdapterV2,
-} from "@t3tools/provider-kiro/testing";
+} from "@onicode/provider-kiro/testing";
 
 const testLayer = Layer.mergeAll(
   NodeServices.layer,
@@ -239,7 +239,7 @@ const configResult = (configOptions: ReadonlyArray<unknown>) =>
   answer("session/set_config_option", { configOptions });
 const reasoning = (value: string) => [{ id: "reasoningEffort", value }];
 
-/** Kiro's `session/new` result, recorded from 2.27.0 and trimmed to what T3 reads. */
+/** Kiro's `session/new` result, recorded from 2.27.0 and trimmed to what Onicode reads. */
 const sessionSetup = (configOptions: ReadonlyArray<unknown>) => ({
   _meta: { schemaVersion: "1.0.0", id: SESSION_ID, agentMode: "vibe", source: "local" },
   sessionId: SESSION_ID,
@@ -254,13 +254,13 @@ const sessionSetup = (configOptions: ReadonlyArray<unknown>) => ({
   configOptions,
 });
 
-/** What Kiro sends right after `initialize` and around `session/new`, all unknown to T3. */
+/** What Kiro sends right after `initialize` and around `session/new`, all unknown to Onicode. */
 const kiroSessionNoise: ReadonlyArray<Frame> = [
   kiroNotification("_kiro/mcp/status", { sessionId: SESSION_ID, servers: [] }),
   kiroNotification("_kiro/sessions/changed", { upserted: [], deleted: [] }),
 ];
 
-// Kiro advertises `sessionCapabilities.close`, so T3 closes the session on teardown.
+// Kiro advertises `sessionCapabilities.close`, so Onicode closes the session on teardown.
 const closeSession: ReadonlyArray<Frame> = [
   outbound("session/close", { sessionId: SESSION_ID }),
   answer("session/close", {}),
@@ -329,7 +329,7 @@ const runKiroScript = Effect.fn("runKiroScript")(function* (input: {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const replayDir = yield* fileSystem.makeTempDirectoryScoped({
-    prefix: `t3-kiro-${input.scenario}-`,
+    prefix: `oni-kiro-${input.scenario}-`,
   });
   const statusPath = path.join(replayDir, "status.json");
   const transcript = yield* decodeAcpReplayTranscript(
@@ -467,7 +467,7 @@ describe("KiroAdapterV2", () => {
         outbound("initialize"),
         answer("initialize", KIRO_V3_INITIALIZE_WITHOUT_EXTENSIONS),
         outbound("session/new", { cwd: "<workspace>", mcpServers: "<any>" }),
-        // No autopilot option advertised, so T3 sends no config write.
+        // No autopilot option advertised, so Onicode sends no config write.
         answer("session/new", sessionSetup([modeOption])),
         turnPrompt,
         update({
@@ -992,7 +992,7 @@ describe("KiroAdapterV2 early Stop", () => {
 
   /**
    * Runs a Kiro turn and presses Stop as soon as it runs. Once Stop holds its
-   * cancel, `drive` gets the replay gate, a receipt for the cancel T3 sends,
+   * cancel, `drive` gets the replay gate, a receipt for the cancel Onicode sends,
    * and Stop's exit.
    */
   const earlyStop = (input: {
@@ -1242,16 +1242,16 @@ describe("KiroAdapterV2 early Stop", () => {
 });
 
 describe("KiroAdapterV2 MCP tools", () => {
-  // Probed live on Kiro 2.33.1 against a stdio MCP server named t3-code, without
-  // the permission round trip. Kiro titles the call "@t3-code/html_render", names
+  // Probed live on Kiro 2.33.1 against a stdio MCP server named onicode, without
+  // the permission round trip. Kiro titles the call "@onicode/html_render", names
   // it in `tool_id`, and keeps only the result's text.
-  it.effect("shows T3's html_render as T3's tool with the page T3 published", () =>
+  it.effect("shows Onicode's html_render as Onicode's tool with the page Onicode published", () =>
     Effect.gen(function* () {
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
       const toolCallId = "tooluse_4N3LnlI9PRlphUtzdBQGDD";
       const args = { html: "<p>hi</p>", title: "Probe", height: 120 };
-      const rawInput = { tool_id: "t3-code::html_render", arguments: args };
-      const kiroMeta = { kiro: { serverName: "t3-code", toolOrigin: "default" } };
+      const rawInput = { tool_id: "onicode::html_render", arguments: args };
+      const kiroMeta = { kiro: { serverName: "onicode", toolOrigin: "default" } };
       const page = { attachmentId: "kiro-mcp-html-render-page", title: "Probe", height: 120 };
       yield* runKiroScript({
         scenario: "mcp-html-render",
@@ -1264,7 +1264,7 @@ describe("KiroAdapterV2 MCP tools", () => {
           update({
             sessionUpdate: "tool_call",
             toolCallId,
-            title: "@t3-code/html_render",
+            title: "@onicode/html_render",
             kind: "other",
             status: "pending",
             rawInput,
@@ -1281,7 +1281,7 @@ describe("KiroAdapterV2 MCP tools", () => {
             sessionUpdate: "tool_call_update",
             toolCallId,
             status: "completed",
-            title: "@t3-code/html_render",
+            title: "@onicode/html_render",
             rawInput,
             rawOutput: { response: "Rendered.", imageBase64Urls: [], message: "Rendered." },
             content: [{ type: "content", content: { type: "text", text: "Rendered." } }],
@@ -1292,7 +1292,7 @@ describe("KiroAdapterV2 MCP tools", () => {
         ],
         drive: ({ events, startTurn }) =>
           Effect.gen(function* () {
-            // T3's MCP server records the page when Kiro calls html_render.
+            // Onicode's MCP server records the page when Kiro calls html_render.
             yield* mcpSessions.recordHtmlRender(
               ThreadId.make("thread-kiro-mcp-html-render"),
               args,
@@ -1310,7 +1310,7 @@ describe("KiroAdapterV2 MCP tools", () => {
             const completed = items.at(-1);
             assert.deepEqual(
               items.map((item) => item.toolName),
-              items.map(() => "t3-code.html_render"),
+              items.map(() => "onicode.html_render"),
             );
             assert.equal(completed?.status, "completed");
             assert.deepEqual(completed?.input, args);
@@ -1326,7 +1326,7 @@ describe("KiroAdapterV2 MCP tools", () => {
 
 describe("KiroAdapterV2 unknown model", () => {
   // Recorded live from Kiro 2.27.0 with the thread on a model id the account
-  // lacks. Kiro has not advertised `model` yet, so T3 sends the id; Kiro
+  // lacks. Kiro has not advertised `model` yet, so Onicode sends the id; Kiro
   // accepts it and fails the prompt with its own explanation.
   it.effect("fails the turn with Kiro's own unavailable-model message", () =>
     Effect.gen(function* () {
@@ -1355,7 +1355,7 @@ describe("KiroAdapterV2 unknown model", () => {
       yield* runKiroScript({
         scenario: "unknown-model",
         model: "not-a-kiro-model",
-        // As recorded: Kiro already runs on Autopilot, so T3 writes only the model.
+        // As recorded: Kiro already runs on Autopilot, so Onicode writes only the model.
         runtimeMode: "full-access",
         frames: [
           ...(frames as ReadonlyArray<Frame>),

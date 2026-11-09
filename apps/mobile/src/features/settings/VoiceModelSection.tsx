@@ -4,12 +4,12 @@ import {
   cancelEnvironmentSpeechModelDownload,
   downloadEnvironmentSpeechModel,
   selectEnvironmentSpeechModel,
-} from "@t3tools/client-runtime/voice-input";
+} from "@onicode/client-runtime/voice-input";
 import {
   AuthSettingsWriteScope,
   type EnvironmentId,
   type EnvironmentSpeechModel,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { type ReactNode, useEffect, useState } from "react";
 import { Platform, Text as NativeText, View } from "react-native";
@@ -49,7 +49,7 @@ export function useVoiceModels(environmentId: EnvironmentId, label: string) {
   const models = AsyncResult.getOrElse(modelsResult, () => null)?.models ?? [];
   const downloading = requested !== null || models.some(isDownloading);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polls the environment's download progress while one runs
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- polls the environment's download progress while one runs
   useEffect(() => {
     if (!downloading) return;
     const timer = setInterval(refreshModels, 1_000);
@@ -137,7 +137,7 @@ function ModelStats(props: { readonly model: EnvironmentSpeechModel; readonly la
             "score",
             <>
               {languageLabel(code)}{" "}
-              <Text className="font-t3-medium text-foreground">{score.grade}</Text> (
+              <Text className="font-oni-medium text-foreground">{score.grade}</Text> (
               {score.errorPercent}% error)
             </>,
           ],
@@ -148,7 +148,7 @@ function ModelStats(props: { readonly model: EnvironmentSpeechModel; readonly la
           [
             "speed",
             <>
-              <Text className="font-t3-medium text-foreground">{data.secondsPer30s} s</Text> / 30 s
+              <Text className="font-oni-medium text-foreground">{data.secondsPer30s} s</Text> / 30 s
             </>,
           ],
         ] as const)
@@ -296,7 +296,7 @@ export function VoiceModelSection(props: {
       footer={
         voice.canManage
           ? undefined
-          : `This connection can’t change settings on ${props.label}. Add a transcription model using T3 Code on that machine.`
+          : `This connection can’t change settings on ${props.label}. Add a transcription model using Onicode on that machine.`
       }
     >
       <ListRow

@@ -14,7 +14,7 @@ import type {
   RunId,
   RuntimeMode,
   TurnTokenUsage,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -23,7 +23,7 @@ import * as Layer from "effect/Layer";
 import {
   getModelSelectionBooleanOptionValue,
   getModelSelectionStringOptionValue,
-} from "@t3tools/shared/model";
+} from "@onicode/shared/model";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as AnalyticsService from "./AnalyticsService.ts";
 import { catalogModelLabel } from "./ProviderDimensions.ts";
@@ -158,7 +158,7 @@ function selectionProperties(
 
 function childKind(context: ProviderTurnAnalyticsContext | undefined) {
   if (context?.segment === "native_child") return "native";
-  return context?.origin?.subagent === true ? "t3" : undefined;
+  return context?.origin?.subagent === true ? "onicode" : undefined;
 }
 
 function counters(usage: TurnTokenUsage | undefined): Properties {
@@ -208,7 +208,7 @@ export function providerTurnProperties(
 function requestKind(origin: ProviderTurnOrigin | undefined) {
   if (origin === undefined) return "unknown";
   if (origin.scheduled) return "scheduled";
-  if (origin.subagent) return "t3_child";
+  if (origin.subagent) return "oni_child";
   if (origin.createdBy === "user") return "user";
   if (origin.creationSource === "provider") return "provider_continuation";
   return origin.createdBy;
@@ -385,7 +385,7 @@ export class ProviderTurnAnalytics extends Context.Reference<{
   }) => Effect.Effect<void>;
   readonly turnCompleted: (report: ProviderTurnReport) => Effect.Effect<void>;
   readonly runSettled: (report: RunSettledReport) => Effect.Effect<void>;
-}>("t3/telemetry/ProviderTurnAnalytics", {
+}>("onicode/telemetry/ProviderTurnAnalytics", {
   defaultValue: () => ({
     runStarted: () => Effect.void,
     turnCompleted: () => Effect.void,

@@ -3,9 +3,9 @@ import {
   AuthPreviewOperateScope,
   AuthTerminalOperateScope,
   type ScopedThreadRef,
-} from "@t3tools/contracts";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { getTerminalLabel } from "@t3tools/shared/terminalLabels";
+} from "@onicode/contracts";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
+import { getTerminalLabel } from "@onicode/shared/terminalLabels";
 import { agentControlledBrowserCloseConfirmation } from "../components/ChatView.logic";
 import { closePreviewSession } from "../components/preview/closePreviewSession";
 import { useThreadTerminalActions } from "../components/terminal/useThreadTerminalActions";

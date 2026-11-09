@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect";
 import { beforeEach, expect, vi } from "vite-plus/test";
 import { it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 const native = vi.hoisted(() => ({
   setBadgeCount: vi.fn(),

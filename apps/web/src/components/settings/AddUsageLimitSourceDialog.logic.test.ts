@@ -1,5 +1,5 @@
-import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts";
-import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@onicode/contracts";
+import { applyServerSettingsPatch } from "@onicode/shared/serverSettings";
 import { describe, expect, it } from "vite-plus/test";
 
 import { sourceIdFromUrl } from "./AddUsageLimitSourceDialog.logic";

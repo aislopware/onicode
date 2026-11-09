@@ -3,7 +3,7 @@ import type {
   ProviderApprovalDecision,
   RuntimeRequestId,
   WorktreeSetupSnapshot,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   type EnvironmentId,
   type MessageId,
@@ -14,19 +14,19 @@ import {
   type RunId,
   ThreadId,
   type TurnItemId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import type { AsyncResult, Atom } from "effect/reactivity";
-import type { CommandOutputView } from "@t3tools/client-runtime/state/command-output";
-import type { WorkflowOpening } from "@t3tools/client-runtime/state/subagentRuntime";
+import type { CommandOutputView } from "@onicode/client-runtime/state/command-output";
+import type { WorkflowOpening } from "@onicode/client-runtime/state/subagentRuntime";
 import { createContext, type MouseEvent, type ReactNode } from "react";
 import { type LegendListRef } from "@legendapp/list/react";
-import type { CodexArtifactTemplate } from "@t3tools/shared/codexArtifactTemplates";
+import type { CodexArtifactTemplate } from "@onicode/shared/codexArtifactTemplates";
 import type { PendingApproval } from "../../session-logic";
 import { type ChatFileAttachment } from "../../types";
 import { ExpandedImagePreview } from "./ExpandedImagePreview";
 import { type AssistantCitationTarget } from "./AssistantCitationSource";
 import { type MessagesTimelineRow, type WorkGroupScrollAnchor } from "./MessagesTimeline.logic";
-import { type TimestampFormat } from "@t3tools/contracts/settings";
+import { type TimestampFormat } from "@onicode/contracts/settings";
 import type { TurnItemDetailSource } from "../../state/queries";
 import { type HandoffTimelineRun } from "./V2LifecycleRow";
 

@@ -125,7 +125,7 @@ export const ProviderAuthState = Schema.Struct({
     ForwardCompatibleArray(ProviderAuthMethod).check(Schema.isMaxLength(32)),
   ),
   interaction: ForwardCompatibleOptional(Schema.NullOr(ProviderAuthInteraction)),
-  credentialOwner: ForwardCompatibleOptional(Schema.Literals(["provider", "t3"])),
+  credentialOwner: ForwardCompatibleOptional(Schema.Literals(["provider", "onicode"])),
 });
 export type ProviderAuthState = typeof ProviderAuthState.Type;
 

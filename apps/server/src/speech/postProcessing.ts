@@ -1,12 +1,12 @@
 import {
   DEFAULT_SPEECH_POST_PROCESSING_PROMPT,
   type EnvironmentSpeechPostProcessingRequest,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import { resolveSpeechPostProcessingModelSelection } from "@t3tools/shared/serverSettings";
+import { resolveSpeechPostProcessingModelSelection } from "@onicode/shared/serverSettings";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
@@ -21,7 +21,7 @@ export class SpeechPostProcessing extends Context.Service<
       input: EnvironmentSpeechPostProcessingRequest,
     ) => Effect.Effect<{ readonly text: string }, SpeechOperationError>;
   }
->()("t3/speech/postProcessing/SpeechPostProcessing") {}
+>()("onicode/speech/postProcessing/SpeechPostProcessing") {}
 
 const make = Effect.gen(function* () {
   const settingsService = yield* ServerSettings.ServerSettingsService;
@@ -37,7 +37,7 @@ const make = Effect.gen(function* () {
           (mode === "custom" ? customInstructions.trim() : "") ||
           DEFAULT_SPEECH_POST_PROCESSING_PROMPT;
         // Providers run in a working directory; cleanup must not read a checkout.
-        const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-voice-cleanup-" });
+        const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-voice-cleanup-" });
         const generated = yield* textGeneration.generateTranscriptionPostProcessing({
           cwd,
           prompt: buildTranscriptionPostProcessingPrompt(

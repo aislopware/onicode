@@ -1,4 +1,4 @@
-import { BranchNamingMode, type ServerSettingsPatch } from "@t3tools/contracts";
+import { BranchNamingMode, type ServerSettingsPatch } from "@onicode/contracts";
 import { useEffect, useEffectEvent, useRef } from "react";
 import { View } from "react-native";
 
@@ -51,7 +51,7 @@ export function BranchNamingSettings(props: {
   const saveDrafts = useEffectEvent(() =>
     send({ ...take("branchNamePrefix"), ...take("branchNameInstructions") }),
   );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- saves unsent branch naming drafts to server settings when the section unmounts
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- saves unsent branch naming drafts to server settings when the section unmounts
   useEffect(() => () => saveDrafts(), []);
   return (
     <SettingsSection
@@ -74,7 +74,7 @@ export function BranchNamingSettings(props: {
       {props.mode === "static" ? (
         <View className="gap-2 px-4 py-3">
           <Text className="text-sm text-foreground-muted">
-            Use t3 or t3/ for t3/add-search. Leave empty for no prefix.
+            Use onicode or onicode/ for onicode/add-search. Leave empty for no prefix.
           </Text>
           <AppTextInput
             key={props.prefix}

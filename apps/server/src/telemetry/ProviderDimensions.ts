@@ -2,7 +2,7 @@ import type {
   ModelSelection,
   OrchestrationV2ThreadShell,
   ServerProvider,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import { BUNDLED_MODEL_MANIFEST } from "../provider/ModelManifest.ts";
 
@@ -150,7 +150,7 @@ export function handoffSettings(tool: string, args: unknown, result: unknown): F
         targetChosen: threads.some((thread) => asFields(thread).target !== undefined),
       };
     }
-    case "t3_thread_launch":
+    case "oni_thread_launch":
       return defined({
         targetChosen: input.modelSelection !== undefined,
         workspace:
@@ -162,9 +162,9 @@ export function handoffSettings(tool: string, args: unknown, result: unknown): F
                 "existing_worktree",
               ]) ?? "root"),
       });
-    case "t3_thread_send":
+    case "oni_thread_send":
       return defined({ delivery: stringField(output, "delivery") });
-    case "t3_thread_send_attachments":
+    case "oni_thread_send_attachments":
       return { delivery: "auto" };
     case "schedule_task":
       return { bindToCurrentThread: input.bindToCurrentThread !== false };
@@ -181,7 +181,7 @@ export function toolOutcome(
 ) {
   if (result === undefined) return { outcome: "error", errorCode: "exception" };
   const content = asFields(result.structuredContent);
-  // T3 tool failures are declared errors whose structured content carries a
+  // Onicode tool failures are declared errors whose structured content carries a
   // closed `code`; the MCP layer does not always set isError for them.
   const code = stringField(content, "code") ?? stringField(asFields(content.error), "_tag");
   if (result.isError === true || (content._tag !== undefined && code !== undefined)) {

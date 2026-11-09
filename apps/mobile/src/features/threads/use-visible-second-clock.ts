@@ -1,5 +1,5 @@
 import { useIsFocused } from "@react-navigation/native";
-import { secondTick } from "@t3tools/client-runtime/clock";
+import { secondTick } from "@onicode/client-runtime/clock";
 import { useSyncExternalStore } from "react";
 
 import { useAppActive } from "../../lib/appState";

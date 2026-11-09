@@ -1,10 +1,10 @@
-import { findErrorTraceId } from "@t3tools/client-runtime/errors";
+import { findErrorTraceId } from "@onicode/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId } from "@t3tools/contracts";
-import type { RelayClientEnvironmentRecord } from "@t3tools/contracts/relay";
+} from "@onicode/client-runtime/state/runtime";
+import type { EnvironmentId } from "@onicode/contracts";
+import type { RelayClientEnvironmentRecord } from "@onicode/contracts/relay";
 import { ServerIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -307,7 +307,7 @@ export function T3ConnectUserProfilePage() {
               <EmptyHeader>
                 <EmptyTitle>No T3 Connect environments</EmptyTitle>
                 <EmptyDescription>
-                  Link an environment from its local Settings to make it available through T3
+                  Link an environment from its local Settings to make it available through Onicode
                   Connect.
                 </EmptyDescription>
               </EmptyHeader>

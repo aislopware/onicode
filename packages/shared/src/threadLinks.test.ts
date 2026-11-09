@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@onicode/contracts";
 
 import {
   formatHostedThreadLink,
@@ -60,36 +60,36 @@ describe("thread link destinations", () => {
 
 describe("thread links", () => {
   it("takes the ids verbatim, percent escapes included", () => {
-    expect(parseThreadLinkHref("t3-thread://v1/mcp:1234")).toEqual(v1("mcp:1234"));
-    expect(parseThreadLinkHref("t3-thread://v1/thread:delegated-task:mcp%3A1")).toEqual(
+    expect(parseThreadLinkHref("oni-thread://v1/mcp:1234")).toEqual(v1("mcp:1234"));
+    expect(parseThreadLinkHref("oni-thread://v1/thread:delegated-task:mcp%3A1")).toEqual(
       v1("thread:delegated-task:mcp%3A1"),
     );
-    expect(parseThreadLinkHref("t3-thread://v2/env-1/thread:a/b%3A1")).toEqual(
+    expect(parseThreadLinkHref("oni-thread://v2/env-1/thread:a/b%3A1")).toEqual(
       ref("env-1", "thread:a/b%3A1"),
     );
   });
 
   it("rejects other links and an empty id", () => {
     expect(parseThreadLinkHref("https://t3.codes")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v1/")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v1/ ")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v2/env-1")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v2/env-1/")).toBeNull();
-    expect(parseThreadLinkHref("t3-thread://v2//chat-1")).toBeNull();
+    expect(parseThreadLinkHref("oni-thread://v1/")).toBeNull();
+    expect(parseThreadLinkHref("oni-thread://v1/ ")).toBeNull();
+    expect(parseThreadLinkHref("oni-thread://v2/env-1")).toBeNull();
+    expect(parseThreadLinkHref("oni-thread://v2/env-1/")).toBeNull();
+    expect(parseThreadLinkHref("oni-thread://v2//chat-1")).toBeNull();
   });
 
   it("resolves a percent-encoded id when the id as written names no thread", () => {
     const title = titlesIn({ local: { "thread:project:1": "Decoded", "provider%3A1": "Literal" } });
     expect(
       relabelThreadLinks(
-        "[a](t3-thread://v1/thread%3Aproject%3A1) [b](t3-thread://v1/provider%3A1)",
+        "[a](oni-thread://v1/thread%3Aproject%3A1) [b](oni-thread://v1/provider%3A1)",
         local,
         title,
       ),
-    ).toBe("[Decoded](t3-thread://v1/thread:project:1) [Literal](t3-thread://v1/provider%3A1)");
+    ).toBe("[Decoded](oni-thread://v1/thread:project:1) [Literal](oni-thread://v1/provider%3A1)");
     const untitled = titlesIn({ local: { "a%3A1": "", "a:1": "Other" } });
-    expect(relabelThreadLinks("[Kept](t3-thread://v1/a%3A1)", local, untitled)).toBe(
-      "[Kept](t3-thread://v1/a%3A1)",
+    expect(relabelThreadLinks("[Kept](oni-thread://v1/a%3A1)", local, untitled)).toBe(
+      "[Kept](oni-thread://v1/a%3A1)",
     );
   });
 
@@ -97,56 +97,56 @@ describe("thread links", () => {
     const title = titlesIn({ local: { t1: "Here" }, there: { t1: "There" } });
     expect(
       relabelThreadLinks(
-        "<t3-thread://v2/there/t1> and [old](t3-thread://v2/local/t1)",
+        "<oni-thread://v2/there/t1> and [old](oni-thread://v2/local/t1)",
         local,
         title,
       ),
-    ).toBe("[There](t3-thread://v2/there/t1) and [Here](t3-thread://v2/local/t1)");
+    ).toBe("[There](oni-thread://v2/there/t1) and [Here](oni-thread://v2/local/t1)");
   });
 
   it("reads an angle-bracketed destination as the labeled link, not an autolink", () => {
     const title = titlesIn({ local: { t1: "Here" }, there: { t1: "There" } });
     expect(
       relabelThreadLinks(
-        "[old](<t3-thread://v2/there/t1>) and [older](<t3-thread://v2/local/t1>)",
+        "[old](<oni-thread://v2/there/t1>) and [older](<oni-thread://v2/local/t1>)",
         local,
         title,
       ),
-    ).toBe("[There](t3-thread://v2/there/t1) and [Here](t3-thread://v2/local/t1)");
+    ).toBe("[There](oni-thread://v2/there/t1) and [Here](oni-thread://v2/local/t1)");
     expect(
-      relabelThreadLinks("[Kept label](<t3-thread://v2/local/t1>)", local, () => undefined),
+      relabelThreadLinks("[Kept label](<oni-thread://v2/local/t1>)", local, () => undefined),
     ).toBe("Kept label");
-    expect(threadLinkRefs("[a](<t3-thread://v2/there/t2>)", local)).toEqual([ref("there", "t2")]);
+    expect(threadLinkRefs("[a](<oni-thread://v2/there/t2>)", local)).toEqual([ref("there", "t2")]);
   });
 
   it("turns a v2 link it cannot resolve into plain text, never the raw link", () => {
     expect(
       relabelThreadLinks(
-        "<t3-thread://v2/there/t1>, <t3-thread://v2/local/t1>, [Old title](t3-thread://v2/there/t1)",
+        "<oni-thread://v2/there/t1>, <oni-thread://v2/local/t1>, [Old title](oni-thread://v2/there/t1)",
         local,
         () => undefined,
       ),
     ).toBe("Thread on another machine, Thread no longer available, Old title");
-    expect(relabelThreadLinks("[Old](t3-thread://v1/t1)", local, () => undefined)).toBe(
-      "[Old](t3-thread://v1/t1)",
+    expect(relabelThreadLinks("[Old](oni-thread://v1/t1)", local, () => undefined)).toBe(
+      "[Old](oni-thread://v1/t1)",
     );
   });
 
   it("leaves links inside code spans and fences as written", () => {
     const markdown = [
-      "Live [old](t3-thread://v1/t1), literal `[old](t3-thread://v1/t1)`.",
+      "Live [old](oni-thread://v1/t1), literal `[old](oni-thread://v1/t1)`.",
       "```md",
-      "<t3-thread://v2/local/t1>",
+      "<oni-thread://v2/local/t1>",
       "```",
-      "After <t3-thread://v2/local/t1>",
+      "After <oni-thread://v2/local/t1>",
     ].join("\n");
     expect(relabelThreadLinks(markdown, local, () => "New")).toBe(
       [
-        "Live [New](t3-thread://v1/t1), literal `[old](t3-thread://v1/t1)`.",
+        "Live [New](oni-thread://v1/t1), literal `[old](oni-thread://v1/t1)`.",
         "```md",
-        "<t3-thread://v2/local/t1>",
+        "<oni-thread://v2/local/t1>",
         "```",
-        "After [New](t3-thread://v2/local/t1)",
+        "After [New](oni-thread://v2/local/t1)",
       ].join("\n"),
     );
   });
@@ -154,7 +154,7 @@ describe("thread links", () => {
   it("lists the threads a message's links can name, outside code", () => {
     expect(
       threadLinkRefs(
-        "<t3-thread://v2/there/t1> [a](t3-thread://v1/t%3A2) `<t3-thread://v2/code/t3>`",
+        "<oni-thread://v2/there/t1> [a](oni-thread://v1/t%3A2) `<oni-thread://v2/code/onicode>`",
         local,
       ),
     ).toEqual([ref("there", "t1"), ref("local", "t%3A2"), ref("local", "t:2")]);
@@ -171,14 +171,14 @@ describe("thread links", () => {
         return match;
       });
     });
-    expect(threadLinkRefs("<t3-thread://v2/local/t1> [a](t3-thread://v2/there/t2)", local)).toEqual(
+    expect(threadLinkRefs("<oni-thread://v2/local/t1> [a](oni-thread://v2/there/t2)", local)).toEqual(
       [ref("local", "t1"), ref("there", "t2")],
     );
   });
 
   it("writes a titleless autolink that opens that exact thread", () => {
     const link = formatThreadLink(ref("env-1", "thread:delegated-task:mcp%3A1"));
-    expect(link).toBe("<t3-thread://v2/env-1/thread:delegated-task:mcp%3A1>");
+    expect(link).toBe("<oni-thread://v2/env-1/thread:delegated-task:mcp%3A1>");
     expect(parseThreadLinkHref(link.slice(1, -1))).toEqual(
       ref("env-1", "thread:delegated-task:mcp%3A1"),
     );
@@ -186,9 +186,9 @@ describe("thread links", () => {
 
   it("formats a label that would otherwise break the Markdown link", () => {
     expect(formatThreadLink(ref("e", "t1"), "Fix [ci] \\ build")).toBe(
-      "[Fix ci build](t3-thread://v2/e/t1)",
+      "[Fix ci build](oni-thread://v2/e/t1)",
     );
-    expect(formatThreadLink(ref("e", "t1"), " ] ")).toBe("<t3-thread://v2/e/t1>");
+    expect(formatThreadLink(ref("e", "t1"), " ] ")).toBe("<oni-thread://v2/e/t1>");
   });
 });
 
@@ -199,7 +199,7 @@ describe("hosted thread links", () => {
     expect(link).toBe("https://app.t3.codes/threads/env%2E1/thread%3Adelegated%2Fmcp%253A1%2E");
     expect(parseThreadLinkHref(link)).toEqual(thread);
     expect(hostedThreadLink(thread, "https://preview.t3.codes/")).toMatch(
-      /^https:\/\/preview\.t3\.codes\/threads\//,
+      /^https:\/\/preview\.onicode\.codes\/threads\//,
     );
   });
 
@@ -237,9 +237,9 @@ describe("hosted thread links", () => {
       ),
     ).toBe(
       [
-        "See [There](t3-thread://v2/there/t1).",
-        "[There](t3-thread://v2/there/t1)",
-        "[There](t3-thread://v2/there/t1)",
+        "See [There](oni-thread://v2/there/t1).",
+        "[There](oni-thread://v2/there/t1)",
+        "[There](oni-thread://v2/there/t1)",
         "`https://app.t3.codes/threads/there/t1`",
         "https://app.t3.codes/threads/there/t1?prompt=go",
       ].join("\n"),

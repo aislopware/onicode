@@ -1,5 +1,5 @@
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { PreparedConnection } from "@onicode/client-runtime/connection";
+import type { EnvironmentId } from "@onicode/contracts";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isLoopbackHostname } from "~/environments/primary/target";

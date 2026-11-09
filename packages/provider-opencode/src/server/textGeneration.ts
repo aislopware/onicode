@@ -1,12 +1,12 @@
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { NonNegativeInt, settingsSecretLiteral, TextGenerationError } from "@t3tools/contracts";
+import { NonNegativeInt, settingsSecretLiteral, TextGenerationError } from "@onicode/contracts";
 import type { OpenCodeSettings } from "../settings.ts";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@onicode/shared/model";
 
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
+import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
+import * as TextGenerationOperations from "@onicode/provider-core/server/textGenerationOperations";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import * as OpenCodeServerOwner from "./OpenCodeServerOwner.ts";
 
@@ -212,7 +212,7 @@ export const makeOpenCodeTextGeneration = Effect.fn("makeOpenCodeTextGeneration"
           try: (signal) =>
             client.session.create(
               {
-                title: `T3 Code ${input.operation}`,
+                title: `Onicode ${input.operation}`,
                 // OpenCode Zen refuses free-model requests that carry no tools, so keep read.
                 permission: [
                   { permission: "*", pattern: "*", action: "deny" },

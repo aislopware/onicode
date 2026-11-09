@@ -1,7 +1,7 @@
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
+import type { EnvironmentId, ThreadId } from "@onicode/contracts";
+import { formatDiffCount } from "@onicode/client-runtime/diff-count";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
@@ -150,7 +150,7 @@ const ReviewNotice = function ReviewNotice(props: { readonly notice: string }) {
         Platform.OS === "android" ? "m-2 rounded-[20px]" : "border-b border-warning-border",
       )}
     >
-      <Text className="text-xs font-t3-bold uppercase text-warning-foreground">Partial diff</Text>
+      <Text className="text-xs font-oni-bold uppercase text-warning-foreground">Partial diff</Text>
       <Text className="text-xs leading-normal text-warning-foreground">{props.notice}</Text>
     </View>
   );
@@ -174,7 +174,7 @@ function ReviewSelectionActionBar(props: {
         tintColorClassName="accent-primary-foreground"
         type="monochrome"
       />
-      <Text className="text-base font-t3-bold text-primary-foreground">{props.title}</Text>
+      <Text className="text-base font-oni-bold text-primary-foreground">{props.title}</Text>
     </>
   );
 
@@ -255,18 +255,18 @@ const ReviewFileNavigatorRow = function ReviewFileNavigatorRow(props: {
       <Text
         className={
           selected
-            ? "text-xs font-t3-bold text-foreground"
-            : "text-xs font-t3-medium text-foreground-secondary"
+            ? "text-xs font-oni-bold text-foreground"
+            : "text-xs font-oni-medium text-foreground-secondary"
         }
         numberOfLines={2}
       >
         {file.path}
       </Text>
       <View className="mt-1 flex-row gap-2">
-        <Text className="text-2xs font-t3-bold text-adaptive-emerald-700-300">
+        <Text className="text-2xs font-oni-bold text-adaptive-emerald-700-300">
           +{formatDiffCount(file.additions)}
         </Text>
-        <Text className="text-2xs font-t3-bold text-adaptive-rose-700-300">
+        <Text className="text-2xs font-oni-bold text-adaptive-rose-700-300">
           -{formatDiffCount(file.deletions)}
         </Text>
       </View>
@@ -576,7 +576,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
             Platform.OS === "android" ? "m-2 rounded-[20px]" : "border-b border-border",
           )}
         >
-          <Text className="text-sm font-t3-bold text-foreground">Review unavailable</Text>
+          <Text className="text-sm font-oni-bold text-foreground">Review unavailable</Text>
           <Text className="text-xs leading-normal text-foreground-muted">{error}</Text>
         </View>,
       );
@@ -725,7 +725,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                         : "border-b border-border bg-card px-4 py-5"
                     }
                   >
-                    <Text className="text-sm font-t3-bold text-foreground">No review diffs</Text>
+                    <Text className="text-sm font-oni-bold text-foreground">No review diffs</Text>
                     <Text
                       className={cn(
                         "text-xs leading-normal text-foreground-muted",
@@ -754,7 +754,7 @@ export function ReviewSheet(props: ReviewSheetProps) {
                       : "border-b border-border bg-card px-4 py-5"
                   }
                 >
-                  <Text className="text-sm font-t3-bold text-foreground">No changes</Text>
+                  <Text className="text-sm font-oni-bold text-foreground">No changes</Text>
                   <Text
                     className={cn(
                       "text-xs leading-normal text-foreground-muted",

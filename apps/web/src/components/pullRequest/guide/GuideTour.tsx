@@ -1,4 +1,4 @@
-import type { EnvironmentId, PullRequestRef, PullRequestReviewGuide } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestRef, PullRequestReviewGuide } from "@onicode/contracts";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
@@ -18,7 +18,7 @@ import {
   useGuideRunStore,
   type GuideProgress,
 } from "./guideRunStore";
-import { stepTourPosition, stopFilePaths } from "@t3tools/client-runtime/review-guide-tour";
+import { stepTourPosition, stopFilePaths } from "@onicode/client-runtime/review-guide-tour";
 import { useGuideDiffFiles } from "./useGuideDiffFiles";
 
 export function GuideTour({
@@ -86,7 +86,7 @@ export function GuideTour({
     event.preventDefault();
     step(event.key === "j" ? 1 : -1);
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- document keydown listener for j/k tour stepping while the guide is active
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- document keydown listener for j/k tour stepping while the guide is active
   useEffect(() => {
     if (!active) return;
     const onKeyDown = (event: KeyboardEvent) => stepFromKey(event);

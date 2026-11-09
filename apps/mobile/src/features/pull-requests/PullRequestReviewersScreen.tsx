@@ -4,14 +4,14 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { usePullRequestConnected } from "./usePullRequestConnected";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import {
   hostReviewerQuery,
   reviewerCandidateView,
   type ReviewerTruncation,
-} from "@t3tools/client-runtime/pull-request-reviewers";
-import type { PullRequestReviewerCandidate } from "@t3tools/contracts";
+} from "@onicode/client-runtime/pull-request-reviewers";
+import type { PullRequestReviewerCandidate } from "@onicode/contracts";
 import { useRef, useState } from "react";
 import { FlatList, Pressable, ScrollView, View } from "react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
@@ -190,7 +190,7 @@ export function PullRequestReviewersScreen({ route }: StaticScreenProps<PullRequ
               >
                 <PullRequestAvatar actor={item} size={32} />
                 <View className="min-w-0 flex-1 gap-0.5">
-                  <Text className="text-sm font-t3-medium" numberOfLines={1}>
+                  <Text className="text-sm font-oni-medium" numberOfLines={1}>
                     {item.name || item.login}
                   </Text>
                   <Text className="text-xs text-foreground-muted" numberOfLines={1}>

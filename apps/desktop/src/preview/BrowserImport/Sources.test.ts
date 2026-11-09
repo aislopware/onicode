@@ -3,7 +3,7 @@
 import * as NodePath from "node:path";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -24,13 +24,13 @@ import {
   sourcePathContext,
   windowsChromiumCookiesAreHeld,
 } from "./Sources.ts";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 
 const helium = BROWSER_IMPORT_SOURCES.find((source) => source.id === "helium")!;
 
 const withSourceHome = Effect.fnUntraced(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
-  const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-sources-" });
+  const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-sources-" });
   const context = yield* sourcePathContext.pipe(
     Effect.provideService(HostProcess.Environment, { HOME: home }),
     Effect.provideService(HostProcess.Platform, "darwin"),
@@ -82,7 +82,7 @@ describe("isSourceRunning", () => {
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
         const home = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3code-helium-windows-lock-",
+          prefix: "onicode-helium-windows-lock-",
         });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, {
@@ -367,7 +367,7 @@ describe("Zen", () => {
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-zen-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-zen-" });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: home }),
           Effect.provideService(HostProcess.Platform, "darwin"),
@@ -419,7 +419,7 @@ describe("Zen", () => {
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-zen-linux-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-zen-linux-" });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: home }),
           Effect.provideService(HostProcess.Platform, "linux"),
@@ -477,7 +477,7 @@ describe("Zen", () => {
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-zen-flatpak-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-zen-flatpak-" });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: home }),
           Effect.provideService(HostProcess.Platform, "linux"),
@@ -507,7 +507,7 @@ describe("Zen", () => {
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-zen-snap-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-zen-snap-" });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: home }),
           Effect.provideService(HostProcess.Platform, "linux"),
@@ -557,7 +557,7 @@ describe("Firefox Snap profiles", () => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const home = yield* fileSystem.makeTempDirectoryScoped({
-            prefix: "t3code-firefox-snap-",
+            prefix: "onicode-firefox-snap-",
           });
           const context = yield* sourcePathContext.pipe(
             Effect.provideService(HostProcess.Environment, { HOME: home }),
@@ -598,7 +598,7 @@ describe("Firefox Snap profiles", () => {
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-firefox-snap-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-firefox-snap-" });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: home }),
           Effect.provideService(HostProcess.Platform, "linux"),
@@ -647,7 +647,7 @@ describe("listSourceProfiles Firefox fallback", () => {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const home = yield* fileSystem.makeTempDirectoryScoped({
-            prefix: `t3code-firefox-${platform}-`,
+            prefix: `onicode-firefox-${platform}-`,
           });
           const appData = path.join(home, "AppData", "Roaming");
           const context = yield* sourcePathContext.pipe(
@@ -685,7 +685,7 @@ describe("listSourceProfiles Firefox fallback", () => {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const home = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3code-firefox-stale-ini-",
+          prefix: "onicode-firefox-stale-ini-",
         });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: home }),
@@ -721,7 +721,7 @@ describe("listSourceProfiles Firefox fallback", () => {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const home = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3code-firefox-counts-",
+          prefix: "onicode-firefox-counts-",
         });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: home }),
@@ -773,7 +773,7 @@ describe("isSourceRunning for Firefox", () => {
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-firefox-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-firefox-" });
         const context = yield* sourcePathContext.pipe(
           Effect.provideService(HostProcess.Environment, { HOME: home }),
           Effect.provideService(HostProcess.Platform, "darwin"),
@@ -815,7 +815,7 @@ describe("isSourceRunning for Firefox", () => {
     run(
       Effect.gen(function* () {
         const fileSystem = yield* FileSystem.FileSystem;
-        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-firefox-" });
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-firefox-" });
         const context = yield* sourcePathContext.pipe(
           // Without APPDATA, the Windows Firefox fixture would escape into the repo.
           Effect.provideService(HostProcess.Environment, {

@@ -1,5 +1,5 @@
 import { assert } from "@effect/vitest";
-import type { ProviderReplayTranscript } from "@t3tools/contracts";
+import type { ProviderReplayTranscript } from "@onicode/contracts";
 
 import type { OrchestratorV2ScenarioResult } from "../../OrchestratorScenario.ts";
 import {
@@ -84,7 +84,7 @@ export function assertKiroSupervisedWriteOutput(
 
 /**
  * Full access keeps Kiro's Autopilot on, so Kiro skips its review of changes.
- * It still asks the client before the write, and T3 answers that by policy
+ * It still asks the client before the write, and Onicode answers that by policy
  * without involving the user.
  */
 export function assertKiroFullAccessWriteOutput(

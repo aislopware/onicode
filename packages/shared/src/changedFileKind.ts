@@ -1,4 +1,4 @@
-import type { PullRequestChangeBreakdown } from "@t3tools/contracts";
+import type { PullRequestChangeBreakdown } from "@onicode/contracts";
 
 export type ChangedFileKind = keyof NonNullable<PullRequestChangeBreakdown>;
 

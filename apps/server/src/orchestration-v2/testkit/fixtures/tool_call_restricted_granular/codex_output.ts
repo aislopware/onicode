@@ -1,5 +1,5 @@
 import { assert } from "@effect/vitest";
-import type { ProviderReplayTranscript } from "@t3tools/contracts";
+import type { ProviderReplayTranscript } from "@onicode/contracts";
 
 import type { OrchestratorV2ScenarioResult } from "../../OrchestratorScenario.ts";
 import {
@@ -38,6 +38,6 @@ export function assertToolCallRestrictedGranularOutput(
   const approval = projection.turnItems.find((item) => item.type === "approval_request");
   assert.equal(
     approval?.prompt,
-    "add /home/replay-user/t3code/packages/effect-codex-app-server/.codex-probe-write-action.txt",
+    "add /home/replay-user/onicode/packages/effect-codex-app-server/.codex-probe-write-action.txt",
   );
 }

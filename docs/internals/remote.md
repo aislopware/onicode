@@ -91,7 +91,7 @@ Unlinking on the linking side only forgets the token.
   thread or project the call names is checked where it lives. A tool that acts
   as the calling thread itself cannot take a linked environment.
 - **Every forwarded call carries the calling agent's modes** in
-  `T3-Mode-Limit`, which the receiving `/mcp` only ever narrows the client's
+  `Onicode-Mode-Limit`, which the receiving `/mcp` only ever narrows the client's
   approved access with. A plan-mode agent therefore cannot start full-access
   work through a full-access link.
 - **The token goes only to an address that proves it is the linked
@@ -106,7 +106,7 @@ Unlinking on the linking side only forgets the token.
 
 **Work a link paired below full access starts stays within that link.** The
 receiving environment knows a session is a peer link because the linking side
-registers its OAuth client with the `t3code-peer-link` software id, and the
+registers its OAuth client with the `onicode-peer-link` software id, and the
 marker is signed into the session. Threads that session launches carry it, with
 the access it was paired with, as an immutable `linkOrigin`, and so do the
 subagents, forks and `create_threads` they derive. The rules live in
@@ -136,7 +136,7 @@ also what keeps restart recovery from treating them as abandoned provider work.
 The link is routing, not isolation: an agent the link starts runs as the
 receiving environment's user. **A full-access link is therefore not fenced**:
 its agents can already do anything that user can, so the fence would only stop
-T3's own tools. Its work still carries `linkOrigin`, so clients show where it
+Onicode's own tools. Its work still carries `linkOrigin`, so clients show where it
 came from. A stamp without the access, from before it was recorded, is fenced.
 
 ## Hosted web is a client
@@ -181,6 +181,6 @@ no local state is deleted. On the next start the main process skips port selecti
 and the primary and WSL backends, and opens the window right away. The renderer sees this through
 `desktopBridge.getLocalEnvironmentEnabled()`: `readPrimaryEnvironmentTarget` returns null, so primary
 auth and platform-managed discovery are skipped and only saved environments (pairing, relay, SSH)
-connect. This is possible because the desktop renderer is not served by the backend: the `t3code://`
+connect. This is possible because the desktop renderer is not served by the backend: the `onicode://`
 scheme serves the bundled client from disk (Vite in development) and API traffic always goes to the
 environment's own URL.

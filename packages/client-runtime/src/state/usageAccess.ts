@@ -2,7 +2,7 @@ import {
   AuthDiagnosticsReadScope,
   sessionGrantsScope,
   type SessionGrantInput,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import type { EnvironmentConnectionPhase } from "../connection/presentation.ts";
 

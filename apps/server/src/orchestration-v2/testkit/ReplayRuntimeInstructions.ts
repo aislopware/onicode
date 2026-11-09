@@ -1,6 +1,6 @@
-import type { ProviderDriverKind, ProviderReplayTranscript } from "@t3tools/contracts";
+import type { ProviderDriverKind, ProviderReplayTranscript } from "@onicode/contracts";
 
-import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
+import { buildRuntimeInstructions } from "@onicode/provider-core/server/runtimeInstructions";
 
 export function materializeReplayTranscriptRuntimeInstructions(
   transcript: ProviderReplayTranscript,

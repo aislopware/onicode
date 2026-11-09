@@ -14,15 +14,15 @@ import {
   EnvironmentHttpUnauthorizedError,
   EnvironmentId,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   type RelayEnvironmentLinkResponse,
   type RelayManagedEndpointProviderKind,
-} from "@t3tools/contracts/relay";
-import { EnvironmentRegistry, EnvironmentSupervisor } from "@t3tools/client-runtime/connection";
-import { request, runStream } from "@t3tools/client-runtime/rpc";
-import { ManagedRelay, relayRequestFailureDetail } from "@t3tools/client-runtime/relay";
-import { executeConnectedEnvironmentHttpRequest } from "@t3tools/client-runtime/state/environmentHttpAuth";
+} from "@onicode/contracts/relay";
+import { EnvironmentRegistry, EnvironmentSupervisor } from "@onicode/client-runtime/connection";
+import { request, runStream } from "@onicode/client-runtime/rpc";
+import { ManagedRelay, relayRequestFailureDetail } from "@onicode/client-runtime/relay";
+import { executeConnectedEnvironmentHttpRequest } from "@onicode/client-runtime/state/environmentHttpAuth";
 
 import { resolveCloudPublicConfig } from "./publicConfig";
 import {
@@ -63,7 +63,7 @@ const ensureRelayClientAvailable = Effect.fn("linkEnvironment.ensureRelayClientA
     if (status.status === "available") return;
     if (status.status === "unsupported") {
       return yield* new CloudEnvironmentLinkError({
-        message: `T3 Code cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
+        message: `Onicode cannot install the relay client automatically on ${status.platform}-${status.arch}.`,
       });
     }
 
@@ -99,7 +99,7 @@ const ensureRelayClientAvailable = Effect.fn("linkEnvironment.ensureRelayClientA
       return yield* new CloudEnvironmentLinkError({
         message:
           installedStatus.status === "unsupported"
-            ? `T3 Code cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
+            ? `Onicode cannot install the relay client automatically on ${installedStatus.platform}-${installedStatus.arch}.`
             : "The relay client is still unavailable after installation.",
       });
     }
@@ -338,7 +338,7 @@ export const linkEnvironmentToCloud: (input: {
   const configuredRelayUrl = relayUrl();
   if (!configuredRelayUrl) {
     return yield* new CloudEnvironmentLinkError({
-      message: "T3CODE_RELAY_URL is not configured.",
+      message: "ONICODE_RELAY_URL is not configured.",
     });
   }
   const managedTunnelsEnabled = (input.mode ?? "managed") === "managed";

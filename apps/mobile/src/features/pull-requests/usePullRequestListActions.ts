@@ -4,8 +4,8 @@ import {
   executeAtomQuery,
   settlePromise,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, PullRequestAction } from "@t3tools/contracts";
+} from "@onicode/client-runtime/state/runtime";
+import type { EnvironmentId, PullRequestAction } from "@onicode/contracts";
 import { Atom, AsyncResult } from "effect/reactivity";
 import { use, useRef, useState } from "react";
 import { Linking, Platform } from "react-native";
@@ -17,7 +17,7 @@ import {
   openOnProviderLabel,
   pullRequestActionLabel,
 } from "./pullRequestActions";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { scopedPullRequestListKey, type EnvironmentPullRequestListEntry } from "./pullRequestList";
 import { copyPullRequestLink, sharePullRequestLink } from "./pullRequestLink";
 import { pullRequestTarget } from "./usePullRequestDiff";

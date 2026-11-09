@@ -1,5 +1,5 @@
-import { EnvironmentId, type ServerConfig, ThreadId, TurnItemId } from "@t3tools/contracts";
-import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
+import { EnvironmentId, type ServerConfig, ThreadId, TurnItemId } from "@onicode/contracts";
+import type { RelayEnvironmentStatusResponse } from "@onicode/contracts/relay";
 import * as Option from "effect/Option";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -154,8 +154,8 @@ const discovered = (
     environmentId: EnvironmentId.make(id),
     label,
     endpoint: {
-      httpBaseUrl: `https://${id}.t3.example`,
-      wsBaseUrl: `wss://${id}.t3.example`,
+      httpBaseUrl: `https://${id}.onicode.example`,
+      wsBaseUrl: `wss://${id}.onicode.example`,
       providerKind: "cloudflare_tunnel",
     },
     linkedAt: "2026-10-01T00:00:00.000Z",
@@ -167,8 +167,8 @@ const discovered = (
       : Option.some({
           environmentId: EnvironmentId.make(id),
           endpoint: {
-            httpBaseUrl: `https://${id}.t3.example`,
-            wsBaseUrl: `wss://${id}.t3.example`,
+            httpBaseUrl: `https://${id}.onicode.example`,
+            wsBaseUrl: `wss://${id}.onicode.example`,
             providerKind: "cloudflare_tunnel",
           },
           status: "online",
@@ -230,7 +230,7 @@ describe("linkableMachines", () => {
       links: [],
       connect: new Map([[box.environmentId, discovered(box.environmentId, "Box")]]),
     });
-    expect(listed?.urls).toEqual(["https://environment-box.t3.example"]);
+    expect(listed?.urls).toEqual(["https://environment-box.onicode.example"]);
     // Until discovery has found it, there is no address to offer.
     expect(
       linkableMachines({
@@ -257,7 +257,7 @@ describe("linkableMachines", () => {
     expect(listed?.urls).toEqual([
       "https://vps.ts.net",
       "http://192.168.1.20:3773",
-      "https://environment-vps.t3.example",
+      "https://environment-vps.onicode.example",
     ]);
   });
 
@@ -309,7 +309,7 @@ describe("linkableMachines", () => {
       connected: false,
       connectOnly: true,
       linked: false,
-      urls: ["https://environment-mini.t3.example"],
+      urls: ["https://environment-mini.onicode.example"],
     });
     expect(listed[2]).toMatchObject({ machine: "server", linked: true });
   });

@@ -1,5 +1,5 @@
 import { makeThreadShellFixture } from "../../test-fixtures";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
 import {
   AuthOrchestrationOperateScope,
   EnvironmentId,
@@ -7,7 +7,7 @@ import {
   ProviderInstanceId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult } from "effect/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";

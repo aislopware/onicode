@@ -9,7 +9,7 @@ import { vitePlusCommand } from "./check-changed-command.ts";
 
 function fixture() {
   const root = NodeFS.realpathSync(
-    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3 check & (vp) % ! ")),
+    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "onicode check & (vp) % ! ")),
   );
   const write = (file: string, content: string) => {
     const path = NodePath.join(root, file);

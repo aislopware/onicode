@@ -1,4 +1,4 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -27,7 +27,7 @@ export class PreviewAgentActivity extends Context.Service<
       Scope.Scope
     >;
   }
->()("t3/preview/PreviewAgentActivity") {}
+>()("onicode/preview/PreviewAgentActivity") {}
 
 const make = Effect.gen(function* () {
   const changes = yield* PubSub.unbounded<PreviewAgentTurnChange>();

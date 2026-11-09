@@ -1,14 +1,14 @@
-import type { EnvironmentShellSummary } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentShellSummary } from "@onicode/client-runtime/state/shell";
 import {
   BearerConnectionProfile,
   BearerConnectionTarget,
-} from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
+} from "@onicode/client-runtime/connection";
+import { EnvironmentId } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Option from "effect/Option";
 
 import { projectWorkspaceState } from "./workspaceModel";
-import { projectEnvironmentConnectionSummary as projectWorkspaceEnvironment } from "@t3tools/client-runtime/state/presentation";
+import { projectEnvironmentConnectionSummary as projectWorkspaceEnvironment } from "@onicode/client-runtime/state/presentation";
 import type { EnvironmentPresentation } from "./environments";
 
 const ENVIRONMENT_ID = EnvironmentId.make("environment-1");

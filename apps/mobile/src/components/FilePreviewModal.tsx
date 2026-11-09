@@ -100,7 +100,7 @@ function ResolvedFilePreview(props: {
     props.onRequestClose();
   });
   // Resolves once per presentation and holds local file leases until it closes.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- resolves preview files and holds their local file leases until the preview closes
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- resolves preview files and holds their local file leases until the preview closes
   useEffect(() => {
     const controller = new AbortController();
     const leases: (() => void)[] = [];

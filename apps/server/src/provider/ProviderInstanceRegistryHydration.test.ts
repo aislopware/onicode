@@ -6,7 +6,7 @@ import {
   SecretProviderId,
   SecretProviderKind,
   type ServerSettings,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it as effectIt } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -111,7 +111,7 @@ describe("seedDevReplayInstance", () => {
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
-          ServerConfig.layerTest(process.cwd(), { prefix: "t3-dev-replay-seed-" }),
+          ServerConfig.layerTest(process.cwd(), { prefix: "oni-dev-replay-seed-" }),
           ServerSettingsService.layerTest({
             providerInstances: {
               [DEV_REPLAY_INSTANCE_ID]: {

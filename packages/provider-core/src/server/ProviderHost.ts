@@ -3,7 +3,7 @@ import type {
   ChatAttachment,
   ServerSettings,
   ServerSettingsError,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
@@ -23,7 +23,7 @@ export interface ProviderHostPaths {
 
 export interface ProviderCredentials {
   /** Instances whose bindings are equal share these credentials. */
-  readonly binding: { readonly owner: "t3"; readonly key: string };
+  readonly binding: { readonly owner: "onicode"; readonly key: string };
   readonly get: Effect.Effect<Option.Option<Uint8Array>, ProviderCredentialError>;
   readonly set: (credentials: Uint8Array) => Effect.Effect<void, ProviderCredentialError>;
   readonly remove: Effect.Effect<void, ProviderCredentialError>;
@@ -52,4 +52,4 @@ export class ProviderHost extends Context.Service<
       bindingId: string,
     ) => Effect.Effect<ProviderCredentials>;
   }
->()("@t3tools/provider-core/server/ProviderHost") {}
+>()("@onicode/provider-core/server/ProviderHost") {}

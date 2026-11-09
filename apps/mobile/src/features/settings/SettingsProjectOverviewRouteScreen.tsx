@@ -3,17 +3,17 @@ import { AppText as Text, AppTextInput } from "../../components/ui/AppText";
 import { Button } from "../../components/ui/Button";
 import { ProjectFavicon } from "../../components/ProjectFavicon";
 import * as Dialog from "../../components/ui/Dialog";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
-import { planProjectRemoval } from "@t3tools/client-runtime/state/projects";
+import { AuthOrchestrationOperateScope } from "@onicode/contracts";
+import { planProjectRemoval } from "@onicode/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import {
   deriveProjectGroupLabel,
   type ProjectGroup,
-} from "@t3tools/client-runtime/state/project-grouping";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
+} from "@onicode/client-runtime/state/project-grouping";
+import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { useNavigation } from "@react-navigation/native";
 import { useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
@@ -310,7 +310,7 @@ function ProjectOverviewContent(props: {
           size={48}
         />
         <View className="min-w-0 flex-1">
-          <Text className="text-xl font-t3-semibold text-foreground" numberOfLines={2}>
+          <Text className="text-xl font-oni-semibold text-foreground" numberOfLines={2}>
             {displayName}
           </Text>
           <Text className="text-sm text-foreground-muted">
@@ -321,7 +321,7 @@ function ProjectOverviewContent(props: {
 
       <SettingsSection title="Project">
         <View className="gap-3 p-4">
-          <Text className="text-sm font-t3-medium text-foreground-muted">Name</Text>
+          <Text className="text-sm font-oni-medium text-foreground-muted">Name</Text>
           <View className="flex-row items-center gap-3">
             <AppTextInput
               accessibilityLabel="Project name"
@@ -451,7 +451,7 @@ function RemoveCheckoutAction(props: {
       onPress={props.onPress}
       className="self-start rounded-full border border-border bg-card px-3 py-1.5 disabled:opacity-40"
     >
-      <Text className="font-t3-medium text-xs text-danger-foreground">Remove checkout</Text>
+      <Text className="font-oni-medium text-xs text-danger-foreground">Remove checkout</Text>
     </Pressable>
   );
 }

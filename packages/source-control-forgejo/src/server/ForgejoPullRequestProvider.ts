@@ -1,18 +1,18 @@
-import { resolvePullRequestAuthorFilter, SourceControlProviderKind } from "@t3tools/contracts";
+import { resolvePullRequestAuthorFilter, SourceControlProviderKind } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Result from "effect/Result";
-import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@t3tools/contracts";
-import { decodeJsonResult } from "@t3tools/shared/schemaJson";
+import type { PullRequestCapabilities, PullRequestViewerPermissions } from "@onicode/contracts";
+import { decodeJsonResult } from "@onicode/shared/schemaJson";
 import * as ForgejoCli from "./ForgejoCli.ts";
-import { parseDiffFileRevisions } from "@t3tools/source-control-core/server/diffFileRevisions";
+import { parseDiffFileRevisions } from "@onicode/source-control-core/server/diffFileRevisions";
 import {
   PullRequestProviderError,
   type ProviderChangeRequestDetail,
   type ProviderChangeRequestSummary,
   type ProviderRepositoryRef,
   type PullRequestProviderApi,
-} from "@t3tools/source-control-core/server/PullRequestProvider";
+} from "@onicode/source-control-core/server/PullRequestProvider";
 import {
   ForgejoPullRequest,
   ForgejoRepository,
@@ -70,7 +70,7 @@ const UNAVAILABLE_REQUIREMENT = {
   missing:
     "Install Forgejo CLI (`fj` 0.6 or later) from https://codeberg.org/forgejo-contrib/forgejo-cli or Gitea CLI (`tea` 0.16 or later) from https://gitea.com/gitea/tea to browse Forgejo pull requests.",
   unauthenticated:
-    "Authenticate your Forgejo or Gitea server with `fj --host <server-url> auth add-token` on the T3 Code server. If fj is missing or unconfigured for that server, use `tea login add`. A configured fj account must be repaired with fj.",
+    "Authenticate your Forgejo or Gitea server with `fj --host <server-url> auth add-token` on the Onicode server. If fj is missing or unconfigured for that server, use `tea login add`. A configured fj account must be repaired with fj.",
 };
 
 const repoPath = (input: ProviderRepositoryRef) =>

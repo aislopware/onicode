@@ -13,7 +13,7 @@ describe("generate highlights", () => {
     const nativeSource = NodeFS.readFileSync(
       NodePath.resolve(
         import.meta.dirname,
-        "../modules/t3-highlights/Vendor/highlights/highlights.c",
+        "../modules/oni-highlights/Vendor/highlights/highlights.c",
       ),
       "utf8",
     );

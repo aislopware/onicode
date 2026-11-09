@@ -1,4 +1,4 @@
-import { HTML_RENDER_DEFAULT_FONTS, htmlRenderTheme } from "@t3tools/shared/htmlRender";
+import { HTML_RENDER_DEFAULT_FONTS, htmlRenderTheme } from "@onicode/shared/htmlRender";
 import { useSyncExternalStore } from "react";
 
 import { appearanceFontStack } from "../appearanceFonts";

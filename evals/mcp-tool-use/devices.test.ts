@@ -26,11 +26,11 @@ import {
   makeSample,
   McpToolUseCase,
   shellRequest,
-  t3SubagentContext,
-  t3SystemAppend,
+  oniSubagentContext,
+  oniSystemAppend,
   withDevices,
 } from "./run.ts";
-import { DeviceOperationError, LOCAL_DEVICE_HOST_ID } from "@t3tools/contracts";
+import { DeviceOperationError, LOCAL_DEVICE_HOST_ID } from "@onicode/contracts";
 
 const MAC = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const IPHONE = "BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB";
@@ -75,7 +75,7 @@ const model = "claude-opus-5-5";
 const base = buildBase(capture, { model, keepUserInstructions: false });
 const json = (text: string) => JSON.parse(text);
 
-it.effect("answers device calls with T3's handlers over the case's world", () =>
+it.effect("answers device calls with Onicode's handlers over the case's world", () =>
   Effect.gen(function* () {
     const { devices, deviceHosts } = deviceCase({}).setup.world ?? {};
     const tools = yield* makeDeviceTools({ devices: devices ?? [], deviceHosts }, base.environment);
@@ -87,10 +87,10 @@ it.effect("answers device calls with T3's handlers over the case's world", () =>
     );
     const opened = json((yield* tools.call("device_open", { hostId: MAC, deviceId: IPHONE })).text);
     const { command } = opened.agentDevice;
-    assert.match(command, /^\/home\/user\/\.t3\/userdata\/device\/.+\/agent-device$/);
+    assert.match(command, /^\/home\/user\/\.onicode\/userdata\/device\/.+\/agent-device$/);
     assert.include(opened.quickStart, command);
     assert.deepEqual(tools.launchers, [command]);
-    // The image never reaches the model; T3's text result has the rest.
+    // The image never reaches the model; Onicode's text result has the rest.
     assert.deepEqual(json((yield* tools.call("device_screenshot", {})).text).screenshot, {
       mimeType: "image/png",
       width: 1206,
@@ -105,7 +105,7 @@ it.effect("answers device calls with T3's handlers over the case's world", () =>
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
-it.effect("lists the boot state T3 left a device in", () =>
+it.effect("lists the boot state Onicode left a device in", () =>
   Effect.gen(function* () {
     const { devices, deviceHosts } = deviceCase({}).setup.world ?? {};
     const stopped = (devices ?? []).map((device) => ({ ...device, booted: false }));
@@ -118,13 +118,13 @@ it.effect("lists the boot state T3 left a device in", () =>
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
-it("decodes only T3 device errors as injected failures", () => {
+it("decodes only Onicode device errors as injected failures", () => {
   assert.isDefined(deviceFailure(screenshotFailure));
   assert.isUndefined(deviceFailure({ error: "Synthetic hub is unavailable", isError: true }));
   assert.isUndefined(deviceFailure("default"));
 });
 
-it.effect("rebuilds prior device results with T3, whose sessions reach the measured turn", () =>
+it.effect("rebuilds prior device results with Onicode, whose sessions reach the measured turn", () =>
   Effect.gen(function* () {
     const testCase = deviceCase({
       priorTurns: [
@@ -153,48 +153,48 @@ it.effect("rebuilds prior device results with T3, whose sessions reach the measu
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
-it.effect("gives a native subagent T3's SubagentStart context instead of T3's append", () =>
+it.effect("gives a native subagent Onicode's SubagentStart context instead of Onicode's append", () =>
   Effect.gen(function* () {
-    const subagentContext = yield* Effect.promise(() => t3SubagentContext(model));
+    const subagentContext = yield* Effect.promise(() => oniSubagentContext(model));
     const native = {
       ...buildBase(capture, { model, keepUserInstructions: false, nativeSubagent: true }),
       subagentContext,
     };
     const system = (blocks: typeof base.system) =>
       blocks.map((block) => String(block.text)).join("");
-    assert.include(system(base.system), t3SystemAppend(model));
-    assert.notInclude(system(native.system), t3SystemAppend(model));
+    assert.include(system(base.system), oniSystemAppend(model));
+    assert.notInclude(system(native.system), oniSystemAppend(model));
     const testCase = deviceCase({ role: "native-subagent" });
     const shown = (sample: typeof native) =>
       buildMessages(makeSample(testCase, sample))[0]?.content.map((block) => String(block.text));
     const reminders = shown(native)?.join("\n") ?? "";
-    // A ref without T3's hook gives the subagent nothing.
+    // A ref without Onicode's hook gives the subagent nothing.
     assert.equal(
       reminders.includes("SubagentStart hook additional context"),
       subagentContext !== "",
     );
     assert.include(reminders, subagentContext);
     // Claude Code 2.1.310 records the hook's context after the task, and sends it that way.
-    const blocks = shown({ ...native, subagentContext: "## T3 Code devices" }) ?? [];
+    const blocks = shown({ ...native, subagentContext: "## Onicode devices" }) ?? [];
     assert.equal(blocks.at(-2), testCase.prompt);
     assert.equal(
       blocks.at(-1),
-      "<system-reminder>\nSubagentStart hook additional context: ## T3 Code devices\n</system-reminder>",
+      "<system-reminder>\nSubagentStart hook additional context: ## Onicode devices\n</system-reminder>",
     );
   }),
 );
 
-it.effect("tells the shell simulator the launchers T3 returned and agent-device's real CLI", () =>
+it.effect("tells the shell simulator the launchers Onicode returned and agent-device's real CLI", () =>
   Effect.gen(function* () {
     const sample = makeSample(deviceCase({}), base);
     yield* withDevices(sample);
     const call = { tool: "Bash", input: { command: "ls /tmp" } };
     const told = (request: ReturnType<typeof shellRequest>) => JSON.stringify(request.messages);
-    assert.notInclude(told(shellRequest(sample, call, "claude-haiku-5-5")), "launchers T3's");
+    assert.notInclude(told(shellRequest(sample, call, "claude-haiku-5-5")), "launchers Onicode's");
     const opened = yield* sample.devices!.call("device_open", { hostId: MAC, deviceId: IPHONE });
     const { command } = json(opened.text).agentDevice;
     const request = shellRequest(sample, call, "claude-haiku-5-5");
-    assert.include(told(request), `agent-device launchers T3's device_open returned: ${command}`);
+    assert.include(told(request), `agent-device launchers Onicode's device_open returned: ${command}`);
     // agent-device's own syntax: a positional recording path, and `record stop` with no flag.
     assert.include(request.system, AGENT_DEVICE_SHELL);
     assert.include(
@@ -215,15 +215,15 @@ it("prints agent-device's own help for a lone help command on a returned launche
       ?.split("\n$ agent-device help")[0]
       ?.trimEnd();
   // Commands from the paired runs. The simulator once answered the first with a placeholder.
-  const launcher = "/home/user/.t3/userdata/device/bin/agent-device";
-  const target = `--platform ios --udid ${IPHONE} --config /home/user/.t3/userdata/device/hosts/303617b9730210ef3c86c52d.json --session t3-4c43aa31e607633b85e9ff2f`;
+  const launcher = "/home/user/.onicode/userdata/device/bin/agent-device";
+  const target = `--platform ios --udid ${IPHONE} --config /home/user/.onicode/userdata/device/hosts/303617b9730210ef3c86c52d.json --session oni-4c43aa31e607633b85e9ff2f`;
   const asked = (command: string) => launcherHelp([launcher], command);
   assert.match(help("") ?? "", /^agent-device <command> \[args\] \[--json\]\n/);
   assert.equal(asked(`${launcher} help ${target}`), help(""));
   assert.equal(asked(`${launcher} record --help ${target}`), help("record"));
   assert.equal(asked(`${launcher} help open ${target}`), help("open"));
   assert.equal(asked(`${launcher} --help 2>&1`), help(""));
-  assert.equal(asked(`${launcher} help settings --session=t3-1`), help("settings"));
+  assert.equal(asked(`${launcher} help settings --session=oni-1`), help("settings"));
   // A password reaches fill from stdin, so request_secret's file never enters argv.
   assert.equal(asked(`${launcher} fill --help ${target}`), help("fill"));
   assert.include(help("fill"), "fill <x y|@ref|selector> --text-stdin");
@@ -235,7 +235,7 @@ it("prints agent-device's own help for a lone help command on a returned launche
   assert.isUndefined(asked(`/usr/local/bin/agent-device help`));
 });
 
-it("pins agent-device's help to the version T3 installs", () => {
+it("pins agent-device's help to the version Onicode installs", () => {
   const versions = JSON.parse(
     NodeFS.readFileSync(
       new URL("../../apps/server/src/device/deviceToolVersions.json", import.meta.url),
@@ -324,7 +324,7 @@ it.effect("answers the returned launcher as agent-device does before and after o
 );
 
 const shared = (session: string): LauncherTarget => ({
-  command: "/home/user/.t3/userdata/device/bin/agent-device",
+  command: "/home/user/.onicode/userdata/device/bin/agent-device",
   session,
   bound: false,
   deviceId: IPHONE,
@@ -332,8 +332,8 @@ const shared = (session: string): LauncherTarget => ({
   iosSimulator: true,
 });
 const boundTarget: LauncherTarget = {
-  command: "/home/user/.t3/userdata/device/targets/t3-bound/agent-device",
-  session: "t3-bound",
+  command: "/home/user/.onicode/userdata/device/targets/oni-bound/agent-device",
+  session: "oni-bound",
   bound: true,
   deviceId: IPHONE,
   ios: true,
@@ -351,23 +351,23 @@ const errorCode = (
 ) => agentDeviceSessionError(targets, agentDeviceSessions(targets, {}, history), command)?.code;
 
 it("names the session on either ref: the bound launcher's own, or the shared one's --session", () => {
-  const flags = `--platform ios --udid ${IPHONE} --config /home/user/.t3/userdata/device/hosts/x.json`;
-  const sharedTargets = [shared("t3-a"), shared("t3-b")];
+  const flags = `--platform ios --udid ${IPHONE} --config /home/user/.onicode/userdata/device/hosts/x.json`;
+  const sharedTargets = [shared("oni-a"), shared("oni-b")];
   // The shared launcher answers each session its flags name; without one, its own check (not
   // modelled) refuses before agent-device runs.
-  const opened = [bash(`${sharedTargets[0]!.command} open com.acme.app ${flags} --session t3-a`)];
+  const opened = [bash(`${sharedTargets[0]!.command} open com.acme.app ${flags} --session oni-a`)];
   assert.isUndefined(
     errorCode(
       sharedTargets,
       opened,
-      `${sharedTargets[0]!.command} screenshot ${flags} --session t3-a`,
+      `${sharedTargets[0]!.command} screenshot ${flags} --session oni-a`,
     ),
   );
   assert.equal(
     errorCode(
       sharedTargets,
       opened,
-      `${sharedTargets[0]!.command} screenshot ${flags} --session=t3-b`,
+      `${sharedTargets[0]!.command} screenshot ${flags} --session=oni-b`,
     ),
     "SESSION_NOT_FOUND",
   );
@@ -391,14 +391,14 @@ it("names the session on either ref: the bound launcher's own, or the shared one
   // Without a selector, agent-device's record and close refuse a missing named session with
   // other text; that stays with the simulator.
   assert.isUndefined(
-    errorCode(sharedTargets, [], `${sharedTargets[0]!.command} record start --session t3-a`),
+    errorCode(sharedTargets, [], `${sharedTargets[0]!.command} record start --session oni-a`),
   );
 });
 
 it("follows the session through aliases, compound calls, snapshots and whole-screen recordings", () => {
   const launcher = boundTarget.command;
   const after = (...history: ReadonlyArray<ShellCall>) =>
-    agentDeviceSessions([boundTarget], {}, history).get("t3-bound");
+    agentDeviceSessions([boundTarget], {}, history).get("oni-bound");
   assert.deepEqual(after(bash(`AD=${launcher}; "$AD" open com.acme.app`)), { app: true });
   // A failed lone open starts nothing; an open in a failed compound call still counts.
   assert.isUndefined(after(bash(`${launcher} open com.acme.app`, "Exit code 1\nError (X): no")));
@@ -415,7 +415,7 @@ it("follows the session through aliases, compound calls, snapshots and whole-scr
   assert.isUndefined(after(bash(`${launcher} snapshot -i`)));
   const android = { ...boundTarget, ios: false, iosSimulator: false };
   assert.deepEqual(
-    agentDeviceSessions([android], {}, [bash(`${launcher} snapshot -i`)]).get("t3-bound"),
+    agentDeviceSessions([android], {}, [bash(`${launcher} snapshot -i`)]).get("oni-bound"),
     { app: false },
   );
   // A whole-screen recording holds a session only until it stops.
@@ -436,10 +436,10 @@ it("follows the session through aliases, compound calls, snapshots and whole-scr
 
 it("follows the shared launcher's session through flags held in a variable or an array", () => {
   // Forms Sonnet used with the shared launcher in a live sample.
-  const target = shared("t3-a");
-  const flags = `--platform ios --udid ${IPHONE} --config /home/user/.t3/userdata/device/hosts/x.json --session t3-a`;
+  const target = shared("oni-a");
+  const flags = `--platform ios --udid ${IPHONE} --config /home/user/.onicode/userdata/device/hosts/x.json --session oni-a`;
   const after = (history: ShellCall, targets = [target]) =>
-    agentDeviceSessions(targets, {}, [history]).get("t3-a");
+    agentDeviceSessions(targets, {}, [history]).get("oni-a");
   const opened = bash(
     `AD=${target.command}; A="${flags}"; $AD open com.acme.app $A 2>&1 | tail -5; sleep 5; $AD snapshot -i $A 2>&1 | head -60`,
     "Opened: com.acme.app",
@@ -448,7 +448,7 @@ it("follows the shared launcher's session through flags held in a variable or an
   const array = bash(`A=(${flags}); ${target.command} open "\${A[@]}" 2>&1 | head -60`);
   assert.deepEqual(after(array), { app: false });
   // With two sessions behind the shared launcher, unread flags name neither.
-  assert.isUndefined(after(array, [target, shared("t3-b")]));
+  assert.isUndefined(after(array, [target, shared("oni-b")]));
   // agent-device still sees no session for a plain command after a failed open in a variable.
   const failed = bash(
     `AD=${target.command}; A="${flags}"; $AD open $A`,
@@ -532,9 +532,9 @@ it.effect(
 
 it("keeps a redirection's descriptor out of the app an open names, on either launcher", () => {
   // Sol R10 B1: `open 2>&1` once read as `open 2`, an app the real shell never passes.
-  const flags = `--platform ios --udid ${IPHONE} --config /home/user/.t3/userdata/device/hosts/x.json --session t3-a`;
+  const flags = `--platform ios --udid ${IPHONE} --config /home/user/.onicode/userdata/device/hosts/x.json --session oni-a`;
   for (const [target, args] of [
-    [shared("t3-a"), ` ${flags}`],
+    [shared("oni-a"), ` ${flags}`],
     [boundTarget, ""],
   ] as const) {
     for (const redirect of ["2>&1", "2>&1 | tail -5", "2>/dev/null"]) {
@@ -559,7 +559,7 @@ it("follows opens the parser cannot prove ran, in calls that did not fail", () =
   // Opus R10 B1(b): shapes from run 5, where `&&` before `;` leaves an open uncertain.
   const launcher = boundTarget.command;
   const after = (command: string, output = "Opened: com.acme.app") =>
-    agentDeviceSessions([boundTarget], {}, [bash(command, output)]).get("t3-bound");
+    agentDeviceSessions([boundTarget], {}, [bash(command, output)]).get("oni-bound");
   assert.deepEqual(
     after(`mkdir -p /tmp/p && ${launcher} open com.acme.app 2>&1 | tail -3; echo done`),
     { app: true },
@@ -578,7 +578,7 @@ it("follows opens the parser cannot prove ran, in calls that did not fail", () =
     agentDeviceSessions([boundTarget], {}, [
       bash(`cd /tmp && AD=${launcher}; echo ready`),
       bash("$AD open com.acme.app"),
-    ]).get("t3-bound"),
+    ]).get("oni-bound"),
     { app: true },
   );
   // A failed call credits only what certainly ran.
@@ -605,7 +605,7 @@ const deviceTools = (extra: object) =>
     base.environment,
   );
 
-it.effect("lists a host whose discovery fails as T3 does: failed, with none of its devices", () =>
+it.effect("lists a host whose discovery fails as Onicode does: failed, with none of its devices", () =>
   Effect.gen(function* () {
     // F1's saved device_list: the hub answered, but its device list timed out.
     const failure = new DeviceOperationError({
@@ -639,7 +639,7 @@ it.effect("lists a host whose discovery fails as T3 does: failed, with none of i
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
-it.effect("denies every device tool with T3's own error when agent device access is off", () =>
+it.effect("denies every device tool with Onicode's own error when agent device access is off", () =>
   Effect.gen(function* () {
     const tools = yield* deviceTools({ deviceAgentAccess: false });
     for (const [name, input] of [
@@ -660,12 +660,12 @@ it.effect("denies every device tool with T3's own error when agent device access
         `${name}: ${result.text}`,
       );
     }
-    // T3 drops its device text for a thread without the capability, on refs that have it.
-    assert.notInclude(t3SystemAppend(model, false), "## T3 Code devices");
+    // Onicode drops its device text for a thread without the capability, on refs that have it.
+    assert.notInclude(oniSystemAppend(model, false), "## Onicode devices");
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
-it.effect("reports an unreadable capture as T3 does: a successful 0×0 screenshot", () =>
+it.effect("reports an unreadable capture as Onicode does: a successful 0×0 screenshot", () =>
   Effect.gen(function* () {
     const tools = yield* deviceTools({ deviceInvalidCapture: true });
     yield* tools.call("device_open", { hostId: MAC, deviceId: IPHONE });
@@ -685,12 +685,12 @@ it.effect("reports an unreadable capture as T3 does: a successful 0×0 screensho
 it.effect("refuses an open on a device another thread's agent-device session holds", () =>
   Effect.gen(function* () {
     const tools = yield* deviceTools({ deviceOwners: { [IPHONE]: "acme-design-review" } });
-    // T3 names the owner's session as it names every thread's.
-    const owner = "t3-a062c547ef0b6bf8ee839b67";
+    // Onicode names the owner's session as it names every thread's.
+    const owner = "oni-a062c547ef0b6bf8ee839b67";
     assert.deepEqual(tools.owners, [
       { deviceId: IPHONE, threadId: "acme-design-review", session: owner },
     ]);
-    // T3 has no cross-thread gate: device_open succeeds, and device_list shows only this thread.
+    // Onicode has no cross-thread gate: device_open succeeds, and device_list shows only this thread.
     const opened = json((yield* tools.call("device_open", { hostId: MAC, deviceId: IPHONE })).text);
     assert.deepEqual(json((yield* tools.call("device_list", {})).text).open, [
       { hostId: MAC, deviceId: IPHONE },
@@ -741,7 +741,7 @@ it.effect("refuses an open on a device another thread's agent-device session hol
     const told = JSON.stringify(shellRequest(sample, { tool: "Bash", input: {} }, model).messages);
     assert.include(
       told,
-      `${owner} (Acme iPhone, ${IPHONE}, on build-mac) belongs to another T3 thread (acme-design-review)`,
+      `${owner} (Acme iPhone, ${IPHONE}, on build-mac) belongs to another Onicode thread (acme-design-review)`,
     );
     // Closing the owner's session frees the device.
     history.push({ tool: "Bash", input: { command: line("close", owner) }, output: "Closed" });
@@ -786,7 +786,7 @@ it.effect(
     Effect.gen(function* () {
       // Opus R11-B3(a): in run 6 the simulator gave the free spare's plain open the owner's
       // DEVICE_IN_USE twice. It could not tell which device a flagless bound launcher drives.
-      const owner = "t3-a062c547ef0b6bf8ee839b67";
+      const owner = "oni-a062c547ef0b6bf8ee839b67";
       const sample = makeSample(
         deviceCase({ world: { ...twoMacs, deviceOwners: { [IPHONE]: "acme-design-review" } } }),
         base,
@@ -822,7 +822,7 @@ it.effect(
       const free = told(spareOpen);
       assert.include(
         free,
-        `agent-device launchers T3's device_open returned: ${
+        `agent-device launchers Onicode's device_open returned: ${
           held.session === undefined
             ? `${held.command} (shared: each command's --udid or --serial and --session name its device and session)`
             : `${held.command} (drives Acme iPhone, ${IPHONE}, on build-mac, in session ${held.session}); ${spare.command} (drives Acme Spare iPhone, ${SPARE_PHONE}, on spare-mac, in session ${spare.session})`
@@ -830,7 +830,7 @@ it.effect(
       );
       assert.include(
         free,
-        `${session(held)} (Acme iPhone, ${IPHONE}, on build-mac) has not started; ${session(spare)} (Acme Spare iPhone, ${SPARE_PHONE}, on spare-mac) has not started; ${owner} (Acme iPhone, ${IPHONE}, on build-mac) belongs to another T3 thread (acme-design-review) and holds its device with an app open.`,
+        `${session(held)} (Acme iPhone, ${IPHONE}, on build-mac) has not started; ${session(spare)} (Acme Spare iPhone, ${SPARE_PHONE}, on spare-mac) has not started; ${owner} (Acme iPhone, ${IPHONE}, on build-mac) belongs to another Onicode thread (acme-design-review) and holds its device with an app open.`,
       );
       assert.include(
         free,
@@ -909,7 +909,7 @@ it("tells the simulator 0.21.31's --foreground and session list behaviour", () =
     assert.isUndefined(
       agentDeviceSessionError(
         [boundTarget],
-        new Map([["t3-bound", undefined]]),
+        new Map([["oni-bound", undefined]]),
         `${boundTarget.command} ${args}`,
       ),
       args,

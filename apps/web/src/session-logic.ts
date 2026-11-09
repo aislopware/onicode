@@ -1,5 +1,5 @@
-import type { ThreadStructureRuntime } from "@t3tools/client-runtime/state/shell";
-import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
+import type { ThreadStructureRuntime } from "@onicode/client-runtime/state/shell";
+import { resolveThreadWorkingStartedAt } from "@onicode/client-runtime/state/models";
 import {
   type AssetResource,
   type OrchestrationV2Checkpoint,
@@ -14,30 +14,30 @@ import {
   type ToolActivitySource,
   type ThreadId,
   type TurnItemId,
-} from "@t3tools/contracts";
-import { extractToolActivityPresentation } from "@t3tools/client-runtime/work-log/tool-presentation";
+} from "@onicode/contracts";
+import { extractToolActivityPresentation } from "@onicode/client-runtime/work-log/tool-presentation";
 import {
   classifyToolActivity,
   collectToolFilePaths,
   formatReadToolLabel,
   formatSearchToolLabel,
-} from "@t3tools/shared/toolActivity";
-import type { HtmlRenderReference } from "@t3tools/shared/htmlRender";
-import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
-import type { McpAppReference } from "@t3tools/shared/mcpApp";
-import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+} from "@onicode/shared/toolActivity";
+import type { HtmlRenderReference } from "@onicode/shared/htmlRender";
+import { turnItemDetailRevision } from "@onicode/client-runtime/work-log/item-detail";
+import type { McpAppReference } from "@onicode/shared/mcpApp";
+import { htmlRenderFromToolItem, mcpAppFromToolItem } from "@onicode/shared/toolOutput";
 import {
   contextCompactionLabel,
   workEntryIndicatesToolFailure,
-} from "@t3tools/client-runtime/work-log/presentation";
-import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
+} from "@onicode/client-runtime/work-log/presentation";
+import type { ThreadCheckpointSummary } from "@onicode/client-runtime/state/thread-checkpoints";
 import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
-} from "@t3tools/client-runtime/state/thread-requests";
-import type { ThreadRunSummary, ThreadRuntimeSummary } from "@t3tools/client-runtime/state/shell";
-import { threadRuntimeHasInterruptibleRun } from "@t3tools/client-runtime/state/thread-execution";
-import { turnItemIsWorkspacePreparation } from "@t3tools/client-runtime/state/turn-item-presentation";
+} from "@onicode/client-runtime/state/thread-requests";
+import type { ThreadRunSummary, ThreadRuntimeSummary } from "@onicode/client-runtime/state/shell";
+import { threadRuntimeHasInterruptibleRun } from "@onicode/client-runtime/state/thread-execution";
+import { turnItemIsWorkspacePreparation } from "@onicode/client-runtime/state/turn-item-presentation";
 
 import {
   isImageAttachment,
@@ -51,11 +51,11 @@ import * as DateTime from "effect/DateTime";
 import * as Equal from "effect/Equal";
 import { shallow } from "zustand/vanilla/shallow";
 
-export { formatDuration } from "@t3tools/shared/orchestrationTiming";
+export { formatDuration } from "@onicode/shared/orchestrationTiming";
 export {
   workEntryDisplayIndicatesToolFailure,
   workEntryIndicatesToolFailure,
-} from "@t3tools/client-runtime/work-log/presentation";
+} from "@onicode/client-runtime/work-log/presentation";
 
 export type WorkLogToolLifecycleStatus =
   | "idle"
@@ -66,7 +66,7 @@ export type WorkLogToolLifecycleStatus =
   | "stopped";
 
 export interface WorkLogEntry {
-  readonly questionAnswer?: import("@t3tools/contracts").UserInputAttachmentAnswerPayload;
+  readonly questionAnswer?: import("@onicode/contracts").UserInputAttachmentAnswerPayload;
   readonly id: string;
   readonly createdAt: string;
   readonly runId?: RunId | null;

@@ -6,7 +6,7 @@ import * as Layer from "effect/Layer";
 import * as DesktopEnvironment from "../../app/DesktopEnvironment.ts";
 
 export const LinuxBrowserSecretPath = Context.Reference<string | undefined>(
-  "@t3tools/desktop/preview/BrowserImport/LinuxBrowserSecretPath",
+  "@onicode/desktop/preview/BrowserImport/LinuxBrowserSecretPath",
   { defaultValue: () => undefined },
 );
 
@@ -16,7 +16,7 @@ export const layer = Layer.effect(
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     if (environment.platform !== "linux") return undefined;
     const fileSystem = yield* FileSystem.FileSystem;
-    const relative = environment.path.join("browser-secret", "t3-browser-secret");
+    const relative = environment.path.join("browser-secret", "oni-browser-secret");
     const candidates = environment.isPackaged
       ? [environment.path.join(environment.resourcesPath, relative)]
       : [
@@ -26,7 +26,7 @@ export const layer = Layer.effect(
             "browser-secret",
             "build",
             environment.processArch,
-            "t3-browser-secret",
+            "oni-browser-secret",
           ),
           ...environment.resolveResourcePathCandidates(relative),
         ];

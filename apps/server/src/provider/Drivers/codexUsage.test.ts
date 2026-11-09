@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { totalTokens } from "@t3tools/provider-core/server/usage";
+import { totalTokens } from "@onicode/provider-core/server/usage";
 
 import {
   type CodexScanState,
@@ -603,7 +603,7 @@ describe("parseCodexLine", () => {
       JSON.stringify({ type: "session_meta", payload: { id, model_provider } });
     const context = (turn_id?: string, model?: string) =>
       JSON.stringify({ type: "turn_context", payload: { turn_id, model } });
-    for (const provider of ["openai", "t3", "custom", undefined]) {
+    for (const provider of ["openai", "onicode", "custom", undefined]) {
       const state = initialCodexScanState();
       parseCodexLine(meta("own-session", provider), state);
       parseCodexLine(meta("ancestor", provider === "openai" ? "custom" : "openai"), state);

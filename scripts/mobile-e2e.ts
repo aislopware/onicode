@@ -178,7 +178,7 @@ async function main() {
   const runId = new Date().toISOString().replaceAll(/[:.]/g, "-");
   const outputDirectory = NodePath.join(REPO_ROOT, "artifacts/mobile-e2e", runId);
   await NodeFSP.mkdir(outputDirectory, { recursive: true });
-  const rootDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-mobile-e2e-"));
+  const rootDir = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "oni-mobile-e2e-"));
   const workspace = await NodeFSP.realpath(outputDirectory);
   const config = NodePath.join(rootDir, "agent-device.json");
   await NodeFSP.writeFile(
@@ -217,7 +217,7 @@ async function main() {
         "start",
         "--dev-client",
         "--scheme",
-        "t3code-dev",
+        "onicode-dev",
         "--lan",
         "--port",
         String(metroPort),

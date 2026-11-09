@@ -7,9 +7,9 @@ import {
   type ServerSettings,
   SimlockDeviceHostConfig,
   UsageLimitSourceConfig,
-} from "@t3tools/contracts";
-import { getProviderClient } from "@t3tools/client-runtime/provider-clients";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+} from "@onicode/contracts";
+import { getProviderClient } from "@onicode/client-runtime/provider-clients";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 
 import { deriveProviderSettingsFields, type SettingsFormDefinition } from "./ProviderSettingsForm";
 

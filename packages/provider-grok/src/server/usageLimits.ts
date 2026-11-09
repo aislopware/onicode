@@ -1,4 +1,4 @@
-import type { ServerProviderUsageWindow } from "@t3tools/contracts";
+import type { ServerProviderUsageWindow } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -12,8 +12,8 @@ import {
   clampPercent,
   makeUnavailableUsageLimits,
   makeUsageLimits,
-} from "@t3tools/provider-core/server/usageLimits";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@onicode/provider-core/server/usageLimits";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 const GrokCredentials = Schema.Record(
   Schema.String,
@@ -95,7 +95,7 @@ export function grokUsageResponseToLimits(
 const readGrokCredential = Effect.fn("readGrokCredential")(function* (
   environment: NodeJS.ProcessEnv,
 ) {
-  // T3's ACP adapter explicitly selects API-key auth when this variable is set.
+  // Onicode's ACP adapter explicitly selects API-key auth when this variable is set.
   if (environment.XAI_API_KEY?.trim()) return undefined;
   // Alternate auth deployments can select another scope or account from the same file.
   if (

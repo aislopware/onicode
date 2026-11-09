@@ -6,12 +6,12 @@ import {
   pullRequestReactionName,
   pullRequestReactionTooltip,
   pullRequestReactionsSignature,
-} from "@t3tools/client-runtime/pull-request-reactions";
+} from "@onicode/client-runtime/pull-request-reactions";
 import type {
   PullRequestComment,
   PullRequestReaction,
   PullRequestReactionContent,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
@@ -84,7 +84,7 @@ function ReactionPills(props: {
           )}
         >
           <Text className="text-sm">{pullRequestReactionEmoji(reaction.content)}</Text>
-          <Text className="text-xs font-t3-medium text-foreground-muted">{reaction.count}</Text>
+          <Text className="text-xs font-oni-medium text-foreground-muted">{reaction.count}</Text>
         </Pressable>
       ))}
       {props.canReact ? (
@@ -187,7 +187,7 @@ export function PullRequestCommentFooter(props: {
           className={cn(PILL, "ml-auto border-transparent")}
         >
           <SymbolView name="pencil" size={13} tintColorClassName="accent-icon-muted" />
-          <Text className="text-xs font-t3-medium text-foreground-muted">Edit</Text>
+          <Text className="text-xs font-oni-medium text-foreground-muted">Edit</Text>
         </Pressable>
       ) : null}
     </View>

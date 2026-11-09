@@ -7,7 +7,7 @@ import {
   type AgentSessionProjectCandidate,
   type AuthEnvironmentScope,
   type AuthSessionState,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
@@ -39,7 +39,7 @@ const state = vi.hoisted(() => ({
   waitForProject: vi.fn(),
 }));
 
-vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
+vi.mock(import("@onicode/client-runtime/state/session"), async (original) => {
   const actual = await original();
   return {
     ...actual,
@@ -146,7 +146,7 @@ function session(scopes: ReadonlyArray<AuthEnvironmentScope>): AuthSessionState 
       policy: "remote-reachable",
       bootstrapMethods: ["one-time-token"],
       sessionMethods: ["bearer-access-token"],
-      sessionCookieName: "t3_session",
+      sessionCookieName: "oni_session",
     },
   };
 }

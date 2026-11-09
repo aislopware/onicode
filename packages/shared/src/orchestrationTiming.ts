@@ -1,4 +1,4 @@
-import { isOrchestrationV2WorkActive, type OrchestrationV2Subagent } from "@t3tools/contracts";
+import { isOrchestrationV2WorkActive, type OrchestrationV2Subagent } from "@onicode/contracts";
 
 export function deriveSubagentElapsedMs(
   agent: {

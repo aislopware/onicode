@@ -1,0 +1,20 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["OniNativeControlsModule", "OniKeyboardCommandsModule"],
+    "appDelegateSubscribers": [
+      "OniWorkspaceOrientationSubscriber",
+      "OniMenuDismissTouchGateSubscriber",
+      "OniBackgroundGraceSubscriber"
+    ]
+  },
+  "android": {
+    "modules": [
+      "expo.modules.oninativecontrols.OniNativeControlsModule",
+      "expo.modules.oninativecontrols.OniWorkspaceNavigationModule",
+      "expo.modules.oninativecontrols.OniKeyboardCommandsModule",
+      "expo.modules.oninativecontrols.OniFoldPostureModule",
+      "expo.modules.oninativecontrols.OniSecretInputModule"
+    ]
+  }
+}

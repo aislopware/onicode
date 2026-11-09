@@ -4,9 +4,9 @@ import type {
   DesktopPreviewRecordingInputEvent,
   PreviewAnnotationPayload,
   PreviewAnnotationRect,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { parseKeybindingShortcut } from "@t3tools/shared/keybindings";
+} from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { parseKeybindingShortcut } from "@onicode/shared/keybindings";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -197,8 +197,8 @@ vi.mock("electron", () => ({
 const layerBrowserSession = Layer.succeed(
   BrowserSession.BrowserSession,
   BrowserSession.BrowserSession.of({
-    getPartition: () => Effect.succeed("persist:t3code-preview-test"),
-    isPartition: (partition) => partition.startsWith("persist:t3code-preview-"),
+    getPartition: () => Effect.succeed("persist:onicode-preview-test"),
+    isPartition: (partition) => partition.startsWith("persist:onicode-preview-"),
     getSession: () => Effect.succeed(previewSession as unknown as Electron.Session),
     clearCookies: () => Effect.void,
     clearCache: () => Effect.void,
@@ -208,8 +208,8 @@ const layerBrowserSession = Layer.succeed(
 const layerEnvironment = Layer.succeed(
   DesktopEnvironment.DesktopEnvironment,
   DesktopEnvironment.DesktopEnvironment.of({
-    browserArtifactsDir: "/tmp/t3/dev/browser-artifacts",
-    dirname: "/tmp/t3/desktop",
+    browserArtifactsDir: "/tmp/onicode/dev/browser-artifacts",
+    dirname: "/tmp/onicode/desktop",
     path: {
       join: (...parts: ReadonlyArray<string>) => parts.join("/"),
     },
@@ -1829,7 +1829,7 @@ describe("PreviewManager", () => {
             message: JSON.stringify({
               id: 1,
               method: "Page.captureScreenshot",
-              sessionId: "t3-preview-page",
+              sessionId: "oni-preview-page",
             }),
           }),
         );
@@ -2756,19 +2756,19 @@ describe("PreviewManager", () => {
   effectIt.effect("reveals only files inside the configured browser artifact directory", () =>
     withManager((manager) =>
       Effect.gen(function* () {
-        yield* manager.revealArtifact("/tmp/t3/dev/browser-artifacts/browser-screenshot-test.png");
+        yield* manager.revealArtifact("/tmp/onicode/dev/browser-artifacts/browser-screenshot-test.png");
 
         expect(showItemInFolder).toHaveBeenCalledWith(
-          "/tmp/t3/dev/browser-artifacts/browser-screenshot-test.png",
+          "/tmp/onicode/dev/browser-artifacts/browser-screenshot-test.png",
         );
-        const exit = yield* Effect.exit(manager.revealArtifact("/tmp/t3/dev/settings.json"));
+        const exit = yield* Effect.exit(manager.revealArtifact("/tmp/onicode/dev/settings.json"));
         expect(Exit.isFailure(exit)).toBe(true);
         if (Exit.isSuccess(exit)) return;
         const error = Option.getOrThrow(Cause.findErrorOption(exit.cause));
         expect(error).toMatchObject({
           _tag: "PreviewArtifactPathOutsideDirectoryError",
-          artifactPath: "/tmp/t3/dev/settings.json",
-          artifactDirectory: "/tmp/t3/dev/browser-artifacts",
+          artifactPath: "/tmp/onicode/dev/settings.json",
+          artifactDirectory: "/tmp/onicode/dev/browser-artifacts",
         });
         expect("cause" in error).toBe(false);
       }),

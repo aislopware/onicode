@@ -2,8 +2,8 @@ import { SheetHeader } from "../../components/ui/SheetHeader";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import * as Dialog from "../../components/ui/Dialog";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId, ThreadId, type PreviewSessionSnapshot } from "@t3tools/contracts";
-import { normalizePreviewUrl, previewPdfAssetUrl } from "@t3tools/shared/preview";
+import { EnvironmentId, ThreadId, type PreviewSessionSnapshot } from "@onicode/contracts";
+import { normalizePreviewUrl, previewPdfAssetUrl } from "@onicode/shared/preview";
 import * as Option from "effect/Option";
 import { useEffect, useRef, useState } from "react";
 import { Platform, TextInput, View } from "react-native";
@@ -75,7 +75,7 @@ function BrowserPreviewScreen({
     setPictureInPicture(NO_PICTURE_IN_PICTURE);
     setSelectedTabId(tabId);
   }
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the focused route through the navigator once the thread has no browser tabs left
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- closes the focused route through the navigator once the thread has no browser tabs left
   useEffect(() => {
     if (focused && loaded && tabs.length === 0) onClose();
   }, [focused, loaded, tabs.length, onClose]);

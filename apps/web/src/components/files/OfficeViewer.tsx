@@ -1,6 +1,6 @@
 /* oxlint-disable react/no-array-index-key -- Spreadsheet rows and columns retain their source positions. */
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
-import type { OfficePreviewKind } from "@t3tools/shared/filePreview";
+import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
+import type { OfficePreviewKind } from "@onicode/shared/filePreview";
 import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
@@ -85,7 +85,7 @@ function ExtendedOfficeViewer(props: {
   const [page, setPage] = useState(0);
   const workerRef = useRef<Worker | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the Office fetch, preparation worker, and timeout for this source and release them on cleanup.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Own the Office fetch, preparation worker, and timeout for this source and release them on cleanup.
   useEffect(() => {
     const controller = new AbortController();
     if ((props.sizeBytes ?? 0) > OFFICE_PREVIEW_MAX_BYTES) {

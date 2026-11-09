@@ -4,7 +4,7 @@ import {
   type OrchestrationV2ThreadShell,
   type Project,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 
 import { backgroundWorkHoldsCompletion } from "./orchestrationV2PendingBackgroundWork.ts";

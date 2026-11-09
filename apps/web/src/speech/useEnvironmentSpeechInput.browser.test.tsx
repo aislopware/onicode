@@ -4,8 +4,8 @@ import { page, userEvent } from "vite-plus/test/browser";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import type { PreparedConnection } from "@t3tools/client-runtime/connection";
-import { getEnvironmentSpeechModels } from "@t3tools/client-runtime/voice-input";
+import type { PreparedConnection } from "@onicode/client-runtime/connection";
+import { getEnvironmentSpeechModels } from "@onicode/client-runtime/voice-input";
 import {
   DEFAULT_CLIENT_SETTINGS,
   DEFAULT_SERVER_SETTINGS,
@@ -15,7 +15,7 @@ import {
   type SpeechCustomWords,
   type SpeechPostProcessingOptions,
   type SpeechTranscriptionOptions,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import { act, render, stubGlobal } from "../../test/render";
 import { VoiceInputSetup } from "../components/chat/VoiceInputSetup";
@@ -111,8 +111,8 @@ vi.mock("../hooks/useSettings", () => ({
 }));
 vi.mock("./runEnvironmentSpeech", () => ({ runEnvironmentSpeech: Effect.runPromise }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
-vi.mock("@t3tools/client-runtime/voice-input", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@t3tools/client-runtime/voice-input")>()),
+vi.mock("@onicode/client-runtime/voice-input", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@onicode/client-runtime/voice-input")>()),
   getEnvironmentSpeechStatus: (prepared: PreparedConnection) =>
     Effect.sync(() => {
       mocks.statusRequests.push(prepared.environmentId);
@@ -205,7 +205,7 @@ const THREAD_ENV = "thread-env";
 function setup(options: { readonly destination?: string | null } = {}) {
   mocks.settings = {};
   setDestination(options.destination ?? null);
-  if (!options.destination) localStorage.removeItem("t3code:voice-audio-grant:v1");
+  if (!options.destination) localStorage.removeItem("onicode:voice-audio-grant:v1");
   chooseTranscriptCleanup(false);
   mocks.primaryEnvironmentId = "primary-env";
   mocks.connected = new Set(["primary-env", THREAD_ENV, "env-a", "env-b"]);
@@ -303,7 +303,7 @@ it.each([
   expect(mocks.committed).not.toHaveBeenCalled();
   expect(mocks.voice.state.phase).toBe("idle");
   expect(mocks.voice.transcriptionEnvironmentId).toBeNull();
-  expect(localStorage.getItem("t3code:voice-audio-grant:v1")).toBeNull();
+  expect(localStorage.getItem("onicode:voice-audio-grant:v1")).toBeNull();
 });
 
 it.each([true, false])(
@@ -595,7 +595,7 @@ it("revokes across windows even before the storage event and survives stale pref
   document.body.append(other);
   try {
     const storage = other.contentWindow!.localStorage;
-    const key = "t3code:voice-audio-grant:v1";
+    const key = "onicode:voice-audio-grant:v1";
     const grant = JSON.parse(storage.getItem(key)!) as { id: string };
     const canSend = bindAudioGrant(grant.id);
     expect(canSend()).toBe(true);
@@ -627,7 +627,7 @@ it.each(["not-json", JSON.stringify("off")])(
     setup();
     mocks.cloudVoiceCapable.add("env-b");
     mocks.modelState = "missing-model";
-    window.localStorage.setItem("t3code:voice-audio-grant:v1", previous);
+    window.localStorage.setItem("onicode:voice-audio-grant:v1", previous);
     const save = pendingCloudAudioChoice({
       kind: "cloud",
       environmentId: EnvironmentId.make("env-b"),
@@ -649,7 +649,7 @@ it.each(["not-json", JSON.stringify("off")])(
 it("sends audio to OpenRouter only under a device grant naming the exact model", async () => {
   setup();
   mocks.cloudVoiceCapable.add("env-b");
-  const key = "t3code:voice-audio-grant:v1";
+  const key = "onicode:voice-audio-grant:v1";
   const destination = { kind: "cloud", environmentId: "env-b", provider: "openrouter" };
   window.localStorage.setItem(key, JSON.stringify({ id: "no-model", destination }));
   {
@@ -671,7 +671,7 @@ it("sends audio to OpenRouter only under a device grant naming the exact model",
 
 it("uses neither destination when the cloud save marker cannot be read", async () => {
   setup({ destination: "env-a" });
-  const key = "t3code:voice-audio-grant:v1";
+  const key = "onicode:voice-audio-grant:v1";
   const previous = JSON.parse(window.localStorage.getItem(key)!) as { id: string };
   const canSendToPrevious = bindAudioGrant(previous.id);
   const save = pendingCloudAudioChoice({

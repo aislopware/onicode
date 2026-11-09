@@ -11,8 +11,8 @@ import {
   type PeerLinkCreateInput,
   PeerLinkError,
   type PeerLinkSummary,
-} from "@t3tools/contracts";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+} from "@onicode/contracts";
+import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -32,7 +32,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpApi from "effect/http-api/HttpApi";
 import * as HttpApiClient from "effect/http-api/HttpApiClient";
-import { isLocalLoopbackHost, isTailnetHost } from "@t3tools/shared/hostClassification";
+import { isLocalLoopbackHost, isTailnetHost } from "@onicode/shared/hostClassification";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
@@ -44,7 +44,7 @@ const PeerHttpApi = HttpApi.make(EnvironmentHttpApi.identifier)
   .annotateMerge(EnvironmentHttpApi.annotations);
 
 /** The redirect registered for a link. Nothing ever listens there: the code comes back in the response. */
-const LINK_REDIRECT_URI = "http://127.0.0.1/t3code-peer-link";
+const LINK_REDIRECT_URI = "http://127.0.0.1/onicode-peer-link";
 /**
  * How long a peer's descriptor may take before a route counts as unreachable.
  * A tailnet or relayed route to a machine that is waking up takes longer.
@@ -94,7 +94,7 @@ export class PeerLinks extends Context.Service<
     readonly link: (input: PeerLinkCreateInput) => Effect.Effect<PeerLink, PeerLinkError>;
     /**
      * The environment answering at `url`, or nothing when it is not a usable
-     * address or does not answer as T3 Code. Sends no credential.
+     * address or does not answer as Onicode. Sends no credential.
      */
     readonly describe: (
       url: string,
@@ -118,7 +118,7 @@ export class PeerLinks extends Context.Service<
       outcome: { readonly error: string | null },
     ) => Effect.Effect<void>;
   }
->()("t3/peer/PeerLinks") {}
+>()("onicode/peer/PeerLinks") {}
 
 interface PeerLinkRow {
   readonly environment_id: string;
@@ -218,7 +218,7 @@ const make = Effect.gen(function* () {
 
   /**
    * The environment answering at `origin`, or nothing when it does not answer
-   * as T3 Code. A certificate this machine rejects fails instead, since
+   * as Onicode. A certificate this machine rejects fails instead, since
    * the peer may well be there.
    */
   const describe = (origin: string) =>
@@ -445,7 +445,7 @@ const make = Effect.gen(function* () {
     if (Option.isNone(descriptor)) {
       return yield* new PeerLinkError({
         reason: "not_a_t3_environment",
-        message: `Nothing at ${primary} answered as a T3 Code environment.`,
+        message: `Nothing at ${primary} answered as a Onicode environment.`,
       });
     }
     return { primary, peer: descriptor.value, origins };
@@ -476,10 +476,10 @@ const make = Effect.gen(function* () {
     if (!linkLimitsHold(peer)) {
       return yield* new PeerLinkError({
         reason: "incompatible",
-        message: `${peer.label} runs a T3 Code version that cannot keep a linked agent's limits. Update it, then link again.`,
+        message: `${peer.label} runs a Onicode version that cannot keep a linked agent's limits. Update it, then link again.`,
       });
     }
-    const issued = yield* signIn(primary, input, `T3 Code · ${self.label}`);
+    const issued = yield* signIn(primary, input, `Onicode · ${self.label}`);
     const now = yield* DateTime.now;
     const linked: PeerLink = {
       environmentId: peer.environmentId,
@@ -603,7 +603,7 @@ const make = Effect.gen(function* () {
       if (Option.isNone(row)) {
         return yield* new PeerLinkError({
           reason: "unknown_link",
-          message: `This environment is not linked to ${environmentId}. t3_environment_links lists the linked ones.`,
+          message: `This environment is not linked to ${environmentId}. oni_environment_links lists the linked ones.`,
         });
       }
       const link = yield* toLink(row.value);
@@ -645,7 +645,7 @@ const make = Effect.gen(function* () {
       if (!fenced) {
         return yield* new PeerLinkError({
           reason: "incompatible",
-          message: `${link.label} runs a T3 Code version that cannot keep a linked agent's limits. Update it, then link again.`,
+          message: `${link.label} runs a Onicode version that cannot keep a linked agent's limits. Update it, then link again.`,
         });
       }
       return {

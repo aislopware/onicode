@@ -1,6 +1,6 @@
-import type { EnvironmentId, RunId, ThreadId } from "@t3tools/contracts";
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
-import { isAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
+import type { EnvironmentId, RunId, ThreadId } from "@onicode/contracts";
+import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
+import { isAttachmentOnlyBootstrapPrompt } from "@onicode/shared/composerContextReferences";
 
 export const REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL = "Remove queued message";
 

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "@effect/vitest";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import type { ResolvedSharePayload, SharePayload } from "expo-sharing";
 
 import {
@@ -483,7 +483,7 @@ describe("incoming native shares", () => {
       value: "content://shared/report",
       mimeType: "application/pdf",
     };
-    const persistedUri = "file:///documents/t3-composer-attachments/report.pdf";
+    const persistedUri = "file:///documents/oni-composer-attachments/report.pdf";
     const removeOwnedFile = vi.fn(async (_uri: string) => undefined);
 
     const result = await buildIncomingShareDraft({
@@ -525,7 +525,7 @@ describe("share cleanup ownership", () => {
     ).toBe(true);
     expect(
       isShareFileUriUnderOwnedRoots(
-        "file:///var/mobile/Containers/Data/Application/APP/Documents/t3-composer-attachments/a.pdf",
+        "file:///var/mobile/Containers/Data/Application/APP/Documents/oni-composer-attachments/a.pdf",
         ["file:///private/var/mobile/Containers/Data/Application/APP/Documents/"],
       ),
     ).toBe(true);

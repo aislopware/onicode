@@ -1,4 +1,4 @@
-import { CommandId, EnvironmentId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { CommandId, EnvironmentId, MessageId, ProjectId, ThreadId } from "@onicode/contracts";
 import { AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 

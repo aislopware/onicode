@@ -1,8 +1,8 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@onicode/contracts";
 import {
   readHostCredentialSettings,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@onicode/client-runtime/source-control-clients";
 import { Linking, Pressable, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -52,7 +52,7 @@ export function SourceControlAppAccessNotice(props: {
         accessibilityRole="link"
         onPress={() => void Linking.openURL(appSignIn.installUrl).catch(() => undefined)}
       >
-        <Text className="text-sm font-t3-bold text-foreground">Install on {owner}</Text>
+        <Text className="text-sm font-oni-bold text-foreground">Install on {owner}</Text>
       </Pressable>
     </View>
   );

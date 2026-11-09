@@ -1,4 +1,4 @@
-import { resolveWorkGroupScrollAnchor } from "@t3tools/client-runtime/work-log/scroll-anchor";
+import { resolveWorkGroupScrollAnchor } from "@onicode/client-runtime/work-log/scroll-anchor";
 
 export type ThreadFeedLiveFollowEvent =
   | { readonly type: "reset" }

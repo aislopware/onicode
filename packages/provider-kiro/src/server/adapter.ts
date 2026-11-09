@@ -1,12 +1,12 @@
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveSelfInvocation, type SelfInvocation } from "@t3tools/shared/nodeRuntime";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { resolveSelfInvocation, type SelfInvocation } from "@onicode/shared/nodeRuntime";
 import {
   type ModelSelection,
   ProviderDriverKind,
   type OrchestrationV2ProviderCapabilities,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { KiroSettings } from "../settings.ts";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@onicode/shared/model";
 import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";
@@ -19,27 +19,27 @@ import type * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import * as EffectAcpErrors from "effect-acp/errors";
 
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import type * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
 import {
   AcpProviderCapabilitiesV2,
   makeAcpAdapterV2,
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
   type AcpAdapterV2SubagentUpdate,
-} from "@t3tools/provider-acp/server/adapter";
-import type { AcpToolCallState } from "@t3tools/provider-acp/server/runtimeModel";
-import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
+} from "@onicode/provider-acp/server/adapter";
+import type { AcpToolCallState } from "@onicode/provider-acp/server/runtimeModel";
+import { makeAcpNativeLoggerFactory } from "@onicode/provider-acp/server/nativeLogging";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
   type ProviderAdapterDriverCreateInput,
-} from "@t3tools/provider-core/server/adapterDriver";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
-import type * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import type * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import type * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+} from "@onicode/provider-core/server/adapterDriver";
+import { makeProviderFailure } from "@onicode/provider-core/server/failure";
+import type * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import { mergeProviderInstanceEnvironment } from "@onicode/provider-core/server/instanceEnvironment";
+import type * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
+import type * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
 import {
   KIRO_AGENT_CONFIG_ID,
   KIRO_AUTOPILOT_CONFIG_ID,
@@ -52,7 +52,7 @@ import {
 } from "./acpSupport.ts";
 
 export const KIRO_PROVIDER = ProviderDriverKind.make("kiro");
-/** T3's slug for "Kiro default", and Kiro's documented default model id. */
+/** Onicode's slug for "Kiro default", and Kiro's documented default model id. */
 const KIRO_DEFAULT_MODEL = "default";
 const KIRO_COMPACT_METHOD = "_kiro/session/compact";
 const KIRO_STEER_METHOD = "_session/steer";
@@ -93,7 +93,7 @@ const KiroProviderCapabilitiesV2 = {
 const KiroCompactResult = Schema.Struct({ success: Schema.Boolean });
 const decodeKiroCompactResult = Schema.decodeUnknownOption(KiroCompactResult);
 
-/** Kiro answers a `/compact` prompt as chat, so T3 compacts with Kiro's own request. */
+/** Kiro answers a `/compact` prompt as chat, so Onicode compacts with Kiro's own request. */
 const compactKiroSession = (
   runtime: AcpSessionRuntime.AcpSessionRuntime["Service"],
   sessionId: string,
@@ -240,7 +240,7 @@ const applyKiroModel = Effect.fn("KiroAdapterV2.applyKiroModel")(function* (
 });
 
 /**
- * Bound on waiting for Kiro to advertise the model T3 just wrote. Kiro 2.27.0
+ * Bound on waiting for Kiro to advertise the model Onicode just wrote. Kiro 2.27.0
  * sent it 40-90 ms after the write's result.
  */
 const KIRO_MODEL_ADVERT_BOUND = "2 seconds";
@@ -541,7 +541,7 @@ function makeKiroAcpAdapterFlavor(options: KiroAdapterV2Options): AcpAdapterV2Fl
     capabilities: KiroProviderCapabilitiesV2,
     // Kiro V3 loads the user's hooks only when the client opts in. `v2` makes
     // Kiro run them itself; `enabled` alone hands them to the client as
-    // `_kiro/hooks/*` requests, which T3 does not answer.
+    // `_kiro/hooks/*` requests, which Onicode does not answer.
     clientCapabilitiesMeta: { kiro: { hooks: { enabled: true, v2: true } } },
     makeRuntime,
     promptFailure: kiroPromptFailure,
@@ -558,7 +558,7 @@ function makeKiroAcpAdapterFlavor(options: KiroAdapterV2Options): AcpAdapterV2Fl
     // there would put the agent's own model back.
     ownedModelOptionIds: ["reasoningEffort", KIRO_AGENT_CONFIG_ID],
     // With Autopilot off (Supervised) Kiro asks the user to accept a turn's
-    // changes before it ends. T3's runtime policy answers its per-tool prompts
+    // changes before it ends. Onicode's runtime policy answers its per-tool prompts
     // either way, and a runtime-mode change reopens the session to reapply it.
     sessionConfigForPolicy: (policy) => [
       { id: KIRO_AUTOPILOT_CONFIG_ID, value: kiroAutopilotValue(policy) },

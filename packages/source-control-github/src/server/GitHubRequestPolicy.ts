@@ -1,5 +1,5 @@
-import { normalizeHost } from "@t3tools/source-control-core/server/pullRequestUtils";
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { normalizeHost } from "@onicode/source-control-core/server/pullRequestUtils";
+import { SourceControlProviderKind } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -9,7 +9,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@onicode/source-control-core/server/SourceControlRateLimit";
 
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
@@ -21,7 +21,7 @@ import * as GitHubQuota from "./GitHubQuota.ts";
 const DEFAULT_TIMEOUT = Duration.seconds(30);
 /** GitHub's secondary limits penalize concurrent bursts. */
 const CONCURRENCY = 8;
-const REQUEST_HEADERS = { "x-github-api-version": "2022-11-28", "user-agent": "t3code" };
+const REQUEST_HEADERS = { "x-github-api-version": "2022-11-28", "user-agent": "onicode" };
 
 /** Pin requests to this host's credential across account switches. Keep it out of RPCs/cache keys. */
 export const PinnedGitHubCredential = Context.Reference<{
@@ -29,7 +29,7 @@ export const PinnedGitHubCredential = Context.Reference<{
   readonly token: Redacted.Redacted<string>;
   readonly credentialFingerprint: string;
   readonly source?: GitHubCredentials.GitHubCredentialSource;
-} | null>("@t3tools/source-control-github/server/GitHubRequestPolicy/PinnedGitHubCredential", {
+} | null>("@onicode/source-control-github/server/GitHubRequestPolicy/PinnedGitHubCredential", {
   defaultValue: () => null,
 });
 
@@ -224,7 +224,7 @@ export class GitHubRequestPolicy extends Context.Service<
       host: string,
     ) => Effect.Effect<Option.Option<GitHubHeldCredential>, GitHubAppSignIn.GitHubAppSessionError>;
   }
->()("@t3tools/source-control-github/server/GitHubRequestPolicy") {}
+>()("@onicode/source-control-github/server/GitHubRequestPolicy") {}
 
 export interface GitHubHeldCredential {
   readonly source?: GitHubCredentials.GitHubCredentialSource;

@@ -13,7 +13,7 @@ effectIt.live("rejects an empty case before requiring Codex or creating output",
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pr-case-" });
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-pr-case-" });
     const outputDirectory = path.join(directory, "results");
     const child = yield* spawner.spawn(
       ChildProcess.make(

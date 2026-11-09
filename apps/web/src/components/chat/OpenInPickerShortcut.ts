@@ -3,7 +3,7 @@ import {
   type EditorId,
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { useEffect } from "react";
 
 import { usePreferredEditor } from "../../editorPreferences";
@@ -61,7 +61,7 @@ export function useOpenFavoriteEditorShortcut({
     remote.mode === "local-exec" ? availableEditors : remoteCapableEditors,
   );
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes a window keydown listener for the open-in-editor shortcut while enabled
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes a window keydown listener for the open-in-editor shortcut while enabled
   useEffect(() => {
     if (!enabled || remote.mode === "remote-unavailable") return;
     const handler = (event: globalThis.KeyboardEvent) => {

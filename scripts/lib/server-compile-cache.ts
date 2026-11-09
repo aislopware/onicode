@@ -1,4 +1,4 @@
-/* oxlint-disable t3code/no-global-process-runtime -- Runs in the packaged engine before an Effect runtime exists. */
+/* oxlint-disable onicode/no-global-process-runtime -- Runs in the packaged engine before an Effect runtime exists. */
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -134,7 +134,7 @@ export function enablePreparedServerCache(entry: string, cacheRoot: string): boo
     const active = NodeModule.getCompileCacheDir();
     if (result.status !== NodeModule.constants.compileCacheStatus.ENABLED || !active) return false;
     const seeded = seedPreparedCache(prepared, active, runtimeIdentity());
-    if (seeded) Reflect.set(globalThis, Symbol.for("t3code.preparedServerCache"), true);
+    if (seeded) Reflect.set(globalThis, Symbol.for("onicode.preparedServerCache"), true);
     return true;
   } catch {
     return false;

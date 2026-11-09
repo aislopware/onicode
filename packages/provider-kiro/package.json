@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/provider-kiro",
+  "name": "@onicode/provider-kiro",
   "private": true,
   "type": "module",
   "exports": {
@@ -25,10 +25,10 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-acp": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@onicode/contracts": "workspace:*",
+    "@onicode/provider-acp": "workspace:*",
+    "@onicode/provider-core": "workspace:*",
+    "@onicode/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

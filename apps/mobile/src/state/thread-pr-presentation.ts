@@ -1,21 +1,21 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
 import type {
   PullRequestSummary,
   ThreadPullRequestKey,
   ThreadPullRequestLink,
   VcsStatusResult,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   sourceControlClients,
   type ChangeRequestTerminology,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@onicode/client-runtime/source-control-clients";
 
 import {
   legacyThreadPullRequestKey,
   resolveThreadCurrentPullRequestLink,
   resolveThreadPullRequestBadge,
   threadPullRequestKeyOf,
-} from "@t3tools/client-runtime/thread-pull-requests";
+} from "@onicode/client-runtime/thread-pull-requests";
 
 export type ThreadPr = NonNullable<VcsStatusResult["pr"]>;
 

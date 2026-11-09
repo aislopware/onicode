@@ -106,7 +106,7 @@ test("resolves a fallback PR with a redacted head repo and exact main baseline",
   await resolve({
     github,
     context: {
-      repo: { owner: "pingdotgg", repo: "t3code" },
+      repo: { owner: "pingdotgg", repo: "onicode" },
       payload: {
         workflow_run: {
           id: 2,
@@ -164,7 +164,7 @@ test("does not guess when a fallback commit belongs to multiple PRs", async () =
       },
     },
     context: {
-      repo: { owner: "pingdotgg", repo: "t3code" },
+      repo: { owner: "pingdotgg", repo: "onicode" },
       payload: {
         workflow_run: {
           id: 2,
@@ -209,7 +209,7 @@ test("skips a missing PR commit but preserves other lookup failures", async () =
         rest: { repos: { listPullRequestsAssociatedWithCommit: () => {} } },
       },
       context: {
-        repo: { owner: "pingdotgg", repo: "t3code" },
+        repo: { owner: "pingdotgg", repo: "onicode" },
         payload: {
           workflow_run: { event: "pull_request", head_sha: "old-head", pull_requests: [] },
         },
@@ -250,7 +250,7 @@ test("does not report a passing run that skipped the server tests", async () => 
       },
     },
     context: {
-      repo: { owner: "pingdotgg", repo: "t3code" },
+      repo: { owner: "pingdotgg", repo: "onicode" },
       payload: {
         workflow_run: {
           id: 2,
@@ -297,7 +297,7 @@ test("does not publish a stale result after the PR head advances", async () => {
         },
       },
     },
-    { repo: { owner: "pingdotgg", repo: "t3code" } },
+    { repo: { owner: "pingdotgg", repo: "onicode" } },
     { info: (message) => info.push(message) },
     5350,
     "old-head-sha",
@@ -318,7 +318,7 @@ test("preserves a successful result when a same-SHA rerun has no artifact", asyn
         {
           id: 1,
           user: { login: "github-actions[bot]" },
-          body: `<!-- t3-thread-transfer-report -->\n<!-- t3-thread-transfer-result-sha:${sha} -->`,
+          body: `<!-- oni-thread-transfer-report -->\n<!-- oni-thread-transfer-result-sha:${sha} -->`,
         },
       ],
       rest: {
@@ -336,7 +336,7 @@ test("preserves a successful result when a same-SHA rerun has no artifact", asyn
         },
       },
     },
-    { repo: { owner: "pingdotgg", repo: "t3code" } },
+    { repo: { owner: "pingdotgg", repo: "onicode" } },
     { info: () => {} },
     5350,
     sha,

@@ -1,5 +1,5 @@
-import { PROVIDER_DISPLAY_NAMES, type ServerProvider } from "@t3tools/contracts";
-import { compareSemverVersions } from "@t3tools/shared/semver";
+import { PROVIDER_DISPLAY_NAMES, type ServerProvider } from "@onicode/contracts";
+import { compareSemverVersions } from "@onicode/shared/semver";
 
 const RUNTIME_NAMES: Partial<Record<string, string>> = {
   claudeAgent: "Claude Code",

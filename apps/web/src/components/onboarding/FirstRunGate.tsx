@@ -96,7 +96,7 @@ export function FirstRunGate({
   }));
   const { decision, stalled } = gateState;
   const settingsReadFailed = hydrationStatus === "failed" || hydrationStatus === "retrying";
-  // The server's sole cwd-bootstrap project/thread still counts as fresh so npx t3 users see onboarding.
+  // The server's sole cwd-bootstrap project/thread still counts as fresh so npx onicode users see onboarding.
   const serverCwd = serverConfig?.cwd ?? null;
   const primaryEnvironmentId = serverConfig?.environment.environmentId ?? null;
   const workspaceFresh =
@@ -140,7 +140,7 @@ export function FirstRunGate({
     if (transitioned !== gateState) setGateState(transitioned);
   }
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists onboarding completion to settings once the gate settles on skipping the wizard
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- persists onboarding completion to settings once the gate settles on skipping the wizard
   useEffect(() => {
     if (decision === "wizard" || !hydrated) return;
     if (persistCompletion && onboardingCompletedAt === null) {
@@ -148,7 +148,7 @@ export function FirstRunGate({
     }
   }, [decision, hydrated, onboardingCompletedAt, persistCompletion]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer gives up on a pending first-run decision after the timeout
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- timer gives up on a pending first-run decision after the timeout
   useEffect(() => {
     if (!enabled || decision !== "pending" || !hydrated) return;
     const timer = window.setTimeout(
@@ -161,7 +161,7 @@ export function FirstRunGate({
   // Setup opens by itself only from the home route. A direct link, such as
   // Settings, opens as asked so setup can never lock a user out of the app.
   const wizardOwnsRoute = pathname === "/";
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- navigates from the home route to /welcome when the gate decides on the wizard
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- navigates from the home route to /welcome when the gate decides on the wizard
   useEffect(() => {
     if (decision === "wizard" && wizardOwnsRoute) {
       void navigate({ to: "/welcome", replace: true });
@@ -197,7 +197,7 @@ function FirstRunRecovery({
         <p className="mt-2 text-sm text-muted-foreground">
           {settingsReadFailed
             ? "Your saved settings could not be loaded."
-            : "T3 Code could not confirm this workspace."}
+            : "Onicode could not confirm this workspace."}
         </p>
         <Button
           className="mt-5"

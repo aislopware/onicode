@@ -6,7 +6,7 @@ import {
   pullRequestRoutingConnectionKey,
   pullRequestRoutingPermissionFor,
   type PullRequestRoutingPermission,
-} from "@t3tools/client-runtime/connection";
+} from "@onicode/client-runtime/connection";
 import { useState } from "react";
 import { Pressable, View } from "react-native";
 
@@ -61,7 +61,7 @@ export function PullRequestRoutingSettings() {
                 onPress={() => setExpanded(expanded === environmentId ? null : environmentId)}
               >
                 <View className="min-w-0 flex-1 gap-0.5">
-                  <Text className="text-base font-t3-bold text-foreground">
+                  <Text className="text-base font-oni-bold text-foreground">
                     {entry.target.label}
                   </Text>
                   <Text className="text-xs text-foreground-muted" numberOfLines={1}>

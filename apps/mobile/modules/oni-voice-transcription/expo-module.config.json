@@ -1,0 +1,10 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["OniVoiceTranscriptionModule"],
+    "podspecPath": "ios/OniVoiceTranscription.podspec"
+  },
+  "android": {
+    "modules": ["expo.modules.onivoicetranscription.OniVoiceTranscriptionModule"]
+  }
+}

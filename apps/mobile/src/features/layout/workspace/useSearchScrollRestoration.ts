@@ -7,7 +7,7 @@ export function useSearchScrollRestoration(
   restore: () => void,
 ) {
   const previousSearchMode = useRef(searchMode);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores the native list's saved search position
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- restores the native list's saved search position
   useEffect(() => {
     const cancelledSearch =
       previousSearchMode.current !== undefined &&

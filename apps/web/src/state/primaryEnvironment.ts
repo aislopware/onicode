@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
@@ -18,7 +18,7 @@ const hostEnvironmentIdAtom = Atom.make<string | null>(null).pipe(
   Atom.withLabel("web-host-environment-id"),
 );
 
-// Without a primary, only the service sharing the desktop app's T3 home supplies themes.
+// Without a primary, only the service sharing the desktop app's Onicode home supplies themes.
 export function createThemeEnvironmentIdAtom(input: {
   readonly primaryEnvironmentIdAtom: Atom.Atom<EnvironmentId | null>;
   readonly hostEnvironmentIdAtom: Atom.Atom<string | null>;

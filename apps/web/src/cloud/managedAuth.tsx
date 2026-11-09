@@ -3,12 +3,12 @@ import {
   createCloudAccountService,
   ManagedRelay,
   setManagedRelaySession,
-} from "@t3tools/client-runtime/relay";
+} from "@onicode/client-runtime/relay";
 import {
   reportAtomCommandResult,
   runAtomCommand,
   settleAsyncResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import * as Effect from "effect/Effect";
 import { useEffect, type ReactNode } from "react";
 
@@ -65,7 +65,7 @@ export function ManagedRelayAuthProvider({ children }: { readonly children: Reac
   // ClerkProvider creates the Clerk instance and owns its lifetime, so the
   // account service observes it for as long as this provider is mounted.
   const clerk = useClerk();
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches the Clerk instance to the managed relay account service for the provider's lifetime
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- attaches the Clerk instance to the managed relay account service for the provider's lifetime
   useEffect(() => managedRelayAccountService.attach(clerk), [clerk]);
   return children;
 }

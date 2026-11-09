@@ -1,6 +1,6 @@
-import { createPeerPairingCodeCommand } from "@t3tools/client-runtime/state/peerPairingCode";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { AuthMcpClientAccess, EnvironmentId } from "@t3tools/contracts";
+import { createPeerPairingCodeCommand } from "@onicode/client-runtime/state/peerPairingCode";
+import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
+import type { AuthMcpClientAccess, EnvironmentId } from "@onicode/contracts";
 import * as Result from "effect/Result";
 
 import { connectionAtomRuntime } from "../connection/runtime";

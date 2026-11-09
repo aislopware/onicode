@@ -10,7 +10,7 @@ import { assert, it } from "vite-plus/test";
 import desktopConfig from "../vite.config.ts";
 
 it("keeps lazy Linux imports and worker bundles from executing desktop startup twice", async () => {
-  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-desktop-bundle-"));
+  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "oni-desktop-bundle-"));
   try {
     const workerEntries = [
       "src/electron/WindowsForegroundFocusWorker.ts",
@@ -112,7 +112,7 @@ void import("./linux.ts").then(({ result }) => process.emit("ready", result));`,
 });
 
 it("loads the emitted packaged boot entry and backend cache preload", async () => {
-  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-desktop-boot-"));
+  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "oni-desktop-boot-"));
   try {
     const entries = ["src/boot.ts", "src/compileCache.ts"];
     assert.ok(Array.isArray(desktopConfig.pack));

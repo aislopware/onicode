@@ -3,7 +3,7 @@ import {
   EnvironmentId,
   type ResourceTelemetryHistory,
   type ResourceTelemetrySnapshot,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
@@ -96,7 +96,7 @@ function setup({ retryFails = false, holdRetry = false } = {}) {
     readAt,
     sampleIntervalMs: 1000,
     processes: [],
-    groups: { backend: aggregate, electron: aggregate, monitor: aggregate, allT3: aggregate },
+    groups: { backend: aggregate, electron: aggregate, monitor: aggregate, allOni: aggregate },
     power: {
       source: "unknown",
       idle: "unknown",

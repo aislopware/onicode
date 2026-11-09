@@ -8,7 +8,7 @@ import type {
   ManagedPolicyClient,
   ManagedPolicyDocument,
   ServerAuthPolicy,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   disableTailscaleServe,
   disableTailscaleServeTcp,
@@ -17,12 +17,12 @@ import {
   readTailscaleStatus,
   type TailscaleServeRoute,
   type TailscaleStderrDiagnostic,
-} from "@t3tools/tailscale";
+} from "@onicode/tailscale";
 import * as Effect from "effect/Effect";
 import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@onicode/shared/Net";
 
 import { loopbackBindAddress } from "../auth/utils.ts";
 
@@ -100,7 +100,7 @@ const NOTHING_TO_CLOSE: ReadonlySet<TailscaleStderrDiagnostic | undefined> = new
 
 /**
  * Turns off the Tailscale Serve routes that forward to the server at `target`, such as one
- * `t3 pair --tailscale` left from before the policy, and keeps every other route. Runs before the
+ * `onicode pair --tailscale` left from before the policy, and keeps every other route. Runs before the
  * server binds, and fails unless a fresh read shows no route here, since `off` can exit 0 and
  * leave it. Without the CLI, or with Tailscale down or logged out, nothing forwards.
  */
@@ -222,7 +222,7 @@ export const checkServerReachability = Effect.fn("managedLimits.checkServerReach
       refuseRemoteClients(
         policy,
         input.privateNetworkOnly === true
-          ? "so the background service cannot listen on private networks; set T3CODE_HOST=127.0.0.1 in its service.env"
+          ? "so the background service cannot listen on private networks; set ONICODE_HOST=127.0.0.1 in its service.env"
           : `so the server cannot listen on ${input.host === "" ? "every interface" : (input.host ?? "this host")}`,
       );
     if (!allowsAuthPolicy(policy, input.authPolicy)) {

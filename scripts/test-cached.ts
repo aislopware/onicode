@@ -69,7 +69,7 @@ console.log(
 );
 const env = {
   ...process.env,
-  T3_CACHED_TESTS: JSON.stringify({
+  ONICODE_CACHED_TESTS: JSON.stringify({
     files,
     groupSize,
     uncached: values.uncached.map((file) => NodePath.relative(root, NodePath.resolve(file))),

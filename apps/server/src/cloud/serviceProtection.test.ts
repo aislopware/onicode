@@ -6,7 +6,7 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Sink from "effect/Sink";
@@ -18,7 +18,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ServiceProtection from "./serviceProtection.ts";
 
 const temporaryDirectory = () =>
-  NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-service-protection-"));
+  NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-service-protection-"));
 
 describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("renderPrivilegedScript", () => {
   it("writes and removes only its drop-ins and gives running main processes their score", () => {
@@ -38,7 +38,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("renderPrivileg
         "[Service]\nMemoryLow=2G\nOOMScoreAdjust=-900\n",
       );
       expect(theo.managerDefaults.path).toBe(
-        "/home/theo/.config/systemd/user.conf.d/90-t3code-protect.conf",
+        "/home/theo/.config/systemd/user.conf.d/90-onicode-protect.conf",
       );
       expect(theo.oomUnits).toEqual(["user@1000.service", "tailscaled.service", "ssh.service"]);
 
@@ -79,7 +79,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("renderPrivileg
         expect(result.status).toBe(0);
       };
       const exists = (unit: string) =>
-        NodeFS.existsSync(NodePath.join(systemUnitDir, `${unit}.d`, "90-t3code-protect.conf"));
+        NodeFS.existsSync(NodePath.join(systemUnitDir, `${unit}.d`, "90-onicode-protect.conf"));
 
       runScript(theo, "apply");
       runScript(plan(1001, []), "apply");
@@ -233,7 +233,7 @@ it.effect("counts memory.min as protection and names the first cgroup that grant
     "user-1000.slice",
     "user@1000.service",
     "app.slice",
-    "t3code.service",
+    "onicode.service",
   ];
   const write = (depth: number, file: string, value: string) => {
     const directory = NodePath.join(root, ...controlGroup.slice(0, depth));

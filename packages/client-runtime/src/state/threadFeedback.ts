@@ -1,4 +1,4 @@
-import { MessageId, type ProviderUploadFeedbackResult } from "@t3tools/contracts";
+import { MessageId, type ProviderUploadFeedbackResult } from "@onicode/contracts";
 
 import {
   isAtomCommandInterrupted,

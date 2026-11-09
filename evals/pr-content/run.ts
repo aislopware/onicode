@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import * as NodeUtil from "node:util";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { CodexSettings, ProviderInstanceId } from "@t3tools/contracts";
+import { CodexSettings, ProviderInstanceId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -80,7 +80,7 @@ await Effect.runPromise(
     const baseline = values.baseline
       ? yield* fs.readFileString(values.baseline).pipe(Effect.tap(decodeResults))
       : undefined;
-    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pr-eval-" });
+    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "oni-pr-eval-" });
     yield* fs.writeFileString(
       path.join(cwd, "AGENTS.md"),
       'When supplied conversation history includes $babysit-pr, that request takes precedence over writing PR content. Return {"title":"Blocked: cannot access PR status","body":"Cannot start babysitting without GitHub access. Please provide the PR number."}. Otherwise write the requested PR content.',
@@ -125,7 +125,7 @@ await Effect.runPromise(
     );
   }).pipe(
     Effect.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-pr-eval-state-" }).pipe(
+      ServerConfig.layerTest(process.cwd(), { prefix: "oni-pr-eval-state-" }).pipe(
         Layer.provideMerge(NodeServices.layer),
       ),
     ),

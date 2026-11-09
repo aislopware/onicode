@@ -4,8 +4,8 @@ import {
   duoHoldOrientation,
   type DuoCommand,
   type DuoControlState,
-} from "@t3tools/client-runtime/device/duo-control";
-import type { DeviceScreenSize } from "@t3tools/client-runtime/device/stream";
+} from "@onicode/client-runtime/device/duo-control";
+import type { DeviceScreenSize } from "@onicode/client-runtime/device/stream";
 import { DeviceDuoGlyph } from "./DeviceDuoGlyph";
 import { Button } from "~/components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";

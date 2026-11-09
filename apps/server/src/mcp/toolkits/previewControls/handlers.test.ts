@@ -7,8 +7,8 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
-} from "@t3tools/contracts";
-import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+} from "@onicode/contracts";
+import { resolveProjectSettings } from "@onicode/shared/projectSettings";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
@@ -54,7 +54,7 @@ it.effect.each([
       const manager = yield* Preview.make.pipe(
         Effect.provide(
           Layer.merge(
-            ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-controls-" }).pipe(
+            ServerConfig.layerTest(process.cwd(), { prefix: "oni-preview-controls-" }).pipe(
               Layer.provide(NodeServices.layer),
             ),
             NodeCrypto.layer,
@@ -81,10 +81,10 @@ it.effect.each([
         ),
       );
       const listed = yield* toolkit
-        .handle("t3_preview_list", {})
+        .handle("oni_preview_list", {})
         .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
       const closed = yield* toolkit
-        .handle("t3_preview_close", { tabId: tab.tabId })
+        .handle("oni_preview_close", { tabId: tab.tabId })
         .pipe(Stream.unwrap, Stream.runCollect, Effect.provide(layerDependencies));
       if (projectAccess) {
         expect(listed.at(-1)?.result).toMatchObject({ sessions: [tab], nextCursor: null });

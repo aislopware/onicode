@@ -73,7 +73,7 @@ The bundled protocol XML ships with the helper because its BSD license requires 
 ## Niri
 
 Niri does not implement the global-shortcut portal. While capture is enabled the app owns
-`<app-id>.SnapShot` on the session bus and exports `com.t3tools.SnapShot.Capture`; the config
+`<app-id>.SnapShot` on the session bus and exports `dev.onicode.SnapShot.Capture`; the config
 binding spawns `gdbus` to call it. Development and packaged app IDs use separate names so a dev
 build does not steal the user's binding.
 
@@ -95,12 +95,12 @@ Source in `apps/desktop/gnome-extension`, UUID `snap-shot@t3.codes`. GNOME only 
 installed extension at login, so setup distinguishes "installed, needs logout" from "discovered but
 disabled" and compares loaded and installed versions.
 
-The extension trusts callers that own `com.t3tools.T3Code.SnapShot` (or the `.Development`
+The extension trusts callers that own `dev.onicode.Onicode.SnapShot` (or the `.Development`
 variant) on the same connection. This is GNOME's trusted-session-client pattern, not authentication
 against a hostile process on the user's bus.
 
 Electron does not position overlay windows on Wayland, so the flash and flight run as Shell actors
-inside the extension with coordinates relative to T3's content area. Electron 44's restored-session
+inside the extension with coordinates relative to Onicode's content area. Electron 44's restored-session
 path can skip rebinding and leave callbacks behind on unregister, which is why
 `PortalCaptureShortcut` owns its own portal session instead of using Electron's global-shortcut API.
 

@@ -1,4 +1,4 @@
-import { GUEST_RENDER_ROUTE, GUEST_SHARE_PARAM } from "@t3tools/contracts";
+import { GUEST_RENDER_ROUTE, GUEST_SHARE_PARAM } from "@onicode/contracts";
 import {
   type HtmlRenderReference,
   HTML_RENDER_COLUMN_WIDTH,
@@ -8,7 +8,7 @@ import {
   htmlRenderThemeMessage,
   readHtmlRenderContentHeight,
   readHtmlRenderLinkRequest,
-} from "@t3tools/shared/htmlRender";
+} from "@onicode/shared/htmlRender";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
@@ -38,7 +38,7 @@ export function GuestHtmlRender({
     () =>
       `${GUEST_RENDER_ROUTE}?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}&item=${encodeURIComponent(itemId)}${htmlRenderThemeFragment(theme)}`,
   );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the frame box and follows its width with a ResizeObserver before paint
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- measures the frame box and follows its width with a ResizeObserver before paint
   useLayoutEffect(() => {
     const box = boxRef.current;
     if (!box) return;
@@ -47,11 +47,11 @@ export function GuestHtmlRender({
       if (entry) setWidth(entry.contentRect.width);
     });
   }, []);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- posts theme changes to the iframe's window
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- posts theme changes to the iframe's window
   useEffect(() => {
     frameRef.current?.contentWindow?.postMessage(htmlRenderThemeMessage(theme), "*");
   }, [theme]);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window message listener for the iframe's height reports and link requests
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- window message listener for the iframe's height reports and link requests
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const frame = frameRef.current;

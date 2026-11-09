@@ -1,4 +1,4 @@
-import { CommandId, EnvironmentId, MessageId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { CommandId, EnvironmentId, MessageId, ProjectId, ThreadId } from "@onicode/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 const harness = vi.hoisted(() => ({
@@ -95,7 +95,7 @@ describe("thread outbox removal", () => {
     const message = queuedMessage({
       environmentId: "environment-1",
       messageId: "message-1",
-      fileUri: "file:///documents/t3-composer-attachments/report.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/report.pdf",
     });
     await harness.manager.enqueue(message);
 
@@ -109,7 +109,7 @@ describe("thread outbox removal", () => {
     const message = queuedMessage({
       environmentId: "environment-1",
       messageId: "message-edited",
-      fileUri: "file:///documents/t3-composer-attachments/report.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/report.pdf",
       creation: true,
     });
     await harness.manager.enqueue(message);
@@ -133,12 +133,12 @@ describe("thread outbox removal", () => {
     const cleared = queuedMessage({
       environmentId: "environment-1",
       messageId: "message-cleared",
-      fileUri: "file:///documents/t3-composer-attachments/cleared.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/cleared.pdf",
     });
     const kept = queuedMessage({
       environmentId: "environment-2",
       messageId: "message-kept",
-      fileUri: "file:///documents/t3-composer-attachments/kept.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/kept.pdf",
     });
     await harness.manager.enqueue(cleared);
     await harness.manager.enqueue(kept);
@@ -156,19 +156,19 @@ describe("thread outbox removal", () => {
     const cleared = queuedMessage({
       environmentId: "environment-1",
       messageId: "message-cleared-pending",
-      fileUri: "file:///documents/t3-composer-attachments/cleared-pending.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/cleared-pending.pdf",
       creation: true,
     });
     const replaced = queuedMessage({
       environmentId: "environment-1",
       messageId: "message-replaced-pending",
-      fileUri: "file:///documents/t3-composer-attachments/replaced-pending.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/replaced-pending.pdf",
       creation: true,
     });
     const kept = queuedMessage({
       environmentId: "environment-2",
       messageId: "message-kept-pending",
-      fileUri: "file:///documents/t3-composer-attachments/kept-pending.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/kept-pending.pdf",
       creation: true,
     });
     const replacement = { ...replaced, text: "replacement queued while drafts hydrate" };
@@ -178,7 +178,7 @@ describe("thread outbox removal", () => {
       name: "cleared-editor.pdf",
       mimeType: "application/pdf",
       sizeBytes: 84,
-      fileUri: "file:///documents/t3-composer-attachments/cleared-editor.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/cleared-editor.pdf",
     };
     const hydrationStarted = Promise.withResolvers<void>();
     const hydrationBarrier = Promise.withResolvers<void>();
@@ -223,7 +223,7 @@ describe("thread outbox removal", () => {
     const message = queuedMessage({
       environmentId: "environment-1",
       messageId: "message-draft-flush-fails",
-      fileUri: "file:///documents/t3-composer-attachments/queued.pdf",
+      fileUri: "file:///documents/oni-composer-attachments/queued.pdf",
       creation: true,
     });
     const flushError = new Error("composer storage unavailable");

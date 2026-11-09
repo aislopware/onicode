@@ -70,7 +70,7 @@ export class OpenCode2Client extends Context.Service<
       readonly password: string | Redacted.Redacted;
     }) => Effect.Effect<OpenCode2Api>;
   }
->()("@t3tools/provider-opencode/server/v2/OpenCode2Client") {}
+>()("@onicode/provider-opencode/server/v2/OpenCode2Client") {}
 
 // Heartbeats arrive every 10-15 seconds; longer silence means stuck, not idle.
 const SILENT_STREAM_TIMEOUT = "45 seconds";
@@ -170,7 +170,7 @@ const fillCompactionRecent = (message: unknown) =>
 /**
  * OpenCode 2.1 dropped a compaction's `recent`, which the bundled 2.0.28 schema requires.
  * Migrated pre-2.1 compactions keep it under `metadata.recent`; native 2.1 ones have none.
- * T3 never reads it, so fill the gap; every other field still validates downstream.
+ * Onicode never reads it, so fill the gap; every other field still validates downstream.
  */
 const fillCompactionRecents = HttpClient.transformResponse(
   Effect.fnUntraced(function* (

@@ -1,8 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
 import { assert, it } from "@effect/vitest";
-import { ProjectId } from "@t3tools/contracts";
+import { ProjectId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -14,7 +14,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as CheckpointStore from "../checkpointing/CheckpointStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflow from "../git/GitWorkflowService.ts";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 
 import * as McpSessionRegistryTestkit from "../mcp/McpSessionRegistry.testkit.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -123,7 +123,7 @@ const layerRuntime = (dbPath: string) => {
     }),
   );
   const layerServerConfig = ServerConfig.layerTest(process.cwd(), {
-    prefix: "t3-project-upgrade-",
+    prefix: "oni-project-upgrade-",
   });
   const layerCheckpointStore = CheckpointStore.layer.pipe(
     Layer.provide(
@@ -179,7 +179,7 @@ it.live("keeps project settings through the V2 migrations and the first V2 boot"
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-project-upgrade-" });
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-project-upgrade-" });
       const dbPath = path.join(stateDir, "statev2.sqlite");
 
       yield* seedV1Database.pipe(Effect.provide(NodeSqliteClient.layer({ filename: dbPath })));

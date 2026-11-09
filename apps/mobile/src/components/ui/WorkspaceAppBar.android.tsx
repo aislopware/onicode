@@ -111,12 +111,12 @@ export function useHasWorkspaceAppBar() {
 export function WorkspaceAppBar(props: WorkspaceAppBarProps) {
   const store = use(WorkspaceAppBarStoreContext);
   const [owner] = useState(() => ({}));
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- projects this tab's header into the out-of-tree workspace bar after every commit
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- projects this tab's header into the out-of-tree workspace bar after every commit
   useLayoutEffect(() => {
     store?.set(owner, props);
   });
   // Hidden panes destroy their effects, so the tab leaving the screen releases the bar.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the workspace bar when this tab hides or unmounts
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- releases the workspace bar when this tab hides or unmounts
   useLayoutEffect(() => (store ? () => store.clear(owner) : undefined), [store, owner]);
   return store ? null : <WorkspaceAppBarView {...props} />;
 }

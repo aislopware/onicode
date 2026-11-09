@@ -1,5 +1,5 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
+import type { ScopedThreadRef } from "@onicode/contracts";
+import { isAtomCommandInterrupted } from "@onicode/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 
 import { resolveBrowserDefaults } from "~/browser/browserDefaults";

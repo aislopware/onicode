@@ -58,15 +58,15 @@ is one provider turn, and `segment` says what started it: the run's first
 attempt (`initial`), a `steering_restart`, a provider `continuation` such as a
 Codex goal turn, or a `native_child` subagent. `createdBy`, `creationSource`,
 `scheduled`, and `subagent` describe the run's starting message, and `childKind`
-separates native subagents from T3-managed child threads. Use this event for
+separates native subagents from Onicode-managed child threads. Use this event for
 per-turn measurements, not for counting requests.
 
 `provider.request.completed` is one run, recorded when the run settles in the
 server process that ran it. It adds each root turn once, so continuations,
 steering, and replayed provider events do not add rows. `requestKind: "user"`
 counts what people asked for. Native subagent turns are summed apart from the
-root (`childUsageStatus`, `childInputTokens`); T3-managed child threads report
-their own requests as `t3_child`. A child still running at settlement is never
+root (`childUsageStatus`, `childInputTokens`); Onicode-managed child threads report
+their own requests as `oni_child`. A child still running at settlement is never
 added later, and the summary sets `childrenRunning`. A server restart loses the
 summary of a run in progress. A run that continues after a restart reports its
 own usage with `restartContinuation` and `lifecycleObserved: false`; it cannot
@@ -151,4 +151,4 @@ must not reject a connection. PostHog person profiles remain disabled.
 
 Dev-runner servers and the CI archive smoke test turn telemetry off, which also
 stops relay tracing, because each would count as a new install. Set
-`T3CODE_TELEMETRY_ENABLED=true` to test analytics or relay tracing from a dev server.
+`ONICODE_TELEMETRY_ENABLED=true` to test analytics or relay tracing from a dev server.

@@ -31,25 +31,25 @@ describe("mergeLegacyLocalStorage", () => {
   it("copies V1 keys into an empty profile, except the per-install client id", () => {
     const storage = memoryStorage();
     mergeLegacyLocalStorage(storage, {
-      "t3code:theme": "dark",
-      "t3code:prompt-stash:v2": stash("a"),
-      "t3.backgroundActivity.clientId": "v1-client",
+      "onicode:theme": "dark",
+      "onicode:prompt-stash:v2": stash("a"),
+      "onicode.backgroundActivity.clientId": "v1-client",
     });
-    assert.equal(storage.getItem("t3code:theme"), "dark");
-    assert.equal(storage.getItem("t3code:prompt-stash:v2"), stash("a"));
-    assert.equal(storage.getItem("t3.backgroundActivity.clientId"), null);
+    assert.equal(storage.getItem("onicode:theme"), "dark");
+    assert.equal(storage.getItem("onicode:prompt-stash:v2"), stash("a"));
+    assert.equal(storage.getItem("onicode.backgroundActivity.clientId"), null);
   });
 
   it("keeps V2 values for plain keys", () => {
-    const storage = memoryStorage({ "t3code:theme": "light" });
-    mergeLegacyLocalStorage(storage, { "t3code:theme": "dark" });
-    assert.equal(storage.getItem("t3code:theme"), "light");
+    const storage = memoryStorage({ "onicode:theme": "light" });
+    mergeLegacyLocalStorage(storage, { "onicode:theme": "dark" });
+    assert.equal(storage.getItem("onicode:theme"), "light");
   });
 
   it("appends V1 stash entries after V2's without duplicating ids", () => {
-    const storage = memoryStorage({ "t3code:prompt-stash:v2": stash("new", "shared") });
-    mergeLegacyLocalStorage(storage, { "t3code:prompt-stash:v2": stash("shared", "old") });
-    const ids = JSON.parse(storage.getItem("t3code:prompt-stash:v2")!).state.entries.map(
+    const storage = memoryStorage({ "onicode:prompt-stash:v2": stash("new", "shared") });
+    mergeLegacyLocalStorage(storage, { "onicode:prompt-stash:v2": stash("shared", "old") });
+    const ids = JSON.parse(storage.getItem("onicode:prompt-stash:v2")!).state.entries.map(
       (entry: { id: string }) => entry.id,
     );
     assert.deepStrictEqual(ids, ["new", "shared", "old"]);
@@ -57,29 +57,29 @@ describe("mergeLegacyLocalStorage", () => {
 
   it("adds V1 drafts for other threads and keeps V2's draft for the same thread", () => {
     const storage = memoryStorage({
-      "t3code:composer-drafts:v1": drafts(9, "env:shared", "v2 text"),
+      "onicode:composer-drafts:v1": drafts(9, "env:shared", "v2 text"),
     });
     const legacy = JSON.parse(drafts(9, "env:shared", "v1 text"));
     legacy.state.draftsByThreadKey["env:old"] = { prompt: "v1 only" };
-    mergeLegacyLocalStorage(storage, { "t3code:composer-drafts:v1": JSON.stringify(legacy) });
-    const merged = JSON.parse(storage.getItem("t3code:composer-drafts:v1")!);
+    mergeLegacyLocalStorage(storage, { "onicode:composer-drafts:v1": JSON.stringify(legacy) });
+    const merged = JSON.parse(storage.getItem("onicode:composer-drafts:v1")!);
     assert.equal(merged.state.draftsByThreadKey["env:shared"].prompt, "v2 text");
     assert.equal(merged.state.draftsByThreadKey["env:old"].prompt, "v1 only");
   });
 
   it("leaves V2 drafts alone when the stored shapes differ in version", () => {
     const current = drafts(10, "env:a", "v2");
-    const storage = memoryStorage({ "t3code:composer-drafts:v1": current });
-    mergeLegacyLocalStorage(storage, { "t3code:composer-drafts:v1": drafts(9, "env:b", "v1") });
-    assert.equal(storage.getItem("t3code:composer-drafts:v1"), current);
+    const storage = memoryStorage({ "onicode:composer-drafts:v1": current });
+    mergeLegacyLocalStorage(storage, { "onicode:composer-drafts:v1": drafts(9, "env:b", "v1") });
+    assert.equal(storage.getItem("onicode:composer-drafts:v1"), current);
   });
 
   it("caps the merged stash at the store's entry limit, dropping the oldest V1 entries", () => {
     const v2Ids = Array.from({ length: 15 }, (_, index) => `v2-${index}`);
     const v1Ids = Array.from({ length: 10 }, (_, index) => `v1-${index}`);
-    const storage = memoryStorage({ "t3code:prompt-stash:v2": stash(...v2Ids) });
-    mergeLegacyLocalStorage(storage, { "t3code:prompt-stash:v2": stash(...v1Ids) });
-    const ids = JSON.parse(storage.getItem("t3code:prompt-stash:v2")!).state.entries.map(
+    const storage = memoryStorage({ "onicode:prompt-stash:v2": stash(...v2Ids) });
+    mergeLegacyLocalStorage(storage, { "onicode:prompt-stash:v2": stash(...v1Ids) });
+    const ids = JSON.parse(storage.getItem("onicode:prompt-stash:v2")!).state.entries.map(
       (entry: { id: string }) => entry.id,
     );
     assert.deepStrictEqual(ids, [...v2Ids, ...v1Ids.slice(0, 5)]);
@@ -89,14 +89,14 @@ describe("mergeLegacyLocalStorage", () => {
     const storage = memoryStorage();
     const setItem = storage.setItem;
     storage.setItem = (key, value) => {
-      if (key === "t3code:theme") throw new DOMException("full", "QuotaExceededError");
+      if (key === "onicode:theme") throw new DOMException("full", "QuotaExceededError");
       setItem(key, value);
     };
     const complete = mergeLegacyLocalStorage(storage, {
-      "t3code:theme": "dark",
-      "t3code:last-editor": "zed",
+      "onicode:theme": "dark",
+      "onicode:last-editor": "zed",
     });
-    assert.equal(storage.getItem("t3code:last-editor"), "zed");
+    assert.equal(storage.getItem("onicode:last-editor"), "zed");
     assert.isFalse(complete);
   });
 });

@@ -1,5 +1,5 @@
 import { assert } from "@effect/vitest";
-import type { ProviderReplayTranscript } from "@t3tools/contracts";
+import type { ProviderReplayTranscript } from "@onicode/contracts";
 
 import type { OrchestratorV2ScenarioResult } from "../../OrchestratorScenario.ts";
 import {
@@ -38,7 +38,7 @@ export function assertKiroMessageSteeringOutput(
   ]);
   assertUserMessageInputIntents(projection, ["turn_start", "steer"]);
   assertAssistantTextIncludes(projection, "steering fixture observed");
-  // Kiro's model appends a `[STEERING steer-…]` note for Kiro's own UI; T3 drops it.
+  // Kiro's model appends a `[STEERING steer-…]` note for Kiro's own UI; Onicode drops it.
   assert.notInclude(
     projection.turnItems
       .map((item) => (item.type === "assistant_message" ? item.text : ""))

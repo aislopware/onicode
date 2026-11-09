@@ -3,16 +3,16 @@ import {
   PrimaryConnectionTarget,
   type EnvironmentPresentation,
   type NetworkStatus,
-} from "@t3tools/client-runtime/connection";
-import type { EnvironmentCatalogState } from "@t3tools/client-runtime/state/connections";
-import type { EnvironmentShellSummary } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentId, type ServerConfig } from "@t3tools/contracts";
+} from "@onicode/client-runtime/connection";
+import type { EnvironmentCatalogState } from "@onicode/client-runtime/state/connections";
+import type { EnvironmentShellSummary } from "@onicode/client-runtime/state/shell";
+import { EnvironmentId, type ServerConfig } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
 
 import { createWorkspaceConnectionAtoms } from "./workspace-connection-atoms";
 import { projectWorkspaceState } from "./workspaceModel";
-import { projectEnvironmentConnectionSummary as projectWorkspaceEnvironment } from "@t3tools/client-runtime/state/presentation";
+import { projectEnvironmentConnectionSummary as projectWorkspaceEnvironment } from "@onicode/client-runtime/state/presentation";
 
 const ID = EnvironmentId.make("environment-1");
 function presentation(): EnvironmentPresentation {

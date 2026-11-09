@@ -14,7 +14,7 @@ import { requireNativeView } from "expo";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { NativeViewResolutionError } from "../../native/nativeViewResolutionError";
 
-const NATIVE_REVIEW_DIFF_MODULE_NAME = "T3ReviewDiffSurface";
+const NATIVE_REVIEW_DIFF_MODULE_NAME = "OniReviewDiffSurface";
 const NATIVE_REVIEW_DIFF_PAYLOAD_RETRY_FRAMES = 60;
 
 interface ExpoGlobalWithViewConfig {
@@ -188,7 +188,7 @@ export function isPendingNativeViewRegistration(error: unknown): boolean {
   return (
     error.message.includes(`Unable to find the '${NATIVE_REVIEW_DIFF_MODULE_NAME}' view`) ||
     (error.message.includes("Unable to find the class") &&
-      error.message.includes("T3ReviewDiffView view with tag"))
+      error.message.includes("OniReviewDiffView view with tag"))
   );
 }
 
@@ -200,7 +200,7 @@ function useNativeReviewDiffPayload(
   onFailure?: () => void,
   onDelivered?: (payload: string) => void,
 ) {
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sends the payload to the native diff view's imperative method, retrying per frame until it mounts
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- sends the payload to the native diff view's imperative method, retrying per frame until it mounts
   useEffect(() => {
     if (payload === undefined) {
       return;
@@ -333,12 +333,12 @@ function NativeReviewDiffContent(
   );
   useNativeReviewDiffPayload(nativeRef, "setTokensJson", tokensJson);
   const onDebugRef = useRef(onDebug);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the latest onDebug for callbacks the native diff view fires outside render
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- keeps the latest onDebug for callbacks the native diff view fires outside render
   useEffect(() => {
     onDebugRef.current = onDebug;
   }, [onDebug]);
   const reportedMountRef = useRef(false);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- reports the native surface mount to the debug callback once per mount
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- reports the native surface mount to the debug callback once per mount
   useEffect(() => {
     // Effect replay keeps the same native content; only a new mount loses tokens.
     if (reportedMountRef.current) return;

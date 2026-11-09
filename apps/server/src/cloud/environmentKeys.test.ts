@@ -16,7 +16,7 @@ import {
 
 const layerServerSecretStore = () =>
   ServerSecretStore.layer.pipe(
-    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "t3-environment-keys-test-" })),
+    Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "oni-environment-keys-test-" })),
   );
 
 const unusedSecretStoreOperation = () => Effect.die("unused secret-store operation");

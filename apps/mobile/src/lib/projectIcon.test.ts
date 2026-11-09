@@ -1,4 +1,4 @@
-import type { ProjectIconOverride } from "@t3tools/contracts";
+import type { ProjectIconOverride } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { projectAutoMonogram, resolveProjectChipIcon } from "./projectIcon";
@@ -21,13 +21,13 @@ describe("resolveProjectChipIcon", () => {
   it("prefers a custom icon over the favicon", () => {
     expect(
       resolveProjectChipIcon(
-        project("t3code", { kind: "monogram", text: "Q7", color: "violet" }),
+        project("onicode", { kind: "monogram", text: "Q7", color: "violet" }),
         null,
         favicon,
       ),
     ).toEqual({ kind: "monogram", text: "Q7", color: "violet" });
     expect(
-      resolveProjectChipIcon(project("t3code", { kind: "emoji", emoji: "🚀" }), null, favicon),
+      resolveProjectChipIcon(project("onicode", { kind: "emoji", emoji: "🚀" }), null, favicon),
     ).toEqual({ kind: "emoji", emoji: "🚀" });
     expect(
       resolveProjectChipIcon(
@@ -39,7 +39,7 @@ describe("resolveProjectChipIcon", () => {
   });
 
   it("uses the favicon, then a monogram of the title", () => {
-    expect(resolveProjectChipIcon(project("t3code"), null, favicon)).toEqual({
+    expect(resolveProjectChipIcon(project("onicode"), null, favicon)).toEqual({
       kind: "favicon",
       uri: "https://env.example/favicon.png",
     });
@@ -50,7 +50,7 @@ describe("resolveProjectChipIcon", () => {
     });
     expect(
       resolveProjectChipIcon(
-        project("t3code"),
+        project("onicode"),
         null,
         () => "https://env.example/api/assets/project-favicon-missing",
       ),
@@ -61,7 +61,7 @@ describe("resolveProjectChipIcon", () => {
 describe("projectAutoMonogram", () => {
   it("matches desktop's deriveProjectIdentity", () => {
     const desktop = [
-      ["t3code", "T3", "teal"],
+      ["onicode", "Onicode", "teal"],
       ["Auto Monogram", "AM", "lime"],
       ["blitzdiff", "BF", "pink"],
       ["uoalbumdotclub", "UB", "gray"],

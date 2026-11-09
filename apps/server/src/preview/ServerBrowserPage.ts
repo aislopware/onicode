@@ -17,7 +17,7 @@ import {
   type PreviewAutomationTypeInput,
   type PreviewAutomationUploadInput,
   type PreviewAutomationWaitForInput,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { constVoid } from "effect/Function";
 import * as Schema from "effect/Schema";
 import type { CDPSession, ConsoleMessage, Frame, Locator, Page } from "playwright-core";
@@ -309,7 +309,7 @@ const openReaders = async (page: Page, cdp: CDPSession) => {
         ids(frameTree).map(async (frameId) => {
           const world = await session.send("Page.createIsolatedWorld", {
             frameId,
-            worldName: "t3-preview",
+            worldName: "oni-preview",
           });
           return world.executionContextId;
         }),
@@ -438,7 +438,7 @@ const readPageMetrics = async (cdp: CDPSession) => {
   const { frameTree } = await cdp.send("Page.getFrameTree");
   const { executionContextId } = await cdp.send("Page.createIsolatedWorld", {
     frameId: frameTree.frame.id,
-    worldName: "t3-preview-metrics",
+    worldName: "oni-preview-metrics",
   });
   let { cssVisualViewport } = await cdp.send("Page.getLayoutMetrics");
   // Desktop zoom applies asynchronously; bracket the CSS metrics to reject a torn read.
@@ -497,7 +497,7 @@ const shrinkPng = async (cdp: CDPSession, png: string, scale: number) => {
   const { frameTree } = await cdp.send("Page.getFrameTree");
   const { executionContextId } = await cdp.send("Page.createIsolatedWorld", {
     frameId: frameTree.frame.id,
-    worldName: "t3-preview-screenshot",
+    worldName: "oni-preview-screenshot",
   });
   const { result, exceptionDetails } = await cdp.send("Runtime.callFunctionOn", {
     functionDeclaration: SHRINK_PNG,
@@ -603,7 +603,7 @@ const capture = async (
   const accessibilityTree = (dotted ? maskTree(redacted, dotted) : redacted)
     .slice(0, MAX_VISIBLE_TEXT_LENGTH)
     .replace(/\[ref=((?:f\d+)?e\d+)\]/g, (_match, nativeRef: string) => {
-      const ref = `t3-${generation}-${nativeRef}`;
+      const ref = `oni-${generation}-${nativeRef}`;
       state.refs.set(ref, nativeRef);
       return `[ref=${ref}]`;
     });

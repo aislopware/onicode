@@ -39,7 +39,7 @@ vi.mock("expo-file-system", () => ({
   },
 }));
 
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@onicode/contracts";
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
 
 import type { DraftComposerImageAttachment } from "./composerImages";
@@ -71,7 +71,7 @@ describe("materializedPreviewAtom", () => {
     expect(uploaded).toBe(atom);
     const result = registry.get(uploaded);
     expect(AsyncResult.isSuccess(result) && result.value).toBe(
-      "file:///cache/t3-composer-previews/image-1.png",
+      "file:///cache/oni-composer-previews/image-1.png",
     );
     expect(mocks.write).toHaveBeenCalledTimes(1);
     unmount();
@@ -100,7 +100,7 @@ describe("materializedPreviewAtom", () => {
     mocks.write.mockRejectedValueOnce(new Error("disk full"));
 
     expect(await materialize()).toBeNull();
-    expect(await materialize()).toBe("file:///cache/t3-composer-previews/image-failed.png");
+    expect(await materialize()).toBe("file:///cache/oni-composer-previews/image-failed.png");
     expect(mocks.write).toHaveBeenCalledTimes(2);
   });
 });

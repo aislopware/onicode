@@ -1,4 +1,4 @@
-import { recognizeRemoteWith } from "@t3tools/source-control-core/shared/definition";
+import { recognizeRemoteWith } from "@onicode/source-control-core/shared/definition";
 import { describe, expect, it } from "vite-plus/test";
 
 import { canonicalizePullRequestUrl, definition, parsePullRequestUrl } from "./definition.ts";
@@ -42,11 +42,11 @@ describe("GitCafe change request URLs", () => {
 
   it("reads its canonical /pull/ path and the older /pulls/ path on its own hosts", () => {
     for (const path of ["pull", "pulls"]) {
-      expect(parse(`https://git.cafe/PingDotGG/T3Code/${path}/23897`), path).toEqual({
+      expect(parse(`https://git.cafe/PingDotGG/Onicode/${path}/23897`), path).toEqual({
         host: "git.cafe",
         repository: "pingdotgg/t3code",
         number: 23897,
-        repositoryUrl: "https://git.cafe/PingDotGG/T3Code",
+        repositoryUrl: "https://git.cafe/PingDotGG/Onicode",
       });
     }
     expect(parse("https://staging.git.cafe/team/repo/pull/7/files")).toMatchObject({

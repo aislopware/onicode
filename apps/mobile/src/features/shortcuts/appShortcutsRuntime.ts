@@ -1,7 +1,7 @@
 import * as QuickActions from "expo-quick-actions";
 import { Platform } from "react-native";
 import type { NavigationState } from "@react-navigation/native";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 
 import {

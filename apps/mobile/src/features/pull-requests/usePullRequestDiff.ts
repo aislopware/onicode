@@ -1,10 +1,10 @@
-import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
+import type { ChangeRequestTerminology } from "@onicode/client-runtime/source-control-clients";
 import {
   EnvironmentId,
   ProjectId,
   type PullRequestListEntry,
   type PullRequestSummary,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { useAtomRefresh } from "@effect/atom-react";
 import { useLayoutEffect, useMemo, useState } from "react";
 
@@ -49,7 +49,7 @@ export function usePullRequestDiffEntry(navigation: {
   ) => () => void;
 }) {
   const [ready, setReady] = useState(false);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to navigator transition events and frames to defer the diff until the opening transition ends
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to navigator transition events and frames to defer the diff until the opening transition ends
   useLayoutEffect(() => {
     if (ready) return;
     let opening = false;

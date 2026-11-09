@@ -1,0 +1,17 @@
+{
+  "name": "@onicode/mobile-terminal-native",
+  "version": "0.0.0",
+  "private": true,
+  "expo-module": {
+    "ios": {
+      "modules": [
+        "OniTerminalModule"
+      ]
+    },
+    "android": {
+      "modules": [
+        "expo.modules.oniterminal.OniTerminalModule"
+      ]
+    }
+  }
+}

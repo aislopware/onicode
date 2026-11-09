@@ -8,7 +8,7 @@ import { useState } from "react";
 import { RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { reportAtomCommandResult, settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { reportAtomCommandResult, settlePromise } from "@onicode/client-runtime/state/runtime";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { CloudEnvironmentRows } from "../connection/CloudEnvironmentRows";
@@ -91,7 +91,7 @@ function ConfiguredConnectOnboardingRouteScreen() {
         ) : (
           <View collapsable={false} className="rounded-[24px] bg-grouped-card p-5">
             <Text className="text-sm leading-normal text-foreground-muted">
-              Sign in to your T3 account to set up T3 Connect.
+              Sign in to your Onicode account to set up T3 Connect.
             </Text>
           </View>
         )}

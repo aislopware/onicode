@@ -40,12 +40,12 @@ export type RenderMetrics = Readonly<Record<string, ScenarioReport>>;
 const root = NodePath.resolve(import.meta.dirname, "..");
 
 export function runOnce(): RenderMetrics {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-renders-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-renders-"));
   try {
     const [command, commandArgs] = vitePlusCommand(["test", "run", "--project", "renders"]);
     const result = NodeChildProcess.spawnSync(command, commandArgs, {
       cwd: NodePath.join(root, "apps/web"),
-      env: { ...process.env, T3CODE_RENDER_REPORT_DIR: directory },
+      env: { ...process.env, ONICODE_RENDER_REPORT_DIR: directory },
       stdio: ["ignore", "inherit", "inherit"],
     });
     if (result.status !== 0) throw new Error(`render scenarios failed (exit ${result.status})`);

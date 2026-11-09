@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off -- The process fixture runs real shell commands with isolated config files.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Deferred from "effect/Deferred";
@@ -38,9 +38,9 @@ const decodeCache = Schema.decodeUnknownEffect(cacheCodec);
 function envOutput(values: Readonly<Record<string, string>>): string {
   return Object.entries(values)
     .flatMap(([name, value]) => [
-      `__T3CODE_ENV_${name}_START__`,
+      `__ONICODE_ENV_${name}_START__`,
       value,
-      `__T3CODE_ENV_${name}_END__`,
+      `__ONICODE_ENV_${name}_END__`,
     ])
     .join("\n");
 }
@@ -227,7 +227,7 @@ describe("DesktopShellEnvironment", () => {
         const source = [
           "const values = { PATH: '/fresh/bin:' + process.env.PATH, __MISE_DIFF: 'fresh-mise', JAVA_HOME: process.env.JAVA_HOME, SSL_CERT_FILE: process.env.SSL_CERT_FILE };",
           "for (const [name, value] of Object.entries(values)) {",
-          "  if (value !== undefined) process.stdout.write('__T3CODE_ENV_' + name + '_START__\\n' + value + '\\n__T3CODE_ENV_' + name + '_END__\\n');",
+          "  if (value !== undefined) process.stdout.write('__ONICODE_ENV_' + name + '_START__\\n' + value + '\\n__ONICODE_ENV_' + name + '_END__\\n');",
           "}",
         ].join("\n");
         let calls = 0;

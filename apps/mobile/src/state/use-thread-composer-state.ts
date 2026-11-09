@@ -1,12 +1,12 @@
 import { useComposerAttachmentActions } from "./use-composer-attachment-actions";
 import * as Dialog from "../components/ui/Dialog";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope } from "@onicode/contracts";
 import { readEnvironmentScope } from "./session";
 import { useAtomValue } from "@effect/atom-react";
-import { shouldCompactBeforeSend } from "@t3tools/client-runtime/state/context-window";
-import { threadRuntimeIsActive } from "@t3tools/client-runtime/state/shell";
-import type { ThreadCheckpointSummary } from "@t3tools/client-runtime/state/thread-checkpoints";
-import { resolvePendingHandoff } from "@t3tools/client-runtime/handoff";
+import { shouldCompactBeforeSend } from "@onicode/client-runtime/state/context-window";
+import { threadRuntimeIsActive } from "@onicode/client-runtime/state/shell";
+import type { ThreadCheckpointSummary } from "@onicode/client-runtime/state/thread-checkpoints";
+import { resolvePendingHandoff } from "@onicode/client-runtime/handoff";
 import {
   deriveProviderSubagentStatus,
   deriveProviderExtensionStatuses,
@@ -15,7 +15,7 @@ import {
   deriveThreadActivityRun,
   deriveThreadRuntime,
   threadRuntimeHasInterruptibleRun,
-} from "@t3tools/client-runtime/state/thread-execution";
+} from "@onicode/client-runtime/state/thread-execution";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -29,16 +29,16 @@ import {
   type RuntimeMode,
   type ScopedThreadRef,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import {
   parseCodexFeedbackCommand,
   submitCodexFeedback,
   type CodexFeedbackSubmission,
-} from "@t3tools/client-runtime/state/threads";
-import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
-import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
-import { restoreAttachmentOnlyBootstrapPrompt } from "@t3tools/shared/composerContextReferences";
+} from "@onicode/client-runtime/state/threads";
+import { resolveThreadWorkingStartedAt } from "@onicode/client-runtime/state/models";
+import { upgradeLegacyContextMessage } from "@onicode/shared/composerContextLegacy";
+import { restoreAttachmentOnlyBootstrapPrompt } from "@onicode/shared/composerContextReferences";
 import { composerContextSendBlockReason, reidentifyComposerContext } from "../lib/composerContext";
 import { uuidv4 } from "../lib/uuid";
 
@@ -83,14 +83,14 @@ import {
   useComposerDraft,
   useComposerDraftSettings,
 } from "./use-composer-drafts";
-import { isClearComposerCommand, parseSideChatCommand } from "@t3tools/shared/composerTrigger";
+import { isClearComposerCommand, parseSideChatCommand } from "@onicode/shared/composerTrigger";
 import {
   resolveComposerDispatchMode,
   type ActiveTurnComposerAction,
-} from "@t3tools/client-runtime/state/composer-dispatch";
+} from "@onicode/client-runtime/state/composer-dispatch";
 import { Atom } from "effect/reactivity";
 import { AsyncResult } from "effect/reactivity";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { prepareTurnAttachments } from "../lib/attachmentUpload";
 import { DEFAULT_FOLLOW_UP_BEHAVIOR } from "../lib/followUpBehavior";
 import { mobilePreferencesAtom } from "./preferences";
@@ -241,7 +241,7 @@ export function useThreadComposerState(input: {
       ? EMPTY_THREAD_SEQUENCE_ATOM
       : environmentThreadDetails.sequenceAtom(selectedThreadDetailRef),
   );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- prunes the app-wide acknowledged atom when the mounted thread catches up
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- prunes the app-wide acknowledged atom when the mounted thread catches up
   useEffect(() => {
     if (selectedThreadKey === null || acknowledgedMessages.length === 0) return;
     pruneCaughtUpAcknowledgedThreadMessages(selectedThreadKey, {
@@ -803,7 +803,7 @@ export function useThreadComposerState(input: {
       return "Side chats are not ready yet. Try again in a moment.";
     }
     if (serverConfig.environment.capabilities.sideChats !== true) {
-      return "Update this environment's T3 Code server to use side chats.";
+      return "Update this environment's Onicode server to use side chats.";
     }
     if (selectedThreadCreation !== null) return "Side chats start after the first message.";
     if (

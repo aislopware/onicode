@@ -60,7 +60,7 @@ function ToastContent(props: ToastProps & { readonly glassReady?: boolean }) {
       size={Platform.OS === "ios" ? "compact" : "default"}
     />
   ) : null;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- announces the toast message to VoiceOver through AccessibilityInfo
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- announces the toast message to VoiceOver through AccessibilityInfo
   useEffect(() => {
     if (Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(props.message);
   }, [props.message]);
@@ -93,7 +93,7 @@ function ToastContent(props: ToastProps & { readonly glassReady?: boolean }) {
         <View className="min-w-0 flex-1" accessibilityLiveRegion="polite">
           <AppText
             textRole="footnote"
-            className="font-t3-semibold"
+            className="font-oni-semibold"
             numberOfLines={props.singleLine ? 1 : undefined}
             accessibilityLabel={props.singleLine ? message : undefined}
           >
@@ -158,7 +158,7 @@ function SwipeableToast(props: ToastProps & { readonly onDismiss: () => void }) 
   const { onDismiss } = props;
   const translation = useSharedValue(0);
   const width = useSharedValue(0);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the Reanimated swipe translation animation on unmount
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- cancels the Reanimated swipe translation animation on unmount
   useLayoutEffect(
     () => () => {
       cancelAnimation(translation);

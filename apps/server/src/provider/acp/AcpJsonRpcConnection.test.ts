@@ -8,7 +8,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { assert, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -19,8 +19,8 @@ import * as Stream from "effect/Stream";
 import { ChildProcessSpawner } from "effect/process";
 import { describe, expect } from "vite-plus/test";
 
-import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import { AgentScope } from "@t3tools/shared/AgentScope";
+import * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
+import { AgentScope } from "@onicode/shared/AgentScope";
 import * as EffectAcpErrors from "effect-acp/errors";
 
 const __dirname = NodePath.dirname(NodeURL.fileURLToPath(import.meta.url));
@@ -30,7 +30,7 @@ const mockAgentArgs = [mockAgentPath];
 const mockRuntimeOptions = {
   spawn: { command: mockAgentCommand, args: mockAgentArgs },
   cwd: process.cwd(),
-  clientInfo: { name: "t3-test", version: "0.0.0" },
+  clientInfo: { name: "oni-test", version: "0.0.0" },
   authMethodId: "test",
 } satisfies AcpSessionRuntime.AcpSessionRuntimeOptions;
 
@@ -58,7 +58,7 @@ describe("AcpSessionRuntime", () => {
             ? {
                 spawn: {
                   ...mockRuntimeOptions.spawn,
-                  env: { T3_ACP_SESSION_LIFECYCLE: "1" },
+                  env: { ONICODE_ACP_SESSION_LIFECYCLE: "1" },
                 },
                 resumeSessionId: "mock-session-1",
                 resumeMethod: "resume" as const,
@@ -130,7 +130,7 @@ describe("AcpSessionRuntime", () => {
         ...mockRuntimeOptions,
         spawn: {
           ...mockRuntimeOptions.spawn,
-          env: { T3_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL: "1" },
+          env: { ONICODE_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL: "1" },
         },
         cancelBehavior: "wait-for-prompt",
         requestLogger: (event) =>
@@ -230,7 +230,7 @@ describe("AcpSessionRuntime", () => {
         Effect.provideService(AgentScope, {
           ...AgentScope.defaultValue(),
           wrap: ({ command, args }) =>
-            Effect.succeed({ command, args, unit: "t3code-acp-test.scope" }),
+            Effect.succeed({ command, args, unit: "onicode-acp-test.scope" }),
           stop: (unit) => Deferred.succeed(stopped, unit).pipe(Effect.asVoid),
         }),
       );
@@ -238,7 +238,7 @@ describe("AcpSessionRuntime", () => {
       expect(yield* Deferred.isDone(stopped)).toBe(false);
       yield* runtime.notify("_test/exit", {});
       const events = yield* runtime.getEvents().pipe(Stream.take(1), Stream.runCollect);
-      expect(yield* Deferred.await(stopped)).toBe("t3code-acp-test.scope");
+      expect(yield* Deferred.await(stopped)).toBe("onicode-acp-test.scope");
       const event = events[0];
       expect(event).toMatchObject({ _tag: "ConnectionTerminated", error: { code: 19 } });
       if (event?._tag !== "ConnectionTerminated") return;
@@ -270,7 +270,7 @@ describe("AcpSessionRuntime", () => {
         ...mockRuntimeOptions,
         spawn: {
           ...mockRuntimeOptions.spawn,
-          env: { T3_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL: "1" },
+          env: { ONICODE_ACP_COMPLETE_FIRST_PROMPT_ON_CANCEL: "1" },
         },
         cancelBehavior: "wait-for-prompt",
       });
@@ -311,7 +311,7 @@ describe("AcpSessionRuntime", () => {
       });
       const runtime = yield* AcpSessionRuntime.make({
         ...mockRuntimeOptions,
-        spawn: { ...mockRuntimeOptions.spawn, env: { T3_ACP_FLOOD_STDERR: "1" } },
+        spawn: { ...mockRuntimeOptions.spawn, env: { ONICODE_ACP_FLOOD_STDERR: "1" } },
         onStderr: () => Effect.fail(failure),
       });
       expect(yield* runtime.start().pipe(Effect.flip)).toBe(failure);
@@ -380,7 +380,7 @@ describe("AcpSessionRuntime", () => {
         yield* Effect.gen(function* () {
           const runtime = yield* AcpSessionRuntime.make({
             ...mockRuntimeOptions,
-            spawn: { ...mockRuntimeOptions.spawn, env: { T3_ACP_FLOOD_STDERR: "1" } },
+            spawn: { ...mockRuntimeOptions.spawn, env: { ONICODE_ACP_FLOOD_STDERR: "1" } },
             ...(logStderr
               ? {
                   onStderr: (text: string) =>
@@ -432,7 +432,7 @@ describe("AcpSessionRuntime", () => {
   it.effect("does not restore ambient variables to a sanitized child environment", () =>
     Effect.gen(function* () {
       yield* Effect.acquireRelease(
-        Effect.sync(() => setProcessEnv("T3_ACP_RUNTIME_AMBIENT", "sentinel")),
+        Effect.sync(() => setProcessEnv("ONICODE_ACP_RUNTIME_AMBIENT", "sentinel")),
         (restore) => Effect.sync(restore),
       );
       const runtime = yield* AcpSessionRuntime.make({
@@ -441,7 +441,7 @@ describe("AcpSessionRuntime", () => {
           command: process.execPath,
           args: mockAgentArgs,
           extendEnv: false,
-          env: { T3_ACP_RUNTIME_EXPLICIT: "kept" },
+          env: { ONICODE_ACP_RUNTIME_EXPLICIT: "kept" },
         },
       });
       yield* runtime.initialize();
@@ -473,7 +473,7 @@ describe("AcpSessionRuntime", () => {
         (event) => event.method === "session/new" && event.status === "started",
       );
       expect(created?.payload).toMatchObject({
-        mcpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }],
+        mcpServers: [{ type: "acp", name: "onicode", serverId: "onicode" }],
       });
     }).pipe(
       Effect.provide(
@@ -481,13 +481,13 @@ describe("AcpSessionRuntime", () => {
           spawn: {
             command: mockAgentCommand,
             args: mockAgentArgs,
-            env: { T3_ACP_MCP_ACP: "1" },
+            env: { ONICODE_ACP_MCP_ACP: "1" },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           authMethodId: "test",
-          mcpServers: [{ type: "stdio", name: "t3-code", command: "/usr/bin/node", args: [] }],
-          acpMcpServers: [{ type: "acp", name: "t3-code", serverId: "t3-code" }],
+          mcpServers: [{ type: "stdio", name: "onicode", command: "/usr/bin/node", args: [] }],
+          acpMcpServers: [{ type: "acp", name: "onicode", serverId: "onicode" }],
           requestLogger: (event) =>
             Effect.sync(() => {
               requestEvents.push(event);
@@ -535,10 +535,10 @@ describe("AcpSessionRuntime", () => {
           spawn: {
             command: mockAgentCommand,
             args: mockAgentArgs,
-            env: { T3_ACP_V2_MANAGEMENT: "1" },
+            env: { ONICODE_ACP_V2_MANAGEMENT: "1" },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           authMethodId: "test",
           requestLogger: (event) =>
             Effect.sync(() => {
@@ -578,12 +578,12 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_AUTH_METHOD_ID: "test",
-              T3_ACP_REQUIRE_AUTH: "1",
+              ONICODE_ACP_AUTH_METHOD_ID: "test",
+              ONICODE_ACP_REQUIRE_AUTH: "1",
             },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           requestLogger: (event) =>
             Effect.sync(() => {
               requestEvents.push(event);
@@ -616,12 +616,12 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_AUTH_METHOD_ID: "test",
-              T3_ACP_REQUIRE_AUTH: "1",
+              ONICODE_ACP_AUTH_METHOD_ID: "test",
+              ONICODE_ACP_REQUIRE_AUTH: "1",
             },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           onInitialized: (initializeResult) =>
             Effect.sync(() => {
               advertisedAuthMethodName = initializeResult.authMethods?.[0]?.name;
@@ -685,7 +685,7 @@ describe("AcpSessionRuntime", () => {
             args: mockAgentArgs,
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           authMethodId: "test",
         }),
       ),
@@ -716,7 +716,7 @@ describe("AcpSessionRuntime", () => {
             args: mockAgentArgs,
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           authMethodId: "test",
         }),
       ),
@@ -762,11 +762,11 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_EMIT_FOREIGN_SESSION_UPDATES: "1",
+              ONICODE_ACP_EMIT_FOREIGN_SESSION_UPDATES: "1",
             },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           authMethodId: "test",
         }),
       ),
@@ -823,11 +823,11 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS: "1",
+              ONICODE_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS: "1",
             },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           authMethodId: "test",
         }),
       ),
@@ -870,10 +870,10 @@ describe("AcpSessionRuntime", () => {
           spawn: {
             command: mockAgentCommand,
             args: mockAgentArgs,
-            env: { T3_ACP_EMIT_BACKGROUND_TOOL_DURING_ANSWER: "1" },
+            env: { ONICODE_ACP_EMIT_BACKGROUND_TOOL_DURING_ANSWER: "1" },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           authMethodId: "test",
         }),
       ),
@@ -916,11 +916,11 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS: "1",
+              ONICODE_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS: "1",
             },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           authMethodId: "test",
         }),
       ),
@@ -976,7 +976,7 @@ describe("AcpSessionRuntime", () => {
           requestEvents.find((event) => event.method === method && event.status === "started")
             ?.payload,
         ).toMatchObject({
-          additionalDirectories: ["/tmp/t3-attachments"],
+          additionalDirectories: ["/tmp/oni-attachments"],
           _meta: { negotiated: "0.0.0" },
         });
       }
@@ -988,15 +988,15 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_SESSION_LIFECYCLE: "1",
+              ONICODE_ACP_SESSION_LIFECYCLE: "1",
             },
           },
-          additionalDirectories: ["/tmp/t3-attachments"],
+          additionalDirectories: ["/tmp/oni-attachments"],
           sessionMeta: (initializeResult) => ({
             negotiated: initializeResult.agentInfo?.version ?? "none",
           }),
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
           requestLogger: (event) =>
             Effect.sync(() => {
               requestEvents.push(event);
@@ -1043,13 +1043,13 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_REQUIRE_AUTH: "1",
-              T3_ACP_SESSION_LIFECYCLE: "1",
+              ONICODE_ACP_REQUIRE_AUTH: "1",
+              ONICODE_ACP_SESSION_LIFECYCLE: "1",
             },
           },
           cwd: process.cwd(),
           resumeSessionId: "mock-session-1",
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
         }),
       ),
       Effect.scoped,
@@ -1072,12 +1072,12 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_FAIL_LOAD_SESSION: "1",
+              ONICODE_ACP_FAIL_LOAD_SESSION: "1",
             },
           },
           cwd: process.cwd(),
           resumeSessionId: "stale-session-id",
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
         }),
       ),
       Effect.scoped,
@@ -1104,11 +1104,11 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_FAIL_LOAD_SESSION_AFTER_CONFIG_REPLAY: "1",
+              ONICODE_ACP_FAIL_LOAD_SESSION_AFTER_CONFIG_REPLAY: "1",
             },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
         }),
       ),
       Effect.scoped,
@@ -1140,12 +1140,12 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_EMIT_LOAD_REPLAY: "1",
+              ONICODE_ACP_EMIT_LOAD_REPLAY: "1",
             },
           },
           cwd: process.cwd(),
           resumeSessionId: "mock-session-1",
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
         }),
       ),
       Effect.scoped,
@@ -1190,11 +1190,11 @@ describe("AcpSessionRuntime", () => {
             command: mockAgentCommand,
             args: mockAgentArgs,
             env: {
-              T3_ACP_REQUEST_LOG_PATH: requestLogPath,
+              ONICODE_ACP_REQUEST_LOG_PATH: requestLogPath,
             },
           },
           cwd: process.cwd(),
-          clientInfo: { name: "t3-test", version: "0.0.0" },
+          clientInfo: { name: "oni-test", version: "0.0.0" },
         }),
       ),
       Effect.scoped,
@@ -1229,7 +1229,7 @@ describe("AcpSessionRuntime", () => {
           spawn: {
             command: mockAgentCommand,
             args: mockAgentArgs,
-            env: { T3_ACP_REQUEST_LOG_PATH: requestLogPath },
+            env: { ONICODE_ACP_REQUEST_LOG_PATH: requestLogPath },
           },
           customModels: ["cline-free/custom-model"],
         }),

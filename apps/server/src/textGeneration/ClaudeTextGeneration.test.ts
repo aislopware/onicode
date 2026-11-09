@@ -1,8 +1,8 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { ClaudeSettings, ProviderInstanceId } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { createModelSelection } from "@t3tools/shared/model";
+import { ClaudeSettings, ProviderInstanceId } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { createModelSelection } from "@onicode/shared/model";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -19,13 +19,13 @@ import {
   SYNTHETIC_CLAUDE_STANDARD_MODEL,
 } from "../provider/ClaudeModelCatalog.testFixtures.ts";
 import * as TextGeneration from "./TextGeneration.ts";
-import { sanitizeThreadTitle } from "@t3tools/provider-core/server/textGenerationUtils";
+import { sanitizeThreadTitle } from "@onicode/provider-core/server/textGenerationUtils";
 import { makeClaudeTextGeneration } from "./ClaudeTextGeneration.ts";
-import { writeFakeCli } from "@t3tools/provider-testing/fakeCli";
+import { writeFakeCli } from "@onicode/provider-testing/fakeCli";
 const decodeClaudeSettings = Schema.decodeSync(ClaudeSettings);
 
 const layerClaudeTextGenerationTest = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-  prefix: "t3code-claude-text-generation-test-",
+  prefix: "onicode-claude-text-generation-test-",
 }).pipe(Layer.provideMerge(NodeServices.layer));
 
 // The stub behaviour lives in Node so the same implementation runs on Windows,
@@ -72,26 +72,26 @@ function withFakeClaudeEnv<A, E, R>(
 ) {
   return Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3code-claude-text-" });
+    const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "onicode-claude-text-" });
     const binDir = yield* makeFakeClaudeBinary(tempDir, input.lifecyclePort);
     const pathDelimiter = (yield* HostProcess.isWindows) ? ";" : ":";
     const hostEnv = yield* HostProcess.Environment;
     const fakeClaudeEnv: Record<string, string | undefined> = {
-      T3_FAKE_CLAUDE_OUTPUT: input.output,
-      T3_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE: input.rejectsNoSessionPersistence
+      ONICODE_FAKE_CLAUDE_OUTPUT: input.output,
+      ONICODE_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE: input.rejectsNoSessionPersistence
         ? "1"
         : undefined,
-      T3_FAKE_CLAUDE_EXIT_CODE: input.exitCode === undefined ? undefined : String(input.exitCode),
-      T3_FAKE_CLAUDE_STDERR: input.stderr,
-      T3_FAKE_CLAUDE_ARGS_MUST_CONTAIN: input.argsMustContain,
-      T3_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN: input.argsMustNotContain,
-      T3_FAKE_CLAUDE_STDIN_MUST_CONTAIN: input.stdinMustContain,
-      T3_FAKE_CLAUDE_CWD_MUST_NOT_BE: input.cwdMustNotBe,
-      T3_FAKE_CLAUDE_CONFIG_DIR_MUST_BE: input.configDirMustBe,
+      ONICODE_FAKE_CLAUDE_EXIT_CODE: input.exitCode === undefined ? undefined : String(input.exitCode),
+      ONICODE_FAKE_CLAUDE_STDERR: input.stderr,
+      ONICODE_FAKE_CLAUDE_ARGS_MUST_CONTAIN: input.argsMustContain,
+      ONICODE_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN: input.argsMustNotContain,
+      ONICODE_FAKE_CLAUDE_STDIN_MUST_CONTAIN: input.stdinMustContain,
+      ONICODE_FAKE_CLAUDE_CWD_MUST_NOT_BE: input.cwdMustNotBe,
+      ONICODE_FAKE_CLAUDE_CONFIG_DIR_MUST_BE: input.configDirMustBe,
     };
     const environment: NodeJS.ProcessEnv = {
       ...Object.fromEntries(
-        Object.entries(hostEnv).filter(([name]) => !name.startsWith("T3_FAKE_CLAUDE_")),
+        Object.entries(hostEnv).filter(([name]) => !name.startsWith("ONICODE_FAKE_CLAUDE_")),
       ),
       ...Object.fromEntries(
         Object.entries(fakeClaudeEnv).filter(([, value]) => value !== undefined),

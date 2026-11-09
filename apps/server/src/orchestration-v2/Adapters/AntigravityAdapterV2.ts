@@ -4,8 +4,8 @@ import {
   ProviderInstanceId,
   type OrchestrationV2ProviderCapabilities,
   type ProviderSetupError,
-} from "@t3tools/contracts";
-import type { SelfInvocation } from "@t3tools/shared/nodeRuntime";
+} from "@onicode/contracts";
+import type { SelfInvocation } from "@onicode/shared/nodeRuntime";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -15,10 +15,10 @@ import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as EffectAcpErrors from "effect-acp/errors";
 
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@t3tools/provider-core/server/runtimeInstructions";
+import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
+import { PULL_REQUEST_LINKING_INSTRUCTIONS } from "@onicode/provider-core/server/runtimeInstructions";
 import type { AntigravityAuth } from "../../provider/AntigravityAuth.ts";
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+import type * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
 import {
   antigravityAppendsSystemPrompt,
   antigravityPermissionMode,
@@ -49,7 +49,7 @@ import {
   makeAcpAdapterV2,
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
-} from "@t3tools/provider-acp/server/adapter";
+} from "@onicode/provider-acp/server/adapter";
 
 const ANTIGRAVITY_PROVIDER = ProviderDriverKind.make("antigravity");
 

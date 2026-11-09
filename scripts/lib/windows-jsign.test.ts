@@ -19,7 +19,7 @@ const UNSIGNED = "MZ unsigned payload";
 const TRANSIENT_CHAIN =
   "jsign: Unable to retrieve the certificate chain 'acct/profile'\nCaused by: java.io.IOException: InternalError - An internal error has occurred.\n";
 const TRANSIENT_SIGN =
-  "jsign: Couldn't sign t3.exe\nCaused by: java.security.GeneralSecurityException: java.io.IOException: InternalError - An internal error has occurred.\n";
+  "jsign: Couldn't sign onicode.exe\nCaused by: java.security.GeneralSecurityException: java.io.IOException: InternalError - An internal error has occurred.\n";
 const BAD_SECRET =
   "jsign: Unable to retrieve the certificate chain 'acct/profile'\nCaused by: java.io.IOException: AADSTS7000215: Invalid client secret provided.\n";
 
@@ -60,8 +60,8 @@ const signed = (content: string): Reply => ({ exitCode: 0, write: `${content}+si
 const runSign = Effect.fn("test.runSign")(function* (replies: ReadonlyArray<Reply>) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-jsign-" });
-  const file = path.join(dir, "t3.exe");
+  const dir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-jsign-" });
+  const file = path.join(dir, "onicode.exe");
   yield* fs.writeFileString(file, UNSIGNED);
   const stub = stubJsign(replies);
   const sleeps: Array<number> = [];
@@ -118,7 +118,7 @@ it.layer(NodeServices.layer)("signWithJsign", (it) => {
       );
       assert.isFalse(result.signedInPlace);
       assert.deepStrictEqual(result.sleeps, [5, 10]);
-      assert.deepStrictEqual(result.entries, ["t3.exe"]);
+      assert.deepStrictEqual(result.entries, ["onicode.exe"]);
     }),
   );
 
@@ -126,7 +126,7 @@ it.layer(NodeServices.layer)("signWithJsign", (it) => {
     Effect.gen(function* () {
       for (const reply of [
         { exitCode: 1, stderr: BAD_SECRET },
-        { exitCode: 1, stderr: "jsign: Unsupported file: t3.exe\n", write: "MZ half-written" },
+        { exitCode: 1, stderr: "jsign: Unsupported file: onicode.exe\n", write: "MZ half-written" },
       ]) {
         const result = yield* runSign([reply, signed(UNSIGNED)]);
         assert.strictEqual(result.error?._tag, "JsignFailedError");
@@ -134,7 +134,7 @@ it.layer(NodeServices.layer)("signWithJsign", (it) => {
         assert.strictEqual(result.inputs.length, 1);
         assert.deepStrictEqual(result.sleeps, []);
         assert.strictEqual(result.content, UNSIGNED);
-        assert.deepStrictEqual(result.entries, ["t3.exe"]);
+        assert.deepStrictEqual(result.entries, ["onicode.exe"]);
       }
     }),
   );
@@ -146,7 +146,7 @@ it.layer(NodeServices.layer)("signWithJsign", (it) => {
       assert.strictEqual(result.inputs.length, 4);
       assert.deepStrictEqual(result.sleeps, [5, 10, 20]);
       assert.strictEqual(result.content, UNSIGNED);
-      assert.deepStrictEqual(result.entries, ["t3.exe"]);
+      assert.deepStrictEqual(result.entries, ["onicode.exe"]);
     }),
   );
 });

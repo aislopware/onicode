@@ -3,12 +3,12 @@ import { AppText } from "./ui/AppText";
 import { Image } from "expo-image";
 import { memo, useLayoutEffect, useState } from "react";
 import { View } from "react-native";
-import type { EnvironmentId, ProjectIconOverride } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectIconOverride } from "@onicode/contracts";
 import {
   getProjectFaviconCacheKey,
   getProjectFaviconResourceKey,
   isProjectFaviconFallbackUrl,
-} from "@t3tools/shared/projectFavicon";
+} from "@onicode/shared/projectFavicon";
 import { useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { projectFaviconUrlAtom } from "../state/assets";
@@ -148,7 +148,7 @@ function ProjectFaviconImage(props: {
   const faviconRequest = createProjectFaviconRequest(props.cacheKey, props.faviconUrl);
   // Registers with the module-level loader before the Image's native onLoad/onError can fire,
   // so stale loads for a superseded URL under the same cacheKey are ignored.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- marks this favicon URL as the current request in the module registry before the native Image reports load or error
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- marks this favicon URL as the current request in the module registry before the native Image reports load or error
   useLayoutEffect(() => {
     if (faviconRequest === null) return;
     return beginProjectFaviconRequest(faviconRequest);

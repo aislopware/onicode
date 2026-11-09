@@ -1,4 +1,4 @@
-import type { ComposerContextRecord, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { ComposerContextRecord, EnvironmentId, ThreadId } from "@onicode/contracts";
 import {
   composerChipSizeSuffix,
   contextChipIcon,
@@ -11,8 +11,8 @@ import type { SelectableMarkdownSkill } from "../native/SelectableMarkdownText.t
 import {
   formatComposerContextHref,
   parseComposerContextHref,
-} from "@t3tools/shared/composerContextReferences";
-import { hasThreadLinks, parseThreadLinkHref } from "@t3tools/shared/threadLinks";
+} from "@onicode/shared/composerContextReferences";
+import { hasThreadLinks, parseThreadLinkHref } from "@onicode/shared/threadLinks";
 
 export function enrichedContextLinkPresentation(
   href: string,
@@ -58,7 +58,7 @@ export function threadChipTargets(
 ): ReadonlyArray<ThreadChipTarget> {
   const targets = new Map<string, ThreadChipTarget>();
   if (hasThreadLinks(markdown)) {
-    for (const [, href = ""] of markdown.matchAll(/\]\(<?(t3-thread:\/\/v[12]\/[^\s>)]+)>?\)/g)) {
+    for (const [, href = ""] of markdown.matchAll(/\]\(<?(oni-thread:\/\/v[12]\/[^\s>)]+)>?\)/g)) {
       const link = parseThreadLinkHref(href);
       if (link) {
         targets.set(href, {

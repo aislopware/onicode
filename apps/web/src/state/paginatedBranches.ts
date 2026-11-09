@@ -1,4 +1,4 @@
-import type { VcsListRefsResult } from "@t3tools/contracts";
+import type { VcsListRefsResult } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 

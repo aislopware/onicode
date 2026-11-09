@@ -1,8 +1,8 @@
 import type {
   SourceControlDriver,
   SourceControlDriverInstance,
-} from "@t3tools/source-control-core/server/driver";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+} from "@onicode/source-control-core/server/driver";
+import * as SourceControlRateLimit from "@onicode/source-control-core/server/SourceControlRateLimit";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -19,7 +19,7 @@ export interface SourceControlDriverEntry {
 export class SourceControlDrivers extends Context.Service<
   SourceControlDrivers,
   ReadonlyArray<SourceControlDriverEntry>
->()("t3/sourceControl/builtInDrivers/SourceControlDrivers") {}
+>()("onicode/sourceControl/builtInDrivers/SourceControlDrivers") {}
 
 const make = Effect.forEach(BUILT_IN_SOURCE_CONTROL_DRIVER_LIST, (driver) =>
   driver.make.pipe(Effect.map((instance) => ({ driver, instance }))),

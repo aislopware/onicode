@@ -5,8 +5,8 @@ import * as NodeChildProcess from "node:child_process";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { spawnMspConnection, type MspHandshake, type SpawnedMspConnection } from "@muse-code/sdk";
 import { it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { SpawnExecutableResolution } from "@onicode/shared/shell";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
@@ -155,7 +155,7 @@ describe("Muse SDK host", () => {
         require("node:readline").createInterface({ input: process.stdin }).on("line", async line => {
           const frame = JSON.parse(line);
           if (!("id" in frame)) return;
-          let result = { schema: { version: 1, fingerprint: "t3-native-fixture" }, grantedCapabilities: [] };
+          let result = { schema: { version: 1, fingerprint: "oni-native-fixture" }, grantedCapabilities: [] };
           if (frame.method === "fixture/exit") {
             const holder = spawn(process.execPath, ["-e", ${JSON.stringify(holderSource)}], {
               detached: true, stdio: ["ignore", 1, 2, "ipc"]

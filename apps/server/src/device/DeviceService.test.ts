@@ -10,17 +10,17 @@ import {
   type DeviceSummary,
   type ServerSettings as Settings,
   type SshDeviceHostConfig,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NetService from "@t3tools/shared/Net";
-import { SshCommandError } from "@t3tools/ssh/errors";
+import * as NetService from "@onicode/shared/Net";
+import { SshCommandError } from "@onicode/ssh/errors";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import * as SecretResolver from "@onicode/secret-provider-core/server/SecretResolver";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
@@ -37,7 +37,7 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as DeviceHost from "./DeviceHost.ts";
 import { makeDeviceHubOperations } from "./DeviceHubOperations.ts";
-import { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
+import { NodeRuntimeUnavailableError } from "@onicode/shared/nodeRuntime";
 
 import * as DeviceService from "./DeviceService.ts";
 import * as SshDeviceHost from "./SshDeviceHost.ts";
@@ -382,14 +382,14 @@ describe("device setup consent", () => {
       exitCode: 1,
       stderr: "private diagnostics",
       expected:
-        "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.",
+        "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run Onicode on it and connect to that environment.",
     },
     {
       name: "a Windows host returning 9009",
       exitCode: 9009,
       stderr: "private diagnostics",
       expected:
-        "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.",
+        "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run Onicode on it and connect to that environment.",
     },
     {
       name: "missing Node on a Windows host with a POSIX shell",
@@ -663,12 +663,12 @@ it.effect.each([1, 9009])(
         hostId: "windows",
         hostLabel: "Windows test",
         reason:
-          "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.",
+          "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run Onicode on it and connect to that environment.",
       });
       const codec = Schema.fromJsonString(DeviceError);
       const decoded = yield* Schema.decodeEffect(codec)(yield* Schema.encodeEffect(codec)(error));
       expect(decoded.message).toBe(
-        "Windows test is unavailable: Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.",
+        "Windows test is unavailable: Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run Onicode on it and connect to that environment.",
       );
       expect(decoded.message).not.toContain("private SSH diagnostics");
     }).pipe(
@@ -676,7 +676,7 @@ it.effect.each([1, 9009])(
         Layer.mergeAll(
           ServerSettings.layerTest(),
           layerSecretResolver,
-          ServerConfig.layerTest(process.cwd(), { prefix: "t3-device-probe-" }),
+          ServerConfig.layerTest(process.cwd(), { prefix: "oni-device-probe-" }),
           NodeCrypto.layer,
           NetService.layer,
         ).pipe(Layer.provideMerge(NodeServices.layer)),
@@ -1093,7 +1093,7 @@ it.effect.each(["shutdown", "close"] as const)(
         stopAgent: Effect.void,
         stop: Effect.void,
       };
-      const launchers = new Set(["t3-from-a-previous-run"]);
+      const launchers = new Set(["oni-from-a-previous-run"]);
       const released: Array<[string, boolean]> = [];
       // Whether the device was still on when each session was released.
       const releasedWhileBooted: Array<boolean> = [];
@@ -1580,7 +1580,7 @@ it.effect("failed manual installation leaves lifecycle state unchanged and can b
 it.effect("reconciles SSH host settings without publishing no-op changes", () =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
-    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-device-reconcile-" });
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-device-reconcile-" });
     const settings = yield* ServerSettings.ServerSettingsService;
     // Each change is acknowledged after reconciliation consumed it, so no-ops are observable.
     const changes = yield* Queue.unbounded<{ value: Settings; done: Deferred.Deferred<void> }>();
@@ -1748,7 +1748,7 @@ it.effect("a failed tool update reports npm's exit code but not its output", () 
       Layer.mergeAll(
         ServerSettings.layerTest({ enableDeviceSupport: true }),
         layerSecretResolver,
-        ServerConfig.layerTest(process.cwd(), { prefix: "t3-device-update-" }),
+        ServerConfig.layerTest(process.cwd(), { prefix: "oni-device-update-" }),
         NodeCrypto.layer,
         NetService.layer,
       ).pipe(Layer.provideMerge(NodeServices.layer)),

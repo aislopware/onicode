@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["OniComposerEditorModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.onicomposereditor.OniComposerEditorModule"]
+  }
+}

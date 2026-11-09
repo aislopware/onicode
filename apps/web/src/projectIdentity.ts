@@ -1,5 +1,5 @@
 import { PROJECT_ICON_COLORS } from "./projectIconColors";
-import type { ProjectIconColor } from "@t3tools/contracts";
+import type { ProjectIconColor } from "@onicode/contracts";
 
 export interface ProjectIdentity {
   readonly monogram: string;

@@ -1,6 +1,6 @@
 import { useAtomMount, useAtomSubscribe } from "@effect/atom-react";
-import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
-import { ProjectListEntriesError, type EnvironmentId, type ProjectEntry } from "@t3tools/contracts";
+import { executeAtomQuery } from "@onicode/client-runtime/state/runtime";
+import { ProjectListEntriesError, type EnvironmentId, type ProjectEntry } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -178,7 +178,7 @@ export function useFileTreeEntries(input: {
   const { target } = directories;
   const requestsByTarget = useRef(new WeakMap<object, ReturnType<typeof createRequests>>());
   // Cancel the old target before consumers' passive effects start new directory loads.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- loads the root and aborts the old target's directory requests before consumers start new loads
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- loads the root and aborts the old target's directory requests before consumers start new loads
   useLayoutEffect(() => {
     const requests = getRequests(requestsByTarget.current, target);
     requests.active = true;

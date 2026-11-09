@@ -13,7 +13,7 @@ import { SourceControlProviderKind } from "./sourceControl.ts";
 export const ORCHESTRATION_PROTOCOL_VERSION = 2;
 export const ORCHESTRATION_PROTOCOL_VERSION_TEXT = "2";
 export const ORCHESTRATION_PROTOCOL_QUERY_PARAM = "orchestrationProtocol";
-export const ORCHESTRATION_PROTOCOL_HEADER = "x-t3-orchestration-protocol";
+export const ORCHESTRATION_PROTOCOL_HEADER = "x-oni-orchestration-protocol";
 
 /** Wire shapes a client understands, comma-separated; a client that omits one gets the older shape. */
 export const CLIENT_CAPABILITIES_QUERY_PARAM = "clientCapabilities";
@@ -159,7 +159,7 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
       in them. Absent on servers from before linking, which clients must not
       offer linking for. */
   peerLinks: Schema.optionalKey(Schema.Boolean),
-  /** Server's `/mcp` narrows an OAuth client's modes from `T3-Mode-Limit`, so
+  /** Server's `/mcp` narrows an OAuth client's modes from `Onicode-Mode-Limit`, so
       a linked environment's calls keep its agent's limits. Another environment
       links to this one only when it is set. */
   mcpModeLimitHeader: Schema.optionalKey(Schema.Boolean),

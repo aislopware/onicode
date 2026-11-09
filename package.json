@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/monorepo",
+  "name": "@onicode/monorepo",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,8 +11,8 @@
     "dev:web": "node scripts/dev-runner.ts dev:web",
     "dev:desktop": "node scripts/dev-runner.ts dev:desktop",
     "migrate-dev-db": "node apps/server/scripts/migrate-dev-db.ts",
-    "start": "vp run --filter t3 start",
-    "start:desktop": "vp run --filter @t3tools/desktop start",
+    "start": "vp run --filter onicode start",
+    "start:desktop": "vp run --filter @onicode/desktop start",
     "start:mock-update-server": "node scripts/mock-update-server.ts",
     "screenshots:mobile": "node scripts/mobile-showcase.ts",
     "icons:export": "node scripts/export-brand-icons.ts",
@@ -20,8 +20,8 @@
     "licenses:sync": "node scripts/sync-third-party-license-notices.ts",
     "icons:export:android": "node scripts/export-android-icons.ts",
     "build": "vp run --filter './apps/*' build",
-    "build:desktop": "vp run --filter @t3tools/desktop --filter t3 build",
-    "build:desktop:bundle": "vp run --filter @t3tools/desktop build:bundle",
+    "build:desktop": "vp run --filter @onicode/desktop --filter onicode build",
+    "build:desktop:bundle": "vp run --filter @onicode/desktop build:bundle",
     "build:resource-monitor": "cargo build --locked --release --manifest-path native/resource-monitor/Cargo.toml",
     "typecheck": "vp run -r --cache --concurrency-limit 4 typecheck",
     "tc": "vp run -r --cache --concurrency-limit 4 typecheck",

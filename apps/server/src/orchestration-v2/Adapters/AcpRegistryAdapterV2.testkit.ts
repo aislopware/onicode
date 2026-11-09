@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { AcpRegistrySettings } from "@t3tools/provider-acp-registry/settings";
-import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
+import { AcpRegistrySettings } from "@onicode/provider-acp-registry/settings";
+import { resolveSelfInvocation } from "@onicode/shared/nodeRuntime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -9,10 +9,10 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as TestProviderHost from "@onicode/provider-testing/TestProviderHost";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import * as ProviderAdapterRegistry from "../ProviderAdapterRegistry.ts";
-import type { ProviderReplayGate } from "@t3tools/provider-testing/replayGate";
+import type { ProviderReplayGate } from "@onicode/provider-testing/replayGate";
 import type { OrchestratorV2ProviderReplayHarness } from "../testkit/ProviderReplayHarness.ts";
 import {
   type AcpReplayTranscript,
@@ -25,8 +25,8 @@ import {
   ACP_REGISTRY_DEFAULT_INSTANCE_ID,
   ACP_REGISTRY_PROVIDER,
   makeAcpRegistryAdapterV2,
-} from "@t3tools/provider-acp-registry/testing";
-import * as AcpRegistrySupport from "@t3tools/provider-acp-registry/server/AcpRegistrySupport";
+} from "@onicode/provider-acp-registry/testing";
+import * as AcpRegistrySupport from "@onicode/provider-acp-registry/server/AcpRegistrySupport";
 
 const REPLAY_SETTINGS = Schema.decodeSync(AcpRegistrySettings)({
   agentId: "replay-agent",
@@ -49,7 +49,7 @@ function layerAcpRegistryProviderAdapterRegistryReplay(
       const replayGate = options.replayGate;
       const replayDir = yield* fileSystem
         .makeTempDirectoryScoped({
-          prefix: `t3-orchestration-v2-acp-registry-replay-${transcript.scenario}-`,
+          prefix: `oni-orchestration-v2-acp-registry-replay-${transcript.scenario}-`,
         })
         .pipe(Effect.orDie);
       const statusPath = path.join(replayDir, "status.json");

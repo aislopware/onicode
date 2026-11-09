@@ -3,8 +3,8 @@ import {
   decodeFilePreviewText,
   filePreviewKind,
   hostPreviewMimeTypeFromExtension,
-} from "@t3tools/shared/filePreview";
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+} from "@onicode/shared/filePreview";
+import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
 import { ChevronLeftIcon, ChevronRightIcon, FileIcon, FolderIcon } from "lucide-react";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
@@ -46,7 +46,7 @@ function ArchiveFile(props: { readonly path: string; readonly bytes: Uint8Array<
       return null;
     }
   })();
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Create an object URL for the extracted image and revoke it when the entry changes or unmounts.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Create an object URL for the extracted image and revoke it when the entry changes or unmounts.
   useEffect(() => {
     if (kind !== "image") return;
     const extension = props.path.slice(props.path.lastIndexOf("."));
@@ -108,7 +108,7 @@ export default function BinaryViewer(props: {
     }, 15_000);
     workerRef.current?.postMessage(request);
   };
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Own the binary fetch, archive or database worker, message subscription, and request timeout for this file.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Own the binary fetch, archive or database worker, message subscription, and request timeout for this file.
   useEffect(() => {
     const controller = new AbortController();
     const worker = new Worker(new URL("./binaryPreview.worker.ts", import.meta.url), {

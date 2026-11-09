@@ -1,4 +1,4 @@
-import type { PullRequestRef, PullRequestStack } from "@t3tools/contracts";
+import type { PullRequestRef, PullRequestStack } from "@onicode/contracts";
 import { CheckIcon } from "lucide-react";
 import { MenuItem, MenuGroupLabel } from "../ui/menu";
 import { PullRequestStackLayerContent } from "./PullRequestStackLayerContent";

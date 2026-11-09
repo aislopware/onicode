@@ -9,7 +9,7 @@ Device panel work over Tailscale and T3 Connect, including when an SSH host runs
 
 [expo-device-hub](../../apps/server/src/device/LocalDeviceHost.ts) streams and
 [agent-device](../../apps/server/src/device/AgentDeviceShim.ts) drives. Each is
-npm-installed at a pinned version into the T3 home after its matching Device
+npm-installed at a pinned version into the Onicode home after its matching Device
 panel consent step. Manual setup installs and starts only expo-device-hub;
 agent-device remains absent and stopped until agent access is granted. Both run
 with the server's Node; `npx` would make the first `device_open` after a reboot
@@ -47,7 +47,7 @@ the device's machine, which EAS does not expose, so they are unavailable there.
 ## Simlock hosts lease through the agent-device front
 
 A [Simlock host](../../apps/server/src/device/SimlockDeviceHost.ts) (alpha) opens a
-device by running T3's own agent-device CLI against the gateway's agent-device
+device by running Onicode's own agent-device CLI against the gateway's agent-device
 front (`connect proxy`, then `open`), not with Simlock's lease HTTP API:
 agent-device cannot adopt a lease it did not allocate. The lease is bound to
 that one agent-device session and to the directory `open` ran in, so
@@ -89,7 +89,7 @@ upgrades for `/api`, not only `/ws`.
 
 serve-sim's preview drives its Tools panel by sending shell commands over that
 same exec channel. Proxying it, even allowlisted, would hand any environment
-session arbitrary command execution on the host, so T3 does not. The
+session arbitrary command execution on the host, so Onicode does not. The
 [`device.action`](../../apps/server/src/device/DeviceActions.ts) RPC runs the
 underlying `simctl`, `adb`, and serve-sim helper binaries itself through
 `DeviceHostReady.run`, one typed action per control, and returns the settings
@@ -101,7 +101,7 @@ screenshot capture and stream tuning.
 
 The `device_*` toolkit is deliberately four tools: list, open, screenshot, and
 close. Driving happens through the `agent-device` CLI, which has the semantic
-snapshot model agents need and stays current with its own releases. T3 prepends
+snapshot model agents need and stays current with its own releases. Onicode prepends
 a shim directory to the provider's PATH. The CLI installs on the environment
 server even when that server cannot run simulators. Hosts start on demand.
 
@@ -117,7 +117,7 @@ always-loaded prompt or skill: it costs nothing in threads that never open a
 device and cannot drift from the pinned CLI version. `device_open` returns a
 launcher bound to its agent-device session, so agents need no target flags.
 The launcher leaves out the flags a command refuses (`cdp` talks to Metro, not
-to the device), refuses the commands that would replace T3's connection, and
+to the device), refuses the commands that would replace Onicode's connection, and
 checks that connection first: agent-device reports a sandboxed shell and a
 dropped tunnel alike as an unreachable daemon, so the launcher names which one it
 is. Ending a session (`device_close`, the Device panel, a shutdown) also closes

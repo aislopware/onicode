@@ -1,4 +1,4 @@
-import { requireSettingsSecretLiteral, SourceControlProviderKind } from "@t3tools/contracts";
+import { requireSettingsSecretLiteral, SourceControlProviderKind } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -19,11 +19,11 @@ import {
   type ChangeRequest,
   type SourceControlProviderDiscoveryItem,
   type SourceControlRepositoryCloneUrls,
-} from "@t3tools/contracts";
-import { normalizeGitRemoteUrl } from "@t3tools/shared/git";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { decodeJsonResult } from "@t3tools/shared/schemaJson";
-import { isSshRemoteUrl } from "@t3tools/shared/sourceControl";
+} from "@onicode/contracts";
+import { normalizeGitRemoteUrl } from "@onicode/shared/git";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { decodeJsonResult } from "@onicode/shared/schemaJson";
+import { isSshRemoteUrl } from "@onicode/shared/sourceControl";
 
 import { GH_PROCESS_CONCURRENCY } from "./GitHubCredentials.ts";
 import * as GitHubAppSignIn from "./GitHubAppSignIn.ts";
@@ -43,14 +43,14 @@ import {
   resolveGitHubRepository,
   type GitHubRepositoryLocator,
 } from "./gitHubRepositoryResolution.ts";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@onicode/source-control-core/server/SourceControlRateLimit";
 import {
   effectiveGitHubAccount,
   findAuthenticatedGitHubAccount,
   parseGitHubAuthStatus,
   type GitHubAuthStatusAccount,
 } from "./gitHubAuthStatus.ts";
-import * as SourceControlProvider from "@t3tools/source-control-core/server/SourceControlProvider";
+import * as SourceControlProvider from "@onicode/source-control-core/server/SourceControlProvider";
 import {
   combinedAuthOutput,
   firstSafeAuthLine,
@@ -59,9 +59,9 @@ import {
   type SourceControlAuthProbeInput,
   type SourceControlCliDiscoverySpec,
   type SourceControlManagedCliDiscoverySpec,
-} from "@t3tools/source-control-core/server/discovery";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
+} from "@onicode/source-control-core/server/discovery";
+import * as SourceControlHost from "@onicode/source-control-core/server/SourceControlHost";
+import { readSourceControlHostSettings } from "@onicode/source-control-core/shared/definition";
 
 import * as GitHubClient from "../shared/definition.ts";
 import {
@@ -920,7 +920,7 @@ export const make = Effect.gen(function* () {
         return locator === null || `${locator.owner}/${locator.name}`.toLowerCase() === target;
       },
     ),
-    // `gh pr create` run in the checkout, as an agent in a T3 worktree often does, takes its base
+    // `gh pr create` run in the checkout, as an agent in a Onicode worktree often does, takes its base
     // from this key.
     recordBranchBase: Effect.fn("GitHubSourceControlProvider.recordBranchBase")(function ({
       cwd,

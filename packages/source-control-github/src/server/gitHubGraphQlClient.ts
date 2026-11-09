@@ -1,4 +1,4 @@
-import { normalizeHost } from "@t3tools/source-control-core/server/pullRequestUtils";
+import { normalizeHost } from "@onicode/source-control-core/server/pullRequestUtils";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { dual } from "effect/Function";
@@ -9,15 +9,15 @@ import * as Stream from "effect/Stream";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
 import * as Headers from "effect/http/Headers";
 import { GraphQLClientError, GraphQLMiddleware, GraphQLProtocol } from "effect/graphql";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
-import { collectUint8StreamText } from "@t3tools/provider-core/server/collectStreamText";
+import * as SourceControlRateLimit from "@onicode/source-control-core/server/SourceControlRateLimit";
+import { collectUint8StreamText } from "@onicode/provider-core/server/collectStreamText";
 
 import * as GitHubCredentials from "./GitHubCredentials.ts";
 import * as GitHubRequestPolicy from "./GitHubRequestPolicy.ts";
 
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 /** Added to the answer, never sent: names the credential an errored answer was given to. */
-const CREDENTIAL_SOURCE_HEADER = "x-t3code-credential-source";
+const CREDENTIAL_SOURCE_HEADER = "x-onicode-credential-source";
 const isCredentialSource = Schema.is(GitHubCredentials.GitHubCredentialSource);
 
 /** One client serves all hosts; each call must supply its target. */
@@ -31,7 +31,7 @@ export class GitHubGraphQlTarget extends Context.Service<
     /** A longer answer fails as a `GitHubApiResponseError`. Defaults to 8 MB. */
     readonly maxResponseBytes?: number | undefined;
   }
->()("@t3tools/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlTarget") {}
+>()("@onicode/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlTarget") {}
 
 // Group traces by query without exposing query text.
 function queryHash(query: string): string {
@@ -52,7 +52,7 @@ export const isNotFoundOnly = (error: unknown): boolean =>
 export class GitHubGraphQlAuth extends GraphQLMiddleware.Service<
   GitHubGraphQlAuth,
   { requires: GitHubGraphQlTarget; error: GitHubRequestPolicy.GitHubApiError }
->()("@t3tools/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlAuth") {
+>()("@onicode/source-control-github/server/gitHubGraphQlClient/GitHubGraphQlAuth") {
   static readonly layer = Layer.effect(
     GitHubGraphQlAuth,
     Effect.gen(function* () {

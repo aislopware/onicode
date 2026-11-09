@@ -1,5 +1,5 @@
 import { useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
+import { formatDiffCount } from "@onicode/client-runtime/diff-count";
 
 import { parseReviewInlineComments } from "./reviewCommentSelection";
 import { getCachedNativeReviewDiffData } from "./nativeReviewDiffAdapter";
@@ -17,7 +17,7 @@ import type {
   OrchestrationMessageContext,
   ReviewDiffFileStat,
   ReviewDiffPreviewSource,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Atom from "effect/reactivity/Atom";
@@ -245,7 +245,7 @@ export function useReviewDiffData(input: {
   });
   const pendingReviewCommentCount = inlineReviewComments.length;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records review perf marks and diagnostic logs once a parsed diff has committed
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- records review perf marks and diagnostic logs once a parsed diff has committed
   useEffect(() => {
     if (parsedDiff.kind !== "files") {
       return;

@@ -4,7 +4,7 @@ import * as NodeReadline from "node:readline";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -133,7 +133,7 @@ describe.each(observedPlatforms)("OpenCodeServerLedger observing as %s", (platfo
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-ledger-" });
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-opencode-ledger-" });
       const orphan = yield* spawnGroup(SERVE_ARGS);
       yield* recordFromDeadServer(stateDir, orphan);
       expect(yield* fs.readDirectory(path.join(stateDir, "opencode-servers"))).toHaveLength(1);
@@ -151,7 +151,7 @@ describe.each(observedPlatforms)("OpenCodeServerLedger observing as %s", (platfo
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-ledger-" });
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-opencode-ledger-" });
       // The inner shell prints once it has exec'd. Until then it still carries the wrapper's
       // command line, and recording that would make the reaper skip the group as recycled.
       const wrapper = yield* spawnGroup(
@@ -177,7 +177,7 @@ describe.each(observedPlatforms)("OpenCodeServerLedger observing as %s", (platfo
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-ledger-" });
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-opencode-ledger-" });
       const unrelated = yield* spawnGroup(SERVE_ARGS);
       yield* recordFromDeadServer(stateDir, unrelated);
       const entryPath = path.join(stateDir, "opencode-servers", `${unrelated.pid}.json`);
@@ -196,7 +196,7 @@ describe.each(observedPlatforms)("OpenCodeServerLedger observing as %s", (platfo
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-ledger-" });
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-opencode-ledger-" });
       const unrelated = yield* spawnGroup(SERVE_ARGS);
       yield* recordFromDeadServer(stateDir, unrelated);
       const entryPath = path.join(stateDir, "opencode-servers", `${unrelated.pid}.json`);
@@ -211,11 +211,11 @@ describe.each(observedPlatforms)("OpenCodeServerLedger observing as %s", (platfo
     }).pipe(provideHost),
   );
 
-  it.live("leaves the servers of a running T3 server alone", () =>
+  it.live("leaves the servers of a running Onicode server alone", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-ledger-" });
+      const stateDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-opencode-ledger-" });
       const running = yield* OpenCodeServerLedger.make({ stateDir });
       const server = yield* spawnGroup(SERVE_ARGS);
       const forget = yield* running.track({ pid: server.pid, port: 4096, args: SERVE_ARGS });
@@ -235,7 +235,7 @@ describe.skipIf(observedPlatforms.length === 0)("OpenCode server startup", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-opencode-startup-" });
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-opencode-startup-" });
       const binaryPath = path.join(tempDir, "opencode");
       yield* fs.writeFileString(binaryPath, "#!/bin/sh\nsleep 600 &\nexit 0\n");
       yield* fs.chmod(binaryPath, 0o755);

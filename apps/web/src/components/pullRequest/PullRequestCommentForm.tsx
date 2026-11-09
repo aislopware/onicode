@@ -1,6 +1,6 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { useAtomCommand } from "~/state/use-atom-command";
-import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestDetailView, PullRequestRef } from "@onicode/contracts";
 import { SendIcon } from "lucide-react";
 import { useEffect, useState, type RefObject } from "react";
 
@@ -55,7 +55,7 @@ export function PullRequestCommentForm({
     disabled: !active || locked,
   });
   const { cancel } = speech;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- discards a recording when the hidden form can no longer be submitted
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- discards a recording when the hidden form can no longer be submitted
   useEffect(() => {
     if (!active) cancel();
   }, [active, cancel]);

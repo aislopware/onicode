@@ -1,4 +1,4 @@
-import type { RelayManagedEndpointRuntimeConfig } from "@t3tools/contracts/relay";
+import type { RelayManagedEndpointRuntimeConfig } from "@onicode/contracts/relay";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";

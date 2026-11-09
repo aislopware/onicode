@@ -14,10 +14,10 @@ const webIconSource = NodeFS.readFileSync(
   NodePath.join(repositoryRoot, "apps/web/src/pierre-icons.ts"),
   "utf8",
 );
-const customSprite = webIconSource.match(/const T3_FILE_ICON_SPRITE = `([\s\S]*?)`;/)?.[1];
+const customSprite = webIconSource.match(/const ONICODE_FILE_ICON_SPRITE = `([\s\S]*?)`;/)?.[1];
 
 if (!customSprite) {
-  throw new Error("Could not read the T3 Pierre icon sprite from apps/web/src/pierre-icons.ts");
+  throw new Error("Could not read the Onicode Pierre icon sprite from apps/web/src/pierre-icons.ts");
 }
 
 const colors = {
@@ -78,9 +78,9 @@ const colors = {
 };
 
 const customIcons = {
-  agents: "t3-file-icon-agents",
-  pnpm: "t3-file-icon-pnpm",
-  video: "t3-file-icon-video",
+  agents: "oni-file-icon-agents",
+  pnpm: "oni-file-icon-pnpm",
+  video: "oni-file-icon-video",
 };
 
 function symbolFromSprite(sprite, id) {

@@ -8,11 +8,11 @@ import { useNavigation } from "@react-navigation/native";
 import { useMemo, useState } from "react";
 import { Platform } from "react-native";
 
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
 import {
   pickableProjectGroups,
   resolveScratchProjectScopeKey,
-} from "@t3tools/client-runtime/state/project-grouping";
+} from "@onicode/client-runtime/state/project-grouping";
 
 import { useProjects } from "../../state/entities";
 import { environmentThreadShells } from "../../state/threads";
@@ -165,7 +165,7 @@ export function HomeRouteScreen() {
     <AndroidHomeFabLayout onStartNewTask={startNewTask}>
       <>
         <WorkspaceListHeader
-          accessibilityLabel="T3 Code, Threads"
+          accessibilityLabel="Onicode, Threads"
           onOpenEnvironments={() => openSettings(navigation, "SettingsEnvironments")}
           search={{
             value: searchQuery,

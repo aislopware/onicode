@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextClipboardHtml,
-} from "@t3tools/shared/composerContextClipboard";
+} from "@onicode/shared/composerContextClipboard";
 import { useStableCallback } from "./useStableCallback";
 
 export class ClipboardApiUnavailableError extends Schema.TaggedError<ClipboardApiUnavailableError>()(
@@ -232,7 +232,7 @@ export function useCopyToClipboard<TContext = void>({
     );
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the copied-state reset timer on unmount
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- clears the copied-state reset timer on unmount
   React.useEffect(() => {
     return (): void => {
       if (timeoutIdRef.current) {

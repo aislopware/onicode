@@ -1,4 +1,4 @@
-import { type OrchestrationV2Command, WS_METHODS } from "@t3tools/contracts";
+import { type OrchestrationV2Command, WS_METHODS } from "@onicode/contracts";
 
 export interface FeatureUsage {
   readonly feature: string;

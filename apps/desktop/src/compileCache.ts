@@ -9,11 +9,11 @@ import { enablePreparedServerCache } from "../../../scripts/lib/server-compile-c
 try {
   if (!process.env.APPIMAGE || process.env.ELECTRON_RUN_AS_NODE === "1") {
     const cacheRoot =
-      // oxlint-disable-next-line t3code/no-global-process-runtime -- Loads before any Effect runtime.
+      // oxlint-disable-next-line onicode/no-global-process-runtime -- Loads before any Effect runtime.
       process.platform === "linux"
         ? process.env.XDG_CACHE_HOME || NodePath.join(NodeOS.homedir(), ".cache")
         : NodeOS.tmpdir();
-    const directory = NodePath.join(cacheRoot, "t3code", "compile-cache");
+    const directory = NodePath.join(cacheRoot, "onicode", "compile-cache");
     const prepared =
       process.env.ELECTRON_RUN_AS_NODE === "1" &&
       enablePreparedServerCache(process.argv[1] ?? "", directory);

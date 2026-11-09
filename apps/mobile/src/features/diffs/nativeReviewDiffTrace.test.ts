@@ -77,7 +77,7 @@ it("serializes appends to a retrievable file and bounds a process to 1000 events
     expect(sink.written).toHaveBeenCalledTimes(1);
     releaseFirst.resolve();
     await finished.promise;
-    expect(sink.opened.mock.calls).toEqual([["documents", "t3-diff-highlight-trace.jsonl"]]);
+    expect(sink.opened.mock.calls).toEqual([["documents", "oni-diff-highlight-trace.jsonl"]]);
     expect(sink.created.mock.calls).toEqual([[{ overwrite: true, intermediates: true }]]);
     expect(sink.written).toHaveBeenCalledTimes(1000);
     expect(warning).toHaveBeenCalledTimes(1000);

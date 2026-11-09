@@ -4,11 +4,11 @@ import {
   type ModelSelection,
   type ServerProviderModel,
   TextGenerationError,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import type { MuseSettings } from "../settings.ts";
-import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@t3tools/shared/git";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
-import { extractJsonObject } from "@t3tools/shared/schemaJson";
+import { sanitizeBranchFragment, sanitizeFeatureBranchName } from "@onicode/shared/git";
+import { getModelSelectionStringOptionValue } from "@onicode/shared/model";
+import { extractJsonObject } from "@onicode/shared/schemaJson";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
@@ -21,23 +21,23 @@ import {
   type MuseSdkHost,
 } from "./sdk.ts";
 import { museModelCapabilities, resolveMuseReasoningEffort } from "./modelCatalog.ts";
-import type { ProviderTextGeneration } from "@t3tools/provider-core/server/textGeneration";
+import type { ProviderTextGeneration } from "@onicode/provider-core/server/textGeneration";
 import {
   investigationUnsupported,
   TranscriptionPostProcessingOutput,
-} from "@t3tools/provider-core/server/textGenerationOperations";
+} from "@onicode/provider-core/server/textGenerationOperations";
 import {
   buildBranchNamePrompt,
   buildCommitMessagePrompt,
   buildPrContentPrompt,
   buildThreadTitlePrompt,
-} from "@t3tools/provider-core/server/textGenerationPrompts";
+} from "@onicode/provider-core/server/textGenerationPrompts";
 import {
   sanitizeCommitSubject,
   sanitizePrTitle,
   sanitizeThreadTitle,
   toJsonSchemaObject,
-} from "@t3tools/provider-core/server/textGenerationUtils";
+} from "@onicode/provider-core/server/textGenerationUtils";
 
 const SessionStarted = Schema.Struct({ session: Schema.Struct({ sessionId: Schema.String }) });
 const ItemNotification = Schema.Struct({
@@ -120,7 +120,7 @@ async function generateMuseText(
       await host.connection.command("userInput/cancel", {
         sessionId,
         userInputId: request.userInputId,
-        reason: "T3 Code text generation cannot request user input.",
+        reason: "Onicode text generation cannot request user input.",
       });
     }
   };
@@ -164,7 +164,7 @@ async function generateMuseText(
   });
   host.connection.onProtocolError(rejectCompletion);
   host.connection.onServerRequest(async () => {
-    const error = new Error("T3 Code text generation cannot approve interactive requests.");
+    const error = new Error("Onicode text generation cannot approve interactive requests.");
     rejectCompletion(error);
     throw error;
   });
@@ -242,7 +242,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
     );
     const response = yield* Effect.gen(function* () {
       // Metadata requests already include their context and do not need checkout configuration.
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-muse-text-" });
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-muse-text-" });
       const host = yield* Effect.acquireRelease(
         createMuseSdkHostEffect(
           {
@@ -277,7 +277,7 @@ export const makeMuseTextGeneration = Effect.fn("makeMuseTextGeneration")(functi
           new TextGenerationError({
             operation,
             detail:
-              "Muse Code text generation failed. Check Muse login and availability on this T3 server host.",
+              "Muse Code text generation failed. Check Muse login and availability on this Onicode server host.",
             cause,
           }),
       ),

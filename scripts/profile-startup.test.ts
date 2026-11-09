@@ -35,7 +35,7 @@ const decodeRunner = Schema.decodeUnknownSync(
 );
 
 it("attributes ESM and CommonJS imports without changing module execution", () => {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-startup-profile-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-startup-profile-"));
   try {
     NodeFS.writeFileSync(NodePath.join(directory, "package.json"), '{"type":"module"}');
     const fixtures = {
@@ -71,7 +71,7 @@ it("attributes ESM and CommonJS imports without changing module execution", () =
         "-e",
         `await import(${JSON.stringify(root)})`,
       ],
-      { env: { ...process.env, NODE_OPTIONS: "", T3CODE_STARTUP_PROFILE_DIR: output } },
+      { env: { ...process.env, NODE_OPTIONS: "", ONICODE_STARTUP_PROFILE_DIR: output } },
     );
     const spans = NodeFS.readdirSync(output)
       .filter((name) => name.endsWith(".modules.json"))
@@ -107,7 +107,7 @@ it("attributes ESM and CommonJS imports without changing module execution", () =
 });
 
 it("captures only the dev runner and preserves its exit status", () => {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-startup-launcher-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-startup-launcher-"));
   try {
     NodeFS.mkdirSync(NodePath.join(directory, "scripts"));
     NodeFS.writeFileSync(
@@ -120,7 +120,7 @@ it("captures only the dev runner and preserves its exit status", () => {
       [NodePath.join(import.meta.dirname, "profile-startup.mjs"), "--no-seed"],
       {
         cwd: directory,
-        env: { ...process.env, NODE_OPTIONS: "", T3CODE_STARTUP_PROFILE_DIR: output },
+        env: { ...process.env, NODE_OPTIONS: "", ONICODE_STARTUP_PROFILE_DIR: output },
         encoding: "utf8",
       },
     );
@@ -138,7 +138,7 @@ it("captures only the dev runner and preserves its exit status", () => {
       [NodePath.join(import.meta.dirname, "profile-startup.mjs")],
       {
         cwd: directory,
-        env: { ...process.env, NODE_OPTIONS: "", T3CODE_STARTUP_PROFILE_DIR: output },
+        env: { ...process.env, NODE_OPTIONS: "", ONICODE_STARTUP_PROFILE_DIR: output },
       },
     );
     expect(interrupted.error).toBeUndefined();

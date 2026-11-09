@@ -4,7 +4,7 @@ import {
   type ProviderConsumeResetCreditResult,
   type UsageLimitSourceAccount,
   type UsageLimitSourceConfig,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
@@ -16,7 +16,7 @@ import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } fr
 import { codexPlanLabel } from "../provider/CodexProvider.ts";
 import { codexRateLimitsToLimits } from "../provider/codexUsageLimits.ts";
 import { claudeUsageResponseToLimits } from "../provider/claudeUsageLimits.ts";
-import { makeUnavailableUsageLimits } from "@t3tools/provider-core/server/usageLimits";
+import { makeUnavailableUsageLimits } from "@onicode/provider-core/server/usageLimits";
 
 /** A hub with its management key already read from wherever the setting keeps it. */
 export interface CliproxyHub {
@@ -157,7 +157,7 @@ const CREDIT_REDEEM_NAMESPACE = new Uint8Array([
   0x6f, 0x1c, 0x2a, 0x9e, 0x2d, 0x4b, 0x4c, 0x1e, 0x9a, 0x7f, 0x3b, 0x8d, 0x5e, 0x0c, 0x1a, 0x42,
 ]);
 
-// UUIDv5 per account and credit also deduplicates retries across T3 environments.
+// UUIDv5 per account and credit also deduplicates retries across Onicode environments.
 const creditRedeemRequestId = Effect.fn("CliproxyApi.creditRedeemRequestId")(function* (
   accountId: string,
   creditId: string,

@@ -1,4 +1,4 @@
-import type { PullRequestReviewGuideNote } from "@t3tools/contracts";
+import type { PullRequestReviewGuideNote } from "@onicode/contracts";
 
 import { cn } from "~/lib/utils";
 

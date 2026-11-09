@@ -1,4 +1,4 @@
-import { recognizeRemoteWith } from "@t3tools/source-control-core/shared/definition";
+import { recognizeRemoteWith } from "@onicode/source-control-core/shared/definition";
 import { describe, expect, it } from "vite-plus/test";
 
 import { definition } from "./definition.ts";
@@ -7,11 +7,11 @@ const parse = (url: string) => definition.parseChangeRequestUrl(new URL(url));
 
 describe("GitLab change request URLs", () => {
   it("reads a merge request on any host, nested groups and all", () => {
-    expect(parse("https://gitlab.com/t3tools/platform/t3code/-/merge_requests/42")).toEqual({
+    expect(parse("https://gitlab.com/onicode/platform/onicode/-/merge_requests/42")).toEqual({
       host: "gitlab.com",
-      repository: "t3tools/platform/t3code",
+      repository: "onicode/platform/onicode",
       number: 42,
-      repositoryUrl: "https://gitlab.com/t3tools/platform/t3code",
+      repositoryUrl: "https://gitlab.com/onicode/platform/onicode",
     });
     expect(parse("https://code.acme.test/team/project/-/merge_requests/9")).toMatchObject({
       host: "code.acme.test",
@@ -27,8 +27,8 @@ describe("GitLab change request URLs", () => {
   });
 
   it("leaves issues and single-segment paths alone", () => {
-    expect(parse("https://gitlab.com/t3tools/t3code/-/issues/12")).toBeNull();
-    expect(parse("https://gitlab.com/t3code/-/merge_requests/12")).toBeNull();
+    expect(parse("https://gitlab.com/onicode/onicode/-/issues/12")).toBeNull();
+    expect(parse("https://gitlab.com/onicode/-/merge_requests/12")).toBeNull();
   });
 
   it("recognizes only merge request URLs it can parse", () => {
@@ -37,7 +37,7 @@ describe("GitLab change request URLs", () => {
       "https://gitlab.com/g/p#/-/merge_requests/5",
       "https://gitlab.com?x=/g/p/-/merge_requests/5",
       "https://gitlab.com#/g/p/-/merge_requests/5",
-      "https://gitlab.com/t3code/-/merge_requests/12",
+      "https://gitlab.com/onicode/-/merge_requests/12",
       "https://gitlab.com/g//-/merge_requests/5",
     ]) {
       expect(definition.isChangeRequestReference(url), url).toBe(false);

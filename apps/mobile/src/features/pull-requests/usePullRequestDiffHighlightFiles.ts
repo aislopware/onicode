@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@onicode/contracts";
 import * as Option from "effect/Option";
 
 import { environmentCatalog } from "../../connection/catalog";

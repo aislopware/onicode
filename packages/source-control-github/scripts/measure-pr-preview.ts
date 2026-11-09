@@ -4,8 +4,8 @@
 // which are approximate when other clients spend the same token's quota.
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
-import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+import * as SourceControlRateLimit from "@onicode/source-control-core/server/SourceControlRateLimit";
+import * as TestSourceControlHost from "@onicode/source-control-testing/TestSourceControlHost";
 import * as Effect from "effect/Effect";
 import * as Console from "effect/Console";
 import * as Layer from "effect/Layer";

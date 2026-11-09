@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/evals",
+  "name": "@onicode/evals",
   "private": true,
   "type": "module",
   "scripts": {
@@ -15,9 +15,9 @@
   },
   "dependencies": {
     "@effect/platform-node": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@onicode/contracts": "workspace:*",
+    "@onicode/provider-core": "workspace:*",
+    "@onicode/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

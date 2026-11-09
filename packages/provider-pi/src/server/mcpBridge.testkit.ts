@@ -54,7 +54,7 @@ export async function loadMcpBridge(
   const tools: RegisteredTool[] = [];
   const requests: Array<{ readonly method: string; readonly params?: unknown }> = [];
   let activeTools = ["read"];
-  let bridgeSourcePath = "/fixture/pi-t3-extension.ts";
+  let bridgeSourcePath = "/fixture/pi-oni-extension.ts";
   const transports: Array<{
     readonly url: string;
     readonly authorization: string;
@@ -88,10 +88,10 @@ export async function loadMcpBridge(
   await NodeVM.runInNewContext(`${source}\nt3McpExtension(pi)`, {
     process: {
       env: {
-        T3_MCP_URL: "http://fixture.invalid/mcp",
-        T3_MCP_BEARER_TOKEN: "fixture-token",
-        T3_PI_MCP_EXTENSION_PATH: "/fixture/pi-t3-extension.ts",
-        T3_PI_RUNTIME_MODE: options.runtimeMode,
+        ONICODE_MCP_URL: "http://fixture.invalid/mcp",
+        ONICODE_MCP_BEARER_TOKEN: "fixture-token",
+        ONICODE_PI_MCP_EXTENSION_PATH: "/fixture/pi-oni-extension.ts",
+        ONICODE_PI_RUNTIME_MODE: options.runtimeMode,
       },
     },
     AbortSignal,

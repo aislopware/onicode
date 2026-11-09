@@ -1,6 +1,6 @@
-import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
-import type { PullRequestDetail } from "@t3tools/contracts";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { threadPullRequestLinkMode } from "@onicode/client-runtime/thread-pull-request-compatibility";
+import type { PullRequestDetail } from "@onicode/contracts";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { useMemo } from "react";
 import { useEnvironmentServerConfig, useNavigationThreadShells } from "../../state/entities";
 import { pullRequestStackAtom } from "../../state/pull-requests";

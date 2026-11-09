@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { describe, expect, it } from "@effect/vitest";
-import { ChatAttachmentId, type ChatAttachment } from "@t3tools/contracts";
+import { ChatAttachmentId, type ChatAttachment } from "@onicode/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -25,7 +25,7 @@ import {
 } from "./AttachmentClaims.ts";
 
 const layerTest = Layer.mergeAll(NodeServices.layer).pipe(
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-attachment-claims-" })),
+  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "oni-attachment-claims-" })),
   Layer.provideMerge(DocumentText.layer.pipe(Layer.provideMerge(NodeServices.layer))),
 );
 

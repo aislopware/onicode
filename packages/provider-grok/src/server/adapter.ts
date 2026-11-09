@@ -1,18 +1,18 @@
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import { makeProviderFailure } from "@onicode/provider-core/server/failure";
 import {
   XAiPromptFailureText,
   isXAiTaskCompletedWakeNotification,
   xAiRateLimitedErrorCode,
 } from "./xaiAcpExtension.ts";
 import { discoverGrokSkills, leadingGrokSkillMention } from "./skills.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveSelfInvocation, type SelfInvocation } from "@t3tools/shared/nodeRuntime";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { resolveSelfInvocation, type SelfInvocation } from "@onicode/shared/nodeRuntime";
 import {
   defaultInstanceIdForDriver,
   ProviderDriverKind,
   type OrchestrationV2ProviderCapabilities,
   type RuntimeMode,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { GrokSettings } from "../settings.ts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -23,9 +23,9 @@ import type * as Scope from "effect/Scope";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as EffectAcpErrors from "effect-acp/errors";
 
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { makeAcpNativeLoggerFactory } from "@t3tools/provider-acp/server/nativeLogging";
+import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
+import { makeAcpNativeLoggerFactory } from "@onicode/provider-acp/server/nativeLogging";
 import {
   applyGrokAcpModelSelection,
   currentGrokModelIdFromSessionSetup,
@@ -55,29 +55,29 @@ import {
   XAiAskUserQuestionRequest,
   XAiExitPlanModeRequest,
 } from "./xaiAcpExtension.ts";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { acpPermissionDisposition } from "@t3tools/provider-acp/server/clientPolicy";
+import { mergeProviderInstanceEnvironment } from "@onicode/provider-core/server/instanceEnvironment";
+import { acpPermissionDisposition } from "@onicode/provider-acp/server/clientPolicy";
 import {
   findModelConfigOption,
   sessionModelStateFromInitialize,
-} from "@t3tools/provider-acp/server/runtimeModel";
-import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+} from "@onicode/provider-acp/server/runtimeModel";
+import * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
+import * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import * as ProviderContinuationRequests from "@onicode/provider-core/server/ProviderContinuationRequests";
+import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
   type ProviderAdapterDriverCreateInput,
-} from "@t3tools/provider-core/server/adapterDriver";
+} from "@onicode/provider-core/server/adapterDriver";
 import {
   AcpProviderCapabilitiesV2,
   makeAcpAdapterV2,
   type AcpAdapterV2ExtensionContext,
   type AcpAdapterV2Flavor,
   type AcpAdapterV2RuntimeInput,
-} from "@t3tools/provider-acp/server/adapter";
+} from "@onicode/provider-acp/server/adapter";
 
 const isXAiPromptFailureText = Schema.is(XAiPromptFailureText);
 
@@ -212,7 +212,7 @@ const registerGrokAskUserQuestionExtensions = ({
     { discard: true },
   );
 
-/** Explicit policy overrides launch in ask mode so Grok cannot bypass T3 approval checks. */
+/** Explicit policy overrides launch in ask mode so Grok cannot bypass Onicode approval checks. */
 export function grokLaunchRuntimeMode(
   runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy,
 ): RuntimeMode {

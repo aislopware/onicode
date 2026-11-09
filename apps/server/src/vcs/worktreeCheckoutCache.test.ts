@@ -5,9 +5,9 @@ import * as NodePath from "node:path";
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -20,7 +20,7 @@ import { makeWorktreeCheckoutCache } from "./worktreeCheckoutCache.ts";
 
 // Tests close their own scope first, so background cache builds finish before the temp folder goes.
 const layerTest = ServerConfig.layerTest(process.cwd(), {
-  prefix: "t3-worktree-checkout-cache-test-",
+  prefix: "oni-worktree-checkout-cache-test-",
 }).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 // macOS clones for real; elsewhere `cp -a` stands in, keeping mtimes like a clone does.

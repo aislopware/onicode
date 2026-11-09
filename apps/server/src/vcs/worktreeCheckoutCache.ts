@@ -2,8 +2,8 @@
 import * as NodeCrypto from "node:crypto";
 import * as NodeFSP from "node:fs/promises";
 
-import { GitCommandError } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { GitCommandError } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -316,7 +316,7 @@ export const makeWorktreeCheckoutCache = Effect.fn("WorktreeCheckoutCache.make")
     const stats = yield* statEntries(input.root, paths);
     const restated = restatIndex(parsed, stats, { verify: input.verify });
     if (restated === null) return null;
-    const temporary = `${input.target}.t3-${NodeCrypto.randomUUID()}`;
+    const temporary = `${input.target}.oni-${NodeCrypto.randomUUID()}`;
     yield* Effect.uninterruptible(
       fileSystem
         .writeFile(temporary, restated)

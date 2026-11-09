@@ -1,4 +1,4 @@
-import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type AssistantCitation } from "@t3tools/contracts";
+import { ASSISTANT_CITATION_MAX_COMMENT_LENGTH, type AssistantCitation } from "@onicode/contracts";
 import { use, useEffect, useRef, useState, type RefObject } from "react";
 
 import { TextFieldSpeechControls, useTextFieldSpeech } from "~/speech/useTextFieldSpeech";
@@ -48,7 +48,7 @@ export function AssistantCitationCommentEditor({
     onTextChange: updateComment,
   });
   const setupOpen = speech.setup.open;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- keeps the citation popover open while the voice setup dialog owns focus
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- keeps the citation popover open while the voice setup dialog owns focus
   useEffect(() => {
     onVoiceSetupOpenChange?.(setupOpen);
     return () => onVoiceSetupOpenChange?.(false);

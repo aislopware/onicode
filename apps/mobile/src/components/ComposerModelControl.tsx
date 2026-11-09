@@ -1,8 +1,8 @@
-import type { ModelSelection, ProviderDriverKind } from "@t3tools/contracts";
+import type { ModelSelection, ProviderDriverKind } from "@onicode/contracts";
 import {
   buildTraitsTriggerDisplay,
   getPromptControlledTraits,
-} from "@t3tools/client-runtime/model-traits";
+} from "@onicode/client-runtime/model-traits";
 import type { ModelOption } from "../lib/modelOptions";
 import { resolveProviderOptionDescriptors } from "../lib/providerOptions";
 import { AppText as Text } from "./ui/AppText";

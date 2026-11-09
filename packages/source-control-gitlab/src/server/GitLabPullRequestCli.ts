@@ -1,5 +1,5 @@
-import { removeAgentCredits } from "@t3tools/source-control-core/server/mergeMessage";
-import { isCommitSha } from "@t3tools/source-control-core/server/pullRequestUtils";
+import { removeAgentCredits } from "@onicode/source-control-core/server/mergeMessage";
+import { isCommitSha } from "@onicode/source-control-core/server/pullRequestUtils";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -7,7 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { resolvePullRequestAuthorFilter, VcsProcessExitError } from "@t3tools/contracts";
+import { resolvePullRequestAuthorFilter, VcsProcessExitError } from "@onicode/contracts";
 import type {
   PullRequestAction,
   PullRequestActor,
@@ -30,7 +30,7 @@ import type {
   PullRequestReviewThread,
   PullRequestReviewVerdict,
   PullRequestReviewerCandidateList,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import * as GitLabCli from "./GitLabCli.ts";
 import {
@@ -88,7 +88,7 @@ import type {
   ProviderChangeRequestSummary,
   ProviderFileStats,
   ProviderListCursor,
-} from "@t3tools/source-control-core/server/PullRequestProvider";
+} from "@onicode/source-control-core/server/PullRequestProvider";
 
 export class GitLabMergeRequestReadError extends Schema.TaggedError<GitLabMergeRequestReadError>()(
   "GitLabMergeRequestReadError",
@@ -640,7 +640,7 @@ export class GitLabPullRequestCli extends Context.Service<
       readonly reacted: boolean;
     }) => Effect.Effect<void, GitLabPullRequestCliError>;
   }
->()("@t3tools/source-control-gitlab/server/GitLabPullRequestCli") {}
+>()("@onicode/source-control-gitlab/server/GitLabPullRequestCli") {}
 
 function projectPath(repository: string): string {
   return encodeURIComponent(repository.trim());

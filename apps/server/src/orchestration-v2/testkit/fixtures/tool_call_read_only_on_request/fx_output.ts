@@ -1,5 +1,5 @@
 import { assert } from "@effect/vitest";
-import type { ProviderReplayTranscript } from "@t3tools/contracts";
+import type { ProviderReplayTranscript } from "@onicode/contracts";
 
 import type { OrchestratorV2ScenarioResult } from "../../OrchestratorScenario.ts";
 import {
@@ -47,5 +47,5 @@ export function assertToolCallReadOnlyOnRequestFxOutput(
     };
     return frame.method === "session/request_permission" ? [frame.params?.toolCall?.kind] : [];
   });
-  assert.deepEqual(permissionKinds, ["edit"], "fx must ask T3 before its own write");
+  assert.deepEqual(permissionKinds, ["edit"], "fx must ask Onicode before its own write");
 }

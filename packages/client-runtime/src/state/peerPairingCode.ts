@@ -3,7 +3,7 @@
  * user's own session there, so a link card can be answered without fetching a code by hand.
  * It carries exactly what an agent sign-in with the chosen access needs.
  */
-import { type AuthMcpClientAccess, mcpClientScopes } from "@t3tools/contracts";
+import { type AuthMcpClientAccess, mcpClientScopes } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import type * as HttpClient from "effect/http/HttpClient";
@@ -20,7 +20,7 @@ import { executeAuthenticatedEnvironmentHttpRequest } from "./environmentHttpAut
 import { createEnvironmentCommand } from "./runtime.ts";
 
 const MINT_TIMEOUT_MS = 8_000;
-const PEER_PAIRING_CODE_LABEL = "T3 Code link";
+const PEER_PAIRING_CODE_LABEL = "Onicode link";
 
 /** Minting failed; the user can still paste a code from the other environment. */
 export class PeerPairingCodeError extends Schema.TaggedError<PeerPairingCodeError>()(

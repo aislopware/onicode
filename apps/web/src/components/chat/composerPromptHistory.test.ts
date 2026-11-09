@@ -1,4 +1,4 @@
-import { ScheduledTaskId } from "@t3tools/contracts";
+import { ScheduledTaskId } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -80,9 +80,9 @@ describe("recallableComposerPrompt", () => {
 
   it("removes canonical references without restoring dangling chips", () => {
     const sent =
-      "Look at [Terminal](t3-context://v1/terminal/term-1) please\n    indented  code\n![image](t3-context://v1/image/img-1)";
+      "Look at [Terminal](oni-context://v1/terminal/term-1) please\n    indented  code\n![image](oni-context://v1/image/img-1)";
     expect(recallableComposerPrompt(sent)).toBe("Look at please\n    indented  code");
-    expect(recallableComposerPrompt("![image](t3-context://v1/image/img-1)")).toBe("");
+    expect(recallableComposerPrompt("![image](oni-context://v1/image/img-1)")).toBe("");
   });
 });
 
@@ -101,7 +101,7 @@ describe("buildComposerPromptHistoryEntries", () => {
     ]);
   });
 
-  it("skips messages sent by automations, agents, and T3 Code", () => {
+  it("skips messages sent by automations, agents, and Onicode", () => {
     const typed = buildComposerPromptHistoryEntries([
       { id: "m1", role: "user", text: "typed" },
       { id: "m2", role: "user", text: "scheduled", scheduledTaskId: ScheduledTaskId.make("task") },

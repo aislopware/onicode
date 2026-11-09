@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off -- replace the native OS lookup and sync its ESM bindings.
 import * as NodeModule from "node:module";
 import { it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as NetService from "@t3tools/shared/Net";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import * as NetService from "@onicode/shared/Net";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
@@ -105,7 +105,7 @@ describe("RemoteOpenTargets", () => {
         sshd: { ipv4: false, ipv6: false },
         tailscale: TAILSCALE_UP,
         hostname: "bb-1",
-        username: "t3-user",
+        username: "oni-user",
       });
       expect(targets).toEqual([]);
     }),
@@ -117,10 +117,10 @@ describe("RemoteOpenTargets", () => {
         sshd: { ipv4: false, ipv6: false },
         tailscale: TAILSCALE_SSH,
         hostname: "bb-1",
-        username: "t3-user",
+        username: "oni-user",
       });
       expect(targets).toEqual([
-        { kind: "tailscale", host: "bb-1.tail1234.ts.net", username: "t3-user" },
+        { kind: "tailscale", host: "bb-1.tail1234.ts.net", username: "oni-user" },
       ]);
     }),
   );
@@ -143,9 +143,9 @@ describe("RemoteOpenTargets", () => {
         sshd: { ipv4: false, ipv6: true },
         tailscale: TAILSCALE_DOWN,
         hostname: "bb-1",
-        username: "t3-user",
+        username: "oni-user",
       });
-      expect(targets).toEqual([{ kind: "mdns", host: "bb-1.local", username: "t3-user" }]);
+      expect(targets).toEqual([{ kind: "mdns", host: "bb-1.local", username: "oni-user" }]);
     }),
   );
 });

@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { runMigrations } from "../Migrations.ts";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 
 const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
 
@@ -67,7 +67,7 @@ layer("050_ProjectionThreadPullRequests", (it) => {
             'project-1',
             'GitHub link',
             '{"instanceId":"codex","model":"gpt-5.4"}',
-            '{"projectId":"project-1","repository":"PingDotGG/T3Code","number":42,"url":"https://GitHub.com/pingdotgg/t3code/pull/42"}',
+            '{"projectId":"project-1","repository":"PingDotGG/Onicode","number":42,"url":"https://GitHub.com/pingdotgg/t3code/pull/42"}',
             '2026-03-01T00:00:01.000Z',
             '2026-03-02T00:00:00.000Z'
           ),

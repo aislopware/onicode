@@ -8,8 +8,8 @@ import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import { CaptureService, isWaylandSession } from "./captureService.js";
 import { CaptureFeedback } from "./captureFeedback.js";
 
-const NAME = "org.gnome.Shell.Extensions.T3SnapShot";
-const PATH = "/org/gnome/Shell/Extensions/T3SnapShot";
+const NAME = "org.gnome.Shell.Extensions.OniSnapShot";
+const PATH = "/org/gnome/Shell/Extensions/OniSnapShot";
 const XML = `<node><interface name="${NAME}">
   <property name="Version" type="u" access="read"/>
   <method name="Capture">
@@ -73,7 +73,7 @@ function takeSnapshot(animate) {
     try {
       content = window.get_compositor_private().paint_to_content(null);
     } catch (error) {
-      console.warn(`T3 capture preview unavailable: ${error.message}`);
+      console.warn(`Onicode capture preview unavailable: ${error.message}`);
     }
   }
   const metadata = JSON.stringify({
@@ -114,7 +114,7 @@ function takeSnapshot(animate) {
   });
 }
 
-export default class T3SnapShotExtension extends Extension {
+export default class OniSnapShotExtension extends Extension {
   enable() {
     this._feedback = new CaptureFeedback();
     this._sessionChanged = Main.sessionMode.connect("updated", () => this._feedback.dispose());

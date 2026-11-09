@@ -1,8 +1,8 @@
 import {
   formatProviderSubagentStatus,
   type ProviderSubagentStatus,
-} from "@t3tools/client-runtime/state/thread-execution";
-import { isOrchestrationV2WorkActive, type EnvironmentId, type ThreadId } from "@t3tools/contracts";
+} from "@onicode/client-runtime/state/thread-execution";
+import { isOrchestrationV2WorkActive, type EnvironmentId, type ThreadId } from "@onicode/contracts";
 import { useState } from "react";
 import { View } from "react-native";
 
@@ -18,7 +18,7 @@ export function ProviderSubagentBar(props: {
   readonly effortLabel: string | null;
   readonly status: ProviderSubagentStatus | null;
   readonly onOpenParent: (() => void) | null;
-  /** Set for providers whose children T3 reads on demand instead of streaming. */
+  /** Set for providers whose children Onicode reads on demand instead of streaming. */
   readonly inspect: { readonly environmentId: EnvironmentId; readonly threadId: ThreadId } | null;
 }) {
   const [inspecting, setInspecting] = useState(false);
@@ -44,7 +44,7 @@ export function ProviderSubagentBar(props: {
               size={16}
             />
           ) : null}
-          <Text numberOfLines={1} className="min-w-0 shrink font-t3-bold text-sm text-foreground">
+          <Text numberOfLines={1} className="min-w-0 shrink font-oni-bold text-sm text-foreground">
             {props.modelLabel}
           </Text>
           {props.effortLabel === null ? null : (

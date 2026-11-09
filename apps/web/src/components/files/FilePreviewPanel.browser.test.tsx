@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ProjectReadFileResult } from "@onicode/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { act, fakeTimers, render } from "../../../test/render";
@@ -9,7 +9,7 @@ const state = vi.hoisted(() => ({
   writeFile: vi.fn(),
 }));
 
-vi.mock(import("@t3tools/client-runtime/state/runtime"), async (original) => ({
+vi.mock(import("@onicode/client-runtime/state/runtime"), async (original) => ({
   ...(await original()),
   runAtomCommand: ((_registry: unknown, _command: unknown, request: unknown) =>
     state.writeFile(request)) as never,
@@ -78,7 +78,7 @@ import FilePreviewPanel from "./FilePreviewPanel";
 const environmentId = EnvironmentId.make("markdown-preview-test");
 const threadRef = { environmentId, threadId: ThreadId.make("thread") };
 function setup() {
-  const keys = ["t3code.fileExplorerOpen", "t3code.renderMarkdown"];
+  const keys = ["onicode.fileExplorerOpen", "onicode.renderMarkdown"];
   const previous = keys.map((key) => localStorage.getItem(key));
   localStorage.setItem(keys[0]!, "false");
   localStorage.setItem(keys[1]!, "true");

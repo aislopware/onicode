@@ -1,5 +1,5 @@
 /* oxlint-disable react/no-array-index-key -- Notebook cells and outputs retain their saved source order. */
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
 import { useEffect, useRef, useState } from "react";
 import type { Root, RootContent } from "mdast";
 import ChatMarkdown from "~/components/ChatMarkdown";
@@ -57,7 +57,7 @@ export default function NotebookPreview(props: {
       (count, cell) => count + cell.outputs.filter((output) => output.kind === "html").length,
       0,
     );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Observe output visibility and measure departing outputs to bound iframe lifetimes while preserving scroll height.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Observe output visibility and measure departing outputs to bound iframe lifetimes while preserving scroll height.
   useEffect(() => {
     const root = scroll.current;
     if (!root || !outputCount) return;

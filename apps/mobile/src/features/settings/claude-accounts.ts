@@ -1,7 +1,7 @@
 import {
   deriveAvailableInstanceId,
   deriveInstanceId,
-} from "@t3tools/client-runtime/provider-instance-ids";
+} from "@onicode/client-runtime/provider-instance-ids";
 import {
   defaultInstanceIdForDriver,
   isManagedSettingPath,
@@ -11,7 +11,7 @@ import {
   type ProviderInstanceConfig,
   type ProviderInstanceMutation,
   type ServerSettings,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 export const CLAUDE_DRIVER = ProviderDriverKind.make("claudeAgent");
 export const DEFAULT_CLAUDE_INSTANCE_ID = defaultInstanceIdForDriver(CLAUDE_DRIVER);

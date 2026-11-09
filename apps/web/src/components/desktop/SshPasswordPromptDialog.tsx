@@ -1,5 +1,5 @@
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
-import type { DesktopSshPasswordPromptRequest } from "@t3tools/contracts";
+import { settlePromise } from "@onicode/client-runtime/state/runtime";
+import type { DesktopSshPasswordPromptRequest } from "@onicode/contracts";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import * as Cause from "effect/Cause";
 import { useId, useRef, useState, useSyncExternalStore } from "react";
@@ -158,9 +158,9 @@ function ActiveSshPasswordPrompt({
         <DialogHeader>
           <DialogTitle>SSH verification required</DialogTitle>
           <DialogDescription>
-            Enter the password or verification code required by <code>{target}</code>. T3 Code
+            Enter the password or verification code required by <code>{target}</code>. Onicode
             passes your response to the local SSH process and keeps it in memory to reuse for this
-            host. T3 Code does not write it to disk.
+            host. Onicode does not write it to disk.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel scrollFade={false}>

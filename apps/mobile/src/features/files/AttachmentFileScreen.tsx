@@ -1,10 +1,10 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import {
   clampFileAttachmentUploadBytes,
   formatAttachmentSize,
-} from "@t3tools/client-runtime/state/attachments";
+} from "@onicode/client-runtime/state/attachments";
 import { useRef, useState } from "react";
 import { View } from "react-native";
 

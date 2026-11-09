@@ -7,8 +7,8 @@ import {
   type EnvironmentRequestInvalidError,
   type EnvironmentResourceNotFoundError,
   type EnvironmentScopeRequiredError,
-} from "@t3tools/contracts";
-import * as HttpObservability from "@t3tools/shared/httpObservability";
+} from "@onicode/contracts";
+import * as HttpObservability from "@onicode/shared/httpObservability";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";

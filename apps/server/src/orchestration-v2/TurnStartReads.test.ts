@@ -14,7 +14,7 @@ import {
   TurnItemId,
   type OrchestrationV2AppThread,
   type OrchestrationV2Run,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -417,7 +417,7 @@ it.effect.each(["sqlite"] as const)(
           ...item,
           id: TurnItemId.make("attachment:recording"),
           type: "dynamic_tool",
-          toolName: "mcp__t3-code__preview_recording_stop",
+          toolName: "mcp__onicode__preview_recording_stop",
           input: {},
           output: [
             { type: "text", text: JSON.stringify({ id: recordingId, mimeType: "video/webm" }) },

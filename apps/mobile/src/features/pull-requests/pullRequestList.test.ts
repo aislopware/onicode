@@ -5,7 +5,7 @@ import {
   SourceControlProviderKind,
   type PullRequestListEntry,
   type PullRequestListResult,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   appendPullRequestListPage,
   DEFAULT_PR_LIST_CONTROLS,
@@ -410,7 +410,7 @@ describe("pullRequestProjectChoices", () => {
   const project = (id: string, environmentId: EnvironmentId) => ({
     id: ProjectId.make(id),
     environmentId,
-    title: "t3code",
+    title: "onicode",
     workspaceRoot: `/work/${id}`,
     repositoryIdentity: { canonicalKey: "github.com/pingdotgg/t3code" },
   });
@@ -431,22 +431,22 @@ describe("pullRequestProjectChoices", () => {
 
   it("lists each repository once per environment that serves pull requests", () => {
     expect(choices(() => true)).toEqual([
-      { id: "main", environmentId: desktop, title: "t3code · desktop" },
-      { id: "main", environmentId: laptop, title: "t3code · laptop" },
+      { id: "main", environmentId: desktop, title: "onicode · desktop" },
+      { id: "main", environmentId: laptop, title: "onicode · laptop" },
     ]);
     expect(choices((environmentId) => environmentId === desktop)).toEqual([
-      { id: "main", environmentId: desktop, title: "t3code" },
+      { id: "main", environmentId: desktop, title: "onicode" },
     ]);
   });
 
   it("keeps the saved scope when its environment stops serving or has not loaded", () => {
     const scope = { projectId: "worktree", projectEnvironmentId: laptop };
     expect(choices((environmentId) => environmentId === desktop, scope)).toEqual([
-      { id: "main", environmentId: desktop, title: "t3code · desktop" },
-      { id: "worktree", environmentId: laptop, title: "t3code · laptop" },
+      { id: "main", environmentId: desktop, title: "onicode · desktop" },
+      { id: "worktree", environmentId: laptop, title: "onicode · laptop" },
     ]);
     expect(choices(() => false, scope)).toEqual([
-      { id: "worktree", environmentId: laptop, title: "t3code" },
+      { id: "worktree", environmentId: laptop, title: "onicode" },
     ]);
   });
 });

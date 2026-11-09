@@ -3,7 +3,7 @@
 use super::*;
 use std::io::BufRead;
 
-const OBJECT: &str = "/com/t3tools/KdeCapture/Feedback";
+const OBJECT: &str = "/dev/onicode/KdeCapture/Feedback";
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,7 +36,7 @@ impl Bridge {
         }
     }
 }
-#[zbus::interface(name = "com.t3tools.KdeCapture.Feedback")]
+#[zbus::interface(name = "dev.onicode.KdeCapture.Feedback")]
 impl Bridge {
     // An async pending call is an event channel, not a timer or a blocking KWin call.
     async fn next(
@@ -165,7 +165,7 @@ pub(super) fn run(connection: &Connection, directory: &Path, options: &str) -> R
     });
 
     let path = directory.join("feedback.qml");
-    let name = format!("t3-capture-feedback-{}", std::process::id());
+    let name = format!("oni-capture-feedback-{}", std::process::id());
     let bus = serde_json::to_string(
         connection
             .unique_name()
@@ -247,7 +247,7 @@ mod tests {
             &stranger,
             destination.as_str(),
             OBJECT,
-            "com.t3tools.KdeCapture.Feedback",
+            "dev.onicode.KdeCapture.Feedback",
         )
         .unwrap();
         let error = unrelated.call::<_, _, String>("Next", &()).unwrap_err();
@@ -266,7 +266,7 @@ mod tests {
             &f._server,
             destination.clone(),
             OBJECT,
-            "com.t3tools.KdeCapture.Feedback",
+            "dev.onicode.KdeCapture.Feedback",
         )
         .unwrap();
         // Event remains responsive while Next waits. No blocking the D-Bus executor.

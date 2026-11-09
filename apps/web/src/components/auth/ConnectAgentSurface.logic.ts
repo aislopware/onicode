@@ -2,7 +2,7 @@ import {
   type AuthMcpApprovalDetails,
   type AuthMcpClientAccess,
   isRuntimeModeAbove,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 export function resolveMcpAccess(
   access: AuthMcpClientAccess,

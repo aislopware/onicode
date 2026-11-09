@@ -1,16 +1,16 @@
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { visibleLinkedThreads } from "@t3tools/client-runtime/state/threads";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId, PullRequestRef, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
+import { visibleLinkedThreads } from "@onicode/client-runtime/state/threads";
+import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
+import type { EnvironmentId, PullRequestRef, ScopedThreadRef, ThreadId } from "@onicode/contracts";
 import { CheckIcon, MessageSquareIcon } from "lucide-react";
 import { useState } from "react";
-import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
+import { threadPullRequestLinkMode } from "@onicode/client-runtime/thread-pull-request-compatibility";
 import { usePullRequestLinking } from "~/hooks/usePullRequestLinking";
 
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { normalizeThreadPullRequestKey } from "@t3tools/client-runtime/thread-pull-requests";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
+import { normalizeThreadPullRequestKey } from "@onicode/client-runtime/thread-pull-requests";
 import {
   useAnyEnvironmentHiding,
   useEnvironmentThreadRefs,

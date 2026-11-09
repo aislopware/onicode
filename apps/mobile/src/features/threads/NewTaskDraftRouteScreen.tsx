@@ -13,7 +13,7 @@ import {
   isAtomCommandInterrupted,
   runAtomCommand,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useProjects } from "../../state/entities";
@@ -163,7 +163,7 @@ export function NewTaskDraftRouteScreen({ route }: StaticScreenProps<NewTaskDraf
   // Native-stack reads the provider's prevent state, which commits a render
   // after usePreventRemove updates its registry; the deferred thread selection
   // (and the failure goBack) must wait for that commit.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the branch checkout to its route once native-stack has committed the prevent-remove state
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- releases the branch checkout to its route once native-stack has committed the prevent-remove state
   useEffect(() => {
     if (checkoutKey === null || checkoutPending || removalBlocked) return;
     branchCheckouts.release(checkoutKey);

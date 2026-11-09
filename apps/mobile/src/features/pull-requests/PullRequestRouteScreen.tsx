@@ -39,7 +39,7 @@ import {
   pullRequestDiffInitialPosition,
 } from "./pullRequestDiffDebug";
 import { usePullRequestDiffHighlightFiles } from "./usePullRequestDiffHighlightFiles";
-import { isTestChangedFile } from "@t3tools/shared/changedFileKind";
+import { isTestChangedFile } from "@onicode/shared/changedFileKind";
 import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RegistryContext, useAtomRefresh, useAtomValue } from "@effect/atom-react";
@@ -48,7 +48,7 @@ import {
   type PullRequestDetail,
   type PullRequestListEntry,
   type PullRequestSummary,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { PullRequestOverviewLoading } from "./PullRequestOverviewLoading";
 import { copyPullRequestLink, sharePullRequestLink } from "./pullRequestLink";
 import { pullRequestStatus } from "./pullRequestStatus";
@@ -121,7 +121,7 @@ import { pullRequestFileJumpScope, subscribePullRequestFileJump } from "./pullRe
 import {
   capitalizeTerm,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@onicode/client-runtime/source-control-clients";
 
 const EMPTY_IDS: readonly string[] = [];
 
@@ -176,7 +176,7 @@ function PullRequestIdentity(props: {
         ) : (
           <View className="min-h-8 flex-row items-center gap-1.5">
             <SymbolView name={status.icon} size={14} tintColorClassName={status.tint} />
-            <Text className={`text-xs font-t3-medium ${status.text}`}>{status.label}</Text>
+            <Text className={`text-xs font-oni-medium ${status.text}`}>{status.label}</Text>
           </View>
         )}
         <PullRequestDiffStats additions={pr.additions ?? 0} deletions={pr.deletions ?? 0} compact />
@@ -188,12 +188,12 @@ function PullRequestIdentity(props: {
           <View className="h-3 w-12 rounded bg-subtle-strong" />
         )}
       </View>
-      <Text selectable className="text-xl font-t3-bold leading-7">
+      <Text selectable className="text-xl font-oni-bold leading-7">
         {pr.title}
       </Text>
       <View className="flex-row items-center gap-2">
         <PullRequestAvatar actor={pr.author ?? null} size={20} />
-        <Text className="min-w-0 flex-1 text-xs font-t3-medium" numberOfLines={1}>
+        <Text className="min-w-0 flex-1 text-xs font-oni-medium" numberOfLines={1}>
           {pr.author?.login ?? "Unknown author"}
         </Text>
         <Text className="shrink text-right text-2xs text-foreground-muted" numberOfLines={1}>
@@ -963,7 +963,7 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
   });
   // Subscribed for the whole screen, so a pick made while the diff is still loading is kept for
   // the first draw.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to pull request file jump requests for the screen's lifetime
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to pull request file jump requests for the screen's lifetime
   useEffect(() => subscribePullRequestFileJump(jumpScope, (path) => jumpToFile(path)), [jumpScope]);
   const { nativeReviewDiffStyle } = useAppearanceCodeSurface();
   const { themeAppearance, appearance, setCodeWordBreak } = useAppearancePreferences();
@@ -978,7 +978,7 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
     canHighlight: true,
   });
   const [NativeDiffView] = useState(() => resolveNativeReviewDiffView());
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests the next page of the paged diff query until the jump target file has loaded
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- requests the next page of the paged diff query until the jump target file has loaded
   useEffect(() => {
     if (!targetFile) loadMore();
   }, [targetFile, loadMore]);

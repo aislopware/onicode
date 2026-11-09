@@ -22,7 +22,7 @@ export async function publishSubscriptionUsage(snapshot: SubscriptionUsageSnapsh
   widget.updateSnapshot(snapshot);
   // Android lacks timelines; alarms re-render snapshots at expiry to mark readings stale.
   requireOptionalNativeModule<{ schedule: (name: string, deadlines: number[]) => void }>(
-    "T3WidgetExpiry",
+    "OniWidgetExpiry",
   )?.schedule(
     "SubscriptionUsage",
     snapshot.providers.map((provider) => provider.expiresAt).filter((at) => at > 0),

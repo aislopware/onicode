@@ -59,7 +59,7 @@
     "testflight": {
       "extends": "production",
       "env": {
-        "T3CODE_MOBILE_VERSION": "3.0.0"
+        "ONICODE_MOBILE_VERSION": "3.0.0"
       }
     },
     "production": {
@@ -67,7 +67,7 @@
       "env": {
         "APP_VARIANT": "production",
         "NODE_OPTIONS": "--max-old-space-size=4096",
-        "SOURCEMAP_FILE": "/tmp/t3code-ios-main.jsbundle.map"
+        "SOURCEMAP_FILE": "/tmp/onicode-ios-main.jsbundle.map"
       },
       "channel": "production",
       "environment": "production",

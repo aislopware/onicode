@@ -1,4 +1,4 @@
-import { DesktopCliCommandStateSchema } from "@t3tools/contracts";
+import { DesktopCliCommandStateSchema } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 

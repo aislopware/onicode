@@ -1,5 +1,5 @@
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { ProviderCredentialError } from "@t3tools/provider-core/server/errors";
+import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
+import { ProviderCredentialError } from "@onicode/provider-core/server/errors";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

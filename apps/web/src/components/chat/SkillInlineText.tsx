@@ -1,7 +1,7 @@
-import type { ScopedThreadRef, ServerProviderSkill } from "@t3tools/contracts";
-import { formatProviderSkillDisplayName } from "@t3tools/shared/inlineSkills";
+import type { ScopedThreadRef, ServerProviderSkill } from "@onicode/contracts";
+import { formatProviderSkillDisplayName } from "@onicode/shared/inlineSkills";
 import { Children, cloneElement, isValidElement, type ReactNode } from "react";
-import { matchInlineSkills } from "@t3tools/shared/inlineSkills";
+import { matchInlineSkills } from "@onicode/shared/inlineSkills";
 
 import { useRightPanelStore } from "~/rightPanelStore";
 import { SKILL_CHIP_ICON_SVG } from "../composerInlineChip";

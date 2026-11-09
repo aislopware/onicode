@@ -3,7 +3,7 @@ import {
   SettingsSecretValue,
   SourceControlProviderKind,
   TrimmedString,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
@@ -15,7 +15,7 @@ import {
   parseChangeRequestPath,
   parseCommitPath,
   projectChangeRequestHost,
-} from "@t3tools/source-control-core/shared/definition";
+} from "@onicode/source-control-core/shared/definition";
 import { icon } from "./icon.ts";
 
 const safeShellArgument = /^[A-Za-z0-9._/@+=,-]+$/;
@@ -105,7 +105,7 @@ export const definition = defineSourceControl({
     headRepositoryNameWithOwner &&
     repositoryName.test(headRepositoryNameWithOwner) &&
     safeShellArgument.test(headBranch)
-      ? `git clone --single-branch --branch ${headBranch} https://bitbucket.org/${headRepositoryNameWithOwner}.git t3code-pr-${number}`
+      ? `git clone --single-branch --branch ${headBranch} https://bitbucket.org/${headRepositoryNameWithOwner}.git onicode-pr-${number}`
       : null,
   authorProfileUrl: () => null,
   reviewSummaryRequired: () => false,

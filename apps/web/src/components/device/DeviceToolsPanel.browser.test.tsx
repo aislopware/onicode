@@ -1,4 +1,4 @@
-import type { DeviceSummary } from "@t3tools/contracts";
+import type { DeviceSummary } from "@onicode/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 

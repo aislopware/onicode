@@ -5,7 +5,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
 
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 import * as WorkspacePaths from "./WorkspacePaths.ts";
 
@@ -17,7 +17,7 @@ const layerTest = Layer.empty.pipe(
 const makeTempDir = Effect.fn("makeTempDir")(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   return yield* fileSystem.makeTempDirectoryScoped({
-    prefix: "t3code-project-paths-",
+    prefix: "onicode-project-paths-",
   });
 });
 

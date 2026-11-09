@@ -9,9 +9,9 @@ import {
   type ProcessExit,
   type SpawnedMspConnection,
 } from "@muse-code/sdk";
-import type { RuntimeMode } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import type { RuntimeMode } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { SpawnExecutableResolution } from "@onicode/shared/shell";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -157,7 +157,7 @@ export function museServeArgs(
 
 export function museInitializeParams(readOnly = false) {
   return {
-    clientInfo: { name: "t3_code", title: "T3 Code", version: "1" },
+    clientInfo: { name: "oni_code", title: "Onicode", version: "1" },
     capabilities: { requestedCapabilities: readOnly ? [] : ["sessionMcp"] },
   };
 }

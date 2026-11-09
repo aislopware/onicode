@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/ssh",
+  "name": "@onicode/ssh",
   "private": true,
   "type": "module",
   "exports": {
@@ -29,8 +29,8 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@onicode/contracts": "workspace:*",
+    "@onicode/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

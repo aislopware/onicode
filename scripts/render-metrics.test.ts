@@ -13,10 +13,10 @@ vi.mock("node:child_process", () => ({
   spawnSync: (
     _command: string,
     _args: string[],
-    options: { env: { T3CODE_RENDER_REPORT_DIR: string } },
+    options: { env: { ONICODE_RENDER_REPORT_DIR: string } },
   ) => {
     NodeFS.writeFileSync(
-      NodePath.join(options.env.T3CODE_RENDER_REPORT_DIR, "mount.json"),
+      NodePath.join(options.env.ONICODE_RENDER_REPORT_DIR, "mount.json"),
       JSON.stringify(mountReport),
     );
     return { status: 0 };
@@ -25,7 +25,7 @@ vi.mock("node:child_process", () => ({
 
 describe("runOnce", () => {
   it("collects the scenario reports when HOME has no .cache, then removes its report dir", () => {
-    const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-render-metrics-"));
+    const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-render-metrics-"));
     vi.stubEnv("HOME", home);
     vi.stubEnv("TMPDIR", home);
     vi.stubEnv("USERPROFILE", home);

@@ -1,4 +1,4 @@
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, MessageId, ThreadId } from "@onicode/contracts";
 import { expect, it } from "vite-plus/test";
 import { serializeAssistantCitation } from "./assistantCitations.ts";
 import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "./composerContextReferences.ts";
@@ -26,7 +26,7 @@ it("excludes structured context chips without joining text across them", () => {
     searchableMessageSegments({
       role: "user",
       streaming: false,
-      text: "before[hidden label](t3-context://v1/terminal/terminal_1)after",
+      text: "before[hidden label](oni-context://v1/terminal/terminal_1)after",
       context: { version: 1, records: [] },
     }),
   ).toEqual(["before", "after"]);

@@ -1,5 +1,5 @@
-import { DesktopThemeSchema, type DesktopTheme } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { DesktopThemeSchema, type DesktopTheme } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -29,7 +29,7 @@ export class ElectronTheme extends Context.Service<
     readonly setSource: (theme: DesktopTheme) => Effect.Effect<void, ElectronThemeSetSourceError>;
     readonly onUpdated: (listener: () => void) => Effect.Effect<void, never, Scope.Scope>;
   }
->()("@t3tools/desktop/electron/ElectronTheme") {}
+>()("@onicode/desktop/electron/ElectronTheme") {}
 
 type WatchSystemColorScheme = (onChange: (scheme: LinuxColorScheme) => void) => {
   readonly stop: () => void;

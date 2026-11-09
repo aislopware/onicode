@@ -2,8 +2,8 @@ import {
   isModifierPairShortcut,
   type SnapShotModifier,
   type SnapShotShortcut,
-} from "@t3tools/contracts";
-import { parseKeybindingShortcut } from "@t3tools/shared/keybindings";
+} from "@onicode/contracts";
+import { parseKeybindingShortcut } from "@onicode/shared/keybindings";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { getDesktopSnapShotBridge } from "../../lib/desktopSnapShot";
 import {
@@ -73,7 +73,7 @@ export function useSnapShotShortcutRecorder({
       onError(error instanceof Error ? error.message : "Could not start shortcut recording.");
     }
   };
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the desktop bridge's SnapShot shortcut suppression on unmount
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- releases the desktop bridge's SnapShot shortcut suppression on unmount
   useEffect(
     () => () => {
       requests.clear();

@@ -6,17 +6,17 @@ import {
   type OrchestrationV2TurnItem,
   type Project,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   RelayApi,
   type RelayAgentActivityPublishProofPayload,
   type RelayAgentActivityState,
-} from "@t3tools/contracts/relay";
-import { projectThreadAwarenessV2 } from "@t3tools/shared/agentAwareness";
-import { turnItemUpdateCanEndBackgroundWork } from "@t3tools/shared/orchestrationV2PendingBackgroundWork";
-import { makeDrainableWorker } from "@t3tools/shared/DrainableWorker";
-import { withRelayClientTracing } from "@t3tools/shared/relayTracing";
-import { normalizeRelayIssuer, RELAY_ACTIVITY_PUBLISH_TYP } from "@t3tools/shared/relayJwt";
+} from "@onicode/contracts/relay";
+import { projectThreadAwarenessV2 } from "@onicode/shared/agentAwareness";
+import { turnItemUpdateCanEndBackgroundWork } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
+import { makeDrainableWorker } from "@onicode/shared/DrainableWorker";
+import { withRelayClientTracing } from "@onicode/shared/relayTracing";
+import { normalizeRelayIssuer, RELAY_ACTIVITY_PUBLISH_TYP } from "@onicode/shared/relayJwt";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -56,7 +56,7 @@ export class AgentAwarenessRelay extends Context.Service<
     readonly requestCatchUp: () => Effect.Effect<void>;
     readonly start: () => Effect.Effect<void, never, Scope.Scope>;
   }
->()("t3/relay/AgentAwarenessRelay") {}
+>()("onicode/relay/AgentAwarenessRelay") {}
 
 function eventThreadId(event: OrchestrationV2DomainEvent): ThreadId {
   return event.threadId;
@@ -253,7 +253,7 @@ const makePublishProof = Effect.fn("makePublishProof")(function* (input: {
   const now = yield* DateTime.now;
   const expiresAt = DateTime.add(now, { minutes: 5 });
   const payload = {
-    iss: `t3-env:${input.environmentId}`,
+    iss: `oni-env:${input.environmentId}`,
     aud: normalizeRelayIssuer(input.relayIssuer),
     sub: input.environmentId,
     jti: input.jti,

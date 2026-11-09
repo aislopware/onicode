@@ -1,5 +1,5 @@
-import { findSearchTokenRanges, splitSearchText } from "@t3tools/shared/paletteSearch";
-import type { EnvironmentThreadSearchMatch } from "@t3tools/client-runtime/state/thread-search";
+import { findSearchTokenRanges, splitSearchText } from "@onicode/shared/paletteSearch";
+import type { EnvironmentThreadSearchMatch } from "@onicode/client-runtime/state/thread-search";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { cn } from "../../lib/cn";
@@ -30,7 +30,7 @@ export function ThreadSearchMatchExcerpt(props: {
     >
       <Text
         className={cn(
-          props.compact ? "text-sm font-t3-medium" : "text-xs font-t3-medium",
+          props.compact ? "text-sm font-oni-medium" : "text-xs font-oni-medium",
           props.selected
             ? "text-thread-selected-foreground"
             : isUser
@@ -46,7 +46,7 @@ export function ThreadSearchMatchExcerpt(props: {
         <Text
           className={cn(
             props.compact ? "text-sm" : "text-xs",
-            part.highlighted && "font-t3-bold",
+            part.highlighted && "font-oni-bold",
             props.selected
               ? "text-thread-selected-foreground"
               : part.highlighted

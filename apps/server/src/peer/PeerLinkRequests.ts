@@ -21,14 +21,14 @@ import {
   type RunId,
   type ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as KeyedLock from "@t3tools/shared/KeyedLock";
+import * as KeyedLock from "@onicode/shared/KeyedLock";
 
 import * as McpInvocationContext from "../mcp/McpInvocationContext.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
@@ -79,7 +79,7 @@ export class PeerLinkRequests extends Context.Service<
       input: PeerLinkRequestAnswerInput,
     ) => Effect.Effect<void, PeerLinkRequestError>;
   }
->()("t3/peer/PeerLinkRequests") {}
+>()("onicode/peer/PeerLinkRequests") {}
 
 const make = Effect.gen(function* () {
   const threadManagement = yield* ThreadManagementService.ThreadManagementService;
@@ -177,7 +177,7 @@ const make = Effect.gen(function* () {
       // The card is shown in, and answered from, the caller's own thread.
       const threadScope = yield* McpInvocationContext.requireThreadScope(
         scope,
-        "t3_environment_link",
+        "oni_environment_link",
       );
       const threadId = threadScope.thread.threadId;
       if (!(yield* peerLinks.enabled)) {
@@ -443,7 +443,7 @@ const outcomeNotice = (
     }
     case "failed":
       return {
-        text: `Linking ${target} failed: ${outcome.failure ?? "the other environment refused"}. Call t3_environment_link again if the user still wants it.`,
+        text: `Linking ${target} failed: ${outcome.failure ?? "the other environment refused"}. Call oni_environment_link again if the user still wants it.`,
         notification: {
           source: { kind: "background_task" },
           outcome: "failed",

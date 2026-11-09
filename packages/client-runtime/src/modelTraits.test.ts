@@ -1,4 +1,4 @@
-import { ProviderDriverKind, type ProviderOptionDescriptor } from "@t3tools/contracts";
+import { ProviderDriverKind, type ProviderOptionDescriptor } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { buildTraitsTriggerDisplay, getDescriptorStringValue } from "./modelTraits.ts";

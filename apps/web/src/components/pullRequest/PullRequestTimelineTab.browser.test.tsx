@@ -3,7 +3,7 @@ import {
   ProjectId,
   SourceControlProviderKind,
   type PullRequestDetailView,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { expect, it } from "vite-plus/test";
 
 import { render } from "../../../test/render";

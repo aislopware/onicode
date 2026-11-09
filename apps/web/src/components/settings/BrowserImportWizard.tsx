@@ -1,7 +1,7 @@
 import { PermissionChecklist, PermissionContinueButton } from "../permissions/PermissionChecklist";
 import { usePermissionStatus } from "../permissions/usePermissionStatus";
-import type { BrowserImportSource } from "@t3tools/contracts";
-import { BROWSER_IMPORT_FAILURE_COPY } from "@t3tools/contracts";
+import type { BrowserImportSource } from "@onicode/contracts";
+import { BROWSER_IMPORT_FAILURE_COPY } from "@onicode/contracts";
 import { ArrowDownIcon, ArrowRightIcon, CheckIcon, HardDriveIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
@@ -263,9 +263,9 @@ function FullDiskAccessStep({
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Let T3 Code read {source.name}&rsquo;s cookies</DialogTitle>
+        <DialogTitle>Let Onicode read {source.name}&rsquo;s cookies</DialogTitle>
         <DialogDescription>
-          To import cookies from {source.name}, T3 Code needs Full Disk Access. Turn it on in System
+          To import cookies from {source.name}, Onicode needs Full Disk Access. Turn it on in System
           Settings, then come back to finish the import. You can revoke it again once the import is
           done.
         </DialogDescription>
@@ -297,8 +297,8 @@ function FullDiskAccessStep({
         {!permission.isReady(["fullDiskAccess"]) ? (
           <p className="mt-3 text-xs text-muted-foreground">
             {stillRequired
-              ? "Access is still required. Quit and reopen T3 Code if you just allowed it, then retry the import."
-              : "If access doesn't update after you allow it, quit and reopen T3 Code, then retry the import."}
+              ? "Access is still required. Quit and reopen Onicode if you just allowed it, then retry the import."
+              : "If access doesn't update after you allow it, quit and reopen Onicode, then retry the import."}
           </p>
         ) : null}
       </DialogPanel>

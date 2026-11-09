@@ -1,5 +1,5 @@
-import type { RunId, ScopedThreadRef, ThreadLinkedPullRequest } from "@t3tools/contracts";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import type { RunId, ScopedThreadRef, ThreadLinkedPullRequest } from "@onicode/contracts";
+import { scopedThreadKey } from "@onicode/client-runtime/environment";
 import { useEffect, useRef } from "react";
 import { useDiffPanelStore } from "../diffPanelStore";
 import {
@@ -69,7 +69,7 @@ export function useProactivePanels(input: {
   > | null>(null);
   const threadKey = threadRef ? scopedThreadKey(threadRef) : null;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens proactive surfaces in the right panel store as runs and linked PRs change
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- opens proactive surfaces in the right panel store as runs and linked PRs change
   useEffect(() => {
     if (threadKey === null || threadRef === null) {
       proactivePanelObservationRef.current = null;

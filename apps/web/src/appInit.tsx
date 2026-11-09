@@ -1,5 +1,5 @@
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { ClientSettings } from "@t3tools/contracts/settings";
+import { scopedThreadKey, scopeThreadRef } from "@onicode/client-runtime/environment";
+import type { ClientSettings } from "@onicode/contracts/settings";
 import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 

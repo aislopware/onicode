@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/provider-core",
+  "name": "@onicode/provider-core",
   "private": true,
   "type": "module",
   "exports": {
@@ -193,8 +193,8 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@onicode/contracts": "workspace:*",
+    "@onicode/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

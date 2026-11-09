@@ -1,5 +1,5 @@
 import { assert } from "@effect/vitest";
-import type { ProviderReplayTranscript } from "@t3tools/contracts";
+import type { ProviderReplayTranscript } from "@onicode/contracts";
 
 import type { OrchestratorV2ScenarioResult } from "../../OrchestratorScenario.ts";
 import {
@@ -28,9 +28,9 @@ export function assertKiroCompactionOutput(
     outbound.filter((frame) => field(frame, "method") === "_kiro/session/compact"),
     1,
   );
-  // Compaction drops T3's instructions from Kiro's context, so the next prompt carries them again.
+  // Compaction drops Onicode's instructions from Kiro's context, so the next prompt carries them again.
   assert.deepEqual(
-    prompts.map((frame) => promptText(frame).startsWith("<t3_code_instructions>")),
+    prompts.map((frame) => promptText(frame).startsWith("<oni_code_instructions>")),
     [true, true],
   );
 

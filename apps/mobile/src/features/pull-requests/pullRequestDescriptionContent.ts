@@ -1,4 +1,4 @@
-import type { PullRequestBodySegment } from "@t3tools/client-runtime/pull-request-markdown";
+import type { PullRequestBodySegment } from "@onicode/client-runtime/pull-request-markdown";
 import type { MarkdownNode } from "../../lib/markdownDocument";
 
 function isWebUrl(url: string): boolean {

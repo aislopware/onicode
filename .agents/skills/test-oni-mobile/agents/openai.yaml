@@ -1,0 +1,4 @@
+interface:
+  display_name: "Test Onicode Mobile"
+  short_description: "Test iOS and Android in Onicode's Device panel"
+  default_prompt: "Use $test-oni-mobile to verify the affected native mobile flow through Onicode's Device panel and AgentDevice."

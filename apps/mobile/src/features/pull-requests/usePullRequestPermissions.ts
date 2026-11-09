@@ -3,8 +3,8 @@ import {
   canEditPullRequestChangeRequest,
   canEditPullRequestComment,
   canEditPullRequestMaintainerEdits,
-} from "@t3tools/client-runtime/pull-request-editing";
-import type { PullRequestComment, PullRequestDetail } from "@t3tools/contracts";
+} from "@onicode/client-runtime/pull-request-editing";
+import type { PullRequestComment, PullRequestDetail } from "@onicode/contracts";
 import { usePullRequestConnected } from "./usePullRequestConnected";
 import { composerPullRequests } from "../../state/pull-requests";
 import { pullRequestTarget, type PullRequestParams } from "./usePullRequestDiff";

@@ -1,6 +1,6 @@
 import * as Dialog from "./ui/Dialog";
 import { requireNativeModule } from "expo";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useEffectEvent, useId } from "react";
 
@@ -31,7 +31,7 @@ const NativeControls = requireNativeModule<{
     event: "videoPlaybackChange",
     listener: (event: { identifier: string; isPlaying: boolean }) => void,
   ): { remove(): void };
-}>("T3NativeControls");
+}>("OniNativeControls");
 
 function NativeVideoPreview(props: {
   readonly source: VideoPreviewSource;
@@ -65,7 +65,7 @@ function NativeVideoPreview(props: {
     }
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- presents the native fullscreen video and owns its audio session and file lease until cleanup
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- presents the native fullscreen video and owns its audio session and file lease until cleanup
   useEffect(() => {
     const controller = new AbortController();
     let token: ReturnType<typeof acquireAudioSession> | null = null;

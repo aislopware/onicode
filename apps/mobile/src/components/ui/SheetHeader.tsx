@@ -179,7 +179,7 @@ function InlineSheetHeader(props: SheetHeaderProps) {
     <View className="flex-row items-center gap-3 px-4 pt-3 pb-3">
       {close}
       <View className="min-w-0 flex-1 gap-1">
-        <AppText numberOfLines={1} className="text-base font-t3-bold text-foreground">
+        <AppText numberOfLines={1} className="text-base font-oni-bold text-foreground">
           {props.title}
         </AppText>
         {props.subtitle ? (

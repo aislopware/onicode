@@ -25,7 +25,7 @@ import {
   ProviderDriverKind,
   type OrchestrationV2ThreadStreamItem,
   type OrchestrationV2ShellStreamItem,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -455,8 +455,8 @@ it.live("reports V2 thread HTTP and WebSocket transfer budgets", () =>
     const fs = yield* FileSystem.FileSystem;
     const report = formatTransferBudgetReport(runs);
     const outputPaths = yield* Config.all({
-      report: Config.String("T3CODE_TRANSFER_BUDGET_REPORT_PATH").pipe(Config.withDefault("")),
-      result: Config.String("T3CODE_TRANSFER_BUDGET_RESULT_PATH").pipe(Config.withDefault("")),
+      report: Config.String("ONICODE_TRANSFER_BUDGET_REPORT_PATH").pipe(Config.withDefault("")),
+      result: Config.String("ONICODE_TRANSFER_BUDGET_RESULT_PATH").pipe(Config.withDefault("")),
     });
     for (const [path, contents] of [
       [outputPaths.report, report],

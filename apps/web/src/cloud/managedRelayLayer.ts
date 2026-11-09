@@ -1,5 +1,5 @@
-import { DpopProof, ManagedRelay } from "@t3tools/client-runtime/relay";
-import { RelayWebClientId } from "@t3tools/contracts/relay";
+import { DpopProof, ManagedRelay } from "@onicode/client-runtime/relay";
+import { RelayWebClientId } from "@onicode/contracts/relay";
 import * as Layer from "effect/Layer";
 
 import { loadOrCreateProofKey } from "./dpop";

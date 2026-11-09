@@ -6,7 +6,7 @@ import {
   RunId,
   ThreadId,
   type OrchestrationV2Subagent,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 
 import { deriveThreadTurnSubagents, resolveSubagentPillSegment } from "./threadSubagents.ts";

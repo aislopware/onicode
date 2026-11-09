@@ -5,26 +5,26 @@ import {
   type PartialState,
   type StackActionType,
 } from "@react-navigation/native";
-import { availableScratchWorkspaceRoot } from "@t3tools/client-runtime/operations/projects";
+import { availableScratchWorkspaceRoot } from "@onicode/client-runtime/operations/projects";
 import {
   findPromptLinkProjects,
   findPromptLinkPullRequestThread,
   resolvePromptLinkModelSelection,
-} from "@t3tools/client-runtime/prompt-links";
+} from "@onicode/client-runtime/prompt-links";
 import {
   executeAtomQuery,
   isAtomCommandInterrupted,
   runAtomCommand,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+} from "@onicode/client-runtime/state/runtime";
+import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
+import type { EnvironmentId, ThreadId } from "@onicode/contracts";
 import {
   parseNewThreadLink,
   type LinkedPrompt,
   type PromptLinkPullRequest,
   type PromptLinkRepository,
-} from "@t3tools/shared/promptLinks";
+} from "@onicode/shared/promptLinks";
 import { Atom, type AsyncResult } from "effect/reactivity";
 
 import { findLinkedRoute, findStackRoute, updateLinkedRoute } from "../../lib/appLinking";

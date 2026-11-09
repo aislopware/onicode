@@ -82,7 +82,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("replayMarkers", 
       Effect.provide(
         ServerSecretStore.layer.pipe(
           Layer.provideMerge(
-            ServerConfig.layerTest(process.cwd(), { prefix: "t3-replay-markers-test-" }),
+            ServerConfig.layerTest(process.cwd(), { prefix: "oni-replay-markers-test-" }),
           ),
         ),
       ),

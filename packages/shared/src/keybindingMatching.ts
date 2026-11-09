@@ -1,4 +1,4 @@
-import type { KeybindingShortcut } from "@t3tools/contracts";
+import type { KeybindingShortcut } from "@onicode/contracts";
 
 // Matching only: the desktop preview guest bundles this file without the rest of the
 // keybindings module, so it stays free of parsing, defaults, and contracts runtime code.

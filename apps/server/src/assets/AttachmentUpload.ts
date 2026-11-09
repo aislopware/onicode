@@ -5,8 +5,8 @@ import {
   ATTACHMENT_UPLOAD_URL_TTL_MS,
   type AttachmentCreateUploadUrlInput,
   AttachmentUploadSigningKeyError,
-} from "@t3tools/contracts";
-import { isSvgAttachment } from "@t3tools/shared/image";
+} from "@onicode/contracts";
+import { isSvgAttachment } from "@onicode/shared/image";
 import * as Clock from "effect/Clock";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";

@@ -1,5 +1,5 @@
-import { PrimaryConnectionTarget } from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
+import { PrimaryConnectionTarget } from "@onicode/client-runtime/connection";
+import { EnvironmentId } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -111,13 +111,13 @@ it("enables the chosen provider only after a successful setup and keeps its gran
           await expect.element(dialog).not.toBeInTheDocument();
           await expect.element(destination).toHaveTextContent("OpenAI via Laptop");
           expect(writes).toEqual([{ key: { provider: "work", reference: "op://Work/Voice/key" } }]);
-          const grant = window.localStorage.getItem("t3code:voice-audio-grant:v1");
+          const grant = window.localStorage.getItem("onicode:voice-audio-grant:v1");
           await screen.getByRole("button", { name: "Manage key" }).click();
           await dialog.getByLabelText("OpenAI API key", { exact: true }).fill("replacement");
           await userEvent.keyboard("{Enter}");
           await expect.element(dialog).not.toBeInTheDocument();
           expect(writes.at(-1)).toEqual({ key: "replacement" });
-          expect(window.localStorage.getItem("t3code:voice-audio-grant:v1")).toBe(grant);
+          expect(window.localStorage.getItem("onicode:voice-audio-grant:v1")).toBe(grant);
           await destination.click();
           await page.getByRole("option", { name: "Grok Voice Transcribe via Laptop" }).click();
           await dialog.getByRole("button", { name: "Use Grok Voice Transcribe" }).click();
@@ -170,7 +170,7 @@ it("OpenRouter needs an exact model, and changing it writes no credential", asyn
       });
     return fetch(request, init);
   });
-  const grantKey = "t3code:voice-audio-grant:v1";
+  const grantKey = "onicode:voice-audio-grant:v1";
   const grantModel = () => {
     const raw = window.localStorage.getItem(grantKey);
     const parsed = raw ? (JSON.parse(raw) as { destination?: { model?: string } }) : null;

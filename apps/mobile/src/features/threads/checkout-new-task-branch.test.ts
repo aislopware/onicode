@@ -3,8 +3,8 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
-import { EnvironmentId, VcsListRefsInput } from "@t3tools/contracts";
-import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { EnvironmentId, VcsListRefsInput } from "@onicode/contracts";
+import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import * as Schema from "effect/Schema";
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
@@ -19,7 +19,7 @@ const environmentId = EnvironmentId.make("branch-test-environment");
 
 beforeEach(async () => {
   directory = await NodeFSP.realpath(
-    await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-branch-selection-")),
+    await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "oni-branch-selection-")),
   );
   cwd = NodePath.join(directory, "project");
   await exec("git", ["init", "-b", "main", cwd]);

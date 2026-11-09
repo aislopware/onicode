@@ -360,7 +360,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "t3-hyprland-snap-shot"
+name = "oni-hyprland-snap-shot"
 version = "0.1.0"
 dependencies = [
  "bitflags",

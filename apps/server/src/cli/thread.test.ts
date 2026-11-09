@@ -1,9 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { AuthSessionId, ProjectId, RunId, ThreadId } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as NetService from "@t3tools/shared/Net";
+import { AuthSessionId, ProjectId, RunId, ThreadId } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import * as NetService from "@onicode/shared/Net";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -53,7 +53,7 @@ it.effect(
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const root = yield* fs
-        .makeTempDirectoryScoped({ prefix: "t3-thread-project-path-" })
+        .makeTempDirectoryScoped({ prefix: "oni-thread-project-path-" })
         .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
       const home = path.join(root, "home");
       const cwd = path.join(root, "current");
@@ -80,9 +80,9 @@ it.effect(
         Effect.succeed({
           call: (tool, args) => {
             switch (tool) {
-              case "t3_project_list":
+              case "oni_project_list":
                 return Effect.succeed({ structuredContent: { projects, nextCursor: null } });
-              case "t3_thread_launch":
+              case "oni_thread_launch":
                 return Effect.succeed({
                   structuredContent: { threadId, projectId: args.projectId, runId: null },
                 });
@@ -128,7 +128,7 @@ it.effect(
           NodeServices.layer,
           NodeCrypto.layer,
           NetService.layer,
-          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_PORT: "3773" } })),
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { ONICODE_PORT: "3773" } })),
         ),
       ),
     ),
@@ -149,18 +149,18 @@ it.effect("--wait follows the sent run to its continuation's terminal status", (
   Effect.gen(function* () {
     const continuation = RunId.make("run-2");
     const { tools, calls } = scriptedTools({
-      t3_thread_wait: [
+      oni_thread_wait: [
         { threadId, runId, status: "running", timedOut: true },
         { threadId, runId: continuation, status: "failed", timedOut: false },
       ],
-      t3_thread_read: [{ thread: { pendingRequestCount: 0 } }],
+      oni_thread_read: [{ thread: { pendingRequestCount: 0 } }],
     });
 
     const outcome = yield* waitForRun(tools, threadId, runId);
 
     assert.deepStrictEqual(outcome, { type: "ended", runId: continuation, status: "failed" });
     assert.deepStrictEqual(
-      calls.filter((entry) => entry.tool === "t3_thread_wait").map((entry) => entry.args),
+      calls.filter((entry) => entry.tool === "oni_thread_wait").map((entry) => entry.args),
       [
         { threadId, runId, timeoutMs: 15_000 },
         { threadId, runId, timeoutMs: 15_000 },
@@ -172,11 +172,11 @@ it.effect("--wait follows the sent run to its continuation's terminal status", (
 it.effect("--wait stops when the thread waits for an answer instead of polling forever", () =>
   Effect.gen(function* () {
     const { tools } = scriptedTools({
-      t3_thread_wait: [
+      oni_thread_wait: [
         { threadId, runId, status: "queued", timedOut: true },
         { threadId, runId, status: "queued", timedOut: true },
       ],
-      t3_thread_read: [{ thread: { pendingRequestCount: 1 } }],
+      oni_thread_read: [{ thread: { pendingRequestCount: 1 } }],
     });
 
     assert.deepStrictEqual(yield* waitForRun(tools, threadId, runId), { type: "needs_input" });
@@ -186,11 +186,11 @@ it.effect("--wait stops when the thread waits for an answer instead of polling f
 it.effect("--wait reports its run's result when a later run is the one waiting", () =>
   Effect.gen(function* () {
     const { tools } = scriptedTools({
-      t3_thread_wait: [
+      oni_thread_wait: [
         { threadId, runId, status: "running", timedOut: true },
         { threadId, runId, status: "completed", timedOut: false },
       ],
-      t3_thread_read: [{ thread: { pendingRequestCount: 1 } }],
+      oni_thread_read: [{ thread: { pendingRequestCount: 1 } }],
     });
 
     assert.deepStrictEqual(yield* waitForRun(tools, threadId, runId), {
@@ -201,7 +201,7 @@ it.effect("--wait reports its run's result when a later run is the one waiting",
   }),
 );
 
-/** Serves t3_thread_read pages the way the server does: positions count every item. */
+/** Serves oni_thread_read pages the way the server does: positions count every item. */
 const timelineTools = (types: ReadonlyArray<string>) => {
   const items = types.map((type, position) => ({ position, itemId: `item-${position}`, type }));
   const served: Array<number> = [];

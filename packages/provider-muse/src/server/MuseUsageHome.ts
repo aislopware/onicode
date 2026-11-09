@@ -15,7 +15,7 @@ export class MuseUsageHome extends Context.Service<
       readonly environment: NodeJS.ProcessEnv;
     }) => Effect.Effect<string | undefined>;
   }
->()("@t3tools/provider-muse/server/MuseUsageHome") {}
+>()("@onicode/provider-muse/server/MuseUsageHome") {}
 
 const make = Effect.gen(function* () {
   const cache = yield* Cache.makeWith(

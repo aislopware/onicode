@@ -1,12 +1,12 @@
 import { pasteTextToFocusComposer, shouldRedirectInputToComposer } from "./composerFocusRedirect";
 import { readPastedComposerContext } from "../composerInlineTokenPaste";
-import { isPasteAsTextShortcut } from "@t3tools/client-runtime/text-paste";
+import { isPasteAsTextShortcut } from "@onicode/client-runtime/text-paste";
 import { useEffect, useRef } from "react";
 import { isMacPlatform } from "../../lib/utils";
 import { isCommandPaletteOpen } from "../../commandPaletteBus";
 import { getTerminalFocusOwner } from "../../lib/terminalFocus";
 import { isInSideChatPane } from "../../lib/sideChatPane";
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@onicode/contracts";
 import type { ComposerHandleRef } from "../../composerHandleContext";
 /**
  * Paste-to-focus: the resting composer blurs on a click into the timeline, so a paste that
@@ -17,7 +17,7 @@ export function usePasteToFocusComposer(
   composerRef: ComposerHandleRef,
 ) {
   const pasteAsTextShortcutUntilRef = useRef(0);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches window keydown and paste capture listeners that route stray pastes into the composer
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- attaches window keydown and paste capture listeners that route stray pastes into the composer
   useEffect(() => {
     if (!activeThreadId) return;
     const keyHandler = (event: KeyboardEvent) => {

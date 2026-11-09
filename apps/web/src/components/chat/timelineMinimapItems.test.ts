@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import { MessageId } from "@t3tools/contracts";
-import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@t3tools/shared/composerContextReferences";
+import { MessageId } from "@onicode/contracts";
+import { ATTACHMENT_ONLY_BOOTSTRAP_PROMPT } from "@onicode/shared/composerContextReferences";
 
 import { deriveTimelineMinimapItems, resolveTimelineMinimapPreview } from "./timelineMinimapItems";
 
@@ -41,7 +41,7 @@ describe("resolveTimelineMinimapPreview", () => {
       rowIndex: 0,
       userText: null,
       assistantText:
-        "Started <t3-thread://v2/env-1/thread-1> and [Fix CI](t3-thread://v2/env-1/t2).",
+        "Started <oni-thread://v2/env-1/thread-1> and [Fix CI](oni-thread://v2/env-1/t2).",
     });
     expect(preview?.assistantText).toBe("Started a thread and Fix CI.");
   });

@@ -102,7 +102,7 @@ export function ComponentCatalogScreen() {
         {page === "controls" ? (
           <>
             <View className="gap-3">
-              <AppText className="text-lg font-t3-semibold">Lists and selection</AppText>
+              <AppText className="text-lg font-oni-semibold">Lists and selection</AppText>
               <ListSection>
                 <View className="p-4">
                   <SegmentedControl
@@ -149,7 +149,7 @@ export function ComponentCatalogScreen() {
             </View>
             <View className="gap-3">
               <NativeAppBarExample />
-              <AppText className="text-lg font-t3-semibold">Buttons</AppText>
+              <AppText className="text-lg font-oni-semibold">Buttons</AppText>
               <View className="flex-row flex-wrap gap-2">
                 <Button label="Primary" tone="primary" onPress={announceAction} />
                 <Button label="Secondary" onPress={announceAction} />
@@ -170,7 +170,7 @@ export function ComponentCatalogScreen() {
         ) : null}
         {page === "forms" ? (
           <View className="gap-3">
-            <AppText className="text-lg font-t3-semibold">Forms</AppText>
+            <AppText className="text-lg font-oni-semibold">Forms</AppText>
             <AppTextInput
               accessibilityLabel="Example name"
               placeholder="Name"
@@ -214,7 +214,7 @@ export function ComponentCatalogScreen() {
         ) : null}
         {page === "feedback" ? (
           <View className="gap-3">
-            <AppText className="text-lg font-t3-semibold">Feedback and presentation</AppText>
+            <AppText className="text-lg font-oni-semibold">Feedback and presentation</AppText>
             <Notice message="This action could not finish. Try again." tone="danger" />
             <Button label="Show notice" onPress={announceAction} />
             <View className="flex-row flex-wrap gap-2">

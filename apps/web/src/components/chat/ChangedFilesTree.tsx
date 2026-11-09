@@ -1,5 +1,5 @@
 import { useSyncLayout } from "@legendapp/list/react";
-import { type OrchestrationV2CheckpointFileTotals, type RunId } from "@t3tools/contracts";
+import { type OrchestrationV2CheckpointFileTotals, type RunId } from "@onicode/contracts";
 import { type MouseEvent, type ReactNode, memo, useLayoutEffect, useRef, useState } from "react";
 import { type TurnDiffFileChange } from "../../types";
 import { buildTurnDiffTree, type TurnDiffTreeNode } from "../../lib/turnDiffTree";
@@ -281,7 +281,7 @@ function ChangedFilesRows({
   const [range, setRange] = useState({ start: 0, end: 40, rowHeight: 28 });
   const [focusedPath, setFocusedPath] = useState<string | null>(null);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- observes scroll, window resize and ancestor resizes to compute the virtualized row range
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- observes scroll, window resize and ancestor resizes to compute the virtualized row range
   useLayoutEffect(() => {
     const container = containerRef.current;
     const rowSize = rowSizeRef.current;

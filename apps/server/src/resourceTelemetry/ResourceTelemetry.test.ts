@@ -2,7 +2,7 @@ import type {
   DesktopHostTelemetrySnapshot,
   ResourceMonitorProcessSample,
   ResourceMonitorSnapshotEvent,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -82,8 +82,8 @@ function nativeSnapshot(input: {
       pid: MONITOR_PID,
       ppid: SERVER_PID,
       startTimeMs: 400,
-      name: "t3-resource-monitor",
-      command: "t3-resource-monitor",
+      name: "oni-resource-monitor",
+      command: "oni-resource-monitor",
       cpuTimeMs: input.sequence * 5,
     }),
   ];

@@ -1,6 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -15,7 +15,7 @@ describe("userFacingDispatchErrorMessage", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-database-error-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-database-error-" });
       const cause = yield* Effect.void.pipe(
         Effect.provide(
           NodeSqliteClient.layer({ filename: path.join(directory, "missing", "state.sqlite") }),

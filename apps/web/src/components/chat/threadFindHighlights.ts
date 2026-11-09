@@ -1,9 +1,9 @@
-import { findThreadSearchOccurrences } from "@t3tools/shared/threadSearch";
+import { findThreadSearchOccurrences } from "@onicode/shared/threadSearch";
 import { useEffect, useEffectEvent, useRef } from "react";
-import { THREAD_FIND_BLOCK_TAGS } from "@t3tools/shared/threadFindText";
+import { THREAD_FIND_BLOCK_TAGS } from "@onicode/shared/threadFindText";
 
-const THREAD_FIND_HIGHLIGHT_NAME = "t3-thread-find";
-const THREAD_FIND_ACTIVE_HIGHLIGHT_NAME = "t3-thread-find-active";
+const THREAD_FIND_HIGHLIGHT_NAME = "oni-thread-find";
+const THREAD_FIND_ACTIVE_HIGHLIGHT_NAME = "oni-thread-find-active";
 
 const THREAD_FIND_TEXT_SELECTOR = "[data-thread-find-text]";
 const THREAD_FIND_IGNORE_SELECTOR = "[data-thread-find-ignore]";
@@ -122,7 +122,7 @@ export function useThreadFindHighlights(input: {
   // The observer repaints with whichever match is selected when text changes.
   const readSelection = useEffectEvent(() => ({ activeRowId, activeOccurrence, onActiveRange }));
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- paints CSS Highlight ranges for the query, repainting on DOM mutations, and clears them on cleanup
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- paints CSS Highlight ranges for the query, repainting on DOM mutations, and clears them on cleanup
   useEffect(() => {
     if (typeof CSS === "undefined" || !CSS.highlights || typeof Highlight === "undefined") {
       readSelection().onActiveRange(null);
@@ -209,7 +209,7 @@ export function useThreadFindHighlights(input: {
 
   // onActiveRange is read at paint time: its identity follows the caller's
   // layout inputs, and repainting the active highlight for those is wasted work.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- repaints the active CSS Highlight range when the selected match changes
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- repaints the active CSS Highlight range when the selected match changes
   useEffect(() => {
     paintRef.current?.(rangesRef.current, {
       activeRowId,

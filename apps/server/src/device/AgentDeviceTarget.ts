@@ -1,4 +1,4 @@
-import { DeviceOperationError } from "@t3tools/contracts";
+import { DeviceOperationError } from "@onicode/contracts";
 import * as Digest from "effect/crypto/Digest";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -43,7 +43,7 @@ export const agentDeviceConfigPath = (
   );
 
 export const agentDeviceSession = (threadId: string, hostId: string, deviceId: string) =>
-  key(JSON.stringify([threadId, hostId, deviceId])).pipe(Effect.map((hash) => `t3-${hash}`));
+  key(JSON.stringify([threadId, hostId, deviceId])).pipe(Effect.map((hash) => `oni-${hash}`));
 
 export const writeAgentDeviceConfig = Effect.fn("AgentDeviceTarget.writeConfig")(function* (
   file: string,

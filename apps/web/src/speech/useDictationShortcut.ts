@@ -1,5 +1,5 @@
-import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
-import type { ResolvedKeybindingsConfig } from "@t3tools/contracts";
+import type { VoiceInputState } from "@onicode/client-runtime/voice-input";
+import type { ResolvedKeybindingsConfig } from "@onicode/contracts";
 import { useEffect, useRef, type RefObject } from "react";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
@@ -65,7 +65,7 @@ export function useDictationShortcut(input: ShortcutInput) {
   const subscribeKeys = input.subscribeKeys;
   const mode = useClientSettings((settings) => settings.voiceShortcutMode);
   const current = useRef(input);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes committed actions to the window keyboard listener and shortcut registry
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes committed actions to the window keyboard listener and shortcut registry
   useEffect(() => {
     current.current = input;
   });
@@ -78,7 +78,7 @@ export function useDictationShortcut(input: ShortcutInput) {
     starting: Promise<void>;
   } | null>(null);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the window keyboard listeners and dictation target registry entry
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- owns the window keyboard listeners and dictation target registry entry
   useEffect(() => {
     if (typeof window === "undefined") return;
     let disposed = false;

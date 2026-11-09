@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ScopedThreadRef } from "@t3tools/contracts";
+import type { ScopedThreadRef } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 import type { ReactNode } from "react";
 

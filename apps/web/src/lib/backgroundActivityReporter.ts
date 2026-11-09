@@ -1,15 +1,15 @@
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
+import { EnvironmentRegistry } from "@onicode/client-runtime/connection";
 import {
   EnvironmentRpcSubscriptionObserver,
   request,
   type EnvironmentRpcSubscriptionObservation,
-} from "@t3tools/client-runtime/rpc";
+} from "@onicode/client-runtime/rpc";
 import {
   type BackgroundScope,
   type ClientActivityReportInput,
   type EnvironmentId,
   WS_METHODS,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -21,7 +21,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { randomUUID } from "./utils";
 
-const CLIENT_ID_STORAGE_KEY = "t3.backgroundActivity.clientId";
+const CLIENT_ID_STORAGE_KEY = "onicode.backgroundActivity.clientId";
 const REPORT_INTERVAL_MS = 25_000;
 // Shorter than the interval, so a report that never settles cannot hold up the next one.
 const REPORT_TIMEOUT_MS = 15_000;

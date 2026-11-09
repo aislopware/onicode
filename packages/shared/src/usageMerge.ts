@@ -7,7 +7,7 @@ import {
   type UsageSourceFingerprint,
   type UsageSummary,
   type UsageTokenTotals,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 export interface EnvironmentUsage {
   readonly environmentId: EnvironmentId;

@@ -126,7 +126,7 @@ it("preserves in-app thread links through the shared Markdown sanitizer", () => 
     .use(CHAT_MARKDOWN_REHYPE_PLUGINS);
   const tree = processor.runSync(
     processor.parse(
-      '[Open thread](t3-thread://v1/thread)\n\n<t3-thread://v2/environment/thread:a%3A1>\n\n<a href="javascript:alert(1)">Unsafe</a>',
+      '[Open thread](oni-thread://v1/thread)\n\n<oni-thread://v2/environment/thread:a%3A1>\n\n<a href="javascript:alert(1)">Unsafe</a>',
     ),
   );
   expect(tree.children[0]).toMatchObject({
@@ -134,7 +134,7 @@ it("preserves in-app thread links through the shared Markdown sanitizer", () => 
     children: [
       {
         tagName: "a",
-        properties: { href: "t3-thread://v1/thread" },
+        properties: { href: "oni-thread://v1/thread" },
         children: [{ type: "text", value: "Open thread" }],
       },
     ],
@@ -144,8 +144,8 @@ it("preserves in-app thread links through the shared Markdown sanitizer", () => 
     children: [
       {
         tagName: "a",
-        properties: { href: "t3-thread://v2/environment/thread:a%3A1" },
-        children: [{ type: "text", value: "t3-thread://v2/environment/thread:a%3A1" }],
+        properties: { href: "oni-thread://v2/environment/thread:a%3A1" },
+        children: [{ type: "text", value: "oni-thread://v2/environment/thread:a%3A1" }],
       },
     ],
   });
@@ -276,14 +276,14 @@ it("keeps backslashes that CommonMark would read as escapes in prose Windows pat
   const render = (markdown: string) => text(processor.runSync(processor.parse(markdown)) as Node);
 
   expect(
-    render(String.raw`Saved to C:\Users\me\.t3\_build and (C:\.scratch) and C:/work\.config.`),
-  ).toBe(String.raw`Saved to C:\Users\me\.t3\_build and (C:\.scratch) and C:/work\.config.`);
+    render(String.raw`Saved to C:\Users\me\.onicode\_build and (C:\.scratch) and C:/work\.config.`),
+  ).toBe(String.raw`Saved to C:\Users\me\.onicode\_build and (C:\.scratch) and C:/work\.config.`);
   expect(render(String.raw`Escaped C:\\Users\\me`)).toBe(String.raw`Escaped C:\\Users\\me`);
   expect(render(String.raw`See C:\x and \*this\* and Note:\*that\*.`)).toBe(
     String.raw`See C:\x and *this* and Note:*that*.`,
   );
-  expect(render(String.raw`${"`"}C:\me\.t3${"`"} and C:\me\.t3`)).toBe(
-    String.raw`<code>C:\me\.t3</code> and C:\me\.t3`,
+  expect(render(String.raw`${"`"}C:\me\.onicode${"`"} and C:\me\.onicode`)).toBe(
+    String.raw`<code>C:\me\.onicode</code> and C:\me\.onicode`,
   );
 });
 

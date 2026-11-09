@@ -1,4 +1,4 @@
-import type { SecretProviderKind } from "@t3tools/contracts";
+import type { SecretProviderKind } from "@onicode/contracts";
 import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import type * as FileSystem from "effect/FileSystem";

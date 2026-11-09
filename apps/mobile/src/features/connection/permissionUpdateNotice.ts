@@ -1,5 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
-import { sessionHasLegacyPermissions } from "@t3tools/contracts";
+import { sessionHasLegacyPermissions } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 import * as SecureStore from "expo-secure-store";
 
@@ -9,7 +9,7 @@ import { projectEnvironmentPresentation } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { environmentSession } from "../../state/session";
 
-const storageKey = "t3code.permission-update.v1";
+const storageKey = "onicode.permission-update.v1";
 
 const legacyPermissionEnvironmentsAtom = Atom.make((get) =>
   [...get(environmentPresentations.presentationsAtom).entries()].flatMap(

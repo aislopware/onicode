@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -26,7 +26,7 @@ const asError = (cause: unknown) =>
   });
 
 /**
- * Looks up the newest T3 Code release for one environment. The atom is not
+ * Looks up the newest Onicode release for one environment. The atom is not
  * kept alive, so leaving the screen interrupts the lookup and aborts its fetch.
  * The argument reads the server version, which an outdated server only
  * reports through a separate description request.

@@ -1,5 +1,5 @@
-import type { AntigravitySettings, ServerProviderUsageWindow } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import type { AntigravitySettings, ServerProviderUsageWindow } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Clock from "effect/Clock";
 import * as Digest from "effect/crypto/Digest";
 import * as DateTime from "effect/DateTime";
@@ -13,7 +13,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 import {
   makeUnavailableUsageLimits,
   makeUsageLimits,
-} from "@t3tools/provider-core/server/usageLimits";
+} from "@onicode/provider-core/server/usageLimits";
 
 const ENDPOINTS = [
   "https://daily-cloudcode-pa.googleapis.com",

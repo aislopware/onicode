@@ -2,15 +2,15 @@ import type {
   ProviderApprovalOption,
   ProviderUserInputAnswers,
   UserInputQuestion,
-} from "@t3tools/contracts";
-import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+} from "@onicode/contracts";
+import { isWorkspaceImagePreviewPath } from "@onicode/shared/filePreview";
 import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 import * as Schema from "effect/Schema";
 import type * as EffectAcpSchema from "effect-acp/compat";
 import * as AcpWireSchema from "effect-acp/schema-v1";
 
-import type { AcpToolCallState } from "@t3tools/provider-acp/server/runtimeModel";
+import type { AcpToolCallState } from "@onicode/provider-acp/server/runtimeModel";
 
 import {
   ANTIGRAVITY_EDIT_DIFF_OMITTED,
@@ -248,7 +248,7 @@ function antigravityClientReadPath(update: {
 
 /**
  * The agent never completes a subagent's `client_view_file` call, then fails every open call
- * with the next unrelated step error. Report reads T3 served as completed instead.
+ * with the next unrelated step error. Report reads Onicode served as completed instead.
  */
 export function makeAntigravityReadRepair() {
   type Outcome = "served" | "refused";
@@ -266,7 +266,7 @@ export function makeAntigravityReadRepair() {
     },
     /**
      * Each `fs/read_text_file` request answers the oldest open read of its path, in order.
-     * Returns the call a served read completes, so T3 can report it without waiting.
+     * Returns the call a served read completes, so Onicode can report it without waiting.
      */
     attempted: (path: string, served: boolean) => {
       const outcome = served ? "served" : "refused";

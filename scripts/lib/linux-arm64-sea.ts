@@ -45,7 +45,7 @@ export const injectLinuxArm64Sea = Effect.fn("LinuxArm64Sea.inject")(function* (
   }
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const temp = yield* fs.makeTempDirectoryScoped({ prefix: "t3-sea-" });
+  const temp = yield* fs.makeTempDirectoryScoped({ prefix: "oni-sea-" });
   const blobPath = path.join(temp, "sea.blob");
   const configPath = path.join(temp, "sea.json");
   yield* fs.writeFileString(

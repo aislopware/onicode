@@ -18,7 +18,7 @@ interface NativeSecretInputProps extends ViewProps {
   readonly onSubmit: (event: NativeSyntheticEvent<{ readonly value: string }>) => void;
 }
 
-const NativeSecretInput = requireNativeView<NativeSecretInputProps>("T3SecretInput");
+const NativeSecretInput = requireNativeView<NativeSecretInputProps>("OniSecretInput");
 
 const FONT_SIZE = 16;
 const LINE_HEIGHT = 24;

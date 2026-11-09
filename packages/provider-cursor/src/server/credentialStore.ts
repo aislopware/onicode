@@ -1,12 +1,12 @@
 import type { SdkCredentialStore } from "@cursor/sdk";
-import { ProviderSetupError, type ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderSetupError, type ProviderInstanceId } from "@onicode/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
+import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
 
 const Credentials = Schema.fromJsonString(
   Schema.Struct({
@@ -91,7 +91,7 @@ export const makeCursorCredentialStore = Effect.fn("makeCursorCredentialStore")(
   return { store, binding: credentials.binding };
 });
 
-/** The unexpired API key from this instance's T3 sign-in, read without loading the SDK. */
+/** The unexpired API key from this instance's Onicode sign-in, read without loading the SDK. */
 export const readStoredCursorApiKey = Effect.fn("readStoredCursorApiKey")(function* (
   instanceId: ProviderInstanceId,
 ) {

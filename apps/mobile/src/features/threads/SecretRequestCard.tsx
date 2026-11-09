@@ -10,16 +10,16 @@ import {
   secretRequestSources,
   type SecretRequestItem,
   type SecretRequestReply,
-} from "@t3tools/client-runtime/secret-request";
+} from "@onicode/client-runtime/secret-request";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   OrchestrationV2ProjectedTurnItem,
   SecretProviderId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
 import { View, type ColorValue } from "react-native";
@@ -126,7 +126,7 @@ function PendingSecretRequestForm(props: {
   return (
     <View className="mb-3 gap-3 rounded-[20px] border border-border bg-card-alt p-4">
       <View className="gap-1">
-        <Text className="font-t3-bold text-base text-foreground">{item.label}</Text>
+        <Text className="font-oni-bold text-base text-foreground">{item.label}</Text>
         {item.reason.trim() ? (
           <Text className="font-sans text-sm leading-5 text-foreground-muted" selectable>
             {item.reason}

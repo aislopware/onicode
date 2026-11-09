@@ -1,13 +1,13 @@
 import { RegistryContext, useAtomValue } from "@effect/atom-react";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
-import { createEnvironmentSubscriptionAtomFamily } from "@t3tools/client-runtime/state/runtime";
+import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
+import { EnvironmentRegistry } from "@onicode/client-runtime/connection";
+import { createEnvironmentSubscriptionAtomFamily } from "@onicode/client-runtime/state/runtime";
 import {
   AuthFilesystemReadScope,
   EnvironmentId,
   ProjectId,
   type VcsListRefsResult,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";

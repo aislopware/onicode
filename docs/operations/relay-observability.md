@@ -1,23 +1,23 @@
 # Relay observability
 
-> For maintainers. Using T3 Code? See [docs/user](../user/).
+> For maintainers. Using Onicode? See [docs/user](../user/).
 
 The relay Alchemy stack owns a shared Axiom trace setup:
 
-- `t3-code-relay-traces-prod`, the OpenTelemetry trace dataset shared by the Worker, mobile app, and
+- `onicode-relay-traces-prod`, the OpenTelemetry trace dataset shared by the Worker, mobile app, and
   first-party relay clients
-- `t3-code-relay-otel-ingest-prod`, the dataset-scoped Worker ingest token
-- `t3-code-mobile-otel-ingest-prod`, the dataset-scoped mobile ingest token
-- `t3-code-relay-client-otel-ingest-prod`, the dataset-scoped first-party relay-client ingest token
-- `t3-code-relay-recent-spans-prod`, a view of recent request and endpoint spans
-- `t3-code-mobile-logs-prod` and `t3-code-mobile-metrics-prod`, the mobile app's crash, error, and
+- `onicode-relay-otel-ingest-prod`, the dataset-scoped Worker ingest token
+- `onicode-mobile-otel-ingest-prod`, the dataset-scoped mobile ingest token
+- `onicode-relay-client-otel-ingest-prod`, the dataset-scoped first-party relay-client ingest token
+- `onicode-relay-recent-spans-prod`, a view of recent request and endpoint spans
+- `onicode-mobile-logs-prod` and `onicode-mobile-metrics-prod`, the mobile app's crash, error, and
   startup data from `expo-observe` (see [Mobile crashes and errors](#mobile-crashes-and-errors))
-- `t3-code-mobile-telemetry-ingest-prod`, the ingest token the Worker forwards that data with
-- `t3-code-mobile-sourcemaps-prod`, the R2 bucket of mobile JavaScript source maps, and
-  `t3-code-mobile-sourcemaps-upload-prod`, a Cloudflare token that can only write objects to it
+- `onicode-mobile-telemetry-ingest-prod`, the ingest token the Worker forwards that data with
+- `onicode-mobile-sourcemaps-prod`, the R2 bucket of mobile JavaScript source maps, and
+  `onicode-mobile-sourcemaps-upload-prod`, a Cloudflare token that can only write objects to it
 
 Alchemy stages append their sanitized stage name to isolate resources, for example
-`t3-code-relay-traces-dev-julius` for a personal stage.
+`onicode-relay-traces-dev-julius` for a personal stage.
 
 Deploy from `infra/relay` with the normal Alchemy workflow:
 
@@ -34,7 +34,7 @@ Effect's OpenTelemetry exporter stores semantic HTTP attributes below the `attri
 For example:
 
 ```apl
-['t3-code-relay-traces-prod']
+['onicode-relay-traces-prod']
 | where kind == 'server'
 | extend endpoint = column_ifexists('attributes.http.route', ''),
     customAttributes = column_ifexists('attributes.custom', dynamic({}))
@@ -72,9 +72,9 @@ managed endpoint, and with it the environment. On a forward, `relay.hook.upstrea
 `relay.hook.upstream_error` records the environment's answer, and
 `relay.hook.upstream_outcome` what it did with the request (`accepted`, `duplicate`,
 `prompt_too_long`, `queue_full`, `rejected_signature`, `expired`, `disabled`, ...), from its
-`x-t3-hook-outcome` response header. A held request's delivery records the same on its
+`x-oni-hook-outcome` response header. A held request's delivery records the same on its
 `relay.inbox.deliver` span. The relay sends its own `traceparent` with each forward and drops any a
-sender supplied, and signs each forward (`x-t3-relay-delivery`) so the environment trusts the
+sender supplied, and signs each forward (`x-oni-relay-delivery`) so the environment trusts the
 relay's delivery id, receive time and trace context only from the relay, so on environments that export to T3 Connect, the environment's
 `ScheduledTaskService.triggerWebhook` span lands in the same trace. `relay.hook.rate_limit` says which
 budget ran out: `endpoint` or `hook`. `relay.hook.rate_limiter_failed_open` is set when the
@@ -95,19 +95,19 @@ Questions these answer:
 
 ```apl
 // Webhook outcomes per hour
-['t3-code-relay-traces-prod']
+['onicode-relay-traces-prod']
 | where name == 'relay.hooks.forward'
 | summarize count() by bin(_time, 1h), outcome = tostring(['attributes.custom']['relay.hook.outcome'])
 
 // Inboxes stuck behind an unreachable environment, by endpoint
-['t3-code-relay-traces-prod']
+['onicode-relay-traces-prod']
 | where name == 'HookInboxStore.deliverDue'
 | extend c = ['attributes.custom']
 | where tostring(c['relay.inbox.run_result']) == 'unreachable'
 | project trace_id, failures = toint(c['relay.inbox.consecutive_failures']),
     backlog = toint(c['relay.inbox.held_count'])
 | join kind=inner (
-    ['t3-code-relay-traces-prod']
+    ['onicode-relay-traces-prod']
     | where name == 'relay.inbox.deliver'
     | project trace_id, endpoint = tostring(['attributes.custom']['relay.hook.endpoint_key'])
   ) on trace_id
@@ -116,7 +116,7 @@ Questions these answer:
 
 ## Alerts
 
-The stack provisions threshold monitors and a `t3-code-relay-health` dashboard from
+The stack provisions threshold monitors and a `onicode-relay-health` dashboard from
 [`infra/relay/src/monitoring.ts`](../../infra/relay/src/monitoring.ts) when the deployment sets
 `RELAY_ALERT_NOTIFIER_ID`. Paging monitors go to that notifier and need two failing runs in a row.
 Warnings go to `RELAY_WARNING_NOTIFIER_ID` when it is set and are otherwise only visible in Axiom.
@@ -170,9 +170,9 @@ usual cause.
 
 The mobile app reports through [`expo-observe`](https://docs.expo.dev/eas/observe/). Its
 `endpointUrl` points at the relay (`/v1/mobile/observe`, set in `apps/mobile/app.config.ts` from
-`T3CODE_RELAY_URL`), because Observe cannot send auth headers and prefixes every path with the EAS
+`ONICODE_RELAY_URL`), because Observe cannot send auth headers and prefixes every path with the EAS
 project id. The relay forwards each request to Axiom with its own token: logs (JavaScript errors,
-native crashes, log events) to `t3-code-mobile-logs-*`, metrics to `t3-code-mobile-metrics-*`, and
+native crashes, log events) to `onicode-mobile-logs-*`, metrics to `onicode-mobile-metrics-*`, and
 spans to the shared traces dataset. Expo's Observe dashboard receives nothing. The endpoint URL is
 compiled into the native app, so pointing it elsewhere takes a store build.
 
@@ -196,19 +196,19 @@ generic React Native stack. The relay marks that one `relay.crash.js_fatal` when
 request, as they do on the next launch. Leave it out to count real native crashes:
 
 ```apl
-['t3-code-mobile-logs-prod']
+['onicode-mobile-logs-prod']
 | where ['attributes.expo.error.source'] == 'nativeCrash'
 | where isnull(['attributes.relay.crash.js_fatal'])
 | summarize count() by ['attributes.exception.type'], ['attributes.exception.message']
 ```
 
 Native crash stacks (`expo.error.source == 'nativeCrash'`) are not symbolicated. On iOS, app frames
-read like `main (T3Code + 19476)`: the offset into the app binary. The build hook uploads that
+read like `main (Onicode + 19476)`: the offset into the app binary. The build hook uploads that
 build's dSYMs to `ios/dsym/<easBuildId>.zip`; download it with an account R2 token, then:
 
 ```sh
 unzip <easBuildId>.zip
-atos -arch arm64 -o T3Code.app.dSYM/Contents/Resources/DWARF/T3Code -l 0x100000000 \
+atos -arch arm64 -o Onicode.app.dSYM/Contents/Resources/DWARF/Onicode -l 0x100000000 \
   $(printf '0x%x' $((0x100000000 + 19476)))
 ```
 
@@ -222,7 +222,7 @@ token needs **Account API Tokens: Edit** on the deploy token. Deploy output show
 it from state, where it is under `__redacted__`:
 
 ```sh
-cd infra/relay && vp exec alchemy state read T3CodeRelay/prod/output
+cd infra/relay && vp exec alchemy state read OnicodeRelay/prod/output
 ```
 
 Set it as a GitHub Actions secret, for OTA updates, and as an EAS environment variable with
@@ -230,11 +230,11 @@ Set it as a GitHub Actions secret, for OTA updates, and as an EAS environment va
 PR preview builds run the PR's code in that environment. In CI only the upload step gets it, not
 `eas update` and the dependencies it runs. If the deploy replaces the token, update both.
 
-The `t3-code-mobile-health` dashboard is the place to look every few days: crash and handled
+The `onicode-mobile-health` dashboard is the place to look every few days: crash and handled
 error counts, top crashes with the installs and app versions they hit, crashes by version, whether
 stacks are symbolicated, and whether reports reach the relay at all. A crash counts once: the
 native abort after a JS crash (`relay.crash.js_fatal`) is left out. Startup times are metrics, so
-they are not on it; query `t3-code-mobile-metrics-*` with MPL. Prod and PR previews get the
+they are not on it; query `onicode-mobile-metrics-*` with MPL. Prod and PR previews get the
 dashboard, and deployments with `RELAY_ALERT_NOTIFIER_ID` get these monitors
 ([`infra/relay/src/mobileTelemetry/monitoring.ts`](../../infra/relay/src/mobileTelemetry/monitoring.ts)):
 

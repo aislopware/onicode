@@ -68,8 +68,8 @@ const PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
 export function loadWindowsForegroundApi(): Promise<WindowsForegroundApi> {
   windowsForegroundApiPromise ??= import("ffi-rs").then(({ DataType, load, open }) => {
-    const kernel32 = "t3-kernel32";
-    const user32 = "t3-user32";
+    const kernel32 = "oni-kernel32";
+    const user32 = "oni-user32";
     open({ library: kernel32, path: "kernel32.dll" });
     open({ library: user32, path: "user32.dll" });
 
@@ -215,7 +215,7 @@ export function loadWindowsForegroundApi(): Promise<WindowsForegroundApi> {
 export async function activateWindowsForeground(handleBuffer: Buffer): Promise<void> {
   const api = await loadWindowsForegroundApi();
   if (activateWindowsForegroundWithApi(handleBuffer, api)) return;
-  throw new Error("Windows refused to activate the T3 Code window.");
+  throw new Error("Windows refused to activate the Onicode window.");
 }
 
 export async function isWindowsShellHostedForeground(): Promise<boolean> {

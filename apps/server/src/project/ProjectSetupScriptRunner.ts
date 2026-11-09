@@ -1,11 +1,11 @@
-import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@t3tools/contracts";
+import { linkOriginIsFenced, ProjectId, type ProjectScript, ThreadId } from "@onicode/contracts";
 import {
   projectScriptRuntimeEnv,
   projectScriptTerminalInput,
   resolveProjectScripts,
   settleProjectScript,
   setupProjectScript,
-} from "@t3tools/shared/projectScripts";
+} from "@onicode/shared/projectScripts";
 
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -48,7 +48,7 @@ export interface ProjectSetupScriptOutputLine {
 
 /**
  * A thread a link below full access started does not run this project's setup
- * script: the script is the user's own code, and such a link only grants T3's
+ * script: the script is the user's own code, and such a link only grants Onicode's
  * tools (see `mcp/linkOrigin.ts`).
  */
 export interface ProjectSetupScriptRunnerResultSkippedForLink {
@@ -129,7 +129,7 @@ export class ProjectSetupScriptRunner extends Context.Service<
       input: ProjectSetupScriptRunnerInput,
     ) => Effect.Effect<ProjectSetupScriptRunnerResult, ProjectSetupScriptRunnerError>;
   }
->()("t3/project/ProjectSetupScriptRunner") {}
+>()("onicode/project/ProjectSetupScriptRunner") {}
 
 /** @public */
 // Random per-run tokens prevent script output from spoofing completion.

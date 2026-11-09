@@ -1,14 +1,14 @@
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { expect, it, vi } from "vite-plus/test";
-import { EnvironmentId, SOURCE_CONTROL_MEDIA_ASSET } from "@t3tools/contracts";
+import { EnvironmentId, SOURCE_CONTROL_MEDIA_ASSET } from "@onicode/contracts";
 
 const harness = vi.hoisted(() => ({
   refreshAssetUrl: vi.fn<(environmentId: string, resource: { url: string }) => Promise<string>>(),
   alert: vi.fn(),
   previews: [] as unknown[],
   mounts: 0,
-  platform: { OS: process.env.T3_MOBILE_TEST_PLATFORM === "android" ? "android" : "ios" },
+  platform: { OS: process.env.ONICODE_MOBILE_TEST_PLATFORM === "android" ? "android" : "ios" },
 }));
 
 vi.mock("react-native", () => ({ Platform: harness.platform }));

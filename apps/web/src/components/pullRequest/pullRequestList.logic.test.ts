@@ -1,11 +1,11 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@onicode/contracts";
 import type {
   EnvironmentId,
   ProjectId,
   PullRequestAction,
   PullRequestListEntry,
   PullRequestSummary,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -53,7 +53,7 @@ function entry(
     provider: SourceControlProviderKind.make("github"),
     host: "github.com",
     projectId: "project-1",
-    projectTitle: "t3code",
+    projectTitle: "onicode",
     repository: "pingdotgg/t3code",
     title: "Add the pull requests page",
     url: `https://github.com/pingdotgg/t3code/pull/${overrides.number}`,
@@ -362,7 +362,7 @@ describe("remembered pull request list controls", () => {
   // regression: #9188 corrupt stored list controls broke the page
   it("falls back to the default controls when storage is corrupt", () => {
     const storage = makeStorage();
-    storage.setItem("t3.pullRequests.preferences", "{not json");
+    storage.setItem("onicode.pullRequests.preferences", "{not json");
     expect(readPullRequestListPreferences(storage)).toEqual({ involvement: "all", state: "open" });
   });
 

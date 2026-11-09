@@ -1,5 +1,5 @@
-import type { OrchestrationV2Run, OrchestrationV2RunStatus, RunId } from "@t3tools/contracts";
-import { latestExecutedRun } from "@t3tools/shared/orchestrationV2ThreadError";
+import type { OrchestrationV2Run, OrchestrationV2RunStatus, RunId } from "@onicode/contracts";
+import { latestExecutedRun } from "@onicode/shared/orchestrationV2ThreadError";
 
 export type ThreadActivityStatus = "working" | "approval" | "input" | "idle";
 

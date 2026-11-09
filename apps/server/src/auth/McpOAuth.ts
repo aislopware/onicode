@@ -16,9 +16,9 @@ import {
   MCP_PEER_LINK_SOFTWARE_ID,
   mcpClientScopes,
   type RuntimeMode,
-} from "@t3tools/contracts";
-import { DEFAULT_HOSTED_APP_URL } from "@t3tools/shared/connectAuth";
-import { encodeOAuthScope } from "@t3tools/shared/oauthScope";
+} from "@onicode/contracts";
+import { DEFAULT_HOSTED_APP_URL } from "@onicode/shared/connectAuth";
+import { encodeOAuthScope } from "@onicode/shared/oauthScope";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Digest from "effect/crypto/Digest";
@@ -82,7 +82,7 @@ export const protectedResourceMetadata = (
   authorization_servers: [urls.issuer],
   scopes_supported: MCP_OAUTH_SCOPES,
   bearer_methods_supported: ["header"],
-  resource_name: "T3 Code",
+  resource_name: "Onicode",
 });
 
 export const authorizationServerMetadata = (
@@ -141,7 +141,7 @@ const ClientIdPayload = Schema.Struct({
   v: Schema.Literal(1),
   n: Schema.String,
   r: Schema.Array(Schema.String),
-  /** Registered as another T3 Code environment's peer link. */
+  /** Registered as another Onicode environment's peer link. */
   p: Schema.optionalKey(Schema.Literal(1)),
 });
 const decodeClientIdPayload = Schema.decodeUnknownOption(Schema.fromJsonString(ClientIdPayload));
@@ -228,7 +228,7 @@ export class McpOAuth extends Context.Service<
       readonly token: AuthMcpTokenRequest;
     }) => Effect.Effect<AuthMcpTokenResult, AuthMcpTokenError>;
   }
->()("t3/auth/McpOAuth") {}
+>()("onicode/auth/McpOAuth") {}
 
 const redirectWith = (
   redirectUri: string,

@@ -1,4 +1,4 @@
-import type { ClientSettingsPatch, DesktopSnapShotState, SnapShotSound } from "@t3tools/contracts";
+import type { ClientSettingsPatch, DesktopSnapShotState, SnapShotSound } from "@onicode/contracts";
 import {
   captureSetupBackend,
   captureSetupDesktopName,

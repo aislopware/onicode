@@ -4,10 +4,10 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
-import type { ThreadId } from "@t3tools/contracts";
-import type * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import { makeAsyncRotatingFileSink } from "@t3tools/shared/logging";
-import { errorTag } from "@t3tools/shared/observability";
+import type { ThreadId } from "@onicode/contracts";
+import type * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
+import { makeAsyncRotatingFileSink } from "@onicode/shared/logging";
+import { errorTag } from "@onicode/shared/observability";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";

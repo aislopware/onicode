@@ -1,6 +1,6 @@
-import { spawnAndCollect } from "@t3tools/provider-core/server/snapshotProbe";
-import { defineSecretProviderDriver } from "@t3tools/secret-provider-core/server/driver";
-import { resolveSpawnCommand } from "@t3tools/shared/shell";
+import { spawnAndCollect } from "@onicode/provider-core/server/snapshotProbe";
+import { defineSecretProviderDriver } from "@onicode/secret-provider-core/server/driver";
+import { resolveSpawnCommand } from "@onicode/shared/shell";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -52,7 +52,7 @@ const readTogether = Effect.fn("OnePasswordDriver.readTogether")(function* (
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const separator = `__t3-secret-${yield* (yield* SecureRandom.SecureRandom).uuidV4()}__`;
-  const templatePath = yield* fileSystem.makeTempFileScoped({ prefix: "t3code-op-inject-" });
+  const templatePath = yield* fileSystem.makeTempFileScoped({ prefix: "onicode-op-inject-" });
   yield* fileSystem.writeFileString(
     templatePath,
     references.map((reference) => `{{ ${reference} }}${separator}`).join(""),

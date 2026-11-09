@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
-import { type EnvironmentId, managedPolicyDeniedMessage } from "@t3tools/contracts";
+import { type EnvironmentId, managedPolicyDeniedMessage } from "@onicode/contracts";
 
 import {
   clearBrowserProfileData,
@@ -76,7 +76,7 @@ describe("importPolicyRefusal", () => {
       }),
     ).toBe(denied);
     const unreadable =
-      "The managed policy at C:\\Program Files\\T3Code\\policy.json could not be read, so importing browser cookies is not allowed.";
+      "The managed policy at C:\\Program Files\\Onicode\\policy.json could not be read, so importing browser cookies is not allowed.";
     expect(importPolicyRefusal({ message: `Error: ${unreadable}` })).toBe(unreadable);
   });
 

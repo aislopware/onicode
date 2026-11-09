@@ -1,5 +1,5 @@
-import type { ScopedThreadRef } from "@t3tools/contracts";
-import { parseThreadLinkPrompt, withoutPromptLinkParams } from "@t3tools/shared/promptLinks";
+import type { ScopedThreadRef } from "@onicode/contracts";
+import { parseThreadLinkPrompt, withoutPromptLinkParams } from "@onicode/shared/promptLinks";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 
@@ -20,7 +20,7 @@ export function ThreadLinkPrompt({ threadRef }: { readonly threadRef: ScopedThre
     structuralSharing: true,
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- places a ?prompt link into the composer once per location and strips it from the URL via the router
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- places a ?prompt link into the composer once per location and strips it from the URL via the router
   useEffect(() => {
     // A pending navigation shows the next location while the params still name this thread.
     if (!isThreadRoutePathname(location.pathname, threadRef)) return;

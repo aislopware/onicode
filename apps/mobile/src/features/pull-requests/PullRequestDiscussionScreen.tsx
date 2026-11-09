@@ -4,9 +4,9 @@ import { useFocusEffect, useNavigation, type StaticScreenProps } from "@react-na
 import {
   type AtomCommandResult,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import type { PullRequestThreadComment } from "@t3tools/contracts";
+import type { PullRequestThreadComment } from "@onicode/contracts";
 import { useRef, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { KeyboardAvoidingView, useKeyboardState } from "react-native-keyboard-controller";
@@ -195,7 +195,7 @@ function Discussion({ params }: { params: PullRequestParams & { readonly discuss
               <View key={comment.id} className="gap-3 border-b border-border-subtle py-4">
                 <View className="flex-row items-center gap-2">
                   <PullRequestAvatar actor={comment.author} size={28} />
-                  <Text className="min-w-0 flex-1 text-sm font-t3-medium">
+                  <Text className="min-w-0 flex-1 text-sm font-oni-medium">
                     {comment.author?.login ?? "Unknown author"}
                   </Text>
                   <Text className="text-2xs text-foreground-muted">

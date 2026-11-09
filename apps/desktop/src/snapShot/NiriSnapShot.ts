@@ -168,12 +168,12 @@ async function activateNiriWindow(path: string, title: string, signal: AbortSign
       } else if (isWindowClosed(value)) {
         windows.delete(value.WindowClosed.id);
       } else return undefined;
-      // Never activate another process's lookalike window, or guess between multiple T3 windows.
+      // Never activate another process's lookalike window, or guess between multiple Onicode windows.
       const matches = [...windows.values()].filter(
         (window) => window.pid === process.pid && window.title === title,
       );
       if (matches.length > 1)
-        throw new Error("More than one T3 Code window matches the capture destination.");
+        throw new Error("More than one Onicode window matches the capture destination.");
       return matches[0];
     });
     connection.send("EventStream");
@@ -187,7 +187,7 @@ async function activateNiriWindow(path: string, title: string, signal: AbortSign
 }
 
 export async function captureNiriWindow(path: string): Promise<LinuxWindowSnapshot> {
-  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-niri-capture-"));
+  const directory = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "oni-niri-capture-"));
   const imagePath = NodePath.join(directory, "capture.png");
   const events = new NiriConnection(path);
   try {

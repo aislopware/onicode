@@ -5,7 +5,7 @@
  */
 globalThis.seedStaleThreadCommand = async function ({ environmentId, threadId, itemId }) {
   const response = await fetch(`/api/orchestration/threads/${threadId}`, {
-    headers: { "x-t3-orchestration-protocol": "2" },
+    headers: { "x-oni-orchestration-protocol": "2" },
   });
   if (!response.ok) throw new Error(`Thread fetch failed: ${response.status}`);
   const full = await response.json();
@@ -19,7 +19,7 @@ globalThis.seedStaleThreadCommand = async function ({ environmentId, threadId, i
     throw new Error("Choose an authoritative completed command with a visible row");
   }
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open("t3code:connection-runtime", 4);
+    const request = indexedDB.open("onicode:connection-runtime", 4);
     request.addEventListener("error", () => reject(request.error));
     request.addEventListener("success", () => {
       const db = request.result;

@@ -73,7 +73,7 @@ describe("cachedTestTasks", () => {
               ...process.env,
               NODE_OPTIONS: "",
               VP_REMOTE_CACHE: "off",
-              T3_CACHED_TESTS: JSON.stringify({ files, groupSize: 1, uncached }),
+              ONICODE_CACHED_TESTS: JSON.stringify({ files, groupSize: 1, uncached }),
               VITE_CACHE_PATH: NodePath.join(directory, "cache"),
               PATH: `${NodePath.join(root, "node_modules/.bin")}${NodePath.delimiter}${process.env.PATH}`,
             },
@@ -99,7 +99,7 @@ describe("cachedTestTasks", () => {
       await NodeFSP.writeFile(NodePath.join(directory, "package.json"), '{"type":"module"}');
       await NodeFSP.writeFile(
         NodePath.join(directory, "vite.config.ts"),
-        `import {cachedTestTasks} from ${JSON.stringify(NodeURL.pathToFileURL(NodePath.join(root, "scripts/lib/cached-tests.ts")).href)}; export default {run:{tasks:cachedTestTasks(process.env.T3_CACHED_TESTS, import.meta.dirname)},test:{include:["*.test.ts"]}};`,
+        `import {cachedTestTasks} from ${JSON.stringify(NodeURL.pathToFileURL(NodePath.join(root, "scripts/lib/cached-tests.ts")).href)}; export default {run:{tasks:cachedTestTasks(process.env.ONICODE_CACHED_TESTS, import.meta.dirname)},test:{include:["*.test.ts"]}};`,
       );
       await NodeFSP.writeFile(
         NodePath.join(directory, "a.test.ts"),

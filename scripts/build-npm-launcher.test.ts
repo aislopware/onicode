@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Serves a fake GitHub Release over real HTTP to the published launcher.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -13,7 +13,7 @@ import * as NodeCrypto from "node:crypto";
 import * as NodeEvents from "node:events";
 import * as NodeHttp from "node:http";
 
-import { npmReleaseDatabaseMigration } from "@t3tools/shared/cliRelease";
+import { npmReleaseDatabaseMigration } from "@onicode/shared/cliRelease";
 
 import { buildNpmLauncher } from "./build-npm-launcher.ts";
 
@@ -50,22 +50,22 @@ const run = Effect.fn("test.run")(function* (
 const serveFakeRelease = Effect.fn("test.serveFakeRelease")(function* (
   root: string,
   executable = `#!/bin/sh
-if [ -n "$T3CODE_TEST_CALLS" ]; then echo "$*|$T3CODE_NPM_LAUNCHER_PATH" >> "$T3CODE_TEST_CALLS"; fi
+if [ -n "$ONICODE_TEST_CALLS" ]; then echo "$*|$ONICODE_NPM_LAUNCHER_PATH" >> "$ONICODE_TEST_CALLS"; fi
 if [ "$1" = "--version" ]; then echo "${VERSION}"; exit 0; fi
-echo "stub $* launcher=$T3CODE_NPM_LAUNCHER_PATH"
+echo "stub $* launcher=$ONICODE_NPM_LAUNCHER_PATH"
 exit 7
 `,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const key = `${yield* HostProcess.Platform}-${yield* HostProcess.Architecture}`;
-  const stem = `t3-${VERSION}-${key}`;
+  const stem = `oni-${VERSION}-${key}`;
   const archiveName = `${stem}.tar.gz`;
   yield* fs.makeDirectory(path.join(root, "release", stem, "node_modules/native"), {
     recursive: true,
   });
-  yield* fs.writeFileString(path.join(root, "release", stem, "t3"), executable);
-  yield* fs.chmod(path.join(root, "release", stem, "t3"), 0o755);
+  yield* fs.writeFileString(path.join(root, "release", stem, "onicode"), executable);
+  yield* fs.chmod(path.join(root, "release", stem, "onicode"), 0o755);
   const tar = yield* run("tar", ["-czf", archiveName, stem], {
     cwd: path.join(root, "release"),
     env: { PATH: (yield* HostProcess.Environment).PATH },
@@ -111,7 +111,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-npm-launcher-test-" });
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-npm-launcher-test-" });
         const output = yield* buildNpmLauncher({
           version: VERSION,
           outputDir: path.join(root, "out"),
@@ -120,9 +120,9 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const manifest = yield* decodeManifest(
           yield* fs.readFileString(path.join(output.packageDir, "package.json")),
         );
-        assert.equal(manifest.name, "t3");
+        assert.equal(manifest.name, "onicode");
         assert.equal(manifest.version, VERSION);
-        assert.deepStrictEqual(manifest.bin, { t3: "./bin/t3.mjs" });
+        assert.deepStrictEqual(manifest.bin, { onicode: "./bin/onicode.mjs" });
         assert.isUndefined(manifest.dependencies);
         assert.isUndefined(manifest.optionalDependencies);
         assert.isAbove(npmReleaseDatabaseMigration(manifest) ?? 0, 0);
@@ -140,11 +140,11 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const home = path.join(root, "home");
         const env = {
           PATH: (yield* HostProcess.Environment).PATH,
-          T3CODE_HOME: home,
-          T3CODE_TEST_CALLS: path.join(root, "calls"),
-          T3CODE_RELEASE_BASE_URL: release.baseUrl,
+          ONICODE_HOME: home,
+          ONICODE_TEST_CALLS: path.join(root, "calls"),
+          ONICODE_RELEASE_BASE_URL: release.baseUrl,
         };
-        const launcher = path.join(packageDir, "bin/t3.mjs");
+        const launcher = path.join(packageDir, "bin/onicode.mjs");
         const first = yield* run(process.execPath, [launcher, "serve", "a b"], {
           cwd: root,
           env,
@@ -152,7 +152,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         assert.equal(first.stdout.trim(), `stub serve a b launcher=${launcher}`, first.stderr);
         assert.equal(first.exitCode, 7);
         assert.deepStrictEqual(
-          (yield* fs.readFileString(env.T3CODE_TEST_CALLS)).trim().split("\n"),
+          (yield* fs.readFileString(env.ONICODE_TEST_CALLS)).trim().split("\n"),
           ["--version|", `serve a b|${launcher}`],
         );
         const versionDir = path.join(home, "runtime/versions", VERSION);
@@ -171,11 +171,11 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         assert.equal(second.exitCode, 0);
         assert.equal(release.requests.length, requestsAfterFirst);
         assert.deepStrictEqual(
-          (yield* fs.readFileString(env.T3CODE_TEST_CALLS)).trim().split("\n"),
+          (yield* fs.readFileString(env.ONICODE_TEST_CALLS)).trim().split("\n"),
           ["--version|", `serve a b|${launcher}`, `--version|${launcher}`],
         );
 
-        yield* fs.writeFileString(path.join(versionDir, "t3"), "#!/t3-test-missing-loader\n");
+        yield* fs.writeFileString(path.join(versionDir, "onicode"), "#!/oni-test-missing-loader\n");
         for (const _attempt of [1, 2]) {
           const cached = yield* run(process.execPath, [launcher, "serve"], { cwd: root, env });
           assert.equal(cached.exitCode, 1, cached.stderr);
@@ -187,7 +187,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
           );
         }
 
-        const ipcServer = path.join(home, "runtime/versions", VERSION, "t3");
+        const ipcServer = path.join(home, "runtime/versions", VERSION, "onicode");
         yield* fs.writeFileString(
           ipcServer,
           `#!${process.execPath}\nprocess.on("SIGTERM", () => process.exit(23));\nprocess.on("message", (m) => process.send({ reply: m }));\nprocess.send({ args: process.argv.slice(2) });\n`,
@@ -212,7 +212,7 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const raceHome = path.join(root, "race-home");
         const launch = run(process.execPath, [launcher, "--version"], {
           cwd: root,
-          env: { ...env, T3CODE_HOME: raceHome },
+          env: { ...env, ONICODE_HOME: raceHome },
         });
         const [one, two] = yield* Effect.all([launch, launch], { concurrency: "unbounded" });
         assert.equal(one.exitCode, 0, one.stderr);
@@ -227,10 +227,10 @@ it.layer(NodeServices.layer)("build-npm-launcher", (it) => {
         const staleDir = path.join(staleHome, "runtime/versions", VERSION);
         const peerDir = path.join(root, "peer-runtime");
         yield* fs.makeDirectory(staleDir, { recursive: true });
-        yield* fs.writeFileString(path.join(staleDir, "t3"), "");
+        yield* fs.writeFileString(path.join(staleDir, "onicode"), "");
         yield* fs.makeDirectory(peerDir);
-        yield* fs.writeFileString(path.join(peerDir, "t3"), '#!/bin/sh\necho "peer $*"\nexit 7\n');
-        yield* fs.chmod(path.join(peerDir, "t3"), 0o755);
+        yield* fs.writeFileString(path.join(peerDir, "onicode"), '#!/bin/sh\necho "peer $*"\nexit 7\n');
+        yield* fs.chmod(path.join(peerDir, "onicode"), 0o755);
         yield* fs.writeFileString(path.join(peerDir, ".install-complete"), `${VERSION}\n`);
         yield* fs.writeFileString(path.join(peerDir, "sidecar"), "peer sidecar");
         const peerChecks = path.join(root, "peer-checks.txt");
@@ -245,7 +245,7 @@ const { readFileSync, renameSync, rmSync } = fs;
 let checking = false;
 let published = false;
 const checkPeer = () => {
-  const child = spawnSync(dir + "/t3", ["--version"], { encoding: "utf8" });
+  const child = spawnSync(dir + "/onicode", ["--version"], { encoding: "utf8" });
   let sidecar;
   try {
     sidecar = readFileSync(dir + "/sidecar", "utf8");
@@ -290,7 +290,7 @@ fs.readFileSync = (file, ...rest) => {
         const recovered = yield* run(
           process.execPath,
           ["--import", peerHook, launcher, "--version"],
-          { cwd: root, env: { ...env, T3CODE_HOME: staleHome } },
+          { cwd: root, env: { ...env, ONICODE_HOME: staleHome } },
         );
         const checks = (yield* fs.readFileString(peerChecks)).trim().split("\n");
         assert.isAtLeast(checks.length, 2);
@@ -306,21 +306,21 @@ fs.readFileSync = (file, ...rest) => {
         const staleOnlyHome = path.join(root, "stale-only-home");
         const staleOnlyDir = path.join(staleOnlyHome, "runtime/versions", VERSION);
         yield* fs.makeDirectory(staleOnlyDir, { recursive: true });
-        yield* fs.writeFileString(path.join(staleOnlyDir, "t3"), "incomplete");
+        yield* fs.writeFileString(path.join(staleOnlyDir, "onicode"), "incomplete");
         yield* fs.makeDirectory(`${staleOnlyDir}.lock`);
         const locked = yield* run(process.execPath, [launcher, "--version"], {
           cwd: root,
-          env: { ...env, T3CODE_HOME: staleOnlyHome },
+          env: { ...env, ONICODE_HOME: staleOnlyHome },
         });
         assert.equal(locked.exitCode, 1);
         assert.include(locked.stderr, `delete ${staleOnlyDir}.lock`);
-        assert.equal(yield* fs.readFileString(path.join(staleOnlyDir, "t3")), "incomplete");
+        assert.equal(yield* fs.readFileString(path.join(staleOnlyDir, "onicode")), "incomplete");
 
         // Without a peer, the stale folder is replaced by our own download.
         yield* fs.remove(`${staleOnlyDir}.lock`, { recursive: true });
         const replaced = yield* run(process.execPath, [launcher, "--version"], {
           cwd: root,
-          env: { ...env, T3CODE_HOME: staleOnlyHome },
+          env: { ...env, ONICODE_HOME: staleOnlyHome },
         });
         assert.equal(replaced.stdout.trim(), VERSION, replaced.stderr);
         assert.equal(replaced.exitCode, 0);
@@ -332,7 +332,7 @@ fs.readFileSync = (file, ...rest) => {
         release.corruptChecksum();
         const corrupt = yield* run(process.execPath, [launcher, "--version"], {
           cwd: root,
-          env: { ...env, T3CODE_HOME: path.join(root, "other-home") },
+          env: { ...env, ONICODE_HOME: path.join(root, "other-home") },
         });
         assert.equal(corrupt.exitCode, 1);
         assert.include(corrupt.stderr, "checksum mismatch");
@@ -349,12 +349,12 @@ fs.readFileSync = (file, ...rest) => {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         for (const executable of [
-          "#!/t3-test-missing-loader\n",
+          "#!/oni-test-missing-loader\n",
           '#!/bin/sh\necho "runtime loader failed" >&2\nexit 42\n',
           "#!/bin/sh\nkill -TERM $$\n",
-          '#!/bin/sh\ntrap \'echo caught > "$T3CODE_TEST_TERM"; exit 42\' TERM\necho ready > "$T3CODE_TEST_READY"\nwhile :; do :; done\n',
+          '#!/bin/sh\ntrap \'echo caught > "$ONICODE_TEST_TERM"; exit 42\' TERM\necho ready > "$ONICODE_TEST_READY"\nwhile :; do :; done\n',
         ]) {
-          const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-npm-validation-test-" });
+          const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-npm-validation-test-" });
           const output = yield* buildNpmLauncher({
             version: VERSION,
             outputDir: path.join(root, "out"),
@@ -375,12 +375,12 @@ syncBuiltinESMExports();
           );
           const env = {
             PATH: (yield* HostProcess.Environment).PATH,
-            T3CODE_HOME: home,
-            T3CODE_RELEASE_BASE_URL: release.baseUrl,
-            T3CODE_TEST_READY: path.join(root, "probe-ready"),
-            T3CODE_TEST_TERM: path.join(root, "probe-term"),
+            ONICODE_HOME: home,
+            ONICODE_RELEASE_BASE_URL: release.baseUrl,
+            ONICODE_TEST_READY: path.join(root, "probe-ready"),
+            ONICODE_TEST_TERM: path.join(root, "probe-term"),
           };
-          const launcher = path.join(output.packageDir, "bin/t3.mjs");
+          const launcher = path.join(output.packageDir, "bin/onicode.mjs");
           const failed = yield* run(
             process.execPath,
             ["--import", probeTimeoutHook, launcher, "serve"],
@@ -393,8 +393,8 @@ syncBuiltinESMExports();
             assert.include(failed.stderr, "runtime loader failed");
           }
           if (executable.includes("trap")) {
-            assert.isTrue(yield* fs.exists(env.T3CODE_TEST_READY));
-            assert.isFalse(yield* fs.exists(env.T3CODE_TEST_TERM));
+            assert.isTrue(yield* fs.exists(env.ONICODE_TEST_READY));
+            assert.isFalse(yield* fs.exists(env.ONICODE_TEST_TERM));
           }
           if ((yield* HostProcess.Platform) === "linux") {
             assert.include(failed.stderr, "glibc");

@@ -1,5 +1,5 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { parsePullRequestQuery } from "@t3tools/client-runtime/pull-request-query";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
+import { parsePullRequestQuery } from "@onicode/client-runtime/pull-request-query";
 import {
   type EnvironmentId,
   type ProjectId,
@@ -7,7 +7,7 @@ import {
   type PullRequestListFilters,
   type PullRequestListResult,
   type PullRequestListState,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { useEffect, useState } from "react";
 
 import { useAllEnvironmentShellsBootstrapped, useProjects } from "~/state/entities";
@@ -36,7 +36,7 @@ import {
 import type { PullRequestExpectedHost } from "./PullRequestListFilters";
 import type { PullRequestListPreferences, PullRequestListSort } from "./pullRequestListPreferences";
 import { assignProjectsToEnvironments } from "./pullRequestProjectAssignment.logic";
-import { pullRequestFilterProjects } from "@t3tools/client-runtime/pull-request-project-filter";
+import { pullRequestFilterProjects } from "@onicode/client-runtime/pull-request-project-filter";
 import { pullRequestListEntryId } from "./pullRequestListGroups.logic";
 
 export interface PullRequestsSearch extends PullRequestListPreferences {
@@ -183,7 +183,7 @@ export function usePullRequestScope(search: PullRequestsSearch) {
 
 export function usePullRequestQueryFilters(search: PullRequestsSearch, typedQuery: string) {
   const [sentQuery, setSentQuery] = useState(typedQuery);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- debounce timer that sends the typed query after SEARCH_DEBOUNCE_MS
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- debounce timer that sends the typed query after SEARCH_DEBOUNCE_MS
   useEffect(() => {
     const timer = window.setTimeout(() => setSentQuery(typedQuery), SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);

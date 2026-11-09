@@ -7,9 +7,9 @@ import {
   agentScopeCommand,
   type AgentScopeShape,
   type AgentSystemdScope,
-} from "@t3tools/shared/AgentScope";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveCommandPath } from "@t3tools/shared/shell";
+} from "@onicode/shared/AgentScope";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { resolveCommandPath } from "@onicode/shared/shell";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -18,9 +18,9 @@ import * as Path from "effect/Path";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 
-const AGENT_SLICE = "app-t3code-agents.slice";
+const AGENT_SLICE = "app-onicode-agents.slice";
 // Owns every agent slice and competes with the server's unit or scope under app.slice.
-const AGENTS_PARENT_SLICE = "app-t3code.slice";
+const AGENTS_PARENT_SLICE = "app-onicode.slice";
 // Low weights yield CPU and disk to the server under contention, where the user manager
 // has those controllers: current systemd delegates cpu, rarely io. TasksMax keeps agents
 // below logind's 33% per-user task limit, leaving forks for the server.
@@ -28,7 +28,7 @@ const AGENTS_PARENT_PROPERTIES = ["CPUWeight=10", "IOWeight=10", "TasksMax=25%"]
 
 export function ownedAgentSlice(stateDir: string): string {
   const hash = NodeCrypto.createHash("sha256").update(stateDir).digest("hex").slice(0, 12);
-  return `app-t3code-agents-${hash}.slice`;
+  return `app-onicode-agents-${hash}.slice`;
 }
 
 const GiB = 1024 ** 3;
@@ -317,7 +317,7 @@ export const make = Effect.gen(function* () {
   );
 
   const stop = Effect.fn("AgentScope.stop")(function* (unit: string) {
-    if (!unit.startsWith("t3code-") || !unit.endsWith(".scope")) return;
+    if (!unit.startsWith("onicode-") || !unit.endsWith(".scope")) return;
     const scope = yield* systemd;
     if (scope === undefined) return;
     const state = yield* readScope(scope.systemctl, unit);
@@ -396,7 +396,7 @@ export const make = Effect.gen(function* () {
       if (resolved === null) return { command, args };
       const scope = yield* systemd;
       if (scope === undefined) return agentScopeCommand({ command: resolved, args });
-      const unit = `t3code-${name}-${NodeCrypto.randomUUID().slice(0, 8)}.scope`;
+      const unit = `onicode-${name}-${NodeCrypto.randomUUID().slice(0, 8)}.scope`;
       // A continuing shared scope cannot attribute a tool's OOM to one thread.
       // Clear the launch thread's previous scope instead.
       const continuing = shared === true && scope.supportsOomPolicy;

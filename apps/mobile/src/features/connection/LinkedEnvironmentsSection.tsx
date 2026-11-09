@@ -1,7 +1,7 @@
-import { offersLinkedEnvironments } from "@t3tools/client-runtime/link-request";
-import { peerLinkHealth } from "@t3tools/client-runtime/state/peerLinks";
+import { offersLinkedEnvironments } from "@onicode/client-runtime/link-request";
+import { peerLinkHealth } from "@onicode/client-runtime/state/peerLinks";
 import { useFocusEffect } from "@react-navigation/native";
-import { AuthAccessReadScope, type EnvironmentId } from "@t3tools/contracts";
+import { AuthAccessReadScope, type EnvironmentId } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import { useCallback, useState } from "react";
 import { AppState, View } from "react-native";
@@ -59,7 +59,7 @@ export function LinkedEnvironmentsSection(props: {
                     : "Reachable";
           return (
             <View key={link.environmentId} className="gap-0.5 p-4">
-              <Text className="text-base font-t3-bold text-foreground">{link.label}</Text>
+              <Text className="text-base font-oni-bold text-foreground">{link.label}</Text>
               <Text
                 className={
                   health.kind === "reachable" && health.expiresInDays === null

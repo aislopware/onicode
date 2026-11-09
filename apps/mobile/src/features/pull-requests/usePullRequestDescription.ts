@@ -4,10 +4,10 @@ import {
   settleDescriptionSave,
   startDescriptionSave,
   type DescriptionDraft,
-} from "@t3tools/client-runtime/pull-request-editing";
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
-import type { PullRequestDetail } from "@t3tools/contracts";
-import { setMarkdownTaskChecked } from "@t3tools/shared/markdownTaskList";
+} from "@onicode/client-runtime/pull-request-editing";
+import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
+import type { PullRequestDetail } from "@onicode/contracts";
+import { setMarkdownTaskChecked } from "@onicode/shared/markdownTaskList";
 import { AsyncResult } from "effect/reactivity";
 import { useRef, useState } from "react";
 import * as Dialog from "../../components/ui/Dialog";

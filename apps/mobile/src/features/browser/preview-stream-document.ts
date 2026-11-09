@@ -1,10 +1,10 @@
-import type { DeviceHubAccess } from "@t3tools/client-runtime/device/hub-access";
-import type { PreviewStreamHostSetup } from "@t3tools/contracts";
+import type { DeviceHubAccess } from "@onicode/client-runtime/device/hub-access";
+import type { PreviewStreamHostSetup } from "@onicode/contracts";
 import type {
   PreviewStreamControl,
   PreviewStreamDownload,
   PreviewStreamFileChooser,
-} from "@t3tools/client-runtime/preview/server-browser-stream";
+} from "@onicode/client-runtime/preview/server-browser-stream";
 
 export interface PreviewStreamConfiguration {
   readonly access: DeviceHubAccess;
@@ -68,7 +68,7 @@ export function previewStreamDocument(configuration: string, script: string) {
     padding: 0; margin: -1px; border: 0; overflow: hidden;
     clip: rect(0, 0, 0, 0); white-space: nowrap; font-size: 16px;
   }
-</style></head><body><script>window.addEventListener("error",function(){${failure}});window.addEventListener("unhandledrejection",function(){${failure}});\n${safeScript}\ntry{T3PreviewStream.start(${safeConfiguration});}catch{${failure}}</script></body></html>`;
+</style></head><body><script>window.addEventListener("error",function(){${failure}});window.addEventListener("unhandledrejection",function(){${failure}});\n${safeScript}\ntry{OniPreviewStream.start(${safeConfiguration});}catch{${failure}}</script></body></html>`;
 }
 
 export function previewStreamMessage(data: string): PreviewStreamMessage | null {

@@ -3,7 +3,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 import { useState } from "react";
 import { page, userEvent } from "vite-plus/test/browser";

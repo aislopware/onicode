@@ -26,7 +26,7 @@ import "../lib/uuid";
 import * as MobileSecureStorage from "./mobile-secure-storage";
 import * as MobileStorage from "./mobile-storage";
 
-const deviceIdKey = "t3code.agent-awareness.device-id";
+const deviceIdKey = "onicode.agent-awareness.device-id";
 const makeStorage = MobileStorage.make().pipe(Effect.provide(MobileSecureStorage.layer));
 
 beforeEach(() => {

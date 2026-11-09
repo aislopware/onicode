@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { replaceTextRange } from "@t3tools/shared/composerTrigger";
+import { replaceTextRange } from "@onicode/shared/composerTrigger";
 
 import {
   VoiceTranscriptionError,

@@ -18,9 +18,9 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as HttpServer from "effect/http/HttpServer";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
-import type { ManagedPolicyDocument } from "@t3tools/contracts";
+import type { ManagedPolicyDocument } from "@onicode/contracts";
 
 import * as ServerConfig from "../config.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
@@ -39,7 +39,7 @@ interface RecordedBatchRequest {
         readonly serverArch?: string;
         readonly serverAppVersion?: string;
         readonly serverMode?: string;
-        readonly t3CodeVersion?: string;
+        readonly onicodeVersion?: string;
       };
     }>;
   } | null;
@@ -55,7 +55,7 @@ interface RecordedBatchBody {
       readonly serverArch?: string;
       readonly serverAppVersion?: string;
       readonly serverMode?: string;
-      readonly t3CodeVersion?: string;
+      readonly onicodeVersion?: string;
     };
   }>;
 }
@@ -116,14 +116,14 @@ const recordTwentyEvents = Effect.gen(function* () {
 const analyticsLayerWith = (client: HttpClient.HttpClient, policy?: ManagedPolicyDocument) =>
   AnalyticsService.layer.pipe(
     Layer.provideMerge(
-      ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "t3-telemetry-retry-" }),
+      ServerConfig.ServerConfig.layerTest(process.cwd(), { prefix: "oni-telemetry-retry-" }),
     ),
     Layer.provide(
       ConfigProvider.layer(
         ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: true,
-          T3CODE_POSTHOG_KEY: "phc_test_key",
-          T3CODE_POSTHOG_HOST: "http://localhost",
+          ONICODE_TELEMETRY_ENABLED: true,
+          ONICODE_POSTHOG_KEY: "phc_test_key",
+          ONICODE_POSTHOG_HOST: "http://localhost",
         }),
       ),
     ),
@@ -179,7 +179,7 @@ const sendFor = (
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService test", (it) => {
   it.effect("waits for desktop shell consent and honors a late telemetry opt-out", () =>
     Effect.gen(function* () {
-      const env: NodeJS.ProcessEnv = { T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1" };
+      const env: NodeJS.ProcessEnv = { ONICODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1" };
       const batches = yield* sendFor(
         0,
         respondWithStatus(204),
@@ -187,11 +187,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
           const analytics = yield* AnalyticsService.AnalyticsService;
           yield* analytics.record("test.before-discovery");
           yield* analytics.flush;
-          env.T3CODE_TELEMETRY_ENABLED = "false";
-          delete env.T3CODE_DESKTOP_SHELL_DISCOVERY_PENDING;
+          env.ONICODE_TELEMETRY_ENABLED = "false";
+          delete env.ONICODE_DESKTOP_SHELL_DISCOVERY_PENDING;
           yield* analytics.record("test.opted-out");
           yield* analytics.flush;
-          env.T3CODE_TELEMETRY_ENABLED = "true";
+          env.ONICODE_TELEMETRY_ENABLED = "true";
           yield* analytics.record("test.allowed");
           yield* analytics.flush;
         }),
@@ -296,16 +296,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
     Effect.gen(function* () {
       const capturedRequests: Array<RecordedBatchRequest> = [];
       const layerServerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3-telemetry-base-",
+        prefix: "oni-telemetry-base-",
       });
 
       const layerTelemetry = AnalyticsService.layer.pipe(Layer.provideMerge(layerServerConfig));
       const layerConfig = ConfigProvider.layer(
         ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: true,
-          T3CODE_POSTHOG_KEY: "phc_test_key",
-          T3CODE_POSTHOG_HOST: "http://localhost",
-          T3CODE_TELEMETRY_FLUSH_BATCH_SIZE: 20,
+          ONICODE_TELEMETRY_ENABLED: true,
+          ONICODE_POSTHOG_KEY: "phc_test_key",
+          ONICODE_POSTHOG_HOST: "http://localhost",
+          ONICODE_TELEMETRY_FLUSH_BATCH_SIZE: 20,
         }),
       );
       const layerBatchServer = HttpServer.serve(
@@ -386,7 +386,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
             (event) =>
               event.properties?.serverOs === "Linux" &&
               event.properties.serverArch === "arm64" &&
-              event.properties.serverAppVersion === event.properties.t3CodeVersion &&
+              event.properties.serverAppVersion === event.properties.onicodeVersion &&
               event.properties.serverMode === "web",
           ),
         ),
@@ -399,14 +399,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("AnalyticsService
     Effect.gen(function* () {
       const capturedPaths: Array<string> = [];
       const layerServerConfig = ServerConfig.ServerConfig.layerTest(process.cwd(), {
-        prefix: "t3-telemetry-disabled-",
+        prefix: "oni-telemetry-disabled-",
       });
       const layerTelemetry = AnalyticsService.layer.pipe(Layer.provideMerge(layerServerConfig));
       const layerConfig = ConfigProvider.layer(
         ConfigProvider.fromUnknown({
-          T3CODE_TELEMETRY_ENABLED: false,
-          T3CODE_POSTHOG_KEY: "phc_test_key",
-          T3CODE_POSTHOG_HOST: "http://localhost",
+          ONICODE_TELEMETRY_ENABLED: false,
+          ONICODE_POSTHOG_KEY: "phc_test_key",
+          ONICODE_POSTHOG_HOST: "http://localhost",
         }),
       );
       const layerBatchServer = HttpServer.serve(

@@ -12,7 +12,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { awaitCliNotarization, signMacArchiveContents } from "./build-cli-archive.ts";
 
 const signedEnv = {
-  T3CODE_CLI_MAC_SIGN_IDENTITY: "Developer ID Application: Test (TEAM)",
+  ONICODE_CLI_MAC_SIGN_IDENTITY: "Developer ID Application: Test (TEAM)",
   APPLE_API_KEY: "/tmp/AuthKey_TEST.p8",
   APPLE_API_KEY_ID: "TEST",
   APPLE_API_ISSUER: "issuer",
@@ -61,11 +61,11 @@ const withStubs = <A, E, R>(
 const makeContent = Effect.fn("test.makeContent")(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-cli-notary-" });
+  const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-cli-notary-" });
   const contentDir = path.join(root, "content");
   yield* fs.makeDirectory(contentDir);
-  const executablePath = path.join(contentDir, "t3");
-  yield* fs.writeFileString(executablePath, "t3");
+  const executablePath = path.join(contentDir, "onicode");
+  yield* fs.writeFileString(executablePath, "onicode");
   return { root, contentDir, executablePath, submissionFile: path.join(root, "submission") };
 });
 
@@ -78,7 +78,7 @@ it.layer(NodeServices.layer)("build-cli-archive notarization", (it) => {
       const fs = yield* FileSystem.FileSystem;
       // Apple documents id and path for an unwaited submit; a pending status must not fail it.
       for (const submitted of [
-        '{"id":"new-id","message":"Successfully uploaded file","path":"t3.zip"}',
+        '{"id":"new-id","message":"Successfully uploaded file","path":"onicode.zip"}',
         '{"id":"new-id","status":"In Progress"}',
       ]) {
         const content = yield* makeContent();
@@ -166,7 +166,7 @@ it.layer(NodeServices.layer)("build-cli-archive notarization", (it) => {
         {
           name: "submission without credentials",
           wait: { exitCode: 0, stdout: '{"id":"sub","status":"Accepted"}' },
-          env: { T3CODE_CLI_MAC_SIGN_IDENTITY: signedEnv.T3CODE_CLI_MAC_SIGN_IDENTITY },
+          env: { ONICODE_CLI_MAC_SIGN_IDENTITY: signedEnv.ONICODE_CLI_MAC_SIGN_IDENTITY },
           error: "CliArchiveInputMissingError",
         },
         {

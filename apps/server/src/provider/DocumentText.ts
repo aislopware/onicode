@@ -8,7 +8,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 const extensions = new Set(["docx", "xlsx", "pptx", "odt", "ods", "odp", "rtf", "epub", "ipynb"]);
 
@@ -40,7 +40,7 @@ export class DocumentText extends Context.Service<
   {
     readonly ensure: (path: string) => Effect.Effect<string | undefined>;
   }
->()("t3/provider/DocumentText") {}
+>()("onicode/provider/DocumentText") {}
 
 const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;

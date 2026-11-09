@@ -10,7 +10,7 @@ import {
   MIN_INTERFACE_FONT_SIZE,
   MIN_PROMPT_FONT_SIZE,
   MIN_TERMINAL_FONT_SIZE,
-} from "@t3tools/contracts/settings";
+} from "@onicode/contracts/settings";
 import * as Schema from "effect/Schema";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
@@ -328,7 +328,7 @@ export function TypographySection() {
   // rows without it would make terminal font edits do nothing. The rows follow the target
   // directly so its row mounts in the first commit; the target clears once handled.
   const searchTargetId = useSettingsSearchTargetId();
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- writes the advanced typography flag to localStorage when a search target needs it
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- writes the advanced typography flag to localStorage when a search target needs it
   useEffect(() => {
     if (searchTargetId !== null) revealSettingsSearchTarget(searchTargetId);
   }, [searchTargetId]);
@@ -399,7 +399,7 @@ function FontFamilySettingsRow({
     setDraftSettled(true);
   }
   const readAdoptedGeneration = useEffectEvent(() => adopted.generation);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears the pending commit timer on unmount
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- clears the pending commit timer on unmount
   useEffect(
     () => () => {
       if (commitTimerRef.current !== null) window.clearTimeout(commitTimerRef.current.id);

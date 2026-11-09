@@ -6,8 +6,8 @@ import {
   type SecretRequestAnswerInput,
   type ServerConfig,
   type ServerSettings,
-} from "@t3tools/contracts";
-import { builtInSecretProviderDefinitions } from "@t3tools/secret-provider-definitions/registry";
+} from "@onicode/contracts";
+import { builtInSecretProviderDefinitions } from "@onicode/secret-provider-definitions/registry";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 

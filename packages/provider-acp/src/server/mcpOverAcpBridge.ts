@@ -5,7 +5,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import type * as AcpSchema from "effect-acp/compat";
 
-import { responsePayloads } from "@t3tools/shared/mcpResponsePayloads";
+import { responsePayloads } from "@onicode/shared/mcpResponsePayloads";
 
 const MAX_CONNECTIONS = 16;
 const MAX_MESSAGE_BYTES = 8 * 1024 * 1024;
@@ -145,7 +145,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
             () => response.body?.cancel().catch(() => undefined) ?? Promise.resolve(),
           );
           return yield* new AcpMcpOverAcpError({
-            message: `T3 Code MCP endpoint responded with HTTP ${response.status}.`,
+            message: `Onicode MCP endpoint responded with HTTP ${response.status}.`,
           });
         }
         const payloads = [...(yield* Stream.runCollect(responsePayloads(response, bridgeError)))];
@@ -180,7 +180,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
       });
       if (!response.ok && response.status !== 404) {
         return yield* new AcpMcpOverAcpError({
-          message: `T3 Code MCP endpoint rejected disconnect with HTTP ${response.status}.`,
+          message: `Onicode MCP endpoint rejected disconnect with HTTP ${response.status}.`,
         });
       }
       yield* Effect.promise(
@@ -192,7 +192,7 @@ export const makeAcpMcpOverAcpBridge = Effect.fn("AcpMcpOverAcpBridge.make")(fun
 
   return {
     connect: Effect.fn("mcpOverAcpBridge.connect")(function* (request) {
-      if (request.serverId !== "t3-code") {
+      if (request.serverId !== "onicode") {
         return yield* new AcpMcpOverAcpError({
           message: `Unknown ACP MCP server "${request.serverId}".`,
         });

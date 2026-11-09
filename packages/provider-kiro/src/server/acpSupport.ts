@@ -1,5 +1,5 @@
 import type * as EffectAcpSchema from "effect-acp/compat";
-import type { ProviderApprovalOption, RuntimeMode } from "@t3tools/contracts";
+import type { ProviderApprovalOption, RuntimeMode } from "@onicode/contracts";
 import type { KiroSettings } from "../settings.ts";
 import type * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
@@ -12,8 +12,8 @@ import {
   acpPermissionDisposition,
   type AcpPermissionDisposition,
   type AcpRuntimePolicy,
-} from "@t3tools/provider-acp/server/clientPolicy";
-import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
+} from "@onicode/provider-acp/server/clientPolicy";
+import * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
 
 /**
  * Kiro's default engine is a v2 server this driver does not speak, so V3 is
@@ -24,7 +24,7 @@ const KIRO_ACP_ARGS = ["acp", "--agent-engine=v3", "--auth-method=cli"] as const
 
 /**
  * Kiro's `autopilot` session option. Off (Supervised), Kiro also asks the user
- * to review a turn's file changes before it ends. Sessions start "on", so T3
+ * to review a turn's file changes before it ends. Sessions start "on", so Onicode
  * sets it from the thread's runtime mode.
  */
 export const KIRO_AUTOPILOT_CONFIG_ID = "autopilot";
@@ -46,7 +46,7 @@ export const KIRO_EFFORT_CONFIG_ID = "effortLevel";
 export const KIRO_AGENT_CONFIG_ID = "mode";
 
 /**
- * Kiro offers two permission postures, Supervised and Autopilot, which T3's
+ * Kiro offers two permission postures, Supervised and Autopilot, which Onicode's
  * Supervised and Full access select. Any other mode runs Supervised.
  */
 export const KIRO_SUPPORTED_RUNTIME_MODES = [
@@ -57,7 +57,7 @@ export const KIRO_SUPPORTED_RUNTIME_MODES = [
 /**
  * Autopilot is on only for an unrestricted Full access thread. An explicit
  * approval or sandbox override keeps Kiro Supervised, so its end-of-turn
- * review still reaches the user and every tool prompt reaches T3's policy
+ * review still reaches the user and every tool prompt reaches Onicode's policy
  * check (the same rule as Grok's `grokLaunchRuntimeMode`).
  */
 export function kiroAutopilotValue(policy: {
@@ -109,7 +109,7 @@ export function kiroApprovalOptions(
 }
 
 /**
- * T3's answer to a Kiro permission request. A policy approval may only use
+ * Onicode's answer to a Kiro permission request. A policy approval may only use
  * Kiro's `allow_once`: its `allow_always` saves a consent rule for the whole
  * workspace or wider, which would outlive the thread. When Kiro offers no
  * one-time choice, the request goes to the user instead of persisting a grant.

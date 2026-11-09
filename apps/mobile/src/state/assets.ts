@@ -1,5 +1,5 @@
 import { useAtomMount, useAtomSubscribe, useAtomValue } from "@effect/atom-react";
-import { resolveFilesystemReadAccess } from "@t3tools/client-runtime/state/filesystem";
+import { resolveFilesystemReadAccess } from "@onicode/client-runtime/state/filesystem";
 import {
   assetUrlStateFromResult,
   blockedAssetUrlState,
@@ -7,9 +7,9 @@ import {
   createProjectFaviconUrlAtomFamily,
   EMPTY_ASSET_URL_ATOM,
   makeRevisionedAssetUrlFamily,
-} from "@t3tools/client-runtime/state/assets";
-import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
-import type { AssetResource, EnvironmentId } from "@t3tools/contracts";
+} from "@onicode/client-runtime/state/assets";
+import { executeAtomQuery } from "@onicode/client-runtime/state/runtime";
+import type { AssetResource, EnvironmentId } from "@onicode/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";

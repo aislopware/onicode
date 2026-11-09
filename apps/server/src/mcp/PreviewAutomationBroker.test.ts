@@ -14,7 +14,7 @@ import {
   type PreviewAutomationRequest,
   type PreviewAutomationStreamEvent,
   SERVER_BROWSER_AUTOMATION_CLIENT_ID,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
@@ -350,7 +350,7 @@ it.effect("names the click target that matched nothing when the server browser t
           error: {
             _tag: "PreviewAutomationTimeoutError",
             message: "No element matches the target.",
-            detail: { reason: 'No element matches ".definitely-no-such-t3-target".' },
+            detail: { reason: 'No element matches ".definitely-no-such-oni-target".' },
           },
         }),
       ).pipe(Effect.forkScoped);
@@ -360,13 +360,13 @@ it.effect("names the click target that matched nothing when the server browser t
         .invoke<void>({
           scope,
           operation: "click",
-          input: { selector: ".definitely-no-such-t3-target", timeoutMs: 15_000 },
+          input: { selector: ".definitely-no-such-oni-target", timeoutMs: 15_000 },
         })
         .pipe(Effect.flip);
 
       expect(error._tag).toBe("PreviewAutomationTimeoutError");
       expect(error.message).toBe(
-        'Preview automation click timed out after 15000ms. No element matches ".definitely-no-such-t3-target".',
+        'Preview automation click timed out after 15000ms. No element matches ".definitely-no-such-oni-target".',
       );
     }),
   ),

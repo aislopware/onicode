@@ -26,7 +26,7 @@ import {
   parseComposerContextHref,
 } from "./composerContextReferences.ts";
 import { assistantCitationLabel, parseAssistantCitationHref } from "./assistantCitations.ts";
-import type { OrchestrationV2ConversationMessage } from "@t3tools/contracts";
+import type { OrchestrationV2ConversationMessage } from "@onicode/contracts";
 import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "./proposedPlanText.ts";
 import { unified } from "unified";
 import remarkParse from "remark-parse";

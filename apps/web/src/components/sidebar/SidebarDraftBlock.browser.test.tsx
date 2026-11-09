@@ -1,5 +1,5 @@
-import { scopeProjectRef, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
+import { EnvironmentId, ProjectId, ThreadId } from "@onicode/contracts";
 import { Profiler } from "react";
 import { expect, it, vi } from "vite-plus/test";
 

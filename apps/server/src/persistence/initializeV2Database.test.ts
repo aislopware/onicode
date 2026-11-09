@@ -7,8 +7,8 @@ import * as NodeSqlite from "node:sqlite";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { ThreadId } from "@t3tools/contracts";
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import { ThreadId } from "@onicode/contracts";
+import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Predicate from "effect/Predicate";
@@ -26,7 +26,7 @@ import * as LegacyV1ThreadImporter from "../orchestration-v2/legacy/LegacyV1Thre
 it.effect(
   "snapshots V1, imports transcripts lazily, and preserves both databases across switches",
   () => {
-    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-v1-v2-"));
+    const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-v1-v2-"));
     const sourcePath = NodePath.join(directory, "state.sqlite");
     const destinationPath = NodePath.join(directory, "statev2.sqlite");
     const threadId = ThreadId.make("legacy-thread");
@@ -120,7 +120,7 @@ it.effect(
 );
 
 it.effect("includes committed WAL data and does not publish a failed snapshot", () => {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-v2-snapshot-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-v2-snapshot-"));
   const sourcePath = NodePath.join(directory, "state.sqlite");
   const destinationPath = NodePath.join(directory, "statev2.sqlite");
   return Effect.gen(function* () {
@@ -158,7 +158,7 @@ it.effect("includes committed WAL data and does not publish a failed snapshot", 
 });
 
 it.effect("starts fresh without V1 and never imports over existing V2 state", () => {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-v2-fresh-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-v2-fresh-"));
   const destinationPath = NodePath.join(directory, "userdata", "statev2.sqlite");
   return Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -187,7 +187,7 @@ it.effect("starts fresh without V1 and never imports over existing V2 state", ()
 });
 
 it.effect("removes copies left by a killed start, but not one that is still running", () => {
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-v2-abandoned-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-v2-abandoned-"));
   const killed = NodeChildProcess.spawnSync(process.execPath, ["-e", ""]).pid;
   const running = `.v2-import-${process.pid}-Kq81Zx`;
   const unrelated = ".v2-import-not-a-copy";

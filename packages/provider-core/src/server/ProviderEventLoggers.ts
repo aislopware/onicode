@@ -1,4 +1,4 @@
-import type { ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@onicode/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
@@ -14,7 +14,7 @@ export class ProviderEventLoggers extends Context.Service<
     readonly native: EventNdjsonLogger | undefined;
     readonly canonical: EventNdjsonLogger | undefined;
   }
->()("@t3tools/provider-core/server/ProviderEventLoggers") {}
+>()("@onicode/provider-core/server/ProviderEventLoggers") {}
 
 export const NoOpProviderEventLoggers: ProviderEventLoggers["Service"] = {
   native: undefined,

@@ -12,10 +12,10 @@ import {
   ThreadId,
   type OrchestrationV2ExecutionNode,
   type OrchestrationV2RunStatus,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
-import { createModelCapabilities, createModelSelection } from "@t3tools/shared/model";
-import { usageLimitBlockedRun } from "@t3tools/shared/orchestrationV2ThreadError";
+import { createModelCapabilities, createModelSelection } from "@onicode/shared/model";
+import { usageLimitBlockedRun } from "@onicode/shared/orchestrationV2ThreadError";
 import { describe, expect, it } from "vite-plus/test";
 
 import { v2Projection } from "./orchestrationV2TestFixtures.ts";
@@ -495,7 +495,7 @@ describe("deriveProviderSubagentStatus", () => {
     nodes: [root],
   });
 
-  it("leaves T3 delegated tasks and ordinary threads alone", () => {
+  it("leaves Onicode delegated tasks and ordinary threads alone", () => {
     expect(deriveProviderSubagentStatus(child("mcp"))).toBeNull();
     expect(deriveProviderSubagentStatus({ ...v2Projection, nodes: [root] })).toBeNull();
   });

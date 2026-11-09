@@ -1,7 +1,7 @@
 import type {
   PullRequestReviewerCandidate,
   PullRequestReviewerCandidateList,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 // Loaded rows retain the request state updated by mutations.
 export function mergeReviewerCandidates(

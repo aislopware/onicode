@@ -3,14 +3,14 @@ import * as NodeFS from "node:fs";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
-import type { GitCommandError } from "@t3tools/contracts";
+import type { GitCommandError } from "@onicode/contracts";
 
 import { assert, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import * as TestSourceControlHost from "@t3tools/source-control-testing/TestSourceControlHost";
+import * as SourceControlHost from "@onicode/source-control-core/server/SourceControlHost";
+import * as TestSourceControlHost from "@onicode/source-control-testing/TestSourceControlHost";
 
 import * as GitLabCli from "./GitLabCli.ts";
 import * as GitLabSourceControlProvider from "./GitLabSourceControlProvider.ts";
@@ -114,7 +114,7 @@ const withRepository = <A, E>(
   Effect.gen(function* () {
     const host = yield* SourceControlHost.SourceControlHost;
     const cwd = yield* Effect.acquireRelease(
-      Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-gitlab-template-"))),
+      Effect.sync(() => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-gitlab-template-"))),
       (directory) => Effect.sync(() => NodeFS.rmSync(directory, { recursive: true, force: true })),
     );
     const git = (...args: string[]) =>

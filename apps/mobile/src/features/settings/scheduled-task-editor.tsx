@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { useMemo, useCallback, type Dispatch, type SetStateAction } from "react";
 
 import { useProjects, useServerConfigs, useThreadShell } from "../../state/entities";

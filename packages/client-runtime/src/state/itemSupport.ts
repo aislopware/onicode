@@ -1,4 +1,4 @@
-import type { OrchestrationV2ThreadProjection, TurnItemId } from "@t3tools/contracts";
+import type { OrchestrationV2ThreadProjection, TurnItemId } from "@onicode/contracts";
 
 type Projection = OrchestrationV2ThreadProjection;
 

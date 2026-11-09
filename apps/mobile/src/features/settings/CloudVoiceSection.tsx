@@ -1,10 +1,10 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
-import { cloudSpeechDisclosure } from "@t3tools/shared/speech";
-import { setCloudSpeechKey } from "@t3tools/client-runtime/voice-input";
+import { cloudSpeechDisclosure } from "@onicode/shared/speech";
+import { setCloudSpeechKey } from "@onicode/client-runtime/voice-input";
 import {
   configuredSecretSources,
   secretRequestReference,
-} from "@t3tools/client-runtime/secret-request";
+} from "@onicode/client-runtime/secret-request";
 import {
   AuthSettingsWriteScope,
   CLOUD_SPEECH_LABELS,
@@ -17,7 +17,7 @@ import {
   type SecretProviderId,
   type SettingsSecretValue,
   type VoiceTranscriptionDestination,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import Constants from "expo-constants";
 import { AsyncResult } from "effect/reactivity";

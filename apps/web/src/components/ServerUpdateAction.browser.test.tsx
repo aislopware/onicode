@@ -1,5 +1,5 @@
 import { RegistryContext } from "@effect/atom-react";
-import { AuthSessionState, type EnvironmentId } from "@t3tools/contracts";
+import { AuthSessionState, type EnvironmentId } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Schema from "effect/Schema";
 import { AsyncResult, Atom } from "effect/reactivity";
@@ -70,7 +70,7 @@ const legacyAuth = {
   policy: "remote-reachable",
   bootstrapMethods: ["one-time-token"],
   sessionMethods: ["bearer-access-token"],
-  sessionCookieName: "t3_session",
+  sessionCookieName: "oni_session",
 } as const;
 
 const currentSession = {

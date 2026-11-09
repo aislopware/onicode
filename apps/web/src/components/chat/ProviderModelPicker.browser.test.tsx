@@ -1,4 +1,4 @@
-import { ProviderDriverKind, ProviderInstanceId, type ModelSelection } from "@t3tools/contracts";
+import { ProviderDriverKind, ProviderInstanceId, type ModelSelection } from "@onicode/contracts";
 import { useState } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
@@ -14,7 +14,7 @@ it("keeps each registry image when adding a model from another ACP agent", async
     "https://cdn.agentclientprotocol.com/registry/icons/picker-explicit.svg",
     "https://cdn.agentclientprotocol.com/registry/v1/latest/picker-by-id.svg",
   ];
-  const cache = await caches.open("t3-acp-registry-icons-v1");
+  const cache = await caches.open("oni-acp-registry-icons-v1");
   await using _cachedIcons = {
     async [Symbol.asyncDispose]() {
       await Promise.all(icons.map((url) => cache.delete(url)));

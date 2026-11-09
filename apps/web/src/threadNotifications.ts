@@ -1,5 +1,5 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import type { ClientSettings } from "@t3tools/contracts/settings";
+import type { EnvironmentId, ThreadId } from "@onicode/contracts";
+import type { ClientSettings } from "@onicode/contracts/settings";
 
 import completionUrl from "./assets/notification-completion.mp3";
 import inputUrl from "./assets/notification-input.mp3";

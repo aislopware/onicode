@@ -1,4 +1,4 @@
-import type { DevicePlatform } from "@t3tools/contracts";
+import type { DevicePlatform } from "@onicode/contracts";
 
 export interface DeviceShapeProfile {
   readonly id: "ios-phone" | "ios-tablet" | "android-phone" | "android-tablet";

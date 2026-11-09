@@ -5,7 +5,7 @@ import {
   AuthRelayWriteScope,
   type AuthSessionState,
   managedCapabilityDenial,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useState } from "react";
 

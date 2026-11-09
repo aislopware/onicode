@@ -1,4 +1,4 @@
-import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
+import type { VoiceInputState } from "@onicode/client-runtime/voice-input";
 import { CheckIcon, MicIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -82,7 +82,7 @@ function formatElapsed(seconds: number) {
 function RecordingStatus(props: { level: number; recordingLimitSeconds?: number | undefined }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the timer displaying the native recording duration
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- owns the timer displaying the native recording duration
   useEffect(() => {
     const startedAt = Date.now();
     const timer = window.setInterval(

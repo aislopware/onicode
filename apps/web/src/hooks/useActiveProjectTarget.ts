@@ -1,5 +1,5 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
+import type { EnvironmentId, ScopedThreadRef } from "@onicode/contracts";
 
 import { useProjects } from "~/state/entities";
 

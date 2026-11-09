@@ -11,7 +11,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";

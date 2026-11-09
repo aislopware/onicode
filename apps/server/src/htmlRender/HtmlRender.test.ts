@@ -1,10 +1,10 @@
 // @effect-diagnostics nodeBuiltinImport:off - plain local servers stand in for LAN services.
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@onicode/contracts";
+import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -25,7 +25,7 @@ import { HtmlRenderBrowserError } from "./headlessChrome.ts";
 import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 import * as PreviewBrowserHost from "../preview/PreviewBrowserHost.ts";
 
-const TEST_BROWSER_ENV = "T3CODE_TEST_HEADLESS_SHELL";
+const TEST_BROWSER_ENV = "ONICODE_TEST_HEADLESS_SHELL";
 
 const layerHtmlRender = (
   executable?: string,
@@ -47,7 +47,7 @@ const layerHtmlRender = (
       ),
     ),
     Layer.provideMerge(McpProviderSessions.layer),
-    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "t3-html-render-" })),
+    Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "oni-html-render-" })),
     Layer.provideMerge(NodeServices.layer),
   );
 const layerTest = layerHtmlRender();
@@ -60,7 +60,7 @@ describe("HtmlRender", () => {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const htmlRender = yield* HtmlRender.HtmlRender;
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-images-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-html-images-" });
       const png = path.join(directory, "shot.png");
       const svg = path.join(directory, "logo.svg");
       yield* fileSystem.writeFile(png, PNG_BYTES);
@@ -89,8 +89,8 @@ describe("HtmlRender", () => {
       expect(prepared).toContain(`['${pngUri}', \`${svgUri}\`]`);
       expect(prepared).not.toContain(directory);
       for (const src of kept) expect(prepared).toContain(`<img src="${src}">`);
-      expect(prepared.indexOf("<head>")).toBeLessThan(prepared.indexOf('<style id="t3-theme">'));
-      expect(prepared.indexOf('<style id="t3-theme">')).toBeLessThan(prepared.indexOf("<title>"));
+      expect(prepared.indexOf("<head>")).toBeLessThan(prepared.indexOf('<style id="oni-theme">'));
+      expect(prepared.indexOf('<style id="oni-theme">')).toBeLessThan(prepared.indexOf("<title>"));
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -121,7 +121,7 @@ describe("HtmlRender", () => {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const htmlRender = yield* HtmlRender.HtmlRender;
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-images-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-html-images-" });
       const svg = path.join(directory, "styled.svg");
       const source = [
         '<?xml version="1.0"?>',
@@ -142,7 +142,7 @@ describe("HtmlRender", () => {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const htmlRender = yield* HtmlRender.HtmlRender;
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-images-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-html-images-" });
       const folder = path.join(directory, "folder.png");
       yield* fileSystem.makeDirectory(folder);
       const missing = path.join(directory, "missing.jpg");
@@ -222,7 +222,7 @@ describe("HtmlRender", () => {
       });
       expect(stored?.endsWith(".html")).toBe(true);
       const html = yield* fileSystem.readFileString(stored ?? "");
-      expect(html).toContain('<style id="t3-theme">');
+      expect(html).toContain('<style id="oni-theme">');
       expect(html).toContain("<p>Quarterly revenue</p>");
       // Antigravity reports the call without its result, so the thread's
       // provider session keeps the page for one call with these arguments.
@@ -268,7 +268,7 @@ describe("HtmlRender", () => {
       const htmlRender = yield* HtmlRender.HtmlRender;
       const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
       const threadId = ThreadId.make("thread-html-path");
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-page-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-html-page-" });
       const file = path.join(directory, "report.html");
       yield* fileSystem.writeFileString(file, "<!doctype html><p>First draft</p>");
       const page = { path: file, title: "Report", height: 300 };
@@ -308,7 +308,7 @@ describe("HtmlRender", () => {
       const config = yield* ServerConfig.ServerConfig;
       const htmlRender = yield* HtmlRender.HtmlRender;
       const threadId = ThreadId.make("thread-html-path-guard");
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-page-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-html-page-" });
       const secret = path.join(directory, "id_rsa");
       yield* fileSystem.writeFileString(secret, "PRIVATE KEY");
       const page = path.join(directory, "page.html");
@@ -354,7 +354,7 @@ describe("HtmlRender", () => {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const htmlRender = yield* HtmlRender.HtmlRender;
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-page-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-html-page-" });
       const secret = path.join(directory, "id_rsa");
       yield* fileSystem.writeFileString(secret, "PRIVATE KEY");
       const symlinked = path.join(directory, "symlinked.html");
@@ -412,7 +412,7 @@ describe("HtmlRender", () => {
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
-          const file = yield* fileSystem.makeTempFileScoped({ prefix: "t3-browser-spawn-" });
+          const file = yield* fileSystem.makeTempFileScoped({ prefix: "oni-browser-spawn-" });
           const outcome = yield* HtmlRender.HtmlRender.use((htmlRender) =>
             htmlRender.preview({ html: "<p>x</p>" }).pipe(Effect.flip),
           ).pipe(
@@ -435,13 +435,13 @@ describe("HtmlRender", () => {
   describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
     "when the browser cannot be signalled",
     () => {
-      // A browser T3 cannot signal, as under AppArmor in an LXC container, must still exit.
+      // A browser Onicode cannot signal, as under AppArmor in an LXC container, must still exit.
       it.live("asks the browser to close when the preview finishes instead of signalling it", () =>
         Effect.gen(function* () {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const directory = yield* fileSystem.makeTempDirectoryScoped({
-            prefix: "t3-fake-browser-",
+            prefix: "oni-fake-browser-",
           });
           const executable = path.join(directory, "chrome-headless-shell");
           const exitRecord = path.join(directory, "exited");
@@ -494,7 +494,7 @@ fs.createReadStream(null, { fd: 3 }).on("end", quit).on("data", (chunk) => {
           const fileSystem = yield* FileSystem.FileSystem;
           const path = yield* Path.Path;
           const directory = yield* fileSystem.makeTempDirectoryScoped({
-            prefix: "t3-fake-browser-",
+            prefix: "oni-fake-browser-",
           });
           const executable = path.join(directory, "chrome-headless-shell");
           yield* fileSystem.writeFileString(
@@ -552,7 +552,7 @@ fs.createReadStream(null, { fd: 3 }).on("end", quit).on("data", (chunk) => {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const htmlRender = yield* HtmlRender.HtmlRender;
-        const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-html-files-" });
+        const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-html-files-" });
         const secret = path.join(directory, "secret.js");
         yield* fileSystem.writeFileString(secret, 'window.secret = "abc123";');
         const secretUrl = NodeURL.pathToFileURL(secret).href;

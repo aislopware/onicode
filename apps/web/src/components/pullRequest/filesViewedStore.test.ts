@@ -3,7 +3,7 @@ import {
   ProjectId,
   type PullRequestFilesViewedResult,
   type PullRequestRef,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { Cause } from "effect";
 import { AsyncResult } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -16,7 +16,7 @@ import {
 
 const reference = (number: number): PullRequestRef => ({
   projectId: ProjectId.make("project"),
-  repository: "t3/code",
+  repository: "onicode/code",
   number,
 });
 

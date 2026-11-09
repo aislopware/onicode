@@ -1,4 +1,4 @@
-import { isLocalEditorFileUrl, LOCAL_FILE_LINK_SCHEMES } from "@t3tools/contracts";
+import { isLocalEditorFileUrl, LOCAL_FILE_LINK_SCHEMES } from "@onicode/contracts";
 import type { Paragraph, PhrasingContent, Root, RootContent } from "mdast";
 import { remarkKeepWindowsPaths } from "./markdownWindowsPaths.ts";
 import { type PluggableList, type Processor, type Transformer, unified } from "unified";
@@ -163,7 +163,7 @@ function rehypePreserveImageSourceMeta() {
   };
 }
 
-const IMAGE_SRC_PROTOCOLS = [...(defaultSchema.protocols?.src ?? []), "file", "t3-context"];
+const IMAGE_SRC_PROTOCOLS = [...(defaultSchema.protocols?.src ?? []), "file", "oni-context"];
 
 // The sanitizer compares schemes case-sensitively, so lowercase accepted editor links first.
 function rehypeNormalizeLocalEditorLinks() {
@@ -213,8 +213,8 @@ const CHAT_MARKDOWN_SANITIZE_SCHEMA = {
     href: [
       ...(defaultSchema.protocols?.href ?? []),
       "file",
-      "t3-citation",
-      "t3-context",
+      "oni-citation",
+      "oni-context",
       THREAD_LINK_PROTOCOL,
       // Scheme only: the renderer's URL transform checks the rest of the link shape.
       ...LOCAL_FILE_LINK_SCHEMES,

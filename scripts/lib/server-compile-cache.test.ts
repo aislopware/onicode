@@ -46,7 +46,7 @@ it.each([
 ])("prepares $platform/$hostArch cache", async ({ platform, hostArch, arch, ...layout }) => {
   const { spawnSync } = await import("node:child_process");
   const root = NodeFS.realpathSync(
-    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-hook-cache-")),
+    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-hook-cache-")),
   );
   try {
     const resources = NodePath.join(root, layout.resources);
@@ -115,7 +115,7 @@ it.each([
 
 it("rejects ambiguous bundled server entries before importing them", async () => {
   const { spawnSync } = await import("node:child_process");
-  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cache-ambiguous-"));
+  const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-cache-ambiguous-"));
   try {
     const dist = NodePath.join(root, "app.asar/apps/server/dist");
     NodeFS.mkdirSync(dist, { recursive: true });
@@ -151,7 +151,7 @@ it("rejects ambiguous bundled server entries before importing them", async () =>
 it("reclaims only AppImage cache directories linked to gone mounts", async () => {
   const { spawnSync } = await import("node:child_process");
   const root = NodeFS.realpathSync(
-    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cache-reclaim-")),
+    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-cache-reclaim-")),
   );
   try {
     const resources = NodePath.join(root, ".mount_live/resources");
@@ -216,7 +216,7 @@ it("reclaims only AppImage cache directories linked to gone mounts", async () =>
 
 it("seeds relocated cache entries without allowing writes into shipped resources", () => {
   const root = NodeFS.realpathSync(
-    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-prepared-test-")),
+    NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-prepared-test-")),
   );
   try {
     const prepared = NodePath.join(root, "resources", "server-compile-cache");
@@ -265,7 +265,7 @@ it.each(["app", "server"])(
     const { spawnSync } = await import("node:child_process");
     const helper = new URL("./server-compile-cache.ts", import.meta.url).href;
     const root = NodeFS.realpathSync(
-      NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-cache-engine-")),
+      NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-cache-engine-")),
     );
     const run = (code: string) => {
       const env = {

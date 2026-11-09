@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import type { PullRequestDetail } from "@t3tools/contracts";
+import type { PullRequestDetail } from "@onicode/contracts";
 import {
   pullRequestAgentActions,
   pullRequestAgentThread,

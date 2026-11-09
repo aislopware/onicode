@@ -16,7 +16,7 @@ import {
   AuthSourceControlWriteScope,
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 export const AUTH_SCOPE_OPTIONS: ReadonlyArray<{
   readonly scope: AuthGrantScope;

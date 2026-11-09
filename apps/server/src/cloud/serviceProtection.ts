@@ -9,7 +9,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as ProcessRunner from "../processRunner.ts";
 import { BOOT_SERVICE_UNIT_FILE } from "./bootService.ts";
 
-const PROTECT_DROP_IN = "90-t3code-protect.conf";
+const PROTECT_DROP_IN = "90-onicode-protect.conf";
 const SYSTEM_UNIT_DIR = "/etc/systemd/system";
 export const REMOTE_ACCESS_UNITS = ["tailscaled.service", "ssh.service", "sshd.service"];
 
@@ -112,9 +112,9 @@ export function renderPrivilegedScript(plan: ProtectionPlan, mode: "apply" | "un
     for (const { path, contents } of plan.system) {
       lines.push(
         `mkdir -p ${quoteShell(directoryOf(path))}`,
-        `cat >${quoteShell(path)} <<'T3CODE_PROTECT'`,
+        `cat >${quoteShell(path)} <<'ONICODE_PROTECT'`,
         contents.trimEnd(),
-        "T3CODE_PROTECT",
+        "ONICODE_PROTECT",
       );
     }
   } else {

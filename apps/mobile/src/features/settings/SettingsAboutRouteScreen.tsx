@@ -1,7 +1,7 @@
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import Constants from "expo-constants";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise } from "@onicode/client-runtime/state/runtime";
 import { useRef, useState } from "react";
 import { Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

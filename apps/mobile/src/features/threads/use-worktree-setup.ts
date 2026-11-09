@@ -1,5 +1,5 @@
-import type { EnvironmentId, ThreadId, WorktreeSetupSnapshot } from "@t3tools/contracts";
-import { resolveVisibleWorktreeSetup } from "@t3tools/client-runtime/worktree-setup";
+import type { EnvironmentId, ThreadId, WorktreeSetupSnapshot } from "@onicode/contracts";
+import { resolveVisibleWorktreeSetup } from "@onicode/client-runtime/worktree-setup";
 import { useState } from "react";
 import { useEnvironmentQuery } from "../../state/query";
 import { vcsEnvironment } from "../../state/vcs";

@@ -1,5 +1,5 @@
 import { Button } from "../../components/ui/Button";
-import deviceStreamScript from "@t3tools/mobile-device-stream";
+import deviceStreamScript from "@onicode/mobile-device-stream";
 import {
   useEffectEvent,
   useImperativeHandle,
@@ -10,7 +10,7 @@ import {
 } from "react";
 import { Platform, View } from "react-native";
 import { WebView } from "react-native-webview";
-import type { DeviceStreamStatus } from "@t3tools/client-runtime/device/stream";
+import type { DeviceStreamStatus } from "@onicode/client-runtime/device/stream";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText } from "../../components/ui/AppText";
@@ -110,7 +110,7 @@ function DeviceStreamDocumentView({
     failed.current = true;
     clearBootstrapTimer();
     void onInputConnected(false);
-    webView.current?.injectJavaScript("window.T3DeviceStream?.stop(); true;");
+    webView.current?.injectJavaScript("window.OniDeviceStream?.stop(); true;");
     setError(message);
     setStatus("error");
   };
@@ -119,7 +119,7 @@ function DeviceStreamDocumentView({
   );
   const resetInput = useEffectEvent(() => void onInputConnected(false));
   // The stream lives exactly as long as this view.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts the bootstrap timeout and stops the WebView device stream when this view unmounts
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- starts the bootstrap timeout and stops the WebView device stream when this view unmounts
   useLayoutEffect(() => {
     active.current = true;
     resetInput();
@@ -129,7 +129,7 @@ function DeviceStreamDocumentView({
       if (bootstrapTimer.current !== null) clearTimeout(bootstrapTimer.current);
       bootstrapTimer.current = null;
       active.current = false;
-      view?.injectJavaScript("window.T3DeviceStream?.stop(); true;");
+      view?.injectJavaScript("window.OniDeviceStream?.stop(); true;");
       resetInput();
     };
   }, []);
@@ -139,7 +139,7 @@ function DeviceStreamDocumentView({
   };
   const command = (button: keyof DeviceStreamRef) => {
     webView.current?.injectJavaScript(
-      `window.T3DeviceStream?.command(${JSON.stringify(button)}); true;`,
+      `window.OniDeviceStream?.command(${JSON.stringify(button)}); true;`,
     );
   };
   useImperativeHandle(ref, () => ({

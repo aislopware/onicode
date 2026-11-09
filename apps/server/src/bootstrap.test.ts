@@ -6,7 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import { vi } from "vite-plus/test";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 import { readBootstrapEnvelope } from "./bootstrap.ts";
 import { assertNone, assertSome } from "@effect/vitest/utils";
@@ -69,7 +69,7 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
   it.effect("reads a bootstrap envelope from a provided fd", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+      const filePath = yield* fs.makeTempFileScoped({ prefix: "oni-bootstrap-", suffix: ".ndjson" });
 
       yield* fs.writeFileString(
         filePath,
@@ -88,7 +88,7 @@ it.layer(NodeServices.layer)("readBootstrapEnvelope", (it) => {
   it.effect("falls back to reading the inherited fd when path duplication fails", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const filePath = yield* fs.makeTempFileScoped({ prefix: "t3-bootstrap-", suffix: ".ndjson" });
+      const filePath = yield* fs.makeTempFileScoped({ prefix: "oni-bootstrap-", suffix: ".ndjson" });
 
       yield* fs.writeFileString(
         filePath,

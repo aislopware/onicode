@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off - native inference and IPC cleanup need killable Promise boundaries outside the Effect runtime.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeSea from "node:sea";
-import type { SpeechStreamText } from "@t3tools/contracts";
+import type { SpeechStreamText } from "@onicode/contracts";
 import { createSpeechAudio } from "./audio.ts";
 
 // Inline the small child entry so the packaged CLI does not need a separate worker artifact.
@@ -146,7 +146,7 @@ process.on("message", async (message) => {
       if (message.acceleration.startsWith("gpu:") && !device)
         throw new Error("The selected speech GPU is unavailable.");
       model = await TranscribeModel.load(message.path, device ? { device } : { backend: message.acceleration });
-      process.send({ type: "t3-speech-reply", ok: true, backend: model.backend,
+      process.send({ type: "oni-speech-reply", ok: true, backend: model.backend,
         languages: model.capabilities.languages,
         supportsStreaming: model.capabilities.supportsStreaming,
         supportsLongForm: model.supports("long_form"),
@@ -154,31 +154,31 @@ process.on("message", async (message) => {
         supportsVocabulary: model.supports("vocabulary") });
     } else if (message.kind === "begin") {
       await begin(message, true);
-      process.send({ type: "t3-speech-reply", ok: true });
+      process.send({ type: "oni-speech-reply", ok: true });
     } else if (message.kind === "feed") {
       const preview = await feed(message.pcm);
-      process.send({ type: "t3-speech-reply", ok: true, revision: ++revision, preview });
+      process.send({ type: "oni-speech-reply", ok: true, revision: ++revision, preview });
     } else if (message.kind === "finish") {
       await feed(undefined, true);
       if (nativeStreaming && heardAudio) await stream.finalize();
       const text = nativeStreaming ? (heardAudio ? stream.text.full : "") : texts.join(" ").trim();
       resetAsr();
       audio = undefined;
-      process.send({ type: "t3-speech-reply", ok: true, text });
+      process.send({ type: "oni-speech-reply", ok: true, text });
     } else if (message.kind === "reset") {
       resetAsr();
       if (vad) await vad.streamReset();
       audio = undefined;
-      process.send({ type: "t3-speech-reply", ok: true });
+      process.send({ type: "oni-speech-reply", ok: true });
     } else if (message.kind === "transcribe") {
       await begin(message, false);
       await feed(message.pcm, true);
       const text = texts.join(" ").trim();
       audio = undefined;
-      process.send({ type: "t3-speech-reply", ok: true, text });
+      process.send({ type: "oni-speech-reply", ok: true, text });
     }
   } catch (error) {
-    process.send({ type: "t3-speech-reply", ok: false,
+    process.send({ type: "oni-speech-reply", ok: false,
       error: error instanceof Error ? error.stack ?? error.message : String(error) });
   }
 });
@@ -186,7 +186,7 @@ process.on("disconnect", () => process.exit(0));
 `;
 
 type Reply = {
-  readonly type: "t3-speech-reply";
+  readonly type: "oni-speech-reply";
   readonly ok: boolean;
   readonly text?: string;
   readonly error?: string;
@@ -351,7 +351,7 @@ async function loadNativeSpeechModelOnce(
       typeof message !== "object" ||
       message === null ||
       !("type" in message) ||
-      message.type !== "t3-speech-reply"
+      message.type !== "oni-speech-reply"
     )
       return;
     const reply = message as Reply;

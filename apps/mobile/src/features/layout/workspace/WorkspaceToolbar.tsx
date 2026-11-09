@@ -86,7 +86,7 @@ export function WorkspaceToolbar(props: {
     else cancelSearch();
     return true;
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the search TextInput after a focus request renders it
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- focuses the search TextInput after a focus request renders it
   useEffect(() => {
     if (focusRequest > 0) input.current?.focus();
   }, [focusRequest]);

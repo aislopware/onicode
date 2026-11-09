@@ -1,5 +1,5 @@
 import * as Dialog from "../../components/ui/Dialog";
-import { buildNewThreadLink, type LinkedPrompt } from "@t3tools/shared/promptLinks";
+import { buildNewThreadLink, type LinkedPrompt } from "@onicode/shared/promptLinks";
 
 import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import {

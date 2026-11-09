@@ -4,7 +4,7 @@ import {
   DesktopBrowserCommand,
   DesktopBrowserEvent,
   type DesktopBrowserEvent as DesktopBrowserEventType,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as NodePath from "node:path";
 import * as Effect from "effect/Effect";
@@ -102,7 +102,7 @@ export class DesktopBrowserHost extends Context.Service<
       readonly active: boolean;
     }>;
   }
->()("@t3tools/desktop/preview/DesktopBrowserHost") {}
+>()("@onicode/desktop/preview/DesktopBrowserHost") {}
 
 export const make = Effect.gen(function* () {
   const outbox = yield* PubSub.unbounded<DesktopBrowserEventType>();

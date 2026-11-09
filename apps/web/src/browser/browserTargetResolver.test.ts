@@ -1,5 +1,5 @@
-import { EnvironmentId } from "@t3tools/contracts";
-import { isPrivateNetworkHost, isPublicFaviconHost } from "@t3tools/shared/hostClassification";
+import { EnvironmentId } from "@onicode/contracts";
+import { isPrivateNetworkHost, isPublicFaviconHost } from "@onicode/shared/hostClassification";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const readPreparedConnection = vi.fn();

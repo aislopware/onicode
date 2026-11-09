@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import { CommandId, type Project, ProjectId } from "@t3tools/contracts";
+import { CommandId, type Project, ProjectId } from "@onicode/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";

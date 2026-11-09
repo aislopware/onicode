@@ -166,13 +166,13 @@ pub fn destination(windows: Vec<Window>, pid: u32, title: &str) -> Result<Option
         .filter(|w| w.pid == pid && w.title == title && w.mapped && !w.hidden);
     let found = matches.next();
     if matches.next().is_some() {
-        return Err("More than one T3 Code window matches the capture destination.".into());
+        return Err("More than one Onicode window matches the capture destination.".into());
     }
     Ok(found)
 }
 
 pub fn activate(pid: u32, title: &str) -> Result<()> {
-    // Subscribe before looking up a newly mapped T3 window, so no map/title event is missed.
+    // Subscribe before looking up a newly mapped Onicode window, so no map/title event is missed.
     let socket = UnixStream::connect(session_directory()?.join(".socket2.sock"))?;
     let deadline = Instant::now() + Duration::from_secs(3);
     let mut events = BufReader::new(socket);
@@ -184,7 +184,7 @@ pub fn activate(pid: u32, title: &str) -> Result<()> {
             if request(&lua)?.trim() != "ok"
                 && request(&format!("/dispatch focuswindow address:0x{address:x}"))?.trim() != "ok"
             {
-                return Err("Hyprland could not focus T3 Code.".into());
+                return Err("Hyprland could not focus Onicode.".into());
             }
             return Ok(());
         }
@@ -192,9 +192,9 @@ pub fn activate(pid: u32, title: &str) -> Result<()> {
     }
 }
 
-/// Waits for one Hyprland event, or explains that T3 Code never appeared before `deadline`.
+/// Waits for one Hyprland event, or explains that Onicode never appeared before `deadline`.
 fn next_event(events: &mut BufReader<UnixStream>, deadline: Instant) -> Result<()> {
-    let not_visible = "T3 Code did not become visible.";
+    let not_visible = "Onicode did not become visible.";
     let left = deadline.checked_duration_since(Instant::now());
     events.get_ref().set_read_timeout(Some(
         left.filter(|left| !left.is_zero()).ok_or(not_visible)?,
@@ -222,7 +222,7 @@ mod tests {
             address: "0x123456789abcdef".into(),
             pid,
             title: title.into(),
-            class: "t3".into(),
+            class: "onicode".into(),
             at: [-1920, 20],
             size: [1000, 800],
             mapped: true,
@@ -236,18 +236,18 @@ mod tests {
     #[test]
     fn destination_requires_unique_process_and_title() {
         assert!(
-            destination(vec![window(2, "T3")], 1, "T3")
+            destination(vec![window(2, "Onicode")], 1, "Onicode")
                 .unwrap()
                 .is_none()
         );
         assert!(
-            destination(vec![window(1, "other")], 1, "T3")
+            destination(vec![window(1, "other")], 1, "Onicode")
                 .unwrap()
                 .is_none()
         );
-        assert!(destination(vec![window(1, "T3"), window(1, "T3")], 1, "T3").is_err());
+        assert!(destination(vec![window(1, "Onicode"), window(1, "Onicode")], 1, "Onicode").is_err());
         assert!(
-            destination(vec![window(2, "T3"), window(1, "T3")], 1, "T3")
+            destination(vec![window(2, "Onicode"), window(1, "Onicode")], 1, "Onicode")
                 .unwrap()
                 .is_some()
         );
@@ -261,9 +261,9 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(3);
         assert_eq!(
             next_event(&mut events, deadline).unwrap_err().to_string(),
-            "T3 Code did not become visible."
+            "Onicode did not become visible."
         );
-        hyprland.write_all(b"openwindow>>1,1,t3,T3 Code\n").unwrap();
+        hyprland.write_all(b"openwindow>>1,1,onicode,Onicode\n").unwrap();
         assert!(next_event(&mut events, deadline).is_ok());
         drop(hyprland);
         assert_eq!(

@@ -1,7 +1,7 @@
 import { requestUrl } from "../requestUrl.ts";
 // Loopback-only hubs expose shell execution or unauthenticated actions.
 // Proxy with environment read scope for streams and operate scope for input and tuning.
-import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -155,7 +155,7 @@ const proxyHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
   const response = yield* httpClient.execute(upstreamRequest);
   const headers: Record<string, string> = {};
   for (const [name, value] of Object.entries(response.headers)) {
-    // A cookie from an upstream such as an EAS session's preview host would land on T3's origin.
+    // A cookie from an upstream such as an EAS session's preview host would land on Onicode's origin.
     if (
       name === "content-encoding" ||
       name === "transfer-encoding" ||

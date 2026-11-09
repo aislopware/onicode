@@ -3,7 +3,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { expect, it } from "@effect/vitest";
-import { ProviderInstanceId, ProviderSetupError, type ProviderAuthState } from "@t3tools/contracts";
+import { ProviderInstanceId, ProviderSetupError, type ProviderAuthState } from "@onicode/contracts";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -190,7 +190,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CursorAuth", (it
   it.effect("discards a credential rejected by verification and permits a fresh login", () =>
     Effect.gen(function* () {
       const rejectionMessage =
-        "Cursor needs a paid plan to run in T3 Code. Upgrade this account or sign in with a different one.";
+        "Cursor needs a paid plan to run in Onicode. Upgrade this account or sign in with a different one.";
       let rejected = true;
       const harness = yield* makeHarness({
         onChanged: (signedIn) =>

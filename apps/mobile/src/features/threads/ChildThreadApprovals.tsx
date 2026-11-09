@@ -1,10 +1,10 @@
 import { useAtomValue } from "@effect/atom-react";
-import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@t3tools/contracts";
-import type { ChildThreadApproval } from "@t3tools/client-runtime/state/thread-requests";
+import { AuthOrchestrationOperateScope, type ScopedThreadRef } from "@onicode/contracts";
+import type { ChildThreadApproval } from "@onicode/client-runtime/state/thread-requests";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import { useState } from "react";
 import { useEnvironmentScope } from "../../state/session";
 import { ScrollView, View } from "react-native";
@@ -21,7 +21,7 @@ function ChildApproval({ entry }: { entry: ChildThreadApproval }) {
   const [error, setError] = useState<string | null>(null);
   return (
     <View className="mx-3.5 my-2 gap-2">
-      <AppText className="font-t3-bold text-sm text-foreground">
+      <AppText className="font-oni-bold text-sm text-foreground">
         Approval from {entry.title}
       </AppText>
       <PendingApprovalCard

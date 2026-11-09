@@ -11,7 +11,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import { vi } from "vite-plus/test";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as ServerConfig from "../config.ts";
 import * as DocumentText from "./DocumentText.ts";
 import { extractDocumentText } from "./documentTextWorker.ts";
@@ -25,7 +25,7 @@ import { appendUserInputAttachmentPaths } from "./userInputAttachments.ts";
 vi.mock("node:child_process", { spy: true });
 
 const layer = Layer.merge(
-  ServerConfig.layerTest(process.cwd(), { prefix: "t3-answer-paths-" }),
+  ServerConfig.layerTest(process.cwd(), { prefix: "oni-answer-paths-" }),
   DocumentText.layer,
 ).pipe(Layer.provideMerge(NodeServices.layer));
 const attachment = {

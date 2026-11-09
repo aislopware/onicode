@@ -5,8 +5,8 @@ import {
   type ServerSelfUpdateProgressEvent,
   type ServerSelfUpdateProgressStage,
   type ServerSelfUpdateResult,
-} from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Config from "effect/Config";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -24,7 +24,7 @@ import {
   CLI_RELEASE_BASE_URL_ENV,
   cliReleaseChannelOf,
   crossesReleaseTrack,
-} from "@t3tools/shared/cliRelease";
+} from "@onicode/shared/cliRelease";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as ServerConfig from "../config.ts";
@@ -72,12 +72,12 @@ export class ServerSelfUpdate extends Context.Service<
       onHandoffAccepted?: () => Effect.Effect<void>,
     ) => Effect.Effect<never, ServerSelfUpdateError>;
   }
->()("t3/cloud/selfUpdate/ServerSelfUpdate") {}
+>()("onicode/cloud/selfUpdate/ServerSelfUpdate") {}
 
 /**
  * A server starting from the runtime its launcher settled on means runtimes left by earlier
  * updates can go. The boot service says so through its IPC context. The SSH launcher and the
- * install script's `t3` start this home's pinned runtime directly, without one.
+ * install script's `onicode` start this home's pinned runtime directly, without one.
  */
 export const pruneRuntimesOnStart = Effect.fn("cloud.server_self_update.prune_on_start")(
   function* (input: { readonly baseDir: string; readonly managed: boolean }) {
@@ -86,7 +86,7 @@ export const pruneRuntimesOnStart = Effect.fn("cloud.server_self_update.prune_on
     const platform = yield* HostProcess.Platform;
     const executablePath = yield* HostProcess.ExecutablePath;
     const { entryPath } = pinnedRuntimePaths(path, input.baseDir, packageJson.version, platform);
-    // The executable path is resolved, so it names the real path of a symlinked T3 home.
+    // The executable path is resolved, so it names the real path of a symlinked Onicode home.
     const realEntryPath = yield* fs.realPath(entryPath).pipe(Effect.orElseSucceed(() => entryPath));
     if (!input.managed && executablePath !== entryPath && executablePath !== realEntryPath) {
       return [];
@@ -96,7 +96,7 @@ export const pruneRuntimesOnStart = Effect.fn("cloud.server_self_update.prune_on
       keep: [packageJson.version],
     });
     if (removed.length > 0) {
-      yield* Effect.logInfo("Removed unused t3 runtimes.", { versions: removed });
+      yield* Effect.logInfo("Removed unused onicode runtimes.", { versions: removed });
     }
     return removed;
   },
@@ -115,10 +115,10 @@ export function trackSwitchBlockReason(input: {
   if (!crossesReleaseTrack(input.serverVersion, input.targetVersion)) return null;
   const databaseMigration = input.databaseMigration();
   if (input.targetDatabaseMigration === undefined || databaseMigration === undefined) {
-    return `Cannot confirm this database works with t3@${input.targetVersion}. Switch tracks from Settings → About → Update track, which checks it first.`;
+    return `Cannot confirm this database works with onicode@${input.targetVersion}. Switch tracks from Settings → About → Update track, which checks it first.`;
   }
   return input.targetDatabaseMigration < databaseMigration
-    ? `This database has changes t3@${input.targetVersion} does not support yet; it stays on this release.`
+    ? `This database has changes onicode@${input.targetVersion} does not support yet; it stays on this release.`
     : null;
 }
 
@@ -180,12 +180,12 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
         );
       }
       return yield* failWith(
-        "This server is managed by the T3 Code desktop app on its machine; update the desktop app to update it.",
+        "This server is managed by the Onicode desktop app on its machine; update the desktop app to update it.",
       );
     }
     if (capability === null) {
       return yield* failWith(
-        "Remote updates require the T3 Code background service. Run `t3 service install` on the server machine.",
+        "Remote updates require the Onicode background service. Run `onicode service install` on the server machine.",
       );
     }
 
@@ -193,7 +193,7 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
     if (unsafeCrossing !== null) return yield* failWith(unsafeCrossing);
     const targetVersion = input.targetVersion.trim();
     if (!isExactServiceVersion(targetVersion)) {
-      return yield* failWith(`'${targetVersion}' is not an exact t3 version.`);
+      return yield* failWith(`'${targetVersion}' is not an exact onicode version.`);
     }
     if (yield* Ref.getAndSet(inFlight, true)) {
       return yield* failWith("A server update is already in progress.");
@@ -287,10 +287,10 @@ export const make = Effect.fn("cloud.server_self_update.make")(function* () {
             ? failWith(error.reason, error)
             : mirror !== undefined && isUnpublishedRelease(error)
               ? failWith(
-                  `${mirror.organization}'s update mirror has no t3@${targetVersion} for this machine.`,
+                  `${mirror.organization}'s update mirror has no onicode@${targetVersion} for this machine.`,
                   error,
                 )
-              : failWith(`Could not prepare t3@${targetVersion}.`, error),
+              : failWith(`Could not prepare onicode@${targetVersion}.`, error),
         ),
       );
 

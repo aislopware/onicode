@@ -6,11 +6,11 @@ import * as Schema from "effect/Schema";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import type * as EffectAcpErrors from "effect-acp/errors";
 
-import { TextGenerationError } from "@t3tools/contracts";
+import { TextGenerationError } from "@onicode/contracts";
 import type { GrokSettings } from "../settings.ts";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
+import { getModelSelectionStringOptionValue } from "@onicode/shared/model";
 
-import * as TextGenerationOperations from "@t3tools/provider-core/server/textGenerationOperations";
+import * as TextGenerationOperations from "@onicode/provider-core/server/textGenerationOperations";
 import {
   applyGrokAcpModelSelection,
   currentGrokModelIdFromSessionSetup,
@@ -39,7 +39,7 @@ export const makeGrokTextGeneration = Effect.fn("makeGrokTextGeneration")(functi
         grokSettings,
         environment,
         cwd,
-        clientInfo: { name: "t3-code-git-text", version: "0.0.0" },
+        clientInfo: { name: "onicode-git-text", version: "0.0.0" },
       }).pipe(
         Effect.provideService(SecureRandom.SecureRandom, random),
         Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, commandSpawner),

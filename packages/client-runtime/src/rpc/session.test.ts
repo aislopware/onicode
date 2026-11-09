@@ -7,8 +7,8 @@ import {
   type ServerConfigStreamEvent as ServerConfigStreamEventType,
   WS_METHODS,
   UsageLimitSourceId,
-} from "@t3tools/contracts";
-import { splitSocketFrame } from "@t3tools/shared/socketFrameParts";
+} from "@onicode/contracts";
+import { splitSocketFrame } from "@onicode/shared/socketFrameParts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -136,7 +136,7 @@ const SERVER_CONFIG: ServerConfigType = {
     policy: "loopback-browser",
     bootstrapMethods: ["one-time-token"],
     sessionMethods: ["browser-session-cookie", "bearer-access-token"],
-    sessionCookieName: "t3_session",
+    sessionCookieName: "oni_session",
   },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/keybindings.json",

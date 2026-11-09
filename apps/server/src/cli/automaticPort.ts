@@ -1,4 +1,4 @@
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@onicode/shared/Net";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -63,7 +63,7 @@ export const make = Effect.gen(function* () {
     }
     return yield* new CliError.UserError({
       cause:
-        "Windows is already using every port T3 Code tried. Pass --port or set T3CODE_PORT to a port Windows is not using.",
+        "Windows is already using every port Onicode tried. Pass --port or set ONICODE_PORT to a port Windows is not using.",
     });
   });
 });

@@ -5,7 +5,7 @@ import {
   type PullRequestMediaLocation,
 } from "./pullRequestMediaSource";
 import { useFilePreviewGallery } from "../../components/FilePreviewGallery";
-import { videoMimeType } from "@t3tools/shared/video";
+import { videoMimeType } from "@onicode/shared/video";
 import { Pressable, View } from "react-native";
 import { Image } from "expo-image";
 import { AppText } from "../../components/ui/AppText";

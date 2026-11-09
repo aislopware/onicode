@@ -1,5 +1,5 @@
 import { assert, expect, it } from "vite-plus/test";
-import { DEFAULT_CLIENT_SETTINGS, type DesktopSnapShotState } from "@t3tools/contracts";
+import { DEFAULT_CLIENT_SETTINGS, type DesktopSnapShotState } from "@onicode/contracts";
 
 import {
   createRecordingRequestTracker,
@@ -151,7 +151,7 @@ it("hides macOS setup only while permissions and the shortcut are all in place",
   const revoked = {
     ...ready,
     macPermissions: { screenRecording: true, accessibility: false },
-    message: "Allow Accessibility in System Settings, then restart T3 Code.",
+    message: "Allow Accessibility in System Settings, then restart Onicode.",
   };
   expect(snapShotSetupComplete(revoked, true)).toBe(false);
   expect(snapShotStatus(revoked, true)).toBe("Capture needs attention");

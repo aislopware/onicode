@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 
 import { scopedThreadKey } from "../../lib/scopedEntities";

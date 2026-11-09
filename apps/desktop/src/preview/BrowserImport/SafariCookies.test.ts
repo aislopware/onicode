@@ -235,7 +235,7 @@ describe("safariAccessDenied", () => {
   it.effect("does not read a readable jar, or any other failure, as denied", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
-      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3code-safari-" });
+      const directory = yield* fileSystem.makeTempDirectoryScoped({ prefix: "onicode-safari-" });
       const jar = `${directory}/Cookies.binarycookies`;
       yield* fileSystem.writeFile(jar, new Uint8Array([0x63, 0x6f, 0x6f, 0x6b]));
       assert.isFalse(yield* safariAccessDenied(jar));

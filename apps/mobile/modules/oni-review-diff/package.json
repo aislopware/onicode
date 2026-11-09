@@ -1,0 +1,17 @@
+{
+  "name": "@onicode/mobile-review-diff-native",
+  "version": "0.0.0",
+  "private": true,
+  "expo-module": {
+    "ios": {
+      "modules": [
+        "OniReviewDiffModule"
+      ]
+    },
+    "android": {
+      "modules": [
+        "expo.modules.onireviewdiff.OniReviewDiffModule"
+      ]
+    }
+  }
+}

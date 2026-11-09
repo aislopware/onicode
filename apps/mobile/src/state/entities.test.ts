@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId, type ScopedThreadRef } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";

@@ -151,7 +151,7 @@ runs:
         inputs.task-cache-read-token != ''
       shell: bash
       env:
-        T3_TASK_CACHE_READ_TOKEN: ${{ inputs.task-cache-read-token }}
+        ONICODE_TASK_CACHE_READ_TOKEN: ${{ inputs.task-cache-read-token }}
       run: |
         node infra/task-cache/scripts/install-ci.ts
         if [[ ( "$GITHUB_EVENT_NAME" == pull_request && "$GITHUB_BASE_REF" == main ) || ( "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ) ]]; then

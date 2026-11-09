@@ -2,8 +2,8 @@ import type { Root, RootContent } from "mdast";
 import { unified, type Processor } from "unified";
 import remarkParse from "remark-parse";
 import remarkGfm from "remark-gfm";
-import { remarkKeepWindowsProsePaths } from "@t3tools/shared/markdownWindowsPaths";
-import { isWindowsAbsolutePath } from "@t3tools/shared/path";
+import { remarkKeepWindowsProsePaths } from "@onicode/shared/markdownWindowsPaths";
+import { isWindowsAbsolutePath } from "@onicode/shared/path";
 
 const parser = unified().use(remarkParse).use(remarkGfm).use(remarkKeepWindowsProsePaths);
 export type MarkdownNode = Root | RootContent;
@@ -393,7 +393,7 @@ interface DestinationToken {
 }
 
 /**
- * Markdown reads `C:\work\.t3` as `C:\work.t3`. Web keeps authored Windows destinations
+ * Markdown reads `C:\work\.onicode` as `C:\work.onicode`. Web keeps authored Windows destinations
  * literally (see `remarkKeepWindowsPaths` in shared), so escape their backslashes to give
  * both parsers here the same path. `\&` stays an escape, as `markdownWithHtml` emits it.
  * Expects authored Markdown: already escaped output would be escaped twice.

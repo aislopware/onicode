@@ -1,9 +1,9 @@
 // @effect-diagnostics nodeBuiltinImport:off - Effect has no incremental digest or free-space query.
 import * as EffectNodeStream from "@effect/platform-node/NodeStream";
-import { ProviderDriverKind, type ProviderInstallState } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { resolveNodeExecutable, nodeRuntimeUnavailableMessage } from "@t3tools/shared/nodeRuntime";
-import { resolveCommandPath } from "@t3tools/shared/shell";
+import { ProviderDriverKind, type ProviderInstallState } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { resolveNodeExecutable, nodeRuntimeUnavailableMessage } from "@onicode/shared/nodeRuntime";
+import { resolveCommandPath } from "@onicode/shared/shell";
 import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -108,7 +108,7 @@ interface AntigravityInstallationService {
 export class AntigravityInstallation extends Context.Service<
   AntigravityInstallation,
   AntigravityInstallationService
->()("t3/provider/AntigravityInstallation") {
+>()("onicode/provider/AntigravityInstallation") {
   static readonly layer = Layer.effect(
     AntigravityInstallation,
     Effect.gen(function* () {
@@ -389,7 +389,7 @@ export const makeAntigravityInstallation = Effect.fn("AntigravityInstallation.ma
       function* (executable: AntigravityExecutable, expectedVersion: string) {
         const validationScope = yield* Effect.scope;
         const profileDirectory = yield* Effect.acquireRelease(
-          fs.makeTempDirectory({ prefix: "t3-antigravity-validate-" }),
+          fs.makeTempDirectory({ prefix: "oni-antigravity-validate-" }),
           (directory) =>
             fs.remove(directory, { recursive: true, force: true }).pipe(
               // Windows may retain DLL handles briefly after taskkill returns.

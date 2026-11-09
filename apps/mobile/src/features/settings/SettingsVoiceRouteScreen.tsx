@@ -31,7 +31,7 @@ import {
 } from "../voice-input/voiceDestination";
 import { VoiceModelSection } from "./VoiceModelSection";
 import { CloudVoiceSection } from "./CloudVoiceSection";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@onicode/contracts";
 import { ThreadSwipeable } from "../home/thread-swipe-actions";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsDragHandle } from "./components/SettingsDragHandle";
@@ -302,7 +302,7 @@ export function SettingsVoiceRouteScreen() {
             <Text className="px-2 text-sm text-foreground-muted">
               {permission === "ask"
                 ? "Allow microphone access to record and to see your microphones."
-                : "Turn on microphone access for T3 Code in Settings to use voice input."}
+                : "Turn on microphone access for Onicode in Settings to use voice input."}
             </Text>
           </>
         ) : null}

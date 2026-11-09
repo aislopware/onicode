@@ -5,7 +5,7 @@ import {
   AuthSessionId,
   LOCAL_DEVICE_HOST_ID,
   type AuthEnvironmentScope,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpClient, HttpClientResponse, HttpRouter } from "effect/http";
@@ -79,7 +79,7 @@ describe("device hub proxy", () => {
   it("releases the upstream response after forwarding its body and strips tickets", async () => {
     const { handler, requests, finalized } = fixture([AuthOrchestrationReadScope]);
     const response = await handler(
-      new Request("http://t3.test/api/device-hub/api/devices?wsTicket=secret"),
+      new Request("http://onicode.test/api/device-hub/api/devices?wsTicket=secret"),
     );
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("frame");
@@ -92,7 +92,7 @@ describe("device hub proxy", () => {
     async (path) => {
       const { handler, requests } = fixture([AuthOrchestrationReadScope]);
       const response = await handler(
-        new Request(`http://t3.test/api/device-hub${path}`, { headers: { upgrade: "websocket" } }),
+        new Request(`http://onicode.test/api/device-hub${path}`, { headers: { upgrade: "websocket" } }),
       );
       expect(response.status).toBe(403);
       expect(requests).toEqual([]);
@@ -101,7 +101,7 @@ describe("device hub proxy", () => {
 
   it("requires operate scope for stream tuning", async () => {
     const readOnly = fixture([AuthOrchestrationReadScope]);
-    const path = "http://t3.test/api/device-hub/vendor/serve-emu/api/stream-settings";
+    const path = "http://onicode.test/api/device-hub/vendor/serve-emu/api/stream-settings";
     expect((await readOnly.handler(new Request(path, { method: "POST" }))).status).toBe(403);
     const operator = fixture([AuthOrchestrationOperateScope]);
     const response = await operator.handler(new Request(path, { method: "POST" }));
@@ -110,7 +110,7 @@ describe("device hub proxy", () => {
   });
 
   it("reads Android fold state but requires operate scope to change it", async () => {
-    const path = "http://t3.test/api/device-hub/vendor/serve-emu/api/fold?device=emulator-5554";
+    const path = "http://onicode.test/api/device-hub/vendor/serve-emu/api/fold?device=emulator-5554";
     const reader = fixture([AuthOrchestrationReadScope]);
     const read = await reader.handler(new Request(path));
     expect(read.status).toBe(200);
@@ -157,7 +157,7 @@ describe("device hub proxy", () => {
   it("lets a viewer negotiate a WebRTC stream with read scope", async () => {
     const { handler, requests, headers } = fixture([AuthOrchestrationReadScope]);
     const offer = await handler(
-      new Request("http://t3.test/api/device-hub/vendor/serve-sim/helper/udid-1/webrtc/offer", {
+      new Request("http://onicode.test/api/device-hub/vendor/serve-sim/helper/udid-1/webrtc/offer", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: '{"type":"offer"}',
@@ -171,7 +171,7 @@ describe("device hub proxy", () => {
 
   it("lets a viewer read Android stream capabilities and signal WebRTC with read scope", async () => {
     const { handler, requests } = fixture([AuthOrchestrationReadScope]);
-    const hub = "http://t3.test/api/device-hub/vendor/serve-emu";
+    const hub = "http://onicode.test/api/device-hub/vendor/serve-emu";
     const api = await handler(new Request(`${hub}/api?device=session-1`));
     expect(api.status).toBe(200);
     await api.text();
@@ -212,7 +212,7 @@ describe("device hub proxy", () => {
         ),
     );
     const routed = await handler(
-      new Request("http://t3.test/api/device-hub/vendor/serve-sim/api?device=udid-1&hostId=eas", {
+      new Request("http://onicode.test/api/device-hub/vendor/serve-sim/api?device=udid-1&hostId=eas", {
         headers: { authorization: "Bearer environment-token" },
       }),
     );
@@ -222,7 +222,7 @@ describe("device hub proxy", () => {
     expect(requests).toEqual(["https://session.test/api?device=udid-1"]);
     expect(headers[0]?.authorization).toBe("Bearer session-token");
     const unrouted = await handler(
-      new Request("http://t3.test/api/device-hub/vendor/serve-sim/helper/udid-2/stream.mjpeg"),
+      new Request("http://onicode.test/api/device-hub/vendor/serve-sim/helper/udid-2/stream.mjpeg"),
     );
     expect(unrouted.status).toBe(404);
     expect(requests).toHaveLength(1);
@@ -233,7 +233,7 @@ describe("device hub proxy", () => {
     expect(
       (
         await handler(
-          new Request("http://t3.test/api/device-hub/vendor/serve-sim/exec", { method: "POST" }),
+          new Request("http://onicode.test/api/device-hub/vendor/serve-sim/exec", { method: "POST" }),
         )
       ).status,
     ).toBe(404);
@@ -251,7 +251,7 @@ it.each([
   ],
 ] as const)("translates authentication failure to HTTP %s", async (error, status) => {
   const { handler, requests } = fixture([], false, error);
-  const response = await handler(new Request("http://t3.test/api/device-hub/api/devices"));
+  const response = await handler(new Request("http://onicode.test/api/device-hub/api/devices"));
   expect(response.status).toBe(status);
   expect(await response.text()).not.toContain("private credential diagnostic");
   expect(requests).toEqual([]);
@@ -260,7 +260,7 @@ it.each([
 it("rejects unsupported Duo routes", async () => {
   const { handler, requests } = fixture([AuthOrchestrationReadScope]);
   const response = await handler(
-    new Request("http://t3.test/api/device-hub/vendor/serve-sim/helper/duo/panel/1/webrtc/offer"),
+    new Request("http://onicode.test/api/device-hub/vendor/serve-sim/helper/duo/panel/1/webrtc/offer"),
   );
   expect(response.status).toBe(404);
   expect(requests).toEqual([]);

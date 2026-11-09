@@ -51,7 +51,7 @@ export function AppBar(props: AppBarProps) {
   const closeInspector = use(InspectorCloseContext);
   const setOptions = useScreenOptionsWriter();
   const ownsInspectorBar = closeInspector !== null && !props.embedded && !props.sheet;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- an inspector pane that stops drawing its bar must not leave it in the out-of-tree inspector bar
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- an inspector pane that stops drawing its bar must not leave it in the out-of-tree inspector bar
   useLayoutEffect(() => {
     if (!ownsInspectorBar || !setOptions) return;
     setOptions({ headerShown: true });

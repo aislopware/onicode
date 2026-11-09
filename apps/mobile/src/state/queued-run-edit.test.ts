@@ -3,7 +3,7 @@ import { Atom } from "effect/reactivity";
 import {
   ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
   restoreAttachmentOnlyBootstrapPrompt,
-} from "@t3tools/shared/composerContextReferences";
+} from "@onicode/shared/composerContextReferences";
 import {
   ChatAttachmentId,
   ComposerContextId,
@@ -11,7 +11,7 @@ import {
   RunId,
   type ChatAttachment,
   type OrchestrationMessageContext,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import { appAtomRegistry } from "./atom-registry";
 import {

@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 import type { Snapshot } from "./checks.ts";
 import type { Pose } from "./poses.ts";
 
-export const BUNDLE_ID = "com.t3tools.t3code.dev";
+export const BUNDLE_ID = "dev.onicode.app.dev";
 
 export interface RunResult {
   readonly code: number;
@@ -92,7 +92,7 @@ export class Device {
 
   /** Leases a device for the pose; `open` waits in the pool's queue while every match is busy. */
   static async lease(pose: Pose, pool: Pool, runId: string): Promise<Device> {
-    const device = new Device(pose, `t3-e2e-${runId}-${pose.id}`, pool);
+    const device = new Device(pose, `oni-e2e-${runId}-${pose.id}`, pool);
     await device.agent(["connect", "proxy", "--daemon-base-url", pool.agentDeviceUrl]);
     await device.agent(
       [
@@ -181,7 +181,7 @@ export class Device {
       [
         "open",
         BUNDLE_ID,
-        `t3code-dev://expo-development-client/?url=${url}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
+        `onicode-dev://expo-development-client/?url=${url}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
         // A real keyboard, so the layout under it is what people see.
         ...(this.pose.platform === "android" ? ["--no-test-ime"] : []),
       ],

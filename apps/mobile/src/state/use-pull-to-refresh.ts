@@ -1,5 +1,5 @@
 import { RegistryContext } from "@effect/atom-react";
-import { executeAtomQuery } from "@t3tools/client-runtime/state/runtime";
+import { executeAtomQuery } from "@onicode/client-runtime/state/runtime";
 import { type AsyncResult, type Atom } from "effect/reactivity";
 import { use, useEffect, useRef, useState } from "react";
 
@@ -10,7 +10,7 @@ export function usePullToRefresh<A, E>(atom: Atom.Atom<AsyncResult.AsyncResult<A
   );
   const [refreshingAtom, setRefreshingAtom] = useState<typeof atom>(null);
   if (refreshingAtom !== null && refreshingAtom !== atom) setRefreshingAtom(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight refresh for an atom when the atom changes or the component unmounts
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- aborts the in-flight refresh for an atom when the atom changes or the component unmounts
   useEffect(
     () => () => {
       if (request.current?.atom === atom) request.current.controller.abort();

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { EnvironmentProject } from "@t3tools/client-runtime/state/models";
-import type { EnvironmentConnectionPhase } from "@t3tools/client-runtime/connection";
-import { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentProject } from "@onicode/client-runtime/state/models";
+import type { EnvironmentConnectionPhase } from "@onicode/client-runtime/connection";
+import { EnvironmentId } from "@onicode/contracts";
 import { pullRequestFallbackEnvironment } from "./pullRequestEnvironmentFallback";
 
 const project = (environmentId: string, id: string, canonicalKey: string) =>
@@ -12,13 +12,13 @@ const project = (environmentId: string, id: string, canonicalKey: string) =>
   }) as unknown as EnvironmentProject;
 
 const projects = [
-  project("laptop", "t3", "github.com/pingdotgg/t3code"),
+  project("laptop", "onicode", "github.com/pingdotgg/t3code"),
   project("desktop", "other", "github.com/pingdotgg/other"),
-  project("server", "t3-copy", "github.com/pingdotgg/t3code"),
+  project("server", "oni-copy", "github.com/pingdotgg/t3code"),
 ];
 const target = {
   environmentId: "laptop",
-  projectId: "t3",
+  projectId: "onicode",
   repository: "pingdotgg/t3code",
   host: "github.com",
 };
@@ -35,7 +35,7 @@ describe("pullRequestFallbackEnvironment", () => {
         environment("desktop"),
         environment("server"),
       ]),
-    ).toEqual({ environmentId: "server", projectId: "t3-copy" });
+    ).toEqual({ environmentId: "server", projectId: "oni-copy" });
   });
 
   it("stays put while the original is connected or nothing else holds the repository", () => {
@@ -52,7 +52,7 @@ describe("pullRequestFallbackEnvironment", () => {
     const { host: _host, ...hostless } = target;
     expect(pullRequestFallbackEnvironment(hostless, projects, [environment("server")])).toEqual({
       environmentId: "server",
-      projectId: "t3-copy",
+      projectId: "oni-copy",
     });
   });
 });

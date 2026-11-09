@@ -7,30 +7,30 @@ import {
   resolveSnoozePresets,
   snoozeWakeLabel,
   threadWokeAt,
-} from "@t3tools/client-runtime/state/thread-settled";
-import type { SnoozePreset } from "@t3tools/client-runtime/state/thread-settled";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { resolveThreadProviderStack } from "@t3tools/client-runtime/state/models";
+} from "@onicode/client-runtime/state/thread-settled";
+import type { SnoozePreset } from "@onicode/client-runtime/state/thread-settled";
+import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
+import { resolveThreadProviderStack } from "@onicode/client-runtime/state/models";
 import {
   threadSearchMatchKey,
   threadSearchSubject,
-} from "@t3tools/client-runtime/state/thread-search";
-import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@t3tools/shared/paletteSearch";
+} from "@onicode/client-runtime/state/thread-search";
+import { foldSearchQuery, rankSearchItems, scoreThreadSearch } from "@onicode/shared/paletteSearch";
 import {
   createInboxReturnTracker,
   isThreadWorking,
   sortInboxThreadsByReturn,
   sortWorkingThreadsBySend,
-} from "@t3tools/client-runtime/state/thread-inbox";
+} from "@onicode/client-runtime/state/thread-inbox";
 import {
   sortActiveThreadsByOrderKey,
   resolveSettledThreadTimestamp,
   resolveThreadActivityTimestamp,
   sortPinnedThreadsByOrderKey,
   sortSettledThreads,
-} from "@t3tools/client-runtime/state/thread-sort";
-import { isListedThreadLineage, type EnvironmentId, type ProjectId } from "@t3tools/contracts";
-import type { SnoozePresetSetting } from "@t3tools/contracts/settings";
+} from "@onicode/client-runtime/state/thread-sort";
+import { isListedThreadLineage, type EnvironmentId, type ProjectId } from "@onicode/contracts";
+import type { SnoozePresetSetting } from "@onicode/contracts/settings";
 import type { MenuAction } from "@react-native-menu/menu";
 
 import type { ThreadListProvider } from "../../state/thread-list-environments";

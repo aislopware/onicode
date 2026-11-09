@@ -11,7 +11,7 @@ import { markdownImageSources } from "./markdownImageSources";
 import { markdownFileEmbedLabel, resolveMarkdownMediaPreview } from "./markdownMedia";
 import { resolveMarkdownLinkPresentation } from "./markdownLinks";
 import { ENRICHED_INLINE_FILE_LINK_REGEX } from "./enrichedLinkPresentation";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { parseMarkdown } from "react-native-enriched-markdown/src/web/parseMarkdown";
 
 describe("HTML in native Markdown", () => {
@@ -347,17 +347,17 @@ describe("file embeds in native thread and file Markdown", () => {
 });
 
 describe("Windows paths in native Markdown", () => {
-  // regression: #23722 Markdown escapes ate the separator before `.t3` and `_build`
+  // regression: #23722 Markdown escapes ate the separator before `.onicode` and `_build`
   it("keeps backslashes in Windows image and link destinations", async () => {
-    const image = String.raw`C:\work\.t3\_build\shot.png`;
-    const link = String.raw`\\server\share\.t3\notes.md`;
+    const image = String.raw`C:\work\.onicode\_build\shot.png`;
+    const link = String.raw`\\server\share\.onicode\notes.md`;
     const markdown = [
       `![shot](${image} "Shot")`,
       String.raw`![paren](C:\a\)b.png)`,
       `[notes](<${link}>)`,
       `<img src="${image}">`,
-      String.raw`![amp](C:\R&D\.t3\a&amp;b.png)`,
-      String.raw`<img src="C:\R&amp;D\.t3\b.png">`,
+      String.raw`![amp](C:\R&D\.onicode\a&amp;b.png)`,
+      String.raw`<img src="C:\R&amp;D\.onicode\b.png">`,
       "> ![quoted](\n> " + image + ")",
     ].join("\n\n");
 
@@ -371,15 +371,15 @@ describe("Windows paths in native Markdown", () => {
     };
     collect(native);
     const paren = String.raw`C:\a\)b.png`;
-    const amp = String.raw`C:\R&D\.t3\a&b.png`;
-    const htmlAmp = String.raw`C:\R&D\.t3\b.png`;
+    const amp = String.raw`C:\R&D\.onicode\a&b.png`;
+    const htmlAmp = String.raw`C:\R&D\.onicode\b.png`;
     expect(urls).toEqual([image, paren, link, image, amp, htmlAmp, image]);
     expect(markdownImageSources(markdown)).toEqual([image, paren, amp, htmlAmp]);
   });
 });
 
 it("keeps backslashes in drive paths in mobile Markdown prose", () => {
-  const path = String.raw`Saved to C:\Users\me\.t3\_build\shot.png and C:/work\.config.`;
+  const path = String.raw`Saved to C:\Users\me\.onicode\_build\shot.png and C:/work\.config.`;
 
   expect(parseMarkdownDocument(String.raw`${path} Then \*this\*.`).children).toMatchObject([
     { type: "paragraph", children: [{ type: "text", value: `${path} Then *this*.` }] },

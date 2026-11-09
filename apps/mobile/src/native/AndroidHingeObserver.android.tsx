@@ -8,7 +8,7 @@ interface ObserverProps extends ViewProps {
   ) => void;
 }
 
-const Observer = requireNativeView<ObserverProps>("T3FoldPosture");
+const Observer = requireNativeView<ObserverProps>("OniFoldPosture");
 
 /** Reports a vertical hinge in this view's coordinates while the device is bent like a book. */
 export function AndroidHingeObserver(props: {

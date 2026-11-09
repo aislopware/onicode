@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { filePreviewKind } from "@t3tools/shared/filePreview";
+import { filePreviewKind } from "@onicode/shared/filePreview";
 
 it.each([
   [

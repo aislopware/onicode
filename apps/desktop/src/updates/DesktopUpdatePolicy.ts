@@ -9,7 +9,7 @@ import {
   managedUpdatesMessage,
   type ManagedPolicyDocument,
   type ManagedUpdatesMode,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -26,7 +26,7 @@ export interface UpdatePolicy {
 }
 
 export class DesktopUpdatePolicy extends Context.Service<DesktopUpdatePolicy, UpdatePolicy>()(
-  "@t3tools/desktop/updates/DesktopUpdatePolicy",
+  "@onicode/desktop/updates/DesktopUpdatePolicy",
 ) {}
 
 export const unmanagedUpdatePolicy: UpdatePolicy = {
@@ -76,7 +76,7 @@ const make = Effect.gen(function* () {
             mode: "off",
             feedUrl: undefined,
             allowNightly: false,
-            message: `Updates are off because T3 Code cannot use the managed policy at ${error.path}. Contact your administrator.`,
+            message: `Updates are off because Onicode cannot use the managed policy at ${error.path}. Contact your administrator.`,
           }),
         ),
     }),

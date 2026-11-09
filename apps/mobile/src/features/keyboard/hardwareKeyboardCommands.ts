@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId, type ThreadJumpKeybindingCommand } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId, type ThreadJumpKeybindingCommand } from "@onicode/contracts";
 import { useEffect } from "react";
 
 export type HardwareKeyboardCommand =
@@ -27,7 +27,7 @@ export function useHardwareKeyboardCommand(
   command: HardwareKeyboardCommand | ReadonlyArray<HardwareKeyboardCommand>,
   handler: CommandHandler,
 ): void {
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the handler in the module-level hardware keyboard command registry
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- registers the handler in the module-level hardware keyboard command registry
   useEffect(() => {
     const commands = typeof command === "string" ? [command] : command;
     for (const command of commands) {

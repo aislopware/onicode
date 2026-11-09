@@ -1,7 +1,7 @@
 packages:
   - apps/*
   - evals
-  - oxlint-plugin-t3code
+  - oxlint-plugin-onicode
   - packages/*
   - scripts
 
@@ -28,11 +28,6 @@ allowBuilds:
   workerd: false
 
 catalog:
-  "@alchemy.run/axiom": 2.0.0-beta.85
-  "@alchemy.run/cloudflare": 2.0.0-beta.85
-  "@alchemy.run/drizzle": 2.0.0-beta.85
-  "@alchemy.run/planetscale": 2.0.0-beta.85
-  "@alchemy.run/test": 2.0.0-beta.85
   "@clerk/backend": 3.25.0
   "@clerk/clerk-js": 6.40.0
   "@clerk/electron": 0.1.3
@@ -66,7 +61,6 @@ catalog:
   "@types/react": ~19.3.0
   "@types/react-dom": ~19.3.0
   "@types/ws": 8.18.2
-  alchemy: 2.0.0-beta.85
   effect: 4.1.2
   electron-webauthn: 1.3.1
   jose: 6.2.2
@@ -105,7 +99,6 @@ overrides:
   micromark-extension-llm-math: 3.1.0
   micromark: 4.0.2
   mdast-util-to-hast: 13.2.1
-  alchemy: "catalog:"
   expo-audio: 58.0.9
   expo-network: 58.0.3
   "@clerk/expo-native-components": 0.4.0
@@ -229,7 +222,6 @@ patchedDependencies:
   expo-video@58.0.11: patches/expo-video@58.0.11.patch
   expo-network@58.0.3: patches/expo-network@58.0.3.patch
   "@clerk/expo-native-components@0.4.0": patches/@clerk__expo-native-components@0.4.0.patch
-  "@alchemy.run/test@2.0.0-beta.85": patches/@alchemy.run__test@2.0.0-beta.85.patch
   "@effect/vitest@4.1.2": patches/@effect__vitest@4.1.2.patch
   "@expo/metro-config@58.0.14": patches/@expo__metro-config@58.0.14.patch
   expo-sharing@58.0.19: patches/expo-sharing@58.0.19.patch
@@ -262,8 +254,6 @@ patchedDependencies:
   # Observe the owned host exit independently of descendants retaining its stdio.
   "@muse-code/sdk@1.4.6": patches/@muse-code__sdk@1.4.6.patch
   app-builder-lib@26.16.1: patches/app-builder-lib@26.16.1.patch
-  # A failed Artifacts.cached effect hangs every later caller: https://github.com/alchemy-run/alchemy/issues/2981
-  alchemy@2.0.0-beta.85: patches/alchemy@2.0.0-beta.85.patch
 
 # Unmet peers fail resolution, so a pin outside a dependency's peer range is
 # caught when the lockfile changes instead of scrolling past as a warning.

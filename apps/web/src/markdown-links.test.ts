@@ -53,9 +53,9 @@ describe("rewriteMarkdownFileUriHref", () => {
   it("normalizes file uri hrefs for windows drive paths", () => {
     expect(
       rewriteMarkdownFileUriHref(
-        "file:///D:/Programme/t3code/apps/web/src/components/chat/OpenInPicker.tsx#L69",
+        "file:///D:/Programme/onicode/apps/web/src/components/chat/OpenInPicker.tsx#L69",
       ),
-    ).toBe("D:/Programme/t3code/apps/web/src/components/chat/OpenInPicker.tsx#L69");
+    ).toBe("D:/Programme/onicode/apps/web/src/components/chat/OpenInPicker.tsx#L69");
   });
 
   it("preserves file uri authorities as windows UNC paths", () => {

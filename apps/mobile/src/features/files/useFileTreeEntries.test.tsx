@@ -3,7 +3,7 @@ import {
   ProjectListEntriesError,
   type ProjectEntry,
   type ProjectListEntriesResult,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
@@ -62,7 +62,7 @@ const mocks = vi.hoisted(() => {
   return { createState, state: createState() };
 });
 
-vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+vi.mock("@onicode/client-runtime/state/runtime", () => ({
   executeAtomQuery: (_registry: unknown, query: Query, options: { signal?: AbortSignal }) =>
     new Promise<Result>((resolve) =>
       mocks.state.requests.push({ query, signal: options.signal, resolve }),

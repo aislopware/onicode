@@ -1,15 +1,15 @@
 included:
-  - ios/T3Code
-  - modules/t3-composer-editor/ios
-  - modules/t3-native-controls/ios
-  - modules/t3-terminal/ios
-  - modules/t3-review-diff/ios
-  - modules/t3-voice-transcription/ios
+  - ios/Onicode
+  - modules/oni-composer-editor/ios
+  - modules/oni-native-controls/ios
+  - modules/oni-terminal/ios
+  - modules/oni-review-diff/ios
+  - modules/oni-voice-transcription/ios
 
 excluded:
   - ios/Pods
   - ios/build
-  - modules/t3-terminal/Vendor
+  - modules/oni-terminal/Vendor
 
 reporter: xcode
 

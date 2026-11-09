@@ -1,9 +1,9 @@
 import {
   sourceControlClients,
   type ChangeRequestTerminology,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@onicode/client-runtime/source-control-clients";
 import type { MenuAction } from "@react-native-menu/menu";
-import type { PullRequestDetail, PullRequestLinkedThreadsResult } from "@t3tools/contracts";
+import type { PullRequestDetail, PullRequestLinkedThreadsResult } from "@onicode/contracts";
 
 export type PullRequestAgentTask = "ask" | "explain" | "feedback" | "conflicts" | "watch";
 
@@ -62,7 +62,7 @@ export function pullRequestAgentPrompt(
     case "conflicts":
       return `Resolve this ${singular}'s conflicts with its base branch. First confirm this thread is on the ${shortLabel}'s branch; if it isn't, prepare the ${shortLabel} in its own worktree. Bring it up to date using this repository's convention, preserve the intent of both sides, and run the relevant checks before pushing.`;
     case "watch":
-      return `Watch this ${singular} for check results, new feedback, and conflicts using T3's pull request watch. End the turn once the watch is armed. When it wakes you, assess what changed and report what needs attention.`;
+      return `Watch this ${singular} for check results, new feedback, and conflicts using Onicode's pull request watch. End the turn once the watch is armed. When it wakes you, assess what changed and report what needs attention.`;
   }
 }
 

@@ -1,7 +1,7 @@
 import { assert, describe, it } from "@effect/vitest";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
-import { ProviderAdapterV2RuntimePolicy } from "@t3tools/provider-core/server/ProviderAdapter";
+import { ProviderAdapterV2RuntimePolicy } from "@onicode/provider-core/server/ProviderAdapter";
 
 import { fxPermissionDisposition } from "./acpSupport.ts";
 
@@ -15,7 +15,7 @@ const editRequest = {
 } satisfies EffectAcpSchema.RequestPermissionRequest;
 
 describe("fx permission prompts", () => {
-  // In Auto, fx's own review asks only about what it refused itself; T3
+  // In Auto, fx's own review asks only about what it refused itself; Onicode
   // answering those by its Auto policy would approve exactly what fx escalated.
   it("sends every Auto prompt to the user", () => {
     assert.equal(

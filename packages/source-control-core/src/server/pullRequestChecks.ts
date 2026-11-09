@@ -1,4 +1,4 @@
-import type { PullRequestCheck } from "@t3tools/contracts";
+import type { PullRequestCheck } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 

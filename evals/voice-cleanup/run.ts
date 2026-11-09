@@ -4,7 +4,7 @@ import {
   CodexSettings,
   DEFAULT_SPEECH_POST_PROCESSING_PROMPT,
   ProviderInstanceId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -49,7 +49,7 @@ await Effect.runPromise(
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-voice-eval-" });
+    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "oni-voice-eval-" });
     const service = yield* makeCodexTextGeneration(yield* decodeSettings({}));
     const baseline = values.baseline
       ? yield* fs.readFileString(values.baseline).pipe(Effect.flatMap(decodeResults))
@@ -98,7 +98,7 @@ await Effect.runPromise(
     }
   }).pipe(
     Effect.provide(
-      ServerConfig.layerTest(process.cwd(), { prefix: "t3-voice-eval-state-" }).pipe(
+      ServerConfig.layerTest(process.cwd(), { prefix: "oni-voice-eval-state-" }).pipe(
         Layer.provideMerge(NodeServices.layer),
       ),
     ),

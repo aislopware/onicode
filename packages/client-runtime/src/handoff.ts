@@ -6,11 +6,11 @@ import type {
   ProviderInstanceId,
   ServerProvider,
   ServerProviderModel,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   getModelSelectionStringOptionValue,
   getProviderOptionCurrentValue,
-} from "@t3tools/shared/model";
+} from "@onicode/shared/model";
 
 import { isReasoningSelect } from "./modelTraits.ts";
 import type { ThreadStructure } from "./state/models.ts";

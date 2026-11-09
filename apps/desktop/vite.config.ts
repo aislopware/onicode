@@ -9,10 +9,10 @@ const repoEnv = loadRepoEnv();
 // Install only bundle externals; the server bundle already carries its dependency tree.
 const isMainProcessExternal = (id: string) =>
   id === "electron" || id.startsWith("electron/") || isDesktopRuntimeExternalDependency(id);
-const shouldLaunchElectronAfterPack = process.env.T3CODE_DESKTOP_DEV === "1";
+const shouldLaunchElectronAfterPack = process.env.ONICODE_DESKTOP_DEV === "1";
 const publicConfigDefine = {
-  __T3CODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
-    repoEnv.T3CODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
+  __ONICODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
+    repoEnv.ONICODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
   ),
 };
 
@@ -22,19 +22,19 @@ export default defineConfig({
       build: {
         command:
           "node scripts/build-browser-secret.mjs && node scripts/build-preview-annotation-css.mjs && vp pack",
-        dependsOn: ["t3#build"],
+        dependsOn: ["onicode#build"],
         cache: false,
       },
       // CI bundle jobs skip the Linux browser secret helper; packaging stages one per arch.
       "build:bundle": {
         command: "node scripts/build-preview-annotation-css.mjs && vp pack",
-        dependsOn: ["t3#build"],
+        dependsOn: ["onicode#build"],
         cache: false,
       },
       dev: {
         command:
-          "node scripts/build-browser-secret.mjs && node scripts/build-preview-annotation-css.mjs && cross-env T3CODE_DESKTOP_DEV=1 vp pack --watch",
-        dependsOn: ["t3#build"],
+          "node scripts/build-browser-secret.mjs && node scripts/build-preview-annotation-css.mjs && cross-env ONICODE_DESKTOP_DEV=1 vp pack --watch",
+        dependsOn: ["onicode#build"],
         cache: false,
       },
       "dev:bundle": {
@@ -44,7 +44,7 @@ export default defineConfig({
       },
       "dev:electron": {
         command: "node scripts/dev-electron.mjs",
-        dependsOn: ["t3#build"],
+        dependsOn: ["onicode#build"],
         cache: false,
       },
       // A local tsbuildinfo is leftover build state, not a typecheck input.
@@ -129,7 +129,7 @@ export default defineConfig({
         alwaysBundle: (id) =>
           id === "react-grab" ||
           id.startsWith("react-grab/") ||
-          id === "@t3tools/shared/keybindingMatching",
+          id === "@onicode/shared/keybindingMatching",
       },
     },
     {

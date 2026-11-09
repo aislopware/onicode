@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
-import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entities";
-import { visibilityParentKey } from "@t3tools/client-runtime/state/threads";
+import { scopedThreadKey } from "@onicode/client-runtime/environment";
+import { parseThreadKey, threadKey } from "@onicode/client-runtime/state/entities";
+import { visibilityParentKey } from "@onicode/client-runtime/state/threads";
 import * as Option from "effect/Option";
 import { Navigate, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
@@ -119,7 +119,7 @@ export function ThreadRouteView({
   });
   const environmentHasAnyThreads = environmentThreadRefs.length > 0 || environmentHasDraftThreads;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- clears pending file drops and navigates the router home once a server thread is confirmed missing
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- clears pending file drops and navigates the router home once a server thread is confirmed missing
   useEffect(() => {
     if (target.kind !== "server" || !bootstrapComplete) {
       return;

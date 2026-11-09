@@ -28,8 +28,8 @@ import {
   type OrchestrationV2Subagent,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
-import { boundedSnapshotProjection } from "@t3tools/shared/orchestrationV2BoundedSnapshot";
+} from "@onicode/contracts";
+import { boundedSnapshotProjection } from "@onicode/shared/orchestrationV2BoundedSnapshot";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as DateTime from "effect/DateTime";
@@ -311,7 +311,7 @@ function bodiesEvents(at: DateTime.Utc): OrchestrationV2DomainEvent[] {
         parentCheckpointId: null,
         ordinalWithinScope: 1,
         appRunOrdinal: 1,
-        ref: CheckpointRef.make(`refs/t3/${BODIES}`),
+        ref: CheckpointRef.make(`refs/onicode/${BODIES}`),
         status: "ready",
         files,
         capturedAt: at,

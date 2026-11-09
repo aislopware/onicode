@@ -1,8 +1,8 @@
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId, ThreadId, TurnItemId } from "@t3tools/contracts";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { turnItemDetailRevision } from "@t3tools/client-runtime/work-log/item-detail";
-import { mcpAppFromToolItem } from "@t3tools/shared/toolOutput";
+import { EnvironmentId, ThreadId, TurnItemId } from "@onicode/contracts";
+import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
+import { turnItemDetailRevision } from "@onicode/client-runtime/work-log/item-detail";
+import { mcpAppFromToolItem } from "@onicode/shared/toolOutput";
 import { useEffect, useRef, useState } from "react";
 import { View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AppText as Text } from "../../components/ui/AppText";
 import { AppBar } from "../../components/ui/AppBar";
 import { orchestrationEnvironment } from "../../state/orchestration";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import { useThreadShell, useThreadShells } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
 import { ThreadMcpApp } from "./McpAppWebView";
@@ -102,7 +102,7 @@ export function McpAppFullscreenScreen({ route }: McpAppFullscreenScreenProps) {
   const awaitingUser =
     conversation?.hasPendingApprovals === true || conversation?.hasPendingUserInput === true;
   // A request for the user is server state with no local handler to react in.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the focused screen through the navigator when the server asks the user for input or approval
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- closes the focused screen through the navigator when the server asks the user for input or approval
   useEffect(() => {
     if (awaitingUser && focused && !exitPending.current) navigation.goBack();
   }, [awaitingUser, focused, navigation]);

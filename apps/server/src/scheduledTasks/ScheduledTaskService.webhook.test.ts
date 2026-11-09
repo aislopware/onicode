@@ -8,7 +8,7 @@ import {
   ScheduledTaskUpsertInput,
   ScheduledTaskWebhookDeliveryId,
   SecretRequestError,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
@@ -320,11 +320,11 @@ it("builds the relay hook URL from the managed tunnel's key, never the environme
   assert.equal(
     ScheduledTaskService.relayHookBaseUrl({
       relayUrl,
-      tunnelName: "t3coderelay-managedendpoint-dev-julius-0123456789abcdef",
+      tunnelName: "onicoderelay-managedendpoint-dev-julius-0123456789abcdef",
     }),
     "https://relay.example.com/v1/hooks/0123456789abcdef",
   );
-  for (const tunnelName of [undefined, "t3coderelay-managedendpoint", "x-0123456789ABCDEF"]) {
+  for (const tunnelName of [undefined, "onicoderelay-managedendpoint", "x-0123456789ABCDEF"]) {
     assert.isNull(ScheduledTaskService.relayHookBaseUrl({ relayUrl, tunnelName }));
   }
 });

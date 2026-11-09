@@ -2,7 +2,7 @@
 import * as NodeFS from "node:fs";
 import * as NodeNet from "node:net";
 
-import { T3_CONNECT_TROUBLESHOOTING_SECTIONS } from "@t3tools/contracts";
+import { T3_CONNECT_TROUBLESHOOTING_SECTIONS } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
@@ -97,10 +97,10 @@ describe("classifyReachability", () => {
   });
 
   it("does not point an unlinked server at a background service it may not have", () => {
-    // Desktop and `t3 serve` run the server without a background service.
+    // Desktop and `onicode serve` run the server without a background service.
     const result = classifyReachability(facts({ managedTunnelConfigured: false }), checkedAt);
     expect(result).toMatchObject({ cause: "not_linked" });
-    expect(result.status === "unreachable" && result.fix).not.toContain("t3 service");
+    expect(result.status === "unreachable" && result.fix).not.toContain("onicode service");
   });
 });
 

@@ -2,15 +2,15 @@ import type {
   StorageCleanupReport,
   StorageCleanupSettings,
   WorktreeCleanupRules,
-} from "@t3tools/contracts";
-import { resolvePastedPath } from "@t3tools/shared/path";
-import { resolveWorktreeCleanup } from "@t3tools/shared/projectSettings";
+} from "@onicode/contracts";
+import { resolvePastedPath } from "@onicode/shared/path";
+import { resolveWorktreeCleanup } from "@onicode/shared/projectSettings";
 import { useRef, useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import { formatBytes } from "../../lib/formatBytes";
 import { environmentAtomList, environmentIdsKey } from "../../state/environmentAtomList";
 import { serverEnvironment } from "../../state/server";
@@ -69,7 +69,7 @@ export function WorktreesDirectoryRow() {
     <SettingsRow
       {...searchableSetting("storage-worktrees-location")}
       description={
-        "Folder where new worktrees are created, on any drive, such as D:\\worktrees or ~/worktrees. Existing worktrees stay where they are. Leave empty to use the T3 home folder."
+        "Folder where new worktrees are created, on any drive, such as D:\\worktrees or ~/worktrees. Existing worktrees stay where they are. Leave empty to use the Onicode home folder."
       }
       serverScoped
       settingKeys={["worktreesDirectory"]}

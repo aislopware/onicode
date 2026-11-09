@@ -1,8 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import { ProviderInstanceId } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { ProviderInstanceId } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -12,14 +12,14 @@ import * as Stream from "effect/Stream";
 import * as HttpClient from "effect/http/HttpClient";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
+import * as ProviderLatestVersions from "@onicode/provider-core/server/ProviderLatestVersions";
+import * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
+import * as TestProviderHost from "@onicode/provider-testing/TestProviderHost";
 import { GrokDriver } from "./driver.ts";
-import { resolveLatestProviderVersion } from "@t3tools/provider-core/server/maintenanceResolver";
+import { resolveLatestProviderVersion } from "@onicode/provider-core/server/maintenanceResolver";
 
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
 
 const layerTest = TestProviderHost.layer({ runBackgroundWork: false }).pipe(
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
@@ -131,7 +131,7 @@ it.layer(layerTest)("GrokDriver", (it) => {
       return Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        prefix = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: "t3-grok-brew-" }));
+        prefix = yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: "oni-grok-brew-" }));
         const brewPath = path.join(prefix, "bin", "brew");
         const binaryPath = path.join(prefix, ...testCase.binary);
         for (const executable of [brewPath, binaryPath]) {
@@ -177,7 +177,7 @@ it.layer(layerTest)("GrokDriver", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-grok-missing-" });
+      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-grok-missing-" });
       const instance = yield* GrokDriver.create({
         instanceId: ProviderInstanceId.make("grok-missing"),
         displayName: "Grok test",

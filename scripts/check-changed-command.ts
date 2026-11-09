@@ -3,7 +3,7 @@ import * as NodeURL from "node:url";
 
 export function vitePlusCommand(
   args: ReadonlyArray<string>,
-  // oxlint-disable-next-line t3code/no-global-process-runtime -- Standalone Node tooling has no Effect runtime; tests pass the platform explicitly.
+  // oxlint-disable-next-line onicode/no-global-process-runtime -- Standalone Node tooling has no Effect runtime; tests pass the platform explicitly.
   platform: NodeJS.Platform = process.platform,
 ): [command: string, args: Array<string>] {
   // Windows cannot spawn the package manager's vp.cmd shim without a shell.

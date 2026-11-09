@@ -1,6 +1,6 @@
 import { useAuth } from "@clerk/react";
 import { Link } from "@tanstack/react-router";
-import { managedCapabilityDenial } from "@t3tools/contracts";
+import { managedCapabilityDenial } from "@onicode/contracts";
 
 import { hasCloudPublicConfig } from "~/cloud/publicConfig";
 import { useT3ConnectAuthPrompt } from "../clerk/useT3ConnectAuthPrompt";
@@ -213,7 +213,7 @@ function SimlockHostsRow() {
           <Link to="/settings/devices" className="underline underline-offset-2">
             Devices
           </Link>
-          . An alpha that may change or break. T3 Code never installs Simlock.
+          . An alpha that may change or break. Onicode never installs Simlock.
         </>
       }
       control={
@@ -250,7 +250,7 @@ function FastWorktreeCheckoutRow() {
       serverScoped
       {...searchableSetting("worktree-fast-checkout")}
       settingKeys={["fastWorktreeCheckout"]}
-      description="On a Mac, clone new worktrees from a checkout cached in the T3 home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
+      description="On a Mac, clone new worktrees from a checkout cached in the Onicode home folder instead of writing every file. Uses Git’s normal checkout when it can’t. Turning it off deletes the cache."
       control={
         <ScopedSwitch
           settingKeys={["fastWorktreeCheckout"]}

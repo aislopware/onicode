@@ -3,8 +3,8 @@ import type {
   ProjectId,
   PullRequestRef,
   RepositoryIdentity,
-} from "@t3tools/contracts";
-import type { ChangeRequestLink } from "@t3tools/source-control-core/shared/definition";
+} from "@onicode/contracts";
+import type { ChangeRequestLink } from "@onicode/source-control-core/shared/definition";
 
 import { sourceControlClients } from "./sourceControlClients.ts";
 

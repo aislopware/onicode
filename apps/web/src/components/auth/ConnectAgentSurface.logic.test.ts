@@ -1,5 +1,5 @@
 import { expect, it } from "vite-plus/test";
-import { RuntimeMode } from "@t3tools/contracts";
+import { RuntimeMode } from "@onicode/contracts";
 
 import { resolveMcpAccess } from "./ConnectAgentSurface.logic";
 

@@ -3,8 +3,8 @@ import {
   OrchestrationV2ThreadProjection,
   ProviderSessionId,
   ThreadId,
-} from "@t3tools/contracts";
-import { modelSelectionsEqual } from "@t3tools/shared/model";
+} from "@onicode/contracts";
+import { modelSelectionsEqual } from "@onicode/shared/model";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -46,7 +46,7 @@ export interface ProviderSwitchServiceV2Shape {
 export class ProviderSwitchServiceV2 extends Context.Service<
   ProviderSwitchServiceV2,
   ProviderSwitchServiceV2Shape
->()("t3/orchestration-v2/ProviderSwitchService/ProviderSwitchServiceV2") {}
+>()("onicode/orchestration-v2/ProviderSwitchService/ProviderSwitchServiceV2") {}
 
 const isLiveProviderSession = (
   session: OrchestrationV2ThreadProjection["providerSessions"][number],

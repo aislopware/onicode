@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/provider-muse",
+  "name": "@onicode/provider-muse",
   "private": true,
   "type": "module",
   "exports": {
@@ -30,15 +30,15 @@
   },
   "dependencies": {
     "@muse-code/sdk": "1.4.6",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@onicode/contracts": "workspace:*",
+    "@onicode/provider-core": "workspace:*",
+    "@onicode/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@t3tools/provider-testing": "workspace:*",
+    "@onicode/provider-testing": "workspace:*",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"
   }

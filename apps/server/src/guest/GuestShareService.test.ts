@@ -16,11 +16,11 @@ import {
   RunId,
   ThreadId,
   TurnItemId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
@@ -77,7 +77,7 @@ const layerOrchestration = Layer.mergeAll(
 );
 
 // The Connect hostname the fake tunnel reports. Tests set it to null to simulate an unlink.
-const hostname = Ref.makeUnsafe<string | null>("env.t3.test");
+const hostname = Ref.makeUnsafe<string | null>("env.onicode.test");
 const layerConnect = Layer.mock(CloudManagedEndpointRuntime)({
   inspectConnector: Effect.map(Ref.get(hostname), (value) => ({
     pid: 1,
@@ -89,7 +89,7 @@ const layerConnect = Layer.mock(CloudManagedEndpointRuntime)({
 const layerProviders = Layer.mock(ProviderRegistry.ProviderRegistry)({
   getProviders: Effect.succeed([]),
 });
-const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "t3-guest-share-" });
+const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "oni-guest-share-" });
 // The real cleanup also closes terminals and previews; these tests only need the files gone.
 const layerCleanup = Layer.effect(
   ResourceCleanupService.ResourceCleanupService,
@@ -118,7 +118,7 @@ const layerCleanup = Layer.effect(
 class RecordedAnalytics extends Context.Service<
   RecordedAnalytics,
   Ref.Ref<ReadonlyArray<Readonly<Record<string, unknown>>>>
->()("t3/guest/GuestShareService.test/RecordedAnalytics") {}
+>()("onicode/guest/GuestShareService.test/RecordedAnalytics") {}
 const layerAnalytics = Layer.effectContext(
   Effect.gen(function* () {
     const recorded = yield* Ref.make<ReadonlyArray<Readonly<Record<string, unknown>>>>([]);
@@ -153,7 +153,7 @@ const layerTest = GuestShareService.layer.pipe(
 const threadId = ThreadId.make("thread:guest-share-service");
 
 const shareThreadFor = Effect.fn(function* (threadId: ThreadId) {
-  yield* Ref.set(hostname, "env.t3.test");
+  yield* Ref.set(hostname, "env.onicode.test");
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   yield* orchestrator.dispatch({
     type: "thread.create",
@@ -171,7 +171,7 @@ const shareThreadFor = Effect.fn(function* (threadId: ThreadId) {
   });
   const guestShares = yield* GuestShareService.GuestShareService;
   const { url } = yield* guestShares.create({ threadId });
-  assert.isTrue(url.startsWith("https://env.t3.test/guest#"));
+  assert.isTrue(url.startsWith("https://env.onicode.test/guest#"));
   const credential = url.slice(url.indexOf("#") + 1);
   return { orchestrator, guestShares, credential };
 });
@@ -333,7 +333,7 @@ it.effect("closes an open guest stream when T3 Connect stops serving the link's 
       ["view", "snapshot"],
     );
     assert.isTrue(Exit.isFailure(yield* Effect.exit(guestShares.stream(session))));
-    yield* Ref.set(hostname, "env.t3.test");
+    yield* Ref.set(hostname, "env.onicode.test");
     assert.isTrue(Exit.isSuccess(yield* Effect.exit(guestShares.stream(session))));
   }).pipe(Effect.provide(layerTest)),
 );

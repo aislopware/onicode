@@ -1,6 +1,6 @@
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Digest is effectful; this resolves the dev token synchronously at startup.
 import * as NodeCrypto from "node:crypto";
-import { AuthSessionId } from "@t3tools/contracts";
+import { AuthSessionId } from "@onicode/contracts";
 import * as Mac from "effect/crypto/Mac";
 import * as DateTime from "effect/DateTime";
 import * as Redacted from "effect/Redacted";
@@ -26,7 +26,7 @@ export function resolveReusableDevAuth(
   return {
     credential: Redacted.value(token),
     sessionId: AuthSessionId.make(`${REUSABLE_DEV_SESSION_PREFIX}${tokenId}`),
-    cookieName: `t3_dev_session_${tokenId}`,
+    cookieName: `oni_dev_session_${tokenId}`,
     matches: (credential: string) =>
       Mac.timingSafeEqual(hash, NodeCrypto.createHash("sha256").update(credential).digest()),
   };

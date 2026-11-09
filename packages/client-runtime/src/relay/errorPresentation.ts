@@ -1,9 +1,9 @@
-import type { DpopFailureReason } from "@t3tools/contracts";
+import type { DpopFailureReason } from "@onicode/contracts";
 import {
   T3CHAT_PLAN_TUNNEL_LIMITS,
   type RelayEnvironmentStatusResponse,
   type RelayProtectedError,
-} from "@t3tools/contracts/relay";
+} from "@onicode/contracts/relay";
 
 export const DPOP_CLOCK_HINT =
   "Hint: Check that automatic date and time is enabled on both devices, then try again.";
@@ -95,7 +95,7 @@ export function relayRequestFailureDetail(error: {
 }
 
 const RELAY_TUNNEL_RELEASED_MESSAGE =
-  "Offline for a while, so its T3 Connect tunnel was removed. Start T3 Code on that computer and update it to the latest version to reconnect.";
+  "Offline for a while, so its T3 Connect tunnel was removed. Start Onicode on that computer and update it to the latest version to reconnect.";
 
 export function relayOfflineReasonMessage(
   status: Pick<RelayEnvironmentStatusResponse, "offlineReason">,

@@ -28,7 +28,7 @@ module.exports = {
       }
       // Windows installs need Linux x64 glibc binaries because WSL shares node_modules.
       // Keep other platforms native; release scripts set their own architectures.
-      // oxlint-disable-next-line t3code/no-global-process-runtime -- pnpm loads this file before any Effect runtime exists.
+      // oxlint-disable-next-line onicode/no-global-process-runtime -- pnpm loads this file before any Effect runtime exists.
       if (process.platform !== "win32") return config;
       return {
         ...config,

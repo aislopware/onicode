@@ -1,6 +1,6 @@
 import Constants from "expo-constants";
-import { type ReleaseChannel, releaseResourceAttributes } from "@t3tools/shared/releaseResource";
-import * as RelayTracing from "@t3tools/shared/relayTracing";
+import { type ReleaseChannel, releaseResourceAttributes } from "@onicode/shared/releaseResource";
+import * as RelayTracing from "@onicode/shared/relayTracing";
 
 import { hasTracingPublicConfig, resolveCloudPublicConfig } from "../cloud/publicConfig";
 
@@ -37,7 +37,7 @@ export function layerFromConfig(config: TracingConfig | null, resource: TracingR
       ? "dev"
       : RELEASE_CHANNEL_BY_VARIANT[resource.appVariant];
   return RelayTracing.layer(config, {
-    serviceName: "t3code-mobile",
+    serviceName: "onicode-mobile",
     serviceVersion: resource.serviceVersion,
     runtime: "react-native",
     serviceInstanceId: resource.serviceInstanceId,

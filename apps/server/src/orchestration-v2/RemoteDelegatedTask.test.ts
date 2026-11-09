@@ -11,7 +11,7 @@ import {
   ProviderThreadId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -21,10 +21,10 @@ import * as Ref from "effect/Ref";
 import { CodexProviderCapabilitiesV2 } from "./Adapters/CodexAdapterV2.ts";
 import * as EventSink from "./EventSink.ts";
 import * as Orchestrator from "./Orchestrator.ts";
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderAdapterRegistry from "./ProviderAdapterRegistry.ts";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
+import * as ProviderContinuationRequests from "@onicode/provider-core/server/ProviderContinuationRequests";
 import * as ProviderReplayHarness from "./testkit/ProviderReplayHarness.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 
@@ -47,7 +47,7 @@ const adapter = {
 class Offers extends Context.Service<
   Offers,
   Ref.Ref<ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>>
->()("t3/orchestration-v2/RemoteDelegatedTask.test/Offers") {}
+>()("onicode/orchestration-v2/RemoteDelegatedTask.test/Offers") {}
 const layerOffers = Layer.effect(
   Offers,
   Ref.make<ReadonlyArray<ProviderContinuationRequests.ProviderContinuationRequest>>([]),

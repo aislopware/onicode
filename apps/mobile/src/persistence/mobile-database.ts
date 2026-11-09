@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@onicode/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -7,7 +7,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import type { SQLiteDatabase } from "expo-sqlite";
 
-const DATABASE_NAME = "t3code-client.db";
+const DATABASE_NAME = "onicode-client.db";
 const DATABASE_SCHEMA_VERSION = 1;
 
 export const ClientCacheKind = Schema.Literals([
@@ -116,7 +116,7 @@ export class MobileDatabase extends Context.Service<
       updatedAt: number,
     ) => Effect.Effect<void, MobileDatabaseError>;
   }
->()("@t3tools/mobile/persistence/mobile-database/MobileDatabase") {}
+>()("@onicode/mobile/persistence/mobile-database/MobileDatabase") {}
 
 const makeAvailable = Effect.gen(function* () {
   const database = yield* Effect.acquireRelease(

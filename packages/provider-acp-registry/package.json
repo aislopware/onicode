@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/provider-acp-registry",
+  "name": "@onicode/provider-acp-registry",
   "private": true,
   "type": "module",
   "exports": {
@@ -34,16 +34,16 @@
   },
   "dependencies": {
     "@noble/hashes": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-acp": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/shared": "workspace:*",
+    "@onicode/contracts": "workspace:*",
+    "@onicode/provider-acp": "workspace:*",
+    "@onicode/provider-core": "workspace:*",
+    "@onicode/shared": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
-    "@t3tools/provider-testing": "workspace:*",
+    "@onicode/provider-testing": "workspace:*",
     "@types/node": "catalog:",
     "effect-acp": "workspace:*",
     "vite-plus": "catalog:"

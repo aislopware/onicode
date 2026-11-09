@@ -13,17 +13,17 @@ import {
   type OrchestrationV2ThreadProjection,
   type ThreadGuestMessage,
   type ThreadGuestMessageStatus,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { formatAttachmentSize } from "@t3tools/client-runtime/state/attachments";
+import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
 import {
   deriveRunlessWorkStartedAt,
   deriveThreadActivityRun,
   deriveThreadStructureRuntime,
-} from "@t3tools/client-runtime/state/thread-execution";
-import { createQuestionHistoryProjector } from "@t3tools/client-runtime/state/thread-requests";
+} from "@onicode/client-runtime/state/thread-execution";
+import { createQuestionHistoryProjector } from "@onicode/client-runtime/state/thread-requests";
 import { ArrowUpIcon, PaperclipIcon, XIcon } from "lucide-react";
 import {
   useEffect,
@@ -81,7 +81,7 @@ interface GuestEntry {
 let capturedEntry: GuestEntry | null = null;
 
 // A reload keeps the tab's session, so it keeps which messages still wait for a row too.
-const AWAITING_ROWS_KEY = "t3:guest-awaiting-rows";
+const AWAITING_ROWS_KEY = "onicode:guest-awaiting-rows";
 const AWAITING_ROWS_LIMIT = 50;
 
 function readAwaitingRowIds(): ReadonlySet<GuestMessageId> {
@@ -203,7 +203,7 @@ export function GuestPage() {
   // A browser that already joined this share goes straight back in, even from the spent link.
   // Sessions are per share, so one for another link never stands in for this one.
   const [access, setAccess] = useState<GuestAccess>(shareId === null ? "none" : "checking");
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fetches whether this browser already has a guest session and ignores the answer after cleanup
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- fetches whether this browser already has a guest session and ignores the answer after cleanup
   useEffect(() => {
     if (shareId === null) return;
     let live = true;
@@ -224,7 +224,7 @@ export function GuestPage() {
   }, [credential, shareId]);
   // Pasting another guest link into this tab changes only the hash, which does not reload the
   // page; reload so the new invite is read instead of the one already captured.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hashchange listener reloads the page when another guest link is pasted into this tab
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- hashchange listener reloads the page when another guest link is pasted into this tab
   useEffect(() => {
     const onHashChange = () => {
       if (window.location.hash !== "") window.location.reload();
@@ -263,7 +263,7 @@ function GuestSession({ shareId }: { readonly shareId: string }) {
     ...initialGuestStreamState,
     awaitingRowIds: readAwaitingRowIds(),
   }));
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- persists the awaiting row ids to sessionStorage so a reload keeps them
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- persists the awaiting row ids to sessionStorage so a reload keeps them
   useEffect(() => writeAwaitingRowIds(stream.awaitingRowIds), [stream.awaitingRowIds]);
   // EventSource closes for good only on a non-200 response, which the guest routes send for a
   // missing, invalid, or ended session. Network drops reconnect on their own.
@@ -295,12 +295,12 @@ function GuestSession({ shareId }: { readonly shareId: string }) {
           onLoadEarlier: () => void loadEarlier(),
         };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sets document.title to the shared thread's title
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- sets document.title to the shared thread's title
   useEffect(() => {
     if (stream.view) document.title = stream.view.title;
   }, [stream.view]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens the guest EventSource stream and closes it on cleanup
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- opens the guest EventSource stream and closes it on cleanup
   useEffect(() => {
     const source = new EventSource(
       `${GUEST_ROUTE_PREFIX}/stream?${GUEST_SHARE_PARAM}=${encodeURIComponent(shareId)}`,
@@ -480,7 +480,7 @@ function GuestThread({
   const previousUnplacedKey = useRef(unplacedKey);
   const following = useRef(follow.timelineLiveFollowEnabled);
   const scrollToEnd = useStableCallback(follow.scrollToEnd);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the timeline to the end after commit when new unplaced messages appear
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- scrolls the timeline to the end after commit when new unplaced messages appear
   useEffect(() => {
     following.current = follow.timelineLiveFollowEnabled;
     const previous = new Set(previousUnplacedKey.current.split(","));
@@ -489,7 +489,7 @@ function GuestThread({
   }, [follow.timelineLiveFollowEnabled, unplacedKey, scrollToEnd, following, previousUnplacedKey]);
   const footerRef = useRef<HTMLOListElement>(null);
   const hasFooter = unplaced.length > 0;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- ResizeObserver on the footer keeps it scrolled into view while following
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- ResizeObserver on the footer keeps it scrolled into view while following
   useEffect(() => {
     const footer = footerRef.current;
     if (!hasFooter || footer === null) return;

@@ -4,7 +4,7 @@ import { Platform } from "react-native";
 
 const nativeControls = requireOptionalNativeModule<{
   releaseVideoAudioSession(): Promise<void>;
-}>("T3NativeControls");
+}>("OniNativeControls");
 
 // Keep the session through seeks, buffering, and brief gaps between players.
 const RELEASE_DELAY_MS = 1_000;
@@ -56,7 +56,7 @@ export function useFullscreenVideoOpen(): boolean {
 }
 
 export function useMediaAudioSessionHold(active: boolean): void {
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the shared native audio session while media plays and releases it on cleanup
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- holds the shared native audio session while media plays and releases it on cleanup
   useEffect(() => {
     if (!active) return;
     mediaPlaybackStarted();

@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@onicode/contracts";
 import { assert, it, describe } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Deferred from "effect/Deferred";
@@ -22,13 +22,13 @@ import type {
   VcsStatusLocalResult,
   VcsStatusRemoteResult,
   VcsStatusStreamEvent,
-} from "@t3tools/contracts";
-import { GitCommandError, GitManagerError } from "@t3tools/contracts";
+} from "@onicode/contracts";
+import { GitCommandError, GitManagerError } from "@onicode/contracts";
 
 import * as VcsStatusBroadcaster from "./VcsStatusBroadcaster.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
-import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
+import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 
 const TEST_EPOCH = DateTime.makeUnsafe("1970-01-01T00:00:00.000Z");
 
@@ -518,10 +518,10 @@ describe("VcsStatusBroadcaster", () => {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const realDir = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3-vcs-auto-pull-real-",
+          prefix: "oni-vcs-auto-pull-real-",
         });
         const linkParent = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3-vcs-auto-pull-link-",
+          prefix: "oni-vcs-auto-pull-link-",
         });
         configuredWorkspaceRoot = path.join(linkParent, "repo-link");
         yield* fileSystem.symlink(realDir, configuredWorkspaceRoot);
@@ -797,10 +797,10 @@ describe("VcsStatusBroadcaster", () => {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const realDir = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3-vcs-status-real-",
+          prefix: "oni-vcs-status-real-",
         });
         const linkParent = yield* fileSystem.makeTempDirectoryScoped({
-          prefix: "t3-vcs-status-link-",
+          prefix: "oni-vcs-status-link-",
         });
         const linkDir = path.join(linkParent, "repo-link");
         yield* fileSystem.symlink(realDir, linkDir);

@@ -1,4 +1,4 @@
-import type { EnvironmentId, OrchestrationV2ShellSnapshot } from "@t3tools/contracts";
+import type { EnvironmentId, OrchestrationV2ShellSnapshot } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { AsyncResult, Atom } from "effect/reactivity";
 

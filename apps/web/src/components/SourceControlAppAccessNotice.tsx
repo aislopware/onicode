@@ -1,15 +1,15 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@onicode/contracts";
 import {
   readHostCredentialSettings,
   sourceControlClients,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@onicode/client-runtime/source-control-clients";
 import { ExternalLinkIcon } from "lucide-react";
 
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { cn } from "../lib/utils";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
-import { T3AppIcon } from "./T3AppIcon";
+import { OniAppIcon } from "./OniAppIcon";
 import { InlineButton } from "./ui/button";
 
 /**
@@ -51,7 +51,7 @@ export function SourceControlAppAccessNotice(props: {
         props.className,
       )}
     >
-      <T3AppIcon className="size-4 shrink-0" />
+      <OniAppIcon className="size-4 shrink-0" />
       <p className="min-w-0 flex-1">
         {appSignIn.appName} isn't installed on <span className="text-foreground">{owner}</span>, so
         requests here use your own GitHub login and its lower rate limit.

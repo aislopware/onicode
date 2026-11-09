@@ -1,5 +1,5 @@
 import { resolveManagedCodexHomeLayout } from "./CodexManagedHome.ts";
-import { CodexSettings, ProviderSetupError, type ProviderInstanceId } from "@t3tools/contracts";
+import { CodexSettings, ProviderSetupError, type ProviderInstanceId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -7,7 +7,7 @@ import * as Schema from "effect/Schema";
 import * as ServerConfig from "../config.ts";
 import * as CodexManagedTokenBroker from "./CodexManagedTokenBroker.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import { resolveSelfInvocation, selfInvocationArgs } from "@t3tools/shared/nodeRuntime";
+import { resolveSelfInvocation, selfInvocationArgs } from "@onicode/shared/nodeRuntime";
 import * as CodexInstallation from "./CodexInstallation.ts";
 import { makeCodexChatGptAuth } from "./CodexChatGptAuth.ts";
 import { COMMAND_TIMEOUT_MS } from "./CodexManagedTokenProtocol.ts";
@@ -67,7 +67,7 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
             instanceId: options.instanceId,
             operation: "runtime",
             detail:
-              "Could not prepare the private managed Codex token listener. Restart T3 and retry.",
+              "Could not prepare the private managed Codex token listener. Restart Onicode and retry.",
             cause,
           }),
       ),
@@ -113,13 +113,13 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
           }),
       ),
     );
-    // Ambient CLI overrides cannot redirect a T3-owned token to a different provider.
+    // Ambient CLI overrides cannot redirect a Onicode-owned token to a different provider.
     const environment: NodeJS.ProcessEnv = {
       ...options.environment,
       CODEX_HOME: homePath,
     };
     delete environment.ACCESS_TOKEN;
-    delete environment.T3CODE_CODEX_LAUNCH_ARGS;
+    delete environment.ONICODE_CODEX_LAUNCH_ARGS;
     delete environment.OPENAI_API_KEY;
     delete environment.OPENAI_BASE_URL;
     return {

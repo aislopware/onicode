@@ -3,7 +3,7 @@ import {
   MessageId,
   ProviderInstanceId,
   type OrchestrationV2ThreadProjection,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { modelSwitchSince } from "./modelSwitch.ts";

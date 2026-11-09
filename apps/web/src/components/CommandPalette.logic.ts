@@ -8,8 +8,8 @@ import {
   type SearchMatchHint,
   type SearchRange,
   type ThreadSearchSubject,
-} from "@t3tools/shared/paletteSearch";
-import { threadSearchSubject } from "@t3tools/client-runtime/state/thread-search";
+} from "@onicode/shared/paletteSearch";
+import { threadSearchSubject } from "@onicode/client-runtime/state/thread-search";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
 import {
   addProjectRemoteSourceLabel,
@@ -17,7 +17,7 @@ import {
   buildAddProjectRemoteSourceReadiness,
   type AddProjectRemoteSource,
   type AddProjectRemoteSourceReadiness,
-} from "@t3tools/client-runtime/operations/projects";
+} from "@onicode/client-runtime/operations/projects";
 import {
   type EnvironmentId,
   type ProjectId,
@@ -27,8 +27,8 @@ import {
   type SourceControlDiscoveryResult,
   type SourceControlRepositoryInfo,
   THREAD_JUMP_KEYBINDING_COMMANDS,
-} from "@t3tools/contracts";
-import { filterFilesystemBrowseEntries } from "@t3tools/client-runtime/state/filesystem";
+} from "@onicode/contracts";
+import { filterFilesystemBrowseEntries } from "@onicode/client-runtime/state/filesystem";
 import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
@@ -660,7 +660,7 @@ export function filterCommandPaletteGroups(input: {
     : [...groups, { value: "threads-messages", label: "In messages", items: messageItems }];
 }
 
-/** Every option inside a submenu as one row, e.g. "New thread in t3code" or "Change theme: Dracula". */
+/** Every option inside a submenu as one row, e.g. "New thread in onicode" or "Change theme: Dracula". */
 export function buildNestedSearchItems(
   items: ReadonlyArray<CommandPaletteActionItem | CommandPaletteSubmenuItem>,
   query: string,

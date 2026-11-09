@@ -1,7 +1,7 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import type { InteractionUpdate } from "@cursor/sdk";
-import { toolOutputImages } from "@t3tools/shared/toolOutput";
+import { toolOutputImages } from "@onicode/shared/toolOutput";
 import {
   EnvironmentId,
   MessageId,
@@ -12,7 +12,7 @@ import {
   RunAttemptId,
   RunId,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -21,11 +21,11 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 
-import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
+import * as TestProviderHost from "@onicode/provider-testing/TestProviderHost";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
+import { makeProviderFailure } from "@onicode/provider-core/server/failure";
 import {
   cursorMcpServers,
   cursorRuntimeAgentPolicy,
@@ -660,7 +660,7 @@ describe("CursorAdapterV2", () => {
     ),
   );
 
-  it.effect("sends T3 instructions to each Cursor conversation that lacks them", () =>
+  it.effect("sends Onicode instructions to each Cursor conversation that lacks them", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const workspace = yield* fileSystem.makeTempDirectoryScoped({ prefix: "cursor-v2-device-" });
@@ -784,8 +784,8 @@ describe("CursorAdapterV2", () => {
         );
         const sent = sentMessages.at(-1)!;
         return {
-          orchestration: sent.includes("## T3 Code orchestration"),
-          devices: sent.includes("## T3 Code devices"),
+          orchestration: sent.includes("## Onicode orchestration"),
+          devices: sent.includes("## Onicode devices"),
         };
       });
       const told = (orchestration: boolean, devices: boolean) => ({ orchestration, devices });
@@ -1759,7 +1759,7 @@ describe("CursorAdapterV2", () => {
     };
 
     assert.deepEqual(cursorMcpServers(mcpSession), {
-      "t3-code": {
+      "onicode": {
         type: "http",
         url: "http://127.0.0.1:43123/mcp",
         headers: {

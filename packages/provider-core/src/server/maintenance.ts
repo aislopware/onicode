@@ -1,4 +1,4 @@
-import type { ProviderDriverKind } from "@t3tools/contracts";
+import type { ProviderDriverKind } from "@onicode/contracts";
 import type * as Effect from "effect/Effect";
 
 export interface ProviderMaintenanceCapabilities {
@@ -17,7 +17,7 @@ export interface ProviderMaintenanceCapabilities {
   readonly compareVersions?: (current: string, latest: string) => number;
   /** Resolved executable path for advisories when no update command is proven. */
   readonly installPath?: string;
-  /** Displayed for manual updates; never executed by T3 Code. */
+  /** Displayed for manual updates; never executed by Onicode. */
   readonly manualCommand?: string;
 }
 

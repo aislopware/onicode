@@ -1,11 +1,11 @@
 import { assert, describe, expect, it } from "@effect/vitest";
-import { EnvironmentId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProviderInstanceId, ThreadId } from "@onicode/contracts";
 
 import {
-  T3_MCP_BEARER_ENV,
-  T3_MCP_URL_ENV,
-  T3_PI_RUNTIME_MODE_ENV,
-  T3_PI_MCP_EXTENSION_PATH_ENV,
+  ONICODE_MCP_BEARER_ENV,
+  ONICODE_MCP_URL_ENV,
+  ONICODE_PI_RUNTIME_MODE_ENV,
+  ONICODE_PI_MCP_EXTENSION_PATH_ENV,
 } from "./mcpExtensionSource.ts";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -15,15 +15,15 @@ import * as NodeFS from "effect/FileSystem";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   buildPiRpcLaunch,
-  materializePiT3McpExtension,
+  materializePiOniMcpExtension,
   resolvePiLaunchArgs,
 } from "./mcpInjection.ts";
 import { PI_T3_MCP_EXTENSION_SOURCE } from "./mcpExtensionSource.ts";
 
-const threadId = ThreadId.make("thread-pi-t3-mcp");
+const threadId = ThreadId.make("thread-pi-oni-mcp");
 
 const mcpSession = {
-  environmentId: EnvironmentId.make("environment-pi-t3-mcp"),
+  environmentId: EnvironmentId.make("environment-pi-oni-mcp"),
   threadId,
   providerSessionId: "mcp-session-pi",
   providerInstanceId: ProviderInstanceId.make("pi"),
@@ -32,7 +32,7 @@ const mcpSession = {
   browserToolsAvailable: true,
 };
 
-describe("pi T3 MCP injection", () => {
+describe("pi Onicode MCP injection", () => {
   it("always adds the permission bridge and configures MCP when available", () => {
     const resolvedArgs = resolvePiLaunchArgs(
       "--extension=/home/user/.pi/agent/extensions/demo.ts --session-dir=/tmp/pi-sessions --provider=anthropic --model=claude-sonnet --tools='' --name=-review --extension-flag=kept",
@@ -43,7 +43,7 @@ describe("pi T3 MCP injection", () => {
       launchArgs: resolvedArgs.args,
       environment: { PATH: "/usr/bin" },
       mcpSession,
-      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+      extensionPath: "/tmp/cache/pi-oni-mcp-extension.ts",
       runtimeMode: "approval-required",
     });
     assert.deepEqual(launch.args, [
@@ -63,37 +63,37 @@ describe("pi T3 MCP injection", () => {
       "-review",
       "--extension-flag=kept",
       "--extension",
-      "/tmp/cache/pi-t3-mcp-extension.ts",
+      "/tmp/cache/pi-oni-mcp-extension.ts",
     ]);
     assert.notInclude(launch.args, "--no-extensions");
-    assert.equal(launch.env[T3_MCP_URL_ENV], "http://127.0.0.1:43123/mcp");
-    assert.equal(launch.env[T3_MCP_BEARER_ENV], "secret-pi-token");
-    assert.equal(launch.env[T3_PI_RUNTIME_MODE_ENV], "approval-required");
-    assert.equal(launch.env[T3_PI_MCP_EXTENSION_PATH_ENV], "/tmp/cache/pi-t3-mcp-extension.ts");
+    assert.equal(launch.env[ONICODE_MCP_URL_ENV], "http://127.0.0.1:43123/mcp");
+    assert.equal(launch.env[ONICODE_MCP_BEARER_ENV], "secret-pi-token");
+    assert.equal(launch.env[ONICODE_PI_RUNTIME_MODE_ENV], "approval-required");
+    assert.equal(launch.env[ONICODE_PI_MCP_EXTENSION_PATH_ENV], "/tmp/cache/pi-oni-mcp-extension.ts");
 
     const permissionOnly = buildPiRpcLaunch({
       launchArgs: [],
       environment: {
-        [T3_MCP_URL_ENV]: "http://127.0.0.1:9999/stale",
-        [T3_MCP_BEARER_ENV]: "stale-token",
-        [T3_PI_MCP_EXTENSION_PATH_ENV]: "/stale/extension.ts",
+        [ONICODE_MCP_URL_ENV]: "http://127.0.0.1:9999/stale",
+        [ONICODE_MCP_BEARER_ENV]: "stale-token",
+        [ONICODE_PI_MCP_EXTENSION_PATH_ENV]: "/stale/extension.ts",
       },
       mcpSession: undefined,
-      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+      extensionPath: "/tmp/cache/pi-oni-mcp-extension.ts",
       runtimeMode: "auto-accept-edits",
     });
     assert.deepEqual(permissionOnly.args, [
       "--mode",
       "rpc",
       "--extension",
-      "/tmp/cache/pi-t3-mcp-extension.ts",
+      "/tmp/cache/pi-oni-mcp-extension.ts",
     ]);
-    assert.isUndefined(permissionOnly.env[T3_MCP_URL_ENV]);
-    assert.isUndefined(permissionOnly.env[T3_MCP_BEARER_ENV]);
-    assert.equal(permissionOnly.env[T3_PI_RUNTIME_MODE_ENV], "auto-accept-edits");
+    assert.isUndefined(permissionOnly.env[ONICODE_MCP_URL_ENV]);
+    assert.isUndefined(permissionOnly.env[ONICODE_MCP_BEARER_ENV]);
+    assert.equal(permissionOnly.env[ONICODE_PI_RUNTIME_MODE_ENV], "auto-accept-edits");
     assert.equal(
-      permissionOnly.env[T3_PI_MCP_EXTENSION_PATH_ENV],
-      "/tmp/cache/pi-t3-mcp-extension.ts",
+      permissionOnly.env[ONICODE_PI_MCP_EXTENSION_PATH_ENV],
+      "/tmp/cache/pi-oni-mcp-extension.ts",
     );
   });
 
@@ -110,7 +110,7 @@ describe("pi T3 MCP injection", () => {
       ],
       environment: {},
       mcpSession,
-      extensionPath: "/tmp/cache/pi-t3-mcp-extension.ts",
+      extensionPath: "/tmp/cache/pi-oni-mcp-extension.ts",
       sessionPath: "/fake/persisted.jsonl",
       ephemeral: true,
       shortLived: true,
@@ -138,7 +138,7 @@ describe("pi T3 MCP injection", () => {
     assert.deepEqual(alreadyOffline.args, ["--mode", "rpc", "--no-session", "--offline"]);
     assert.deepInclude(resolvePiLaunchArgs("--mode text"), {
       ok: false,
-      message: "Pi launch argument '--mode' is controlled by T3 Code and cannot be overridden.",
+      message: "Pi launch argument '--mode' is controlled by Onicode and cannot be overridden.",
     });
     assert.deepInclude(resolvePiLaunchArgs("--session old.jsonl"), { ok: false });
     assert.deepInclude(resolvePiLaunchArgs("prompt pi immediately"), { ok: false });
@@ -157,7 +157,7 @@ describe("pi T3 MCP injection", () => {
   });
 });
 
-describe("materializePiT3McpExtension", () => {
+describe("materializePiOniMcpExtension", () => {
   // A pi launch concurrent with the materialize reads the extension file from
   // disk; a truncate-then-write exposes an empty or partial file mid-write and
   // the launch loads a broken extension.
@@ -165,17 +165,17 @@ describe("materializePiT3McpExtension", () => {
     Effect.gen(function* () {
       const fs = yield* NodeFS.FileSystem;
       const path = yield* NodePath.Path;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pi-atomic-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-pi-atomic-" });
       const anomalies: Array<string> = [];
       const stopAfter = 120;
       const writer = yield* Effect.forkChild(
         Effect.gen(function* () {
           for (let index = 0; index < stopAfter; index += 1) {
             yield* fs
-              .remove(path.join(directory, "pi-t3-mcp-extension.ts"), { force: true })
+              .remove(path.join(directory, "pi-oni-mcp-extension.ts"), { force: true })
               .pipe(Effect.ignore);
             yield* Effect.all(
-              [materializePiT3McpExtension(directory), materializePiT3McpExtension(directory)],
+              [materializePiOniMcpExtension(directory), materializePiOniMcpExtension(directory)],
               { concurrency: "unbounded" },
             );
           }
@@ -185,7 +185,7 @@ describe("materializePiT3McpExtension", () => {
         Effect.forever(
           Effect.gen(function* () {
             const text = yield* fs
-              .readFileString(path.join(directory, "pi-t3-mcp-extension.ts"))
+              .readFileString(path.join(directory, "pi-oni-mcp-extension.ts"))
               .pipe(Effect.option);
             if (Option.isNone(text)) return; // Missing between writes: legitimate.
             // A read that SUCCEEDS must return the full extension: an empty or

@@ -1,6 +1,6 @@
-import { EnvironmentId, type DeviceDetail, type DeviceSummary } from "@t3tools/contracts";
-import type { DeviceHubAccess } from "@t3tools/client-runtime/device/hub-access";
-import type { AtomCommandConcurrency } from "@t3tools/client-runtime/state/runtime";
+import { EnvironmentId, type DeviceDetail, type DeviceSummary } from "@onicode/contracts";
+import type { DeviceHubAccess } from "@onicode/client-runtime/device/hub-access";
+import type { AtomCommandConcurrency } from "@onicode/client-runtime/state/runtime";
 import { RegistryContext } from "@effect/atom-react";
 import * as Cause from "effect/Cause";
 import { AtomRegistry } from "effect/reactivity";
@@ -17,7 +17,7 @@ const { read, action, subscribe } = vi.hoisted(() => ({
     vi.fn<(_target: unknown, onChange: (app: { id: string } | null) => void) => () => void>(),
 }));
 // Stubs only the transport; the device atoms' real scheduler and lanes decide ordering.
-vi.mock(import("@t3tools/client-runtime/state/runtime"), async (original) => {
+vi.mock(import("@onicode/client-runtime/state/runtime"), async (original) => {
   const runtime = await original();
   const createEnvironmentRpcCommand = (
     _runtime: unknown,

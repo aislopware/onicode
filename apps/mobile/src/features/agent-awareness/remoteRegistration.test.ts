@@ -11,9 +11,9 @@ import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import { Cookies, FetchHttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
+import { ManagedRelay } from "@onicode/client-runtime/relay";
 
-import { verifyDpopProof } from "@t3tools/shared/dpop";
+import { verifyDpopProof } from "@onicode/shared/dpop";
 import * as Dpop from "../cloud/dpop";
 import * as ManagedRelayLayer from "../cloud/managedRelayLayer";
 import {
@@ -204,7 +204,7 @@ const layerRelayTest = ManagedRelayLayer.layer("https://relay.example.test").pip
 const runBackgroundOperations = Effect.fn("TestRemoteRegistration.runBackgroundOperations")(
   function* () {
     let idlePasses = 0;
-    // oxlint-disable-next-line t3code/no-polling-loop-in-tests -- This harness drains mocked runtime jobs and their promise continuations, not external I/O or elapsed time.
+    // oxlint-disable-next-line onicode/no-polling-loop-in-tests -- This harness drains mocked runtime jobs and their promise continuations, not external I/O or elapsed time.
     for (;;) {
       yield* Effect.promise(() => Promise.resolve());
       const pending = backgroundRuntime.pending.shift();

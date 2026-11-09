@@ -1,4 +1,4 @@
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@onicode/contracts";
 
 import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 

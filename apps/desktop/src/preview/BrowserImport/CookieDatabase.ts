@@ -3,7 +3,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
+import * as NodeSqliteClient from "@onicode/shared/nodeSqliteClient";
 
 export interface ImportedCookie {
   readonly url: string;
@@ -46,7 +46,7 @@ export const bareHost = (host: string): string => (host.startsWith(".") ? host.s
 /** Copy before reading to avoid live WAL writes and never open the source browser database for writing. */
 export const snapshotCookieDatabase = Effect.fn("CookieDatabase.snapshotCookieDatabase")(function* (
   cookiePath: string,
-  tempPrefix = "t3code-cookie-import-",
+  tempPrefix = "onicode-cookie-import-",
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;

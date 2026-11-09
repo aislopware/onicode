@@ -5,9 +5,9 @@ import {
   deviceToolVersionLabels,
   deviceToolUpdateOwnership,
   deviceToolUpdatePolicy,
-} from "@t3tools/client-runtime/state/device";
+} from "@onicode/client-runtime/state/device";
 import { useIsFocused, useNavigation, type StaticScreenProps } from "@react-navigation/native";
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import * as Haptics from "expo-haptics";
@@ -60,7 +60,7 @@ export function DevicePreviewRouteScreen({ route }: DevicePreviewRouteScreenProp
   const onClose = () => navigation.goBack();
   const { environmentId, threadId } = route.params;
   const isBlankLink = environmentId.trim().length === 0 || threadId.trim().length === 0;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pops a deep-linked route with a blank environment or thread off the navigator
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- pops a deep-linked route with a blank environment or thread off the navigator
   useEffect(() => {
     if (isBlankLink) onClose();
   }, [isBlankLink, onClose]);
@@ -112,11 +112,11 @@ export function DevicePreviewScreen({
     setInputConnected(connected);
     if (!connected) setControlsVisible(true);
   };
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes the focused route through the navigator once the thread has no device previews
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- closes the focused route through the navigator once the thread has no device previews
   useEffect(() => {
     if (focused && state.data !== null && previews.length === 0) onClose();
   }, [focused, state.data, previews.length, onClose]);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to the Accelerometer while focused to toggle controls on a shake
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to the Accelerometer while focused to toggle controls on a shake
   useEffect(() => {
     if (!focused || !foreground || embedded) return;
     const shaken = createShakeDetector();
@@ -337,7 +337,7 @@ export function DevicePreviewScreen({
           <View className="px-3" style={{ paddingTop: Math.max(insets.top, 12) }}>
             <GlassSurface className="flex-row items-center gap-1 p-1">
               <SheetCloseButton accessibilityLabel="Close device preview" onClose={onClose} />
-              <AppText numberOfLines={1} className="flex-1 text-center font-t3-medium text-base">
+              <AppText numberOfLines={1} className="flex-1 text-center font-oni-medium text-base">
                 {preview?.name ?? "Devices"}
               </AppText>
               <ControlPill

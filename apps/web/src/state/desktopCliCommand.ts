@@ -1,4 +1,4 @@
-import type { DesktopBridge, DesktopCliCommandState } from "@t3tools/contracts";
+import type { DesktopBridge, DesktopCliCommandState } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
@@ -12,7 +12,7 @@ class DesktopCliCommandUnavailableError extends Schema.TaggedError<DesktopCliCom
   {},
 ) {
   override get message(): string {
-    return "The t3 command is unavailable.";
+    return "The onicode command is unavailable.";
   }
 }
 
@@ -21,7 +21,7 @@ class DesktopCliCommandLoadError extends Schema.TaggedError<DesktopCliCommandLoa
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Failed to load the t3 command state.";
+    return "Failed to load the onicode command state.";
   }
 }
 

@@ -1,4 +1,4 @@
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -45,7 +45,7 @@ describe("resolvePendingDraftBranch", () => {
     expect(resolve({ draft: untouched, defaults: worktreeDefault, branches, projectCwd })).toBe(
       "origin/main",
     );
-    // Until t3.json settles, the environment default may still be replaced.
+    // Until onicode.json settles, the environment default may still be replaced.
     expect(
       resolve({
         draft: untouched,

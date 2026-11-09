@@ -4,7 +4,7 @@ import * as NodePath from "node:path";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@onicode/shared/Net";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
@@ -60,7 +60,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CLI deferred imp
   it.effect("fails a server start on a broken import before resolving config", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-deferred-server-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-deferred-server-" });
       const baseDir = NodePath.join(root, "state");
 
       for (const command of ["serve", "start"]) {
@@ -75,7 +75,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CLI deferred imp
   it.effect("keeps server state when the offline project runtime fails to import", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-deferred-project-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-deferred-project-" });
       const baseDir = NodePath.join(root, "state");
       const runtimeStatePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
       yield* persistServerRuntimeState({
@@ -102,7 +102,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CLI deferred imp
   it.effect("forwards live project mutations without importing the offline runtime", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-deferred-live-project-" });
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-deferred-live-project-" });
       const baseDir = NodePath.join(root, "state");
       const workspaceRoot = NodePath.join(root, "workspace");
       yield* fs.makeDirectory(workspaceRoot);

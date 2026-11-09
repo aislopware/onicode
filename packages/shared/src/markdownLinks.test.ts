@@ -44,7 +44,7 @@ describe("inlineCodeFilePathCandidate", () => {
 describe("parseMarkdownFileLink", () => {
   it.each([
     ["C:%5Crepo%5Cimage.png", "C:\\repo\\image.png"],
-    ["</D:/Programme/t3code/ChatMarkdown.tsx:1>", "D:/Programme/t3code/ChatMarkdown.tsx"],
+    ["</D:/Programme/onicode/ChatMarkdown.tsx:1>", "D:/Programme/onicode/ChatMarkdown.tsx"],
     ["file://localhost/home/me/notes.md", "/home/me/notes.md"],
     ["app/routes/posts.$postId.tsx", "app/routes/posts.$postId.tsx"],
     ["src/routes/+page.svelte", "src/routes/+page.svelte"],
@@ -185,9 +185,9 @@ describe("resolveMarkdownFileLinkTarget", () => {
   it("normalizes slash-prefixed windows drive paths before resolving", () => {
     expect(
       resolveMarkdownFileLinkTarget(
-        "/D:/Programme/t3code/apps/web/src/components/chat/OpenInPicker.tsx#L69",
+        "/D:/Programme/onicode/apps/web/src/components/chat/OpenInPicker.tsx#L69",
       ),
-    ).toBe("D:/Programme/t3code/apps/web/src/components/chat/OpenInPicker.tsx:69");
+    ).toBe("D:/Programme/onicode/apps/web/src/components/chat/OpenInPicker.tsx:69");
   });
 
   it("decodes an encoded drive colon in a file uri before dropping its slash", () => {

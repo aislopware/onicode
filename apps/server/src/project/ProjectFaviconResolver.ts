@@ -12,7 +12,7 @@ import * as PlatformError from "effect/PlatformError";
 import * as Schema from "effect/Schema";
 
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
-import * as T3ProjectFileLoader from "./T3ProjectFileLoader.ts";
+import * as OniProjectFileLoader from "./OniProjectFileLoader.ts";
 
 const FAVICON_CACHE_CAPACITY = 512;
 const FAVICON_POSITIVE_CACHE_TTL = Duration.minutes(10);
@@ -112,7 +112,7 @@ export class ProjectFaviconResolver extends Context.Service<
     /** Forgets cached lookups for a workspace whose files changed, such as a finished clone. */
     readonly invalidate: (cwd: string) => Effect.Effect<void>;
   }
->()("t3/project/ProjectFaviconResolver") {}
+>()("onicode/project/ProjectFaviconResolver") {}
 
 function extractIconHref(source: string): string | null {
   const htmlMatch = source.match(LINK_ICON_HTML_RE);
@@ -140,7 +140,7 @@ export const make = Effect.gen(function* () {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const workspacePaths = yield* WorkspacePaths.WorkspacePaths;
-  const projectFileLoader = yield* T3ProjectFileLoader.T3ProjectFileLoader;
+  const projectFileLoader = yield* OniProjectFileLoader.OniProjectFileLoader;
 
   const resolveIconHref = (href: string): ReadonlyArray<string> => {
     const clean = href.replace(/^\//, "");

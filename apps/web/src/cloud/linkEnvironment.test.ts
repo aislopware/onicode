@@ -3,8 +3,8 @@ import {
   EnvironmentId,
   type RelayClientInstallProgressEvent,
   WS_METHODS,
-} from "@t3tools/contracts";
-import { RelayWebClientId } from "@t3tools/contracts/relay";
+} from "@onicode/contracts";
+import { RelayWebClientId } from "@onicode/contracts/relay";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -19,11 +19,11 @@ import {
   BearerConnectionTarget,
   PrimaryConnectionTarget,
   EnvironmentSupervisor,
-} from "@t3tools/client-runtime/connection";
-import { type RpcSession } from "@t3tools/client-runtime/rpc";
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
-import { ManagedRelay } from "@t3tools/client-runtime/relay";
-import { layerRemoteHttpClient } from "@t3tools/client-runtime/rpc";
+} from "@onicode/client-runtime/connection";
+import { type RpcSession } from "@onicode/client-runtime/rpc";
+import { EnvironmentRegistry } from "@onicode/client-runtime/connection";
+import { ManagedRelay } from "@onicode/client-runtime/relay";
+import { layerRemoteHttpClient } from "@onicode/client-runtime/rpc";
 import { __resetDesktopPrimaryAuthForTests } from "../environments/primary/desktopAuth";
 
 import { readCloudLinkState, unlinkEnvironmentFromCloud } from "./linkEnvironment";
@@ -188,7 +188,7 @@ function withServices<A, E>(
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.stubEnv("VITE_T3CODE_RELAY_URL", "https://relay.example.test");
+  vi.stubEnv("VITE_ONICODE_RELAY_URL", "https://relay.example.test");
   relayClientInstallDialog.requestConfirmation.mockResolvedValue(true);
 });
 
@@ -214,7 +214,7 @@ describe("web cloud link environment client", () => {
       );
       vi.stubGlobal("fetch", fetchMock);
       vi.stubGlobal("window", {
-        location: { origin: "t3code://app" },
+        location: { origin: "onicode://app" },
         desktopBridge: {
           getLocalEnvironmentBearerToken: vi.fn().mockResolvedValue("desktop-bearer-token"),
         } as unknown as DesktopBridge,
@@ -259,7 +259,7 @@ describe("web cloud link environment client", () => {
       );
       vi.stubGlobal("fetch", fetchMock);
       vi.stubGlobal("window", {
-        location: { origin: "t3code://app" },
+        location: { origin: "onicode://app" },
         desktopBridge: {
           getLocalEnvironmentBearerToken: vi.fn().mockResolvedValue("desktop-bearer-token"),
         } as unknown as DesktopBridge,

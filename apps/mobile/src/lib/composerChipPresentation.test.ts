@@ -88,7 +88,7 @@ describe("contextChipAccent", () => {
 
   it("reads on both a saturated Material You bubble and the light canvas beside it", () => {
     const theme = {
-      ...getMobileThemeVariables("t3-code", "light"),
+      ...getMobileThemeVariables("onicode", "light"),
       "--color-user-bubble": "#6750a4",
       "--color-user-bubble-foreground": "#ffffff",
     };
@@ -104,7 +104,7 @@ describe("contextChipAccent", () => {
   });
 
   it("keeps an accent that already reads everywhere", () => {
-    const theme = getMobileThemeVariables("t3-code", "dark");
+    const theme = getMobileThemeVariables("onicode", "dark");
     expect(contextChipAccent("#009f6e", theme, theme["--color-md-body"])).toBe("#009f6e");
   });
 });

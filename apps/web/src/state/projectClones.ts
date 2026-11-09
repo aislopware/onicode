@@ -1,6 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
-import { parseScopedProjectKey, scopedProjectKey } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ProjectCloneSnapshot, ScopedProjectRef } from "@t3tools/contracts";
+import { parseScopedProjectKey, scopedProjectKey } from "@onicode/client-runtime/environment";
+import type { EnvironmentId, ProjectCloneSnapshot, ScopedProjectRef } from "@onicode/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentServerConfigsAtom } from "./server";

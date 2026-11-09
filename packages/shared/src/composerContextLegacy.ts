@@ -5,7 +5,7 @@ import {
   type PreviewAnnotationContextRecord,
   ReviewCommentContextRecord,
   type TerminalContextRecord,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 
 import { formatComposerContextReference } from "./composerContextReferences.ts";

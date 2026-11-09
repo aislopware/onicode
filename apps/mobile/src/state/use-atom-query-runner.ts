@@ -3,7 +3,7 @@ import {
   executeAtomQuery,
   type AtomQueryOptions,
   type AtomCommandResult,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import { AsyncResult, type Atom } from "effect/reactivity";
 import { useContext } from "react";
 

@@ -5,14 +5,14 @@ import {
   ProviderInstanceId,
   type ServerSettings,
   type ServerSettingsPatch,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   AVAILABLE_CONNECTION_STATE,
   type SupervisorConnectionState,
-} from "@t3tools/client-runtime/connection";
+} from "@onicode/client-runtime/connection";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
-import { applyServerSettingsPatch } from "@t3tools/shared/serverSettings";
+import { applyServerSettingsPatch } from "@onicode/shared/serverSettings";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vite-plus/test";
 

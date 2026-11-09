@@ -6,7 +6,7 @@ import {
   type OrchestratorMcpRuntimeMode,
   type ProviderInteractionMode,
   type RuntimeMode,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 
 /** How much a runtime mode allows, narrowest first. */

@@ -3,7 +3,7 @@ import type {
   VoiceRecorder,
   VoiceStreamingSession,
   VoiceTranscriptionOptions,
-} from "@t3tools/client-runtime/voice-input";
+} from "@onicode/client-runtime/voice-input";
 import workletUrl from "./pcmWorklet.ts?worker&url";
 
 type PreparedBrowserTranscription = PreparedVoiceTranscription & {
@@ -88,7 +88,7 @@ export function createBrowserPcmCapture(
         audioContext = context;
         await context.audioWorklet.addModule(workletUrl);
         captureSignal.throwIfAborted();
-        const node = new AudioWorkletNode(context, "t3-pcm-capture", { channelCount: 1 });
+        const node = new AudioWorkletNode(context, "oni-pcm-capture", { channelCount: 1 });
         worklet = node;
         node.port.onmessage = ({
           data,

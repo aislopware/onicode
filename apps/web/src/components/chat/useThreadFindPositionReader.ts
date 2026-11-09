@@ -1,6 +1,6 @@
 import { useLayoutEffect } from "react";
-import type { RunId } from "@t3tools/contracts";
-import type { ToolCallVisibility } from "@t3tools/contracts/settings";
+import type { RunId } from "@onicode/contracts";
+import type { ToolCallVisibility } from "@onicode/contracts/settings";
 import type { TimelineEntry } from "../../session-logic";
 import {
   timelineTurnFoldRunIdsByEntryId,
@@ -40,7 +40,7 @@ export function useThreadFindPositionReader({
   readonly contentInsetEndAdjustment: number;
 }) {
   // Layout effect so a find opened right after a thread switch reads this viewport.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- attaches the timeline viewport's position reader to the thread find registry
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- attaches the timeline viewport's position reader to the thread find registry
   useLayoutEffect(() => {
     if (!timelineViewportElement) return;
     const read: ThreadFindPositionReader = (query) => {

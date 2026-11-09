@@ -4,7 +4,7 @@ import { assert, it } from "@effect/vitest";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
-import { PullRequestOperationError } from "@t3tools/contracts";
+import { PullRequestOperationError } from "@onicode/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -26,7 +26,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PR filesystem ca
   it.effect("clears in-flight reads before a new service can reuse them", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pr-cache-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-pr-cache-" });
       const started = yield* Deferred.make<void>();
       const release = yield* Deferred.make<void>();
       const cache = yield* cacheLayer(directory);
@@ -59,7 +59,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PR filesystem ca
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pr-cache-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-pr-cache-" });
       const cache = yield* cacheLayer(directory);
       yield* cache.get("summary", Effect.succeed("value"));
       const [entry] = yield* fs.readDirectory(directory);
@@ -76,7 +76,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PR filesystem ca
   it.effect("invalidates only the changed scope across restarts and coalesces its next reads", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pr-cache-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-pr-cache-" });
       let reads = 0;
       const lookup = Effect.sync(() => String(++reads));
       const cache = yield* cacheLayer(directory);
@@ -141,7 +141,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PR filesystem ca
   it.effect("does not persist failed GitHub reads", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pr-cache-" });
+      const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-pr-cache-" });
       const cache = yield* cacheLayer(directory);
       const error = new PullRequestOperationError({ operation: "summary", detail: "unavailable" });
       yield* cache.get("summary", Effect.fail(error)).pipe(Effect.flip);
@@ -155,7 +155,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PR filesystem ca
     (corrupt) =>
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
-        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-pr-cache-" });
+        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-pr-cache-" });
         const original = yield* cacheLayer(directory);
         yield* original.get("summary", Effect.succeed("stale"), ["pr"]);
         yield* fs.writeFileString(directory + "/revisions", corrupt);

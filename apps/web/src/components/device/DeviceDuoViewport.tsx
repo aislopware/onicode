@@ -1,13 +1,13 @@
 import { useEffect, useRef } from "react";
-import type { DuoViewer } from "@t3tools/client-runtime/device/duo-viewer";
-import type { DeviceModelSource } from "@t3tools/client-runtime/device/model";
-import type { createPhoneInteraction } from "@t3tools/client-runtime/device/phone-interaction";
-import { createCanvasFrameSink } from "@t3tools/client-runtime/device/frame";
-import type { DeviceScreenSize, DeviceStreamClient } from "@t3tools/client-runtime/device/stream";
-import { createDuoPinch } from "@t3tools/client-runtime/device/duo-control";
+import type { DuoViewer } from "@onicode/client-runtime/device/duo-viewer";
+import type { DeviceModelSource } from "@onicode/client-runtime/device/model";
+import type { createPhoneInteraction } from "@onicode/client-runtime/device/phone-interaction";
+import { createCanvasFrameSink } from "@onicode/client-runtime/device/frame";
+import type { DeviceScreenSize, DeviceStreamClient } from "@onicode/client-runtime/device/stream";
+import { createDuoPinch } from "@onicode/client-runtime/device/duo-control";
 import { mountDeviceViewer } from "./mountDeviceViewer";
 
-const loadDuoViewer = () => import("@t3tools/client-runtime/device/duo-viewer");
+const loadDuoViewer = () => import("@onicode/client-runtime/device/duo-viewer");
 
 export function DeviceDuoViewport(props: {
   readonly model: DeviceModelSource;
@@ -39,7 +39,7 @@ export function DeviceDuoViewport(props: {
     onFrameListener,
   } = props;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- stores screen and model in refs, ends any active interaction, and pushes the screen into the 3D Duo viewer
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- stores screen and model in refs, ends any active interaction, and pushes the screen into the 3D Duo viewer
   useEffect(() => {
     screenRef.current = props.screen;
     modelRef.current = props.model;
@@ -47,7 +47,7 @@ export function DeviceDuoViewport(props: {
     viewerRef.current?.setScreen(props.screen);
   }, [props.screen, props.model]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- pushes the hinge preview into the imperative 3D Duo viewer unless a pinch is active
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- pushes the hinge preview into the imperative 3D Duo viewer unless a pinch is active
   useEffect(() => {
     previewRef.current = props.hingePreview;
     if (!pinchRef.current?.active) viewerRef.current?.setHingePreview(props.hingePreview);

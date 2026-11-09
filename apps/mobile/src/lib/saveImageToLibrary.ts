@@ -15,9 +15,9 @@ export function canSaveImageToLibrary(mimeType: string): boolean {
   );
 }
 
-/** Adds a local image file to Photos on iOS or Pictures/T3 Code on Android. */
+/** Adds a local image file to Photos on iOS or Pictures/Onicode on Android. */
 export function saveImageToLibrary(uri: string, mimeType: string, name: string): Promise<void> {
   return requireNativeModule<{
     saveImageToLibrary(uri: string, mimeType: string, name: string): Promise<void>;
-  }>("T3NativeControls").saveImageToLibrary(uri, baseMimeType(mimeType), name);
+  }>("OniNativeControls").saveImageToLibrary(uri, baseMimeType(mimeType), name);
 }

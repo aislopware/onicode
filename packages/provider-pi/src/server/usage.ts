@@ -3,7 +3,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import {
   parseTimestampMs,
   tokenCount,
@@ -11,8 +11,8 @@ import {
   type ProviderUsageReader,
   type TranscriptUsageFormat,
   type UsageRecord,
-} from "@t3tools/provider-core/server/usage";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@onicode/provider-core/server/usage";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import type { PiSettings } from "../settings.ts";
 import { PI_ARGUMENTS_WITH_VALUES, resolvePiLaunchArgs } from "./mcpInjection.ts";
 
@@ -137,7 +137,7 @@ export const piUsageReader: ProviderUsageReader<PiSettings, Path.Path> = {
     const sessionDirArg = config === undefined ? undefined : piLaunchSessionDir(config.launchArgs);
     const launchDir =
       sessionDirArg === undefined ? undefined : expandHomePath(sessionDirArg, launchHome);
-    // --session-dir moves only T3-launched sessions; terminal sessions stay in Pi's own directory.
+    // --session-dir moves only Onicode-launched sessions; terminal sessions stay in Pi's own directory.
     return [
       ...(launchDir !== undefined && path.isAbsolute(launchDir)
         ? [{ dir: path.resolve(launchDir) }]

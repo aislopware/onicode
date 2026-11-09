@@ -1,4 +1,4 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@onicode/contracts";
 import {
   GitCommandError,
   ProjectId,
@@ -11,7 +11,7 @@ import {
   type PullRequestState,
   type RepositoryIdentity,
   type ThreadPullRequestLink,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import { reviewCommentContextLabel } from "~/lib/composerContextRecords";
 
@@ -954,7 +954,7 @@ describe("asking about a change rather than working on it", () => {
     const otherUrl = "https://github.com/acme/other/pull/42";
     const first = buildAddSelectionToAgentHandoff({
       ...base,
-      comment: selection("pull-request-selection:t3code:page.tsx:12:18"),
+      comment: selection("pull-request-selection:onicode:page.tsx:12:18"),
       request: "why?",
     });
     const second = buildAddSelectionToAgentHandoff({
@@ -1402,7 +1402,7 @@ describe("pull request panel context beside a thread", () => {
 
   it("recognizes an unsynced manual link, and matches host and repository case-insensitively", () => {
     const thread = { projectId: "proj-a", pullRequests: [link(7, { host: "GitHub.com" })] };
-    expect(pullRequestPanelContext(thread, surface(7, { repository: "PingDotGG/T3Code" }))).toBe(
+    expect(pullRequestPanelContext(thread, surface(7, { repository: "PingDotGG/Onicode" }))).toBe(
       "thread",
     );
     expect(pullRequestPanelContext(thread, surface(7, { host: undefined }))).toBe("thread");
@@ -1794,7 +1794,7 @@ describe("cached pull request detail", () => {
   // regression: #9294 corrupt cached PR chrome broke reopening
   it("shrugs off corrupt storage and no storage at all", () => {
     const storage = makeStorage();
-    storage.setItem("t3.pullRequests.detail:env-1:project-1:acme/web#7", "{not json");
+    storage.setItem("onicode.pullRequests.detail:env-1:project-1:acme/web#7", "{not json");
     expect(readPullRequestDetailSnapshot(storage, "env-1", reference)).toBeNull();
     expect(readPullRequestDetailSnapshot(undefined, "env-1", reference)).toBeNull();
     const hosted = { ...reference, host: "github.com" };

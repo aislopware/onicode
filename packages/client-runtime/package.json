@@ -1,5 +1,5 @@
 {
-  "name": "@t3tools/client-runtime",
+  "name": "@onicode/client-runtime",
   "private": true,
   "type": "module",
   "exports": {
@@ -135,9 +135,9 @@
       "types": "./src/voice-input/index.ts",
       "default": "./src/voice-input/index.ts"
     },
-    "./t3ToolSummary": {
-      "types": "./src/t3ToolSummary.ts",
-      "default": "./src/t3ToolSummary.ts"
+    "./oniToolSummary": {
+      "types": "./src/oniToolSummary.ts",
+      "default": "./src/oniToolSummary.ts"
     },
     "./relay": {
       "types": "./src/relay/index.ts",
@@ -546,20 +546,20 @@
   },
   "dependencies": {
     "@pierre/diffs": "catalog:",
-    "@t3tools/contracts": "workspace:*",
-    "@t3tools/provider-acp-registry": "workspace:*",
-    "@t3tools/provider-core": "workspace:*",
-    "@t3tools/provider-cursor": "workspace:*",
-    "@t3tools/provider-fx": "workspace:*",
-    "@t3tools/provider-grok": "workspace:*",
-    "@t3tools/provider-kiro": "workspace:*",
-    "@t3tools/provider-muse": "workspace:*",
-    "@t3tools/provider-opencode": "workspace:*",
-    "@t3tools/provider-pi": "workspace:*",
-    "@t3tools/secret-provider-definitions": "workspace:*",
-    "@t3tools/shared": "workspace:*",
-    "@t3tools/source-control-core": "workspace:*",
-    "@t3tools/source-control-definitions": "workspace:*",
+    "@onicode/contracts": "workspace:*",
+    "@onicode/provider-acp-registry": "workspace:*",
+    "@onicode/provider-core": "workspace:*",
+    "@onicode/provider-cursor": "workspace:*",
+    "@onicode/provider-fx": "workspace:*",
+    "@onicode/provider-grok": "workspace:*",
+    "@onicode/provider-kiro": "workspace:*",
+    "@onicode/provider-muse": "workspace:*",
+    "@onicode/provider-opencode": "workspace:*",
+    "@onicode/provider-pi": "workspace:*",
+    "@onicode/secret-provider-definitions": "workspace:*",
+    "@onicode/shared": "workspace:*",
+    "@onicode/source-control-core": "workspace:*",
+    "@onicode/source-control-definitions": "workspace:*",
     "effect": "catalog:",
     "jszip": "3.10.1",
     "three": "0.180.0"

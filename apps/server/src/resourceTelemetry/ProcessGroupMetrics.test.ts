@@ -1,5 +1,5 @@
 import { assert, describe, it } from "@effect/vitest";
-import type { ResourceTelemetryProcess, ResourceTelemetrySnapshot } from "@t3tools/contracts";
+import type { ResourceTelemetryProcess, ResourceTelemetrySnapshot } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
@@ -34,7 +34,7 @@ describe("groupProcesses", () => {
   it("sums each direct child of the server with its whole subtree", () => {
     const totals = groupProcesses([
       process(10, 1, "node", "server"),
-      process(11, 10, "t3-resource-mon", "resource-monitor"),
+      process(11, 10, "oni-resource-mon", "resource-monitor"),
       process(20, 10, "claude"),
       process(21, 20, "bash"),
       process(22, 21, "cargo"),

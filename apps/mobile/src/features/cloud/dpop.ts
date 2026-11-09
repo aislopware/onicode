@@ -8,8 +8,8 @@ import * as Schema from "effect/Schema";
 import * as ExpoCrypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { p256 } from "@noble/curves/nist";
-import { DpopProof } from "@t3tools/client-runtime/relay";
-import { DpopPublicJwk } from "@t3tools/shared/dpopCommon";
+import { DpopProof } from "@onicode/client-runtime/relay";
+import { DpopPublicJwk } from "@onicode/shared/dpopCommon";
 import * as Layer from "effect/Layer";
 
 export class CloudDpopError extends Schema.TaggedError<CloudDpopError>()("CloudDpopError", {
@@ -73,7 +73,7 @@ export interface DpopProofKeyPair {
   readonly publicJwk: DpopPublicJwk;
 }
 
-const DPOP_PROOF_KEY_STORAGE_KEY = "t3code.cloud.dpop-proof-key";
+const DPOP_PROOF_KEY_STORAGE_KEY = "onicode.cloud.dpop-proof-key";
 
 function base64UrlToBytes(value: string): Uint8Array {
   return Result.getOrThrow(Base64Url.decode(value));

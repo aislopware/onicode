@@ -1,4 +1,4 @@
-import type { EnvironmentId, EnvironmentMachineKind } from "@t3tools/contracts";
+import type { EnvironmentId, EnvironmentMachineKind } from "@onicode/contracts";
 
 import type { SidebarProjectSnapshot } from "../sidebarProjectGrouping";
 import type { Project } from "../types";

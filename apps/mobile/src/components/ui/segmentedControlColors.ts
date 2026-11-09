@@ -30,7 +30,7 @@ export function segmentedControlColors(
     : flattenThemeColor(themeColorWithAlpha(accent, dark ? 0.1 : 0.07), colors["--color-screen"]);
   let selectedColor = colors["--color-secondary"];
   if (card && !dark) selectedColor = colors["--color-screen"];
-  if (dark && (!card || themeId === "t3-code")) {
+  if (dark && (!card || themeId === "onicode")) {
     selectedColor = flattenThemeColor(themeColorWithAlpha(accent, 0.32), colors["--color-screen"]);
   }
   let selectedTextColor =

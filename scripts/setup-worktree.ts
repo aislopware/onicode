@@ -7,10 +7,10 @@ const ENV_FILES = [".env", NodePath.join("infra", "relay", ".env")];
 
 const worktree = NodePath.dirname(import.meta.dirname);
 
-// T3 runs setup in the background, so agents can start before it ends.
+// Onicode runs setup in the background, so agents can start before it ends.
 // `setup-running` holds this PID until setup ends with `setup-done` or
 // `setup-failed`, so agents wait instead of racing it with their own `vp i`.
-const markerDir = NodePath.join(worktree, ".t3");
+const markerDir = NodePath.join(worktree, ".onicode");
 const runningMarker = NodePath.join(markerDir, "setup-running");
 const doneMarker = NodePath.join(markerDir, "setup-done");
 const failedMarker = NodePath.join(markerDir, "setup-failed");
@@ -41,9 +41,9 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
   });
 }
 
-const projectRoot = process.env.T3CODE_PROJECT_ROOT;
+const projectRoot = process.env.ONICODE_PROJECT_ROOT;
 if (!projectRoot) {
-  throw new Error("T3CODE_PROJECT_ROOT is not set. Run this through the t3.json setup action.");
+  throw new Error("ONICODE_PROJECT_ROOT is not set. Run this through the onicode.json setup action.");
 }
 
 // Use the shell for Windows vp shims. Unattended installs need pnpm's confirmation

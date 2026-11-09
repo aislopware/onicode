@@ -1,4 +1,4 @@
-import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
+import type { ChangeRequestTerminology } from "@onicode/client-runtime/source-control-clients";
 
 export function offHeadPullRequestCheckoutToast(terminology: ChangeRequestTerminology) {
   return {

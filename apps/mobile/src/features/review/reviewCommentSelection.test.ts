@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
-import { upgradeLegacyContextMessage } from "@t3tools/shared/composerContextLegacy";
-import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
+import { upgradeLegacyContextMessage } from "@onicode/shared/composerContextLegacy";
+import { formatComposerContextReference } from "@onicode/shared/composerContextReferences";
 
 import { pullRequestComposerContext } from "../../lib/composerContext";
 
@@ -123,7 +123,7 @@ describe("review comment serialization", () => {
   });
 
   it("keeps closing-tag text inside a chip label within a real review body", () => {
-    const body = "Before [</review_comment>](t3-context://v1/mention/context-1) after";
+    const body = "Before [</review_comment>](oni-context://v1/mention/context-1) after";
     const serialized = `<review_comment sectionId="s" filePath="app.ts" startIndex="0" endIndex="0">${body}</review_comment>`;
     const segments = parseReviewCommentMessageSegments(`${serialized} tail`);
     expect(segments).toEqual([
@@ -134,7 +134,7 @@ describe("review comment serialization", () => {
 
   it("treats legacy markup inside a context label as opaque text", () => {
     const text =
-      '[<review_comment sectionId="s" filePath="app.ts" startIndex="0" endIndex="0">Review this</review_comment>](t3-context://v1/mention/context-1)';
+      '[<review_comment sectionId="s" filePath="app.ts" startIndex="0" endIndex="0">Review this</review_comment>](oni-context://v1/mention/context-1)';
     expect(parseReviewCommentMessageSegments(text)).toEqual([
       { kind: "text", id: "review-comment-text:0", text },
     ]);

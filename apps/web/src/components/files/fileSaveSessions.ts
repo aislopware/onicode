@@ -1,5 +1,5 @@
-import { AuthFilesystemWriteScope, type EnvironmentId } from "@t3tools/contracts";
-import { type AtomCommandResult, runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { AuthFilesystemWriteScope, type EnvironmentId } from "@onicode/contracts";
+import { type AtomCommandResult, runAtomCommand } from "@onicode/client-runtime/state/runtime";
 import { useEffect } from "react";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -166,7 +166,7 @@ export function useFileSaveSession(
   { environmentId, cwd, relativePath }: FileSaveTarget,
   onPendingChange: FilePendingListener,
 ): void {
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- the lease is a mount-scoped external resource; React runs every unmount cleanup before mount setups, so a surface switch flushes before the next surface recovers.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the lease is a mount-scoped external resource; React runs every unmount cleanup before mount setups, so a surface switch flushes before the next surface recovers.
   useEffect(
     () => fileSaveSessions.acquire({ environmentId, cwd, relativePath }, onPendingChange),
     [environmentId, cwd, relativePath, onPendingChange],

@@ -1,8 +1,8 @@
-import type { ThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
+import type { ThreadReferenceCopyTarget } from "@onicode/client-runtime/thread-reference";
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   encodeComposerContextFragment,
-} from "@t3tools/shared/composerContextClipboard";
+} from "@onicode/shared/composerContextClipboard";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { writeTextToClipboard } from "../hooks/useCopyToClipboard";

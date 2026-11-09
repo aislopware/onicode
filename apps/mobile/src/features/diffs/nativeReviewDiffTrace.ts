@@ -17,7 +17,7 @@ export function diffHighlightTraceHash(value: string): number {
 function appendTraceLine(line: string) {
   fileSink ??= import("expo-file-system")
     .then(({ File, Paths }) => {
-      const file = new File(Paths.document, "t3-diff-highlight-trace.jsonl");
+      const file = new File(Paths.document, "oni-diff-highlight-trace.jsonl");
       file.create({ overwrite: true, intermediates: true });
       return file;
     })

@@ -1,4 +1,4 @@
-import type { EnvironmentSpeechModel } from "@t3tools/contracts";
+import type { EnvironmentSpeechModel } from "@onicode/contracts";
 import { CheckIcon } from "lucide-react";
 
 import { cn } from "../../lib/utils";

@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@onicode/contracts";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -42,7 +42,7 @@ vi.mock("../state/server", () => ({
   serverEnvironment: { refreshProviders: { label: "Refresh providers" } },
 }));
 
-vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+vi.mock("@onicode/client-runtime/state/runtime", () => ({
   runAtomCommand: (
     _registry: unknown,
     _command: unknown,

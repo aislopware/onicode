@@ -1,8 +1,8 @@
 import {
   t3ConnectTroubleshootingUrl,
   type T3ConnectTroubleshootingSection,
-} from "@t3tools/contracts";
-import type { RelayEnvironmentStatusResponse } from "@t3tools/contracts/relay";
+} from "@onicode/contracts";
+import type { RelayEnvironmentStatusResponse } from "@onicode/contracts/relay";
 import * as DateTime from "effect/DateTime";
 
 import type {
@@ -102,7 +102,7 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "session_pending":
       return "This device is still loading its T3 Connect sign-in";
     case "outdated":
-      return `${host} runs an older T3 Code`;
+      return `${host} runs an older Onicode`;
     case "clock_skew":
       return "This device's clock is off";
     case "not_linked":
@@ -117,9 +117,9 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
     case "tunnel_down":
       return `${host}'s tunnel is offline`;
     case "origin_unreachable":
-      return `Tunnel works, but T3 Code on ${host} did not answer`;
+      return `Tunnel works, but Onicode on ${host} did not answer`;
     case "invalid_response":
-      return `T3 Code on ${host} sent an unexpected answer`;
+      return `Onicode on ${host} sent an unexpected answer`;
     case "dns":
       return `${host}'s tunnel address did not resolve`;
     case "tls":
@@ -148,8 +148,8 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
         : `T3 Connect could not reach ${host}'s tunnel`;
     case "server":
       return failure?.reason === "authentication" || failure?.reason === "permission"
-        ? `T3 Code on ${host} did not accept this device`
-        : `T3 Code on ${host} did not answer`;
+        ? `Onicode on ${host} did not accept this device`
+        : `Onicode on ${host} did not answer`;
   }
 }
 
@@ -157,14 +157,14 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
   const checkHost = `On ${host}, check Settings > Sharing & access or run \`t3 connect status\`.`;
   switch (located.cause) {
     case "offline":
-      return ["Connect this device to the internet. T3 Code reconnects on its own."];
+      return ["Connect this device to the internet. Onicode reconnects on its own."];
     case "session_pending":
       return [
-        "Wait a moment. T3 Code retries on its own.",
-        "If it keeps waiting, reload or restart T3 Code on this device.",
+        "Wait a moment. Onicode retries on its own.",
+        "If it keeps waiting, reload or restart Onicode on this device.",
       ];
     case "outdated":
-      return [`Update T3 Code on ${host}.`];
+      return [`Update Onicode on ${host}.`];
     case "clock_skew":
       return [`Turn on automatic date and time on this device and on ${host}, then retry.`];
     case "not_linked":
@@ -173,10 +173,10 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
         `On ${host}, open Settings > Sharing & access and turn T3 Connect on.`,
       ];
     case "tunnel_pending":
-      return ["Wait a minute. T3 Code retries on its own.", checkHost];
+      return ["Wait a minute. Onicode retries on its own.", checkHost];
     case "relay_error":
       return [
-        "Wait a few minutes. T3 Code retries on its own.",
+        "Wait a few minutes. Onicode retries on its own.",
         "If it keeps failing, copy the diagnostics and report it.",
       ];
     case "tunnel_not_enabled":
@@ -184,13 +184,13 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
     case "released":
     case "tunnel_down":
       return [
-        `Make sure ${host} is awake and T3 Code is running on it.`,
+        `Make sure ${host} is awake and Onicode is running on it.`,
         checkHost,
         `A VPN or Tailscale exit node on ${host} can block the tunnel (port 7844). Turn it off or allow the tunnel.`,
       ];
     case "origin_unreachable":
     case "invalid_response":
-      return [`Open or restart T3 Code on ${host}.`, checkHost];
+      return [`Open or restart Onicode on ${host}.`, checkHost];
     // The relay saw these on its way to the host, so the fix is on the host.
     case "dns":
     case "tls":
@@ -204,7 +204,7 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
   switch (located.hop) {
     case "device":
       return [
-        "Restart T3 Code on this device.",
+        "Restart Onicode on this device.",
         `If it keeps failing, remove ${host} from this device and add it again.`,
       ];
     case "relay":
@@ -225,7 +225,7 @@ function steps(host: string, located: Located, failure: ConnectionAttemptError |
         : [`Make sure ${host} is awake and online.`, checkHost];
     case "server":
       return [
-        `Make sure T3 Code is running on ${host}.`,
+        `Make sure Onicode is running on ${host}.`,
         "Retry. If it keeps failing, copy the diagnostics.",
       ];
   }
@@ -239,7 +239,7 @@ function helpSection(
     case "offline":
       return "this-device-cant-reach-t3-connect";
     case "outdated":
-      return "the-host-runs-an-older-t3-code";
+      return "the-host-runs-an-older-onicode";
     case "clock_skew":
       return "the-clock-is-off";
     case "session_pending":
@@ -254,7 +254,7 @@ function helpSection(
       return "the-hosts-tunnel-is-offline";
     case "origin_unreachable":
     case "invalid_response":
-      return "the-tunnel-works-but-t3-code-does-not-answer";
+      return "the-tunnel-works-but-onicode-does-not-answer";
     case "dns":
     case "tls":
     case "refused":
@@ -280,7 +280,7 @@ function helpSection(
     case "server":
       return failure?.reason === "authentication" || failure?.reason === "permission"
         ? "sign-in-account-or-link-problems"
-        : "the-tunnel-works-but-t3-code-does-not-answer";
+        : "the-tunnel-works-but-onicode-does-not-answer";
   }
 }
 
@@ -298,7 +298,7 @@ function hopLabel(hop: ConnectionHop, host: string): string {
     case "tunnel":
       return `${host} tunnel`;
     case "server":
-      return `T3 Code on ${host}`;
+      return `Onicode on ${host}`;
   }
 }
 
@@ -369,7 +369,7 @@ const HOP_MARK = { ok: "ok", failed: "FAILED", unchecked: "not checked" } as con
 /** One plain-text block for bug reports. */
 export function connectionDiagnosisText(hostLabel: string, diagnosis: ConnectionDiagnosis): string {
   return [
-    `T3 Code connection to ${hostLabel}: ${diagnosis.headline}`,
+    `Onicode connection to ${hostLabel}: ${diagnosis.headline}`,
     "",
     ...diagnosis.hops.map((hop) => `${hop.label}: ${HOP_MARK[hop.result]}`),
     "",

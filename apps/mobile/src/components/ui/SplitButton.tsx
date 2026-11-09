@@ -30,7 +30,7 @@ export function SplitButton(props: SplitButtonProps) {
           />
         ) : null}
         <AppText
-          className={`shrink text-center text-sm font-t3-semibold ${active ? "text-prominent-action-foreground" : "text-foreground-muted"}`}
+          className={`shrink text-center text-sm font-oni-semibold ${active ? "text-prominent-action-foreground" : "text-foreground-muted"}`}
         >
           {props.label}
         </AppText>

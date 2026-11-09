@@ -1,17 +1,17 @@
 import { useParams } from "@tanstack/react-router";
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { scopeProjectRef } from "@onicode/client-runtime/environment";
 import {
   type AtomCommandResult,
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import {
   projectCloneDisplayName,
   projectCloneProgressSummary,
   type EnvironmentId,
   type ProjectCloneSnapshot,
   type ProjectId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { useEffect, useRef } from "react";
 
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
@@ -88,7 +88,7 @@ function EnvironmentCloneToasts({ environmentId }: { environmentId: EnvironmentI
     void handleNewThread(scopeProjectRef(environmentId, projectId));
   };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- opens, updates and closes imperative toastManager toasts to match the current project clones
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- opens, updates and closes imperative toastManager toasts to match the current project clones
   useEffect(() => {
     const seen = new Set<ProjectId>();
     for (const clone of clones) {
@@ -216,7 +216,7 @@ function EnvironmentCloneToasts({ environmentId }: { environmentId: EnvironmentI
     retryClone,
   ]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- closes every tracked clone toast in toastManager when the coordinator unmounts
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- closes every tracked clone toast in toastManager when the coordinator unmounts
   useEffect(
     () => () => {
       for (const tracked of toasts.current.values()) toastManager.close(tracked.toastId);

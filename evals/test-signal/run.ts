@@ -63,7 +63,7 @@ const world = (entry: Case) => {
   if (!before?.includes(entry.after)) throw new Error(`${entry.id}: anchor not found.`);
   const after = before.replace(entry.after, entry.after + entry.insert);
   files.set(entry.path, after);
-  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-test-signal-"));
+  const directory = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-test-signal-"));
   NodeFS.writeFileSync(NodePath.join(directory, "before"), before);
   NodeFS.writeFileSync(NodePath.join(directory, "after"), after);
   const raw = NodeChildProcess.spawnSync("git", ["diff", "--no-index", "before", "after"], {

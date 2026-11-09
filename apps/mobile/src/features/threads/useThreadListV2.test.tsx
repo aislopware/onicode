@@ -1,10 +1,10 @@
 import { act, useLayoutEffect } from "react";
 import { createRoot } from "react-dom/client";
 import { RegistryContext } from "@effect/atom-react";
-import type { OlderSettledShelfEnvironment } from "@t3tools/client-runtime/state/threads";
-import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type { OlderSettledShelfEnvironment } from "@onicode/client-runtime/state/threads";
+import { presentThreadShell } from "@onicode/client-runtime/state/shell";
 import * as DateTime from "effect/DateTime";
-import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@onicode/contracts";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 

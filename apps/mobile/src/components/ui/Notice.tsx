@@ -16,7 +16,7 @@ export function Notice(props: {
   readonly dismissLabel?: string;
 }) {
   const danger = props.tone === "danger";
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- announces the message to VoiceOver through AccessibilityInfo
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- announces the message to VoiceOver through AccessibilityInfo
   useEffect(() => {
     // Live regions reach TalkBack; VoiceOver needs an explicit announcement.
     if (Platform.OS === "ios") AccessibilityInfo.announceForAccessibility(props.message);
@@ -44,7 +44,7 @@ export function Notice(props: {
         className={cn(
           "min-w-0 flex-1",
           danger ? "text-danger-foreground" : "text-foreground",
-          !props.floating && "font-t3-medium",
+          !props.floating && "font-oni-medium",
         )}
       >
         {props.message}

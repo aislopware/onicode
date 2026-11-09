@@ -1,7 +1,7 @@
 import {
   COMPOSER_CONTEXT_CLIPBOARD_MIME,
   ComposerContextClipboardFragment,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
@@ -25,9 +25,9 @@ export function encodeComposerContextClipboardHtml(
   html?: string,
 ): string {
   if (html !== undefined)
-    return `<div data-t3-context-fragment="${encodeURIComponent(fragment)}">${html}</div>`;
+    return `<div data-oni-context-fragment="${encodeURIComponent(fragment)}">${html}</div>`;
   const escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  return `<pre data-t3-context-fragment="${encodeURIComponent(fragment)}">${escaped}</pre>`;
+  return `<pre data-oni-context-fragment="${encodeURIComponent(fragment)}">${escaped}</pre>`;
 }
 
 export function decodeComposerContextClipboardHtml(
@@ -36,7 +36,7 @@ export function decodeComposerContextClipboardHtml(
   // Percent encoding can expand each UTF-16 code unit to nine characters.
   if (!html || html.length > MAX_FRAGMENT_CHARS * 9 + HTML_WRAPPER_SLACK_CHARS) return null;
   // `encodeURIComponent` leaves `'` as is, so each quote style must end only at its own quote.
-  const match = /data-t3-context-fragment=(?:"([^"]+)"|'([^']+)')/.exec(html);
+  const match = /data-oni-context-fragment=(?:"([^"]+)"|'([^']+)')/.exec(html);
   const encoded = match?.[1] ?? match?.[2];
   if (!encoded) return null;
   try {

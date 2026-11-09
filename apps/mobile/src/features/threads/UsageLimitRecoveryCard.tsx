@@ -1,14 +1,14 @@
-import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
+import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { limitRecoveryOwnsSnooze } from "@t3tools/client-runtime/state/thread-execution";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
+import { limitRecoveryOwnsSnooze } from "@onicode/client-runtime/state/thread-execution";
+import type { EnvironmentId } from "@onicode/contracts";
 import {
   CHATGPT_USAGE_LIMIT_CODE,
   CHATGPT_USAGE_URL,
   CHATGPT_WORKSPACE_ADMIN_REQUEST,
   CHATGPT_WORKSPACE_USAGE_LIMIT_CODE,
-} from "@t3tools/shared/usageLimits";
+} from "@onicode/shared/usageLimits";
 import * as Clipboard from "expo-clipboard";
 import { useState } from "react";
 import { Linking, Pressable, View } from "react-native";
@@ -136,7 +136,7 @@ export function UsageLimitRecoveryCard({
       ) : null}
       <View className="min-w-0 flex-1 gap-1">
         {chatGptLimit ? (
-          <Text className="text-sm font-t3-medium text-foreground">
+          <Text className="text-sm font-oni-medium text-foreground">
             ChatGPT usage limit reached
           </Text>
         ) : null}
@@ -210,8 +210,8 @@ function RecoveryAction(props: {
       <Text
         className={
           props.disabled
-            ? "text-sm font-t3-medium text-foreground-muted"
-            : "text-sm font-t3-medium text-primary"
+            ? "text-sm font-oni-medium text-foreground-muted"
+            : "text-sm font-oni-medium text-primary"
         }
       >
         {props.label}

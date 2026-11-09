@@ -1,8 +1,8 @@
 // @effect-diagnostics nodeBuiltinImport:off
 import * as NodeOS from "node:os";
 
-import { TRIAGE_PROMPT_FILE_NAME } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { TRIAGE_PROMPT_FILE_NAME } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -43,7 +43,7 @@ export const triageSourceCacheDir = (baseDir: string, path: Path.Path) =>
 
 /**
  * Writes `context.md` and the playbook prompt into a fresh `<stateDir>/triage/<time>`
- * folder. Both `t3 triage` and the in-app entry point start from these files.
+ * folder. Both `onicode triage` and the in-app entry point start from these files.
  */
 export const writeTriageSession = Effect.fn("triage.writeTriageSession")(function* (input: {
   readonly baseDir: string;

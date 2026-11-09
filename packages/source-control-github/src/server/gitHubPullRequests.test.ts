@@ -14,14 +14,14 @@ it("names a fork's head repository from its owner when gh leaves nameWithOwner o
         baseRefName: "main",
         headRefName: "fix/git-action-default-without-origin",
         isCrossRepository: true,
-        headRepository: { id: "R_1", name: "t3code" },
+        headRepository: { id: "R_1", name: "onicode" },
         headRepositoryOwner: { login: "binbandit" },
       },
     ]),
   );
 
   expect(Result.getOrThrow(decoded)[0]).toMatchObject({
-    headRepositoryNameWithOwner: "binbandit/t3code",
+    headRepositoryNameWithOwner: "binbandit/onicode",
     headRepositoryOwnerLogin: "binbandit",
   });
 });

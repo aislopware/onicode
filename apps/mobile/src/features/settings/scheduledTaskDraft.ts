@@ -1,4 +1,4 @@
-import { isWebhookDedupeTemplate, scheduledTaskThreadMode } from "@t3tools/contracts";
+import { isWebhookDedupeTemplate, scheduledTaskThreadMode } from "@onicode/contracts";
 import type {
   ModelSelection,
   ServerConfig,
@@ -9,20 +9,20 @@ import type {
   ScheduledTaskUpsertSchedule,
   ScheduledTaskWebhookSignature,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
-import { DEFAULT_SERVER_SETTINGS } from "@t3tools/contracts";
+import { DEFAULT_SERVER_SETTINGS } from "@onicode/contracts";
 import {
   parseMaxDeliveryAge,
   parseWebhookFilterDrafts,
   webhookFilterDrafts,
   webhookFilterDraftsChanged,
   type WebhookFilterDraft,
-} from "@t3tools/client-runtime/scheduled-task-webhook";
+} from "@onicode/client-runtime/scheduled-task-webhook";
 import {
   resolveProjectSettings,
   type LegacyProjectSettingsFields,
-} from "@t3tools/shared/projectSettings";
+} from "@onicode/shared/projectSettings";
 import {
   buildModelOptions,
   resolveDefaultableModelSelection,

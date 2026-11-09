@@ -2,7 +2,7 @@ import type {
   DesktopPreviewColorScheme,
   PreviewViewportSetting,
   ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { useShallow } from "zustand/react/shallow";
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 
@@ -105,7 +105,7 @@ export function HostedBrowserWebview(props: {
   const serverColorScheme = serverRendering?.colorScheme;
   const serverZoomFactor = serverRendering?.zoomFactor;
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- leases the desktop preview tab for this webview and releases it on cleanup
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- leases the desktop preview tab for this webview and releases it on cleanup
   useEffect(() => {
     if (!clientSettingsHydrated) return;
     crashRecoveryRef.current = INITIAL_WEBVIEW_CRASH_RECOVERY_STATE;
@@ -120,13 +120,13 @@ export function HostedBrowserWebview(props: {
     };
   }, [clientSettingsHydrated, runtimeTabId, serverDriven, tabId, threadRef.threadId]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies the server color scheme to the desktop preview tab through the desktop bridge
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- applies the server color scheme to the desktop preview tab through the desktop bridge
   useEffect(() => {
     const bridge = window.desktopBridge?.preview;
     if (!bridge || serverColorScheme === undefined) return;
     withDesktopTab(runtimeTabId, () => bridge.setColorScheme(runtimeTabId, serverColorScheme));
   }, [runtimeTabId, serverColorScheme]);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies the server zoom factor to the desktop preview tab through the desktop bridge
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- applies the server zoom factor to the desktop preview tab through the desktop bridge
   useEffect(() => {
     const bridge = window.desktopBridge?.preview;
     if (!bridge || serverZoomFactor === undefined) return;
@@ -147,7 +147,7 @@ export function HostedBrowserWebview(props: {
     webviewRef.current = node as ElectronWebview | null;
   };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the webview's webContents with the desktop bridge and listens for crashes and focus
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- registers the webview's webContents with the desktop bridge and listens for crashes and focus
   useEffect(() => {
     const webview = webviewRef.current;
     const bridge = previewBridge;
@@ -273,13 +273,13 @@ export function HostedBrowserWebview(props: {
     });
   };
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- schedules a frame that publishes the webview layout and scroll to the browser surface store
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- schedules a frame that publishes the webview layout and scroll to the browser surface store
   useEffect(() => {
     const frameId = window.requestAnimationFrame(syncContentPresentation);
     return () => window.cancelAnimationFrame(frameId);
   }, [syncContentPresentation]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the webview wrapper element to its origin for a new tab or viewport size
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- scrolls the webview wrapper element to its origin for a new tab or viewport size
   useEffect(() => {
     const wrapper = wrapperRef.current;
     if (!wrapper) return;
@@ -292,7 +292,7 @@ export function HostedBrowserWebview(props: {
     viewportWidth,
   ]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- Report the mounted webview's visibility to the desktop host.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Report the mounted webview's visibility to the desktop host.
   useEffect(() => {
     const bridge = window.desktopBridge?.preview;
     if (!clientSettingsHydrated || !bridge || !serverDriven) return;

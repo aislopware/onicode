@@ -12,7 +12,7 @@ import {
   type GuestShareView,
   type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -99,7 +99,7 @@ const items: ReadonlyArray<OrchestrationV2TurnItem> = [
   {
     ...itemBase("visual", 2),
     type: "dynamic_tool",
-    toolName: "mcp__t3-code__html_render",
+    toolName: "mcp__onicode__html_render",
     input: null,
     output: { htmlRender: { attachmentId: "thread-a-1", title: "Chart", height: 200 } },
   },

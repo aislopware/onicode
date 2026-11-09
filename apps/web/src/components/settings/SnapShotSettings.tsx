@@ -5,9 +5,9 @@ import {
   type DesktopSnapShotShortcutAvailability,
   type DesktopSnapShotSetupAction,
   type SnapShotShortcut,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { PlayIcon } from "lucide-react";
-import { settlePromise } from "@t3tools/client-runtime/state/runtime";
+import { settlePromise } from "@onicode/client-runtime/state/runtime";
 import * as Cause from "effect/Cause";
 import { useContext, useRef, useState } from "react";
 
@@ -255,7 +255,7 @@ export function SnapShotSettings() {
   const shortcutStatus = recording
     ? "Press your shortcut. Esc cancels."
     : candidateConflict
-      ? `T3 Code already uses this for "${commandLabel(candidateConflict)}".`
+      ? `Onicode already uses this for "${commandLabel(candidateConflict)}".`
       : shortcutCheck.status === "checking"
         ? "Checking shortcut…"
         : shortcutCheck.availability

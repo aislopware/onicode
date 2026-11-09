@@ -16,8 +16,8 @@ import {
   replaceCatalogValue,
   Persistence,
   makeStoredShellSnapshotEncoder,
-} from "@t3tools/client-runtime/platform";
-import { TokenStore } from "@t3tools/client-runtime/authorization";
+} from "@onicode/client-runtime/platform";
+import { TokenStore } from "@onicode/client-runtime/authorization";
 import {
   ConnectionTransientError,
   ConnectionBlockedError,
@@ -27,9 +27,9 @@ import {
   StoredPullRequestRoutingPermission,
   pullRequestRoutingConnectionKey,
   pullRequestRoutingPermissionFor,
-} from "@t3tools/client-runtime/connection";
-import { EnvironmentQueryStore } from "@t3tools/client-runtime/state/query-persistence";
-import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@t3tools/contracts";
+} from "@onicode/client-runtime/connection";
+import { EnvironmentQueryStore } from "@onicode/client-runtime/state/query-persistence";
+import { EnvironmentId, ServerConfig, ThreadId, VcsListRefsResult } from "@onicode/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -42,7 +42,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 import { projectFaviconCache } from "../assets/projectFaviconCache";
 
-const DATABASE_NAME = "t3code:connection-runtime";
+const DATABASE_NAME = "onicode:connection-runtime";
 const DATABASE_VERSION = 5;
 const CATALOG_STORE_NAME = "catalog";
 const SHELL_STORE_NAME = "shell";
@@ -592,8 +592,8 @@ export const makeCatalogStore = Effect.fn("web.connectionStorage.makeCatalogStor
 
 // The stored names predate the rename and stay, so a tab still on an older version and an
 // updated one read and revoke the same grants.
-const PULL_REQUEST_ROUTING_KEY_PREFIX = "t3code:github-routing:";
-const PULL_REQUEST_ROUTING_CHANGED = "t3code:github-routing-changed";
+const PULL_REQUEST_ROUTING_KEY_PREFIX = "onicode:github-routing:";
+const PULL_REQUEST_ROUTING_CHANGED = "onicode:github-routing-changed";
 const isStoredPullRequestRoutingPermission = Schema.is(StoredPullRequestRoutingPermission);
 const encodeStoredPullRequestRoutingPermission = Schema.encodeSync(
   Schema.fromJsonString(StoredPullRequestRoutingPermission),

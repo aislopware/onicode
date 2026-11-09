@@ -1,5 +1,5 @@
-import { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
-import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
+import { EnvironmentId, MessageId, ThreadId } from "@onicode/contracts";
+import { serializeAssistantCitation } from "@onicode/shared/assistantCitations";
 import * as DateTime from "effect/DateTime";
 import type { ComponentProps } from "react";
 import { expect, it, vi } from "vite-plus/test";
@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   workflow: null as unknown,
 }));
 
-vi.mock(import("@t3tools/client-runtime/state/thread-workflows"), async (importOriginal) => ({
+vi.mock(import("@onicode/client-runtime/state/thread-workflows"), async (importOriginal) => ({
   ...(await importOriginal()),
   deriveThreadQueueWorkflowState: (() => state.workflow) as never,
 }));
@@ -170,7 +170,7 @@ it("shows who sent a queued message and folds automation and agent prompts", asy
   await page.getByRole("button", { name: "Open thread" }).click({ force: true });
   expect(onOpenThread).toHaveBeenCalledExactlyOnceWith("thread:lead");
 
-  await expect.element(page.getByText("Sent by T3 Code")).toBeVisible();
+  await expect.element(page.getByText("Sent by Onicode")).toBeVisible();
   await expect.element(page.getByText("Continue where you left off.")).toBeVisible();
 });
 

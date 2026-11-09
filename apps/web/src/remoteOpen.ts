@@ -1,10 +1,10 @@
-import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
+import type { ConnectionTarget } from "@onicode/client-runtime/connection";
 import {
   REMOTE_CAPABLE_EDITOR_IDS,
   type EditorId,
   type EnvironmentId,
   type RemoteOpenTarget,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
@@ -177,7 +177,7 @@ export async function openRemoteEditorUrl(url: string): Promise<boolean> {
   return true;
 }
 
-const REMOTE_OPEN_HINT_KEY = "t3code:remote-open-hint-seen";
+const REMOTE_OPEN_HINT_KEY = "onicode:remote-open-hint-seen";
 
 export function useRemoteOpenHint(): readonly [seen: boolean, markSeen: () => void] {
   const [seen, setSeen] = useLocalStorage(REMOTE_OPEN_HINT_KEY, false, Schema.Boolean);

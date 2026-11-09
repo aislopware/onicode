@@ -129,10 +129,10 @@ jobs:
     # "Wait for Linux CLI archive"), so it gets that wait on top of the usual 30.
     timeout-minutes: ${{ inputs.platform == 'win' && 70 || 30 }}
     env:
-      T3CODE_CLERK_PUBLISHABLE_KEY: ${{ inputs.clerk_publishable_key }}
-      T3CODE_CLERK_JWT_TEMPLATE: ${{ inputs.clerk_jwt_template }}
-      T3CODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ inputs.clerk_cli_oauth_client_id }}
-      T3CODE_RELAY_URL: ${{ inputs.relay_url }}
+      ONICODE_CLERK_PUBLISHABLE_KEY: ${{ inputs.clerk_publishable_key }}
+      ONICODE_CLERK_JWT_TEMPLATE: ${{ inputs.clerk_jwt_template }}
+      ONICODE_CLERK_CLI_OAUTH_CLIENT_ID: ${{ inputs.clerk_cli_oauth_client_id }}
+      ONICODE_RELAY_URL: ${{ inputs.relay_url }}
     steps:
       # This repository is public, so Git needs no credentials. checkout's
       # credential cleanup runs submodule foreach even with submodules disabled,
@@ -165,7 +165,7 @@ jobs:
       - name: Setup dependencies
         uses: ./.github/actions/setup-ci-deps
         with:
-          install-args: --filter=@t3tools/desktop... --filter=t3... --filter=@t3tools/scripts...
+          install-args: --filter=@onicode/desktop... --filter=onicode... --filter=@onicode/scripts...
           save-pnpm-store: ${{ inputs.save_pnpm_store }}
         env:
           pnpm_config_cache_dir: ${{ runner.temp }}/pnpm-metadata
@@ -197,7 +197,7 @@ jobs:
         id: resource_monitor_cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          path: native/resource-monitor/target/${{ inputs.rust_target }}/release/t3-resource-monitor${{ inputs.platform == 'win' && '.exe' || '' }}
+          path: native/resource-monitor/target/${{ inputs.rust_target }}/release/oni-resource-monitor${{ inputs.platform == 'win' && '.exe' || '' }}
           key: resource-monitor-${{ inputs.rust_target }}-${{ hashFiles('native/resource-monitor/Cargo.lock', 'native/resource-monitor/Cargo.toml', 'native/resource-monitor/src/**') }}
 
       - name: Cache Linux capture helpers
@@ -206,8 +206,8 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
-            native/kde-snap-shot/target/${{ inputs.rust_target }}/release/t3-kde-snap-shot
-            native/hyprland-snap-shot/target/${{ inputs.rust_target }}/release/t3-hyprland-snap-shot
+            native/kde-snap-shot/target/${{ inputs.rust_target }}/release/oni-kde-snap-shot
+            native/hyprland-snap-shot/target/${{ inputs.rust_target }}/release/oni-hyprland-snap-shot
           key: linux-capture-helpers-${{ inputs.rust_target }}-${{ hashFiles('native/kde-snap-shot/Cargo.lock', 'native/kde-snap-shot/Cargo.toml', 'native/kde-snap-shot/src/**', 'native/hyprland-snap-shot/Cargo.lock', 'native/hyprland-snap-shot/Cargo.toml', 'native/hyprland-snap-shot/src/**', 'native/hyprland-snap-shot/protocols/**') }}
 
       - name: Ensure Rosetta for macOS x64 bytecode generation
@@ -237,7 +237,7 @@ jobs:
         shell: bash
         run: |
           config_path="$RUNNER_TEMP/relay-client-tracing/relay-client-tracing.env"
-          tracing_token="$(sed -n 's/^T3CODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=//p' "$config_path")"
+          tracing_token="$(sed -n 's/^ONICODE_RELAY_CLIENT_OTLP_TRACES_TOKEN=//p' "$config_path")"
           echo "::add-mask::$tracing_token"
           cat "$config_path" >> "$GITHUB_ENV"
 
@@ -279,7 +279,7 @@ jobs:
           echo "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5  $dir/jsign.jar" | sha256sum -c -
           printf '#!/bin/sh\nexec java -jar "%s" "$@"\n' "$dir/jsign.jar" > "$dir/jsign"
           chmod +x "$dir/jsign"
-          echo "T3CODE_JSIGN=$dir/jsign" >> "$GITHUB_ENV"
+          echo "ONICODE_JSIGN=$dir/jsign" >> "$GITHUB_ENV"
 
       # The desktop build applies the same branding to apps/server/dist/client
       # (resolveDesktopWebAssetBrand in scripts/build-desktop-artifact.ts); the
@@ -358,7 +358,7 @@ jobs:
         env:
           # The executable bundles the server again, so it needs the same stamp
           # as release.yml's JS bundle.
-          T3CODE_TELEMETRY_CHANNEL: ${{ github.repository == 'pingdotgg/t3code' && inputs.release_channel || 'dev' }}
+          ONICODE_TELEMETRY_CHANNEL: ${{ github.repository == 'pingdotgg/t3code' && inputs.release_channel || 'dev' }}
         run: node apps/server/scripts/cli.ts build-exe --verbose ${{ inputs.platform == 'win' && format('--target win-{0}', inputs.arch) || '' }}
 
       - name: Import macOS signing certificate for the CLI archive
@@ -373,9 +373,9 @@ jobs:
             echo "macOS CLI signing disabled (missing CSC_LINK); the archive is signed ad hoc."
             exit 0
           fi
-          keychain="$RUNNER_TEMP/t3-cli-signing.keychain-db"
+          keychain="$RUNNER_TEMP/oni-cli-signing.keychain-db"
           keychain_password="$(openssl rand -hex 16)"
-          cert_path="$RUNNER_TEMP/t3-cli-signing.p12"
+          cert_path="$RUNNER_TEMP/oni-cli-signing.p12"
           printf '%s' "$CSC_LINK" | base64 --decode > "$cert_path"
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 21600 "$keychain"
@@ -389,7 +389,7 @@ jobs:
             exit 1
           fi
           echo "::add-mask::$keychain_password"
-          echo "T3CODE_CLI_MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "ONICODE_CLI_MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
           echo "macOS CLI signing enabled."
 
       - name: Stage resource monitor for the CLI archive
@@ -397,7 +397,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          binary_name="t3-resource-monitor"
+          binary_name="oni-resource-monitor"
           if [[ "${{ inputs.platform }}" == "win" ]]; then
             binary_name="${binary_name}.exe"
           fi
@@ -408,7 +408,7 @@ jobs:
       - uses: ./.github/actions/setup-apt-mirrors
         if: inputs.platform == 'linux'
 
-      # The Linux archive ships libatomic.so.1 and points t3's RUNPATH at it.
+      # The Linux archive ships libatomic.so.1 and points onicode's RUNPATH at it.
       - name: Install patchelf
         if: inputs.cli_archive && inputs.platform == 'linux'
         shell: bash
@@ -436,7 +436,7 @@ jobs:
           extra_args=()
           if [[ "${{ inputs.platform }}" == "mac" ]]; then
             if [[ -n "${APPLE_API_KEY:-}" ]]; then
-              key_dir="$(mktemp -d "$RUNNER_TEMP/t3-cli-notary.XXXXXXXX")"
+              key_dir="$(mktemp -d "$RUNNER_TEMP/oni-cli-notary.XXXXXXXX")"
               trap 'rm -rf "$key_dir"' EXIT
               key_path="$key_dir/AuthKey.p8"
               (umask 077 && printf '%s' "$APPLE_API_KEY" > "$key_path")
@@ -445,7 +445,7 @@ jobs:
             # Older release refs lack deferred notarization and still wait here.
             cli_help="$(node scripts/build-cli-archive.ts --help)"
             if [[ "$cli_help" == *--notary-submission-file* ]]; then
-              extra_args=(--notary-submission-file "$RUNNER_TEMP/t3-cli-notary-submission")
+              extra_args=(--notary-submission-file "$RUNNER_TEMP/oni-cli-notary-submission")
               echo "deferred_notarization=true" >> "$GITHUB_OUTPUT"
             fi
           fi
@@ -557,8 +557,8 @@ jobs:
           pnpm_config_cache_dir: ${{ steps.stage_pnpm.outputs.dir }}/cache
           pnpm_config_store_dir: ${{ steps.stage_pnpm.outputs.dir }}/store
           pnpm_config_prefer_offline: "true"
-          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: true
-          T3CODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
+          ONICODE_DESKTOP_REUSE_RESOURCE_MONITOR: true
+          ONICODE_DESKTOP_REUSE_LINUX_CAPTURE_HELPERS: ${{ steps.capture_helper_cache.outputs.cache-hit == 'true' }}
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
@@ -566,7 +566,7 @@ jobs:
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           MACOS_PROVISIONING_PROFILE: ${{ secrets.MACOS_PROVISIONING_PROFILE }}
-          T3CODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
+          ONICODE_CLERK_PASSKEY_RP_DOMAINS: ${{ vars.CLERK_PASSKEY_RP_DOMAINS }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -607,11 +607,11 @@ jobs:
               printf '%s' "$APPLE_API_KEY" > "$key_path"
               export APPLE_API_KEY="$key_path"
 
-              profile_path="$RUNNER_TEMP/t3code.provisionprofile"
+              profile_path="$RUNNER_TEMP/onicode.provisionprofile"
               printf '%s' "$MACOS_PROVISIONING_PROFILE" | base64 -D > "$profile_path"
               security cms -D -i "$profile_path" >/dev/null
-              export T3CODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
-              export T3CODE_MACOS_PROVISIONING_PROFILE="$profile_path"
+              export ONICODE_APPLE_TEAM_ID="$APPLE_TEAM_ID"
+              export ONICODE_MACOS_PROVISIONING_PROFILE="$profile_path"
 
               echo "macOS signing enabled."
               args+=(--signed)
@@ -621,7 +621,7 @@ jobs:
           elif [[ "${{ inputs.platform }}" == "win" ]]; then
             # Embed the Linux CLI archive built by the same-arch Linux job as
             # the WSL runtime. Required for a working WSL backend on Windows.
-            args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/t3-*-linux-${{ inputs.arch }}.tar.gz)
+            args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/oni-*-linux-${{ inputs.arch }}.tar.gz)
             if has_all \
               "$AZURE_TENANT_ID" \
               "$AZURE_CLIENT_ID" \
@@ -655,14 +655,14 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${APPLE_API_KEY:-}" ]]; then
-            key_dir="$(mktemp -d "$RUNNER_TEMP/t3-cli-notary.XXXXXXXX")"
+            key_dir="$(mktemp -d "$RUNNER_TEMP/oni-cli-notary.XXXXXXXX")"
             trap 'rm -rf "$key_dir"' EXIT
             key_path="$key_dir/AuthKey.p8"
             (umask 077 && printf '%s' "$APPLE_API_KEY" > "$key_path")
             export APPLE_API_KEY="$key_path"
           fi
           node scripts/build-cli-archive.ts await-notarization \
-            --submission-file "$RUNNER_TEMP/t3-cli-notary-submission"
+            --submission-file "$RUNNER_TEMP/oni-cli-notary-submission"
 
       - name: Upload notarized CLI archive
         if: inputs.cli_archive && inputs.platform == 'mac'
@@ -712,7 +712,7 @@ jobs:
             appimage=$(ls "$GITHUB_WORKSPACE"/release/*.AppImage)
             chmod +x "$appimage"
             (cd "$RUNNER_TEMP" && "$appimage" --appimage-extract >/dev/null)
-            xvfb-run -a "${check[@]}" --executable "$RUNNER_TEMP/squashfs-root/t3code"
+            xvfb-run -a "${check[@]}" --executable "$RUNNER_TEMP/squashfs-root/onicode"
           fi
 
       - name: Upload launch check output
@@ -731,7 +731,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p verify
-          unpacked=$(ls -d "${TMPDIR:-/tmp}"/t3code-desktop-${{ inputs.platform }}-stage-*/app/dist/"$UNPACKED_DIR")
+          unpacked=$(ls -d "${TMPDIR:-/tmp}"/onicode-desktop-${{ inputs.platform }}-stage-*/app/dist/"$UNPACKED_DIR")
           tar -C "$(dirname "$unpacked")" -cf verify/unpacked.tar "$(basename "$unpacked")"
           esbuild=scripts/node_modules/.bin/esbuild
           banner="import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);"
@@ -802,7 +802,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          binary_name="t3-resource-monitor"
+          binary_name="oni-resource-monitor"
           if [[ "${{ inputs.platform }}" == "win" ]]; then
             binary_name="${binary_name}.exe"
           fi
@@ -868,7 +868,7 @@ jobs:
       - name: Smoke-test resource monitor
         shell: bash
         env:
-          MONITOR: verify/${{ env.UNPACKED_DIR }}/resources/resource-monitor/t3-resource-monitor.exe
+          MONITOR: verify/${{ env.UNPACKED_DIR }}/resources/resource-monitor/oni-resource-monitor.exe
           EXPECTED_ARCH: ${{ inputs.arch == 'arm64' && 'aarch64' || 'x86_64' }}
         run: |
           node --input-type=module <<'EOF'

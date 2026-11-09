@@ -63,7 +63,7 @@ it("probes generic vocabulary support and delivers ordered terms to offline infe
       const options = {
         timestamps: "none" as const,
         language: "en",
-        ...(supported ? { vocabulary: ["T3 Code", "GitHub"] } : {}),
+        ...(supported ? { vocabulary: ["Onicode", "GitHub"] } : {}),
       };
       const result = await model.transcribe(new Float32Array([0.25]), options, false);
       expect(JSON.parse(result.text)).toEqual(options);
@@ -132,11 +132,11 @@ it("returns streaming previews and final text from an isolated process", async (
     await model.feed(new Float32Array(512));
     expect(await model.finish()).toBe("fr");
     await model.begin(
-      { timestamps: "none", language: "fr", vocabulary: ["T3 Code", "GitHub"] },
+      { timestamps: "none", language: "fr", vocabulary: ["Onicode", "GitHub"] },
       false,
     );
     await model.feed(new Float32Array(512).fill(0.25));
-    expect(await model.finish()).toBe("T3 Code / GitHub");
+    expect(await model.finish()).toBe("Onicode / GitHub");
   } finally {
     await model.dispose();
   }

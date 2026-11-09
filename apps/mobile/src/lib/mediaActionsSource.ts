@@ -1,5 +1,5 @@
-import type { MediaReference } from "@t3tools/client-runtime/media-reference";
-import type { AssetResource, EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { MediaReference } from "@onicode/client-runtime/media-reference";
+import type { AssetResource, EnvironmentId, ThreadId } from "@onicode/contracts";
 import type { FileBackedComposerAttachment } from "./composerImages";
 
 export type MediaActionsSource = {

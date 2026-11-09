@@ -1,4 +1,4 @@
-import type { ProviderDriverKind, ProviderInstanceId } from "@t3tools/contracts";
+import type { ProviderDriverKind, ProviderInstanceId } from "@onicode/contracts";
 import {
   resolveSelectableProviderInstanceEntry,
   type ProviderInstanceEntry,

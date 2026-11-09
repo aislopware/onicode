@@ -1,6 +1,6 @@
-import { Persistence } from "@t3tools/client-runtime/platform";
-import { EnvironmentQueryStore } from "@t3tools/client-runtime/state/query-persistence";
-import { EnvironmentId } from "@t3tools/contracts";
+import { Persistence } from "@onicode/client-runtime/platform";
+import { EnvironmentQueryStore } from "@onicode/client-runtime/state/query-persistence";
+import { EnvironmentId } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";

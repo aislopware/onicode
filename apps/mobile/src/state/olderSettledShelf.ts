@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
+import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/models";
 import {
   isListedSettledThread,
   settledShelfFrontier,
@@ -8,8 +8,8 @@ import {
   wantedOlderSettledPages,
   type OlderSettled,
   type OlderSettledScope,
-} from "@t3tools/client-runtime/state/threads";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+} from "@onicode/client-runtime/state/threads";
+import type { EnvironmentId, ProjectId } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 import { useEffect, useMemo, useState } from "react";
 
@@ -41,7 +41,7 @@ export function useOlderSettledShelf(input: {
   }));
   const shelfKey = JSON.stringify(shelfScopes);
   const shelf = useAtomValue(olderSettledThreads.shelfAtom(shelfScopes));
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- mounts older settled thread pages into the shared thread registry while the shelf shows them
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- mounts older settled thread pages into the shared thread registry while the shelf shows them
   useEffect(() => {
     const releases = (JSON.parse(shelfKey) as typeof shelfScopes).flatMap(({ scope, pages }) =>
       pages === 0
@@ -95,7 +95,7 @@ export function useOlderSettledShelfGrowth(
     visibleCount: shelf.visibleCount,
   });
   const { grow, pages } = shelf;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- requests more shelf pages when the loaded rows list fewer threads than the shelf shows
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- requests more shelf pages when the loaded rows list fewer threads than the shelf shows
   useEffect(() => {
     if (wanted !== pages) grow(wanted);
   }, [wanted, pages, grow]);

@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@t3tools/contracts";
+import { EnvironmentId } from "@onicode/contracts";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -10,7 +10,7 @@ function relaunchWhileRestarting(environmentId: EnvironmentId) {
   vi.useFakeTimers({ now });
   const store = new Map([
     [
-      "t3code:update-everything-result:v1",
+      "onicode:update-everything-result:v1",
       JSON.stringify({
         savedAt: now,
         localVersion: null,

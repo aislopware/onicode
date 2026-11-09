@@ -55,7 +55,7 @@ interface NativeNavigationProps extends ViewProps {
   readonly onOverlayChange: (event: NativeSyntheticEvent<{ readonly overlay: boolean }>) => void;
 }
 
-const NativeNavigation = requireNativeView<NativeNavigationProps>("T3WorkspaceNavigation");
+const NativeNavigation = requireNativeView<NativeNavigationProps>("OniWorkspaceNavigation");
 
 function nativeColor(value: string) {
   const color = processColor(value);

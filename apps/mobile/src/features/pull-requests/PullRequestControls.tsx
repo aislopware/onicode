@@ -1,8 +1,8 @@
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import Animated from "react-native-reanimated";
 import { PR_ROW_LAYOUT } from "./pullRequestAnimations";
 import { useNavigation } from "@react-navigation/native";
-import type { PullRequestDetail } from "@t3tools/contracts";
+import type { PullRequestDetail } from "@onicode/contracts";
 import type { MenuAction } from "@react-native-menu/menu";
 import type { ReactNode } from "react";
 import { Platform, Pressable, View } from "react-native";
@@ -67,8 +67,8 @@ export function PullRequestCardRow(props: {
         <Text
           className={
             props.destructive
-              ? "text-sm font-t3-medium text-danger-foreground"
-              : "text-sm font-t3-medium"
+              ? "text-sm font-oni-medium text-danger-foreground"
+              : "text-sm font-oni-medium"
           }
         >
           {props.title}

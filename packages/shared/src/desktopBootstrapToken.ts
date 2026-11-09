@@ -15,7 +15,7 @@ function windowIndex(nowMs: number): number {
 const deriveToken = Effect.fnUntraced(function* (secret: string, window: number) {
   const mac = yield* Mac.Mac;
   const key = yield* Mac.key(Mac.hmacSha256, utf8(secret));
-  return Hex.encode(yield* mac.sign(key, utf8(`t3-desktop-bootstrap:${window}`)));
+  return Hex.encode(yield* mac.sign(key, utf8(`oni-desktop-bootstrap:${window}`)));
 }, Effect.orDie);
 
 export const currentDesktopBootstrapToken = Effect.fn("desktopBootstrapToken.current")(

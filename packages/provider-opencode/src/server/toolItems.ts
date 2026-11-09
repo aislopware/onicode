@@ -1,11 +1,11 @@
-import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
-import { resolveT3McpToolId } from "@t3tools/shared/t3McpToolPresentation";
-import { formatReadToolLabel, formatSearchToolLabel } from "@t3tools/shared/toolActivity";
+import type { OrchestrationV2TurnItem } from "@onicode/contracts";
+import { resolveOniMcpToolId } from "@onicode/shared/oniMcpToolPresentation";
+import { formatReadToolLabel, formatSearchToolLabel } from "@onicode/shared/toolActivity";
 import {
   MAX_TOOL_OUTPUT_IMAGES,
   readToolOutputImage,
   type ToolOutputImage,
-} from "@t3tools/shared/toolOutput";
+} from "@onicode/shared/toolOutput";
 
 export function openCodeToolOutput(
   output: string | undefined,
@@ -36,7 +36,7 @@ type ToolItemBase = Omit<
 function openCodeToolProjectionKind(
   toolName: string,
 ): "command_execution" | "file_change" | "file_search" | "web_search" | "dynamic_tool" {
-  if (toolName.startsWith("mcp__") || resolveT3McpToolId(toolName) !== null) return "dynamic_tool";
+  if (toolName.startsWith("mcp__") || resolveOniMcpToolId(toolName) !== null) return "dynamic_tool";
   const normalized = toolName.toLowerCase();
   if (normalized === "todowrite") {
     return "dynamic_tool";

@@ -14,7 +14,7 @@ export function usePullRequestEnvironmentFallback(params: PullRequestEnvironment
   const isReady = useConnectionsReady();
   const environments = useWorkspaceEnvironments();
   const fallback = isReady ? pullRequestFallbackEnvironment(params, projects, environments) : null;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- rewrites the route params through the navigator to the fallback environment once connections are ready
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- rewrites the route params through the navigator to the fallback environment once connections are ready
   useEffect(() => {
     if (fallback) navigation.setParams(fallback);
   }, [fallback, navigation]);

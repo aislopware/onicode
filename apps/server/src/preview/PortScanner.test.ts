@@ -7,9 +7,9 @@ import {
   CONFIGURED_LOCAL_SERVER_URLS_MAX_ITEMS,
   PREVIEW_URL_MAX_LENGTH,
   type DiscoveredLocalServer,
-} from "@t3tools/contracts";
-import * as ProcessGroup from "@t3tools/provider-core/server/processGroup";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+} from "@onicode/contracts";
+import * as ProcessGroup from "@onicode/provider-core/server/processGroup";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -25,7 +25,7 @@ import { FetchHttpClient } from "effect/http";
 import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "./PortScanner.ts";
 
-vi.mock("@t3tools/provider-core/server/processGroup", { spy: true });
+vi.mock("@onicode/provider-core/server/processGroup", { spy: true });
 
 const processProbeFailure: ProcessRunner.ProcessRunner["Service"]["run"] = (input) =>
   Effect.fail(
@@ -737,7 +737,7 @@ effectIt.effect("rechecks the socket owner before stopping a Linux server withou
 });
 
 effectIt.effect.each(["linux", "darwin", "win32"] as const)(
-  "reads no listeners on %s while T3CODE_PORT_DISCOVERY=0, and still probes configured URLs",
+  "reads no listeners on %s while ONICODE_PORT_DISCOVERY=0, and still probes configured URLs",
   (platform) => {
     const configuredUrl = `http://localhost:${LSOF_TEST_PORT}/docs`;
     const commands: string[] = [];
@@ -764,7 +764,7 @@ effectIt.effect.each(["linux", "darwin", "win32"] as const)(
             },
           }),
           Layer.succeed(HostProcess.Platform, platform),
-          Layer.succeed(HostProcess.Environment, { T3CODE_PORT_DISCOVERY: "0" }),
+          Layer.succeed(HostProcess.Environment, { ONICODE_PORT_DISCOVERY: "0" }),
           FetchHttpClient.layer.pipe(
             Layer.provide(
               Layer.succeed(FetchHttpClient.Fetch, (input) => {

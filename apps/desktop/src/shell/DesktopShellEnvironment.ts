@@ -1,11 +1,11 @@
-import { DesktopShellEnvironmentSnapshot, ShellEnvironmentPatch } from "@t3tools/contracts";
+import { DesktopShellEnvironmentSnapshot, ShellEnvironmentPatch } from "@onicode/contracts";
 import {
   applyShellEnvironment,
   buildEnvironmentCaptureCommand,
   listLoginShellCandidates,
   readUserLoginShell,
   setWindowsPath,
-} from "@t3tools/shared/shell";
+} from "@onicode/shared/shell";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -84,7 +84,7 @@ export class DesktopShellEnvironment extends Context.Service<
     readonly awaitUserShellDiscovery: Effect.Effect<boolean>;
     readonly updates: Stream.Stream<DesktopShellEnvironmentSnapshot>;
   }
->()("@t3tools/desktop/shell/DesktopShellEnvironment") {}
+>()("@onicode/desktop/shell/DesktopShellEnvironment") {}
 
 const LOGIN_SHELL_ENV_NAMES = [
   "PATH",
@@ -107,8 +107,8 @@ const LOGIN_SHELL_ENV_NAMES = [
   "SSL_CERT_FILE",
   "SSL_CERT_DIR",
   "NODE_EXTRA_CA_CERTS",
-  "T3CODE_TELEMETRY_ENABLED",
-  "T3CODE_GITHUB_APP_CLIENT_ID",
+  "ONICODE_TELEMETRY_ENABLED",
+  "ONICODE_GITHUB_APP_CLIENT_ID",
   "__MISE_DIFF",
   "JAVA_HOME",
 ] as const;
@@ -203,8 +203,8 @@ const knownWindowsCliDirs = (env: NodeJS.ProcessEnv): ReadonlyArray<string> => [
   ),
 ];
 
-const startMarker = (name: string) => `__T3CODE_ENV_${name}_START__`;
-const endMarker = (name: string) => `__T3CODE_ENV_${name}_END__`;
+const startMarker = (name: string) => `__ONICODE_ENV_${name}_START__`;
+const endMarker = (name: string) => `__ONICODE_ENV_${name}_END__`;
 
 const executableName = (command: string): string => command.split(/[\\/]/u).at(-1) ?? command;
 
@@ -484,8 +484,8 @@ const installPosixEnvironment = Effect.fn("desktop.shellEnvironment.installPosix
       "SSL_CERT_DIR",
       "NODE_EXTRA_CA_CERTS",
       "JAVA_HOME",
-      "T3CODE_TELEMETRY_ENABLED",
-      "T3CODE_GITHUB_APP_CLIENT_ID",
+      "ONICODE_TELEMETRY_ENABLED",
+      "ONICODE_GITHUB_APP_CLIENT_ID",
     ] as const) {
       if (!config.env[name] && shellEnvironment[name]) {
         config.env[name] = shellEnvironment[name];

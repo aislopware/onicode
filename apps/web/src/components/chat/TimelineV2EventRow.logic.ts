@@ -1,4 +1,4 @@
-import { type OrchestrationV2TurnItem } from "@t3tools/contracts";
+import { type OrchestrationV2TurnItem } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 
 export function subagentGroupTiming(

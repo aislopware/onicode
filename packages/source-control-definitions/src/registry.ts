@@ -1,12 +1,12 @@
-import * as AzureDevOps from "@t3tools/source-control-azure-devops/shared/definition";
-import * as Bitbucket from "@t3tools/source-control-bitbucket/shared/definition";
-import { makeSourceControlDefinitionRegistry } from "@t3tools/source-control-core/shared/definition";
-import * as Forgejo from "@t3tools/source-control-forgejo/shared/definition";
-import * as GitCafe from "@t3tools/source-control-gitcafe/shared/definition";
-import * as GitHub from "@t3tools/source-control-github/shared/definition";
-import * as GitLab from "@t3tools/source-control-gitlab/shared/definition";
+import * as AzureDevOps from "@onicode/source-control-azure-devops/shared/definition";
+import * as Bitbucket from "@onicode/source-control-bitbucket/shared/definition";
+import { makeSourceControlDefinitionRegistry } from "@onicode/source-control-core/shared/definition";
+import * as Forgejo from "@onicode/source-control-forgejo/shared/definition";
+import * as GitCafe from "@onicode/source-control-gitcafe/shared/definition";
+import * as GitHub from "@onicode/source-control-github/shared/definition";
+import * as GitLab from "@onicode/source-control-gitlab/shared/definition";
 
-export { canonicalizePullRequestUrl as canonicalizeGitCafePullRequestUrl } from "@t3tools/source-control-gitcafe/shared/definition";
+export { canonicalizePullRequestUrl as canonicalizeGitCafePullRequestUrl } from "@onicode/source-control-gitcafe/shared/definition";
 
 /**
  * GitHub comes first to preserve the client default for repositories with an unknown host.

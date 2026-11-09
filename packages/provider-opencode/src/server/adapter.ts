@@ -9,9 +9,9 @@ import type {
   Todo as OpenCodeTodo,
   ToolPart,
 } from "@opencode-ai/sdk/v2";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { getModelSelectionStringOptionValue } from "@t3tools/shared/model";
-import { causeErrorTag } from "@t3tools/shared/observability";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { getModelSelectionStringOptionValue } from "@onicode/shared/model";
+import { causeErrorTag } from "@onicode/shared/observability";
 import {
   defaultInstanceIdForDriver,
   type ModelSelection,
@@ -36,7 +36,7 @@ import {
   type RuntimeRequestId,
   type ThreadId,
   settingsSecretLiteral,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { OpenCodeSettings } from "../settings.ts";
 import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
@@ -54,33 +54,33 @@ import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
 
-import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";
-import { mcpToolPresentation } from "@t3tools/provider-core/server/mcpToolPresentation";
-import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
-import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
+import { mcpToolPresentation } from "@onicode/provider-core/server/mcpToolPresentation";
+import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
 import {
   structuralProtocolMethod,
   summarizeNativeProtocolPayload,
-} from "@t3tools/provider-core/server/nativeProtocolLogging";
-import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
-import { t3OrchestrationSystemPrompt } from "@t3tools/provider-core/server/orchestrationInstructions";
-import { buildRuntimeInstructions } from "@t3tools/provider-core/server/runtimeInstructions";
+} from "@onicode/provider-core/server/nativeProtocolLogging";
+import { mergeProviderInstanceEnvironment } from "@onicode/provider-core/server/instanceEnvironment";
+import { oniOrchestrationSystemPrompt } from "@onicode/provider-core/server/orchestrationInstructions";
+import { buildRuntimeInstructions } from "@onicode/provider-core/server/runtimeInstructions";
 import * as OpenCodeRuntime from "./OpenCodeRuntime.ts";
 import { readableProviderErrorMessage } from "./providerErrorMessage.ts";
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import { makeProviderFailure } from "@t3tools/provider-core/server/failure";
-import { turnScopedSelectionTransition } from "@t3tools/provider-core/server/selectionTransition";
-import { providerMessageTextWithAttachmentPaths } from "@t3tools/provider-core/server/attachmentPrompt";
-import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import { makeProviderFailure } from "@onicode/provider-core/server/failure";
+import { turnScopedSelectionTransition } from "@onicode/provider-core/server/selectionTransition";
+import { providerMessageTextWithAttachmentPaths } from "@onicode/provider-core/server/attachmentPrompt";
+import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import {
   ProviderAdapterDriverCreateError,
   type ProviderAdapterDriver,
   type ProviderAdapterDriverCreateInput,
-} from "@t3tools/provider-core/server/adapterDriver";
+} from "@onicode/provider-core/server/adapterDriver";
 import {
   makeSubagentChildThread,
   subagentThreadTitle,
-} from "@t3tools/provider-core/server/subagentProjection";
+} from "@onicode/provider-core/server/subagentProjection";
 import { openCodeCommandFailed, openCodeToolOutput, openCodeToolTurnItem } from "./toolItems.ts";
 
 export const OPENCODE_PROVIDER = ProviderDriverKind.make("opencode");
@@ -967,15 +967,15 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         });
 
         const mcpSession = yield* mcpSessions.read(input.threadId);
-        const hasT3Mcp = mcpSession !== undefined && !connection.external;
-        const orchestrationSystemPrompt = t3OrchestrationSystemPrompt(
-          hasT3Mcp,
+        const hasOniMcp = mcpSession !== undefined && !connection.external;
+        const orchestrationSystemPrompt = oniOrchestrationSystemPrompt(
+          hasOniMcp,
           mcpSession?.capabilities?.has("device") === true,
         );
-        if (hasT3Mcp) {
+        if (hasOniMcp) {
           yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
             client.mcp.add({
-              name: "t3-code",
+              name: "onicode",
               config: {
                 type: "remote",
                 url: mcpSession.endpoint,

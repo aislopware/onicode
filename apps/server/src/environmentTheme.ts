@@ -7,8 +7,8 @@ import {
   EnvironmentThemeFile,
   EnvironmentThemeId,
   environmentThemeFileHasColors,
-} from "@t3tools/contracts";
-import { UNPUBLISHABLE_THEME_IDS } from "@t3tools/shared/themePalettes";
+} from "@onicode/contracts";
+import { UNPUBLISHABLE_THEME_IDS } from "@onicode/shared/themePalettes";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Duration from "effect/Duration";
@@ -51,7 +51,7 @@ export class EnvironmentThemeService extends Context.Service<
     /** Subscribes before reading to retain changes during connection. */
     readonly streamChanges: Stream.Stream<ReadonlyArray<EnvironmentTheme>>;
   }
->()("t3/environmentTheme/EnvironmentThemeService") {}
+>()("onicode/environmentTheme/EnvironmentThemeService") {}
 
 /** Validates and reads one handle; rejects symlinked files, allows symlinked directories.
  * Uses non-blocking opens against FIFOs; Windows lacks these flags and checks symlinks with lstat. */

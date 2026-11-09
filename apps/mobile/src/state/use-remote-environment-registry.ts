@@ -1,11 +1,11 @@
 import * as Dialog from "../components/ui/Dialog";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigation } from "@react-navigation/native";
-import { Discovery } from "@t3tools/client-runtime/relay";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { Discovery } from "@onicode/client-runtime/relay";
+import type { EnvironmentId } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom } from "effect/reactivity";
-import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
+import { runAtomCommand } from "@onicode/client-runtime/state/runtime";
 
 import { hasCloudPublicConfig } from "../features/cloud/publicConfig";
 import { useConnectionController } from "../features/connection/useConnectionController";
@@ -23,10 +23,10 @@ import { connectPairingUrl as connectPairingUrlCommand } from "../connection/onb
 
 const RELAY_REMOVAL_ACCOUNT_NOTE: Record<Discovery.RelayEnvironmentRegistration, string> = {
   registered:
-    "It stays on your T3 Connect account and keeps its host space. Deregister it under T3 Account → T3 Connect to free it.",
+    "It stays on your T3 Connect account and keeps its host space. Deregister it under Onicode Account → T3 Connect to free it.",
   unregistered: "It's no longer on your T3 Connect account.",
   unknown:
-    "This doesn't change your T3 Connect account. To deregister it there, use T3 Account → T3 Connect.",
+    "This doesn't change your T3 Connect account. To deregister it there, use Onicode Account → T3 Connect.",
 };
 
 const connectionPairingUrlAtom = Atom.make("").pipe(
@@ -195,7 +195,7 @@ export function useRemoteConnections() {
         environmentId,
       );
       const openAccount = {
-        text: "Open T3 Account",
+        text: "Open Onicode Account",
         onPress: () => navigation.navigate("SettingsAuth"),
       };
       Dialog.alert(

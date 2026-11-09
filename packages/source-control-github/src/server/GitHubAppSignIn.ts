@@ -3,9 +3,9 @@ import {
   SourceControlSignInError,
   type SourceControlSignInFailure,
   type SourceControlSignInPrompt,
-} from "@t3tools/contracts";
-import * as SourceControlHost from "@t3tools/source-control-core/server/SourceControlHost";
-import { readSourceControlHostSettings } from "@t3tools/source-control-core/shared/definition";
+} from "@onicode/contracts";
+import * as SourceControlHost from "@onicode/source-control-core/server/SourceControlHost";
+import { readSourceControlHostSettings } from "@onicode/source-control-core/shared/definition";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -19,15 +19,15 @@ import * as Schema from "effect/Schema";
 import * as Schedule from "effect/Schedule";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 import * as GitHubClient from "../shared/definition.ts";
 
 /**
- * The public client ID of the T3 Code for GitHub app, which the device flow needs (no secret).
+ * The public client ID of the Onicode for GitHub app, which the device flow needs (no secret).
  * Unset turns the app sign-in off: no app tokens, no sign-in, nothing for clients to show.
  */
-export const CLIENT_ID_VARIABLE = "T3CODE_GITHUB_APP_CLIENT_ID";
+export const CLIENT_ID_VARIABLE = "ONICODE_GITHUB_APP_CLIENT_ID";
 
 const KIND = SourceControlProviderKind.make("github");
 const REQUEST_TIMEOUT = Duration.seconds(15);
@@ -93,7 +93,7 @@ export class GitHubAppSignIn extends Context.Service<
     readonly wait: (host: string) => Effect.Effect<void, SourceControlSignInError>;
     readonly cancel: (host: string) => Effect.Effect<void>;
   }
->()("@t3tools/source-control-github/server/GitHubAppSignIn") {}
+>()("@onicode/source-control-github/server/GitHubAppSignIn") {}
 
 interface PendingSignIn {
   readonly deferred: Deferred.Deferred<void, SourceControlSignInError>;
@@ -167,7 +167,7 @@ export const make = Effect.gen(function* () {
     httpClient
       .execute(
         HttpClientRequest.post(`https://${host}${path}`).pipe(
-          HttpClientRequest.setHeaders({ accept: "application/json", "user-agent": "t3code" }),
+          HttpClientRequest.setHeaders({ accept: "application/json", "user-agent": "onicode" }),
           HttpClientRequest.bodyUrlParams(body),
         ),
       )

@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 import { appAtomRegistry } from "./atom-registry";
 

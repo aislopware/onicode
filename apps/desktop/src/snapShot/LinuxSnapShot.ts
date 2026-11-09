@@ -24,8 +24,8 @@ const PORTAL = "org.freedesktop.portal.Desktop";
 const PORTAL_PATH = "/org/freedesktop/portal/desktop";
 const SCREENSHOT = "org.freedesktop.portal.Screenshot";
 const REQUEST = "org.freedesktop.portal.Request";
-const EXTENSION = "org.gnome.Shell.Extensions.T3SnapShot";
-const EXTENSION_PATH = "/org/gnome/Shell/Extensions/T3SnapShot";
+const EXTENSION = "org.gnome.Shell.Extensions.OniSnapShot";
+const EXTENSION_PATH = "/org/gnome/Shell/Extensions/OniSnapShot";
 const DBUS = "org.freedesktop.DBus";
 const DBUS_PATH = "/org/freedesktop/DBus";
 const UInt = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 0xffff_ffff }));
@@ -221,7 +221,7 @@ class LinuxCaptureConnection {
       body: [PORTAL],
     });
     const sender = decodeString(owner.body[0]);
-    const token = `t3_${NodeCrypto.randomUUID().replaceAll("-", "")}`;
+    const token = `oni_${NodeCrypto.randomUUID().replaceAll("-", "")}`;
     const namespace = `${PORTAL_PATH}/request/${this.uniqueName.slice(1).replaceAll(".", "_")}/`;
     let handle = namespace + token;
     let completed = false;
@@ -304,7 +304,7 @@ class LinuxCaptureConnection {
       this.bus.requestName(`${appId}.SnapShot`, NameFlag.DO_NOT_QUEUE),
     );
     if (result !== RequestNameReply.PRIMARY_OWNER) {
-      throw new Error("Another T3 Code instance is capturing a window. Try again.");
+      throw new Error("Another Onicode instance is capturing a window. Try again.");
     }
     const withFeedback = this.feedbackAvailable && options !== undefined;
     const reply = await this.call({

@@ -1,6 +1,6 @@
 import { useStableCallback } from "../../hooks/useStableCallback";
-import { type MessageId, type RunId } from "@t3tools/contracts";
-import { CHAT_LIST_ANCHOR_OFFSET } from "@t3tools/shared/chatList";
+import { type MessageId, type RunId } from "@onicode/contracts";
+import { CHAT_LIST_ANCHOR_OFFSET } from "@onicode/shared/chatList";
 import { Debouncer } from "@tanstack/react-pacer";
 import {
   type SetStateAction,
@@ -35,9 +35,9 @@ import {
   shouldReleaseTimelineAnchorForToolActivity,
 } from "../ChatView.logic";
 import type { Dispatch, RefObject } from "react";
-import type { ThreadStructure } from "@t3tools/client-runtime/state/shell";
-import type { deriveThreadActivityRun } from "@t3tools/client-runtime/state/thread-execution";
-import type { EnvironmentThreadStatus } from "@t3tools/client-runtime/state/threads";
+import type { ThreadStructure } from "@onicode/client-runtime/state/shell";
+import type { deriveThreadActivityRun } from "@onicode/client-runtime/state/thread-execution";
+import type { EnvironmentThreadStatus } from "@onicode/client-runtime/state/threads";
 import type { TimelineEntry } from "../../session-logic";
 
 const TIMELINE_SCROLL_CANCEL_SENTINEL = Object.freeze({});
@@ -351,7 +351,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   // The list does not follow footer layout, so the resting composer cannot scroll it. Growth
   // above the composer (a new notice) would cover the last rows instead.
   const followedInsetRef = useRef(composerTimelineInset);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the list after its bottom inset grows
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- scrolls the list after its bottom inset grows
   useLayoutEffect(() => {
     const grew = composerTimelineInset > followedInsetRef.current;
     followedInsetRef.current = composerTimelineInset;
@@ -519,7 +519,7 @@ export function useTimelineFollow(input: TimelineFollowInput) {
   // the anchored end space; the trigger is streamed thread data. A
   // totalSize listener cannot replace it: the anchored end space can already
   // be 0, so dropping it changes no size and no list event fires.
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- scrolls the timeline to the end after the commit that drops anchored end space
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- scrolls the timeline to the end after the commit that drops anchored end space
   useLayoutEffect(() => {
     if (timelineAnchorMessageId === null || !timelineLiveFollowEnabled) return;
     if (

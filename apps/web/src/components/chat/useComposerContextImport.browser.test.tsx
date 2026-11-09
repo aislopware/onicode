@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { type ComposerContextRecord, ComposerContextId, EnvironmentId } from "@t3tools/contracts";
+import { type ComposerContextRecord, ComposerContextId, EnvironmentId } from "@onicode/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 import { act, render, stubGlobal } from "../../../test/render";

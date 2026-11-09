@@ -14,7 +14,7 @@ class CompileCacheFlushError extends Schema.TaggedError<CompileCacheFlushError>(
 // Windows force-kills on quit; persist the cache after startup.
 export const flushCompileCache = Effect.try({
   try: () => {
-    if (!Reflect.get(globalThis, Symbol.for("t3code.preparedServerCache"))) {
+    if (!Reflect.get(globalThis, Symbol.for("onicode.preparedServerCache"))) {
       NodeModule.flushCompileCache();
     }
   },

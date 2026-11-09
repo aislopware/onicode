@@ -1,4 +1,4 @@
-import { ProviderDriverKind } from "@t3tools/contracts";
+import { ProviderDriverKind } from "@onicode/contracts";
 import {
   makeCachedProviderMaintenanceResolution,
   makePackageManagedProviderMaintenanceResolver,
@@ -6,9 +6,9 @@ import {
   resolveProviderMaintenanceCapabilitiesEffect,
   type ProviderMaintenanceCapabilities,
   type ProviderMaintenanceResolverServices,
-} from "@t3tools/provider-core/server/maintenanceResolver";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { fromLenientJson } from "@t3tools/shared/schemaJson";
+} from "@onicode/provider-core/server/maintenanceResolver";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { fromLenientJson } from "@onicode/shared/schemaJson";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";

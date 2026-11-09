@@ -7,7 +7,7 @@ import {
   type PeerLinkSummary,
   resolveEnvironmentMachineKind,
   type ServerConfig,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Option from "effect/Option";
 
 import type { EnvironmentPresentation } from "./connection/presentation.ts";
@@ -74,7 +74,7 @@ export interface LinkableMachine {
 }
 
 /**
- * The catalog's machines other than the thread's own, in catalog order, then those only T3
+ * The catalog's machines other than the thread's own, in catalog order, then those only Onicode
  * Connect knows. `links` are the thread environment's; an expired one no longer counts as
  * linked. `connect` is what relay discovery found, and a server reaches a machine there as a
  * browser does, so its Connect address is usable.

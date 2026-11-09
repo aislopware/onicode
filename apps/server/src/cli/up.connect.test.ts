@@ -1,8 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import * as NetService from "@t3tools/shared/Net";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import * as NetService from "@onicode/shared/Net";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -58,7 +58,7 @@ vi.mock("./connect.ts", async (importOriginal) => {
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))(
-  "t3 up with T3 Connect",
+  "onicode up with T3 Connect",
   (it) => {
     it.effect.each([
       { label: "no link", prior: null, events: ["link", "restart", "unlink", "restart"] },
@@ -74,14 +74,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
         link.desired = input.prior !== null;
         link.mode = input.prior ?? "managed";
         const fs = yield* FileSystem.FileSystem;
-        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-up-connect-test-" });
-        yield* fs.writeFileString(`${baseDir}/service.env`, "T3CODE_LAN=false\n");
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-up-connect-test-" });
+        yield* fs.writeFileString(`${baseDir}/service.env`, "ONICODE_LAN=false\n");
         const status = {
           supported: true,
           installed: true,
           current: true,
-          unitPath: "/home/me/.config/systemd/user/t3code.service",
-          logPath: "/home/me/.t3/userdata/logs/boot-service.log",
+          unitPath: "/home/me/.config/systemd/user/onicode.service",
+          logPath: "/home/me/.onicode/userdata/logs/boot-service.log",
         };
         vi.spyOn(BootService, "layer").mockReturnValue(
           Layer.succeed(
@@ -123,7 +123,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
             ? { desired: false, mode: "managed" }
             : { desired: true, mode: input.prior },
         );
-        expect(yield* fs.readFileString(`${baseDir}/service.env`)).toBe("T3CODE_LAN=false\n");
+        expect(yield* fs.readFileString(`${baseDir}/service.env`)).toBe("ONICODE_LAN=false\n");
       }),
     );
 
@@ -133,7 +133,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
         link.desired = false;
         link.mode = "managed";
         const fs = yield* FileSystem.FileSystem;
-        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-up-connect-test-" });
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-up-connect-test-" });
         vi.spyOn(BootService, "layer").mockReturnValue(
           Layer.succeed(
             BootService.BootService,
@@ -142,9 +142,9 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))
                 supported: true,
                 installed: true,
                 current: false,
-                otherBaseDir: "/srv/t3",
-                unitPath: "/home/me/.config/systemd/user/t3code.service",
-                logPath: "/home/me/.t3/userdata/logs/boot-service.log",
+                otherBaseDir: "/srv/onicode",
+                unitPath: "/home/me/.config/systemd/user/onicode.service",
+                logPath: "/home/me/.onicode/userdata/logs/boot-service.log",
               }),
               withStopped: (operation) => operation,
               restart: Effect.sync(() => events.push("restart")).pipe(

@@ -1,15 +1,15 @@
 import { useAtomValue } from "@effect/atom-react";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import {
   AuthPreviewOperateScope,
   type DiscoveredLocalServer,
   type EnvironmentId,
   type ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import { ChevronDown, ChevronUp } from "lucide";
 import { GlobeIcon, LoaderCircleIcon, SquareIcon } from "lucide-react";
 import { type MouseEvent, useState } from "react";

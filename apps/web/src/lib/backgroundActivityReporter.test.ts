@@ -1,5 +1,5 @@
-import { EnvironmentRegistry } from "@t3tools/client-runtime/connection";
-import { EnvironmentId, WS_METHODS } from "@t3tools/contracts";
+import { EnvironmentRegistry } from "@onicode/client-runtime/connection";
+import { EnvironmentId, WS_METHODS } from "@onicode/contracts";
 import { afterEach, beforeEach, describe, expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";

@@ -5,7 +5,7 @@ import type {
   PullRequestChecksState,
   PullRequestRef,
   ScopedThreadRef,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { useState } from "react";
 
 import { useOpenLink } from "~/browser/useOpenLink";

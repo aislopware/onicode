@@ -15,7 +15,7 @@ const ready: ShowcaseReadinessInput = {
   orientationSettled: true,
   themeApplied: true,
   agentActivityStaged: false,
-  themeId: "t3-code",
+  themeId: "onicode",
   renderSignal: null,
   renderReports: 0,
 };
@@ -31,7 +31,7 @@ describe("showcaseSceneOnScreen", () => {
 
 describe("isShowcaseThemeApplied", () => {
   it("waits for the launch request when no theme is requested", () => {
-    const themeIds = { light: "t3-code", dark: "t3-code" } as const;
+    const themeIds = { light: "onicode", dark: "onicode" } as const;
     expect(
       isShowcaseThemeApplied({ launchRequestRead: false, requestedTheme: null, themeIds }),
     ).toBe(false);
@@ -44,8 +44,8 @@ describe("isShowcaseThemeApplied", () => {
     expect(
       isShowcaseThemeApplied({
         launchRequestRead: true,
-        requestedTheme: "t3-code",
-        themeIds: { light: "t3-code", dark: "material-you" },
+        requestedTheme: "onicode",
+        themeIds: { light: "onicode", dark: "material-you" },
       }),
     ).toBe(false);
   });
@@ -79,7 +79,7 @@ describe("showcaseReadinessKey", () => {
         renderSignal: { scene: "review", themeId: "material-you" },
       }),
     ).toBeNull();
-    const drawn = { ...review, renderSignal: { scene: "review", themeId: "t3-code" } } as const;
+    const drawn = { ...review, renderSignal: { scene: "review", themeId: "onicode" } } as const;
     const firstDraw = showcaseReadinessKey({ ...drawn, renderReports: 1 });
     expect(firstDraw).not.toBeNull();
     expect(showcaseReadinessKey({ ...drawn, renderReports: 2 })).not.toBe(firstDraw);

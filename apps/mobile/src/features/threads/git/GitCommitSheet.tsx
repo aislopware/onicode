@@ -4,7 +4,7 @@ import { Button } from "../../../components/ui/Button";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, useWindowDimensions, View } from "react-native";
-import { formatDiffCount } from "@t3tools/client-runtime/diff-count";
+import { formatDiffCount } from "@onicode/client-runtime/diff-count";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../../components/ui/AppSymbol";
@@ -101,7 +101,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
             </Text>
           ) : null}
           <View className="gap-2">
-            <Text className="text-sm font-t3-medium text-foreground">Commit message</Text>
+            <Text className="text-sm font-oni-medium text-foreground">Commit message</Text>
             <TextInput
               multiline
               accessibilityLabel="Commit message"
@@ -118,7 +118,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
           <View>
             <View className="flex-row items-center justify-between gap-2 pb-2">
               <View className="flex-1 gap-1">
-                <Text className="text-base font-t3-bold text-foreground">Changed files</Text>
+                <Text className="text-base font-oni-bold text-foreground">Changed files</Text>
                 <Text className="text-xs text-foreground-muted">
                   {selectedFiles.length} of {allFiles.length} selected · +
                   {formatDiffCount(selectedInsertions)} −{formatDiffCount(selectedDeletions)}
@@ -180,7 +180,7 @@ export function GitCommitSheet(_props: GitCommitSheetProps) {
                       <Text
                         numberOfLines={1}
                         ellipsizeMode="middle"
-                        className="text-sm font-t3-medium text-foreground"
+                        className="text-sm font-oni-medium text-foreground"
                       >
                         {name}
                       </Text>

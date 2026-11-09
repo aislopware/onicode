@@ -29,7 +29,7 @@ failed clear and continues, and turning holding off stops at the first link it
 cannot clear, so those requests wait for the 24-hour expiry. The relay still
 never checks the token;
 delivery goes through the same environment route.
-Every forward carries `x-t3-relay-delivery-id`, so a request that reached the
+Every forward carries `x-oni-relay-delivery-id`, so a request that reached the
 environment before a timeout and is delivered again later runs once
 ([inbox object](../../infra/relay/src/hooks/HookInboxObject.ts)).
 
@@ -143,7 +143,7 @@ host that reconnects mid-sweep wins.
 
 T3 Chat uses WorkOS, not Clerk, so the two accounts are linked by consent
 rather than by a shared identity. The relay and T3 Chat share one secret
-(`T3CHAT_LINK_SECRET` here, `T3CODE_LINK_SECRET` there). The relay signs a
+(`T3CHAT_LINK_SECRET` here, `ONICODE_LINK_SECRET` there). The relay signs a
 short-lived token naming the Clerk user and email; the user confirms it while
 signed in to T3 Chat, and T3 Chat stores the link. T3 Chat owns the link and the
 plan, so the relay keeps no copy. It asks T3 Chat only when an account reaches
@@ -164,12 +164,12 @@ release, installs the pinned one in the background, then starts a second
 connector on it for the same tunnel. The old connector stops only after the new
 one registers, so the swap never takes the host off the relay. If the new one
 fails to spawn, the old one keeps serving and the install retries later. A host
-with no relay client installs one first. A `cloudflared` on `PATH` or an explicit `T3CODE_CLOUDFLARED_PATH` is the
+with no relay client installs one first. A `cloudflared` on `PATH` or an explicit `ONICODE_CLOUDFLARED_PATH` is the
 user's choice and is never replaced, since linking asks before downloading.
 
 Once the pinned release registers a connection, managed releases older than the
 pin are deleted except the newest of them. That one, and any newer release, can
-belong to another server sharing the same T3 home, such as a rollback after a
+belong to another server sharing the same Onicode home, such as a rollback after a
 failed update, which could not run again without it.
 
 The version comes from running `cloudflared version`, not from the folder name.

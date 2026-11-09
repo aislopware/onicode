@@ -9,7 +9,7 @@ import {
   ThreadId,
   type OrchestrationV2ThreadProjection,
   type OrchestrationV2Notification,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
@@ -20,8 +20,8 @@ import * as Ref from "effect/Ref";
 import * as Semaphore from "effect/Semaphore";
 import * as TestClock from "effect/testing/TestClock";
 
-import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
-import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
+import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
+import * as ProviderContinuationRequests from "@onicode/provider-core/server/ProviderContinuationRequests";
 import * as ProviderContinuationService from "./ProviderContinuationService.ts";
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 

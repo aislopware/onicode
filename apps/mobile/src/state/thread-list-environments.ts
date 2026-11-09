@@ -4,7 +4,7 @@ import {
   type EnvironmentMachineKind,
   type ServerConfig,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 
 export type ThreadListProvider = Pick<

@@ -1,4 +1,4 @@
-import type { EnvironmentId, OrchestrationGetTurnDiffResult, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, OrchestrationGetTurnDiffResult, ThreadId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import { Atom, type AtomRegistry } from "effect/reactivity";
 

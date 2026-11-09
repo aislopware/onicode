@@ -3,7 +3,7 @@ import { assert, describe, it } from "@effect/vitest";
 import * as NodeOS from "node:os";
 import * as NodeUtil from "node:util";
 
-import { ExternalLauncherBrowserSpawnError } from "@t3tools/contracts";
+import { ExternalLauncherBrowserSpawnError } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
@@ -16,8 +16,8 @@ import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import * as TestConsole from "effect/testing/TestConsole";
 
-import { DEFAULT_SIGNAL_EXPORT } from "@t3tools/shared/observability";
-import * as OtelEnvironment from "@t3tools/shared/otelEnvironment";
+import { DEFAULT_SIGNAL_EXPORT } from "@onicode/shared/observability";
+import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
 
 import * as ServerConfig from "./config.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
@@ -55,7 +55,7 @@ const layerConfig = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =
     ServerConfig.ServerConfig,
     Effect.gen(function* () {
       const path = yield* Path.Path;
-      const baseDir = path.join(NodeOS.tmpdir(), "t3-server-logger-test");
+      const baseDir = path.join(NodeOS.tmpdir(), "oni-server-logger-test");
       const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, undefined);
       return ServerConfig.make({
         logLevel: "Info",
@@ -174,7 +174,7 @@ describe("ServerLoggerLive", () => {
       });
 
       const body = requests.map((request) => request.body).join("\n");
-      assert.include(body, '"key":"t3code.server.managed_by","value":{"stringValue":"desktop"}');
+      assert.include(body, '"key":"onicode.server.managed_by","value":{"stringValue":"desktop"}');
       assert.notInclude(body, "service.mode");
     }),
   );

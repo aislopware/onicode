@@ -13,7 +13,7 @@ export const layerReaderDatabase = Layer.unwrap(
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
-    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "t3-routing-" });
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-routing-" });
     return Sqlite.layerFromPath(path.join(directory, "state.sqlite"));
   }),
 ).pipe(Layer.provide(NodeServices.layer));

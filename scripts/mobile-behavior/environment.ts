@@ -1,6 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off - the eval owns a server subprocess and a scratch workspace.
 /**
- * An isolated T3 server for one device run. Its only provider is `evalbot`, an Fx instance
+ * An isolated Onicode server for one device run. Its only provider is `evalbot`, an Fx instance
  * backed by `fake-fx.ts`, so every reply is scripted. State lives under the run's `--out`.
  */
 import * as NodeChildProcess from "node:child_process";
@@ -21,7 +21,7 @@ import {
   ThreadId,
   WsRpcGroup,
   type OrchestrationV2ThreadProjection,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -111,7 +111,7 @@ function writeScratch(baseDir: string) {
         [EVAL_INSTANCE]: {
           driver: "fx",
           displayName: "Eval Bot",
-          environment: [{ name: "T3_EVAL_FX_CONTROL_DIR", value: control }],
+          environment: [{ name: "ONICODE_EVAL_FX_CONTROL_DIR", value: control }],
           config: { enabled: true, binaryPath: launcher },
         },
       },
@@ -187,7 +187,7 @@ export const startEnvironment = Effect.fn("environment.start")(function* (input:
     HttpClient.filterStatusOk,
   );
   const descriptor = yield* http
-    .get(`${origin}/.well-known/t3/environment`)
+    .get(`${origin}/.well-known/onicode/environment`)
     .pipe(Effect.flatMap(HttpClientResponse.schemaBodyJson(ExecutionEnvironmentDescriptor)));
   const shell = () =>
     http

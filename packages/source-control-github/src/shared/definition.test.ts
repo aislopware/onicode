@@ -1,4 +1,4 @@
-import { recognizeRemoteWith } from "@t3tools/source-control-core/shared/definition";
+import { recognizeRemoteWith } from "@onicode/source-control-core/shared/definition";
 import { describe, expect, it } from "vite-plus/test";
 
 import { definition } from "./definition.ts";
@@ -7,11 +7,11 @@ const parse = (url: string) => definition.parseChangeRequestUrl(new URL(url));
 
 describe("GitHub change request URLs", () => {
   it("reads a pull request on any host, lower-casing host and repository", () => {
-    expect(parse("https://github.com/T3Tools/T3Code/pull/123/files?w=1#diff")).toEqual({
+    expect(parse("https://github.com/Onicode/Onicode/pull/123/files?w=1#diff")).toEqual({
       host: "github.com",
-      repository: "t3tools/t3code",
+      repository: "onicode/onicode",
       number: 123,
-      repositoryUrl: "https://github.com/T3Tools/T3Code",
+      repositoryUrl: "https://github.com/Onicode/Onicode",
     });
     expect(parse("https://GHE.Example.com:8443/acme/web/pull/42/")).toEqual({
       host: "ghe.example.com",
@@ -23,12 +23,12 @@ describe("GitHub change request URLs", () => {
 
   it("claims only the two-segment pull route", () => {
     for (const url of [
-      "https://github.com/t3tools/t3code/issues/123",
-      "https://github.com/t3tools/t3code/pulls/123",
-      "https://github.com/t3tools/t3code/pull/abc",
-      "https://github.com/t3tools/t3code/pull/0",
+      "https://github.com/onicode/onicode/issues/123",
+      "https://github.com/onicode/onicode/pulls/123",
+      "https://github.com/onicode/onicode/pull/abc",
+      "https://github.com/onicode/onicode/pull/0",
       "https://github.com/group/sub/repo/pull/1",
-      "ftp://github.com/t3tools/t3code/pull/1",
+      "ftp://github.com/onicode/onicode/pull/1",
     ]) {
       expect(parse(url), url).toBeNull();
     }

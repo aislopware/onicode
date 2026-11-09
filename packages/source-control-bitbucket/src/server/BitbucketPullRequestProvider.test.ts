@@ -1,10 +1,10 @@
-import { SourceControlProviderKind } from "@t3tools/contracts";
+import { SourceControlProviderKind } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
-import * as SourceControlRateLimit from "@t3tools/source-control-core/server/SourceControlRateLimit";
+import * as SourceControlRateLimit from "@onicode/source-control-core/server/SourceControlRateLimit";
 
 import * as BitbucketApi from "./BitbucketApi.ts";
 import * as BitbucketPullRequestApi from "./BitbucketPullRequestApi.ts";
@@ -198,7 +198,7 @@ it.effect("serves only Bitbucket Cloud hosts unless an API base url is configure
 
     expect(yield* servedHosts({})).toEqual(["bitbucket.org", "altssh.bitbucket.org"]);
     expect(
-      yield* servedHosts({ T3CODE_BITBUCKET_API_BASE_URL: "https://bitbucket.example.com/api" }),
+      yield* servedHosts({ ONICODE_BITBUCKET_API_BASE_URL: "https://bitbucket.example.com/api" }),
     ).toEqual(["bitbucket.org", "altssh.bitbucket.org", "bitbucket.example.com"]);
   }),
 );

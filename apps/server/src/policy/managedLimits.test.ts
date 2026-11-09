@@ -1,4 +1,4 @@
-import type { ManagedPolicyDocument } from "@t3tools/contracts";
+import type { ManagedPolicyDocument } from "@onicode/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -8,7 +8,7 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
 
-import * as NetService from "@t3tools/shared/Net";
+import * as NetService from "@onicode/shared/Net";
 
 import * as EnvironmentAuthPolicy from "../auth/EnvironmentAuthPolicy.ts";
 import * as ManagedLimits from "./managedLimits.ts";
@@ -68,7 +68,7 @@ it.effect("binds only the loopback address it approved when remote clients are n
       tailscaleServeEnabled: false,
       privateNetworkOnly: true,
     }).pipe(Effect.flip);
-    assert.include(service.message, "set T3CODE_HOST=127.0.0.1 in its service.env");
+    assert.include(service.message, "set ONICODE_HOST=127.0.0.1 in its service.env");
     assert.equal(yield* bind("localhost", { document: undefined }), "localhost");
     assert.equal(yield* bind(undefined, { document: undefined }), "127.0.0.1");
   }),
@@ -256,7 +256,7 @@ it.effect(
     return Effect.gen(function* () {
       // A route that shares the port with this server's stays, as does one to another loopback
       // address on the same port; a TCP forward here goes too.
-      for (const mount of ["/t3", "/"]) {
+      for (const mount of ["/onicode", "/"]) {
         const web: Web = {
           "box.tailnet.ts.net:443": {
             [mount]: "http://127.0.0.1:3773",
@@ -330,8 +330,8 @@ it.effect(
             },
           },
           Services: {
-            "svc:t3": {
-              Web: { "t3:443": { Handlers: { "/t3": { Proxy: "http://127.0.0.1:3773" } } } },
+            "svc:onicode": {
+              Web: { "onicode:443": { Handlers: { "/onicode": { Proxy: "http://127.0.0.1:3773" } } } },
             },
           },
         }),
@@ -343,7 +343,7 @@ it.effect(
       assert.include(owned.message, 'stop the "tailscale serve" command that runs it');
       assert.include(
         owned.message,
-        '"tailscale serve --service=svc:t3 --https=443 --set-path=/t3 off"',
+        '"tailscale serve --service=svc:onicode --https=443 --set-path=/onicode off"',
       );
       // An answer that cannot be read might hide a mapping, so the server does not start.
       const dialFailure = (reason: string) =>

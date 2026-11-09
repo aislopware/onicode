@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import type { EnvironmentId, ProjectId } from "@onicode/contracts";
 import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 
 import {
@@ -22,7 +22,7 @@ export function useTextFieldSpeech(input: {
   readonly disabled?: boolean | undefined;
 }) {
   const latest = useRef(input);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes committed field callbacks to the asynchronous recording controller
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes committed field callbacks to the asynchronous recording controller
   useEffect(() => {
     latest.current = input;
   });

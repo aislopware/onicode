@@ -1,4 +1,4 @@
-import type { PullRequestRef, PullRequestReviewCommentDraft } from "@t3tools/contracts";
+import type { PullRequestRef, PullRequestReviewCommentDraft } from "@onicode/contracts";
 import { create } from "zustand";
 
 export type PendingReviewComment = PullRequestReviewCommentDraft & { readonly id: string };

@@ -6,7 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import { HttpClient, HttpClientError, HttpClientResponse } from "effect/http";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 import { makeExpoApi, resolveExpoCredential, type ExpoCredential } from "./ExpoApi.ts";
 
@@ -21,7 +21,7 @@ describe("Expo credentials", () => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* fs.makeTempDirectoryScoped({ prefix: "t3-expo-home-" });
+      const home = yield* fs.makeTempDirectoryScoped({ prefix: "oni-expo-home-" });
       yield* fs.makeDirectory(path.join(home, ".expo"));
       yield* fs.writeFileString(
         path.join(home, ".expo", "state.json"),

@@ -4,8 +4,8 @@ import {
   ProviderInstanceId,
   type ServerProvider,
   type ServerProviderUpdateState,
-} from "@t3tools/contracts";
-import { ServerProviderUpdateError } from "@t3tools/contracts";
+} from "@onicode/contracts";
+import { ServerProviderUpdateError } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -19,18 +19,18 @@ import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 import { HttpClient, HttpClientResponse } from "effect/http";
 import { ChildProcessSpawner } from "effect/process";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { SpawnExecutableResolution } from "@t3tools/shared/shell";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { SpawnExecutableResolution } from "@onicode/shared/shell";
 
 import * as ProviderRegistry from "./ProviderRegistry.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import * as ProviderMaintenanceRunner from "./providerMaintenanceRunner.ts";
-import * as ProviderLatestVersions from "@t3tools/provider-core/server/ProviderLatestVersions";
+import * as ProviderLatestVersions from "@onicode/provider-core/server/ProviderLatestVersions";
 import {
   enrichProviderSnapshotWithVersionAdvisory,
   makeProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilities,
-} from "@t3tools/provider-core/server/maintenanceResolver";
+} from "@onicode/provider-core/server/maintenanceResolver";
 const isServerProviderUpdateError = Schema.is(ServerProviderUpdateError);
 
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
@@ -233,7 +233,7 @@ const makeTestRunner = (
     currentModels: {},
     compatibility: [CODEX_DRIVER, OPENCODE_DRIVER].map((driver) => ({
       driver,
-      t3CodeRange: ">=0.0.42",
+      onicodeRange: ">=0.0.42",
       ranges: [],
     })),
   },
@@ -1015,7 +1015,7 @@ it.effect.each([
       compatibility: [
         {
           driver: OPENCODE_DRIVER,
-          t3CodeRange: ">=0.0.42",
+          onicodeRange: ">=0.0.42",
           recommendedVersion: "1.14.20",
           ranges: [{ range: "=1.14.20", status: "supported" }],
         },
@@ -1102,7 +1102,7 @@ it.effect(
       compatibility: [
         {
           driver: "codex",
-          t3CodeRange: ">=0.0.42",
+          onicodeRange: ">=0.0.42",
           ranges: [
             { range: "<=2.0.0", status: "supported" },
             { range: ">2.0.0", status: "broken" },
@@ -1166,7 +1166,7 @@ it.effect("refuses incompatible latest versions and unapproved or unpinnable tar
     compatibility: [
       {
         driver: "codex",
-        t3CodeRange: ">=0.0.42",
+        onicodeRange: ">=0.0.42",
         recommendedVersion: "2.0.0",
         ranges: [
           { range: "=2.0.0", status: "supported" },

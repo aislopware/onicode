@@ -14,16 +14,16 @@ import {
   resolveProviderInstanceEnabled,
   type RuntimeMode,
   type ServerSettings,
-} from "@t3tools/contracts";
-import { acpRegistryClient } from "@t3tools/provider-acp-registry/client";
-import { cursorClient } from "@t3tools/provider-cursor/client";
-import { fxClient } from "@t3tools/provider-fx/client";
-import { grokClient } from "@t3tools/provider-grok/client";
-import { kiroClient } from "@t3tools/provider-kiro/client";
-import { museClient } from "@t3tools/provider-muse/client";
-import { openCodeClient } from "@t3tools/provider-opencode/client";
-import { piClient } from "@t3tools/provider-pi/client";
-import type { ProviderClientDefinition } from "@t3tools/provider-core/client";
+} from "@onicode/contracts";
+import { acpRegistryClient } from "@onicode/provider-acp-registry/client";
+import { cursorClient } from "@onicode/provider-cursor/client";
+import { fxClient } from "@onicode/provider-fx/client";
+import { grokClient } from "@onicode/provider-grok/client";
+import { kiroClient } from "@onicode/provider-kiro/client";
+import { museClient } from "@onicode/provider-muse/client";
+import { openCodeClient } from "@onicode/provider-opencode/client";
+import { piClient } from "@onicode/provider-pi/client";
+import type { ProviderClientDefinition } from "@onicode/provider-core/client";
 
 interface KnownDriver {
   readonly label: string;
@@ -54,7 +54,7 @@ const PACKAGED_CLIENTS: ReadonlyArray<ProviderClientDefinition> = [
 ];
 
 /**
- * Fields that make an instance launch without the settings a pin sets: managed Codex runs T3's own
+ * Fields that make an instance launch without the settings a pin sets: managed Codex runs Onicode's own
  * runtime against OpenAI, and a server URL points OpenCode at a server it does not start. A policy
  * that owns a pin owns these too, holding each at the value given here, which clients still send
  * when they add an instance.
@@ -87,7 +87,7 @@ type PinnedConfigField = (typeof PINNED_CONFIG_FIELDS)[number];
 /**
  * Fields that decide what a provider starts and reads on startup; a driver has those its schema
  * has. Under a ceiling they are the administrator's: a wrapper binary, a skip-permissions flag, or
- * a config directory with allow rules each outrank T3 Code's mode, and no flag filter stops a wrapper.
+ * a config directory with allow rules each outrank Onicode's mode, and no flag filter stops a wrapper.
  */
 const LAUNCH_CONFIG_FIELDS = [
   "binaryPath",
@@ -154,7 +154,7 @@ export const disallowedDriverReason = (
  * server they are ignored under any policy, which can lock launch arguments in more than one way;
  * from an instance's own variables they are ignored when the policy locks launch arguments.
  */
-const LAUNCH_OVERRIDE_VARIABLES = ["T3CODE_CODEX_LAUNCH_ARGS"] as const;
+const LAUNCH_OVERRIDE_VARIABLES = ["ONICODE_CODEX_LAUNCH_ARGS"] as const;
 
 /** The environment provider drivers launch from under the policy clients were told about. */
 export const providerHostEnvironment = (

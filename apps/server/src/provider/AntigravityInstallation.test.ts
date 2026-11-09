@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
 import { expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Digest from "effect/crypto/Digest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -134,7 +134,7 @@ const makeHarness = Effect.fn("test.makeAntigravityInstallation")(function* (
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
   const baseDir =
-    options.baseDir ?? (yield* fs.makeTempDirectoryScoped({ prefix: "t3-agy-test-" }));
+    options.baseDir ?? (yield* fs.makeTempDirectoryScoped({ prefix: "oni-agy-test-" }));
   const platform = options.platform ?? hostPlatform;
   const arch = options.arch ?? "x64";
   const archive = options.archive ?? completeArchive;
@@ -642,7 +642,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const baseDir = yield* fs
-          .makeTempDirectoryScoped({ prefix: "t3-agy-cli-test-" })
+          .makeTempDirectoryScoped({ prefix: "oni-agy-cli-test-" })
           .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
         const cliDirectory = path.join(baseDir, "cli");
         yield* fs.makeDirectory(cliDirectory);
@@ -704,7 +704,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("Antigravity inst
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const baseDir = yield* fs
-          .makeTempDirectoryScoped({ prefix: "t3-agy-path-test-" })
+          .makeTempDirectoryScoped({ prefix: "oni-agy-path-test-" })
           .pipe(Effect.flatMap((directory) => fs.realPath(directory)));
         const externalDirectory = path.join(baseDir, "external");
         const externalExecutable = path.join(externalDirectory, executableName);

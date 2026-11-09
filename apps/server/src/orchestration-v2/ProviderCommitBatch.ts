@@ -1,4 +1,4 @@
-import type * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
@@ -14,7 +14,7 @@ const MAX_EVENTS = 64;
 const MAX_BYTES = 1024 * 1024;
 const encodeQueue = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 
-export const enabled = Config.Boolean("T3CODE_PROVIDER_COMMIT_BATCHING").pipe(
+export const enabled = Config.Boolean("ONICODE_PROVIDER_COMMIT_BATCHING").pipe(
   Config.withDefault(true),
   Effect.orDie,
 );
@@ -78,7 +78,7 @@ function collect(queue: Queue.Queue<Job>) {
 }
 
 const CurrentWorker = Context.Reference<number | undefined>(
-  "t3/ProviderCommitBatch/CurrentWorker",
+  "onicode/ProviderCommitBatch/CurrentWorker",
   {
     defaultValue: () => undefined,
   },

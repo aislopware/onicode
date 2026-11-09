@@ -1,6 +1,6 @@
-import { isActiveSubagentStatus } from "@t3tools/client-runtime/state/subagentRuntime";
-import type { OrchestrationV2Subagent } from "@t3tools/contracts";
-import { formatDuration } from "@t3tools/shared/orchestrationTiming";
+import { isActiveSubagentStatus } from "@onicode/client-runtime/state/subagentRuntime";
+import type { OrchestrationV2Subagent } from "@onicode/contracts";
+import { formatDuration } from "@onicode/shared/orchestrationTiming";
 import * as DateTime from "effect/DateTime";
 
 export function subagentCardDetail(detail: string | null): string | null {

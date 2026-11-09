@@ -5,7 +5,7 @@ import {
   TerminalNotRunningError,
   type TerminalEvent,
   type TerminalSessionSnapshot,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -26,7 +26,7 @@ const event = { threadId, terminalId, sequence: 1, createdAt: "2026-01-01T00:00:
 const openSnapshot = (history: string): TerminalSessionSnapshot => ({
   threadId,
   terminalId,
-  cwd: "/repo/.t3/worktrees/feature",
+  cwd: "/repo/.onicode/worktrees/feature",
   worktreePath: null,
   status: "running",
   pid: 123,
@@ -79,7 +79,7 @@ const makeHarness = Effect.fn(function* (options: {
   );
   const start = runner.runForThread({
     threadId,
-    worktreePath: "/repo/.t3/worktrees/feature",
+    worktreePath: "/repo/.onicode/worktrees/feature",
     observeCompletion: { onOutputLine: (line) => Queue.offer(outputLines, line) },
     project: {
       id: ProjectId.make("project-1"),

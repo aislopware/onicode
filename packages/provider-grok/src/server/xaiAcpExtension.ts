@@ -1,4 +1,4 @@
-import type { ProviderUserInputAnswers, UserInputQuestion } from "@t3tools/contracts";
+import type { ProviderUserInputAnswers, UserInputQuestion } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -8,8 +8,8 @@ import * as Schema from "effect/Schema";
 import * as EffectAcpErrors from "effect-acp/errors";
 import type * as EffectAcpSchema from "effect-acp/compat";
 
-import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
-import type { AcpToolCallState } from "@t3tools/provider-acp/server/runtimeModel";
+import type * as AcpSessionRuntime from "@onicode/provider-acp/server/AcpSessionRuntime";
+import type { AcpToolCallState } from "@onicode/provider-acp/server/runtimeModel";
 
 export const xAiRateLimitedErrorCode = -32003;
 const completedXAiPromptIdLimit = 128;
@@ -941,7 +941,7 @@ export interface XAiExitPlanModeResponse {
   readonly feedback?: string;
 }
 
-/** Abandon the native approval gate after T3 captures the plan; implementation uses T3 UI. */
+/** Abandon the native approval gate after Onicode captures the plan; implementation uses Onicode UI. */
 export function makeXAiExitPlanModeCapturedResponse(feedback?: string): XAiExitPlanModeResponse {
   return {
     outcome: "abandoned",
@@ -1435,7 +1435,7 @@ export const makeXAiPromptCompletionRuntime = Effect.fn("makeXAiPromptCompletion
     let nextPromptFallbackId = 0;
     const allocatePromptFallbackId = Effect.sync(() => {
       nextPromptFallbackId += 1;
-      return `t3-xai-prompt-${nextPromptFallbackId}`;
+      return `oni-xai-prompt-${nextPromptFallbackId}`;
     });
     const pendingXAiPromptCompletionsRef = yield* Ref.make<
       ReadonlyArray<PendingXAiPromptCompletion>

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// Hermes has no WebAssembly, so wasm2c supplies C for T3Highlights.
+// Hermes has no WebAssembly, so wasm2c supplies C for OniHighlights.
 // Token and language IDs are an ABI; generate native code and JS tables from the same version.
 // After bumping @pierre/highlights:
-// WASM2C=/path/to/wabt-1.0.42/bin/wasm2c vp run --filter @t3tools/mobile generate:highlights
+// WASM2C=/path/to/wabt-1.0.42/bin/wasm2c vp run --filter @onicode/mobile generate:highlights
 
 import * as NodeChildProcess from "node:child_process";
 import * as NodeCrypto from "node:crypto";
@@ -17,7 +17,7 @@ const WASM2C_VERSION = "1.0.42";
 const THEMES = { light: "pierre-light", dark: "pierre-dark" } as const;
 
 const mobileRoot = NodePath.resolve(import.meta.dirname, "..");
-const moduleRoot = NodePath.join(mobileRoot, "modules/t3-highlights");
+const moduleRoot = NodePath.join(mobileRoot, "modules/oni-highlights");
 const generatedDataPath = NodePath.join(mobileRoot, "src/lib/highlights.generated.ts");
 
 interface ThemeStyle {
@@ -145,7 +145,7 @@ function resolveWasm2c(): { readonly binary: string; readonly prefix: string } {
 async function generate() {
   const source = resolveHighlightsPackage();
   const wasm2c = resolveWasm2c();
-  const scratch = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-highlights-"));
+  const scratch = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-highlights-"));
   try {
     NodeChildProcess.execFileSync(wasm2c.binary, [
       NodePath.join(source.root, "dist/highlights.wasm"),

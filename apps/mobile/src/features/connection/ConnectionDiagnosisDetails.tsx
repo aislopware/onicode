@@ -7,8 +7,8 @@ import {
   hasRelayRoute,
   presentConnectionDiagnosis,
   type EnvironmentPresentation,
-} from "@t3tools/client-runtime/connection";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@onicode/client-runtime/connection";
+import type { EnvironmentId } from "@onicode/contracts";
 import Constants from "expo-constants";
 import { AsyncResult } from "effect/reactivity";
 import { Linking, View } from "react-native";
@@ -68,7 +68,7 @@ export function ConnectionDiagnosisDetails(props: {
         ))}
       </View>
       <View className="gap-0.5">
-        <Text className="text-sm font-t3-bold text-foreground">What to try</Text>
+        <Text className="text-sm font-oni-bold text-foreground">What to try</Text>
         {diagnosis.steps.map((step, index) => (
           <Text key={step} className="text-sm text-foreground-muted">
             {`${index + 1}. ${step}`}

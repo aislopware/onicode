@@ -1,4 +1,4 @@
-import { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { resolveMarkdownMediaPreview } from "./markdownMedia";
@@ -51,8 +51,8 @@ describe("resolveMarkdownMediaPreview", () => {
     });
   });
 
-  it("serves a linked T3 attachment file in place like any other host path", () => {
-    const path = "/home/demo/.t3/userdata/attachments/11111111-1111-4111-8111-111111111111-mp4.mp4";
+  it("serves a linked Onicode attachment file in place like any other host path", () => {
+    const path = "/home/demo/.onicode/userdata/attachments/11111111-1111-4111-8111-111111111111-mp4.mp4";
     expect(resolveMarkdownMediaPreview(path, input)).toMatchObject({
       kind: "video",
       source: {

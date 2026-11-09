@@ -289,7 +289,7 @@ pub fn run(directory: &Path, mut options: Options) -> Result<()> {
             &qh,
             surface,
             Layer::Overlay,
-            Some("t3-snap-shot"),
+            Some("oni-snap-shot"),
             Some(&output),
         );
         layer.set_anchor(Anchor::TOP | Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
@@ -60,9 +60,9 @@ const diagnose = (input: {
     version: input.version ?? LOADER_ERROR,
   });
   return PreviewBrowserHost.diagnoseLaunchFailure({
-    executable: "/home/me/.t3/tools/chrome-headless-shell/linux64/154/chrome-headless-shell",
+    executable: "/home/me/.onicode/tools/chrome-headless-shell/linux64/154/chrome-headless-shell",
     output: input.output,
-    setupCommand: "sudo t3 browser setup",
+    setupCommand: "sudo onicode browser setup",
   }).pipe(
     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
     Effect.provideService(HostProcess.Platform, input.platform),
@@ -81,10 +81,10 @@ describe("diagnoseLaunchFailure", () => {
         ldd: "",
       });
       expect(error).toBeInstanceOf(PreviewBrowserHost.PreviewBrowserRootError);
-      expect(error?.message).toContain("T3 server is running as root");
-      expect(error?.message).toContain("T3 server's environment and restart the server");
-      expect(error?.message).toContain("T3CODE_SERVER_BROWSER_SANDBOX=0 t3 serve");
-      expect(error?.message).toContain("Environment=T3CODE_SERVER_BROWSER_SANDBOX=0");
+      expect(error?.message).toContain("Onicode server is running as root");
+      expect(error?.message).toContain("Onicode server's environment and restart the server");
+      expect(error?.message).toContain("ONICODE_SERVER_BROWSER_SANDBOX=0 onicode serve");
+      expect(error?.message).toContain("Environment=ONICODE_SERVER_BROWSER_SANDBOX=0");
       expect(error?.message).toContain("this disables Chrome's sandbox");
       expect(commands).toEqual([]);
     }),
@@ -98,7 +98,7 @@ describe("diagnoseLaunchFailure", () => {
         ldd: "",
       });
       expect(error).toBeInstanceOf(PreviewBrowserHost.PreviewBrowserSandboxError);
-      expect(error?.message).toContain("Run `sudo t3 browser setup` on the host");
+      expect(error?.message).toContain("Run `sudo onicode browser setup` on the host");
     }),
   );
 
@@ -113,7 +113,7 @@ describe("diagnoseLaunchFailure", () => {
         _tag: "PreviewBrowserLibrariesError",
         libraries: ["libglib-2.0.so.0", "libnss3.so", "libX11.so.6"],
       });
-      expect(error?.message).toContain("Run `sudo t3 browser setup` on the host");
+      expect(error?.message).toContain("Run `sudo onicode browser setup` on the host");
     }),
   );
 

@@ -1,6 +1,6 @@
 import { BookmarkIcon, FileIcon, FileTextIcon } from "lucide-react";
 import { memo, useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
-import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";
+import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 
 import { RelativeTime } from "../RelativeTime";
 import { cn } from "~/lib/utils";
@@ -111,7 +111,7 @@ export const ComposerStashMenu = memo(function ComposerStashMenu(props: {
     }
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes capture-phase pointerdown and keydown listeners for outside close and keyboard navigation
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes capture-phase pointerdown and keydown listeners for outside close and keyboard navigation
   useEffect(() => {
     const onPointerDown = (event: PointerEvent) => closeOnOutsidePointer(event);
     const onKeyDown = (event: KeyboardEvent) => handleKeyDown(event);

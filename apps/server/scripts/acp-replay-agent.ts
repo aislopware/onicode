@@ -34,10 +34,10 @@ interface JsonRpcMessage {
   readonly headers?: ReadonlyArray<unknown>;
 }
 
-const encodedTranscript = process.env.T3_ACP_REPLAY_TRANSCRIPT;
-const transcriptPath = process.env.T3_ACP_REPLAY_TRANSCRIPT_PATH;
-const statusPath = process.env.T3_ACP_REPLAY_STATUS_PATH;
-const replayWorkspace = process.env.T3_ACP_REPLAY_WORKSPACE ?? process.cwd();
+const encodedTranscript = process.env.ONICODE_ACP_REPLAY_TRANSCRIPT;
+const transcriptPath = process.env.ONICODE_ACP_REPLAY_TRANSCRIPT_PATH;
+const statusPath = process.env.ONICODE_ACP_REPLAY_STATUS_PATH;
+const replayWorkspace = process.env.ONICODE_ACP_REPLAY_WORKSPACE ?? process.cwd();
 
 if ((encodedTranscript === undefined && transcriptPath === undefined) || statusPath === undefined) {
   process.stderr.write("ACP replay requires transcript and status environment variables.\n");
@@ -239,7 +239,7 @@ function inboundMessage(recorded: LogicalFrame): JsonRpcMessage | undefined {
   }
 }
 
-// T3 may kill the agent after its last reply. Record the batch, including trailing
+// Onicode may kill the agent after its last reply. Record the batch, including trailing
 // runtime exits, before publishing any frames.
 function flushInbound(): void {
   const messages: Array<JsonRpcMessage> = [];

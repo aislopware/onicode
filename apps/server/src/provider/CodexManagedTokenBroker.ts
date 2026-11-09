@@ -4,8 +4,8 @@ import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeCrypto from "node:crypto";
-import { EnvironmentId, ProviderInstanceId } from "@t3tools/contracts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import { EnvironmentId, ProviderInstanceId } from "@onicode/contracts";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FiberSet from "effect/FiberSet";
@@ -38,7 +38,7 @@ export class CodexManagedTokenBroker extends Context.Service<
     readonly endpoint: Effect.Effect<string, BrokerStartError>;
     readonly awaitIdle: Effect.Effect<void>;
   }
->()("t3/provider/CodexManagedTokenBroker") {}
+>()("onicode/provider/CodexManagedTokenBroker") {}
 
 const io = <A>(f: () => Promise<A>) =>
   Effect.tryPromise({ try: f, catch: (cause) => new BrokerStartError({ cause }) });
@@ -50,7 +50,7 @@ const acquireListener = Effect.gen(function* () {
   const owned = yield* Effect.acquireRelease(
     io(async () => {
       if (platform === "win32")
-        return { endpoint: `\\\\.\\pipe\\t3-token-${NodeCrypto.randomUUID()}` };
+        return { endpoint: `\\\\.\\pipe\\oni-token-${NodeCrypto.randomUUID()}` };
       if (uid === undefined) throw new Error("Missing IPC owner");
       const acquireDirectory = async (candidate: string) => {
         const parent = await NodeFSP.realpath(candidate);
@@ -64,7 +64,7 @@ const acquireListener = Effect.gen(function* () {
           )
         )
           throw new Error("Untrusted IPC parent");
-        const directory = await NodeFSP.mkdtemp(NodePath.join(parent, "t3-token-"));
+        const directory = await NodeFSP.mkdtemp(NodePath.join(parent, "oni-token-"));
         try {
           await NodeFSP.chmod(directory, 0o700);
           const created = await NodeFSP.lstat(directory);

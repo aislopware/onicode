@@ -6,12 +6,12 @@ export function nativeWorkspaceColumnsSupportedFor(_metrics: unknown) {
   return NATIVE_WORKSPACE_COLUMNS_SUPPORTED;
 }
 
-// oxlint-disable-next-line t3code/no-hookless-use-function -- Non-iOS stub of a hook; the .ios.tsx file calls hooks.
+// oxlint-disable-next-line onicode/no-hookless-use-function -- Non-iOS stub of a hook; the .ios.tsx file calls hooks.
 export function useNativeWorkspaceColumnsReady() {
   return true;
 }
 
-// oxlint-disable-next-line t3code/no-hookless-use-function -- Non-iOS stub of a hook; the .ios.tsx file calls hooks.
+// oxlint-disable-next-line onicode/no-hookless-use-function -- Non-iOS stub of a hook; the .ios.tsx file calls hooks.
 export function useNativeWorkspaceColumnsSupported() {
   return NATIVE_WORKSPACE_COLUMNS_SUPPORTED;
 }

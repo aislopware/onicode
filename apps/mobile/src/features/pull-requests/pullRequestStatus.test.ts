@@ -1,4 +1,4 @@
-import type { PullRequestActivity, PullRequestCheck, PullRequestComment } from "@t3tools/contracts";
+import type { PullRequestActivity, PullRequestCheck, PullRequestComment } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
   normalizedReviewState,

@@ -3,7 +3,7 @@
  * A scripted stand-in for the `fx` CLI, registered as an Fx provider instance so the
  * server streams deterministic replies with no model. A `[[eval:<script>]]` marker in
  * the prompt picks the reply; see `scriptOf`. `hold` scripts wait for a release file
- * named after the marker's key in `T3_EVAL_FX_CONTROL_DIR`.
+ * named after the marker's key in `ONICODE_EVAL_FX_CONTROL_DIR`.
  */
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
@@ -20,7 +20,7 @@ interface Message {
   readonly error?: Json;
 }
 
-const controlDir = process.env.T3_EVAL_FX_CONTROL_DIR ?? "";
+const controlDir = process.env.ONICODE_EVAL_FX_CONTROL_DIR ?? "";
 const send = (message: object) => process.stdout.write(`${JSON.stringify(message)}\n`);
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const update = (sessionId: string, value: object) =>

@@ -2,8 +2,8 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ResolvedKeybindingsConfig,
-} from "@t3tools/contracts";
-import { compileResolvedKeybindingsConfig } from "@t3tools/shared/keybindings";
+} from "@onicode/contracts";
+import { compileResolvedKeybindingsConfig } from "@onicode/shared/keybindings";
 import { useState } from "react";
 import { expect, it } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";

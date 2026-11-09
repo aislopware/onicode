@@ -1,4 +1,4 @@
-import type { EnvironmentId, UsageModelFilter, UsageSummaryInput } from "@t3tools/contracts";
+import type { EnvironmentId, UsageModelFilter, UsageSummaryInput } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import type { AtomRegistry } from "effect/reactivity";
 

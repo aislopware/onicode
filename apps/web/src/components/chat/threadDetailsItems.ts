@@ -1,4 +1,4 @@
-import type { ClientSettings } from "@t3tools/contracts";
+import type { ClientSettings } from "@onicode/contracts";
 
 // Ids are stored in client settings, so never rename one.
 export const THREAD_DETAILS_ITEMS = [

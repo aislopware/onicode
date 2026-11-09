@@ -1,6 +1,6 @@
 import { it as effectIt } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { parseKeybindingShortcut } from "@t3tools/shared/keybindings";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { parseKeybindingShortcut } from "@onicode/shared/keybindings";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -429,8 +429,8 @@ describe("findAccessibleWindow", () => {
   });
 
   it.each([
-    ["⠋ t3code", "t3code"],
-    ["t3code", "⠙ t3code"],
+    ["⠋ onicode", "onicode"],
+    ["onicode", "⠙ onicode"],
   ])("matches a Wayland spinner starting or stopping: %s → %s", (title, name) => {
     const windows = [{ name, bounds: captured.bounds }];
 
@@ -438,10 +438,10 @@ describe("findAccessibleWindow", () => {
   });
 
   it.each([
-    ["⠋ t3code", "⠙ private"],
-    ["t3code ⠋", "t3code ⠙"],
-    ["⠋t3code", "⠙t3code"],
-    ["⠁ t3code", "⠙ t3code"],
+    ["⠋ onicode", "⠙ private"],
+    ["onicode ⠋", "onicode ⠙"],
+    ["⠋onicode", "⠙onicode"],
+    ["⠁ onicode", "⠙ onicode"],
     ["⠋", "⠋"],
   ])("does not guess a Wayland title match: %s → %s", (title, name) => {
     expect(
@@ -476,7 +476,7 @@ describe("isWaylandSession", () => {
           const { createServer } = await import("node:net");
           const { tmpdir } = await import("node:os");
           const { join } = await import("node:path");
-          const runtimeDirectory = await mkdtemp(join(tmpdir(), "t3-wayland-"));
+          const runtimeDirectory = await mkdtemp(join(tmpdir(), "oni-wayland-"));
           const socketPath = join(runtimeDirectory, "wayland-0");
           const server = createServer();
           try {
@@ -495,7 +495,7 @@ describe("isWaylandSession", () => {
                 XDG_SESSION_TYPE: "x11",
               }),
             ).toBe(false);
-            expect(isWaylandSession("linux", { XDG_RUNTIME_DIR: "/nonexistent-t3-test" })).toBe(
+            expect(isWaylandSession("linux", { XDG_RUNTIME_DIR: "/nonexistent-oni-test" })).toBe(
               false,
             );
           } finally {

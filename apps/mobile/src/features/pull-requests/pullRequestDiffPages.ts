@@ -1,5 +1,5 @@
-import type { ChangeRequestTerminology } from "@t3tools/client-runtime/source-control-clients";
-import type { PullRequestDiffResult } from "@t3tools/contracts";
+import type { ChangeRequestTerminology } from "@onicode/client-runtime/source-control-clients";
+import type { PullRequestDiffResult } from "@onicode/contracts";
 import { buildReviewParsedDiff, type ReviewParsedDiff } from "../review/reviewModel";
 
 export interface PullRequestDiffPage {

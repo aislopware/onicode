@@ -13,7 +13,7 @@ import {
   type DevicePlatformAvailability,
   type SettingsSecretValue,
   type SimlockDeviceHostConfig,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
@@ -26,10 +26,10 @@ import * as Random from "effect/Random";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/http";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import type { NodeRuntimeUnavailableError } from "@t3tools/shared/nodeRuntime";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import type { NodeRuntimeUnavailableError } from "@onicode/shared/nodeRuntime";
 
-import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
+import * as SecretResolver from "@onicode/secret-provider-core/server/SecretResolver";
 import * as ServerConfig from "../config.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import { requireSettingsSecret } from "../secrets/settingsSecretValue.ts";
@@ -137,7 +137,7 @@ export const resolveSimlockToken = Effect.fn("SimlockDeviceHost.resolveToken")(f
 export const describeGatewayFailure = (cause: unknown, gatewayUrl: string, tokenOwner: string) => {
   if (Cause.isTimeoutError(cause)) return `Could not reach the Simlock gateway at ${gatewayUrl}.`;
   if (!HttpClientError.isHttpClientError(cause))
-    return `The Simlock gateway at ${gatewayUrl} sent an answer T3 could not read.`;
+    return `The Simlock gateway at ${gatewayUrl} sent an answer Onicode could not read.`;
   if (cause.reason._tag === "StatusCodeError") {
     const status = cause.reason.response.status;
     return status === 401 || status === 403
@@ -146,7 +146,7 @@ export const describeGatewayFailure = (cause: unknown, gatewayUrl: string, token
   }
   return cause.reason._tag === "TransportError"
     ? `Could not reach the Simlock gateway at ${gatewayUrl}.`
-    : `The Simlock gateway at ${gatewayUrl} sent an answer T3 could not read.`;
+    : `The Simlock gateway at ${gatewayUrl} sent an answer Onicode could not read.`;
 };
 
 const decodeIdentity = Schema.decodeUnknownEffect(
@@ -174,7 +174,7 @@ export const simlockIdentity = Effect.fn("SimlockDeviceHost.identity")(function*
     );
 });
 
-/** T3's own agent-device CLI, installed on first use. */
+/** Onicode's own agent-device CLI, installed on first use. */
 export type AgentDeviceCli = Effect.Effect<
   { readonly nodePath: string; readonly entryPath: string },
   DeviceHost.DeviceHostError | NodeRuntimeUnavailableError
@@ -266,7 +266,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
     ),
   );
 
-  /** Runs T3's own agent-device CLI against the lease's session; its failure message is the reason. */
+  /** Runs Onicode's own agent-device CLI against the lease's session; its failure message is the reason. */
   const agentDevice = Effect.fn("SimlockDeviceHost.agentDevice")(function* (
     lease: Pick<Lease, "session" | "configPath">,
     args: ReadonlyArray<string>,
@@ -448,7 +448,7 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
       });
     }
     const suffix = (yield* Random.nextIntBetween(0, 0xffffff)).toString(16).padStart(6, "0");
-    const session = `t3-${suffix}`;
+    const session = `oni-${suffix}`;
     const dir = path.join(hostDir, suffix);
     const configPath = path.join(dir, "agent-device.json");
     const agentToken = yield* currentToken;

@@ -5,7 +5,7 @@ import {
   type PreviewViewportSetting,
   ThreadId,
   type PreviewSessionSnapshot,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 const mocks = vi.hoisted(() => ({
   resize: Symbol("preview-resize"),
@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   updatePreviewServerSnapshot: vi.fn(),
 }));
 
-vi.mock("@t3tools/client-runtime/state/runtime", () => ({
+vi.mock("@onicode/client-runtime/state/runtime", () => ({
   runAtomCommand: mocks.runAtomCommand,
   squashAtomCommandFailure: (result: { readonly error: unknown }) => result.error,
 }));

@@ -1,8 +1,8 @@
-import { encodeSpeechPcmRequest } from "@t3tools/shared/speech";
+import { encodeSpeechPcmRequest } from "@onicode/shared/speech";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import { CloudSpeechError, SPEECH_STREAM_PATH } from "@t3tools/contracts";
+import { CloudSpeechError, SPEECH_STREAM_PATH } from "@onicode/contracts";
 import type {
   CloudSpeechModelId,
   CloudSpeechProvider,
@@ -11,7 +11,7 @@ import type {
   SpeechModelUnloadTimeout,
   SpeechTranscriptionOptions,
   SpeechPostProcessingOptions,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import type { PreparedConnection } from "../connection/model.ts";

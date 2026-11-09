@@ -1,6 +1,6 @@
 import * as NodeAssert from "node:assert/strict";
 
-import { EnvironmentId, ServerConfig, ServerNpmReleaseError } from "@t3tools/contracts";
+import { EnvironmentId, ServerConfig, ServerNpmReleaseError } from "@onicode/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Cause from "effect/Cause";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";

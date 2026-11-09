@@ -5,7 +5,7 @@ import { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { splitBlockKeepMarks } from "@tiptap/pm/commands";
 import { describe, expect, it, onTestFinished } from "vite-plus/test";
-import { serializeComposerFileLink } from "@t3tools/shared/composerTrigger";
+import { serializeComposerFileLink } from "@onicode/shared/composerTrigger";
 
 import {
   collapseExpandedComposerCursor,
@@ -152,7 +152,7 @@ describe("editable math source", () => {
   });
   it("preserves formula source as text when styling is disabled", () => {
     const source =
-      "\\[\n\\text{use $browser, @README.md and [file](t3-context://v1/file/ctx_1)}\n\\]";
+      "\\[\n\\text{use $browser, @README.md and [file](oni-context://v1/file/ctx_1)}\n\\]";
     const doc = plainSchema.nodeFromJSON(
       buildDocJson(source, (name) => ({ label: name, description: null }), { styling: false }),
     );

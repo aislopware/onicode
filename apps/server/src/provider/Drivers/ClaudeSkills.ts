@@ -1,16 +1,16 @@
-import type { ClaudeSettings, ServerProviderSkill } from "@t3tools/contracts";
+import type { ClaudeSettings, ServerProviderSkill } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as HostProcess from "@t3tools/shared/HostProcess";
-import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
-import { fromLenientJson } from "@t3tools/shared/schemaJson";
-import { SKILL_MENTION_PATTERN } from "@t3tools/shared/composerInlineTokens";
+import * as HostProcess from "@onicode/shared/HostProcess";
+import { tokenizeCliArgs } from "@onicode/shared/cliArgs";
+import { fromLenientJson } from "@onicode/shared/schemaJson";
+import { SKILL_MENTION_PATTERN } from "@onicode/shared/composerInlineTokens";
 import { parse as parseYamlDocument } from "yaml";
 
-import { expandHomePath } from "@t3tools/provider-core/server/pathExpansion";
+import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 
 type ClaudeSkillScope = "user" | "project";
 
@@ -444,7 +444,7 @@ const decodeSettingsEnv = Schema.decodeUnknownEffect(
   fromLenientJson(Schema.Struct({ env: Schema.optional(SettingsEnv) })),
 );
 
-/** The `env` values T3 Code reads from Claude's user and managed settings; later files win. */
+/** The `env` values Onicode reads from Claude's user and managed settings; later files win. */
 export const readClaudeSettingsEnv = Effect.fn("readClaudeSettingsEnv")(function* (
   config: Pick<ClaudeSettings, "homePath">,
   cwd: string | undefined,

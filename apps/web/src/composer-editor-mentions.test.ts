@@ -1,5 +1,5 @@
-import { EnvironmentId, MessageId, ThreadId, type AssistantCitation } from "@t3tools/contracts";
-import { serializeAssistantCitation } from "@t3tools/shared/assistantCitations";
+import { EnvironmentId, MessageId, ThreadId, type AssistantCitation } from "@onicode/contracts";
+import { serializeAssistantCitation } from "@onicode/shared/assistantCitations";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -160,7 +160,7 @@ describe("splitPromptIntoComposerSegments", () => {
   });
 
   it("keeps malformed citation links as editable text", () => {
-    const prompt = "[Assistant quote](t3-citation://v1/env/thread/message?text=missing+metadata)";
+    const prompt = "[Assistant quote](oni-citation://v1/env/thread/message?text=missing+metadata)";
 
     expect(splitPromptIntoComposerSegments(prompt)).toEqual([{ type: "text", text: prompt }]);
   });

@@ -1,10 +1,10 @@
-import { Connection } from "@t3tools/client-runtime/connection";
-import { ShellSnapshotLoader } from "@t3tools/client-runtime/state/shell";
-import { PullRequestDiffLoader } from "@t3tools/client-runtime/state/pull-requests";
+import { Connection } from "@onicode/client-runtime/connection";
+import { ShellSnapshotLoader } from "@onicode/client-runtime/state/shell";
+import { PullRequestDiffLoader } from "@onicode/client-runtime/state/pull-requests";
 import {
   BoundedThreadSnapshotLoader,
   ThreadHistoryController,
-} from "@t3tools/client-runtime/state/threads";
+} from "@onicode/client-runtime/state/threads";
 import * as Layer from "effect/Layer";
 import { Atom } from "effect/reactivity";
 
@@ -59,7 +59,7 @@ export const connectionAtomRuntime: Atom.AtomRuntime<
   Layer.Success<ConnectionLayerSource>,
   Layer.Error<ConnectionLayerSource>
 > = hotSwappableAtomRuntime({
-  id: "t3.mobile.connection-runtime",
+  id: "onicode.mobile.connection-runtime",
   hotModule: typeof module === "undefined" ? undefined : module.hot,
   registry: appAtomRegistry,
   layer: layerConnection,

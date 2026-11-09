@@ -10,17 +10,17 @@ import {
   type LinkRequestItem,
   linkRequestTargetName,
   rankMachinesByHint,
-} from "@t3tools/client-runtime/link-request";
+} from "@onicode/client-runtime/link-request";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
+} from "@onicode/client-runtime/state/runtime";
 import {
   AuthAccessWriteScope,
   type AuthMcpClientAccess,
   type EnvironmentId,
   type OrchestrationV2ProjectedTurnItem,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Option from "effect/Option";
 import * as Result from "effect/Result";
 import { useMemo, useRef, useState } from "react";
@@ -133,7 +133,7 @@ function PendingLinkRequest(props: {
   return (
     <View className="mb-3 gap-3 rounded-[20px] border border-border bg-card-alt p-4">
       <View className="gap-1">
-        <Text className="font-t3-bold text-base text-foreground">
+        <Text className="font-oni-bold text-base text-foreground">
           {picksMachine(item)
             ? "Link a machine to this environment"
             : `Link ${target} to this environment`}

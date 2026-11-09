@@ -7,7 +7,7 @@ import {
   ProviderInstanceId,
   ThreadId,
   type PreviewAutomationRequest,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
@@ -140,7 +140,7 @@ describe("claimPreviewRecording", () => {
       expect(wrongPath._tag).toBe("Failure");
     }).pipe(
       Effect.provide(
-        ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-recording-" }).pipe(
+        ServerConfig.layerTest(process.cwd(), { prefix: "oni-preview-recording-" }).pipe(
           Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
         ),
       ),
@@ -185,7 +185,7 @@ describe("claimPreviewRecording", () => {
         }
       }).pipe(
         Effect.provide(
-          ServerConfig.layerTest(process.cwd(), { prefix: "t3-preview-recording-" }).pipe(
+          ServerConfig.layerTest(process.cwd(), { prefix: "oni-preview-recording-" }).pipe(
             Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
           ),
         ),

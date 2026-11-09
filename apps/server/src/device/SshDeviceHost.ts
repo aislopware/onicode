@@ -4,11 +4,11 @@ import {
   DeviceToolVersions,
   deviceToolInstallMessage,
   type SshDeviceHostConfig,
-} from "@t3tools/contracts";
-import { runSshCommand, baseSshArgs, resolveSshCommand } from "@t3tools/ssh/command";
-import { SshCommandError } from "@t3tools/ssh/errors";
-import * as NetService from "@t3tools/shared/Net";
-import { waitForHttpReady } from "@t3tools/shared/httpReadiness";
+} from "@onicode/contracts";
+import { runSshCommand, baseSshArgs, resolveSshCommand } from "@onicode/ssh/command";
+import { SshCommandError } from "@onicode/ssh/errors";
+import * as NetService from "@onicode/shared/Net";
+import { waitForHttpReady } from "@onicode/shared/httpReadiness";
 import * as Digest from "effect/crypto/Digest";
 import * as Exit from "effect/Exit";
 import * as Effect from "effect/Effect";
@@ -36,7 +36,7 @@ export class SshWindowsHostError extends Schema.TaggedError<SshWindowsHostError>
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run T3 Code on it and connect to that environment.";
+    return "Connected over SSH, but this host runs Windows, and SSH device hosts currently need macOS or Linux. To use this machine's devices, run Onicode on it and connect to that environment.";
   }
 }
 export const isSshWindowsHostError = Schema.is(SshWindowsHostError);
@@ -238,7 +238,7 @@ export const make = Effect.fn("SshDeviceHost.make")(function* (
         preHostArgs: identityArgs(config),
         // Match the hub cwd so relative executables and PATH entries resolve identically.
         remoteCommandArgs: commandArgs(
-          `cd "$HOME/.t3/device/hosts/${owner}" && exec ${[command, ...args].map(quoteRemoteArg).join(" ")}`,
+          `cd "$HOME/.onicode/device/hosts/${owner}" && exec ${[command, ...args].map(quoteRemoteArg).join(" ")}`,
         ),
         keepErrorOutputTail: true,
         ...(options?.stdin === undefined ? {} : { stdin: options.stdin }),

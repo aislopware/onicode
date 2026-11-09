@@ -14,7 +14,7 @@ import {
   type SnapShotKeyChord,
   type SnapShotModifier,
   type SnapShotShortcut,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 interface AccessibilityTreeNode {
   readonly name?: string;

@@ -1,15 +1,15 @@
-import type { ProviderDriverKind, ThreadId } from "@t3tools/contracts";
-import { causeErrorTag } from "@t3tools/shared/observability";
+import type { ProviderDriverKind, ThreadId } from "@onicode/contracts";
+import { causeErrorTag } from "@onicode/shared/observability";
 import * as Cause from "effect/Cause";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 
-import type * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
+import type * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
 import {
   structuralProtocolMethod,
   summarizeNativeProtocolPayload,
-} from "@t3tools/provider-core/server/nativeProtocolLogging";
+} from "@onicode/provider-core/server/nativeProtocolLogging";
 import type * as AcpSessionRuntime from "./AcpSessionRuntime.ts";
 
 function formatRequestLogPayload(event: AcpSessionRuntime.AcpSessionRequestLogEvent) {

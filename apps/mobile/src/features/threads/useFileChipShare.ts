@@ -1,6 +1,6 @@
 import * as Dialog from "../../components/ui/Dialog";
-import { resolveAssetUrl } from "@t3tools/client-runtime/state/assets";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { resolveAssetUrl } from "@onicode/client-runtime/state/assets";
+import type { EnvironmentId, ThreadId } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import { useEffect, useRef } from "react";
 
@@ -22,7 +22,7 @@ export function useFileChipShare(
     reportFailure: false,
   });
   const requestRef = useRef<AbortController | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- aborts the in-flight file share download when the component unmounts
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- aborts the in-flight file share download when the component unmounts
   useEffect(() => () => requestRef.current?.abort(), []);
 
   return (target: FileChipTarget) => {

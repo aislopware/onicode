@@ -3,7 +3,7 @@ import type {
   PreviewReportStatusInput,
   ScopedThreadRef,
   ThreadId,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { useEffect, useEffectEvent, useRef } from "react";
 
 import { recordFaviconForThread } from "~/browserFaviconStore";
@@ -84,7 +84,7 @@ export function usePreviewBridge(input: {
       });
     },
   );
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to preview bridge state changes and capture activity for the current tab
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to preview bridge state changes and capture activity for the current tab
   useEffect(() => {
     if (!previewBridge || typeof window === "undefined") return;
     lastReportedUrl.current = null;

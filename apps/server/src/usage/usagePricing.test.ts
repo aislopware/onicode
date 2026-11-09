@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest";
 
-import { cursorRateModel } from "@t3tools/provider-cursor/server/accountUsage";
-import type { UsageSpeed } from "@t3tools/provider-core/server/usage";
+import { cursorRateModel } from "@onicode/provider-cursor/server/accountUsage";
+import type { UsageSpeed } from "@onicode/provider-core/server/usage";
 import {
   cacheSavingsUsd,
   createOverrideRateTable,

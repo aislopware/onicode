@@ -1,4 +1,4 @@
-import { EnvironmentQueryStore } from "@t3tools/client-runtime/state/query-persistence";
+import { EnvironmentQueryStore } from "@onicode/client-runtime/state/query-persistence";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 

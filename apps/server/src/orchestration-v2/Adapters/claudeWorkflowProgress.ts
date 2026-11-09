@@ -3,7 +3,7 @@ import type {
   OrchestrationV2WorkflowAgent,
   OrchestrationV2WorkflowPhase,
   OrchestrationV2WorkflowRunHandles,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 
 import { field, text } from "../unknownField.ts";
 

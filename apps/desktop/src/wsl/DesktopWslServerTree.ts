@@ -14,7 +14,7 @@ export type WslServerTreeResult =
   | { readonly ok: true; readonly root: string }
   | { readonly ok: false; readonly reason: string; readonly fatal: boolean };
 
-const MARKER_FILE_NAME = "t3code-wsl-server-tree.json";
+const MARKER_FILE_NAME = "onicode-wsl-server-tree.json";
 const COPY_CONCURRENCY = 8;
 
 const Marker = Schema.Struct({ version: Schema.String });
@@ -39,7 +39,7 @@ export class DesktopWslServerTree extends Context.Service<
     readonly ensure: Effect.Effect<WslServerTreeResult>;
     readonly cleanupLegacy: Effect.Effect<void>;
   }
->()("@t3tools/desktop/wsl/DesktopWslServerTree") {}
+>()("@onicode/desktop/wsl/DesktopWslServerTree") {}
 
 export const forEachBoundedTree = Effect.fn("DesktopWslServerTree.forEachBoundedTree")(function* <
   Node,

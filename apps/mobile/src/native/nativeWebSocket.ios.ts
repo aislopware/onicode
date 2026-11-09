@@ -186,7 +186,7 @@ function layerFromModule(native: NativeModule): Layer.Layer<Socket.WebSocketCons
   );
 }
 
-const native = requireOptionalNativeModule<NativeModule>("T3WebSocket");
+const native = requireOptionalNativeModule<NativeModule>("OniWebSocket");
 
 // A dev client built before this module shipped still has SocketRocket.
 export const layer: Layer.Layer<Socket.WebSocketConstructor> =

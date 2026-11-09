@@ -1,5 +1,5 @@
 /** The free tier refuses deny-all sessions. */
-import type { ProviderReplayEntry } from "@t3tools/contracts";
+import type { ProviderReplayEntry } from "@onicode/contracts";
 
 export const OPENCODE2_TITLE_GENERATION: ReadonlyArray<ProviderReplayEntry> = [
   { type: "expect_outbound", label: "event.subscribe", frame: { type: "event.subscribe" } },
@@ -17,7 +17,7 @@ export const OPENCODE2_TITLE_GENERATION: ReadonlyArray<ProviderReplayEntry> = [
     frame: {
       type: "session.create",
       input: {
-        title: "T3 Code generateThreadTitle",
+        title: "Onicode generateThreadTitle",
         location: { directory: "<any>" },
         model: { providerID: "opencode", id: "big-pickle" },
         permissions: [{ action: "*", resource: "*", effect: "ask" }],
@@ -38,7 +38,7 @@ export const OPENCODE2_TITLE_GENERATION: ReadonlyArray<ProviderReplayEntry> = [
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           time: { created: 1790753350431, updated: 1790753350431 },
-          title: "T3 Code generateThreadTitle",
+          title: "Onicode generateThreadTitle",
           permissions: [{ action: "*", resource: "*", effect: "ask" }],
           location: { directory: "<work>" },
         },
@@ -62,7 +62,7 @@ export const OPENCODE2_TITLE_GENERATION: ReadonlyArray<ProviderReplayEntry> = [
           projectID: "global",
           location: { directory: "<work>" },
           subpath: "",
-          title: "T3 Code generateThreadTitle",
+          title: "Onicode generateThreadTitle",
           permissions: [{ action: "*", resource: "*", effect: "ask" }],
           model: { id: "big-pickle", providerID: "opencode" },
         },

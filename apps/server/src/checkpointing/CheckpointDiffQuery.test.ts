@@ -1,7 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it, vi } from "@effect/vitest";
-import { CheckpointRef, CheckpointScopeId, RunId, ThreadId } from "@t3tools/contracts";
+import { CheckpointRef, CheckpointScopeId, RunId, ThreadId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -22,7 +22,7 @@ const firstRunId = RunId.make("run:checkpoint-diff-v2:1");
 const secondRunId = RunId.make("run:checkpoint-diff-v2:2");
 const firstScopeId = CheckpointScopeId.make("scope:checkpoint-diff-v2:1");
 const secondScopeId = CheckpointScopeId.make("scope:checkpoint-diff-v2:2");
-const secondRef = CheckpointRef.make("refs/t3/test/second");
+const secondRef = CheckpointRef.make("refs/onicode/test/second");
 
 function makeProjection(): ProjectionCheckpointContext {
   return {
@@ -82,7 +82,7 @@ it.effect("excludes ready checkpoints from rolled-back runs", () => {
           scopeId: firstScopeId,
           runId: firstRunId,
           appRunOrdinal: 1,
-          ref: CheckpointRef.make("refs/t3/test/first"),
+          ref: CheckpointRef.make("refs/onicode/test/first"),
         },
         ...projection.checkpoints,
       ],
@@ -117,7 +117,7 @@ function makeProjectionAfterStoppedRun(stoppedRunCheckpoint: boolean) {
     ordinalWithinScope,
     appRunOrdinal: runId === null ? null : ordinalWithinScope,
     status: "ready",
-    ref: CheckpointRef.make(`refs/t3/test/ordinal/${ordinalWithinScope}`),
+    ref: CheckpointRef.make(`refs/onicode/test/ordinal/${ordinalWithinScope}`),
   });
   return {
     runs: [
@@ -133,7 +133,7 @@ function makeProjectionAfterStoppedRun(stoppedRunCheckpoint: boolean) {
       {
         ...checkpoint(2, null),
         scopeId: secondScopeId,
-        ref: CheckpointRef.make("refs/t3/test/tool/2"),
+        ref: CheckpointRef.make("refs/onicode/test/tool/2"),
       },
       checkpoint(0, null),
       checkpoint(1, firstRunId),
@@ -167,14 +167,14 @@ it.effect.each([false, true])(
           to: input.toCheckpointRef,
         })),
         [
-          { from: "refs/t3/test/ordinal/2", to: "refs/t3/test/ordinal/3" },
-          { from: "refs/t3/test/ordinal/1", to: "refs/t3/test/ordinal/3" },
+          { from: "refs/onicode/test/ordinal/2", to: "refs/onicode/test/ordinal/3" },
+          { from: "refs/onicode/test/ordinal/1", to: "refs/onicode/test/ordinal/3" },
           {
             from: yield* checkpointRefForScopeOrdinal({
               scopeId: firstScopeId,
               ordinalWithinScope: 0,
             }),
-            to: "refs/t3/test/ordinal/3",
+            to: "refs/onicode/test/ordinal/3",
           },
         ],
       );
@@ -206,7 +206,7 @@ it.effect("shares the turn and full-thread diff budget across real Git batches",
     const path = yield* Path.Path;
     const process = yield* VcsProcess.VcsProcess;
     const store = yield* CheckpointStore.CheckpointStore;
-    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "t3-diff-aggregate-" });
+    const cwd = yield* fs.makeTempDirectoryScoped({ prefix: "oni-diff-aggregate-" });
     const git = (args: ReadonlyArray<string>, env?: NodeJS.ProcessEnv) =>
       process.run({
         operation: "CheckpointDiffQuery.test.git",
@@ -229,7 +229,7 @@ it.effect("shares the turn and full-thread diff budget across real Git batches",
       scopeId,
       ordinalWithinScope: 0,
     });
-    const toCheckpointRef = CheckpointRef.make("refs/t3/test/aggregate-after");
+    const toCheckpointRef = CheckpointRef.make("refs/onicode/test/aggregate-after");
     yield* store.captureCheckpoint({ cwd, checkpointRef: fromCheckpointRef });
     // The old commit models files imported by a pull after the baseline was captured.
     yield* fs.writeFileString(path.join(cwd, "upstream.ts"), "imported\n");

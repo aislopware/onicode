@@ -2,17 +2,17 @@ import type {
   BrowserNavigationTarget,
   EnvironmentId,
   PreviewUrlResolution,
-} from "@t3tools/contracts";
-import { isLoopbackHost, normalizePreviewUrl } from "@t3tools/shared/preview";
-import { isLocalLoopbackHost, isPrivateNetworkHost } from "@t3tools/shared/hostClassification";
+} from "@onicode/contracts";
+import { isLoopbackHost, normalizePreviewUrl } from "@onicode/shared/preview";
+import { isLocalLoopbackHost, isPrivateNetworkHost } from "@onicode/shared/hostClassification";
 
-import type { ConnectionTarget } from "@t3tools/client-runtime/connection";
+import type { ConnectionTarget } from "@onicode/client-runtime/connection";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { readPreparedConnection } from "~/state/session";
 
-export { normalizeHostname, isLocalLoopbackHost } from "@t3tools/shared/hostClassification";
+export { normalizeHostname, isLocalLoopbackHost } from "@onicode/shared/hostClassification";
 
 const readEnvironmentUrl = (environmentId: EnvironmentId): URL => {
   const connection = readPreparedConnection(environmentId);

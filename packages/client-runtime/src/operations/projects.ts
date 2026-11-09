@@ -7,10 +7,10 @@ import type {
   ServerConfig,
   SourceControlDiscoveryResult,
   SourceControlRepositoryInfo,
-} from "@t3tools/contracts";
-import { SourceControlProviderKind } from "@t3tools/contracts";
-import { cloneUrlRepositoryPath } from "@t3tools/shared/cloneUrl";
-import { newProjectFolderName } from "@t3tools/shared/path";
+} from "@onicode/contracts";
+import { SourceControlProviderKind } from "@onicode/contracts";
+import { cloneUrlRepositoryPath } from "@onicode/shared/cloneUrl";
+import { newProjectFolderName } from "@onicode/shared/path";
 import * as Arr from "effect/Array";
 import * as Option from "effect/Option";
 import * as Order from "effect/Order";

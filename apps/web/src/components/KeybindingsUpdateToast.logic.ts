@@ -1,4 +1,4 @@
-import type { ServerConfigStreamEvent } from "@t3tools/contracts";
+import type { ServerConfigStreamEvent } from "@onicode/contracts";
 
 const KEYBINDINGS_TOAST_COOLDOWN_MS = 2_000;
 

@@ -1,4 +1,4 @@
-import { OrchestratorMcpFailure } from "@t3tools/contracts";
+import { OrchestratorMcpFailure } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 
 import * as HtmlRender from "../../../htmlRender/HtmlRender.ts";
@@ -48,7 +48,7 @@ const pageSource = Effect.fn("HtmlToolkit.pageSource")(function* (input: {
 });
 
 const handlers = {
-  // Local-file access limits this host browser to T3-launched agents.
+  // Local-file access limits this host browser to Onicode-launched agents.
   html_preview: McpToolAccess.readsAsCaller((input) =>
     Effect.gen(function* () {
       const htmlRender = yield* HtmlRender.HtmlRender;

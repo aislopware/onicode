@@ -1,5 +1,5 @@
 import * as Console from "effect/Console";
-import type { ManagedPolicyDocument } from "@t3tools/contracts";
+import type { ManagedPolicyDocument } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -40,14 +40,14 @@ const describePolicy = (
   return `${lines.join("\n")}\n`;
 };
 
-/** Whether the server running from this T3 home loaded the installed policy, which waits for a restart. */
+/** Whether the server running from this Onicode home loaded the installed policy, which waits for a restart. */
 export const describeRunningServer = Effect.fn("cli.policy.describeRunningServer")(function* (
   statePath: string,
   installed: Effect.Success<ReturnType<typeof ManagedPolicy.loadedPolicy>>,
 ) {
   const state = yield* readPersistedServerRuntimeState(statePath);
   if (Option.isNone(state) || !isProcessAlive(state.value.pid)) {
-    return "No T3 Code server is running from this T3 home. The installed policy applies when one starts.";
+    return "No Onicode server is running from this Onicode home. The installed policy applies when one starts.";
   }
   const { pid, startedAt, managedPolicy: loaded } = state.value;
   const server = `The running server (pid ${pid}, started ${startedAt})`;
@@ -63,7 +63,7 @@ export const describeRunningServer = Effect.fn("cli.policy.describeRunningServer
     loaded === null
       ? "no policy"
       : `${loaded.organization}'s policy from ${loaded.source} (fingerprint ${loaded.fingerprint})`;
-  return `${server} loaded ${what}. Restart T3 Code to apply the installed policy.`;
+  return `${server} loaded ${what}. Restart Onicode to apply the installed policy.`;
 });
 
 const showCommand = Command.make("show", projectLocationFlags).pipe(
@@ -149,9 +149,9 @@ const templatesCommand = Command.make("templates", {
         return yield* new CliError.UserError({ cause: document, userMessage: profile.reason });
       }
       const files = [
-        [path.join(directory, "windows", "t3code.admx"), windowsAdmx()],
-        [path.join(directory, "windows", "en-US", "t3code.adml"), windowsAdml()],
-        [path.join(directory, "macos", "t3code.mobileconfig"), profile.profile],
+        [path.join(directory, "windows", "onicode.admx"), windowsAdmx()],
+        [path.join(directory, "windows", "en-US", "onicode.adml"), windowsAdml()],
+        [path.join(directory, "macos", "onicode.mobileconfig"), profile.profile],
       ] as const;
       for (const [file, contents] of files) {
         yield* fs.makeDirectory(path.dirname(file), { recursive: true });

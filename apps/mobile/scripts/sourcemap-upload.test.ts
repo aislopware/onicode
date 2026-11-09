@@ -127,7 +127,7 @@ describe("buildSourceMapUpload", () => {
 
   it("names an iOS build's dSYMs under its build id", () => {
     const project = tempDir();
-    const dsym = NodePath.join(project, "ios/build/T3Code.app.dSYM.zip");
+    const dsym = NodePath.join(project, "ios/build/Onicode.app.dSYM.zip");
     writeFile(dsym, "zip");
     expect(
       buildDsymUpload({ EAS_BUILD_PLATFORM: "ios", EAS_BUILD_ID: "build-3" }, project),

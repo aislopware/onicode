@@ -57,7 +57,7 @@ jobs:
           run-install: false
 
       - name: Install bundle dependencies
-        run: vp install --filter=t3... --filter=@t3tools/web... --filter=@t3tools/desktop... --filter=@t3tools/scripts...
+        run: vp install --filter=onicode... --filter=@onicode/web... --filter=@onicode/desktop... --filter=@onicode/scripts...
 
       # The publish workflow derives the same version from this run's number,
       # so the version baked into the bundle matches the packaged app.
@@ -92,7 +92,7 @@ jobs:
       # channel. The Linux browser secret helper is not part of a macOS app.
       - name: Build JS bundle
         env:
-          T3CODE_TELEMETRY_CHANNEL: ${{ github.repository == 'pingdotgg/t3code' && 'preview' || 'dev' }}
+          ONICODE_TELEMETRY_CHANNEL: ${{ github.repository == 'pingdotgg/t3code' && 'preview' || 'dev' }}
         run: vp run ${{ steps.bundle_build.outputs.script }}
 
       # Same layout as release.yml's js-bundle so release-desktop.yml can

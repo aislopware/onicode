@@ -1,6 +1,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -13,20 +13,20 @@ import { installCli, isForegroundProcStat, isForegroundPs, offerCliInstall } fro
 
 const VERSION = packageJson.version;
 
-/** A standalone runtime in a temp T3 home, started by the npm launcher from an npx cache. */
+/** A standalone runtime in a temp Onicode home, started by the npm launcher from an npx cache. */
 const setup = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const root = yield* fs.makeTempDirectoryScoped({ prefix: "t3-install-" });
-  const runtimeDir = path.join(root, ".t3/runtime");
-  const executable = path.join(runtimeDir, "versions", VERSION, "t3");
+  const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-install-" });
+  const runtimeDir = path.join(root, ".onicode/runtime");
+  const executable = path.join(runtimeDir, "versions", VERSION, "onicode");
   yield* fs.makeDirectory(path.dirname(executable), { recursive: true });
   yield* fs.writeFileString(executable, "");
-  const npmPackage = path.join(root, ".npm/_npx/abc/node_modules/t3");
+  const npmPackage = path.join(root, ".npm/_npx/abc/node_modules/onicode");
   yield* fs.makeDirectory(path.join(npmPackage, "bin"), { recursive: true });
   yield* fs.writeFileString(
     path.join(npmPackage, "package.json"),
-    JSON.stringify({ name: "t3", version: VERSION }),
+    JSON.stringify({ name: "onicode", version: VERSION }),
   );
   const binDir = path.join(root, "bin");
   const provide = <A, E, R>(effect: Effect.Effect<A, E, R>, env: NodeJS.ProcessEnv = {}) =>
@@ -38,22 +38,22 @@ const setup = Effect.gen(function* () {
       Effect.provideService(HostProcess.Environment, {
         PATH: "/usr/bin",
         SHELL: "/bin/zsh",
-        T3CODE_INSTALL_BIN_DIR: binDir,
-        T3CODE_NPM_LAUNCHER_PATH: path.join(npmPackage, "bin/t3.mjs"),
+        ONICODE_INSTALL_BIN_DIR: binDir,
+        ONICODE_NPM_LAUNCHER_PATH: path.join(npmPackage, "bin/onicode.mjs"),
         ...env,
       }),
     );
-  return { root, npmPackage, runtimeDir, executable, link: path.join(binDir, "t3"), provide };
+  return { root, npmPackage, runtimeDir, executable, link: path.join(binDir, "onicode"), provide };
 });
 
-it.layer(NodeServices.layer)("t3 install", (it) => {
-  it.effect("links the running runtime, records it, and never replaces another t3", () =>
+it.layer(NodeServices.layer)("onicode install", (it) => {
+  it.effect("links the running runtime, records it, and never replaces another onicode", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const { root, runtimeDir, executable, link, provide } = yield* setup;
 
-      const older = path.join(runtimeDir, "versions/0.0.1/t3");
+      const older = path.join(runtimeDir, "versions/0.0.1/onicode");
       yield* fs.makeDirectory(path.dirname(link), { recursive: true });
       yield* fs.symlink(older, link);
       const installed = yield* provide(installCli());
@@ -61,40 +61,40 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       assert.isFalse(installed.onPath);
       assert.include(installed.pathCommand, "$HOME/bin");
 
-      // A link written through a symlinked T3 home is still ours.
+      // A link written through a symlinked Onicode home is still ours.
       const alias = path.join(root, "alias");
-      yield* fs.symlink(path.join(root, ".t3"), alias);
+      yield* fs.symlink(path.join(root, ".onicode"), alias);
       yield* fs.remove(link);
-      yield* fs.symlink(path.join(alias, "runtime/versions", VERSION, "t3"), link);
+      yield* fs.symlink(path.join(alias, "runtime/versions", VERSION, "onicode"), link);
       const onPath = yield* provide(installCli(), { PATH: `/usr/bin:${path.join(root, "bin")}/` });
       assert.isTrue(onPath.onPath);
-      // Another t3 earlier on PATH still runs first, so `t3` would not run this one.
+      // Another onicode earlier on PATH still runs first, so `onicode` would not run this one.
       const otherBin = path.join(root, "other-bin");
       yield* fs.makeDirectory(otherBin);
-      yield* fs.writeFileString(path.join(otherBin, "t3"), "");
+      yield* fs.writeFileString(path.join(otherBin, "onicode"), "");
       const shadowed = yield* provide(installCli(), {
         PATH: `${otherBin}:${path.join(root, "bin")}`,
       });
       assert.isFalse(shadowed.onPath);
-      assert.equal(shadowed.shadowedBy, path.join(otherBin, "t3"));
+      assert.equal(shadowed.shadowedBy, path.join(otherBin, "onicode"));
       assert.isUndefined(shadowed.pathCommand);
       const recorded = yield* fs.readFileString(path.join(runtimeDir, "launchers"));
-      assert.equal(recorded, `\n${yield* fs.realPath(path.join(root, "bin"))}/t3\n`);
+      assert.equal(recorded, `\n${yield* fs.realPath(path.join(root, "bin"))}/onicode\n`);
 
       yield* fs.remove(link);
       yield* fs.writeFileString(link, "#!/bin/sh\n");
       const error = yield* provide(installCli()).pipe(Effect.flip);
-      assert.include(error.message, "Another t3 is already at");
+      assert.include(error.message, "Another onicode is already at");
       assert.equal(yield* fs.readFileString(link), "#!/bin/sh\n");
 
-      // Only `<version>/t3` is ours, not another program inside a version.
+      // Only `<version>/onicode` is ours, not another program inside a version.
       yield* fs.remove(link);
       yield* fs.symlink(path.join(runtimeDir, "versions/0.0.1/node"), link);
       const sibling = yield* provide(installCli()).pipe(Effect.flip);
-      assert.include(sibling.message, "Another t3 is already at");
+      assert.include(sibling.message, "Another onicode is already at");
       // This home's desktop launcher is replaced, as install.sh does.
       yield* fs.remove(link);
-      yield* fs.symlink(path.join(root, ".t3/bin/t3"), link);
+      yield* fs.symlink(path.join(root, ".onicode/bin/onicode"), link);
       yield* provide(installCli());
       assert.equal(yield* fs.readLink(link), executable);
 
@@ -123,18 +123,18 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       assert.equal(yield* fs.readFileString(link), "#!/bin/sh\necho raced\n");
       yield* fs.remove(link);
 
-      // Windows writes a t3.cmd: only over its own, and only for paths cmd can run.
-      const shim = path.join(root, "bin", "t3.cmd");
+      // Windows writes a onicode.cmd: only over its own, and only for paths cmd can run.
+      const shim = path.join(root, "bin", "onicode.cmd");
       const windows = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         provide(effect.pipe(Effect.provideService(HostProcess.Platform, "win32")));
       const desktopShim =
-        '@echo off\r\nrem Written by T3 Code\r\n"C:\\T3 Code\\T3 Code.exe" "x" %*\r\n';
+        '@echo off\r\nrem Written by Onicode\r\n"C:\\Onicode\\Onicode.exe" "x" %*\r\n';
       yield* fs.writeFileString(shim, desktopShim);
       const foreignShim = yield* windows(installCli()).pipe(Effect.flip);
-      assert.include(foreignShim.message, "Another t3 is already at");
+      assert.include(foreignShim.message, "Another onicode is already at");
       assert.equal(yield* fs.readFileString(shim), desktopShim);
-      // A user's wrapper that also runs a managed t3.exe is still theirs.
-      const wrapper = `@echo off\r\nset FOO=1\r\n"${path.join(runtimeDir, "versions/0.0.1/t3.exe")}" %*`;
+      // A user's wrapper that also runs a managed onicode.exe is still theirs.
+      const wrapper = `@echo off\r\nset FOO=1\r\n"${path.join(runtimeDir, "versions/0.0.1/onicode.exe")}" %*`;
       yield* fs.writeFileString(shim, wrapper);
       yield* windows(installCli()).pipe(Effect.flip);
       assert.equal(yield* fs.readFileString(shim), wrapper);
@@ -147,7 +147,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       yield* fs.remove(shim);
       yield* fs.writeFileString(
         shim,
-        `@echo off\r\n"${path.join(runtimeDir, "versions/0.0.1/t3.exe")}" %*`,
+        `@echo off\r\n"${path.join(runtimeDir, "versions/0.0.1/onicode.exe")}" %*`,
       );
       const windowsInstalled = yield* windows(installCli());
       assert.equal(yield* fs.readFileString(shim), `@echo off\r\n"${executable}" %*`);
@@ -157,7 +157,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
         installCli().pipe(
           Effect.provideService(
             HostProcess.ExecutablePath,
-            path.join(runtimeDir, "versions/100%/t3"),
+            path.join(runtimeDir, "versions/100%/onicode"),
           ),
         ),
       ).pipe(Effect.flip);
@@ -165,7 +165,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
     }).pipe(Effect.scoped),
   );
 
-  it.effect("asks npx users without a t3 command once per minor release and installs on yes", () =>
+  it.effect("asks npx users without a onicode command once per minor release and installs on yes", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
@@ -208,24 +208,24 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
       yield* offer(false, { args: ["status", "--json=true"] });
       const globalBin = path.join(root, "global-bin");
       yield* fs.makeDirectory(globalBin);
-      yield* fs.writeFileString(path.join(globalBin, "t3"), "");
+      yield* fs.writeFileString(path.join(globalBin, "onicode"), "");
       yield* offer(false, { env: { PATH: globalBin } });
       assert.equal(asked, 0);
       assert.isFalse(yield* fs.exists(link));
 
-      // A runner's own .bin on PATH is not an installed t3.
+      // A runner's own .bin on PATH is not an installed onicode.
       const npxBin = path.join(npmPackage, "../.bin");
       const pnpmBin = path.join(root, ".cache/pnpm/dlx/abc/node_modules/.bin");
       for (const bin of [npxBin, pnpmBin]) {
         yield* fs.makeDirectory(bin, { recursive: true });
-        yield* fs.writeFileString(path.join(bin, "t3"), "");
+        yield* fs.writeFileString(path.join(bin, "onicode"), "");
       }
       assert.isFalse(yield* offer(undefined, { env: { PATH: `${npxBin}:${pnpmBin}` } }));
       assert.equal(asked, 1);
       assert.isFalse(yield* fs.exists(path.join(runtimeDir, "install-prompt-declined")));
       asked = 0;
 
-      // `service install` is not `t3 install`; it still leaves the command unlinked.
+      // `service install` is not `onicode install`; it still leaves the command unlinked.
       yield* offer(false, { args: ["service", "install"] });
       assert.equal(asked, 1);
       yield* offer(false);
@@ -274,7 +274,7 @@ it.layer(NodeServices.layer)("t3 install", (it) => {
     Effect.sync(() => {
       // The command name can hold spaces and parentheses.
       const stat = (pgrp: number, tpgid: number) =>
-        `4242 (t3 (serve) x) S 100 ${pgrp} 100 34816 ${tpgid} 4194560 0 0`;
+        `4242 (onicode (serve) x) S 100 ${pgrp} 100 34816 ${tpgid} 4194560 0 0`;
       assert.isTrue(isForegroundProcStat(stat(4242, 4242)));
       assert.isFalse(isForegroundProcStat(stat(4242, 4300)));
       assert.isFalse(isForegroundProcStat(stat(4242, -1)));

@@ -6,7 +6,7 @@ import {
   ProviderDriverKind,
   ProviderInstanceId,
   type ServerProvider,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect } from "react";
 import { expect, it, vi } from "vite-plus/test";
@@ -28,7 +28,7 @@ vi.mock(import("~/state/environments"), () => ({
   useEnvironments: (() => ({ environments: state.environments })) as never,
   useEnvironmentProviders: () => state.providers,
 }));
-vi.mock(import("@t3tools/client-runtime/state/session"), async (original) => {
+vi.mock(import("@onicode/client-runtime/state/session"), async (original) => {
   const actual = await original();
   return {
     ...actual,
@@ -87,7 +87,7 @@ function session(
       policy: "remote-reachable",
       bootstrapMethods: ["one-time-token"],
       sessionMethods: ["bearer-access-token"],
-      sessionCookieName: "t3_session",
+      sessionCookieName: "oni_session",
     },
   });
 }

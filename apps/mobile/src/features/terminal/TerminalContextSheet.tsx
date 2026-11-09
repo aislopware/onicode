@@ -4,8 +4,8 @@ import {
   COMPOSER_CONTEXT_TERMINAL_TEXT_MAX_CHARS,
   type EnvironmentId,
   type ThreadId,
-} from "@t3tools/contracts";
-import { formatComposerContextReference } from "@t3tools/shared/composerContextReferences";
+} from "@onicode/contracts";
+import { formatComposerContextReference } from "@onicode/shared/composerContextReferences";
 import { useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";

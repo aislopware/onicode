@@ -1,6 +1,6 @@
 import { RegistryContext } from "@effect/atom-react";
-import type { ReviewDiffPreviewSource } from "@t3tools/contracts";
-import { EnvironmentId } from "@t3tools/contracts";
+import type { ReviewDiffPreviewSource } from "@onicode/contracts";
+import { EnvironmentId } from "@onicode/contracts";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import * as Option from "effect/Option";
 import { expect, it, vi } from "vite-plus/test";

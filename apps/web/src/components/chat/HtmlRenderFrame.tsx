@@ -1,10 +1,10 @@
-import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
+import type { EnvironmentId, ScopedThreadRef } from "@onicode/contracts";
 import {
   HTML_RENDER_COLUMN_WIDTH,
   htmlRenderFileName,
   htmlRenderFrameHeight,
   type HtmlRenderReference,
-} from "@t3tools/shared/htmlRender";
+} from "@onicode/shared/htmlRender";
 import { Maximize2Icon } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -59,7 +59,7 @@ export function HtmlRenderFrame(props: {
   // Tied to the viewer's lifetime: unmounting while expanded must still release
   // the timeline's follow pin, which a close handler alone never reaches.
   const expanded = expandedSrc !== null;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the parent's fullscreen pin while expanded and releases it on collapse or unmount
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- holds the parent's fullscreen pin while expanded and releases it on collapse or unmount
   useEffect(() => {
     if (!expanded) return;
     onFullscreenChange?.(true);

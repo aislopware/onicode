@@ -53,7 +53,7 @@ export class SpeechModelStore extends Context.Service<
     >;
     readonly remove: (model: ModelFile) => Effect.Effect<void, PlatformError>;
   }
->()("t3/speech/SpeechModelStore") {}
+>()("onicode/speech/SpeechModelStore") {}
 
 const DOWNLOAD_ATTEMPTS = 3;
 const PARTIAL_FILENAME =

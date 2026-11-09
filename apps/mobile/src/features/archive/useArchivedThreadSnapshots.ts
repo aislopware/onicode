@@ -3,8 +3,8 @@ import {
   type ArchivedSnapshotEntry,
   createArchivedThreadSnapshotsAtomFamily,
   makeArchivedThreadsEnvironmentKey,
-} from "@t3tools/client-runtime/state/threads";
-import type { EnvironmentId } from "@t3tools/contracts";
+} from "@onicode/client-runtime/state/threads";
+import type { EnvironmentId } from "@onicode/contracts";
 import { useMemo } from "react";
 
 import { appAtomRegistry } from "../../state/atom-registry";

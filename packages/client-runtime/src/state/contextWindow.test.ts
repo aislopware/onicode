@@ -6,11 +6,11 @@ import {
   RunId,
   type ServerProvider,
   type ServerSettings,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import {
   CLAUDE_RESUME_COMPACTION_NEVER_ANSWER,
   formatClaudeResumeCompactionQuestion,
-} from "@t3tools/shared/claudeCompaction";
+} from "@onicode/shared/claudeCompaction";
 import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 

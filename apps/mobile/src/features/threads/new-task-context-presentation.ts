@@ -1,6 +1,6 @@
-import { sanitizeNewRefName } from "@t3tools/shared/git";
-import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { resolveSendEnvMode } from "@t3tools/shared/projectSettings";
+import { sanitizeNewRefName } from "@onicode/shared/git";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
+import { resolveSendEnvMode } from "@onicode/shared/projectSettings";
 import type { ComposerDraftWorkspaceSelection } from "../../state/use-composer-drafts";
 
 type WorkspaceMode = "local" | "worktree";
@@ -115,7 +115,7 @@ export function filterNewTaskBranches<T extends { readonly name: string }>(
 /**
  * A worktree with no chosen base starts from the default branch, and a local
  * selection the user just switched to follows the current checkout until refs
- * load. Both are derived, never written back, so a late ref list or t3.json
+ * load. Both are derived, never written back, so a late ref list or onicode.json
  * default still wins.
  */
 export function fillNewTaskWorkspaceBranch(input: {

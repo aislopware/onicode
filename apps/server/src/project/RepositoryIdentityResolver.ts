@@ -1,5 +1,5 @@
-import type { RepositoryIdentity, SourceControlProviderError } from "@t3tools/contracts";
-import { repositoryPathFromRemoteUrl } from "@t3tools/source-control-core/server/SourceControlProvider";
+import type { RepositoryIdentity, SourceControlProviderError } from "@onicode/contracts";
+import { repositoryPathFromRemoteUrl } from "@onicode/source-control-core/server/SourceControlProvider";
 import * as Cache from "effect/Cache";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -13,7 +13,7 @@ import * as Path from "effect/Path";
 import * as ProcessRunner from "../processRunner.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
 import { explicitBareRepositoryEnv } from "../vcs/VcsProcess.ts";
-import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 const DEFAULT_REPOSITORY_IDENTITY_CACHE_CAPACITY = 512;
 // Minute-by-minute sweeps need cached hits; clone, publish and PR discovery force refresh.
@@ -35,7 +35,7 @@ export class RepositoryIdentityResolver extends Context.Service<
       options?: { readonly refresh?: boolean },
     ) => Effect.Effect<RepositoryIdentity | null>;
   }
->()("t3/project/RepositoryIdentityResolver") {}
+>()("onicode/project/RepositoryIdentityResolver") {}
 
 // Local paths such as GitButler's gb-local=. would give unrelated repos the same identity.
 function isLocalRemoteUrl(url: string): boolean {

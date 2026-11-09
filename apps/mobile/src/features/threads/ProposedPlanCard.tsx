@@ -2,9 +2,9 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import type { EnvironmentId } from "@t3tools/contracts";
-import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@t3tools/shared/proposedPlanText";
+} from "@onicode/client-runtime/state/runtime";
+import type { EnvironmentId } from "@onicode/contracts";
+import { proposedPlanTitle, stripDisplayedPlanMarkdown } from "@onicode/shared/proposedPlanText";
 import { useRef, useState, type ReactNode } from "react";
 import { View } from "react-native";
 
@@ -56,7 +56,7 @@ export function ProposedPlanCard(props: {
   return (
     <View className="mb-3 gap-3 rounded-[20px] border border-border bg-card-alt p-4">
       <View className="flex-row items-center gap-2">
-        <Text accessibilityRole="header" className="flex-1 font-t3-bold text-base text-foreground">
+        <Text accessibilityRole="header" className="flex-1 font-oni-bold text-base text-foreground">
           {proposedPlanTitle(props.markdown) ?? "Proposed plan"}
         </Text>
         <CopyTextButton accessibilityLabel="Copy plan" text={contents} />

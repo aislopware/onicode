@@ -1,4 +1,4 @@
-import { VoiceTranscriptionDestination } from "@t3tools/contracts";
+import { VoiceTranscriptionDestination } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import { useSyncExternalStore } from "react";
 import { randomUUID } from "../lib/utils";
@@ -11,8 +11,8 @@ import {
 } from "../hooks/useLocalStorage";
 
 // Separate keys: a stale window saving ordinary preferences must not restore either grant.
-const AUDIO_KEY = "t3code:voice-audio-grant:v1";
-const CLEANUP_KEY = "t3code:voice-cleanup-grant:v1";
+const AUDIO_KEY = "onicode:voice-audio-grant:v1";
+const CLEANUP_KEY = "onicode:voice-cleanup-grant:v1";
 const Grant = Schema.Struct({ id: Schema.String, destination: VoiceTranscriptionDestination });
 const AudioGrant = Schema.NullOr(Grant);
 const sameGrant = Schema.toEquivalence(AudioGrant);

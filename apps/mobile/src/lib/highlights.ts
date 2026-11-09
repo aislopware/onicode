@@ -1,4 +1,4 @@
-import type { T3Highlights } from "@t3tools/mobile-highlights-native";
+import type { OniHighlights } from "@onicode/mobile-highlights-native";
 import { NitroModules } from "react-native-nitro-modules";
 
 import { highlightLanguageId } from "./highlightLanguage";
@@ -19,10 +19,10 @@ const LINE_END = 0xffffffff;
 // thousands of native text runs.
 const MAX_HIGHLIGHTED_LINE_LENGTH = 1_000;
 
-// @pierre/highlights compiled to native code (modules/t3-highlights). Missing
+// @pierre/highlights compiled to native code (modules/oni-highlights). Missing
 // from binaries built before it shipped, where code renders as plain text.
-const nativeHighlights = NitroModules.hasHybridObject("T3Highlights")
-  ? NitroModules.createHybridObject<T3Highlights>("T3Highlights")
+const nativeHighlights = NitroModules.hasHybridObject("OniHighlights")
+  ? NitroModules.createHybridObject<OniHighlights>("OniHighlights")
   : undefined;
 
 export interface TokenizedCode {

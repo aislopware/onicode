@@ -1,11 +1,11 @@
 // Trust relay headers only with a mint-key-signed proof; otherwise handle the webhook as a direct request.
-import { RelayHookDeliveryProofPayload } from "@t3tools/contracts/relay";
+import { RelayHookDeliveryProofPayload } from "@onicode/contracts/relay";
 import {
   normalizeRelayIssuer,
   RELAY_HOOK_DELIVERY_HEADER,
   RELAY_HOOK_DELIVERY_TYP,
   verifyRelayJwt,
-} from "@t3tools/shared/relayJwt";
+} from "@onicode/shared/relayJwt";
 import * as Context from "effect/Context";
 import * as Signature from "effect/crypto/Signature";
 import * as Effect from "effect/Effect";
@@ -32,7 +32,7 @@ export class RelayDeliveryProof extends Context.Service<
       Option.Option<{ readonly deliveryId: string; readonly receivedAt: string }>
     >;
   }
->()("t3/scheduledTasks/RelayDeliveryProof") {}
+>()("onicode/scheduledTasks/RelayDeliveryProof") {}
 
 const make = Effect.gen(function* () {
   const secrets = yield* ServerSecretStore.ServerSecretStore;
@@ -41,8 +41,8 @@ const make = Effect.gen(function* () {
   const verify: RelayDeliveryProof["Service"]["verify"] = Effect.fn("webhook.verifyRelayDelivery")(
     function* (input) {
       const proof = input.headers[RELAY_HOOK_DELIVERY_HEADER];
-      const deliveryId = input.headers["x-t3-relay-delivery-id"];
-      const receivedAt = input.headers["x-t3-relay-received-at"];
+      const deliveryId = input.headers["x-oni-relay-delivery-id"];
+      const receivedAt = input.headers["x-oni-relay-received-at"];
       if (proof === undefined || deliveryId === undefined || receivedAt === undefined) {
         return Option.none();
       }
@@ -59,7 +59,7 @@ const make = Effect.gen(function* () {
         token: proof,
         typ: RELAY_HOOK_DELIVERY_TYP,
         issuer: normalizeRelayIssuer(relayIssuer.value),
-        audience: `t3-env:${environmentId}`,
+        audience: `oni-env:${environmentId}`,
         maxTokenAge: MAX_PROOF_AGE,
       }).pipe(Effect.provideService(Signature.Signature, signature), Effect.option);
       // The proof must name exactly this delivery, so it cannot be lifted onto another one.

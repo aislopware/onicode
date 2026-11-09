@@ -15,7 +15,7 @@ build/
 .logs/
 release/
 release-mock/
-.t3
+.onicode
 .idea/
 apps/web/.playwright
 apps/web/playwright-report

@@ -1,5 +1,5 @@
 import { RegistryContext } from "@effect/atom-react";
-import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey } from "@onicode/client-runtime/environment";
 import {
   DEFAULT_CLIENT_SETTINGS,
   EnvironmentId,
@@ -12,7 +12,7 @@ import {
   type ScopedThreadRef,
   type VcsListRefsResult,
   type VcsStatusResult,
-} from "@t3tools/contracts";
+} from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";

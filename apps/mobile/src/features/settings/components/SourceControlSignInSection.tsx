@@ -1,10 +1,10 @@
-import type { EnvironmentId, SourceControlSignInPrompt } from "@t3tools/contracts";
+import type { EnvironmentId, SourceControlSignInPrompt } from "@onicode/contracts";
 import {
   readHostCredentialSettings,
   sourceControlClients,
   type SourceControlAppSignIn,
   type SourceControlDefinition,
-} from "@t3tools/client-runtime/source-control-clients";
+} from "@onicode/client-runtime/source-control-clients";
 import * as Cause from "effect/Cause";
 import * as Clipboard from "expo-clipboard";
 import { useRef, useState } from "react";
@@ -32,7 +32,7 @@ const appSignInHosts = sourceControlClients.definitions.flatMap((definition) =>
 );
 
 /**
- * Signing an environment in through a forge's own app, such as T3 Code for GitHub, on servers
+ * Signing an environment in through a forge's own app, such as Onicode for GitHub, on servers
  * configured for it.
  */
 export function SourceControlSignInSection(props: {

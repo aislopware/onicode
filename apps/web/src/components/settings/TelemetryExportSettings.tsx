@@ -1,5 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { OtlpEndpointCheckResult, OtlpSignal, ServerObservability } from "@t3tools/contracts";
+import type { OtlpEndpointCheckResult, OtlpSignal, ServerObservability } from "@onicode/contracts";
 import { useEffect, useEffectEvent, useState } from "react";
 
 import { serverEnvironment } from "../../state/server";
@@ -136,7 +136,7 @@ function TelemetryExportForm() {
       if (check?.result === null) void sendCheck(key, signal, check.url);
     }
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- sends pending endpoint check requests once the environment can run them
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- sends pending endpoint check requests once the environment can run them
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- State changes only after the response arrives.
     if (canCheck) sendPendingChecks();

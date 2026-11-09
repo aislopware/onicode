@@ -1,7 +1,7 @@
 import { Spinner } from "~/components/ui/spinner";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
-import type { ServerProvider } from "@t3tools/contracts";
+import type { ServerProvider } from "@onicode/contracts";
 import { CircleCheckIcon, DownloadIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 import { useEffect, useEffectEvent, useState, type CSSProperties } from "react";
 
@@ -111,7 +111,7 @@ export function SidebarProviderUpdatePill() {
     setDismissAfterExitKey(null);
   });
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- fallback timer that finishes the exit if the CSS transition never ends
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- fallback timer that finishes the exit if the CSS transition never ends
   useEffect(() => {
     if (exitingKey === null) return;
     // A cancelled or skipped CSS transition must not keep a hidden spinner mounted.
@@ -119,7 +119,7 @@ export function SidebarProviderUpdatePill() {
     return () => window.clearTimeout(timeoutId);
   }, [exitingKey]);
 
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- timer that dismisses the pill after it has been visible for dismissAfterVisibleMs
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- timer that dismisses the pill after it has been visible for dismissAfterVisibleMs
   useEffect(() => {
     if (!dismissAfterVisibleMs || !viewKey) {
       return;

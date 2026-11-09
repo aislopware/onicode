@@ -21,7 +21,7 @@ import { managedRelayAccessTokenStore } from "./managedRelayTokenStore";
 it.effect("falls back to an empty cache when persisted data is invalid", () =>
   Effect.gen(function* () {
     secureStore.clear();
-    secureStore.set("t3code.cloud.relay-access-tokens", "not-json");
+    secureStore.set("onicode.cloud.relay-access-tokens", "not-json");
 
     expect(yield* managedRelayAccessTokenStore.load).toEqual([]);
   }),
