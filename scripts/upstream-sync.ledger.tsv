@@ -11,3 +11,4 @@ eb97d82156	take	feat: text generators let model APIs write titles, commits, and 
 637507056c	take	fix(mobile): feature screens use the components/ui menu, dialog and search primitives (#33193)
 202e8ef77c	take	fix(web): Markdown tasks no longer stay checked after their source is unchecked (#27353)
 69dd6956d5	take	fix(web): return focus to composer after timeline prompts (#33192)
+47e336b131	take	fix(mobile): SVG markers with orient="auto-start-reverse" no longer crash Android (#32812)
