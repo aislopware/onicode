@@ -13,7 +13,6 @@ import type {
 
 import { DEFAULT_SERVER_SETTINGS } from "@onicode/contracts";
 import {
-  parseMaxDeliveryAge,
   parseWebhookFilterDrafts,
   webhookFilterDrafts,
   webhookFilterDraftsChanged,
@@ -60,7 +59,6 @@ export type ScheduleDraft = {
   readonly weekdays: ReadonlyArray<number>;
   readonly intervalMinutes: string;
   readonly signature: ScheduledTaskWebhookSignature | null;
-  readonly maxDeliveryAgeMinutes: string;
   readonly replayKey: string;
   readonly coalesceKey: string;
   readonly coalesceWindowSeconds: string;
@@ -76,7 +74,6 @@ export const DEFAULT_SCHEDULE: ScheduleDraft = {
   weekdays: [1, 2, 3, 4, 5],
   intervalMinutes: "15",
   signature: null,
-  maxDeliveryAgeMinutes: "",
   replayKey: "",
   coalesceKey: "",
   coalesceWindowSeconds: "",
@@ -113,10 +110,6 @@ export function scheduleDraftForTask(task: Pick<ScheduledTask, "schedule">): Sch
           task.schedule.dedupe?.coalesceWindowSeconds === undefined
             ? ""
             : String(task.schedule.dedupe.coalesceWindowSeconds),
-        maxDeliveryAgeMinutes:
-          task.schedule.maxDeliveryAgeMinutes == null
-            ? ""
-            : String(task.schedule.maxDeliveryAgeMinutes),
         filters: webhookFilterDrafts(task.schedule.filters),
         savedFilters: webhookFilterDrafts(task.schedule.filters),
       };
@@ -129,8 +122,6 @@ export function parseIntervalMinutes(value: string): number {
 
 export function scheduleFromDraft(draft: ScheduleDraft): ScheduledTaskUpsertSchedule | null {
   if (draft.mode === "webhook") {
-    const maxDeliveryAgeMinutes = parseMaxDeliveryAge(draft.maxDeliveryAgeMinutes);
-    if (maxDeliveryAgeMinutes === undefined) return null;
     const replayKey = draft.replayKey.trim();
     const coalesceKey = draft.coalesceKey.trim();
     if ([replayKey, coalesceKey].some((key) => key && !isWebhookDedupeTemplate(key))) return null;
@@ -157,7 +148,6 @@ export function scheduleFromDraft(draft: ScheduleDraft): ScheduledTaskUpsertSche
               encoding: draft.signature.encoding,
               prefix: draft.signature.prefix,
             },
-      maxDeliveryAgeMinutes,
       ...(replayKey || coalesceKey || coalesceWindowSeconds !== undefined
         ? {
             dedupe: {
@@ -232,7 +222,6 @@ function draftSignature(draft: ScheduledTaskDraft): string {
     draft.schedule.runAt,
     [...draft.schedule.weekdays].sort((a, b) => a - b),
     draft.schedule.intervalMinutes,
-    draft.schedule.maxDeliveryAgeMinutes,
     draft.schedule.replayKey,
     draft.schedule.coalesceKey,
     draft.schedule.coalesceWindowSeconds,

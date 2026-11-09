@@ -140,28 +140,11 @@ const layerWakeups = Wakeups.layer({
 
 const layerCapabilities = Layer.succeedContext(
   Context.make(
-    ClientCapabilities.CloudSession,
-    // Onicode has no cloud account; client-runtime still asks for one.
-    ClientCapabilities.CloudSession.of({
-      identity: Effect.succeedNone,
-      clerkToken: Effect.fail(
-        new ConnectionBlockedError({
-          reason: "unsupported",
-          detail: "Cloud environments are not supported.",
-        }),
-      ),
+    ClientCapabilities.PrimaryEnvironmentAuth,
+    ClientCapabilities.PrimaryEnvironmentAuth.of({
+      bearerToken: Effect.succeedNone,
     }),
   ).pipe(
-    Context.add(
-      ClientCapabilities.PrimaryEnvironmentAuth,
-      ClientCapabilities.PrimaryEnvironmentAuth.of({
-        bearerToken: Effect.succeedNone,
-      }),
-    ),
-    Context.add(
-      ClientCapabilities.RelayDeviceIdentity,
-      ClientCapabilities.RelayDeviceIdentity.of({ deviceId: Effect.succeedNone }),
-    ),
     Context.add(
       ClientCapabilities.ClientPresentation,
       ClientCapabilities.ClientPresentation.of({

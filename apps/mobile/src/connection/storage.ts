@@ -18,7 +18,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { TokenStore } from "@onicode/client-runtime/authorization";
 
 import * as CatalogStore from "./catalog-store";
 
@@ -142,15 +141,6 @@ export const layer = Layer.effectContext(
       Context.add(Persistence.ConnectionRegistrationStore, registrationStore),
       Context.add(ProfileStore.ConnectionProfileStore, profileStore),
       Context.add(CredentialStore.ConnectionCredentialStore, credentialStore),
-      // DPoP tokens only exist for relay routes, which Onicode has none of.
-      Context.add(
-        TokenStore.RemoteDpopAccessTokenStore,
-        TokenStore.make({
-          get: () => Effect.succeedNone,
-          put: () => Effect.void,
-          remove: () => Effect.void,
-        }),
-      ),
     );
   }),
 );

@@ -13,8 +13,6 @@ import { useEnvironmentQuery } from "./query";
 
 export const peerLinkEnvironment = createPeerLinkEnvironmentAtoms(connectionAtomRuntime);
 
-const NO_CONNECT_ENVIRONMENTS: Parameters<typeof linkableMachines>[0]["connect"] = new Map();
-
 /**
  * The machines `environmentId` links to, by name, while it offers links, and none otherwise.
  * Its agents can read threads there. Listing asks each linked machine whether it answers, so
@@ -52,6 +50,5 @@ export function useLinkableMachines(environmentId: EnvironmentId, enabled: boole
     environments,
     threadEnvironmentId: environmentId,
     links: links.data?.links ?? [],
-    connect: NO_CONNECT_ENVIRONMENTS,
   });
 }
