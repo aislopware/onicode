@@ -1,4 +1,4 @@
-import { sha256 } from "@noble/hashes/sha2";
+import { sha256 } from "@noble/hashes/sha2.js";
 import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 

@@ -70,6 +70,12 @@ describe("embeddedScripts", () => {
     [`psql app <<'EOF'\nselect 1;\nEOF`, "sql", "select 1;\n"],
     [`echo "$(node -e 'console.log(1)')"`, "javascript", "console.log(1)"],
     [`python3 <<< 'print(1)'`, "python", "print(1)"],
+    [
+      `if false; then :; elif true; then node -e 'console.log(1)'; fi`,
+      "javascript",
+      "console.log(1)",
+    ],
+    [`ls [$(node -e 'console.log(1)')]`, "javascript", "console.log(1)"],
   ])("finds the inline script in %s", (command, language, script) => {
     expect(scriptsOf(command)).toEqual([[language, script, expect.any(String)]]);
   });

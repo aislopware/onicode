@@ -1,9 +1,11 @@
 import { getFiletypeFromFileName } from "@pierre/diffs";
 import {
+  forEachChild,
   parse,
   type Command,
   type DoubleQuotedChild,
   type HereDoc,
+  type SyntaxNode,
   type Word,
   type WordPart,
 } from "unbash";
@@ -186,7 +188,7 @@ function scriptsIn(source: MappedText, depth: number): EmbeddedScript[] {
   const script = parse(source.text);
   if (script.errors?.length) return [];
   const found: EmbeddedScript[] = [];
-  forEachCommand(script.commands, (command) => {
+  forEachCommand(script, (command) => {
     for (const { language, mapped } of commandScripts(command, source.text)) {
       if (mapped.text.trim() === "") continue;
       const embedded: EmbeddedScript = {
@@ -204,39 +206,18 @@ function scriptsIn(source: MappedText, depth: number): EmbeddedScript[] {
   return found;
 }
 
-function isNode(value: unknown): value is { readonly type: string } {
-  return typeof value === "object" && value !== null && "type" in value;
-}
-
-function forEachCommand(
-  node: unknown,
-  visit: (command: Command) => void,
-  seen = new WeakSet<object>(),
-): void {
-  if (Array.isArray(node)) {
-    for (const child of node) forEachCommand(child, visit, seen);
-    return;
+function forEachCommand(node: SyntaxNode, visit: (command: Command) => void): void {
+  if (node.type === "Command") visit(node);
+  if (
+    node.type === "CommandExpansion" ||
+    node.type === "ProcessSubstitution" ||
+    node.type === "ArithmeticCommandExpansion"
+  ) {
+    // A backtick body with escapes parses a decoded copy whose offsets do not map to the source.
+    const { script } = node;
+    if (!script || script.errors?.length || script.source !== undefined) return;
   }
-  if (!isNode(node) || seen.has(node)) return;
-  seen.add(node);
-  switch (node.type) {
-    case "Command":
-      visit(node as Command);
-      break;
-    case "CommandExpansion":
-    case "ProcessSubstitution": {
-      const { script } = node as Extract<WordPart, { type: "CommandExpansion" }>;
-      if (script && !script.errors?.length && script.source === undefined) {
-        forEachCommand(script.commands, visit, seen);
-      }
-      return;
-    }
-  }
-  // Word parts are lazy getters, which Object.values skips.
-  if ("parts" in node) forEachCommand(node.parts, visit, seen);
-  for (const value of Object.values(node)) {
-    if (typeof value === "object") forEachCommand(value, visit, seen);
-  }
+  forEachChild(node, (child) => forEachCommand(child, visit));
 }
 
 function programName(word: Word): string {

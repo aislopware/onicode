@@ -20,7 +20,7 @@
     "@onicode/contracts": "workspace:*",
     "@onicode/shared": "workspace:*",
     "@onicode/source-control-core": "workspace:*",
-    "diff": "8.0.3",
+    "diff": "9.0.0",
     "effect": "catalog:"
   },
   "devDependencies": {

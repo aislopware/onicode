@@ -35,14 +35,13 @@ catalog:
   "@effect/vitest": 4.1.2
   "@electron-webauthn/macos": 1.4.0
   "@legendapp/list": 3.7.2
-  "@noble/hashes": 1.8.0
+  "@noble/hashes": 2.4.0
   "@pierre/diffs": 1.6.1
   "@pierre/highlights": 0.2.0
   "@tailwindcss/node": 4.3.5
   "@tailwindcss/oxide": 4.3.5
   "@tailwindcss/vite": 4.3.5
   "@types/node": 26.6.6
-  "@types/plist": 3.0.5
   "@types/react": ~19.3.0
   "@types/react-dom": ~19.3.0
   "@types/ws": 8.18.2
@@ -51,11 +50,11 @@ catalog:
   lightningcss: 1.33.0
   objc-js: 1.6.0
   pele: ^1.8.0
-  plist: 3.1.1
+  plist: 5.1.0
   react: 19.3.0
   react-dom: 19.3.0
   tailwindcss: 4.3.5
-  tldts: 7.4.2
+  tldts: 7.4.19
   undici: 8.12.4
   vite: npm:@voidzero-dev/vite-plus-core@1.5.1
   vite-plus: 1.5.1
@@ -106,7 +105,7 @@ overrides:
   app-builder-lib: 26.18.1
   expo-modules-core: 58.0.22
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
-  "@exodus/bytes>@noble/hashes": "1.8.0"
+  "@exodus/bytes>@noble/hashes": "catalog:"
   # Earlier React Navigation declarations create a circular type alias in TypeScript 7.
   # Move this with @react-navigation/native: an older core than it requires crashes
   # every native stack at launch.
