@@ -184,7 +184,7 @@ describe("DesktopPreReadyPlatform", () => {
               DesktopConfig.layerTest({
                 XDG_DATA_HOME: "/xdg",
                 APPIMAGE: "/Applications/current.AppImage",
-                ONICODE_DESKTOP_LAUNCHER_PATH: " /opt/Onicode/onicode ",
+                ONICODE_DESKTOP_LAUNCHER_PATH: " /opt/Oni Code/onicode ",
               }),
             ),
           ),
@@ -192,7 +192,7 @@ describe("DesktopPreReadyPlatform", () => {
         const entry = writeFileSyncMock.mock.calls.find(
           ([path]) => path === "/xdg/applications/dev.onicode.Onicode.desktop",
         )?.[1];
-        assert.include(entry, 'Exec="/opt/Onicode/onicode" %U');
+        assert.include(entry, 'Exec="/opt/Oni Code/onicode" %U');
       }),
     ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
   });

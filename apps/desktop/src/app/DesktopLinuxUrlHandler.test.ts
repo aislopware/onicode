@@ -241,10 +241,10 @@ describe("DesktopLinuxUrlHandler", () => {
 
     return Effect.gen(function* () {
       yield* runRegister(recorded, {
-        environment: { desktopLauncherPath: Option.some("/opt/Onicode/onicode") },
+        environment: { desktopLauncherPath: Option.some("/opt/Oni Code/onicode") },
       });
 
-      assert.include(recorded.files[0]?.content, 'Exec="/opt/Onicode/onicode" %U');
+      assert.include(recorded.files[0]?.content, 'Exec="/opt/Oni Code/onicode" %U');
     });
   });
 
@@ -569,16 +569,16 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       yield* registerWithRealFileSystem(run);
       assert.deepEqual([...(yield* fileSystem.readDirectory(fixture.appsDir))].sort(), [
         "dev.onicode.Onicode.png",
-        "dev.onicode.app.png",
+        "dev.onicode.onicode.png",
       ]);
-      for (const name of ["dev.onicode.app", "dev.onicode.Onicode"]) {
+      for (const name of ["dev.onicode.onicode", "dev.onicode.Onicode"]) {
         const target = path.join(fixture.appsDir, `${name}.png`);
         assert.deepEqual([...(yield* fileSystem.readFile(target))], [...icon]);
         yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
       }
 
       yield* registerWithRealFileSystem(run);
-      for (const name of ["dev.onicode.app", "dev.onicode.Onicode"]) {
+      for (const name of ["dev.onicode.onicode", "dev.onicode.Onicode"]) {
         const info = yield* fileSystem.stat(path.join(fixture.appsDir, `${name}.png`));
         assert.equal(Option.getOrThrow(info.mtime).getTime(), fixture.pastSeconds * 1000);
       }
@@ -593,7 +593,7 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
       const path = yield* Path.Path;
       const fixture = yield* themeIconFixture(new Uint8Array([1, 2, 3]));
       yield* fixture.seedCache;
-      const lower = path.join(fixture.appsDir, "dev.onicode.app.png");
+      const lower = path.join(fixture.appsDir, "dev.onicode.onicode.png");
       const upper = path.join(fixture.appsDir, "dev.onicode.Onicode.png");
       yield* fileSystem.writeFile(lower, new Uint8Array([3, 2, 1]));
       yield* fileSystem.writeFile(upper, new Uint8Array([1, 2, 3]));
@@ -635,7 +635,9 @@ it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
 
       yield* registerWithRealFileSystem(run);
 
-      assert.isTrue(yield* fileSystem.exists(path.join(fixture.appsDir, "dev.onicode.Onicode.png")));
+      assert.isTrue(
+        yield* fileSystem.exists(path.join(fixture.appsDir, "dev.onicode.Onicode.png")),
+      );
       assert.equal(iconCacheRuns(run), 1);
     }).pipe(Effect.scoped),
   );
