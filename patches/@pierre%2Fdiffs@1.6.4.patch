@@ -1,5 +1,5 @@
 diff --git a/dist/components/CodeView.d.ts b/dist/components/CodeView.d.ts
-index 234ec4baa4..274ff5e32b 100644
+index 234ec4b..274ff5e 100644
 --- a/dist/components/CodeView.d.ts
 +++ b/dist/components/CodeView.d.ts
 @@ -158,6 +158,12 @@ interface CodeViewOptions<LAnnotation, Caret> extends CodeViewPassThroughOptions
@@ -30,7 +30,7 @@ index 234ec4baa4..274ff5e32b 100644
     * Returns the editor while this item is being edited. Partial diffs get an
     * editor after their files load; scrolling away or collapsing keeps it.
 diff --git a/dist/components/CodeView.js b/dist/components/CodeView.js
-index ee5c91c5ab..7d0a2901e4 100644
+index ee5c91c..7d0a290 100644
 --- a/dist/components/CodeView.js
 +++ b/dist/components/CodeView.js
 @@ -18,6 +18,7 @@ import { resolvePreferredHighlighter } from "../utils/resolvePreferredHighlighte
@@ -330,7 +330,7 @@ index ee5c91c5ab..7d0a2901e4 100644
  	if (item.type === "diff") return item.instance.updateCodeViewLayout(item.item.fileDiff, item.top, void 0, item.item.annotations ?? []);
 diff --git a/dist/components/CodeViewSearch.js b/dist/components/CodeViewSearch.js
 new file mode 100644
-index 0000000000..29370adf88
+index 0000000..29370ad
 --- /dev/null
 +++ b/dist/components/CodeViewSearch.js
 @@ -0,0 +1,360 @@
@@ -695,7 +695,7 @@ index 0000000000..29370adf88
 +
 +//# sourceMappingURL=CodeViewSearch.js.map
 diff --git a/dist/components/FileDiff.js b/dist/components/FileDiff.js
-index 12f4f8949f..e33a5ed319 100644
+index 6910f5c..c1defdd 100644
 --- a/dist/components/FileDiff.js
 +++ b/dist/components/FileDiff.js
 @@ -1,6 +1,7 @@
@@ -707,7 +707,7 @@ index 12f4f8949f..e33a5ed319 100644
  import { getHighlighterIfLoaded, getSharedHighlighter } from "../highlighter/shared_highlighter.js";
  import { dequeueRender, queueRender } from "../managers/UniversalRenderingManager.js";
  import { areThemesEqual } from "../utils/areThemesEqual.js";
-@@ -724,7 +725,7 @@ var FileDiff = class {
+@@ -723,7 +724,7 @@ var FileDiff = class {
  		if (expandUnchanged) this.loadFilesIfNecessary();
  		this.hunksRenderer.setOptions(this.getHunksRendererOptions(this.options));
  		this.syncInteractionOptions();
@@ -716,7 +716,7 @@ index 12f4f8949f..e33a5ed319 100644
  		const { disableErrorHandling = false, disableFileHeader = false } = this.options;
  		if (disableFileHeader) {
  			if (this.headerElement != null) {
-@@ -740,11 +741,22 @@ var FileDiff = class {
+@@ -739,11 +740,22 @@ var FileDiff = class {
  			this.removeRenderedCode();
  			this.clearAuxiliaryNodes();
  			try {
@@ -744,7 +744,7 @@ index 12f4f8949f..e33a5ed319 100644
  			} catch (error) {
  				if (disableErrorHandling) throw error;
 diff --git a/dist/components/VirtualizedFile.d.ts b/dist/components/VirtualizedFile.d.ts
-index 90ef575932..0fd262cbb7 100644
+index 90ef575..0fd262c 100644
 --- a/dist/components/VirtualizedFile.d.ts
 +++ b/dist/components/VirtualizedFile.d.ts
 @@ -50,7 +50,7 @@ declare class VirtualizedFile<LAnnotation = undefined, Caret = undefined> extend
@@ -757,7 +757,7 @@ index 90ef575932..0fd262cbb7 100644
    protected finalizeRender(): void;
    private updatePendingRender;
 diff --git a/dist/components/VirtualizedFile.js b/dist/components/VirtualizedFile.js
-index 95d4ca8fdf..24a980672d 100644
+index 95d4ca8..24a9806 100644
 --- a/dist/components/VirtualizedFile.js
 +++ b/dist/components/VirtualizedFile.js
 @@ -23,6 +23,7 @@ var VirtualizedFile = class extends File {
@@ -823,7 +823,7 @@ index 95d4ca8fdf..24a980672d 100644
  		if (!this.isSimpleMode()) this.computeApproximateSize(true);
  		else if (shouldUpdateBuffer && previousRenderRange != null && file != null) {
 diff --git a/dist/components/VirtualizedFileDiff.js b/dist/components/VirtualizedFileDiff.js
-index eb34dd4a77..821bb0ab11 100644
+index eb8c283..10efb6d 100644
 --- a/dist/components/VirtualizedFileDiff.js
 +++ b/dist/components/VirtualizedFileDiff.js
 @@ -551,7 +551,7 @@ var VirtualizedFileDiff = class extends FileDiff {
@@ -845,7 +845,7 @@ index eb34dd4a77..821bb0ab11 100644
  			workingDiff,
  			diff: pendingRenderDiff
 diff --git a/dist/components/web-components.js b/dist/components/web-components.js
-index 6e7b486a02..5b7290f181 100644
+index 6e7b486..5b7290f 100644
 --- a/dist/components/web-components.js
 +++ b/dist/components/web-components.js
 @@ -2,8 +2,17 @@ import { DIFFS_TAG_NAME } from "../constants.js";
@@ -879,7 +879,7 @@ index 6e7b486a02..5b7290f181 100644
  		connectedCallback() {
  			const shadowRoot = this.shadowRoot ?? this.attachShadow({ mode: "open" });
 diff --git a/dist/editor/editor.js b/dist/editor/editor.js
-index bf17cea32f..671e77b8cd 100644
+index bf17cea..b07328a 100644
 --- a/dist/editor/editor.js
 +++ b/dist/editor/editor.js
 @@ -436,7 +436,9 @@ var Editor = class {
@@ -907,7 +907,7 @@ index bf17cea32f..671e77b8cd 100644
  		if (newLineAnnotations != null) {
  			this.#lineAnnotations = newLineAnnotations;
 diff --git a/dist/editor/searchPanel.d.ts b/dist/editor/searchPanel.d.ts
-index 9542849786..1c1a51f56d 100644
+index 9542849..1c1a51f 100644
 --- a/dist/editor/searchPanel.d.ts
 +++ b/dist/editor/searchPanel.d.ts
 @@ -15,6 +15,8 @@ interface SearchPanelOptions {
@@ -920,7 +920,7 @@ index 9542849786..1c1a51f56d 100644
    scrollToMatch: (nextMatch: MatchRange, retainFocus: boolean) => void;
    applyReplace: (edits: ResolvedTextEdit[]) => void;
 diff --git a/dist/editor/searchPanel.js b/dist/editor/searchPanel.js
-index df1ba637c2..676751bb0e 100644
+index 807ac9f..c7027b6 100644
 --- a/dist/editor/searchPanel.js
 +++ b/dist/editor/searchPanel.js
 @@ -12,7 +12,7 @@ var SearchPanelWidget = class {
@@ -932,17 +932,20 @@ index df1ba637c2..676751bb0e 100644
  		const searchParams = {
  			text: defaultQuery,
  			replaceText: "",
-@@ -278,7 +278,7 @@ var SearchPanelWidget = class {
+@@ -292,8 +292,9 @@ var SearchPanelWidget = class {
  			]
  		});
  		const applyMode = (next) => {
 -			gridElement.dataset.mode = next;
-+			gridElement.dataset.mode = allowReplace ? next : "find";
+-			replaceToggleElement.ariaExpanded = String(next === "replace");
++			const applied = allowReplace ? next : "find";
++			gridElement.dataset.mode = applied;
++			replaceToggleElement.ariaExpanded = String(applied === "replace");
  			this.#inputElement.focus();
  			this.#inputElement.select();
  		};
 diff --git a/dist/managers/ResizeManager.d.ts b/dist/managers/ResizeManager.d.ts
-index 3efafc4132..9e5b7511f9 100644
+index 3efafc4..9e5b751 100644
 --- a/dist/managers/ResizeManager.d.ts
 +++ b/dist/managers/ResizeManager.d.ts
 @@ -5,6 +5,8 @@ interface ResizeManagerSetupOptions {
@@ -955,7 +958,7 @@ index 3efafc4132..9e5b7511f9 100644
    private static managersByElement;
    private static getResizeObserver;
 diff --git a/dist/managers/ResizeManager.js b/dist/managers/ResizeManager.js
-index 9724cb1e34..14145d8329 100644
+index 9724cb1..14145d8 100644
 --- a/dist/managers/ResizeManager.js
 +++ b/dist/managers/ResizeManager.js
 @@ -19,6 +19,7 @@ var ResizeManager = class ResizeManager {
@@ -975,7 +978,7 @@ index 9724cb1e34..14145d8329 100644
  	}
  	applyAnnotationUpdates(annotationUpdates) {
 diff --git a/dist/react/CodeView.d.ts b/dist/react/CodeView.d.ts
-index 12e12c50cd..684c7a89fa 100644
+index 12e12c5..684c7a8 100644
 --- a/dist/react/CodeView.d.ts
 +++ b/dist/react/CodeView.d.ts
 @@ -57,6 +57,8 @@ interface CodeViewBaseProps<LAnnotation, Caret> {
@@ -988,7 +991,7 @@ index 12e12c50cd..684c7a89fa 100644
    renderHeaderPrefix?(item: CodeViewItem<LAnnotation>): ReactNode;
    renderHeaderFilenameSuffix?(item: CodeViewItem<LAnnotation>): ReactNode;
 diff --git a/dist/react/CodeView.js b/dist/react/CodeView.js
-index 4dfed6bd0a..ac35a5a455 100644
+index 4dfed6b..ac35a5a 100644
 --- a/dist/react/CodeView.js
 +++ b/dist/react/CodeView.js
 @@ -24,7 +24,7 @@ function createDefaultCache(controlled) {
@@ -1053,7 +1056,7 @@ index 4dfed6bd0a..ac35a5a455 100644
  	if (hasGutterRenderer) managedOptions.renderGutterUtility = noopRender;
  	if (hasCodeViewHeader) managedOptions.renderCodeViewHeader = noopRender;
 diff --git a/dist/utils/createFileHeaderElement.js b/dist/utils/createFileHeaderElement.js
-index 39fe30e47b..600442e3eb 100644
+index 39fe30e..600442e 100644
 --- a/dist/utils/createFileHeaderElement.js
 +++ b/dist/utils/createFileHeaderElement.js
 @@ -73,12 +73,12 @@ function createMetadataElement(fileDiff) {
@@ -1072,7 +1075,7 @@ index 39fe30e47b..600442e3eb 100644
  		}));
  	}
 diff --git a/package.json b/package.json
-index 0cc43c4a7d..60b7d17d61 100644
+index fa94fac..47b6fe9 100644
 --- a/package.json
 +++ b/package.json
 @@ -60,6 +60,18 @@
