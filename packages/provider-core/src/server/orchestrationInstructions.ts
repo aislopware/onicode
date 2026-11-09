@@ -16,7 +16,7 @@ Ordinary coding tasks need no Onicode tools.
 - Another machine: \`oni_environment_links\` lists linked ones. Pass its \`environmentId\` to a Onicode tool to act there. Ids are then that machine's, so pass \`threadId\`.
 - A machine the user names that is not linked ("delegate this to my vps"): call \`oni_environment_link\` with a \`hint\` from their words. Never ask for a pairing code in chat.
 - In your reply, mention a thread by its \`link\`, verbatim. Never a plain title or bare id.
-- A login, token, PIN or pairing code only the user can give: call \`request_secret\`, not a chat ask or a handoff. Not for access you have. When asked only to schedule, \`schedule_task\` without running its prompt.
+- A login, token, PIN, pairing code or sudo password only the user can give: call \`request_secret\`, not a chat ask or a handoff. Not for access you have. Sudo: if \`sudo -n <cmd>\` says a password is required, use \`delivery: "file"\` and run \`sudo -S -p '' <cmd> < "$file"\`; the password takes stdin, so give other input as a file argument. When asked only to schedule, \`schedule_task\` without running its prompt.
 - Onicode tools may load late. Try the name once before you call it absent.`,
   `### Visuals and preview
 
@@ -36,7 +36,12 @@ export const ONICODE_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 When browser work was asked, \`preview_*\` is the browser you share with the user: \`preview_status\` first, then \`preview_open\` if no tab can be automated. Prefer snapshot locators over coordinates. Switch browsers only if the tools are absent or \`preview_open\` says unsupported, the user asks, or two preview calls fail on one step. Then quote the error and switch.
 `;
 
-const ONICODE_CODE_DEVICE_TOOLS = ["device_list", "device_open", "device_screenshot", "device_close"];
+const ONICODE_CODE_DEVICE_TOOLS = [
+  "device_list",
+  "device_open",
+  "device_screenshot",
+  "device_close",
+];
 
 const deviceToolInstructions = (loadTools: string) => `## Onicode devices
 
