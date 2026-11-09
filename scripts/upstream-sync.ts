@@ -36,6 +36,7 @@ const RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/\bT3(?=[A-Z][a-z])/g, "Oni"],
   [/\bT3(?=[A-Z])/g, "ONI"],
   [/\bt3(?=[A-Z])/g, "oni"],
+  [/(?<=\\[nrt])t3(?=[A-Z])/g, "oni"],
   [/\bt3(?=[a-z])/g, "oni"],
   [/\bt3_/g, "oni_"],
   [/\bt3-/g, "oni-"],
