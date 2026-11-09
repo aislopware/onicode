@@ -29,16 +29,16 @@ describe("findPromptLinkProjects", () => {
     const projects = [
       {
         id: "fork",
-        repositoryIdentity: identity("github.com/pingdotgg/t3code", "github.com/me/onicode"),
+        repositoryIdentity: identity("github.com/pingdotgg/t3code", "github.com/me/t3code"),
       },
       { id: "none", repositoryIdentity: null },
-      { id: "recent", repositoryIdentity: identity("github.com/PingDotGG/Onicode") },
+      { id: "recent", repositoryIdentity: identity("github.com/PingDotGG/T3Code") },
       { id: "older", repositoryIdentity: identity("github.com/pingdotgg/t3code") },
     ];
     const ids = (owner: string, name: string) =>
       findPromptLinkProjects(projects, { owner, name }).map((project) => project.id);
-    expect(ids("pingdotgg", "onicode")).toEqual(["recent", "older"]);
-    expect(ids("me", "onicode")).toEqual(["fork"]);
+    expect(ids("pingdotgg", "t3code")).toEqual(["recent", "older"]);
+    expect(ids("me", "t3code")).toEqual(["fork"]);
     expect(ids("gitlab", "x")).toEqual([]);
   });
 
@@ -49,7 +49,7 @@ describe("findPromptLinkProjects", () => {
       { id: "gitlab", repositoryIdentity: identity("gitlab.com/pingdotgg/t3code") },
     ];
     expect(
-      findPromptLinkProjects(projects, { owner: "pingdotgg", name: "onicode" }).map(
+      findPromptLinkProjects(projects, { owner: "pingdotgg", name: "t3code" }).map(
         (project) => project.id,
       ),
     ).toEqual(["gitcafe", "staging"]);

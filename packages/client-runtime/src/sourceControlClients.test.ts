@@ -23,7 +23,7 @@ describe("sourceControlClients.parseChangeRequestUrl", () => {
 
   it("reads a GitCafe pull request at its canonical /pull/ path and the older /pulls/ path", () => {
     for (const path of ["pull", "pulls"]) {
-      const url = `https://git.cafe/PingDotGG/Onicode/${path}/23897`;
+      const url = `https://git.cafe/PingDotGG/T3Code/${path}/23897`;
       expect(parse(url), path).toEqual({
         host: "git.cafe",
         repository: "pingdotgg/t3code",
@@ -175,7 +175,7 @@ describe("sourceControlClients.isSameChangeRequest", () => {
     expect(
       sourceControlClients.isSameChangeRequest(
         linked,
-        "https://github.com/PingDotGG/Onicode/pull/42/files",
+        "https://github.com/PingDotGG/T3Code/pull/42/files",
       ),
     ).toBe(true);
   });
