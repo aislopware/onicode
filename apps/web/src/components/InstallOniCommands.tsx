@@ -2,10 +2,7 @@ import { cn } from "~/lib/utils";
 
 import { CommandBlock } from "./CommandBlock";
 
-/**
- * Setup steps for another computer: install `onicode`, then run `command`. Both installers are shown
- * because the browser showing this is often not the computer being set up.
- */
+/** Setup steps for another computer: install `onicode`, then run `command`. */
 export function InstallOniCommands({
   command,
   className,
@@ -15,16 +12,13 @@ export function InstallOniCommands({
 }) {
   return (
     <div className={cn("space-y-2", className)}>
-      <p className="text-xs text-muted-foreground">macOS, Linux</p>
-      <CommandBlock command="curl -fsSL https://t3.codes/install.sh | sh" />
-      <p className="text-xs text-muted-foreground">Windows (PowerShell)</p>
-      <CommandBlock command="irm https://t3.codes/install.ps1 | iex" />
+      <CommandBlock command="npm install -g onicode" />
       <p className="text-xs text-muted-foreground">Then</p>
       <CommandBlock command={command} />
       <p className="text-xs text-muted-foreground">
         Skip the install if you already have <code className="font-mono">onicode</code>. If{" "}
-        <code className="font-mono">onicode</code> is not found after installing, add the folder the
-        installer names to your PATH.
+        <code className="font-mono">onicode</code> is not found after installing, add npm's global
+        bin folder to your PATH.
       </p>
     </div>
   );

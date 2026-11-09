@@ -1,7 +1,6 @@
 import type { DesktopBridge, DesktopUpdateState } from "@onicode/contracts";
 
 const FALLBACK_TRIAGE_COMMAND = "npx onicode triage";
-const DOWNLOAD_URL = "https://t3.codes/download";
 const ISSUE_URL = "https://github.com/pingdotgg/t3code/issues/new";
 const LAST_FAILURE_KEY = "onicode:boot-failed-at";
 const REPEAT_FAILURE_MS = 5 * 60_000;
@@ -350,20 +349,9 @@ export function showBootError(error: unknown) {
   issue.searchParams.set("environment", `${environment.surface}, ${environment.platform}`);
   const link = (href: string, textContent: string) =>
     element("a", { href, textContent, target: "_blank", rel: "noreferrer" });
-  const nightly = environment.channel === "nightly";
 
   const more = element("details", { open: isRepeatFailure(Date.now()) }, [
     element("summary", { textContent: "More options if it keeps failing" }),
-    ...(bridge
-      ? [
-          link(
-            nightly ? `${DOWNLOAD_URL}?channel=nightly` : DOWNLOAD_URL,
-            nightly
-              ? "Download and reinstall the latest nightly build"
-              : "Download and reinstall Onicode",
-          ),
-        ]
-      : []),
     element("div", {}, [
       element("p", {
         textContent:
