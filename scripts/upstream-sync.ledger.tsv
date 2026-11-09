@@ -7,3 +7,4 @@ ca920d5cdb	skip	T3 release CI; Onicode releases through better-update
 415f68d2fe	take	refactor(mobile): components/ui platform primitives are iOS files with .android overrides (#33173)
 225685a8d5	take	feat(pi): Fast and Ultrafast service tiers for Pi models (#33177)
 1d5404ad5d	take	fix(mobile): older chat messages show the date, not just the time (#33189)
+eb97d82156	take	feat: text generators let model APIs write titles, commits, and transcript cleanup (#33147)
