@@ -111,7 +111,7 @@
     "react-native-worklets": "0.13.0",
     "remark-gfm": "catalog:",
     "remark-parse": "catalog:",
-    "tailwind-merge": "^3.5.0",
+    "tailwind-merge": "^3.7.0",
     "unified": "catalog:",
     "uniwind": "1.13.0"
   },

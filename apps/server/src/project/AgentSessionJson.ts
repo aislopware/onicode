@@ -3,7 +3,7 @@ import * as SchemaAST from "effect/SchemaAST";
 import { none, type Many } from "stream-chain/defs.js";
 import { Assembler } from "stream-json/core/assembler.js";
 import * as StreamJson from "stream-json/core/parser.js";
-import type { ParserOptions, Token } from "stream-json/core/parser.js";
+import type { Token } from "stream-json/core/parser.js";
 
 type JsonPath = ReadonlyArray<string | number | null>;
 
@@ -52,12 +52,10 @@ export function createTranscriptJsonReader(
   options?: { readonly maxDepth?: number },
 ) {
   // 3.6.0 omits the synchronous tokenizer from types; parser() adds an unnecessary async generator.
-  const { jsonParser } = StreamJson as typeof StreamJson & {
-    jsonParser: (
-      options: ParserOptions,
-    ) => (input: string | typeof none) => Many<Token> | typeof none;
-  };
-  const tokenize = jsonParser({ packValues: false });
+  // A flushable also takes `none` at end of input, which its declared signature omits.
+  const tokenize = StreamJson.jsonParser({ packValues: false }) as (
+    input: string | typeof none,
+  ) => Many<Token> | typeof none;
   const assembler = new Assembler();
   let key: string | null = null;
   let value = "";

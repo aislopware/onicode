@@ -1,8 +1,12 @@
 import { getDocument, GlobalWorkerOptions, PDFWorker } from "pdfjs-dist";
+import rendererUrl from "pdfjs-dist/build/pdf.renderer.min.mjs?url";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import fallbackUrl from "pdfjs-dist/wasm/openjpeg_nowasm_fallback.js?url";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
+// Pages rasterize on an OffscreenCanvas in a worker, keeping scrolling off the main thread.
+// A second document open at once gets its own renderer from this script.
+GlobalWorkerOptions.rendererSrc = rendererUrl;
 
 const standardFonts = import.meta.glob<string>(
   "../../../node_modules/pdfjs-dist/standard_fonts/*",
@@ -36,6 +40,10 @@ let worker: PDFWorker | undefined;
 
 export function openPdf(bytes: ArrayBuffer) {
   worker ??= new PDFWorker();
+  if (GlobalWorkerOptions.rendererPorts.length === 0) {
+    // A document frees its port when destroyed, so reopening reuses this renderer.
+    GlobalWorkerOptions.rendererPorts = [new Worker(rendererUrl, { type: "module" })];
+  }
   return getDocument({
     worker,
     data: new Uint8Array(bytes),

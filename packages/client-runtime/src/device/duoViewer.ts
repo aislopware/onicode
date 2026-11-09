@@ -88,6 +88,8 @@ export function createDuoViewer(options: {
   const environment = (() => {
     const generator = new PMREMGenerator(renderer);
     const room = new RoomEnvironment();
+    // The phone's reflections are tuned for a room centered on the camera, which three now lowers.
+    room.position.y = 0;
     try {
       return generator.fromScene(room, 0.04);
     } catch (cause) {
