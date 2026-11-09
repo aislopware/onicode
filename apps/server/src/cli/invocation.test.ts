@@ -68,7 +68,12 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
         }),
       ).toBe(`sudo env "PATH=$PATH" onicode browser setup --base-dir '/srv/onicode home'`);
       expect(
-        yield* rootCommand({ node: "/opt/onicode/onicode", entry: "/opt/onicode/onicode", executable: true, args }),
+        yield* rootCommand({
+          node: "/opt/onicode/onicode",
+          entry: "/opt/onicode/onicode",
+          executable: true,
+          args,
+        }),
       ).toBe("sudo /opt/onicode/onicode browser setup --base-dir '/srv/onicode home'");
     }).pipe(Effect.scoped),
   );
@@ -126,7 +131,10 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
       yield* fs.writeFileString(shim, "@echo off\r\n");
       const hostCommand = (platform: NodeJS.Platform, env: Record<string, string>) =>
         resolveHostCliCommand("doctor", ["--base-dir", "C:\\Users\\Jane Doe\\.onicode"]).pipe(
-          Effect.provideService(HostProcess.ExecutablePath, "C:\\Program Files\\Onicode\\onicode.exe"),
+          Effect.provideService(
+            HostProcess.ExecutablePath,
+            "C:\\Program Files\\Onicode\\onicode.exe",
+          ),
           Effect.provideService(HostProcess.Arguments, [
             "C:\\Program Files\\Onicode\\onicode.exe",
             "C:\\Program Files\\Onicode\\resources\\app.asar\\apps\\server\\dist\\bin.mjs",
@@ -142,7 +150,10 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
         'onicode doctor "--base-dir" "C:\\Users\\Jane Doe\\.onicode"',
       );
       expect(
-        (yield* resolveHostCliCommand("doctor", ["--base-dir", "C:\\Onicode\\\u201CArchive\u201D"]).pipe(
+        (yield* resolveHostCliCommand("doctor", [
+          "--base-dir",
+          "C:\\Onicode\\\u201CArchive\u201D",
+        ]).pipe(
           Effect.provideService(HostProcess.Platform, "win32"),
           Effect.provideService(HostProcess.Environment, { PATH: "" }),
           Effect.provideService(HostProcess.ExecutablePath, "C:\\onicode.exe"),
@@ -198,7 +209,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped();
+      const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
       const prefix = path.join(root, "bunx-tools");
       const packageRoot = path.join(prefix, "lib/node_modules/onicode");
       const entry = path.join(packageRoot, "dist/bin.mjs");
@@ -229,7 +240,7 @@ it.layer(NodeServices.layer)("manual server installation ownership", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const root = yield* fs.makeTempDirectoryScoped();
+      const root = yield* fs.realPath(yield* fs.makeTempDirectoryScoped());
       const prefix = path.join(root, "bunx-tools");
       const packageRoot = path.join(prefix, "lib/node_modules/onicode");
       const launcher = path.join(packageRoot, "bin/onicode.mjs");

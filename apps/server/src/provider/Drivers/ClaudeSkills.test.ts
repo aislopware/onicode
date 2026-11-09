@@ -80,7 +80,10 @@ it.layer(NodeServices.layer)("discoverClaudeSkills", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const tempDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-claude-skills-" });
+      // Claude records projectPath from its symlink-resolved cwd, as with macOS's /var -> /private/var.
+      const tempDir = yield* fs.realPath(
+        yield* fs.makeTempDirectoryScoped({ prefix: "oni-claude-skills-" }),
+      );
       const configDir = path.join(tempDir, "claude-home");
       const workspace = path.join(tempDir, "workspace");
       const nestedWorkspace = path.join(workspace, "packages", "app");
