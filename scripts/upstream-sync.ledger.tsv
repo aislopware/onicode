@@ -1,0 +1,3 @@
+upstream	decision	note
+ca920d5cdb	skip	T3 release CI; Onicode releases through better-update
+2877a5e734	skip	hosted web alias job; Onicode has no hosted web app
