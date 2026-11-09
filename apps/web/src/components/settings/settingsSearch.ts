@@ -478,7 +478,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Guest links",
     to: "/settings/labs",
     scope: "environment",
-    searchTerms: ["beta share guest invite link teammate watch t3 connect tunnel"],
+    searchTerms: ["beta share guest invite link teammate watch"],
+  },
+  {
+    id: "public-access",
+    title: "Public access",
+    to: "/settings/labs",
+    scope: "environment",
+    searchTerms: ["beta tailscale funnel internet public guest webhook url"],
   },
   {
     id: "linked-environments-beta",
@@ -847,12 +854,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Mobile app",
     to: "/settings/about",
     searchTerms: ["phone tablet iPhone iPad iOS Android App Store Google Play QR"],
-  },
-  {
-    id: "privacy-policy",
-    title: "Privacy policy",
-    to: "/settings/about",
-    searchTerms: ["telemetry analytics usage data tracking legal opt out"],
   },
   {
     id: "telemetry-export",

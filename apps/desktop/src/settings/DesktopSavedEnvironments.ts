@@ -48,7 +48,6 @@ const PersistedSavedEnvironmentStorageRecordSchema = Schema.Struct({
   createdAt: Schema.String,
   lastConnectedAt: Schema.NullOr(Schema.String),
   desktopSsh: Schema.optionalKey(DesktopSshTargetSchema),
-  relayManaged: Schema.optionalKey(Schema.Struct({ relayUrl: Schema.String })),
   encryptedBearerToken: Schema.optionalKey(Schema.String),
 });
 
@@ -229,11 +228,8 @@ export const make = Effect.gen(function* () {
 
   return DesktopSavedEnvironments.of({
     getRegistry: readRegistryDocument(fileSystem, environment.savedEnvironmentRegistryPath).pipe(
-      // Relay-managed records have no reachable server to migrate.
       Effect.map((document) =>
-        document.records
-          .filter((record) => record.relayManaged === undefined)
-          .map((record) => toPersistedSavedEnvironmentRecord(record)),
+        document.records.map((record) => toPersistedSavedEnvironmentRecord(record)),
       ),
       Effect.withSpan("desktop.savedEnvironments.getRegistry"),
     ),

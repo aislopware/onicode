@@ -97,7 +97,6 @@ export const bootstrapRemoteBearerSession = Effect.fn(
     environmentEndpointUrl(input.httpBaseUrl, "/oauth/token"),
     input.timeoutMs ?? DEFAULT_REMOTE_REQUEST_TIMEOUT_MS,
     client.token({
-      headers: {},
       payload: {
         grant_type: AuthTokenExchangeGrantType,
         subject_token: input.credential,

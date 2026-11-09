@@ -18,7 +18,7 @@ export function webhookAddress(
     return {
       address: endpoint.path,
       copyable: false,
-      note: "This environment has no address to call yet.",
+      note: "This environment has no address to call yet. Public access gives it one on the internet.",
     };
   }
   const url = new URL(endpoint.path, httpBaseUrl);
@@ -26,7 +26,7 @@ export function webhookAddress(
     address: url.href,
     copyable: true,
     note: isLocalLoopbackHost(url.hostname)
-      ? "Only this computer can call this address."
-      : "Works wherever this environment's address is reachable, for example over Tailscale or your own proxy.",
+      ? "Only this computer can call this address. Turn on public access in Settings → Labs to receive webhooks from the internet."
+      : "Works wherever this environment's address is reachable, such as over Tailscale. Turn on public access in Settings → Labs to receive webhooks from the internet.",
   };
 }

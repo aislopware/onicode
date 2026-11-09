@@ -1227,6 +1227,11 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.serverGetStorageCleanupReport,
       idleTtlMs: 0,
     }),
+    publicAccessStatus: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:server:public-access-status",
+      tag: WS_METHODS.publicAccessSubscribeStatus,
+      idleTtlMs: 0,
+    }),
     updateStateAtom,
     settingsValueAtom,
     hiddenThreadTagsAtom,
