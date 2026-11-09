@@ -5,7 +5,7 @@ import {
   secretRequestDisplay,
   secretRequestFailureMessage,
   secretRequestLink,
-  secretRequestPrivacyNote,
+  SECRET_REQUEST_PRIVACY_NOTE,
   secretRequestReference,
   secretRequestSources,
   type SecretRequestItem,
@@ -237,7 +237,7 @@ function PendingSecretRequestForm(props: {
           className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
         >
           <ShieldCheckIcon className="size-3.5 shrink-0" aria-hidden />
-          {secretRequestPrivacyNote(item)}
+          {SECRET_REQUEST_PRIVACY_NOTE}
         </p>
         <Button
           type="button"

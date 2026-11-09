@@ -92,7 +92,6 @@ describe("native device stream transport", () => {
         access: {
           httpBase: "https://environment.test/api/device-hub",
           wsBase: "wss://environment.test/api/device-hub",
-          credentials: false,
           query: { wsTicket: "stream-ticket", hostId: "ssh-host" },
         },
       },
@@ -188,7 +187,6 @@ describe("iOS keypad protocol", () => {
         access: {
           httpBase: "https://device.test",
           wsBase: "wss://device.test",
-          credentials: false,
           query: {},
         },
       },
@@ -375,7 +373,6 @@ function recoveryFixture(
       access: {
         httpBase: "https://test/api/device-hub",
         wsBase: "wss://test/api/device-hub",
-        credentials: true,
         query: {},
       },
     },
@@ -644,7 +641,6 @@ describe("Android WebRTC device streams", () => {
         access: {
           httpBase: "https://test/api/device-hub",
           wsBase: "wss://test/api/device-hub",
-          credentials: true,
           query: { hostId: "eas" },
         },
       },

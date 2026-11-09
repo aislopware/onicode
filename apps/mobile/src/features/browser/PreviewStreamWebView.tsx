@@ -84,7 +84,7 @@ async function sendFilesToPage(chooser: PreviewStreamFileChooser, pick: boolean)
   const response = await fetch(chooser.uploadUrl, {
     method: "POST",
     body,
-    credentials: chooser.credentials ? "include" : "omit",
+    credentials: "omit",
   });
   if (!response.ok) throw new Error((await response.text()) || "The upload was refused.");
 }
@@ -165,7 +165,7 @@ function AuthorizedPreviewStream({
 }: PreviewStreamConfiguration & NativeStreamBridge) {
   const [attempt, setAttempt] = useState(0);
   const [previousAccess, setPreviousAccess] = useState(props.access);
-  // Wait for refreshed access, including cookie credentials with unchanged JSON.
+  // Wait for refreshed access, even when its JSON is unchanged.
   if (props.access !== previousAccess) {
     setPreviousAccess(props.access);
     setAttempt((current) => current + 1);

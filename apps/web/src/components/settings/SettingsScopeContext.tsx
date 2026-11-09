@@ -1,4 +1,8 @@
-import { type EnvironmentId, ONICODE_PROJECT_FILE_NAME, type OniProjectFile } from "@onicode/contracts";
+import {
+  type EnvironmentId,
+  ONICODE_PROJECT_FILE_NAME,
+  type OniProjectFile,
+} from "@onicode/contracts";
 import { parseOniProjectFile } from "@onicode/shared/oniProjectFile";
 import { useAtomValue } from "@effect/atom-react";
 import { AsyncResult, Atom } from "effect/reactivity";

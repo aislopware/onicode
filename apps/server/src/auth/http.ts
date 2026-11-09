@@ -21,17 +21,14 @@ import {
 import type { AuthEnvironmentScope } from "@onicode/contracts";
 import { parseOAuthScope } from "@onicode/shared/oauthScope";
 import { causeErrorTag } from "@onicode/shared/observability";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Layer from "effect/Layer";
-import * as Cookies from "effect/http/Cookies";
 import * as HttpEffect from "effect/http/HttpEffect";
 import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
-import * as SessionStore from "./SessionStore.ts";
 import { deriveAuthClientMetadata } from "./utils.ts";
 import { requestUrl } from "../requestUrl.ts";
 
@@ -134,8 +131,8 @@ export function failEnvironmentNotFound(reason: EnvironmentResourceNotFoundReaso
 
 /**
  * `<img>` and WebSocket cannot set headers, so media routes (device hub, preview stream)
- * authenticate the way the `/ws` upgrade does: a cookie for browser sessions, or a short-lived
- * `wsTicket` minted over authenticated HTTP for bearer clients.
+ * authenticate the way the `/ws` upgrade does: a short-lived `wsTicket` minted over
+ * authenticated HTTP.
  */
 export const authenticateMediaRequest =
   /* Request instrumentation already owns the span; keep this helper in that context. */
@@ -173,23 +170,6 @@ export const failEnvironmentInternal =
     }
     return yield* new EnvironmentInternalError({ code: "internal_error", reason, traceId });
   });
-
-const appendSessionCookie = (cookieName: string, token: string, expiresAt: DateTime.DateTime) =>
-  Effect.fromResult(
-    Cookies.set(Cookies.empty, cookieName, token, {
-      expires: DateTime.toDate(expiresAt),
-      httpOnly: true,
-      path: "/",
-      sameSite: "lax",
-    }),
-  ).pipe(
-    Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")),
-    Effect.flatMap((cookies) =>
-      HttpEffect.appendPreResponseHandler((_request, response) =>
-        Effect.succeed(HttpServerResponse.mergeCookies(response, cookies)),
-      ),
-    ),
-  );
 
 export const requireEnvironmentScope = Effect.fn("environment.auth.requireScope")(function* (
   scope: AuthEnvironmentScope,
@@ -231,7 +211,6 @@ export const layer = HttpApiBuilder.group(
   "auth",
   Effect.fnUntraced(function* (handlers) {
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-    const sessions = yield* SessionStore.SessionStore;
 
     return handlers
       .handle(
@@ -240,77 +219,10 @@ export const layer = HttpApiBuilder.group(
           function* (args) {
             yield* annotateEnvironmentRequest(args.endpoint.name);
             const request = yield* HttpServerRequest.HttpServerRequest;
-            const result = yield* serverAuth.getSessionState(request);
-            const credential = EnvironmentAuth.selectRequestCredential(
-              request,
-              sessions.cookieName,
-              sessions.legacyCookieName,
-            );
-            if (
-              credential?.source === "legacy-cookie" &&
-              result.authenticated &&
-              result.sessionMethod === "browser-session-cookie" &&
-              result.expiresAt
-            ) {
-              yield* appendSessionCookie(sessions.cookieName, credential.token, result.expiresAt);
-              yield* appendCredentialResponseHeaders;
-            }
-            return result;
+            return yield* serverAuth.getSessionState(request);
           },
           Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
             failEnvironmentInternal("internal_error", error),
-          ),
-        ),
-      )
-      .handle(
-        "browserSession",
-        Effect.fn("environment.auth.browserSession")(
-          function* (args) {
-            yield* annotateEnvironmentRequest(args.endpoint.name);
-            const request = yield* HttpServerRequest.HttpServerRequest;
-            const previousCredential = EnvironmentAuth.selectRequestCredential(
-              request,
-              sessions.cookieName,
-              sessions.legacyCookieName,
-            );
-            const result = yield* serverAuth.createBrowserSession(
-              args.payload.credential,
-              deriveAuthClientMetadata({ request }),
-              previousCredential &&
-                EnvironmentAuth.isBrowserCookieCredential(previousCredential.source)
-                ? previousCredential.token
-                : undefined,
-            );
-            const cookieName = result.cookieName ?? sessions.cookieName;
-            const selectedCookie = yield* Effect.fromResult(
-              Cookies.set(Cookies.empty, cookieName, result.sessionToken, {
-                expires: DateTime.toDate(result.response.expiresAt),
-                httpOnly: true,
-                path: "/",
-                sameSite: "lax",
-              }),
-            ).pipe(Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")));
-            const sessionCookies = result.expireNormalCookie
-              ? yield* Effect.fromResult(
-                  Cookies.expireCookie(selectedCookie, sessions.cookieName, {
-                    httpOnly: true,
-                    path: "/",
-                    sameSite: "lax",
-                  }),
-                ).pipe(Effect.catch(() => failEnvironmentInternal("browser_session_cookie_failed")))
-              : selectedCookie;
-
-            yield* HttpEffect.appendPreResponseHandler((_request, response) =>
-              Effect.succeed(HttpServerResponse.mergeCookies(response, sessionCookies)),
-            );
-            yield* appendCredentialResponseHeaders;
-            return result.response;
-          },
-          Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-            failEnvironmentAuthInvalid(EnvironmentAuth.serverAuthCredentialReason(error)),
-          ),
-          Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
-            failEnvironmentInternal("browser_session_issuance_failed", error),
           ),
         ),
       )

@@ -1,4 +1,4 @@
 interface:
   display_name: "Onicode App Testing"
-  short_description: "Test web and desktop in Onicode's Browser panel"
-  default_prompt: "Use $test-oni-app to verify the affected web or desktop flow through Onicode's Browser panel."
+  short_description: "Test the desktop app in a dev Electron window over CDP"
+  default_prompt: "Use $test-oni-app to verify the affected desktop flow in a dev Electron window."

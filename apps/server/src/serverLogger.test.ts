@@ -3,30 +3,21 @@ import { assert, describe, it } from "@effect/vitest";
 import * as NodeOS from "node:os";
 import * as NodeUtil from "node:util";
 
-import { ExternalLauncherBrowserSpawnError } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
 import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Redactable from "effect/Redactable";
 import * as Path from "effect/Path";
 import * as Tracer from "effect/Tracer";
 import * as HttpClient from "effect/http/HttpClient";
 import * as HttpClientResponse from "effect/http/HttpClientResponse";
-import * as TestConsole from "effect/testing/TestConsole";
 
 import { DEFAULT_SIGNAL_EXPORT } from "@onicode/shared/observability";
 import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
 
 import * as ServerConfig from "./config.ts";
-import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ServerLogger from "./serverLogger.ts";
-import {
-  announceStartupPairingUrl,
-  logBrowserAutoOpenUnavailable,
-  maybeOpenBrowser,
-} from "./serverRuntimeStartup.ts";
 
 interface ExportedRequest {
   readonly url: string;
@@ -56,7 +47,7 @@ const layerConfig = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =
     Effect.gen(function* () {
       const path = yield* Path.Path;
       const baseDir = path.join(NodeOS.tmpdir(), "oni-server-logger-test");
-      const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, undefined);
+      const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, false);
       return ServerConfig.make({
         logLevel: "Info",
         traceMinLevel: "Info",
@@ -74,7 +65,7 @@ const layerConfig = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =
         cwd: baseDir,
         baseDir,
         ...derivedPaths,
-        mode: "web",
+        mode: "standalone",
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
         tailscaleServeEnabled: false,
@@ -85,11 +76,7 @@ const layerConfig = (overrides: Partial<ServerConfig.ServerConfig["Service"]>) =
         desktopTelemetryFd: undefined,
         desktopTelemetryControlFd: undefined,
         resourceMonitorPath: undefined,
-        staticDir: undefined,
-        devUrl: undefined,
-        devAllowedOrigins: [],
-        noBrowser: false,
-        startupPresentation: "browser",
+        dev: false,
         ...overrides,
       });
     }),
@@ -240,78 +227,4 @@ describe("ServerLoggerLive", () => {
       assert.notInclude(output, "secret-token-value");
     }),
   );
-
-  describe("startup pairing URL", () => {
-    const pairingToken = "PAIRTOKEN7Q4K9";
-    const pairingUrl = `http://localhost:3773/pair#token=${pairingToken}`;
-    const announce = announceStartupPairingUrl(pairingUrl).pipe(
-      Effect.andThen(logBrowserAutoOpenUnavailable),
-    );
-
-    it.effect("prints the full URL but keeps its token out of exported log records", () =>
-      Effect.gen(function* () {
-        const { requests } = yield* logInSpanThrough(
-          { otlpLogsUrl: "https://collector.example.com/v1/logs" },
-          announce,
-        );
-
-        const body = requests.map((request) => request.body).join("\n");
-        assert.include(body, "Authentication required");
-        assert.notInclude(body, pairingToken);
-        const printed = (yield* TestConsole.logLines).map((line) =>
-          Array.isArray(line) ? line.join(" ") : String(line),
-        );
-        assert.isTrue(printed.some((line) => line.includes(`pairingUrl: ${pairingUrl}`)));
-      }).pipe(Effect.provide(TestConsole.layer)),
-    );
-
-    it.effect("keeps the token off the span events the trace file records", () =>
-      Effect.gen(function* () {
-        const { spans } = yield* logInSpanThrough({}, announce);
-
-        const events = JSON.stringify(
-          spans.flatMap((span) => span.events.map(([name, , attributes]) => [name, attributes])),
-        );
-        assert.include(events, "Authentication required");
-        assert.notInclude(events, pairingToken);
-      }).pipe(Effect.provide(TestConsole.layer)),
-    );
-
-    it.effect("keeps the token out of traces when the browser fails to open", () =>
-      Effect.gen(function* () {
-        const failingLaunch = maybeOpenBrowser(pairingUrl).pipe(
-          Effect.provide(
-            Layer.mergeAll(
-              layerConfig({ noBrowser: false }),
-              Layer.mock(ExternalLauncher.ExternalLauncher)({
-                launchBrowser: (target) =>
-                  Effect.fail(
-                    new ExternalLauncherBrowserSpawnError({
-                      target,
-                      command: "xdg-open",
-                      args: [target],
-                      cause: new Error("spawn xdg-open ENOENT"),
-                    }),
-                  ).pipe(Effect.withSpan("externalLauncher.launchBrowser")),
-              }),
-            ),
-          ),
-        );
-        const { spans } = yield* logInSpanThrough({}, failingLaunch);
-
-        const recorded = JSON.stringify(
-          spans.map((span) => ({
-            name: span.name,
-            events: span.events.map(([name, , attributes]) => [name, attributes]),
-            exit:
-              span.status._tag === "Ended" && Exit.isFailure(span.status.exit)
-                ? Cause.pretty(span.status.exit.cause)
-                : null,
-          })),
-        );
-        assert.include(recorded, "browser auto-open unavailable");
-        assert.notInclude(recorded, pairingToken);
-      }),
-    );
-  });
 });

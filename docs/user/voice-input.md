@@ -12,7 +12,7 @@ to a named environment on that phone, open **Settings → Voice → Transcribe o
 
 ## Choose where audio goes
 
-On web and desktop, you choose where transcription runs.
+On desktop, you choose where transcription runs.
 Nothing is sent until you choose one: open **Settings → Voice** and set
 **Transcribe with** to the environment that should transcribe for you.
 On a new device, the microphone or dictation shortcut opens that setting from the composer.
@@ -33,7 +33,7 @@ If a key is already saved, just confirm the provider. After
 you stop, the environment forwards your recording and any vocabulary hints to
 the selected provider, which bills its API account. No local model download or chat
 subscription is needed. Switch back to **This device** on mobile or **Off** on
-web and desktop to stop sharing. Removing the key stops that provider for everyone
+desktop to stop sharing. Removing the key stops that provider for everyone
 on the environment.
 
 **OpenRouter** works the same way but has no default model: pick one from its live

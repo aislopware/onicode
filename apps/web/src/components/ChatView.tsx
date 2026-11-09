@@ -128,7 +128,6 @@ import {
   type AtomCommandResult,
 } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import { isElectron } from "../env";
 import { useDiffPanelStore } from "../diffPanelStore";
 import { useActiveThreadRef } from "../hooks/useActiveThreadRef";
 import { composerRequiresModifier } from "../composer-logic";
@@ -2661,8 +2660,6 @@ export default function ChatView(props: ChatViewProps) {
     draftThreadRoute: routeKind === "draft",
     turnRunning: phase === "running",
     composerRequiresModifier: composerRequiresModifier(settings.sendShortcut, promptRef.current),
-    isWeb: !isElectron,
-    isDesktop: isElectron,
   });
   const getShortcutContextStable = useStableCallback(getShortcutContext);
   const timelineSkills = activeProviderStatus
@@ -3241,18 +3238,14 @@ export default function ChatView(props: ChatViewProps) {
             data-chat-header
             className={cn(
               "relative bg-background [[data-panel-animations=true]_&]:motion-safe:transition-[padding-left] [[data-panel-animations=true]_&]:motion-safe:duration-(--panel-animation-duration) [[data-panel-animations=true]_&]:motion-safe:ease-out",
-              isElectron
-                ? cn(
-                    "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
-                    reserveTitleBarControlInset &&
-                      !inlineRightPanelOwnsTitleBar &&
-                      "wco:pr-(--workspace-native-controls-inset)",
-                  )
-                : "flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center pl-(--workspace-gutter-start) pr-(--workspace-gutter-end)",
+              "drag-region flex h-[var(--workspace-topbar-height)] min-h-[var(--workspace-topbar-height)] shrink-0 items-center px-3 sm:px-5",
+              reserveTitleBarControlInset &&
+                !inlineRightPanelOwnsTitleBar &&
+                "wco:pr-(--workspace-native-controls-inset)",
               COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS,
             )}
           >
-            {isElectron && rightPanelControlsAtRoot ? (
+            {rightPanelControlsAtRoot ? (
               <span
                 aria-hidden
                 className="pointer-events-none fixed top-[var(--workspace-controls-top)] right-[var(--workspace-controls-right)] h-[var(--workspace-topbar-height)] w-28 [-webkit-app-region:no-drag]"

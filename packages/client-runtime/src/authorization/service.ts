@@ -1,13 +1,8 @@
-import {
-  type ClientConnectionMethod,
-  EnvironmentId,
-  type ExecutionEnvironmentDescriptor,
-} from "@onicode/contracts";
+import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@onicode/contracts";
 import { resolveRemoteWebSocketConnectionUrl } from "./remote.ts";
 import { environmentMismatchError, mapRemoteEnvironmentError } from "../connection/errors.ts";
 import type { ConnectionAttemptError, PreparedHttpAuthorization } from "../connection/model.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
-import * as ClientCapabilities from "../platform/capabilities.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -32,7 +27,6 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
       readonly bearerToken: string;
-      readonly connectionMethod: ClientConnectionMethod;
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
     /** Lets the next direct authorization of this address skip its own descriptor read. */
     readonly rememberCheckedDescriptor: (
@@ -45,7 +39,6 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
 const CHECKED_DESCRIPTOR_TTL_NANOS = 5_000_000_000n;
 
 const make = Effect.gen(function* () {
-  const presentation = yield* ClientCapabilities.ClientPresentation;
   const httpClient = yield* HttpClient.HttpClient;
 
   // A route or host check hands its descriptor to the connect it leads to, once,
@@ -95,8 +88,6 @@ const make = Effect.gen(function* () {
       wsBaseUrl: input.wsBaseUrl,
       httpBaseUrl: input.httpBaseUrl,
       bearerToken: input.bearerToken,
-      clientMetadata: presentation.metadata,
-      connectionMethod: input.connectionMethod,
     }).pipe(
       Effect.mapError(mapRemoteEnvironmentError),
       Effect.provideService(HttpClient.HttpClient, httpClient),

@@ -1,7 +1,4 @@
-import type {
-  AuthClientPresentationMetadata,
-  ExecutionEnvironmentDescriptor,
-} from "@onicode/contracts";
+import type { ExecutionEnvironmentDescriptor } from "@onicode/contracts";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -9,7 +6,6 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as HttpClient from "effect/http/HttpClient";
 
-import { appendClientConnectionParams } from "../authorization/remote.ts";
 import * as RemoteEnvironmentAuthorization from "../authorization/service.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
 import {
@@ -69,21 +65,8 @@ const isBearerProfile = Schema.is(BearerConnectionProfile);
 const isSshProfile = Schema.is(SshConnectionProfile);
 const isBearerCredential = Schema.is(BearerConnectionCredential);
 
-function primarySocketUrl(
-  target: PrimaryConnectionTarget,
-  clientMetadata: AuthClientPresentationMetadata | undefined,
-): string {
-  const url = new URL(target.wsBaseUrl);
-  if (url.pathname === "" || url.pathname === "/") {
-    url.pathname = "/ws";
-  }
-  appendClientConnectionParams(url, clientMetadata, "direct");
-  return url.toString();
-}
-
 const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary")(function* () {
   const auth = yield* ClientCapabilities.PrimaryEnvironmentAuth;
-  const presentation = yield* ClientCapabilities.ClientPresentation;
   const remote = yield* RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization;
 
   return Effect.fn("clientRuntime.connection.broker.primary")(function* (
@@ -91,14 +74,10 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
   ) {
     const bearerToken = yield* auth.bearerToken;
     if (Option.isNone(bearerToken)) {
-      return {
-        environmentId: target.environmentId,
-        label: target.label,
-        httpBaseUrl: target.httpBaseUrl,
-        socketUrl: primarySocketUrl(target, presentation.metadata),
-        httpAuthorization: null,
-        target,
-      } satisfies PreparedConnection;
+      return yield* new ConnectionBlockedError({
+        reason: "authentication",
+        detail: "This app has no credential for its own environment.",
+      });
     }
 
     const authorized = yield* remote.authorizeBearer({
@@ -106,7 +85,6 @@ const makePrimaryBroker = Effect.fn("clientRuntime.connection.broker.makePrimary
       httpBaseUrl: target.httpBaseUrl,
       wsBaseUrl: target.wsBaseUrl,
       bearerToken: bearerToken.value,
-      connectionMethod: "direct",
     });
     return {
       ...authorized,
@@ -154,7 +132,6 @@ const makeBearerBroker = Effect.fn("clientRuntime.connection.broker.makeBearer")
       httpBaseUrl: profile.httpBaseUrl,
       wsBaseUrl: profile.wsBaseUrl,
       bearerToken: credential.token,
-      connectionMethod: "direct",
     });
     return {
       ...authorized,
@@ -222,7 +199,6 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
       httpBaseUrl: prepared.bootstrap.httpBaseUrl,
       wsBaseUrl: prepared.bootstrap.wsBaseUrl,
       bearerToken: prepared.bearerToken,
-      connectionMethod: "ssh",
     });
     return {
       ...authorized,

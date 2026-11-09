@@ -55,7 +55,7 @@ const runCli = (args: ReadonlyArray<string>) =>
 
 const makeConfig = (baseDir: string) =>
   Effect.gen(function* () {
-    const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, undefined);
+    const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, false);
     return {
       logLevel: "Info",
       traceMinLevel: "Info",
@@ -70,17 +70,13 @@ const makeConfig = (baseDir: string) =>
       otlpTracesExport: DEFAULT_SIGNAL_EXPORT,
       otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
       otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
-      mode: "web",
+      mode: "standalone",
       port: 0,
       host: "127.0.0.1",
       cwd: process.cwd(),
       baseDir,
       ...derivedPaths,
-      staticDir: undefined,
-      devUrl: undefined,
-      devAllowedOrigins: [],
-      noBrowser: true,
-      startupPresentation: "browser",
+      dev: false,
       desktopBootstrapToken: undefined,
       autoBootstrapProjectFromCwd: false,
       logWebSocketEvents: false,
@@ -146,7 +142,7 @@ it.effect.each(["snapshot", "mutation"] as const)(
       yield* persistServerRuntimeState({
         path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
         state: yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", devUrl: undefined },
+          config: { host: "127.0.0.1", dev: false },
           port: 3_773,
         }),
       });

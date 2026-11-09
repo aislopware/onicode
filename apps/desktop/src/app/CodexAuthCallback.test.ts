@@ -1,8 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off globalFetch:off - Tests exercise the real native loopback listener without an OpenAI account.
 import * as NodeHttp from "node:http";
 import { describe, expect, it } from "vite-plus/test";
-import { codexAuthDeliveryUrl, readCodexAuthDelivery } from "@onicode/shared/codexAuthHandoff";
-import { EnvironmentId, ProviderInstanceId } from "@onicode/contracts";
 import { receiveCodexAuthCallback, cancelCodexAuthCallback } from "./CodexAuthCallback.ts";
 
 async function freePort() {
@@ -50,31 +48,6 @@ describe("desktop Codex callback helper", () => {
       return true;
     });
     expect(received).toBe(expected);
-  });
-  it("returns the web app to the exact instance and environment without putting the code in its query", async () => {
-    const authorizationUrl = request(await freePort());
-    const expected = callback(authorizationUrl);
-    const input = {
-      authorizationUrl,
-      returnUrl:
-        "http://localhost:3773/settings/providers?environmentId=remote-one&instanceId=work",
-      environmentId: EnvironmentId.make("remote-one"),
-      instanceId: ProviderInstanceId.make("work"),
-      flowId: "flow-one",
-    };
-    await receiveCodexAuthCallback(
-      authorizationUrl,
-      async () => {
-        const response = await fetch(expected, { redirect: "manual" });
-        expect(response.status).toBe(303);
-        const delivery = response.headers.get("location")!;
-        expect(new URL(delivery).searchParams.has("code")).toBe(false);
-        expect(readCodexAuthDelivery(delivery)?.callbackUrl).toBe(expected);
-        expect(readCodexAuthDelivery(delivery)?.returnUrl).toBe(input.returnUrl);
-        return true;
-      },
-      (url) => codexAuthDeliveryUrl(input, url),
-    );
   });
   it("cancels and releases its listener so exact-port reauthorization can run again", async () => {
     const authorizationUrl = request(await freePort());

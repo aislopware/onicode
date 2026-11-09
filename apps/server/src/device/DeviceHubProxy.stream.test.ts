@@ -47,7 +47,6 @@ it.effect("preserves binary input and admission frames through the real socket p
               Effect.succeed({
                 sessionId: AuthSessionId.make("test"),
                 subject: "test",
-                method: "bearer-access-token",
                 scopes: [AuthOrchestrationOperateScope],
               }),
           } as unknown as EnvironmentAuth.EnvironmentAuth["Service"]),

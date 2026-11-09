@@ -624,9 +624,8 @@ development; the UI reports `dev` from a development bundle or one built with
 `VITE_RELEASE_CHANNEL=dev`. On the server and the desktop main process either key in
 `OTEL_RESOURCE_ATTRIBUTES` wins; the UI never reads that variable.
 
-Attributes specific to Onicode use the `onicode.` prefix. The UI runs as `onicode-web` in both a
-browser and the desktop window, since it is the same code, and `onicode.client.surface` is `desktop`
-or `web`. The server's `onicode.server.managed_by` is `desktop` when the desktop app launched it and
+Attributes specific to Onicode use the `onicode.` prefix. The desktop window's renderer runs as
+`onicode-renderer`. The server's `onicode.server.managed_by` is `desktop` when the desktop app launched it and
 `standalone` otherwise. The desktop main process reports `onicode.desktop.mode` as `development` or
 `packaged` (formerly `service.mode`; dashboards filtering on that key must switch). Node processes
 also report the semantic `process.runtime.name`, `process.runtime.version`, and

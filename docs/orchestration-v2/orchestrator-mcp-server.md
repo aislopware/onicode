@@ -411,7 +411,7 @@ environment's thread and show its current title; a link to a thread they do not
 know renders as a label that opens nothing. Older `oni-thread://v1/<threadId>`
 links name no environment: clients resolve them in the message's environment,
 then by a unique match in another enabled environment. Every caller, including
-an outside OAuth client, gets the same `oni-thread://` link.
+a linked environment, gets the same `oni-thread://` link.
 
 List and read results report `snoozed` and `snoozedUntil`, and
 `oni_thread_list` filters on `snoozed`. The server's `isSnoozed` follows the

@@ -126,7 +126,7 @@ export const triageCommand = Command.make("triage", {
       const explicitBaseDir = Option.getOrUndefined(flags.baseDir);
       const envHome = yield* Config.String("ONICODE_HOME").pipe(Config.option);
       const baseDir = yield* resolveBaseDir(explicitBaseDir ?? Option.getOrUndefined(envHome));
-      const paths = yield* ServerConfig.deriveServerPaths(baseDir, undefined, {});
+      const paths = yield* ServerConfig.deriveServerPaths(baseDir, false, {});
 
       const session = yield* writeTriageSession({
         baseDir,

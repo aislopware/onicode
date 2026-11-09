@@ -320,7 +320,7 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
       );
       assert.deepEqual(fork.targetThread.linkOrigin, shell?.linkOrigin);
 
-      // An ordinary outside agent's launch is not a link's.
+      // A launch by an MCP client that is not a link is not a link's.
       const plain = yield* launch(claudeCode, "Started by Claude Code");
       assert.equal((yield* projections.getThreadShell(plain))?.linkOrigin, undefined);
 
@@ -356,7 +356,7 @@ it.layer(Layer.provideMerge(layerTools, layerOrchestration))("work a link starts
       assert.equal(failureCode(yield* rename(laptop, users)), "capability_denied");
       assert.equal(failureCode(yield* rename(desk, ownLaunch)), "capability_denied");
       assert.equal((yield* projections.getThreadShell(users))?.title, "The user's own");
-      // An ordinary outside agent is not fenced.
+      // An MCP client that is not a link is not fenced.
       assert.equal((yield* rename(claudeCode, users)).isError, false);
       // Naming this environment's own id is still this environment's thread.
       for (const [name, args] of [

@@ -24,7 +24,7 @@ import { SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
 import * as ServerSelfUpdate from "./selfUpdate.ts";
 
 interface HarnessOptions {
-  readonly mode?: "web" | "desktop";
+  readonly mode?: "standalone" | "desktop";
   readonly managed?: boolean;
   readonly preflight?: "ready" | "blocked";
   readonly preflightDuration?: Duration.Input;
@@ -153,7 +153,7 @@ const makeHarness = Effect.fn("test.make_self_update_harness")(function* (
     Effect.provideService(HostProcess.Architecture, "x64"),
     Effect.provide(
       Layer.merge(
-        ServerConfig.layer({ ...config, mode: options.mode ?? "web" }),
+        ServerConfig.layer({ ...config, mode: options.mode ?? "standalone" }),
         ManagedPolicy.layerTest(options.policy),
       ),
     ),

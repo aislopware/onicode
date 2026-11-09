@@ -9,7 +9,6 @@ export const SERVER_EXIT_CODE_MANAGED_POLICY = 77;
 
 export const DesktopBackendBootstrap = Schema.Struct({
   mode: Schema.Literal("desktop"),
-  noBrowser: Schema.Boolean,
   port: PortSchema,
   // Omit in WSL to use the Linux home instead of the mapped Windows directory.
   oniHome: Schema.optional(Schema.String),

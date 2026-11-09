@@ -67,31 +67,9 @@ import {
 } from "./toolkits/device/tools.ts";
 import * as HtmlHandlers from "./toolkits/html/handlers.ts";
 import { HtmlPreviewTool, HtmlPreviewToolkit, HtmlRenderToolkit } from "./toolkits/html/tools.ts";
-import { requestUrl } from "../requestUrl.ts";
 
-const mcpResourceMetadataUrl = (request: HttpServerRequest.HttpServerRequest) =>
-  requestUrl(request).pipe(
-    Option.map((url) => `${url.origin}/.well-known/oauth-protected-resource/mcp`),
-  );
-
-/** Launched agents cannot open OAuth browsers; OAuth would mint credentials outliving their session. */
-const unauthorized = (input: {
-  readonly request: HttpServerRequest.HttpServerRequest;
-  readonly presentedToken: boolean;
-  readonly offerOAuth: boolean;
-}) => {
-  const metadataUrl = input.offerOAuth
-    ? Option.getOrUndefined(mcpResourceMetadataUrl(input.request))
-    : undefined;
-  const challenge = [
-    "Bearer",
-    [
-      ...(metadataUrl === undefined ? [] : [`resource_metadata="${metadataUrl}"`]),
-      ...(input.presentedToken ? ['error="invalid_token"'] : []),
-    ].join(", "),
-  ]
-    .filter((part) => part.length > 0)
-    .join(" ");
+const unauthorized = (presentedToken: boolean) => {
+  const challenge = presentedToken ? 'Bearer error="invalid_token"' : "Bearer";
   return HttpServerResponse.jsonUnsafe(
     {
       error: "invalid_mcp_credential",
@@ -141,9 +119,6 @@ const normalizeMcpHttpResponse = (
     ? HttpServerResponse.setStatus(response, 202)
     : response;
 };
-
-// Session tokens are `<payload>.<signature>`; registry tokens are a bare base64url secret.
-const looksLikeProviderToken = (token: string) => token.length > 0 && !token.includes(".");
 
 const decodeModeLimit = Schema.decodeUnknownOption(
   Schema.Struct({ runtimeMode: RuntimeMode, interactionMode: ProviderInteractionMode }),
@@ -213,11 +188,7 @@ const makeMcpAuthMiddleware = Effect.gen(function* () {
                 ? "missing_bearer_token"
                 : "unknown_or_expired_token",
       });
-      return unauthorized({
-        request,
-        presentedToken: token.length > 0,
-        offerOAuth: Option.isSome(clients) && !looksLikeProviderToken(token),
-      });
+      return unauthorized(token.length > 0);
     }
     const asked = withModeLimit(invocation, request);
     if (asked === undefined) return invalidModeLimit;

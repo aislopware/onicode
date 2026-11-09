@@ -30,7 +30,7 @@ import { useEnvironmentScope, usePreparedConnection } from "../../state/session"
 import { mintPairingCodeOn } from "../../state/peerPairingCode";
 import { peerLinkEnvironment, useLinkableMachines } from "../../state/peerLinks";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { accessConfig } from "../auth/ConnectAgentSurface";
+import { accessConfig } from "../settings/linkAccess";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { LinkAccessPicker } from "../settings/LinkAccessPicker";
 import { ANOTHER_ADDRESS, LinkMachineBadge } from "../settings/LinkMachineSelect";

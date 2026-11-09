@@ -20,85 +20,41 @@ import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess } from "effect/process";
 
-import { type DevShareError, shareDevServer, unshareDevServer } from "./lib/dev-share.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 
 Object.assign(process.env, loadRepoEnv());
 
 const BASE_SERVER_PORT = 13773;
 const BASE_WEB_PORT = 5733;
+// Clear of common CDP ports such as 9222 and 9333 that a developer's own browser may hold.
+const BASE_DEBUG_PORT = 19222;
 const MAX_HASH_OFFSET = 3000;
 const MAX_PORT = 65535;
 const DESKTOP_DEV_LOOPBACK_HOST = "127.0.0.1";
-// Browsers block these ports before networking even when curl accepts them.
-// https://fetch.spec.whatwg.org/#port-blocking
-const FETCH_BAD_PORTS = new Set([
-  0, 1, 7, 9, 11, 13, 15, 17, 19, 20, 21, 22, 23, 25, 37, 42, 43, 53, 69, 77, 79, 87, 95, 101, 102,
-  103, 104, 109, 110, 111, 113, 115, 117, 119, 123, 135, 137, 139, 143, 161, 179, 389, 427, 465,
-  512, 513, 514, 515, 526, 530, 531, 532, 540, 548, 554, 556, 563, 587, 601, 636, 989, 990, 993,
-  995, 1719, 1720, 1723, 2049, 3659, 4045, 4190, 5060, 5061, 6000, 6566, 6665, 6666, 6667, 6668,
-  6669, 6679, 6697, 10080,
-]);
 // Dev binds loopback; other interfaces cannot establish port availability.
 const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "::1"] as const;
 // Migration prunes after copying, so large sources also need an automatic-seeding limit.
 const LARGE_DEV_DATABASE_BYTES = 500 * 1024 * 1024;
-
-/** Only loopback and wildcard binds keep the loopback proxy target reachable. */
-export function isProxiableBindHost(host: string): boolean {
-  const normalized = host.trim();
-  return (
-    normalized === "" ||
-    normalized === "localhost" ||
-    normalized === "127.0.0.1" ||
-    normalized === "::1" ||
-    normalized === "[::1]" ||
-    normalized === "0.0.0.0" ||
-    normalized === "::" ||
-    normalized === "[::]"
-  );
-}
 
 export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(NodeOS.homedir(), ".onicode"),
 );
 
 const MODE_ARGS = {
-  dev: [
-    "run",
-    "--filter=@onicode/contracts",
-    "--filter=@onicode/web",
-    "--filter=onicode",
-    "--parallel",
-    "dev",
-  ],
+  // The desktop task depends on the server build; Electron starts that server itself.
+  dev: ["run", "--filter=@onicode/desktop", "--filter=@onicode/web", "dev"],
+  // The server alone, for the mobile app and CLI work.
   "dev:server": ["run", "--filter=onicode", "dev"],
-  "dev:web": ["run", "--filter=@onicode/web", "dev"],
-  "dev:desktop": ["run", "--filter=@onicode/desktop", "--filter=@onicode/web", "dev"],
 } as const satisfies Record<string, ReadonlyArray<string>>;
 
-// `--built`: the web package rebuilds into apps/web/dist and the backend serves
-// it, so no Vite dev server runs.
-const BUILT_DEV_ARGS = [
-  "run",
-  "--filter=@onicode/web",
-  "--filter=onicode",
-  "--parallel",
-  "dev:built",
-] as const;
-
 type DevMode = keyof typeof MODE_ARGS;
-// Only backend ports honor --host/ONICODE_HOST; web ports stay loopback.
+// Only the backend port honors --host/ONICODE_HOST; the others stay loopback.
 type PortAvailabilityCheck<R = never> = (
   port: number,
-  role?: "server" | "web",
+  role?: "server" | "loopback",
 ) => Effect.Effect<boolean, never, R>;
 
 const DEV_RUNNER_MODES = Object.keys(MODE_ARGS) as Array<DevMode>;
-
-export function isBrowserAllowedPort(port: number): boolean {
-  return !FETCH_BAD_PORTS.has(port);
-}
 
 export class DevRunnerConfigurationError extends Schema.TaggedError<DevRunnerConfigurationError>()(
   "DevRunnerConfigurationError",
@@ -145,7 +101,7 @@ export class DevRunnerProcessError extends Schema.TaggedError<DevRunnerProcessEr
   "DevRunnerProcessError",
   {
     operation: Schema.Literals(["spawn", "wait-for-exit"]),
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
+    mode: Schema.Literals(["dev", "dev:server"]),
     executable: Schema.Literal("vp"),
     argumentCount: Schema.Number,
     shell: Schema.Boolean,
@@ -160,7 +116,7 @@ export class DevRunnerProcessError extends Schema.TaggedError<DevRunnerProcessEr
 export class DevRunnerProcessExitError extends Schema.TaggedError<DevRunnerProcessExitError>()(
   "DevRunnerProcessExitError",
   {
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
+    mode: Schema.Literals(["dev", "dev:server"]),
     executable: Schema.Literal("vp"),
     argumentCount: Schema.Number,
     shell: Schema.Boolean,
@@ -169,29 +125,6 @@ export class DevRunnerProcessExitError extends Schema.TaggedError<DevRunnerProce
 ) {
   override get message(): string {
     return `Dev-runner process exited with code ${this.exitCode} in mode "${this.mode}".`;
-  }
-}
-
-export class DevRunnerHostNotProxiableError extends Schema.TaggedError<DevRunnerHostNotProxiableError>()(
-  "DevRunnerHostNotProxiableError",
-  {
-    mode: Schema.Literals(["dev", "dev:web"]),
-    host: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `--host ${this.host} cannot be combined with ${this.mode}: single-origin browser dev proxies the backend at localhost, and a backend bound only to ${this.host} leaves localhost unanswered, so every proxied request fails. Use a wildcard (0.0.0.0 or ::) to serve that interface and loopback together, or --share for remote access.`;
-  }
-}
-
-export class DevRunnerBuiltNeedsShareError extends Schema.TaggedError<DevRunnerBuiltNeedsShareError>()(
-  "DevRunnerBuiltNeedsShareError",
-  {
-    mode: Schema.Literals(["dev", "dev:server", "dev:web", "dev:desktop"]),
-  },
-) {
-  override get message(): string {
-    return `--built only works with \`dev --share\` (got ${this.mode}${this.mode === "dev" ? " without --share" : ""}): the backend serves the built client on the tailnet URL.`;
   }
 }
 
@@ -291,7 +224,6 @@ interface CreateDevRunnerEnvInput {
   readonly serverOffset: number;
   readonly webOffset: number;
   readonly oniHome: string | undefined;
-  readonly browser: boolean | undefined;
   readonly autoBootstrapProjectFromCwd: boolean | undefined;
   readonly logWebSocketEvents: boolean | undefined;
   readonly host: string | undefined;
@@ -305,26 +237,18 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
   serverOffset,
   webOffset,
   oniHome,
-  browser,
   autoBootstrapProjectFromCwd,
   logWebSocketEvents,
   host,
   port,
   devUrl,
 }: CreateDevRunnerEnvInput): Effect.fn.Return<NodeJS.ProcessEnv, never, Path.Path> {
+  const { webPort, debugPort } = portsForOffset(webOffset);
   const serverPort = port ?? BASE_SERVER_PORT + serverOffset;
-  const webPort = BASE_WEB_PORT + webOffset;
   const configuredBaseDir = oniHome?.trim() || undefined;
   const resolvedBaseDir = yield* resolveBaseDir(configuredBaseDir);
-  const isDesktopMode = mode === "dev:desktop";
 
-  const output: NodeJS.ProcessEnv = {
-    ...baseEnv,
-    PORT: String(webPort),
-    VITE_DEV_SERVER_URL:
-      devUrl?.toString() ??
-      `http://${isDesktopMode ? DESKTOP_DEV_LOOPBACK_HOST : "localhost"}:${webPort}`,
-  };
+  const output: NodeJS.ProcessEnv = { ...baseEnv, ONICODE_PORT: String(serverPort) };
 
   if (configuredBaseDir !== undefined) {
     output.ONICODE_HOME = resolvedBaseDir;
@@ -336,47 +260,24 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
   // Dev-runner servers are never launcher-managed (serviceLauncherClient.ts resolveStartup).
   delete output.ONICODE_SERVICE_LAUNCHER_CONTEXT;
   delete output.ONICODE_BOOT_SERVICE_UNIT;
+  delete output.ONICODE_DESKTOP_WS_URL;
 
-  if (!isDesktopMode) {
-    output.ONICODE_PORT = String(serverPort);
-    // An inherited HOST pins Vite's HMR socket via explicitHost in apps/web/vite.config.ts.
-    // Only desktop mode should set it.
-    delete output.HOST;
-    if (mode === "dev" || mode === "dev:web") {
-      // Browser dev is single-origin: everything (including /ws) is proxied
-      // through Vite, so the client must resolve its backend from
-      // window.location.origin rather than a baked-in localhost URL.
-      delete output.VITE_HTTP_URL;
-      delete output.VITE_WS_URL;
-      // Deleting is not enough on its own: vite.config.ts calls loadRepoEnv,
-      // which merges `.env`/`.env.local` *under* this env, so a developer
-      // with either URL in their `.env` would get it back and silently lose
-      // single-origin mode.
-      output.ONICODE_SINGLE_ORIGIN_DEV = "1";
-    } else {
-      output.VITE_HTTP_URL = `http://localhost:${serverPort}`;
-      output.VITE_WS_URL = `ws://localhost:${serverPort}`;
-      delete output.ONICODE_SINGLE_ORIGIN_DEV;
-    }
-  } else {
-    output.ONICODE_PORT = String(serverPort);
-    output.VITE_HTTP_URL = `http://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
-    output.VITE_WS_URL = `ws://${DESKTOP_DEV_LOOPBACK_HOST}:${serverPort}`;
-    // Desktop pins the renderer to loopback on purpose; an ambient marker
-    // must not make Vite drop those URLs.
-    delete output.ONICODE_SINGLE_ORIGIN_DEV;
+  if (mode === "dev") {
+    output.PORT = String(webPort);
+    output.VITE_DEV_SERVER_URL =
+      devUrl?.toString() ?? `http://${DESKTOP_DEV_LOOPBACK_HOST}:${webPort}`;
+    output.ONICODE_DESKTOP_REMOTE_DEBUGGING_PORT = String(debugPort);
+    // Electron starts and owns the server, always on loopback, and passes it `--dev` itself.
     delete output.ONICODE_MODE;
-    delete output.ONICODE_NO_BROWSER;
     delete output.ONICODE_HOST;
-    delete output.ONICODE_DEV_AUTH_TOKEN;
-  }
-
-  if (!isDesktopMode && host !== undefined) {
-    output.ONICODE_HOST = host;
-  }
-
-  if (!isDesktopMode) {
-    output.ONICODE_NO_BROWSER = browser === true ? "0" : "1";
+    delete output.ONICODE_DEV;
+  } else {
+    output.ONICODE_MODE = "standalone";
+    output.ONICODE_DEV = "1";
+    delete output.VITE_DEV_SERVER_URL;
+    if (host !== undefined) {
+      output.ONICODE_HOST = host;
+    }
   }
 
   if (autoBootstrapProjectFromCwd !== undefined) {
@@ -391,31 +292,18 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
     delete output.ONICODE_LOG_WS_EVENTS;
   }
 
-  if (mode === "dev") {
-    output.ONICODE_MODE = "web";
-    delete output.ONICODE_DESKTOP_WS_URL;
-  }
-
-  if (mode === "dev:server" || mode === "dev:web") {
-    output.ONICODE_MODE = "web";
-    delete output.ONICODE_DESKTOP_WS_URL;
-  }
-
-  if (isDesktopMode) {
-    output.HOST = DESKTOP_DEV_LOOPBACK_HOST;
-    delete output.ONICODE_DESKTOP_WS_URL;
-  }
-
   return output;
 });
 
-function portPairForOffset(offset: number): {
+function portsForOffset(offset: number): {
   readonly serverPort: number;
   readonly webPort: number;
+  readonly debugPort: number;
 } {
   return {
     serverPort: BASE_SERVER_PORT + offset,
     webPort: BASE_WEB_PORT + offset,
+    debugPort: BASE_DEBUG_PORT + offset,
   };
 }
 
@@ -448,7 +336,7 @@ const makeDefaultCheckPortAvailability =
   (port, role) =>
     Effect.gen(function* () {
       const net = yield* NetService.NetService;
-      const hosts = role === "web" ? DEV_PORT_PROBE_HOSTS : devPortProbeHosts(configuredHost);
+      const hosts = role === "loopback" ? DEV_PORT_PROBE_HOSTS : devPortProbeHosts(configuredHost);
       return yield* checkPortAvailabilityOnHosts(port, hosts, (candidatePort, host) =>
         net.canListenOnHost(candidatePort, host),
       );
@@ -475,9 +363,9 @@ export const findFirstAvailableOffset = Effect.fn("dev-runner.findFirstAvailable
     defaultCheckPortAvailability) as PortAvailabilityCheck<R>;
 
   for (let candidate = startOffset; ; candidate += 1) {
-    const { serverPort, webPort } = portPairForOffset(candidate);
+    const { serverPort, webPort, debugPort } = portsForOffset(candidate);
     const serverPortOutOfRange = serverPort > MAX_PORT;
-    const webPortOutOfRange = webPort > MAX_PORT;
+    const webPortOutOfRange = debugPort > MAX_PORT;
 
     if (
       (requireServerPort && serverPortOutOfRange) ||
@@ -487,16 +375,12 @@ export const findFirstAvailableOffset = Effect.fn("dev-runner.findFirstAvailable
       break;
     }
 
-    if (requireWebPort && !isBrowserAllowedPort(webPort)) {
-      continue;
-    }
-
     const checks: Array<Effect.Effect<boolean, never, R>> = [];
     if (requireServerPort) {
       checks.push(checkPort(serverPort, "server"));
     }
     if (requireWebPort) {
-      checks.push(checkPort(webPort, "web"));
+      checks.push(checkPort(webPort, "loopback"), checkPort(debugPort, "loopback"));
     }
 
     if (checks.length === 0) {
@@ -542,20 +426,6 @@ export const resolveModePortOffsets = Effect.fn("dev-runner.resolveModePortOffse
 > {
   const checkPort = (checkPortAvailability ??
     defaultCheckPortAvailability) as PortAvailabilityCheck<R>;
-
-  if (mode === "dev:web") {
-    if (hasExplicitDevUrl) {
-      return { serverOffset: startOffset, webOffset: startOffset };
-    }
-
-    const webOffset = yield* findFirstAvailableOffset({
-      startOffset,
-      requireServerPort: false,
-      requireWebPort: true,
-      checkPortAvailability: checkPort,
-    });
-    return { serverOffset: startOffset, webOffset };
-  }
 
   if (mode === "dev:server") {
     if (hasExplicitServerPort) {
@@ -618,7 +488,7 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
   const path = yield* Path.Path;
   const exists = (file: string) => fs.exists(file).pipe(Effect.orElseSucceed(() => false));
 
-  if (input.worktreeHome !== undefined && input.mode !== "dev:web") {
+  if (input.worktreeHome !== undefined) {
     const stateDir = path.join(input.worktreeHome, "userdata");
     for (const name of ["statev2.sqlite", "state.sqlite"]) {
       const file = path.join(stateDir, name);
@@ -674,16 +544,13 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
 interface DevRunnerCliInput {
   readonly mode: DevMode;
   readonly oniHome: string | undefined;
-  readonly browser: boolean | undefined;
   readonly autoBootstrapProjectFromCwd: boolean | undefined;
   readonly logWebSocketEvents: boolean | undefined;
   readonly host: string | undefined;
   readonly port: number | undefined;
   readonly devUrl: URL | undefined;
   readonly dryRun: boolean;
-  readonly share: boolean;
   readonly seed?: boolean | undefined;
-  readonly built: boolean;
   readonly runArgs: ReadonlyArray<string>;
 }
 
@@ -699,18 +566,6 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
         }),
     ),
   );
-
-  if (
-    (input.mode === "dev" || input.mode === "dev:web") &&
-    input.host !== undefined &&
-    !isProxiableBindHost(input.host)
-  ) {
-    return yield* new DevRunnerHostNotProxiableError({ mode: input.mode, host: input.host });
-  }
-
-  if (input.built && (input.mode !== "dev" || !input.share)) {
-    return yield* new DevRunnerBuiltNeedsShareError({ mode: input.mode });
-  }
 
   const worktreePath = yield* resolveGitWorktreePath(yield* HostProcess.WorkingDirectory);
 
@@ -746,7 +601,6 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     serverOffset,
     webOffset,
     oniHome: resolvedOniHome,
-    browser: input.browser,
     autoBootstrapProjectFromCwd: input.autoBootstrapProjectFromCwd,
     logWebSocketEvents: input.logWebSocketEvents,
     host: input.host,
@@ -761,101 +615,17 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
   const baseDir = env.ONICODE_HOME ?? (yield* DEFAULT_T3_HOME);
 
   yield* Effect.logInfo(
-    `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.ONICODE_PORT)} webPort=${String(env.PORT)} baseDir=${baseDir}`,
+    `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.ONICODE_PORT)}${
+      input.mode === "dev"
+        ? ` webPort=${String(env.PORT)} cdpPort=${String(env.ONICODE_DESKTOP_REMOTE_DEBUGGING_PORT)}`
+        : ""
+    } baseDir=${baseDir}`,
   );
 
-  // Before the share block: --dry-run only resolves and prints. Sharing would
-  // replace, then tear down, whatever mapping the port already had — a
-  // surprising side effect from a command documented as inert.
   if (input.dryRun) {
     return;
   }
 
-  const sharedWebPort = BASE_WEB_PORT + webOffset;
-  let built = false;
-  if (input.share) {
-    if (input.mode === "dev:server") {
-      yield* Effect.logInfo("[dev-runner] --share has no effect for dev:server (no web server).");
-    } else if (input.mode === "dev:desktop") {
-      yield* Effect.logWarning(
-        "[dev-runner] --share is not supported for dev:desktop (the renderer is pinned to loopback). Use `dev`, which runs the whole browser stack.",
-      );
-    } else {
-      // acquireRelease, not share-then-addFinalizer: the mapping outlives this
-      // process (and reboots), so the cleanup has to be registered atomically
-      // with creating it. An interrupt landing in between would otherwise
-      // leave a mapping pointing at a port nothing is listening on.
-      const shared = yield* Effect.acquireRelease(
-        shareDevServer({
-          webPort: sharedWebPort,
-          // The backend binds 127.0.0.1 unless --host changes it. A wildcard
-          // still answers there; `--host ::1` binds only the IPv6 loopback.
-          ...(input.built
-            ? {
-                localTarget: {
-                  port: Number(env.ONICODE_PORT),
-                  host: ["::1", "[::1]"].includes(input.host?.trim() ?? "") ? "[::1]" : "127.0.0.1",
-                },
-              }
-            : {}),
-        }),
-        () =>
-          unshareDevServer(sharedWebPort).pipe(
-            Effect.flatMap((result) =>
-              result.cleared
-                ? Effect.void
-                : Effect.logWarning(
-                    `[dev-runner] could not remove the tailnet mapping for port ${String(sharedWebPort)}${
-                      result.explanation ? `: ${result.explanation}` : ""
-                    }. Remove it with \`tailscale serve --https=${String(sharedWebPort)} --set-path=/ off\`.`,
-                  ),
-            ),
-          ),
-      ).pipe(
-        Effect.tapError((error: DevShareError) =>
-          Effect.logWarning(
-            `[dev-runner] could not share on the tailnet: ${error.message}${
-              error.hint ? ` — ${error.hint}` : ""
-            }`,
-          ),
-        ),
-        Effect.option,
-        Effect.map(Option.getOrUndefined),
-      );
-
-      if (shared) {
-        // The app is reached from the tailnet origin. Vite already allows
-        // *.ts.net hosts; the backend needs the origin for credentialed
-        // requests that bypass the proxy (desktop renderer, direct calls).
-        env.ONICODE_DEV_ALLOWED_ORIGINS = [
-          env.ONICODE_DEV_ALLOWED_ORIGINS,
-          new URL(shared.url).origin,
-        ]
-          .filter((entry) => entry && entry.length > 0)
-          .join(",");
-        if (input.devUrl === undefined) {
-          env.VITE_DEV_SERVER_URL = shared.url;
-        }
-        if (input.built) {
-          built = true;
-          env.ONICODE_BUILT_DEV = "1";
-        } else if (env.ONICODE_BUNDLED_DEV === undefined) {
-          // A shared origin serves a remote browser, where unbundled dev's
-          // per-module requests each pay a tailnet round trip — a cold module
-          // graph takes minutes to first paint. Bundled dev collapses that to a
-          // few chunk requests.
-          env.ONICODE_BUNDLED_DEV = "1";
-        }
-        yield* Effect.logInfo(`[dev-runner] shared on tailnet: ${shared.url}`);
-      } else if (input.built) {
-        yield* Effect.logWarning(
-          "[dev-runner] --built needs the tailnet share; running the Vite dev server instead.",
-        );
-      }
-    }
-  }
-
-  // After sharing, so the warm step sees the same bundled-dev env as Vite.
   yield* prepareFirstStart({
     mode: input.mode,
     seed: input.seed !== false,
@@ -863,7 +633,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     env,
   });
 
-  const args = [...(built ? BUILT_DEV_ARGS : MODE_ARGS[input.mode]), ...input.runArgs];
+  const args = [...MODE_ARGS[input.mode], ...input.runArgs];
   const spawnCommand = yield* resolveSpawnCommand("vp", args, { env });
   const processContext = {
     mode: input.mode,
@@ -923,10 +693,6 @@ const devRunnerCli = Command.make("dev-runner", {
     Flag.optional,
     Flag.map(Option.getOrUndefined),
   ),
-  browser: Flag.Boolean("browser").pipe(
-    Flag.withDescription("Open a browser automatically (disabled by default for web dev)."),
-    Flag.withDefault(false),
-  ),
   autoBootstrapProjectFromCwd: Flag.Boolean("auto-bootstrap-project-from-cwd").pipe(
     Flag.withDescription(
       "Auto-bootstrap toggle (equivalent to ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD).",
@@ -939,7 +705,9 @@ const devRunnerCli = Command.make("dev-runner", {
     Flag.withFallbackConfig(optionalBooleanConfig("ONICODE_LOG_WS_EVENTS")),
   ),
   host: Flag.String("host").pipe(
-    Flag.withDescription("Server host/interface override (forwards to ONICODE_HOST)."),
+    Flag.withDescription(
+      "Server host/interface override for `dev:server` (forwards to ONICODE_HOST). The desktop app always binds its server to loopback.",
+    ),
     Flag.withFallbackConfig(optionalStringConfig("ONICODE_HOST")),
   ),
   port: Flag.Int("port").pipe(
@@ -950,7 +718,7 @@ const devRunnerCli = Command.make("dev-runner", {
   devUrl: Flag.String("dev-url").pipe(
     Flag.withSchema(Schema.URLFromString),
     Flag.withDescription(
-      "Explicit web dev URL override (forwards to VITE_DEV_SERVER_URL). Ambient VITE_DEV_SERVER_URL values are ignored so a parent dev app cannot redirect the child runner.",
+      "Renderer dev server URL override for `dev` (forwards to VITE_DEV_SERVER_URL). Ambient VITE_DEV_SERVER_URL values are ignored so a parent dev app cannot redirect the child runner.",
     ),
     Flag.optional,
     Flag.map(Option.getOrUndefined),
@@ -959,23 +727,11 @@ const devRunnerCli = Command.make("dev-runner", {
     Flag.withDescription("Resolve mode/ports/env and print, but do not spawn Vite+."),
     Flag.withDefault(false),
   ),
-  share: Flag.Boolean("share").pipe(
-    Flag.withDescription(
-      "Publish the web dev server on this machine's tailnet over HTTPS (via `tailscale serve`) and print the pairing URL for it. Removed again on exit.",
-    ),
-    Flag.withDefault(false),
-  ),
   seed: Flag.Boolean("seed").pipe(
     Flag.withDescription(
       "Seed an empty worktree database from ~/.onicode on first start (read-only, via migrate-dev-db) if the source is at most 500 MiB. On by default; --no-seed or ONICODE_DEV_SEED=0 skips it.",
     ),
     Flag.withFallbackConfig(optionalBooleanConfig("ONICODE_DEV_SEED")),
-  ),
-  built: Flag.Boolean("built").pipe(
-    Flag.withDescription(
-      "With --share: serve a production web build from the backend instead of the Vite dev server. Rebuilds on change, no HMR, much smaller remote loads.",
-    ),
-    Flag.withDefault(false),
   ),
   runArgs: Argument.String("run-arg").pipe(
     Argument.withDescription("Additional Vite+ run args (pass after `--`)."),

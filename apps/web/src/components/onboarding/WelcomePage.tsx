@@ -38,7 +38,6 @@ import {
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { TYPOGRAPHY_ADVANCED_STORAGE_KEY } from "../../appearanceFonts";
-import { isElectron } from "../../env";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { usePersistEnvironmentProviderInstanceMutation } from "../../hooks/useSettings";
 import { workspaceAreaProps } from "../../lib/workspaceFocus";
@@ -257,7 +256,7 @@ export function WelcomePage({
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         {/* The desktop window only moves where CSS opts in, so keep a titlebar strip. */}
-        {isElectron ? <WorkspacePageHeader electron /> : null}
+        <WorkspacePageHeader />
         <div className="min-h-0 flex-1 overflow-y-auto scrollbar-gutter-both">
           <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col px-6 pt-12 pb-8 sm:pt-20">
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">

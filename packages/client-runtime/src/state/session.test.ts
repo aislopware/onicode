@@ -40,8 +40,6 @@ const SESSION = {
   auth: {
     policy: "remote-reachable",
     bootstrapMethods: [],
-    sessionMethods: [],
-    sessionCookieName: "oni_session",
   },
   scopes: ["orchestration:read"],
 } satisfies AuthSessionState;

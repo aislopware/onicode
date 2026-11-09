@@ -41,7 +41,6 @@ const principal = (...scopes: AuthEnvironmentScope[]) =>
       Effect.provideService(EnvironmentAuthenticatedPrincipal, {
         sessionId: decodeSessionId("voice-test"),
         subject: "test",
-        method: "bearer-access-token",
         scopes: new Set(scopes),
       }),
     ),

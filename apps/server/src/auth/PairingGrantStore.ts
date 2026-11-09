@@ -388,7 +388,7 @@ const make = Effect.gen(function* () {
         ),
       );
     const credential = yield* generatePairingToken;
-    const isDevStartupToken = config.devUrl !== undefined && input?.purpose === "startup";
+    const isDevStartupToken = config.dev && input?.purpose === "startup";
     const ttl =
       input?.ttl ??
       (isDevStartupToken ? DEV_STARTUP_TTL_HOURS : DEFAULT_ONE_TIME_TOKEN_TTL_MINUTES);

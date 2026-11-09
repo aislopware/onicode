@@ -104,12 +104,6 @@ describe("searchSettings", () => {
     ).toEqual(["network-access", "connections-environment"]);
   });
 
-  it("hides desktop-only settings from browser search", () => {
-    expect(SETTINGS_SEARCH_ITEMS.some((item) => item.id === "quit-confirmation")).toBe(true);
-    expect(searchSettings("hold to quit")).toEqual([]);
-    expect(searchSettings("wsl")).toEqual([]);
-  });
-
   it("hides settings whose controls are unavailable", () => {
     const available = filterAvailableSettingsSearchItems({
       hasEnvironment: false,

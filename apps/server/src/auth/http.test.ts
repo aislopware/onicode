@@ -11,8 +11,6 @@ import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
-import * as Schema from "effect/Schema";
 import * as Etag from "effect/http/Etag";
 import * as HttpPlatform from "effect/http/HttpPlatform";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
@@ -27,21 +25,9 @@ import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as AuthHttp from "./http.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 
-const DEV_TOKEN = "reusable-dev-auth-token-that-is-long-enough";
 class AuthTestApi extends HttpApi.make("environment").add(EnvironmentHttpApi.groups.auth) {}
 
-const layerConfig = Layer.effect(
-  ServerConfig.ServerConfig,
-  Effect.gen(function* () {
-    const config = yield* ServerConfig.ServerConfig;
-    return {
-      ...config,
-      mode: "web",
-      devUrl: new URL("http://127.0.0.1:5173"),
-      devAuthToken: Redacted.make(DEV_TOKEN),
-    } satisfies ServerConfig.ServerConfig["Service"];
-  }),
-).pipe(Layer.provide(ServerConfig.layerTest(process.cwd(), { prefix: "oni-auth-http-test-" })));
+const layerConfig = ServerConfig.layerTest(process.cwd(), { prefix: "oni-auth-http-test-" });
 
 const layerEnvironmentAuth = EnvironmentAuth.layer.pipe(
   Layer.provide(ManagedPolicy.layerTest()),
@@ -64,15 +50,7 @@ const layerRoutes = HttpApiBuilder.layer(AuthTestApi).pipe(
   Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 
-const encodeJson = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
-const postJson = (path: string, body: unknown, headers?: Readonly<Record<string, string>>) =>
-  new Request(`http://127.0.0.1${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...headers },
-    body: encodeJson(body),
-  });
-
-it.effect("sets the selected browser session cookies through the HTTP route", () =>
+it.effect("rejects a token exchange that only requests retired scopes", () =>
   Effect.gen(function* () {
     const random = yield* SecureRandom.SecureRandom;
     const unusedSecretStore = ServerSecretStore.ServerSecretStore.of({
@@ -86,26 +64,15 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
       Context.add(ServerSecretStore.ServerSecretStore, unusedSecretStore),
     );
     return yield* Effect.acquireUseRelease(
-      Effect.sync(
-        () =>
-          [
-            HttpRouter.toWebHandler(layerRoutes, { disableLogger: true }),
-            HttpRouter.toWebHandler(layerRoutes, { disableLogger: true }),
-          ] as const,
-      ),
-      ([environmentA, environmentB]) =>
+      Effect.sync(() => HttpRouter.toWebHandler(layerRoutes, { disableLogger: true })),
+      (environment) =>
         Effect.promise(async () => {
-          const devResponse = await environmentA.handler(
-            postJson("/api/auth/browser-session", { credential: DEV_TOKEN }),
-            requestContext,
-          );
-          expect(devResponse.status).toBe(200);
-          const retiredScopeResponse = await environmentA.handler(
+          const response = await environment.handler(
             new Request("http://127.0.0.1/oauth/token", {
               method: "POST",
               body: new URLSearchParams({
                 grant_type: AuthTokenExchangeGrantType,
-                subject_token: DEV_TOKEN,
+                subject_token: "unused-pairing-credential",
                 subject_token_type: AuthEnvironmentBootstrapTokenType,
                 requested_token_type: AuthAccessTokenType,
                 scope: "review:write",
@@ -113,48 +80,10 @@ it.effect("sets the selected browser session cookies through the HTTP route", ()
             }),
             requestContext,
           );
-          expect(retiredScopeResponse.status).toBe(400);
-          expect(await retiredScopeResponse.json()).toMatchObject({ reason: "invalid_scope" });
-
-          const devCookies = devResponse.headers.getSetCookie();
-          const devCookie = devCookies.find((cookie) => cookie.startsWith("oni_dev_session_"));
-          expect(devCookie).toContain("HttpOnly");
-          expect(devCookie).toContain(`=${DEV_TOKEN};`);
-          expect(devCookies).toContainEqual(
-            expect.stringMatching(/^oni_session_[^=]*=;.*Max-Age=0/),
-          );
-          const devCookieHeader = devCookie?.split(";", 1)[0] ?? "";
-          const environmentBSession = await environmentB.handler(
-            new Request("http://127.0.0.1/api/auth/session", {
-              headers: { cookie: devCookieHeader },
-            }),
-            requestContext,
-          );
-          expect(environmentBSession.status).toBe(200);
-          expect(await environmentBSession.json()).toMatchObject({ authenticated: true });
-
-          const pairingResponse = await environmentA.handler(
-            postJson(
-              "/api/auth/pairing-token",
-              { scopes: ["orchestration:read"] },
-              { cookie: devCookieHeader },
-            ),
-            requestContext,
-          );
-          expect(pairingResponse.status).toBe(200);
-          const pairing = (await pairingResponse.json()) as { credential: string };
-          const restrictedResponse = await environmentA.handler(
-            postJson("/api/auth/browser-session", { credential: pairing.credential }),
-            requestContext,
-          );
-          expect(restrictedResponse.status).toBe(200);
-          const restrictedCookies = restrictedResponse.headers.getSetCookie();
-          expect(restrictedCookies).toHaveLength(1);
-          expect(restrictedCookies[0]).toMatch(/^oni_session_/);
-          expect(restrictedCookies[0]).not.toContain("oni_dev_session_");
+          expect(response.status).toBe(400);
+          expect(await response.json()).toMatchObject({ reason: "invalid_scope" });
         }),
-      ([environmentA, environmentB]) =>
-        Effect.promise(() => Promise.all([environmentA.dispose(), environmentB.dispose()])),
+      (environment) => Effect.promise(() => environment.dispose()),
     );
   }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );

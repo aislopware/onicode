@@ -142,19 +142,11 @@ export function ProviderAuthenticationSection({
   async function openBrowser() {
     if (!url || readOnly) return;
     const requiresConsent = interaction?.type === "browser" && interaction.requiresConsent;
-    // Reserve tabs before awaiting consent; browsers block later opens.
-    const pending = requiresConsent && !window.desktopBridge ? window.open("", "_blank") : null;
-    if (pending) pending.opener = null;
     try {
-      if (requiresConsent && !(await send({ type: "browser", action: "accept" }))) {
-        pending?.close();
-        return;
-      }
-      if (pending) pending.location.href = url;
-      else await ensureLocalApi().shell.openExternal(url);
+      if (requiresConsent && !(await send({ type: "browser", action: "accept" }))) return;
+      await ensureLocalApi().shell.openExternal(url);
       setError(null);
     } catch {
-      pending?.close();
       setError("Could not open the sign-in page. Copy the link and open it in your browser.");
     }
   }

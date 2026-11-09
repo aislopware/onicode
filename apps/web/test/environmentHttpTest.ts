@@ -5,14 +5,11 @@ import {
   EnvironmentAuthenticatedPrincipal,
   EnvironmentHttpApi,
   EnvironmentVoiceBodyLimit,
-  type AuthBrowserSessionRequest,
-  type AuthBrowserSessionResult,
   type AuthCreatePairingCredentialInput,
   type AuthEnvironmentScope,
   type AuthPairingCredentialResult,
   type AuthSessionState,
   type ExecutionEnvironmentDescriptor,
-  type EnvironmentAuthInvalidError,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import type * as Context from "effect/Context";
@@ -25,14 +22,9 @@ import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 import { PrimaryEnvironmentHttpClient } from "../src/environments/primary/httpClient";
 import { __setPrimaryHttpRunnerForTests } from "../src/lib/runtime";
 
-type BrowserSessionHandler = (
-  payload: AuthBrowserSessionRequest,
-) => Effect.Effect<AuthBrowserSessionResult, EnvironmentAuthInvalidError>;
-
 interface EnvironmentHttpTestScenario {
   readonly descriptor?: () => Effect.Effect<ExecutionEnvironmentDescriptor>;
   readonly session?: () => Effect.Effect<AuthSessionState>;
-  readonly browserSession?: BrowserSessionHandler;
   readonly pairingCredential?: (
     payload: AuthCreatePairingCredentialInput,
   ) => Effect.Effect<AuthPairingCredentialResult>;
@@ -41,7 +33,6 @@ interface EnvironmentHttpTestScenario {
 export interface EnvironmentHttpTestCalls {
   descriptor: number;
   session: number;
-  browserSession: Array<AuthBrowserSessionRequest>;
   pairingCredential: Array<AuthCreatePairingCredentialInput>;
 }
 
@@ -55,7 +46,6 @@ const authenticatedAuth: Context.Service.Shape<typeof EnvironmentAuthenticatedAu
     Effect.provideService(EnvironmentAuthenticatedPrincipal, {
       sessionId: AuthSessionId.make("test-session"),
       subject: "test-client",
-      method: "browser-session-cookie",
       scopes: new Set<AuthEnvironmentScope>(),
       expiresAt: DateTime.makeUnsafe("2026-05-01T12:00:00.000Z"),
     }),
@@ -65,7 +55,6 @@ export async function installEnvironmentHttpTest(scenario: EnvironmentHttpTestSc
   const calls: EnvironmentHttpTestCalls = {
     descriptor: 0,
     session: 0,
-    browserSession: [],
     pairingCredential: [],
   };
 
@@ -90,15 +79,6 @@ export async function installEnvironmentHttpTest(scenario: EnvironmentHttpTestSc
               Effect.fn("test.environment.auth.session")(function* () {
                 calls.session += 1;
                 return yield* scenario.session?.() ?? unexpectedEndpoint("auth.session");
-              }),
-            )
-            .handle(
-              "browserSession",
-              Effect.fn("test.environment.auth.browserSession")(function* ({ payload }) {
-                calls.browserSession.push(payload);
-                return yield* (
-                  scenario.browserSession?.(payload) ?? unexpectedEndpoint("auth.browserSession")
-                );
               }),
             )
             .handle("token", () => unexpectedEndpoint("auth.token"))

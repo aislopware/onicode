@@ -817,7 +817,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ServerLifecycleEvents.ServerLifecycleEvents)({}),
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
-  Layer.mock(SessionStore.SessionStore)({ cookieName: "config-test", legacyCookieName: undefined }),
+  Layer.mock(SessionStore.SessionStore)({}),
   Layer.mock(SourceControlDiscovery.SourceControlDiscovery)({}),
   Layer.mock(SourceControlRepositoryService.SourceControlRepositoryService)({}),
   Layer.mock(SourceControlSignIn.SourceControlSignIn)({}),
@@ -948,10 +948,8 @@ it.effect.each([
         Layer.mock(EnvironmentAuth.EnvironmentAuth)({
           getDescriptor: () =>
             Effect.succeed({
-              policy: "loopback-browser",
+              policy: "loopback",
               bootstrapMethods: [],
-              sessionMethods: ["browser-session-cookie"],
-              sessionCookieName: "config-test-session",
             }),
         }),
         // Signal subscription on either accessor so the test also fails, rather
@@ -984,7 +982,6 @@ it.effect.each([
             {
               sessionId: AuthSessionId.make("config-test"),
               subject: "config-test",
-              method: "browser-session-cookie",
               scopes: [],
             },
             yield* ServerBrowser.ServerBrowser,
@@ -1199,10 +1196,8 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({
         getDescriptor: () =>
           Effect.succeed({
-            policy: "loopback-browser",
+            policy: "loopback",
             bootstrapMethods: [],
-            sessionMethods: ["browser-session-cookie"],
-            sessionCookieName: "config-test-session",
           }),
       }),
     );
@@ -1225,7 +1220,6 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
           {
             sessionId: AuthSessionId.make("config-test"),
             subject: "config-test",
-            method: "browser-session-cookie",
             scopes: [],
           },
           yield* ServerBrowser.ServerBrowser,
@@ -1386,7 +1380,6 @@ it.effect("a publish whose push fails still refreshes the new remote", () =>
           {
             sessionId: AuthSessionId.make("publish-test"),
             subject: "publish-test",
-            method: "browser-session-cookie",
             scopes: [AuthSourceControlWriteScope],
           },
           yield* ServerBrowser.ServerBrowser,

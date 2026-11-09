@@ -82,9 +82,9 @@ export const LINKED_ENVIRONMENTS_OFF =
 
 /**
  * Links from this environment to others. Linking signs this environment in to
- * the peer's `/mcp` as an outside agent with a pairing code from the peer, the
- * same MCP OAuth flow an outside agent uses, without a browser. The peer's
- * session token is kept in the server secret store; the table keeps the rest.
+ * the peer's `/mcp` through its peer-link OAuth flow with a pairing code from the
+ * peer. The peer's session token is kept in the server secret store; the table
+ * keeps the rest.
  */
 export class PeerLinks extends Context.Service<
   PeerLinks,

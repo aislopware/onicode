@@ -240,7 +240,7 @@ describe("readManagedPolicy", () => {
             ],
             // Registry names ignore case, so a subkey written in other case still counts.
             {
-              clients: { Desktop: 1, "LOCAL-BROWSER": 1, REMOTE: 1 },
+              clients: { Desktop: 1, LOCAL: 1, REMOTE: 1 },
               AllowedDrivers: { Codex: 1, CLAUDEAGENT: 1, UnknownDriver: 1 },
             },
           ),
@@ -253,7 +253,7 @@ describe("readManagedPolicy", () => {
             maxRuntimeMode: "auto-accept-edits",
             browserCookieImport: false,
             updates: { mode: "off" },
-            clients: ["desktop", "local-browser", "remote"],
+            clients: ["desktop", "local", "remote"],
             providers: { allowedDrivers: ["codex", "claudeAgent", "UnknownDriver"] },
           },
         },
@@ -261,7 +261,7 @@ describe("readManagedPolicy", () => {
 
       // Disabling a policy leaves each checkbox's falseValue behind; it restricts nothing.
       const disabledGroups = {
-        Clients: { desktop: 0, "local-browser": 0, remote: 0 },
+        Clients: { desktop: 0, local: 0, remote: 0 },
         AllowedDrivers: { codex: 0, claudeAgent: 0 },
       };
       assert.deepStrictEqual(

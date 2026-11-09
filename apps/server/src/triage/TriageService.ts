@@ -42,7 +42,6 @@ const describeClient = (client: AuthClientPresentationMetadata) =>
     client.label ?? "an unknown client",
     client.appVersion === undefined ? undefined : `version ${client.appVersion}`,
     client.os === undefined ? undefined : `on ${client.os}`,
-    client.browser === undefined ? undefined : `in ${client.browser}`,
   ]
     .filter((part) => part !== undefined)
     .join(" ");

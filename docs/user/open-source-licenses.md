@@ -3,7 +3,7 @@
 Onicode includes third-party software and adapted assets. To read their license and attribution
 notices:
 
-- On web and desktop, open **Settings → About**, find **Open source licenses** under **Legal**,
+- On desktop, open **Settings → About**, find **Open source licenses** under **Legal**,
   and select **View licenses**.
 - On mobile, open **Settings → About Onicode → Open source licenses**.
 

@@ -732,7 +732,6 @@ export const make = Effect.gen(function* () {
                   current.value.target._tag === "BearerConnectionTarget" &&
                   credentialConnectionId(current.value.target.connectionId) ===
                     registration.target.connectionId &&
-                  current.value.httpAuthorization?._tag === "Bearer" &&
                   current.value.httpAuthorization.token !== token
                     ? Option.some(
                         Option.some({

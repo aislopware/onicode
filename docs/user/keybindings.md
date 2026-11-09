@@ -125,19 +125,15 @@ Join modifiers and a key with `+`, such as `mod+shift+d` or `ctrl+l`.
 
 Available context keys are `terminalFocus`, `terminalOpen`, `previewFocus`,
 `previewOpen`, `rightPanelOpen`, `modelPickerOpen`, `usagePageOpen`, `composerFocus`,
-`draftThreadRoute`, `turnRunning`, `editableFocus`, `isWeb`, and `isDesktop`.
+`draftThreadRoute`, `turnRunning`, and `editableFocus`.
 `rightPanelOpen` applies only to `rightPanel.new` and is true while the right panel is
 open; the default `mod+t` uses it to open the panel's new-tab menu.
 `draftThreadRoute` is true on a draft thread, including a restored draft, until it is first sent.
 `editableFocus` is true while a text field, the composer, or another editor has
-the keyboard. `isWeb` is true in a browser tab. `isDesktop` is true in the
-desktop app. Unknown keys evaluate to `false`.
+the keyboard. Unknown keys evaluate to `false`.
 
 `mod+1` through `mod+9` jump to the first nine threads, and to models while the
 model picker is open. The thread jumps do not run while the model picker is open.
-Those defaults use `isDesktop` so they do not steal the
-browser's tab-switch shortcuts. Remove that condition in Settings if you want
-the same jumps in a browser.
 
 Combine keys with `!` for not, `&&` for and, `||` for or, and parentheses:
 

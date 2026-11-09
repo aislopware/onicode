@@ -4,54 +4,11 @@ import type {
   AuthClientPresentationMetadata,
 } from "@onicode/contracts";
 import type * as HttpServerRequest from "effect/http/HttpServerRequest";
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Digest is effectful; the cookie name stays a plain function.
-import * as NodeCrypto from "node:crypto";
 import * as NodeNet from "node:net";
 import { normalizeHostname } from "@onicode/shared/hostClassification";
 import * as Mac from "effect/crypto/Mac";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Result from "effect/Result";
-
-const SESSION_COOKIE_NAME = "oni_session";
-
-/** Cookies span ports; use separate names for servers sharing a hostname. */
-export function resolveSessionCookieName(input: {
-  readonly mode: "web" | "desktop";
-  readonly port: number;
-  readonly host: string | undefined;
-  readonly instanceKey: string;
-  readonly environmentId: string;
-  readonly development: boolean;
-}): string {
-  if (input.mode === "desktop") {
-    return `${SESSION_COOKIE_NAME}_${input.port}`;
-  }
-
-  const instanceHash = NodeCrypto.createHash("sha256")
-    .update(
-      !input.development && isRemoteReachableHost(input.host)
-        ? input.environmentId
-        : input.instanceKey,
-    )
-    .digest("hex")
-    .slice(0, 12);
-
-  if (!input.development && isRemoteReachableHost(input.host)) {
-    return `${SESSION_COOKIE_NAME}_${instanceHash}`;
-  }
-
-  return `${SESSION_COOKIE_NAME}_${input.port}_${instanceHash}`;
-}
-
-export function resolveLegacySessionCookieName(input: {
-  readonly mode: "web" | "desktop";
-  readonly host: string | undefined;
-  readonly development: boolean;
-}): string | undefined {
-  return input.mode === "web" && !input.development && isRemoteReachableHost(input.host)
-    ? SESSION_COOKIE_NAME
-    : undefined;
-}
 
 /**
  * The loopback address a server given `host` listens on, or undefined when it may listen beyond
@@ -124,20 +81,6 @@ function inferDeviceType(userAgent: string | undefined): AuthClientMetadataDevic
   return "desktop";
 }
 
-function inferBrowser(userAgent: string | undefined): string | undefined {
-  if (!userAgent) {
-    return undefined;
-  }
-  const normalized = userAgent.toLowerCase();
-  if (/edg(?:e|a|ios)?\//.test(normalized)) return "Edge";
-  if (/opr\/|opios\//.test(normalized)) return "Opera";
-  if (/firefox\/|fxios\//.test(normalized)) return "Firefox";
-  if (/electron\//.test(normalized)) return "Electron";
-  if (/chrome\//.test(normalized) || /crios\//.test(normalized)) return "Chrome";
-  if (/safari\//.test(normalized) && !/chrome\//.test(normalized)) return "Safari";
-  return undefined;
-}
-
 function inferOs(userAgent: string | undefined): string | undefined {
   if (!userAgent) {
     return undefined;
@@ -173,13 +116,11 @@ export function deriveAuthClientMetadata(input: {
   const userAgent = normalizeNonEmptyString(input.request.headers["user-agent"]);
   const ipAddress = readRemoteAddressFromSource(input.request.source);
   const os = input.presented?.os ?? inferOs(userAgent);
-  const browser = inferBrowser(userAgent);
   return {
     ...(input.presented?.label ? { label: input.presented.label } : {}),
     ...(ipAddress ? { ipAddress } : {}),
     ...(userAgent ? { userAgent } : {}),
     deviceType: input.presented?.deviceType ?? inferDeviceType(userAgent),
     ...(os ? { os } : {}),
-    ...(browser ? { browser } : {}),
   };
 }

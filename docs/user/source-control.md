@@ -10,14 +10,13 @@ rebases, the files Git brought in are left out. A file stays in the list when th
 committed it, or fixed a conflict in it. Use the branch comparison to review everything that changed
 against your base branch. Restore still returns the complete saved workspace.
 
-On web and desktop, open the Diff pane source picker and choose **Commits** to review one local
+On desktop, open the Diff pane source picker and choose **Commits** to review one local
 commit at a time. The list shows the newest 100 commits in the branch comparison. A merge commit
 shows its changes against its first parent.
 
 A commit link from a supported code host opens in the Diff pane when the thread's repository has
 that commit locally, on any branch. Otherwise a pull request commit link opens the pull request. Other
-commit links follow your **Open links in** setting; on web, when that opens a new tab, Onicode first
-shows an **Open link** button. Command/Ctrl+Click always opens the link in your browser. Commit links follow the **Open pull requests in Onicode**
+commit links follow your **Open links in** setting. Command/Ctrl+Click always opens the link in your browser. Commit links follow the **Open pull requests in Onicode**
 setting in **Settings → Diffs**.
 
 ## Connect an account
@@ -207,7 +206,7 @@ co-authors stay credited. The setting is off by default and projects can overrid
 applies to auto-merge, but not merge queues or native stack merges. Original commits keep their
 messages, so merge and rebase can still retain agent credits in those commits.
 
-On web and desktop, hold **Shift** in the GitHub pull request list for quick actions.
+On desktop, hold **Shift** in the GitHub pull request list for quick actions.
 To close several, press **Close**, drag across the rows in the same group, and release.
 Press **Escape** before releasing to cancel. Failed closes stay in the list so you can retry them.
 
@@ -251,12 +250,12 @@ covers that layer only, and may point out what a lower layer introduced or what 
 Choose **Write guide** to have the review guide model from Settings → Source control read the
 change in a temporary checkout; without one set, the source control writer model is used. Nothing
 in the checkout is changed, and a large pull request takes a few minutes; you can go elsewhere in
-the app. On web, you are told when the guide is ready; on mobile, return to the guide to check
+the app. On desktop, you are told when the guide is ready; on mobile, return to the guide to check
 its progress. Claude and Codex can write guides. The guide is
 kept for everyone using this server. To write it again, for example after a push or after changing
 the model or instructions, choose **Rewrite guide** from the pull request's **⋯** menu.
 
-On web, while reading a stop, select lines in an excerpt to add a comment to your review or ask an agent
+On desktop, while reading a stop, select lines in an excerpt to add a comment to your review or ask an agent
 about them; comments wait with the ones from the **Code** tab until you send the review. Choose a
 suggested question, or **Ask about this stop**, to open a thread that already knows which stop you
 are on. **Finish review** on the last stop opens the review with everything you collected.
@@ -280,7 +279,7 @@ Onicode can read, so the server you are connected to keeps them instead: they fo
 apps connected to that server, but the host's own site will not show them, and the count reads **viewed in Onicode**.
 
 On mobile, open a changed file and mark it viewed from its header. Viewed files collapse,
-and their marks follow the same rules as on web and desktop.
+and their marks follow the same rules as on desktop.
 
 ## Troubleshooting
 
@@ -307,7 +306,7 @@ also lists the threads that link to it, including archived threads, so you can r
 
 Thread badges show a stack's layer count or the current review number with a count of additional
 links. Clicking a badge with more than one review opens the **Linked pull requests** panel. On mobile, the Git overview lists linked reviews and their stacks; tap a review to open it.
-Linking and unlinking are available in the web and desktop clients.
+Linking and unlinking are available in the desktop app.
 
 The **Linked pull requests** panel lists every review and groups stacks. Unlink a review from its
 row menu. An unlinked stack layer stays out of later syncs. Open linked reviews refresh on the server;

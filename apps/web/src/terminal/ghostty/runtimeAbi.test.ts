@@ -46,7 +46,12 @@ describe("vendored libghostty-vt WebAssembly", () => {
       decodeWasmDataUrl(writePtyWasmDataUrl).buffer as ArrayBuffer,
       {
         env: {
-          oni_write_pty: (_terminal: number, _userdata: number, pointer: number, length: number) => {
+          oni_write_pty: (
+            _terminal: number,
+            _userdata: number,
+            pointer: number,
+            length: number,
+          ) => {
             reply += new TextDecoder().decode(new Uint8Array(memory.buffer, pointer, length));
           },
         },

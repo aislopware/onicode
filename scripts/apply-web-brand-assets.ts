@@ -34,11 +34,11 @@ export const applyWebBrandAssetsCommand = Command.make(
   "apply-web-brand-assets",
   {
     brand: Argument.Literals("brand", WEB_ASSET_BRANDS).pipe(
-      Argument.withDescription("Asset brand to copy into the hosted web output directory."),
+      Argument.withDescription("Asset brand to copy into the built renderer."),
       Argument.optional,
     ),
     targetDirectory: Argument.String("target-directory").pipe(
-      Argument.withDescription("Output directory that contains the hosted web build assets."),
+      Argument.withDescription("Output directory of the built renderer."),
       Argument.optional,
     ),
   },
@@ -47,7 +47,7 @@ export const applyWebBrandAssetsCommand = Command.make(
       Option.getOrElse(brand, () => "production" as const),
       Option.getOrElse(targetDirectory, () => "apps/web/dist"),
     ),
-).pipe(Command.withDescription("Copy web brand assets into a built hosted web app."));
+).pipe(Command.withDescription("Copy the branded splash logo into a built renderer."));
 
 if (import.meta.main) {
   Command.run(applyWebBrandAssetsCommand, { version: "0.0.0" }).pipe(

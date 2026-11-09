@@ -53,7 +53,7 @@ but keeps package installs. To use an existing local binary, set **Executable ov
 
 ## Signing in
 
-Open the agent's account section in **Settings → Providers** on web or desktop. Choose
+Open the agent's account section in **Settings → Providers** on desktop. Choose
 **Sign in** and, if the agent offers several methods, select one. For an installed, configured
 provider, mobile also offers **Settings → Providers**.
 
@@ -100,7 +100,7 @@ including when another client performs the import.
 The thread keeps the native session's title and last-update value as provider metadata without
 overwriting a title you set in Onicode. Agents that report ACP context usage drive the thread details
 context window and cumulative cost metadata. See
-[commands and skills](./composer.md#commands-and-skills) to show it on web and desktop.
+[commands and skills](./composer.md#commands-and-skills) to show it on desktop.
 Text resources and links render as assistant output;
 binary resources, images, and audio that Onicode cannot render yet appear as explicit placeholders
 instead of disappearing.

@@ -40,7 +40,6 @@ export function composerCommandKeyHandler(input: {
   readonly phase: ChatComposerProps["phase"];
   readonly isCompacting: boolean;
   readonly followUpBehavior: ChatComposerProps["settings"]["followUpBehavior"];
-  readonly isSoftwareKeyboardOpen: boolean;
   readonly isLiteralPendingAnswer: boolean;
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
   readonly promptHistoryEntries: ChatComposerProps["promptHistoryEntries"];
@@ -93,7 +92,6 @@ export function composerCommandKeyHandler(input: {
     phase,
     isCompacting,
     followUpBehavior,
-    isSoftwareKeyboardOpen,
     isLiteralPendingAnswer,
     pendingUserInputs,
     promptHistoryEntries,
@@ -203,7 +201,6 @@ export function composerCommandKeyHandler(input: {
     const submissionIntent = composerSubmissionIntentForKey({
       event,
       keybindings,
-      isSoftwareKeyboardOpen,
       isDraftThread: routeKind === "draft",
       isRunning: phase === "running",
       sendShortcut,

@@ -1,7 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off globalTimers:off - Native loopback helper uses a bounded Node listener with AbortController cleanup.
 import * as Schema from "effect/Schema";
 import * as NodeHttp from "node:http";
-import { codexAuthorizationRequest, codexCallbackUrl } from "@onicode/shared/codexAuthHandoff";
+import { codexAuthorizationRequest, codexCallbackUrl } from "@onicode/shared/codexAuthRequest";
 
 export class CodexAuthCallbackError extends Schema.TaggedError<CodexAuthCallbackError>()(
   "CodexAuthCallbackError",
@@ -23,15 +23,11 @@ export function cancelCodexAuthCallback(authorizationUrl: string) {
 export async function receiveCodexAuthCallback(
   authorizationUrl: string,
   openBrowser: (url: string) => Promise<boolean>,
-  destination?: (callbackUrl: string) => string,
-  signal?: AbortSignal,
 ) {
   const request = codexAuthorizationRequest(authorizationUrl);
   if (listeners.has(request.state))
     throw new Error("This sign-in is already open on this computer.");
   const abort = new AbortController();
-  const interrupted = () => abort.abort();
-  signal?.addEventListener("abort", interrupted, { once: true });
   listeners.set(request.state, abort);
   const callback = Promise.withResolvers<string>();
   // Keep early open/bind failures from leaving an unobserved rejection behind.
@@ -44,23 +40,18 @@ export async function receiveCodexAuthCallback(
         request.redirectUri,
         request.state,
       ).toString();
-      const returnUrl = destination?.(url);
       response.setHeader("cache-control", "no-store");
       response.setHeader("referrer-policy", "no-referrer");
       response.setHeader("x-content-type-options", "nosniff");
-      if (returnUrl) {
-        response.writeHead(303, { location: returnUrl }).end();
-      } else {
-        response.setHeader(
-          "content-security-policy",
-          "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+      response.setHeader(
+        "content-security-policy",
+        "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'",
+      );
+      response
+        .writeHead(200, { "content-type": "text/html; charset=utf-8" })
+        .end(
+          '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Onicode</title><style>body{font-family:system-ui;display:grid;place-items:center;min-height:90vh;margin:0}main{max-width:360px;padding:32px}h1{font-size:24px}p{line-height:1.6;opacity:.7}</style></head><body><main><h1>Return to Onicode</h1><p>Your sign-in response has been received. Onicode is finishing the connection. You can close this tab.</p></main></body></html>',
         );
-        response
-          .writeHead(200, { "content-type": "text/html; charset=utf-8" })
-          .end(
-            '<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>Onicode</title><style>body{font-family:system-ui;display:grid;place-items:center;min-height:90vh;margin:0}main{max-width:360px;padding:32px}h1{font-size:24px}p{line-height:1.6;opacity:.7}</style></head><body><main><h1>Return to Onicode</h1><p>Your sign-in response has been received. Onicode is finishing the connection. You can close this tab.</p></main></body></html>',
-          );
-      }
       callback.resolve(url);
     } catch {
       response.writeHead(400).end("This response does not belong to the active sign-in.");
@@ -74,12 +65,11 @@ export async function receiveCodexAuthCallback(
   );
   timer.unref();
   try {
-    if (signal?.aborted) throw new Error("Sign-in cancelled on this computer.");
     await new Promise<void>((resolve, reject) => {
       server.once("error", () =>
         reject(
           new Error(
-            "The ChatGPT callback port is in use on this computer. Close the other sign-in and try again, or paste the redirect URL in Onicode.",
+            "The ChatGPT callback port is in use on this computer. Close the other sign-in and try again.",
           ),
         ),
       );
@@ -91,7 +81,6 @@ export async function receiveCodexAuthCallback(
     return await callback.promise;
   } finally {
     clearTimeout(timer);
-    signal?.removeEventListener("abort", interrupted);
     abort.signal.removeEventListener("abort", cancelled);
     listeners.delete(request.state);
     server.closeAllConnections();

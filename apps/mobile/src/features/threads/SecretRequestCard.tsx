@@ -5,7 +5,7 @@ import {
   secretRequestDisplay,
   secretRequestFailureMessage,
   secretRequestLink,
-  secretRequestPrivacyNote,
+  SECRET_REQUEST_PRIVACY_NOTE,
   secretRequestReference,
   secretRequestSources,
   type SecretRequestItem,
@@ -231,7 +231,7 @@ function PendingSecretRequestForm(props: {
             type="monochrome"
           />
           <Text className="flex-1 font-sans text-xs text-foreground-muted">
-            {secretRequestPrivacyNote(item)}
+            {SECRET_REQUEST_PRIVACY_NOTE}
           </Text>
         </View>
         <Button

@@ -35,7 +35,6 @@ import {
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
 
-import { isElectron } from "../../env";
 import { useOpenInPreferredEditor } from "../../editorPreferences";
 import { formatShortcutLabel } from "../../keybindings";
 import { cn } from "../../lib/utils";
@@ -1272,25 +1271,6 @@ function KeybindingsGroups(props: KeybindingsGroupsProps) {
   ));
 }
 
-function BrowserKeybindingNotice() {
-  const message = "The browser may claim some shortcuts first. The desktop app receives them all.";
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        delay={200}
-        render={
-          <Button size="icon-micro" variant="ghost-muted" aria-label={message}>
-            <TriangleAlertIcon className="size-3.5 text-warning" />
-          </Button>
-        }
-      />
-      <TooltipPopup side="top" className="max-w-72">
-        {message}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
 function keybindingAnchorIds(rows: ReturnType<typeof buildKeybindingRows>) {
   const ids = new Map<string, string>();
   const seen = new Set<KeybindingCommand>();
@@ -1468,10 +1448,7 @@ export function KeybindingsSettingsPanel() {
 
   return (
     <SettingsPageContainer>
-      <SettingsSection
-        {...searchableSetting("keybindings")}
-        headerAction={!isElectron ? <BrowserKeybindingNotice /> : null}
-      >
+      <SettingsSection {...searchableSetting("keybindings")}>
         <div className="flex flex-wrap items-center gap-2 px-3 py-3 sm:px-4">
           <KeybindingsSearchInput query={query} onChange={setQuery} inputRef={searchInputRef} />
           <Button

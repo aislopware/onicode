@@ -44,6 +44,19 @@ vi.mock("../../../packages/client-runtime/src/connection/driver.ts", async (impo
   return { ...actual, layer: Layer.succeed(actual.ConnectionDriver, fakeDriver) };
 });
 
+vi.mock(import("~/environments/primary/target"), async (original) => {
+  const [actual, { fakePrimaryEnvironmentTarget }] = await Promise.all([
+    original(),
+    import("./fakeEnvironment"),
+  ]);
+  return {
+    ...actual,
+    readPrimaryEnvironmentTarget: fakePrimaryEnvironmentTarget,
+    resolvePrimaryEnvironmentHttpUrl: (pathname: string) =>
+      new URL(pathname, fakePrimaryEnvironmentTarget().httpBaseUrl).toString(),
+  };
+});
+
 // The fake server leaves most requests unanswered, which would raise the slow-request toast
 // 15s of wall clock after each one, at a different point in every run.
 vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({

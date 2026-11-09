@@ -32,28 +32,18 @@ export function withOrchestrationProtocolHeader(
   };
 }
 
-/**
- * Cookie-authenticated environments need credentialed mode for cross-origin fetches; bearer uses headers.
- * `FetchHttpClient` reads `RequestInit` from the fiber context per request.
- */
+/** `FetchHttpClient` reads `RequestInit` from the fiber context per request. */
 const withEnvironmentRequestInit = <A, E, R>(
-  authorization: PreparedHttpAuthorization | null,
   requestInit: RequestInit | undefined,
   request: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> => {
-  if (authorization !== null && requestInit === undefined) return request;
-  return request.pipe(
-    Effect.provideService(FetchHttpClient.RequestInit, {
-      ...requestInit,
-      ...(authorization === null ? { credentials: "include" as const } : {}),
-    }),
-  );
-};
+): Effect.Effect<A, E, R> =>
+  requestInit === undefined
+    ? request
+    : request.pipe(Effect.provideService(FetchHttpClient.RequestInit, requestInit));
 
 const buildEnvironmentAuthHeaders = (
-  authorization: PreparedHttpAuthorization | null,
-): EnvironmentHttpAuthHeaders =>
-  authorization === null ? {} : { authorization: `Bearer ${authorization.token}` };
+  authorization: PreparedHttpAuthorization,
+): EnvironmentHttpAuthHeaders => ({ authorization: `Bearer ${authorization.token}` });
 
 export const executeAuthenticatedEnvironmentHttpRequest = <
   Group extends Parameters<typeof makeEnvironmentHttpApiGroupClient>[1],
@@ -117,10 +107,6 @@ const executeEnvironmentRequest = Effect.fnUntraced(function* <
   return yield* executeEnvironmentHttpRequest(
     requestUrl,
     input.timeoutMs,
-    withEnvironmentRequestInit(
-      authorization,
-      input.requestInit,
-      input.request({ client, headers }),
-    ),
+    withEnvironmentRequestInit(input.requestInit, input.request({ client, headers })),
   );
 });

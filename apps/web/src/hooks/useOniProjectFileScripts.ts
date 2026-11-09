@@ -20,7 +20,12 @@ export function useOniProjectFileState(
   environmentId: EnvironmentId,
   cwd: string | null,
 ): OniProjectFileState {
-  const query = useProjectFileQuery(environmentId, cwd ?? "", ONICODE_PROJECT_FILE_NAME, cwd !== null);
+  const query = useProjectFileQuery(
+    environmentId,
+    cwd ?? "",
+    ONICODE_PROJECT_FILE_NAME,
+    cwd !== null,
+  );
   const contents = query.data && !query.data.truncated ? query.data.contents : null;
   const isPending = query.isPending;
   if (contents === null) {

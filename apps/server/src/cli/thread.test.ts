@@ -72,7 +72,7 @@ it.effect(
       yield* persistServerRuntimeState({
         path: path.join(baseDir, "userdata", "server-runtime.json"),
         state: yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", devUrl: undefined },
+          config: { host: "127.0.0.1", dev: false },
           port: 3_773,
         }),
       });

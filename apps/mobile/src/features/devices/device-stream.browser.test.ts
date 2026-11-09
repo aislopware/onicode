@@ -66,7 +66,6 @@ function viewerFixture(supported: boolean) {
     access: {
       httpBase: "https://environment.test/api/device-hub",
       wsBase: "wss://environment.test/api/device-hub",
-      credentials: false,
       query: {},
     },
     colors: {

@@ -49,11 +49,7 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
-import {
-  isLoopbackHostname,
-  type ServerClientSessionRecord,
-  type ServerPairingLinkRecord,
-} from "~/environments/primary";
+import type { ServerClientSessionRecord, ServerPairingLinkRecord } from "~/environments/primary";
 import { authEnvironment } from "~/state/auth";
 import { readEnvironmentScope } from "~/state/session";
 import { useManagedPolicy, usePrimaryManagedPolicy } from "~/state/managedPolicy";
@@ -67,8 +63,6 @@ import {
   isTailscaleHttpsEndpoint,
   endpointDefaultPreferenceKey,
   resolveAdvertisedEndpointPairingUrl,
-  resolveCurrentOriginPairingUrl,
-  isHostedAppPairingUrl,
   endpointShareHint,
 } from "./ConnectionsSettings.logic";
 
@@ -127,8 +121,6 @@ type PairingLinkListRowProps = {
   pairingLink: ServerPairingLinkRecord;
   credential: string | undefined;
   defaultShareOpen: boolean;
-  /** Whether this page is served by the environment the link pairs with. */
-  servedByEnvironment: boolean;
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
@@ -141,7 +133,6 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   pairingLink,
   credential,
   defaultShareOpen,
-  servedByEnvironment,
   endpointUrl,
   endpoints,
   defaultEndpointKey,
@@ -156,7 +147,6 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   const [qrEndpointId, setQrEndpointId] = useState<string | null>(null);
   const qrPanelId = useId();
 
-  const currentOriginPairingUrl = credential ? resolveCurrentOriginPairingUrl(credential) : null;
   const endpointPairingUrl = (() => {
     const endpoint = selectPairingEndpoint(endpoints, defaultEndpointKey);
     return endpoint && credential
@@ -183,7 +173,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
         preferenceKey: endpointDefaultPreferenceKey(endpoint),
         label: endpoint.label,
         url,
-        detail: endpointShareHint(endpoint, url),
+        detail: endpointShareHint(endpoint),
         qrShareable: isQrShareableEndpoint(endpoint),
       });
     }
@@ -193,13 +183,10 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
     endpointPairingUrl ??
     (credential && endpointUrl != null && endpointUrl !== ""
       ? resolveDesktopPairingUrl(endpointUrl, credential)
-      : !servedByEnvironment || isLoopbackHostname(window.location.hostname)
-        ? null
-        : currentOriginPairingUrl);
+      : null);
   const [failedCopyValue, setFailedCopyValue] = useState<string | null>(null);
   const revealValue = failedCopyValue ?? shareablePairingUrl ?? credential ?? "";
   const isRevealValueUrl = revealValue !== credential;
-  const isRevealValueHostedAppPairingUrl = isRevealValueUrl && isHostedAppPairingUrl(revealValue);
   const isRevealValueQrShareable =
     endpointCopyOptions.find((option) => option.url === revealValue)?.qrShareable ?? true;
   const canCopyToClipboard =
@@ -209,23 +196,16 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
 
   const { copyToClipboard } = useCopyToClipboard<{
     value: string;
-    kind: "code" | "hosted-link" | "link";
+    kind: "code" | "link";
   }>({
     onCopy: ({ kind }) => {
       toastManager.add({
         type: "success",
-        title:
-          kind === "hosted-link"
-            ? "Hosted app link copied"
-            : kind === "link"
-              ? "Pairing URL copied"
-              : "Pairing code copied",
+        title: kind === "link" ? "Pairing URL copied" : "Pairing code copied",
         description:
-          kind === "hosted-link"
-            ? "Open it in the browser on the device you want to connect."
-            : kind === "link"
-              ? "Open it in the client you want to pair to this environment."
-              : "Paste it into another client to finish pairing.",
+          kind === "link"
+            ? "Open it in the client you want to pair to this environment."
+            : "Paste it into another client to finish pairing.",
       });
     },
     onError: (error, { value, kind }) => {
@@ -237,11 +217,9 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
         stackedThreadToast({
           type: "error",
           title: canCopyToClipboard
-            ? kind === "hosted-link"
-              ? "Could not copy hosted app link"
-              : kind === "link"
-                ? "Could not copy pairing URL"
-                : "Could not copy pairing code"
+            ? kind === "link"
+              ? "Could not copy pairing URL"
+              : "Could not copy pairing code"
             : "Clipboard copy unavailable",
           description: canCopyToClipboard ? error.message : "Showing the full value instead.",
         }),
@@ -249,12 +227,9 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
     },
   });
 
-  const copyPairingValue = (value: string, kind: "code" | "hosted-link" | "link") => {
+  const copyPairingValue = (value: string, kind: "code" | "link") => {
     copyToClipboard(value, { value, kind });
   };
-
-  const copyKindForUrl = (url: string): "hosted-link" | "link" =>
-    isHostedAppPairingUrl(url) ? "hosted-link" : "link";
 
   const handleCopyCode = () => {
     if (credential) copyPairingValue(credential, "code");
@@ -338,18 +313,10 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
             )}
             <DialogPopup className="max-w-md">
               <DialogHeader>
-                <DialogTitle>
-                  {isRevealValueUrl
-                    ? isRevealValueHostedAppPairingUrl
-                      ? "Hosted app pairing link"
-                      : "Pairing link"
-                    : "Pairing code"}
-                </DialogTitle>
+                <DialogTitle>{isRevealValueUrl ? "Pairing link" : "Pairing code"}</DialogTitle>
                 <DialogDescription>
                   {isRevealValueUrl
-                    ? isRevealValueHostedAppPairingUrl
-                      ? "Clipboard copy is unavailable here. Open or manually copy this hosted app link on the device you want to connect."
-                      : "Clipboard copy is unavailable here. Open or manually copy this full pairing URL on the device you want to connect."
+                    ? "Clipboard copy is unavailable here. Open or manually copy this full pairing URL on the device you want to connect."
                     : "Clipboard copy is unavailable here. Manually copy this code into another client."}
                 </DialogDescription>
               </DialogHeader>
@@ -455,7 +422,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                 size="xs"
                 variant="ghost"
                 className="shrink-0"
-                onClick={() => copyPairingValue(qrPairingUrl, copyKindForUrl(qrPairingUrl))}
+                onClick={() => copyPairingValue(qrPairingUrl, "link")}
               >
                 Copy link
               </Button>
@@ -516,13 +483,10 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
       ? clientSession.client.deviceType[0]?.toUpperCase() + clientSession.client.deviceType.slice(1)
       : null,
     clientSession.client.os ?? null,
-    clientSession.client.browser ?? null,
     clientSession.client.ipAddress ?? null,
   ].filter((value): value is string => value !== null);
   const primaryLabel =
-    clientSession.client.label ??
-    ([clientSession.client.os, clientSession.client.browser].filter(Boolean).join(" · ") ||
-      clientSession.subject);
+    clientSession.client.label ?? clientSession.client.os ?? clientSession.subject;
 
   return (
     <div className={ITEM_ROW_CLASSNAME}>
@@ -792,7 +756,6 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
 });
 
 type PairingClientsListProps = {
-  servedByEnvironment: boolean;
   endpointUrl: string | null | undefined;
   endpoints: ReadonlyArray<AdvertisedEndpoint>;
   defaultEndpointKey: string | null;
@@ -809,7 +772,6 @@ type PairingClientsListProps = {
 };
 
 export const PairingClientsList = memo(function PairingClientsList({
-  servedByEnvironment,
   endpointUrl,
   endpoints,
   defaultEndpointKey,
@@ -832,7 +794,6 @@ export const PairingClientsList = memo(function PairingClientsList({
           pairingLink={pairingLink}
           credential={createdPairingCredentials.get(pairingLink.id)}
           defaultShareOpen={pairingLink.id === sharedPairingLinkId}
-          servedByEnvironment={servedByEnvironment}
           endpointUrl={endpointUrl}
           endpoints={endpoints}
           defaultEndpointKey={defaultEndpointKey}

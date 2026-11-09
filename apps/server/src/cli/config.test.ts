@@ -11,7 +11,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Redacted from "effect/Redacted";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
@@ -33,8 +32,8 @@ import {
 import { deriveServerPaths } from "../config.ts";
 import { resolveServerConfig } from "./config.ts";
 
-const deriveExplicitServerPaths = (baseDir: string, devUrl: URL | undefined) =>
-  deriveServerPaths(baseDir, devUrl, { baseDirIsExplicit: true });
+const deriveExplicitServerPaths = (baseDir: string, dev: boolean) =>
+  deriveServerPaths(baseDir, dev, { baseDirIsExplicit: true });
 
 const minimalDesktopFlags = (baseDir: string) => ({
   mode: Option.some("desktop" as const),
@@ -42,8 +41,7 @@ const minimalDesktopFlags = (baseDir: string) => ({
   host: Option.none<string>(),
   baseDir: Option.some(baseDir),
   cwd: Option.none<string>(),
-  devUrl: Option.none<URL>(),
-  noBrowser: Option.none<boolean>(),
+  dev: Option.none<boolean>(),
   bootstrapFd: Option.none<number>(),
   autoBootstrapProjectFromCwd: Option.none<boolean>(),
   logWebSocketEvents: Option.none<boolean>(),
@@ -59,7 +57,6 @@ const makeDesktopBootstrap = (
   overrides: Partial<DesktopBackendBootstrapValue> = {},
 ): DesktopBackendBootstrapValue => ({
   mode: "desktop",
-  noBrowser: true,
   port: 4888,
   oniHome: "/tmp/oni-bootstrap-home",
   host: "127.0.0.1",
@@ -99,7 +96,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
     otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
     otelEnvironment: OtelEnvironment.none,
-    devAllowedOrigins: [],
   } as const;
 
   const openBootstrapFd = Effect.fn(function* (payload: DesktopBackendBootstrapValue) {
@@ -129,10 +125,10 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       const child = yield* liveProcess;
       assert(child.pid !== undefined);
       for (const [name, pid, mode, rejectRunningServer] of [
-        ["stale", 2_147_483_647, "web", true],
-        ["own-pid", process.pid, "web", true],
+        ["stale", 2_147_483_647, "standalone", true],
+        ["own-pid", process.pid, "standalone", true],
         ["desktop", child.pid, "desktop", true],
-        ["serve", child.pid, "web", false],
+        ["serve", child.pid, "standalone", false],
       ] as const) {
         const baseDir = path.join(root, name);
         const stateDir = path.join(baseDir, "userdata");
@@ -214,120 +210,26 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       }),
   );
 
-  it.effect("enables a trimmed reusable auth token only for web dev mode", () =>
-    Effect.gen(function* () {
-      const baseDir = yield* FileSystem.FileSystem.pipe(
-        Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "oni-cli-dev-auth-" })),
-      );
-      const flags = {
-        mode: Option.some("web" as const),
-        port: Option.some(8788),
-        host: Option.none<string>(),
-        baseDir: Option.some(baseDir),
-        cwd: Option.none<string>(),
-        devUrl: Option.some(new URL("http://127.0.0.1:5173")),
-        noBrowser: Option.none<boolean>(),
-        bootstrapFd: Option.none<number>(),
-        autoBootstrapProjectFromCwd: Option.none<boolean>(),
-        logWebSocketEvents: Option.none<boolean>(),
-        tailscaleServeEnabled: Option.none<boolean>(),
-        tailscaleServePort: Option.none<number>(),
-        lan: Option.none<boolean>(),
-      };
-      const layerConfig = ConfigProvider.layer(
-        ConfigProvider.fromEnv({
-          env: {
-            ONICODE_DEV_AUTH_TOKEN: "  reusable-dev-auth-token-that-is-long-enough  ",
-          },
-        }),
-      );
-      const web = yield* resolveServerConfig(flags, Option.none()).pipe(
-        Effect.provide(Layer.mergeAll(layerConfig, NetService.layer)),
-      );
-      const desktop = yield* resolveServerConfig(
-        { ...flags, mode: Option.some("desktop" as const) },
-        Option.none(),
-      ).pipe(Effect.provide(Layer.mergeAll(layerConfig, NetService.layer)));
-
-      expect(web.devAuthToken).toBeDefined();
-      if (web.devAuthToken === undefined) {
-        return yield* Effect.die("Expected reusable dev auth token.");
-      }
-      expect(Redacted.value(web.devAuthToken)).toBe("reusable-dev-auth-token-that-is-long-enough");
-      expect(desktop.devAuthToken).toBeUndefined();
-    }),
-  );
-
-  it.effect("does not expose an invalid reusable auth token", () =>
-    Effect.gen(function* () {
-      const secret = "short-secret";
-      const baseDir = yield* FileSystem.FileSystem.pipe(
-        Effect.flatMap((fs) => fs.makeTempDirectoryScoped({ prefix: "oni-cli-dev-auth-invalid-" })),
-      );
-      const flags = {
-        mode: Option.some("web" as const),
-        port: Option.some(8788),
-        host: Option.none<string>(),
-        baseDir: Option.some(baseDir),
-        cwd: Option.none<string>(),
-        devUrl: Option.some(new URL("http://127.0.0.1:5173")),
-        noBrowser: Option.none<boolean>(),
-        bootstrapFd: Option.none<number>(),
-        autoBootstrapProjectFromCwd: Option.none<boolean>(),
-        logWebSocketEvents: Option.none<boolean>(),
-        tailscaleServeEnabled: Option.none<boolean>(),
-        tailscaleServePort: Option.none<number>(),
-        lan: Option.none<boolean>(),
-      };
-      const layerConfig = ConfigProvider.layer(
-        ConfigProvider.fromEnv({ env: { ONICODE_DEV_AUTH_TOKEN: secret } }),
-      );
-      const error = yield* resolveServerConfig(flags, Option.none()).pipe(
-        Effect.provide(Layer.mergeAll(layerConfig, NetService.layer)),
-        Effect.flip,
-      );
-      const desktop = yield* resolveServerConfig(
-        { ...flags, mode: Option.some("desktop" as const) },
-        Option.none(),
-      ).pipe(Effect.provide(Layer.mergeAll(layerConfig, NetService.layer)));
-      const staticWeb = yield* resolveServerConfig(
-        { ...flags, devUrl: Option.none() },
-        Option.none(),
-      ).pipe(Effect.provide(Layer.mergeAll(layerConfig, NetService.layer)));
-
-      expect(String(error)).not.toContain(secret);
-      const serialized = yield* encodeUnknownJson(error);
-      expect(serialized).not.toContain(secret);
-      expect(desktop.devAuthToken).toBeUndefined();
-      expect(staticWeb.devAuthToken).toBeUndefined();
-    }),
-  );
-
   it.effect("preserves explicit false CLI boolean flags over env and bootstrap values", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
       const baseDir = join(NodeOS.tmpdir(), "oni-cli-config-false-flags");
       const fd = yield* openBootstrapFd(
         makeDesktopBootstrap({
-          noBrowser: true,
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
         }),
       );
-      const derivedPaths = yield* deriveExplicitServerPaths(
-        baseDir,
-        new URL("http://127.0.0.1:4173"),
-      );
+      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, true);
 
       const resolved = yield* resolveServerConfig(
         {
-          mode: Option.some("web"),
+          mode: Option.some("standalone"),
           port: Option.some(8788),
           host: Option.some("127.0.0.1"),
           baseDir: Option.some(baseDir),
           cwd: Option.none(),
-          devUrl: Option.some(new URL("http://127.0.0.1:4173")),
-          noBrowser: Option.some(false),
+          dev: Option.some(true),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.some(false),
           logWebSocketEvents: Option.some(false),
@@ -343,7 +245,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
               ConfigProvider.fromEnv({
                 env: {
                   ONICODE_BOOTSTRAP_FD: String(fd),
-                  ONICODE_NO_BROWSER: "true",
                   ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
                   ONICODE_LOG_WS_EVENTS: "true",
                 },
@@ -357,16 +258,13 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Info",
         ...defaultObservabilityConfig,
-        mode: "web",
+        mode: "standalone",
         port: 8788,
         cwd: process.cwd(),
         baseDir,
         ...derivedPaths,
         host: "127.0.0.1",
-        staticDir: undefined,
-        devUrl: new URL("http://127.0.0.1:4173"),
-        noBrowser: false,
-        startupPresentation: "browser",
+        dev: true,
         desktopBootstrapToken: "desktop-bootstrap-token",
         autoBootstrapProjectFromCwd: false,
         logWebSocketEvents: false,
@@ -385,16 +283,12 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           port: 4888,
           host: "127.0.0.2",
           oniHome: "/tmp/oni-bootstrap-home",
-          noBrowser: false,
           desktopBootstrapToken: "desktop-token",
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
         }),
       );
-      const derivedPaths = yield* deriveExplicitServerPaths(
-        baseDir,
-        new URL("http://127.0.0.1:4173"),
-      );
+      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, true);
 
       const resolved = yield* resolveServerConfig(
         {
@@ -403,8 +297,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           host: Option.some("127.0.0.1"),
           baseDir: Option.none(),
           cwd: Option.none(),
-          devUrl: Option.some(new URL("http://127.0.0.1:4173")),
-          noBrowser: Option.none(),
+          dev: Option.some(true),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
@@ -419,10 +312,9 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
             ConfigProvider.layer(
               ConfigProvider.fromEnv({
                 env: {
-                  ONICODE_MODE: "web",
+                  ONICODE_MODE: "standalone",
                   ONICODE_BOOTSTRAP_FD: String(fd),
                   ONICODE_HOME: baseDir,
-                  ONICODE_NO_BROWSER: "true",
                   ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
                   ONICODE_LOG_WS_EVENTS: "true",
                 },
@@ -436,16 +328,13 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       expect(resolved).toEqual({
         logLevel: "Debug",
         ...defaultObservabilityConfig,
-        mode: "web",
+        mode: "standalone",
         port: 8788,
         cwd: process.cwd(),
         baseDir,
         ...derivedPaths,
         host: "127.0.0.1",
-        staticDir: undefined,
-        devUrl: new URL("http://127.0.0.1:4173"),
-        noBrowser: true,
-        startupPresentation: "browser",
+        dev: true,
         desktopBootstrapToken: "desktop-token",
         autoBootstrapProjectFromCwd: true,
         logWebSocketEvents: true,
@@ -497,7 +386,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       const baseDir = yield* fs.makeTempDirectoryScoped({
         prefix: "oni-cli-config-otlp-settings-",
       });
-      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
+      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, false);
       yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
       yield* fs.writeFileString(
         derivedPaths.settingsPath,
@@ -533,7 +422,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-cli-config-otel-off-" });
-      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
+      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, false);
       yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
       yield* fs.writeFileString(
         derivedPaths.settingsPath,
@@ -553,8 +442,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           host: Option.none(),
           baseDir: Option.some(baseDir),
           cwd: Option.none(),
-          devUrl: Option.none(),
-          noBrowser: Option.none(),
+          dev: Option.none(),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
@@ -584,7 +472,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-cli-config-otel-on-" });
-      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
+      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, false);
       yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
       yield* fs.writeFileString(
         derivedPaths.settingsPath,
@@ -602,8 +490,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           host: Option.none(),
           baseDir: Option.some(baseDir),
           cwd: Option.none(),
-          devUrl: Option.none(),
-          noBrowser: Option.none(),
+          dev: Option.none(),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
@@ -630,70 +517,6 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     }),
   );
 
-  it.effect("forces noBrowser and disables auto-bootstrap for headless startup presentation", () =>
-    Effect.gen(function* () {
-      const { join } = yield* Path.Path;
-      const baseDir = join(NodeOS.tmpdir(), "oni-cli-config-headless-base");
-      const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
-
-      const resolved = yield* resolveServerConfig(
-        {
-          mode: Option.some("web"),
-          port: Option.some(3773),
-          host: Option.none(),
-          baseDir: Option.some(baseDir),
-          cwd: Option.none(),
-          devUrl: Option.none(),
-          noBrowser: Option.none(),
-          bootstrapFd: Option.none(),
-          autoBootstrapProjectFromCwd: Option.none(),
-          logWebSocketEvents: Option.none(),
-          tailscaleServeEnabled: Option.none(),
-          tailscaleServePort: Option.none(),
-          lan: Option.none(),
-        },
-        Option.none(),
-        {
-          startupPresentation: "headless",
-        },
-      ).pipe(
-        Effect.provide(
-          Layer.mergeAll(
-            ConfigProvider.layer(
-              ConfigProvider.fromEnv({
-                env: {
-                  ONICODE_NO_BROWSER: "false",
-                  ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "true",
-                },
-              }),
-            ),
-            NetService.layer,
-          ),
-        ),
-      );
-
-      expect(resolved).toEqual({
-        logLevel: "Info",
-        ...defaultObservabilityConfig,
-        mode: "web",
-        port: 3773,
-        cwd: process.cwd(),
-        baseDir,
-        ...derivedPaths,
-        host: undefined,
-        staticDir: resolved.staticDir,
-        devUrl: undefined,
-        noBrowser: true,
-        startupPresentation: "headless",
-        desktopBootstrapToken: undefined,
-        autoBootstrapProjectFromCwd: false,
-        logWebSocketEvents: false,
-        tailscaleServeEnabled: false,
-        tailscaleServePort: 443,
-      });
-    }),
-  );
-
   it.effect("keeps whitespace-separated pairs and literal equals signs in OTLP headers", () =>
     Effect.gen(function* () {
       const { join } = yield* Path.Path;
@@ -701,13 +524,12 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
 
       const resolved = yield* resolveServerConfig(
         {
-          mode: Option.some("web"),
+          mode: Option.some("standalone"),
           port: Option.some(3773),
           host: Option.none(),
           baseDir: Option.some(baseDir),
           cwd: Option.none(),
-          devUrl: Option.none(),
-          noBrowser: Option.none(),
+          dev: Option.none(),
           bootstrapFd: Option.none(),
           autoBootstrapProjectFromCwd: Option.none(),
           logWebSocketEvents: Option.none(),
@@ -741,13 +563,12 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
   );
 
   const minimalWebFlags = (baseDir: string) => ({
-    mode: Option.some("web" as const),
+    mode: Option.some("standalone" as const),
     port: Option.some(3773),
     host: Option.none<string>(),
     baseDir: Option.some(baseDir),
     cwd: Option.none<string>(),
-    devUrl: Option.none<URL>(),
-    noBrowser: Option.none<boolean>(),
+    dev: Option.none<boolean>(),
     bootstrapFd: Option.none<number>(),
     autoBootstrapProjectFromCwd: Option.none<boolean>(),
     logWebSocketEvents: Option.none<boolean>(),
@@ -768,7 +589,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           return 50_123;
         });
       const resolvePort = (flags: {
-        readonly mode?: Option.Option<"web" | "desktop">;
+        readonly mode?: Option.Option<"standalone" | "desktop">;
         readonly port: Option.Option<number>;
       }) =>
         resolveServerConfig({ ...minimalWebFlags(baseDir), ...flags }, Option.none(), {
@@ -802,7 +623,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         const baseDir = yield* fs.makeTempDirectoryScoped({
           prefix: "oni-cli-config-otel-precedence-",
         });
-        const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
+        const derivedPaths = yield* deriveExplicitServerPaths(baseDir, false);
         yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
         yield* fs.writeFileString(
           derivedPaths.settingsPath,
@@ -870,7 +691,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         const baseDir = yield* fs.makeTempDirectoryScoped({
           prefix: "oni-cli-config-otel-off-",
         });
-        const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
+        const derivedPaths = yield* deriveExplicitServerPaths(baseDir, false);
         yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
         yield* fs.writeFileString(
           derivedPaths.settingsPath,

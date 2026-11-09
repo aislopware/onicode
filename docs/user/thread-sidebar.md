@@ -5,7 +5,7 @@ need a separate branch and working directory.
 
 ## Start a thread
 
-On web and desktop, **New thread** opens the project picker when you have more than one
+On desktop, **New thread** opens the project picker when you have more than one
 open project in the default or project-grouped sidebar. Archived projects don't count. **Shift-click** to start in
 the current project, or use a project's own new-thread action. A new thread carries
 your model and mode selections, unless the destination project has its own model default.
@@ -52,7 +52,7 @@ on Windows and Linux to start a new thread and immediately open another draft. T
 next draft keeps the workspace mode and base branch you selected. With **New
 worktree**, each background submission creates its own worktree.
 
-To send the same prompt to several models on web or desktop, **Shift-click** models
+To send the same prompt to several models on desktop, **Shift-click** models
 in a new thread's model picker to add or remove them. A regular click returns to a
 single model. Choose a base branch and send. Each selection starts a separate thread
 and worktree while you stay in the new thread composer. This requires a Git project.
@@ -61,24 +61,24 @@ and worktree while you stay in the new thread composer. This requires a Git proj
 
 Pin a thread from its menu to keep it above your active work.
 
-On web and desktop, unpinning, settling, snoozing, and archiving a thread each show
+On desktop, unpinning, settling, snoozing, and archiving a thread each show
 a notification with **Undo** for five seconds. Undo restores the thread's previous
 state, including its pinned position, and reopens an archived thread you were
 viewing. Discarding an unsent draft from the sidebar works the same way: Undo brings
 back its text and attachments. `mod+z` triggers the most recent Undo, even from the composer; see
 [Keybindings](./keybindings.md#commands-with-special-behavior).
 
-On web and desktop, you can also drag files from your computer onto any thread row:
+On desktop, you can also drag files from your computer onto any thread row:
 the thread opens and the files are attached in its composer, ready for
 your next message. The same per-message file limits apply as when attaching
 files directly; see [Attach files](./composer.md#attach-files).
 
-On web and desktop, pinning or unpinning a thread keeps the sidebar at your current
+On desktop, pinning or unpinning a thread keeps the sidebar at your current
 scroll position instead of following the thread to its new place in the list.
 
 Pinning does not prevent automatic settlement. Settling a thread removes its pin.
 
-On web and desktop, drag a thread between sections to change its state. Drag a thread up into
+On desktop, drag a thread between sections to change its state. Drag a thread up into
 the pinned section to pin it at the spot you drop it; drag a pinned thread down into the active
 list to unpin it. Dragging a thread onto the **Settled** header settles it, and dragging a settled
 thread into the active list un-settles it. A snoozed thread can be dragged out of the snoozed
@@ -103,7 +103,7 @@ or **Settled** to drag a parked thread back into either live section. Each drop 
 **Move up** and **Move down** are also available in the thread menu. The server
 saves the order, so it survives a refresh and appears on your other connected devices.
 
-On web and desktop, the list also animates section changes made with thread actions such as
+On desktop, the list also animates section changes made with thread actions such as
 **Pin**, **Settle**, and **Snooze**. These transitions respect your system's reduced-motion
 preference. While dragging, rows follow the insertion gap without replaying a second transition
 after the drop.
@@ -127,7 +127,7 @@ regenerated titles. Select a project to give it its own instructions.
 
 Agents connected through Onicode can use the same server-owned metadata workflow to
 rename a thread, regenerate its title, or link and unlink a pull request. These changes
-appear on web, desktop, and mobile without requiring the originating browser to remain
+appear on desktop and mobile without requiring the originating browser to remain
 open.
 
 ### Fold working threads (beta)
@@ -140,7 +140,7 @@ there. A thread returns to the top of the active list when it finishes, fails, o
 answer. The Working section lists the thread you last sent work to first. Pinned threads stay in
 the pinned section.
 
-This is on by default. Turn it off with **Settings → General → Working section** on web and desktop,
+This is on by default. Turn it off with **Settings → General → Working section** on desktop,
 or **Settings → General → Working section** on iOS and Android. Each device keeps its own
 choice.
 
@@ -149,7 +149,7 @@ cannot drag or move threads within it. Your saved order returns when you turn it
 
 ### Group threads by project (beta)
 
-Turn on **Settings → Labs → Boring sidebar (group by project)** on web and desktop to put active
+Turn on **Settings → Labs → Boring sidebar (group by project)** on desktop to put active
 threads in a folder for each project. Pinned projects come first. A project with no active
 threads has no folder unless it is pinned or you pick it in the project filter. An archived
 project's folder comes last and shows only while it has active threads. Click a folder to open or
@@ -180,7 +180,7 @@ worktree settles, manually or automatically, even if a terminal there still runs
 command such as a dev server. Threads in the project's main checkout skip it. Its terminal
 closes when the command succeeds and stays open when it fails.
 
-On web and desktop, press a thread's **Settle** button and drag up or down to
+On desktop, press a thread's **Settle** button and drag up or down to
 settle every thread in that section between it and the one you release on.
 The **Un-settle** and **Wake** buttons work the same way in their sections.
 Press `Escape` while dragging to cancel.
@@ -201,7 +201,7 @@ choose **Auto-settle behavior**, and pick **Disabled**. The current option is ch
 is disabled.
 
 Change these rules in **Settings → Threads**.
-They continue to run when your apps are closed. On web and desktop, choose an environment at the
+They continue to run when your apps are closed. On desktop, choose an environment at the
 top to change only its rules, or **All environments** to update connected environments together.
 Mixed values show where the selected environments disagree. Mobile applies these
 rules to connected environments that support shared settings. Offline environments
@@ -214,14 +214,14 @@ The server finds the PR for each unsettled thread's saved branch, even when your
 apps are closed. Settled threads keep their saved links. Update the server if
 automatic branch links do not appear.
 
-On web and desktop, right-click a pull request link in a thread and choose
+On desktop, right-click a pull request link in a thread and choose
 **Link to thread** to select a different PR. Use **Unlink from thread** on the
 same link to return to the branch PR, if one exists.
 The linked pull request participates in automatic settlement.
 
 ## Find and reference work
 
-On web and desktop, open the command palette with `Cmd/Ctrl+K` to search threads
+On desktop, open the command palette with `Cmd/Ctrl+K` to search threads
 across connected environments by title, branch, pull request, or project.
 Threads you open often or recently rank higher, and for three weeks the thread
 you last picked for a query ranks higher when you type that query again.
@@ -267,7 +267,7 @@ the snooze. Enable **Snooze until limits reset** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 
-On web and desktop, use **Agents** to follow work delegated to subagents.
+On desktop, use **Agents** to follow work delegated to subagents.
 On mobile, open a subagent from its conversation card or **Agents**. On iOS
 layouts with an inspector, its thread opens beside the parent. Maximize it to
 fill the screen; close the full-screen view to return to the parent and inspector.
@@ -281,7 +281,7 @@ Expand a tool call in the conversation to see its full command and output.
 Summaries shorten shell wrappers and can still describe the latest call after it
 finishes; the call's own result shows its status.
 
-On web and desktop, the thread details card lists the local servers that the
+On desktop, the thread details card lists the local servers that the
 thread's terminals or its Claude agent started, with their ports. Not every one
 serves a web page. A server the agent started stays listed after the agent's
 turn ends.
@@ -299,7 +299,7 @@ back the standard rows.
 A side chat lets you ask a question about a thread without adding to it. It starts
 with what the thread knows, and the thread keeps working while you ask.
 
-On web and desktop, start a message with `/side` or `/btw`, then your question.
+On desktop, start a message with `/side` or `/btw`, then your question.
 You can also choose **Side chat** from the **+** menu in the right panel. The side
 chat opens as a tab there, with its own composer. Side chats do not show in the
 sidebar. Find one again under **Side chats** in thread details.
@@ -329,7 +329,7 @@ selected, the options apply to every connected environment, and the mobile app u
 
 Choose **Snooze → Custom…** from a thread's menu to pick a date and time in your
 local time zone, or a duration in minutes, hours, or days. Durations start when
-you confirm; one day means 24 hours. On web and desktop, you can also snooze
+you confirm; one day means 24 hours. On desktop, you can also snooze
 several selected threads together. Choose **Wake thread** to bring a thread back early.
 
 A snoozed thread keeps working and stays hidden until its wake time, even while

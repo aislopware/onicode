@@ -53,7 +53,6 @@ const fetchJson = async (
 ): Promise<unknown> => {
   const response = await fetch(url, {
     cache: "no-store",
-    credentials: target.access.credentials ? "include" : "same-origin",
     ...(signal ? { signal } : {}),
   });
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
@@ -162,7 +161,7 @@ const openEventSource = (
   url: string,
   onMessage: (data: unknown) => void,
 ): (() => void) => {
-  const source = new EventSource(url, { withCredentials: target.access.credentials });
+  const source = new EventSource(url);
   source.addEventListener("message", (event) => {
     try {
       onMessage(JSON.parse(String(event.data)));

@@ -142,7 +142,6 @@ const serveOrchestrationHttp = (allowed: () => boolean) =>
               Effect.provideService(EnvironmentAuthenticatedPrincipal, {
                 sessionId: AuthSessionId.make("test-session"),
                 subject: "test",
-                method: "bearer-access-token",
                 scopes: new Set<AuthEnvironmentScope>(allowed() ? ["orchestration:read"] : []),
               }),
             ),

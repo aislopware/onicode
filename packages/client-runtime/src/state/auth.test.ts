@@ -18,7 +18,6 @@ describe("applyAuthAccessStreamEvent", () => {
       sessionId: AuthSessionId.make("session-client"),
       subject: "subject",
       scopes: ["orchestration:read"],
-      method: "browser-session-cookie",
       client: {
         label: "Phone",
         deviceType: "mobile",

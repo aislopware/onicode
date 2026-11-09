@@ -1,11 +1,11 @@
 # Appearance and themes
 
-On web and desktop, open **Settings → Appearance** to choose a theme and follow the system
+On desktop, open **Settings → Appearance** to choose a theme and follow the system
 appearance or stay in light or dark mode. To use different themes for light and dark mode, select
 the corresponding preview within each theme. Appearance preferences are saved separately on each
 device or browser.
 
-On web and desktop, use **Change theme** in the command palette to select a theme without leaving chat.
+On desktop, use **Change theme** in the command palette to select a theme without leaving chat.
 Press **Cmd+Option+A** on macOS or **Ctrl+Alt+A** on Windows/Linux to open the theme picker directly.
 Use **Change appearance** in the command palette to choose System, Light, or Dark independently of
 the theme. **Cmd+Option+Shift+A** on macOS or **Ctrl+Alt+Shift+A** on Windows/Linux cycles through
@@ -27,12 +27,12 @@ Git-backed projects show branch and worktree controls below the composer while y
 The controls retreat as the composer docks after you send the first message.
 
 Turn on **Composer context** to keep those controls visible after the thread starts. This preference
-applies to the web and desktop clients.
+applies to the desktop app.
 
 ## Math
 
 Turn on **Render math** in **Settings → Appearance** to typeset LaTeX in messages and Markdown
-previews on web, desktop, and mobile. It reads `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`, outside of code.
+previews on desktop and mobile. It reads `$…$`, `$$…$$`, `\(…\)`, and `\[…\]`, outside of code.
 Fenced `math` blocks also render. Formulas work in tables, including absolute-value bars.
 Dollar amounts such as `$5 and $10` stay text; write `\$` to keep any other dollar sign literal.
 Wide formulas scroll horizontally while the surrounding text wraps. Copying a formula or
@@ -50,14 +50,13 @@ without replaying its transitions.
 
 ## Custom themes
 
-On web and desktop, choose **Create theme** to adjust a palette, or import a Onicode or VS Code
+On desktop, choose **Create theme** to adjust a palette, or import a Onicode or VS Code
 theme. The theme editor's color picker lets you select an area of the app to find the color to
 change. Export your theme as JSON to share it.
 
 ## Environment themes
 
-Environment themes and defaults come from the server serving your web app or the desktop app's
-main local environment. With the desktop app's local environment off, they come from the
+Environment themes and defaults come from the desktop app's main local environment. With the desktop app's local environment off, they come from the
 [background service](./background-service.md) on the same machine while the app is connected to
 it. Other connections do not use them.
 

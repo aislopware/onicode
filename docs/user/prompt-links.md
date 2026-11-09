@@ -32,9 +32,7 @@ Encode the prompt for a URL. In JavaScript, use `encodeURIComponent`.
 
 ## Open a link
 
-An `onicode://` link opens in the desktop or mobile app. To open one in the web app your Onicode
-server serves, use the same path and parameters on that server's address, such as
-`http://localhost:3773/new?prompt=…`.
+An `onicode://` link opens in the desktop or mobile app.
 
 - **No `repo`**: the draft opens without a project, on the machine you used last.
 - **`repo`**: the draft opens in your most recently used project for that repository. A fork

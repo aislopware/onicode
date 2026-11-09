@@ -1242,10 +1242,13 @@ describe("AcpRegistryAdapterV2", () => {
         new: stdio("Bearer opened-token"),
         load: stdio("Bearer rotated-token"),
       });
-      assert.deepEqual(yield* sessionMcpServers({ agentId: "gemini" }, { ONICODE_ACP_MCP_HTTP: "1" }), {
-        new: stdio("Bearer opened-token"),
-        load: stdio("Bearer rotated-token"),
-      });
+      assert.deepEqual(
+        yield* sessionMcpServers({ agentId: "gemini" }, { ONICODE_ACP_MCP_HTTP: "1" }),
+        {
+          new: stdio("Bearer opened-token"),
+          load: stdio("Bearer rotated-token"),
+        },
+      );
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
@@ -2152,7 +2155,8 @@ describe("AcpRegistryAdapterV2", () => {
               ...update("grandchild", {
                 sessionUpdate: "terminal_update",
                 terminalId: "nested-terminal",
-                command: "/usr/bin/node /srv/onicode/bin.ts acp-mcp-call orchestrator_capabilities {}",
+                command:
+                  "/usr/bin/node /srv/onicode/bin.ts acp-mcp-call orchestrator_capabilities {}",
               }),
               label: "nested-output",
             },

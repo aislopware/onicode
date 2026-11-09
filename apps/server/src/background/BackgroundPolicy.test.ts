@@ -33,7 +33,7 @@ const nominalHostPower: HostPowerSnapshot = {
 function makeReport(overrides: Partial<ClientActivityReportInput> = {}): ClientActivityReportInput {
   return {
     clientId: "client-1",
-    clientKind: "web",
+    clientKind: "desktop-renderer",
     visible: true,
     focused: true,
     recentlyInteracted: true,

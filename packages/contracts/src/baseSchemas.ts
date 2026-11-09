@@ -262,7 +262,7 @@ export type AuthSessionId = typeof AuthSessionId.Type;
 export const RpcClientId = NonNegativeInt.pipe(Schema.brand("RpcClientId"));
 export type RpcClientId = typeof RpcClientId.Type;
 
-export const ClientSurface = Schema.Literals(["web", "desktop", "mobile", "cli"]);
+export const ClientSurface = Schema.Literals(["desktop", "mobile", "cli"]);
 export type ClientSurface = typeof ClientSurface.Type;
 
 export const ClientOs = Schema.Literals([
@@ -279,12 +279,6 @@ export type ClientOs = typeof ClientOs.Type;
 
 export const ClientDeviceType = Schema.Literals(["desktop", "phone", "tablet", "unknown"]);
 export type ClientDeviceType = typeof ClientDeviceType.Type;
-
-export const ClientWebDeployment = Schema.Literals(["hosted", "server"]);
-export type ClientWebDeployment = typeof ClientWebDeployment.Type;
-
-export const ClientConnectionMethod = Schema.Literals(["direct", "ssh", "unknown"]);
-export type ClientConnectionMethod = typeof ClientConnectionMethod.Type;
 
 export const ProviderItemId = makeEntityId("ProviderItemId");
 export type ProviderItemId = typeof ProviderItemId.Type;

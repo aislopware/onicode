@@ -3,7 +3,6 @@ import { PROVIDER_DISPLAY_NAMES } from "@onicode/contracts";
 
 import { APP_VERSION } from "~/branding";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
-import { isElectron } from "~/env";
 import { useEnvironments } from "~/state/environments";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
@@ -37,9 +36,8 @@ function isHostedByThisApp(
   environment: ReturnType<typeof useEnvironments>["environments"][number],
 ) {
   return (
-    isElectron &&
-    (environment.entry.target._tag === "PrimaryConnectionTarget" ||
-      isDesktopLocalConnectionTarget(environment.entry.target))
+    environment.entry.target._tag === "PrimaryConnectionTarget" ||
+    isDesktopLocalConnectionTarget(environment.entry.target)
   );
 }
 

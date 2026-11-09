@@ -145,7 +145,6 @@ export const startEnvironment = Effect.fn("environment.start")(function* (input:
           String(port),
           "--base-dir",
           input.baseDir,
-          "--no-browser",
           "--log-level",
           "warn",
           workspace,

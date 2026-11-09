@@ -93,7 +93,7 @@ const claudeSystemAppend = () => {
     nativeThreadId: "context-budget",
     resume: false,
     cwd: null,
-    mcpServers: { "onicode": { type: "http", url: "http://127.0.0.1/mcp" } },
+    mcpServers: { onicode: { type: "http", url: "http://127.0.0.1/mcp" } },
   });
   return typeof systemPrompt === "object" && "append" in systemPrompt ? systemPrompt.append : "";
 };

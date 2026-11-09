@@ -27,7 +27,6 @@ import { Atom } from "effect/reactivity";
 import { type ReactNode, useEffect, useEffectEvent, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "~/composerDraftStore";
-import { isElectron } from "~/env";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { useScratchProject } from "~/hooks/useScratchProject";
 import { newProjectId } from "~/lib/utils";
@@ -446,7 +445,7 @@ function LinkPage({
 }) {
   return (
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
-      {isElectron ? <WorkspacePageHeader electron /> : null}
+      <WorkspacePageHeader />
       <Empty className="flex-1">
         <EmptyHeader className="max-w-md">
           <EmptyTitle>{title}</EmptyTitle>

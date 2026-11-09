@@ -23,7 +23,7 @@ import { peerLinkEnvironment, useLinkableMachines } from "~/state/peerLinks";
 import { useEnvironmentQuery } from "~/state/query";
 import { useEnvironmentScope, usePreparedConnection } from "~/state/session";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { accessConfig } from "../auth/ConnectAgentSurface";
+import { accessConfig } from "./linkAccess";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { Button } from "../ui/button";
 import {

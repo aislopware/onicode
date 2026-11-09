@@ -86,19 +86,26 @@ export const deriveProviderInstanceConfigMap = (
 export const DEV_REPLAY_INSTANCE_ID = ProviderInstanceId.make("devReplay");
 
 /**
- * Dev servers run from source keep a free ACP agent that replays recorded turns, so UI checks
- * need no paid model. Bundled servers, such as desktop dev, have no agent script and skip it.
+ * Dev servers keep a free ACP agent that replays recorded turns, so UI checks need no paid
+ * model. Packaged servers ship no agent script and skip it.
  */
 export const seedDevReplayInstance = Effect.fn(
   "ProviderInstanceRegistryHydration.seedDevReplayInstance",
 )(function* () {
   const config = yield* ServerConfig.ServerConfig;
-  if (config.devUrl === undefined) return;
+  if (!config.dev) return;
   const path = yield* Path.Path;
-  const agentPath = yield* path.fromFileUrl(
-    new URL("../../scripts/dev-replay-agent.ts", import.meta.url),
-  );
-  if (!(yield* (yield* FileSystem.FileSystem).exists(agentPath))) return;
+  const fs = yield* FileSystem.FileSystem;
+  // Relative to src/provider when run from source, and to dist/ when desktop dev runs the bundle.
+  let agentPath: string | undefined;
+  for (const relative of ["../../scripts/dev-replay-agent.ts", "../scripts/dev-replay-agent.ts"]) {
+    const candidate = yield* path.fromFileUrl(new URL(relative, import.meta.url));
+    if (yield* fs.exists(candidate)) {
+      agentPath = candidate;
+      break;
+    }
+  }
+  if (agentPath === undefined) return;
   const commandPath = yield* HostProcess.ExecutablePath;
   const serverSettings = yield* Settings.ServerSettingsService;
   const existing = (yield* serverSettings.getSettings).providerInstances[DEV_REPLAY_INSTANCE_ID];

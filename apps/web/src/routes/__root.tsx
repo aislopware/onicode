@@ -31,11 +31,11 @@ import { ProjectCloneToastCoordinator } from "../components/ProjectCloneToastCoo
 import { ChatGptWelcomeCoordinator } from "../components/settings/ChatGptWelcomeCoordinator";
 import { ThemeEditorHost } from "../components/settings/ThemeEditorHost";
 import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
+import { PrimaryAuthErrorSurface } from "../components/auth/PrimaryAuthErrorSurface";
 import { Button } from "../components/ui/button";
 import { MorphIcon } from "~/components/MorphIcon";
 import { StandalonePage, StandalonePageHeader } from "../components/ui/standalone-page";
 import { AnchoredToastProvider, ToastProvider } from "../components/ui/toast";
-import { isElectron } from "../env";
 import { cn } from "../lib/utils";
 import { useClientSettings } from "../hooks/useSettings";
 import {
@@ -127,13 +127,9 @@ function RootRouteBranch() {
   const [returningFromWelcome, setReturningFromWelcome] = useState(pathname === "/welcome");
   if (pathname === "/welcome" && !returningFromWelcome) setReturningFromWelcome(true);
 
-  if (pathname === "/pair" || pathname === "/connect-agent") {
-    return <Outlet />;
-  }
-
   const isWelcome = pathname === "/welcome";
-  if (authGateState.status !== "authenticated" && authGateState.status !== "hosted-static") {
-    return <Outlet />;
+  if (authGateState.status === "requires-auth") {
+    return <PrimaryAuthErrorSurface errorMessage={authGateState.errorMessage} />;
   }
 
   // Settings can reopen /welcome mid-session, so it mounts everything the app does except the
@@ -144,7 +140,7 @@ function RootRouteBranch() {
       {primaryEnvironmentAuthenticated || localEnvironmentDisabled ? (
         <DesktopWebLinkCoordinator />
       ) : null}
-      {isElectron ? <RunningThreadKeepAlive /> : null}
+      <RunningThreadKeepAlive />
       <SshPasswordPromptDialog />
       <SnapShotCoordinator />
       <ReopenClosedViewShortcut />

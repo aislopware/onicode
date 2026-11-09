@@ -18,7 +18,6 @@ import {
   type ShortcutEventLike as SharedShortcutEventLike,
   type ShortcutModifierStateLike,
 } from "@onicode/shared/keybindings";
-import { isElectron } from "./env";
 import { isEditableFocused } from "./lib/editableFocus";
 import { projectScriptIdFromCommand } from "./projectScripts";
 
@@ -34,8 +33,6 @@ export interface ShortcutMatchContext {
   terminalOpen: boolean;
   previewFocus: boolean;
   previewOpen: boolean;
-  isWeb: boolean;
-  isDesktop: boolean;
   editableFocus?: boolean;
   [key: string]: boolean;
 }
@@ -64,8 +61,6 @@ function resolveContext(options: ShortcutMatchOptions | undefined): ShortcutMatc
     terminalOpen: false,
     previewFocus: false,
     previewOpen: false,
-    isWeb: !isElectron,
-    isDesktop: isElectron,
     editableFocus: false,
     ...options?.context,
   };

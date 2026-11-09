@@ -200,8 +200,8 @@ const makeThreadTools = (session: McpToolSession, origin: string) => {
 export type ThreadTools = ReturnType<typeof makeThreadTools>;
 
 /**
- * Signs in as a short-lived MCP client of the running server, the same way an
- * outside agent does, and revokes that session when the command ends.
+ * Signs in as a short-lived MCP client of the running server and revokes that
+ * session when the command ends.
  */
 const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function* <A, E, R>(
   flags: { readonly baseDir: Option.Option<string> },
@@ -222,7 +222,7 @@ const withThreadTools = Effect.fn("cli.thread.withThreadTools")(function* <A, E,
         // The CLI runs as the machine's owner. New threads still start at
         // the project's default mode, never at this ceiling by default.
         access: "full-access",
-        peerLink: false,
+        purpose: "thread-cli",
         client: { deviceType: "bot" },
       }),
       (session) =>

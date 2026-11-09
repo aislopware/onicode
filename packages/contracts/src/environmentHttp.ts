@@ -11,17 +11,11 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
 import {
   AuthAccessTokenResult,
-  AuthBrowserSessionRequest,
-  AuthBrowserSessionResult,
   AuthCreatePairingCredentialInput,
   AuthMcpApprovalDecisionRequest,
-  AuthMcpApprovalDetails,
   AuthMcpApprovalError,
   AuthMcpApprovalRedirect,
-  AuthMcpAuthorizationRequest,
-  AuthMcpAuthorizationServerMetadata,
   AuthMcpClientRegistration,
-  AuthMcpProtectedResourceMetadata,
   AuthMcpRegisteredClient,
   AuthMcpRegistrationError,
   AuthMcpTokenError,
@@ -35,7 +29,6 @@ import {
   AuthSessionState,
   AuthWebSocketTicketParams,
   AuthWebSocketTicketResult,
-  ServerAuthSessionMethod,
 } from "./auth.ts";
 import {
   ExecutionEnvironmentDescriptor,
@@ -109,8 +102,6 @@ export type EnvironmentOperationForbiddenReason = typeof EnvironmentOperationFor
 
 export const EnvironmentInternalErrorReason = Schema.Literals([
   "bootstrap_validation_failed",
-  "browser_session_issuance_failed",
-  "browser_session_cookie_failed",
   "access_token_issuance_failed",
   "websocket_ticket_issuance_failed",
   "pairing_credential_issuance_failed",
@@ -315,10 +306,6 @@ export class EnvironmentHttpConflictError extends Schema.TaggedError<Environment
   }
 }
 
-const EnvironmentSessionCreationErrors = [
-  EnvironmentAuthInvalidError,
-  EnvironmentInternalError,
-] as const;
 const EnvironmentTokenExchangeErrors = [
   EnvironmentRequestInvalidError,
   EnvironmentAuthInvalidError,
@@ -361,7 +348,6 @@ const EnvironmentProjectMutationErrors = [
 export interface EnvironmentSessionPrincipalShape {
   readonly sessionId: AuthSessionId;
   readonly subject: string;
-  readonly method: ServerAuthSessionMethod;
   readonly scopes: ReadonlySet<AuthEnvironmentScope>;
   readonly expiresAt?: DateTime.DateTime;
 }
@@ -405,13 +391,6 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
       headers: OptionalBearerHeaders,
       success: AuthSessionState,
       error: [EnvironmentInternalError],
-    }),
-  )
-  .add(
-    HttpApiEndpoint.post("browserSession", "/api/auth/browser-session", {
-      payload: AuthBrowserSessionRequest,
-      success: AuthBrowserSessionResult,
-      error: EnvironmentSessionCreationErrors,
     }),
   )
   .add(
@@ -470,33 +449,10 @@ class EnvironmentAuthHttpApi extends HttpApiGroup.make("auth")
 
 class EnvironmentMcpOAuthHttpApi extends HttpApiGroup.make("mcpOAuth")
   .add(
-    HttpApiEndpoint.get("protectedResource", "/.well-known/oauth-protected-resource", {
-      success: AuthMcpProtectedResourceMetadata,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("mcpProtectedResource", "/.well-known/oauth-protected-resource/mcp", {
-      success: AuthMcpProtectedResourceMetadata,
-    }),
-  )
-  .add(
-    HttpApiEndpoint.get("authorizationServer", "/.well-known/oauth-authorization-server", {
-      success: AuthMcpAuthorizationServerMetadata,
-    }),
-  )
-  .add(
     HttpApiEndpoint.post("register", "/oauth/mcp/register", {
       payload: AuthMcpClientRegistration,
       success: AuthMcpRegisteredClient,
       error: AuthMcpRegistrationError,
-    }),
-  )
-  .add(HttpApiEndpoint.get("authorize", "/oauth/mcp/authorize"))
-  .add(
-    HttpApiEndpoint.post("approval", "/oauth/mcp/approval", {
-      payload: AuthMcpAuthorizationRequest,
-      success: [AuthMcpApprovalDetails, AuthMcpApprovalRedirect],
-      error: AuthMcpApprovalError,
     }),
   )
   .add(

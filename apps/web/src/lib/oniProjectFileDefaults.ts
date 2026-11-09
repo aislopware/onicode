@@ -1,4 +1,8 @@
-import { ONICODE_PROJECT_FILE_NAME, type EnvironmentId, type OniProjectFile } from "@onicode/contracts";
+import {
+  ONICODE_PROJECT_FILE_NAME,
+  type EnvironmentId,
+  type OniProjectFile,
+} from "@onicode/contracts";
 import { parseOniProjectFile } from "@onicode/shared/oniProjectFile";
 import { executeAtomQuery } from "@onicode/client-runtime/state/runtime";
 

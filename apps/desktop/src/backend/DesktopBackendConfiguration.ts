@@ -73,13 +73,15 @@ const emptyBackendObservabilitySettings: BackendObservabilitySettings = {
 const DESKTOP_BACKEND_ENV_NAMES = [
   "ONICODE_PORT",
   "ONICODE_MODE",
-  "ONICODE_NO_BROWSER",
   "ONICODE_HOST",
   "ONICODE_DESKTOP_WS_URL",
   "ONICODE_DESKTOP_LAN_HOST",
   "ONICODE_DESKTOP_HTTPS_ENDPOINTS",
   "ONICODE_TAILSCALE_SERVE",
   "ONICODE_TAILSCALE_SERVE_PORT",
+  // The renderer's dev server is the desktop's concern; the backend learns dev mode from `--dev`.
+  "VITE_DEV_SERVER_URL",
+  "ONICODE_DEV",
 ] as const;
 
 // Windows forwards these variables into WSL only through WSLENV.
@@ -499,7 +501,6 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
 
     const bootstrap = {
       mode: "desktop" as const,
-      noBrowser: true,
       port: backendExposure.port,
       oniHome: environment.baseDir,
       host: backendExposure.bindHost,
@@ -527,6 +528,7 @@ const resolvePrimaryStartConfig = Effect.fn("desktop.backendConfiguration.resolv
         environment.backendEntryPath,
         "--bootstrap-fd",
         "3",
+        ...(environment.isDevelopment ? ["--dev"] : []),
       ],
       entryPath: environment.backendEntryPath,
       cwd: environment.backendCwd,
@@ -569,7 +571,6 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
 
   const bootstrap = {
     mode: "desktop" as const,
-    noBrowser: true,
     port: input.port,
     // Omit oniHome to keep the Linux backend from sharing the primary's Windows SQLite file.
     host: wslBindHost,
@@ -668,11 +669,8 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
     ...(runningDistro !== null ? { runningDistro } : {}),
   };
 
-  // Explicit --dev-url keeps WSL state in dev/ rather than userdata/.
-  const devUrlArgs = Option.match(environment.devServerUrl, {
-    onNone: () => [] as ReadonlyArray<string>,
-    onSome: (url) => ["--dev-url", url.href],
-  });
+  // Keeps WSL state in dev/ rather than userdata/.
+  const devArgs = environment.isDevelopment ? ["--dev"] : [];
 
   if (preflight._tag === "Failed") {
     const retryLimit =
@@ -709,7 +707,7 @@ const resolveWslStartConfig = Effect.fn("desktop.backendConfiguration.resolveWsl
       ...command,
       "--bootstrap-fd",
       "0",
-      ...devUrlArgs,
+      ...devArgs,
     ],
     preflightFailure: Option.none(),
     ...(preflight.runtimeId === undefined ? {} : { wslRuntimeId: preflight.runtimeId }),

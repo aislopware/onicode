@@ -48,7 +48,7 @@ the agent a file path; only [Antigravity](./providers-antigravity.md#skills-and-
 sends supported videos to Gemini models as video.
 
 Uploads begin when you add an attachment. All uploads must finish before the
-message can send. Retry or remove a failed upload. On web and desktop, reloading
+message can send. Retry or remove a failed upload. On desktop, reloading
 before an upload finishes requires you to attach that file again.
 
 You can drag or paste images into the web or desktop composer. HEIC and HEIF
@@ -62,7 +62,7 @@ See [images and videos](#images-and-videos-in-messages) for previewing and savin
 
 ## Send while the agent is working
 
-On web and desktop, choose **Settings → Chat → Follow-up behavior** to queue
+On desktop, choose **Settings → Chat → Follow-up behavior** to queue
 new messages for a later turn or steer the running turn immediately. The setting
 applies to this client; already queued messages keep their place. Queued messages
 are saved on the server and can be edited or removed before they send.
@@ -98,7 +98,7 @@ messages survive app restarts.
 
 ## Custom models
 
-On web and desktop, use Settings → Providers → **Models** to add an unlisted model with a custom
+On desktop, use Settings → Providers → **Models** to add an unlisted model with a custom
 name and options. Only options supported by the provider integration affect turns. Antigravity
 uses its account catalog and does not support custom models.
 
@@ -127,7 +127,7 @@ Leaving reasoning level or service tier unset uses the provider's own configurat
 
 ## Quote an assistant response
 
-On web and desktop, select text within one assistant response and choose
+On desktop, select text within one assistant response and choose
 **Cite in composer**. You can add a comment about the quote and write instructions
 around it.
 
@@ -165,11 +165,11 @@ press `Escape` to dismiss it. Each suggestion is one extra request that reuses t
 cache, so it uses a little of your plan's usage. Claude skips suggestions on the first turn of a
 thread and near usage limits. Codex needs version 0.165 or later; if Onicode manages
 Codex, update it in Settings > Providers. Codex follows a change to the setting at once; open Claude
-threads follow it after they restart. Suggestions show on web and desktop.
+threads follow it after they restart. Suggestions show on desktop.
 
 ## Edit an earlier prompt
 
-On web and desktop, choose **Edit from here** beneath a sent message to rewind
+On desktop, choose **Edit from here** beneath a sent message to rewind
 the conversation to before that message. Choose **Revert and keep changes** to
 leave workspace files as they are, or **Revert files too** to put the workspace back
 to its checkpoint from before that message. That also undoes edits you made yourself.
@@ -186,7 +186,7 @@ memory. The action is available only when the provider supports rewind.
 
 ## Prompt stash
 
-On web and desktop, press `Cmd+S` on macOS or `Ctrl+S` on Windows and Linux to save
+On desktop, press `Cmd+S` on macOS or `Ctrl+S` on Windows and Linux to save
 the current prompt and its attachments for later. Wait for uploads to finish first.
 With an empty composer, the same shortcut restores a single stash or opens the
 stash menu when there are several.
@@ -195,7 +195,7 @@ Stashes containing uploaded files must be restored in their original environment
 Those files are retained for 24 hours. After an upload expires, restore the prompt
 and use **Attach again** or remove the missing file before sending.
 
-## Voice input on web and desktop
+## Voice input on desktop
 
 Use the composer's microphone or `mod+shift+d` to dictate into your draft. Audio
 is transcribed on an environment you choose in **Settings → Voice**; nothing is
@@ -244,14 +244,14 @@ cancellation. The transcript stays in your draft until you send the message to t
 
 ## Queued messages
 
-On web and desktop, the composer shows **Interrupt** while the agent is working and the draft is
+On desktop, the composer shows **Interrupt** while the agent is working and the draft is
 empty. Adding text or attachments replaces it with a send button that shows your
 [Follow-up behavior](#send-while-the-agent-is-working): a queue icon for Queue or a steer arrow for
 Steer. Click it or press your send shortcut to use that action. Hold `Cmd` on macOS or `Ctrl` on
 Windows and Linux to switch the button to the opposite action, then click, or use the opposite-action
 shortcut described above.
 
-On web and desktop, queued messages appear at the end of the thread as dashed messages that have
+On desktop, queued messages appear at the end of the thread as dashed messages that have
 not been sent yet. On mobile they appear above the composer. Each shows its text and any attached
 images. **Send now** sends a message right away, into the running turn if there is one. You can
 also edit or remove it.
@@ -279,7 +279,7 @@ The slash menu also includes skills unless you turn off **Settings → Chat →
 Show skills in slash menu**, under Advanced. Only skills enabled for the provider are listed.
 
 After you add or change skills, plugins, or MCP servers, use **Restart agent
-session** in the command palette on web and desktop. The conversation continues,
+session** in the command palette on desktop. The conversation continues,
 and your next message starts the agent again with the new setup.
 
 Provider commands must start the message to run. Onicode commands such as
@@ -294,7 +294,7 @@ earlier messages, and the thread marks where it began with **New session**.
 Earlier messages and diffs stay in the thread. Dismiss the notice above the
 composer to keep the current session instead.
 
-On web and desktop, turn on **Context window** in **Settings → Appearance →
+On desktop, turn on **Context window** in **Settings → Appearance →
 Thread details** to see context usage in the thread details card. It appears
 once the provider reports usage.
 
@@ -330,7 +330,7 @@ excerpt, Terminal 1 lines 3-4" and similar to screen readers.
 
 A pull request appears as its icon and number. Its color reflects whether it was open, draft,
 merged, or closed when it was attached. Select it to inspect the captured title and branches,
-then choose **Open pull request** to visit the pull request. On web and desktop, type `#` to browse the newest
+then choose **Open pull request** to visit the pull request. On desktop, type `#` to browse the newest
 pull requests in the current project's repository. Pull requests linked to the thread are included
 from any repository and listed first, after any exact number match. Continue typing digits to filter the recent list
 by any part of its pull request numbers. A complete number is also resolved directly, even when that
@@ -339,7 +339,7 @@ the repository by text. Choose a result to insert it as a chip.
 
 Another thread can be context too. Type `@` followed by part of its title to pick one from
 the same server, or from a machine it links to while the Linked environments beta is on; those
-show the machine's name. On web and desktop you can also drag a thread out of the sidebar and
+show the machine's name. On desktop you can also drag a thread out of the sidebar and
 drop it on the composer; a multi-selection drops together. On any client, **Copy thread** copies a
 link to the thread that pastes into a composer as its chip. The chip shows the thread's
 current title and opens it when selected. Your prompt only carries a reference: the agent reads the thread's
@@ -383,7 +383,7 @@ Select a file chip in your draft or a sent message to preview it. Code and JSON 
 highlighting; Markdown, HTML, CSV, and TSV offer rendered and raw views. Audio files have
 playback controls. Large text files show a limited preview; save the file to read it in full.
 
-On web and desktop, files open beside the conversation with the same controls as a workspace
+On desktop, files open beside the conversation with the same controls as a workspace
 file: a header row with the view toggle, **Copy contents** and **Save file**. On mobile, documents
 open in the same file screen as workspace files; its menu holds **Copy contents**, **Save or
 share** and **Open in file viewer**. Pictures, videos and PDFs keep their native viewers, and
@@ -397,7 +397,7 @@ save, or add it to chat.
 Select an image or video attachment or link to preview it. Playback support depends
 on your browser or device; save an unsupported video to open it in another app.
 
-On web and desktop, right-click media to save it or copy its path or URL. On mobile,
+On desktop, right-click media to save it or copy its path or URL. On mobile,
 touch and hold an image or video thumbnail and choose **Save or share**. On iOS,
 return to the thumbnail to open this menu after watching a full-screen video.
 
@@ -413,7 +413,7 @@ styles, or images from neighboring files.
 
 ## HTML and PDF files in the file viewer
 
-On web and desktop, HTML and PDF files open as rendered pages. Switch an HTML
+On desktop, HTML and PDF files open as rendered pages. Switch an HTML
 file to source view to read its markup; a link to a specific line opens source
 automatically. HTML previews cannot access your Onicode session.
 

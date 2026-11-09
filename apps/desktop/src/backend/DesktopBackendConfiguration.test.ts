@@ -243,7 +243,6 @@ describe("DesktopBackendConfiguration", () => {
         assert.isUndefined(first.env.ONICODE_DESKTOP_LAN_HOST);
 
         assert.equal(first.bootstrap.mode, "desktop");
-        assert.equal(first.bootstrap.noBrowser, true);
         assert.equal(first.bootstrap.port, 4888);
         assert.equal(first.bootstrap.host, "0.0.0.0");
         assert.equal(first.bootstrap.oniHome, environment.baseDir);
@@ -654,8 +653,7 @@ describe("DesktopBackendConfiguration", () => {
           linuxEntryPath,
           "--bootstrap-fd",
           "0",
-          "--dev-url",
-          devServerUrl,
+          "--dev",
         ]);
         assert.notInclude(config.args, "bash");
         assert.notInclude(config.args, "/bin/sh");

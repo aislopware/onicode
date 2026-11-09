@@ -70,7 +70,7 @@ it.effect.each([
         NodeCrypto.layer,
         Path.layer,
         Layer.mock(ServerConfig.ServerConfig)({
-          ...(yield* ServerConfig.deriveServerPaths("/bootstrap-project", undefined).pipe(
+          ...(yield* ServerConfig.deriveServerPaths("/bootstrap-project", false).pipe(
             Effect.provide(Path.layer),
           )),
           baseDir: "/bootstrap-project",
@@ -87,19 +87,15 @@ it.effect.each([
           otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
           otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
           otelEnvironment: OtelEnvironment.none,
-          staticDir: undefined,
-          devAllowedOrigins: [],
           desktopBootstrapToken: undefined,
           logWebSocketEvents: false,
           tailscaleServeEnabled: false,
           tailscaleServePort: 443,
-          mode: "web",
+          mode: "standalone",
           cwd: "/bootstrap-project",
           host: "localhost",
           port: 3773,
-          devUrl: undefined,
-          noBrowser: true,
-          startupPresentation: "browser",
+          dev: false,
           autoBootstrapProjectFromCwd: true,
         }),
         Layer.mock(Keybindings.Keybindings)({ start: Effect.void }),
@@ -262,7 +258,7 @@ it.effect("enqueueCommand fails queued work when readiness fails", () =>
 
       yield* commandGate.failCommandReady(
         new ServerRuntimeStartup.ServerRuntimeStartupError({
-          mode: "web",
+          mode: "standalone",
           host: "127.0.0.1",
           port: 3773,
           cause: new Error("test startup failure"),

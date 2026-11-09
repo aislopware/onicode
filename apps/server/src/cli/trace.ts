@@ -168,7 +168,7 @@ const traceSummaryCommand = Command.make("summary", {
       );
       const traceFilePath =
         (yield* traceFileConfig) ??
-        (yield* ServerConfig.deriveServerPaths(baseDir, undefined)).serverTracePath;
+        (yield* ServerConfig.deriveServerPaths(baseDir, false)).serverTracePath;
       const sinceMs = Option.isSome(flags.since)
         ? (yield* Clock.currentTimeMillis) - Duration.toMillis(flags.since.value)
         : undefined;

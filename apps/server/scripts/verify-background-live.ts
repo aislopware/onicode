@@ -213,7 +213,6 @@ function startServer() {
   bootstrapPipe.end(
     JSON.stringify({
       mode: "desktop",
-      noBrowser: true,
       port,
       oniHome: home,
       host: "127.0.0.1",

@@ -48,7 +48,7 @@ export function getCommandPaletteReturnFocus(): HTMLElement | boolean {
   return element?.isConnected && !element.matches(":disabled") ? element : true;
 }
 
-// The palette is only mounted on app-shell routes (not /pair, sign-in or
+// The palette is only mounted on app-shell routes (not error pages or
 // landings), so its shortcuts must stay inert elsewhere.
 let mountedPalettes = 0;
 

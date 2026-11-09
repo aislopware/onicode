@@ -12,7 +12,6 @@
     "@electron/osx-sign": "2.7.0",
     "@onicode/contracts": "workspace:*",
     "@onicode/shared": "workspace:*",
-    "@onicode/tailscale": "workspace:*",
     "agent-device": "0.21.32",
     "effect": "catalog:",
     "plist": "catalog:",

@@ -5,7 +5,7 @@ import { EnvironmentId, ThreadId, TrimmedNonEmptyString, TurnItemId } from "./ba
 
 /**
  * A link from this environment to another one (the peer). This environment
- * signed in to the peer's `/mcp` as an outside agent, with a pairing code from
+ * signed in to the peer's `/mcp` as a linked environment, with a pairing code from
  * the peer, so its agents can work there. The peer enforces the access chosen
  * at linking, and revokes the link from its own Connections.
  */

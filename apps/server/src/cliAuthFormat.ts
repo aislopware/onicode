@@ -14,7 +14,6 @@ function formatClientMetadata(metadata: AuthClientMetadata): string {
     metadata.label,
     metadata.deviceType !== "unknown" ? metadata.deviceType : undefined,
     metadata.os,
-    metadata.browser,
     metadata.ipAddress,
   ]);
   return details.length > 0 ? details.join(" | ") : "unlabeled client";
@@ -120,7 +119,6 @@ export function formatIssuedSession(
       {
         sessionId: session.sessionId,
         token: session.token,
-        method: session.method,
         scopes: session.scopes,
         subject: session.subject,
         client: session.client,
@@ -153,7 +151,6 @@ export function formatSessionList(
     return `${JSON.stringify(
       sessions.map((session) => ({
         sessionId: session.sessionId,
-        method: session.method,
         scopes: session.scopes,
         subject: session.subject,
         client: session.client,
@@ -177,7 +174,6 @@ export function formatSessionList(
         [
           `${session.sessionId}${session.connected ? " connected" : ""}`,
           `  scopes: ${session.scopes.join(" ")}`,
-          `  method: ${session.method}`,
           `  subject: ${session.subject}`,
           `  client: ${formatClientMetadata(session.client)}`,
           `  issued: ${toIsoString(session.issuedAt)}`,

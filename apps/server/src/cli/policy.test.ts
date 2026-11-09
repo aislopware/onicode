@@ -34,7 +34,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))((it) =>
       const running = (managedPolicy: typeof installed | undefined, current = installed) =>
         Effect.gen(function* () {
           const state = yield* makePersistedServerRuntimeState({
-            config: { host: undefined, devUrl: undefined },
+            config: { host: undefined, dev: false },
             port: 3773,
             ...(managedPolicy === undefined ? {} : { managedPolicy }),
           });

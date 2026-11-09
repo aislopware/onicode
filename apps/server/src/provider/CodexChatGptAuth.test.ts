@@ -91,7 +91,7 @@ const makeHarnessFor = Effect.fnUntraced(function* (
   const exchanges: URLSearchParams[] = [];
   const authorizationRequests: URL[] = [];
   const callbackResponses: { body: string; headers: Headers }[] = [];
-  let returnUrl = "http://localhost:7001/welcome";
+  let returnUrl = "onicode://app/";
   const server = yield* Effect.acquireRelease(
     Effect.promise(
       () =>
@@ -557,10 +557,7 @@ it.effect(
         const h = yield* makeHarness;
         yield* h.signIn;
         yield* h.phase("succeeded");
-        assert.include(
-          h.callbackResponses[0]!.body,
-          'content="1;url=http://localhost:7001/welcome"',
-        );
+        assert.include(h.callbackResponses[0]!.body, 'content="1;url=onicode://app/"');
         const first = h.authorizationRequests[0]!;
         assert.strictEqual(
           first.searchParams.get("ext_agent_host_id"),
@@ -666,9 +663,7 @@ it.effect(
     provision(
       Effect.gen(function* () {
         const h = yield* makeHarness;
-        h.setReturnUrl(
-          "http://localhost:7001/settings/providers?instanceId=codex_work&code=secret-code",
-        );
+        h.setReturnUrl("onicode-dev://app/");
         yield* h.signIn;
         assert.isTrue(Option.isSome(yield* h.auth.read));
         const response = h.callbackResponses[0]!;
@@ -677,11 +672,7 @@ it.effect(
         assert.strictEqual(response.headers.get("referrer-policy"), "no-referrer");
         assert.include(response.headers.get("content-security-policy")!, "default-src 'none'");
         assert.include(response.body, "You're signed in".replace("'", "&#39;"));
-        assert.include(
-          response.body,
-          'content="1;url=http://localhost:7001/settings/providers?instanceId=codex_work"',
-        );
-        assert.notInclude(response.body, "secret-code");
+        assert.include(response.body, 'content="1;url=onicode-dev://app/"');
         assert.include(response.body, 'history.replaceState(null,"","/auth/callback")');
         assert.notInclude(response.body, "authorization-code");
         assert.notInclude(response.body, "initial-access");

@@ -11,7 +11,6 @@ import { Atom } from "effect/reactivity";
 import { useAtomValue } from "@effect/atom-react";
 
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
-import { isLoopbackHostname } from "~/environments/primary/target";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { environmentPresentations } from "~/state/presentation";
 
@@ -40,34 +39,17 @@ const UNRESOLVED_REMOTE_OPEN: RemoteOpenResolution = {
   isResolved: false,
 };
 
-function parseHostname(url: string): string | null {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return null;
-  }
-}
-
 export function resolveRemoteOpenState(input: {
   readonly target: ConnectionTarget | null;
   readonly sshTarget: { readonly alias: string; readonly username: string | null } | null;
   readonly remoteOpenTargets: ReadonlyArray<RemoteOpenTarget> | undefined;
-  readonly isDesktopRenderer: boolean;
 }): RemoteOpenState {
   const { target } = input;
   if (target === null) {
     return LOCAL_EXEC;
   }
-  if (target._tag === "PrimaryConnectionTarget") {
-    // Desktop owns its primary even at a non-loopback WSL2 NAT address.
-    if (input.isDesktopRenderer) {
-      return LOCAL_EXEC;
-    }
-    const hostname = parseHostname(target.httpBaseUrl);
-    if (hostname !== null && isLoopbackHostname(hostname)) {
-      return LOCAL_EXEC;
-    }
-  } else if (isDesktopLocalConnectionTarget(target)) {
+  // Desktop owns its primary even at a non-loopback WSL2 NAT address.
+  if (target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target)) {
     return LOCAL_EXEC;
   }
 
@@ -119,7 +101,6 @@ const remoteOpenResolutionAtom = Atom.family((environmentId: EnvironmentId) =>
         sshTarget:
           profile !== null && profile._tag === "SshConnectionProfile" ? profile.target : null,
         remoteOpenTargets: presentation?.serverConfig?.remoteOpenTargets,
-        isDesktopRenderer: window.desktopBridge !== undefined,
       }),
       isResolved: true,
     };

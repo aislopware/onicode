@@ -9,7 +9,6 @@ export function folderDropTarget(input: {
   environmentId: EnvironmentId;
   primaryEnvironmentId: EnvironmentId | null;
   connection: Pick<PreparedConnection, "target" | "httpBaseUrl"> | null;
-  isDesktopRenderer: boolean;
 }): "local" | "remote" {
   if (
     !input.localEnvironmentDisabled &&
@@ -18,9 +17,7 @@ export function folderDropTarget(input: {
   ) {
     return "local";
   }
-  return input.isDesktopRenderer &&
-    input.connection !== null &&
-    isSavedLoopbackConnection(input.connection)
+  return input.connection !== null && isSavedLoopbackConnection(input.connection)
     ? "local"
     : "remote";
 }

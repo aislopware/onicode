@@ -5,14 +5,12 @@ import {
   AuthSessionId,
   ForwardCompatibleArray,
   ClientSurface,
-  ClientWebDeployment,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
-import { RuntimeMode } from "./providerPolicy.ts";
 
 export const ServerAuthPolicy = Schema.Literals([
   "desktop-managed-local",
-  "loopback-browser",
+  "loopback",
   "remote-reachable",
   "unsafe-no-auth",
 ]);
@@ -20,12 +18,6 @@ export type ServerAuthPolicy = typeof ServerAuthPolicy.Type;
 
 export const ServerAuthBootstrapMethod = Schema.Literals(["desktop-bootstrap", "one-time-token"]);
 export type ServerAuthBootstrapMethod = typeof ServerAuthBootstrapMethod.Type;
-
-export const ServerAuthSessionMethod = Schema.Literals([
-  "browser-session-cookie",
-  "bearer-access-token",
-]);
-export type ServerAuthSessionMethod = typeof ServerAuthSessionMethod.Type;
 
 export const AuthOrchestrationReadScope = "orchestration:read" as const;
 export const AuthOrchestrationOperateScope = "orchestration:operate" as const;
@@ -166,25 +158,10 @@ export const AuthEnvironmentBootstrapTokenType =
 export const ServerAuthDescriptor = Schema.Struct({
   policy: ServerAuthPolicy,
   bootstrapMethods: Schema.Array(ServerAuthBootstrapMethod),
-  sessionMethods: Schema.Array(ServerAuthSessionMethod),
-  sessionCookieName: TrimmedNonEmptyString,
   /** Older servers omit this and authorize self-updates with orchestration:operate. */
   serverUpdateScope: Schema.optionalKey(Schema.Literal(AuthEnvironmentMaintainScope)),
 });
 export type ServerAuthDescriptor = typeof ServerAuthDescriptor.Type;
-
-export const AuthBrowserSessionRequest = Schema.Struct({
-  credential: TrimmedNonEmptyString,
-});
-export type AuthBrowserSessionRequest = typeof AuthBrowserSessionRequest.Type;
-
-export const AuthBrowserSessionResult = Schema.Struct({
-  authenticated: Schema.Literal(true),
-  ...authScopeResponseFields,
-  sessionMethod: ServerAuthSessionMethod,
-  expiresAt: Schema.DateTimeUtc,
-});
-export type AuthBrowserSessionResult = typeof AuthBrowserSessionResult.Type;
 
 export const AuthClientMetadataDeviceType = Schema.Literals([
   "desktop",
@@ -202,8 +179,6 @@ export const AuthClientPresentationMetadata = Schema.Struct({
   osMajorVersion: Schema.optionalKey(Schema.Int),
   deviceModel: Schema.optionalKey(TrimmedNonEmptyString),
   surface: Schema.optionalKey(ClientSurface),
-  webDeployment: Schema.optionalKey(ClientWebDeployment),
-  browser: Schema.optionalKey(TrimmedNonEmptyString),
   appVersion: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type AuthClientPresentationMetadata = typeof AuthClientPresentationMetadata.Type;
@@ -270,7 +245,6 @@ export const AuthClientMetadata = Schema.Struct({
   userAgent: Schema.optionalKey(TrimmedNonEmptyString),
   deviceType: AuthClientMetadataDeviceType,
   os: Schema.optionalKey(TrimmedNonEmptyString),
-  browser: Schema.optionalKey(TrimmedNonEmptyString),
 });
 export type AuthClientMetadata = typeof AuthClientMetadata.Type;
 
@@ -278,7 +252,6 @@ export const AuthClientSession = Schema.Struct({
   sessionId: AuthSessionId,
   subject: TrimmedNonEmptyString,
   ...authScopeResponseFields,
-  method: ServerAuthSessionMethod,
   client: AuthClientMetadata,
   issuedAt: Schema.DateTimeUtc,
   expiresAt: Schema.DateTimeUtc,
@@ -386,7 +359,6 @@ export const AuthSessionState = Schema.Struct({
   auth: ServerAuthDescriptor,
   scopes: Schema.optionalKey(AuthEnvironmentScopes),
   permissions: authScopeResponseFields.permissions,
-  sessionMethod: Schema.optionalKey(ServerAuthSessionMethod),
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
 });
 export type AuthSessionState = typeof AuthSessionState.Type;
@@ -413,33 +385,10 @@ export const mcpClientScopes = (access: AuthMcpClientAccess): ReadonlyArray<Auth
         ]
       : [AuthOrchestrationReadScope, AuthOrchestrationOperateScope];
 
-export const AuthMcpProtectedResourceMetadata = Schema.Struct({
-  resource: Schema.String,
-  authorization_servers: Schema.Array(Schema.String),
-  scopes_supported: Schema.Array(AuthEnvironmentScope),
-  bearer_methods_supported: Schema.Array(Schema.Literal("header")),
-  resource_name: Schema.String,
-});
-export type AuthMcpProtectedResourceMetadata = typeof AuthMcpProtectedResourceMetadata.Type;
-
-export const AuthMcpAuthorizationServerMetadata = Schema.Struct({
-  issuer: Schema.String,
-  authorization_endpoint: Schema.String,
-  token_endpoint: Schema.String,
-  registration_endpoint: Schema.String,
-  response_types_supported: Schema.Array(Schema.Literal("code")),
-  grant_types_supported: Schema.Array(Schema.Literal("authorization_code")),
-  code_challenge_methods_supported: Schema.Array(Schema.Literal("S256")),
-  token_endpoint_auth_methods_supported: Schema.Array(Schema.Literal("none")),
-  scopes_supported: Schema.Array(AuthEnvironmentScope),
-  authorization_response_iss_parameter_supported: Schema.Boolean,
-});
-export type AuthMcpAuthorizationServerMetadata = typeof AuthMcpAuthorizationServerMetadata.Type;
-
 /**
  * The `software_id` another Onicode environment registers with when it links
- * to this one. Its session is then a peer link: the work it starts here stays
- * within that link. Claiming it only ever adds limits.
+ * to this one; registration refuses every other client. The session it gets is
+ * a peer link: the work it starts here stays within that link.
  */
 export const MCP_PEER_LINK_SOFTWARE_ID = "onicode-peer-link";
 
@@ -487,38 +436,15 @@ export const AuthMcpAuthorizationRequest = Schema.Struct({
 });
 export type AuthMcpAuthorizationRequest = typeof AuthMcpAuthorizationRequest.Type;
 
-/** Server-validated request details, trusted by the client only for display. */
-export const AuthMcpApprovalDetails = Schema.Struct({
-  /** Self-declared by the client, so shown as such. */
-  clientName: Schema.String,
-  redirectHost: Schema.String,
-  environmentHost: Schema.String,
-  csrfToken: Schema.optionalKey(Schema.String),
-  /** Only scopes held by this session qualify; others need a pairing code. Absent with `csrfToken`. */
-  oneClickAccess: Schema.optionalKey(Schema.Array(AuthMcpClientAccess)),
-  /** A managed policy's runtime-mode ceiling; the page loads without the server's config. */
-  runtimeModeCeiling: Schema.optionalKey(
-    Schema.Struct({ organization: Schema.String, maxRuntimeMode: RuntimeMode }),
-  ),
-});
-export type AuthMcpApprovalDetails = typeof AuthMcpApprovalDetails.Type;
-
 export const AuthMcpApprovalRedirect = Schema.Struct({
   redirectTo: Schema.String,
 });
 export type AuthMcpApprovalRedirect = typeof AuthMcpApprovalRedirect.Type;
 
-export const AuthMcpApprovalDecision = Schema.Union([
-  Schema.TaggedStruct("deny", {}),
-  Schema.TaggedStruct("pairing-code", {
-    access: AuthMcpClientAccess,
-    code: TrimmedNonEmptyString,
-  }),
-  Schema.TaggedStruct("browser-session", {
-    access: AuthMcpClientAccess,
-    csrfToken: Schema.String,
-  }),
-]);
+export const AuthMcpApprovalDecision = Schema.TaggedStruct("pairing-code", {
+  access: AuthMcpClientAccess,
+  code: TrimmedNonEmptyString,
+});
 export type AuthMcpApprovalDecision = typeof AuthMcpApprovalDecision.Type;
 
 export const AuthMcpApprovalDecisionRequest = Schema.Struct({

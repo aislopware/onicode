@@ -82,7 +82,7 @@ const requests: Record<
       label: target.label,
       httpBaseUrl: target.httpBaseUrl,
       socketUrl: target.wsBaseUrl,
-      httpAuthorization: null,
+      httpAuthorization: { _tag: "Bearer", token: "test-token" },
       target,
     },
     threadId: thread.thread.id,

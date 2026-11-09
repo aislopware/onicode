@@ -27,7 +27,7 @@ export interface McpAppHostContext {
   readonly containerDimensions:
     | { readonly width: number; readonly maxHeight: number }
     | { readonly width: number; readonly height: number };
-  readonly platform: "web" | "desktop" | "mobile";
+  readonly platform: "desktop" | "mobile";
   readonly locale?: string;
   readonly timeZone?: string;
   readonly userAgent?: string;

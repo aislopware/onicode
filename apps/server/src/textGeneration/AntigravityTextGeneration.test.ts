@@ -520,17 +520,19 @@ it.layer(NodeServices.layer)("AntigravityTextGeneration", (it) => {
       }).pipe(Effect.scoped),
   );
 
-  it.effect("uses the native default without sending Onicode's default selection as a model ID", () =>
-    Effect.gen(function* () {
-      const fixture = yield* makeFixture();
-      const result = yield* fixture.textGeneration.generateThreadTitle({
-        ...fixture.titleInput,
-        modelSelection: { ...modelSelection, model: ANTIGRAVITY_DEFAULT_MODEL },
-      });
-      expect(result).toEqual({ title: "Repair login" });
-      expect(fixture.state.selectedModels).toEqual([]);
-      yield* fixture.assertCleaned;
-    }).pipe(Effect.scoped),
+  it.effect(
+    "uses the native default without sending Onicode's default selection as a model ID",
+    () =>
+      Effect.gen(function* () {
+        const fixture = yield* makeFixture();
+        const result = yield* fixture.textGeneration.generateThreadTitle({
+          ...fixture.titleInput,
+          modelSelection: { ...modelSelection, model: ANTIGRAVITY_DEFAULT_MODEL },
+        });
+        expect(result).toEqual({ title: "Repair login" });
+        expect(fixture.state.selectedModels).toEqual([]);
+        yield* fixture.assertCleaned;
+      }).pipe(Effect.scoped),
   );
 
   it.effect.each([

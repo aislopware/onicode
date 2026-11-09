@@ -61,7 +61,7 @@ export const ManagedUpdatesPolicy = Schema.Struct({
 export type ManagedUpdatesPolicy = typeof ManagedUpdatesPolicy.Type;
 
 /** A kind of client the server may accept, mapped onto `ServerAuthPolicy`. */
-export const ManagedPolicyClient = Schema.Literals(["desktop", "local-browser", "remote"]);
+export const ManagedPolicyClient = Schema.Literals(["desktop", "local", "remote"]);
 export type ManagedPolicyClient = typeof ManagedPolicyClient.Type;
 
 /**
@@ -73,8 +73,6 @@ export const ManagedPolicyLimits = Schema.Struct({
   maxRuntimeMode: Schema.optionalKey(RuntimeMode),
   /** Clients the server accepts. Without `remote`, nothing off this machine can pair. */
   clients: Schema.optionalKey(Schema.NonEmptyArray(ManagedPolicyClient)),
-  /** Webhook tasks are gone, so this always holds; accepted so older policy files still load. */
-  webhookTasks: Schema.optionalKey(Schema.Boolean),
   browserCookieImport: Schema.optionalKey(Schema.Boolean),
   providers: Schema.optionalKey(ManagedProviderLimits),
   updates: Schema.optionalKey(ManagedUpdatesPolicy),

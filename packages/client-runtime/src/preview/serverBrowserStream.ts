@@ -95,7 +95,7 @@ export type PreviewStreamInput =
 export interface PreviewStreamDownload {
   readonly fileName: string;
   readonly sizeBytes: number;
-  /** Authenticated with the stream's own access; cookie sessions must send credentials. */
+  /** Authenticated with the stream's own access. */
   readonly url: string;
 }
 
@@ -104,7 +104,6 @@ export interface PreviewStreamFileChooser {
   readonly accept: string;
   /** POST multipart `file` parts here; an empty form cancels the page's picker. */
   readonly uploadUrl: string;
-  readonly credentials: boolean;
 }
 
 const previewStreamUploadUrl = (
@@ -129,7 +128,7 @@ export async function uploadPreviewStreamFiles(
   const response = await fetch(chooser.uploadUrl, {
     method: "POST",
     body,
-    credentials: chooser.credentials ? "include" : "omit",
+    credentials: "omit",
   });
   if (!response.ok) throw new Error((await response.text()) || "The upload was refused.");
 }
@@ -290,7 +289,6 @@ export function createPreviewStreamClient(
           multiple,
           accept,
           uploadUrl: previewStreamUploadUrl(target, id),
-          credentials: target.access.credentials,
         });
       } else if (type === "fileChooserClosed" && typeof id === "string") {
         if (fileChooser !== id) return;

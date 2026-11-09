@@ -679,7 +679,6 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerAttachmentUploadRoute,
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
-    ServerHttp.layerStaticAndDevRoute,
     Ws.layer,
     speechStreamRouteLayer,
   ),
@@ -726,7 +725,7 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(PreviewAutomationBroker.layer),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
   Layer.provide(layerCommandReadiness),
-  Layer.provide(ServerHttp.layerBrowserApiCors),
+  Layer.provide(ServerHttp.layerApiCors),
   Layer.provide(ServerHttp.layerHttpCompression),
 );
 

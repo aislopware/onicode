@@ -85,7 +85,9 @@ const layerTest = McpHttpServer.layerPreviewToolkit.pipe(
   Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provideMerge(McpToolAccessTestkit.liveThreadsLayer),
   Layer.provideMerge(PreviewAutomationBroker.layer),
-  Layer.provideMerge(ServerConfig.layerTest(process.cwd(), { prefix: "oni-mcp-http-server-test-" })),
+  Layer.provideMerge(
+    ServerConfig.layerTest(process.cwd(), { prefix: "oni-mcp-http-server-test-" }),
+  ),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
 const layerPullRequestsTest = McpHttpServer.layerPullRequestsToolkit.pipe(
@@ -919,7 +921,7 @@ it.effect("terminates HTTP MCP sessions with DELETE", () =>
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );
 
-it.effect("admits provider and OAuth client credentials and points only clients at OAuth", () =>
+it.effect("admits provider and client session credentials", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const providerToken = "providerTokenWithoutDots";
@@ -1044,13 +1046,10 @@ it.effect("admits provider and OAuth client credentials and points only clients 
 
       const missing = yield* call(undefined);
       expect(missing.status).toBe(401);
-      expect(missing.headers["www-authenticate"]).toMatch(
-        /^Bearer resource_metadata="http:\/\/[^"]+\/\.well-known\/oauth-protected-resource\/mcp"$/,
-      );
+      expect(missing.headers["www-authenticate"]).toBe("Bearer");
 
       const expiredClient = yield* call("stale-payload.stale-signature");
-      expect(expiredClient.headers["www-authenticate"]).toContain("resource_metadata=");
-      expect(expiredClient.headers["www-authenticate"]).toContain('error="invalid_token"');
+      expect(expiredClient.headers["www-authenticate"]).toBe('Bearer error="invalid_token"');
 
       const spansBeforeRejection = traced.spans.length;
       const deadProvider = yield* call("deadProviderToken");
@@ -1097,10 +1096,10 @@ it.effect("accepts case-insensitive MCP bearer schemes and diagnoses rejected cr
         providerInstanceId: ProviderInstanceId.make("codex"),
       });
       const providerToken = issued.config.authorizationHeader.slice("Bearer ".length);
-      const oauth = yield* auth.issueMcpClientSession({
+      const client = yield* auth.issueMcpClientSession({
         label: "MCP header test",
         access: "read-only",
-        peerLink: false,
+        purpose: "thread-cli",
         client: { deviceType: "bot" },
       });
       yield* HttpRouter.serve(
@@ -1126,7 +1125,7 @@ it.effect("accepts case-insensitive MCP bearer schemes and diagnoses rejected cr
       for (const scheme of ["Bearer", "bearer", "bEaReR"]) {
         for (const [kind, token] of [
           ["provider", providerToken],
-          ["OAuth", oauth.token],
+          ["client", client.token],
         ]) {
           const response = yield* initialize(`${scheme} ${token}`);
           expect.soft(response.status, `${kind} ${scheme}`).toBe(200);
@@ -1139,7 +1138,7 @@ it.effect("accepts case-insensitive MCP bearer schemes and diagnoses rejected cr
         ["Bearer", "missing_bearer_token"],
         ["bEaReR ", "missing_bearer_token"],
         [`bearer ${providerToken.toUpperCase()}`, "unknown_or_expired_token"],
-        [`bEaReR ${oauth.token.toUpperCase()}`, "unknown_or_expired_token"],
+        [`bEaReR ${client.token.toUpperCase()}`, "unknown_or_expired_token"],
       ] as const) {
         const response = yield* initialize(authorization);
         expect(response.status).toBe(401);
@@ -1148,19 +1147,19 @@ it.effect("accepts case-insensitive MCP bearer schemes and diagnoses rejected cr
           .toEqual(["rejected MCP request with an unusable credential", { reason }]);
         const body = yield* response.text;
         expect(body).not.toContain(providerToken);
-        expect(body).not.toContain(oauth.token);
+        expect(body).not.toContain(client.token);
         expect(JSON.stringify(response.headers)).not.toContain(providerToken);
-        expect(JSON.stringify(response.headers)).not.toContain(oauth.token);
+        expect(JSON.stringify(response.headers)).not.toContain(client.token);
       }
       yield* registry.revokeThread(threadId);
-      yield* auth.revokeSession(oauth.sessionId);
-      for (const token of [providerToken, oauth.token]) {
+      yield* auth.revokeSession(client.sessionId);
+      for (const token of [providerToken, client.token]) {
         expect((yield* initialize(`bearer ${token}`)).status).toBe(401);
       }
       expect(JSON.stringify(messages)).not.toContain(providerToken);
-      expect(JSON.stringify(messages)).not.toContain(oauth.token);
+      expect(JSON.stringify(messages)).not.toContain(client.token);
       expect(JSON.stringify(messages)).not.toContain(providerToken.toUpperCase());
-      expect(JSON.stringify(messages)).not.toContain(oauth.token.toUpperCase());
+      expect(JSON.stringify(messages)).not.toContain(client.token.toUpperCase());
     }),
   ).pipe(
     Effect.provide(
@@ -1385,7 +1384,7 @@ it.effect("lists pull request watch tools only to threads that are not delegated
 );
 
 it.effect(
-  "narrows an OAuth client's modes to the Onicode-Mode-Limit it sends, and never widens them",
+  "narrows a client session's modes to the Onicode-Mode-Limit it sends, and never widens them",
   () =>
     Effect.scoped(
       Effect.gen(function* () {

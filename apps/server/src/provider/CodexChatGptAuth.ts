@@ -6,7 +6,7 @@ import {
   type ChatGptTransferredProfile,
   type ProviderInstanceId,
 } from "@onicode/contracts";
-import { codexCallbackUrl } from "@onicode/shared/codexAuthHandoff";
+import { codexCallbackUrl } from "@onicode/shared/codexAuthRequest";
 import * as Clock from "effect/Clock";
 import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -17,7 +17,7 @@ import * as Jwt from "effect/jose/Jwt";
 import * as Base64Url from "effect/encoding/Base64Url";
 import * as Hex from "effect/encoding/Hex";
 import * as Exit from "effect/Exit";
-import { codexAuthCallbackPage, codexAuthReturnUrl } from "./CodexAuthCallbackPage.ts";
+import { codexAuthCallbackPage } from "./CodexAuthCallbackPage.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -111,7 +111,6 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
   readonly instanceId: ProviderInstanceId;
   readonly discoveryUrl?: string;
   readonly resource?: string;
-  readonly defaultReturnUrl?: string;
   readonly reconnectProfile?: ChatGptReconnectProfile | null;
   readonly expectedProfileKey?: string;
 }) {
@@ -427,8 +426,6 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
     const state = yield* randomToken(32);
     const nonce = yield* randomToken(32);
     const verifier = yield* randomToken(64);
-    const returnUrl =
-      codexAuthReturnUrl(context.returnUrl) ?? codexAuthReturnUrl(options.defaultReturnUrl);
     const pageNonce = yield* randomToken(24);
     const callback = Promise.withResolvers<{ url: URL; response?: NodeHttp.ServerResponse }>();
     const clientCallback = context.callbackMode === "client";
@@ -680,7 +677,10 @@ export const makeCodexChatGptAuth = Effect.fn("makeCodexChatGptAuth")(function* 
                   "content-security-policy": `default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${pageNonce}'; base-uri 'none'; frame-ancestors 'none'`,
                   "x-content-type-options": "nosniff",
                 })
-                .end(codexAuthCallbackPage(Exit.isSuccess(result), returnUrl, pageNonce), resolve);
+                .end(
+                  codexAuthCallbackPage(Exit.isSuccess(result), context.returnUrl, pageNonce),
+                  resolve,
+                );
             }),
         ),
       ),

@@ -60,10 +60,9 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         JSON.stringify({
           schemaVersion: 1,
           organization: "Example Corp",
-          limits: { browserCookieImport: false, webhookTasks: false },
+          limits: { browserCookieImport: false },
         }),
       );
-      // webhookTasks still loads from older files but no longer reaches clients.
       assert.deepEqual(policy.summary?.limits, { browserCookieImport: false });
     }),
   );

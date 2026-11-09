@@ -45,13 +45,7 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
   const environmentIdentity = yield* ServerEnvironment.ServerEnvironmentIdentity;
   const environmentId = yield* environmentIdentity.getEnvironmentId;
   const invocation = yield* resolveSelfInvocation();
-  const auth = yield* makeCodexChatGptAuth({
-    instanceId: options.instanceId,
-    defaultReturnUrl: new URL(
-      "/welcome",
-      config.devUrl ?? `http://localhost:${config.port}`,
-    ).toString(),
-  });
+  const auth = yield* makeCodexChatGptAuth({ instanceId: options.instanceId });
   const homeLayout = yield* resolveManagedCodexHomeLayout(
     config.stateDir,
     options.instanceId,

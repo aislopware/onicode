@@ -132,8 +132,6 @@ const makeHarness = Effect.fn("TestProjectCommands.makeHarness")(function* () {
       auth: {
         policy: "remote-reachable" as const,
         bootstrapMethods: [],
-        sessionMethods: [],
-        sessionCookieName: "test",
       },
       scopes: [AuthFilesystemWriteScope],
       permissions: [AuthFilesystemWriteScope],

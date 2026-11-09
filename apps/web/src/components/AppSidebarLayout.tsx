@@ -11,7 +11,6 @@ import { useLocation, useRouter, type AnyRouter } from "@tanstack/react-router";
 
 import { moveWorkspaceFocus, workspaceAreaProps } from "../lib/workspaceFocus";
 import { isCommandPaletteOpen } from "../commandPaletteBus";
-import { isElectron } from "../env";
 import {
   releaseThreadUndoShortcut,
   threadUndoClaimsShortcut,
@@ -80,7 +79,7 @@ function readViewportWidth(): number {
 let windowFullscreenSnapshot: boolean | null = null;
 
 function macosDesktopBridge() {
-  if (!isElectron || !isMacPlatform(navigator.platform)) return null;
+  if (!isMacPlatform(navigator.platform)) return null;
   return window.desktopBridge ?? null;
 }
 
@@ -422,7 +421,7 @@ export function AppSidebarLayout({
   const pathname = useLocation({ select: (location) => location.pathname });
   const panelAnimationsSuppressed = usePanelNavigationSuppression(pathname);
   const routePanelAnimationsActive = panelAnimationsActive && !panelAnimationsSuppressed;
-  const isMacosDesktop = isElectron && isMacPlatform(navigator.platform);
+  const isMacosDesktop = isMacPlatform(navigator.platform);
   const [sidebarWidth, setSidebarWidth] = useState(readInitialThreadSidebarWidth);
   // A clamped drag may not change width, so viewport changes need a separate subscription.
   const viewportWidth = useSyncExternalStore(subscribeToViewportWidth, readViewportWidth);
@@ -462,7 +461,7 @@ export function AppSidebarLayout({
       >
         {showSidebar ? (
           <>
-            <SidebarBrandWidthProbe isElectron={isElectron} onWidthChange={setBrandWidth} />
+            <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />
             <Sidebar
               side="left"
               collapsible="offcanvas"
@@ -489,7 +488,7 @@ export function AppSidebarLayout({
         {children}
         <BackgroundThreadAnnouncer />
         <SidebarControl showSidebar={showSidebar} />
-        {isElectron ? <HistorySwipeNavigation /> : null}
+        <HistorySwipeNavigation />
       </SidebarProvider>
     </PanelAnimationSuppressionProvider>
   );

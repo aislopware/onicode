@@ -33,7 +33,6 @@ const target = {
     httpBase: "http://preview.test/api/preview-stream",
     wsBase: "ws://preview.test/api/preview-stream",
     query: {},
-    credentials: true,
   },
   threadId: "thread",
   tabId: "tab",
@@ -143,7 +142,7 @@ describe("preview stream downloads", () => {
     createPreviewStreamClient(
       {
         ...target,
-        access: { ...target.access, query: { wsTicket: "ticket" }, credentials: false },
+        access: { ...target.access, query: { wsTicket: "ticket" } },
       },
       {
         onFrame: vi.fn(),

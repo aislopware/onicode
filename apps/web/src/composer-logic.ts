@@ -60,7 +60,6 @@ export function composerSubmissionIntentForKey(input: {
   event: ShortcutEventLike & { isComposing?: boolean; keyCode?: number; repeat?: boolean };
   keybindings: ResolvedKeybindingsConfig;
   platform?: string;
-  isSoftwareKeyboardOpen: boolean;
   isDraftThread: boolean;
   isRunning?: boolean;
   sendShortcut?: ClientSettings["sendShortcut"];
@@ -68,8 +67,6 @@ export function composerSubmissionIntentForKey(input: {
 }): ComposerSubmissionIntent | null {
   const { event } = input;
   if (event.isComposing || event.keyCode === 229 || event.repeat) return null;
-  if (input.isSoftwareKeyboardOpen && event.key === "Enter" && !event.metaKey && !event.ctrlKey)
-    return null;
   const command = resolveShortcutCommand(event, input.keybindings, {
     ...(input.platform === undefined ? {} : { platform: input.platform }),
     context: {

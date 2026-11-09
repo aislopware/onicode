@@ -2,7 +2,6 @@ export interface DeviceHubAccess {
   readonly httpBase: string;
   readonly wsBase: string;
   readonly query: Readonly<Record<string, string>>;
-  readonly credentials: boolean;
 }
 
 export const withDeviceHubQuery = (url: string, access: DeviceHubAccess): string => {

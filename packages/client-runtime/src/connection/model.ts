@@ -114,7 +114,7 @@ export interface PreparedConnection {
   readonly label: string;
   readonly httpBaseUrl: string;
   readonly socketUrl: string;
-  readonly httpAuthorization: PreparedHttpAuthorization | null;
+  readonly httpAuthorization: PreparedHttpAuthorization;
   readonly target: ConnectionTarget;
 }
 

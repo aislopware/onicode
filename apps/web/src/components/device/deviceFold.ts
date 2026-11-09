@@ -51,7 +51,6 @@ const foldRequest = async (
   const response = await fetch(url, {
     method: posture ? "POST" : "GET",
     cache: "no-store",
-    credentials: access.credentials ? "include" : "same-origin",
     ...(posture
       ? { headers: { "content-type": "application/json" }, body: JSON.stringify({ posture }) }
       : {}),

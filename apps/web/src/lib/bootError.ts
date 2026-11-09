@@ -85,7 +85,6 @@ function redact(text: string) {
 export interface BootErrorEnvironment {
   readonly version: string;
   readonly channel: string;
-  readonly surface: "desktop" | "web";
   readonly platform: string;
   readonly userAgent: string;
   readonly time: string;
@@ -111,7 +110,6 @@ export function buildErrorReport(error: unknown, environment: BootErrorEnvironme
     "",
     `Version: ${environment.version}`,
     `Channel: ${environment.channel}`,
-    `Surface: ${environment.surface}`,
     `Platform: ${environment.platform}`,
     `User agent: ${environment.userAgent}`,
     `Time: ${environment.time}`,
@@ -131,7 +129,6 @@ function readEnvironment(bridge: DesktopBridge | undefined): BootErrorEnvironmen
   return {
     version,
     channel: import.meta.env.VITE_RELEASE_CHANNEL || "stable",
-    surface: bridge ? "desktop" : "web",
     platform: clientPlatform(bridge),
     userAgent: navigator.userAgent,
     time: new Date().toISOString(),
@@ -345,7 +342,7 @@ export function showBootError(error: unknown) {
   issue.searchParams.set("title", "Onicode failed to start");
   issue.searchParams.set("area", "apps/web");
   issue.searchParams.set("version", `${environment.version} (${environment.channel})`);
-  issue.searchParams.set("environment", `${environment.surface}, ${environment.platform}`);
+  issue.searchParams.set("environment", `desktop, ${environment.platform}`);
   const link = (href: string, textContent: string) =>
     element("a", { href, textContent, target: "_blank", rel: "noreferrer" });
 

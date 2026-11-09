@@ -1,6 +1,6 @@
 # Onicode
 
-Onicode is a minimal GUI for coding agents. A server on your machine drives the agent CLIs you already use, and desktop, mobile and web clients connect to it, on the same machine or from anywhere on your network.
+Onicode is a minimal GUI for coding agents. A server on your machine drives the agent CLIs you already use, and the desktop and mobile apps connect to it, on the same machine or from anywhere on your network.
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, Onicode can control them.
 
@@ -26,7 +26,7 @@ Install and authenticate at least one provider on the machine that runs the Onic
 npm install -g onicode
 ```
 
-Then run `onicode` to start the server and open the web app it serves. `onicode service install` keeps it running in the background, and `onicode --help` has the full reference.
+Then run `onicode` to start the server and print pairing details for the desktop and mobile apps. `onicode service install` keeps it running in the background, and `onicode --help` has the full reference.
 
 ### Desktop and mobile
 
@@ -69,7 +69,6 @@ Docs live in [docs/](./docs).
 - [Project settings](./docs/user/project-settings.md)
 - [Appearance preferences](./docs/user/appearance.md)
 - [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Connect Claude Code, Codex, ChatGPT and other agents over MCP](./docs/user/outside-agents.md)
 - [Keeping app and server in sync](./docs/user/updating.md)
 - [Source control integrations](./docs/user/source-control.md)
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
@@ -77,7 +76,7 @@ Docs live in [docs/](./docs).
 
 ## Fork of t3code
 
-Onicode is a fork of [t3code](https://github.com/pingdotgg/t3code) by T3 Tools Inc. Credit for the foundation goes to the t3code team. Onicode drops T3's hosted services (T3 Connect, the hosted web app, telemetry), reaches other devices over your network or Tailscale, and ships through its own update feeds. Fixes and features from t3code are still reviewed and ported one commit at a time ([how](./docs/operations/upstream-sync.md)).
+Onicode is a fork of [t3code](https://github.com/pingdotgg/t3code) by T3 Tools Inc. Credit for the foundation goes to the t3code team. Onicode drops T3's hosted services (T3 Connect, the web app, telemetry), reaches other devices over your network or Tailscale, and ships through its own update feeds. Fixes and features from t3code are still reviewed and ported one commit at a time ([how](./docs/operations/upstream-sync.md)).
 
 ## Contributing
 

@@ -74,7 +74,7 @@ hub binds loopback and the only way in is the
 [proxy](../../apps/server/src/device/DeviceHubProxy.ts), which allowlists the
 stream, config, and screenshot routes and authenticates every request as an
 environment session. `<img>` and `WebSocket` cannot carry headers, so the proxy
-authenticates like the `/ws` upgrade: cookie, or a short-lived `wsTicket` that
+authenticates like the `/ws` upgrade, with a short-lived `wsTicket` that
 bearer and DPoP clients mint over authenticated HTTP. The ticket is stripped
 before the request reaches the hub.
 

@@ -19,7 +19,7 @@ const context = (
   displayMode,
   availableDisplayModes: ["inline", "fullscreen"],
   containerDimensions: { width: 600, maxHeight: 2000 },
-  platform: "web",
+  platform: "desktop",
 });
 
 const flush = () => new Promise<void>((resolve) => queueMicrotask(resolve)).then(() => undefined);

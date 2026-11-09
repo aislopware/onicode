@@ -123,8 +123,6 @@ const panel = (attach = false) => (
       terminalOpen: false,
       previewFocus: false,
       previewOpen: false,
-      isWeb: true,
-      isDesktop: false,
     })}
     {...(attach ? { composerDraftTarget: draftId } : {})}
   />

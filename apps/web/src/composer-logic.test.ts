@@ -98,7 +98,6 @@ describe("composerSubmissionIntentForKey", () => {
   const input = {
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     platform: "Linux",
-    isSoftwareKeyboardOpen: false,
     isDraftThread: false,
   };
   const enter = { key: "Enter", metaKey: false, ctrlKey: false, altKey: false, shiftKey: false };
@@ -203,34 +202,12 @@ describe("composerSubmissionIntentForKey", () => {
     },
   );
 
-  it.each(["MacIntel", "Win32", "Linux"])(
-    "keeps modifier submission available with the software keyboard open on %s",
-    (platform) => {
-      const modEnter = {
-        ...enter,
-        metaKey: platform === "MacIntel",
-        ctrlKey: platform !== "MacIntel",
-      };
-      const keyboardOpen = { ...input, platform, isSoftwareKeyboardOpen: true };
-      expect(composerSubmissionIntentForKey({ ...keyboardOpen, event: modEnter })).toBe(
-        "foreground",
-      );
-      expect(
-        composerSubmissionIntentForKey({ ...keyboardOpen, isRunning: true, event: modEnter }),
-      ).toBe("alternate");
-      expect(
-        composerSubmissionIntentForKey({ ...keyboardOpen, isDraftThread: true, event: modEnter }),
-      ).toBe("background");
-    },
-  );
-
   it.each([
-    { isSoftwareKeyboardOpen: true },
-    { event: { ...enter, isComposing: true } },
-    { event: { ...enter, keyCode: 229 } },
-    { event: { ...enter, repeat: true } },
-  ])("does not submit with %j", (override) => {
-    expect(composerSubmissionIntentForKey({ ...input, event: enter, ...override })).toBeNull();
+    { ...enter, isComposing: true },
+    { ...enter, keyCode: 229 },
+    { ...enter, repeat: true },
+  ])("does not submit with %j", (event) => {
+    expect(composerSubmissionIntentForKey({ ...input, event })).toBeNull();
   });
 });
 

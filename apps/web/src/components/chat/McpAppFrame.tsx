@@ -28,7 +28,6 @@ import { isConfirmDialogActive, requestConfirmDialog } from "~/confirmDialog";
 import { useHtmlRenderTheme } from "~/hooks/useHtmlRenderTheme";
 import { useStableCallback } from "~/hooks/useStableCallback";
 import { Button } from "~/components/ui/button";
-import { isElectron } from "~/env";
 import { cn } from "~/lib/utils";
 import { useEnvironmentQuery } from "~/state/query";
 import { useTurnItemDetail } from "~/state/queries";
@@ -235,7 +234,7 @@ export function McpAppFrame(props: {
                 height: frameRef.current?.clientHeight || window.innerHeight,
               }
             : { width: current.width, maxHeight: MCP_APP_MAX_HEIGHT },
-        platform: isElectron ? "desktop" : "web",
+        platform: "desktop",
         locale: navigator.language,
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         userAgent: `onicode/${APP_VERSION}`,

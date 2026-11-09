@@ -74,7 +74,6 @@ const withService = <A, E>(
   options: {
     readonly threadId?: ThreadId;
     /** A card from before every request was for shell use, which promised to keep the value. */
-    readonly legacyCard?: boolean;
     readonly directory?: string;
     readonly runStatus?: string;
     readonly removeFails?: boolean;
@@ -151,7 +150,6 @@ const withService = <A, E>(
                     label: "GitHub token",
                     reason: "Used as GH_TOKEN.",
                     url: "https://github.com/settings/tokens",
-                    ...(options.legacyCard ? {} : { delivery: "file" }),
                     secretStatus,
                   },
                 ],
@@ -223,7 +221,6 @@ it.effect("a saved answer reaches the agent once, and the thread only learns it 
       assert.include(dispatched[0] as object, {
         type: "secret_request.record",
         secretStatus: "saved",
-        delivery: "file",
         url: "https://github.com/settings/tokens",
       });
       assert.notInclude(JSON.stringify(dispatched), "ghp_secret");
@@ -389,7 +386,7 @@ it.effect("declining stores nothing, and a request is answered once", () =>
       yield* service.answer({ threadId, turnItemId, answer: { type: "decline" } });
       assert.deepEqual(valuesOf(stored), []);
       const refused = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
-      assert.equal(refused.reason, "not_a_file_request");
+      assert.equal(refused.reason, "not_found");
       const late = yield* service
         .answer({ threadId, turnItemId, answer: { type: "save", secret: "ghp_secret" } })
         .pipe(Effect.flip);
@@ -480,7 +477,7 @@ it.effect("a file request moves its value to an owner-only file, once", () =>
             turnItemId,
             answer: { type: "save", secret: "cf_token'$(id)" },
           });
-          assert.include(dispatched[0] as object, { secretStatus: "saved", delivery: "file" });
+          assert.include(dispatched[0] as object, { secretStatus: "saved" });
           const file = yield* service.saveToFile({ threadId, turnItemId });
           assert.equal(yield* fs.readFileString(file), "cf_token'$(id)");
           assert.deepEqual(valuesOf(stored), []);
@@ -556,23 +553,6 @@ it.effect("a file is not delivered while its stored copy cannot be removed", () 
       { directory, removeFails: true },
     );
   }).pipe(Effect.provide(NodeServices.layer)),
-);
-
-it.effect("a secret the card promised to keep from the agent is never written to a file", () =>
-  withService(
-    ({ service, stored }) =>
-      Effect.gen(function* () {
-        yield* service.answer({
-          threadId,
-          turnItemId,
-          answer: { type: "save", secret: "ghp_secret" },
-        });
-        const refused = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
-        assert.equal(refused.reason, "not_a_file_request");
-        assert.isTrue(valuesOf(stored).some((value) => value.includes("ghp_secret")));
-      }),
-    { legacyCard: true },
-  ),
 );
 
 it.effect("a pasted secret goes straight to an owner-only file, with no card", () =>

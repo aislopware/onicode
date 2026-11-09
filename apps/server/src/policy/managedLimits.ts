@@ -47,13 +47,13 @@ export class ManagedPolicyRefusedError extends Schema.TaggedError<ManagedPolicyR
 
 const CLIENT_AUTH_POLICY: Record<ManagedPolicyClient, ServerAuthPolicy> = {
   desktop: "desktop-managed-local",
-  "local-browser": "loopback-browser",
+  local: "loopback",
   remote: "remote-reachable",
 };
 
 const AUTH_POLICY_ACTION: Record<ServerAuthPolicy, string> = {
   "desktop-managed-local": "the desktop app",
-  "loopback-browser": "browsers on this machine",
+  loopback: "a server started from the CLI on this machine",
   "remote-reachable": "remote clients",
   "unsafe-no-auth": "running without authentication",
 };

@@ -52,7 +52,6 @@ const fixture = (
               : Effect.succeed({
                   sessionId: AuthSessionId.make("test"),
                   subject: "test",
-                  method: "bearer-access-token",
                   scopes,
                 }),
         } as unknown as EnvironmentAuth.EnvironmentAuth["Service"]),
@@ -92,7 +91,9 @@ describe("device hub proxy", () => {
     async (path) => {
       const { handler, requests } = fixture([AuthOrchestrationReadScope]);
       const response = await handler(
-        new Request(`http://onicode.test/api/device-hub${path}`, { headers: { upgrade: "websocket" } }),
+        new Request(`http://onicode.test/api/device-hub${path}`, {
+          headers: { upgrade: "websocket" },
+        }),
       );
       expect(response.status).toBe(403);
       expect(requests).toEqual([]);
@@ -110,7 +111,8 @@ describe("device hub proxy", () => {
   });
 
   it("reads Android fold state but requires operate scope to change it", async () => {
-    const path = "http://onicode.test/api/device-hub/vendor/serve-emu/api/fold?device=emulator-5554";
+    const path =
+      "http://onicode.test/api/device-hub/vendor/serve-emu/api/fold?device=emulator-5554";
     const reader = fixture([AuthOrchestrationReadScope]);
     const read = await reader.handler(new Request(path));
     expect(read.status).toBe(200);
@@ -157,11 +159,14 @@ describe("device hub proxy", () => {
   it("lets a viewer negotiate a WebRTC stream with read scope", async () => {
     const { handler, requests, headers } = fixture([AuthOrchestrationReadScope]);
     const offer = await handler(
-      new Request("http://onicode.test/api/device-hub/vendor/serve-sim/helper/udid-1/webrtc/offer", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: '{"type":"offer"}',
-      }),
+      new Request(
+        "http://onicode.test/api/device-hub/vendor/serve-sim/helper/udid-1/webrtc/offer",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: '{"type":"offer"}',
+        },
+      ),
     );
     expect(offer.status).toBe(200);
     await offer.text();
@@ -212,9 +217,12 @@ describe("device hub proxy", () => {
         ),
     );
     const routed = await handler(
-      new Request("http://onicode.test/api/device-hub/vendor/serve-sim/api?device=udid-1&hostId=eas", {
-        headers: { authorization: "Bearer environment-token" },
-      }),
+      new Request(
+        "http://onicode.test/api/device-hub/vendor/serve-sim/api?device=udid-1&hostId=eas",
+        {
+          headers: { authorization: "Bearer environment-token" },
+        },
+      ),
     );
     expect(routed.status).toBe(200);
     expect(routed.headers.get("set-cookie")).toBeNull();
@@ -233,7 +241,9 @@ describe("device hub proxy", () => {
     expect(
       (
         await handler(
-          new Request("http://onicode.test/api/device-hub/vendor/serve-sim/exec", { method: "POST" }),
+          new Request("http://onicode.test/api/device-hub/vendor/serve-sim/exec", {
+            method: "POST",
+          }),
         )
       ).status,
     ).toBe(404);
@@ -260,7 +270,9 @@ it.each([
 it("rejects unsupported Duo routes", async () => {
   const { handler, requests } = fixture([AuthOrchestrationReadScope]);
   const response = await handler(
-    new Request("http://onicode.test/api/device-hub/vendor/serve-sim/helper/duo/panel/1/webrtc/offer"),
+    new Request(
+      "http://onicode.test/api/device-hub/vendor/serve-sim/helper/duo/panel/1/webrtc/offer",
+    ),
   );
   expect(response.status).toBe(404);
   expect(requests).toEqual([]);

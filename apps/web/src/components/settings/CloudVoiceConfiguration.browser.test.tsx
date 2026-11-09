@@ -52,7 +52,7 @@ it("enables the chosen provider only after a successful setup and keeps its gran
     ...target,
     target,
     socketUrl: target.wsBaseUrl,
-    httpAuthorization: null,
+    httpAuthorization: { _tag: "Bearer" as const, token: "test-token" },
   });
   using cleanup = new DisposableStack();
   cleanup.defer(() => chooseAudioDestination(null));
@@ -143,7 +143,7 @@ it("OpenRouter needs an exact model, and changing it writes no credential", asyn
     ...target,
     target,
     socketUrl: target.wsBaseUrl,
-    httpAuthorization: null,
+    httpAuthorization: { _tag: "Bearer" as const, token: "test-token" },
   });
   using cleanup = new DisposableStack();
   cleanup.defer(() => chooseAudioDestination(null));

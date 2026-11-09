@@ -100,11 +100,11 @@ describe("deriveProviderInstanceConfigMap", () => {
 });
 
 describe("seedDevReplayInstance", () => {
-  const seed = (devUrl: URL | undefined) =>
+  const seed = (dev: boolean) =>
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
       yield* seedDevReplayInstance().pipe(
-        Effect.provideService(ServerConfig.ServerConfig, { ...config, devUrl }),
+        Effect.provideService(ServerConfig.ServerConfig, { ...config, dev }),
       );
       const settings = yield* ServerSettingsService;
       return (yield* settings.getSettings).providerInstances[DEV_REPLAY_INSTANCE_ID];
@@ -127,7 +127,7 @@ describe("seedDevReplayInstance", () => {
     );
 
   effectIt.effect("leaves settings alone outside dev", () =>
-    seed(undefined).pipe(
+    seed(false).pipe(
       Effect.map((instance) =>
         expect(instance?.config).toEqual({ source: "local", commandPath: "/old/node" }),
       ),
@@ -135,7 +135,7 @@ describe("seedDevReplayInstance", () => {
   );
 
   effectIt.effect("points a dev server at the replay agent and keeps user edits", () =>
-    seed(new URL("http://localhost:5733")).pipe(
+    seed(true).pipe(
       Effect.map((instance) => {
         expect(instance?.displayName).toBe("My replay");
         expect(instance?.enabled).toBe(false);

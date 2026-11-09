@@ -1,21 +1,14 @@
 import {
-  AuthAccessWriteScope,
   type AuthMcpApprovalDecision,
   type AuthMcpAuthorizationRequest,
-  type AuthMcpAuthorizationServerMetadata,
   type AuthMcpClientRegistration,
-  type AuthMcpProtectedResourceMetadata,
   AuthMcpRegistrationError,
   AuthMcpTokenError,
   type AuthMcpTokenRequest,
   type AuthMcpTokenResult,
   type AuthMcpClientAccess,
-  type AuthEnvironmentScope,
-  AuthOrchestrationOperateScope,
-  AuthOrchestrationReadScope,
   MCP_PEER_LINK_SOFTWARE_ID,
   mcpClientScopes,
-  type RuntimeMode,
 } from "@onicode/contracts";
 import { encodeOAuthScope } from "@onicode/shared/oauthScope";
 import * as Clock from "effect/Clock";
@@ -45,20 +38,19 @@ import {
 } from "./utils.ts";
 import { requestUrl } from "../requestUrl.ts";
 
+// Another Onicode environment links to this one by registering, deciding with a pairing code, and
+// exchanging the code, all over HTTP. Signed client metadata keeps registration stateless.
 // Request-derived origins support loopback, Tailscale and tunnels.
-// Signed client metadata keeps unauthenticated registration stateless.
 
 const SIGNING_SECRET_NAME = "mcp-oauth-signing-key";
 const AUTHORIZATION_CODE_TTL_MS = 60_000;
 const MAX_CLIENT_NAME_LENGTH = 100;
 const MAX_REDIRECT_URIS = 5;
 const MAX_REDIRECT_URI_LENGTH = 512;
-const DEFAULT_CLIENT_NAME = "MCP client";
+const DEFAULT_CLIENT_NAME = "Linked environment";
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const CODE_CHALLENGE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const CODE_VERIFIER_PATTERN = /^[A-Za-z0-9\-._~]{43,128}$/;
-
-const MCP_OAUTH_SCOPES = [AuthOrchestrationReadScope, AuthOrchestrationOperateScope];
 
 export interface McpOAuthUrls {
   readonly issuer: string;
@@ -72,31 +64,6 @@ export const requestUrls = (request: HttpServerRequest.HttpServerRequest): McpOA
   });
   return { issuer: origin, resource: `${origin}/mcp` };
 };
-
-export const protectedResourceMetadata = (
-  urls: McpOAuthUrls,
-): AuthMcpProtectedResourceMetadata => ({
-  resource: urls.resource,
-  authorization_servers: [urls.issuer],
-  scopes_supported: MCP_OAUTH_SCOPES,
-  bearer_methods_supported: ["header"],
-  resource_name: "Onicode",
-});
-
-export const authorizationServerMetadata = (
-  urls: McpOAuthUrls,
-): AuthMcpAuthorizationServerMetadata => ({
-  issuer: urls.issuer,
-  authorization_endpoint: `${urls.issuer}/oauth/mcp/authorize`,
-  token_endpoint: `${urls.issuer}/oauth/mcp/token`,
-  registration_endpoint: `${urls.issuer}/oauth/mcp/register`,
-  response_types_supported: ["code"],
-  grant_types_supported: ["authorization_code"],
-  code_challenge_methods_supported: ["S256"],
-  token_endpoint_auth_methods_supported: ["none"],
-  scopes_supported: MCP_OAUTH_SCOPES,
-  authorization_response_iss_parameter_supported: true,
-});
 
 const parseRedirect = (value: string): URL | undefined => {
   // URL.hash misses empty fragments, which RFC 6749 §3.1.2 also forbids.
@@ -139,8 +106,6 @@ const ClientIdPayload = Schema.Struct({
   v: Schema.Literal(1),
   n: Schema.String,
   r: Schema.Array(Schema.String),
-  /** Registered as another Onicode environment's peer link. */
-  p: Schema.optionalKey(Schema.Literal(1)),
 });
 const decodeClientIdPayload = Schema.decodeUnknownOption(Schema.fromJsonString(ClientIdPayload));
 
@@ -148,7 +113,6 @@ export interface McpOAuthClient {
   readonly clientId: string;
   readonly name: string;
   readonly redirectUris: ReadonlyArray<string>;
-  readonly peerLink: boolean;
 }
 
 export class McpOAuthPageError extends Schema.TaggedError<McpOAuthPageError>()(
@@ -182,15 +146,12 @@ export interface AuthorizationRequest {
 interface PendingCode {
   readonly clientId: string;
   readonly clientName: string;
-  readonly peerLink: boolean;
   readonly redirectUri: string;
   readonly codeChallenge: string;
   readonly resource: string;
   readonly access: AuthMcpClientAccess;
   readonly expiresAtMs: number;
 }
-
-export type ApprovalDecision = Exclude<AuthMcpApprovalDecision, { readonly _tag: "deny" }>;
 
 export class McpOAuth extends Context.Service<
   McpOAuth,
@@ -203,23 +164,10 @@ export class McpOAuth extends Context.Service<
       readonly urls: McpOAuthUrls;
       readonly request: AuthMcpAuthorizationRequest;
     }) => Effect.Effect<AuthorizationRequest, McpOAuthPageError | McpOAuthRedirectError>;
-    readonly approvingBrowserSession: (
-      request: HttpServerRequest.HttpServerRequest,
-      authorization: AuthorizationRequest,
-    ) => Effect.Effect<
-      | { readonly csrfToken: string; readonly scopes: ReadonlyArray<AuthEnvironmentScope> }
-      | undefined
-    >;
     readonly approve: (input: {
-      readonly request: HttpServerRequest.HttpServerRequest;
       readonly authorization: AuthorizationRequest;
-      readonly decision: ApprovalDecision;
+      readonly decision: AuthMcpApprovalDecision;
     }) => Effect.Effect<string, EnvironmentAuth.ServerAuthMcpApprovalCodeError | McpOAuthPageError>;
-    readonly deny: (authorization: AuthorizationRequest) => string;
-    /** A managed policy's runtime-mode ceiling, shown on the approval page. */
-    readonly runtimeModeCeiling:
-      | { readonly organization: string; readonly maxRuntimeMode: RuntimeMode }
-      | undefined;
     readonly exchangeCode: (input: {
       readonly request: HttpServerRequest.HttpServerRequest;
       readonly urls: McpOAuthUrls;
@@ -266,10 +214,8 @@ const make = Effect.gen(function* () {
 
   const sign = (domain: string, payload: string) => signer.sign(`${domain}.${payload}`);
 
-  const signClientId = (name: string, redirectUris: ReadonlyArray<string>, peerLink: boolean) => {
-    const body = base64UrlEncode(
-      JSON.stringify({ v: 1, n: name, r: redirectUris, ...(peerLink ? { p: 1 } : {}) }),
-    );
+  const signClientId = (name: string, redirectUris: ReadonlyArray<string>) => {
+    const body = base64UrlEncode(JSON.stringify({ v: 1, n: name, r: redirectUris }));
     return sign("mcp-client-id", body).pipe(Effect.map((signature) => `${body}.${signature}`));
   };
 
@@ -289,7 +235,6 @@ const make = Effect.gen(function* () {
           clientId,
           name: payload.n,
           redirectUris: payload.r,
-          peerLink: payload.p === 1,
         })),
       ),
     );
@@ -302,17 +247,6 @@ const make = Effect.gen(function* () {
           Effect.map((digest) => timingSafeEqualBase64Url(base64UrlEncode(digest), challenge)),
         )
       : Effect.succeed(false);
-
-  const csrfToken = (sessionId: string, authorization: AuthorizationRequest) =>
-    sign(
-      "mcp-csrf",
-      JSON.stringify([
-        sessionId,
-        authorization.client.clientId,
-        authorization.redirectUri,
-        authorization.codeChallenge,
-      ]),
-    );
 
   const register: McpOAuth["Service"]["register"] = Effect.fn("McpOAuth.register")(
     function* (metadata) {
@@ -336,8 +270,13 @@ const make = Effect.gen(function* () {
         });
       }
       // RFC 7591 allows ignoring unsupported registration options; all clients use public PKCE.
-      const peerLink = metadata.software_id === MCP_PEER_LINK_SOFTWARE_ID;
-      if (peerLink && !(yield* linksEnabled)) {
+      if (metadata.software_id !== MCP_PEER_LINK_SOFTWARE_ID) {
+        return yield* new AuthMcpRegistrationError({
+          error: "invalid_client_metadata",
+          error_description: "Only another Onicode environment can register here.",
+        });
+      }
+      if (!(yield* linksEnabled)) {
         return yield* new AuthMcpRegistrationError({
           error: "invalid_client_metadata",
           error_description:
@@ -345,10 +284,9 @@ const make = Effect.gen(function* () {
         });
       }
       return {
-        clientId: yield* signClientId(name, redirectUris, peerLink),
+        clientId: yield* signClientId(name, redirectUris),
         name,
         redirectUris,
-        peerLink,
       };
     },
   );
@@ -403,23 +341,6 @@ const make = Effect.gen(function* () {
     } satisfies AuthorizationRequest;
   });
 
-  const approvingBrowserSession: McpOAuth["Service"]["approvingBrowserSession"] = (
-    request,
-    authorization,
-  ) =>
-    environmentAuth.authenticateBrowserSession(request).pipe(
-      Effect.flatMap((session) =>
-        // Approving manages access, and a session may only hand out scopes it holds.
-        session.scopes.includes(AuthAccessWriteScope) &&
-        session.scopes.includes(AuthOrchestrationReadScope)
-          ? csrfToken(session.sessionId, authorization).pipe(
-              Effect.map((token) => ({ csrfToken: token, scopes: session.scopes })),
-            )
-          : Effect.undefined,
-      ),
-      Effect.orElseSucceed(() => undefined),
-    );
-
   const mintCode = Effect.fn("McpOAuth.mintCode")(function* (
     authorization: AuthorizationRequest,
     access: AuthMcpClientAccess,
@@ -431,7 +352,6 @@ const make = Effect.gen(function* () {
       next.set(code, {
         clientId: authorization.client.clientId,
         clientName: authorization.client.name,
-        peerLink: authorization.client.peerLink,
         redirectUri: authorization.redirectUri,
         codeChallenge: authorization.codeChallenge,
         resource: authorization.resource,
@@ -445,37 +365,23 @@ const make = Effect.gen(function* () {
 
   const approve: McpOAuth["Service"]["approve"] = Effect.fn("McpOAuth.approve")(function* (input) {
     const { decision } = input;
-    if (decision._tag === "pairing-code") {
-      yield* environmentAuth.consumeMcpApprovalCode(decision.code, decision.access).pipe(
-        Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (cause) =>
-          Effect.logError("MCP approval code check failed.", { cause }).pipe(
-            Effect.andThen(
-              Effect.fail(
-                new McpOAuthPageError({
-                  description: "The code could not be checked. Try again.",
-                }),
-              ),
+    yield* environmentAuth.consumeMcpApprovalCode(decision.code, decision.access).pipe(
+      Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (cause) =>
+        Effect.logError("MCP approval code check failed.", { cause }).pipe(
+          Effect.andThen(
+            Effect.fail(
+              new McpOAuthPageError({
+                description: "The code could not be checked. Try again.",
+              }),
             ),
           ),
         ),
-      );
-    } else {
-      const session = yield* approvingBrowserSession(input.request, input.authorization);
-      if (
-        session === undefined ||
-        !timingSafeEqualBase64Url(decision.csrfToken, session.csrfToken) ||
-        !mcpClientScopes(decision.access).every((scope) => session.scopes.includes(scope))
-      ) {
-        return yield* new McpOAuthPageError({
-          description: "Your session cannot approve this request. Enter a pairing code instead.",
-        });
-      }
-    }
+      ),
+    );
     const code = yield* mintCode(input.authorization, decision.access);
     yield* Effect.logInfo("Approved an MCP client sign-in.", {
       client: input.authorization.client.name,
       access: decision.access,
-      method: decision._tag,
     });
     return redirectWith(input.authorization.redirectUri, {
       code,
@@ -483,13 +389,6 @@ const make = Effect.gen(function* () {
       iss: input.authorization.issuer,
     });
   });
-
-  const deny: McpOAuth["Service"]["deny"] = (authorization) =>
-    redirectWith(authorization.redirectUri, {
-      error: "access_denied",
-      state: authorization.state,
-      iss: authorization.issuer,
-    });
 
   const exchangeCode: McpOAuth["Service"]["exchangeCode"] = Effect.fn("McpOAuth.exchangeCode")(
     function* ({ request, urls, token }) {
@@ -534,7 +433,7 @@ const make = Effect.gen(function* () {
         .issueMcpClientSession({
           label: pending.clientName,
           access: pending.access,
-          peerLink: pending.peerLink,
+          purpose: "peer-link",
           client: deriveAuthClientMetadata({ request }),
         })
         .pipe(
@@ -555,18 +454,10 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const managedPolicy = serverSettings.managedPolicy;
-  const maxRuntimeMode = managedPolicy?.limits?.maxRuntimeMode;
   return McpOAuth.of({
-    runtimeModeCeiling:
-      managedPolicy === undefined || maxRuntimeMode === undefined
-        ? undefined
-        : { organization: managedPolicy.organization, maxRuntimeMode },
     register,
     validateAuthorization,
-    approvingBrowserSession,
     approve,
-    deny,
     exchangeCode,
   });
 });

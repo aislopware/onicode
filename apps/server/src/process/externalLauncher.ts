@@ -2,7 +2,6 @@ import * as NodePath from "@effect/platform-node/NodePath";
 import {
   EDITORS,
   ExternalLauncherError,
-  ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
   ExternalLauncherUnknownEditorError,
@@ -35,7 +34,6 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { makeStaleWhileRevalidate } from "../environment/staleWhileRevalidate.ts";
 export {
   ExternalLauncherError,
-  ExternalLauncherBrowserSpawnError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherEditorSpawnError,
   ExternalLauncherUnknownEditorError,
@@ -76,13 +74,6 @@ const POWERSHELL_ARGUMENTS_PREFIX = [
 
 // Detached Windows PowerShell exits 0 without executing; only WSL interop keeps detached launches.
 const WINDOWS_POWERSHELL_DETACHED = false;
-
-const DETACHED_IGNORE_STDIO_OPTIONS = {
-  detached: true,
-  stdin: "ignore",
-  stdout: "ignore",
-  stderr: "ignore",
-} as const satisfies ChildProcess.CommandOptions;
 
 const compactEnv = (input: Record<string, Option.Option<string>>): NodeJS.ProcessEnv =>
   Object.fromEntries(
@@ -181,10 +172,6 @@ function resolvePowerShellPath(env: NodeJS.ProcessEnv = {}): string {
   return `${env.SYSTEMROOT || env.windir || String.raw`C:\Windows`}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`;
 }
 
-function resolveWslPowerShellPath(): string {
-  return "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe";
-}
-
 // WSL automount roots vary; resolve PowerShell via PATH to match launchEditor's availability check.
 const WSL_POWERSHELL_COMMAND = "powershell.exe";
 
@@ -199,27 +186,6 @@ function shouldUseWindowsHostFromWsl(
     env.SSH_TTY === undefined &&
     env.container === undefined
   );
-}
-
-function resolveWindowsBrowserLaunch(
-  target: string,
-  command: string,
-  detached: boolean,
-): ProcessLaunch {
-  const encodedCommand = encodeUtf16LeBase64(
-    `$ProgressPreference = 'SilentlyContinue'; Start ${escapePowerShellStringLiteral(target)}`,
-  );
-  return {
-    command,
-    args: [...POWERSHELL_ARGUMENTS_PREFIX, encodedCommand],
-    options: {
-      detached,
-      shell: false,
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "ignore",
-    },
-  };
 }
 
 function hasGraphicalLinuxSession(env: NodeJS.ProcessEnv): boolean {
@@ -362,38 +328,6 @@ function resolveWslFileManagerPath(target: string, distroName: string): string {
   return `\\\\wsl.localhost\\${distroName}${relativePath.length > 0 ? `\\${relativePath}` : ""}`;
 }
 
-function buildBrowserLaunch(
-  target: string,
-  platform: NodeJS.Platform,
-  env: NodeJS.ProcessEnv = {},
-): ProcessLaunch {
-  if (platform === "darwin") {
-    return {
-      command: "open",
-      args: [target],
-      options: DETACHED_IGNORE_STDIO_OPTIONS,
-    };
-  }
-
-  if (platform === "win32") {
-    return resolveWindowsBrowserLaunch(
-      target,
-      resolvePowerShellPath(env),
-      WINDOWS_POWERSHELL_DETACHED,
-    );
-  }
-
-  if (shouldUseWindowsHostFromWsl(platform, env)) {
-    return resolveWindowsBrowserLaunch(target, resolveWslPowerShellPath(), true);
-  }
-
-  return {
-    command: "xdg-open",
-    args: [target],
-    options: DETACHED_IGNORE_STDIO_OPTIONS,
-  };
-}
-
 const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors")(function* (
   platform: NodeJS.Platform,
   env: NodeJS.ProcessEnv,
@@ -421,14 +355,6 @@ const buildAvailableEditors = Effect.fn("externalLauncher.buildAvailableEditors"
   return available;
 });
 
-const resolveBrowserLaunch = Effect.fn("externalLauncher.resolveBrowserLaunch")(function* (
-  target: string,
-) {
-  const platform = yield* HostProcess.Platform;
-  const env = yield* readBrowserLaunchEnv;
-  return buildBrowserLaunch(target, platform, env);
-});
-
 const resolveAvailableEditors = Effect.fn("externalLauncher.resolveAvailableEditors")(function* () {
   const platform = yield* HostProcess.Platform;
   const env = { ...(yield* readBrowserLaunchEnv), ...(yield* readCommandLookupEnv) };
@@ -451,7 +377,6 @@ export class ExternalLauncher extends Context.Service<
     readonly resolveAvailableEditors: () => Effect.Effect<ReadonlyArray<EditorId>>;
     /** Requires file-manager in resolveAvailableEditors; Linux relies on its directory-handler probe. */
     readonly resolveFileManagerRevealKind: () => Effect.Effect<FileManagerRevealKind | undefined>;
-    readonly launchBrowser: (target: string) => Effect.Effect<void, ExternalLauncherError>;
     readonly launchEditor: (input: LaunchEditorInput) => Effect.Effect<void, ExternalLauncherError>;
   }
 >()("onicode/process/externalLauncher") {}
@@ -734,22 +659,6 @@ const launchAndUnref = Effect.fn("externalLauncher.launchAndUnref")(function* (
   );
 });
 
-const launchBrowser = Effect.fn("externalLauncher.launchBrowser")(function* (
-  target: string,
-): Effect.fn.Return<void, ExternalLauncherError, ChildProcessSpawner.ChildProcessSpawner> {
-  const launch = yield* resolveBrowserLaunch(target);
-  return yield* launchAndUnref(
-    launch,
-    (cause) =>
-      new ExternalLauncherBrowserSpawnError({
-        target,
-        command: launch.command,
-        args: launch.args,
-        cause,
-      }),
-  );
-});
-
 const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(function* (
   launch: EditorLaunch,
 ): Effect.fn.Return<
@@ -828,12 +737,6 @@ export const make = Effect.gen(function* () {
     resolveFileManagerRevealKind: Effect.fnUntraced(function* () {
       return yield* cachedFileManagerRevealKind;
     }),
-    launchBrowser: Effect.fnUntraced(
-      function* (target) {
-        return yield* launchBrowser(target);
-      },
-      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-    ),
     launchEditor: Effect.fnUntraced(
       function* (input) {
         return yield* provideCommandResolutionServices(launchEditor(input));

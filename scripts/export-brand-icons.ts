@@ -47,12 +47,7 @@ interface VariantOutputs {
   readonly ios: string;
   readonly macos: string;
   readonly universal: string;
-  readonly appleTouch: string;
-  readonly webIcon192: string;
-  readonly webIcon512: string;
-  readonly favicon16: string;
-  readonly favicon32: string;
-  readonly faviconIco: string;
+  readonly splashLogo: string;
   readonly windowsIco: string;
 }
 
@@ -212,12 +207,7 @@ const ICON_VARIANTS = [
       ios: BRAND_ASSET_PATHS.developmentIosIconPng,
       macos: BRAND_ASSET_PATHS.developmentDesktopIconPng,
       universal: BRAND_ASSET_PATHS.developmentUniversalIconPng,
-      appleTouch: BRAND_ASSET_PATHS.developmentWebAppleTouchIconPng,
-      webIcon192: BRAND_ASSET_PATHS.developmentWebIcon192Png,
-      webIcon512: BRAND_ASSET_PATHS.developmentWebIcon512Png,
-      favicon16: BRAND_ASSET_PATHS.developmentWebFavicon16Png,
-      favicon32: BRAND_ASSET_PATHS.developmentWebFavicon32Png,
-      faviconIco: BRAND_ASSET_PATHS.developmentWebFaviconIco,
+      splashLogo: BRAND_ASSET_PATHS.developmentSplashLogoPng,
       windowsIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
     },
   },
@@ -228,12 +218,7 @@ const ICON_VARIANTS = [
       ios: BRAND_ASSET_PATHS.productionIosIconPng,
       macos: BRAND_ASSET_PATHS.productionMacIconPng,
       universal: BRAND_ASSET_PATHS.productionLinuxIconPng,
-      appleTouch: BRAND_ASSET_PATHS.productionWebAppleTouchIconPng,
-      webIcon192: BRAND_ASSET_PATHS.productionWebIcon192Png,
-      webIcon512: BRAND_ASSET_PATHS.productionWebIcon512Png,
-      favicon16: BRAND_ASSET_PATHS.productionWebFavicon16Png,
-      favicon32: BRAND_ASSET_PATHS.productionWebFavicon32Png,
-      faviconIco: BRAND_ASSET_PATHS.productionWebFaviconIco,
+      splashLogo: BRAND_ASSET_PATHS.productionSplashLogoPng,
       windowsIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
     },
   },
@@ -583,12 +568,7 @@ const renderVariant = Effect.fn("iconExport.renderVariant")(function* (
   return new Map<string, Buffer>([
     [variant.outputs.ios, ios],
     [variant.outputs.universal, ios],
-    [variant.outputs.appleTouch, yield* render("iOS", 180)],
-    [variant.outputs.webIcon192, yield* render("iOS", 192)],
-    [variant.outputs.webIcon512, yield* render("iOS", 512)],
-    [variant.outputs.favicon16, yield* render("iOS", 16)],
-    [variant.outputs.favicon32, yield* render("iOS", 32)],
-    [variant.outputs.faviconIco, ico],
+    [variant.outputs.splashLogo, yield* render("iOS", 180)],
     [variant.outputs.windowsIco, ico],
   ]);
 });
@@ -723,7 +703,7 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
     const sourceContents = generated.get(override.sourceRelativePath);
     if (sourceContents === undefined) {
       return yield* Effect.die(
-        new Error(`Generated development web icon is missing: ${override.sourceRelativePath}`),
+        new Error(`Generated development splash logo is missing: ${override.sourceRelativePath}`),
       );
     }
     generated.set(override.targetRelativePath, sourceContents);

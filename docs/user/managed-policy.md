@@ -3,7 +3,7 @@
 A managed policy lets an administrator configure Onicode for every user on a machine. It sets
 defaults and locks for settings, and limits such as the broadest permission mode or which
 providers may run. The Onicode server on the machine enforces it for every app that connects:
-the desktop app, a browser, or the mobile app.
+the desktop app or the mobile app.
 
 ## Roll out a policy
 
@@ -30,7 +30,7 @@ The desktop app includes the `onicode` command; see [The `onicode` command](./in
   },
   "limits": {
     "maxRuntimeMode": "auto-accept-edits",
-    "clients": ["desktop", "local-browser"]
+    "clients": ["desktop", "local"]
   }
 }
 ```
@@ -102,7 +102,7 @@ and each locked control shows **Managed by**.
 
 After you deploy, change, or remove a policy, restart the Onicode server on the machine: quit and
 reopen the desktop app, or run `onicode service restart` for the
-[background service](./background-service.md). Reconnecting a phone or browser does not reload the
+[background service](./background-service.md). Reconnecting a phone or another computer does not reload the
 policy.
 
 To remove a policy, delete the file, remove the profile, set the Group Policy settings to
@@ -213,10 +213,11 @@ The limit decides which modes Onicode asks the provider for. It is not a sandbox
 `clients` lists how the server may run:
 
 - `desktop`: as the desktop app's own server.
-- `local-browser`: as a server only browsers on this machine reach, such as `npx onicode`.
+- `local`: as a server started from the CLI on this machine, such as `npx onicode`, reachable
+  only from this machine.
 - `remote`: reachable from phones and other computers over the network.
 
-`remote` is the line that matters. A server reachable from the network also accepts browsers on
+`remote` is the line that matters. A server reachable from the network also accepts clients on
 this machine, and the two local kinds differ only in how Onicode was started. On machines with the
 desktop app, keep `desktop` in the list, or the app cannot start.
 

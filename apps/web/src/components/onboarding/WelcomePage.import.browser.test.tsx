@@ -146,8 +146,6 @@ function session(scopes: ReadonlyArray<AuthEnvironmentScope>): AuthSessionState 
     auth: {
       policy: "remote-reachable",
       bootstrapMethods: ["one-time-token"],
-      sessionMethods: ["bearer-access-token"],
-      sessionCookieName: "oni_session",
     },
   };
 }

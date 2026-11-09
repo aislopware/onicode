@@ -4,7 +4,6 @@ import {
   AuthOrchestrationOperateScope,
   AuthStandardClientScopes,
   type AuthAccessTokenResult,
-  type AuthBrowserSessionResult,
   type AuthClientMetadata,
   type AuthClientSession,
   type AuthCreatePairingCredentialInput,
@@ -16,7 +15,6 @@ import {
   type AuthSessionState,
   authScopeResponse,
   type ServerAuthDescriptor,
-  type ServerAuthSessionMethod,
   type AuthWebSocketTicketResult,
   type AuthWebSocketTicketUse,
   mcpClientScopes,
@@ -34,13 +32,10 @@ import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
-import * as ServerConfig from "../config.ts";
 import * as EnvironmentAuthPolicy from "./EnvironmentAuthPolicy.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 import * as ServerSecretStore from "./ServerSecretStore.ts";
 import * as SessionStore from "./SessionStore.ts";
-import { REUSABLE_DEV_SESSION_EXPIRES_AT, resolveReusableDevAuth } from "./ReusableDevAuth.ts";
-import { DESKTOP_RENDERER_ORIGINS } from "../httpCors.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
@@ -62,7 +57,6 @@ export interface IssuedPairingLink {
 export interface IssuedBearerSession {
   readonly sessionId: AuthSessionId;
   readonly token: string;
-  readonly method: "bearer-access-token";
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly subject: string;
   readonly client: AuthClientMetadata;
@@ -70,7 +64,10 @@ export interface IssuedBearerSession {
 }
 
 // MCP client tokens are restricted to /mcp; HTTP API and WebSocket RPC would bypass their access cap.
-const MCP_CLIENT_SUBJECT = "mcp-client";
+// Peer links carry the signed peer-link claim; outside-agent sessions from before have neither.
+const PEER_LINK_SUBJECT = "mcp-client";
+const THREAD_CLI_SUBJECT = "thread-cli";
+const MCP_CLIENT_SUBJECTS: ReadonlySet<string> = new Set([PEER_LINK_SUBJECT, THREAD_CLI_SUBJECT]);
 const MCP_CLIENT_SESSION_TTL = Duration.days(30);
 
 export interface McpClientSession {
@@ -84,7 +81,6 @@ export interface McpClientSession {
 export interface AuthenticatedSession {
   readonly sessionId: AuthSessionId;
   readonly subject: string;
-  readonly method: ServerAuthSessionMethod;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
   readonly expiresAt?: DateTime.DateTime;
 }
@@ -112,17 +108,6 @@ export class ServerAuthSessionCredentialValidationError extends Schema.TaggedErr
 ) {
   override get message(): string {
     return "Failed to validate session credential.";
-  }
-}
-
-export class ServerAuthAuthenticatedSessionIssueError extends Schema.TaggedError<ServerAuthAuthenticatedSessionIssueError>()(
-  "ServerAuthAuthenticatedSessionIssueError",
-  {
-    ...serverAuthInternalErrorContext,
-  },
-) {
-  override get message(): string {
-    return "Failed to issue authenticated session.";
   }
 }
 
@@ -228,7 +213,6 @@ export class ServerAuthWebSocketTokenIssueError extends Schema.TaggedError<Serve
 export const ServerAuthInternalError = Schema.Union([
   ServerAuthBootstrapCredentialValidationError,
   ServerAuthSessionCredentialValidationError,
-  ServerAuthAuthenticatedSessionIssueError,
   ServerAuthAuthenticatedAccessTokenIssueError,
   ServerAuthPairingLinkCreationError,
   ServerAuthPairingLinksListError,
@@ -332,19 +316,6 @@ export class EnvironmentAuth extends Context.Service<
     readonly getSessionState: (
       request: HttpServerRequest.HttpServerRequest,
     ) => Effect.Effect<AuthSessionState, ServerAuthInternalError>;
-    readonly createBrowserSession: (
-      credential: string,
-      requestMetadata: AuthClientMetadata,
-      previousSessionToken?: string,
-    ) => Effect.Effect<
-      {
-        readonly response: AuthBrowserSessionResult;
-        readonly sessionToken: string;
-        readonly cookieName?: string;
-        readonly expireNormalCookie?: boolean;
-      },
-      ServerAuthInvalidCredentialError | ServerAuthInternalError
-    >;
     readonly exchangeBootstrapCredentialForAccessToken: (
       credential: string,
       requestedScopes: ReadonlyArray<AuthEnvironmentScope> | undefined,
@@ -411,16 +382,13 @@ export class EnvironmentAuth extends Context.Service<
       session: Pick<AuthenticatedSession, "sessionId">,
       input?: { readonly use?: AuthWebSocketTicketUse },
     ) => Effect.Effect<AuthWebSocketTicketResult, ServerAuthInternalError>;
-    readonly issueStartupPairingUrl: (
-      baseUrl: string,
-    ) => Effect.Effect<string, ServerAuthInternalError>;
     readonly authenticateMcpClient: (
       request: HttpServerRequest.HttpServerRequest,
     ) => Effect.Effect<McpClientSession, ServerAuthCredentialError | ServerAuthInternalError>;
     readonly issueMcpClientSession: (input: {
       readonly label: string;
       readonly access: AuthMcpClientAccess;
-      readonly peerLink: boolean;
+      readonly purpose: "peer-link" | "thread-cli";
       readonly client: AuthClientMetadata;
     }) => Effect.Effect<
       {
@@ -435,18 +403,8 @@ export class EnvironmentAuth extends Context.Service<
       code: string,
       access: AuthMcpClientAccess,
     ) => Effect.Effect<void, ServerAuthMcpApprovalCodeError | ServerAuthInternalError>;
-    readonly authenticateBrowserSession: (
-      request: HttpServerRequest.HttpServerRequest,
-    ) => Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError>;
   }
 >()("onicode/auth/EnvironmentAuth") {}
-
-type BootstrapExchangeResult = {
-  readonly response: AuthBrowserSessionResult;
-  readonly sessionToken: string;
-  readonly cookieName?: string;
-  readonly expireNormalCookie?: boolean;
-};
 
 const AUTHORIZATION_PREFIX = "Bearer ";
 const WebSocketUpgradeQuery = Schema.Struct({
@@ -479,7 +437,7 @@ function toBootstrapExchangeError(
 }
 
 const rejectMcpClientAudience = <S extends { readonly subject: string }>(session: S) =>
-  session.subject === MCP_CLIENT_SUBJECT
+  MCP_CLIENT_SUBJECTS.has(session.subject)
     ? Effect.fail(
         new ServerAuthInvalidCredentialError({
           diagnostic: "MCP client sessions are only accepted by the MCP endpoint.",
@@ -507,71 +465,13 @@ export function parseBearerToken(request: HttpServerRequest.HttpServerRequest): 
   return token.length > 0 ? token : null;
 }
 
-export function selectRequestCredential(
-  request: HttpServerRequest.HttpServerRequest,
-  cookieName: string,
-  legacyCookieName: string | undefined,
-) {
-  const cookieToken = request.cookies[cookieName];
-  if (cookieToken) {
-    return { token: cookieToken, source: "cookie" } as const;
-  }
-
-  const bearerToken = parseBearerToken(request);
-  if (bearerToken !== null) {
-    return { token: bearerToken, source: "bearer" } as const;
-  }
-
-  const legacyToken = legacyCookieName ? request.cookies[legacyCookieName] : undefined;
-  if (legacyToken !== undefined) {
-    return { token: legacyToken, source: "legacy-cookie" } as const;
-  }
-
-  return undefined;
-}
-
-type RequestCredentialSource = NonNullable<ReturnType<typeof selectRequestCredential>>["source"];
-
-export const isBrowserCookieCredential = (source: RequestCredentialSource | "dev-cookie") =>
-  source === "cookie" || source === "legacy-cookie" || source === "dev-cookie";
-
-function firstHeaderValue(value: string | undefined): string | undefined {
-  const first = value?.split(",")[0]?.trim().toLowerCase();
-  return first && first.length > 0 ? first : undefined;
-}
-
-// Missing Origin allows same-origin reads and non-browser clients; otherwise require
-// same-origin Sec-Fetch-Site, this server's host (including X-Forwarded-Host), or a trusted app origin.
-function isBrowserOriginAllowed(
-  request: HttpServerRequest.HttpServerRequest,
-  trustedOrigins: ReadonlySet<string>,
-): boolean {
-  const origin = request.headers.origin;
-  if (origin === undefined) return true;
-  if (request.headers["sec-fetch-site"] === "same-origin") return true;
-  if (trustedOrigins.has(origin)) return true;
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host.toLowerCase();
-  } catch {
-    return false;
-  }
-  if (originHost === "") return false;
-  return (
-    originHost === firstHeaderValue(request.headers.host) ||
-    originHost === firstHeaderValue(request.headers["x-forwarded-host"])
-  );
-}
-
 /** @public */
 export const make = Effect.gen(function* () {
   const policy = yield* EnvironmentAuthPolicy.EnvironmentAuthPolicy;
   const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
   const sessions = yield* SessionStore.SessionStore;
   const descriptor = yield* policy.getDescriptor();
-  const config = yield* ServerConfig.ServerConfig;
   const managedPolicy = yield* ManagedPolicy.ManagedPolicy;
-  const devAuth = resolveReusableDevAuth(config);
 
   const authenticateToken = (
     token: string,
@@ -594,53 +494,18 @@ export const make = Effect.gen(function* () {
       Effect.map((session) => ({
         sessionId: session.sessionId,
         subject: session.subject,
-        method: session.method,
         scopes: session.scopes,
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
       })),
     );
 
-  const resolveRequestCredential = (request: HttpServerRequest.HttpServerRequest) => {
-    const selectedCredential = selectRequestCredential(
-      request,
-      sessions.cookieName,
-      sessions.legacyCookieName,
-    );
-    const hasAuthorization = request.headers.authorization !== undefined;
-    const devCookieToken = devAuth ? request.cookies[devAuth.cookieName] : undefined;
-    return (
-      selectedCredential ??
-      (!hasAuthorization && devCookieToken !== undefined
-        ? { token: devCookieToken, source: "dev-cookie" as const }
-        : undefined)
-    );
-  };
-
-  // Cookies span ports; reject cookie-authenticated requests and sockets from other same-site origins.
-  const trustedBrowserOrigins = new Set<string>([
-    ...(config.devUrl ? [config.devUrl.origin] : []),
-    ...DESKTOP_RENDERER_ORIGINS,
-    ...config.devAllowedOrigins,
-  ]);
-
   const authenticateRequest = (
     request: HttpServerRequest.HttpServerRequest,
   ): Effect.Effect<AuthenticatedSession, ServerAuthCredentialError | ServerAuthInternalError> => {
-    const credential = resolveRequestCredential(request);
-    if (!credential?.token) {
-      return Effect.fail(new ServerAuthMissingCredentialError({}));
-    }
-    if (
-      isBrowserCookieCredential(credential.source) &&
-      !isBrowserOriginAllowed(request, trustedBrowserOrigins)
-    ) {
-      return Effect.fail(
-        new ServerAuthInvalidCredentialError({
-          diagnostic: "Browser sessions are only accepted from the app's own origin.",
-        }),
-      );
-    }
-    return authenticateToken(credential.token);
+    const token = parseBearerToken(request);
+    return token === null
+      ? Effect.fail(new ServerAuthMissingCredentialError({}))
+      : authenticateToken(token);
   };
 
   const getSessionState: EnvironmentAuth["Service"]["getSessionState"] = (request) =>
@@ -651,7 +516,6 @@ export const make = Effect.gen(function* () {
             authenticated: true,
             auth: descriptor,
             ...authScopeResponse(session.scopes),
-            sessionMethod: session.method,
             ...(session.expiresAt ? { expiresAt: DateTime.toUtc(session.expiresAt) } : {}),
           }) satisfies AuthSessionState,
       ),
@@ -664,117 +528,26 @@ export const make = Effect.gen(function* () {
       Effect.withSpan("EnvironmentAuth.getSessionState"),
     );
 
-  const createBrowserSession: EnvironmentAuth["Service"]["createBrowserSession"] = Effect.fn(
-    "EnvironmentAuth.createBrowserSession",
-  )(function* (credential, requestMetadata, previousSessionToken) {
-    if (devAuth?.matches(credential)) {
-      return yield* sessions.verify(credential).pipe(
-        mapSessionVerificationErrors,
-        Effect.flatMap((session) =>
-          DateTime.now.pipe(
-            Effect.map(
-              (now) =>
-                ({
-                  response: {
-                    authenticated: true,
-                    ...authScopeResponse(session.scopes),
-                    sessionMethod: session.method,
-                    expiresAt: DateTime.toUtc(DateTime.add(now, { days: 30 })),
-                  } satisfies AuthBrowserSessionResult,
-                  sessionToken: credential,
-                  cookieName: devAuth.cookieName,
-                  expireNormalCookie: true,
-                }) satisfies BootstrapExchangeResult,
-            ),
-          ),
-        ),
-        Effect.withSpan("EnvironmentAuth.createBrowserSession"),
-      );
-    }
-    const previousSession =
-      previousSessionToken === undefined
-        ? undefined
-        : yield* sessions.verify(previousSessionToken).pipe(
-            Effect.catchIf(SessionStore.isSessionCredentialInvalidError, () => Effect.void),
-            Effect.mapError((cause) => new ServerAuthSessionCredentialValidationError({ cause })),
-          );
-    const grant = yield* bootstrapCredentials
-      .consume(credential)
-      .pipe(Effect.mapError(toBootstrapExchangeError));
-    const session = yield* sessions
-      .issue({
-        method: "browser-session-cookie",
-        subject: grant.subject,
-        scopes: grant.scopes,
-        ...(previousSession?.method === "browser-session-cookie"
-          ? { replaceSessionId: previousSession.sessionId }
-          : {}),
-        client: {
-          ...requestMetadata,
-          ...(grant.label ? { label: grant.label } : {}),
-        },
-      })
-      .pipe(Effect.mapError((cause) => new ServerAuthAuthenticatedSessionIssueError({ cause })));
-    return {
-      response: {
-        authenticated: true,
-        ...authScopeResponse(session.scopes),
-        sessionMethod: session.method,
-        expiresAt: DateTime.toUtc(session.expiresAt),
-      } satisfies AuthBrowserSessionResult,
-      sessionToken: session.token,
-    } satisfies BootstrapExchangeResult;
-  });
-
-  type ResolvedBootstrapGrant = Pick<
-    PairingGrantStore.BootstrapGrant,
-    "scopes" | "subject" | "label"
-  > & {
-    readonly method: PairingGrantStore.BootstrapGrant["method"] | "reusable-dev-token";
-  };
-  const resolveBootstrapGrant = (
+  const consumeBootstrapGrant = (
     credential: string,
     input?: {
       readonly requestedScopes?: ReadonlyArray<AuthEnvironmentScope>;
       readonly requiredScopes?: ReadonlyArray<AuthEnvironmentScope>;
     },
-  ): Effect.Effect<
-    ResolvedBootstrapGrant,
-    ServerAuthInvalidCredentialError | ServerAuthInternalError | ServerAuthScopeNotGrantedError
-  > => {
-    if (!devAuth?.matches(credential)) {
-      return bootstrapCredentials
-        .consume(credential, input)
-        .pipe(
-          Effect.mapError((cause) =>
-            cause._tag === "BootstrapCredentialScopeNotGrantedError"
-              ? new ServerAuthScopeNotGrantedError({})
-              : toBootstrapExchangeError(cause),
-          ),
-        );
-    }
-    return sessions.verify(credential).pipe(
-      mapSessionVerificationErrors,
-      Effect.filterOrFail(
-        (session) =>
-          input?.requiredScopes === undefined ||
-          input.requiredScopes.every((scope) => session.scopes.includes(scope)),
-        () => new ServerAuthScopeNotGrantedError({}),
-      ),
-      Effect.map(
-        (session) =>
-          ({
-            method: "reusable-dev-token",
-            scopes: session.scopes,
-            subject: "reusable-dev-token-child",
-          }) satisfies ResolvedBootstrapGrant,
-      ),
-    );
-  };
+  ) =>
+    bootstrapCredentials
+      .consume(credential, input)
+      .pipe(
+        Effect.mapError((cause) =>
+          cause._tag === "BootstrapCredentialScopeNotGrantedError"
+            ? new ServerAuthScopeNotGrantedError({})
+            : toBootstrapExchangeError(cause),
+        ),
+      );
 
   const exchangeBootstrapCredentialForAccessToken: EnvironmentAuth["Service"]["exchangeBootstrapCredentialForAccessToken"] =
     (credential, requestedScopes, requestMetadata) => {
-      return resolveBootstrapGrant(
+      return consumeBootstrapGrant(
         credential,
         requestedScopes !== undefined ? { requestedScopes } : undefined,
       ).pipe(
@@ -789,10 +562,9 @@ export const make = Effect.gen(function* () {
             }
             return yield* sessions
               .issue({
-                method: "bearer-access-token",
                 subject: grant.subject,
                 scopes: grantedScopes,
-                replaceActiveForSubjectAndMethod: grant.method === "desktop-bootstrap",
+                replaceActiveForSubject: grant.method === "desktop-bootstrap",
                 client: {
                   ...requestMetadata,
                   ...(grant.label ? { label: grant.label } : {}),
@@ -861,7 +633,7 @@ export const make = Effect.gen(function* () {
   const createPairingLink: EnvironmentAuth["Service"]["createPairingLink"] = Effect.fn(
     "EnvironmentAuth.createPairingLink",
   )(function* (input) {
-    // The startup link is for a browser on this machine; every other link lets a device pair.
+    // The startup link is for a client on this machine; every other link lets a device pair.
     if (input?.purpose !== "startup" && !ManagedLimits.allowsRemoteClients(managedPolicy)) {
       return yield* ManagedLimits.refuseRemoteClients(
         managedPolicy,
@@ -898,7 +670,6 @@ export const make = Effect.gen(function* () {
     sessions
       .issue({
         subject: input?.subject ?? DEFAULT_SESSION_SUBJECT,
-        method: "bearer-access-token",
         scopes: input?.scopes ?? AuthStandardClientScopes,
         client: {
           ...(input?.label ? { label: input.label } : {}),
@@ -912,7 +683,6 @@ export const make = Effect.gen(function* () {
             ({
               sessionId: issued.sessionId,
               token: issued.token,
-              method: "bearer-access-token",
               scopes: issued.scopes,
               subject: input?.subject ?? DEFAULT_SESSION_SUBJECT,
               client: issued.client,
@@ -953,34 +723,16 @@ export const make = Effect.gen(function* () {
     );
 
   const issueStartupPairingCredential: EnvironmentAuth["Service"]["issueStartupPairingCredential"] =
-    () => {
+    () =>
       // Unguarded: startup already refused auth policies the managed policy leaves out.
-      const fallback = issuePairingLink({
+      issuePairingLink({
         scopes: AuthStandardClientScopes,
         subject: INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT,
         purpose: "startup",
-      }).pipe(Effect.map(toPairingCredential));
-      if (!devAuth) {
-        return fallback.pipe(Effect.withSpan("EnvironmentAuth.issueStartupPairingCredential"));
-      }
-      return sessions.verify(devAuth.credential).pipe(
-        Effect.map(
-          (session) =>
-            ({
-              id: session.sessionId,
-              credential: devAuth.credential,
-              label: "Reusable dev token",
-              expiresAt: DateTime.toUtc(session.expiresAt ?? REUSABLE_DEV_SESSION_EXPIRES_AT),
-            }) satisfies AuthPairingCredentialResult,
-        ),
-        Effect.catch((cause) =>
-          SessionStore.isSessionCredentialInvalidError(cause)
-            ? fallback
-            : Effect.fail(new ServerAuthPairingLinkCreationError({ cause })),
-        ),
+      }).pipe(
+        Effect.map(toPairingCredential),
         Effect.withSpan("EnvironmentAuth.issueStartupPairingCredential"),
       );
-    };
 
   const listClientSessions: EnvironmentAuth["Service"]["listClientSessions"] = (currentSessionId) =>
     listSessions().pipe(
@@ -1008,18 +760,6 @@ export const make = Effect.gen(function* () {
   ) =>
     revokeOtherSessionsExcept(currentSessionId).pipe(
       Effect.withSpan("EnvironmentAuth.revokeOtherClientSessions"),
-    );
-
-  const issueStartupPairingUrl: EnvironmentAuth["Service"]["issueStartupPairingUrl"] = (baseUrl) =>
-    issueStartupPairingCredential().pipe(
-      Effect.map((issued) => {
-        const url = new URL(baseUrl);
-        url.pathname = "/pair";
-        url.searchParams.delete("token");
-        url.hash = new URLSearchParams([["token", issued.credential]]).toString();
-        return url.toString();
-      }),
-      Effect.withSpan("EnvironmentAuth.issueStartupPairingUrl"),
     );
 
   const issueWebSocketTicket: EnvironmentAuth["Service"]["issueWebSocketTicket"] = (
@@ -1063,7 +803,6 @@ export const make = Effect.gen(function* () {
           return {
             sessionId: session.sessionId,
             subject: session.subject,
-            method: session.method,
             scopes: session.scopes,
             ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
           };
@@ -1079,7 +818,8 @@ export const make = Effect.gen(function* () {
     return sessions.verify(token).pipe(
       mapSessionVerificationErrors,
       Effect.flatMap((session) =>
-        session.subject === MCP_CLIENT_SUBJECT && session.method === "bearer-access-token"
+        (session.subject === PEER_LINK_SUBJECT && session.peerLink === true) ||
+        session.subject === THREAD_CLI_SUBJECT
           ? Effect.succeed({
               sessionId: session.sessionId,
               label: session.client.label ?? "MCP client",
@@ -1090,7 +830,7 @@ export const make = Effect.gen(function* () {
             } satisfies McpClientSession)
           : Effect.fail(
               new ServerAuthInvalidCredentialError({
-                diagnostic: "Only MCP client sessions are accepted here.",
+                diagnostic: "Only linked environments and the thread CLI are accepted here.",
               }),
             ),
       ),
@@ -1101,12 +841,11 @@ export const make = Effect.gen(function* () {
   const issueMcpClientSession: EnvironmentAuth["Service"]["issueMcpClientSession"] = (input) =>
     sessions
       .issue({
-        subject: MCP_CLIENT_SUBJECT,
-        method: "bearer-access-token",
+        subject: input.purpose === "peer-link" ? PEER_LINK_SUBJECT : THREAD_CLI_SUBJECT,
         scopes: mcpClientScopes(input.access),
         ttl: MCP_CLIENT_SESSION_TTL,
         ...(input.access === "read-only" ? {} : { runtimeModeCeiling: input.access }),
-        peerLink: input.peerLink,
+        peerLink: input.purpose === "peer-link",
         client: { ...input.client, label: input.label, deviceType: "bot" },
       })
       .pipe(
@@ -1119,27 +858,11 @@ export const make = Effect.gen(function* () {
         Effect.withSpan("EnvironmentAuth.issueMcpClientSession"),
       );
 
-  const authenticateBrowserSession: EnvironmentAuth["Service"]["authenticateBrowserSession"] = (
-    request,
-  ) => {
-    const credential = resolveRequestCredential(request);
-    if (!credential || !isBrowserCookieCredential(credential.source)) {
-      return Effect.fail(new ServerAuthMissingCredentialError({}));
-    }
-    return authenticateRequest(request).pipe(
-      Effect.filterOrFail(
-        (session) => session.method === "browser-session-cookie",
-        () => new ServerAuthInvalidCredentialError({ diagnostic: "Not a browser session." }),
-      ),
-      Effect.withSpan("EnvironmentAuth.authenticateBrowserSession"),
-    );
-  };
-
   const consumeMcpApprovalCode: EnvironmentAuth["Service"]["consumeMcpApprovalCode"] = (
     code,
     access,
   ) =>
-    resolveBootstrapGrant(code.trim(), { requiredScopes: mcpClientScopes(access) }).pipe(
+    consumeBootstrapGrant(code.trim(), { requiredScopes: mcpClientScopes(access) }).pipe(
       Effect.catchTags({
         ServerAuthInvalidCredentialError: () =>
           Effect.fail(new ServerAuthMcpApprovalCodeError({ reason: "unknown_or_used" })),
@@ -1147,7 +870,7 @@ export const make = Effect.gen(function* () {
           Effect.fail(new ServerAuthMcpApprovalCodeError({ reason: "insufficient_scope" })),
       }),
       Effect.flatMap((grant) =>
-        grant.method !== "one-time-token" && grant.method !== "reusable-dev-token"
+        grant.method !== "one-time-token"
           ? Effect.fail(new ServerAuthMcpApprovalCodeError({ reason: "not_a_pairing_code" }))
           : Effect.void,
       ),
@@ -1164,7 +887,6 @@ export const make = Effect.gen(function* () {
       return Effect.succeed(descriptor);
     }),
     getSessionState,
-    createBrowserSession,
     exchangeBootstrapCredentialForAccessToken,
     createPairingLink,
     issuePairingCredential,
@@ -1180,11 +902,9 @@ export const make = Effect.gen(function* () {
     authenticateHttpRequest,
     authenticateWebSocketUpgrade,
     issueWebSocketTicket,
-    issueStartupPairingUrl,
     authenticateMcpClient,
     issueMcpClientSession,
     consumeMcpApprovalCode,
-    authenticateBrowserSession,
   });
 });
 
@@ -1211,7 +931,7 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
   const sessions = (yield* stores.sessions.listActive()).filter(
     (session) =>
       disallowed.has(session.subject) ||
-      // The startup link also pairs browsers on this machine; only a device elsewhere goes.
+      // The startup link also pairs clients on this machine; only a device elsewhere goes.
       (!remoteAllowed &&
         session.subject === INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT &&
         session.client.ipAddress !== undefined &&

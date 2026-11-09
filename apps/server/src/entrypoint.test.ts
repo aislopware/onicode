@@ -9,7 +9,8 @@ import { describe, expect, it } from "vite-plus/test";
 import { isEntrypoint } from "./entrypoint.ts";
 import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 
-const makeTempDir = () => NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-entrypoint-test-"));
+const makeTempDir = () =>
+  NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-entrypoint-test-"));
 
 describe("isEntrypoint", () => {
   it("matches the entrypoint path when the runtime has no import.meta.main", () => {

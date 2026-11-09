@@ -81,7 +81,7 @@ const PREPARED: PreparedConnection = {
   label: TARGET.label,
   httpBaseUrl: TARGET.httpBaseUrl,
   socketUrl: "wss://environment.example.test/ws",
-  httpAuthorization: null,
+  httpAuthorization: { _tag: "Bearer", token: "test-token" },
   target: TARGET,
 };
 
@@ -356,9 +356,10 @@ const makeHarness = Effect.fn("TestEnvironmentRegistry.makeHarness")(function* (
         ...PREPARED,
         environmentId: target.environmentId,
         label: target.label,
-        httpAuthorization: Option.isSome(credential)
-          ? { _tag: "Bearer", token: credential.value.token }
-          : null,
+        httpAuthorization: {
+          _tag: "Bearer",
+          token: Option.isSome(credential) ? credential.value.token : "primary-token",
+        },
         target,
       };
       if (options?.prepareError) return yield* options.prepareError;

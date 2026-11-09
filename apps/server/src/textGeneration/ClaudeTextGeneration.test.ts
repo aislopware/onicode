@@ -81,7 +81,8 @@ function withFakeClaudeEnv<A, E, R>(
       ONICODE_FAKE_CLAUDE_REJECTS_NO_SESSION_PERSISTENCE: input.rejectsNoSessionPersistence
         ? "1"
         : undefined,
-      ONICODE_FAKE_CLAUDE_EXIT_CODE: input.exitCode === undefined ? undefined : String(input.exitCode),
+      ONICODE_FAKE_CLAUDE_EXIT_CODE:
+        input.exitCode === undefined ? undefined : String(input.exitCode),
       ONICODE_FAKE_CLAUDE_STDERR: input.stderr,
       ONICODE_FAKE_CLAUDE_ARGS_MUST_CONTAIN: input.argsMustContain,
       ONICODE_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN: input.argsMustNotContain,

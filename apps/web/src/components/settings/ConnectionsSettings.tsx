@@ -1020,7 +1020,6 @@ function ConnectionsSettingsContent({
     clientSessions: typeof desktopClientSessions,
   ) => (
     <PairingClientsList
-      servedByEnvironment={isPrimaryAccess}
       endpointUrl={desktopServerExposureState?.endpointUrl}
       endpoints={visibleDesktopAdvertisedEndpoints}
       defaultEndpointKey={defaultDesktopAdvertisedEndpointKey}
@@ -1087,13 +1086,13 @@ function ConnectionsSettingsContent({
           ? "This connection cannot view or change network exposure."
           : currentAuthPolicy === "remote-reachable"
             ? "Remote access is already configured. Change network exposure where the server starts."
-            : currentAuthPolicy === "loopback-browser"
+            : currentAuthPolicy === "loopback"
               ? "Only this machine can connect. Restart with a non-loopback host for remote pairing."
               : "Network exposure information is unavailable."
       }
       control={
         !desktopBridge &&
-        (currentAuthPolicy === "remote-reachable" || currentAuthPolicy === "loopback-browser") ? (
+        (currentAuthPolicy === "remote-reachable" || currentAuthPolicy === "loopback") ? (
           <Tooltip>
             <TooltipTrigger
               render={

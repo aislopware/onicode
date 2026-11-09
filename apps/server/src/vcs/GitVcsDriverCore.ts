@@ -4350,17 +4350,22 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           options?.submodules ?? null,
           options?.submodules != null
             ? null
-            : yield* fileSystem.readFileString(path.join(worktreePath, ONICODE_PROJECT_FILE_NAME)).pipe(
-                Effect.flatMap((contents) => {
-                  const file = parseOniProjectFile(contents);
-                  return file === null
-                    ? Effect.logWarning("onicode.json is invalid; initializing submodules recursively", {
-                        worktreePath,
-                      }).pipe(Effect.as(null))
-                    : Effect.succeed(file);
-                }),
-                Effect.orElseSucceed(() => null),
-              ),
+            : yield* fileSystem
+                .readFileString(path.join(worktreePath, ONICODE_PROJECT_FILE_NAME))
+                .pipe(
+                  Effect.flatMap((contents) => {
+                    const file = parseOniProjectFile(contents);
+                    return file === null
+                      ? Effect.logWarning(
+                          "onicode.json is invalid; initializing submodules recursively",
+                          {
+                            worktreePath,
+                          },
+                        ).pipe(Effect.as(null))
+                      : Effect.succeed(file);
+                  }),
+                  Effect.orElseSucceed(() => null),
+                ),
         );
     if (hasSubmodules && submoduleMode.value === "none" && progress?.onSubmodulesDisabled) {
       yield* progress.onSubmodulesDisabled({

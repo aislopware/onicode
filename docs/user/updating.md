@@ -9,7 +9,7 @@ of the sidebar and **Settings → Environments** offer to update it.
 The update button at the bottom of the sidebar updates every connected machine
 in one step. It updates outdated providers, then servers that are behind, then
 the desktop app you are using. Servers move to the
-version your desktop app is installing, or to your web app's version. A remote
+version your desktop app is installing. A remote
 desktop app installs the latest release. Hover the button to see what it will
 update.
 

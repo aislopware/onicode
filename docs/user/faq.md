@@ -33,7 +33,7 @@ Onicode drives Claude through Anthropic's Agent SDK. Agent SDK usage can drain y
 
 ## How do I use Onicode remotely?
 
-Your agents run wherever Onicode runs: your desktop, a server, a VPS. You connect to it from your other devices. Run `onicode up` on that machine to set up remote access. Pair over your LAN or Tailscale; a browser on your network can open the machine's own web app. [Remote access](./remote-access.md)
+Your agents run wherever Onicode runs: your desktop, a server, a VPS. You connect to it from your other devices. Run `onicode up` on that machine to set up remote access. Pair the desktop or mobile app over your LAN or Tailscale. [Remote access](./remote-access.md)
 
 ## How do I use Onicode on my phone?
 
@@ -67,7 +67,7 @@ Open **Settings → Worktrees → Cleanup** and turn on automatic worktree clean
 
 ## Is there voice input?
 
-Yes. On iPhone and Android, dictation uses on-device speech by default; you can opt in to a paired environment instead. Web and desktop require you to choose an environment first. The transcript goes into your draft for review. See [Voice input](./voice-input.md).
+Yes. On iPhone and Android, dictation uses on-device speech by default; you can opt in to a paired environment instead. Desktop requires you to choose an environment first. The transcript goes into your draft for review. See [Voice input](./voice-input.md).
 
 ## Does it work on Windows, Mac, and Linux?
 

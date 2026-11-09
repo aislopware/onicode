@@ -87,8 +87,8 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
           created_at, updated_at, last_run_status, run_count)
         VALUES ('task-1', 'Nightly', 'Run it', 1, '{}', 'project-kept', '{}', '{}',
           'full-access', 'default', 'user', 'user', '2026-08-01', '2026-08-01', 'never', 0)`;
-      yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, method, issued_at, expires_at)
-        VALUES ('session-1', 'user', '[]', 'pairing', '2026-08-01', '2027-08-01')`;
+      yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, issued_at, expires_at)
+        VALUES ('session-1', 'user', '[]', '2026-08-01', '2027-08-01')`;
       yield* sql`INSERT INTO peer_environment_links
         (environment_id, secret_name, label, urls_json, access, linked_at, expires_at)
         VALUES ('environment-box', 'peer-link-box', 'Box', '["https://box.example"]', 'auto',

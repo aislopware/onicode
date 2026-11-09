@@ -137,7 +137,7 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
     Layer.succeed(
       ClientCapabilities.ClientPresentation,
       ClientCapabilities.ClientPresentation.of({
-        metadata: { label: "Test Client", deviceType: "desktop", surface: "web" },
+        metadata: { label: "Test Client", deviceType: "desktop", surface: "desktop" },
       }),
     ),
     Layer.succeed(RemoteEnvironmentAuthorization.RemoteEnvironmentAuthorization, remote),
@@ -150,7 +150,10 @@ const makeDependencies = Effect.fn("TestConnectionResolver.makeDependencies")((o
 describe("ConnectionResolver", () => {
   it.effect("blocks an old host during discovery before opening orchestration RPC", () =>
     Effect.gen(function* () {
-      const layerBroker = yield* makeDependencies({ descriptorProtocolVersion: null });
+      const layerBroker = yield* makeDependencies({
+        descriptorProtocolVersion: null,
+        primaryBearerToken: "primary-token",
+      });
       const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
       const target = new PrimaryConnectionTarget({
         environmentId: ENVIRONMENT_ID,
@@ -166,7 +169,7 @@ describe("ConnectionResolver", () => {
     }),
   );
 
-  it.effect("prepares a primary environment without remote capabilities", () =>
+  it.effect("refuses a primary environment without the desktop credential", () =>
     Effect.gen(function* () {
       const layerBroker = yield* makeDependencies();
       const broker = yield* ConnectionResolver.ConnectionResolver.pipe(Effect.provide(layerBroker));
@@ -177,15 +180,9 @@ describe("ConnectionResolver", () => {
         wsBaseUrl: "ws://127.0.0.1:3777",
       });
 
-      expect(yield* broker.prepare(catalogEntry(target))).toEqual({
-        environmentId: ENVIRONMENT_ID,
-        label: "Primary",
-        httpBaseUrl: "http://127.0.0.1:3777",
-        socketUrl:
-          "ws://127.0.0.1:3777/ws?clientSurface=web&clientDeviceType=desktop&connectionMethod=direct&orchestrationProtocol=2&clientCapabilities=settingsSecretReferences",
-        httpAuthorization: null,
-        target,
-      });
+      const error = yield* Effect.flip(broker.prepare(catalogEntry(target)));
+
+      expect(error).toMatchObject({ _tag: "ConnectionBlockedError", reason: "authentication" });
     }),
   );
 

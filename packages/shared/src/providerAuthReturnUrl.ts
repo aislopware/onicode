@@ -1,30 +1,16 @@
-import { isLoopbackHost } from "./preview.ts";
-
+/**
+ * A browser sign-in may only send the user back to the desktop app itself
+ * (`onicode://app/` or `onicode-dev://app/`), which brings its window forward.
+ */
 export function providerAuthReturnUrl(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
     const url = new URL(value);
-    const desktop = ["onicode:", "onicode-dev:"].includes(url.protocol) && url.host === "app";
-    const web = ["http:", "https:"].includes(url.protocol) && isLoopbackHost(url.hostname);
-    if (
-      url.username ||
-      url.password ||
-      (!desktop && !web) ||
-      (url.pathname !== "/welcome" &&
-        url.pathname !== "/settings" &&
-        !url.pathname.startsWith("/settings/"))
-    )
-      return undefined;
-    for (const key of Array.from(url.searchParams.keys())) {
-      if (
-        url.pathname === "/welcome" ||
-        !["machine", "project", "checkout", "environmentId", "instanceId"].includes(key)
-      ) {
-        url.searchParams.delete(key);
-      }
-    }
-    if (url.pathname !== "/welcome" || !/^#agents:[\w-]+$/u.test(url.hash)) url.hash = "";
-    return url.toString();
+    return (url.protocol === "onicode:" || url.protocol === "onicode-dev:") &&
+      url.host === "app" &&
+      url.href === `${url.protocol}//app/`
+      ? url.href
+      : undefined;
   } catch {
     return undefined;
   }

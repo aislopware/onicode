@@ -1,6 +1,6 @@
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { authScopeResponse, AuthStandardClientScopes } from "@onicode/contracts";
+import { AuthStandardClientScopes } from "@onicode/contracts";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -39,24 +39,10 @@ const layerEnvironmentAuth = (overrides?: Partial<ServerConfig.ServerConfig["Ser
     Layer.provide(layerServerConfig(overrides)),
   );
 
-const makeCookieRequest = (
-  cookieName: string,
-  sessionToken: string,
-): Parameters<EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]>[0] =>
-  ({
-    cookies: {
-      [cookieName]: sessionToken,
-    },
-    headers: {},
-  }) as unknown as Parameters<
-    EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]
-  >[0];
-
 const makeBearerRequest = (
   token: string,
 ): Parameters<EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]>[0] =>
   ({
-    cookies: {},
     headers: {
       authorization: `Bearer ${token}`,
     },
@@ -67,226 +53,12 @@ const makeBearerRequest = (
 const requestMetadata = {
   deviceType: "desktop" as const,
   os: "macOS",
-  browser: "Chrome",
   ipAddress: "192.168.1.23",
 };
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
   "EnvironmentAuth.layer",
   (it) => {
-    it.effect("uses the reusable dev cookie without overriding a normal scoped cookie", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const token = "reusable-dev-auth-token-that-is-long-enough";
-        const devExchange = yield* serverAuth.createBrowserSession(token, requestMetadata);
-        const pairing = yield* serverAuth.issuePairingCredential({
-          scopes: ["orchestration:read"],
-        });
-        const scopedExchange = yield* serverAuth.createBrowserSession(
-          pairing.credential,
-          requestMetadata,
-        );
-        const request = {
-          cookies: {
-            [sessions.cookieName]: scopedExchange.sessionToken,
-            [devExchange.cookieName ?? "missing"]: devExchange.sessionToken,
-          },
-          headers: {},
-        } as unknown as Parameters<
-          EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]
-        >[0];
-
-        const authenticated = yield* serverAuth.authenticateHttpRequest(request);
-        expect(devExchange.cookieName).toMatch(/^oni_dev_session_/);
-        expect(devExchange.expireNormalCookie).toBe(true);
-        expect(devExchange.response).toMatchObject(authScopeResponse(AuthStandardClientScopes));
-        expect(authenticated.scopes).toEqual(["orchestration:read"]);
-      }).pipe(
-        Effect.provide(
-          layerEnvironmentAuth({
-            mode: "web",
-            devUrl: new URL("http://127.0.0.1:5173"),
-            devAuthToken: Redacted.make("reusable-dev-auth-token-that-is-long-enough"),
-          }),
-        ),
-      ),
-    );
-
-    it.effect("does not fall back to the dev cookie after a normal cookie is rejected", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const token = "reusable-dev-auth-token-that-is-long-enough";
-        const devExchange = yield* serverAuth.createBrowserSession(token, requestMetadata);
-        const pairing = yield* serverAuth.issuePairingCredential({
-          scopes: ["orchestration:read"],
-        });
-        const scopedExchange = yield* serverAuth.createBrowserSession(
-          pairing.credential,
-          requestMetadata,
-        );
-        const scoped = yield* sessions.verify(scopedExchange.sessionToken);
-        yield* sessions.revoke(scoped.sessionId);
-        const request = {
-          cookies: {
-            [sessions.cookieName]: scopedExchange.sessionToken,
-            [devExchange.cookieName ?? "missing"]: devExchange.sessionToken,
-          },
-          headers: {},
-        } as unknown as Parameters<
-          EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]
-        >[0];
-
-        const error = yield* Effect.flip(serverAuth.authenticateHttpRequest(request));
-        expect(error._tag).toBe("ServerAuthInvalidCredentialError");
-      }).pipe(
-        Effect.provide(
-          layerEnvironmentAuth({
-            mode: "web",
-            devUrl: new URL("http://127.0.0.1:5173"),
-            devAuthToken: Redacted.make("reusable-dev-auth-token-that-is-long-enough"),
-          }),
-        ),
-      ),
-    );
-
-    it.effect("does not use the dev cookie when Authorization is invalid or empty", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const token = "reusable-dev-auth-token-that-is-long-enough";
-        const devExchange = yield* serverAuth.createBrowserSession(token, requestMetadata);
-        for (const authorization of [
-          "Bearer invalid",
-          "bearer invalid",
-          "bEaReR invalid",
-          "Basic invalid",
-          "",
-        ] as const) {
-          const request = {
-            cookies: { [devExchange.cookieName ?? "missing"]: devExchange.sessionToken },
-            headers: { authorization },
-          } as unknown as Parameters<
-            EnvironmentAuth.EnvironmentAuth["Service"]["authenticateHttpRequest"]
-          >[0];
-          const error = yield* Effect.flip(serverAuth.authenticateHttpRequest(request));
-          expect(EnvironmentAuth.isServerAuthCredentialError(error)).toBe(true);
-        }
-      }).pipe(
-        Effect.provide(
-          layerEnvironmentAuth({
-            mode: "web",
-            devUrl: new URL("http://127.0.0.1:5173"),
-            devAuthToken: Redacted.make("reusable-dev-auth-token-that-is-long-enough"),
-          }),
-        ),
-      ),
-    );
-
-    it.effect("exchanges the reusable dev token for a local scoped OAuth session", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const token = "reusable-dev-auth-token-that-is-long-enough";
-        const exchanged = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
-          token,
-          ["orchestration:read"],
-          requestMetadata,
-        );
-
-        expect(exchanged.access_token).not.toBe(token);
-        expect(exchanged.scope).toBe("orchestration:read");
-        const secondBearer = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
-          token,
-          ["orchestration:read"],
-          requestMetadata,
-        );
-        const firstSession = yield* serverAuth.authenticateHttpRequest(
-          makeBearerRequest(exchanged.access_token),
-        );
-        const secondSession = yield* serverAuth.authenticateHttpRequest(
-          makeBearerRequest(secondBearer.access_token),
-        );
-        expect(firstSession.subject).toBe("reusable-dev-token-child");
-        expect(secondSession.subject).toBe("reusable-dev-token-child");
-        expect((yield* sessions.verify(token)).subject).toBe("reusable-dev-token");
-        const before = yield* serverAuth.listClientSessions(firstSession.sessionId);
-        const denied = yield* serverAuth
-          .exchangeBootstrapCredentialForAccessToken(token, ["review:write"], requestMetadata)
-          .pipe(Effect.flip);
-        expect(denied._tag).toBe("ServerAuthScopeNotGrantedError");
-        const empty = yield* serverAuth
-          .exchangeBootstrapCredentialForAccessToken(token, [], requestMetadata)
-          .pipe(Effect.flip);
-        expect(empty._tag).toBe("ServerAuthScopeNotGrantedError");
-        expect(yield* serverAuth.listClientSessions(firstSession.sessionId)).toEqual(before);
-      }).pipe(
-        Effect.provide(
-          layerEnvironmentAuth({
-            mode: "web",
-            devUrl: new URL("http://127.0.0.1:5173"),
-            devAuthToken: Redacted.make("reusable-dev-auth-token-that-is-long-enough"),
-          }),
-        ),
-      ),
-    );
-
-    it.effect("uses a one-time startup credential after local dev token revocation", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const token = "reusable-dev-auth-token-that-is-long-enough";
-        const initial = yield* serverAuth.issueStartupPairingCredential();
-        const seeded = yield* sessions.verify(token);
-
-        yield* sessions.revoke(seeded.sessionId);
-        const recovery = yield* serverAuth.issueStartupPairingCredential();
-
-        expect(initial.credential).toBe(token);
-        expect(recovery.credential).not.toBe(token);
-        expect((yield* Effect.flip(sessions.verify(token)))._tag).toBe("SessionTokenRevokedError");
-        expect(
-          (yield* serverAuth.createBrowserSession(recovery.credential, requestMetadata)).response,
-        ).toMatchObject({ authenticated: true, ...authScopeResponse(AuthStandardClientScopes) });
-      }).pipe(
-        Effect.provide(
-          layerEnvironmentAuth({
-            mode: "web",
-            devUrl: new URL("http://127.0.0.1:5173"),
-            devAuthToken: Redacted.make("reusable-dev-auth-token-that-is-long-enough"),
-          }),
-        ),
-      ),
-    );
-
-    it.effect("prefers a bearer token over a stale legacy cookie", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const bearer = yield* serverAuth.issueSession();
-        const verified = yield* serverAuth.authenticateHttpRequest({
-          cookies: { [sessions.legacyCookieName ?? "oni_session"]: "stale" },
-          headers: { authorization: `Bearer ${bearer.token}` },
-        } as never);
-
-        expect(verified.sessionId).toBe(bearer.sessionId);
-      }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" }))),
-    );
-
-    it.effect("prefers a bearer token over an empty primary cookie", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const bearer = yield* serverAuth.issueSession();
-        const verified = yield* serverAuth.authenticateHttpRequest({
-          cookies: { [sessions.cookieName]: "" },
-          headers: { authorization: `Bearer ${bearer.token}` },
-        } as never);
-
-        expect(verified.sessionId).toBe(bearer.sessionId);
-      }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" }))),
-    );
-
     it.effect("preserves pairing grants after rejecting scopes they do not grant", () =>
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
@@ -408,15 +180,8 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
         const sessions = yield* SessionStore.SessionStore;
-        const browser = yield* serverAuth.createBrowserSession(
-          "desktop-bootstrap-token",
-          requestMetadata,
-        );
-        const browserSession = yield* serverAuth.authenticateHttpRequest(
-          makeCookieRequest(sessions.cookieName, browser.sessionToken),
-        );
         const staleSessions = yield* Effect.forEach([1, 2, 3], () =>
-          sessions.issue({ subject: "desktop-bootstrap", method: "bearer-access-token" }),
+          sessions.issue({ subject: "desktop-bootstrap" }),
         );
         const pairing = yield* serverAuth.issuePairingCredential();
         const paired = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
@@ -446,8 +211,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
           makeBearerRequest(second.access_token),
         );
 
-        expect(active).toHaveLength(3);
-        expect(active.map((entry) => entry.sessionId)).toContain(browserSession.sessionId);
+        expect(active).toHaveLength(2);
         expect(active.map((entry) => entry.sessionId)).toContain(secondSession.sessionId);
         expect(active.map((entry) => entry.sessionId)).not.toContain(firstSession.sessionId);
         expect(firstError._tag).toBe("ServerAuthInvalidCredentialError");
@@ -469,24 +233,25 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
       ),
     );
 
-    it.effect("issues startup pairing URLs that bootstrap administrative sessions", () =>
+    it.effect("issues startup pairing credentials that bootstrap administrative sessions", () =>
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
 
-        const pairingUrl = yield* serverAuth.issueStartupPairingUrl("http://127.0.0.1:3773");
-        const token = new URLSearchParams(new URL(pairingUrl).hash.slice(1)).get("token");
+        const startup = yield* serverAuth.issueStartupPairingCredential();
         const listedPairingLinks = yield* serverAuth.listPairingLinks();
-        expect(token).toBeTruthy();
         expect(
           listedPairingLinks.some(
             (pairingLink) => pairingLink.subject === "administrative-bootstrap",
           ),
         ).toBe(false);
 
-        const exchanged = yield* serverAuth.createBrowserSession(token ?? "", requestMetadata);
+        const exchanged = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+          startup.credential,
+          undefined,
+          requestMetadata,
+        );
         const verified = yield* serverAuth.authenticateHttpRequest(
-          makeCookieRequest(sessions.cookieName, exchanged.sessionToken),
+          makeBearerRequest(exchanged.access_token),
         );
 
         expect(verified.scopes).toEqual(AuthStandardClientScopes);
@@ -499,31 +264,31 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
       () =>
         Effect.gen(function* () {
           const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-          const sessions = yield* SessionStore.SessionStore;
-
-          const administrativeExchange = yield* serverAuth.createBrowserSession(
-            "desktop-bootstrap-token",
-            requestMetadata,
-          );
+          const administrativeExchange =
+            yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
+              "desktop-bootstrap-token",
+              undefined,
+              requestMetadata,
+            );
           const administrativeSession = yield* serverAuth.authenticateHttpRequest(
-            makeCookieRequest(sessions.cookieName, administrativeExchange.sessionToken),
+            makeBearerRequest(administrativeExchange.access_token),
           );
           const pairingCredential = yield* serverAuth.issuePairingCredential({
             label: "Julius iPhone",
           });
           const listedPairingLinks = yield* serverAuth.listPairingLinks();
-          const clientExchange = yield* serverAuth.createBrowserSession(
+          const clientExchange = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
             pairingCredential.credential,
+            undefined,
             {
               ...requestMetadata,
               deviceType: "mobile",
               os: "iOS",
-              browser: "Safari",
               ipAddress: "192.168.1.88",
             },
           );
           const clientSession = yield* serverAuth.authenticateHttpRequest(
-            makeCookieRequest(sessions.cookieName, clientExchange.sessionToken),
+            makeBearerRequest(clientExchange.access_token),
           );
           const clientsBeforeRevoke = yield* serverAuth.listClientSessions(
             administrativeSession.sessionId,
@@ -568,77 +333,42 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         ),
     );
 
-    it.effect("accepts cookie sessions on socket upgrades only from the app's own origins", () =>
+    it.effect("admits only peer links and the thread CLI as MCP clients", () =>
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
         const sessions = yield* SessionStore.SessionStore;
-        const pairing = yield* serverAuth.issuePairingCredential();
-        const exchanged = yield* serverAuth.createBrowserSession(
-          pairing.credential,
-          requestMetadata,
-        );
-        const upgrade = (headers: Record<string, string>) =>
-          serverAuth.authenticateWebSocketUpgrade(
-            {
-              url: "/ws",
-              cookies: { [sessions.cookieName]: exchanged.sessionToken },
-              headers: { host: "192.168.1.50:3773", ...headers },
-            } as never,
-            "rpc",
-          );
+        const authenticate = (token: string) =>
+          serverAuth.authenticateMcpClient(makeBearerRequest(token));
+        const issue = (purpose: "peer-link" | "thread-cli") =>
+          serverAuth.issueMcpClientSession({
+            label: purpose,
+            access: "auto",
+            purpose,
+            client: { deviceType: "bot" },
+          });
 
-        yield* upgrade({ origin: "http://192.168.1.50:3773" });
-        yield* upgrade({
-          origin: "https://box.tail1234.ts.net",
-          "x-forwarded-host": "box.tail1234.ts.net",
+        expect(yield* authenticate((yield* issue("peer-link")).token)).toMatchObject({
+          access: "auto",
+          peerLink: true,
         });
-        yield* upgrade({ origin: "onicode://app" });
-        yield* upgrade({ origin: "http://localhost:5733" });
-        yield* upgrade({});
-
-        const otherPort = yield* Effect.flip(upgrade({ origin: "http://192.168.1.50:8080" }));
-        expect(otherPort._tag).toBe("ServerAuthInvalidCredentialError");
-        const opaque = yield* Effect.flip(upgrade({ origin: "null" }));
-        expect(opaque._tag).toBe("ServerAuthInvalidCredentialError");
-      }).pipe(
-        Effect.provide(
-          layerEnvironmentAuth({
-            mode: "web",
-            host: "192.168.1.50",
-            devUrl: new URL("http://localhost:5733"),
-          }),
-        ),
-      ),
-    );
-
-    it.effect("accepts cookie sessions on HTTP requests only from the app's own origins", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const pairing = yield* serverAuth.issuePairingCredential();
-        const exchanged = yield* serverAuth.createBrowserSession(
-          pairing.credential,
-          requestMetadata,
+        expect(yield* authenticate((yield* issue("thread-cli")).token)).toMatchObject({
+          access: "auto",
+          peerLink: false,
+        });
+        // Outside agents signed in through OAuth got an mcp-client session without the claim.
+        const outsideAgent = yield* sessions.issue({
+          subject: "mcp-client",
+          scopes: ["orchestration:read", "orchestration:operate"],
+          runtimeModeCeiling: "auto",
+        });
+        const rejected = yield* Effect.flip(authenticate(outsideAgent.token));
+        expect(rejected._tag).toBe("ServerAuthInvalidCredentialError");
+        const threadCli = yield* issue("thread-cli");
+        const outsideMcp = yield* Effect.flip(
+          serverAuth.authenticateHttpRequest(makeBearerRequest(threadCli.token)),
         );
-        const post = (headers: Record<string, string>) =>
-          serverAuth.authenticateHttpRequest({
-            cookies: { [sessions.cookieName]: exchanged.sessionToken },
-            headers: { host: "localhost:13773", ...headers },
-          } as never);
-
-        yield* post({ origin: "http://192.168.1.50:5733", "sec-fetch-site": "same-origin" });
-        yield* post({ origin: "http://localhost:13773" });
-
-        const otherPort = yield* Effect.flip(
-          post({ origin: "http://localhost:3000", "sec-fetch-site": "same-site" }),
-        );
-        expect(otherPort._tag).toBe("ServerAuthInvalidCredentialError");
-        const state = yield* serverAuth.getSessionState({
-          cookies: { [sessions.cookieName]: exchanged.sessionToken },
-          headers: { host: "localhost:13773", origin: "http://localhost:3000" },
-        } as never);
-        expect(state.authenticated).toBe(false);
-      }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web" }))),
+        expect(outsideMcp._tag).toBe("ServerAuthInvalidCredentialError");
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
 
     it.effect.each(["Bearer", "bearer", "bEaReR"])(
@@ -649,7 +379,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
           const bearer = yield* serverAuth.issueSession();
           const request = {
             url: "/ws",
-            cookies: {},
             headers: {
               host: "192.168.1.50:3773",
               origin: "http://192.168.1.50:8080",
@@ -661,7 +390,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
           expect((yield* serverAuth.authenticateHttpRequest(request)).sessionId).toBe(
             bearer.sessionId,
           );
-        }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" }))),
+        }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "standalone", host: "192.168.1.50" }))),
     );
 
     it.effect("binds a socket ticket to the route it was issued for", () =>
@@ -679,7 +408,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
             {
               method: "GET",
               url: `/ws?orchestrationProtocol=2&wsTicket=${ticket}`,
-              cookies: {},
               headers: { host: "192.168.1.50:3773" },
             } as never,
             use,

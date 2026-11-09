@@ -2180,7 +2180,6 @@ const make = Effect.gen(function* () {
             reason: input.reason,
             ...(input.url === undefined ? {} : { url: input.url }),
             ...(input.placeholder === undefined ? {} : { placeholder: input.placeholder }),
-            delivery: "file",
             secretStatus,
           })
           .pipe(

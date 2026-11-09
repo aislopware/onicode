@@ -164,7 +164,7 @@ const resolveThemePaths = Effect.fn(function* (explicitBaseDir: Option.Option<st
   const envHome = Option.filter(yield* envOniHome, (value) => value.trim().length > 0);
   const configuredBaseDir = Option.orElse(explicitBaseDir, () => envHome);
   const baseDir = yield* resolveBaseDir(Option.getOrUndefined(configuredBaseDir));
-  const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, undefined, {
+  const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, false, {
     baseDirIsExplicit: Option.isSome(configuredBaseDir),
   });
   return {

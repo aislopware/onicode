@@ -1,8 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off globalFetchInEffect:off - Web handoff test uses a real localhost listener without an OpenAI account.
-import * as NodeHttp from "node:http";
 import * as NodePathLayer from "@effect/platform-node/NodePath";
-import { codexAuthHandoffUrl, readCodexAuthDelivery } from "@onicode/shared/codexAuthHandoff";
-import { EnvironmentId, ProviderInstanceId } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -15,7 +11,6 @@ const { requestSingleInstanceLockMock } = vi.hoisted(() => ({
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as ElectronApp from "../electron/ElectronApp.ts";
-import * as ElectronShell from "../electron/ElectronShell.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
 import * as DesktopDeepLinks from "./DesktopDeepLinks.ts";
 import * as DesktopWebLinks from "./DesktopWebLinks.ts";
@@ -34,11 +29,6 @@ const layerDesktopDeepLinks = (
   fileSystemLayer: Layer.Layer<FileSystem.FileSystem> = FileSystem.layerNoop({
     exists: () => Effect.succeed(false),
   }),
-  shell: ElectronShell.ElectronShell["Service"] = {
-    openExternal: () => Effect.succeed(true),
-    openSystemSettings: () => Effect.succeed(false),
-    copyText: () => Effect.void,
-  },
   listeners = new Map<string, (...args: unknown[]) => void>(),
 ) => {
   const environment = DesktopEnvironment.DesktopEnvironment.of({
@@ -79,7 +69,6 @@ const layerDesktopDeepLinks = (
         NodePathLayer.layerPosix,
         Layer.succeed(DesktopEnvironment.DesktopEnvironment, environment),
         Layer.succeed(ElectronApp.ElectronApp, electronApp),
-        Layer.succeed(ElectronShell.ElectronShell, shell),
         fileSystemLayer,
       ),
     ),
@@ -167,7 +156,7 @@ describe("DesktopDeepLinks", () => {
         assert.strictEqual(yield* Effect.promise(() => revealed.promise), window);
       }).pipe(
         Effect.scoped,
-        Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, undefined, listeners)),
+        Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, listeners)),
         Effect.provideService(ElectronApp.ElectronApp, electronApp),
         Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
         Effect.provideService(DesktopWebLinks.DesktopWebLinks, ignoreWebLinks),
@@ -204,7 +193,7 @@ describe("DesktopDeepLinks", () => {
       assert.deepEqual(received, [launchPair, first, second, later]);
     }).pipe(
       Effect.scoped,
-      Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, undefined, listeners)),
+      Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, listeners)),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
       Effect.provideService(
         ElectronWindow.ElectronWindow,
@@ -252,7 +241,7 @@ describe("DesktopDeepLinks", () => {
 });
 
 it.effect(
-  "provider auth deep links navigate and reveal the running desktop and leave other app URLs alone",
+  "provider auth return links reveal the running desktop without reloading it and leave other app URLs alone",
   () => {
     const listeners = new Map<string, (...args: unknown[]) => void>();
     const revealed = Promise.withResolvers<void>();
@@ -273,114 +262,21 @@ it.effect(
       yield* deepLinks.configure;
       const event = { preventDefault: vi.fn() };
       listeners.get("open-url")!(event, "onicode-dev://app/auth/callback?code=other-code");
-      listeners.get("open-url")!(event, "onicode://app/welcome");
-      assert.equal(loadURL.mock.calls.length, 0);
+      listeners.get("open-url")!(event, "onicode://app/");
       assert.equal(event.preventDefault.mock.calls.length, 0);
-      listeners.get("second-instance")!({}, [
-        "onicode",
-        "onicode-dev://app/settings/providers?instanceId=work&code=never-forward",
-      ]);
+      listeners.get("second-instance")!({}, ["onicode", "onicode-dev://app/"]);
       yield* Effect.promise(() => revealed.promise);
-      assert.deepEqual(loadURL.mock.calls, [
-        ["onicode-dev://app/settings/providers?instanceId=work"],
-      ]);
-      listeners.get("open-url")!(event, "onicode-dev://app/welcome#agents:machine-id");
+      listeners.get("open-url")!(event, "onicode-dev://app/");
       assert.equal(event.preventDefault.mock.calls.length, 1);
+      assert.equal(loadURL.mock.calls.length, 0);
     }).pipe(
       Effect.scoped,
-      Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, undefined, listeners)),
+      Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, listeners)),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
       Effect.provideService(ElectronWindow.ElectronWindow, electronWindow),
       Effect.provideService(DesktopWebLinks.DesktopWebLinks, ignoreWebLinks),
     );
   },
-);
-
-it.effect.each(["startup", "open-url", "early-second-instance"] as const)(
-  "receives web sign-in through the desktop %s handler",
-  (entry) =>
-    Effect.gen(function* () {
-      const port = yield* Effect.promise(async () => {
-        const server = NodeHttp.createServer();
-        await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-        const address = server.address();
-        if (!address || typeof address === "string") throw new Error("address");
-        await new Promise<void>((resolve) => server.close(() => resolve()));
-        return address.port;
-      });
-      const authorize = new URL("https://auth.openai.com/api/accounts/authorize");
-      authorize.search = new URLSearchParams({
-        client_id: "dynamic_agent_client",
-        response_type: "code",
-        redirect_uri: `http://127.0.0.1:${port}/auth/callback`,
-        state: "a".repeat(43),
-        code_challenge_method: "S256",
-        code_challenge: "b".repeat(43),
-      }).toString();
-      const request = {
-        authorizationUrl: authorize.toString(),
-        returnUrl: "http://localhost:3773/welcome#agents:remote-one",
-        environmentId: EnvironmentId.make("remote-one"),
-        instanceId: ProviderInstanceId.make("work"),
-        flowId: "flow-one",
-      };
-      const link = codexAuthHandoffUrl(request, true);
-      const delivered = Promise.withResolvers<string>();
-      const shell = ElectronShell.ElectronShell.of({
-        openExternal: (value) =>
-          Effect.promise(async () => {
-            const url = new URL(String(value));
-            const callback = new URL(url.searchParams.get("redirect_uri")!);
-            callback.search = new URLSearchParams({
-              state: url.searchParams.get("state")!,
-              code: "test-code",
-              client_id: "oaiapp_test",
-            }).toString();
-            const response = await fetch(callback, { redirect: "manual" });
-            delivered.resolve(response.headers.get("location")!);
-            return true;
-          }),
-        openSystemSettings: () => Effect.succeed(false),
-        copyText: () => Effect.void,
-      });
-      const listeners = new Map<string, (...args: unknown[]) => void>();
-      const electronApp = {
-        whenReady: Effect.void,
-        on: (name: string, listener: (...args: unknown[]) => void) =>
-          Effect.sync(() => {
-            listeners.set(name, listener);
-          }),
-      } as unknown as ElectronApp.ElectronApp["Service"];
-      yield* Effect.gen(function* () {
-        const deepLinks = yield* DesktopDeepLinks.DesktopDeepLinks;
-        if (entry === "early-second-instance") {
-          listeners.get("second-instance")?.({}, ["onicode", link]);
-        }
-        yield* deepLinks.configure;
-        if (entry === "open-url") {
-          const event = { preventDefault: vi.fn() };
-          listeners.get("open-url")!(event, link);
-          assert.strictEqual(event.preventDefault.mock.calls.length, 1);
-        }
-        const delivery = readCodexAuthDelivery(yield* Effect.promise(() => delivered.promise));
-        assert.strictEqual(delivery?.environmentId, request.environmentId);
-        assert.strictEqual(delivery?.instanceId, request.instanceId);
-        assert.strictEqual(delivery?.flowId, request.flowId);
-        assert.strictEqual(delivery?.returnUrl, request.returnUrl);
-      }).pipe(
-        Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, shell, listeners)),
-        Effect.provideService(
-          HostProcess.Arguments,
-          entry === "startup" ? ["onicode", link] : ["onicode"],
-        ),
-        Effect.provideService(ElectronApp.ElectronApp, electronApp),
-        Effect.provideService(
-          ElectronWindow.ElectronWindow,
-          {} as ElectronWindow.ElectronWindow["Service"],
-        ),
-        Effect.provideService(DesktopWebLinks.DesktopWebLinks, ignoreWebLinks),
-      );
-    }).pipe(Effect.scoped),
 );
 
 it.effect("hands web and app links to the renderer and leaves other links alone", () =>
@@ -420,7 +316,7 @@ it.effect("hands web and app links to the renderer and leaves other links alone"
         pairLink,
       ]);
     }).pipe(
-      Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, undefined, listeners)),
+      Effect.provide(layerDesktopDeepLinks(true, [], "darwin", undefined, listeners)),
       Effect.provideService(HostProcess.Arguments, ["onicode"]),
       Effect.provideService(ElectronApp.ElectronApp, electronApp),
       Effect.provideService(

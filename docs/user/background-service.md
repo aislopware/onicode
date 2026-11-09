@@ -153,12 +153,12 @@ Downloads, it may need Full Disk Access for the `onicode` executable listed in
 Onicode removes internal history older than a day on its own while it runs;
 your conversations are kept. Databases created before this shrank automatically
 still hold the freed space on disk until a one-time offline repair returns it
-and turns on automatic shrinking. Settings > Maintenance (web and desktop) or
+and turns on automatic shrinking. Settings > Maintenance (desktop) or
 Settings > Maintenance (mobile) suggests the repair when at least 1 GiB can be
 reclaimed.
 
 When the desktop app or the background service runs Onicode on that machine,
-select **Reclaim** in Settings on web or desktop. Onicode checks for free disk
+select **Reclaim** in Settings on desktop. Onicode checks for free disk
 space, then stops, repairs the database, and starts again. It is offline while
 the repair runs, and running agents stop. If the repair fails, Settings shows
 why.

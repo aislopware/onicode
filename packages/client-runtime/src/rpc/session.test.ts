@@ -114,7 +114,7 @@ const PREPARED: PreparedConnection = {
   label: TARGET.label,
   httpBaseUrl: TARGET.httpBaseUrl,
   socketUrl: "wss://environment.example.test/ws?wsTicket=test",
-  httpAuthorization: null,
+  httpAuthorization: { _tag: "Bearer", token: "test-token" },
   target: TARGET,
 };
 
@@ -133,10 +133,8 @@ const SERVER_CONFIG: ServerConfigType = {
     },
   },
   auth: {
-    policy: "loopback-browser",
+    policy: "loopback",
     bootstrapMethods: ["one-time-token"],
-    sessionMethods: ["browser-session-cookie", "bearer-access-token"],
-    sessionCookieName: "oni_session",
   },
   cwd: "/tmp/workspace",
   keybindingsConfigPath: "/tmp/workspace/keybindings.json",

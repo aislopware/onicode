@@ -45,8 +45,6 @@ const session = (canOperate: boolean): AuthSessionState => ({
   auth: {
     policy: "remote-reachable",
     bootstrapMethods: [],
-    sessionMethods: [],
-    sessionCookieName: "session",
   },
 });
 const source = (id: EnvironmentId) =>

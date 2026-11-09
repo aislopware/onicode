@@ -19,8 +19,9 @@ When reconnecting, choose the same account in Onicode and on OpenAI's sign-in
 page. Disconnecting stops running threads but keeps their history and lets you
 reconnect later.
 
-If remote sign-in cannot return automatically, paste the full URL from the final
-localhost page into the sign-in panel, even if that page could not load.
+On desktop, sign-in returns to Onicode on its own, including for remote machines.
+In the mobile app, the final localhost page cannot load; paste its full URL into
+the sign-in panel to finish.
 
 ## Use an existing Codex login
 
@@ -96,7 +97,7 @@ supports async questions.
 ## Approve app access
 
 Codex tools can request access to another app. Respond to the named app's request
-in the thread on web, desktop, or mobile. Some tools offer access for one request,
+in the thread on desktop or mobile. Some tools offer access for one request,
 the current session, or permanently. See [Permission modes](./permission-modes.md)
 for command and file approvals.
 

@@ -185,7 +185,6 @@ describe("RemoteEnvironmentAuthorization", () => {
             httpBaseUrl,
             wsBaseUrl: httpBaseUrl.replace(/^http/, "ws"),
             bearerToken: "bearer-token",
-            connectionMethod: "direct",
           });
         const authorize = authorizeAt(ENDPOINT.httpBaseUrl);
         const remember = (value: Option.Option<ExecutionEnvironmentDescriptor>) =>
@@ -271,7 +270,6 @@ describe("RemoteEnvironmentAuthorization", () => {
             httpBaseUrl: ENDPOINT.httpBaseUrl,
             wsBaseUrl: ENDPOINT.wsBaseUrl,
             bearerToken: "bearer-token",
-            connectionMethod: "direct",
           });
         return [yield* authorize(), yield* authorize()] as const;
       }).pipe(Effect.provide(harness.layer));

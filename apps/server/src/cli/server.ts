@@ -25,7 +25,6 @@ function ignoreClosedLauncherPipe(error: NodeJS.ErrnoException): void {
 const runServerCommand = Effect.fn("server.runServerCommand")(function* (
   flags: CliServerFlags,
   options?: {
-    readonly startupPresentation?: ServerConfig.StartupPresentation;
     readonly forceAutoBootstrapProjectFromCwd?: boolean;
     readonly rejectRunningServer?: boolean;
   },
@@ -88,14 +87,11 @@ export const startCommand = Command.make("start", { ...sharedServerCommandFlags 
 );
 
 export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
-  Command.withShortDescription("Run Onicode in this terminal, with no browser."),
+  Command.withShortDescription("Run Onicode in this terminal without adding a project."),
   Command.withDescription(
-    "Run Onicode in this terminal without opening a browser, and print pairing details. The background service runs this. To set up access from your other devices, run `onicode up`.",
+    "Run Onicode in this terminal and print pairing details, without adding the current directory as a project. The background service runs this. To set up access from your other devices, run `onicode up`.",
   ),
   Command.withHandler((flags) =>
-    runServerCommand(flags, {
-      startupPresentation: "headless",
-      forceAutoBootstrapProjectFromCwd: false,
-    }),
+    runServerCommand(flags, { forceAutoBootstrapProjectFromCwd: false }),
   ),
 );

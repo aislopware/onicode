@@ -17,10 +17,10 @@ and stop verification. Do not install or switch to another automation system.
 
 ## Use an isolated backend
 
-Reuse this task's healthy backend. Otherwise run `vp run dev` from the
+Reuse this task's healthy backend. Otherwise run `vp run dev:server` from the
 repository root, retain its terminal session, and read the actual backend port
 from the dev-runner output. Use the worktree's ignored `.onicode` state. Never run
-against `~/.onicode/userdata`. The Browser panel is not required for this workflow.
+against `~/.onicode/userdata`.
 
 Test with meaningful project and thread data. Read the shared
 [SQLite fixture reference](../test-oni-app/references/sqlite-fixtures.md) only

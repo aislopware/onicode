@@ -88,7 +88,6 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@onicode/client-runtime/state/runtime";
-import { isElectron } from "../env";
 import {
   resolveShortcutCommand,
   shortcutLabelForCommand,
@@ -2884,8 +2883,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           terminalFocus: isTerminalFocused(),
           terminalOpen: routeTerminalOpen,
           modelPickerOpen: isModelPickerOpen(),
-          isWeb: !isElectron,
-          isDesktop: isElectron,
         },
       });
       const navigateToThreadKey = (targetThreadKey: string | null) => {
@@ -2932,8 +2929,6 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
         terminalFocus: terminalFocused,
         terminalOpen: routeTerminalOpen,
         modelPickerOpen: isModelPickerOpen(),
-        isWeb: !isElectron,
-        isDesktop: isElectron,
       },
     },
   );
@@ -2972,7 +2967,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   return (
     <>
       <ThreadContextDragGhost />
-      <SidebarChromeHeader isElectron={isElectron} />
+      <SidebarChromeHeader />
       <SidebarContent
         ref={sidebarContentRef}
         className="min-h-full"

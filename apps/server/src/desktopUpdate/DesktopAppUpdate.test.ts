@@ -54,7 +54,7 @@ function report(
 }
 
 interface HarnessOptions {
-  readonly mode?: "web" | "desktop";
+  readonly mode?: "standalone" | "desktop";
   readonly controlFd?: number | undefined;
   readonly reports?: (requestId: string) => readonly DesktopUpdateStatusReport[];
   readonly keepOpen?: boolean;

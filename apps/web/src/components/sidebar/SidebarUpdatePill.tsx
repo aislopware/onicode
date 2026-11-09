@@ -7,7 +7,6 @@ import { TriangleAlertIcon } from "lucide-react";
 import { type ComponentProps, useId, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
-import { isElectron } from "../../env";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { cn } from "../../lib/utils";
 import { ensureLocalApi } from "../../localApi";
@@ -116,10 +115,6 @@ function resolveSidebarUpdatePresentation({
 }
 
 export function SidebarUpdateArchitectureWarning() {
-  return isElectron ? <SidebarUpdateArchitectureWarningContent /> : null;
-}
-
-function SidebarUpdateArchitectureWarningContent() {
   const state = useDesktopUpdateState();
   const visible = shouldShowArm64IntelBuildWarning(state);
   const description = state && visible ? getArm64IntelBuildWarningDescription(state) : null;
@@ -390,8 +385,6 @@ function SidebarUpdateControl() {
       }),
     );
   };
-
-  if (!isElectron && !runsEverything && !isRunningEverything) return null;
 
   const statusIcon = (
     <DesktopUpdateStatusIcon

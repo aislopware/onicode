@@ -69,12 +69,8 @@ function getClientId(): string {
     window.localStorage.setItem(CLIENT_ID_STORAGE_KEY, next);
     return next;
   } catch {
-    return "ephemeral-browser-client";
+    return "ephemeral-desktop-client";
   }
-}
-
-function resolveClientKind(): ClientActivityReportInput["clientKind"] {
-  return window.desktopBridge ? "desktop-renderer" : "web";
 }
 
 function wasRecentlyInteracted(lastInteractionAtMs: number, observedAtMs: number): boolean {
@@ -98,7 +94,7 @@ function createActivityReport(
   return {
     environmentId,
     clientId: getClientId(),
-    clientKind: resolveClientKind(),
+    clientKind: "desktop-renderer",
     visible: document.visibilityState === "visible",
     focused: document.hasFocus(),
     recentlyInteracted: wasRecentlyInteracted(lastInteractionAtMs, observedAtMs),

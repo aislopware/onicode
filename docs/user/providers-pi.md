@@ -89,6 +89,6 @@ threads.
   environment, including `PI_CODING_AGENT_DIR` if set. Trust the folder or its parent with `/trust`,
   then start a new thread using that same worktree. Launch arguments with `--no-approve` keep
   project files off without the notice.
-- To see context usage on web and desktop, turn on **Context window** in **Settings → Appearance →
+- To see context usage on desktop, turn on **Context window** in **Settings → Appearance →
   Thread details**. It appears once Pi reports usage for the thread. Some model providers only
   report usage when a response completes, so it can wait for the first reply.

@@ -36,7 +36,6 @@ import {
 } from "../../components/desktopUpdate.logic";
 import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
-import { isElectron } from "../../env";
 import {
   readAppearanceModePreference,
   readThemeHalves,
@@ -805,47 +804,45 @@ export function GeneralSettingsPanel() {
             />
           }
         />
-        {isElectron ? (
-          <SettingsRow
-            {...searchableSetting("quit-confirmation")}
-            description="Hold mode also quits on two quick presses."
-            resetAction={
-              settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
-                <SettingResetButton
-                  label="quit shortcut behavior"
-                  onClick={() =>
-                    updateSettings({ confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit })
-                  }
-                />
-              ) : null
-            }
-            control={
-              <Select
-                value={settings.confirmQuit}
-                onValueChange={(value) => {
-                  if (value === "direct" || value === "hold" || value === "double-click") {
-                    updateSettings({ confirmQuit: value });
-                  }
-                }}
+        <SettingsRow
+          {...searchableSetting("quit-confirmation")}
+          description="Hold mode also quits on two quick presses."
+          resetAction={
+            settings.confirmQuit !== DEFAULT_UNIFIED_SETTINGS.confirmQuit ? (
+              <SettingResetButton
+                label="quit shortcut behavior"
+                onClick={() =>
+                  updateSettings({ confirmQuit: DEFAULT_UNIFIED_SETTINGS.confirmQuit })
+                }
+              />
+            ) : null
+          }
+          control={
+            <Select
+              value={settings.confirmQuit}
+              onValueChange={(value) => {
+                if (value === "direct" || value === "hold" || value === "double-click") {
+                  updateSettings({ confirmQuit: value });
+                }
+              }}
+            >
+              <SelectTrigger
+                size="sm"
+                className="w-full sm:w-40"
+                aria-label="Quit shortcut behavior"
               >
-                <SelectTrigger
-                  size="sm"
-                  className="w-full sm:w-40"
-                  aria-label="Quit shortcut behavior"
-                >
-                  <SelectValue>{QUIT_CONFIRMATION_MODE_LABELS[settings.confirmQuit]}</SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {Object.entries(QUIT_CONFIRMATION_MODE_LABELS).map(([value, label]) => (
-                    <SelectItem hideIndicator key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
-                </SelectPopup>
-              </Select>
-            }
-          />
-        ) : null}
+                <SelectValue>{QUIT_CONFIRMATION_MODE_LABELS[settings.confirmQuit]}</SelectValue>
+              </SelectTrigger>
+              <SelectPopup align="end" alignItemWithTrigger={false}>
+                {Object.entries(QUIT_CONFIRMATION_MODE_LABELS).map(([value, label]) => (
+                  <SelectItem hideIndicator key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectPopup>
+            </Select>
+          }
+        />
       </SettingsSection>
 
       <SettingsSection id="display" title="Display">
@@ -1928,17 +1925,7 @@ export function AboutSettingsPanel() {
             }
           />
         ) : null}
-        {isElectron ? (
-          <AboutVersionSection />
-        ) : (
-          <>
-            <SettingsRow
-              id={searchableSetting("app-version").id}
-              title={<AboutVersionTitle />}
-              description="Current version of the application."
-            />
-          </>
-        )}
+        <AboutVersionSection />
         {primaryEnvironmentId === null ? null : (
           <SettingsRow
             {...searchableSetting("welcome-page")}

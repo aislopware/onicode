@@ -71,9 +71,7 @@ it.effect("parks automatic pull until activation without delaying command readin
         Layer.Services<ReturnType<typeof ServerRuntimeStartup.layerWithOptions>>
       > = Layer.mergeAll(
         Layer.mock(ServerConfig.ServerConfig)({
-          ...(yield* ServerConfig.deriveServerPaths(cwd, undefined).pipe(
-            Effect.provide(Path.layer),
-          )),
+          ...(yield* ServerConfig.deriveServerPaths(cwd, false).pipe(Effect.provide(Path.layer))),
           baseDir: cwd,
           logLevel: "Error",
           traceMinLevel: "Info",
@@ -88,8 +86,6 @@ it.effect("parks automatic pull until activation without delaying command readin
           otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
           otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
           otelEnvironment: OtelEnvironment.none,
-          staticDir: undefined,
-          devAllowedOrigins: [],
           desktopBootstrapToken: undefined,
           logWebSocketEvents: false,
           tailscaleServeEnabled: false,
@@ -98,9 +94,7 @@ it.effect("parks automatic pull until activation without delaying command readin
           cwd,
           host: "localhost",
           port: 3773,
-          devUrl: undefined,
-          noBrowser: true,
-          startupPresentation: "browser",
+          dev: false,
           autoBootstrapProjectFromCwd: false,
         }),
         Layer.mock(Keybindings.Keybindings)({ start: Effect.void }),

@@ -1,6 +1,6 @@
 # Usage and limits
 
-Open **Usage** from the sidebar or the command palette, or press `mod+u` on web and
+Open **Usage** from the sidebar or the command palette, or press `mod+u` on
 desktop when the terminal is not focused. Customize `usage.open` in
 **Settings → Keybindings**.
 
@@ -49,7 +49,7 @@ explicitly.
 When your app and server support different providers, usage totals may cover only the providers
 your app understands. Update the app to include newly supported providers.
 
-On web and desktop, use the environment dropdown to filter costs, tokens, and limits. All
+On desktop, use the environment dropdown to filter costs, tokens, and limits. All
 environments are selected by default. The dropdown shows which environments are still scanning;
 results appear as each one responds, and figures still updating are dimmed. Cursor shows its last
 saved totals first, then updates them when Cursor's API responds.
@@ -59,7 +59,7 @@ update model pricing.
 
 ## Set custom model prices
 
-On web or desktop, open the environment dropdown on **Usage**, then choose **Model prices** to add,
+On desktop, open the environment dropdown on **Usage**, then choose **Model prices** to add,
 edit, or reset a model's estimated price. **Apply to** starts with your current Usage filter;
 choose all environments or select individual destinations. Enter the exact model ID and USD
 rates per million input and output tokens. You can enter any model ID, including models
@@ -119,7 +119,7 @@ The first available window is used when no account reports a 5-hour limit. A gap
 account does not report that window. When the provider reports reset times, the card also says
 when the next reset lands and how much it hands back. The hatched
 part of a segment is what that reset restores. Tap a segment or account row for the account's plan,
-where it is signed in, and its reset time. On web, you can hover too. Codex and Claude accounts
+where it is signed in, and its reset time. On desktop, you can hover too. Codex and Claude accounts
 with banked reset credits show a ticket count and the **Use reset** action in the account details.
 Claude resets are not available when the server runs on macOS, where Claude keeps its login in the
 Keychain. On narrow screens, numbered rows below
@@ -143,7 +143,7 @@ current model's limits without leaving the conversation. The result opens above 
 closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
 anything. The command is offered only for providers that appear under **Usage → Limits**.
 
-To keep them in view on web and desktop, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
+To keep them in view on desktop, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
 The bottom of the thread details card then shows how much is left in each limit window of the
 current provider account. Some windows, such as a weekly Opus limit, count only one model. Hover a
 row to see when it resets and your pace. Turn on **Context window** to also show the thread's
@@ -189,7 +189,7 @@ Session, Weekly, or both for each provider. Reopen Onicode to refresh expired re
 
 ## Keyboard shortcuts
 
-On web and desktop, open Usage from the command palette. While on Usage,
+On desktop, open Usage from the command palette. While on Usage,
 press `C`, `T`, or `L` for Cost, Tokens, or Limits while not typing in a field.
 Use `Ctrl+Shift+1/2/3/4` (`Cmd+Shift+1/2/3/4` on macOS) for the past
 24 hours, 7 days, 30 days, or 90 days. Period shortcuts do nothing on Limits.

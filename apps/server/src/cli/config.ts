@@ -14,7 +14,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as LogLevel from "effect/LogLevel";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
-import * as Redacted from "effect/Redacted";
 import * as References from "effect/References";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
@@ -47,13 +46,10 @@ export const baseDirFlag = Flag.String("base-dir").pipe(
   ),
   Flag.optional,
 );
-const devUrlFlag = Flag.String("dev-url").pipe(
-  Flag.withSchema(Schema.URLFromString),
-  Flag.withDescription("Dev web URL to proxy/redirect to (equivalent to VITE_DEV_SERVER_URL)."),
-  Flag.optional,
-);
-const noBrowserFlag = Flag.Boolean("no-browser").pipe(
-  Flag.withDescription("Disable automatic browser opening."),
+const devFlag = Flag.Boolean("dev").pipe(
+  Flag.withDescription(
+    "Run as a development server from a checkout: dev state directory and dev-only providers (equivalent to ONICODE_DEV).",
+  ),
   Flag.optional,
 );
 const bootstrapFdFlag = Flag.Int("bootstrap-fd").pipe(
@@ -137,20 +133,7 @@ const EnvServerConfig = Config.all({
   port: Config.Port("ONICODE_PORT").pipe(Config.option, Config.map(Option.getOrUndefined)),
   host: Config.String("ONICODE_HOST").pipe(Config.option, Config.map(Option.getOrUndefined)),
   oniHome: Config.String("ONICODE_HOME").pipe(Config.option, Config.map(Option.getOrUndefined)),
-  devUrl: Config.URL("VITE_DEV_SERVER_URL").pipe(Config.option, Config.map(Option.getOrUndefined)),
-  devAllowedOrigins: Config.String("ONICODE_DEV_ALLOWED_ORIGINS").pipe(
-    Config.withDefault(""),
-    Config.map((value) =>
-      value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0),
-    ),
-  ),
-  noBrowser: Config.Boolean("ONICODE_NO_BROWSER").pipe(
-    Config.option,
-    Config.map(Option.getOrUndefined),
-  ),
+  dev: Config.Boolean("ONICODE_DEV").pipe(Config.option, Config.map(Option.getOrUndefined)),
   bootstrapFd: Config.Int("ONICODE_BOOTSTRAP_FD").pipe(
     Config.option,
     Config.map(Option.getOrUndefined),
@@ -174,34 +157,13 @@ const EnvServerConfig = Config.all({
   lan: Config.Boolean("ONICODE_LAN").pipe(Config.option, Config.map(Option.getOrUndefined)),
 });
 
-const DevAuthTokenConfig = Config.Redacted("ONICODE_DEV_AUTH_TOKEN").pipe(
-  Config.map((token) => Redacted.make(Redacted.value(token).trim())),
-  Config.mapEffect((token) =>
-    Redacted.value(token).length === 0 || Redacted.value(token).length >= 32
-      ? Effect.succeed(token)
-      : Effect.fail(
-          new Config.ConfigError(
-            new Schema.SchemaError(
-              new SchemaIssue.InvalidValue({
-                message: "ONICODE_DEV_AUTH_TOKEN must contain at least 32 characters.",
-              }),
-            ),
-          ),
-        ),
-  ),
-  Config.option,
-  Config.map(Option.filter((token) => Redacted.value(token).length > 0)),
-  Config.map(Option.getOrUndefined),
-);
-
 export interface CliServerFlags {
   readonly mode: Option.Option<ServerConfig.RuntimeMode>;
   readonly port: Option.Option<number>;
   readonly host: Option.Option<string>;
   readonly baseDir: Option.Option<string>;
   readonly cwd: Option.Option<string>;
-  readonly devUrl: Option.Option<URL>;
-  readonly noBrowser: Option.Option<boolean>;
+  readonly dev: Option.Option<boolean>;
   readonly bootstrapFd: Option.Option<number>;
   readonly autoBootstrapProjectFromCwd: Option.Option<boolean>;
   readonly logWebSocketEvents: Option.Option<boolean>;
@@ -212,12 +174,12 @@ export interface CliServerFlags {
 
 export interface CliAuthLocationFlags {
   readonly baseDir: Option.Option<string>;
-  readonly devUrl?: Option.Option<URL>;
+  readonly dev?: Option.Option<boolean>;
 }
 
 export const authLocationFlags = {
   baseDir: baseDirFlag,
-  devUrl: devUrlFlag,
+  dev: devFlag,
 } as const;
 
 export const projectLocationFlags = {
@@ -235,8 +197,7 @@ export const sharedServerCommandFlags = {
     ),
     Argument.optional,
   ),
-  devUrl: devUrlFlag,
-  noBrowser: noBrowserFlag,
+  dev: devFlag,
   bootstrapFd: bootstrapFdFlag,
   autoBootstrapProjectFromCwd: autoBootstrapProjectFromCwdFlag,
   logWebSocketEvents: logWebSocketEventsFlag,
@@ -264,7 +225,6 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   flags: CliServerFlags,
   cliLogLevel: Option.Option<LogLevel.LogLevel>,
   options?: {
-    readonly startupPresentation?: ServerConfig.StartupPresentation;
     readonly forceAutoBootstrapProjectFromCwd?: boolean;
     readonly rejectRunningServer?: boolean;
     readonly selectAutomaticPort?: (
@@ -283,8 +243,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     host: flags.host ?? Option.none(),
     baseDir: flags.baseDir ?? Option.none(),
     cwd: flags.cwd ?? Option.none(),
-    devUrl: flags.devUrl ?? Option.none(),
-    noBrowser: flags.noBrowser ?? Option.none(),
+    dev: flags.dev ?? Option.none(),
     bootstrapFd: flags.bootstrapFd ?? Option.none(),
     autoBootstrapProjectFromCwd: flags.autoBootstrapProjectFromCwd ?? Option.none(),
     logWebSocketEvents: flags.logWebSocketEvents ?? Option.none(),
@@ -305,7 +264,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
       Option.fromUndefinedOr(env.mode),
       Option.fromUndefinedOr(bootstrap?.mode),
     ),
-    () => "web",
+    () => "standalone",
   );
 
   const port = yield* Option.match(
@@ -324,12 +283,10 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
       },
     },
   );
-  const devUrl = Option.getOrElse(
-    resolveOptionPrecedence(normalizedFlags.devUrl, Option.fromUndefinedOr(env.devUrl)),
-    () => undefined,
+  const dev = Option.getOrElse(
+    resolveOptionPrecedence(normalizedFlags.dev, Option.fromUndefinedOr(env.dev)),
+    () => false,
   );
-  const devAuthToken =
-    mode === "web" && devUrl !== undefined ? yield* DevAuthTokenConfig : undefined;
   const explicitBaseDir = resolveOptionPrecedence(
     normalizedFlags.baseDir,
     Option.fromUndefinedOr(env.oniHome),
@@ -341,12 +298,12 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   const rawCwd = Option.getOrElse(normalizedFlags.cwd, () => process.cwd());
   const cwd = path.resolve(yield* expandHomePath(rawCwd.trim()));
-  const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, devUrl, {
+  const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, dev, {
     baseDirIsExplicit: Option.isSome(explicitBaseDir),
   });
   // An interactive CLI must not start over a discovered server. Lifetime locking
   // and supervisor handoff are separate; this preflight cannot arbitrate two starts.
-  if (options?.rejectRunningServer && mode === "web") {
+  if (options?.rejectRunningServer && mode === "standalone") {
     const runtime = yield* readPersistedServerRuntimeState(derivedPaths.serverRuntimeStatePath);
     // A killed container can leave a record with the new server's own PID.
     if (
@@ -367,17 +324,6 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   );
   const serverTracePath = env.traceFile ?? derivedPaths.serverTracePath;
   yield* fs.makeDirectory(path.dirname(serverTracePath), { recursive: true });
-  const startupPresentation = options?.startupPresentation ?? "browser";
-  const isHeadlessStartup = startupPresentation === "headless";
-  const noBrowser = Option.getOrElse(
-    resolveOptionPrecedence(
-      isHeadlessStartup ? Option.some(true) : Option.none(),
-      normalizedFlags.noBrowser,
-      Option.fromUndefinedOr(env.noBrowser),
-      Option.fromUndefinedOr(bootstrap?.noBrowser),
-    ),
-    () => mode === "desktop",
-  );
   const desktopBootstrapToken = bootstrap?.desktopBootstrapToken;
   const desktopBootstrapSecret = bootstrap?.desktopBootstrapSecret;
   const shellEnvironmentPrepared = bootstrap?.shellEnvironmentPrepared;
@@ -389,18 +335,17 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   const autoBootstrapProjectFromCwd = Option.getOrElse(
     resolveOptionPrecedence(
       Option.fromUndefinedOr(options?.forceAutoBootstrapProjectFromCwd),
-      isHeadlessStartup ? Option.some(false) : Option.none(),
       normalizedFlags.autoBootstrapProjectFromCwd,
       Option.fromUndefinedOr(env.autoBootstrapProjectFromCwd),
     ),
-    () => mode === "web",
+    () => mode === "standalone",
   );
   const logWebSocketEvents = Option.getOrElse(
     resolveOptionPrecedence(
       normalizedFlags.logWebSocketEvents,
       Option.fromUndefinedOr(env.logWebSocketEvents),
     ),
-    () => Boolean(devUrl),
+    () => dev,
   );
   const tailscaleServeEnabled = Option.getOrElse(
     resolveOptionPrecedence(
@@ -418,7 +363,6 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     ),
     () => 443,
   );
-  const staticDir = devUrl ? undefined : yield* ServerConfig.resolveStaticDir();
   const explicitHost = resolveOptionPrecedence(
     normalizedFlags.host,
     Option.fromUndefinedOr(env.host),
@@ -430,7 +374,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
   const lan = resolveOptionPrecedence(normalizedFlags.lan, Option.fromUndefinedOr(env.lan));
   const privateNetworkOnly =
     Option.isNone(explicitHost) &&
-    mode === "web" &&
+    mode === "standalone" &&
     (Option.isSome(lan)
       ? lan.value
       : yield* resolveServiceLauncherMode().pipe(
@@ -505,12 +449,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     serverTracePath,
     host,
     ...(privateNetworkOnly ? { privateNetworkOnly } : {}),
-    staticDir,
-    devUrl,
-    ...(devAuthToken === undefined ? {} : { devAuthToken }),
-    devAllowedOrigins: env.devAllowedOrigins,
-    noBrowser,
-    startupPresentation,
+    dev,
     desktopBootstrapToken,
     ...(desktopBootstrapSecret === undefined ? {} : { desktopBootstrapSecret }),
     ...(shellEnvironmentPrepared === undefined ? {} : { shellEnvironmentPrepared }),
@@ -540,8 +479,7 @@ export const resolveCliAuthConfig = (
       host: Option.none(),
       baseDir: flags.baseDir,
       cwd: Option.none(),
-      devUrl: flags.devUrl ?? Option.none(),
-      noBrowser: Option.none(),
+      dev: flags.dev ?? Option.none(),
       bootstrapFd: Option.none(),
       autoBootstrapProjectFromCwd: Option.none(),
       logWebSocketEvents: Option.none(),

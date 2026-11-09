@@ -10,19 +10,18 @@ vp i
 vp run dev
 ```
 
-Open the pairing URL printed by the dev runner. The bare origin does not authenticate
-a new browser.
+This builds the server, starts the renderer's Vite server, and opens a dev desktop app
+that starts its own server and signs in to it.
 
 Prefer a container? See [Dev container](../internals/devcontainer.md) for VS Code and Codespaces setup.
 
 ## Choosing a dev process
 
-Use `vp run dev` for server and web, or `vp run dev:desktop` for the Electron client.
-`dev:server` and `dev:web` start those processes separately.
+Use `vp run dev` for the desktop app. `vp run dev:server` runs only the server, for the
+mobile app and CLI work; pair a client with `node apps/server/src/bin.ts pair --base-dir <home>`.
 See the [mobile README](../../apps/mobile/README.md) for native builds and Metro.
 
 Flags go directly after the task name, for example `vp run dev --home-dir /tmp/onicode-dev`.
-Add `--browser` to open a browser automatically.
 
 To stop a worktree's dev stack when its thread settles, import the **Dev** action from
 `onicode.json` in Settings > Projects > Actions and start it through the action menu or its
@@ -51,7 +50,7 @@ different preference when needed.
 [dev-replay-agent.ts](../../apps/server/scripts/dev-replay-agent.ts). It plays recorded
 ACP transcripts with simulated streaming, so the real adapter, orchestration, and UI run
 without a paid model. Each scenario is a model, and each prompt plays the next recorded turn.
-Bundled servers, including desktop dev, skip it because they have no agent script.
+Packaged builds skip it because they ship no agent script.
 Dev servers add it back on start, so turn it off in Settings instead of removing it.
 To add a scenario, point a `SCENARIOS` entry at a generic ACP replay fixture
 (`registry_transcript.ndjson`) or a file in [dev-replay](../../apps/server/scripts/dev-replay).
@@ -86,18 +85,17 @@ A fresh process still uses filesystem, Node compilation, provider, and Vite depe
 Measure a missing Vite dependency cache separately from a restart with an existing database.
 Neither the Vite ready message nor the HTTP listener proves that a browser has rendered the app.
 
-### Sharing and remote debugging
+### Driving the dev window
 
-`vp run dev --share` publishes the web port over the machine's tailnet and prints a pairing URL
-for that origin. Give the tester the complete URL, including its token. The dev runner removes
-its mapping on exit.
+The dev desktop window serves the Chrome DevTools Protocol on the `cdpPort` the dev runner
+prints. Attach to the `onicode-dev://app` page with any CDP client, such as Playwright's
+`chromium.connectOverCDP`. The [test-oni-app](../../.agents/skills/test-oni-app/SKILL.md) skill
+covers agent-driven checks.
 
-Leave `VITE_HTTP_URL` and `VITE_WS_URL` unset. Vite proxies the backend through the browser's
-origin so the same build works over localhost and remote connections.
+### Bundled dev
 
-Shared runs enable bundled dev to avoid a network round trip for each import level.
-`ONICODE_BUNDLED_DEV=0` opts out when debugging bundler differences. Two reload traps matter
-when changing this setup:
+`ONICODE_BUNDLED_DEV=1` serves the renderer through Rolldown's bundled dev mode instead of
+per-module requests. Two reload traps matter when changing this setup:
 
 - The web entry must dynamically import the app so React refresh initializes before application
   chunks. Static imports can work on first load and fail after a route split.
@@ -110,54 +108,6 @@ when changing this setup:
 The workarounds live in the [web entry](../../apps/web/src/bootstrap.ts),
 [Tailwind plugin](../../apps/web/vite/tailwind.ts), and
 [startup warmup](../../apps/web/vite/warmBundledDev.ts).
-
-`vp run dev --share --built` skips the Vite dev server. It runs `vp build --watch` for the web
-app, and the backend serves `apps/web/dist` on the same tailnet URL and pairing flow. Use it when
-someone tests over a slow link or only needs to use the app: loads are production size, and the
-first load does not wait for dev bundling. There is no HMR. After an edit, wait for the
-`built in` line (about 6 s), then reload. Until the first build exists, the URL shows a page that
-reloads by itself. The license manifest is not generated in this mode. `--built` requires
-`--share` and the `dev` mode.
-
-#### Reusable dev credential
-
-Use this only on a hostname where you trust every service. Browsers send cookies to all ports
-on that hostname. Any service you visit there can receive the reusable admin credential,
-including services unrelated to Onicode. If you run untrusted services on that hostname, keep
-normal per-environment pairing instead.
-
-To use one browser profile across web dev worktrees on the same hostname, generate one fixed
-value once:
-
-```sh
-openssl rand -hex 32
-```
-
-Put that value in the main checkout's gitignored `.env`:
-
-```dotenv
-ONICODE_DEV_AUTH_TOKEN=<the value generated above>
-```
-
-The `onicode.json` Setup Worktree action links that file to each worktree's `.env`. The dev runner reads repository env files at startup. `.env.local` and inherited process
-environment values override `.env`, so no per-worktree export is needed after setup.
-
-For a manual worktree or launcher without that link, export the same fixed value instead:
-
-```sh
-export ONICODE_DEV_AUTH_TOKEN="<the value generated above>"
-```
-
-Do not generate a new value at startup. Start or restart `vp run dev --share` after configuration,
-then open its printed startup pairing URL once per browser profile on that hostname. Later web dev
-servers on the same hostname accept the shared cookie across ports. The cookie expires after 30
-days. Reload an old tab if its URL now serves a replacement environment.
-
-The token and startup pairing URLs are reusable administrative secrets. Never put them in a
-commit, pull request, or public output. Every server still seeds its own auth database record at
-startup and keeps its own SQLite data, signing key, and revocation state. Desktop and non-dev
-servers ignore the value. See [environment authentication](../internals/environment-auth.md#reusable-dev-credential)
-for the security model.
 
 ## Checks
 

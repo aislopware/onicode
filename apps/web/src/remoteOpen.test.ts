@@ -24,48 +24,21 @@ const TAILSCALE_TARGETS = [
 ] as const;
 
 describe("resolveRemoteOpenState", () => {
-  it("keeps exec behavior for a loopback primary target", () => {
-    expect(
-      resolveRemoteOpenState({
-        target: primaryTarget("http://127.0.0.1:8000"),
-        sshTarget: null,
-        isDesktopRenderer: false,
-        remoteOpenTargets: TAILSCALE_TARGETS,
-      }),
-    ).toEqual({ mode: "local-exec" });
-  });
-
-  it("uses deep links for a primary target reached over the network", () => {
-    expect(
-      resolveRemoteOpenState({
-        target: primaryTarget("https://sol.tail1234.ts.net"),
-        sshTarget: null,
-        isDesktopRenderer: false,
-        remoteOpenTargets: TAILSCALE_TARGETS,
-      }),
-    ).toEqual({
-      mode: "remote-links",
-      host: { kind: "tailscale", host: "sol.tail1234.ts.net" },
-    });
-  });
-
-  it("keeps exec behavior for the desktop app's own primary even on a NAT URL", () => {
+  it("keeps exec behavior for the primary even on a NAT URL", () => {
     // wsl-only binds the desktop-owned primary to its WSL2 NAT address.
     expect(
       resolveRemoteOpenState({
         target: primaryTarget("http://172.29.112.1:14369"),
         sshTarget: null,
-        isDesktopRenderer: true,
         remoteOpenTargets: TAILSCALE_TARGETS,
       }),
     ).toEqual({ mode: "local-exec" });
   });
 
-  it("leaves a bare desktop SSH alias for the editor to resolve through SSH config", () => {
+  it("leaves a bare SSH alias for the editor to resolve through SSH config", () => {
     const state = resolveRemoteOpenState({
       target: new SshConnectionTarget({ environmentId, label: "sol", connectionId: "ssh-1" }),
       sshTarget: { alias: "sol", username: null },
-      isDesktopRenderer: true,
       remoteOpenTargets: [
         { kind: "tailscale", host: "sol.tail1234.ts.net", username: "server-user" },
       ],
@@ -95,7 +68,6 @@ describe("resolveRemoteOpenState", () => {
     const state = resolveRemoteOpenState({
       target: new SshConnectionTarget({ environmentId, label: "server", connectionId: "ssh-1" }),
       sshTarget,
-      isDesktopRenderer: true,
       remoteOpenTargets: TAILSCALE_TARGETS,
     });
     expect(state.mode).toBe("remote-links");
@@ -121,7 +93,6 @@ describe("resolveRemoteOpenState", () => {
         connectionId: "paired",
       }),
       sshTarget: null,
-      isDesktopRenderer: false,
       remoteOpenTargets: [
         { kind: "tailscale", host: "server.tail1234.ts.net", username: "admin-user" },
       ],
@@ -143,7 +114,6 @@ describe("resolveRemoteOpenState", () => {
             connectionId: "paired",
           }),
           sshTarget: null,
-          isDesktopRenderer: false,
           remoteOpenTargets,
         }),
       ).toEqual({ mode: "remote-unavailable" });

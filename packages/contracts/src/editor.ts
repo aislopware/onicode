@@ -293,18 +293,6 @@ const ExternalLauncherSpawnFields = {
   cause: Schema.Defect(),
 };
 
-export class ExternalLauncherBrowserSpawnError extends Schema.TaggedError<ExternalLauncherBrowserSpawnError>()(
-  "ExternalLauncherBrowserSpawnError",
-  {
-    ...ExternalLauncherSpawnFields,
-    target: Schema.String,
-  },
-) {
-  override get message(): string {
-    return `Failed to launch browser target '${this.target}' with '${[this.command, ...this.args].join(" ")}'`;
-  }
-}
-
 export class ExternalLauncherEditorSpawnError extends Schema.TaggedError<ExternalLauncherEditorSpawnError>()(
   "ExternalLauncherEditorSpawnError",
   {
@@ -323,7 +311,6 @@ export const ExternalLauncherError = Schema.Union([
   ExternalLauncherUnsupportedEditorError,
   ExternalLauncherCommandNotFoundError,
   ExternalLauncherUnsupportedTargetError,
-  ExternalLauncherBrowserSpawnError,
   ExternalLauncherEditorSpawnError,
 ]);
 export type ExternalLauncherError = typeof ExternalLauncherError.Type;

@@ -27,7 +27,7 @@ describe("foreground app events", () => {
       {
         platform: "ios",
         deviceId: "test",
-        access: { httpBase: "http://test", wsBase: "ws://test", query: {}, credentials: true },
+        access: { httpBase: "http://test", wsBase: "ws://test", query: {} },
       },
       onChange,
     );

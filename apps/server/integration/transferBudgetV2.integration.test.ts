@@ -161,7 +161,6 @@ const layerAuth = Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
     Effect.provideService(EnvironmentAuthenticatedPrincipal, {
       sessionId: AuthSessionId.make("transfer-session"),
       subject: "transfer-test",
-      method: "browser-session-cookie",
       scopes: new Set([AuthOrchestrationReadScope]),
     }),
   ),

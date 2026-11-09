@@ -59,10 +59,8 @@ describe("authorization grants", () => {
     const session = decodeAuthSessionState({
       authenticated: true,
       auth: {
-        policy: "loopback-browser",
+        policy: "loopback",
         bootstrapMethods: [],
-        sessionMethods: [],
-        sessionCookieName: "session",
       },
       scopes: ["orchestration:operate"],
       permissions: ["future:permission"],

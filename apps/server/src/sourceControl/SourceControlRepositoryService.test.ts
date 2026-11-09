@@ -89,7 +89,9 @@ function layer(input: {
     Layer.provide(
       ServerConfig.layerTest(
         process.cwd(),
-        input.fileSystem ? "/tmp/oni-source-control-repos" : { prefix: "oni-source-control-repos-" },
+        input.fileSystem
+          ? "/tmp/oni-source-control-repos"
+          : { prefix: "oni-source-control-repos-" },
       ),
     ),
   );

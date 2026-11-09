@@ -21,7 +21,7 @@ const policy = (limits?: ManagedPolicyDocument["limits"]) => ({
   },
 });
 
-const desktopAndLocal = policy({ clients: ["desktop", "local-browser"] });
+const desktopAndLocal = policy({ clients: ["desktop", "local"] });
 
 it.effect("refuses to listen on a non-loopback host when remote clients are not allowed", () =>
   Effect.gen(function* () {
@@ -44,7 +44,7 @@ it.effect("binds only the loopback address it approved when remote clients are n
       policy: { readonly document: ManagedPolicyDocument | undefined } = desktopAndLocal,
     ) =>
       ManagedLimits.checkServerReachability(policy, {
-        authPolicy: EnvironmentAuthPolicy.resolveServerAuthPolicy({ mode: "web", host }),
+        authPolicy: EnvironmentAuthPolicy.resolveServerAuthPolicy({ mode: "standalone", host }),
         host,
         tailscaleServeEnabled: false,
       });
@@ -76,7 +76,7 @@ it.effect("binds only the loopback address it approved when remote clients are n
 it.effect("refuses Tailscale Serve when remote clients are not allowed", () =>
   Effect.gen(function* () {
     const error = yield* ManagedLimits.checkServerReachability(desktopAndLocal, {
-      authPolicy: "loopback-browser",
+      authPolicy: "loopback",
       host: undefined,
       tailscaleServeEnabled: true,
     }).pipe(Effect.flip);
@@ -87,11 +87,14 @@ it.effect("refuses Tailscale Serve when remote clients are not allowed", () =>
 it.effect("refuses an auth policy the clients list leaves out", () =>
   Effect.gen(function* () {
     const error = yield* ManagedLimits.checkServerReachability(policy({ clients: ["desktop"] }), {
-      authPolicy: "loopback-browser",
+      authPolicy: "loopback",
       host: undefined,
       tailscaleServeEnabled: false,
     }).pipe(Effect.flip);
-    assert.equal(error.message, "Example Corp's policy does not allow browsers on this machine.");
+    assert.equal(
+      error.message,
+      "Example Corp's policy does not allow a server started from the CLI on this machine.",
+    );
   }),
 );
 

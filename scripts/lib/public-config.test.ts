@@ -19,17 +19,16 @@ describe("loadRepoEnv", () => {
     const repoRoot = makeTemporaryDirectory();
     NodeFS.writeFileSync(
       NodePath.join(repoRoot, ".env"),
-      "ONICODE_DEV_AUTH_TOKEN=root\nONICODE_ONLY_ROOT=root\n",
+      "ONICODE_SHARED_VALUE=root\nONICODE_ONLY_ROOT=root\n",
     );
-    NodeFS.writeFileSync(NodePath.join(repoRoot, ".env.local"), "ONICODE_DEV_AUTH_TOKEN=local\n");
+    NodeFS.writeFileSync(NodePath.join(repoRoot, ".env.local"), "ONICODE_SHARED_VALUE=local\n");
 
     expect(loadRepoEnv({ baseEnv: {}, repoRoot })).toMatchObject({
-      ONICODE_DEV_AUTH_TOKEN: "local",
+      ONICODE_SHARED_VALUE: "local",
       ONICODE_ONLY_ROOT: "root",
     });
     expect(
-      loadRepoEnv({ baseEnv: { ONICODE_DEV_AUTH_TOKEN: "process" }, repoRoot })
-        .ONICODE_DEV_AUTH_TOKEN,
+      loadRepoEnv({ baseEnv: { ONICODE_SHARED_VALUE: "process" }, repoRoot }).ONICODE_SHARED_VALUE,
     ).toBe("process");
   });
 });

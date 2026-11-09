@@ -44,7 +44,7 @@ const layerCliRuntime = Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, Net
 
 export const cli = Command.make("onicode", { ...sharedServerCommandFlags }).pipe(
   Command.withDescription(
-    "Run Onicode in this terminal and open it in your browser. To use it from your other devices, run `onicode up`.",
+    "Run Onicode in this terminal, add the current directory as a project, and print pairing details for the desktop and mobile apps. To use it from your other devices, run `onicode up`.",
   ),
   Command.withHandler(runDefaultServerCommand),
   Command.withSubcommands([

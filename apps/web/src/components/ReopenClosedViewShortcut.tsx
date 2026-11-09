@@ -199,8 +199,6 @@ export function ReopenClosedViewShortcut() {
         terminalOpen,
         editableFocus: false,
         modelPickerOpen: false,
-        isDesktop: true,
-        isWeb: false,
       },
     };
     // Guest browser processes miss app keydown listeners; desktop forwards the chords as menu actions.

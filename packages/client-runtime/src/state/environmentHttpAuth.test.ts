@@ -20,11 +20,7 @@ import * as Schema from "effect/Schema";
 import * as TestClock from "effect/testing/TestClock";
 import type { HttpClient } from "effect/http";
 
-import {
-  BearerConnectionTarget,
-  type PreparedConnection,
-  type PreparedHttpAuthorization,
-} from "../connection/model.ts";
+import { BearerConnectionTarget, type PreparedConnection } from "../connection/model.ts";
 import { type RemoteEnvironmentRequestError } from "../rpc/http.ts";
 import * as RpcHttp from "../rpc/http.ts";
 import * as PullRequestDiffLoader from "./pullRequestDiffHttp.ts";
@@ -61,14 +57,11 @@ const DIFF_RESULT = { patch: "diff --git a/file.ts b/file.ts", truncated: false,
 const AUTH = {
   policy: "remote-reachable",
   bootstrapMethods: ["one-time-token"],
-  sessionMethods: ["bearer-access-token"],
-  sessionCookieName: "oni_session",
 } satisfies AuthSessionState["auth"];
 const SESSION = {
   authenticated: true,
   auth: AUTH,
   scopes: ["orchestration:read", "orchestration:operate"],
-  sessionMethod: "bearer-access-token",
 } satisfies AuthSessionState;
 const UNAUTHENTICATED_SESSION = { authenticated: false, auth: AUTH } satisfies AuthSessionState;
 const SHELL = {
@@ -423,26 +416,19 @@ describe("authenticated environment HTTP requests", () => {
     }),
   );
 
-  it.effect.each([
-    { name: "cookie", authorization: null },
-    { name: "bearer", authorization: { _tag: "Bearer", token: "bearer-token" } },
-  ] satisfies ReadonlyArray<{ name: string; authorization: PreparedHttpAuthorization | null }>)(
-    "sends $name sessions' credentials as they are",
-    ({ authorization }) =>
-      Effect.gen(function* () {
-        const harness = makeHarness(() => Response.json(UNAUTHENTICATED_SESSION));
-        const result = yield* fetchEnvironmentSessionState({
-          prepared: { ...PREPARED, httpAuthorization: authorization },
-        }).pipe(Effect.provide(harness.httpLayer));
+  it.effect("sends the bearer token in a header, never as a cookie", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness(() => Response.json(UNAUTHENTICATED_SESSION));
+      const result = yield* fetchEnvironmentSessionState({
+        prepared: { ...PREPARED, httpAuthorization: { _tag: "Bearer", token: "bearer-token" } },
+      }).pipe(Effect.provide(harness.httpLayer));
 
-        expect(result).toEqual(UNAUTHENTICATED_SESSION);
-        expect(harness.calls).toHaveLength(1);
-        expect(new Headers(harness.calls[0]!.init.headers).get("authorization")).toBe(
-          authorization === null ? null : "Bearer bearer-token",
-        );
-        expect(harness.calls[0]!.init.credentials).toBe(
-          authorization === null ? "include" : undefined,
-        );
-      }),
+      expect(result).toEqual(UNAUTHENTICATED_SESSION);
+      expect(harness.calls).toHaveLength(1);
+      expect(new Headers(harness.calls[0]!.init.headers).get("authorization")).toBe(
+        "Bearer bearer-token",
+      );
+      expect(harness.calls[0]!.init.credentials).toBeUndefined();
+    }),
   );
 });

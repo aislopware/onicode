@@ -12,8 +12,6 @@ describe("environment maintenance access", () => {
       auth: {
         policy: "remote-reachable" as const,
         bootstrapMethods: [],
-        sessionMethods: [],
-        sessionCookieName: "session",
       },
       scopes: [AuthOrchestrationOperateScope],
     };
@@ -40,8 +38,6 @@ describe("environment maintenance access", () => {
             auth: {
               policy: "remote-reachable",
               bootstrapMethods: [],
-              sessionMethods: [],
-              sessionCookieName: "session",
               serverUpdateScope: "environment:maintain",
             },
             scopes: ["orchestration:operate"],

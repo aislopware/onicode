@@ -14,7 +14,6 @@ const thinClient = {
   localEnvironmentDisabled: true,
   environmentId,
   primaryEnvironmentId: null,
-  isDesktopRenderer: true,
 };
 
 describe("folderDropTarget", () => {
@@ -30,18 +29,13 @@ describe("folderDropTarget", () => {
       "local",
     ],
     [
-      "a saved loopback server on desktop",
+      "a saved loopback server",
       { ...thinClient, connection: savedServer("http://127.0.0.1:3773") },
       "local",
     ],
     [
       "a saved LAN server",
       { ...thinClient, connection: savedServer("http://192.168.1.20:3773") },
-      "remote",
-    ],
-    [
-      "a saved loopback server in a browser",
-      { ...thinClient, isDesktopRenderer: false, connection: savedServer("http://localhost:3773") },
       "remote",
     ],
     [

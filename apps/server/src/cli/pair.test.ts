@@ -35,7 +35,7 @@ import {
   type PersistedServerRuntimeState,
 } from "../serverRuntimeState.ts";
 import { resolveHostCliCommand } from "./invocation.ts";
-import { DevServerNotProxiableError, resolveTailscaleLocalTarget } from "./pair.ts";
+import { resolveTailscaleLocalTarget } from "./pair.ts";
 
 import packageJson from "../../package.json" with { type: "json" };
 import { buildPairingAppLink } from "@onicode/shared/remote";
@@ -51,23 +51,13 @@ const baseState = {
 } as const satisfies PersistedServerRuntimeState;
 
 describe("pair tailscale local target", () => {
-  it("proxies the dev web port for dev servers", () => {
-    expect(resolveTailscaleLocalTarget({ ...baseState, devUrl: "http://localhost:5733/" })).toEqual(
-      { localPort: 5_733 },
-    );
-    // tailscale serve defaults to loopback, so non-loopback dev servers need an explicit target.
-    expect(
-      resolveTailscaleLocalTarget({ ...baseState, devUrl: "http://192.168.1.10:5733/" }),
-    ).toEqual({ localPort: 5_733, localHost: "192.168.1.10" });
-    expect(
-      resolveTailscaleLocalTarget({ ...baseState, devUrl: "http://[fd7a:115c::1]:5733/" }),
-    ).toEqual({ localPort: 5_733, localHost: "[fd7a:115c::1]" });
-  });
-
-  it("rejects HTTPS dev URLs, which tailscale serve cannot proxy", () => {
-    expect(
-      resolveTailscaleLocalTarget({ ...baseState, devUrl: "https://localhost:5733/" }),
-    ).toBeInstanceOf(DevServerNotProxiableError);
+  it("proxies the server port itself, dev or not", () => {
+    expect(resolveTailscaleLocalTarget({ ...baseState, dev: true })).toEqual({ localPort: 3_773 });
+    // tailscale serve defaults to loopback, so a server bound elsewhere needs an explicit target.
+    expect(resolveTailscaleLocalTarget({ ...baseState, host: "192.168.1.10" })).toEqual({
+      localPort: 3_773,
+      localHost: "192.168.1.10",
+    });
   });
 });
 
@@ -166,7 +156,7 @@ describe("onicode pair", () => {
           yield* persistServerRuntimeState({
             path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
             state: yield* makePersistedServerRuntimeState({
-              config: { host: "::1", devUrl: undefined },
+              config: { host: "::1", dev: false },
               port: Number(new URL(origin).port),
             }),
           });
@@ -203,7 +193,7 @@ describe("onicode pair", () => {
         yield* persistServerRuntimeState({
           path: statePath,
           state: yield* makePersistedServerRuntimeState({
-            config: { host: "127.0.0.1", devUrl: undefined },
+            config: { host: "127.0.0.1", dev: false },
             port,
           }),
         });
@@ -248,7 +238,7 @@ describe("onicode pair", () => {
     ),
   );
 
-  it.effect("pairs through the recorded dev web URL for dev servers", () =>
+  it.effect("pairs dev servers through the server's own address", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
         const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-pair-dev-test-"));
@@ -257,14 +247,14 @@ describe("onicode pair", () => {
         yield* persistServerRuntimeState({
           path: statePath,
           state: yield* makePersistedServerRuntimeState({
-            config: { host: undefined, devUrl: new URL("http://localhost:5733") },
+            config: { host: "127.0.0.1", dev: true },
             port,
           }),
         });
 
         const output = yield* captureStdout(runCli(["pair", "--base-dir", baseDir]));
 
-        assert.include(output, "Pairing URL: http://localhost:5733/pair#token=");
+        assert.include(output, `Pairing URL: http://127.0.0.1:${port}/pair#token=`);
       }),
     ).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
@@ -279,13 +269,13 @@ describe("onicode pair", () => {
           JSON.stringify({
             schemaVersion: 1,
             organization: "Example Corp",
-            limits: { clients: ["desktop", "local-browser"] },
+            limits: { clients: ["desktop", "local"] },
           }),
         );
         yield* persistServerRuntimeState({
           path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
           state: yield* makePersistedServerRuntimeState({
-            config: { host: "127.0.0.1", devUrl: undefined },
+            config: { host: "127.0.0.1", dev: false },
             port: Number(new URL(origin).port),
           }),
         });
@@ -321,7 +311,7 @@ describe("onicode pair", () => {
         );
         const statePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
         const state = yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", devUrl: undefined },
+          config: { host: "127.0.0.1", dev: false },
           port: Number(new URL(origin).port),
         });
         yield* persistServerRuntimeState({
@@ -361,7 +351,7 @@ describe("onicode pair", () => {
         yield* persistServerRuntimeState({
           path: NodePath.join(sharedHome, "userdata", "server-runtime.json"),
           state: yield* makePersistedServerRuntimeState({
-            config: { host: "127.0.0.1", devUrl: undefined },
+            config: { host: "127.0.0.1", dev: false },
             port: Number(new URL(origin).port),
           }),
         });
@@ -397,7 +387,7 @@ describe("onicode pair", () => {
           yield* persistServerRuntimeState({
             path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
             state: yield* makePersistedServerRuntimeState({
-              config: { host: "127.0.0.1", devUrl: undefined },
+              config: { host: "127.0.0.1", dev: false },
               port: Number(new URL(origin).port),
             }),
           });
@@ -428,7 +418,7 @@ describe("onicode pair", () => {
         yield* persistServerRuntimeState({
           path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
           state: yield* makePersistedServerRuntimeState({
-            config: { host: "127.0.0.1", devUrl: undefined },
+            config: { host: "127.0.0.1", dev: false },
             port: Number(new URL(origin).port),
           }),
         });

@@ -3,10 +3,8 @@ import { isPrivateNetworkHost, isPublicFaviconHost } from "@onicode/shared/hostC
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 const readPreparedConnection = vi.fn();
-const env = vi.hoisted(() => ({ isElectron: false }));
 
 vi.mock("~/state/session", () => ({ readPreparedConnection }));
-vi.mock("~/env", () => env);
 
 describe("browser target resolver", () => {
   beforeEach(() => readPreparedConnection.mockReset());
@@ -41,27 +39,22 @@ describe("browser target resolver", () => {
   it("keeps localhost for servers on the desktop's own WSL or primary backend", async () => {
     // WSL NAT advertises a distro IP, but loopback-bound servers only answer on localhost.
     const { resolveDiscoveredServerUrl } = await import("./browserTargetResolver");
-    env.isElectron = true;
-    try {
-      for (const target of [
-        { _tag: "BearerConnectionTarget", connectionId: "local:wsl:Ubuntu" },
-        { _tag: "PrimaryConnectionTarget" },
-      ]) {
-        readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://172.24.66.27:3773", target });
-        expect(
-          resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3001/"),
-        ).toBe("http://localhost:3001/");
-      }
-      readPreparedConnection.mockReturnValue({
-        httpBaseUrl: "http://192.168.1.25:3773",
-        target: { _tag: "BearerConnectionTarget", connectionId: "saved:remote" },
-      });
+    for (const target of [
+      { _tag: "BearerConnectionTarget", connectionId: "local:wsl:Ubuntu" },
+      { _tag: "PrimaryConnectionTarget" },
+    ]) {
+      readPreparedConnection.mockReturnValue({ httpBaseUrl: "http://172.24.66.27:3773", target });
       expect(
         resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3001/"),
-      ).toBe("http://192.168.1.25:3001/");
-    } finally {
-      env.isElectron = false;
+      ).toBe("http://localhost:3001/");
     }
+    readPreparedConnection.mockReturnValue({
+      httpBaseUrl: "http://192.168.1.25:3773",
+      target: { _tag: "BearerConnectionTarget", connectionId: "saved:remote" },
+    });
+    expect(resolveDiscoveredServerUrl(EnvironmentId.make("environment-1"), "localhost:3001/")).toBe(
+      "http://192.168.1.25:3001/",
+    );
   });
 
   it("classifies exact private IPv4 and IPv6 boundaries", async () => {

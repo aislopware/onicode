@@ -59,7 +59,6 @@ import {
   useState,
 } from "react";
 
-import { isElectron } from "~/env";
 import type { DesktopPreviewOverlay } from "~/previewStateStore";
 import type { RightPanelSurface } from "~/rightPanelStore";
 import { cn } from "~/lib/utils";
@@ -1024,7 +1023,7 @@ function RightPanelTab(
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
   const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
-  const ownsDesktopTitleBar = isElectron && props.mode === "inline";
+  const ownsDesktopTitleBar = props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;
   const { resolvedTheme } = useTheme();
   const tabListRef = useRef<HTMLDivElement>(null);

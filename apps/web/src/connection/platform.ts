@@ -147,11 +147,6 @@ const layerWakeups = Wakeups.layer({
 export function currentClientMetadata() {
   return clientPresentationMetadata({
     appVersion: APP_VERSION,
-    identity: {
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      maxTouchPoints: navigator.maxTouchPoints,
-    },
     desktopBridge: window.desktopBridge,
   });
 }
@@ -367,7 +362,7 @@ const loadPrimaryConnectionRegistration = Effect.fn(
   "web.connectionPlatform.loadPrimaryConnectionRegistration",
 )(function* (resolved: PrimaryEnvironmentTarget) {
   const descriptor = yield* fetchRemoteEnvironmentDescriptor({
-    httpBaseUrl: resolved.target.httpBaseUrl,
+    httpBaseUrl: resolved.httpBaseUrl,
   }).pipe(
     Effect.provide(PrimaryEnvironmentHttpLayer.layer),
     Effect.mapError(mapRemoteEnvironmentError),
@@ -376,8 +371,8 @@ const loadPrimaryConnectionRegistration = Effect.fn(
     target: new PrimaryConnectionTarget({
       environmentId: descriptor.environmentId,
       label: descriptor.label,
-      httpBaseUrl: resolved.target.httpBaseUrl,
-      wsBaseUrl: resolved.target.wsBaseUrl,
+      httpBaseUrl: resolved.httpBaseUrl,
+      wsBaseUrl: resolved.wsBaseUrl,
     }),
   });
 });
@@ -597,7 +592,7 @@ const layerPlatformConnectionSource = Layer.effect(
         });
       } else if (primaryTopologyRead.target !== null) {
         const primaryTarget = primaryTopologyRead.target;
-        const signature = `primary|${primaryTarget.target.httpBaseUrl}|${primaryTarget.target.wsBaseUrl}`;
+        const signature = `primary|${primaryTarget.httpBaseUrl}|${primaryTarget.wsBaseUrl}`;
         const cached = previous.get(PRIMARY_LOCAL_ENVIRONMENT_ID);
         if (
           cached !== undefined &&

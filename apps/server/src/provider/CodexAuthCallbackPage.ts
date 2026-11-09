@@ -1,7 +1,5 @@
 import { providerAuthReturnUrl } from "@onicode/shared/providerAuthReturnUrl";
 
-export const codexAuthReturnUrl = providerAuthReturnUrl;
-
 const escapeHtml = (value: string) =>
   value.replace(
     /[&<>"']/gu,
@@ -14,7 +12,7 @@ export function codexAuthCallbackPage(
   returnUrl: string | undefined,
   nonce: string,
 ) {
-  const destination = codexAuthReturnUrl(returnUrl);
+  const destination = providerAuthReturnUrl(returnUrl);
   const title = success ? "You're signed in" : "Sign-in couldn't finish";
   const description = success
     ? destination

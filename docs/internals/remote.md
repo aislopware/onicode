@@ -69,9 +69,9 @@ revokes it; reordering does not, because the same addresses remain trusted.
 
 A [peer link](../../apps/server/src/peer/PeerLinks.ts) lets one environment's
 agents work in another. The linking environment signs in to the other's `/mcp`
-as an outside MCP client, with a pairing code from it, and keeps that session's
-token in its own secret store. The other environment needs nothing new: it
-sees one more OAuth client, lists it in Sharing & access, and revokes it there.
+through its peer-link OAuth flow, with a pairing code from it, and keeps that
+session's token in its own secret store. The other environment lists the link
+in Sharing & access with its other clients and revokes it there.
 Unlinking on the linking side only forgets the token.
 
 - **The Linked environments beta (`linkedEnvironmentsEnabled`) gates both
@@ -104,8 +104,8 @@ Unlinking on the linking side only forgets the token.
 
 **Work a link paired below full access starts stays within that link.** The
 receiving environment knows a session is a peer link because the linking side
-registers its OAuth client with the `onicode-peer-link` software id, and the
-marker is signed into the session. Threads that session launches carry it, with
+registers its OAuth client with the `onicode-peer-link` software id, the only
+one registration accepts, and the marker is signed into the session. Threads that session launches carry it, with
 the access it was paired with, as an immutable `linkOrigin`, and so do the
 subagents, forks and `create_threads` they derive. The rules live in
 [`mcp/linkOrigin.ts`](../../apps/server/src/mcp/linkOrigin.ts) and run in the

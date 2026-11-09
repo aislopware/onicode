@@ -62,8 +62,6 @@ const decodeSessionState = Schema.decodeUnknownSync(AuthSessionState);
 const legacyAuth = {
   policy: "remote-reachable",
   bootstrapMethods: ["one-time-token"],
-  sessionMethods: ["bearer-access-token"],
-  sessionCookieName: "oni_session",
 } as const;
 
 const currentSession = {

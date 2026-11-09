@@ -21,7 +21,7 @@ const PREPARED: PreparedConnection = {
   label: TARGET.label,
   httpBaseUrl: TARGET.httpBaseUrl,
   socketUrl: TARGET.wsBaseUrl,
-  httpAuthorization: null,
+  httpAuthorization: { _tag: "Bearer", token: "test-token" },
   target: TARGET,
 };
 

@@ -5,7 +5,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as LogLevel from "effect/LogLevel";
 import * as Path from "effect/Path";
-import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
 import type { OtlpEndpointSource } from "@onicode/contracts";
@@ -27,11 +26,8 @@ export const releaseChannel: ReleaseChannel =
 
 export const DEFAULT_PORT = 3773;
 
-export const RuntimeMode = Schema.Literals(["web", "desktop"]);
+export const RuntimeMode = Schema.Literals(["standalone", "desktop"]);
 export type RuntimeMode = typeof RuntimeMode.Type;
-
-export const StartupPresentation = Schema.Literals(["browser", "headless"]);
-export type StartupPresentation = typeof StartupPresentation.Type;
 
 export interface ServerDerivedPaths {
   readonly stateDir: string;
@@ -87,12 +83,8 @@ export class ServerConfig extends Context.Service<
     readonly privateNetworkOnly?: boolean | undefined;
     readonly cwd: string;
     readonly baseDir: string;
-    readonly staticDir: string | undefined;
-    readonly devUrl: URL | undefined;
-    readonly devAuthToken?: Redacted.Redacted<string> | undefined;
-    readonly devAllowedOrigins: ReadonlyArray<string>;
-    readonly noBrowser: boolean;
-    readonly startupPresentation: StartupPresentation;
+    /** Running from a checkout in development (`--dev` / `ONICODE_DEV`). */
+    readonly dev: boolean;
     readonly desktopBootstrapToken: string | undefined;
     readonly desktopBootstrapSecret?: string | undefined;
     readonly shellEnvironmentPrepared?: boolean | undefined;
@@ -124,7 +116,7 @@ export const otlpResource = (
   attributes: {
     "service.namespace": "onicode",
     "service.runtime": "oni-server",
-    "onicode.server.managed_by": config.mode === "desktop" ? "desktop" : "standalone",
+    "onicode.server.managed_by": config.mode,
     "service.instance.id": processServiceInstanceId(config.otelEnvironment.resourceAttributes),
     ...releaseResourceAttributes(releaseChannel, config.otelEnvironment.resourceAttributes),
     "host.name": config.otelEnvironment.resourceAttributes["host.name"] || hostName,
@@ -136,14 +128,11 @@ export const layer = (config: ServerConfig["Service"]) => Layer.succeed(ServerCo
 
 export const deriveServerPaths = Effect.fn(function* (
   baseDir: ServerConfig["Service"]["baseDir"],
-  devUrl: ServerConfig["Service"]["devUrl"],
+  dev: boolean,
   options: DeriveServerPathsOptions = {},
 ): Effect.fn.Return<ServerDerivedPaths, never, Path.Path> {
   const { join } = yield* Path.Path;
-  const stateDir = join(
-    baseDir,
-    devUrl !== undefined && !options.baseDirIsExplicit ? "dev" : "userdata",
-  );
+  const stateDir = join(baseDir, dev && !options.baseDirIsExplicit ? "dev" : "userdata");
   const dbPath = join(stateDir, "statev2.sqlite");
   const attachmentsDir = join(stateDir, "attachments");
   const logsDir = join(stateDir, "logs");
@@ -212,7 +201,6 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
   cwd: string,
   baseDirOrPrefix: string | { readonly prefix: string },
 ) {
-  const devUrl = undefined;
   const fs = yield* FileSystem.FileSystem;
   const baseDir =
     typeof baseDirOrPrefix === "string"
@@ -220,7 +208,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
       : // macOS temp dirs live under the /var -> /private/var symlink; storage cleanup's
         // symlink guards compare resolved paths, so generated test dirs must be real paths.
         yield* fs.realPath(yield* fs.makeTempDirectoryScoped({ prefix: baseDirOrPrefix.prefix }));
-  const derivedPaths = yield* deriveServerPaths(baseDir, devUrl);
+  const derivedPaths = yield* deriveServerPaths(baseDir, false);
   yield* ensureServerDirectories(derivedPaths);
 
   return ServerConfig.of({
@@ -240,7 +228,7 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     cwd,
     baseDir,
     ...derivedPaths,
-    mode: "web",
+    mode: "standalone",
     autoBootstrapProjectFromCwd: false,
     logWebSocketEvents: false,
     tailscaleServeEnabled: false,
@@ -253,34 +241,9 @@ const makeTest = Effect.fn("ServerConfig.makeTest")(function* (
     desktopBrowserFd: undefined,
     desktopBrowserControlFd: undefined,
     resourceMonitorPath: undefined,
-    staticDir: undefined,
-    devUrl,
-    devAllowedOrigins: [],
-    noBrowser: false,
-    startupPresentation: "browser",
+    dev: false,
   });
 });
 
 export const layerTest = (cwd: string, baseDirOrPrefix: string | { readonly prefix: string }) =>
   Layer.effect(ServerConfig, makeTest(cwd, baseDirOrPrefix));
-
-export const resolveStaticDir = Effect.fn(function* () {
-  const { join, resolve } = yield* Path.Path;
-  const { exists } = yield* FileSystem.FileSystem;
-  const bundledClient = resolve(join(import.meta.dirname, "client"));
-  const bundledStat = yield* exists(join(bundledClient, "index.html")).pipe(
-    Effect.orElseSucceed(() => false),
-  );
-  if (bundledStat) {
-    return bundledClient;
-  }
-
-  const monorepoClient = resolve(join(import.meta.dirname, "../../web/dist"));
-  const monorepoStat = yield* exists(join(monorepoClient, "index.html")).pipe(
-    Effect.orElseSucceed(() => false),
-  );
-  if (monorepoStat) {
-    return monorepoClient;
-  }
-  return undefined;
-});

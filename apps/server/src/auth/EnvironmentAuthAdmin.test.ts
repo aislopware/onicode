@@ -49,7 +49,7 @@ const layerEnvironmentAuth = (
 const desktopAndLocalOnly: ManagedPolicyDocument = {
   schemaVersion: 1,
   organization: "Example Corp",
-  limits: { clients: ["desktop", "local-browser"] },
+  limits: { clients: ["desktop", "local"] },
 };
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
@@ -83,7 +83,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
             client: { deviceType: "unknown", ipAddress },
           });
         const startupPhone = yield* startup("192.168.1.20");
-        const startupBrowser = yield* startup("127.0.0.1");
+        const startupLocal = yield* startup("127.0.0.1");
         yield* environmentAuth.createPairingLink({ subject: "one-time-token" });
 
         yield* EnvironmentAuth.make.pipe(
@@ -95,7 +95,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const remaining = (yield* sessions.listActive()).map((session) => session.sessionId);
         assert.notInclude(remaining, phone.sessionId);
         assert.notInclude(remaining, startupPhone.sessionId);
-        assert.include(remaining, startupBrowser.sessionId);
+        assert.include(remaining, startupLocal.sessionId);
         assert.include(remaining, bot.sessionId);
         assert.lengthOf(yield* pairingLinks.listActive(), 0);
       }).pipe(Effect.provide(layerEnvironmentAuth())),
@@ -154,13 +154,11 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         const revoked = yield* environmentAuth.revokeSession(issued.sessionId);
         const listedAfterRevoke = yield* environmentAuth.listSessions();
 
-        expect(issued.method).toBe("bearer-access-token");
         expect(issued.scopes).toEqual(AuthStandardClientScopes);
         expect(issued.client.deviceType).toBe("bot");
         expect(issued.client.label).toBe("deploy-bot");
         expect(verified.sessionId).toBe(issued.sessionId);
         expect(verified.scopes).toEqual(AuthStandardClientScopes);
-        expect(verified.method).toBe("bearer-access-token");
         expect(listedBeforeRevoke).toHaveLength(1);
         expect(listedBeforeRevoke[0]?.sessionId).toBe(issued.sessionId);
         expect("token" in (listedBeforeRevoke[0] ?? {})).toBe(false);

@@ -58,7 +58,7 @@ export const BackgroundScope = Schema.Union([
 ]);
 export type BackgroundScope = typeof BackgroundScope.Type;
 
-export const ClientKind = Schema.Literals(["web", "desktop-renderer", "mobile", "unknown"]);
+export const ClientKind = Schema.Literals(["desktop-renderer", "mobile", "unknown"]);
 export type ClientKind = typeof ClientKind.Type;
 
 export const ClientActivityClientId = TrimmedNonEmptyString.check(Schema.isMaxLength(128));

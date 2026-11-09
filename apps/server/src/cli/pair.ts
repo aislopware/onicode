@@ -58,9 +58,6 @@ const TAILSCALE_PROBE_RETRY_DELAY = Duration.seconds(1);
 
 export type PairStateVariant = "userdata" | "dev";
 
-// Only devUrl's presence selects dev state; its value is unused.
-const DEV_VARIANT_PLACEHOLDER_URL = new URL("http://localhost");
-
 export class NoRunningServerError extends Schema.TaggedError<NoRunningServerError>()(
   "NoRunningServerError",
   {
@@ -148,36 +145,13 @@ export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupied
 }
 
 const resolveDirectPairingBaseUrl = (state: PersistedServerRuntimeState): string =>
-  state.devUrl ??
   resolveHeadlessConnectionString(state.host, state.port, {
     privateNetworkOnly: state.privateNetworkOnly,
   });
 
-export class DevServerNotProxiableError extends Schema.TaggedError<DevServerNotProxiableError>()(
-  "DevServerNotProxiableError",
-  { devUrl: Schema.String },
-) {
-  override get message(): string {
-    return `Tailscale Serve can only proxy plain-HTTP local targets, and this dev server runs at ${this.devUrl}. Pair without --tailscale instead.`;
-  }
-}
-
-const isDevServerNotProxiableError = Schema.is(DevServerNotProxiableError);
-
-/** Publish the single-origin web dev port, which proxies the backend. Serve requires HTTP targets. */
 export const resolveTailscaleLocalTarget = (
   state: PersistedServerRuntimeState,
-): { readonly localPort: number; readonly localHost?: string } | DevServerNotProxiableError => {
-  if (state.devUrl !== undefined) {
-    const devUrl = new URL(state.devUrl);
-    if (devUrl.protocol !== "http:") {
-      return new DevServerNotProxiableError({ devUrl: state.devUrl });
-    }
-    const localPort = devUrl.port.length > 0 ? Number.parseInt(devUrl.port, 10) : 80;
-    return isLoopbackHost(devUrl.hostname)
-      ? { localPort }
-      : { localPort, localHost: devUrl.hostname };
-  }
+): { readonly localPort: number; readonly localHost?: string } => {
   if (state.host !== undefined && !isWildcardHost(state.host)) {
     return { localPort: state.port, localHost: formatHostForUrl(state.host) };
   }
@@ -268,11 +242,7 @@ const discoverPairTarget = Effect.fn("pair.discoverPairTarget")(function* (
   const checkedStatePaths: Array<string> = [];
   for (const baseDir of new Set(bases)) {
     for (const variant of ["userdata", "dev"] as const) {
-      const derivedPaths = yield* ServerConfig.deriveServerPaths(
-        baseDir,
-        variant === "dev" ? DEV_VARIANT_PLACEHOLDER_URL : undefined,
-        {},
-      );
+      const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, variant === "dev", {});
       const statePath = derivedPaths.serverRuntimeStatePath;
       checkedStatePaths.push(statePath);
       const state = yield* readPersistedServerRuntimeState(statePath);
@@ -309,13 +279,7 @@ const makePairServerConfig = Effect.fn(function* (input: {
   readonly logLevel: ServerConfig.ServerConfig["Service"]["logLevel"];
 }) {
   const { baseDir, variant, state } = input.target;
-  // Worktree dev servers can use `userdata`; only the recorded devUrl marks a dev server.
-  const devUrl = state.devUrl !== undefined ? new URL(state.devUrl) : undefined;
-  const derivedPaths = yield* ServerConfig.deriveServerPaths(
-    baseDir,
-    variant === "dev" ? DEV_VARIANT_PLACEHOLDER_URL : undefined,
-    {},
-  );
+  const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, variant === "dev", {});
   return ServerConfig.make({
     logLevel: input.logLevel,
     traceMinLevel: "Info",
@@ -330,17 +294,14 @@ const makePairServerConfig = Effect.fn(function* (input: {
     otlpMetricsExport: DEFAULT_SIGNAL_EXPORT,
     otlpLogsExport: DEFAULT_SIGNAL_EXPORT,
     otelEnvironment: OtelEnvironment.none,
-    mode: "web",
+    mode: "standalone",
     port: state.port,
     host: state.host,
     cwd: process.cwd(),
     baseDir,
     ...derivedPaths,
-    staticDir: undefined,
-    devUrl,
-    devAllowedOrigins: [],
-    noBrowser: true,
-    startupPresentation: "headless",
+    // Worktree dev servers can use `userdata`; only the recorded flag marks a dev server.
+    dev: state.dev === true,
     desktopBootstrapToken: undefined,
     desktopTelemetryFd: undefined,
     desktopBrowserFd: undefined,
@@ -391,19 +352,13 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
       if (existing.descriptor.environmentId !== input.target.descriptor.environmentId) {
         return yield* new ServesOtherEnvironmentError({ servePort: input.servePort });
       }
-      // A dev backend also answers /.well-known, but /pair needs the web origin.
-      if (input.target.state.devUrl === undefined) {
-        return { baseUrl, notes };
-      }
+      return { baseUrl, notes };
     }
     if (existing._tag === "not-a-oni-server") {
       return yield* new ServePortOccupiedError({ servePort: input.servePort });
     }
 
     const localTarget = resolveTailscaleLocalTarget(input.target.state);
-    if (isDevServerNotProxiableError(localTarget)) {
-      return yield* localTarget;
-    }
     yield* ensureTailscaleServe({
       localPort: localTarget.localPort,
       servePort: input.servePort,
@@ -535,11 +490,6 @@ export const pairCommand = Command.make("pair", {
         } else if (target.state.privateNetworkOnly) {
           notes.push(
             "This URL works only from this machine's local network. From elsewhere, re-run with --tailscale.",
-          );
-        }
-        if (target.variant === "dev" && target.state.devUrl === undefined) {
-          notes.push(
-            "This dev server did not record its web URL; restart it so pairing can go through the web origin.",
           );
         }
       }

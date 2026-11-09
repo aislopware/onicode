@@ -34,7 +34,7 @@ const layerEmptySecretStore = Layer.succeed(
 );
 
 const makeServerConfig = Effect.fn(function* (baseDir: string) {
-  const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, undefined);
+  const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, false);
 
   return {
     ...derivedPaths,
@@ -53,7 +53,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     otelEnvironment: OtelEnvironment.none,
     cwd: process.cwd(),
     baseDir,
-    mode: "web",
+    mode: "standalone",
     autoBootstrapProjectFromCwd: false,
     logWebSocketEvents: false,
     tailscaleServeEnabled: false,
@@ -61,11 +61,7 @@ const makeServerConfig = Effect.fn(function* (baseDir: string) {
     port: 0,
     host: undefined,
     desktopBootstrapToken: undefined,
-    staticDir: undefined,
-    devUrl: undefined,
-    devAllowedOrigins: [],
-    noBrowser: false,
-    startupPresentation: "browser",
+    dev: false,
   } satisfies ServerConfig.ServerConfig["Service"];
 });
 
@@ -86,7 +82,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
       yield* fs.symlink(entry, `${prefix}/bin/onicode`);
       const config = yield* makeServerConfig(baseDir);
       yield* fs.makeDirectory(config.stateDir, { recursive: true });
-      for (const mode of ["web", "desktop"] as const) {
+      for (const mode of ["standalone", "desktop"] as const) {
         const descriptor = yield* Effect.gen(function* () {
           const environment = yield* ServerEnvironment.ServerEnvironment;
           return yield* environment.getDescriptor;
@@ -103,10 +99,10 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("ServerEnvironmen
           Effect.provideService(HostProcess.Environment, {}),
         );
         expect(descriptor.capabilities.serverInstallation).toEqual(
-          mode === "web" ? { kind: "npm-global", prefix } : undefined,
+          mode === "standalone" ? { kind: "npm-global", prefix } : undefined,
         );
         expect(descriptor.capabilities.serverSelfUpdate).toBe(
-          mode === "web" ? undefined : "desktop-managed",
+          mode === "standalone" ? undefined : "desktop-managed",
         );
         expect(descriptor.capabilities).toMatchObject({
           settledWorktreeCleanup: true,

@@ -51,7 +51,6 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
             ? displayUrl.replace(/^https:/, "wss:")
             : displayUrl.replace(/^http:/, "ws:")
           : new URL(socketUrl).origin;
-      const authorization = prepared?.httpAuthorization ?? null;
 
       previousEntry = presentation.entry;
       previousPrepared = prepared;
@@ -62,7 +61,7 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
         displayUrl,
         httpBaseUrl,
         wsBaseUrl,
-        bearerToken: authorization?._tag === "Bearer" ? authorization.token : null,
+        bearerToken: prepared?.httpAuthorization.token ?? null,
       };
       return previous;
     }).pipe(Atom.withLabel(`mobile:saved-connection:${environmentId}`));

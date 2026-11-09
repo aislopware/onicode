@@ -24,7 +24,7 @@ describe("command palette shortcuts", () => {
   it("stay inert on routes without the palette", async () => {
     setup();
     using _platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("Linux x86_64");
-    await using screen = await render(null, { router: "/pair" });
+    await using screen = await render(null, { router: "/welcome" });
     using commands = new DisposableStack();
     commands.defer(
       installCommandPaletteCommands(screen.router!, { keybindings: () => keybindings }),
@@ -55,7 +55,7 @@ describe("command palette shortcuts", () => {
 describe("openCommandPalette", () => {
   it("drops a request made while no palette is mounted", async () => {
     setup();
-    await using screen = await render(null, { router: "/pair" });
+    await using screen = await render(null, { router: "/welcome" });
 
     openCommandPalette({ open: "new-thread-in" });
     await screen.rerender(<MountedPalette />);

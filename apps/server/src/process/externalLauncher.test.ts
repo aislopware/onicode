@@ -95,50 +95,43 @@ const layerTest = (input: {
   );
 };
 
-it.effect.skipIf(windowsHost)(
-  "launched browsers and editors do not inherit ELECTRON_RUN_AS_NODE",
-  () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-editors-" });
-      const codePath = path.join(binDir, "code");
-      yield* fileSystem.writeFileString(codePath, "#!/bin/sh\n");
-      yield* fileSystem.chmod(codePath, 0o755);
+it.effect.skipIf(windowsHost)("launched editors do not inherit ELECTRON_RUN_AS_NODE", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const binDir = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-editors-" });
+    const codePath = path.join(binDir, "code");
+    yield* fileSystem.writeFileString(codePath, "#!/bin/sh\n");
+    yield* fileSystem.chmod(codePath, 0o755);
 
-      const spawned: ChildProcess.StandardCommand[] = [];
-      yield* Effect.gen(function* () {
-        const launcher = yield* ExternalLauncher.ExternalLauncher;
-        yield* launcher.launchBrowser("https://example.com");
-        yield* launcher.launchEditor({ editor: "vscode", cwd: "/workspace" });
-      }).pipe(
-        Effect.provide(
-          layerTest({
-            platform: "linux",
-            env: { PATH: binDir, DISPLAY: ":0" },
-            onSpawn: (command) => spawned.push(command),
-          }),
-        ),
-        Effect.provideService(HostProcess.Environment, {
-          PATH: binDir,
-          DISPLAY: ":0",
-          ELECTRON_RUN_AS_NODE: "1",
-        }),
-      );
-
-      assert.deepEqual(
-        spawned.map((command) => ({
-          command: command.command,
-          env: command.options.env,
-          extendEnv: command.options.extendEnv,
-        })),
-        ["xdg-open", "code"].map((command) => ({
-          command,
+    const spawned: ChildProcess.StandardCommand[] = [];
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      yield* launcher.launchEditor({ editor: "vscode", cwd: "/workspace" });
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          platform: "linux",
           env: { PATH: binDir, DISPLAY: ":0" },
-          extendEnv: false,
-        })),
-      );
-    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+          onSpawn: (command) => spawned.push(command),
+        }),
+      ),
+      Effect.provideService(HostProcess.Environment, {
+        PATH: binDir,
+        DISPLAY: ":0",
+        ELECTRON_RUN_AS_NODE: "1",
+      }),
+    );
+
+    assert.deepEqual(
+      spawned.map((command) => ({
+        command: command.command,
+        env: command.options.env,
+        extendEnv: command.options.extendEnv,
+      })),
+      [{ command: "code", env: { PATH: binDir, DISPLAY: ":0" }, extendEnv: false }],
+    );
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 // Windows drive letters cannot resolve the POSIX editor stub.
@@ -159,7 +152,6 @@ it.effect.skipIf(windowsHost)(
           yield* Effect.gen(function* () {
             const launcher = yield* ExternalLauncher.ExternalLauncher;
             yield* launcher.launchEditor({ editor: "vscodium", cwd: "/workspace" });
-            yield* launcher.launchBrowser("https://example.com");
           }).pipe(
             Effect.provide(
               layerTest({
@@ -172,10 +164,6 @@ it.effect.skipIf(windowsHost)(
             ),
             Effect.provideService(HostProcess.Environment, { PATH: binDir }),
           );
-          // Only editors borrow the session display; a browser must not open on that screen.
-          assert.deepEqual(spawned.find((command) => command.command === "xdg-open")?.options.env, {
-            PATH: binDir,
-          });
           return spawned.find((command) => command.command === "codium")?.options.env;
         });
 

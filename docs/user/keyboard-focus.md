@@ -12,17 +12,15 @@ becomes ready. Opening or switching to a terminal explicitly still focuses it.
 
 ## Move between workspace areas
 
-On web and desktop, press `F6` or `Shift+F6` to move between the Threads sidebar,
+On desktop, press `F6` or `Shift+F6` to move between the Threads sidebar,
 conversation, message input, and visible panels. Navigation wraps around and restores
 the last focused control in each area. Pull Requests has a page content area. In Settings,
 `F6` moves between the section list and the open section. Hidden areas are skipped. Other
 dialogs and form popups retain focus; a thread context menu closes when an area command
 moves focus away.
 
-In a browser, plain `F6` may move to the browser's own toolbar. Use `mod+F6` and
-`mod+Shift+F6` instead (`mod` is Command on macOS and Ctrl elsewhere). **Focus Next
-Workspace Area** and **Focus Previous Workspace Area** are also in the command palette and
-can be remapped in Settings > Keybindings.
+**Focus Next Workspace Area** and **Focus Previous Workspace Area** are also in the command
+palette and can be remapped in Settings > Keybindings.
 
 ## Browse threads
 

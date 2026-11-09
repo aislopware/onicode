@@ -1,4 +1,4 @@
-import { isElectron, isSecretsFeatureEnabled } from "~/env";
+import { isSecretsFeatureEnabled } from "~/env";
 import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";
 import { STATIC_KEYBINDING_COMMANDS, type KeybindingCommand } from "@onicode/contracts";
 import type { EnvironmentId } from "@onicode/contracts";
@@ -54,7 +54,6 @@ export interface SettingsSearchItem {
   readonly targetId?: string;
   readonly searchTerms?: ReadonlyArray<string>;
   readonly scope?: SettingsSearchScope;
-  readonly desktopOnly?: boolean;
   readonly macOnly?: boolean;
   readonly windowsOnly?: boolean;
   readonly secretsFeatureOnly?: boolean;
@@ -803,7 +802,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Quit shortcut",
     to: "/settings/general",
     searchTerms: ["confirmation desktop app exit direct hold double click press twice"],
-    desktopOnly: true,
   },
   {
     id: "text-generation-model",
@@ -830,7 +828,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "onicode command",
     to: "/settings/about",
     searchTerms: ["cli terminal shell path install command line"],
-    desktopOnly: true,
   },
   {
     id: "welcome-page",
@@ -1169,7 +1166,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Local environment",
     to: "/settings/connections",
     searchTerms: ["turn off on disable enable local server agents remote only restart"],
-    desktopOnly: true,
   },
   {
     id: "network-access",
@@ -1185,7 +1181,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     to: "/settings/access",
     targetId: "connections-environment",
     searchTerms: ["serve magicdns endpoint remote secure network"],
-    desktopOnly: true,
     localBackendManagementOnly: true,
   },
   {
@@ -1195,7 +1190,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [
       "windows subsystem linux distro second server projects stop windows backend restart wsl only",
     ],
-    desktopOnly: true,
     windowsOnly: true,
     localBackendManagementOnly: true,
     wslAvailableOnly: true,
@@ -1424,7 +1418,6 @@ export function settingsForThisPlatform(
   const platform = typeof navigator === "undefined" ? "" : navigator.platform;
   return items.filter(
     (item) =>
-      (isElectron || item.desktopOnly !== true) &&
       (!item.secretsFeatureOnly || isSecretsFeatureEnabled) &&
       (!item.macOnly || isMacPlatform(platform)) &&
       (!item.windowsOnly || isWindowsPlatform(platform)),

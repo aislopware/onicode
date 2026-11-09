@@ -1,7 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, PreviewRuntime, PreviewSessionSnapshot } from "@onicode/contracts";
 
-import { isElectron } from "~/env";
 import { isPreviewSupportedInRuntime } from "~/previewStateStore";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { primaryEnvironmentIdAtom } from "~/state/primaryEnvironment";
@@ -47,7 +46,6 @@ export function rendersServerTabNatively(
   snapshot: Pick<PreviewSessionSnapshot, "runtime" | "headless"> | null | undefined,
 ): boolean {
   return (
-    isElectron &&
     snapshot?.runtime === "server" &&
     !snapshot.headless &&
     primaryEnvironmentId !== null &&

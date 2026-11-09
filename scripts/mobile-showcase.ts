@@ -629,7 +629,6 @@ function startShowcaseServer(
       String(port),
       "--base-dir",
       baseDir,
-      "--no-browser",
       "--log-level",
       "error",
       workspaceRoot,

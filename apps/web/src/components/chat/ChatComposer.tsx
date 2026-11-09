@@ -248,7 +248,6 @@ import {
 } from "@onicode/client-runtime/providerSkills";
 import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Kbd } from "../ui/kbd";
-import { useSoftwareKeyboardOpen } from "../../hooks/useSoftwareKeyboardOpen";
 import { useStableCallback } from "../../hooks/useStableCallback";
 import { usePanelAnimationSettings } from "../../panelAnimations";
 import { readEnvironmentScope, readPreparedConnection } from "../../state/session";
@@ -976,7 +975,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const [isComposerPrimaryActionsCompact, setIsComposerPrimaryActionsCompact] = useState(false);
   const [isComposerModelPickerOpen, setIsComposerModelPickerOpen] = useState(false);
   const isMobileViewport = useMediaQuery("max-sm");
-  const isSoftwareKeyboardOpen = useSoftwareKeyboardOpen();
   const [isComposerFocused, setIsComposerFocused] = useState(false);
   const [composerSubmissionError, setComposerSubmissionError] = useState<string | null>(null);
   const [providerInputSubmissionError, setProviderInputSubmissionError] = useState<string | null>(
@@ -2045,36 +2043,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setComposerHighlightedItemId(nextItem?.id ?? null);
   };
 
-  const blurMobileComposerAfterSend = () => {
-    if (!isSoftwareKeyboardOpen) return;
-    if (composerBlurFrameRef.current !== null) {
-      window.cancelAnimationFrame(composerBlurFrameRef.current);
-      composerBlurFrameRef.current = null;
-    }
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) {
-      activeElement.blur();
-    }
-    setIsComposerFocused(false);
-  };
-
-  const shouldBlurMobileComposerOnSubmit = () => {
-    if (!isSoftwareKeyboardOpen) return false;
-    if (
-      isSendBusy ||
-      isSendDisabled ||
-      noProviderAvailable ||
-      environmentUnavailable !== null ||
-      phase === "running"
-    ) {
-      return false;
-    }
-    if (activePendingProgress) {
-      return activePendingProgress.isLastQuestion && Boolean(activePendingResolvedAnswers);
-    }
-    return composerSendState.hasSendableContent;
-  };
-
   const submitComposerRef = useRef<
     (dispatchMode?: ComposerDispatchMode, submissionIntent?: ComposerSubmissionIntent) => void
   >(() => {});
@@ -2140,9 +2108,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setComposerSubmissionError(submission.validationMessage);
     if (!submission.didDispatch) return;
     onTypingGuardSend();
-    if (shouldBlurMobileComposerOnSubmit()) {
-      blurMobileComposerAfterSend();
-    }
   };
   const submitComposerStable = useStableCallback(submitComposer);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes the committed submission handler to the asynchronous dictation completion
@@ -2156,7 +2121,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       const intent = composerSubmissionIntentForKey({
         event,
         keybindings,
-        isSoftwareKeyboardOpen,
         isDraftThread: routeKind === "draft",
         isRunning: phase === "running",
         sendShortcut: settings.sendShortcut,
@@ -2279,7 +2243,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       phase,
       isCompacting,
       followUpBehavior,
-      isSoftwareKeyboardOpen,
       isLiteralPendingAnswer,
       pendingUserInputs,
       promptHistoryEntries,
@@ -2588,7 +2551,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       environmentId,
       primaryEnvironmentId,
       connection: readPreparedConnection(environmentId),
-      isDesktopRenderer: window.desktopBridge !== undefined,
     });
     if (target === "remote") {
       toastManager.add({

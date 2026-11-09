@@ -20,7 +20,7 @@ it.effect("reports the version the running server recorded, not the CLI's", () =
       "server-runtime.json",
     );
     const state = yield* makePersistedServerRuntimeState({
-      config: { host: undefined, devUrl: undefined },
+      config: { host: undefined, dev: false },
       port: 3773,
     });
     yield* persistServerRuntimeState({ path: statePath, state });

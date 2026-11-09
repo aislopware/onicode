@@ -68,7 +68,10 @@ export function diffFileTreeModel(paths: ReadonlyArray<string>) {
     paths: modelBySelectionPath.size === 0 ? paths : modelPaths,
     selectionPath: (modelPath: string) => selectionByModelPath.get(modelPath) ?? modelPath,
     modelPath: (path: string) => modelBySelectionPath.get(path) ?? path,
-    icons: modelBySelectionPath.size === 0 ? ONICODE_PIERRE_ICONS : { ...ONICODE_PIERRE_ICONS, byFileName },
+    icons:
+      modelBySelectionPath.size === 0
+        ? ONICODE_PIERRE_ICONS
+        : { ...ONICODE_PIERRE_ICONS, byFileName },
   };
 }
 

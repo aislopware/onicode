@@ -49,8 +49,6 @@ const grant = (allowed: boolean): AuthSessionState => ({
   auth: {
     policy: "remote-reachable",
     bootstrapMethods: [],
-    sessionMethods: [],
-    sessionCookieName: "test",
   },
   scopes: allowed ? [AuthOrchestrationOperateScope] : [],
   permissions: allowed ? [AuthOrchestrationOperateScope] : [],

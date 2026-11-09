@@ -50,8 +50,6 @@ const SECRET_REQUEST_FAILURE_MESSAGES = {
     "That secret was already delivered or does not exist. Ask the user again with request_secret.",
   ref_expired: "That secret expired. Ask the user again with request_secret.",
   consume_failed: "Could not deliver that secret. Try again.",
-  not_a_file_request:
-    "The user did not save this secret for shell use. Ask again with request_secret.",
 } as const;
 
 export const SecretRequestFailureReason = Schema.Literals(

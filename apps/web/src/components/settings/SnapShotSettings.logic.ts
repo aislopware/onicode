@@ -107,10 +107,7 @@ export function snapShotAccessibilityUnavailableMessage(
 }
 
 export function snapShotUnavailableMessage(hasBridge: boolean): string | undefined {
-  if (hasBridge) return undefined;
-  return typeof window !== "undefined" && window.desktopBridge
-    ? "Update the desktop app to use snapshots."
-    : "Only available in the desktop app.";
+  return hasBridge ? undefined : "Update the desktop app to use snapshots.";
 }
 
 export function snapShotSoundPatch(sound: SnapShotSoundSelection): ClientSettingsPatch {

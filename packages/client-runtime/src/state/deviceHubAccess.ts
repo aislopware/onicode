@@ -25,9 +25,6 @@ export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDevi
   }): Effect.fn.Return<DeviceHubAccess, RemoteEnvironmentRequestError, HttpClient.HttpClient> {
     const httpBase = environmentEndpointUrl(input.prepared.httpBaseUrl, input.hubBasePath);
     const wsBase = httpBase.replace(/^http/, "ws");
-    if (input.prepared.httpAuthorization === null) {
-      return { httpBase, wsBase, query: {}, credentials: true };
-    }
     const ticket = yield* executeAuthenticatedEnvironmentHttpRequest({
       prepared: input.prepared,
       group: "auth",
@@ -41,7 +38,6 @@ export const resolveDeviceHubAccess = Effect.fn("clientRuntime.state.resolveDevi
       httpBase,
       wsBase,
       query: { wsTicket: Redacted.value(ticket.ticket) },
-      credentials: false,
     };
   },
 );

@@ -7,7 +7,7 @@ line can be shortened at the start. New terminal output is not truncated.
 These limits apply when you reconnect and when Onicode restores saved terminal
 history. A client can show less scrollback than the server keeps.
 
-On web and desktop, use Shift+PageUp and Shift+PageDown to read scrollback
+On desktop, use Shift+PageUp and Shift+PageDown to read scrollback
 without leaving terminal input. Ctrl+Shift+Home and Ctrl+Shift+End jump to the
 start and latest output; use Cmd instead of Ctrl on macOS. Full-screen terminal
 programs keep these navigation keys.

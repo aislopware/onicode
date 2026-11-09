@@ -33,7 +33,6 @@ type BootResult = {
   themeSelected: string | undefined;
   backgroundColor: string;
   bootVariables: Record<string, string>;
-  metaContent: string | null;
 };
 
 function runBootScript(options: {
@@ -43,12 +42,6 @@ function runBootScript(options: {
 }): BootResult {
   const classes = new Set<string>();
   const bootVariables: Record<string, string> = {};
-  const meta = {
-    content: null as string | null,
-    setAttribute(_name: string, value: string) {
-      this.content = value;
-    },
-  };
   const documentElement = {
     dataset: {} as Record<string, string | undefined>,
     classList: {
@@ -68,10 +61,7 @@ function runBootScript(options: {
       },
     },
   };
-  const fakeDocument = {
-    documentElement,
-    querySelectorAll: (selector: string) => (selector === 'meta[name="theme-color"]' ? [meta] : []),
-  };
+  const fakeDocument = { documentElement };
   const fakeWindow = {
     localStorage: {
       getItem: (key: string): string | null => {
@@ -95,7 +85,6 @@ function runBootScript(options: {
     themeSelected: documentElement.dataset.themeSelected,
     backgroundColor: documentElement.style.backgroundColor,
     bootVariables,
-    metaContent: meta.content,
   };
 }
 
@@ -280,7 +269,6 @@ describe("index.html boot script", () => {
     expect(boot.bootVariables["--boot-foreground"]).toBe(colors.text);
     expect(boot.bootVariables["--boot-accent"]).toBe(colors.accent);
     expect(boot.backgroundColor).toBe(colors.chrome);
-    expect(boot.metaContent).toBe(colors.chrome);
   });
 
   it("keeps every built-in boot splash in sync with the real palettes", () => {
@@ -302,7 +290,6 @@ describe("index.html boot script", () => {
         expect(boot.bootVariables["--boot-foreground"]).toBe(colors!.text);
         expect(boot.bootVariables["--boot-accent"]).toBe(colors!.accent);
         expect(boot.backgroundColor).toBe(colors!.chrome);
-        expect(boot.metaContent).toBe(colors!.chrome);
       }
     }
   });
@@ -368,7 +355,6 @@ describe("index.html boot script", () => {
     expect(boot.bootVariables["--boot-foreground"]).toBe("#fffaff");
     expect(boot.bootVariables["--boot-accent"]).toBe(getDefaultThemeColors("dark").accent);
     expect(boot.backgroundColor).toBe(DEFAULT_DARK_CHROME);
-    expect(boot.metaContent).toBe(DEFAULT_DARK_CHROME);
   });
 
   it("follows the OS appearance when storage is unavailable", () => {

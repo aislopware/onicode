@@ -1,6 +1,6 @@
 import { scopedThreadKey, scopeThreadRef } from "@onicode/client-runtime/environment";
 import type { ClientSettings } from "@onicode/contracts/settings";
-import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
+import { createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 
 import { applyAppearanceContrast } from "./appearanceContrast";
@@ -22,7 +22,6 @@ import { startSlowRpcRequestToasts } from "./components/SlowRpcRequestToastCoord
 import { startThreadNotifications } from "./components/ThreadNotificationCoordinator";
 import { startGuideRunNotifications } from "./components/pullRequest/guide/PullRequestGuideRunCoordinator";
 import { APP_DISPLAY_NAME } from "./branding";
-import { isElectron } from "./env";
 import {
   subscribeComposerDraftModelReconciliation,
   subscribeDraftThreadPromotion,
@@ -37,14 +36,13 @@ import {
   startModelPreferencesMigration,
   subscribeClientSettings,
 } from "./hooks/useSettings";
-import { syncBrowserChromeTheme } from "./hooks/useTheme";
+import { syncDocumentBackground } from "./hooks/useTheme";
 import { startThreadVisitedMigration } from "./hooks/useThreadVisitedMigration";
 import { installDesktopPasteAsText } from "./lib/desktopPasteAsText";
 import {
   syncDocumentElectronPlatformClasses,
   syncDocumentWindowControlsOverlayClass,
 } from "./lib/windowControlsOverlay";
-import { startProviderAuthDelivery } from "./providerAuthDelivery";
 import { getRouter, type AppRouter } from "./router";
 import { appAtomRegistry } from "./rpc/atomRegistry";
 import { environmentShell } from "./state/shell";
@@ -116,12 +114,12 @@ function startClientAppearance(): void {
 }
 
 /**
- * Each route paints its own surface, which the browser chrome samples once it is on screen.
+ * Each route paints its own surface, which the document background copies once it is on screen.
  * onRendered only fires for a new href; onResolved also covers `router.invalidate()`, which
  * can swap the root between the bare outlet and the shell at the same address.
  */
-function startBrowserChromeThemeSync(router: AppRouter): void {
-  const resync = () => window.requestAnimationFrame(syncBrowserChromeTheme);
+function startDocumentBackgroundSync(router: AppRouter): void {
+  const resync = () => window.requestAnimationFrame(syncDocumentBackground);
   router.subscribe("onRendered", resync);
   router.subscribe("onResolved", resync);
 }
@@ -149,16 +147,11 @@ function startThreadOverlayRetention(router: AppRouter): void {
  * They run for the life of the page, so their disposers are dropped here.
  */
 export function startAppServices(): AppRouter {
-  // Ahead of the history: the provider auth code must leave the address before anything reads it.
-  startProviderAuthDelivery();
-
   // Electron loads the app from a file-backed shell, so hash history avoids path resolution issues.
-  const router = getRouter(isElectron ? createHashHistory() : createBrowserHistory());
+  const router = getRouter(createHashHistory());
 
-  if (isElectron) {
-    syncDocumentElectronPlatformClasses(navigator.platform);
-    syncDocumentWindowControlsOverlayClass();
-  }
+  syncDocumentElectronPlatformClasses(navigator.platform);
+  syncDocumentWindowControlsOverlayClass();
 
   installDesktopPasteAsText(window.desktopBridge, window);
 
@@ -166,11 +159,11 @@ export function startAppServices(): AppRouter {
   document.title = APP_DISPLAY_NAME;
   startHostEnvironmentLookup();
   startEnvironmentThemeRepaint();
-  startBrowserChromeThemeSync(router);
+  startDocumentBackgroundSync(router);
   startDefaultThemeAdoption();
   startModelPreferencesMigration();
   startAgentOpenedPreviews();
-  if (isElectron) startElectronBrowserHost();
+  startElectronBrowserHost();
   startPreviewTitleRecording();
   startBrowserProfileReporting();
   installChatRouteCommands(router);
@@ -203,7 +196,7 @@ export function startAppServices(): AppRouter {
   startPermissionUpdateNotices(router);
   startThreadNotifications(appAtomRegistry, router);
   startGuideRunNotifications(appAtomRegistry, router);
-  if (isElectron) startDesktopUpdateLaunchNotice();
+  startDesktopUpdateLaunchNotice();
 
   return router;
 }

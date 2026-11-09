@@ -45,7 +45,12 @@ it("tests the selected model after download and preserves its transcript across 
     httpBaseUrl: window.location.origin,
     wsBaseUrl: "ws://localhost",
   });
-  const prepared = { ...target, target, socketUrl: target.wsBaseUrl, httpAuthorization: null };
+  const prepared = {
+    ...target,
+    target,
+    socketUrl: target.wsBaseUrl,
+    httpAuthorization: { _tag: "Bearer" as const, token: "test-token" },
+  };
   const model: EnvironmentSpeechModel = {
     id: "tiny",
     name: "Tiny",
@@ -272,7 +277,12 @@ it("recovers from a failed download progress poll without notifying, but reports
     httpBaseUrl: window.location.origin,
     wsBaseUrl: "ws://localhost",
   });
-  const prepared = { ...target, target, socketUrl: target.wsBaseUrl, httpAuthorization: null };
+  const prepared = {
+    ...target,
+    target,
+    socketUrl: target.wsBaseUrl,
+    httpAuthorization: { _tag: "Bearer" as const, token: "test-token" },
+  };
   const model: EnvironmentSpeechModel = {
     id: "tiny",
     name: "Tiny",

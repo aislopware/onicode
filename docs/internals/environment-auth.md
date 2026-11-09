@@ -19,46 +19,43 @@ secrets. Only the creation response returns the raw credential. Otherwise read
 access to the connections list would become a way to acquire another client's
 authority.
 
-Browser cookies and bearer tokens adapt the same scoped session model. The OAuth
-token-exchange vocabulary gives these grants a familiar meaning.
+Every session is a bearer token; the OAuth token-exchange vocabulary gives
+these grants a familiar meaning.
 
 ### MCP clients are a separate audience
 
-Agents Onicode did not launch sign in to `/mcp` through a narrow OAuth
-authorization-code server ([McpOAuth](../../apps/server/src/auth/McpOAuth.ts)).
-It accepts loopback redirect URIs for agents on the user's machine and any
-HTTPS redirect for agents elsewhere. An HTTPS redirect means a
-link someone else sends the owner can deliver access to that someone, so the
-approval page names the host access goes to and approving stays the owner's
-call. Every client is public and proves itself with PKCE; a client that asks
-for a secret is registered without one. Client registration is stateless, so an unauthenticated caller cannot grow server
-state. Approval spends a one-time pairing code, or uses a browser session with
-`access:write`.
+Only two kinds of callers sign in to `/mcp` from outside an Onicode thread:
+linked environments and `onicode thread`. A link signs in through a narrow
+OAuth authorization-code flow ([McpOAuth](../../apps/server/src/auth/McpOAuth.ts))
+that registers only clients carrying the peer-link software ID, and approval
+spends a one-time pairing code from the peer. Registration is stateless, so an
+unauthenticated caller cannot grow server state. `onicode thread` gets a
+short-lived session from the running server directly.
 
-The user grants either read-only access or a runtime-mode ceiling, not a
+The grant is either read-only access or a runtime-mode ceiling, not a
 scope list: MCP tools are all orchestration, and `orchestration:operate`
-alone would let an agent start a thread in full access and act through it.
-The result is an ordinary session with subject `mcp-client`. A read-only
-grant holds `orchestration:read` alone. On `/mcp` it passes only tools
+alone would let a caller start a thread in full access and act through it.
+A read-only grant holds `orchestration:read` alone. On `/mcp` it passes only tools
 declared as reads in [McpToolAccess](../../apps/server/src/mcp/McpToolAccess.ts),
 where every tool must declare who may call it to compile. Any other grant adds
-`orchestration:operate` and a signed ceiling. Only `/mcp` accepts these sessions. Every other HTTP and WebSocket
-path rejects that subject, because the RPC surface would let the agent act
+`orchestration:operate` and a signed ceiling. Links get subject `mcp-client`
+plus a signed peer-link claim; the thread CLI gets `thread-cli`. `/mcp` admits
+nothing else, so an `mcp-client` session without the claim is refused. Every
+other HTTP and WebSocket
+path rejects both subjects, because the RPC surface would let the caller act
 above its ceiling. Inside MCP the credential sets the limits and tool
 parameters only pick targets; see
 [threadAccess](../../apps/server/src/mcp/threadAccess.ts).
 
-Issuer and resource URLs come from the request's Host and
-`X-Forwarded-Proto`, so one server answers over loopback, the LAN and Tailscale
-Serve. A proxy that rewrites Host or drops the protocol header
-breaks sign-in.
+The issuer URL comes from the request's Host and `X-Forwarded-Proto`, so one
+server answers links over loopback, the LAN and Tailscale Serve. A proxy that
+rewrites Host or drops the protocol header breaks linking.
 
 Bearer clients obtain short-lived WebSocket tickets through authenticated HTTP so
 long-lived tokens stay out of socket URLs. A ticket names the route it opens: the
 RPC socket, or the media routes (device hub, preview stream), which share one
 ticket across `<img>`, `EventSource` and several sockets. Clients that predate
-this mint tickets that open either route. Browser sessions can authenticate the upgrade
-with their cookie. A successful handshake grants no
+this mint tickets that open either route. A successful handshake grants no
 extra authority: [every RPC declares a required
 scope](../../apps/server/src/auth/RpcAuthorization.ts), and the WebSocket RPC
 group's `RpcScopeAuthorization` middleware checks it before any handler runs.
@@ -77,30 +74,11 @@ add the exact `requiredPermission`, so a denied RPC stays decodable by old clien
 Unknown response permissions are ignored; grant inputs stay strict.
 
 Desktop restarts forget the previous local bearer token, so its reusable
-bootstrap grant replaces earlier sessions for the same subject and method.
+bootstrap grant replaces earlier sessions for the same subject.
 Revocation and insertion share a [database
 transaction](../../apps/server/src/persistence/AuthSessions.ts); a failed
-replacement must leave the old credential usable. Pairing and browser sessions
-do not follow this replacement rule.
-
-### Reusable dev credential
-
-Web development environments can accept one `ONICODE_DEV_AUTH_TOKEN` across
-worktrees and ports on one hostname. The token and startup URLs that contain it
-grant administrative access. Desktop and non-development servers ignore it. See
-the [development runbook](../operations/development.md#reusable-dev-credential)
-for setup.
-
-Each environment hashes the value and seeds its own database record at startup.
-Environments do not share SQLite data, signing keys, environment IDs, session
-records, pairing grants, or revocation state. Local revocation persists after
-restart and does not affect another worktree. Removing or rotating the value
-and restarting invalidates the old credential and its WebSocket tickets.
-
-Normal credentials keep precedence. A rejected normal credential never falls
-back to the reusable credential. OAuth exchanges create ordinary local bearer
-children with normal expiry and revocation. The reusable cookie expires
-after 30 days.
+replacement must leave the old credential usable. Pairing sessions do not
+follow this replacement rule.
 
 ## The environment is the filesystem boundary
 

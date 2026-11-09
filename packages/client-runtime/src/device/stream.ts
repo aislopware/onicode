@@ -719,7 +719,6 @@ export function createDeviceStreamClient(
     try {
       const response = await fetch(httpUrl(videoPath), {
         signal: videoController.signal,
-        credentials: access.credentials ? "include" : "same-origin",
       });
       if (!isCurrent()) {
         await response.body?.cancel();
@@ -837,7 +836,6 @@ export function createDeviceStreamClient(
     try {
       const response = await fetch(httpUrl(`/helper/${device}/stream.mjpeg`), {
         signal: controller.signal,
-        credentials: access.credentials ? "include" : "same-origin",
       });
       if (stopped || generation !== session) return;
       if (response.status === 401 || response.status === 403) return handleUnauthorized();
@@ -861,7 +859,6 @@ export function createDeviceStreamClient(
     try {
       const response = await fetch(httpUrl(`/api?device=${device}`), {
         signal: probe.signal,
-        credentials: access.credentials ? "include" : "same-origin",
       });
       if (!response.ok) return null;
       const api = decodeServeSimApi(await response.json());
@@ -891,7 +888,6 @@ export function createDeviceStreamClient(
       keepalive: true,
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ sessionId: current.sessionId }),
-      credentials: access.credentials ? "include" : "same-origin",
     }).catch(() => {});
   };
 
@@ -1017,7 +1013,6 @@ export function createDeviceStreamClient(
           sessionId: current.sessionId,
           codec: "h264",
         }),
-        credentials: access.credentials ? "include" : "same-origin",
       });
       if (!isCurrent()) {
         await response.body?.cancel();

@@ -13,10 +13,8 @@ import type {
   ProviderInstanceId,
   ServerProvider,
 } from "@onicode/contracts";
-import { codexAuthHandoffUrl } from "@onicode/shared/codexAuthHandoff";
-import { providerAuthReturnUrl } from "@onicode/shared/providerAuthReturnUrl";
 import { isLoopbackHost } from "@onicode/shared/preview";
-import { CheckIcon, ChevronRightIcon, ExternalLinkIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 import {
   Children,
   useEffect,
@@ -30,7 +28,6 @@ import {
 import { ensureLocalApi } from "../../localApi";
 import { managedInstanceLocks, useManagedPolicy } from "../../state/managedPolicy";
 import { ManagedControl } from "../ManagedPolicy";
-import { useEnvironmentHttpBaseUrl } from "../../state/environments";
 import { environmentPresentations } from "../../state/presentation";
 import { primaryEnvironmentIdAtom } from "../../state/primaryEnvironment";
 import { useEnvironmentQuery } from "../../state/query";
@@ -59,33 +56,20 @@ const noop = () => undefined;
 
 const isLoopbackUrl = (url: string | null) => url !== null && isLoopbackHost(new URL(url).hostname);
 
-// A loopback server can receive the provider's callback itself, unless the
-// desktop shell offers to catch it on the client.
-const prefersClientCallback = (local: boolean) => !local || window.desktopBridge !== undefined;
-
 /**
- * How a sign-in started now reaches the provider. Read at use time, because a
- * sign-in can start minutes after the click that asked for it (once an install
- * finishes), and the primary environment may have connected in between.
+ * The connected local environment that signs in on behalf of a remote one, if any.
+ * Read at use time, because a sign-in can start minutes after the click that asked
+ * for it (once an install finishes), and the primary environment may have connected in between.
  */
-function readSignInRouting(environmentId: EnvironmentId) {
-  const local = isLoopbackUrl(readPreparedConnection(environmentId)?.httpBaseUrl ?? null);
-  const clientCallback = prefersClientCallback(local);
+function readPrimaryAuthEnvironmentId(environmentId: EnvironmentId) {
+  if (isLoopbackUrl(readPreparedConnection(environmentId)?.httpBaseUrl ?? null)) return null;
   const primaryEnvironmentId = appAtomRegistry.get(primaryEnvironmentIdAtom);
-  const primaryAuthEnvironmentId =
-    !local &&
-    primaryEnvironmentId !== null &&
+  return primaryEnvironmentId !== null &&
     appAtomRegistry.get(environmentPresentations.presentationAtom(primaryEnvironmentId))?.connection
       .phase === "connected" &&
-    isLoopbackUrl(readPreparedConnection(primaryEnvironmentId)?.httpBaseUrl ?? null) &&
-    (window.desktopBridge !== undefined || isLoopbackHost(window.location.hostname))
-      ? primaryEnvironmentId
-      : null;
-  return {
-    clientCallback,
-    remoteWeb: clientCallback && !window.desktopBridge,
-    primaryAuthEnvironmentId,
-  };
+    isLoopbackUrl(readPreparedConnection(primaryEnvironmentId)?.httpBaseUrl ?? null)
+    ? primaryEnvironmentId
+    : null;
 }
 
 interface CodexSetupSectionProps {
@@ -189,7 +173,7 @@ export function CodexSetupSection(props: CodexSetupSectionProps) {
       props.presentation === "onboarding" ? (
         <CodexWelcomeCard
           title={props.displayName || props.provider?.displayName || "Codex"}
-          description={<CodexSignInDescription />}
+          description="Complete sign-in in your browser."
           control={
             <Button size="sm" variant="outline" className="min-w-44" disabled>
               Open sign-in page
@@ -294,8 +278,6 @@ function ManagedCodexSetup({
   const hasSavedAccount = auth?.methods?.some((method) => method.id.startsWith("chatgpt-profile:"));
   const url = auth?.interaction?.type === "browser" ? auth.interaction.url : auth?.authorizationUrl;
   const installation = installQuery.data;
-  const httpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
-  const local = isLoopbackUrl(httpBaseUrl);
   const options = { reportFailure: false, reportDefect: false };
   const startAuth = useAtomCommand(serverEnvironment.startProviderAuth, options);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders, options);
@@ -310,17 +292,8 @@ function ManagedCodexSetup({
   const cancelInstall = useAtomCommand(serverEnvironment.cancelProviderInstall, options);
   const reconnectProfile = useAtomCommand(serverEnvironment.chatGptReconnectProfile, options);
   const importProfile = useAtomCommand(serverEnvironment.chatGptImportProfile, options);
-  const clientCallback = !handoff && prefersClientCallback(local);
-  const remoteWeb = clientCallback && !window.desktopBridge;
-  const returnUrl = new URL(window.location.href);
-  if (returnUrl.pathname === "/welcome") returnUrl.hash = `agents:${environmentId}`;
-  if (returnUrl.pathname === "/settings/providers")
-    returnUrl.searchParams.set("instanceId", instanceId);
-  const needsManualCallback = remoteWeb;
-  const callbackHelpId = useId();
-  const [callbackHelpOpen, setCallbackHelpOpen] = useState(false);
-  const [callbackDraft, setCallbackDraft] = useState({ flowId: "", value: "" });
-  const callbackUrl = callbackDraft.flowId === auth?.flowId ? callbackDraft.value : "";
+  // A handoff's callback reaches the local environment's server, not the desktop shell.
+  const clientCallback = !handoff;
   const [pending, setPending] = useState(false);
   const [awaitingProvider, setAwaitingProvider] = useState<"sign-in" | "handoff" | null>(null);
   const pendingRef = useRef(false);
@@ -358,7 +331,7 @@ function ManagedCodexSetup({
     setAwaitingProvider(null);
   }
   // The server does not refresh the provider snapshot when a sign-in flow
-  // succeeds, and the flow can finish elsewhere (callback, pasted redirect URL).
+  // succeeds, and the flow can finish elsewhere (the desktop callback or a handoff).
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- asks the server to refresh the provider snapshot once the sign-in flow succeeds
   useEffect(() => {
     if (awaitingProvider && auth?.phase === "succeeded") {
@@ -483,9 +456,7 @@ function ManagedCodexSetup({
         await ensureLocalApi().shell.openExternal(authorizationUrl);
       }
     } catch {
-      setError(
-        "Could not finish sign-in on this computer. Try again or paste the redirect URL below.",
-      );
+      setError("Could not finish sign-in on this computer. Try again.");
     }
   };
 
@@ -493,12 +464,7 @@ function ManagedCodexSetup({
     if (pendingRef.current) return;
     setTransferFailed(false);
     setRequestedMethodId(methodId);
-    const returnUrl = new URL(window.location.href);
-    if (returnUrl.pathname === "/welcome") returnUrl.hash = `agents:${environmentId}`;
-    if (returnUrl.pathname === "/settings/providers")
-      returnUrl.searchParams.set("instanceId", instanceId);
-    const { clientCallback, remoteWeb, primaryAuthEnvironmentId } =
-      readSignInRouting(environmentId);
+    const primaryAuthEnvironmentId = readPrimaryAuthEnvironmentId(environmentId);
     if (primaryAuthEnvironmentId) {
       const attemptId = `${handoffId}:${++handoffSequence.current}`;
       await run(
@@ -510,7 +476,8 @@ function ManagedCodexSetup({
               instanceId,
               environmentId,
               attemptId,
-              returnUrl: returnUrl.toString(),
+              // The browser's last page opens this to bring the app forward.
+              returnUrl: `${window.location.protocol}//app/`,
               profile,
             },
           };
@@ -531,18 +498,12 @@ function ManagedCodexSetup({
       () =>
         startAuth({
           environmentId,
-          input: {
-            instanceId,
-            methodId,
-            returnUrl: returnUrl.toString(),
-            callbackMode: clientCallback ? "client" : "server",
-          },
+          input: { instanceId, methodId, callbackMode: "client" },
         }),
       (started) => {
         setAwaitingProvider("sign-in");
         const startedFlowId = started.flowId;
-        // A remote browser cannot receive the callback, so the user opens the page from the card.
-        if (remoteWeb || startedFlowId === null) return;
+        if (startedFlowId === null) return;
         const startedPage = settleAuthorizationPage(started, startedFlowId);
         void (
           startedPage !== undefined
@@ -554,7 +515,7 @@ function ManagedCodexSetup({
                 signal,
               })
         ).then((page) => {
-          if (page && !signal.aborted) void openPage(page, startedFlowId, clientCallback);
+          if (page && !signal.aborted) void openPage(page, startedFlowId, true);
         });
       },
     );
@@ -650,23 +611,10 @@ function ManagedCodexSetup({
     (reconnectEmail ?? "Use your ChatGPT subscription.")
   );
 
-  const handoffUrl =
-    needsManualCallback && url && auth?.flowId && providerAuthReturnUrl(returnUrl.toString())
-      ? codexAuthHandoffUrl(
-          {
-            authorizationUrl: url,
-            returnUrl: returnUrl.toString(),
-            environmentId,
-            instanceId,
-            flowId: auth.flowId,
-          },
-          import.meta.env.DEV,
-        )
-      : null;
   const waitingControl = (
     <Button
       size="sm"
-      variant={remoteWeb ? "default" : "outline"}
+      variant="outline"
       className={presentation === "onboarding" ? "min-w-44" : undefined}
       disabled={
         handoffQuery.data?.phase === "finished"
@@ -686,99 +634,12 @@ function ManagedCodexSetup({
             ? "Retry connection"
             : "Finishing sign-in..."
           : auth?.phase === "waiting"
-            ? remoteWeb
-              ? "Open ChatGPT sign-in"
-              : "Open sign-in page"
+            ? "Open sign-in page"
             : presentation === "onboarding"
               ? "Open sign-in page"
               : "Signing in..."}
     </Button>
   );
-  const callbackCompletion =
-    !handoff && auth?.phase === "waiting" && url ? (
-      <div className="flex w-full flex-col gap-3 text-xs leading-relaxed text-muted-foreground">
-        <p>If sign-in doesn't return to Onicode, paste the URL from the final localhost page.</p>
-        <form
-          className="flex flex-col gap-2 sm:flex-row sm:items-center"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (!auth.flowId || !callbackUrl.trim()) return;
-            const value = callbackUrl.trim();
-            const submittedFlowId = auth.flowId;
-            void run(() =>
-              completeAuth({
-                environmentId,
-                input: { instanceId, flowId: submittedFlowId, callbackUrl: value },
-              }),
-            ).then((connected) => {
-              if (connected) setCallbackDraft({ flowId: submittedFlowId, value: "" });
-            });
-          }}
-        >
-          <div className="min-w-0 flex-1">
-            <Input
-              aria-label="ChatGPT sign-in redirect URL"
-              type="password"
-              autoComplete="off"
-              placeholder="Paste the URL from the sign-in tab"
-              value={callbackUrl}
-              maxLength={16_384}
-              disabled={pending || readOnly}
-              onChange={(event) =>
-                setCallbackDraft({ flowId: auth.flowId ?? "", value: event.target.value })
-              }
-            />
-          </div>
-          <Button
-            variant="outline"
-            type="submit"
-            disabled={pending || readOnly || !callbackUrl.trim()}
-          >
-            Connect
-          </Button>
-        </form>
-        {!remoteWeb ? (
-          <div>
-            <Button
-              size="xs"
-              variant="ghost-muted"
-              onClick={() => void ensureLocalApi().shell.openExternal(url)}
-            >
-              Try sign-in in your browser
-              <ExternalLinkIcon className="size-3.5" />
-            </Button>
-          </div>
-        ) : null}
-        {handoffUrl ? (
-          <details>
-            <summary className="cursor-pointer">Other ways to connect</summary>
-            <Button className="mt-2" size="sm" variant="outline" render={<a href={handoffUrl} />}>
-              Use Onicode desktop for automatic return
-            </Button>
-          </details>
-        ) : null}
-      </div>
-    ) : null;
-  const callbackHelpContent =
-    callbackCompletion && callbackHelpOpen ? (
-      <div id={callbackHelpId} className="w-full border-t border-border/50 pt-3">
-        {callbackCompletion}
-      </div>
-    ) : null;
-  const callbackFallback = needsManualCallback ? (
-    callbackCompletion
-  ) : callbackCompletion ? (
-    <div className="space-y-3 text-xs leading-relaxed text-muted-foreground">
-      <CodexSignInDescription
-        label="Having trouble signing in?"
-        expanded={callbackHelpOpen}
-        controls={callbackHelpId}
-        onToggle={() => setCallbackHelpOpen((open) => !open)}
-      />
-      {callbackHelpContent}
-    </div>
-  ) : null;
-
   const accountPicker = (
     <ChatGptAccountPicker
       open={accountPickerOpen}
@@ -837,18 +698,12 @@ function ManagedCodexSetup({
               ) : (
                 "Connected to ChatGPT."
               )
-            ) : callbackCompletion && !needsManualCallback ? (
-              <CodexSignInDescription
-                expanded={callbackHelpOpen}
-                controls={callbackHelpId}
-                onToggle={() => setCallbackHelpOpen((open) => !open)}
-              />
             ) : startingAutomatically ||
               waitingForAuthState ||
               auth?.phase === "starting" ||
               auth?.phase === "waiting" ||
               (pending && !installActive) ? (
-              <CodexSignInDescription />
+              "Complete sign-in in your browser."
             ) : authActive || auth?.phase === "failed" || auth?.phase === "cancelled" ? (
               accountDescription
             ) : (
@@ -925,7 +780,6 @@ function ManagedCodexSetup({
             ) : null
           }
         >
-          {needsManualCallback ? callbackFallback : callbackHelpContent}
           {setupError ? (
             <p role="alert" className="text-xs text-destructive">
               {setupError}
@@ -1055,7 +909,6 @@ function ManagedCodexSetup({
           {logoutWarning}
         </p>
       ) : null}
-      {callbackFallback ? <div className="px-3 py-3 sm:px-4">{callbackFallback}</div> : null}
       {error || authQuery.error || installQuery.error || installation?.phase === "failed" ? (
         <p role="alert" className="px-3 py-2 text-xs text-destructive sm:px-4">
           {error ??
@@ -1136,33 +989,6 @@ export function CodexManagedRuntimeFields({
         }
       />
     </>
-  );
-}
-
-function CodexSignInDescription({
-  label = "Complete sign-in in your browser.",
-  expanded = false,
-  controls,
-  onToggle,
-}: {
-  readonly label?: string;
-  readonly expanded?: boolean;
-  readonly controls?: string;
-  readonly onToggle?: () => void;
-}) {
-  if (!onToggle) return <div className="leading-relaxed">{label}</div>;
-  return (
-    <button
-      type="button"
-      className="inline-flex items-center gap-1.5 rounded-sm text-left leading-relaxed outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-      aria-label="Having trouble signing in?"
-      aria-expanded={expanded}
-      aria-controls={controls}
-      onClick={onToggle}
-    >
-      {label}
-      <ChevronRightIcon aria-hidden className={`size-3 shrink-0 ${expanded ? "rotate-90" : ""}`} />
-    </button>
   );
 }
 

@@ -575,37 +575,39 @@ describe("terminatePosixOwnedProcessTree", () => {
     }),
   );
 
-  it.live("re-admits a still-owned child after PID reuse and never signals the Onicode session", () =>
-    Effect.gen(function* () {
-      const reused = identity(110, 100, 110, 110, "reused");
-      const fixture = makeController({
-        processes: [
-          server(),
-          identity(100, process.pid, 100, 100),
-          identity(110, 100, 110, 110, "owned"),
-          identity(120, 100, 120, process.pid),
-        ],
-        onProcess: (processes, pid) => {
-          if (pid === 110) processes.set(110, reused);
-          else processes.delete(pid);
-        },
-      });
+  it.live(
+    "re-admits a still-owned child after PID reuse and never signals the Onicode session",
+    () =>
+      Effect.gen(function* () {
+        const reused = identity(110, 100, 110, 110, "reused");
+        const fixture = makeController({
+          processes: [
+            server(),
+            identity(100, process.pid, 100, 100),
+            identity(110, 100, 110, 110, "owned"),
+            identity(120, 100, 120, process.pid),
+          ],
+          onProcess: (processes, pid) => {
+            if (pid === 110) processes.set(110, reused);
+            else processes.delete(pid);
+          },
+        });
 
-      const result = yield* Effect.exit(
-        AcpSessionRuntime.terminatePosixOwnedProcessTree({
-          controller: fixture.controller,
-          grace: 0,
-          rootPid: 100,
-        }),
-      );
+        const result = yield* Effect.exit(
+          AcpSessionRuntime.terminatePosixOwnedProcessTree({
+            controller: fixture.controller,
+            grace: 0,
+            rootPid: 100,
+          }),
+        );
 
-      expect(Exit.isFailure(result)).toBe(true);
-      expect(fixture.processes.get(110)).toEqual(reused);
-      expect(
-        fixture.signals.filter((entry) => entry.startsWith("process:110:")).length,
-      ).toBeGreaterThan(0);
-      expect(fixture.signals.some((entry) => entry.includes(":120:"))).toBe(false);
-    }),
+        expect(Exit.isFailure(result)).toBe(true);
+        expect(fixture.processes.get(110)).toEqual(reused);
+        expect(
+          fixture.signals.filter((entry) => entry.startsWith("process:110:")).length,
+        ).toBeGreaterThan(0);
+        expect(fixture.signals.some((entry) => entry.includes(":120:"))).toBe(false);
+      }),
   );
 
   it.live("does not treat zombie residual entries as teardown survivors", () =>

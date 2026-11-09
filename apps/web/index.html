@@ -6,10 +6,6 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#000000" />
-    <link rel="icon" href="/favicon.ico" sizes="48x48" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
     <script>
       (() => {
         const LIGHT_BACKGROUND = "#ffffff";
@@ -143,12 +139,6 @@
           "oni-ember",
           "oni-iris",
         ];
-        const setThemeColor = (color) => {
-          for (const meta of document.querySelectorAll('meta[name="theme-color"]')) {
-            meta.setAttribute("content", color);
-          }
-        };
-
         // The runtime decodes the same literal CSS formats into OKLCH. Keep
         // contextual colors out: they cannot be resolved from stored data.
         const SYSTEM_COLOR_KEYWORD =
@@ -371,7 +361,6 @@
               document.documentElement.style.setProperty(`--boot-${name}`, value);
             }
           }
-          setThemeColor(chromeColor);
         } catch {
           let prefersDark = true;
           try {
@@ -382,7 +371,6 @@
           document.documentElement.classList.toggle("dark", prefersDark);
           const fallbackColor = prefersDark ? DARK_BACKGROUND : LIGHT_BACKGROUND;
           document.documentElement.style.backgroundColor = fallbackColor;
-          setThemeColor(fallbackColor);
         }
       })();
     </script>
@@ -674,7 +662,7 @@
     <div id="root">
       <div id="boot-shell">
         <div id="boot-shell-card" aria-label="Onicode splash screen">
-          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Onicode" />
+          <img id="boot-shell-logo" src="/splash-logo.png" alt="Onicode" />
         </div>
       </div>
     </div>

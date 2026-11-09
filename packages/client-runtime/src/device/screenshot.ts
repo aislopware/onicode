@@ -20,7 +20,7 @@ export async function captureDeviceScreenshot(target: DeviceStreamTarget, signal
   );
   const response = await fetch(url, {
     method: "POST",
-    credentials: target.access.credentials ? "include" : "omit",
+    credentials: "omit",
     signal: AbortSignal.any([signal, AbortSignal.timeout(20_000)]),
   });
   if (!response.ok) throw new DeviceScreenshotError({ status: response.status });

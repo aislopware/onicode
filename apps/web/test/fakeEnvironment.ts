@@ -38,6 +38,7 @@ import type {
 import type { WsRpcProtocolClient } from "@onicode/client-runtime/rpc";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@onicode/shared/keybindings";
 import { APP_VERSION } from "~/branding";
+import type { PrimaryEnvironmentTarget } from "~/environments/primary/target";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
@@ -62,10 +63,8 @@ const descriptor = {
   capabilities: { repositoryIdentity: true },
 };
 const auth = {
-  policy: "loopback-browser",
+  policy: "loopback",
   bootstrapMethods: ["one-time-token"],
-  sessionMethods: ["browser-session-cookie"],
-  sessionCookieName: "oni_session",
 };
 
 const serverConfig: ServerConfig = {
@@ -430,7 +429,7 @@ export const fakeDriver = {
         label: descriptor.label,
         httpBaseUrl: window.location.origin,
         socketUrl: window.location.origin.replace(/^http/, "ws"),
-        httpAuthorization: null,
+        httpAuthorization: { _tag: "Bearer", token: "test-token" },
         target: entry.target,
       },
       session,
@@ -444,6 +443,14 @@ const realFetch = globalThis.fetch;
 const encodedDescriptor = Schema.encodeSync(ExecutionEnvironmentDescriptor)(
   Schema.decodeUnknownSync(ExecutionEnvironmentDescriptor)(descriptor),
 );
+
+/** Stands in for the desktop bridge's local-server lookup; the fetch stub serves this origin. */
+export function fakePrimaryEnvironmentTarget(): PrimaryEnvironmentTarget {
+  return {
+    httpBaseUrl: `${window.location.origin}/`,
+    wsBaseUrl: `${window.location.origin.replace(/^http/, "ws")}/`,
+  };
+}
 
 /** Serves the environment's HTTP API and these threads until disposed. */
 export function installFakeEnvironment(
@@ -462,7 +469,6 @@ export function installFakeEnvironment(
         authenticated: true,
         auth,
         scopes: AuthStandardClientScopes,
-        sessionMethod: "browser-session-cookie",
         expiresAt: "2099-01-01T00:00:00.000Z",
       });
     }

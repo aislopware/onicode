@@ -6,14 +6,7 @@ import * as Path from "effect/Path";
 
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
 
-const WEB_ICON_FILENAMES = [
-  "apple-touch-icon.png",
-  "favicon-16x16.png",
-  "favicon-32x32.png",
-  "favicon.ico",
-  "icon-192x192.png",
-  "icon-512x512.png",
-];
+const WEB_ICON_FILENAMES = ["splash-logo.png"];
 
 it.layer(NodeServices.layer)("apply-web-brand-assets", (it) => {
   it.effect("copies the icons into an absolute target directory as given", () =>

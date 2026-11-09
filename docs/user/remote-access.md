@@ -47,7 +47,7 @@ onicode pair
 
 Scan the QR code on your phone or paste the pairing URL into **Add environment**
 in the receiving app. Connection settings are under **Settings → Environments**
-on web and desktop and **Settings → Environments** on mobile. A loopback address
+on desktop and **Settings → Environments** on mobile. A loopback address
 such as `127.0.0.1` reaches only the device opening the link.
 
 On a computer with the desktop app, you can open the printed `onicode://pair`
@@ -93,7 +93,7 @@ again, after the other routes, if none of them connect. While connected over a
 later route, Onicode checks the earlier ones when your network changes, when you
 return to the app, and every minute, and moves back as soon as one works.
 
-On web and desktop, select the route count under the machine's name in
+On desktop, select the route count under the machine's name in
 **Settings → Environments** to see its routes. Drag a route to change the order,
 or remove it. On mobile, open the machine under **Settings → Environments** and
 choose **Edit**.
@@ -106,7 +106,7 @@ checked.
 
 ### Balance new threads across machines
 
-Auto balance is off by default. On web and desktop, enable it in
+Auto balance is off by default. On desktop, enable it in
 **Settings → Environments → Load balancing** to automatically choose a machine for
 new threads in projects grouped across connected environments. The section
 appears once two or more machines are switched on.
@@ -257,12 +257,6 @@ For a systemd service, add `Environment=ONICODE_SERVER_BROWSER_SANDBOX=0` under
 your Onicode service. Setting the variable in an agent's terminal does not change the
 environment of an already running Onicode server.
 
-## Connect an outside agent
-
-Claude Code, Codex, and other agents Onicode did not start can drive
-threads on an environment through its MCP server. See
-[outside agents](./outside-agents.md) for setup.
-
 ## Link another environment
 
 Link two machines, such as your laptop and a VPS, and agents on one can work on
@@ -294,8 +288,8 @@ and the access, then approve.
   access, the link's agents can change only threads it started, not that
   machine's own threads, projects or settings, and they skip its project setup
   scripts.
-- The link shows up in that machine's **Settings → Sharing & access** like any
-  outside agent. Revoke it there to end it. **Forget** on this machine only
+- The link shows up in that machine's **Settings → Sharing & access** with its
+  other clients. Revoke it there to end it. **Forget** on this machine only
   removes it here.
 - Links last 30 days. Link again with a new pairing code to renew one.
 
@@ -335,9 +329,7 @@ client that should not manage access also needs to go without `terminal:operate`
 and `orchestration:operate`.
 
 To change an existing client's permissions, create a fresh pairing link with the
-scopes it needs. In a browser opened directly on the environment, open that link
-to replace the browser's current grant. For mobile or a saved remote environment
-in web or desktop, use **Add Environment** with the fresh link or code; pairing
+scopes it needs. For mobile or a saved remote environment on desktop, use **Add Environment** with the fresh link or code; pairing
 the same environment replaces its saved grant. Reconnecting alone does not change
 permissions.
 

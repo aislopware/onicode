@@ -86,6 +86,8 @@ import Migration0080 from "./Migrations/080_ScheduledTaskThreadMode.ts";
 import Migration0081 from "./Migrations/081_DropWebhookRelayDeliveries.ts";
 import Migration0082 from "./Migrations/082_RemoveGuestShares.ts";
 import Migration0083 from "./Migrations/083_RemoveWebhookTasks.ts";
+import Migration0084 from "./Migrations/084_RemoveBrowserSessions.ts";
+import Migration0085 from "./Migrations/085_RemoveClientBrowser.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -172,6 +174,8 @@ const migrationEntries = [
   [81, "DropWebhookRelayDeliveries", Migration0081],
   [82, "RemoveGuestShares", Migration0082],
   [83, "RemoveWebhookTasks", Migration0083],
+  [84, "RemoveBrowserSessions", Migration0084],
+  [85, "RemoveClientBrowser", Migration0085],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);

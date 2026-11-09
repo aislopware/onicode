@@ -1,6 +1,5 @@
 import { AuthEnvironmentMaintainScope } from "@onicode/contracts";
 
-import { isElectron } from "~/env";
 import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { desktopWslStateAtom } from "~/state/desktopWslState";
 import { useEnvironments, usePrimaryEnvironmentId } from "~/state/environments";
@@ -46,9 +45,7 @@ export function useAvailableSettingsSearchItems() {
   const hasPeerLinkHost = usePeerLinkHosts().length > 0;
   const localEnvironmentDisabled = isLocalEnvironmentDisabled() === true;
   const canManageLocalBackend = !localEnvironmentDisabled && canMaintain;
-  const desktopWsl = useEnvironmentQuery(
-    isElectron && canManageLocalBackend ? desktopWslStateAtom : null,
-  );
+  const desktopWsl = useEnvironmentQuery(canManageLocalBackend ? desktopWslStateAtom : null);
   const wslSettingsRowVisible =
     isWslSettingsRowVisible({ state: desktopWsl.data, error: desktopWsl.error }) === true;
 

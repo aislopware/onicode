@@ -103,7 +103,6 @@ const auth = Layer.succeed(EnvironmentAuthenticatedAuth, (effect) =>
     Effect.provideService(EnvironmentAuthenticatedPrincipal, {
       sessionId: AuthSessionId.make("compact-transport"),
       subject: "compact-transport",
-      method: "browser-session-cookie",
       scopes: new Set([AuthOrchestrationReadScope]),
     }),
   ),

@@ -222,7 +222,7 @@ const resumedMcpQueryInput = {
     tools: [],
     permissionMode: "default",
     mcpServers: {
-      "onicode": {
+      onicode: {
         type: "http",
         url: "http://localhost:3773/mcp",
         headers: { Authorization: "Bearer test-mcp-credential" },

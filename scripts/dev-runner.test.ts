@@ -57,42 +57,17 @@ function mockProcess(exit: number | PlatformError.PlatformError) {
 const devServerInput = {
   mode: "dev:server",
   oniHome: "/tmp/onicode-dev-runner",
-  browser: undefined,
   autoBootstrapProjectFromCwd: undefined,
   logWebSocketEvents: undefined,
   host: undefined,
   port: 13_773,
   devUrl: undefined,
   dryRun: false,
-  share: false,
-  built: false,
   runArgs: ["--inspect", "secret-token-value"],
 } as const;
 
 it.layer(NodeServices.layer)("dev-runner", (it) => {
   describe("createDevRunnerEnv", () => {
-    it.effect("forwards the reusable auth token to web dev and removes it for desktop", () =>
-      Effect.gen(function* () {
-        const input = {
-          baseEnv: { ONICODE_DEV_AUTH_TOKEN: "reusable-dev-auth-token-that-is-long-enough" },
-          serverOffset: 0,
-          webOffset: 0,
-          oniHome: undefined,
-          browser: undefined,
-          autoBootstrapProjectFromCwd: undefined,
-          logWebSocketEvents: undefined,
-          host: undefined,
-          port: undefined,
-          devUrl: undefined,
-        } as const;
-        const web = yield* createDevRunnerEnv({ ...input, mode: "dev" });
-        const desktop = yield* createDevRunnerEnv({ ...input, mode: "dev:desktop" });
-
-        assert.equal(web.ONICODE_DEV_AUTH_TOKEN, input.baseEnv.ONICODE_DEV_AUTH_TOKEN);
-        assert.equal(desktop.ONICODE_DEV_AUTH_TOKEN, undefined);
-      }),
-    );
-
     it.effect("strips inherited service-launcher context", () =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
@@ -104,7 +79,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           serverOffset: 0,
           webOffset: 0,
           oniHome: undefined,
-          browser: undefined,
           autoBootstrapProjectFromCwd: undefined,
           logWebSocketEvents: undefined,
           host: undefined,
@@ -117,51 +91,50 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    it.effect.each(["dev", "dev:web"] as const)(
-      "leaves the client backend URLs unset in %s mode",
-      (mode) =>
-        Effect.gen(function* () {
-          const env = yield* createDevRunnerEnv({
-            mode,
-            baseEnv: {
-              VITE_HTTP_URL: "http://localhost:1234",
-              VITE_WS_URL: "ws://localhost:1234",
-            },
-            serverOffset: 0,
-            webOffset: 0,
-            oniHome: undefined,
-            browser: undefined,
-            autoBootstrapProjectFromCwd: undefined,
-            logWebSocketEvents: undefined,
-            host: undefined,
-            port: undefined,
-            devUrl: undefined,
-          });
-
-          assert.equal(env.VITE_HTTP_URL, undefined);
-          assert.equal(env.VITE_WS_URL, undefined);
-          assert.equal(env.ONICODE_PORT, "13773");
-          assert.equal(env.ONICODE_SINGLE_ORIGIN_DEV, "1");
-        }),
-    );
-
-    it.effect.each(["dev", "dev:web"] as const)("drops an inherited HOST in %s mode", (mode) =>
+    it.effect("points the desktop app at its renderer and debug ports in dev mode", () =>
       Effect.gen(function* () {
         const env = yield* createDevRunnerEnv({
-          mode,
-          baseEnv: { HOST: "0.0.0.0" },
-          serverOffset: 0,
-          webOffset: 0,
+          mode: "dev",
+          baseEnv: { ONICODE_MODE: "standalone", ONICODE_HOST: "0.0.0.0", ONICODE_DEV: "1" },
+          serverOffset: 2,
+          webOffset: 2,
           oniHome: undefined,
-          browser: undefined,
           autoBootstrapProjectFromCwd: undefined,
           logWebSocketEvents: undefined,
-          host: undefined,
+          host: "0.0.0.0",
           port: undefined,
           devUrl: undefined,
         });
 
-        assert.equal(env.HOST, undefined);
+        assert.equal(env.ONICODE_PORT, "13775");
+        assert.equal(env.VITE_DEV_SERVER_URL, "http://127.0.0.1:5735");
+        assert.equal(env.ONICODE_DESKTOP_REMOTE_DEBUGGING_PORT, "19224");
+        assert.equal(env.ONICODE_MODE, undefined);
+        assert.equal(env.ONICODE_HOST, undefined);
+        assert.equal(env.ONICODE_DEV, undefined);
+      }),
+    );
+
+    it.effect("runs a standalone server on the requested host in dev:server mode", () =>
+      Effect.gen(function* () {
+        const env = yield* createDevRunnerEnv({
+          mode: "dev:server",
+          baseEnv: { VITE_DEV_SERVER_URL: "http://127.0.0.1:5733" },
+          serverOffset: 0,
+          webOffset: 0,
+          oniHome: undefined,
+          autoBootstrapProjectFromCwd: undefined,
+          logWebSocketEvents: undefined,
+          host: "0.0.0.0",
+          port: undefined,
+          devUrl: undefined,
+        });
+
+        assert.equal(env.ONICODE_MODE, "standalone");
+        assert.equal(env.ONICODE_HOST, "0.0.0.0");
+        assert.equal(env.ONICODE_DEV, "1");
+        assert.equal(env.VITE_DEV_SERVER_URL, undefined);
+        assert.equal(env.ONICODE_DESKTOP_REMOTE_DEBUGGING_PORT, undefined);
       }),
     );
   });
@@ -181,38 +154,25 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    it.effect("skips browser-blocked web ports before probing availability", () =>
+    it.effect("probes the renderer and debug ports on loopback only", () =>
       Effect.gen(function* () {
         const probed: Array<{ port: number; role: string | undefined }> = [];
         const offset = yield* findFirstAvailableOffset({
-          // 5733 + 833 = 6566, which browsers block as sane-port.
-          startOffset: 833,
+          startOffset: 0,
           requireServerPort: true,
           requireWebPort: true,
           checkPortAvailability: (port, role) => {
             probed.push({ port, role });
-            return Effect.succeed(true);
+            return Effect.succeed(port !== 19_222);
           },
         });
 
-        assert.equal(offset, 834);
-        assert.deepStrictEqual(probed, [
-          { port: 14_607, role: "server" },
-          { port: 6567, role: "web" },
+        assert.equal(offset, 1);
+        assert.deepStrictEqual(probed.slice(0, 3), [
+          { port: 13_773, role: "server" },
+          { port: 5733, role: "loopback" },
+          { port: 19_222, role: "loopback" },
         ]);
-      }),
-    );
-
-    it.effect("does not reject a server-only offset because its unused web port is blocked", () =>
-      Effect.gen(function* () {
-        const offset = yield* findFirstAvailableOffset({
-          startOffset: 833,
-          requireServerPort: true,
-          requireWebPort: false,
-          checkPortAvailability: () => Effect.succeed(true),
-        });
-
-        assert.equal(offset, 833);
       }),
     );
   });
@@ -265,7 +225,8 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
 
         assert.deepStrictEqual(probed, [
           { port: 13_773, role: "server" },
-          { port: 5733, role: "web" },
+          { port: 5733, role: "loopback" },
+          { port: 19_222, role: "loopback" },
         ]);
       }),
     );
@@ -287,21 +248,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
-    it.effect("keeps server offset stable for dev:web and only shifts web offset", () =>
-      Effect.gen(function* () {
-        const taken = new Set([5733]);
-        const offsets = yield* resolveModePortOffsets({
-          mode: "dev:web",
-          startOffset: 0,
-          hasExplicitServerPort: false,
-          hasExplicitDevUrl: false,
-          checkPortAvailability: (port) => Effect.succeed(!taken.has(port)),
-        });
-
-        assert.deepStrictEqual(offsets, { serverOffset: 0, webOffset: 1 });
-      }),
-    );
-
     it.effect("shifts only server offset for dev:server", () =>
       Effect.gen(function* () {
         const taken = new Set([13773]);
@@ -314,20 +260,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         });
 
         assert.deepStrictEqual(offsets, { serverOffset: 1, webOffset: 1 });
-      }),
-    );
-
-    it.effect("respects explicit dev-url override for dev:web", () =>
-      Effect.gen(function* () {
-        const offsets = yield* resolveModePortOffsets({
-          mode: "dev:web",
-          startOffset: 0,
-          hasExplicitServerPort: false,
-          hasExplicitDevUrl: true,
-          checkPortAvailability: () => Effect.succeed(false),
-        });
-
-        assert.deepStrictEqual(offsets, { serverOffset: 0, webOffset: 0 });
       }),
     );
   });
@@ -375,7 +307,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
           serverOffset: 0,
           webOffset: 0,
           oniHome: undefined,
-          browser: undefined,
           autoBootstrapProjectFromCwd: undefined,
           logWebSocketEvents: undefined,
           host: undefined,
@@ -397,7 +328,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
             serverOffset: 0,
             webOffset: 0,
             oniHome,
-            browser: undefined,
             autoBootstrapProjectFromCwd: undefined,
             logWebSocketEvents: undefined,
             host: undefined,
@@ -417,176 +347,6 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
         assert.equal(yield* homeFor("/tmp/oni-dev"), path.resolve("/tmp/oni-dev"));
       }),
     );
-
-    it.effect("rejects a specific non-loopback --host for browser dev modes", () => {
-      const spawnerLayer = Layer.succeed(
-        ChildProcessSpawner.ChildProcessSpawner,
-        ChildProcessSpawner.make(() => Effect.succeed(mockProcess(0))),
-      );
-
-      return Effect.gen(function* () {
-        const error = yield* runDevRunnerWithInput({
-          ...devServerInput,
-          mode: "dev",
-          port: undefined,
-          host: "192.168.1.10",
-        }).pipe(
-          Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
-          Effect.provideService(HostProcess.Platform, "linux"),
-          Effect.flip,
-        );
-
-        if (error._tag !== "DevRunnerHostNotProxiableError") {
-          assert.fail(`Unexpected error: ${error._tag}`);
-        }
-        assert.equal(error.mode, "dev");
-        assert.equal(error.host, "192.168.1.10");
-        assert.include(error.message, "0.0.0.0");
-        assert.include(error.message, "--share");
-      });
-    });
-
-    // A shared origin means a remote browser, where unbundled dev's
-    // per-module waterfall pays a tailnet round trip per import level. The
-    // runner defaults bundled dev on for the spawned stack, but only
-    // defaults: an explicit ONICODE_BUNDLED_DEV (even "0") must pass through.
-    describe("--share spawn wiring", () => {
-      const shareSpawned = (input: {
-        readonly ambientBundledDev?: string | undefined;
-        readonly built?: boolean;
-        readonly host?: string;
-      }) =>
-        Effect.gen(function* () {
-          let captured: Record<string, string | undefined> | undefined;
-          let vpArgs: ReadonlyArray<string> = [];
-          const tailscaleCalls: Array<ReadonlyArray<string>> = [];
-          const spawnerLayer = Layer.succeed(
-            ChildProcessSpawner.ChildProcessSpawner,
-            ChildProcessSpawner.make((command) => {
-              const spawned = command as unknown as {
-                readonly command: string;
-                readonly args: ReadonlyArray<string>;
-                readonly options?: { readonly env?: Record<string, string | undefined> };
-              };
-              if (spawned.command === "vp") {
-                captured = spawned.options?.env;
-                vpArgs = spawned.args;
-                return Effect.succeed(mockProcess(0));
-              }
-              tailscaleCalls.push(spawned.args);
-              return Effect.succeed(
-                ChildProcessSpawner.makeHandle({
-                  pid: ChildProcessSpawner.ProcessId(2),
-                  exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
-                  isRunning: Effect.succeed(false),
-                  kill: () => Effect.void,
-                  unref: Effect.succeed(Effect.void),
-                  stdin: Sink.drain,
-                  stdout: spawned.args.includes("status")
-                    ? Stream.make(
-                        new TextEncoder().encode(
-                          JSON.stringify({ Self: { DNSName: "host.example.ts.net." } }),
-                        ),
-                      )
-                    : Stream.empty,
-                  stderr: Stream.empty,
-                  all: Stream.empty,
-                  getInputFd: () => Sink.drain,
-                  getOutputFd: () => Stream.empty,
-                }),
-              );
-            }),
-          );
-
-          yield* runDevRunnerWithInput({
-            ...devServerInput,
-            mode: "dev",
-            port: undefined,
-            share: true,
-            built: input.built ?? false,
-            host: input.host,
-          }).pipe(
-            Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
-            Effect.provideService(HostProcess.Platform, "linux"),
-            Effect.provideService(
-              HostProcess.Environment,
-              input.ambientBundledDev === undefined
-                ? {}
-                : { ONICODE_BUNDLED_DEV: input.ambientBundledDev },
-            ),
-          );
-
-          return { env: captured, vpArgs, tailscaleCalls };
-        });
-
-      it.effect("keeps an explicit ONICODE_BUNDLED_DEV=0 opt-out", () =>
-        Effect.gen(function* () {
-          const { env } = yield* shareSpawned({ ambientBundledDev: "0" });
-          assert.equal(env?.ONICODE_BUNDLED_DEV, "0");
-        }),
-      );
-
-      it.effect("--built serves the backend on the web port's tailnet URL", () =>
-        Effect.gen(function* () {
-          const { env, vpArgs, tailscaleCalls } = yield* shareSpawned({ built: true });
-          assert.include(vpArgs, "dev:built");
-          assert.equal(env?.ONICODE_BUILT_DEV, "1");
-          assert.equal(env?.ONICODE_BUNDLED_DEV, undefined);
-          assert.equal(env?.VITE_DEV_SERVER_URL, `https://host.example.ts.net:${env?.PORT}/`);
-          const serve = tailscaleCalls.find((args) => args.includes("--bg"));
-          assert.deepEqual(serve?.slice(-2), [
-            `--https=${env?.PORT}`,
-            `http://127.0.0.1:${env?.ONICODE_PORT}`,
-          ]);
-        }),
-      );
-
-      it.effect("--built --host ::1 targets the backend's IPv6 loopback", () =>
-        Effect.gen(function* () {
-          const { env, tailscaleCalls } = yield* shareSpawned({ built: true, host: "::1" });
-          const serve = tailscaleCalls.find((args) => args.includes("--bg"));
-          assert.equal(serve?.at(-1), `http://[::1]:${env?.ONICODE_PORT}`);
-        }),
-      );
-
-      it.effect("without --built keeps Vite behind the tailnet URL", () =>
-        Effect.gen(function* () {
-          const { env, vpArgs, tailscaleCalls } = yield* shareSpawned({});
-          assert.include(vpArgs, "dev");
-          assert.notInclude(vpArgs, "dev:built");
-          assert.equal(env?.ONICODE_BUNDLED_DEV, "1");
-          const serve = tailscaleCalls.find((args) => args.includes("--bg"));
-          assert.equal(serve?.at(-1), `http://localhost:${env?.PORT}`);
-        }),
-      );
-    });
-
-    it.effect.each([
-      { mode: "dev", share: false },
-      { mode: "dev:web", share: true },
-      { mode: "dev:desktop", share: true },
-    ] as const)("rejects --built for $mode with share=$share", ({ mode, share }) => {
-      const spawnerLayer = Layer.succeed(
-        ChildProcessSpawner.ChildProcessSpawner,
-        ChildProcessSpawner.make(() => Effect.succeed(mockProcess(0))),
-      );
-
-      return Effect.gen(function* () {
-        const error = yield* runDevRunnerWithInput({
-          ...devServerInput,
-          mode,
-          port: undefined,
-          share,
-          built: true,
-        }).pipe(
-          Effect.provide(Layer.mergeAll(emptyConfigLayer, netServiceLayer, spawnerLayer)),
-          Effect.provideService(HostProcess.Platform, "linux"),
-          Effect.flip,
-        );
-
-        assert.equal(error._tag, "DevRunnerBuiltNeedsShareError");
-      });
-    });
 
     it.effect("reports non-zero exits without manufacturing a cause", () => {
       const spawnerLayer = Layer.succeed(

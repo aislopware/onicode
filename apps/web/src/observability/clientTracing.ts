@@ -11,7 +11,6 @@ import { resolvePrimaryEnvironmentHttpUrl } from "../environments/primary";
 import { releaseResourceAttributes } from "@onicode/shared/releaseResource";
 import * as ClientTracer from "./clientTracer";
 import * as PrimaryEnvironmentHttpLayer from "../environments/primary/httpLayer";
-import { isElectron } from "../env";
 import { APP_VERSION } from "~/branding";
 
 const DEFAULT_EXPORT_INTERVAL_MS = 1_000;
@@ -44,13 +43,12 @@ const browserResourceAttributes = (): Record<string, unknown> => {
 const RELEASE_CHANNEL =
   import.meta.env.DEV || import.meta.env.VITE_RELEASE_CHANNEL === "dev" ? "dev" : "stable";
 const CLIENT_TRACING_RESOURCE = {
-  serviceName: "onicode-web",
+  serviceName: "onicode-renderer",
   attributes: {
     "service.namespace": "onicode",
     "service.instance.id": ClientTracer.serviceInstanceId,
     ...releaseResourceAttributes(RELEASE_CHANNEL),
-    "service.runtime": "oni-web",
-    "onicode.client.surface": isElectron ? "desktop" : "web",
+    "service.runtime": "oni-renderer",
     "service.version": APP_VERSION,
     ...browserResourceAttributes(),
   },

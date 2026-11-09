@@ -88,8 +88,8 @@ const policies = (): ReadonlyArray<Policy> => [
       {
         kind: "checkbox",
         list: "Clients",
-        name: "local-browser",
-        label: "A browser on this machine",
+        name: "local",
+        label: "A server started from the CLI on this machine",
         defaultChecked: true,
       },
       {

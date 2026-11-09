@@ -117,7 +117,7 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
         label: TARGET.label,
         httpBaseUrl: TARGET.httpBaseUrl,
         socketUrl: TARGET.wsBaseUrl,
-        httpAuthorization: null,
+        httpAuthorization: { _tag: "Bearer", token: "test-token" },
         target: TARGET,
       }),
     ),

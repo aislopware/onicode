@@ -81,7 +81,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CLI deferred imp
       yield* persistServerRuntimeState({
         path: runtimeStatePath,
         state: yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", devUrl: undefined },
+          config: { host: "127.0.0.1", dev: false },
           port: 3_773,
         }),
       });
@@ -109,7 +109,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CLI deferred imp
       yield* persistServerRuntimeState({
         path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
         state: yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", devUrl: undefined },
+          config: { host: "127.0.0.1", dev: false },
           port: 3_773,
         }),
       });

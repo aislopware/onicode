@@ -147,7 +147,6 @@ import {
   resolveMarkdownFileHostPath,
 } from "../markdownFileHostPath";
 import { isMarkdownFileLinkLabel } from "@onicode/shared/markdownLinks";
-import { isElectron } from "../env";
 import { readLocalApi } from "../localApi";
 import { cn } from "../lib/utils";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
@@ -604,7 +603,6 @@ function useChatMarkdownState({
               target,
               sshTarget: null,
               remoteOpenTargets: undefined,
-              isDesktopRenderer: window.desktopBridge !== undefined,
             }).mode !== "local-exec"
           ) {
             description = `The file was not found on ${target.label} at ${error.checkedPath ?? error.resource.path}.`;
@@ -1190,8 +1188,8 @@ const CHAT_MARKDOWN_COMPONENTS = {
                 canOpenInApp: canOpenInPreview,
               }) !== "app"
             ) {
-              // Open desktop Alt-clicks before Chromium downloads them so link routers can read the held key.
-              if (isElectron && event.altKey) {
+              // Open Alt-clicks before Chromium downloads them so link routers can read the held key.
+              if (event.altKey) {
                 event.preventDefault();
                 event.stopPropagation();
                 void readLocalApi()

@@ -1,7 +1,7 @@
 # Install Onicode
 
 Onicode runs coding agents on your computer and lets you control them from its
-desktop, web, or mobile app. Set up the machine where the agents will work first.
+desktop or mobile app. Set up the machine where the agents will work first.
 
 ## Requirements
 
@@ -29,8 +29,8 @@ one alone and stops. Set `ONICODE_VERSION` to pin an exact version.
 
 | Task                                             | Command                                                                      |
 | ------------------------------------------------ | ---------------------------------------------------------------------------- |
-| Start the server and open the web app            | `onicode`                                                                    |
-| Start the server without a browser               | `onicode serve`                                                              |
+| Start the server and print pairing details       | `onicode`                                                                    |
+| Same, without adding this folder as a project    | `onicode serve`                                                              |
 | Use it from your other devices                   | `onicode up` ([details](./remote-access.md))                                 |
 | Keep it running in the background (macOS, Linux) | `onicode service install` ([details](./background-service.md))               |
 | Move to the newest release                       | `onicode update`                                                             |

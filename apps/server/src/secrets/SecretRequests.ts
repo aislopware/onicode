@@ -159,7 +159,6 @@ const make = Effect.gen(function* () {
           reason: item.reason,
           ...(item.url === undefined ? {} : { url: item.url }),
           ...(item.placeholder === undefined ? {} : { placeholder: item.placeholder }),
-          ...(item.delivery === undefined ? {} : { delivery: item.delivery }),
           secretStatus,
         })
         .pipe(
@@ -252,13 +251,8 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.mapError((cause) => new SecretRequestError({ reason: "load_failed", cause })));
     const item = records.turnItems.find((candidate) => candidate.id === input.turnItemId);
-    // Only a card that told the user the agent's commands can read the value may write it out.
-    if (
-      item?.type !== "secret_request" ||
-      item.secretStatus !== "saved" ||
-      item.delivery !== "file"
-    ) {
-      return yield* new SecretRequestError({ reason: "not_a_file_request" });
+    if (item?.type !== "secret_request" || item.secretStatus !== "saved") {
+      return yield* new SecretRequestError({ reason: "not_found" });
     }
     if (filesDir === undefined) return yield* new SecretRequestError({ reason: "store_failed" });
     const ref = yield* refFor(input.threadId, item.id);

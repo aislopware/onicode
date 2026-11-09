@@ -30,7 +30,6 @@ import * as ServerConfig from "./config.ts";
 import * as ServiceLauncherClient from "./service/serviceLauncherClient.ts";
 import { flushCompileCache } from "./compileCache.ts";
 import * as Keybindings from "./keybindings.ts";
-import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as EffectWorker from "./orchestration-v2/EffectWorker.ts";
 import * as LegacyV1ThreadImporter from "./orchestration-v2/legacy/LegacyV1ThreadImporter.ts";
 import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
@@ -45,13 +44,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import { forkParked, forkParkedFiber } from "./serverActivation.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import {
-  formatHeadlessServeOutput,
-  formatHostForUrl,
-  isWildcardHost,
-  issueHeadlessServeAccessInfo,
-} from "./startupAccess.ts";
+import { formatHeadlessServeOutput, issueHeadlessServeAccessInfo } from "./startupAccess.ts";
 
 export class ServerRuntimeStartupError extends Schema.TaggedError<ServerRuntimeStartupError>()(
   "ServerRuntimeStartupError",
@@ -295,48 +288,6 @@ const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
   } satisfies AutoBootstrapWelcomeTargets;
 });
 
-const resolveStartupBrowserTarget = Effect.gen(function* () {
-  const serverConfig = yield* ServerConfig.ServerConfig;
-  const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-  const localUrl = `http://localhost:${serverConfig.port}`;
-  const bindUrl =
-    serverConfig.host && !isWildcardHost(serverConfig.host)
-      ? `http://${formatHostForUrl(serverConfig.host)}:${serverConfig.port}`
-      : localUrl;
-  const baseTarget = serverConfig.devUrl?.toString() ?? bindUrl;
-  return serverConfig.mode === "desktop"
-    ? baseTarget
-    : yield* serverAuth.issueStartupPairingUrl(baseTarget);
-});
-
-/** Prints the one-time admin pairing URL to stdout only; logger records reach trace files and collectors. */
-export const announceStartupPairingUrl = (pairingUrl: string) =>
-  Effect.logInfo("Authentication required. Open Onicode using the pairing URL.").pipe(
-    Effect.andThen(Console.log(`  pairingUrl: ${pairingUrl}`)),
-  );
-
-// Pairing tokens belong only in announceStartupPairingUrl's stdout output.
-export const logBrowserAutoOpenUnavailable = Effect.logInfo("browser auto-open unavailable", {
-  hint: "Open the pairing URL above in your browser.",
-});
-
-export const maybeOpenBrowser = Effect.fn("serverRuntimeStartup.maybeOpenBrowser")(function* (
-  target: string,
-) {
-  const serverConfig = yield* ServerConfig.ServerConfig;
-  if (serverConfig.noBrowser) {
-    return;
-  }
-  const externalLauncher = yield* ExternalLauncher.ExternalLauncher;
-
-  yield* externalLauncher.launchBrowser(target).pipe(
-    // The target carries the pairing token, and a failed launch records its
-    // command line on the span, so this call stays out of traces.
-    Effect.withTracerEnabled(false),
-    Effect.catch(() => logBrowserAutoOpenUnavailable),
-  );
-});
-
 const runStartupPhase = <A, E, R>(phase: string, effect: Effect.Effect<A, E, R>) =>
   effect.pipe(
     // Use span attributes; annotations would follow long-lived forked fibers for the server's lifetime.
@@ -555,21 +506,13 @@ const make = Effect.fn("serverRuntimeStartup.make")(function* (options?: Startup
 
     yield* forkParked(
       Effect.gen(function* () {
-        if (serverConfig.startupPresentation === "headless") {
-          yield* Effect.logDebug("startup phase: headless access info");
-          const accessInfo = yield* issueHeadlessServeAccessInfo();
-          yield* runStartupPhase(
-            "headless.output",
-            Console.log(formatHeadlessServeOutput(accessInfo)),
-          );
-        } else {
-          yield* Effect.logDebug("startup phase: browser open check");
-          const startupBrowserTarget = yield* resolveStartupBrowserTarget;
-          if (serverConfig.mode !== "desktop") {
-            yield* announceStartupPairingUrl(startupBrowserTarget);
-          }
-          yield* runStartupPhase("browser.open", maybeOpenBrowser(startupBrowserTarget));
-        }
+        if (serverConfig.mode === "desktop") return;
+        yield* Effect.logDebug("startup phase: headless access info");
+        const accessInfo = yield* issueHeadlessServeAccessInfo();
+        yield* runStartupPhase(
+          "headless.output",
+          Console.log(formatHeadlessServeOutput(accessInfo)),
+        );
       }),
     );
 

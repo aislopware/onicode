@@ -235,7 +235,7 @@ export const makeProviderAuthService = Effect.gen(function* () {
             ownerSessionId,
             stopSessions(input.instanceId, auth.credentialBinding),
             input.methodId,
-            input.returnUrl,
+            undefined,
             input.callbackMode,
           );
         }),

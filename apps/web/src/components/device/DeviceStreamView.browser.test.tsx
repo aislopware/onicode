@@ -15,7 +15,7 @@ vi.mock(import("./DevicePhoneViewport"), () => ({
 }));
 import { DeviceStreamView } from "./DeviceStreamView";
 
-const access = { httpBase: "http://test", wsBase: "ws://test", query: {}, credentials: true };
+const access = { httpBase: "http://test", wsBase: "ws://test", query: {} };
 function setup() {
   const registry = AtomRegistry.make();
   const touches: unknown[] = [];

@@ -327,10 +327,6 @@
       "types": "./src/devHome.ts",
       "import": "./src/devHome.ts"
     },
-    "./devProxy": {
-      "types": "./src/devProxy.ts",
-      "import": "./src/devProxy.ts"
-    },
     "./usageMerge": {
       "types": "./src/usageMerge.ts",
       "import": "./src/usageMerge.ts"
@@ -403,9 +399,9 @@
       "types": "./src/codexAuthCallback.ts",
       "import": "./src/codexAuthCallback.ts"
     },
-    "./codexAuthHandoff": {
-      "types": "./src/codexAuthHandoff.ts",
-      "import": "./src/codexAuthHandoff.ts"
+    "./codexAuthRequest": {
+      "types": "./src/codexAuthRequest.ts",
+      "import": "./src/codexAuthRequest.ts"
     },
     "./codexArtifactTemplates": {
       "types": "./src/codexArtifactTemplates.ts",

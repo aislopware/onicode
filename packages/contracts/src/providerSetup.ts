@@ -87,7 +87,6 @@ export type ProviderAuthResponse = typeof ProviderAuthResponse.Type;
 export const ProviderAuthStartInput = Schema.Struct({
   instanceId: ProviderInstanceId,
   methodId: Schema.optionalKey(SetupOperationId),
-  returnUrl: Schema.optionalKey(Schema.String),
   callbackMode: Schema.optionalKey(Schema.Literals(["server", "client"])),
 });
 export type ProviderAuthStartInput = typeof ProviderAuthStartInput.Type;

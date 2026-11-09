@@ -2180,8 +2180,6 @@ const grantedSessions = Atom.family((_id: EnvironmentId) =>
       auth: {
         policy: "remote-reachable" as const,
         bootstrapMethods: [],
-        sessionMethods: [],
-        sessionCookieName: "test",
       },
       scopes: [AuthSourceControlWriteScope],
     }),
@@ -2213,8 +2211,6 @@ it.effect("denies a routed write when only the origin has source-control permiss
           auth: {
             policy: "remote-reachable" as const,
             bootstrapMethods: [],
-            sessionMethods: [],
-            sessionCookieName: "test",
           },
         }),
       );

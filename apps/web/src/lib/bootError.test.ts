@@ -67,7 +67,6 @@ describe("resolveTriageCommand", () => {
 const environment: BootErrorEnvironment = {
   version: "0.1.3",
   channel: "stable",
-  surface: "web",
   platform: "MacIntel",
   userAgent: "Test",
   time: "2026-10-26T00:00:00.000Z",
