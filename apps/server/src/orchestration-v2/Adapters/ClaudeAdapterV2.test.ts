@@ -527,7 +527,7 @@ describe("ClaudeAdapterV2 runtime query policy", () => {
 
 describe("ClaudeAdapterV2 MCP query overrides", () => {
   const ONICODE_MCP_SERVERS = {
-    "onicode": {
+    onicode: {
       type: "http",
       url: "http://127.0.0.1:43123/mcp",
       headers: {
@@ -636,7 +636,7 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.deepEqual(overrides, {
       allowedTools: ["Read", "mcp__onicode__*"],
       mcpServers: {
-        "onicode": {
+        onicode: {
           type: "http",
           url: "http://127.0.0.1:43123/mcp",
           headers: {
@@ -700,7 +700,7 @@ describe("ClaudeAdapterV2 device instructions", () => {
       resume: false,
       cwd: "/workspace",
       ...(input.mcp
-        ? { mcpServers: { "onicode": { type: "http" as const, url: "http://127.0.0.1/mcp" } } }
+        ? { mcpServers: { onicode: { type: "http" as const, url: "http://127.0.0.1/mcp" } } }
         : {}),
       deviceToolsAvailable: input.deviceToolsAvailable,
       environment: {},
@@ -2701,7 +2701,7 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
             resume: false,
             cwd: null,
             environment: { PATH: "/usr/bin" },
-            mcpServers: { "onicode": oniMcpServer },
+            mcpServers: { onicode: oniMcpServer },
           }),
           pathToClaudeCodeExecutable: "/opt/claude/cli.js",
           spawnClaudeCodeProcess: cli.spawn,
@@ -2750,7 +2750,7 @@ describe("ClaudeAdapterV2 MCP credential channel", () => {
 
       assert.deepInclude(cli.controlRequests, {
         subtype: "mcp_set_servers",
-        servers: { "onicode": oniMcpServer },
+        servers: { onicode: oniMcpServer },
       });
       assert.deepInclude(
         cli.controlRequests.find((request) => Reflect.get(request, "subtype") === "initialize"),
@@ -4525,7 +4525,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
 
         // Project settings beat user settings, and the process env applies only when no file sets it.
-        const project = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-project-" });
+        const project = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "oni-claude-project-",
+        });
         yield* fileSystem.makeDirectory(path.join(project, ".claude"));
         yield* fileSystem.writeFileString(
           path.join(project, ".claude", "settings.json"),
@@ -4783,7 +4785,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const homePath = yield* fs.makeTempDirectoryScoped({ prefix: "oni-claude-skill-dispatch-" });
+        const homePath = yield* fs.makeTempDirectoryScoped({
+          prefix: "oni-claude-skill-dispatch-",
+        });
         for (const [name, userOnly] of [
           ["interrogate", true],
           ["implement", true],
@@ -6435,6 +6439,121 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       yield* Queue.take(harness.terminalReceipts);
       assert.lengthOf(notices(), 3);
       assert.notEqual(notices()[0]?.id, notices()[2]?.id);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("tells the thread once when Claude Code runs another model than the selected one", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const now = yield* DateTime.now;
+      const turn = Effect.fnUntraced(function* (
+        ordinal: number,
+        requested: string,
+        reported: string,
+      ) {
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-claude-model-swap-${ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Continue.",
+            attachments: [],
+            modelSelection: { ...CLAUDE_TEST_MODEL_SELECTION, model: requested },
+          }),
+        );
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "init",
+            model: reported,
+            uuid: `00000000-0000-4000-8000-00000000070${ordinal}`,
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: `00000000-0000-4000-8000-00000000071${ordinal}`, result: "Ok." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+      });
+      const notices = () =>
+        harness.events.flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "system_notice"
+            ? [event.turnItem.message]
+            : [],
+        );
+
+      yield* turn(1, "claude-sonnet-4-6", "claude-sonnet-4-6");
+      yield* turn(2, "claude-opus-5-5", "claude-opus-5-5[1m]");
+      assert.deepEqual(notices(), []);
+      yield* turn(3, "claude-fable-5-1", "claude-opus-5-5");
+      yield* turn(4, "claude-fable-5-1", "claude-opus-5-5");
+      assert.deepEqual(notices(), [
+        "Claude Code is running Claude Opus 5.5 instead of the selected Claude Fable 5.1.",
+      ]);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("leaves plan mode when Claude Code offers no ExitPlanMode to end it", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarness;
+      const now = yield* DateTime.now;
+      const turn = Effect.fnUntraced(function* (ordinal: number, tools: ReadonlyArray<string>) {
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now,
+            attemptId: RunAttemptId.make(`attempt-claude-plan-exit-${ordinal}`),
+            providerTurnOrdinal: ordinal,
+            text: "Plan it.",
+            attachments: [],
+            runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+              runtimeMode: "auto-accept-edits",
+              interactionMode: "plan",
+              cwd: "/workspace",
+            }),
+          }),
+        );
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "init",
+            permissionMode: "plan",
+            tools: [...tools],
+            uuid: `00000000-0000-4000-8000-00000000072${ordinal}`,
+            session_id: WAKE_NATIVE_SESSION,
+          }),
+        );
+        yield* harness.offerAndWait(
+          makeResultFrame({ uuid: `00000000-0000-4000-8000-00000000073${ordinal}`, result: "Ok." }),
+        );
+        yield* Queue.take(harness.terminalReceipts);
+      });
+
+      yield* turn(1, ["Read", "ExitPlanMode"]);
+      assert.deepEqual(harness.permissionModeChanges, []);
+      yield* turn(2, ["Read"]);
+      assert.deepEqual(harness.permissionModeChanges, ["acceptEdits"]);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
@@ -8141,7 +8260,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         const fileSystem = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
         const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-compact-" });
-        const project = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-compact-" });
+        const project = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "oni-claude-compact-",
+        });
         if (userSettings !== undefined) {
           yield* fileSystem.writeFileString(path.join(home, "settings.json"), userSettings);
         }

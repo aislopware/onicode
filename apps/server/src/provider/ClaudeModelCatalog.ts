@@ -6,7 +6,10 @@ import {
   type ServerProviderModel,
   type ServerProviderUpdateRequiredModel,
 } from "@onicode/contracts";
-import type { ModelInfo as ClaudeModelInfo } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  FastModeDisabledReason,
+  ModelInfo as ClaudeModelInfo,
+} from "@anthropic-ai/claude-agent-sdk";
 import * as Option from "effect/Option";
 import {
   getModelSelectionStringOptionValue,
@@ -221,6 +224,80 @@ export function claudeReportedModels(
   return models;
 }
 
+/** `opus` for `opus`, `opus[1m]` and `claude-opus-5-5`; undefined for gateway ids. */
+function claudeModelFamily(id: string): string | undefined {
+  const value = stripClaudeContextWindowSuffix(id).toLowerCase();
+  return /^claude-([a-z]+)-/.exec(value)?.[1] ?? (/^[a-z]+$/.test(value) ? value : undefined);
+}
+
+/**
+ * Drops built-in models whose family Claude Code does not offer, as when `availableModels`
+ * limits it. Reports naming no built-in family, such as gateway-only lists, change nothing.
+ */
+export function claudeModelsOfferedByReport(
+  models: ReadonlyArray<ServerProviderModel>,
+  reported: ReadonlyArray<ClaudeModelInfo> | undefined,
+): ReadonlyArray<ServerProviderModel> {
+  const builtInFamilies = new Set(
+    models.flatMap((model) => (model.isCustom ? [] : [claudeModelFamily(model.slug)])),
+  );
+  const offered = new Set(
+    (reported ?? [])
+      .flatMap((info) => [info.value === "default" ? "" : info.value, info.resolvedModel ?? ""])
+      .map(claudeModelFamily)
+      .filter((family) => family !== undefined && builtInFamilies.has(family)),
+  );
+  if (offered.size === 0) return models;
+  return models.filter((model) => {
+    const family = model.isCustom ? undefined : claudeModelFamily(model.slug);
+    return family === undefined || offered.has(family);
+  });
+}
+
+function withoutFastModeOption(capabilities: ModelCapabilities | null): ModelCapabilities | null {
+  const descriptors = capabilities?.optionDescriptors;
+  if (!capabilities || !descriptors?.some((descriptor) => descriptor.id === "fastMode")) {
+    return capabilities;
+  }
+  return {
+    ...capabilities,
+    optionDescriptors: descriptors.filter((descriptor) => descriptor.id !== "fastMode"),
+  };
+}
+
+export function withoutClaudeFastMode(
+  models: ReadonlyArray<ServerProviderModel>,
+): ReadonlyArray<ServerProviderModel> {
+  return models.map((model) => ({
+    ...model,
+    capabilities: withoutFastModeOption(model.capabilities),
+  }));
+}
+
+export function withoutClaudeCatalogFastMode(catalog: ClaudeModelCatalog): ClaudeModelCatalog {
+  return {
+    models: catalog.models.map((entry) => ({
+      ...entry,
+      model: { ...entry.model, capabilities: withoutFastModeOption(entry.model.capabilities) },
+    })),
+  };
+}
+
+/**
+ * Fast mode reasons that hold whatever Onicode sends. Others, such as `preference`, `pending`
+ * or `network_error`, still let a session opt in or clear up on their own.
+ */
+const CLAUDE_FAST_MODE_BLOCKING_REASONS: ReadonlySet<FastModeDisabledReason> = new Set([
+  "free",
+  "extra_usage_disabled",
+  "not_first_party",
+  "disabled_by_env",
+]);
+
+export function isClaudeFastModeBlocked(reason: FastModeDisabledReason | undefined): boolean {
+  return reason !== undefined && CLAUDE_FAST_MODE_BLOCKING_REASONS.has(reason);
+}
+
 function resolveClaudeCatalogModel(
   catalog: ClaudeModelCatalog,
   slugOrAlias: string | null | undefined,
@@ -233,6 +310,31 @@ function resolveClaudeCatalogModel(
       entry.model.aliases?.some((alias) => alias.toLowerCase() === value.toLowerCase()),
     )
   );
+}
+
+/**
+ * Names the model Claude Code reported running when it is not the built-in one requested,
+ * as when settings limit the account to other models. Unknown requests are not compared.
+ */
+export function claudeModelSubstitution(
+  catalog: ClaudeModelCatalog,
+  requested: string,
+  reported: string | undefined,
+): { readonly requested: string; readonly reported: string } | undefined {
+  const requestedEntry = resolveClaudeCatalogModel(
+    catalog,
+    stripClaudeContextWindowSuffix(requested),
+  );
+  const reportedId = stripClaudeContextWindowSuffix(reported ?? "").toLowerCase();
+  if (!requestedEntry || !reportedId) return undefined;
+  const reportedEntry =
+    resolveClaudeCatalogModel(catalog, reportedId) ??
+    resolveClaudeCatalogModel(catalog, reportedId.replace(/-\d{8}$/, ""));
+  if (reportedEntry?.model.slug === requestedEntry.model.slug) return undefined;
+  return {
+    requested: requestedEntry.model.name,
+    reported: reportedEntry?.model.name ?? reported!.trim(),
+  };
 }
 
 export function resolveClaudeModelSlug(catalog: ClaudeModelCatalog, slugOrAlias: string): string {

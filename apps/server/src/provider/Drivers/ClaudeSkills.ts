@@ -472,6 +472,44 @@ export const readClaudeSettingsEnv = Effect.fn("readClaudeSettingsEnv")(function
   return settingsEnv;
 });
 
+const decodePermissionSettings = Schema.decodeUnknownEffect(
+  fromLenientJson(
+    Schema.Struct({
+      permissions: Schema.optional(
+        Schema.Struct({ deny: Schema.optional(Schema.Array(Schema.Unknown)) }),
+      ),
+    }),
+  ),
+);
+
+/** Whole-tool deny rules from Claude's user, managed and cached server-managed settings. */
+export const readClaudeDeniedTools = Effect.fn("readClaudeDeniedTools")(function* (
+  config: Pick<ClaudeSettings, "homePath">,
+  environment: NodeJS.ProcessEnv,
+): Effect.fn.Return<ReadonlySet<string>, never, FileSystem.FileSystem | Path.Path> {
+  const fileSystem = yield* FileSystem.FileSystem;
+  const path = yield* Path.Path;
+  const platform = yield* HostProcess.Platform;
+  const configDirPath = yield* resolveClaudeConfigDirPath(config, environment);
+  const denied = new Set<string>();
+  for (const settingsPath of [
+    ...claudeSettingsPaths(path, configDirPath, undefined, platform, environment),
+    path.join(configDirPath, "remote-settings.json"),
+  ]) {
+    const contents = yield* fileSystem
+      .readFileString(settingsPath)
+      .pipe(Effect.orElseSucceed(() => undefined));
+    if (contents === undefined) continue;
+    const parsed = yield* decodePermissionSettings(contents).pipe(
+      Effect.orElseSucceed(() => undefined),
+    );
+    for (const rule of parsed?.permissions?.deny ?? []) {
+      if (typeof rule === "string") denied.add(rule.trim());
+    }
+  }
+  return denied;
+});
+
 // Claude's --add-dir is repeatable and variadic; parseCliArgs keeps only one value.
 export function claudeLaunchArgDirectories(launchArgs?: string): ReadonlyArray<string> {
   const directories: string[] = [];

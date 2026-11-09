@@ -470,6 +470,59 @@ describe("ProviderInstanceRegistry — multi-instance codex slice", () => {
     }).pipe(Effect.provide(layerTest)),
   );
 
+  it.live("follows the models and fast mode Claude reports, and shows why its probe failed", () =>
+    Effect.gen(function* () {
+      if (yield* HostProcess.isWindows) return;
+
+      const fixtures = yield* makeTildeProviderFixtures();
+      const instance = (variable: string, value: string) => ({
+        driver: ProviderDriverKind.make("claudeAgent"),
+        enabled: true,
+        environment: [{ name: variable, value, sensitive: false }],
+        config: makeClaudeConfig({
+          enabled: true,
+          binaryPath: fixtures.claudeBinaryPath,
+          homePath: fixtures.claudeHomePath,
+        }),
+      });
+      const limitedId = ProviderInstanceId.make("claude_limited");
+      const refusedId = ProviderInstanceId.make("claude_refused");
+      const { registry } = yield* makeProviderInstanceRegistry<ClaudeDriverEnv>({
+        drivers: [ClaudeDriver],
+        configMap: {
+          [limitedId]: instance(
+            "ONICODE_CLAUDE_INIT_EXTRA",
+            JSON.stringify({
+              models: ["default", "opus", "sonnet", "haiku"].map((value) => ({
+                value,
+                displayName: value,
+                description: "",
+              })),
+              fast_mode_state: "off",
+              fast_mode_disabled_reason: "disabled_by_env",
+            }),
+          ),
+          [refusedId]: instance(
+            "ONICODE_CLAUDE_FAIL_STDERR",
+            "claude: this machine is not enrolled\n",
+          ),
+        },
+      });
+      const limited = yield* (yield* registry.getInstance(limitedId))!.snapshot.refresh;
+      const refused = yield* (yield* registry.getInstance(refusedId))!.snapshot.refresh;
+
+      const slugs = limited.models.map((model) => model.slug);
+      expect(slugs).toContain("claude-opus-5");
+      expect(slugs).not.toContain("claude-fable-5");
+      expect(
+        limited.models.find((model) => model.slug === "claude-opus-5")?.capabilities
+          ?.optionDescriptors,
+      ).not.toContainEqual(expect.objectContaining({ id: "fastMode" }));
+      expect(refused).toMatchObject({ status: "warning", auth: { status: "unknown" } });
+      expect(refused.message).toContain("claude: this machine is not enrolled");
+    }).pipe(Effect.provide(layerTest)),
+  );
+
   it.effect("Claude's one-probe fallback keeps the last account once, then warns", () =>
     Effect.gen(function* () {
       if (yield* HostProcess.isWindows) return;

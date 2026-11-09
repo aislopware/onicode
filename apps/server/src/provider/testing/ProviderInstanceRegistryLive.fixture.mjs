@@ -10,6 +10,10 @@ if (process.argv.includes("--version")) {
   process.stdout.write("claude 2.1.219\n");
   process.exit(0);
 }
+if (process.env.ONICODE_CLAUDE_FAIL_STDERR) {
+  process.stderr.write(process.env.ONICODE_CLAUDE_FAIL_STDERR);
+  process.exit(1);
+}
 const loginMarker = process.env.ONICODE_CLAUDE_LOGIN_MARKER;
 const signedOut = loginMarker !== undefined && !NodeFS.existsSync(loginMarker);
 if (process.env.ONICODE_CLAUDE_PROBE_LOG)
@@ -80,6 +84,7 @@ lines.on("line", (line) => {
           account: signedOut
             ? { tokenSource: "none", apiProvider: "firstParty" }
             : { email: "test@example.com", subscriptionType: "pro", tokenSource: "oauth" },
+          ...JSON.parse(process.env.ONICODE_CLAUDE_INIT_EXTRA ?? "{}"),
         },
       },
     }) + "\n",

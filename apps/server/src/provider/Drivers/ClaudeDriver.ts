@@ -33,7 +33,11 @@ import {
 } from "../ClaudeProvider.ts";
 import { makeManagedServerProvider } from "@onicode/provider-core/server/managedProvider";
 import * as ModelCatalog from "@onicode/provider-core/server/ModelCatalog";
-import { resolveClaudeModelCatalog } from "../ClaudeModelCatalog.ts";
+import {
+  isClaudeFastModeBlocked,
+  resolveClaudeModelCatalog,
+  withoutClaudeCatalogFastMode,
+} from "../ClaudeModelCatalog.ts";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -137,6 +141,13 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     });
 
     const scopedLimitNames = yield* makeClaudeScopedLimitNames;
+    // Turns and text generation leave out the fast mode setting the last probe saw blocked.
+    const fastModeBlocked = yield* Ref.make(false);
+    const turnModelCatalog = Effect.all([modelCatalog, Ref.get(fastModeBlocked)]).pipe(
+      Effect.map(([catalog, blocked]) =>
+        blocked ? withoutClaudeCatalogFastMode(catalog) : catalog,
+      ),
+    );
     const orchestrationAdapter = yield* createClaudeAdapterV2(
       {
         instanceId,
@@ -149,7 +160,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       {
         scopedLimitNames,
         onUsageLimits: (update) => snapshot.applyUsageLimits(update),
-        modelCatalog,
+        modelCatalog: turnModelCatalog,
       },
     ).pipe(
       Effect.mapError(
@@ -165,7 +176,7 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
     const textGeneration = yield* makeClaudeTextGeneration(
       effectiveConfig,
       processEnv,
-      modelCatalog,
+      turnModelCatalog,
     );
 
     // Per-instance capabilities cache: keyed on binary + resolved HOME so
@@ -176,7 +187,15 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       () =>
         probeClaudeCapabilities(effectiveConfig, processEnv, stateDir).pipe(
           Effect.map((capabilities) => ({ _tag: "fresh" as const, capabilities })),
-          Effect.tap(({ capabilities }) => Ref.set(lastGoodCapabilities, capabilities)),
+          Effect.tap(({ capabilities }) =>
+            Effect.all([
+              Ref.set(lastGoodCapabilities, capabilities),
+              Ref.set(
+                fastModeBlocked,
+                isClaudeFastModeBlocked(capabilities.fastModeDisabledReason),
+              ),
+            ]),
+          ),
           // A transient miss shows the last account once, without its usage windows.
           Effect.catch((error) =>
             Ref.getAndSet(lastGoodCapabilities, undefined).pipe(

@@ -187,6 +187,7 @@ import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   resolveClaudeCatalogContextWindowTokens,
   type ClaudeModelCatalog,
+  claudeModelSubstitution,
   getClaudeCatalogModelCapabilities,
   resolveClaudeModelSlug,
   scopeClaudeModelCatalog,
@@ -2029,7 +2030,7 @@ export function claudeMcpQueryOverrides(input: {
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
-      "onicode": {
+      onicode: {
         type: "http",
         url: session.endpoint,
         headers: {
@@ -4897,6 +4898,8 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
     adapterOptions.settings.homePath.trim().length > 0 ||
     adapterOptions.environment.CLAUDE_CONFIG_DIR !== hostEnvironment.CLAUDE_CONFIG_DIR;
   const announcedBypassDowngrades = new Set<ThreadId>();
+  // The last swap each thread was told about, so every turn's init does not repeat it.
+  const announcedModelSubstitutions = new Map<ThreadId, string>();
   const readBypassSettings = (filePath: string) =>
     fileSystem.readFileString(filePath).pipe(
       Effect.flatMap(decodeClaudeBypassSettings),
@@ -9022,6 +9025,87 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             return;
           }
           yield* trackClaudeGoal({ nativeThreadId: liveQuery.nativeThreadId, context, message });
+
+          if (message.type === "system" && message.subtype === "init" && input.replayed !== true) {
+            // Plan mode ends only through ExitPlanMode; without it a session would stay stuck in plan.
+            if (
+              message.permissionMode === "plan" &&
+              Array.isArray(message.tools) &&
+              !message.tools.includes("ExitPlanMode") &&
+              context.queryPolicy.tools === undefined
+            ) {
+              const target = (yield* queryPolicyForTurn({
+                ...context.input,
+                runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
+                  ...context.input.runtimePolicy,
+                  interactionMode: "default",
+                }),
+              })).permissionMode;
+              liveQuery.permissionMode = yield* liveQuery.query.setPermissionMode(target).pipe(
+                Effect.as(target),
+                Effect.catchTags({
+                  ClaudeAgentSdkQueryRunnerError: () =>
+                    liveQuery.query
+                      .setPermissionMode("default")
+                      .pipe(Effect.as("default" as const)),
+                }),
+                Effect.catchTags({
+                  ClaudeAgentSdkQueryRunnerError: (error) =>
+                    Effect.logWarning("orchestration-v2.claude-plan-mode-exit-failed", {
+                      providerTurnId: context.providerTurnId,
+                      error: error.message,
+                    }).pipe(Effect.as(liveQuery.permissionMode)),
+                }),
+              );
+            }
+            const substitution = claudeModelSubstitution(
+              modelCatalog,
+              compileClaudeModelSelection(context.input.modelSelection, modelCatalog).apiModelId,
+              message.model,
+            );
+            const threadId = context.input.threadId;
+            const key = substitution && `${substitution.requested}\0${substitution.reported}`;
+            if (key && announcedModelSubstitutions.get(threadId) !== key) {
+              announcedModelSubstitutions.delete(threadId);
+              announcedModelSubstitutions.set(threadId, key);
+              if (announcedModelSubstitutions.size > 1000) {
+                const oldest = announcedModelSubstitutions.keys().next().value;
+                if (oldest !== undefined) announcedModelSubstitutions.delete(oldest);
+              }
+              const now = yield* DateTime.now;
+              const nativeItemId = `model-substitution:${context.providerTurnId}`;
+              const notice = `Claude Code is running ${substitution.reported} instead of the selected ${substitution.requested}.`;
+              yield* emitProviderEvent({
+                type: "turn_item.updated",
+                driver: CLAUDE_PROVIDER,
+                turnItem: {
+                  id: idAllocator.derive.turnItemFromProviderItem({
+                    driver: CLAUDE_PROVIDER,
+                    nativeItemId,
+                  }),
+                  threadId,
+                  runId: context.input.runId,
+                  nodeId: context.input.rootNodeId,
+                  providerThreadId: context.input.providerThread.id,
+                  providerTurnId: context.providerTurnId,
+                  nativeItemRef: {
+                    driver: CLAUDE_PROVIDER,
+                    nativeId: nativeItemId,
+                    strength: "weak",
+                  },
+                  parentItemId: null,
+                  ordinal: yield* resolveItemOrdinal(context, nativeItemId),
+                  type: "system_notice",
+                  status: "completed",
+                  title: notice,
+                  message: notice,
+                  startedAt: now,
+                  completedAt: now,
+                  updatedAt: now,
+                },
+              });
+            }
+          }
 
           if (message.type === "stream_event" && !message.parent_tool_use_id) {
             const event = message.event;

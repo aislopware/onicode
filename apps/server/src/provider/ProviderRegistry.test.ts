@@ -46,7 +46,7 @@ import { applyServerSettingsPatch } from "@onicode/shared/serverSettings";
 
 import { checkCodexProviderStatus, type CodexAppServerProviderSnapshot } from "./CodexProvider.ts";
 import { BUNDLED_CLAUDE_MODEL_CATALOG } from "./ClaudeModelCatalog.ts";
-import { checkClaudeProviderStatus } from "./ClaudeProvider.ts";
+import { type ClaudeCapabilitiesProbe, checkClaudeProviderStatus } from "./ClaudeProvider.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import * as ModelManifest from "./ModelManifest.ts";
@@ -178,6 +178,7 @@ type TestClaudeCapabilities = {
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
   readonly models?: ReadonlyArray<ModelInfo>;
+  readonly fastModeDisabledReason?: NonNullable<ClaudeCapabilitiesProbe["fastModeDisabledReason"]>;
 };
 
 function claudeCapabilities(overrides: Partial<TestClaudeCapabilities> = {}) {
@@ -3101,6 +3102,80 @@ it.layer(
           layerMockSpawner((args) => {
             const joined = args.join(" ");
             if (joined === "--version") return { stdout: "1.0.0\n", stderr: "", code: 0 };
+            throw new Error(`Unexpected args: ${joined}`);
+          }),
+        ),
+      ),
+    );
+
+    it.effect.each([
+      {
+        name: "a policy that limits models, blocks fast mode and denies ExitPlanMode",
+        models: ["default", "opus", "sonnet", "haiku"],
+        fastModeDisabledReason: "disabled_by_env",
+        deny: ["EnterPlanMode", "ExitPlanMode"],
+        expected: { fable: false, opus: true, fastMode: false, planMode: false },
+      },
+      {
+        name: "a stock account that reports the families it offers",
+        models: ["default=claude-opus-5-5", "sonnet[1m]", "haiku", "fable"],
+        fastModeDisabledReason: "preference",
+        deny: ["ExitPlanMode(*)"],
+        expected: { fable: true, opus: true, fastMode: true, planMode: true },
+      },
+      {
+        name: "a report without models",
+        models: [],
+        fastModeDisabledReason: undefined,
+        deny: [],
+        expected: { fable: true, opus: true, fastMode: true, planMode: true },
+      },
+    ] as const)("offers what Claude Code reports for $name", (row) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const configDir = yield* fileSystem.makeTempDirectoryScoped({
+          prefix: "oni-claude-policy-",
+        });
+        yield* fileSystem.writeFileString(
+          path.join(configDir, "remote-settings.json"),
+          JSON.stringify({ permissions: { deny: row.deny } }),
+        );
+        const status = yield* checkClaudeProviderStatus(
+          { ...defaultClaudeSettings, homePath: configDir },
+          claudeCapabilities({
+            models: row.models.map((entry) => {
+              const [value, resolvedModel] = entry.split("=");
+              return {
+                value: value!,
+                ...(resolvedModel ? { resolvedModel } : {}),
+                displayName: value!,
+                description: "",
+              };
+            }),
+            ...(row.fastModeDisabledReason
+              ? { fastModeDisabledReason: row.fastModeDisabledReason }
+              : {}),
+          }),
+        );
+        const opus = status.models.find((model) => model.slug === "claude-opus-5-5");
+        assert.deepStrictEqual(
+          {
+            fable: status.models.some((model) => model.slug === "claude-fable-5-1"),
+            opus: opus !== undefined,
+            fastMode:
+              opus?.capabilities?.optionDescriptors?.some(
+                (descriptor) => descriptor.id === "fastMode",
+              ) ?? false,
+            planMode: status.showInteractionModeToggle,
+          },
+          row.expected,
+        );
+      }).pipe(
+        Effect.provide(
+          layerMockSpawner((args) => {
+            const joined = args.join(" ");
+            if (joined === "--version") return { stdout: "2.1.316\n", stderr: "", code: 0 };
             throw new Error(`Unexpected args: ${joined}`);
           }),
         ),

@@ -19,6 +19,7 @@ import { createModelCapabilities } from "@onicode/shared/model";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 import {
   query as claudeQuery,
+  type FastModeDisabledReason,
   type ModelInfo as ClaudeModelInfo,
   type Options as ClaudeQueryOptions,
   type SlashCommand as ClaudeSlashCommand,
@@ -39,7 +40,11 @@ import {
 } from "@onicode/provider-core/server/snapshotProbe";
 import { resolveClaudeSdkExecutablePath } from "./Drivers/ClaudeExecutable.ts";
 import { hasClaudeManagedMcpConfig, makeClaudeEnvironment } from "./Drivers/ClaudeHome.ts";
-import { discoverClaudeSkills, readClaudeSettingsEnv } from "./Drivers/ClaudeSkills.ts";
+import {
+  discoverClaudeSkills,
+  readClaudeDeniedTools,
+  readClaudeSettingsEnv,
+} from "./Drivers/ClaudeSkills.ts";
 import type { ProviderWorkspaceSnapshot } from "@onicode/provider-core/server/driver";
 import { makeUnavailableUsageLimits } from "@onicode/provider-core/server/usageLimits";
 import {
@@ -50,10 +55,13 @@ import {
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
   type ClaudeModelCatalog,
+  claudeModelsOfferedByReport,
   claudeReportedModels,
   formatClaudeVersionUpgradeMessage,
+  isClaudeFastModeBlocked,
   resolveClaudeModelsForVersion,
   resolveClaudeUpdateRequiredModels,
+  withoutClaudeFastMode,
   withUltracodeToggle,
 } from "./ClaudeModelCatalog.ts";
 
@@ -205,6 +213,7 @@ function claudeAuthStatus(
 const CAPABILITIES_PROBE_TIMEOUT_MS = 25_000;
 // Native CLI startup on Windows can exceed the shared probe deadline.
 const CLAUDE_VERSION_CHECK_TIMEOUT_MS = 20_000;
+const CLAUDE_PROBE_STDERR_TAIL_CHARS = 1_000;
 
 const CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES = [
   "user",
@@ -218,6 +227,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly environment: NodeJS.ProcessEnv;
   readonly cwd: string | undefined;
   readonly managedMcpConfig: boolean;
+  readonly onStderr: (chunk: string) => void;
 }): ClaudeQueryOptions {
   return {
     persistSession: false,
@@ -240,7 +250,7 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
       CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
     },
     ...(input.cwd ? { cwd: input.cwd } : {}),
-    stderr: () => {},
+    stderr: input.onStderr,
   };
 }
 
@@ -259,6 +269,7 @@ export type ClaudeCapabilitiesProbe = {
   readonly apiProvider: string | undefined;
   readonly slashCommands: ReadonlyArray<ServerProviderSlashCommand>;
   readonly models?: ReadonlyArray<ClaudeModelInfo>;
+  readonly fastModeDisabledReason?: FastModeDisabledReason;
   /** Undefined means get_usage failed; absent windows on success mean no subscription windows, as with API keys. */
   readonly usage?: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
   readonly usageCheckedAt?: string;
@@ -352,7 +363,11 @@ function claudeGatewayDiscoveryGraceMs(environment: Readonly<Record<string, unkn
 
 class ClaudeCapabilitiesProbeSdkError extends Schema.TaggedError<ClaudeCapabilitiesProbeSdkError>()(
   "ClaudeCapabilitiesProbeSdkError",
-  { operation: Schema.Literals(["initialize", "usage"]), cause: Schema.Defect() },
+  {
+    operation: Schema.Literals(["initialize", "usage"]),
+    cause: Schema.Defect(),
+    stderrTail: Schema.optional(Schema.String),
+  },
 ) {
   override get message(): string {
     return `Claude capability probe ${this.operation} failed.`;
@@ -367,6 +382,11 @@ const probeClaudeCapabilities = (
   includeUsage = true,
 ) => {
   const abort = new AbortController();
+  // Launchers explain refusals (not enrolled, proxy down) only on stderr.
+  let stderrTail = "";
+  const onStderr = (chunk: string) => {
+    stderrTail = (stderrTail + chunk).slice(-CLAUDE_PROBE_STDERR_TAIL_CHARS);
+  };
   const abortProbe = Effect.sync(() => {
     if (!abort.signal.aborted) abort.abort();
   });
@@ -397,12 +417,20 @@ const probeClaudeCapabilities = (
             environment: claudeEnvironment,
             cwd,
             managedMcpConfig,
+            onStderr,
           }),
         });
         const init = await q.initializationResult();
         return { q, init, graceMs };
       },
-      catch: (cause) => new ClaudeCapabilitiesProbeSdkError({ operation: "initialize", cause }),
+      catch: (cause) => {
+        const tail = stderrTail.trim();
+        return new ClaudeCapabilitiesProbeSdkError({
+          operation: "initialize",
+          cause,
+          ...(tail ? { stderrTail: tail } : {}),
+        });
+      },
     });
   }).pipe(
     Effect.timeout(CAPABILITIES_PROBE_TIMEOUT_MS),
@@ -447,6 +475,9 @@ const probeClaudeCapabilities = (
           apiProvider: account?.apiProvider,
           slashCommands: parseClaudeInitializationCommands(init.commands),
           ...(init.models?.length ? { models: init.models } : {}),
+          ...(init.fast_mode_disabled_reason
+            ? { fastModeDisabledReason: init.fast_mode_disabled_reason }
+            : {}),
           ...(usage ? { usage, usageCheckedAt } : {}),
         } satisfies ClaudeCapabilitiesProbe;
       }).pipe(
@@ -549,6 +580,13 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     });
   }
 
+  // Plan mode can only end through ExitPlanMode, so a policy that denies it rules plan mode out.
+  const presentation = (yield* readClaudeDeniedTools(claudeSettings, resolvedEnvironment)).has(
+    "ExitPlanMode",
+  )
+    ? { ...CLAUDE_PRESENTATION, showInteractionModeToggle: false }
+    : CLAUDE_PRESENTATION;
+
   const versionProbe = yield* runClaudeCommand(
     claudeSettings,
     ["--version"],
@@ -562,7 +600,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       errorTag: error._tag,
     });
     return buildServerProvider({
-      presentation: CLAUDE_PRESENTATION,
+      presentation,
       enabled: claudeSettings.enabled,
       checkedAt,
       models: allModels,
@@ -580,7 +618,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
 
   if (Option.isNone(versionProbe.success)) {
     return buildServerProvider({
-      presentation: CLAUDE_PRESENTATION,
+      presentation,
       enabled: claudeSettings.enabled,
       checkedAt,
       models: allModels,
@@ -604,7 +642,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
       stderrLength: version.stderr.length,
     });
     return buildServerProvider({
-      presentation: CLAUDE_PRESENTATION,
+      presentation,
       enabled: claudeSettings.enabled,
       checkedAt,
       models: allModels,
@@ -628,20 +666,26 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     probeResult && Result.isSuccess(probeResult) ? probeResult.success : undefined;
   const probeFailure =
     probeResult && Result.isFailure(probeResult) ? probeResult.failure : undefined;
-  const models = claudeProviderModels(
+  const offeredModels = claudeProviderModels(
     [
-      ...resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+      ...claudeModelsOfferedByReport(
+        resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+        capabilities?.models,
+      ),
       ...claudeReportedModels(modelCatalog, claudeSettings.customModels, capabilities?.models),
     ],
     claudeSettings.customModels,
   );
+  const models = isClaudeFastModeBlocked(capabilities?.fastModeDisabledReason)
+    ? withoutClaudeFastMode(offeredModels)
+    : offeredModels;
   const skills = yield* discoverClaudeSkills(claudeSettings, cwd, resolvedEnvironment);
   const slashCommands = [COMPACT_SLASH_COMMAND, ...(capabilities?.slashCommands ?? [])];
   const dedupedSlashCommands = dedupeSlashCommands(slashCommands);
 
   if (!capabilities) {
     return buildServerProvider({
-      presentation: CLAUDE_PRESENTATION,
+      presentation,
       enabled: claudeSettings.enabled,
       checkedAt,
       models,
@@ -656,7 +700,11 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
         message: probeFailure
           ? Cause.isTimeoutError(probeFailure)
             ? `Timed out after ${CAPABILITIES_PROBE_TIMEOUT_MS / 1_000}s while checking Claude account status.`
-            : "Claude Agent CLI failed while checking account status."
+            : `Claude Agent CLI failed while checking account status.${
+                probeFailure._tag === "ClaudeCapabilitiesProbeSdkError" && probeFailure.stderrTail
+                  ? ` stderr: ${probeFailure.stderrTail}`
+                  : ""
+              }`
           : "Could not verify Claude authentication status from initialization result.",
       },
     });
@@ -674,7 +722,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     endpoint.hostname !== "api.anthropic.com";
   if (!customApiEndpoint && claudeAuthStatus(capabilities) === "unauthenticated") {
     return buildServerProvider({
-      presentation: CLAUDE_PRESENTATION,
+      presentation,
       enabled: claudeSettings.enabled,
       checkedAt,
       models,
@@ -712,7 +760,7 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
           checkedAt: usageCheckedAt,
         }).limits;
   return buildServerProvider({
-    presentation: CLAUDE_PRESENTATION,
+    presentation,
     enabled: claudeSettings.enabled,
     checkedAt,
     models,
