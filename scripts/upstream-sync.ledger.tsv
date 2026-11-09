@@ -23,3 +23,5 @@ eb3e95cfbc	take	fix(android): keep diagonal horizontal swipes inside HTML blocks
 06f8b99f46	skip	Android live activity and relay FCM deliveries; Onicode removed agent-awareness notifications and the relay
 c4ce7b0fd7	take	fix(desktop): update xa11y to 0.15.4 so App Shots read window text faster (#33135)
 9fcfd4c16e	take	feat(source-control): add Cursor Origin provider (#33093)
+445efb6dfc	skip	native DPoP signing serves the T3 Connect relay and cloud sign-in, which Onicode removed
+b07fdeb143	take	fix(mobile): iOS terminal can copy, paste, and stop freezing (#25828)

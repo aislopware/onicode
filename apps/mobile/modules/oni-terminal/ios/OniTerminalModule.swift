@@ -7,7 +7,7 @@ public class OniTerminalModule: Module {
     // Bumped when native hardware-keyboard handling changes; surfaced in the JS debug
     // logs so a stale native binary is distinguishable from a broken key pipeline.
     Constants([
-      "hardwareKeyRevision": 3,
+      "hardwareKeyRevision": 4,
       "outputRevision": 1,
     ])
 
@@ -71,7 +71,7 @@ public class OniTerminalModule: Module {
       Prop("sharedGrid") { (view: OniTerminalView, sharedGrid: [Int]) in
         view.sharedGrid = sharedGrid
       }
-      Events("onInput", "onResize", "onCapture")
+      Events("onInput", "onResize", "onCapture", "onPaste")
 
       OnViewDidUpdateProps { (view: OniTerminalView) in
         view.applyPendingBuffer()
