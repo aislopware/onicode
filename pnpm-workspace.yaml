@@ -222,7 +222,7 @@ patchedDependencies:
   # skip, the fingerprint silently drops every Expo native module and OTAs reach stale binaries.
   "@expo/fingerprint@0.21.5": patches/@expo__fingerprint@0.21.5.patch
   # Observe the owned host exit independently of descendants retaining its stdio.
-  "@muse-code/sdk@1.4.6": patches/@muse-code__sdk@1.4.6.patch
+  "@muse-code/sdk@1.4.14": patches/@muse-code__sdk@1.4.14.patch
   app-builder-lib@26.18.1: patches/app-builder-lib@26.18.1.patch
   # Android: a marker orient other than "auto" or a number (auto-start-reverse) no longer throws.
   react-native-svg@15.16.0: patches/react-native-svg@15.16.0.patch

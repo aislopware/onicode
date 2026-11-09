@@ -322,7 +322,7 @@ patchedDependencies:
   '@expo/metro-config@58.0.14': 90fa980e8b6480631fb2fbb04559834e3c612db40c550cd828f11be297d8d760
   '@expo/ui@58.0.20': 64559cb60723e19a8a72256d4c78d1315d937a7af3b32d19860ea596f88736ce
   '@ff-labs/fff-node@0.11.0': cc71fcec015f4d39bc96ae2e2bf6b0ca678124c722c66a7841efce9d34b5983c
-  '@muse-code/sdk@1.4.6': 7b495b607fc5d76b444c7c4d58821e839726a30e6f3c53564f0d59f2d5b42101
+  '@muse-code/sdk@1.4.14': 6613a36786b1278616ca2c142ad93cd8b30be4311c3ecc192c3cbc9fe3a41f4a
   '@pierre/diffs@1.6.1': 322ac5f5db8b5715189c010802047f8235c3a45d8ed5ca0ba60fac266e2eba34
   '@react-native-ai/apple@0.12.0': 2d09870c2848d185cb05b53ed823a46e12dba519324d8dd8e584e28731990f9d
   '@react-native-menu/menu@2.0.0': 6872ba71b9847c5a0210b1b896923dadc3860faedfe28d9f062bcedfe786ef1d
@@ -731,11 +731,11 @@ importers:
   apps/server:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
-        specifier: ^0.3.316
-        version: 0.3.316(@anthropic-ai/sdk@0.93.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@8.1.1)(zod@4.6.7))(zod@4.6.7)
+        specifier: ^0.3.319
+        version: 0.3.319(@anthropic-ai/sdk@0.93.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@8.1.1)(zod@4.6.7))(zod@4.6.7)
       '@cursor/sdk':
-        specifier: 1.2.0
-        version: 1.2.0(zod@4.6.7)
+        specifier: 1.3.1
+        version: 1.3.1(zod@4.6.7)
       '@effect/platform-node':
         specifier: 4.1.2
         version: 4.1.2(bufferutil@4.1.0)(effect@4.1.2)(redis@6.2.1)(utf-8-validate@6.0.6)
@@ -746,8 +746,8 @@ importers:
         specifier: 0.11.0
         version: 0.11.0(patch_hash=cc71fcec015f4d39bc96ae2e2bf6b0ca678124c722c66a7841efce9d34b5983c)
       '@muse-code/sdk':
-        specifier: 1.4.6
-        version: 1.4.6(patch_hash=7b495b607fc5d76b444c7c4d58821e839726a30e6f3c53564f0d59f2d5b42101)(@types/node@26.6.6)
+        specifier: 1.4.14
+        version: 1.4.14(patch_hash=6613a36786b1278616ca2c142ad93cd8b30be4311c3ecc192c3cbc9fe3a41f4a)(@types/node@26.6.6)
       '@onicode/provider-acp':
         specifier: workspace:*
         version: link:../../packages/provider-acp
@@ -891,8 +891,8 @@ importers:
         specifier: workspace:*
         version: link:../web
       '@opencode-ai/sdk':
-        specifier: ^1.3.15
-        version: 1.15.13
+        specifier: ^1.19.5
+        version: 1.19.5
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6
@@ -1480,8 +1480,8 @@ importers:
   packages/provider-cursor:
     dependencies:
       '@cursor/sdk':
-        specifier: 1.2.0
-        version: 1.2.0(zod@4.6.7)
+        specifier: 1.3.1
+        version: 1.3.1(zod@4.6.7)
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -1619,8 +1619,8 @@ importers:
   packages/provider-muse:
     dependencies:
       '@muse-code/sdk':
-        specifier: 1.4.6
-        version: 1.4.6(patch_hash=7b495b607fc5d76b444c7c4d58821e839726a30e6f3c53564f0d59f2d5b42101)(@types/node@26.6.6)
+        specifier: 1.4.14
+        version: 1.4.14(patch_hash=6613a36786b1278616ca2c142ad93cd8b30be4311c3ecc192c3cbc9fe3a41f4a)(@types/node@26.6.6)
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -1662,17 +1662,17 @@ importers:
         specifier: workspace:*
         version: link:../shared
       '@opencode-ai/sdk':
-        specifier: ^1.3.15
-        version: 1.15.13
+        specifier: ^1.19.5
+        version: 1.19.5
       '@opencode/client':
-        specifier: 2.0.28
-        version: 2.0.28(effect@4.1.2)
+        specifier: 2.2.6
+        version: 2.2.6(effect@4.1.2)
       '@opencode/protocol':
-        specifier: 2.0.28
-        version: 2.0.28
+        specifier: 2.2.6
+        version: 2.2.6
       '@opencode/schema':
-        specifier: 2.0.28
-        version: 2.0.28
+        specifier: 2.2.6
+        version: 2.2.6
       effect:
         specifier: 4.1.2
         version: 4.1.2
@@ -2301,8 +2301,8 @@ packages:
     resolution: {integrity: sha512-IpefF5ssZVOZCD4Wu7zxt6PwZoGT2HLVjxpJ10Bjx6EAmRfLYJPjyrfxb0RYDlwvXnDb9nkQ7Do/oJVDuRFzew==}
     engines: {node: '>=18'}
 
-  '@anthropic-ai/claude-agent-sdk@0.3.316':
-    resolution: {integrity: sha512-mCMr0que5kIy80JslJub6WFDB2+GYRGWNeVgSZaBpkBwXrr4wnRMnnGHitkA2BEJ5QP5xWyc6YH/6do/edxCWg==}
+  '@anthropic-ai/claude-agent-sdk@0.3.319':
+    resolution: {integrity: sha512-7X+sh4uZv/u4OL4I4cQvMr9N3NM6FDiuyk829hFylgbrnNwVyiGElWEDWGuO26zwMIxmgpKdPoDILoFIHh1uwA==}
     engines: {node: '>=18.14.0'}
     peerDependencies:
       '@anthropic-ai/sdk': '>=0.93.0'
@@ -2886,38 +2886,38 @@ packages:
     engines: {node: '>=18'}
     hasBin: true
 
-  '@cursor/sdk-darwin-arm64@1.2.0':
-    resolution: {integrity: sha512-UkZ/RdxKCpOQ85nRgzSq+g0h+gIw36/lCEvQvomhs5EkSFZW3OwbeEzkAU3UYglZ7t3RNHj3mc5C5cdDtHguvw==}
+  '@cursor/sdk-darwin-arm64@1.3.1':
+    resolution: {integrity: sha512-5JXgVJYeFPxXjDqnu1ha/rAmH+ATFh4abdx199x8E/RcYYM++9b55oJXO3GYv1/9/4Qa9RsE5JkHRY6FYc5vQw==}
     cpu: [arm64]
     os: [darwin]
     hasBin: true
 
-  '@cursor/sdk-darwin-x64@1.2.0':
-    resolution: {integrity: sha512-mJTFdX+qv9dHAm59tT7uq7ci7+BDvFoNk4gdF2zGp9SLULicY+FdFD64p1qLen1bX5Y2soZaX5mWBy7BfObjcg==}
+  '@cursor/sdk-darwin-x64@1.3.1':
+    resolution: {integrity: sha512-yHzIRER8IpOpIH/CUigquuwqvcjCEe62xV6OiJHzRfgApdnzxCjC8JMhLZP2M08/dofyZu9xeo7yr43H6oSRTA==}
     cpu: [x64]
     os: [darwin]
     hasBin: true
 
-  '@cursor/sdk-linux-arm64@1.2.0':
-    resolution: {integrity: sha512-Rs+cd5snuhxMAHkpqRfEGPB1qAsfqSOYJh5SOHZTOWy2LkRVO62WHwd4x80C2emj+dosTV5WAcuF2kMKKcrDJg==}
+  '@cursor/sdk-linux-arm64@1.3.1':
+    resolution: {integrity: sha512-8wI7DUSQtJ7Rkyj5AhNONeR0M+5bjhR0qo8GJEEmRs6isi072sNPsFXwfhlzX7bhbtsX/FCtvsTG/vpam48ObA==}
     cpu: [arm64]
     os: [linux]
     hasBin: true
 
-  '@cursor/sdk-linux-x64@1.2.0':
-    resolution: {integrity: sha512-ainsGAFtkWTBZrLABp82Hvfv7VB/FxmZHE42qMVotFTRDwOY2iduvhSig910bVxv+kw3S00Srmu/9CxklLwhbw==}
+  '@cursor/sdk-linux-x64@1.3.1':
+    resolution: {integrity: sha512-jIwzTr3KhMtU4aJc8x0i1RlcBKttqcVYhor9FI/h1qJQm03yTgSwhyZjsMvfBHPQ5KoYDFVdu47S1dIhwaSWZA==}
     cpu: [x64]
     os: [linux]
     hasBin: true
 
-  '@cursor/sdk-win32-x64@1.2.0':
-    resolution: {integrity: sha512-p3rkyta6R/nXIukd3/ifJq32otkkGoUi41T2jxnHbPHMhzE2F8OuJQGBVmORuQLMr+bIGGVZmCxertgs4WgzcQ==}
+  '@cursor/sdk-win32-x64@1.3.1':
+    resolution: {integrity: sha512-hqYllGgY27eaq+w035PebKdoc/JswcrvOSNCniqq/nicLXgWdK5zdKiAs5MyWUr73HGGL1sK0aiE7WdxbIKKVw==}
     cpu: [x64]
     os: [win32]
     hasBin: true
 
-  '@cursor/sdk@1.2.0':
-    resolution: {integrity: sha512-Nqm2U0zTWrYEDCv3Rdwsfa1gYZWsg+JnY+I2F8BwWSAr3FNo0TZWwyHWoWngZgriF1w02fJ4gjJWaul9zysvgQ==}
+  '@cursor/sdk@1.3.1':
+    resolution: {integrity: sha512-Mn0gK8V+5BkOqm22J2ocU+1BrqnNH8QcK9kmA7SkRuawDOeq2ABC2BIZq9gRnF3z68x/I7J/ZU8jl6DcshCVUA==}
     engines: {node: '>=22.13'}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
@@ -3945,8 +3945,8 @@ packages:
       '@cfworker/json-schema':
         optional: true
 
-  '@muse-code/sdk@1.4.6':
-    resolution: {integrity: sha512-pUENCnmn9q4e2xMXicdRbzbSMdH1fiyTIh5fVBXuxNdNP2ZKA0kwQz5fWMxIB8wzxS2ZyH0v27dvfbZuGuoUjg==}
+  '@muse-code/sdk@1.4.14':
+    resolution: {integrity: sha512-LMBcXGhZjBrzO/KhvPAvqLAt5DsJeiESRKmHMDNIKdBO74kUb4aFo4ieM/r7/O5cCee1Alrjn7dL6zXQnIYWJA==}
     engines: {node: '>=20'}
     peerDependencies:
       '@types/node': 26.6.6
@@ -4205,11 +4205,11 @@ packages:
   '@onicode/mobile-terminal-native@file:apps/mobile/modules/oni-terminal':
     resolution: {directory: apps/mobile/modules/oni-terminal, type: directory}
 
-  '@opencode-ai/sdk@1.15.13':
-    resolution: {integrity: sha512-4TwojIoQ8EG6/mVBuUVYZXiFcwNmiiytEnjnvyuvSJjGwFIlw2YIBFxtSVC3FbwwbwHT63teh1RHiQUUC4U5xw==}
+  '@opencode-ai/sdk@1.19.5':
+    resolution: {integrity: sha512-+bqu8gHiwmq96T9q5G34uLNHWCInIMsrE3hytCNHj1cVaxjY0AGJyNCT1rkeeZwgPU7A5TMTNwN+0XxCO2vqDg==}
 
-  '@opencode/client@2.0.28':
-    resolution: {integrity: sha512-YV0Yxk93/K2h4Xy/sEW/4ZYGMwn7ltxG2Y/Vdy2VCIZ2z0/r9MI6x5/XawSNfCvImBxuHkQNbYtu9Rgp3ArJ4g==}
+  '@opencode/client@2.2.6':
+    resolution: {integrity: sha512-o90b8Z6tk62U3MiRK1g6r7WmNWLzHzIHme75/MCWa9/XmOREMzY4W1N01wAuHwU3J6UH/PlUDNKvLkeX5qCyeA==}
     peerDependencies:
       effect: 4.1.2
       solid-js: '>=1.9.0'
@@ -4219,11 +4219,11 @@ packages:
       solid-js:
         optional: true
 
-  '@opencode/protocol@2.0.28':
-    resolution: {integrity: sha512-yfc0SDa7FxqSDZRC0olACnhB7Gvsx8X0ji0gEmO2xunCswNiJTCPUngcIKphxN5NFeMl/A5E0iNG4q39KW5fyA==}
+  '@opencode/protocol@2.2.6':
+    resolution: {integrity: sha512-XBAgz2qnhFS/EI4P3pgC9A6HJTHnFiaQXkqux3liXwE7hZh5wEzRZ551nQZD95rkrH00EnryUSaKI2y/O2Bt6w==}
 
-  '@opencode/schema@2.0.28':
-    resolution: {integrity: sha512-NHl42ngFN6uLCjtmtooYlEGEayng9ZFc+30DAqQuPcvKpMWsO23OqximHlukxtErp209C4f9LW+OJH/6k60+yw==}
+  '@opencode/schema@2.2.6':
+    resolution: {integrity: sha512-TaLr30ktFFVsuReorFNbqYvybTVxV/4M44qm5XzRjUqq6deR0jH4h4Wt1gB0NTkXDFL0LMH+Ul1oVBnp5w9TRg==}
 
   '@oslojs/asn1@1.0.0':
     resolution: {integrity: sha512-zw/wn0sj0j0QKbIXfIlnEcTviaCzYOY3V5rAyjR6YtOByFtJiT574+8p9Wlach0lZH9fddD4yb9laEAIl4vXQA==}
@@ -10365,7 +10365,7 @@ snapshots:
     dependencies:
       json-schema: 0.4.0
 
-  '@anthropic-ai/claude-agent-sdk@0.3.316(@anthropic-ai/sdk@0.93.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@8.1.1)(zod@4.6.7))(zod@4.6.7)':
+  '@anthropic-ai/claude-agent-sdk@0.3.319(@anthropic-ai/sdk@0.93.0(zod@4.6.7))(@modelcontextprotocol/sdk@1.32.2(supports-color@8.1.1)(zod@4.6.7))(zod@4.6.7)':
     dependencies:
       '@anthropic-ai/sdk': 0.93.0(zod@4.6.7)
       '@modelcontextprotocol/sdk': 1.32.2(supports-color@8.1.1)(zod@4.6.7)
@@ -10993,22 +10993,22 @@ snapshots:
       '@crowecawcaw/xa11y-win32-arm64-msvc': 0.15.4
       '@crowecawcaw/xa11y-win32-x64-msvc': 0.15.4
 
-  '@cursor/sdk-darwin-arm64@1.2.0':
+  '@cursor/sdk-darwin-arm64@1.3.1':
     optional: true
 
-  '@cursor/sdk-darwin-x64@1.2.0':
+  '@cursor/sdk-darwin-x64@1.3.1':
     optional: true
 
-  '@cursor/sdk-linux-arm64@1.2.0':
+  '@cursor/sdk-linux-arm64@1.3.1':
     optional: true
 
-  '@cursor/sdk-linux-x64@1.2.0':
+  '@cursor/sdk-linux-x64@1.3.1':
     optional: true
 
-  '@cursor/sdk-win32-x64@1.2.0':
+  '@cursor/sdk-win32-x64@1.3.1':
     optional: true
 
-  '@cursor/sdk@1.2.0(zod@4.6.7)':
+  '@cursor/sdk@1.3.1(zod@4.6.7)':
     dependencies:
       '@bufbuild/protobuf': 1.10.0
       '@connectrpc/connect': 1.7.0(@bufbuild/protobuf@1.10.0)
@@ -11016,11 +11016,11 @@ snapshots:
       '@statsig/js-client': 3.31.0
       zod: 4.6.7
     optionalDependencies:
-      '@cursor/sdk-darwin-arm64': 1.2.0
-      '@cursor/sdk-darwin-x64': 1.2.0
-      '@cursor/sdk-linux-arm64': 1.2.0
-      '@cursor/sdk-linux-x64': 1.2.0
-      '@cursor/sdk-win32-x64': 1.2.0
+      '@cursor/sdk-darwin-arm64': 1.3.1
+      '@cursor/sdk-darwin-x64': 1.3.1
+      '@cursor/sdk-linux-arm64': 1.3.1
+      '@cursor/sdk-linux-x64': 1.3.1
+      '@cursor/sdk-win32-x64': 1.3.1
 
   '@date-fns/tz@1.5.0': {}
 
@@ -12177,7 +12177,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@muse-code/sdk@1.4.6(patch_hash=7b495b607fc5d76b444c7c4d58821e839726a30e6f3c53564f0d59f2d5b42101)(@types/node@26.6.6)':
+  '@muse-code/sdk@1.4.14(patch_hash=6613a36786b1278616ca2c142ad93cd8b30be4311c3ecc192c3cbc9fe3a41f4a)(@types/node@26.6.6)':
     optionalDependencies:
       '@types/node': 26.6.6
 
@@ -12348,23 +12348,23 @@ snapshots:
 
   '@onicode/mobile-terminal-native@file:apps/mobile/modules/oni-terminal': {}
 
-  '@opencode-ai/sdk@1.15.13':
+  '@opencode-ai/sdk@1.19.5':
     dependencies:
       cross-spawn: 7.0.6
 
-  '@opencode/client@2.0.28(effect@4.1.2)':
+  '@opencode/client@2.2.6(effect@4.1.2)':
     dependencies:
-      '@opencode/protocol': 2.0.28
-      '@opencode/schema': 2.0.28
+      '@opencode/protocol': 2.2.6
+      '@opencode/schema': 2.2.6
     optionalDependencies:
       effect: 4.1.2
 
-  '@opencode/protocol@2.0.28':
+  '@opencode/protocol@2.2.6':
     dependencies:
-      '@opencode/schema': 2.0.28
+      '@opencode/schema': 2.2.6
       effect: 4.1.2
 
-  '@opencode/schema@2.0.28':
+  '@opencode/schema@2.2.6':
     dependencies:
       '@standard-schema/spec': 1.1.0
       effect: 4.1.2

@@ -148,14 +148,11 @@ describe("OpenCode2Client message history", () => {
         type: "compaction",
         status,
         summary: "Fixture compaction",
-        recent:
-          "metadata" in fields && "recent" in fields.metadata ? previous.id : (fields.recent ?? ""),
       });
     }),
   );
 
   it.effect.each([
-    { field: "recent", fields: { status: "completed", recent: 42 } },
     { field: "reason", fields: { status: "completed", reason: "scheduled", recent: previous.id } },
   ] as const)("keeps a compaction with an invalid $field an error", ({ field, fields }) =>
     Effect.gen(function* () {

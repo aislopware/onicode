@@ -1,5 +1,5 @@
 diff --git a/dist/src/connection/spawn.d.ts b/dist/src/connection/spawn.d.ts
-index b67e690eae07748e6aee2c8ee59bbfef13b2eea8..581ef3e9184da89cde8471a8fe03c86209ac7c81 100644
+index b67e690..581ef3e 100644
 --- a/dist/src/connection/spawn.d.ts
 +++ b/dist/src/connection/spawn.d.ts
 @@ -20,6 +20,8 @@ export interface SpawnMspConnectionOptions {
@@ -21,7 +21,7 @@ index b67e690eae07748e6aee2c8ee59bbfef13b2eea8..581ef3e9184da89cde8471a8fe03c862
       * Deterministic-test seam; production always uses `child_process.spawn`.
       * A stub here observes the exact options the call site passes, so a
 diff --git a/dist/src/connection/spawn.js b/dist/src/connection/spawn.js
-index 28aeb6246ba937c5321f1393dc120eface0707f3..0c835bb9d45a73eacd6a35b5e589191f04104537 100644
+index 28aeb62..0c835bb 100644
 --- a/dist/src/connection/spawn.js
 +++ b/dist/src/connection/spawn.js
 @@ -390,7 +390,10 @@ export class MuseServeChild {

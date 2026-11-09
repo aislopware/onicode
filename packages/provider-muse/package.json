@@ -29,7 +29,7 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@muse-code/sdk": "1.4.6",
+    "@muse-code/sdk": "1.4.14",
     "@onicode/contracts": "workspace:*",
     "@onicode/provider-core": "workspace:*",
     "@onicode/shared": "workspace:*",
