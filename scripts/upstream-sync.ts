@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics nodeBuiltinImport:off globalConsole:off
 // Ports t3code (the `upstream` remote) into Onicode one reviewed commit at a time.
 // See docs/operations/upstream-sync.md. Never `git merge upstream/main`: the rebrand makes
 // a blind merge resurrect removed T3 features and silently undo Onicode changes.
@@ -105,7 +105,7 @@ const REMOVED_AREAS =
 
 const pending = () => {
   const base = gitText(["merge-base", "HEAD", UPSTREAM]);
-  const done = new Set(readLedger().map(([sha]) => sha));
+  const done = new Set(readLedger().flatMap(([sha]) => (sha ? [sha] : [])));
   const commits = gitText(["rev-list", "--reverse", "--no-merges", `${base}..${UPSTREAM}`])
     .split("\n")
     .filter(Boolean)
