@@ -1,10 +1,6 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import * as Path from "effect/Path";
-import * as Mime from "effect/http/Mime";
 import * as Ref from "effect/Ref";
 import * as Schedule from "effect/Schedule";
 import * as Schema from "effect/Schema";
@@ -195,47 +191,10 @@ const proxyRequest = Effect.fn("desktop.protocol.proxyRequest")(function* (
   return withContentSecurityPolicy(response, contentSecurityPolicy);
 });
 
-const serveDesktopAsset = Effect.fn("desktop.protocol.serveAsset")(function* (
-  request: Request,
-  assetDirectory: string,
-) {
-  const fileSystem = yield* FileSystem.FileSystem;
-  const path = yield* Path.Path;
-  const url = new URL(request.url);
-  if (url.host !== DESKTOP_HOST) return new Response(null, { status: 404 });
-  if (request.method !== "GET" && request.method !== "HEAD") {
-    return new Response(null, { status: 405 });
-  }
-  const pathname = Option.getOrNull(Option.liftThrowable(decodeURIComponent)(url.pathname));
-  if (pathname === null || pathname.includes("\0")) return new Response(null, { status: 400 });
-  const root = path.resolve(assetDirectory);
-  const assetPath = path.resolve(root, `.${pathname}`);
-  if (assetPath !== root && !assetPath.startsWith(root + path.sep)) {
-    return new Response(null, { status: 404 });
-  }
-  const stat = yield* fileSystem.stat(assetPath).pipe(Effect.orElseSucceed(() => null));
-  let filePath = assetPath;
-  if (stat?.type !== "File") {
-    const wantsHtml = request.headers.get("accept")?.includes("text/html") ?? false;
-    if (path.extname(assetPath) !== "" && !wantsHtml) {
-      return new Response(null, { status: 404 });
-    }
-    filePath = path.join(root, "index.html");
-  }
-  const contents = yield* fileSystem.readFile(filePath).pipe(Effect.orElseSucceed(() => null));
-  if (contents === null) return new Response(null, { status: 404 });
-  return new Response(request.method === "HEAD" ? null : new Uint8Array(contents), {
-    headers: {
-      "content-type": Option.getOrElse(Mime.getType(filePath), () => "application/octet-stream"),
-    },
-  });
-});
-
 /** @public */
 export const make = Effect.gen(function* () {
   const registered = yield* Ref.make(false);
-  const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
-  const runPromise = Effect.runPromiseWith(context);
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
 
   const registerDesktopProtocol = Effect.fn("desktop.electron.protocol.registerDesktopProtocol")(
     function* (input: DesktopProtocolRegistrationInput) {
@@ -246,21 +205,31 @@ export const make = Effect.gen(function* () {
       yield* Effect.acquireRelease(
         Effect.try({
           try: () => {
-            Electron.protocol.handle(input.scheme, async (request) => {
-              if ("assetDirectory" in input) {
-                return withContentSecurityPolicy(
-                  await runPromise(serveDesktopAsset(request, input.assetDirectory)),
-                  contentSecurityPolicy,
-                );
-              }
-              return runPromise(
+            if ("assetDirectory" in input) {
+              // Served by the network service, so asset loads never wait on a busy main thread.
+              Electron.protocol.registerSource(input.scheme, {
+                routes: [
+                  {
+                    match: { host: DESKTOP_HOST },
+                    source: {
+                      type: "directory",
+                      root: input.assetDirectory,
+                      headers: { "Content-Security-Policy": contentSecurityPolicy },
+                    },
+                  },
+                ],
+              });
+              return;
+            }
+            Electron.protocol.handle(input.scheme, (request) =>
+              runPromise(
                 proxyRequest(request, input.targetOrigin, contentSecurityPolicy).pipe(
                   Effect.catchTags({
                     ElectronProtocolFetchError: (error) => Effect.die(error.cause),
                   }),
                 ),
-              );
-            });
+              ),
+            );
           },
           catch: (cause) => new ElectronProtocolRegistrationError({ scheme: input.scheme, cause }),
         }).pipe(Effect.andThen(Ref.set(registered, true))),

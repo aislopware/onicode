@@ -1,68 +1,44 @@
 import { assert, describe, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as FileSystem from "effect/FileSystem";
-import * as Layer from "effect/Layer";
 import { beforeEach, vi } from "vite-plus/test";
 
-const { handleMock, netFetchMock, unhandleMock } = vi.hoisted(() => ({
+const { handleMock, netFetchMock, registerSourceMock, unhandleMock } = vi.hoisted(() => ({
   handleMock: vi.fn(),
+  registerSourceMock: vi.fn(),
   netFetchMock: vi.fn(),
   unhandleMock: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   net: { fetch: netFetchMock },
-  protocol: { handle: handleMock, unhandle: unhandleMock },
+  protocol: { handle: handleMock, registerSource: registerSourceMock, unhandle: unhandleMock },
 }));
 
 import * as ElectronProtocol from "./ElectronProtocol.ts";
 
-const layerProtocol = ElectronProtocol.layer.pipe(Layer.provide(NodeServices.layer));
+const layerProtocol = ElectronProtocol.layer;
 
 describe("ElectronProtocol", () => {
   beforeEach(() => {
     handleMock.mockReset();
     netFetchMock.mockReset();
+    registerSourceMock.mockReset();
     unhandleMock.mockReset();
   });
 
-  it.effect("serves the bundled client from disk without a backend", () =>
+  it.effect("serves the bundled client from disk under the app policy, without a JS handler", () =>
     Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const directory = yield* fileSystem.makeTempDirectoryScoped();
-      yield* fileSystem.writeFileString(`${directory}/index.html`, "<html>app</html>");
-      yield* fileSystem.writeFileString(`${directory}/app.js`, "export default 1;");
-      let handler: ((request: Request) => Promise<Response>) | undefined;
-      handleMock.mockImplementation((_scheme, nextHandler) => {
-        handler = nextHandler;
-      });
       const protocol = yield* ElectronProtocol.ElectronProtocol;
-      yield* protocol.registerDesktopProtocol({
-        scheme: "onicode",
-        assetDirectory: directory,
-      });
-      const request = (pathname: string, init?: RequestInit) =>
-        Effect.promise(() => handler!(new Request(`onicode://app${pathname}`, init)));
+      yield* protocol.registerDesktopProtocol({ scheme: "onicode", assetDirectory: "/app/client" });
 
-      const page = yield* request("/settings/connections");
-      assert.equal(yield* Effect.promise(() => page.text()), "<html>app</html>");
-      assert.include(page.headers.get("content-security-policy") ?? "", "default-src 'self'");
-      const dottedRoute = yield* request("/environment/thread.with.dots", {
-        headers: { accept: "text/html" },
-      });
-      assert.equal(yield* Effect.promise(() => dottedRoute.text()), "<html>app</html>");
-
-      const script = yield* request("/app.js?v=1");
-      assert.equal(yield* Effect.promise(() => script.text()), "export default 1;");
-      assert.include(script.headers.get("content-type") ?? "", "javascript");
-
-      assert.equal((yield* request("/missing.js")).status, 404);
-      assert.equal((yield* request("/%2e%2e%2fsecret.txt")).status, 404);
-      assert.equal((yield* request("/%invalid")).status, 400);
-      assert.equal((yield* request("/", { method: "POST" })).status, 405);
-      assert.equal(netFetchMock.mock.calls.length, 0);
-    }).pipe(Effect.provide(Layer.merge(layerProtocol, NodeServices.layer)), Effect.scoped),
+      assert.equal(handleMock.mock.calls.length, 0);
+      const [scheme, source] = registerSourceMock.mock.calls[0]!;
+      assert.equal(scheme, "onicode");
+      const [route] = source.routes;
+      assert.deepEqual(route.match, { host: "app" });
+      assert.equal(route.source.root, "/app/client");
+      assert.include(route.source.headers["Content-Security-Policy"], "default-src 'self'");
+    }).pipe(Effect.provide(layerProtocol), Effect.scoped),
   );
 
   it.effect("proxies the stable renderer origin to the current app server", () =>
