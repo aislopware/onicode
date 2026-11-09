@@ -249,7 +249,9 @@ describe("pull request list answers across a reload", () => {
           detail: null,
         },
       ],
-      errors: [{ projectId: ProjectId.make("project-1"), projectTitle: "onicode", message: "boom" }],
+      errors: [
+        { projectId: ProjectId.make("project-1"), projectTitle: "onicode", message: "boom" },
+      ],
       truncated: true,
       nextCursors: { "aislopware/onicode": "cursor-1" },
     }) as PullRequestListResult;

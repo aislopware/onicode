@@ -2130,7 +2130,10 @@ describe("AcpAdapterV2", () => {
     {
       // Without a `mode` category, Onicode derives no mode state and only the config option switches.
       modeIds: "Copilot URL collaboration_mode",
-      environment: { ONICODE_ACP_COPILOT_MODES: "1", ONICODE_ACP_MODE_OPTION_CATEGORY: "collaboration_mode" },
+      environment: {
+        ONICODE_ACP_COPILOT_MODES: "1",
+        ONICODE_ACP_MODE_OPTION_CATEGORY: "collaboration_mode",
+      },
       planModeId: "https://agentclientprotocol.com/protocol/session-modes#plan",
       buildModeId: "https://agentclientprotocol.com/protocol/session-modes#agent",
     },
@@ -3651,7 +3654,10 @@ describe("AcpAdapterV2", () => {
       assert.deepEqual(webItem("grok-web-search", "completed"), {
         title: "Web search: onicode code",
         patterns: ["onicode code"],
-        results: [{ url: "https://github.com/aislopware/onicode" }, { url: "https://github.com/aislopware/onicode" }],
+        results: [
+          { url: "https://github.com/aislopware/onicode" },
+          { url: "https://github.com/aislopware/onicode" },
+        ],
       });
       assert.deepEqual(webItem("grok-web-fetch", "completed")?.results, [
         { url: "https://github.com/aislopware/onicode", snippet: "Onicode page" },
@@ -4145,7 +4151,9 @@ describe("AcpAdapterV2", () => {
       Effect.gen(function* () {
         const harness = yield* makePromptInactivityHarness({
           environment: (runtimeOrdinal) =>
-            runtimeOrdinal === 1 ? { ONICODE_ACP_EMIT_TRACKED_TOOL_CALL_KIND_THEN_HANG: "execute" } : {},
+            runtimeOrdinal === 1
+              ? { ONICODE_ACP_EMIT_TRACKED_TOOL_CALL_KIND_THEN_HANG: "execute" }
+              : {},
         });
         yield* harness.startTurn(1);
         yield* harness.runtime.events.pipe(
@@ -5194,8 +5202,9 @@ describe("AcpAdapterV2", () => {
           ? replacementMcpServer.env
           : undefined;
       assert.equal(
-        replacementMcpEnvironment?.find((variable) => variable.name === "ONICODE_ACP_MCP_AUTHORIZATION")
-          ?.value,
+        replacementMcpEnvironment?.find(
+          (variable) => variable.name === "ONICODE_ACP_MCP_AUTHORIZATION",
+        )?.value,
         "Bearer rollback-target-token",
       );
       const snapshotAfterRollback = yield* runtime.readThreadSnapshot({

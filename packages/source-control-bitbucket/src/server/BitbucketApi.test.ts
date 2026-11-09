@@ -260,7 +260,10 @@ it.effect.each([false, true])(
       response: () =>
         Response.json({
           ...bitbucketPullRequest,
-          source: { ...bitbucketPullRequest.source, repository: { full_name: "aislopware/onicode" } },
+          source: {
+            ...bitbucketPullRequest.source,
+            repository: { full_name: "aislopware/onicode" },
+          },
         }),
     });
     return Effect.gen(function* () {
@@ -428,7 +431,10 @@ it.effect("prefers an explicit repository and uses context when the repository i
       remoteName: "origin",
       remoteUrl: "git@bitbucket.org:another/context.git",
     };
-    for (const repository of ["aislopware/onicode", "https://bitbucket.org/aislopware/onicode.git"]) {
+    for (const repository of [
+      "aislopware/onicode",
+      "https://bitbucket.org/aislopware/onicode.git",
+    ]) {
       yield* bitbucket.getRepositoryCloneUrls({ cwd: "/repo", context, repository });
     }
     yield* bitbucket.getDefaultBranch({ cwd: "/repo", context });

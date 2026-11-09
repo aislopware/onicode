@@ -1640,7 +1640,12 @@ it.effect("lets a worktree checkout that is still working run past five minutes"
     const worktreePath = path.join(cwd, "worktree");
 
     const creation = yield* driver
-      .createWorktree({ cwd, refName: "main", newRefName: "onicode/slow-checkout", path: worktreePath })
+      .createWorktree({
+        cwd,
+        refName: "main",
+        newRefName: "onicode/slow-checkout",
+        path: worktreePath,
+      })
       .pipe(Effect.forkChild);
     yield* Deferred.await(checkoutStarted);
     yield* TestClock.adjust("6 minutes");
@@ -4319,25 +4324,27 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
       }),
     );
 
-    it.effect.each(["onicode", "Onicode"])("flattens a generated name when parent %s blocks it", (parent) =>
-      Effect.gen(function* () {
-        const cwd = yield* makeTmpDir();
-        yield* initRepoWithCommit(cwd);
-        const driver = yield* GitVcsDriver.GitVcsDriver;
-        // A local `onicode` branch is why launches start on the flat `oni-<hex>` temporary branch.
-        yield* git(cwd, ["branch", parent]);
-        yield* git(cwd, ["checkout", "-b", "oni-abcd1234"]);
-        yield* git(cwd, ["branch", "oni-fix-login"]);
+    it.effect.each(["onicode", "Onicode"])(
+      "flattens a generated name when parent %s blocks it",
+      (parent) =>
+        Effect.gen(function* () {
+          const cwd = yield* makeTmpDir();
+          yield* initRepoWithCommit(cwd);
+          const driver = yield* GitVcsDriver.GitVcsDriver;
+          // A local `onicode` branch is why launches start on the flat `oni-<hex>` temporary branch.
+          yield* git(cwd, ["branch", parent]);
+          yield* git(cwd, ["checkout", "-b", "oni-abcd1234"]);
+          yield* git(cwd, ["branch", "oni-fix-login"]);
 
-        const renamed = yield* driver.renameBranch({
-          cwd,
-          oldBranch: "oni-abcd1234",
-          newBranch: "onicode/fix-login",
-        });
+          const renamed = yield* driver.renameBranch({
+            cwd,
+            oldBranch: "oni-abcd1234",
+            newBranch: "onicode/fix-login",
+          });
 
-        assert.equal(renamed.branch, "oni-fix-login-1");
-        assert.equal(yield* git(cwd, ["branch", "--show-current"]), "oni-fix-login-1");
-      }),
+          assert.equal(renamed.branch, "oni-fix-login-1");
+          assert.equal(yield* git(cwd, ["branch", "--show-current"]), "oni-fix-login-1");
+        }),
     );
 
     it.effect.each(["oni-fix-login/child", "Onicode-Fix-Login/child", "Onicode-FIX-LOGIN"])(
@@ -5246,7 +5253,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           "# test\n",
         );
         assert.equal(
-          yield* driver.readConfigValue(worktreePath, "branch.feature/locked-config.oni-merge-base"),
+          yield* driver.readConfigValue(
+            worktreePath,
+            "branch.feature/locked-config.oni-merge-base",
+          ),
           null,
         );
         assert.equal(yield* fileSystem.exists(pathService.join(cwd, ".git/config.lock")), true);
@@ -6266,7 +6276,10 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.strictEqual(status.branchChanges?.deletions, 0);
         // gh pr create consumes this setting verbatim as the hosted target branch.
         assert.equal(
-          yield* driver.readConfigValue(worktreePath, "branch.feature/from-upstream.oni-merge-base"),
+          yield* driver.readConfigValue(
+            worktreePath,
+            "branch.feature/from-upstream.oni-merge-base",
+          ),
           "release",
         );
         assert.equal(changes.baseRef, "upstream/release");

@@ -451,7 +451,10 @@ describe("scoreThreadSearch with heavy use and loose input", () => {
       pullRequests: [
         {
           number: 22889,
-          references: ["aislopware/onicode#22889", "https://github.com/aislopware/onicode/pull/22889"],
+          references: [
+            "aislopware/onicode#22889",
+            "https://github.com/aislopware/onicode/pull/22889",
+          ],
         },
       ],
     });

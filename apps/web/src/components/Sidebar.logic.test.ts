@@ -1517,7 +1517,9 @@ describe("sidebarFolderExpansionKeys", () => {
   it("honors a collapse the legacy sidebar saved under a member's cwd", () => {
     const keys = sidebarFolderExpansionKeys({
       projectKey: "github.com/aislopware/onicode",
-      memberProjects: [{ physicalProjectKey: "local:/code/onicode", workspaceRoot: "/code/onicode" }],
+      memberProjects: [
+        { physicalProjectKey: "local:/code/onicode", workspaceRoot: "/code/onicode" },
+      ],
     });
     const cwdKey = keys.at(-1)!;
 

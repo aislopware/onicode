@@ -4,9 +4,9 @@ import { faviconUrlForOrigin, toolActivityFaviconUrl } from "./favicon.ts";
 
 describe("faviconUrlForOrigin", () => {
   it("sends only the public hostname and requested size, never the port", () => {
-    expect(faviconUrlForOrigin("https://github.com:8443/aislopware/onicode?private=query", 64)).toBe(
-      "https://www.google.com/s2/favicons?domain=github.com&sz=64",
-    );
+    expect(
+      faviconUrlForOrigin("https://github.com:8443/aislopware/onicode?private=query", 64),
+    ).toBe("https://www.google.com/s2/favicons?domain=github.com&sz=64");
   });
 
   // regression: #5838 no favicon request for missing or non-http origins

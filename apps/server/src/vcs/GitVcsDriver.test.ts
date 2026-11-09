@@ -990,7 +990,9 @@ it.effect.each(["committed", "unborn"] as const)(
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const driver = yield* GitVcsDriver.makeVcsDriverShape();
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-checkpoint-processes-" });
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "oni-checkpoint-processes-",
+      });
       const git = (args: ReadonlyArray<string>) =>
         driver.execute({ operation: "checkpoint-test", cwd, args });
       const checkpointRef = CheckpointRef.make("refs/onicode/checkpoints/test");
@@ -1053,7 +1055,9 @@ it.effect.skipIf(HostProcess.Platform.defaultValue() === "win32")(
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const driver = yield* GitVcsDriver.makeVcsDriverShape();
-      const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-checkpoint-new\nline-" });
+      const cwd = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "oni-checkpoint-new\nline-",
+      });
       const { git, checkpointRef } = yield* makeCheckpointFixture(driver, cwd);
       const originalIndex = yield* fileSystem.readFile(path.join(cwd, ".git", "index"));
 
