@@ -5,3 +5,4 @@ ca920d5cdb	skip	T3 release CI; Onicode releases through better-update
 357fb754fa	skip	CI desktop launch check runs scripts/smoke-desktop-app.ts, which Onicode removed with T3's release pipeline
 5ee1dbffbe	skip	marketing site localization; Onicode removed apps/marketing
 415f68d2fe	take	refactor(mobile): components/ui platform primitives are iOS files with .android overrides (#33173)
+225685a8d5	take	feat(pi): Fast and Ultrafast service tiers for Pi models (#33177)

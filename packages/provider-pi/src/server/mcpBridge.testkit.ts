@@ -85,7 +85,7 @@ export async function loadMcpBridge(
       "async function",
     ),
   );
-  await NodeVM.runInNewContext(`${source}\nt3McpExtension(pi)`, {
+  await NodeVM.runInNewContext(`${source}\noniMcpExtension(pi)`, {
     process: {
       env: {
         ONICODE_MCP_URL: "http://fixture.invalid/mcp",
@@ -125,6 +125,7 @@ export async function loadMcpBridge(
     },
     pi: {
       on: (name: string, handler: AgentStartHook) => handlers.set(name, handler),
+      registerCommand: () => {},
       registerTool: (tool: RegisteredTool) => {
         if (options.allowsTool && !options.allowsTool(tool.name)) return;
         const index = tools.findIndex((current) => current.name === tool.name);
