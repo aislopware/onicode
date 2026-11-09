@@ -32,7 +32,9 @@ export function NewThreadButton(props: {
         type="monochrome"
       />
       {props.extended && props.expanded !== false ? (
-        <AppText className="text-[16px] font-oni-medium text-primary-foreground">New thread</AppText>
+        <AppText className="text-[16px] font-oni-medium text-primary-foreground">
+          New thread
+        </AppText>
       ) : null}
     </Pressable>
   );

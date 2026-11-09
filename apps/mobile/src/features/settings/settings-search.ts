@@ -4,7 +4,6 @@ import type { SettingsPageTarget } from "./components/settings-page-targets";
 
 /** What each page holds besides its row's label, so search finds a setting by its own name. */
 const SETTINGS_SEARCH_TERMS = {
-  account: ["sign in", "sign out", "login", "clerk", "connect"],
   SettingsEnvironments: [
     "servers",
     "connections",
@@ -13,7 +12,6 @@ const SETTINGS_SEARCH_TERMS = {
     "remote",
     "tailscale",
   ],
-  SettingsNotifications: ["push", "alerts", "live activity", "agent activity"],
   SettingsAppearance: [
     "theme",
     "dark mode",
@@ -112,17 +110,8 @@ const SETTINGS_SEARCH_TERMS = {
     "clone cache",
   ],
   SettingsEnvironmentMaintenance: ["updates", "provider updates", "restart", "manage environments"],
-  SettingsAbout: [
-    "version",
-    "diagnostics",
-    "client storage",
-    "cache",
-    "legal",
-    "privacy",
-    "terms",
-    "open source licenses",
-  ],
-} satisfies Partial<Record<SettingsPageTarget | "account", readonly string[]>>;
+  SettingsAbout: ["version", "diagnostics", "client storage", "cache", "open source licenses"],
+} satisfies Partial<Record<SettingsPageTarget, readonly string[]>>;
 const termsById: ReadonlyMap<string, readonly string[]> = new Map(
   Object.entries(SETTINGS_SEARCH_TERMS),
 );

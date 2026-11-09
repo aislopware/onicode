@@ -41,8 +41,20 @@ export function SubscriptionUsage(props: SubscriptionUsageProps, environment: Wi
     : getMaterialColors({ scheme: appearance });
   const muted = colors.onSurfaceVariant;
   const providers = props.providers ?? [
-    { name: "Codex", detail: "Open Onicode to connect", windows: [], expiresAt: 0, totalWindows: 0 },
-    { name: "Claude", detail: "Open Onicode to connect", windows: [], expiresAt: 0, totalWindows: 0 },
+    {
+      name: "Codex",
+      detail: "Open Onicode to connect",
+      windows: [],
+      expiresAt: 0,
+      totalWindows: 0,
+    },
+    {
+      name: "Claude",
+      detail: "Open Onicode to connect",
+      windows: [],
+      expiresAt: 0,
+      totalWindows: 0,
+    },
   ];
   return (
     // Android lacks widgetURL; one card Button routes taps to the app listener opening props.url.

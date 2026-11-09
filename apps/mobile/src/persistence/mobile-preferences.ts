@@ -93,7 +93,6 @@ export interface Preferences {
   readonly hiddenNavigationTabs?: readonly string[];
   readonly pullRequestHideTestFiles?: boolean;
   readonly pullRequestMergeMethod?: PullRequestMergeMethod;
-  readonly liveActivitiesEnabled?: boolean;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
   readonly darkThemeId?: MobileThemeId;
@@ -105,9 +104,6 @@ export interface Preferences {
   readonly codeFontSize?: number | null;
   readonly codeWordBreak?: boolean;
   readonly mathRenderingEnabled?: boolean;
-  /** Unset means on: crash reports are sent unless the user turns them off. */
-  readonly crashReportsEnabled?: boolean;
-  readonly connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
   readonly collapsedProjectGroups?: readonly string[];
   readonly dismissedDatabaseStorageNotices?: readonly string[];
   /** Hardware Return behavior is iOS-only. */
@@ -179,7 +175,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     hiddenNavigationTabs?: readonly string[];
     pullRequestHideTestFiles?: boolean;
     pullRequestMergeMethod?: PullRequestMergeMethod;
-    liveActivitiesEnabled?: boolean;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
     darkThemeId?: MobileThemeId;
@@ -191,8 +186,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     codeFontSize?: number | null;
     codeWordBreak?: boolean;
     mathRenderingEnabled?: boolean;
-    crashReportsEnabled?: boolean;
-    connectOnboardingOptOutAccounts?: ReadonlyArray<string>;
     collapsedProjectGroups?: readonly string[];
     dismissedDatabaseStorageNotices?: readonly string[];
     composerEnterBehavior?: ComposerEnterBehavior;
@@ -237,9 +230,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     preferences.pullRequestMergeMethod = parsed.pullRequestMergeMethod;
   }
 
-  if (typeof parsed.liveActivitiesEnabled === "boolean") {
-    preferences.liveActivitiesEnabled = parsed.liveActivitiesEnabled;
-  }
   if (
     typeof parsed.themeId === "string" &&
     (MOBILE_THEME_IDS as readonly string[]).includes(parsed.themeId)
@@ -281,14 +271,6 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   if (typeof parsed.codeWordBreak === "boolean") preferences.codeWordBreak = parsed.codeWordBreak;
   if (typeof parsed.mathRenderingEnabled === "boolean")
     preferences.mathRenderingEnabled = parsed.mathRenderingEnabled;
-  if (typeof parsed.crashReportsEnabled === "boolean") {
-    preferences.crashReportsEnabled = parsed.crashReportsEnabled;
-  }
-  if (Array.isArray(parsed.connectOnboardingOptOutAccounts)) {
-    preferences.connectOnboardingOptOutAccounts = parsed.connectOnboardingOptOutAccounts.filter(
-      (account): account is string => typeof account === "string",
-    );
-  }
   if (Array.isArray(parsed.collapsedProjectGroups)) {
     preferences.collapsedProjectGroups = parsed.collapsedProjectGroups.filter(
       (key): key is string => typeof key === "string",

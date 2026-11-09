@@ -18,6 +18,7 @@ vi.mock("expo", () => ({
     }),
   }),
 }));
+vi.mock("expo-crypto", () => ({ getRandomBytes: (size: number) => new Uint8Array(size) }));
 vi.mock("react-native", () => ({
   Platform: {
     get OS() {
@@ -41,19 +42,6 @@ vi.mock("../persistence/layer", async () => {
   const Layer = await import("effect/Layer");
   return { layer: Layer.effectDiscard(Effect.promise(mocks.readStorage)) };
 });
-vi.mock("../features/cloud/dpop", async () => ({
-  layer: (await import("effect/Layer")).empty,
-}));
-vi.mock("../features/cloud/managedRelayLayer", async () => {
-  const Layer = await import("effect/Layer");
-  return { layer: () => Layer.empty };
-});
-vi.mock("../features/cloud/publicConfig", () => ({
-  resolveCloudPublicConfig: () => ({ relay: { url: null } }),
-}));
-vi.mock("../features/observability/tracing", async () => ({
-  layer: (await import("effect/Layer")).empty,
-}));
 vi.mock("@onicode/client-runtime/rpc", async () => {
   const Layer = await import("effect/Layer");
   return { layerRemoteHttpClient: () => Layer.empty };

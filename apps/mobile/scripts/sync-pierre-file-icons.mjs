@@ -17,7 +17,9 @@ const webIconSource = NodeFS.readFileSync(
 const customSprite = webIconSource.match(/const ONICODE_FILE_ICON_SPRITE = `([\s\S]*?)`;/)?.[1];
 
 if (!customSprite) {
-  throw new Error("Could not read the Onicode Pierre icon sprite from apps/web/src/pierre-icons.ts");
+  throw new Error(
+    "Could not read the Onicode Pierre icon sprite from apps/web/src/pierre-icons.ts",
+  );
 }
 
 const colors = {

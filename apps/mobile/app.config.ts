@@ -19,12 +19,6 @@ const runtimeVersionPolicy =
 const personalTeamBundleIdentifier = repoEnv.ONICODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
-// Compiled into the native project. Without a relay, Observe's native side could dispatch to
-// Expo's own ingest before observe.ts turns it off; `.invalid` never resolves (RFC 6761).
-const observeEndpointUrl = repoEnv.ONICODE_RELAY_URL?.trim()
-  ? new URL("/v1/mobile/observe", repoEnv.ONICODE_RELAY_URL.trim()).toString()
-  : "https://observe.invalid";
-
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
 
@@ -47,8 +41,6 @@ const DEVELOPMENT_ASSETS = {
   androidAdaptiveBackgroundImage: "./assets/android-icon-background-dev.png",
   androidSplashIcon: "./assets/android-splash-icon-dev.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#FF2D55",
 } as const;
 
 const PREVIEW_ASSETS = {
@@ -60,8 +52,6 @@ const PREVIEW_ASSETS = {
   androidAdaptiveBackgroundImage: "./assets/android-icon-background-nightly.png",
   androidSplashIcon: "./assets/android-splash-icon-nightly.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#FF2D55",
 } as const;
 
 const RELEASE_ASSETS = {
@@ -73,8 +63,6 @@ const RELEASE_ASSETS = {
   androidAdaptiveBackgroundImage: undefined,
   androidSplashIcon: "./assets/android-splash-icon-prod.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
-  androidNotificationIcon: "./assets/android-notification-icon.png",
-  androidNotificationColor: "#FF2D55",
 } as const;
 
 const VARIANT_CONFIG = {
@@ -83,7 +71,6 @@ const VARIANT_CONFIG = {
     scheme: "onicode-dev",
     iosBundleIdentifier: "dev.onicode.app.dev",
     androidPackage: "dev.onicode.app.dev",
-    relyingParty: "clerk.t3.codes",
     assets: DEVELOPMENT_ASSETS,
   },
   preview: {
@@ -91,7 +78,6 @@ const VARIANT_CONFIG = {
     scheme: "onicode-preview",
     iosBundleIdentifier: "dev.onicode.app.preview",
     androidPackage: "dev.onicode.app.preview",
-    relyingParty: "clerk.t3.codes",
     assets: PREVIEW_ASSETS,
   },
   production: {
@@ -99,7 +85,6 @@ const VARIANT_CONFIG = {
     scheme: "onicode",
     iosBundleIdentifier: "dev.onicode.app",
     androidPackage: "dev.onicode.app",
-    relyingParty: "clerk.t3.codes",
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -118,8 +103,6 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 }
 
 const variant = VARIANT_CONFIG[APP_VARIANT];
-// Copied thread links open the app. app.t3.codes/.well-known lists every variant's identifiers.
-const HOSTED_APP_HOST = "app.t3.codes";
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
@@ -135,9 +118,6 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   {
     bundleIdentifier: `${iosBundleIdentifier}.widgets`,
     groupIdentifier: `group.${iosBundleIdentifier}`,
-    enablePushNotifications: true,
-    // Frequent updates need the iOS entitlement to avoid early throttling.
-    frequentUpdates: true,
     enableAndroid: true,
     widgets: [
       {
@@ -189,13 +169,6 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
           // The embedded layout renders before first launch; publishing replaces it with stored props.
           initialLayout: "./src/widgets/SubscriptionUsage.android.tsx",
         },
-      },
-      {
-        name: "AgentActivity",
-        displayName: "Agent Activity",
-        description: "Shows the current state of active Onicode agents.",
-        android: null,
-        ios: { supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"] },
       },
     ],
   },
@@ -251,13 +224,8 @@ const config: ExpoConfig = {
     supportsTablet: true,
     requireFullScreen: process.env.ONICODE_SHOWCASE_CAPTURE_BUILD === "1",
     bundleIdentifier: iosBundleIdentifier,
-    // Avoid Personal Team fallback: it cannot sign App Groups, Apple sign-in or push entitlements.
+    // Avoid Personal Team fallback: it cannot sign App Groups.
     appleTeamId: "ARK85ZXQ4Z",
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-      `applinks:${HOSTED_APP_HOST}`,
-    ],
     entitlements: {
       "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
     },
@@ -292,9 +260,6 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
-    ...(repoEnv.ONICODE_ANDROID_GOOGLE_SERVICES_FILE
-      ? { googleServicesFile: repoEnv.ONICODE_ANDROID_GOOGLE_SERVICES_FILE }
-      : {}),
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
       ...(variant.assets.androidAdaptiveBackgroundImage
@@ -307,14 +272,6 @@ const config: ExpoConfig = {
     predictiveBackGestureEnabled: true,
     // expo-sensors declares this for its pedometer, which the app does not use.
     blockedPermissions: ["android.permission.ACTIVITY_RECOGNITION"],
-    intentFilters: [
-      {
-        action: "VIEW",
-        autoVerify: true,
-        data: [{ scheme: "https", host: HOSTED_APP_HOST, pathPrefix: "/threads/" }],
-        category: ["BROWSABLE", "DEFAULT"],
-      },
-    ],
   },
   web: {
     favicon: variant.assets.appIcon,
@@ -351,17 +308,6 @@ const config: ExpoConfig = {
     ...(isIosPersonalTeamBuild
       ? [sharingPlugin]
       : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),
-    [
-      "expo-notifications",
-      {
-        icon: variant.assets.androidNotificationIcon,
-        color: variant.assets.androidNotificationColor,
-        mode: APP_VARIANT === "development" ? "development" : "production",
-      },
-    ],
-    // Gate Clerk here: withoutIosPersonalTeamCapabilities runs too early to strip its entitlement.
-    ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild }],
-    "expo-web-browser",
     [
       "expo-quick-actions",
       {
@@ -462,26 +408,8 @@ const config: ExpoConfig = {
       process.env.ONICODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
     ),
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
-    relay: {
-      url: repoEnv.ONICODE_RELAY_URL ?? null,
-    },
-    clerk: {
-      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,
-      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,
-    },
-    // Clerk reads these exact names at prebuild. Omit unset values: manifest null becomes truthy {}.
-    EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_WEB_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_ANDROID_CLIENT_ID,
-    EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME: repoEnv.EXPO_PUBLIC_CLERK_GOOGLE_IOS_URL_SCHEME,
-    observability: {
-      tracesUrl: repoEnv.EXPO_PUBLIC_OTLP_TRACES_URL ?? "https://api.axiom.co/v1/traces",
-      tracesDataset: repoEnv.EXPO_PUBLIC_OTLP_TRACES_DATASET ?? null,
-      tracesToken: repoEnv.EXPO_PUBLIC_OTLP_TRACES_TOKEN ?? null,
-    },
     eas: {
       projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",
-      observe: { endpointUrl: observeEndpointUrl },
     },
   },
   owner: "pingdotgg",

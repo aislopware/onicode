@@ -129,7 +129,10 @@ function WorkLogIcon(props: {
   const colorClassName = props.highlighted ? "accent-foreground" : props.colorClassName;
   if (props.icon === "onicode") {
     return (
-      <OniWordmark height={10} {...(colorClassName ? { colorClassName } : { color: props.color })} />
+      <OniWordmark
+        height={10}
+        {...(colorClassName ? { colorClassName } : { color: props.color })}
+      />
     );
   }
   if (props.icon === "computer") {

@@ -18,13 +18,11 @@ import {
   type NavigationState,
 } from "@react-navigation/native";
 import { pipe } from "effect/Function";
-import { DEFAULT_HOSTED_APP_URL } from "@onicode/shared/connectAuth";
 
 import { RegistryContext } from "@effect/atom-react";
 import { ProjectChipIconRasterizer } from "./native/ProjectChipIconImages";
 import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";
 import * as Dialog from "./components/ui/Dialog";
-import { CloudAuthProvider } from "./features/cloud/CloudAuthProvider";
 import { prepareNativeShowcaseCapture } from "./features/showcase/nativeShowcaseScene";
 import { installShowcaseCapture } from "./features/showcase/ShowcaseCaptureCoordinator";
 import {
@@ -32,10 +30,6 @@ import {
   pruneIncomingShareImports,
   startIncomingShareInbox,
 } from "./features/sharing/IncomingShareProvider";
-import {
-  installAgentNotificationNavigation,
-  setAgentNotificationPathname,
-} from "./features/agent-awareness/notificationNavigation";
 import {
   installAppShortcuts,
   recordAppShortcutNavigationState,
@@ -45,14 +39,13 @@ import {
   installAppearanceRuntime,
   useAppearancePreferences,
 } from "./features/settings/appearance/AppearancePreferencesProvider";
-import { RootStack, rootPathnameFromState, workspaceLocationFromState } from "./Stack";
+import { RootStack, rootPathnameFromState } from "./Stack";
 import { appAtomRegistry } from "./state/atom-registry";
 import { subscribeComposerDraftModelReconciliation } from "./state/use-composer-drafts";
 import { environmentThreadShells } from "./state/threads";
 import { environmentShell } from "./state/shell";
 import { OverlayPortalHost } from "./components/ui/OverlayPortal";
 import { shouldHandleAppLink, restoreDraftLinkState } from "./lib/appLinking";
-import { hasCloudPublicConfig } from "./features/cloud/publicConfig";
 import { takeScheduledTaskNewLink } from "./features/settings/scheduled-task-editor-state";
 import {
   pairingFormLinkAction,
@@ -123,15 +116,9 @@ function getAppStateFromPath(path: string, options: Parameters<typeof getStateFr
 }
 
 const appLinking = {
-  prefixes: [
-    Linking.createURL("/"),
-    "onicode://",
-    "onicode-dev://",
-    "onicode-preview://",
-    DEFAULT_HOSTED_APP_URL,
-  ],
+  prefixes: [Linking.createURL("/"), "onicode://", "onicode-dev://", "onicode-preview://"],
   config: { initialRouteName: "Home" },
-  filter: (url: string) => shouldHandleAppLink(url, hasCloudPublicConfig()),
+  filter: shouldHandleAppLink,
   getInitialURL: async () => (await Linking.getInitialURL()) ?? (await launchWorkspaceURL()),
   getActionFromState: (
     state: Parameters<typeof getActionFromState>[0],
@@ -165,7 +152,6 @@ function handleNavigationStateChange(state: NavigationState | undefined): void {
   resolvePendingNewTaskPromptLink(state);
   resolvePendingThreadPromptLink(state);
   if (!state) return;
-  setAgentNotificationPathname(workspaceLocationFromState(state).pathname);
   recordAppShortcutNavigationState(state);
   pruneNewTaskFlowStates(state);
   pruneNewTaskBranchCheckouts(state);
@@ -193,7 +179,6 @@ const appServiceDisposers = [
   installThreadOutboxDelivery(),
   installComposerAttachmentUploads(),
   startIncomingShareInbox(),
-  installAgentNotificationNavigation(linkToAppPath),
   installAppShortcuts(linkToAppPath),
   installAppUpdateChecks(),
   installShowcaseCapture(rootPathnameFromState),
@@ -216,11 +201,9 @@ function SplashScreenCoordinator() {
 export default function App() {
   return (
     <RegistryContext.Provider value={appAtomRegistry}>
-      <CloudAuthProvider>
-        <AppearancePreferencesProvider>
-          <AppContent />
-        </AppearancePreferencesProvider>
-      </CloudAuthProvider>
+      <AppearancePreferencesProvider>
+        <AppContent />
+      </AppearancePreferencesProvider>
     </RegistryContext.Provider>
   );
 }

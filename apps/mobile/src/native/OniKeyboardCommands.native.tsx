@@ -11,7 +11,8 @@ interface NativeKeyboardCommandsProps extends ViewProps {
   ) => void;
 }
 
-const NativeKeyboardCommands = requireNativeView<NativeKeyboardCommandsProps>("OniKeyboardCommands");
+const NativeKeyboardCommands =
+  requireNativeView<NativeKeyboardCommandsProps>("OniKeyboardCommands");
 
 export function OniKeyboardCommands(
   props: PropsWithChildren<{

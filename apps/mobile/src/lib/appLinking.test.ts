@@ -13,7 +13,7 @@ describe("shouldHandleAppLink", () => {
   it.each(["onicode://", "onicode:///", "onicode-dev://", "onicode-preview://"])(
     "ignores scheme-only URL %s",
     (url) => {
-      expect(shouldHandleAppLink(url, true)).toBe(false);
+      expect(shouldHandleAppLink(url)).toBe(false);
     },
   );
 
@@ -21,41 +21,17 @@ describe("shouldHandleAppLink", () => {
     "onicode://threads/env-1/thread-1",
     "onicode://pair?pairingUrl=x",
     "onicode-dev://settings/usage?tab=limits",
-    "https://app.t3.codes/threads/env/thread?prompt=Fix%20expo-development-client%20and%20onicode://expo-sharing",
+    "onicode://threads/env/thread?prompt=Fix%20expo-development-client%20and%20onicode://expo-sharing",
   ])("handles path-bearing URL %s", (url) => {
-    expect(shouldHandleAppLink(url, true)).toBe(true);
+    expect(shouldHandleAppLink(url)).toBe(true);
   });
 
   it.each(["onicode://expo-development-client/?url=x", "onicode://expo-sharing/anything"])(
     "ignores lifecycle URL %s",
     (url) => {
-      expect(shouldHandleAppLink(url, true)).toBe(false);
+      expect(shouldHandleAppLink(url)).toBe(false);
     },
   );
-});
-
-describe("cloud-only deep links", () => {
-  it.each([
-    "onicode://connect-onboarding",
-    "onicode-dev://connect-onboarding/?source=x",
-    "onicode://settings/waitlist",
-    "onicode://settings/auth",
-    "exp://192.168.1.2:8081/--/settings/auth",
-  ])("ignores %s without cloud config", (url) => {
-    expect(shouldHandleAppLink(url, false)).toBe(false);
-    expect(shouldHandleAppLink(url, true)).toBe(true);
-  });
-
-  it.each([
-    "onicode://settings",
-    "onicode://settings/authors",
-    "onicode://pair?next=settings/auth",
-    "onicode://threads/env/thread/files/scripts/connect-onboarding",
-    "onicode://new/draft/files/settings/auth",
-    "exp://192.168.1.2:8081/--/threads/env/thread/files/settings/waitlist",
-  ])("still handles %s without cloud config", (url) => {
-    expect(shouldHandleAppLink(url, false)).toBe(true);
-  });
 });
 
 describe("draft deep links", () => {

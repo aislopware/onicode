@@ -66,8 +66,7 @@
       "corepack": true,
       "env": {
         "APP_VARIANT": "production",
-        "NODE_OPTIONS": "--max-old-space-size=4096",
-        "SOURCEMAP_FILE": "/tmp/onicode-ios-main.jsbundle.map"
+        "NODE_OPTIONS": "--max-old-space-size=4096"
       },
       "channel": "production",
       "environment": "production",
