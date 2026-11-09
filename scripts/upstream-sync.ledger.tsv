@@ -19,3 +19,4 @@ c7c2bcc3a6	take	fix(mobile): compose button no longer covers the last tab on iPh
 61629df695	take	fix(mobile): Android chip taps open the chip from either half (#33126)
 97c6773cc6	skip	Agent Activity widget reads T3 Connect relay state; Onicode removed the relay and the widget
 42b2df9995	take	fix(mobile): Android navigation bar follows the app theme (#27576)
+eb3e95cfbc	take	fix(android): keep diagonal horizontal swipes inside HTML blocks (#21652)
