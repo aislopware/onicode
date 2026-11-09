@@ -6,7 +6,7 @@
 
 using namespace facebook::react;
 
-@interface OniSourceTextRun () <RCTT3SourceTextRunViewProtocol>
+@interface OniSourceTextRun () <RCTOniSourceTextRunViewProtocol>
 
 @end
 

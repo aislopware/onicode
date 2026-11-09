@@ -117,7 +117,7 @@ OniSourceTextOutsideTapCoordinatorForWindow(UIWindow *window) {
   return coordinator;
 }
 
-@interface OniSourceText () <RCTT3SourceTextViewProtocol, UITextViewDelegate,
+@interface OniSourceText () <RCTOniSourceTextViewProtocol, UITextViewDelegate,
                             OniSourceTextOutsideTapTarget>
 @end
 
