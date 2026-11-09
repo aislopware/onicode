@@ -189,8 +189,6 @@ Default Grafana login:
 
 #### 2. Export OTLP env vars
 
-For endpoint settings and startup precedence, see the
-[user telemetry guide](../user/telemetry.md#export-diagnostics-to-your-own-receiver).
 In a worktree, use `vp run dev` instead of `onicode` to keep state isolated.
 
 ```bash

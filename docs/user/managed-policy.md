@@ -46,11 +46,11 @@ Every user on the machine can read the policy, so do not put credentials in it.
 
 Use one of these per machine:
 
-| OS      | Native policy                                                                                        | Policy file                                       |
-| ------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| macOS   | Configuration profile for `dev.onicode.app`                                                       | `/Library/Application Support/Onicode/policy.json` |
+| OS      | Native policy                                                                                         | Policy file                                        |
+| ------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
+| macOS   | Configuration profile for `dev.onicode.app`                                                           | `/Library/Application Support/Onicode/policy.json` |
 | Windows | Group Policy template, or a `Policy` JSON value (both under `HKLM\SOFTWARE\Policies\Onicode\Onicode`) | `C:\Program Files\Onicode\policy.json`             |
-| Linux   |                                                                                                      | `/etc/onicode/policy.json`                         |
+| Linux   |                                                                                                       | `/etc/onicode/policy.json`                         |
 
 Onicode does not merge sources. If a machine has both a native policy and a policy file, Onicode
 refuses to start until you remove one.
@@ -250,9 +250,6 @@ so restart Onicode after that.
   but do not run, and cannot be turned back on. Users can still edit or delete them.
 - `browserCookieImport: false`: users cannot import cookies from another browser into Onicode's
   browser.
-- `telemetry: false`: the server and desktop app send no [product usage data](./telemetry.md) or
-  relay connection traces. A policy cannot turn them on. A browser that opens the server, such as
-  app.t3.codes, still sends its own relay traces.
 
 ### Providers
 
