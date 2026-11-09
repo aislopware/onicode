@@ -13,3 +13,4 @@ eb97d82156	take	feat: text generators let model APIs write titles, commits, and 
 69dd6956d5	take	fix(web): return focus to composer after timeline prompts (#33192)
 47e336b131	take	fix(mobile): SVG markers with orient="auto-start-reverse" no longer crash Android (#32812)
 f4cf7a95b2	take	fix(mobile): Android keyboard clipboard pastes fold into attachments (#24482)
+6c41890c7e	take	fix(mobile): text no longer clips in Android desktop windows on external displays (#19064)
