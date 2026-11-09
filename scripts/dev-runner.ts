@@ -337,10 +337,6 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
   delete output.ONICODE_SERVICE_LAUNCHER_CONTEXT;
   delete output.ONICODE_BOOT_SERVICE_UNIT;
 
-  // Each worktree has its own state, so a dev server would count as a new
-  // install of the developer's real accounts. Set it explicitly to opt in.
-  output.ONICODE_TELEMETRY_ENABLED = baseEnv.ONICODE_TELEMETRY_ENABLED ?? "false";
-
   if (!isDesktopMode) {
     output.ONICODE_PORT = String(serverPort);
     // An inherited HOST pins Vite's HMR socket via explicitHost in apps/web/vite.config.ts.
@@ -633,7 +629,12 @@ const prepareFirstStart = Effect.fn("dev-runner.prepareFirstStart")(function* (i
         );
       }
     }
-    const source = path.join(yield* HostProcess.HomeDirectory, ".onicode", "userdata", "statev2.sqlite");
+    const source = path.join(
+      yield* HostProcess.HomeDirectory,
+      ".onicode",
+      "userdata",
+      "statev2.sqlite",
+    );
     // A V1 state.sqlite counts as data too: the server imports it only while
     // statev2.sqlite is missing, so seeding would hide it.
     if (

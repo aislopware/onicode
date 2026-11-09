@@ -18,6 +18,9 @@ const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefi
   "not-logged-in": "this machine is not logged into a tailnet — run `tailscale up`",
   "not-running": "Tailscale is not running; start it and try again",
   "permission-denied": "permission denied — `tailscale serve` may need elevated privileges",
+  "https-disabled":
+    "HTTPS certificates are off for this tailnet; turn them on in the admin console",
+  "funnel-not-allowed": "the tailnet policy does not allow Funnel on this machine",
   unknown: undefined,
 };
 

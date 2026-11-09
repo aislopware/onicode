@@ -1,5 +1,4 @@
 {
-  "$schema": "https://t3.codes/schema/onicode.json",
   "iconPath": "assets/dev/blueprint-web-apple-touch-180.png",
   "scripts": [
     {

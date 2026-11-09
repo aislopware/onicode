@@ -19,37 +19,18 @@ describe("loadRepoEnv", () => {
     const repoRoot = makeTemporaryDirectory();
     NodeFS.writeFileSync(
       NodePath.join(repoRoot, ".env"),
-      "ONICODE_CLERK_PUBLISHABLE_KEY=pk_root\nONICODE_CLERK_JWT_TEMPLATE=template_root\nONICODE_CLERK_CLI_OAUTH_CLIENT_ID=oauth_root\nONICODE_RELAY_URL=https://root.example.test\n",
+      "ONICODE_DEV_AUTH_TOKEN=root\nONICODE_ONLY_ROOT=root\n",
     );
-    NodeFS.writeFileSync(
-      NodePath.join(repoRoot, ".env.local"),
-      "ONICODE_CLERK_PUBLISHABLE_KEY=pk_local\nONICODE_CLERK_JWT_TEMPLATE=template_local\nONICODE_CLERK_CLI_OAUTH_CLIENT_ID=oauth_local\nONICODE_RELAY_URL=https://local.example.test\n",
-    );
+    NodeFS.writeFileSync(NodePath.join(repoRoot, ".env.local"), "ONICODE_DEV_AUTH_TOKEN=local\n");
 
-    expect(loadRepoEnv({ baseEnv: {}, repoRoot }).ONICODE_RELAY_URL).toBe(
-      "https://local.example.test",
-    );
-    expect(
-      loadRepoEnv({
-        baseEnv: {
-          ONICODE_CLERK_PUBLISHABLE_KEY: "pk_ci",
-          ONICODE_CLERK_JWT_TEMPLATE: "template_ci",
-          ONICODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_ci",
-          ONICODE_RELAY_URL: "https://ci.example.test",
-        },
-        repoRoot,
-      }),
-    ).toMatchObject({
-      ONICODE_CLERK_PUBLISHABLE_KEY: "pk_ci",
-      ONICODE_CLERK_CLI_OAUTH_CLIENT_ID: "oauth_ci",
-      VITE_CLERK_PUBLISHABLE_KEY: "pk_ci",
-      EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_ci",
-      ONICODE_CLERK_JWT_TEMPLATE: "template_ci",
-      VITE_CLERK_JWT_TEMPLATE: "template_ci",
-      EXPO_PUBLIC_CLERK_JWT_TEMPLATE: "template_ci",
-      ONICODE_RELAY_URL: "https://ci.example.test",
-      VITE_ONICODE_RELAY_URL: "https://ci.example.test",
+    expect(loadRepoEnv({ baseEnv: {}, repoRoot })).toMatchObject({
+      ONICODE_DEV_AUTH_TOKEN: "local",
+      ONICODE_ONLY_ROOT: "root",
     });
+    expect(
+      loadRepoEnv({ baseEnv: { ONICODE_DEV_AUTH_TOKEN: "process" }, repoRoot })
+        .ONICODE_DEV_AUTH_TOKEN,
+    ).toBe("process");
   });
 });
 

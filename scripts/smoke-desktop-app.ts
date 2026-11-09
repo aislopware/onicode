@@ -46,7 +46,6 @@ try {
       XDG_CONFIG_HOME: NodePath.join(home, ".config"),
       XDG_DATA_HOME: NodePath.join(home, ".local/share"),
       ONICODE_HOME: oniHome,
-      ONICODE_TELEMETRY_ENABLED: "false",
       ONICODE_DISABLE_AUTO_UPDATE: "true",
     },
     timeout: STEP_TIMEOUT_MS,
