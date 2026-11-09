@@ -153,7 +153,7 @@ If that port is already in use, choose another with
 ### Public access for guest links and webhooks
 
 Guest links and webhook triggers have to be reachable by people and services outside your
-tailnet. Turn on **Settings → Sharing & access → Public access** on the machine that runs the
+tailnet. Turn on **Settings → Labs → Public access** on the machine that runs the
 threads or tasks. Onicode then publishes them with
 [Tailscale Funnel](https://tailscale.com/kb/1223/funnel) at an address such as
 `https://machine.tailnet.ts.net:8443`.
