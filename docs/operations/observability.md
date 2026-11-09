@@ -409,22 +409,21 @@ Counters tell you volume and failure rate:
 
 Webhooks have their own families:
 
-- `oni_webhook_deliveries_total` by `outcome` and `source` (`relay` or `direct`). Beyond what the
-  sender sees, `queue_full` means a task already had its limit of deliveries waiting,
-  `prompt_too_long` means the filled-in prompt passed the provider limit, and `duplicate` means
-  the relay delivered a request this environment had already run.
+- `oni_webhook_deliveries_total` by `outcome`. Beyond what the sender sees, `queue_full` means a
+  task already had its limit of deliveries waiting, `prompt_too_long` means the filled-in prompt
+  passed the provider limit, and `duplicate` means the task's replay key matched a request it had
+  already run.
 - `oni_webhook_runs_total` by `outcome` (`started`, `skipped`, `failed`) for the runs those
   deliveries start, which happen after the sender has its answer.
-- `oni_webhook_held_delay` for how long requests the relay held waited before arriving.
+- `oni_webhook_delivery_duration` for the time to verify, log, and enqueue one request.
 
 - `oni_secret_requests_total` by `status` (`saved`, `declined`, `cancelled`, `timed_out`) for secrets
   agents asked users for, and `oni_secret_refs_consumed_total` by `result` (`used`, `rejected`) for
   tools redeeming them. Neither ever carries a value.
 
 `ScheduledTaskService.triggerWebhook` spans carry the same outcome per request, and each run
-started from a delivery is its own `ScheduledTaskService.runWebhookDelivery` trace. For a request
-the relay forwarded, the span also goes to the T3 Connect trace export as a child of the relay's
-span; requests that reach the environment directly never join a sender's trace.
+started from a delivery is its own `ScheduledTaskService.runWebhookDelivery` trace. Requests never
+join a sender's trace.
 
 Use metrics when the question is:
 
@@ -637,9 +636,8 @@ the UI, and the mobile app each carry `onicode.release.channel` (`dev`, `stable`
 `preview`, from their own version; desktop PR builds count as `preview`, and a server not built by a
 release workflow reports `dev`) and `deployment.environment.name` (`development`, `production`, or
 `staging` for `preview`). On the server and the desktop main process either key in
-`OTEL_RESOURCE_ATTRIBUTES` wins. The UI and mobile app never read that variable: Vercel PR previews
-set `VITE_RELEASE_CHANNEL=preview` because their `APP_VERSION` must stay comparable with the
-server's, and the mobile app maps its build variant (`development`, `preview`, `production`), or
+`OTEL_RESOURCE_ATTRIBUTES` wins. The UI and mobile app never read that variable: the UI takes its
+channel from `VITE_RELEASE_CHANNEL` when a build sets it, and the mobile app maps its build variant (`development`, `preview`, `production`), or
 reports `dev` from a development bundle.
 
 Attributes specific to Onicode use the `onicode.` prefix. The UI runs as `onicode-web` in both a

@@ -286,7 +286,7 @@ environment of an already running Onicode server.
 
 ## Connect an outside agent
 
-Claude Code, Codex, ChatGPT and other agents Onicode did not start can drive
+Claude Code, Codex, and other agents Onicode did not start can drive
 threads on an environment through its MCP server. See
 [outside agents](./outside-agents.md) for setup.
 

@@ -37,8 +37,7 @@ attempt; a short one leaves it alone.
 The [registry](../../packages/client-runtime/src/connection/registry.ts) scopes
 connections by environment. An involuntary disconnect retains the registration
 and cached data. Explicit removal closes the scope and clears credentials,
-projections, and platform-owned state such as drafts. Cloud-account changes apply
-to relay registrations; they must not discard directly paired environments.
+projections, and platform-owned state such as drafts.
 
 ## HTTP authorization
 
@@ -49,12 +48,9 @@ Replacing a healthy socket for HTTP renewal would interrupt conversations and
 change the transport generation without a transport failure. Refresh failure
 belongs to the HTTP operation.
 
-The server closes a socket when its session is revoked or expires. T3 Connect
-access tokens last one hour, so the driver renews a live socket's token in its
-last minute. The server then moves the socket to the newer session for the same
-DPoP key, subject, and scopes
-([`SessionStore.awaitInvalidation`](../../apps/server/src/auth/SessionStore.ts)).
-If renewal fails, the socket closes at expiry and the supervisor reconnects.
+The server closes a socket when its session is revoked or expires
+([`SessionStore.awaitInvalidation`](../../apps/server/src/auth/SessionStore.ts)),
+and the supervisor reconnects.
 
 Session listings must retain unrevoked connected sessions after credential expiry
 so an open connection does not disappear from connection management. This does

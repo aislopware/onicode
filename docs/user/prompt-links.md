@@ -15,9 +15,9 @@ and the model you picked. Sent messages have a **Copy prompt link** button too.
 You can also write a link by hand:
 
 ```
-https://app.t3.codes/new?prompt=Rate%20my%20swearing
-https://app.t3.codes/new?prompt=Fix%20the%20build&repo=owner/name&provider=codex&model=gpt-5.5
-https://app.t3.codes/new?pr=owner/name/123&prompt=Fix%20the%20failing%20check
+onicode://new?prompt=Rate%20my%20swearing
+onicode://new?prompt=Fix%20the%20build&repo=owner/name&provider=codex&model=gpt-5.5
+onicode://new?pr=owner/name/123&prompt=Fix%20the%20failing%20check
 ```
 
 | Parameter  | Meaning                                                                       |
@@ -32,9 +32,9 @@ Encode the prompt for a URL. In JavaScript, use `encodeURIComponent`.
 
 ## Open a link
 
-On app.t3.codes, the link first asks where to open it: the desktop or mobile app, this browser
-when it is connected to a machine, or the download page. Select **Remember my choice** to skip
-this step next time.
+An `onicode://` link opens in the desktop or mobile app. To open one in the web app your Onicode
+server serves, use the same path and parameters on that server's address, such as
+`http://localhost:3773/new?prompt=…`.
 
 - **No `repo`**: the draft opens without a project, on the machine you used last.
 - **`repo`**: the draft opens in your most recently used project for that repository. A fork
@@ -47,7 +47,7 @@ this step next time.
   worktree. Onicode checks the code out only after you confirm, because the checkout runs your
   setup script on it.
 
-A thread link with a prompt, such as `https://app.t3.codes/<environment>/<thread>?prompt=…`,
+A thread link with a prompt, such as `onicode://threads/<environment>/<thread>?prompt=…`,
 puts the prompt in that thread's composer. If you already typed a draft there, Onicode asks
 before it replaces it.
 
@@ -57,8 +57,7 @@ malicious.
 
 ## Share a thread
 
-**Copy thread** copies a link such as `https://app.t3.codes/threads/<environment>/<thread>`. Paste
-it anywhere, such as Slack, a GitHub comment, or your notes. On a phone with Onicode installed, it
-opens the thread in the app. Elsewhere, opening it asks where to open it, like a prompt link, then
-opens the thread. Only someone connected to the machine that runs the thread can see it. In Onicode,
-a thread link in a message opens the thread in the app.
+**Copy thread** copies a Markdown link to the thread, such as
+`[Fix the build](oni-thread://v2/<environment>/<thread>)`. Paste it into a composer to give the
+agent that thread as context. In Onicode, a thread link in a message opens the thread on any client
+paired with the machine that runs it. Only someone connected to that machine can see the thread.

@@ -2,9 +2,7 @@
 
 Server features are Effect services. Transports call them: WebSocket RPC handlers in
 [`ws.ts`](../../apps/server/src/ws.ts), HTTP routes, MCP tools, scheduled tasks, and the CLI. This
-page holds the rules for writing them. The
-[Effect Service Conventions](../../.macroscope/check-run-agents/effect-service-conventions.md)
-review check enforces the same rules; keep the two in step.
+page holds the rules for writing them.
 
 ## Where a feature lives
 
@@ -84,7 +82,7 @@ export const layer = Layer.effect(Foo, make);
   `Layer.effect`; use the constructor that fits, like `Layer.succeed` or `Layer.sync`.
 - **Names.** A module named for its implementation uses plain `make` and `layer`
   ([`NodePtyAdapter.ts`](../../apps/server/src/terminal/NodePtyAdapter.ts)). A port module that also
-  holds implementations names them, like `makeCloudflaredRelayClient` and `layerCloudflared`.
+  holds several implementations names each one, like `makeNodeFoo` and `layerNode`.
 - **Moves.** Moving a service deletes the old files and updates every consumer, including
   orchestration, MCP, tests, and integration harnesses. No re-export shims.
 - **Tests** exercise behavior through the service, with test layers only for external dependencies.

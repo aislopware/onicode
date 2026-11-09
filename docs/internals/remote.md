@@ -2,8 +2,8 @@
 
 Each connection joins a client to one environment over HTTP and WebSocket. The
 environment owns providers, execution, files, and durable state. Direct access,
-Tailscale, SSH, and T3 Connect change how the client reaches that server; they do
-not introduce another execution model. See
+Tailscale, and SSH change how the client reaches that server; they do not
+introduce another execution model. See
 [remote access](../user/remote-access.md) for setup.
 
 ## Identity is independent of the route
@@ -35,8 +35,7 @@ the first that works. Each direct route is first checked with the public
 descriptor, so a saved LAN address that a different machine answers on another
 network receives no credential. That check is not proof of a working route:
 when every route stays silent, each is still tried. A route that fails to
-connect, including a blocked one such as a signed-out T3 Connect, moves on to
-the next; only an incompatible server stops the walk, because it is the same
+connect moves on to the next; only an incompatible server stops the walk, because it is the same
 server on every route. While connected over a later route the
 [supervisor](../../packages/client-runtime/src/connection/supervisor.ts)
 preflights the earlier ones and replaces the session when one would connect.
@@ -46,9 +45,7 @@ held back for a cooldown so a flaky network cannot bounce the connection.
 
 A connected server reports the LAN and tailnet addresses it is bound to, and the
 client saves them as learned routes. A learned route reuses the credential of
-the route it was learned over: the T3 Connect access token, which is not bound
-to an origin because each DPoP proof names the URL it signs, or the paired
-bearer token. A paired token only learns a plain HTTP address off the tailnet
+the route it was learned over, the paired bearer token. A paired token only learns a plain HTTP address off the tailnet
 when it was itself paired over plain HTTP, so a token paired over HTTPS never
 starts travelling unencrypted. Learned routes the server stops reporting are
 dropped, which is how a changed LAN address replaces the old one; routes the
@@ -60,8 +57,10 @@ headless machines. It listens on every IPv4 interface and closes each
 connection unless both addresses of the direct peer are loopback, private, or
 tailnet IPv4. That keeps a VPS's public address closed, including a cloud VM
 whose public address is NATed to a private interface. It is not a firewall:
-T3 Connect and Tailscale Serve reach the server over loopback by design, and a
-proxy that rewrites the source address looks private. One listener per address would
+Tailscale Serve reaches the server over loopback by design, and a proxy that
+rewrites the source address looks private. For the same reason Funnel never
+forwards to this listener: [public access](../../apps/server/src/publicAccess/PublicAccess.ts)
+gets a second loopback listener that serves only the guest and webhook routes. One listener per address would
 miss a DHCP change, and the wildcard keeps the reported addresses current.
 
 Pull request routing trust covers the whole route list. Adding or changing a route
@@ -101,8 +100,8 @@ Unlinking on the linking side only forgets the token.
   so idempotency keys are hashed with the caller's namespace before they
   leave. Without that, two agents reusing a key would collide on the far side.
 - **A forwarded wait is split into calls of at most 50 s**, because the
-  receiving `/mcp` sends nothing while a wait is open and T3 Connect's edge
-  drops idle requests after about 100 s.
+  receiving `/mcp` sends nothing while a wait is open, and a proxy on the
+  route may drop a request that stays idle too long.
 
 **Work a link paired below full access starts stays within that link.** The
 receiving environment knows a session is a peer link because the linking side
@@ -139,19 +138,6 @@ its agents can already do anything that user can, so the fence would only stop
 Onicode's own tools. Its work still carries `linkOrigin`, so clients show where it
 came from. A stamp without the access, from before it was recorded, is fenced.
 
-## Hosted web is a client
-
-The hosted web app stores its connection catalog in the browser and connects
-directly to each environment. It does not proxy traffic or hold server-side
-pairing state. Hosting the UI over HTTPS therefore cannot make a plain HTTP LAN
-backend accessible from that browser context.
-
-A [hosted pairing URL](../../apps/web/src/hostedPairing.ts) identifies the backend
-in its query and carries the pairing secret in its fragment. Fragments stay out
-of requests to the hosted origin. The browser exchanges the secret with the
-environment and strips it from its history. Moving the token into a query
-parameter would disclose it to the wrong origin.
-
 ## Access and process ownership are different
 
 Tailscale supplies an endpoint for ordinary pairing, so it needs no separate
@@ -179,7 +165,7 @@ Desktop normally launches its own primary server, but the desktop setting `local
 no local state is deleted. On the next start the main process skips port selection, server exposure,
 and the primary and WSL backends, and opens the window right away. The renderer sees this through
 `desktopBridge.getLocalEnvironmentEnabled()`: `readPrimaryEnvironmentTarget` returns null, so primary
-auth and platform-managed discovery are skipped and only saved environments (pairing, relay, SSH)
+auth and platform-managed discovery are skipped and only saved environments (pairing, SSH)
 connect. This is possible because the desktop renderer is not served by the backend: the `onicode://`
 scheme serves the bundled client from disk (Vite in development) and API traffic always goes to the
 environment's own URL.

@@ -3,8 +3,8 @@
 License notices are generated independently for the client that ships them:
 
 - The web build emits `third-party-licenses.json` beside `index.html`. The Settings page loads that
-  static file, so the same artifact works in hosted web, the client bundled with `npx onicode`, and
-  desktop.
+  static file, so the same artifact works in the web app the server serves, the client bundled with
+  `npx onicode`, and desktop.
 - The mobile Metro config generates an ignored virtual module before each development, native, or
   over-the-air JavaScript bundle. Mobile loads and decodes that module only when a license screen
   opens, so the notice text does not occupy memory during ordinary app startup. It does not need a

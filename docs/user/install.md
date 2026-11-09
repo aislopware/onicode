@@ -28,8 +28,8 @@ installer or the desktop app did not create is already there, it leaves that
 one alone and stops. Set `ONICODE_CHANNEL=nightly` to install the nightly train, or
 `ONICODE_VERSION` to pin an exact version.
 
-| Task                                             | Command                                                                 |
-| ------------------------------------------------ | ----------------------------------------------------------------------- |
+| Task                                             | Command                                                                      |
+| ------------------------------------------------ | ---------------------------------------------------------------------------- |
 | Start the server and open the web app            | `onicode`                                                                    |
 | Start the server without a browser               | `onicode serve`                                                              |
 | Use it from your other devices                   | `onicode up` ([details](./remote-access.md))                                 |
@@ -50,7 +50,7 @@ To try Onicode once without installing it, run `npx onicode@latest` instead (nee
 Node.js for `npx`). It offers to install the `onicode` command first. If you say no,
 it asks again at the next minor release, and `npx onicode install` installs it later.
 `npx onicode` always runs the version npm picked, even when a `onicode` is installed. On
-the nightly train, run your installed `onicode` (for example `t3 connect`), not
+the nightly train, run your installed `onicode`, not
 `npx onicode`, which runs the latest stable release.
 
 ### Intel Macs
@@ -73,11 +73,11 @@ update it with `git pull` and a rebuild.
 Download a release from [GitHub Releases](https://github.com/aislopware/onicode/releases),
 or use a package manager:
 
-| Platform           | Install                                                      |
-| ------------------ | ------------------------------------------------------------ |
+| Platform           | Install                                                       |
+| ------------------ | ------------------------------------------------------------- |
 | Windows            | `winget install Onicode.Onicode`                              |
-| macOS              | `brew install --cask onicode`                                |
-| Debian, Ubuntu     | `sudo apt install ./Onicode-*.deb`                           |
+| macOS              | `brew install --cask onicode`                                 |
+| Debian, Ubuntu     | `sudo apt install ./Onicode-*.deb`                            |
 | Arch Linux         | `yay -S onicode-bin`                                          |
 | Arch Linux nightly | `yay -S onicode-nightly-bin`                                  |
 | Nix                | `nix profile add github:NixOS/nixpkgs/nixos-unstable#onicode` |
@@ -160,22 +160,13 @@ command cannot reach the app, start or update the desktop app and try again.
 
 ## Mobile app
 
-Install Onicode from the
-[App Store](https://apps.apple.com/us/app/onicode-remote-claude-more/id6787819824) or
-[Google Play](https://play.google.com/store/apps/details?id=dev.onicode.app).
+The iOS and Android apps come through Onicode's own update feed and receive updates from it.
 The phone connects to a server on another machine. Follow
-[remote access](./remote-access.md) to link it through T3 Connect or a pairing URL.
-
-Store links and QR codes are also available in **Settings → About → Mobile app**
-on web and desktop. The store apps work with both stable and Nightly servers. Test builds are optional:
-
-- **iPhone and iPad:** TestFlight is invite-only.
-- **Android:** download an APK from the
-  [Android beta releases](https://github.com/aislopware/onicode/releases?q=android-beta-).
+[remote access](./remote-access.md) to link it with a pairing URL.
 
 If the app crashes during launch, open Settings → Diagnostics on the next launch
 that succeeds. It lists startup crashes from the last 7 days with the error and
-component stack that store crash reports leave out. Copy the report and paste it
+component stack that platform crash reports leave out. Copy the report and paste it
 into a GitHub issue. Error messages can quote values from the app, so read it over
 before sharing.
 

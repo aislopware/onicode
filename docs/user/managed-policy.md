@@ -30,8 +30,7 @@ The desktop app includes the `onicode` command; see [The `onicode` command](./in
   },
   "limits": {
     "maxRuntimeMode": "auto-accept-edits",
-    "clients": ["desktop", "local-browser"],
-    "telemetry": false
+    "clients": ["desktop", "local-browser"]
   }
 }
 ```
@@ -75,8 +74,8 @@ Administrative Templates > Onicode. Set **Organization** whenever you set any ot
 Locks and provider fields go in the two JSON policies, as the same objects a policy file would hold.
 Machines pick up a change at the next Group Policy refresh; run `gpupdate /target:computer /force`
 to apply it now, then restart Onicode.
-Setting **Allow T3 Connect**, **Allow webhook tasks**, **Allow importing browser cookies**, or
-**Allow usage data** to **Disabled** turns that feature off. Setting any other Onicode policy to
+Setting **Allow webhook tasks** or **Allow importing browser cookies** to **Disabled** turns that
+feature off. Setting any other Onicode policy to
 **Disabled** restricts nothing, the same as **Not Configured**.
 
 **Windows registry value.** Instead of the template, set the `Policy` value (`REG_SZ`) to the whole policy as one line of JSON,
@@ -166,10 +165,8 @@ A few settings need care:
   "limits": {
     "maxRuntimeMode": "auto-accept-edits",
     "clients": ["desktop"],
-    "connect": false,
     "webhookTasks": false,
     "browserCookieImport": false,
-    "telemetry": false,
     "providers": {
       "allowedDrivers": ["claudeAgent", "codex"],
       "instances": {
@@ -212,26 +209,25 @@ Onicode can place under the limit. Users still choose which ACP Registry agent r
 The limit decides which modes Onicode asks the provider for. It is not a sandbox; see
 [What a policy does not cover](#what-a-policy-does-not-cover).
 
-### Clients and T3 Connect
+### Clients
 
 `clients` lists how the server may run:
 
 - `desktop`: as the desktop app's own server.
 - `local-browser`: as a server only browsers on this machine reach, such as `npx onicode`.
-- `remote`: reachable from phones, other computers, and app.t3.codes over the network.
+- `remote`: reachable from phones and other computers over the network.
 
 `remote` is the line that matters. A server reachable from the network also accepts browsers on
 this machine, and the two local kinds differ only in how Onicode was started. On machines with the
 desktop app, keep `desktop` in the list, or the app cannot start.
 
-Without `remote`, the server listens only on a loopback address, creates no pairing links, and
-signs out devices that paired earlier. It does not start with a host other than a loopback
+Without `remote`, the server listens only on a loopback address, creates no pairing links, signs
+out devices that paired earlier, and keeps [public access](./remote-access.md) off. It does not start with a host other than a loopback
 address or `localhost`. A [background service](./background-service.md) installed before
 `ONICODE_LAN` existed keeps private-network access, so without `remote` it refuses to start.
 Run `onicode up --no-lan` when its `service.env` sets no `ONICODE_HOST`, or set
 `ONICODE_HOST=127.0.0.1` in `service.env`, then run `onicode service restart`. The desktop app starts
-with network access and Tailscale Serve off, whatever the user chose. That also turns off
-T3 Connect. To keep other remote access but turn off T3 Connect alone, set `"connect": false`.
+with network access and Tailscale Serve off, whatever the user chose.
 
 When it starts, the server also turns off each Tailscale Serve route, HTTPS or TCP, that forwards
 to it, such as one `onicode pair --tailscale` set up, and leaves other routes alone. It does not start

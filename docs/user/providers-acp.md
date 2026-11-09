@@ -41,8 +41,8 @@ without expanding shell expressions.
 
 ## Where agents run
 
-Registry agents always run on the machine that hosts your Onicode server. That stays true when you
-connect through `app.t3.codes`, T3 Connect, or a relay.
+Registry agents always run on the machine that hosts your Onicode server, including when you
+connect to it from another device.
 
 Agents install under `tools/<agent-id>/<version>/` inside Onicode home. Onicode verifies SHA-256 when the Registry entry
 provides one; entries without a checksum retain the Registry's HTTPS distribution guarantee.
