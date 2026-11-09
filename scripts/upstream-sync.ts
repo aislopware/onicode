@@ -16,8 +16,8 @@ const UPSTREAM = "upstream/main";
 const PROTECT =
   /[Tt]3[ _-]?[Cc]onnect|T3CONNECT|T3_CONNECT|[Tt]3[ _.-]?[Cc]hat|T3CHAT|T3_CHAT|pingdotgg\/t3code|-t3\.\d+|t3\.codes|T3 Tools Inc\.?/g;
 const RULES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/(?<![\w.])com\.t3tools\.t3code/g, "dev.onicode.app"],
-  [/(?<![\w.])com\/t3tools\/t3code/g, "dev/onicode/app"],
+  [/(?<![\w.])com\.t3tools\.t3code/g, "dev.aislopware.onicode"],
+  [/(?<![\w.])com\/t3tools\/t3code/g, "dev/aislopware/onicode"],
   [/(?<![\w.])com\.t3tools\.T3Code/g, "dev.onicode.Onicode"],
   [/(?<![\w.])com\.t3tools\./g, "dev.onicode."],
   [/(?<![\w.])com\/t3tools\//g, "dev/onicode/"],

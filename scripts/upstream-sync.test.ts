@@ -17,7 +17,8 @@ describe("upstream-sync translation", () => {
       "curl -fsSL https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.sh | sh",
     ],
     ["react-native-screens-5.0.0-t3.48.tgz", "react-native-screens-5.0.0-t3.48.tgz"],
-    ["com.t3tools.t3code.widgets", "dev.onicode.app.widgets"],
+    ["com.t3tools.t3code.widgets", "dev.aislopware.onicode.widgets"],
+    ["java/com/t3tools/t3code/MainActivity.kt", "java/dev/aislopware/onicode/MainActivity.kt"],
   ])("%s", (upstream, onicode) => {
     expect(translateText(upstream)).toBe(onicode);
   });
