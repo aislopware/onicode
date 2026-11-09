@@ -47,7 +47,7 @@ Use one of these per machine:
 
 | OS      | Native policy                                                                                         | Policy file                                        |
 | ------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| macOS   | Configuration profile for `dev.onicode.app`                                                           | `/Library/Application Support/Onicode/policy.json` |
+| macOS   | Configuration profile for `dev.aislopware.onicode`                                                    | `/Library/Application Support/Onicode/policy.json` |
 | Windows | Group Policy template, or a `Policy` JSON value (both under `HKLM\SOFTWARE\Policies\Onicode\Onicode`) | `C:\Program Files\Onicode\policy.json`             |
 | Linux   |                                                                                                       | `/etc/onicode/policy.json`                         |
 
@@ -58,10 +58,10 @@ refuses to start until you remove one.
 administrators.
 
 **macOS configuration profile.** Add a custom settings payload for the preference domain
-`dev.onicode.app`. The payload's keys are the policy's top-level keys (`schemaVersion`,
+`dev.aislopware.onicode`. The payload's keys are the policy's top-level keys (`schemaVersion`,
 `organization`, `supportUrl`, `settings`, `limits`); JSON objects become dictionaries and lists
 become arrays. To make the payload from a policy file you checked, run
-`plutil -convert xml1 -o dev.onicode.app.plist policy.json` and upload the result, or run
+`plutil -convert xml1 -o dev.aislopware.onicode.plist policy.json` and upload the result, or run
 `onicode policy templates <directory> --policy policy.json` to write a complete
 `macos/onicode.mobileconfig`. Install it as
 a device profile, since Onicode ignores user profiles, and deploy only one profile for this domain.
@@ -269,14 +269,12 @@ starts the binary you set.
 
 - `mode`: `auto` keeps the normal update flow. `off` stops Onicode from checking for updates, for
   machines that get Onicode through device management.
-- `feedUrl`: Onicode updates from your own mirror instead of GitHub: the desktop app, `onicode update`,
-  and updates started from another device. Publish only the versions you have approved, laid out
-  as on a GitHub release. The release's update files (`latest.yml`, `latest-mac.yml`,
-  `latest-linux.yml`, `latest-linux-arm64.yml`, and their `nightly` versions if you allow nightly)
-  and the desktop installers they list go at the URL's root. The release's `oni-*` archives and
-  `SHA256SUMS` go under `v<version>/`. A `onicode` run through `npx` comes from npm, so pin it with your
-  package tooling.
-- `allowNightly: false`: the nightly channel is unavailable.
+- `feedUrl`: Onicode updates from your own mirror instead of its own update server and GitHub: the
+  desktop app, `onicode update`, and updates started from another device. Publish only the versions
+  you have approved. The desktop update files (`latest-mac.yml` and `latest-linux.yml`, copied from
+  Onicode's update feeds) and the downloads they list go at the URL's root. The `oni-*` archives and
+  `SHA256SUMS` of a GitHub release go under `v<version>/`. A `onicode` run through `npx` comes from
+  npm, so pin it with your package tooling.
 
 ## What a policy does not cover
 
@@ -284,9 +282,8 @@ The policy controls what Onicode does. Agents run through each provider's own CL
 own configuration, such as `~/.claude`, and which a user can also run outside Onicode. To restrict
 those CLIs, use their own managed configuration, such as Claude Code's managed settings.
 
-On a managed Windows machine, the desktop app does not run a WSL environment. A Onicode server a
-user starts inside WSL reads `/etc/onicode/policy.json` in that distro, not the Windows policy.
-Deploy the policy file there too if your users run Onicode in WSL.
+A Onicode server a user starts inside WSL reads `/etc/onicode/policy.json` in that distro, not
+the Windows policy. Deploy the policy file there too if your users run Onicode in WSL.
 
 Without `remote`, Onicode does not expose the server, but a user can still forward its local port
 with other tools.

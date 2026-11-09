@@ -9,10 +9,9 @@ of the sidebar and **Settings → Environments** offer to update it.
 The update button at the bottom of the sidebar updates every connected machine
 in one step. It updates outdated providers, then servers that are behind, then
 the desktop app you are using. Servers move to the
-version your desktop app is installing, or to your web app's version. A
-background service stays on its current release channel. A remote desktop app
-installs the latest release from its own channel. Hover the button to see what
-it will update.
+version your desktop app is installing, or to your web app's version. A remote
+desktop app installs the latest release. Hover the button to see what it will
+update.
 
 While it runs, the button widens to show progress. It names a machine that is
 taking longer than usual, and offers **Retry** for a server that failed. Click
@@ -35,29 +34,6 @@ device asks. Use the update button on that machine to retry.
 The confirmation counts the running threads that the restarts will interrupt,
 and how many can resume afterwards. See **Continue threads after restarts**
 below.
-
-## Switch between Stable and Nightly
-
-In the desktop app, change **Settings → About → Update track**. Onicode shows each
-connected machine it will move and each one it skips, then moves them in one
-step. Remote servers install the latest release on the new track. Remote desktop
-apps reinstall on the new track. This app reinstalls last. Your threads,
-settings, and data stay.
-
-A background service cannot move to an older release remotely. When Stable is
-older than its Nightly, run `onicode update --channel stable --allow-downgrade` on
-that machine.
-
-A switch is blocked for a machine whose database already has changes the
-target release does not support, or when Onicode cannot confirm that it does.
-The dialog says why: update a machine on its current track first when its
-release is too old to check, or wait until the target track includes the
-changes. A Mac running the desktop app must switch on that Mac.
-
-Each machine keeps the new track even if its switch did not finish, but it
-moves to that track only through a switch. **Update track** shows how many
-machines still run the other track. **Review** opens the same dialog with fresh
-checks.
 
 ## Before you update
 
@@ -104,7 +80,7 @@ The offered action depends on how the server runs:
 | **Update server**          | Keep the client open while it installs and reconnects. Supported background services update remotely. For a desktop-hosted server, this also closes and relaunches the desktop app on the host. |
 | **Update the desktop app** | Update the desktop app on the machine running the server, then reopen it if needed.                                                                                                             |
 | **Copy update command**    | Run the command on the named host to update the detected global npm install, then restart the server with your usual options.                                                                   |
-| **Copy relaunch command**  | Stop the command-line server on its host and relaunch with the copied command, keeping your usual subcommand and options. This does not update an installed `onicode` command.                       |
+| **Copy relaunch command**  | Stop the command-line server on its host and relaunch with the copied command, keeping your usual subcommand and options. This does not update an installed `onicode` command.                  |
 
 On the host, run:
 
@@ -134,19 +110,6 @@ update can roll back to the previous version. If the update still fails:
 Only one server can use a Onicode home directory at a time. If startup reports that
 another server owns it, stop that server before retrying, or use a separate home
 directory and pair with the running server.
-
-### macOS app does not reopen after an Alpha update
-
-Updating an older **Onicode (Alpha)** installation can replace it with
-**Onicode (Beta)** without reopening the app. Open **Onicode (Beta)** from
-Applications, or run:
-
-```sh
-open "/Applications/Onicode (Beta).app"
-```
-
-If an old Dock shortcut no longer opens the app, remove it and add the Beta app
-from Applications again.
 
 ## If the desktop app does not start
 
@@ -188,8 +151,7 @@ status and refresh it again.
 ## Mobile updates
 
 To update an environment from your phone, open **Settings → Environments** and
-select it. **Check for updates** finds the latest release on that environment's
-current release channel. Keep the app open while the environment updates and
+select it. **Check for updates** finds the latest release. Keep the app open while the environment updates and
 reconnects. Hosts that cannot update remotely show instructions for updating on
 the machine instead.
 
@@ -201,8 +163,7 @@ there before refreshing to find newer versions. The same setting controls whethe
 Onicode downloads model catalog updates, so with it off new models may not appear
 until you enable it and refresh provider status.
 
-Install App Store or Google Play releases as usual. The mobile app can also
-download updates in the background and apply them when you next leave the app.
+The mobile app downloads updates in the background and apply them when you next leave the app.
 It saves drafts and queued messages before restarting. If you keep the app open
 for a long time, it may ask to install immediately; choosing **Later** leaves the
 update queued for the next suitable moment.

@@ -25,8 +25,7 @@ This installs the `onicode` binary to `~/.local/bin`. If that folder is not on y
 a command to add it. On Windows, `onicode` works in the same PowerShell window right
 away; add the folder to your `PATH` for new windows. If a `onicode` that the
 installer or the desktop app did not create is already there, it leaves that
-one alone and stops. Set `ONICODE_CHANNEL=nightly` to install the nightly train, or
-`ONICODE_VERSION` to pin an exact version.
+one alone and stops. Set `ONICODE_VERSION` to pin an exact version.
 
 | Task                                             | Command                                                                      |
 | ------------------------------------------------ | ---------------------------------------------------------------------------- |
@@ -49,14 +48,11 @@ for an independent server.
 To try Onicode once without installing it, run `npx onicode@latest` instead (needs
 Node.js for `npx`). It offers to install the `onicode` command first. If you say no,
 it asks again at the next minor release, and `npx onicode install` installs it later.
-`npx onicode` always runs the version npm picked, even when a `onicode` is installed. On
-the nightly train, run your installed `onicode`, not
-`npx onicode`, which runs the latest stable release.
+`npx onicode` always runs the version npm picked, even when a `onicode` is installed.
 
 ### Intel Macs
 
-There is no `onicode` executable for Intel Macs (the desktop app is available). To
-run a server there, build it from source with `vp`, which provides the Node version it needs
+There is no `onicode` executable or desktop app for Intel Macs. To run a server there, build it from source with `vp`, which provides the Node version it needs
 ([Install vp](https://github.com/aislopware/onicode#install-vp)):
 
 ```bash
@@ -70,26 +66,22 @@ update it with `git pull` and a rebuild.
 
 ## Desktop app
 
-Download a release from [GitHub Releases](https://github.com/aislopware/onicode/releases),
-or use a package manager:
+The desktop app is available for macOS on Apple silicon and for Linux on x86_64.
+Download the newest release:
 
-| Platform           | Install                                                       |
-| ------------------ | ------------------------------------------------------------- |
-| Windows            | `winget install Onicode.Onicode`                              |
-| macOS              | `brew install --cask onicode`                                 |
-| Debian, Ubuntu     | `sudo apt install ./Onicode-*.deb`                            |
-| Arch Linux         | `yay -S onicode-bin`                                          |
-| Arch Linux nightly | `yay -S onicode-nightly-bin`                                  |
-| Nix                | `nix profile add github:NixOS/nixpkgs/nixos-unstable#onicode` |
+| Platform       | Download                                                                                                          |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| macOS          | [Onicode for Mac](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/macos/latest/download) |
+| Linux AppImage | [AppImage](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/linux/latest/download)        |
+| Debian, Ubuntu | [.deb](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/linux/latest/download?format=deb) |
+
+On macOS, unzip the download and move **Onicode** to Applications. The app updates
+itself from then on. If you used the earlier native Onicode, it updates to this
+app on its own.
 
 ### Linux
 
-AppImage and `.deb` downloads are available for x86_64 and ARM64. Check your
-architecture with `uname -m`: for `x86_64`, choose a file ending in
-`x86_64.AppImage` or `amd64.deb`; for `aarch64`, choose `arm64.AppImage` or
-`arm64.deb`.
-
-To launch an AppImage, open a terminal in its download folder. Replace
+To launch the AppImage, open a terminal in its download folder. Replace
 `Onicode.AppImage` below with the exact filename you downloaded:
 
 ```bash
@@ -97,53 +89,20 @@ chmod +x ./Onicode.AppImage
 ./Onicode.AppImage
 ```
 
-The `.deb` updates itself like the other desktop builds. It asks for your
-password to install each update. If your desktop has no password prompt, the
-update fails. Download the new `.deb` and install it the same way.
-
-The AUR packages currently support x86_64 only; on ARM64, use the AppImage.
-Update AUR installs with your AUR helper, such as `yay -Syu`, instead of the
-in-app updater.
-
-### Nix (nixpkgs)
-
-Onicode is maintained in [nixpkgs](https://github.com/NixOS/nixpkgs/tree/nixos-unstable/pkgs/by-name/onicode/onicode).
-The command above installs from `nixos-unstable` and requires Nix 2.30 or later with
-`nix-command` and `flakes` enabled. Launch the desktop app with `onicode-desktop`;
-the package also includes the `onicode` command.
-
-On NixOS, you can instead add the package to your system configuration, using
-a nixpkgs revision that includes `onicode`:
-
-```nix
-environment.systemPackages = [ pkgs.onicode ];
-```
-
-Apply the change with `sudo nixos-rebuild switch`. For Home Manager, add
-`pkgs.onicode` to `home.packages` and run `home-manager switch`.
-
-Update a profile installation with `nix profile upgrade onicode`. For NixOS or
-Home Manager, update your configuration's nixpkgs input or channel and rebuild.
-Nix manages both the desktop app and the bundled
-`onicode` command; use Nix to update them instead of the in-app updater or `onicode update`.
+Install the `.deb` with `sudo apt install ./Onicode-*.deb`. It updates itself like
+the AppImage and asks for your password to install each update. If your desktop
+has no password prompt, the update fails; download the new `.deb` and install it
+the same way.
 
 ### The `onicode` command
 
 The desktop app includes the `onicode` command-line tool. A new install sets it up
 on first launch; after an update, or any time, choose **Install** next to
 **onicode command** in **Settings → About**. On macOS and Linux it adds a `onicode` link
-in `~/.local/bin` (or `~/bin`); on Windows it adds the app's command folder to
-your `PATH`. Open a new terminal afterwards. If the folder is not on your
+in `~/.local/bin` (or `~/bin`). Open a new terminal afterwards. If the folder is not on your
 `PATH`, **Add to PATH** in the welcome setup or **Settings → About** adds one
 line to your shell's startup file. **Remove** takes it off, and the app does not
 add it again. If you already have another `onicode`, it stays as it is.
-
-### Windows Subsystem for Linux
-
-Choose a WSL distro in **Settings → Sharing & access** to run agents and projects
-there. Install the provider CLIs inside that distro. Onicode installs its own
-server runtime there automatically; the first launch after an app update can
-take longer.
 
 ### Open a project from a terminal
 
