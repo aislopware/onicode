@@ -424,9 +424,9 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     Option.fromUndefinedOr(env.host),
     Option.fromUndefinedOr(bootstrap?.host),
   );
-  // Private networks only, so clients learn a LAN address and prefer it over
-  // T3 Connect. `onicode service install` writes ONICODE_LAN=false for a new
-  // service; one installed before ONICODE_LAN existed keeps listening.
+  // Private networks only, so clients learn a LAN address. `onicode service install`
+  // writes ONICODE_LAN=false for a new service; one installed before ONICODE_LAN
+  // existed keeps listening.
   const lan = resolveOptionPrecedence(normalizedFlags.lan, Option.fromUndefinedOr(env.lan));
   const privateNetworkOnly =
     Option.isNone(explicitHost) &&

@@ -1226,7 +1226,7 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "remote-environments",
     title: "Environments",
     to: "/settings/connections",
-    searchTerms: ["add pair backend host code ssh config agent tunnel saved t3 connect"],
+    searchTerms: ["add pair backend host code ssh config agent tunnel saved"],
   },
   {
     id: "load-balancing",

@@ -66,7 +66,7 @@ export type GuestShareCreateResult = typeof GuestShareCreateResult.Type;
 
 const GUEST_SHARE_CREATE_MESSAGES = {
   disabled: "Guest links are off. Turn them on in Settings > Labs.",
-  public_access_off: "Guest links need public access. Turn it on in Settings > Sharing & access.",
+  public_access_off: "Guest links need public access. Turn it on in Settings > Labs.",
   thread_unavailable: "This thread cannot be shared.",
   read_failed: "Failed to read the shared thread.",
   changed: "The guest link changed while it was being created.",
