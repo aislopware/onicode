@@ -1675,34 +1675,44 @@ function markdownRenderer(remarkPlugins: PluggableList, rehypePlugins: Pluggable
   return renderer;
 }
 
-const MarkdownSource = memo(function MarkdownSource({
-  text,
-  remarkPlugins,
-  rehypePlugins,
-  shared,
-  cache,
-}: {
-  text: string;
-  remarkPlugins: PluggableList;
-  rehypePlugins: PluggableList;
-  /** The plugins are one of the shared sets. */
-  shared: boolean;
-  /** The text will not change again; streamed text would only fill the cache with prefixes. */
-  cache: boolean;
-}) {
-  // Per-instance plugins, such as the incremental parser, set up their state on every render.
-  const render = shared
-    ? markdownRenderer(remarkPlugins, rehypePlugins)
-    : createMarkdownRenderer({
-        remarkPlugins,
-        rehypePlugins,
-        components: CHAT_MARKDOWN_COMPONENTS,
-        urlTransform: markdownUrlTransform,
-      });
-  return (
-    <ChatMarkdownTextContext value={text}>{render(text, shared && cache)}</ChatMarkdownTextContext>
-  );
-});
+const MarkdownSource = memo(
+  function MarkdownSource({
+    text,
+    remarkPlugins,
+    rehypePlugins,
+    shared,
+    cache,
+  }: {
+    text: string;
+    remarkPlugins: PluggableList;
+    rehypePlugins: PluggableList;
+    /** The plugins are one of the shared sets. */
+    shared: boolean;
+    /** The text will not change again; streamed text would only fill the cache with prefixes. */
+    cache: boolean;
+  }) {
+    // Per-instance plugins, such as the incremental parser, set up their state on every render.
+    const render = shared
+      ? markdownRenderer(remarkPlugins, rehypePlugins)
+      : createMarkdownRenderer({
+          remarkPlugins,
+          rehypePlugins,
+          components: CHAT_MARKDOWN_COMPONENTS,
+          urlTransform: markdownUrlTransform,
+        });
+    return (
+      <ChatMarkdownTextContext value={text}>
+        {render(text, shared && cache)}
+      </ChatMarkdownTextContext>
+    );
+  },
+  // `cache` only decides whether the parse is kept, so a block finishing does not re-render it.
+  (previous, next) =>
+    previous.text === next.text &&
+    previous.remarkPlugins === next.remarkPlugins &&
+    previous.rehypePlugins === next.rehypePlugins &&
+    previous.shared === next.shared,
+);
 
 function ChatMarkdown({
   text,

@@ -6,6 +6,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import type { ThreadId } from "@onicode/contracts";
 import { DEFAULT_CLIENT_SETTINGS } from "@onicode/contracts/settings";
+import { isMacPlatform } from "@onicode/shared/keybindingMatching";
 import type * as Context from "effect/Context";
 import { expect, it, vi } from "vite-plus/test";
 import { commands, page, userEvent } from "vite-plus/test/browser";
@@ -292,7 +293,8 @@ it("app-switch-thread", async () => {
 
 // Through the diff.toggle shortcut, the same handler as the header's diff button.
 const toggleDiff = (to: "open" | "close") => async () => {
-  await userEvent.keyboard("{Control>}d{/Control}");
+  const mod = isMacPlatform(navigator.platform) ? "Meta" : "Control";
+  await userEvent.keyboard(`{${mod}>}d{/${mod}}`);
   const diff = page.getByRole("group", { name: "Diff layout" });
   if (to === "open") await expect.element(diff).toBeVisible();
   else await expect.element(diff).not.toBeInTheDocument();
