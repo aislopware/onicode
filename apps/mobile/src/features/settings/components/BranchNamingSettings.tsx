@@ -103,7 +103,7 @@ export function BranchNamingSettings(props: {
             placeholder={
               props.instructions === null
                 ? "Mixed. Enter instructions for all selected targets."
-                : "Use julius/ followed by the issue ID and a short description."
+                : "Use alice/ followed by the issue ID and a short description."
             }
             editable={!props.disabled.instructions}
             multiline
