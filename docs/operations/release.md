@@ -54,6 +54,10 @@ The root `eas.json` holds both profiles:
   `scripts/release/build-linux.sh` yourself and upload with
   `better-update builds upload --platform linux`.
 
+electron-builder downloads its 7-Zip, AppImage and fpm tools from GitHub on first use. If that
+fails, point `ELECTRON_BUILDER_7ZIP_PATH` at a local `7zz` (`brew install sevenzip`); the macOS
+build needs nothing else from there.
+
 Apps read their feed from `app-update.yml`: `…/feeds/<project-id>/macos` and `…/linux`. A managed
 `feedUrl` policy overrides it.
 
