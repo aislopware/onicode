@@ -36,3 +36,4 @@ c6ca605630	take	fix(deps): update vulnerable dependencies and lockfile resolutio
 c73b38b379	take	fix(mobile): Android sends with Return on a hardware keyboard (#21687)
 cd87cce900	take	fix(server): include thread titles in MCP links (#33255)
 402d0623d5	take	fix(composer): persist model picks before the next message (#31739)
+1a43f4870d	take	fix(server): Codex /goal no longer tries to create the goal twice (#33260)

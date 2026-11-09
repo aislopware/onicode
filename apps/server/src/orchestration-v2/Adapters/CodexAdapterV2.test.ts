@@ -493,7 +493,8 @@ const CODEX_TEST_RUNTIME_POLICY = ProviderAdapter.ProviderAdapterV2RuntimePolicy
 });
 const ONICODE_THREAD_ENV_KEY = "shell_environment_policy.set.ONICODE_THREAD_ID";
 const threadEnvOf = (params: unknown) =>
-  Predicate.hasProperty(params, "config") && Predicate.hasProperty(params.config, ONICODE_THREAD_ENV_KEY)
+  Predicate.hasProperty(params, "config") &&
+  Predicate.hasProperty(params.config, ONICODE_THREAD_ENV_KEY)
     ? params.config[ONICODE_THREAD_ENV_KEY]
     : undefined;
 
@@ -1676,7 +1677,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         "mcp_servers.extra.command": "cat",
       };
       for (const recordedMcp of [
-        { mcp_servers: { "onicode": recordedServer } },
+        { mcp_servers: { onicode: recordedServer } },
         { "mcp_servers.onicode": recordedServer, "mcp_servers.extra.command": "echo" },
       ]) {
         const entries = codexReplayPreamble({
@@ -8700,7 +8701,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 nativeThreadId,
                 nativeTurnId: "goal-turn-1",
                 prompt: objective,
-                sentPrompt: `Start working toward this goal: ${objective}`,
+                sentPrompt: `This thread's goal is already set. Do not call create_goal. Start working on it now: ${objective}`,
               }).slice(5),
               5,
             ),
@@ -8840,7 +8841,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 nativeThreadId,
                 nativeTurnId: "goal-turn-limit",
                 prompt: atLimit,
-                sentPrompt: `Start working toward this goal: ${atLimit}`,
+                sentPrompt: `This thread's goal is already set. Do not call create_goal. Start working on it now: ${atLimit}`,
               }).slice(5),
               5,
             ),
