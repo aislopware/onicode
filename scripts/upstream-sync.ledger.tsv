@@ -16,3 +16,4 @@ f4cf7a95b2	take	fix(mobile): Android keyboard clipboard pastes fold into attachm
 6c41890c7e	take	fix(mobile): text no longer clips in Android desktop windows on external displays (#19064)
 c7c2bcc3a6	take	fix(mobile): compose button no longer covers the last tab on iPhone (#32995)
 9cd337ff9a	take	fix(mobile): accept image drops in the iOS message input (#25532)
+61629df695	take	fix(mobile): Android chip taps open the chip from either half (#33126)
