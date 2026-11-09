@@ -27,9 +27,8 @@ same device can reach it.
   `http://100.x.y.z:3773`, lets an agent find the environment but not finish
   signing in.
 - **A hosted agent**, such as ChatGPT or a bot running in the cloud, cannot reach
-  the environment. Onicode does not publish its MCP server to the internet, even
-  with [public access](./remote-access.md#public-access-for-guest-links-and-webhooks)
-  on, and a Tailscale address only works from your own tailnet.
+  the environment. Onicode does not publish its MCP server to the internet, and a
+  Tailscale address only works from your own tailnet.
 
 ## Approve a sign-in
 

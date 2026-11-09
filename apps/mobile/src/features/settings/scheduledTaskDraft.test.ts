@@ -19,67 +19,6 @@ describe("scheduleDraftForTask", () => {
     expect(draft.intervalMinutes).toBe("1");
     expect(scheduleFromDraft(draft)).toEqual({ type: "interval", everyMs: 60_000 });
   });
-
-  it("round-trips dedupe settings and rejects invalid windows", () => {
-    const dedupe = {
-      replayKey: "{{headers.delivery-id}}",
-      coalesceKey: "{{body.id}}",
-      coalesceWindowSeconds: 3600,
-    };
-    const draft = scheduleDraftForTask({ schedule: { type: "webhook", signature: null, dedupe } });
-    expect(scheduleFromDraft(draft)).toMatchObject({ dedupe });
-    expect(
-      scheduleFromDraft({
-        ...draft,
-        replayKey: " \n ",
-        coalesceKey: " \t ",
-        coalesceWindowSeconds: "",
-      }),
-    ).toMatchObject({ dedupe: {} });
-    expect(
-      scheduleFromDraft({
-        ...draft,
-        replayKey: `  ${dedupe.replayKey}  `,
-        coalesceKey: `\t${dedupe.coalesceKey}\n`,
-      }),
-    ).toMatchObject({ dedupe });
-    expect(
-      scheduleFromDraft({ ...draft, replayKey: "", coalesceKey: "", coalesceWindowSeconds: "" }),
-    ).toMatchObject({ dedupe: {} });
-    for (const coalesceWindowSeconds of ["9", "3601", "1.5", "abc"]) {
-      expect(scheduleFromDraft({ ...draft, coalesceWindowSeconds })).toBeNull();
-    }
-  });
-
-  it("keeps a webhook signature on save without sending a secret", () => {
-    const signature = {
-      header: "x-hub-signature-256",
-      encoding: "hex" as const,
-      prefix: "sha256=",
-    };
-    const saved = scheduleFromDraft(
-      scheduleDraftForTask({ schedule: { type: "webhook", signature } }),
-    );
-    expect(saved).toEqual({ type: "webhook", signature, dedupe: {} });
-    expect(saved?.type === "webhook" && saved.signature && "secret" in saved.signature).toBe(false);
-  });
-
-  it("round-trips webhook filters and refuses an invalid one", () => {
-    const filters = [
-      { path: "headers.x-github-event", op: "equals", value: "pull_request" },
-      { path: "body.label.name", op: "in", value: ["needs review", "agent:fix"] },
-    ] as const;
-    const draft = scheduleDraftForTask({ schedule: { type: "webhook", signature: null, filters } });
-    // Untouched rows are left out, so the server keeps whatever is stored now.
-    expect(scheduleFromDraft(draft)).not.toHaveProperty("filters");
-    expect(scheduleFromDraft({ ...draft, filters: [] })).toMatchObject({ filters: [] });
-    expect(scheduleFromDraft({ ...draft, filters: draft.filters.slice(1) })).toMatchObject({
-      filters: filters.slice(1),
-    });
-    expect(
-      scheduleFromDraft({ ...draft, filters: [{ id: "f1", path: "", op: "exists", value: "" }] }),
-    ).toBeNull();
-  });
 });
 
 describe("scheduleFromDraft", () => {
@@ -197,13 +136,4 @@ describe("scheduled task model defaults", () => {
       ),
     ).toBeNull();
   });
-});
-
-it("rejects dedupe keys without valid request placeholders", () => {
-  expect(
-    scheduleFromDraft({ ...DEFAULT_SCHEDULE, mode: "webhook", replayKey: "literal" }),
-  ).toBeNull();
-  expect(
-    scheduleFromDraft({ ...DEFAULT_SCHEDULE, mode: "webhook", coalesceKey: "{{body.bad" }),
-  ).toBeNull();
 });

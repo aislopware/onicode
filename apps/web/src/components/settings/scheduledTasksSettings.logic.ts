@@ -1,4 +1,4 @@
-import { isListedThreadLineage, isWebhookDedupeTemplate } from "@onicode/contracts";
+import { isListedThreadLineage } from "@onicode/contracts";
 import {
   EnvironmentId,
   type ProjectId,
@@ -14,12 +14,6 @@ import {
   type ThreadId,
 } from "@onicode/contracts";
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/models";
-import {
-  parseWebhookFilterDrafts,
-  webhookFilterDrafts,
-  webhookFilterDraftsChanged,
-  type WebhookFilterDraft,
-} from "@onicode/client-runtime/scheduled-task-webhook";
 
 import {
   resolveProjectSettings,
@@ -54,7 +48,7 @@ export function validateScheduledTasksSearch(raw: Record<string, unknown>) {
   };
 }
 
-export type ScheduleMode = "fixed" | "once" | "interval" | "webhook";
+export type ScheduleMode = "fixed" | "once" | "interval";
 export type WorkspaceMode = "root" | "worktree" | "existing_worktree";
 
 export interface DraftState {
@@ -82,25 +76,7 @@ export interface DraftState {
   readonly interactionMode: ProviderInteractionMode;
   /** Retain the source selection's provider options when the picker leaves instanceId:model unchanged. */
   readonly baseModelSelection: ModelSelection | null;
-  readonly signatureEnabled: boolean;
-  readonly signatureHeader: string;
-  readonly signatureEncoding: "hex" | "base64";
-  readonly signaturePrefix: string;
-  /** Write-only: empty keeps the secret already stored on the server. */
-  readonly signatureSecret: string;
-  readonly replayKey: string;
-  readonly coalesceKey: string;
-  readonly coalesceWindowSeconds: string;
-  readonly filters: ReadonlyArray<WebhookFilterDraft>;
-  /** The filter rows the form opened with. */
-  readonly savedFilters: ReadonlyArray<WebhookFilterDraft>;
 }
-
-export const WEBHOOK_SIGNATURE_DEFAULTS = {
-  signatureHeader: "x-hub-signature-256",
-  signatureEncoding: "hex",
-  signaturePrefix: "sha256=",
-} as const;
 
 /** Formats a date as a `datetime-local` input value in the browser's time zone. */
 export function toDateTimeLocalValue(date: Date): string {
@@ -109,54 +85,16 @@ export function toDateTimeLocalValue(date: Date): string {
 }
 
 export function scheduleDraftErrors(draft: DraftState) {
-  if (draft.scheduleMode === "once") {
-    const runAt = new Date(draft.runAt);
-    if (Number.isNaN(runAt.getTime()))
-      return [{ title: "Invalid run time", description: "Pick a date and time." }];
-    // A time skipped by a daylight saving change parses to a different clock time.
-    if (toDateTimeLocalValue(runAt) !== draft.runAt)
-      return [
-        { title: "Invalid run time", description: "That time does not exist in your time zone." },
-      ];
-    return [];
-  }
-  if (draft.scheduleMode !== "webhook") return [];
-  const errors: Array<{ title: string; description: string }> = [];
-  for (const [label, value] of [
-    ["Duplicate request key", draft.replayKey],
-    ["Coalesce key", draft.coalesceKey],
-  ] as const) {
-    if (value.trim() && !isWebhookDedupeTemplate(value.trim()))
-      errors.push({
-        title: "Invalid webhook settings",
-        description: `${label} must contain a valid request placeholder.`,
-      });
-  }
-  const window = draft.coalesceWindowSeconds.trim();
-  if (window && (!Number.isInteger(Number(window)) || Number(window) < 10 || Number(window) > 3600))
-    errors.push({
-      title: "Invalid webhook settings",
-      description: "Coalesce window must be whole seconds from 10 to 3600.",
-    });
-  return errors;
-}
-
-export function webhookDeliveryLabel(delivery: {
-  readonly outcome: string;
-  readonly pendingWindow?: boolean | undefined;
-}) {
-  if (delivery.outcome === "accepted") return delivery.pendingWindow ? "Opened window" : "Ran";
-  const labels: Record<string, string> = {
-    dispatch_failed: "Run failed",
-    duplicate: "Duplicate",
-    coalesced: "Coalesced",
-    filtered: "Filtered",
-    rejected_signature: "Bad signature",
-    disabled: "Task paused",
-    rate_limited: "Rate limited",
-    expired: "Too old",
-  };
-  return labels[delivery.outcome] ?? delivery.outcome.replaceAll("_", " ");
+  if (draft.scheduleMode !== "once") return [];
+  const runAt = new Date(draft.runAt);
+  if (Number.isNaN(runAt.getTime()))
+    return [{ title: "Invalid run time", description: "Pick a date and time." }];
+  // A time skipped by a daylight saving change parses to a different clock time.
+  if (toDateTimeLocalValue(runAt) !== draft.runAt)
+    return [
+      { title: "Invalid run time", description: "That time does not exist in your time zone." },
+    ];
+  return [];
 }
 
 export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedule | null {
@@ -179,40 +117,6 @@ export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedul
           : new Date(draft.runAt).toISOString(),
     };
   }
-  if (draft.scheduleMode === "webhook") {
-    const replayKey = draft.replayKey.trim();
-    const coalesceKey = draft.coalesceKey.trim();
-    const coalesceWindowSeconds = draft.coalesceWindowSeconds.trim()
-      ? Number(draft.coalesceWindowSeconds)
-      : undefined;
-    const parsedFilters = parseWebhookFilterDrafts(draft.filters);
-    if (!("filters" in parsedFilters)) return null;
-    const secret = draft.signatureSecret.trim();
-    return {
-      type: "webhook",
-      signature: draft.signatureEnabled
-        ? {
-            header: draft.signatureHeader.trim(),
-            encoding: draft.signatureEncoding,
-            prefix: draft.signaturePrefix,
-            ...(secret ? { secret } : {}),
-          }
-        : null,
-      ...(replayKey || coalesceKey || coalesceWindowSeconds !== undefined
-        ? {
-            dedupe: {
-              ...(replayKey ? { replayKey } : {}),
-              ...(coalesceKey ? { coalesceKey } : {}),
-              ...(coalesceWindowSeconds === undefined ? {} : { coalesceWindowSeconds }),
-            },
-          }
-        : { dedupe: {} }),
-      // Only edited filters are sent; the server keeps the stored ones otherwise.
-      ...(webhookFilterDraftsChanged(draft.savedFilters, draft.filters)
-        ? { filters: parsedFilters.filters }
-        : {}),
-    };
-  }
   if (draft.scheduleMode === "interval") {
     const everyMs = Math.round(Number(draft.intervalMinutes) * 60_000);
     return { type: "interval", everyMs };
@@ -227,7 +131,6 @@ export function scheduleFromDraft(draft: DraftState): ScheduledTaskUpsertSchedul
 
 export function taskToDraft(task: ScheduledTask): DraftState {
   const schedule = task.schedule;
-  const filters = webhookFilterDrafts(schedule.type === "webhook" ? schedule.filters : undefined);
   const weekdays =
     schedule.type === "fixed_time" && schedule.weekdays && schedule.weekdays.length > 0
       ? new Set(schedule.weekdays)
@@ -261,23 +164,6 @@ export function taskToDraft(task: ScheduledTask): DraftState {
     runtimeMode: task.runtimeMode,
     interactionMode: task.interactionMode,
     baseModelSelection: task.modelSelection,
-    ...(schedule.type === "webhook" && schedule.signature !== null
-      ? {
-          signatureEnabled: true,
-          signatureHeader: schedule.signature.header,
-          signatureEncoding: schedule.signature.encoding,
-          signaturePrefix: schedule.signature.prefix,
-        }
-      : { signatureEnabled: false, ...WEBHOOK_SIGNATURE_DEFAULTS }),
-    signatureSecret: "",
-    replayKey: schedule.type === "webhook" ? (schedule.dedupe?.replayKey ?? "") : "",
-    coalesceKey: schedule.type === "webhook" ? (schedule.dedupe?.coalesceKey ?? "") : "",
-    coalesceWindowSeconds:
-      schedule.type === "webhook" && schedule.dedupe?.coalesceWindowSeconds !== undefined
-        ? String(schedule.dedupe.coalesceWindowSeconds)
-        : "",
-    filters,
-    savedFilters: filters,
   };
 }
 

@@ -691,19 +691,14 @@ it.effect("a caller cannot rewrite a scheduled task that runs above its own mode
 
 it.effect.each([
   {
-    scenario: "explains why a webhook task cannot run manually",
-    tasks: [
-      {
-        ...Schema.decodeSync(ScheduledTask)(scheduledTask("task-webhook", "full-access")),
-        schedule: { type: "webhook" as const, signature: null },
-      },
-    ],
+    scenario: "explains why a task cannot run now, without its cause",
+    tasks: [Schema.decodeSync(ScheduledTask)(scheduledTask("task-manual", "full-access"))],
     error: new ScheduledTaskError({
-      message: "Webhook tasks run when their URL receives a request.",
-      cause: new Error("private-webhook-cause"),
+      message: "Schedule task is already running.",
+      cause: new Error("private-run-cause"),
     }),
     code: "orchestration_error",
-    message: "Webhook tasks run when their URL receives a request.",
+    message: "Schedule task is already running.",
   },
   {
     scenario: "reports a missing task before trying to run it",
@@ -716,7 +711,7 @@ it.effect.each([
   Effect.gen(function* () {
     const server = yield* McpServer.McpServer;
     const result = yield* server
-      .callTool({ name: "run_scheduled_task_now", arguments: { taskId: "task-webhook" } })
+      .callTool({ name: "run_scheduled_task_now", arguments: { taskId: "task-manual" } })
       .pipe(
         Effect.provideService(
           McpInvocationContext.McpInvocationContext,

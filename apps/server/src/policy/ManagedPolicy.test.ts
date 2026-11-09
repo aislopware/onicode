@@ -60,11 +60,11 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         JSON.stringify({
           schemaVersion: 1,
           organization: "Example Corp",
-          limits: { webhookTasks: false },
+          limits: { browserCookieImport: false, webhookTasks: false },
         }),
       );
-      assert.deepEqual(policy.summary?.limits, { webhookTasks: false });
-      assert.equal(ManagedPolicy.deniedBy(policy, "webhookTasks"), "Example Corp");
+      // webhookTasks still loads from older files but no longer reaches clients.
+      assert.deepEqual(policy.summary?.limits, { browserCookieImport: false });
     }),
   );
 
@@ -75,7 +75,7 @@ it.layer(NodeServices.layer)("ManagedPolicy.load", (it) => {
         [
           "{ not json",
           // An unknown key may be a restriction from a newer release.
-          JSON.stringify({ ...base, limits: { webhookTasks: false, futureLimit: true } }),
+          JSON.stringify({ ...base, limits: { browserCookieImport: false, futureLimit: true } }),
           JSON.stringify({ ...base, settings: { notASetting: { value: 1, locked: true } } }),
           JSON.stringify({
             ...base,

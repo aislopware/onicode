@@ -3,7 +3,6 @@ import { useAtomValue } from "@effect/atom-react";
 import {
   AuthOrchestrationOperateScope,
   clampManagedRuntimeMode,
-  managedCapabilityDenial,
   resolveProjectProviderInstanceEnabled,
 } from "@onicode/contracts";
 import { readEnvironmentScope } from "../../state/session";
@@ -14,11 +13,7 @@ import type {
   ScheduledTaskThreadMode,
   ScheduledTaskUpsertInput,
 } from "@onicode/contracts";
-import {
-  MAX_WEBHOOK_FILTERS,
-  resolveEnvironmentMachineKind,
-  scheduledTaskThreadMode,
-} from "@onicode/contracts";
+import { resolveEnvironmentMachineKind, scheduledTaskThreadMode } from "@onicode/contracts";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import type { MenuAction } from "@react-native-menu/menu";
 import { DateTimePicker } from "@expo/ui/community/datetime-picker";
@@ -28,14 +23,6 @@ import {
   type AtomCommandResult,
 } from "@onicode/client-runtime/state/runtime";
 import { resolvePastedPath } from "@onicode/shared/path";
-import {
-  DEFAULT_WEBHOOK_PROMPT,
-  emptyWebhookFilterDraft,
-  parseWebhookFilterDrafts,
-  removeWebhookFilterDraft,
-  WEBHOOK_FILTER_OPS,
-  type WebhookFilterDraft,
-} from "@onicode/client-runtime/scheduled-task-webhook";
 import { useRef, useState, type ReactNode } from "react";
 import { useFocusEffect, useNavigation, usePreventRemove } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -54,9 +41,6 @@ import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { SegmentedControl } from "../../components/ui/SegmentedControl";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
-import { webhookAddress } from "@onicode/client-runtime/webhook-address";
-import { tryCopyTextWithHaptic } from "../../lib/copyTextWithHaptic";
-import { usePreparedConnection } from "../../state/session";
 import { buildModelOptions } from "../../lib/modelOptions";
 import { useProjects, useEnvironmentServerConfig } from "../../state/entities";
 import { useEnvironmentQuery } from "../../state/query";
@@ -116,7 +100,6 @@ const THREAD_MODE_LABELS: Record<ScheduledTaskThreadMode, string> = {
 };
 
 function describeSchedule(task: ScheduledTask): string {
-  if (task.schedule.type === "webhook") return "On webhook";
   if (task.schedule.type === "once") {
     const runAt = new Date(task.schedule.runAt);
     return `Once, ${formatRunAtDate(runAt)} at ${formatRunAtTime(runAt)}`;
@@ -258,86 +241,6 @@ function SelectRow(props: {
         />
       </Pressable>
     </Menu>
-  );
-}
-
-function WebhookFilterRows(props: {
-  readonly filters: ReadonlyArray<WebhookFilterDraft>;
-  readonly disabled: boolean;
-  readonly onChange: (filters: ReadonlyArray<WebhookFilterDraft>) => void;
-}) {
-  const update = (index: number, patch: Partial<WebhookFilterDraft>) =>
-    props.onChange(
-      props.filters.map((filter, at) => (at === index ? { ...filter, ...patch } : filter)),
-    );
-  return (
-    <>
-      {props.filters.map((filter, index) => (
-        <View key={filter.id}>
-          <View className="flex-row items-center gap-3 border-t border-border-subtle px-4 pt-3">
-            <Text className="min-w-0 flex-1 text-sm text-foreground-muted">Filter {index + 1}</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Remove filter ${index + 1}`}
-              disabled={props.disabled}
-              hitSlop={8}
-              onPress={() => props.onChange(removeWebhookFilterDraft(props.filters, filter.id))}
-              className="active:opacity-70"
-            >
-              <SymbolView name="trash" size={16} tintColorClassName="accent-danger-foreground" />
-            </Pressable>
-          </View>
-          <FormField
-            label="Path"
-            value={filter.path}
-            placeholder="body.action"
-            disabled={props.disabled}
-            onChange={(path) => update(index, { path })}
-          />
-          <SelectRow
-            label="Test"
-            value={WEBHOOK_FILTER_OPS.find((option) => option.op === filter.op)?.label ?? ""}
-            actions={WEBHOOK_FILTER_OPS.map((option) => ({
-              id: option.op,
-              title: option.label,
-              state: option.op === filter.op ? ("on" as const) : undefined,
-            }))}
-            onSelect={(id) => {
-              const known = WEBHOOK_FILTER_OPS.find((option) => option.op === id);
-              if (known) update(index, { op: known.op });
-            }}
-          />
-          {filter.op === "exists" ? null : (
-            <FormField
-              label={filter.op === "in" ? "Values, comma-separated" : "Value"}
-              value={filter.value}
-              placeholder={filter.op === "in" ? "opened, reopened" : "opened"}
-              disabled={props.disabled}
-              onChange={(value) => update(index, { value })}
-            />
-          )}
-        </View>
-      ))}
-      {props.filters.length < MAX_WEBHOOK_FILTERS ? (
-        <Pressable
-          accessibilityRole="button"
-          disabled={props.disabled}
-          onPress={() => props.onChange([...props.filters, emptyWebhookFilterDraft()])}
-          className="min-h-14 flex-row items-center gap-3 border-t border-border-subtle px-4 py-3 active:opacity-70"
-        >
-          <Text textRole="body" className="min-w-0 flex-1 text-foreground">
-            Add filter
-          </Text>
-          <SymbolView name="plus" size={16} tintColorClassName="accent-icon" />
-        </Pressable>
-      ) : null}
-      {props.filters.length > 0 ? (
-        <Text className="px-4 pb-3 text-sm text-foreground-muted">
-          Runs only when every filter matches. Other requests are logged as filtered. Separate “is
-          one of” values with commas; a value can't contain a comma.
-        </Text>
-      ) : null}
-    </>
   );
 }
 
@@ -666,8 +569,6 @@ function TaskForm({
   const config = useEnvironmentServerConfig(environmentId);
   const destinationLabel = useScheduledTaskDestinationLabel(environmentId, draft.threadId);
   const modelOptions = buildModelOptions(config, null, undefined, draft.projectId);
-  // Existing webhook tasks keep the option so they can still switch to a timer.
-  const webhookDenial = managedCapabilityDenial(config?.managedPolicy, "webhookTasks");
   const canOperate = useAtomValue(
     serverEnvironment.upsertScheduledTask.permissionAtom(environmentId),
   );
@@ -706,29 +607,11 @@ function TaskForm({
       environmentUnavailable
     )
       return;
-    // Preserve signatures edited on other clients by sending the task's current value.
-    const liveTask = tasks.data?.tasks.find((task) => task.id === draft.task?.id);
-    const schedule = scheduleFromDraft(
-      draft.schedule.mode === "webhook" && liveTask?.schedule.type === "webhook"
-        ? { ...draft.schedule, signature: liveTask.schedule.signature }
-        : draft.schedule,
-    );
+    const schedule = scheduleFromDraft(draft.schedule);
     if (draft.schedule.mode === "once" && !offersOnce) {
       Dialog.alert(
         "Once is not available here",
         "This environment runs an older Onicode. Update it to schedule a one-time task, or pick another schedule.",
-      );
-      return;
-    }
-    const parsedFilters = parseWebhookFilterDrafts(draft.schedule.filters);
-    if (draft.schedule.mode === "webhook" && "error" in parsedFilters) {
-      Dialog.alert("Invalid filter", parsedFilters.error);
-      return;
-    }
-    if (draft.schedule.mode === "webhook" && schedule === null) {
-      Dialog.alert(
-        "Invalid webhook settings",
-        "Each dedupe key must contain a valid request placeholder. The coalesce window must be whole seconds from 10 to 3600, or blank.",
       );
       return;
     }
@@ -1016,9 +899,6 @@ function TaskForm({
                   ? [{ value: "once" as const, label: "Once" }]
                   : []),
                 { value: "interval", label: "Interval" },
-                ...(webhookDenial === undefined || draft.schedule.mode === "webhook"
-                  ? [{ value: "webhook" as const, label: "On webhook" }]
-                  : []),
               ]}
               selected={draft.schedule.mode}
               onSelect={(mode) => {
@@ -1026,10 +906,6 @@ function TaskForm({
                 setRunAtPicker(null);
                 setDraft({
                   ...draft,
-                  prompt:
-                    mode === "webhook" && !draft.prompt.trim()
-                      ? DEFAULT_WEBHOOK_PROMPT
-                      : draft.prompt,
                   schedule: {
                     ...draft.schedule,
                     mode,
@@ -1119,10 +995,6 @@ function TaskForm({
                 }}
               />
             </>
-          ) : draft.schedule.mode === "webhook" && webhookDenial !== undefined && draft.enabled ? (
-            <Text className="border-t border-border-subtle px-4 py-3 text-sm text-foreground-muted">
-              {`${webhookDenial} Switch the task to a timer, or turn it off, to save it.`}
-            </Text>
           ) : draft.schedule.mode === "once" ? (
             (["date", "time"] as const).map((field) => {
               const runAt = new Date(draft.schedule.runAt);
@@ -1170,65 +1042,6 @@ function TaskForm({
                 </View>
               );
             })
-          ) : draft.schedule.mode === "webhook" ? (
-            <>
-              <WebhookScheduleDetails
-                environmentId={environmentId}
-                // Use the live row for rotated URLs; hide the URL once a loaded list no longer contains the task.
-                task={
-                  tasks.data
-                    ? (tasks.data.tasks.find((task) => task.id === draft.task?.id) ?? null)
-                    : draft.task
-                }
-                signatureConfigured={draft.schedule.signature !== null}
-                disabled={!canOperate || saving || environmentUnavailable}
-              />
-              <WebhookFilterRows
-                filters={draft.schedule.filters}
-                disabled={saving}
-                onChange={(filters) =>
-                  setDraft({ ...draft, schedule: { ...draft.schedule, filters } })
-                }
-              />
-              <FormField
-                label="Duplicate request key"
-                value={draft.schedule.replayKey}
-                placeholder="{{headers.delivery-id}}"
-                disabled={saving}
-                borderTop
-                onChange={(replayKey) =>
-                  setDraft({ ...draft, schedule: { ...draft.schedule, replayKey } })
-                }
-              />
-              <Text className="px-4 pb-3 text-sm text-foreground-muted">
-                Requests with the same key run only once within 7 days.
-              </Text>
-              <FormField
-                label="Coalesce key template"
-                value={draft.schedule.coalesceKey}
-                placeholder="{{body.id}}"
-                disabled={saving}
-                borderTop
-                onChange={(coalesceKey) =>
-                  setDraft({ ...draft, schedule: { ...draft.schedule, coalesceKey } })
-                }
-              />
-              <FormField
-                label="Coalesce window (seconds, 10–3600)"
-                value={draft.schedule.coalesceWindowSeconds}
-                placeholder="120"
-                keyboardType="number-pad"
-                disabled={saving}
-                borderTop
-                onChange={(coalesceWindowSeconds) =>
-                  setDraft({ ...draft, schedule: { ...draft.schedule, coalesceWindowSeconds } })
-                }
-              />
-              <Text className="px-4 pb-3 text-sm text-foreground-muted">
-                Coalescing runs the latest payload when the window from the first delivery closes.
-                Empty keys run normally.
-              </Text>
-            </>
           ) : (
             <>
               <FormField
@@ -1275,105 +1088,10 @@ function TaskForm({
         tone="primary"
         fullWidth
         loading={saving}
-        disabled={
-          !canOperate ||
-          dictationPending ||
-          taskMissing ||
-          environmentUnavailable ||
-          // The server refuses an enabled webhook task under this policy.
-          (draft.enabled && draft.schedule.mode === "webhook" && webhookDenial !== undefined)
-        }
+        disabled={!canOperate || dictationPending || taskMissing || environmentUnavailable}
         onPress={() => void save()}
         label={saving ? "Saving…" : draft.task ? "Save changes" : "Create task"}
       />
-    </View>
-  );
-}
-
-function WebhookScheduleDetails({
-  environmentId,
-  task,
-  signatureConfigured,
-  disabled,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly task: ScheduledTask | null;
-  readonly signatureConfigured: boolean;
-  readonly disabled: boolean;
-}) {
-  const [rotating, setRotating] = useState(false);
-  const rotate = useAtomCommand(serverEnvironment.rotateScheduledTaskWebhookToken, {
-    label: "scheduled task rotate webhook token",
-    reportFailure: false,
-  });
-  const preparedConnection = usePreparedConnection(environmentId);
-  const httpBaseUrl =
-    preparedConnection._tag === "Some" ? preparedConnection.value.httpBaseUrl : null;
-  const webhook = task?.schedule.type === "webhook" ? task.webhook : undefined;
-  const resolved = webhook ? webhookAddress(webhook, httpBaseUrl) : null;
-  return (
-    <View className="gap-2 border-t border-border-subtle px-4 py-3">
-      <Text className="text-sm text-foreground-muted">
-        {
-          "The prompt can use {{body.a.b}}, {{headers.name}}, {{query.name}}, {{body}} and {{request}}. The filled-in prompt is all the agent sees."
-        }
-      </Text>
-      {task === null || resolved === null ? (
-        <Text className="text-sm text-foreground-muted">Save the task to get its webhook URL.</Text>
-      ) : (
-        <>
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Copy webhook URL"
-            accessibilityHint="Copies the URL to the clipboard"
-            disabled={!resolved.copyable}
-            onPress={() => void tryCopyTextWithHaptic(resolved.address)}
-            className="gap-1 active:opacity-70"
-          >
-            <Text textRole="body" className="text-foreground">
-              {resolved.copyable ? "Webhook URL" : "Webhook path"}
-            </Text>
-            <Text className="text-sm text-foreground-muted" numberOfLines={2} selectable>
-              {resolved.address}
-            </Text>
-          </Pressable>
-          {resolved.note !== null ? (
-            <Text className="text-sm text-foreground-muted">{resolved.note}</Text>
-          ) : null}
-          <Button
-            label={rotating ? "Rotating…" : "Rotate URL"}
-            tone="danger"
-            disabled={disabled || rotating}
-            onPress={() =>
-              Dialog.alert("Rotate URL?", "The current URL stops working immediately.", [
-                { text: "Cancel", style: "cancel" },
-                {
-                  text: "Rotate",
-                  style: "destructive",
-                  onPress: () => {
-                    setRotating(true);
-                    void rotate({ environmentId, input: { id: task.id } }).then((result) => {
-                      setRotating(false);
-                      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-                        Dialog.alert(
-                          "Could not rotate URL",
-                          String(squashAtomCommandFailure(result)),
-                        );
-                      }
-                    });
-                  },
-                },
-              ])
-            }
-            loading={rotating}
-          />
-        </>
-      )}
-      {signatureConfigured ? (
-        <Text className="text-sm text-foreground-muted">
-          Signature check configured on desktop/web.
-        </Text>
-      ) : null}
     </View>
   );
 }
@@ -1479,11 +1197,6 @@ function EnvironmentTasks({
                     ? ` · ${formatNextScheduledTaskRun(task.nextRunAt, now)}`
                     : ""}
               </Text>
-              {task.blockedByPolicy ? (
-                <Text className="text-sm text-foreground-muted" numberOfLines={2}>
-                  {task.blockedByPolicy}
-                </Text>
-              ) : null}
               {task.lastRunError ? (
                 <Text className="text-sm text-danger-foreground" numberOfLines={2}>
                   Last run failed: {task.lastRunError}
@@ -1501,9 +1214,7 @@ function EnvironmentTasks({
                   title: task.enabled ? "Pause" : "Resume",
                   attributes: { disabled: !canOperate },
                 },
-                ...(task.schedule.type === "webhook"
-                  ? []
-                  : [{ id: "run", title: "Run now", attributes: { disabled: !canOperate } }]),
+                { id: "run", title: "Run now", attributes: { disabled: !canOperate } },
                 {
                   id: "delete",
                   title: "Delete",

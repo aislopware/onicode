@@ -760,26 +760,6 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
-// Path tokens and optional body signatures authenticate webhooks; read raw bytes to verify signatures.
-const WebhookParams = Schema.Struct({
-  hookId: TrimmedNonEmptyString,
-  token: TrimmedNonEmptyString,
-});
-const WebhookAccepted = Schema.Struct({ deliveryId: TrimmedNonEmptyString }).pipe(
-  HttpApiSchema.status(202),
-);
-const webhookEndpoint = {
-  params: WebhookParams,
-  success: WebhookAccepted,
-} as const;
-const WEBHOOK_PATH = "/api/hooks/:hookId/:token";
-
-class EnvironmentWebhooksHttpApi extends HttpApiGroup.make("webhooks")
-  .add(HttpApiEndpoint.post("webhookPost", WEBHOOK_PATH, webhookEndpoint))
-  .add(HttpApiEndpoint.put("webhookPut", WEBHOOK_PATH, webhookEndpoint))
-  .add(HttpApiEndpoint.patch("webhookPatch", WEBHOOK_PATH, webhookEndpoint))
-  .add(HttpApiEndpoint.get("webhookGet", WEBHOOK_PATH, webhookEndpoint)) {}
-
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
@@ -787,10 +767,4 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
   .add(EnvironmentProjectsHttpApi)
-  .add(EnvironmentVoiceHttpApi)
-  .add(EnvironmentWebhooksHttpApi) {}
-
-/** What the public listener serves to the internet through Tailscale Funnel. */
-export class EnvironmentPublicHttpApi extends HttpApi.make("public").add(
-  EnvironmentWebhooksHttpApi,
-) {}
+  .add(EnvironmentVoiceHttpApi) {}

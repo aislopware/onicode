@@ -15,7 +15,6 @@ import {
   RunId,
   RuntimeRequestId,
   ScheduledTaskId,
-  SecretRef,
   ThreadId,
   TrimmedNonEmptyString,
   TurnItemId,
@@ -68,7 +67,7 @@ const OrchestratorMcpSchedule = Schema.Union([
   OrchestratorMcpScheduleFromJsonString,
 ]).annotate({
   description:
-    "Trigger: {type:'interval',everyMs}, {type:'fixed_time',timeOfDay,weekdays?}, {type:'once',runAt}, or {type:'webhook'}.",
+    "Trigger: {type:'interval',everyMs}, {type:'fixed_time',timeOfDay,weekdays?}, or {type:'once',runAt}.",
 });
 
 const OrchestratorMcpTargetOptionsFromRecord = Schema.Record(
@@ -707,14 +706,6 @@ export const OrchestratorMcpScheduledTask = Schema.Struct({
   schedule: ScheduledTaskSchedule,
   nextRunAt: Schema.NullOr(IsoDateTime),
   lastRunStatus: ScheduledTaskRunStatus,
-  webhookUrl: Schema.optional(Schema.String).annotate({
-    description:
-      "Public URL for the sender. Absent: public access is off; the user must turn it on in Settings > Labs.",
-  }),
-  webhookSignature: Schema.optional(Schema.Literals(["none", "set"])),
-  blockedByPolicy: Schema.optional(Schema.String).annotate({
-    description: "Present when an administrator's policy stops this task from running.",
-  }),
 });
 export type OrchestratorMcpScheduledTask = typeof OrchestratorMcpScheduledTask.Type;
 
@@ -758,7 +749,7 @@ const PastedSecretValue = Schema.String.check(
 
 export const OrchestratorMcpRequestSecretInput = Schema.Struct({
   label: TrimmedNonEmptyString.annotate({
-    description: "Card title, such as 'GitHub webhook secret'.",
+    description: "Card title, such as 'OpenAI API key'.",
   }),
   reason: TrimmedNonEmptyString.annotate({
     description: "What it is for and where to get it. A link goes in `url`.",
@@ -773,9 +764,6 @@ export const OrchestratorMcpRequestSecretInput = Schema.Struct({
     description: "Sign-in or setup page for the value. Shown as a button.",
   }),
   placeholder: Schema.optional(TrimmedNonEmptyString),
-  delivery: Schema.optional(Schema.Literals(["secretRef", "file"])).annotate({
-    description: "secretRef (default) for a Onicode tool; file for a command.",
-  }),
   value: Schema.optional(PastedSecretValue).annotate({
     description: "Pasted in this thread; no card.",
   }),
@@ -790,12 +778,6 @@ export const OrchestratorMcpRequestSecretInput = Schema.Struct({
 export type OrchestratorMcpRequestSecretInput = typeof OrchestratorMcpRequestSecretInput.Type;
 
 export const OrchestratorMcpRequestSecretResult = Schema.Union([
-  Schema.Struct({
-    status: Schema.Literal("saved"),
-    secretRef: SecretRef.annotate({
-      description: "One-use. Pass to a tool that accepts a secretRef. You never see the value.",
-    }),
-  }),
   Schema.Struct({
     status: Schema.Literal("saved").annotate({ description: "file holds the value." }),
     file: Schema.String.annotate({

@@ -1,4 +1,4 @@
-import { isWebhookDedupeTemplate, scheduledTaskThreadMode } from "@onicode/contracts";
+import { scheduledTaskThreadMode } from "@onicode/contracts";
 import type {
   ModelSelection,
   ServerConfig,
@@ -7,17 +7,10 @@ import type {
   ScheduledTask,
   ScheduledTaskThreadMode,
   ScheduledTaskUpsertSchedule,
-  ScheduledTaskWebhookSignature,
   ThreadId,
 } from "@onicode/contracts";
 
 import { DEFAULT_SERVER_SETTINGS } from "@onicode/contracts";
-import {
-  parseWebhookFilterDrafts,
-  webhookFilterDrafts,
-  webhookFilterDraftsChanged,
-  type WebhookFilterDraft,
-} from "@onicode/client-runtime/scheduled-task-webhook";
 import {
   resolveProjectSettings,
   type LegacyProjectSettingsFields,
@@ -52,19 +45,12 @@ export function scheduledTaskDefaultModel(
 }
 
 export type ScheduleDraft = {
-  readonly mode: "fixed_time" | "once" | "interval" | "webhook";
+  readonly mode: "fixed_time" | "once" | "interval";
   readonly timeOfDay: string;
   /** ISO time for a one-time run. Empty until the user picks the "Once" mode. */
   readonly runAt: string;
   readonly weekdays: ReadonlyArray<number>;
   readonly intervalMinutes: string;
-  readonly signature: ScheduledTaskWebhookSignature | null;
-  readonly replayKey: string;
-  readonly coalesceKey: string;
-  readonly coalesceWindowSeconds: string;
-  readonly filters: ReadonlyArray<WebhookFilterDraft>;
-  /** The filter rows the form opened with. */
-  readonly savedFilters: ReadonlyArray<WebhookFilterDraft>;
 };
 
 export const DEFAULT_SCHEDULE: ScheduleDraft = {
@@ -73,12 +59,6 @@ export const DEFAULT_SCHEDULE: ScheduleDraft = {
   runAt: "",
   weekdays: [1, 2, 3, 4, 5],
   intervalMinutes: "15",
-  signature: null,
-  replayKey: "",
-  coalesceKey: "",
-  coalesceWindowSeconds: "",
-  filters: [],
-  savedFilters: [],
 };
 
 export function scheduleDraftForTask(task: Pick<ScheduledTask, "schedule">): ScheduleDraft {
@@ -99,20 +79,6 @@ export function scheduleDraftForTask(task: Pick<ScheduledTask, "schedule">): Sch
         mode: "interval",
         intervalMinutes: String(Math.max(1, task.schedule.everyMs / 60_000)),
       };
-    case "webhook":
-      return {
-        ...DEFAULT_SCHEDULE,
-        mode: "webhook",
-        signature: task.schedule.signature,
-        replayKey: task.schedule.dedupe?.replayKey ?? "",
-        coalesceKey: task.schedule.dedupe?.coalesceKey ?? "",
-        coalesceWindowSeconds:
-          task.schedule.dedupe?.coalesceWindowSeconds === undefined
-            ? ""
-            : String(task.schedule.dedupe.coalesceWindowSeconds),
-        filters: webhookFilterDrafts(task.schedule.filters),
-        savedFilters: webhookFilterDrafts(task.schedule.filters),
-      };
   }
 }
 
@@ -121,48 +87,6 @@ export function parseIntervalMinutes(value: string): number {
 }
 
 export function scheduleFromDraft(draft: ScheduleDraft): ScheduledTaskUpsertSchedule | null {
-  if (draft.mode === "webhook") {
-    const replayKey = draft.replayKey.trim();
-    const coalesceKey = draft.coalesceKey.trim();
-    if ([replayKey, coalesceKey].some((key) => key && !isWebhookDedupeTemplate(key))) return null;
-    const coalesceWindowSeconds = draft.coalesceWindowSeconds?.trim()
-      ? Number(draft.coalesceWindowSeconds)
-      : undefined;
-    if (
-      coalesceWindowSeconds !== undefined &&
-      (!Number.isInteger(coalesceWindowSeconds) ||
-        coalesceWindowSeconds < 10 ||
-        coalesceWindowSeconds > 3600)
-    )
-      return null;
-    const parsedFilters = parseWebhookFilterDrafts(draft.filters);
-    if (!("filters" in parsedFilters)) return null;
-    // No secret is sent, so the server keeps the stored one.
-    return {
-      type: "webhook",
-      signature:
-        draft.signature === null
-          ? null
-          : {
-              header: draft.signature.header,
-              encoding: draft.signature.encoding,
-              prefix: draft.signature.prefix,
-            },
-      ...(replayKey || coalesceKey || coalesceWindowSeconds !== undefined
-        ? {
-            dedupe: {
-              ...(replayKey ? { replayKey } : {}),
-              ...(coalesceKey ? { coalesceKey } : {}),
-              ...(coalesceWindowSeconds === undefined ? {} : { coalesceWindowSeconds }),
-            },
-          }
-        : { dedupe: {} }),
-      // Only edited filters are sent; the server keeps the stored ones otherwise.
-      ...(webhookFilterDraftsChanged(draft.savedFilters, draft.filters)
-        ? { filters: parsedFilters.filters }
-        : {}),
-    };
-  }
   if (draft.mode === "once") {
     const runAt = new Date(draft.runAt);
     return Number.isNaN(runAt.getTime()) ? null : { type: "once", runAt: runAt.toISOString() };
@@ -222,10 +146,6 @@ function draftSignature(draft: ScheduledTaskDraft): string {
     draft.schedule.runAt,
     [...draft.schedule.weekdays].sort((a, b) => a - b),
     draft.schedule.intervalMinutes,
-    draft.schedule.replayKey,
-    draft.schedule.coalesceKey,
-    draft.schedule.coalesceWindowSeconds,
-    draft.schedule.filters.map(({ path, op, value }) => [path, op, value]),
     draft.threadMode,
     draft.workspace,
     draft.baseRef,

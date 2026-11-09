@@ -478,13 +478,6 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
-    id: "public-access",
-    title: "Public access",
-    to: "/settings/labs",
-    scope: "environment",
-    searchTerms: ["beta tailscale funnel internet public webhook url"],
-  },
-  {
     id: "linked-environments-beta",
     title: "Linked environments",
     to: "/settings/labs",

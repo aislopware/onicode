@@ -8,8 +8,6 @@ import {
   ProviderInstanceId,
   ScheduledTaskError,
   ScheduledTaskId,
-  type ScheduledTaskUpsertInput,
-  SecretRef,
   ThreadId,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
@@ -28,7 +26,6 @@ import * as TestClock from "effect/testing/TestClock";
 
 import * as ThreadLaunchService from "../orchestration-v2/ThreadLaunchService.ts";
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
-import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as ManagedProjectFolders from "../project/ManagedProjectFolders.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ScheduledTaskService from "./ScheduledTaskService.ts";
@@ -217,7 +214,6 @@ it.effect(
                   isScratchProject: () => Effect.succeed(false),
                 }),
                 Layer.mock(ThreadManagementService.ThreadManagementService)({}),
-                Layer.mock(SecretRequests.SecretRequests)({}),
                 NodeCrypto.layer,
                 Scheduler.layer,
               ),
@@ -315,7 +311,6 @@ it.effect(
                   isScratchProject: () => Effect.succeed(false),
                 }),
                 Layer.mock(ThreadManagementService.ThreadManagementService)({}),
-                Layer.mock(SecretRequests.SecretRequests)({}),
                 NodeCrypto.layer,
                 Scheduler.layer,
               ),
@@ -367,7 +362,6 @@ it.effect("thread cleanup notifies subscribers and a finishing run cannot recrea
               ),
             getThreadShell: () => Effect.succeed(threadShell(ProjectId.make("project:test"))),
           }),
-          Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
@@ -451,7 +445,6 @@ it.effect("a bound run follows its thread when promotion moves it mid-send", () 
             getThreadShell: () =>
               Ref.modify(shellProjects, ([next, ...rest]) => [threadShell(next ?? promoted), rest]),
           }),
-          Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
@@ -517,7 +510,6 @@ it.effect("a fresh-session task launches one thread, then starts each later run 
                 },
               ]).pipe(Effect.as({} as never)),
           }),
-          Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
@@ -592,7 +584,6 @@ it.effect("a first run whose thread was deleted before it bound removes the task
             getThreadShell: () =>
               Effect.succeed({ deletedAt: DateTime.makeUnsafe("2026-11-03T00:00:00Z") } as never),
           }),
-          Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
@@ -644,7 +635,6 @@ it.effect.each(["recreated under the same id", "moved to another project"] as co
                 ),
             }),
             Layer.mock(ThreadManagementService.ThreadManagementService)({}),
-            Layer.mock(SecretRequests.SecretRequests)({}),
             Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
               namedProjectsRoot: "/projects",
               isScratchProject: () => Effect.succeed(false),
@@ -702,7 +692,6 @@ it.effect("refuses saving an enabled task above the policy ceiling", () =>
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: () => Effect.succeed(threadShell(ProjectId.make("project:test"))),
           }),
-          Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),
@@ -772,7 +761,6 @@ it.effect("checks a task's destination thread only when the destination changes"
         [ThreadId.make("thread:other-project"), threadShell(otherProject)],
       ]),
     );
-    const consumed = yield* Ref.make(0);
     const layer = ScheduledTaskService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -781,9 +769,6 @@ it.effect("checks a task's destination thread only when the destination changes"
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             getThreadShell: (threadId) =>
               Ref.get(shells).pipe(Effect.map((all) => all.get(threadId) ?? null)),
-          }),
-          Layer.mock(SecretRequests.SecretRequests)({
-            consume: () => Ref.update(consumed, (count) => count + 1).pipe(Effect.as("secret")),
           }),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
@@ -797,16 +782,13 @@ it.effect("checks a task's destination thread only when the destination changes"
     yield* Effect.gen(function* () {
       const service = yield* ScheduledTaskService.ScheduledTaskService;
       const id = ScheduledTaskId.make("task:destination");
-      const save = (
-        threadId: ThreadId,
-        schedule: ScheduledTaskUpsertInput["schedule"] = { type: "interval", everyMs: 60_000 },
-      ) =>
+      const save = (threadId: ThreadId) =>
         service.upsert({
           id,
           title: "Follow up",
           prompt: "Check progress",
           enabled: true,
-          schedule,
+          schedule: { type: "interval", everyMs: 60_000 },
           projectId: project,
           threadId,
           workspaceStrategy: { type: "root" },
@@ -825,18 +807,6 @@ it.effect("checks a task's destination thread only when the destination changes"
         assert.equal(refused.message, message);
       }
       assert.lengthOf((yield* service.list()).tasks, 0);
-
-      // A rejected save must not burn a one-shot secret.
-      yield* save(ThreadId.make("thread:missing"), {
-        type: "webhook",
-        signature: {
-          header: "x-signature",
-          encoding: "hex",
-          prefix: "",
-          secretRef: SecretRef.make("secret-ref:00000000000000000000000000000001"),
-        },
-      }).pipe(Effect.flip);
-      assert.equal(yield* Ref.get(consumed), 0);
 
       yield* save(destination);
       // A task whose thread was archived later stays editable.
@@ -862,7 +832,6 @@ it.effect("a run interrupted right after it reserves the task does not block the
               ),
           }),
           Layer.mock(ThreadManagementService.ThreadManagementService)({}),
-          Layer.mock(SecretRequests.SecretRequests)({}),
           Layer.mock(ManagedProjectFolders.ManagedProjectFolders)({
             namedProjectsRoot: "/projects",
             isScratchProject: () => Effect.succeed(false),

@@ -134,14 +134,10 @@ import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as AuthHttp from "./auth/http.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as CodexManagedTokenBroker from "./provider/CodexManagedTokenBroker.ts";
-import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
 import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
-import { ScheduledTaskWebhookOrigin } from "./scheduledTasks/ScheduledTaskService.ts";
-import * as PublicAccess from "./publicAccess/PublicAccess.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as EnvironmentAuthPolicy from "./auth/EnvironmentAuthPolicy.ts";
-import { EnvironmentPublicHttpApi } from "@onicode/contracts";
 import * as ServerSelfUpdate from "./service/selfUpdate.ts";
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
 import * as ServiceLauncherClient from "./service/serviceLauncherClient.ts";
@@ -181,7 +177,6 @@ import {
   ensureTailscaleServe,
   readTailscaleServeRoutesTo,
   readTailscaleStatus,
-  layerTailscaleFunnel,
 } from "@onicode/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 
@@ -470,16 +465,7 @@ const layerAuth = EnvironmentAuth.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
 );
 
-const layerScheduledTaskWebhookOrigin = Layer.effect(
-  ScheduledTaskWebhookOrigin,
-  Effect.gen(function* () {
-    const access = yield* PublicAccess.PublicAccess;
-    return Effect.map(access.origin, (publicOrigin) => ({ publicOrigin }));
-  }),
-).pipe(Layer.provide(PublicAccess.layer));
-
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
-  Layer.provide(layerScheduledTaskWebhookOrigin),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
   Layer.provide(
@@ -653,7 +639,6 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(layerAuth),
   Layer.provideMerge(AssetSigner.layer),
   Layer.provideMerge(ServerSecretStore.layer),
-  Layer.provideMerge(PublicAccess.layer),
 );
 
 const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
@@ -687,7 +672,6 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(ProjectHttp.layer),
       Layer.provide(speechHttpApiLayer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
-      Layer.provide(WebhookRoute.layer),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
     ),
     ServerHttp.layerOtlpTracesProxyRoute,
@@ -743,12 +727,6 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),
-  Layer.provide(ServerHttp.layerHttpCompression),
-);
-
-/** All that the public listener serves: webhooks. */
-const layerPublicRoutes = HttpApiBuilder.layer(EnvironmentPublicHttpApi).pipe(
-  Layer.provide(WebhookRoute.layerPublic),
   Layer.provide(ServerHttp.layerHttpCompression),
 );
 
@@ -891,20 +869,6 @@ const layerMakeServer = Layer.unwrap(
           ),
         )
       : Layer.empty;
-    // Funnel forwards only to this listener, never to the main one, whose loopback trust it would
-    // otherwise inherit. It follows the public access setting from activation until shutdown.
-    const layerPublicAccess = Layer.effectDiscard(
-      Effect.forkScoped(
-        Effect.gen(function* () {
-          yield* awaitActivation;
-          const app = yield* HttpRouter.toHttpEffect(layerPublicRoutes);
-          yield* PublicAccess.run(app);
-        }).pipe(
-          Effect.catchCause((cause) => Effect.logWarning("Public access stopped", { cause })),
-        ),
-      ),
-    );
-
     const layerRuntimeServices = ServerRuntimeStartup.layerWithOptions({
       activate: Deferred.succeed(activation, undefined).pipe(Effect.asVoid),
       abort: (error) => Deferred.die(activation, error).pipe(Effect.asVoid),
@@ -930,12 +894,10 @@ const layerMakeServer = Layer.unwrap(
       layerHttpListening,
       layerRuntimeState.pipe(Layer.provide(layerLauncher)),
       layerTailscaleServe,
-      layerPublicAccess,
       HeapSnapshot.layer,
     );
 
     return layerServerApplication.pipe(
-      Layer.provide(layerTailscaleFunnel),
       Layer.provideMerge(layerRuntimeServices),
       Layer.provideMerge(
         McpSessionRegistry.layer.pipe(

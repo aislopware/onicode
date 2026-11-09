@@ -110,6 +110,7 @@ export const WINDOWS_POLICY_VALUES = {
   SupportUrl: { type: "string", path: ["supportUrl"] },
   Settings: { type: "json", path: ["settings"] },
   MaxRuntimeMode: { type: "string", path: ["limits", "maxRuntimeMode"] },
+  // Webhook tasks are gone; older Group Policy templates may still write this value.
   WebhookTasks: { type: "boolean", path: ["limits", "webhookTasks"] },
   BrowserCookieImport: { type: "boolean", path: ["limits", "browserCookieImport"] },
   ProviderInstances: { type: "json", path: ["limits", "providers", "instances"] },

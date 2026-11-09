@@ -14,7 +14,7 @@ export function secretRequestPageUrl(value: string): URL | null {
   }
 }
 
-/** Server stores the value under a one-use SecretRef; the thread learns only status. */
+/** The server keeps the value until the asking agent's call writes it to a file; the thread learns only status. */
 export const SecretRequestAnswerInput = Schema.Struct({
   threadId: ThreadId,
   turnItemId: TurnItemId,
@@ -45,14 +45,13 @@ const SECRET_REQUEST_FAILURE_MESSAGES = {
   store_failed: "Could not store the secret.",
   reference_unreadable: "Could not read the secret from the secret provider.",
   record_failed: "Saved the secret, but could not update the request.",
-  invalid_ref: "That secretRef is not valid.",
   read_failed: "Could not read the secret.",
   ref_unavailable:
-    "That secretRef was already used or does not exist. Ask the user again with request_secret.",
-  ref_expired: "That secretRef expired. Ask the user again with request_secret.",
-  consume_failed: "Could not use that secretRef. Try again.",
+    "That secret was already delivered or does not exist. Ask the user again with request_secret.",
+  ref_expired: "That secret expired. Ask the user again with request_secret.",
+  consume_failed: "Could not deliver that secret. Try again.",
   not_a_file_request:
-    'The user did not save this secret for shell use. Ask again with request_secret and delivery: "file".',
+    "The user did not save this secret for shell use. Ask again with request_secret.",
 } as const;
 
 export const SecretRequestFailureReason = Schema.Literals(

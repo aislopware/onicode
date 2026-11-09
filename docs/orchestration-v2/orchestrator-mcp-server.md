@@ -467,10 +467,8 @@ returned unchanged, and a thread with no active provider turn returns
 `schedule_task`, `list_scheduled_tasks`, and `delete_scheduled_task` manage
 recurring work in the app scheduler; `schedule_task` with a `scheduledTaskId`
 updates an existing task. A schedule
-runs its prompt on an interval, at a fixed time in the server's local time
-zone, or on each qualifying webhook request, even when no turn is active.
-Without a signature, anyone with the webhook URL can trigger a run.
-Signature checks, filters, and dedupe can skip a webhook request.
+runs its prompt on an interval or at a fixed time in the server's local time
+zone, even when no turn is active.
 `bindToCurrentThread` defaults to `true` only when the caller has a thread in
 the task's project; otherwise it defaults to `false`. Bound runs post into
 that thread; unbound runs each launch a fresh thread in the task's project.

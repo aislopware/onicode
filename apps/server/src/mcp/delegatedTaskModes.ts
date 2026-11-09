@@ -10,7 +10,7 @@ import {
 import * as Effect from "effect/Effect";
 
 /** How much a runtime mode allows, narrowest first. */
-export function runtimeModeRank(mode: RuntimeMode): number {
+function runtimeModeRank(mode: RuntimeMode): number {
   switch (mode) {
     case "approval-required":
       return 0;
@@ -24,7 +24,7 @@ export function runtimeModeRank(mode: RuntimeMode): number {
 }
 
 /** How much an interaction mode allows: plan, then default. */
-export function interactionModeRank(mode: ProviderInteractionMode): number {
+function interactionModeRank(mode: ProviderInteractionMode): number {
   return mode === "plan" ? 0 : 1;
 }
 

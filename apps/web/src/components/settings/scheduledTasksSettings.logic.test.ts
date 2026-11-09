@@ -223,93 +223,6 @@ describe("one-time scheduled tasks", () => {
   });
 });
 
-describe("webhook scheduled tasks", () => {
-  const signature = { header: "x-signature", encoding: "base64", prefix: "" } as const;
-  const webhookTask: ScheduledTask = {
-    ...legacyTask,
-    schedule: { type: "webhook", signature },
-    webhook: { path: "/api/hooks/legacy-task/token", url: null, hasSecret: true },
-  };
-
-  it("round-trips dedupe settings, clears them, and rejects invalid windows", () => {
-    const dedupe = {
-      replayKey: "{{headers.delivery-id}}",
-      coalesceKey: "{{body.id}}",
-      coalesceWindowSeconds: 10,
-    };
-    const draft = taskToDraft({
-      ...webhookTask,
-      schedule: { type: "webhook", signature: null, dedupe },
-    });
-    expect(scheduleFromDraft(draft)).toMatchObject({ dedupe });
-    expect(
-      scheduleFromDraft({
-        ...draft,
-        replayKey: " \n ",
-        coalesceKey: " \t ",
-        coalesceWindowSeconds: "",
-      }),
-    ).toMatchObject({ dedupe: {} });
-    expect(
-      scheduleFromDraft({
-        ...draft,
-        replayKey: `  ${dedupe.replayKey}  `,
-        coalesceKey: `\t${dedupe.coalesceKey}\n`,
-      }),
-    ).toMatchObject({ dedupe });
-    expect(
-      scheduleFromDraft({ ...draft, replayKey: "", coalesceKey: "", coalesceWindowSeconds: "" }),
-    ).toMatchObject({ dedupe: {} });
-    expect(scheduleFromDraft({ ...draft, coalesceWindowSeconds: "" })).toMatchObject({
-      dedupe: { replayKey: dedupe.replayKey, coalesceKey: dedupe.coalesceKey },
-    });
-    for (const coalesceWindowSeconds of ["9", "3601", "1.5", "abc"]) {
-      expect(scheduleFromDraft({ ...draft, coalesceWindowSeconds })).toBeNull();
-    }
-  });
-
-  it("keeps a stored secret when the secret field is left blank", () => {
-    const draft = taskToDraft(webhookTask);
-    expect(draft.scheduleMode).toBe("webhook");
-    expect(draft.signatureSecret).toBe("");
-    expect(scheduleFromDraft(draft)).toEqual({
-      type: "webhook",
-      signature,
-      dedupe: {},
-    });
-    expect(scheduleFromDraft({ ...draft, signatureSecret: " new " })).toEqual({
-      type: "webhook",
-      signature: { ...signature, secret: "new" },
-      dedupe: {},
-    });
-  });
-
-  it("sends filters only when the form changed them", () => {
-    const filters = [
-      { path: "headers.x-github-event", op: "equals", value: "pull_request" },
-      { path: "body.action", op: "in", value: ["opened", "reopened"] },
-    ] as const;
-    const draft = taskToDraft({
-      ...webhookTask,
-      schedule: { type: "webhook", signature, filters },
-    });
-    expect(draft.filters.map((filter) => filter.op)).toEqual(["equals", "in"]);
-    // A title-only save leaves the key out, so the server keeps whatever is stored now.
-    expect(scheduleFromDraft({ ...draft, title: "Renamed" })).not.toHaveProperty("filters");
-    expect(scheduleFromDraft({ ...draft, filters: draft.filters.slice(0, 1) })).toMatchObject({
-      filters: filters.slice(0, 1),
-    });
-    // Removing every row is a change, so it clears the stored filters.
-    expect(scheduleFromDraft({ ...draft, filters: [] })).toMatchObject({ filters: [] });
-    expect(
-      scheduleFromDraft({
-        ...draft,
-        filters: [{ id: "f1", path: "body.action", op: "in", value: " , " }],
-      }),
-    ).toBeNull();
-  });
-});
-
 describe("scheduled task model defaults", () => {
   const instanceId = ProviderInstanceId.make("codex");
   const projectId = ProjectId.make("project");
@@ -370,10 +283,4 @@ describe("scheduled task model defaults", () => {
       }),
     ).toEqual(environmentSelection);
   });
-});
-
-it("rejects dedupe templates without a request placeholder", () => {
-  const draft = taskToDraft({ ...legacyTask, schedule: { type: "webhook", signature: null } });
-  expect(scheduleFromDraft({ ...draft, replayKey: "literal" })).toBeNull();
-  expect(scheduleFromDraft({ ...draft, coalesceKey: "{{body.bad" })).toBeNull();
 });

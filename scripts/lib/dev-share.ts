@@ -20,7 +20,6 @@ const DIAGNOSTIC_EXPLANATIONS: Record<TailscaleStderrDiagnostic, string | undefi
   "permission-denied": "permission denied — `tailscale serve` may need elevated privileges",
   "https-disabled":
     "HTTPS certificates are off for this tailnet; turn them on in the admin console",
-  "funnel-not-allowed": "the tailnet policy does not allow Funnel on this machine",
   unknown: undefined,
 };
 

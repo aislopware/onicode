@@ -1190,16 +1190,14 @@ export const oniDefault = (
       };
     }
     case "request_secret": {
-      // Onicode names a ref and a file with 32 hex characters, new for each request, in its secrets dir.
+      // Onicode names each request's file with 32 new hex characters, in its secrets dir.
       const id = NodeCrypto.createHash("sha256")
         .update(`${sample.testCase.id}:${sample.secretRequests++}`)
         .digest("hex")
         .slice(0, 32);
       const home =
         /^\/(?:home|Users)\/[^/]+/.exec(sample.base.environment.cwd)?.[0] ?? "/home/user";
-      return input.delivery === "file" || pastedSecret(name, input)
-        ? { status: "saved", file: `${home}/.onicode/userdata/secrets/files/${id}` }
-        : { status: "saved", secretRef: `secret-ref:${id}` };
+      return { status: "saved", file: `${home}/.onicode/userdata/secrets/files/${id}` };
     }
     case "unlink_pull_request":
       return { ...pr(), wasLinked: sample.linked.delete(pr().url) };

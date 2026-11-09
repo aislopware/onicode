@@ -87,12 +87,6 @@ const createFixtureSource = Effect.fn("createMigrateDevDbFixtureSource")(functio
           created_at, updated_at, last_run_status, run_count)
         VALUES ('task-1', 'Nightly', 'Run it', 1, '{}', 'project-kept', '{}', '{}',
           'full-access', 'default', 'user', 'user', '2026-08-01', '2026-08-01', 'never', 0)`;
-      yield* sql`INSERT INTO scheduled_task_webhook_replay_keys
-        (task_id, replay_key, delivery_id, expires_at)
-        VALUES ('task-1', 'replay-1', 'delivery-1', 1900000000000)`;
-      yield* sql`INSERT INTO scheduled_task_webhook_pending
-        (delivery_id, task_id, coalesce_key, due_at, task_json, request_json, delivery_ids_json)
-        VALUES ('delivery-1', 'task-1', 'key-1', 1900000000000, '{}', '{}', '[]')`;
       yield* sql`INSERT INTO auth_sessions (session_id, subject, scopes, method, issued_at, expires_at)
         VALUES ('session-1', 'user', '[]', 'pairing', '2026-08-01', '2027-08-01')`;
       yield* sql`INSERT INTO peer_environment_links
@@ -132,15 +126,12 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
           const [leftovers] = yield* sql<{
             auth: number;
             tasks: number;
-            webhooks: number;
             transfers: number;
             links: number;
           }>`
             SELECT
               (SELECT COUNT(*) FROM auth_sessions) AS auth,
               (SELECT COUNT(*) FROM scheduled_tasks) AS tasks,
-              (SELECT COUNT(*) FROM scheduled_task_webhook_replay_keys) +
-                (SELECT COUNT(*) FROM scheduled_task_webhook_pending) AS webhooks,
               (SELECT COUNT(*) FROM orchestration_v2_projection_context_transfers) AS transfers,
               (SELECT COUNT(*) FROM peer_environment_links) AS links`;
           return { threads, events, sessions, leftovers };
@@ -161,7 +152,6 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
       assert.deepStrictEqual(kept.leftovers, {
         auth: 0,
         tasks: 0,
-        webhooks: 0,
         transfers: 0,
         links: 0,
       });

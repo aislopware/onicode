@@ -8,7 +8,6 @@ import {
   type OrchestrationV2ServerCommand,
   SecretProviderId,
   SecretProviderKind,
-  SecretRef,
   ThreadId,
   TurnItemId,
 } from "@onicode/contracts";
@@ -19,7 +18,6 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
-import * as Metric from "effect/Metric";
 import * as Tracer from "effect/Tracer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
@@ -71,10 +69,12 @@ const withService = <A, E>(
     readonly service: SecretRequests.SecretRequests["Service"];
     readonly stored: Map<string, Uint8Array>;
     readonly dispatched: Array<OrchestrationV2ServerCommand>;
+    readonly moveThread: (to: ProjectId) => void;
   }) => Effect.Effect<A, E>,
   options: {
     readonly threadId?: ThreadId;
-    readonly delivery?: "file";
+    /** A card from before every request was for shell use, which promised to keep the value. */
+    readonly legacyCard?: boolean;
     readonly directory?: string;
     readonly runStatus?: string;
     readonly removeFails?: boolean;
@@ -87,6 +87,7 @@ const withService = <A, E>(
     const stored = new Map<string, Uint8Array>();
     const dispatched: Array<OrchestrationV2ServerCommand> = [];
     let secretStatus = "pending";
+    let threadProjectId = projectId;
     let failedRecords = options.failedRecords ?? 0;
     const requestThreadId = options.threadId ?? threadId;
     const layerDependencies = Layer.mergeAll(
@@ -135,24 +136,27 @@ const withService = <A, E>(
       ),
       Layer.mock(ThreadManagementService.ThreadManagementService)({
         getThreadRecords: () =>
-          Effect.succeed({
-            thread: { projectId },
-            runs: [{ id: "run-1", status: options.runStatus ?? "running" }],
-            turnItems: [
-              {
-                id: turnItemId,
-                threadId: requestThreadId,
-                runId: "run-1",
-                nodeId: "node-root",
-                type: "secret_request",
-                label: "GitHub token",
-                reason: "Used as GH_TOKEN.",
-                url: "https://github.com/settings/tokens",
-                ...(options.delivery === undefined ? {} : { delivery: options.delivery }),
-                secretStatus,
-              },
-            ],
-          } as never),
+          Effect.sync(
+            () =>
+              ({
+                thread: { projectId: threadProjectId },
+                runs: [{ id: "run-1", status: options.runStatus ?? "running" }],
+                turnItems: [
+                  {
+                    id: turnItemId,
+                    threadId: requestThreadId,
+                    runId: "run-1",
+                    nodeId: "node-root",
+                    type: "secret_request",
+                    label: "GitHub token",
+                    reason: "Used as GH_TOKEN.",
+                    url: "https://github.com/settings/tokens",
+                    ...(options.legacyCard ? {} : { delivery: "file" }),
+                    secretStatus,
+                  },
+                ],
+              }) as never,
+          ),
         dispatch: (command) => {
           if (command.type === "secret_request.record" && failedRecords > 0) {
             failedRecords -= 1;
@@ -172,17 +176,43 @@ const withService = <A, E>(
     );
     return yield* Effect.gen(function* () {
       const service = yield* SecretRequests.SecretRequests;
-      return yield* body({ service, stored, dispatched });
+      return yield* body({
+        service,
+        stored,
+        dispatched,
+        moveThread: (to) => {
+          threadProjectId = to;
+        },
+      });
     }).pipe(Effect.provide(SecretRequests.layer.pipe(Layer.provide(layerDependencies))));
   });
+
+/** `withService` with its secret files in a fresh temporary directory. */
+const withFiles = <A, E>(
+  body: (
+    input: Parameters<Parameters<typeof withService>[0]>[0] & {
+      readonly fs: FileSystem.FileSystem;
+      readonly directory: string;
+    },
+  ) => Effect.Effect<A, E>,
+  options: Omit<NonNullable<Parameters<typeof withService>[1]>, "directory"> = {},
+) =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const directory = yield* fs.makeTempDirectoryScoped({ prefix: "secret-files-test-" });
+    return yield* withService((input) => body({ ...input, fs, directory }), {
+      ...options,
+      directory,
+    });
+  }).pipe(Effect.provide(NodeServices.layer));
 
 const valuesOf = (stored: Map<string, Uint8Array>) =>
   Array.from(stored.entries())
     .filter(([name]) => name !== "secret-request-salt")
     .map(([, bytes]) => new TextDecoder().decode(bytes));
 
-it.effect("a saved answer becomes a one-use ref, and the thread only learns it was saved", () =>
-  withService(({ service, stored, dispatched }) =>
+it.effect("a saved answer reaches the agent once, and the thread only learns it was saved", () =>
+  withFiles(({ service, stored, dispatched, fs }) =>
     Effect.gen(function* () {
       yield* service.answer({
         threadId,
@@ -193,21 +223,24 @@ it.effect("a saved answer becomes a one-use ref, and the thread only learns it w
       assert.include(dispatched[0] as object, {
         type: "secret_request.record",
         secretStatus: "saved",
+        delivery: "file",
         url: "https://github.com/settings/tokens",
       });
-      assert.notInclude(Object.values(dispatched[0] as object).map(String), "ghp_secret");
+      assert.notInclude(JSON.stringify(dispatched), "ghp_secret");
 
-      const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-      assert.equal(yield* service.consume({ ref, projectId }), "ghp_secret");
+      const file = yield* service.saveToFile({ threadId, turnItemId });
+      assert.equal(yield* fs.readFileString(file), "ghp_secret");
       assert.isFalse(valuesOf(stored).some((value) => value.includes("ghp_secret")));
-      const again = yield* service.consume({ ref, projectId }).pipe(Effect.flip);
-      assert.include(again.message, "already used");
+      yield* fs.remove(file);
+      const again = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
+      assert.equal(again.reason, "ref_unavailable");
+      assert.include(again.message, "already delivered");
     }),
   ),
 );
 
 it.effect("a secret provider reference is read once and saved like a typed value", () =>
-  withService(({ service, dispatched }) =>
+  withFiles(({ service, dispatched, fs }) =>
     Effect.gen(function* () {
       yield* service.answer({
         threadId,
@@ -219,8 +252,8 @@ it.effect("a secret provider reference is read once and saved like a typed value
       });
       assert.include(dispatched[0] as object, { secretStatus: "saved" });
       assert.notInclude(JSON.stringify(dispatched), "fake://");
-      const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-      assert.equal(yield* service.consume({ ref, projectId }), "ghp_from_vault");
+      const file = yield* service.saveToFile({ threadId, turnItemId });
+      assert.equal(yield* fs.readFileString(file), "ghp_from_vault");
     }),
   ),
 );
@@ -230,8 +263,8 @@ it.effect(
   () => {
     const { state, layer } = fakeVault();
     state.unlocked = false;
-    return withService(
-      ({ service, stored, dispatched }) =>
+    return withFiles(
+      ({ service, stored, dispatched, fs }) =>
         Effect.gen(function* () {
           const reference = { provider: vault, reference: "fake://github/token" };
           const locked = yield* service
@@ -244,8 +277,8 @@ it.effect(
 
           state.unlocked = true;
           yield* service.answer({ threadId, turnItemId, answer: { type: "reference", reference } });
-          const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-          assert.equal(yield* service.consume({ ref, projectId }), "ghp_from_vault");
+          const file = yield* service.saveToFile({ threadId, turnItemId });
+          assert.equal(yield* fs.readFileString(file), "ghp_from_vault");
         }),
       { resolver: layer },
     );
@@ -276,21 +309,24 @@ it.effect("a reference to a secret provider that is not configured fails", () =>
   ),
 );
 
-it.effect("two concurrent uses of one ref hand the value out once", () =>
-  withService(({ service }) =>
+it.effect("two concurrent deliveries of one answer both get the one file it was written to", () =>
+  withFiles(({ service, stored, fs }) =>
     Effect.gen(function* () {
       yield* service.answer({
         threadId,
         turnItemId,
         answer: { type: "save", secret: "ghp_secret" },
       });
-      const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-      const results = yield* Effect.forEach(
-        [service.consume({ ref, projectId }), service.consume({ ref, projectId })],
-        Effect.result,
+      const [first, second] = yield* Effect.all(
+        [
+          service.saveToFile({ threadId, turnItemId }),
+          service.saveToFile({ threadId, turnItemId }),
+        ],
         { concurrency: "unbounded" },
       );
-      assert.deepEqual(results.map((result) => result._tag).toSorted(), ["Failure", "Success"]);
+      assert.equal(first, second);
+      assert.equal(yield* fs.readFileString(first), "ghp_secret");
+      assert.deepEqual(valuesOf(stored), []);
     }),
   ),
 );
@@ -310,8 +346,8 @@ it.effect("a save that loses to the card closing deletes the value and says so",
 );
 
 it.effect("a save whose record failed can be saved again", () =>
-  withService(
-    ({ service }) =>
+  withFiles(
+    ({ service, fs }) =>
       Effect.gen(function* () {
         const failed = yield* service
           .answer({ threadId, turnItemId, answer: { type: "save", secret: "ghp_secret" } })
@@ -322,27 +358,27 @@ it.effect("a save whose record failed can be saved again", () =>
           turnItemId,
           answer: { type: "save", secret: "ghp_secret" },
         });
-        const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-        assert.equal(yield* service.consume({ ref, projectId }), "ghp_secret");
+        const file = yield* service.saveToFile({ threadId, turnItemId });
+        assert.equal(yield* fs.readFileString(file), "ghp_secret");
       }),
     { failedRecords: 1 },
   ),
 );
 
-it.effect("a ref only works in the project it was entered for", () =>
-  withService(({ service }) =>
+it.effect("a saved answer is only delivered in the project it was entered for", () =>
+  withFiles(({ service, moveThread, fs }) =>
     Effect.gen(function* () {
       yield* service.answer({
         threadId,
         turnItemId,
         answer: { type: "save", secret: "ghp_secret" },
       });
-      const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-      const elsewhere = yield* service
-        .consume({ ref, projectId: ProjectId.make("project-other") })
-        .pipe(Effect.flip);
+      moveThread(ProjectId.make("project-other"));
+      const elsewhere = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
       assert.include(elsewhere.message, "does not exist");
-      assert.equal(yield* service.consume({ ref, projectId }), "ghp_secret");
+      moveThread(projectId);
+      const file = yield* service.saveToFile({ threadId, turnItemId });
+      assert.equal(yield* fs.readFileString(file), "ghp_secret");
     }),
   ),
 );
@@ -352,7 +388,8 @@ it.effect("declining stores nothing, and a request is answered once", () =>
     Effect.gen(function* () {
       yield* service.answer({ threadId, turnItemId, answer: { type: "decline" } });
       assert.deepEqual(valuesOf(stored), []);
-      assert.isTrue(Option.isNone(yield* service.savedRef({ threadId, turnItemId })));
+      const refused = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
+      assert.equal(refused.reason, "not_a_file_request");
       const late = yield* service
         .answer({ threadId, turnItemId, answer: { type: "save", secret: "ghp_secret" } })
         .pipe(Effect.flip);
@@ -363,7 +400,7 @@ it.effect("declining stores nothing, and a request is answered once", () =>
   ),
 );
 
-it.effect("traces and counts a saved answer without ever recording the value", () =>
+it.effect("traces a saved answer and its delivery without ever recording the value", () =>
   Effect.gen(function* () {
     const spans: Array<Tracer.NativeSpan> = [];
     const tracer = Tracer.make({
@@ -373,35 +410,22 @@ it.effect("traces and counts a saved answer without ever recording the value", (
         return span;
       },
     });
-    const counted = Metric.snapshot.pipe(
-      Effect.map((snapshots) => {
-        const found = snapshots.find(
-          (snapshot) =>
-            snapshot.id === "oni_secret_refs_consumed_total" &&
-            snapshot.attributes?.result === "used",
-        );
-        return found?.type === "Counter" ? Number(found.state.count) : 0;
-      }),
-    );
-    const before = yield* counted;
-    yield* withService(({ service }) =>
+    yield* withFiles(({ service }) =>
       Effect.gen(function* () {
         yield* service.answer({
           threadId,
           turnItemId,
           answer: { type: "save", secret: "ghp_secret" },
         });
-        const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-        yield* service.consume({ ref, projectId });
+        yield* service.saveToFile({ threadId, turnItemId });
       }),
     ).pipe(Effect.withTracer(tracer));
-    assert.equal((yield* counted) - before, 1);
     const recorded = spans.flatMap((span) => [
       span.name,
       ...Array.from(span.attributes.values(), String),
     ]);
     assert.include(recorded, "SecretRequests.answer");
-    assert.include(recorded, "SecretRequests.consume");
+    assert.include(recorded, "SecretRequests.saveToFile");
     assert.isFalse(recorded.some((value) => value.includes("ghp_secret")));
   }),
 );
@@ -410,8 +434,8 @@ it.effect("works in threads with long ids, such as a delegated subagent's", () =
   const delegatedThreadId = ThreadId.make(
     `thread:delegated-task:command%3Amcp%3A${"a".repeat(36)}%3Adelegate-task%3Arelease-notes-v0.2.0-${"b".repeat(40)}`,
   );
-  return withService(
-    ({ service, stored }) =>
+  return withFiles(
+    ({ service, stored, fs }) =>
       Effect.gen(function* () {
         yield* service.answer({
           threadId: delegatedThreadId,
@@ -419,10 +443,8 @@ it.effect("works in threads with long ids, such as a delegated subagent's", () =
           answer: { type: "save", secret: "ghp_secret" },
         });
         assert.isTrue(Array.from(stored.keys()).every((name) => name.length < 100));
-        const ref = Option.getOrThrow(
-          yield* service.savedRef({ threadId: delegatedThreadId, turnItemId }),
-        );
-        assert.equal(yield* service.consume({ ref, projectId }), "ghp_secret");
+        const file = yield* service.saveToFile({ threadId: delegatedThreadId, turnItemId });
+        assert.equal(yield* fs.readFileString(file), "ghp_secret");
       }),
     { threadId: delegatedThreadId },
   );
@@ -440,23 +462,6 @@ it.effect("refuses an answer once the agent that asked has stopped", () =>
         assert.equal(dispatched.length, 0);
       }),
     { runStatus: "completed" },
-  ),
-);
-
-it.effect("a used value that cannot be deleted is not handed out", () =>
-  withService(
-    ({ service }) =>
-      Effect.gen(function* () {
-        yield* service.answer({
-          threadId,
-          turnItemId,
-          answer: { type: "save", secret: "ghp_secret" },
-        });
-        const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-        const failed = yield* service.consume({ ref, projectId }).pipe(Effect.flip);
-        assert.include(failed.message, "Could not use");
-      }),
-    { removeFails: true },
   ),
 );
 
@@ -483,14 +488,11 @@ it.effect("a file request moves its value to an owner-only file, once", () =>
             assert.equal((yield* fs.stat(file)).mode & 0o777, 0o600);
             assert.equal((yield* fs.stat(path.dirname(file))).mode & 0o777, 0o700);
           }
-          // A retried request_secret gets the same file; the value is never a ref again.
+          // A retried request_secret gets the same file.
           assert.equal(yield* service.saveToFile({ threadId, turnItemId }), file);
-          const ref = SecretRef.make(`secret-ref:${path.basename(file)}`);
-          const reused = yield* service.consume({ ref, projectId }).pipe(Effect.flip);
-          assert.equal(reused.reason, "ref_unavailable");
           return file;
         }),
-      { delivery: "file", directory },
+      { directory },
     );
 
     const { mtime } = yield* fs.stat(file);
@@ -509,15 +511,16 @@ it.effect("a failed file write keeps the value, so the request can retry", () =>
     const path = yield* Path.Path;
     const directory = yield* fs.makeTempDirectoryScoped({ prefix: "secret-files-test-" });
     yield* withService(
-      ({ service }) =>
+      ({ service, stored }) =>
         Effect.gen(function* () {
           yield* service.answer({
             threadId,
             turnItemId,
             answer: { type: "save", secret: "cf_token" },
           });
-          const ref = Option.getOrThrow(yield* service.savedRef({ threadId, turnItemId }));
-          const name = ref.slice("secret-ref:".length);
+          const name = Array.from(stored.keys())
+            .map((key) => /^secret-request-([0-9a-f]{32})$/.exec(key)?.[1])
+            .find((match) => match !== undefined)!;
           // A non-empty directory where the partial file goes makes the write fail.
           const partial = path.join(directory, "files", `${name}.partial`);
           yield* fs.makeDirectory(path.join(partial, "block"), { recursive: true });
@@ -527,7 +530,7 @@ it.effect("a failed file write keeps the value, so the request can retry", () =>
           const file = yield* service.saveToFile({ threadId, turnItemId });
           assert.equal(yield* fs.readFileString(file), "cf_token");
         }),
-      { delivery: "file", directory },
+      { directory },
     );
   }).pipe(Effect.provide(NodeServices.layer)),
 );
@@ -550,23 +553,25 @@ it.effect("a file is not delivered while its stored copy cannot be removed", () 
           const retried = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
           assert.equal(retried.reason, "consume_failed");
         }),
-      { delivery: "file", directory, removeFails: true },
+      { directory, removeFails: true },
     );
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
 it.effect("a secret the card promised to keep from the agent is never written to a file", () =>
-  withService(({ service, stored }) =>
-    Effect.gen(function* () {
-      yield* service.answer({
-        threadId,
-        turnItemId,
-        answer: { type: "save", secret: "ghp_secret" },
-      });
-      const refused = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
-      assert.equal(refused.reason, "not_a_file_request");
-      assert.isTrue(valuesOf(stored).some((value) => value.includes("ghp_secret")));
-    }),
+  withService(
+    ({ service, stored }) =>
+      Effect.gen(function* () {
+        yield* service.answer({
+          threadId,
+          turnItemId,
+          answer: { type: "save", secret: "ghp_secret" },
+        });
+        const refused = yield* service.saveToFile({ threadId, turnItemId }).pipe(Effect.flip);
+        assert.equal(refused.reason, "not_a_file_request");
+        assert.isTrue(valuesOf(stored).some((value) => value.includes("ghp_secret")));
+      }),
+    { legacyCard: true },
   ),
 );
 
@@ -630,10 +635,6 @@ it.effect("a pasted secret goes straight to an owner-only file, with no card", (
           });
           assert.notEqual(otherSession, file);
           assert.equal(yield* fs.readFileString(file), pasted);
-          // Its name is not a ref to the value.
-          const ref = SecretRef.make(`secret-ref:${path.basename(file)}`);
-          const reused = yield* service.consume({ ref, projectId }).pipe(Effect.flip);
-          assert.equal(reused.reason, "ref_unavailable");
           return file;
         }).pipe(Effect.withTracer(tracer)),
       { directory },

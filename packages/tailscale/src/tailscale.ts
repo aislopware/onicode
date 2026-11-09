@@ -1,9 +1,7 @@
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { normalizeHostname } from "@onicode/shared/hostClassification";
 import * as Duration from "effect/Duration";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
@@ -33,7 +31,7 @@ const tailscaleCommandForPlatform = (platform: NodeJS.Platform): "tailscale" | "
 
 const TailscaleCommandContext = {
   executable: Schema.Literals(["tailscale", "tailscale.exe"]),
-  subcommand: Schema.Literals(["status", "serve", "funnel", "debug"]),
+  subcommand: Schema.Literals(["status", "serve", "debug"]),
   argumentCount: Schema.Number,
 };
 
@@ -44,7 +42,6 @@ const TailscaleCommandContext = {
  */
 export const TailscaleStderrDiagnostic = Schema.Literals([
   "no-existing-handler",
-  "funnel-not-allowed",
   "https-disabled",
   "not-logged-in",
   "not-running",
@@ -57,11 +54,6 @@ const STDERR_DIAGNOSTIC_PATTERNS: ReadonlyArray<
   readonly [RegExp, Exclude<TailscaleStderrDiagnostic, "unknown">]
 > = [
   [/handler does not exist/i, "no-existing-handler"],
-  // `Funnel not available; "funnel" node attribute not set`, and the CLI's prompt to turn it on.
-  [
-    /"funnel" node attribute|funnel is not enabled|not allowed to use funnel/i,
-    "funnel-not-allowed",
-  ],
   [/https (must be|is not) enabled|enable https/i, "https-disabled"],
   [/not logged in|logged out|needs? login/i, "not-logged-in"],
   // Only answers that confirm no daemon; a dial can also fail for want of permission. Windows
@@ -168,8 +160,6 @@ export interface TailscaleStatus {
    * CLI reports no capability map (older CLI), so callers still attempt serve.
    */
   readonly httpsServeEnabled: boolean | null;
-  /** Whether the tailnet policy grants this node the `funnel` attribute; `null` as above. */
-  readonly funnelAllowed: boolean | null;
 }
 
 const collectStdout = <E>(stream: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
@@ -238,13 +228,12 @@ export const parseTailscaleStatus = (
         magicDnsName: normalizeMagicDnsName(parsed),
         tailnetIpv4Addresses,
         httpsServeEnabled: hasCapability("https"),
-        funnelAllowed: hasCapability("funnel"),
       };
     }),
   );
 
 const readTailscaleOutput = Effect.fn("tailscale.readTailscaleOutput")(function* (
-  subcommand: "status" | "serve" | "funnel" | "debug",
+  subcommand: "status" | "serve" | "debug",
   args: readonly string[],
 ) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
@@ -355,7 +344,7 @@ const runTailscaleCommand = Effect.fn("tailscale.runTailscaleCommand")(function*
   const executable = tailscaleCommandForPlatform(hostPlatform);
   const commandContext = {
     executable,
-    subcommand: args[0] === "funnel" ? ("funnel" as const) : ("serve" as const),
+    subcommand: "serve" as const,
     argumentCount: args.length,
   };
   const timeout = Duration.fromInputUnsafe(timeoutInput);
@@ -479,8 +468,6 @@ const TailscaleServeConfigJson = Schema.Struct({
 });
 const TailscaleServeStatusJson = Schema.Struct({
   ...TailscaleServeConfigJson.fields,
-  // `host:port` web sites open to the public internet through Funnel.
-  AllowFunnel: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)),
   // A Tailscale Service's routes, and those of each `tailscale serve` still running in the foreground.
   Services: Schema.optional(Schema.Record(Schema.String, TailscaleServeConfigJson)),
   Foreground: Schema.optional(Schema.Record(Schema.String, TailscaleServeConfigJson)),
@@ -631,191 +618,3 @@ export const probeTailscaleHttpsEndpoint = Effect.fn("tailscale.probeTailscaleHt
   },
   Effect.orElseSucceed(() => false),
 );
-
-/** The only ports Tailscale Funnel accepts. */
-const TAILSCALE_FUNNEL_PORTS = [443, 8443, 10000] as const;
-export type TailscaleFunnelPort = (typeof TAILSCALE_FUNNEL_PORTS)[number];
-/**
- * Funnel opens a whole `host:port` to the internet, every Serve path on it included, so it gets a
- * port of its own and never the tailnet Serve default of 443.
- */
-export const DEFAULT_TAILSCALE_FUNNEL_PORT: TailscaleFunnelPort = 8443;
-
-export const TailscaleFunnelFailure = Schema.Literals([
-  "not-installed",
-  "not-running",
-  "not-logged-in",
-  "https-disabled",
-  "funnel-not-allowed",
-  "port-in-use",
-  "permission-denied",
-  "unknown",
-]);
-export type TailscaleFunnelFailure = typeof TailscaleFunnelFailure.Type;
-
-export class TailscaleFunnelError extends Schema.TaggedError<TailscaleFunnelError>()(
-  "TailscaleFunnelError",
-  { reason: TailscaleFunnelFailure, cause: Schema.optional(Schema.Defect()) },
-) {
-  override get message(): string {
-    return `Tailscale Funnel is unavailable (${this.reason}).`;
-  }
-}
-
-/** A local server Funnel forwards to, and the public port it listens on. */
-export interface TailscaleFunnelTarget {
-  readonly localHost: string;
-  readonly localPort: number;
-  readonly funnelPort: TailscaleFunnelPort;
-}
-
-export interface TailscaleFunnelStatus {
-  /** `https://<node>.<tailnet>.ts.net[:port]`, or null while Funnel does not reach the target. */
-  readonly origin: string | null;
-}
-
-const funnelFailureOf = (error: TailscaleCommandError | TailscaleStatusParseError) => {
-  switch (error._tag) {
-    case "TailscaleCommandSpawnError":
-      return new TailscaleFunnelError({ reason: "not-installed", cause: error });
-    case "TailscaleCommandExitError":
-      return new TailscaleFunnelError({
-        reason:
-          error.stderrDiagnostic === undefined || error.stderrDiagnostic === "no-existing-handler"
-            ? "unknown"
-            : error.stderrDiagnostic,
-        cause: error,
-      });
-    // Without the `funnel` attribute the CLI waits for someone to approve it in a browser.
-    case "TailscaleCommandTimeoutError":
-      return new TailscaleFunnelError({ reason: "funnel-not-allowed", cause: error });
-    default:
-      return new TailscaleFunnelError({ reason: "unknown", cause: error });
-  }
-};
-
-const tailscaleFunnelOrigin = (magicDnsName: string, funnelPort: number) =>
-  new URL(buildTailscaleHttpsBaseUrl({ magicDnsName, servePort: funnelPort })).origin;
-
-/**
- * Where Funnel on `funnelPort` of `host` stands: `ours` when its root handler dials the target,
- * `taken` when something else serves that port, so turning Funnel on would publish it.
- */
-export const parseTailscaleFunnelState = (
-  rawServeStatusJson: string,
-  input: TailscaleFunnelTarget & { readonly host: string },
-): { readonly funnel: boolean; readonly port: "free" | "ours" | "taken" } | undefined => {
-  const status = decodeTailscaleServeStatusJson(rawServeStatusJson);
-  if (Option.isNone(status)) return undefined;
-  const hostPort = `${input.host}:${input.funnelPort}`;
-  const funnel = Object.entries(status.value?.AllowFunnel ?? {}).some(
-    ([key, allowed]) => allowed && key.toLowerCase() === hostPort.toLowerCase(),
-  );
-  const site = Object.entries(status.value?.Web ?? {}).find(
-    ([key]) => key.toLowerCase() === hostPort.toLowerCase(),
-  )?.[1];
-  const handlers = Object.entries(site?.Handlers ?? {});
-  const tcp = status.value?.TCP?.[String(input.funnelPort)];
-  if (handlers.length === 0 && tcp?.TCPForward === undefined) return { funnel, port: "free" };
-  const ours =
-    tcp?.TCPForward === undefined &&
-    handlers.length === 1 &&
-    handlers[0]![0] === "/" &&
-    handlers[0]![1].Proxy !== undefined &&
-    reachesTarget(expandProxy(handlers[0]![1].Proxy), {
-      host: input.localHost,
-      port: input.localPort,
-    })?.reach === "exact";
-  return { funnel, port: ours ? "ours" : "taken" };
-};
-
-/**
- * Publishes a local server on the internet with `tailscale funnel`. Separate from Serve because
- * Funnel is public: callers point it only at a listener that serves what strangers may reach.
- */
-export class TailscaleFunnel extends Context.Service<
-  TailscaleFunnel,
-  {
-    readonly status: (
-      target: TailscaleFunnelTarget,
-    ) => Effect.Effect<TailscaleFunnelStatus, TailscaleFunnelError>;
-    /** Turns Funnel on for the target and returns its public origin. */
-    readonly enable: (target: TailscaleFunnelTarget) => Effect.Effect<string, TailscaleFunnelError>;
-    /** Turns Funnel off, but only while it still forwards to the target. */
-    readonly disable: (target: TailscaleFunnelTarget) => Effect.Effect<void, TailscaleFunnelError>;
-  }
->()("@onicode/tailscale/tailscale/TailscaleFunnel") {}
-
-const makeTailscaleFunnel = Effect.gen(function* () {
-  const context = yield* Effect.context<ChildProcessSpawner.ChildProcessSpawner>();
-  const platform = yield* HostProcess.Platform;
-  const run = <A, E>(effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>) =>
-    effect.pipe(
-      Effect.provideContext(context),
-      Effect.provideService(HostProcess.Platform, platform),
-    );
-
-  const inspect = Effect.fn("TailscaleFunnel.inspect")(function* (target: TailscaleFunnelTarget) {
-    const status = yield* run(readTailscaleStatus).pipe(Effect.mapError(funnelFailureOf));
-    if (status.magicDnsName === null) {
-      return yield* new TailscaleFunnelError({ reason: "not-logged-in" });
-    }
-    const raw = yield* run(readTailscaleOutput("serve", ["serve", "status", "--json"])).pipe(
-      Effect.mapError(funnelFailureOf),
-    );
-    const state = parseTailscaleFunnelState(raw, { ...target, host: status.magicDnsName });
-    if (state === undefined) {
-      return yield* new TailscaleFunnelError({ reason: "unknown" });
-    }
-    return { status, state, origin: tailscaleFunnelOrigin(status.magicDnsName, target.funnelPort) };
-  });
-
-  const offArgs = (target: TailscaleFunnelTarget) => [
-    "funnel",
-    `--https=${target.funnelPort}`,
-    "--set-path=/",
-    "off",
-  ];
-
-  return TailscaleFunnel.of({
-    status: Effect.fn("TailscaleFunnel.status")(function* (target) {
-      const { state, origin } = yield* inspect(target);
-      return { origin: state.funnel && state.port === "ours" ? origin : null };
-    }),
-    enable: Effect.fn("TailscaleFunnel.enable")(function* (target) {
-      const { status, state, origin } = yield* inspect(target);
-      if (state.port === "taken") {
-        return yield* new TailscaleFunnelError({ reason: "port-in-use" });
-      }
-      if (state.funnel && state.port === "ours") return origin;
-      // Checked first because the CLI would otherwise prompt and wait for a browser approval.
-      if (status.httpsServeEnabled === false) {
-        return yield* new TailscaleFunnelError({ reason: "https-disabled" });
-      }
-      if (status.funnelAllowed === false) {
-        return yield* new TailscaleFunnelError({ reason: "funnel-not-allowed" });
-      }
-      yield* run(
-        runTailscaleCommand(
-          [
-            "funnel",
-            "--bg",
-            `--https=${target.funnelPort}`,
-            `http://${target.localHost.includes(":") ? `[${target.localHost}]` : target.localHost}:${target.localPort}`,
-          ],
-          TAILSCALE_SERVE_TIMEOUT,
-        ),
-      ).pipe(Effect.mapError(funnelFailureOf));
-      return origin;
-    }),
-    disable: Effect.fn("TailscaleFunnel.disable")(function* (target) {
-      const { state } = yield* inspect(target);
-      if (state.port !== "ours") return;
-      yield* run(runTailscaleCommand(offArgs(target), TAILSCALE_SERVE_TIMEOUT)).pipe(
-        Effect.mapError(funnelFailureOf),
-      );
-    }),
-  });
-});
-
-export const layerTailscaleFunnel = Layer.effect(TailscaleFunnel, makeTailscaleFunnel);

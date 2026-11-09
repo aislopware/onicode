@@ -62,6 +62,7 @@ describe("V2 preview upgrade", () => {
         [80, "ScheduledTaskThreadMode"],
         [81, "DropWebhookRelayDeliveries"],
         [82, "RemoveGuestShares"],
+        [83, "RemoveWebhookTasks"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -167,6 +168,7 @@ describe("V2 preview upgrade", () => {
         [80, "ScheduledTaskThreadMode"],
         [81, "DropWebhookRelayDeliveries"],
         [82, "RemoveGuestShares"],
+        [83, "RemoveWebhookTasks"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );

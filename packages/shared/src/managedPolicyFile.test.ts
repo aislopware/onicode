@@ -138,7 +138,7 @@ describe("readManagedPolicy", () => {
       );
       // Keys beside the wrapper, or a second entry, are refused rather than dropped or merged.
       for (const ambiguous of [
-        { Forced: [{ mcx_preference_settings: settings }], limits: { webhookTasks: false } },
+        { Forced: [{ mcx_preference_settings: settings }], limits: { browserCookieImport: false } },
         { Forced: [{ mcx_preference_settings: settings }, { mcx_preference_settings: settings }] },
       ]) {
         assert.include(
@@ -231,7 +231,7 @@ describe("readManagedPolicy", () => {
               text("SupportUrl", ""),
               // Registry names ignore case.
               text("maxRuntimeMode", "auto-accept-edits"),
-              dword("WebhookTasks", 0),
+              dword("BrowserCookieImport", 0),
               text("Settings", '{"enableAgentBrowserAccess": {"value": false, "locked": true}}'),
               text("UpdatesMode", "off"),
               dword("Updates", 1),
@@ -251,7 +251,7 @@ describe("readManagedPolicy", () => {
           settings: { enableAgentBrowserAccess: { value: false, locked: true } },
           limits: {
             maxRuntimeMode: "auto-accept-edits",
-            webhookTasks: false,
+            browserCookieImport: false,
             updates: { mode: "off" },
             clients: ["desktop", "local-browser", "remote"],
             providers: { allowedDrivers: ["codex", "claudeAgent", "UnknownDriver"] },
@@ -272,12 +272,16 @@ describe("readManagedPolicy", () => {
               dword("Clients", 0),
               dword("AllowedDrivers", 0),
               dword("Updates", 0),
-              dword("WebhookTasks", 0),
+              dword("BrowserCookieImport", 0),
             ],
             disabledGroups,
           ),
         ),
-        { schemaVersion: 1, organization: "Société 日本 ✓", limits: { webhookTasks: false } },
+        {
+          schemaVersion: 1,
+          organization: "Société 日本 ✓",
+          limits: { browserCookieImport: false },
+        },
       );
       // With nothing else configured, that is no policy rather than one missing Organization.
       assert.isUndefined(
@@ -291,7 +295,7 @@ describe("readManagedPolicy", () => {
 
       // Anything the template does not write fails closed rather than being ignored.
       for (const [registry, reason] of [
-        [policyKey([organization, dword("WebhookTasks", 2)]), "DWORD of 0 or 1"],
+        [policyKey([organization, dword("BrowserCookieImport", 2)]), "DWORD of 0 or 1"],
         [policyKey([organization, text("MaxMode", "auto")]), "not a Onicode policy value"],
         [policyKey([organization], { Other: { x: 1 } }), "Other is not a Onicode policy key"],
         [

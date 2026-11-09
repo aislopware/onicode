@@ -25,7 +25,7 @@ vi.mock(import("../../state/entities"), async (importOriginal) => ({
 vi.mock(import("../../state/query"), async (importOriginal) => ({
   ...(await importOriginal()),
   useEnvironmentQuery: (() => ({
-    data: { tasks: [{ id: "task:webhook", title: "PR dispatcher" }] },
+    data: { tasks: [{ id: "task:dispatcher", title: "PR dispatcher" }] },
   })) as never,
 }));
 
@@ -129,7 +129,7 @@ it("shows who sent a queued message and folds automation and agent prompts", asy
         "GitHub labeled a pull request.\nFollow the runbook.",
         {
           createdBy: "agent",
-          scheduledTaskId: "task:webhook",
+          scheduledTaskId: "task:dispatcher",
         },
       ],
       [

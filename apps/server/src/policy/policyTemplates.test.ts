@@ -10,6 +10,8 @@ import { macosProfile, windowsAdmx } from "./policyTemplates.ts";
 it("gives every registry value the Windows reader accepts a Group Policy control", () => {
   const admx = windowsAdmx();
   for (const name of Object.keys(WINDOWS_POLICY_VALUES)) {
+    // Retired: still read so values older templates wrote keep loading, but no longer offered.
+    if (name === "WebhookTasks") continue;
     assert.include(admx, `valueName="${name}"`);
   }
   for (const key of Object.keys(WINDOWS_POLICY_LISTS)) {

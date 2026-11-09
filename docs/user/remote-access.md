@@ -150,33 +150,6 @@ tailscale serve --https=443 --set-path=/ off
 If that port is already in use, choose another with
 `--tailscale-serve-port`. See `onicode pair --help` for other pairing options.
 
-### Public access for guest links and webhooks
-
-Guest links and webhook triggers have to be reachable by people and services outside your
-tailnet. Turn on **Settings → Labs → Public access** on the machine that runs the
-threads or tasks. Onicode then publishes them with
-[Tailscale Funnel](https://tailscale.com/kb/1223/funnel) at an address such as
-`https://machine.tailnet.ts.net:8443`.
-
-Only guest links, the guest page, and webhook addresses are published. The app, its API, pairing,
-and `/mcp` stay on your network and tailnet. Onicode serves the published routes from a second
-server that listens on `127.0.0.1` only, and Funnel forwards to that server alone.
-
-Funnel needs:
-
-- Tailscale installed, running, and logged in on the machine.
-- HTTPS certificates turned on for the tailnet, under **DNS** in the Tailscale admin console.
-- The `funnel` node attribute for this machine in the tailnet policy file, under **Access
-  controls**. Without it Tailscale refuses, and Settings says so.
-- Port 8443 free of other `tailscale serve` or `tailscale funnel` routes on the machine.
-
-If public access cannot start, Settings shows why. Fix the cause, then turn the setting off and on
-again. Turning it off removes the Funnel route; existing guest links and webhook addresses stop
-working until you turn it on again. A webhook sent while the machine is offline or public access
-is off fails; nothing holds it for later.
-
-A managed policy whose `clients` leaves out `remote` also turns public access off.
-
 ## Desktop-managed SSH
 
 In the desktop app, open **Settings → Environments → Add environment**, choose

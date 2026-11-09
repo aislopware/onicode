@@ -102,12 +102,6 @@ const policies = (): ReadonlyArray<Policy> => [
     ],
   },
   {
-    id: "WebhookTasks",
-    title: "Allow webhook tasks",
-    help: "Disabled stops scheduled tasks from using webhook triggers. Existing webhook tasks are kept but do not run.",
-    toggle: "WebhookTasks",
-  },
-  {
     id: "BrowserCookieImport",
     title: "Allow importing browser cookies",
     help: "Disabled stops users from importing cookies from another browser into Onicode's browser.",

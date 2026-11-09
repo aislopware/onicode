@@ -110,7 +110,7 @@ const checkCommand = Command.make("check", {
 const SAMPLE_POLICY: ManagedPolicyDocument = {
   schemaVersion: 1,
   organization: "Example Corp",
-  limits: { maxRuntimeMode: "auto-accept-edits", clients: ["desktop"], webhookTasks: false },
+  limits: { maxRuntimeMode: "auto-accept-edits", clients: ["desktop"], browserCookieImport: false },
 };
 
 const templatesCommand = Command.make("templates", {

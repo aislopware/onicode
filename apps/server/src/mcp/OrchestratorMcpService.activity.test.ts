@@ -761,19 +761,6 @@ it("requestSecret saves a pasted value to a file without opening a card", async 
     ]);
     expect(dispatched).toEqual([]);
     expect((yield* counted) - before).toBe(1);
-
-    const asRef = yield* service
-      .requestSecret(makeScope(), {
-        label: "Pixel PIN",
-        reason: "Unlocks the test phone.",
-        value: "482916",
-        delivery: "secretRef",
-      })
-      .pipe(Effect.flip);
-    expect(asRef.code).toBe("invalid_request");
-    expect(asRef.message).not.toContain("482916");
-    expect(saved).toHaveLength(1);
-    expect(dispatched).toEqual([]);
   }).pipe(Effect.provide(layer), Effect.runPromise);
 });
 
@@ -834,7 +821,6 @@ it("requestSecret returns the unsaved note for a declined, cancelled or timed-ou
         .requestSecret(makeScope(), {
           label: "Staging password",
           reason: "Signs in the QA account.",
-          delivery: "file",
           timeoutMs: 1_000,
         })
         .pipe(Effect.forkChild({ startImmediately: true }));

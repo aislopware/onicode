@@ -1,22 +1,11 @@
-import { useAtomValue } from "@effect/atom-react";
 import { Link } from "@tanstack/react-router";
-import {
-  type EnvironmentId,
-  managedCapabilityDenial,
-  publicAccessFailureMessage,
-  type PublicAccessStatus,
-} from "@onicode/contracts";
 
 import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
-import { useOptionalSettingsScope, useSettingsScope } from "./SettingsScopeContext";
-import { environmentAtomList, environmentIdsKey } from "~/state/environmentAtomList";
-import { usePrimaryEnvironmentId } from "~/state/environments";
-import { firstManagedDenial, usePrimaryManagedPolicy } from "~/state/managedPolicy";
-import { serverEnvironment } from "~/state/server";
+import { useSettingsScope } from "./SettingsScopeContext";
 
 /** Features still settling in. */
 export function LabsSettingsPanel() {
@@ -24,7 +13,6 @@ export function LabsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
-        <PublicAccessRow />
         <LinkedEnvironmentsRow />
         <PromptSuggestionsRow />
         <SimlockHostsRow />
@@ -76,78 +64,6 @@ function BoringSidebarMultilineRow() {
         />
       }
     />
-  );
-}
-
-/** A policy that keeps clients on this machine turns public access off. */
-function useRemoteClientsDenial() {
-  const scope = useOptionalSettingsScope();
-  const primaryPolicy = usePrimaryManagedPolicy();
-  return firstManagedDenial(
-    scope
-      ? scope.connectedEnvironments.map((environment) => environment.serverConfig?.managedPolicy)
-      : [primaryPolicy],
-    (policy) => managedCapabilityDenial(policy, "remoteClients"),
-  );
-}
-
-const publicAccessStatusesAtom = environmentAtomList(
-  "web-public-access-statuses",
-  (environmentId) => serverEnvironment.publicAccessStatus({ environmentId, input: {} }),
-);
-
-function publicAccessStatusText(status: PublicAccessStatus): string | null {
-  switch (status._tag) {
-    case "off":
-      return null;
-    case "starting":
-      return "Starting Tailscale Funnel…";
-    case "on":
-      return `Reachable at ${status.origin}`;
-    case "failed":
-      return publicAccessFailureMessage(status.reason);
-  }
-}
-
-/** Publishes only webhook addresses, through Tailscale Funnel. */
-function PublicAccessRow() {
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  const remoteClientsDenial = useRemoteClientsDenial();
-  const scope = useOptionalSettingsScope();
-  const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const environmentIds: ReadonlyArray<EnvironmentId> = scope
-    ? scope.connectedEnvironments.map((environment) => environment.environmentId)
-    : primaryEnvironmentId === null
-      ? []
-      : [primaryEnvironmentId];
-  const statuses = useAtomValue(publicAccessStatusesAtom(environmentIdsKey(environmentIds)));
-  const statusLines = statuses.flatMap((result) => {
-    const text = result._tag === "Success" ? publicAccessStatusText(result.value) : null;
-    return text === null ? [] : [text];
-  });
-  return (
-    <SettingsRow
-      serverScoped
-      {...searchableSetting("public-access")}
-      settingKeys={["publicAccessEnabled"]}
-      managed={settings.publicAccessEnabled ? undefined : remoteClientsDenial}
-      description="Let webhook addresses reach this machine from the internet through Tailscale Funnel. Nothing else is published. The tailnet needs HTTPS certificates and the funnel node attribute."
-      control={
-        <ScopedSwitch
-          settingKeys={["publicAccessEnabled"]}
-          checked={settings.publicAccessEnabled}
-          onCheckedChange={(checked) => updateSettings({ publicAccessEnabled: Boolean(checked) })}
-          aria-label="Public access"
-        />
-      }
-    >
-      {statusLines.map((line) => (
-        <p key={line} className="mt-1 text-muted-foreground text-xs">
-          {line}
-        </p>
-      ))}
-    </SettingsRow>
   );
 }
 

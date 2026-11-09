@@ -58,9 +58,8 @@ connection unless both addresses of the direct peer are loopback, private, or
 tailnet IPv4. That keeps a VPS's public address closed, including a cloud VM
 whose public address is NATed to a private interface. It is not a firewall:
 Tailscale Serve reaches the server over loopback by design, and a proxy that
-rewrites the source address looks private. For the same reason Funnel never
-forwards to this listener: [public access](../../apps/server/src/publicAccess/PublicAccess.ts)
-gets a second loopback listener that serves only the guest and webhook routes. One listener per address would
+rewrites the source address looks private, so nothing may proxy the public
+internet to it. One listener per address would
 miss a DHCP change, and the wildcard keeps the reported addresses current.
 
 Pull request routing trust covers the whole route list. Adding or changing a route

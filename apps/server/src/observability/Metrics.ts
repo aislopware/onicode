@@ -95,24 +95,8 @@ export const terminalSessionsTotal = Metric.counter("oni_terminal_sessions_total
   description: "Total terminal sessions started.",
 });
 
-export const webhookDeliveriesTotal = Metric.counter("oni_webhook_deliveries_total", {
-  description: "Webhook requests handled, by outcome.",
-});
-
-export const webhookDeliveryDuration = Metric.timer("oni_webhook_delivery_duration", {
-  description: "Time to verify, log, and enqueue one webhook request.",
-});
-
-export const webhookRunsTotal = Metric.counter("oni_webhook_runs_total", {
-  description: "Runs started from webhook deliveries, by outcome.",
-});
-
 export const secretRequestsTotal = Metric.counter("oni_secret_requests_total", {
   description: "Secrets agents asked users for, by how each request ended.",
-});
-
-export const secretRefsConsumedTotal = Metric.counter("oni_secret_refs_consumed_total", {
-  description: "Secret refs tools tried to use, by result.",
 });
 
 export const metricAttributes = (

@@ -46,7 +46,6 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
-import { WEBHOOK_ROUTE_PREFIX } from "./scheduledTasks/ScheduledTaskService.ts";
 import {
   browserApiCorsAllowedHeaders,
   browserApiCorsAllowedMethods,
@@ -391,7 +390,6 @@ const layerUntracedRequests = Layer.succeed(HttpMiddleware.TracerDisabledWhen)((
   // Signed URLs carry bearer tokens in the path, so they never reach a trace.
   return (
     UNTRACED_REQUEST_PATHS.has(path) ||
-    path.startsWith(`${WEBHOOK_ROUTE_PREFIX}/`) ||
     path.startsWith(`${ASSET_ROUTE_PREFIX}/`) ||
     path.startsWith(`${ATTACHMENT_UPLOAD_ROUTE_PREFIX}/`)
   );
