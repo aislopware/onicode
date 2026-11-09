@@ -13,10 +13,10 @@ const repoRoot = NodePath.resolve(desktopDir, "..", "..");
 const devBundleIdSuffix = NodePath.basename(repoRoot)
   .toLowerCase()
   .replaceAll(/[^a-z0-9]+/g, "");
-const APP_DISPLAY_NAME = isDevelopment ? "Onicode (Dev)" : "Onicode (Beta)";
+const APP_DISPLAY_NAME = isDevelopment ? "Onicode (Dev)" : "Onicode";
 const APP_BUNDLE_ID = isDevelopment
-  ? `dev.onicode.app.dev.${devBundleIdSuffix || "local"}`
-  : "dev.onicode.app";
+  ? `dev.aislopware.onicode.dev.${devBundleIdSuffix || "local"}`
+  : "dev.aislopware.onicode";
 const APP_PROTOCOL_SCHEMES = isDevelopment ? ["onicode-dev"] : ["onicode"];
 const LAUNCHER_VERSION = 20;
 const developmentMacIconPngPath = NodePath.join(

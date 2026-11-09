@@ -1,5 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Tests use Node's glob matcher to verify electron-builder exclusions.
 import * as NodeCrypto from "node:crypto";
+import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -32,7 +33,6 @@ import {
   DESKTOP_FILE_EXCLUSIONS,
   UnsupportedDesktopBuildArchitectureError,
   MacPasskeySigningConfigurationResolutionError,
-  MissingMacPasskeyProvisioningProfileError,
   packWindowsServerAsar,
   preflightWindowsDesktopBuild,
   renderMacPasskeyEntitlements,
@@ -71,6 +71,10 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 
 const encodeModuleUrl = Schema.encodeEffect(Schema.fromJsonString(Schema.String));
+const baseEntitlements = NodeFS.readFileSync(
+  NodePath.join(import.meta.dirname, "../apps/desktop/resources/entitlements.mac.plist"),
+  "utf8",
+);
 const decodePackageVersion = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Struct({ version: Schema.String })),
 );
@@ -387,7 +391,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
           "scripts": { "build:desktop": "node build.cjs" }
         }`;
         yield* fs.writeFileString(path.join(root, "package.json"), packageJson);
-        const version = "0.0.43-nightly.20260920.2018";
+        const version = "0.0.43";
         const matchingPath = "packages/contracts/package.json";
         const originals = releasePackageFiles.map((relativePath, index) => ({
           relativePath,
@@ -495,78 +499,47 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
-  it.effect("omits update feeds for pull request preview builds", () =>
+  it.effect("bakes the better-update feed into macOS and Linux builds", () =>
     Effect.gen(function* () {
-      const preview = yield* createBuildConfig(
-        "mac",
-        "dmg",
-        "0.0.33-pr.8182.1",
-        false,
-        false,
-        undefined,
-        undefined,
-      );
-      const release = yield* createBuildConfig(
-        "mac",
-        "dmg",
-        "0.0.33",
-        false,
-        false,
-        undefined,
-        undefined,
-      );
+      const feed = "https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92";
+      const publish = (platform: "mac" | "linux" | "win", mockUpdates = false) =>
+        createBuildConfig(platform, "dir", "0.4.0", false, mockUpdates, 3012, undefined).pipe(
+          Effect.map((config) => config.publish),
+        );
 
-      const previewChannel = yield* createBuildConfig(
-        "mac",
-        "dmg",
-        "0.0.41-preview.20260912.1589",
-        false,
-        false,
-        undefined,
-        undefined,
-      );
-
-      assert.isNull(preview.publish);
-      assert.isNull(previewChannel.publish);
-      assert.deepStrictEqual(release.publish, [
-        {
-          provider: "github",
-          owner: "aislopware",
-          repo: "onicode",
-          releaseType: "release",
-        },
+      assert.deepStrictEqual(yield* publish("mac"), [
+        { provider: "generic", url: `${feed}/macos` },
       ]);
-    }).pipe(
-      Effect.provide(
-        ConfigProvider.layer(
-          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "aislopware/onicode" } }),
-        ),
-      ),
-    ),
+      assert.deepStrictEqual(yield* publish("linux"), [
+        { provider: "generic", url: `${feed}/linux` },
+      ]);
+      assert.isNull(yield* publish("win"));
+      assert.deepStrictEqual(yield* publish("mac", true), [
+        { provider: "generic", url: "http://localhost:3012" },
+      ]);
+    }),
   );
 
   it.effect("declares Calendar access for hosted commands in macOS builds", () =>
     Effect.gen(function* () {
-      for (const version of ["0.1.0", "0.1.1-nightly.20261019.1"]) {
-        for (const signed of [false, true]) {
-          const config = yield* createBuildConfig(
-            "mac",
-            "dmg",
-            version,
-            signed,
-            false,
-            undefined,
-            undefined,
-          );
-          const mac = config.mac as { extendInfo: Record<string, unknown> };
-          for (const key of [
-            "NSCalendarsUsageDescription",
-            "NSCalendarsFullAccessUsageDescription",
-            "NSCalendarsWriteOnlyAccessUsageDescription",
-          ]) {
-            assert.isString(mac.extendInfo[key], `${version}, signed=${signed}: ${key}`);
-            assert.isNotEmpty(mac.extendInfo[key]);
-          }
+      for (const signed of [false, true]) {
+        const config = yield* createBuildConfig(
+          "mac",
+          "dmg",
+          "0.1.0",
+          signed,
+          false,
+          undefined,
+          undefined,
+        );
+        const mac = config.mac as { extendInfo: Record<string, unknown> };
+        for (const key of [
+          "NSCalendarsUsageDescription",
+          "NSCalendarsFullAccessUsageDescription",
+          "NSCalendarsWriteOnlyAccessUsageDescription",
+        ]) {
+          assert.isString(mac.extendInfo[key], `signed=${signed}: ${key}`);
+          assert.isNotEmpty(mac.extendInfo[key]);
         }
       }
     }),
@@ -1437,20 +1410,21 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
 
   it("resolves macOS signing configuration and renders required entitlements", () => {
     const configuration = resolveMacPasskeySigningConfiguration({
-      ONICODE_APPLE_TEAM_ID: "abc1234567",
+      BETTER_UPDATE_MACOS_TEAM_ID: "abc1234567",
       ONICODE_MACOS_PROVISIONING_PROFILE: "/tmp/onicode.provisionprofile",
     });
-    const entitlements = renderMacPasskeyEntitlements(configuration, {
+    assert.isDefined(configuration);
+    const entitlements = renderMacPasskeyEntitlements(baseEntitlements, configuration, {
       touchIdKeychainAccessGroup: undefined,
       browserPasskeys: false,
     });
 
     assert.deepStrictEqual(configuration, {
-      appId: "dev.onicode.app",
+      appId: "dev.aislopware.onicode",
       teamId: "ABC1234567",
       provisioningProfilePath: "/tmp/onicode.provisionprofile",
     });
-    assert.include(entitlements, "<string>ABC1234567.dev.onicode.app</string>");
+    assert.include(entitlements, "<string>ABC1234567.dev.aislopware.onicode</string>");
     assert.notInclude(entitlements, "associated-domains");
     assert.include(entitlements, "<key>com.apple.security.cs.allow-jit</key>");
     assert.match(entitlements, /<key>com\.apple\.security\.device\.camera<\/key>\s*<true\/>/u);
@@ -1460,7 +1434,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
   });
 
   it("grants in-app browser passkey entitlements only when the provisioning profile does", () => {
-    const configuration = { appId: "dev.onicode.app", teamId: "ABC1234567" };
+    const configuration = { appId: "dev.aislopware.onicode", teamId: "ABC1234567" };
     const profile = (entitlements: string, outside = "") =>
       `0\x82\x1f\x9a\x06\t*\x86H<?xml version="1.0"?><plist version="1.0"><dict>${outside}<key>Entitlements</key><dict>${entitlements}</dict></dict></plist>\x00\x01`;
     const teamWildcardGroups = `<key>keychain-access-groups</key>
@@ -1502,12 +1476,13 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
         configuration,
       ),
       {
-        touchIdKeychainAccessGroup: "ABC1234567.dev.onicode.app.webauthn",
+        touchIdKeychainAccessGroup: "ABC1234567.dev.aislopware.onicode.webauthn",
         browserPasskeys: true,
       },
     );
 
     const entitlements = renderMacPasskeyEntitlements(
+      baseEntitlements,
       { ...configuration, provisioningProfilePath: "" },
       resolveMacWebAuthnEntitlements(
         profile(
@@ -1518,7 +1493,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     );
     assert.match(
       entitlements,
-      /<key>keychain-access-groups<\/key>\s*<array>\s*<string>ABC1234567\.dev\.onicode\.app\.webauthn<\/string>\s*<\/array>/u,
+      /<key>keychain-access-groups<\/key>\s*<array>\s*<string>ABC1234567\.dev\.aislopware\.onicode\.webauthn<\/string>\s*<\/array>/u,
     );
     assert.match(
       entitlements,
@@ -1526,21 +1501,9 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     );
   });
 
-  it("rejects incomplete macOS passkey signing configuration", () => {
-    const captureError = (env: Readonly<Record<string, string | undefined>>) => {
-      try {
-        resolveMacPasskeySigningConfiguration(env);
-      } catch (error) {
-        return error;
-      }
-      return assert.fail("Expected passkey signing configuration to fail.");
-    };
-
-    const missingProfileError = captureError({ ONICODE_APPLE_TEAM_ID: "ABC1234567" });
-    assert.instanceOf(missingProfileError, MissingMacPasskeyProvisioningProfileError);
-    assert.equal(
-      missingProfileError.message,
-      "ONICODE_MACOS_PROVISIONING_PROFILE must point to the app's provisioning profile.",
+  it("claims no passkey entitlements without a provisioning profile", () => {
+    assert.isUndefined(
+      resolveMacPasskeySigningConfiguration({ ONICODE_APPLE_TEAM_ID: "ABC1234567" }),
     );
   });
 

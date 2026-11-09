@@ -39,7 +39,7 @@ it.each([
     hostArch: "arm64",
     arch: 1,
     resources: "Fixture.app/Contents/Resources",
-    executable: "Fixture.app/Contents/MacOS/Fixture",
+    executable: "Fixture.app/Contents/MacOS/fixture",
   },
   { platform: "linux", hostArch: "x64", arch: 1, resources: "resources", executable: "fixture" },
   { platform: "linux", hostArch: "arm64", arch: 3, resources: "resources", executable: "fixture" },
@@ -80,7 +80,7 @@ it.each([
       Object.defineProperty(process, "arch", { value: ${JSON.stringify(hostArch)} });
       require(${JSON.stringify(hook)})({
         appOutDir: ${JSON.stringify(root)}, electronPlatformName: ${JSON.stringify(platform)}, arch: ${arch},
-        packager: { appInfo: { productFilename: "Fixture" }, executableName: "fixture" }
+        packager: { appInfo: { productFilename: "Fixture" }, executableName: "fixture", platformSpecificBuildOptions: { extendInfo: { CFBundleExecutable: "fixture" } } }
       }).catch(error => { console.error(error); process.exitCode = 1; });
     `,
       ],

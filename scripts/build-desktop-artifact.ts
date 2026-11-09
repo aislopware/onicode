@@ -29,11 +29,7 @@ import {
   updateReleasePackageVersions,
 } from "./update-release-package-versions.ts";
 import { applyWebBrandAssets } from "./apply-web-brand-assets.ts";
-import {
-  BRAND_ASSET_PATHS,
-  resolveWebAssetBrandForChannel,
-  type WebAssetBrand,
-} from "./lib/brand-assets.ts";
+import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 import { getDefaultBuildArch } from "./lib/build-target-arch.ts";
 import {
   findInlinedExternalPackages,
@@ -61,7 +57,13 @@ import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
 const LINUX_ICON_SIZES = [16, 22, 24, 32, 48, 64, 128, 256, 512] as const;
-const DESKTOP_APP_ID = "dev.onicode.app";
+const DESKTOP_APP_ID = "dev.aislopware.onicode";
+const DESKTOP_PRODUCT_NAME = "Onicode";
+// The earlier native Onicode's updater runs `Contents/MacOS/onicode --version` on every update.
+const MAC_EXECUTABLE_NAME = "onicode";
+const MAC_ENTITLEMENTS_PATH = "apps/desktop/resources/entitlements.mac.plist";
+const BETTER_UPDATE_FEED_BASE_URL =
+  "https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92";
 const APPLE_TEAM_ID_PATTERN = /^[A-Z0-9]{10}$/u;
 
 const BuildPlatform = Schema.Literals(["mac", "linux", "win"]);
@@ -488,12 +490,11 @@ export class DesktopIconSourceMissingError extends Schema.TaggedError<DesktopIco
 export class DesktopDmgBackgroundSourceMissingError extends Schema.TaggedError<DesktopDmgBackgroundSourceMissingError>()(
   "DesktopDmgBackgroundSourceMissingError",
   {
-    channel: Schema.Literals(["latest", "nightly"]),
     sourcePath: Schema.String,
   },
 ) {
   override get message(): string {
-    return `Desktop ${this.channel} DMG background source is missing at ${this.sourcePath}`;
+    return `Desktop DMG background source is missing at ${this.sourcePath}`;
   }
 }
 
@@ -1115,37 +1116,26 @@ export class InvalidAppleTeamIdError extends Schema.TaggedError<InvalidAppleTeam
   },
 ) {
   override get message(): string {
-    return `ONICODE_APPLE_TEAM_ID '${this.teamId}' must be a 10-character Apple Developer Team ID.`;
+    return `ONICODE_APPLE_TEAM_ID or BETTER_UPDATE_MACOS_TEAM_ID '${this.teamId}' must be a 10-character Apple Developer Team ID.`;
   }
 }
 
-export class MissingMacPasskeyProvisioningProfileError extends Schema.TaggedError<MissingMacPasskeyProvisioningProfileError>()(
-  "MissingMacPasskeyProvisioningProfileError",
-  {},
-) {
-  override get message(): string {
-    return "ONICODE_MACOS_PROVISIONING_PROFILE must point to the app's provisioning profile.";
-  }
-}
-
-export const MacPasskeySigningConfigurationError = Schema.Union([
-  InvalidAppleTeamIdError,
-  MissingMacPasskeyProvisioningProfileError,
-]);
+export const MacPasskeySigningConfigurationError = Schema.Union([InvalidAppleTeamIdError]);
 export type MacPasskeySigningConfigurationError = typeof MacPasskeySigningConfigurationError.Type;
 export const isMacPasskeySigningConfigurationError = Schema.is(MacPasskeySigningConfigurationError);
 
+/** Passkeys need restricted entitlements, so only a build given a provisioning profile claims them. */
 export function resolveMacPasskeySigningConfiguration(
   env: Readonly<Record<string, string | undefined>>,
-): MacPasskeySigningConfiguration {
-  const teamId = env.ONICODE_APPLE_TEAM_ID?.trim().toUpperCase() ?? "";
+): MacPasskeySigningConfiguration | undefined {
+  const provisioningProfilePath = env.ONICODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "";
+  if (provisioningProfilePath.length === 0) return undefined;
+
+  const teamId = (env.ONICODE_APPLE_TEAM_ID ?? env.BETTER_UPDATE_MACOS_TEAM_ID ?? "")
+    .trim()
+    .toUpperCase();
   if (!APPLE_TEAM_ID_PATTERN.test(teamId)) {
     throw new InvalidAppleTeamIdError({ teamId });
-  }
-
-  const provisioningProfilePath = env.ONICODE_MACOS_PROVISIONING_PROFILE?.trim() ?? "";
-  if (provisioningProfilePath.length === 0) {
-    throw new MissingMacPasskeyProvisioningProfileError();
   }
 
   return {
@@ -1209,7 +1199,9 @@ export function resolveMacWebAuthnEntitlements(
   };
 }
 
+/** The committed base entitlements plus the identity and passkey keys the profile grants. */
 export function renderMacPasskeyEntitlements(
+  baseEntitlements: string,
   configuration: MacPasskeySigningConfiguration,
   webAuthn: MacWebAuthnEntitlements,
 ): string {
@@ -1226,31 +1218,14 @@ export function renderMacPasskeyEntitlements(
     <true/>`
     : "";
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-  <dict>
+  return baseEntitlements.replace(
+    "<dict>",
+    `<dict>
     <key>com.apple.application-identifier</key>
     <string>${escapeXml(`${configuration.teamId}.${configuration.appId}`)}</string>
     <key>com.apple.developer.team-identifier</key>
-    <string>${escapeXml(configuration.teamId)}</string>${keychainAccessGroups}${browserPasskeys}
-    <key>com.apple.security.cs.allow-jit</key>
-    <true/>
-    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
-    <true/>
-    <key>com.apple.security.cs.disable-library-validation</key>
-    <true/>
-    <!-- The hardened runtime denies camera and microphone to the app and every
-         child process, with no prompt, unless the app claims these. Terminals
-         and coding agents inherit the app's TCC identity, so without these a
-         command like ffmpeg or imagesnap gets silent access-denied. -->
-    <key>com.apple.security.device.camera</key>
-    <true/>
-    <key>com.apple.security.device.audio-input</key>
-    <true/>
-  </dict>
-</plist>
-`;
+    <string>${escapeXml(configuration.teamId)}</string>${keychainAccessGroups}${browserPasskeys}`,
+  );
 }
 
 export function resolveFffNativeDependencies(
@@ -2325,31 +2300,26 @@ const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function
 
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
   stageResourcesDir: string,
-  channel: "latest" | "nightly",
   verbose: boolean,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const sourcePath = path.join(stageResourcesDir, "dmg", `dmg-background-${channel}.svg`);
+  const sourcePath = path.join(stageResourcesDir, "dmg", "dmg-background.svg");
   if (!(yield* fs.exists(sourcePath))) {
-    return yield* new DesktopDmgBackgroundSourceMissingError({ channel, sourcePath });
+    return yield* new DesktopDmgBackgroundSourceMissingError({ sourcePath });
   }
 
   for (const output of [
     { suffix: "", width: 640, height: 432 },
     { suffix: "@2x", width: 1280, height: 864 },
   ] as const) {
-    const targetPath = path.join(
-      stageResourcesDir,
-      "dmg",
-      `dmg-background-${channel}${output.suffix}.png`,
-    );
+    const targetPath = path.join(stageResourcesDir, "dmg", `dmg-background${output.suffix}.png`);
     yield* runCommand(
       ChildProcess.make(
         {},
       )`sips -s format png -z ${output.height} ${output.width} ${sourcePath} --out ${targetPath}`,
       {
-        label: `sips ${channel} DMG background${output.suffix || "@1x"}`,
+        label: `sips DMG background${output.suffix || "@1x"}`,
         verbose,
       },
     );
@@ -2487,59 +2457,28 @@ export function resolveDesktopRuntimeDependencies(
   );
 }
 
-export const resolveGitHubPublishConfig = Effect.fn("resolveGitHubPublishConfig")(function* (
-  updateChannel: "latest" | "nightly",
-) {
-  const env = yield* Config.all({
-    updateRepository: Config.String("ONICODE_DESKTOP_UPDATE_REPOSITORY").pipe(Config.option),
-    githubRepository: Config.String("GITHUB_REPOSITORY").pipe(Config.option),
-  });
-  const rawRepo = (
-    Option.getOrUndefined(env.updateRepository)?.trim() ||
-    Option.getOrUndefined(env.githubRepository)?.trim() ||
-    ""
-  ).trim();
-  if (!rawRepo) return undefined;
-
-  const [owner, repo, ...rest] = rawRepo.split("/");
-  if (!owner || !repo || rest.length > 0) return undefined;
-
-  return {
-    provider: "github",
-    owner,
-    repo,
-    releaseType: updateChannel === "nightly" ? "prerelease" : "release",
-    ...(updateChannel === "nightly" ? { channel: "nightly" as const } : {}),
-  };
-});
-
-export function resolveDesktopUpdateChannel(version: string): "latest" | "nightly" {
-  return /-nightly\.\d{8}\.\d+$/.test(version) ? "nightly" : "latest";
-}
-
-export function isDesktopPreviewVersion(version: string): boolean {
-  return /-pr\./.test(version) || /-preview\.\d{8}\.\d+$/.test(version);
-}
-
-export function resolveDesktopWebAssetBrand(version: string): WebAssetBrand {
-  return resolveWebAssetBrandForChannel(resolveDesktopUpdateChannel(version));
-}
-
-export function resolveDesktopBuildIconAssets(version: string): DesktopBuildIconAssets {
-  if (resolveDesktopUpdateChannel(version) === "nightly") {
-    return {
-      macIconPng: BRAND_ASSET_PATHS.nightlyMacIconPng,
-      linuxIconPng: BRAND_ASSET_PATHS.nightlyLinuxIconPng,
-      windowsIconIco: BRAND_ASSET_PATHS.nightlyWindowsIconIco,
-    };
+export function resolveDesktopPublishConfig(input: {
+  readonly platform: typeof BuildPlatform.Type;
+  readonly mockUpdates: boolean;
+  readonly mockUpdateServerPort: number | undefined;
+}): ReadonlyArray<Record<string, string>> | null {
+  if (input.mockUpdates) {
+    return [{ provider: "generic", url: resolveMockUpdateServerUrl(input.mockUpdateServerPort) }];
   }
-
-  return {
-    macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
-    linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
-    windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
-  };
+  if (input.platform === "win") return null;
+  return [
+    {
+      provider: "generic",
+      url: `${BETTER_UPDATE_FEED_BASE_URL}/${input.platform === "mac" ? "macos" : "linux"}`,
+    },
+  ];
 }
+
+const DESKTOP_BUILD_ICON_ASSETS: DesktopBuildIconAssets = {
+  macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
+  linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
+  windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
+};
 
 export function resolveMockUpdateServerUrl(mockUpdateServerPort: number | undefined): string {
   return `http://localhost:${mockUpdateServerPort ?? 3000}`;
@@ -2556,12 +2495,6 @@ export function resolvePackageManagerUserAgent(packageManager: string): string {
   return `${trimmed.slice(0, versionSeparator)}/${trimmed.slice(versionSeparator + 1)}`;
 }
 
-export function resolveDesktopProductName(version: string): string {
-  return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "Onicode (Nightly)"
-    : (desktopPackageJson.productName ?? "Onicode");
-}
-
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   platform: typeof BuildPlatform.Type,
   target: string,
@@ -2569,10 +2502,10 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   signed: boolean,
   mockUpdates: boolean,
   mockUpdateServerPort: number | undefined,
-  macPasskeySigning:
+  macSigning:
     | {
         readonly entitlementsPath: string;
-        readonly provisioningProfilePath: string;
+        readonly provisioningProfilePath: string | undefined;
       }
     | undefined,
   wslRuntimeBundled = false,
@@ -2581,7 +2514,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   const buildConfig: Record<string, unknown> = {
     afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
     appId: DESKTOP_APP_ID,
-    productName: resolveDesktopProductName(version),
+    productName: DESKTOP_PRODUCT_NAME,
     artifactName: "Onicode-${version}-${arch}.${ext}",
     electronLanguages: [...DESKTOP_ELECTRON_LANGUAGES],
     files: [
@@ -2607,22 +2540,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       ...(platform === "win" && wslRuntimeBundled ? WSL_RUNTIME_EXTRA_RESOURCES : []),
     ],
   };
-  const updateChannel = resolveDesktopUpdateChannel(version);
-  // Missing publish config infers a GitHub feed from tokens; staging has no repository, so manifest generation would crash.
-  buildConfig.publish = null;
-  if (!isDesktopPreviewVersion(version)) {
-    const publishConfig = yield* resolveGitHubPublishConfig(updateChannel);
-    if (publishConfig) {
-      buildConfig.publish = [publishConfig];
-    } else if (mockUpdates) {
-      buildConfig.publish = [
-        {
-          provider: "generic",
-          url: resolveMockUpdateServerUrl(mockUpdateServerPort),
-        },
-      ];
-    }
-  }
+  // Becomes app-update.yml. Without one, electron-builder would infer a GitHub feed.
+  buildConfig.publish = resolveDesktopPublishConfig({
+    platform,
+    mockUpdates,
+    mockUpdateServerPort,
+  });
 
   if (platform === "mac") {
     const path = yield* Path.Path;
@@ -2632,6 +2555,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       icon: "icon.icns",
       category: "public.app-category.developer-tools",
       extendInfo: {
+        // electron-builder renames the Electron binary to CFBundleExecutable; the app keeps its name.
+        CFBundleExecutable: MAC_EXECUTABLE_NAME,
         // macOS 26 offers Messages/Mail codes in every text field unless opted out.
         NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,
         NSLocalNetworkUsageDescription:
@@ -2670,12 +2595,12 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
           role: "Viewer",
         },
       ],
+      // better-update notarizes and staples the packaged zip once.
+      notarize: false,
       ...(signed ? { sign: path.join(repoRoot, "scripts/sign-macos.ts") } : {}),
-      ...(macPasskeySigning
-        ? {
-            entitlements: macPasskeySigning.entitlementsPath,
-            provisioningProfile: macPasskeySigning.provisioningProfilePath,
-          }
+      ...(macSigning ? { entitlements: macSigning.entitlementsPath } : {}),
+      ...(macSigning?.provisioningProfilePath
+        ? { provisioningProfile: macSigning.provisioningProfilePath }
         : {}),
     };
   }
@@ -2683,8 +2608,8 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
   if (platform === "mac" && target === "dmg") {
     buildConfig.dmg = {
       // Finder caches DMG backgrounds by volume name; give each installer its own.
-      title: `${resolveDesktopProductName(version)} ${version} Installer`,
-      background: `dmg/dmg-background-${updateChannel}.png`,
+      title: `${DESKTOP_PRODUCT_NAME} ${version} Installer`,
+      background: "dmg/dmg-background.png",
       window: {
         width: 640,
         // DMG bounds include Finder's 32px title bar; keep that artwork strip clear.
@@ -2727,7 +2652,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     buildConfig.deb = {
       // FPM runs outside the staged app directory, so source paths must be absolute.
       fpm: [
-        `${path.join(repoRoot, "apps/desktop/resources/linux/dev.onicode.app.metainfo.xml")}=/usr/share/metainfo/dev.onicode.app.metainfo.xml`,
+        `${path.join(repoRoot, `apps/desktop/resources/linux/${DESKTOP_APP_ID}.metainfo.xml`)}=/usr/share/metainfo/${DESKTOP_APP_ID}.metainfo.xml`,
         `${path.join(repoRoot, "LICENSE")}=/usr/share/doc/onicode/copyright`,
       ],
       // Debian 13 and Ubuntu 24.04 use 64-bit-time names; retain old-name fallbacks.
@@ -3090,29 +3015,28 @@ export const verifyWindowsPrimaryFffNativeLoad = Effect.fn(
 
 /**
  * The fff probe needs a host of the target's platform and architecture; the
- * bundle self-check needs a Windows host. A cross build defers both to
- * scripts/verify-windows-desktop-artifact.ts.
+ * bundle self-check needs a Windows host; a cross build skips it.
  */
-export const verifyWindowsPackagedRuntime = Effect.fn(
-  "desktopArtifact.verifyWindowsPackagedRuntime",
-)(function* (input: {
-  readonly packagedAppDir: string;
-  readonly appExecutableName: string;
-  readonly targetArch: typeof BuildArch.Type;
-  readonly verbose: boolean;
-}) {
-  const path = yield* Path.Path;
-  const asarPath = path.join(input.packagedAppDir, "resources", WINDOWS_SERVER_ASAR_RESOURCE);
-  yield* verifyWindowsPrimaryFffNativeLoad({ ...input, asarPath });
-  const hostPlatform = yield* HostProcess.Platform;
-  if (hostPlatform !== "win32") {
-    yield* Effect.log(
-      `[desktop-artifact] Skipped the bundle self-check on a ${hostPlatform} host.`,
-    );
-    return;
-  }
-  yield* verifyPackagedBundleIsSelfContained({ asarPath, verbose: input.verbose });
-});
+const verifyWindowsPackagedRuntime = Effect.fn("desktopArtifact.verifyWindowsPackagedRuntime")(
+  function* (input: {
+    readonly packagedAppDir: string;
+    readonly appExecutableName: string;
+    readonly targetArch: typeof BuildArch.Type;
+    readonly verbose: boolean;
+  }) {
+    const path = yield* Path.Path;
+    const asarPath = path.join(input.packagedAppDir, "resources", WINDOWS_SERVER_ASAR_RESOURCE);
+    yield* verifyWindowsPrimaryFffNativeLoad({ ...input, asarPath });
+    const hostPlatform = yield* HostProcess.Platform;
+    if (hostPlatform !== "win32") {
+      yield* Effect.log(
+        `[desktop-artifact] Skipped the bundle self-check on a ${hostPlatform} host.`,
+      );
+      return;
+    }
+    yield* verifyPackagedBundleIsSelfContained({ asarPath, verbose: input.verbose });
+  },
+);
 
 export const validateWindowsPackagedPayload = Effect.fn(
   "desktopArtifact.validateWindowsPackagedPayload",
@@ -3450,7 +3374,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   });
 
   const appVersion = options.version ?? serverPackageJson.version;
-  const iconAssets = resolveDesktopBuildIconAssets(appVersion);
+  const iconAssets = DESKTOP_BUILD_ICON_ASSETS;
   const commitHash = yield* resolveGitCommitHash(repoRoot);
   const mkdir = options.keepStage ? fs.makeTempDirectory : fs.makeTempDirectoryScoped;
   const stageRoot = yield* mkdir({
@@ -3537,9 +3461,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     });
   }
 
-  const webAssetBrand = resolveDesktopWebAssetBrand(appVersion);
-  yield* applyWebBrandAssets(webAssetBrand, "apps/server/dist/client");
-  yield* Effect.log(`[desktop-artifact] Applied ${webAssetBrand} web client branding.`);
+  yield* applyWebBrandAssets("production", "apps/server/dist/client");
   yield* validateBundledClientAssets(path.dirname(bundledClientEntry));
 
   yield* fs.makeDirectory(path.join(stageAppDir, "apps/desktop"), { recursive: true });
@@ -3561,11 +3483,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     }
   }
   if (options.platform === "mac" && options.target === "dmg") {
-    yield* stageDesktopDmgBackground(
-      stageResourcesDir,
-      resolveDesktopUpdateChannel(appVersion),
-      options.verbose,
-    );
+    yield* stageDesktopDmgBackground(stageResourcesDir, options.verbose);
   }
   if (options.platform !== "win") {
     yield* fs.copy(distDirs.serverDist, path.join(stageAppDir, "apps/server/dist"));
@@ -3617,6 +3535,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
           catch: MacPasskeySigningConfigurationResolutionError.fromCause,
         })
       : undefined;
+  const macBaseEntitlementsPath = path.join(repoRoot, MAC_ENTITLEMENTS_PATH);
   const macPasskeySigning = configuredMacPasskeySigning
     ? {
         ...configuredMacPasskeySigning,
@@ -3628,7 +3547,9 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     : undefined;
   const macEntitlementsPath = macPasskeySigning
     ? path.join(stageAppDir, "entitlements.mac.plist")
-    : undefined;
+    : options.platform === "mac" && options.signed
+      ? macBaseEntitlementsPath
+      : undefined;
   let macWebAuthn: MacWebAuthnEntitlements | undefined;
   if (macPasskeySigning && macEntitlementsPath) {
     if (!(yield* fs.exists(macPasskeySigning.provisioningProfilePath))) {
@@ -3645,7 +3566,11 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     );
     yield* fs.writeFileString(
       macEntitlementsPath,
-      renderMacPasskeyEntitlements(macPasskeySigning, macWebAuthn),
+      renderMacPasskeyEntitlements(
+        yield* fs.readFileString(macBaseEntitlementsPath),
+        macPasskeySigning,
+        macWebAuthn,
+      ),
     );
   }
 
@@ -3689,10 +3614,10 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
       options.signed,
       options.mockUpdates,
       options.mockUpdateServerPort,
-      macPasskeySigning && macEntitlementsPath
+      macEntitlementsPath
         ? {
             entitlementsPath: macEntitlementsPath,
-            provisioningProfilePath: macPasskeySigning.provisioningProfilePath,
+            provisioningProfilePath: macPasskeySigning?.provisioningProfilePath,
           }
         : undefined,
       bundlesWslRuntime({ platform: options.platform, runtimeArchivePath: options.wslRuntime }),
@@ -3857,7 +3782,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
   if (options.platform === "win") {
     yield* validateWindowsPackagedPayload({
       stageDistDir,
-      appExecutableName: `${resolveDesktopProductName(appVersion)}.exe`,
+      appExecutableName: `${DESKTOP_PRODUCT_NAME}.exe`,
       targetArch: options.arch,
       appVersion,
       expectWslRuntime: bundlesWslRuntime({

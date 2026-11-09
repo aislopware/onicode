@@ -32,7 +32,13 @@ module.exports = async ({ appOutDir, electronPlatformName, arch, packager }) => 
       : path.join(appOutDir, "resources");
   const executable =
     electronPlatformName === "darwin"
-      ? path.join(appOutDir, `${product}.app`, "Contents", "MacOS", product)
+      ? path.join(
+          appOutDir,
+          `${product}.app`,
+          "Contents",
+          "MacOS",
+          packager.platformSpecificBuildOptions?.extendInfo?.CFBundleExecutable ?? product,
+        )
       : path.join(
           appOutDir,
           electronPlatformName === "win32" ? `${product}.exe` : packager.executableName,
