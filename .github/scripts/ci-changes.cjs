@@ -7,7 +7,7 @@ const root = path.resolve(__dirname, "../..");
 
 const INERT = [
   /^docs\//,
-  /^\.(agents|cursor|vscode|devcontainer|macroscope|repos)\//,
+  /^\.(agents|cursor|vscode|devcontainer|repos)\//,
   /^[^/]+\.md$/,
   /^LICENSE$/,
 ];
@@ -27,8 +27,6 @@ const EXTRA_OWNERS = [
   [/^native\/browser-secret\//, ["@onicode/desktop"]],
   [/^native\/kde-snap-shot\//, ["@onicode/desktop"]],
   [/^native\/libghostty-vt\//, ["@onicode/web"]],
-  // apps/server/src/cloud/ConnectReachability.test.ts checks the guide's headings.
-  [/^docs\/user\/t3-connect-troubleshooting\.md$/, ["onicode"]],
 ];
 const RUST = /^native\/(resource-monitor|kde-snap-shot|hyprland-snap-shot)\//;
 
