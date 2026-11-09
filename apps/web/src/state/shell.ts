@@ -20,7 +20,6 @@ import { AsyncResult, Atom } from "effect/reactivity";
 
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
-import { isHostedStaticApp } from "../hostedPairing";
 import { isLocalEnvironmentDisabled } from "../localEnvironment";
 
 export const shellEnvironment = createShellEnvironmentAtoms(connectionAtomRuntime);
@@ -127,9 +126,9 @@ export const allEnvironmentProjectSnapshotsReadyAtom =
     requiresPrimaryEnvironment: expectsPrimaryEnvironment(),
   });
 
-/** Hosted clients and desktops with the local environment disabled never discover a primary. */
+/** Desktops with the local environment disabled never discover a primary. */
 export function expectsPrimaryEnvironment(): boolean {
-  return !isHostedStaticApp() && !isLocalEnvironmentDisabled();
+  return !isLocalEnvironmentDisabled();
 }
 
 export const allReachableShellsLiveAtom = Atom.make((get) => {

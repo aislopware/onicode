@@ -1,5 +1,7 @@
-import { PrimaryConnectionTarget, RelayConnectionTarget } from "@onicode/client-runtime/connection";
-import type * as Effect from "effect/Effect";
+import {
+  BearerConnectionTarget,
+  PrimaryConnectionTarget,
+} from "@onicode/client-runtime/connection";
 import {
   EnvironmentId,
   type EnvironmentSpeechModel,
@@ -23,50 +25,15 @@ import { VoiceSettingsPanel } from "./VoiceSettingsPanel";
 vi.mock(import("../../speech/useEnvironmentSpeechInput"), { spy: true });
 vi.mock(import("../../state/session"), { spy: true });
 
-// The real connection runtime authorizes relay requests with a signed-in cloud session.
+// The real connection runtime connects every saved environment; HTTP requests need only a client.
 vi.mock("../../connection/runtime", async () => {
-  const [{ ManagedRelay }, rpc, { Atom }, Context, Effect, Layer] = await Promise.all([
-    import("@onicode/client-runtime/relay"),
+  const [rpc, { Atom }] = await Promise.all([
     import("@onicode/client-runtime/rpc"),
     import("effect/reactivity"),
-    import("effect/Context"),
-    import("effect/Effect"),
-    import("effect/Layer"),
   ]);
-  type AuthorizedHttp =
-    import("@onicode/client-runtime/authorization").AuthorizedRemoteHttpEnvironment;
-  // Services resolve by key, and client-runtime does not export this one.
-  class RemoteEnvironmentAuthorization extends Context.Service<
-    RemoteEnvironmentAuthorization,
-    {
-      readonly authorizeDpopHttp: (input: {
-        readonly expectedEnvironmentId: AuthorizedHttp["environmentId"];
-      }) => Effect.Effect<AuthorizedHttp>;
-    }
-    // @effect-diagnostics-next-line deterministicKeys:off
-  >()("@onicode/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
   return {
     connectionAtomRuntime: Atom.runtime(
-      Layer.mergeAll(
-        rpc.layerRemoteHttpClient((input, init) => globalThis.fetch(input, init)),
-        Layer.succeed(ManagedRelay.ManagedRelayDpopSigner, {
-          thumbprint: Effect.succeed("thumbprint"),
-          createProof: () => Effect.succeed("proof"),
-        }),
-        Layer.succeed(RemoteEnvironmentAuthorization, {
-          authorizeDpopHttp: ({ expectedEnvironmentId }) =>
-            Effect.succeed({
-              environmentId: expectedEnvironmentId,
-              label: "MacBook Pro",
-              httpBaseUrl: window.location.origin,
-              httpAuthorization: {
-                _tag: "Dpop",
-                accessToken: "relay-access-token",
-                expiresAtEpochMs: 4_102_444_800_000,
-              },
-            }),
-        }),
-      ),
+      rpc.layerRemoteHttpClient((input, init) => globalThis.fetch(input, init)),
     ),
   };
 });
@@ -226,21 +193,18 @@ it("tests the selected model after download and preserves its transcript across 
   );
 });
 
-it("loads the models of a relay-connected destination", async () => {
-  const target = new RelayConnectionTarget({
-    environmentId: EnvironmentId.make("voice-relay"),
+it("loads the models of a paired destination with its bearer credential", async () => {
+  const target = new BearerConnectionTarget({
+    environmentId: EnvironmentId.make("voice-paired"),
     label: "MacBook Pro",
+    connectionId: "paired",
   });
   const prepared = {
     environmentId: target.environmentId,
     label: target.label,
     httpBaseUrl: window.location.origin,
     socketUrl: "ws://localhost",
-    httpAuthorization: {
-      _tag: "Dpop" as const,
-      accessToken: "stale-access-token",
-      expiresAtEpochMs: 4_102_444_800_000,
-    },
+    httpAuthorization: { _tag: "Bearer" as const, token: "bearer-token" },
     target,
   };
   const model: EnvironmentSpeechModel = {
@@ -297,7 +261,7 @@ it("loads the models of a relay-connected destination", async () => {
   );
   await vi.waitFor(() => expect(authorizations.length + notify.mock.calls.length).not.toBe(0));
   expect(notify).not.toHaveBeenCalled();
-  expect(authorizations).toEqual(["DPoP relay-access-token"]);
+  expect(authorizations).toEqual(["Bearer bearer-token"]);
   await expect.element(screen.getByText("Tiny", { exact: true })).toBeVisible();
 });
 

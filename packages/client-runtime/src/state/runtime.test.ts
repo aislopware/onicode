@@ -72,7 +72,7 @@ class TestQueryError extends Schema.TaggedError<TestQueryError>()("TestQueryErro
 
 const OFFLINE_QUERY_FAILURE = new ConnectionTransientError({
   reason: "transport",
-  detail: "Relay is unavailable.",
+  detail: "The environment is unavailable.",
 });
 
 const BLOCKED_QUERY_FAILURE = new ConnectionBlockedError({
@@ -543,7 +543,7 @@ describe("environment query lifecycle", () => {
   );
 
   it.effect(
-    "hides a session replacement, reports the relay backoff, and recovers on reconnect",
+    "hides a session replacement, reports the reconnect backoff, and recovers on reconnect",
     () =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -601,16 +601,16 @@ describe("environment query lifecycle", () => {
             queryConnectionState({ phase: "connecting", stage: "preparing" }),
           );
           yield* Effect.yieldNow;
-          const relayFailure = new ConnectionTransientError({
+          const sessionFailure = new ConnectionTransientError({
             reason: "transport",
-            detail: "Relay session is reconnecting.",
+            detail: "Session is reconnecting.",
           });
           yield* SubscriptionRef.set(
             harness.supervisorState,
             queryConnectionState({
               phase: "backoff",
               stage: null,
-              lastFailure: relayFailure,
+              lastFailure: sessionFailure,
               retryAt: 1,
             }),
           );
@@ -619,7 +619,7 @@ describe("environment query lifecycle", () => {
           const backingOff = registry.get(harness.atom);
           expect(backingOff.waiting).toBe(false);
           expect(AsyncResult.isFailure(backingOff) && Cause.squash(backingOff.cause)).toBe(
-            relayFailure,
+            sessionFailure,
           );
 
           yield* SubscriptionRef.set(harness.supervisorSession, Option.some(QUERY_RPC_SESSION));

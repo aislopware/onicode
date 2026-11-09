@@ -1,6 +1,6 @@
 import {
+  BearerConnectionTarget,
   PrimaryConnectionTarget,
-  RelayConnectionTarget,
   SshConnectionTarget,
 } from "@onicode/client-runtime/connection";
 import { buildRemoteOpenUrl, EnvironmentId } from "@onicode/contracts";
@@ -113,9 +113,13 @@ describe("resolveRemoteOpenState", () => {
     );
   });
 
-  it("uses the advertised login username in editor links over a relay", () => {
+  it("uses the advertised login username in editor links over a paired address", () => {
     const state = resolveRemoteOpenState({
-      target: new RelayConnectionTarget({ environmentId, label: "server" }),
+      target: new BearerConnectionTarget({
+        environmentId,
+        label: "server",
+        connectionId: "paired",
+      }),
       sshTarget: null,
       isDesktopRenderer: false,
       remoteOpenTargets: [
@@ -133,7 +137,11 @@ describe("resolveRemoteOpenState", () => {
     for (const remoteOpenTargets of [[], undefined] as const) {
       expect(
         resolveRemoteOpenState({
-          target: new RelayConnectionTarget({ environmentId, label: "sol" }),
+          target: new BearerConnectionTarget({
+            environmentId,
+            label: "sol",
+            connectionId: "paired",
+          }),
           sshTarget: null,
           isDesktopRenderer: false,
           remoteOpenTargets,

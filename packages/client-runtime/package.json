@@ -139,10 +139,6 @@
       "types": "./src/oniToolSummary.ts",
       "default": "./src/oniToolSummary.ts"
     },
-    "./relay": {
-      "types": "./src/relay/index.ts",
-      "default": "./src/relay/index.ts"
-    },
     "./state/auth": {
       "types": "./src/state/auth.ts",
       "default": "./src/state/auth.ts"
@@ -258,10 +254,6 @@
     "./state/project-grouping": {
       "types": "./src/state/projectGrouping.ts",
       "default": "./src/state/projectGrouping.ts"
-    },
-    "./state/relay": {
-      "types": "./src/state/relayDiscovery.ts",
-      "default": "./src/state/relayDiscovery.ts"
     },
     "./state/review": {
       "types": "./src/state/review.ts",
@@ -545,7 +537,6 @@
     "test": "vp test run"
   },
   "dependencies": {
-    "@pierre/diffs": "catalog:",
     "@onicode/contracts": "workspace:*",
     "@onicode/provider-acp-registry": "workspace:*",
     "@onicode/provider-core": "workspace:*",
@@ -560,6 +551,7 @@
     "@onicode/shared": "workspace:*",
     "@onicode/source-control-core": "workspace:*",
     "@onicode/source-control-definitions": "workspace:*",
+    "@pierre/diffs": "catalog:",
     "effect": "catalog:",
     "jszip": "3.10.1",
     "three": "0.180.0"
