@@ -62,7 +62,7 @@ import {
 import type { ToolCallVisibility } from "@onicode/contracts/settings";
 import { renderAssistantCitationsAsText } from "@onicode/shared/assistantCitations";
 import { encodeComposerContextFragment } from "@onicode/shared/composerContextClipboard";
-import { hostedThreadLink, parseThreadLinkHref } from "@onicode/shared/threadLinks";
+import { parseThreadLinkHref } from "@onicode/shared/threadLinks";
 import { PROMPT_LINK_MAX_PROMPT_LENGTH } from "@onicode/shared/promptLinks";
 import {
   parseComposerContextHref,
@@ -3041,10 +3041,7 @@ export const ThreadFeed = memo(function ThreadFeed({
         return {
           title:
             appAtomRegistry.get(environmentThreadShells.threadShellAtom(thread))?.title ?? "Thread",
-          actions: [
-            { id: "open-thread", title: "Open thread" },
-            { id: "copy-thread-link", title: "Copy link" },
-          ],
+          actions: [{ id: "open-thread", title: "Open thread" }],
         };
       }
       const target = resolveFileChipTarget(href, props.workspaceRoot);
@@ -3061,7 +3058,6 @@ export const ThreadFeed = memo(function ThreadFeed({
       const thread = resolveLinkedThread(href);
       if (thread) {
         if (actionId === "open-thread") onMarkdownLinkPress(href);
-        else if (actionId === "copy-thread-link") copyTextWithHaptic(hostedThreadLink(thread));
         return;
       }
       const target = resolveFileChipTarget(href, props.workspaceRoot);

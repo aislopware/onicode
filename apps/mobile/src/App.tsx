@@ -18,7 +18,6 @@ import {
   type NavigationState,
 } from "@react-navigation/native";
 import { pipe } from "effect/Function";
-import { DEFAULT_HOSTED_APP_URL } from "@onicode/shared/connectAuth";
 
 import { RegistryContext } from "@effect/atom-react";
 import { ProjectChipIconRasterizer } from "./native/ProjectChipIconImages";
@@ -117,13 +116,7 @@ function getAppStateFromPath(path: string, options: Parameters<typeof getStateFr
 }
 
 const appLinking = {
-  prefixes: [
-    Linking.createURL("/"),
-    "onicode://",
-    "onicode-dev://",
-    "onicode-preview://",
-    DEFAULT_HOSTED_APP_URL,
-  ],
+  prefixes: [Linking.createURL("/"), "onicode://", "onicode-dev://", "onicode-preview://"],
   config: { initialRouteName: "Home" },
   filter: shouldHandleAppLink,
   getInitialURL: async () => (await Linking.getInitialURL()) ?? (await launchWorkspaceURL()),

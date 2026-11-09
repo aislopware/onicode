@@ -110,17 +110,8 @@ const SETTINGS_SEARCH_TERMS = {
     "clone cache",
   ],
   SettingsEnvironmentMaintenance: ["updates", "provider updates", "restart", "manage environments"],
-  SettingsAbout: [
-    "version",
-    "diagnostics",
-    "client storage",
-    "cache",
-    "legal",
-    "privacy",
-    "terms",
-    "open source licenses",
-  ],
-} satisfies Partial<Record<SettingsPageTarget | "account", readonly string[]>>;
+  SettingsAbout: ["version", "diagnostics", "client storage", "cache", "open source licenses"],
+} satisfies Partial<Record<SettingsPageTarget, readonly string[]>>;
 const termsById: ReadonlyMap<string, readonly string[]> = new Map(
   Object.entries(SETTINGS_SEARCH_TERMS),
 );

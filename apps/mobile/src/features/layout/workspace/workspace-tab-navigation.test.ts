@@ -217,9 +217,4 @@ describe("Settings links", () => {
     ]);
     expect(restoreSettingsLinkState(bare, undefined)).toBe(bare);
   });
-
-  it("opens the legal link as a modal over the workspace", () => {
-    const state = { routes: [{ name: "Home" }, { name: "SettingsLegal" }] };
-    expect(restoreSettingsLinkState(state, "SettingsAppearance")).toBe(state);
-  });
 });

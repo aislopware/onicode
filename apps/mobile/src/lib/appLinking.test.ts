@@ -21,7 +21,7 @@ describe("shouldHandleAppLink", () => {
     "onicode://threads/env-1/thread-1",
     "onicode://pair?pairingUrl=x",
     "onicode-dev://settings/usage?tab=limits",
-    "https://app.t3.codes/threads/env/thread?prompt=Fix%20expo-development-client%20and%20onicode://expo-sharing",
+    "onicode://threads/env/thread?prompt=Fix%20expo-development-client%20and%20onicode://expo-sharing",
   ])("handles path-bearing URL %s", (url) => {
     expect(shouldHandleAppLink(url)).toBe(true);
   });
