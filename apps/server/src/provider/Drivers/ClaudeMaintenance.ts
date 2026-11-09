@@ -19,9 +19,25 @@ import * as HttpClientResponse from "effect/http/HttpClientResponse";
 import { resolveClaudeHomePath } from "./ClaudeHome.ts";
 
 const NATIVE_RELEASES = "https://downloads.claude.ai/claude-code-releases";
-const UpdateChannelSettings = fromLenientJson(
-  Schema.Struct({ autoUpdatesChannel: Schema.optional(Schema.Literals(["latest", "stable"])) }),
+const decodeUpdateChannelSettings = Schema.decodeUnknownEffect(
+  fromLenientJson(
+    Schema.Struct({ autoUpdatesChannel: Schema.optional(Schema.Literals(["latest", "stable"])) }),
+  ),
 );
+const decodeAutoUpdaterSettings = Schema.decodeUnknownEffect(
+  fromLenientJson(
+    Schema.Struct({
+      env: Schema.optional(Schema.Struct({ DISABLE_AUTOUPDATER: Schema.optional(Schema.Unknown) })),
+    }),
+  ),
+);
+
+// Claude Code's own truthiness test for environment switches.
+function isClaudeEnvTruthy(value: unknown): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string" && typeof value !== "number") return false;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
 const NativeVersion = Schema.String.check(Schema.isPattern(/^\d+\.\d+\.\d+$/));
 
 const update = makePackageManagedProviderMaintenanceResolver({
@@ -63,22 +79,45 @@ const readUpdateChannel = Effect.fn("ClaudeMaintenance.readUpdateChannel")(funct
       .filter((name) => name.endsWith(".json") && !name.startsWith("."))
       .toSorted()
       .map((name) => path.join(dropInDirectory, name)),
+    path.join(configDirectory, "remote-settings.json"),
   ];
-  const channels = yield* Effect.forEach(settingsPaths, (settingsPath) =>
+  const settings = yield* Effect.forEach(settingsPaths, (settingsPath) =>
     fs.readFileString(settingsPath).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(UpdateChannelSettings)),
-      Effect.map((settings) => settings.autoUpdatesChannel),
-      Effect.orElseSucceed(() => undefined),
+      Effect.flatMap((contents) =>
+        Effect.all([
+          decodeUpdateChannelSettings(contents).pipe(
+            Effect.map((decoded) => decoded.autoUpdatesChannel),
+            Effect.orElseSucceed(() => undefined),
+          ),
+          decodeAutoUpdaterSettings(contents).pipe(
+            Effect.map((decoded) => decoded.env?.DISABLE_AUTOUPDATER),
+            Effect.orElseSucceed(() => undefined),
+          ),
+        ]),
+      ),
+      Effect.orElseSucceed(() => [undefined, undefined] as const),
     ),
   );
-  return channels.findLast((channel) => channel !== undefined) ?? "latest";
+  const autoUpdater = settings
+    .map(([, disabled]) => disabled)
+    .findLast((disabled) => disabled !== undefined);
+  return {
+    channel:
+      settings.map(([channel]) => channel).findLast((channel) => channel !== undefined) ?? "latest",
+    autoUpdatesDisabled: isClaudeEnvTruthy(autoUpdater ?? environment.DISABLE_AUTOUPDATER),
+  };
 });
 
 const resolveClaudeMaintenance = Effect.fn("ClaudeMaintenance.resolve")(function* (
   capabilities: ProviderMaintenanceCapabilities,
 ) {
+  const { channel, autoUpdatesDisabled } = yield* readUpdateChannel();
+  // Whoever turned Claude's updater off owns its version, so no release feed is asked.
+  if (autoUpdatesDisabled) {
+    const { lookupLatestVersion: _, ...rest } = capabilities;
+    return { ...rest, latestVersion: null };
+  }
   if (capabilities.update?.lockKey !== "claudeAgent-native") return capabilities;
-  const channel = yield* readUpdateChannel();
   const client = yield* HttpClient.HttpClient;
   const url = `${NATIVE_RELEASES}/${channel}`;
   return {

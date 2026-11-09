@@ -192,10 +192,36 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
       advisory: "behind_latest",
       npm: true,
     },
+    {
+      name: "updater turned off by server-managed settings",
+      settings: '{"env":{"DISABLE_AUTOUPDATER":"1"}}',
+      settingsFile: "remote-settings.json",
+      channel: null,
+      body: "2.1.315",
+      status: 200,
+      expected: null,
+      advisory: "unknown",
+      npm: false,
+    },
+    {
+      name: "npm install with the updater turned off",
+      settings: '{"env":{"DISABLE_AUTOUPDATER":true}}',
+      channel: null,
+      body: "",
+      status: 200,
+      expected: null,
+      advisory: "unknown",
+      npm: true,
+    },
   ])("advertises the installable version for $name", (row) =>
     Effect.gen(function* () {
       const f = yield* fixture(row.npm);
-      if (row.settings) yield* f.fs.writeFileString(f.settingsPath, row.settings);
+      if (row.settings) {
+        yield* f.fs.writeFileString(
+          f.settingsPath.replace(/settings\.json$/, row.settingsFile ?? "settings.json"),
+          row.settings,
+        );
+      }
       const requests: string[] = [];
       const client = HttpClient.make((request) => {
         requests.push(request.url);
@@ -221,12 +247,15 @@ it.layer(NodeServices.layer)("ClaudeMaintenance", (it) => {
         status: row.advisory,
         latestVersion: row.expected,
       });
-      expect(requests).toHaveLength(1);
-      expect(requests[0]).toMatch(
-        row.npm ? /registry\.npmjs\.org/ : new RegExp(`claude-code-releases/${row.channel}$`),
-      );
+      const expectedRequests = row.channel === null ? 0 : 1;
+      expect(requests).toHaveLength(expectedRequests);
+      if (expectedRequests > 0) {
+        expect(requests[0]).toMatch(
+          row.npm ? /registry\.npmjs\.org/ : new RegExp(`claude-code-releases/${row.channel}$`),
+        );
+      }
       yield* enrich;
-      expect(requests).toHaveLength(1);
+      expect(requests).toHaveLength(expectedRequests);
     }).pipe(Effect.scoped),
   );
 
