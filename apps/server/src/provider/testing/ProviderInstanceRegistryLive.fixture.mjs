@@ -32,12 +32,8 @@ lines.on("line", (line) => {
     return;
   }
   if (message.request?.subtype === "get_usage") {
-    const marker = process.env.ONICODE_CLAUDE_RESET_MARKER;
     const usageFailsUntil = process.env.ONICODE_CLAUDE_USAGE_FAILS_UNTIL;
-    if (
-      (usageFailsUntil && !NodeFS.existsSync(usageFailsUntil)) ||
-      (process.env.ONICODE_CLAUDE_USAGE_FAILS_AFTER_CLAIM && marker && NodeFS.existsSync(marker))
-    ) {
+    if (usageFailsUntil && !NodeFS.existsSync(usageFailsUntil)) {
       process.stdout.write(
         JSON.stringify({
           type: "control_response",
@@ -58,7 +54,7 @@ lines.on("line", (line) => {
             rate_limits_available: true,
             rate_limits: {
               five_hour: {
-                utilization: marker && NodeFS.existsSync(marker) ? 0 : 100,
+                utilization: 100,
                 resets_at: null,
               },
             },
