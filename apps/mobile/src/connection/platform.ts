@@ -3,18 +3,11 @@ import {
   PlatformConnectionSource,
   Persistence,
 } from "@onicode/client-runtime/platform";
-import {
-  ConnectionBlockedError,
-  ConnectionTransientError,
-  Connectivity,
-  Wakeups,
-} from "@onicode/client-runtime/connection";
-import { managedRelayAccountChanges, managedRelaySessionAtom } from "@onicode/client-runtime/relay";
+import { ConnectionBlockedError, Connectivity, Wakeups } from "@onicode/client-runtime/connection";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import Constants from "expo-constants";
@@ -23,7 +16,6 @@ import { AppState } from "react-native";
 
 import { authClientMetadata } from "../lib/authClientMetadata";
 import * as Runtime from "../lib/runtime";
-import { appAtomRegistry } from "../state/atom-registry";
 import { clearThreadOutboxEnvironment } from "../state/thread-outbox-removal";
 import { clearComposerDraftsEnvironment } from "../state/use-composer-drafts";
 import { clearThreadComposerErrorsForEnvironment } from "../state/thread-composer-error";
@@ -140,9 +132,6 @@ const layerWakeups = Wakeups.layer({
           (subscription) => Effect.sync(() => subscription.remove()),
         ).pipe(Effect.asVoid),
       ),
-      managedRelayAccountChanges(appAtomRegistry).pipe(
-        Stream.map(() => "credentials-changed" as const),
-      ),
       networkPathChanges,
     ],
     { concurrency: "unbounded" },
@@ -152,35 +141,15 @@ const layerWakeups = Wakeups.layer({
 const layerCapabilities = Layer.succeedContext(
   Context.make(
     ClientCapabilities.CloudSession,
+    // Onicode has no cloud account; client-runtime still asks for one.
     ClientCapabilities.CloudSession.of({
-      identity: Effect.sync(() =>
-        Option.fromNullishOr(appAtomRegistry.get(managedRelaySessionAtom)),
+      identity: Effect.succeedNone,
+      clerkToken: Effect.fail(
+        new ConnectionBlockedError({
+          reason: "unsupported",
+          detail: "Cloud environments are not supported.",
+        }),
       ),
-      clerkToken: Effect.gen(function* () {
-        const session = appAtomRegistry.get(managedRelaySessionAtom);
-        if (session === null) {
-          return yield* new ConnectionBlockedError({
-            reason: "authentication",
-            detail: "Sign in to T3 Connect to connect this environment.",
-          });
-        }
-        const token = yield* session.readClerkToken().pipe(
-          Effect.mapError(
-            (error) =>
-              new ConnectionTransientError({
-                reason: "network",
-                detail: error.message,
-              }),
-          ),
-        );
-        if (token === null) {
-          return yield* new ConnectionBlockedError({
-            reason: "authentication",
-            detail: "The T3 Connect session is unavailable.",
-          });
-        }
-        return token;
-      }),
     }),
   ).pipe(
     Context.add(

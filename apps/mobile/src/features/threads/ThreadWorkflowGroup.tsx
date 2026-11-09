@@ -199,7 +199,10 @@ function WorkflowMemberRow(props: {
             </Text>
             <Text
               textRole="label"
-              className={cn("shrink-0 font-oni-medium", SUBAGENT_TONE_TEXT_CLASS[presentation.tone])}
+              className={cn(
+                "shrink-0 font-oni-medium",
+                SUBAGENT_TONE_TEXT_CLASS[presentation.tone],
+              )}
             >
               {presentation.statusLabel}
             </Text>

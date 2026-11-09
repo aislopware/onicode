@@ -75,7 +75,9 @@ export function WorkspaceEmptyDetail(props: {
                   className="mt-2 flex-row items-center gap-2 rounded-full bg-primary px-5 py-3 active:opacity-70"
                   onPress={props.onStartNewTask}
                 >
-                  <Text className="text-base font-oni-bold text-primary-foreground">New thread</Text>
+                  <Text className="text-base font-oni-bold text-primary-foreground">
+                    New thread
+                  </Text>
                 </Pressable>
               )
             ) : null}

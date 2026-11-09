@@ -4,7 +4,6 @@ import type { SettingsPageTarget } from "./components/settings-page-targets";
 
 /** What each page holds besides its row's label, so search finds a setting by its own name. */
 const SETTINGS_SEARCH_TERMS = {
-  account: ["sign in", "sign out", "login", "clerk", "connect"],
   SettingsEnvironments: [
     "servers",
     "connections",

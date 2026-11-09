@@ -49,7 +49,9 @@ export function useNewTaskProjectDefaults(project: EnvironmentProject | null) {
   );
   const oniProjectFileData = oniProjectFileQuery.data as ProjectReadFileResult | null;
   const oniProjectFile =
-    oniProjectFileData === null || oniProjectFileData.exists === false || oniProjectFileData.truncated
+    oniProjectFileData === null ||
+    oniProjectFileData.exists === false ||
+    oniProjectFileData.truncated
       ? null
       : parseOniProjectFile(oniProjectFileData.contents);
   const projectSettings = resolveProjectSettings(

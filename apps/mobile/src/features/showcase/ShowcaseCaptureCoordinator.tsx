@@ -268,9 +268,7 @@ export function installShowcaseCapture(
 
     const navigationReady = rootNavigationRef.isReady();
     const rootState = navigationReady ? rootNavigationRef.getRootState() : undefined;
-    const scene = rootState
-      ? showcaseSceneOnScreen(pathnameFromState(rootState))
-      : null;
+    const scene = rootState ? showcaseSceneOnScreen(pathnameFromState(rootState)) : null;
 
     if (requestedScene !== null && hasFixture && showcaseThread && rootState) {
       const navigation = { requestedScene, scene, thread: showcaseThread };

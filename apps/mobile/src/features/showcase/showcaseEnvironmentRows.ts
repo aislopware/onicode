@@ -1,6 +1,3 @@
-import { EnvironmentId } from "@onicode/contracts";
-
-import type { RelayEnvironmentView } from "../connection/useConnectionController";
 import type { ConnectedEnvironmentSummary } from "../../state/remote-runtime-types";
 
 const SHOWCASE_LOCAL_ENVIRONMENT_DISPLAY_URLS: Readonly<Record<string, string>> = {
@@ -29,43 +26,3 @@ export function resolveShowcaseEnvironmentUpdateDisplayUrl(input: {
     ? input.actualDisplayUrl
     : input.submittedDisplayUrl;
 }
-
-const pocketPiId = EnvironmentId.make("showcase-pocket-pi");
-const pocketPiEndpoint = {
-  httpBaseUrl: "https://pocket-pi.onicode.sh",
-  wsBaseUrl: "wss://pocket-pi.onicode.sh",
-  providerKind: "oni_relay" as const,
-};
-
-export const SHOWCASE_CONNECTED_CLOUD_ENVIRONMENTS: ReadonlyArray<ConnectedEnvironmentSummary> = [
-  {
-    environmentId: EnvironmentId.make("showcase-aurora-gpu"),
-    environmentLabel: "Aurora GPU Pod",
-    displayUrl: "https://aurora-gpu.onicode.sh",
-    isRelayManaged: true,
-    isEnabled: true,
-    connectionState: "connected",
-    connectionError: null,
-    connectionErrorTraceId: null,
-  },
-];
-
-export const SHOWCASE_AVAILABLE_CLOUD_ENVIRONMENTS: ReadonlyArray<RelayEnvironmentView> = [
-  {
-    environment: {
-      environmentId: pocketPiId,
-      label: "Pocket Pi",
-      endpoint: pocketPiEndpoint,
-      linkedAt: "2026-07-16T08:00:00.000Z",
-    },
-    availability: "online",
-    status: {
-      environmentId: pocketPiId,
-      endpoint: pocketPiEndpoint,
-      status: "online",
-      checkedAt: "2026-07-16T08:41:00.000Z",
-    },
-    error: null,
-    traceId: null,
-  },
-];
