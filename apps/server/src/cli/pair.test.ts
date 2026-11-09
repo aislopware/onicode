@@ -27,8 +27,8 @@ import { cli } from "../binCli.ts";
 import {
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
-} from "../cloud/serviceProtocol.ts";
-import * as ServiceLauncherClient from "../cloud/serviceLauncherClient.ts";
+} from "../service/serviceProtocol.ts";
+import * as ServiceLauncherClient from "../service/serviceLauncherClient.ts";
 import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
@@ -316,7 +316,9 @@ describe("onicode pair", () => {
   it.effect("ignores runtime state whose recorded pid is no longer alive", () =>
     withDescriptorServer((origin) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "onicode pair pid test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "onicode pair pid test-"),
+        );
         const statePath = NodePath.join(baseDir, "userdata", "server-runtime.json");
         const state = yield* makePersistedServerRuntimeState({
           config: { host: "127.0.0.1", devUrl: undefined },
@@ -335,7 +337,7 @@ describe("onicode pair", () => {
           typeof error === "object" && error !== null && "cause" in error ? error.cause : error,
         );
         assert.include(rendered, "No running Onicode server found.");
-        for (const subcommand of ["serve", "connect"]) {
+        for (const subcommand of ["serve"]) {
           const { command } = yield* resolveHostCliCommand(subcommand, ["--base-dir", baseDir]);
           assert.include(rendered, `\`${command}\``);
         }
@@ -545,7 +547,9 @@ describe("auth pairing create --base-url", () => {
     "rejects %s before issuing a token",
     (baseUrl) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-cli-base-url-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "oni-cli-base-url-test-"),
+        );
         const error = yield* runCli([
           "auth",
           "pairing",
@@ -577,7 +581,9 @@ describe("auth pairing create --base-url", () => {
     "prints a pair URL for %s",
     (baseUrl) =>
       Effect.gen(function* () {
-        const baseDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-cli-base-url-test-"));
+        const baseDir = NodeFS.mkdtempSync(
+          NodePath.join(NodeOS.tmpdir(), "oni-cli-base-url-test-"),
+        );
         const output = yield* captureStdout(
           runCli([
             "auth",

@@ -76,7 +76,7 @@ const policies = (): ReadonlyArray<Policy> => [
   {
     id: "Clients",
     title: "Allowed clients",
-    help: "What may connect to Onicode on this machine.\n\nWithout Remote, Onicode only listens on this machine, does not create pairing links, signs out devices that paired earlier, and turns T3 Connect off. Check at least one client.\n\nDisabled or Not Configured: no restriction.",
+    help: "What may connect to Onicode on this machine.\n\nWithout Remote, Onicode only listens on this machine, does not create pairing links, signs out devices that paired earlier, and turns public access off. Check at least one client.\n\nDisabled or Not Configured: no restriction.",
     elements: [
       {
         kind: "checkbox",
@@ -96,16 +96,10 @@ const policies = (): ReadonlyArray<Policy> => [
         kind: "checkbox",
         list: "Clients",
         name: "remote",
-        label: "Remote: phones, other computers, app.t3.codes",
+        label: "Remote: phones and other computers",
         defaultChecked: false,
       },
     ],
-  },
-  {
-    id: "Connect",
-    title: "Allow T3 Connect",
-    help: "Disabled turns T3 Connect off and unlinks this machine. Other remote access still follows Allowed clients.\n\nEnabled or Not Configured leaves T3 Connect available.",
-    toggle: "Connect",
   },
   {
     id: "WebhookTasks",
@@ -118,12 +112,6 @@ const policies = (): ReadonlyArray<Policy> => [
     title: "Allow importing browser cookies",
     help: "Disabled stops users from importing cookies from another browser into Onicode's browser.",
     toggle: "BrowserCookieImport",
-  },
-  {
-    id: "Telemetry",
-    title: "Allow usage data",
-    help: "Disabled stops Onicode from sending product usage data and relay connection traces. Enabled cannot turn them on for a user who turned them off.",
-    toggle: "Telemetry",
   },
   {
     id: "AllowedDrivers",

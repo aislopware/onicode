@@ -16,7 +16,7 @@ import {
   generatedWindowsShimTarget,
   isVersionExecutable,
   recordPinnedRuntimeLauncher,
-} from "../cloud/pinnedRuntime.ts";
+} from "../service/pinnedRuntime.ts";
 import { detectCliRunner, resolveCliCommand, resolveEntryPath } from "./invocation.ts";
 
 export class CliInstallError extends Schema.TaggedError<CliInstallError>()("CliInstallError", {
@@ -51,11 +51,9 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
   const runtime = yield* standaloneRuntime;
   const windows = platform === "win32";
   if (Option.isNone(runtime)) {
-    const script = windows
-      ? "irm https://t3.codes/install.ps1 | iex"
-      : "curl -fsSL https://t3.codes/install.sh | sh";
+    const script = windows ? "scripts/install.ps1" : "scripts/install.sh";
     return yield* new CliInstallError({
-      reason: `Only the standalone onicode can install itself. Use \`${script}\`, or Settings in the desktop app.`,
+      reason: `Only the standalone onicode can install itself. Run ${script} from the Onicode repository, or use Settings in the desktop app.`,
     });
   }
   const { executable, versionsDir, runtimeDir } = runtime.value;

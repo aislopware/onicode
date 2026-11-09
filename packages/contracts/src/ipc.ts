@@ -482,11 +482,6 @@ export const PersistedSavedEnvironmentRecordSchema = Schema.Struct({
   createdAt: Schema.String,
   lastConnectedAt: Schema.NullOr(Schema.String),
   desktopSsh: Schema.optionalKey(DesktopSshEnvironmentTargetSchema),
-  relayManaged: Schema.optionalKey(
-    Schema.Struct({
-      relayUrl: Schema.String,
-    }),
-  ),
 });
 export type PersistedSavedEnvironmentRecord = typeof PersistedSavedEnvironmentRecordSchema.Type;
 
@@ -1031,7 +1026,6 @@ export type SystemSettingsPane = typeof SystemSettingsPaneSchema.Type;
 
 export interface DesktopBridge {
   getAppBranding: () => DesktopAppBranding | null;
-  getRelayTelemetryEnabled: () => boolean;
   getPathForFile: (file: File) => string;
   getClientPlatform: () => string;
   setNotificationBadge: (badge: { count: number; image: string | null }) => Promise<void>;

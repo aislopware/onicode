@@ -32,16 +32,6 @@ export const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));
 export const PortSchema = Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }));
 
-export const DpopFailureReason = Schema.Literals([
-  "time_window",
-  "key_mismatch",
-  "request_mismatch",
-  "token_mismatch",
-  "replay",
-  "invalid_proof",
-]);
-export type DpopFailureReason = typeof DpopFailureReason.Type;
-
 export const IsoDateTime = Schema.String;
 export type IsoDateTime = typeof IsoDateTime.Type;
 
@@ -297,7 +287,7 @@ export type ClientDeviceType = typeof ClientDeviceType.Type;
 export const ClientWebDeployment = Schema.Literals(["hosted", "server"]);
 export type ClientWebDeployment = typeof ClientWebDeployment.Type;
 
-export const ClientConnectionMethod = Schema.Literals(["direct", "ssh", "relay", "unknown"]);
+export const ClientConnectionMethod = Schema.Literals(["direct", "ssh", "unknown"]);
 export type ClientConnectionMethod = typeof ClientConnectionMethod.Type;
 
 export const ProviderItemId = makeEntityId("ProviderItemId");

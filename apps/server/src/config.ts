@@ -20,11 +20,11 @@ import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
 import { type ReleaseChannel, releaseResourceAttributes } from "@onicode/shared/releaseResource";
 import packageJson from "../package.json" with { type: "json" };
 
-// Official release workflows set this telemetry channel; other builds report dev.
+// Official release workflows set this channel; other builds report dev.
 // Unlike __ONICODE_BUILD_CHANNEL__, this is not the sign-in page's latest/nightly channel.
-declare const __ONICODE_TELEMETRY_CHANNEL__: ReleaseChannel | undefined;
-export const telemetryChannel: ReleaseChannel =
-  typeof __ONICODE_TELEMETRY_CHANNEL__ === "undefined" ? "dev" : __ONICODE_TELEMETRY_CHANNEL__;
+declare const __ONICODE_RELEASE_CHANNEL__: ReleaseChannel | undefined;
+export const releaseChannel: ReleaseChannel =
+  typeof __ONICODE_RELEASE_CHANNEL__ === "undefined" ? "dev" : __ONICODE_RELEASE_CHANNEL__;
 
 export const DEFAULT_PORT = 3773;
 
@@ -50,7 +50,6 @@ export interface ServerDerivedPaths {
   readonly providerLogsDir: string;
   readonly providerEventLogPath: string;
   readonly terminalLogsDir: string;
-  readonly anonymousIdPath: string;
   readonly environmentIdPath: string;
   readonly serverRuntimeStatePath: string;
   readonly secretsDir: string;
@@ -128,7 +127,7 @@ export const otlpResource = (
     "service.runtime": "oni-server",
     "onicode.server.managed_by": config.mode === "desktop" ? "desktop" : "standalone",
     "service.instance.id": processServiceInstanceId(config.otelEnvironment.resourceAttributes),
-    ...releaseResourceAttributes(telemetryChannel, config.otelEnvironment.resourceAttributes),
+    ...releaseResourceAttributes(releaseChannel, config.otelEnvironment.resourceAttributes),
     "host.name": config.otelEnvironment.resourceAttributes["host.name"] || hostName,
     ...nodeProcessRuntimeAttributes(),
   },
@@ -167,7 +166,6 @@ export const deriveServerPaths = Effect.fn(function* (
     providerLogsDir,
     providerEventLogPath: join(providerLogsDir, "events.log"),
     terminalLogsDir: join(logsDir, "terminals"),
-    anonymousIdPath: join(stateDir, "anonymous-id"),
     environmentIdPath: join(stateDir, "environment-id"),
     serverRuntimeStatePath: join(stateDir, "server-runtime.json"),
     secretsDir: join(stateDir, "secrets"),
@@ -189,7 +187,6 @@ export const ensureServerDirectories = Effect.fn(function* (derivedPaths: Server
       fs.makeDirectory(path.dirname(derivedPaths.keybindingsConfigPath), { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true }),
       fs.makeDirectory(derivedPaths.providerStatusCacheDir, { recursive: true }),
-      fs.makeDirectory(path.dirname(derivedPaths.anonymousIdPath), { recursive: true }),
       fs.makeDirectory(path.dirname(derivedPaths.serverRuntimeStatePath), { recursive: true }),
     ],
     { concurrency: "unbounded" },

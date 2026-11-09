@@ -1,7 +1,4 @@
 import * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
-import type { RelayManagedEndpointRuntimeConfig } from "@onicode/contracts/relay";
-import * as Random from "effect/Random";
-import * as EnvironmentKeys from "./cloud/environmentKeys.ts";
 import * as AssetSigner from "./assets/AssetSigner.ts";
 import * as DatabaseStorage from "./persistence/DatabaseStorage.ts";
 import * as StorageCleanup from "./storageCleanup.ts";
@@ -16,11 +13,8 @@ import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { EnvironmentHttpApi, type RepositoryIdentity } from "@onicode/contracts";
-import * as Cause from "effect/Cause";
-import * as Duration from "effect/Duration";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
-import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Stream from "effect/Stream";
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/http";
@@ -53,9 +47,6 @@ import * as PullRequestFilesViewed from "./persistence/PullRequestFilesViewed.ts
 import * as PullRequestReviewGuides from "./persistence/PullRequestReviewGuides.ts";
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
-import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
-import * as DelegatedTaskAnalytics from "./telemetry/DelegatedTaskAnalytics.ts";
-import * as ProviderUsageAnalytics from "./telemetry/ProviderUsageAnalytics.ts";
 import * as ModelManifest from "./provider/ModelManifest.ts";
 import * as ResetCreditCoordinator from "./provider/resetCreditCoordinator.ts";
 import * as EventNdjsonLogger from "./provider/EventNdjsonLogger.ts";
@@ -100,8 +91,6 @@ import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerOwnership from "./serverOwnership.ts";
-import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
-import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as ManagedLimits from "./policy/managedLimits.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
@@ -143,44 +132,20 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as DirectEndpoints from "./environment/DirectEndpoints.ts";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as AuthHttp from "./auth/http.ts";
-import * as ReplayMarkers from "./auth/replayMarkers.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
 import * as CodexManagedTokenBroker from "./provider/CodexManagedTokenBroker.ts";
 import * as WebhookRoute from "./scheduledTasks/webhookRoute.ts";
-import * as RelayDeliveryProof from "./scheduledTasks/RelayDeliveryProof.ts";
-import * as HeldHooksWaker from "./relay/HeldHooksWaker.ts";
 import * as McpOAuth from "./auth/McpOAuth.ts";
 import * as McpOAuthHttp from "./auth/mcpOAuthHttp.ts";
-import {
-  relayHookBaseUrl,
-  ScheduledTaskWebhookOrigin,
-} from "./scheduledTasks/ScheduledTaskService.ts";
-import {
-  CLOUD_ENDPOINT_RUNTIME_CONFIG,
-  decodeRuntimeConfig,
-  RELAY_URL_SECRET,
-} from "./cloud/config.ts";
+import { ScheduledTaskWebhookOrigin } from "./scheduledTasks/ScheduledTaskService.ts";
+import * as PublicAccess from "./publicAccess/PublicAccess.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as EnvironmentAuthPolicy from "./auth/EnvironmentAuthPolicy.ts";
-import * as CloudHttp from "./cloud/http.ts";
 import * as GuestHttp from "./guest/http.ts";
-import * as CloudLink from "./cloud/CloudLink.ts";
-import * as ConnectReachability from "./cloud/ConnectReachability.ts";
-import { pendingServiceUpdateExists } from "./cloud/updateHandoff.ts";
-import * as RelayTracing from "./cloud/relayTracing.ts";
-import * as CloudManagedEndpointRuntime from "./cloud/ManagedEndpointRuntime.ts";
-import {
-  MANAGED_TUNNEL_FIRST_REGISTRATION_JITTER,
-  makeManagedTunnelRecovery,
-  managedTunnelStartupAction,
-  retryDesiredLinkReconcile,
-  retryManagedTunnelRegistration,
-} from "./cloud/managedTunnelStartup.ts";
-import * as CloudCliTokenManager from "./cloud/CliTokenManager.ts";
-import * as CloudCliState from "./cloud/CliState.ts";
-import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
+import { EnvironmentPublicHttpApi } from "@onicode/contracts";
+import * as ServerSelfUpdate from "./service/selfUpdate.ts";
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
-import * as ServiceLauncherClient from "./cloud/serviceLauncherClient.ts";
+import * as ServiceLauncherClient from "./service/serviceLauncherClient.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as HostResources from "./resourceTelemetry/HostResources.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
@@ -212,12 +177,12 @@ import { acceptsPrivateNetworkConnection, loopbackUrlHostForAddress } from "./st
 import * as OrchestrationHttp from "./orchestration-v2/http.ts";
 import * as ProjectHttp from "./project/http.ts";
 import * as NetService from "@onicode/shared/Net";
-import * as RelayClient from "@onicode/shared/relayClient";
 import {
   disableTailscaleServe,
   ensureTailscaleServe,
   readTailscaleServeRoutesTo,
   readTailscaleStatus,
+  layerTailscaleFunnel,
 } from "@onicode/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 
@@ -309,33 +274,6 @@ const layerResourceDiagnostics = Layer.mergeAll(
   ProcessResourceMonitor.layer.pipe(Layer.provide(layerResourceTelemetry)),
   ProcessGroupMetrics.layer.pipe(Layer.provide(layerResourceTelemetry)),
 );
-
-const layerRelayClient = Layer.unwrap(
-  Effect.gen(function* () {
-    const config = yield* ServerConfig.ServerConfig;
-    const policy = yield* ManagedPolicy.ManagedPolicy;
-    const layerCloudflared = RelayClient.layerCloudflared({ baseDir: config.baseDir });
-    if (ManagedLimits.allowsConnect(policy)) return layerCloudflared;
-    // The connector only carries T3 Connect, so a policy without Connect never installs one.
-    const refused = Effect.fn("RelayClient.installRefusedByPolicy")(function* () {
-      return yield* new RelayClient.RelayClientInstallError({
-        reason: "managed_by_policy",
-        message: ManagedLimits.refuseConnect(policy).message,
-      });
-    });
-    return Layer.effect(
-      RelayClient.RelayClient,
-      Effect.gen(function* () {
-        const relayClient = yield* RelayClient.RelayClient;
-        return RelayClient.RelayClient.of({
-          ...relayClient,
-          install: refused(),
-          installWithProgress: refused,
-        });
-      }),
-    ).pipe(Layer.provide(layerCloudflared));
-  }),
-).pipe(Layer.provide(ManagedPolicy.layer));
 
 const layerHttpServer = Layer.unwrap(
   Effect.gen(function* () {
@@ -533,40 +471,16 @@ const layerAuth = EnvironmentAuth.layer.pipe(
   Layer.provide(ServerSecretStore.layer),
 );
 
-const layerCloudManagedEndpointRuntime = Layer.mergeAll(
-  layerRelayClient,
-  CloudManagedEndpointRuntime.layer.pipe(
-    Layer.provide(ServerSecretStore.layer),
-    Layer.provide(layerRelayClient),
-  ),
-);
-
 const layerScheduledTaskWebhookOrigin = Layer.effect(
   ScheduledTaskWebhookOrigin,
   Effect.gen(function* () {
-    const secrets = yield* ServerSecretStore.ServerSecretStore;
-    return Effect.gen(function* () {
-      const [relayUrl, tunnelConfig] = yield* Effect.all([
-        secrets.get(RELAY_URL_SECRET),
-        secrets.get(CLOUD_ENDPOINT_RUNTIME_CONFIG),
-      ]).pipe(Effect.orElseSucceed(() => [Option.none(), Option.none()] as const));
-      if (Option.isNone(relayUrl) || Option.isNone(tunnelConfig)) {
-        return { relayHookBaseUrl: null };
-      }
-      const config = decodeRuntimeConfig(new TextDecoder().decode(tunnelConfig.value));
-      return {
-        relayHookBaseUrl: relayHookBaseUrl({
-          relayUrl: new TextDecoder().decode(relayUrl.value),
-          tunnelName: Option.isSome(config) ? config.value.tunnelName : undefined,
-        }),
-      };
-    });
+    const access = yield* PublicAccess.PublicAccess;
+    return Effect.map(access.origin, (publicOrigin) => ({ publicOrigin }));
   }),
-);
+).pipe(Layer.provide(PublicAccess.layer));
 
 const layerOrchestrationV2Runtime = RuntimeLayer.layerProduction.pipe(
   Layer.provide(layerScheduledTaskWebhookOrigin),
-  Layer.provide(ProviderUsageAnalytics.layer),
   Layer.provide(layerCheckpointStore),
   Layer.provide(layerGitWorkflow),
   Layer.provide(
@@ -642,8 +556,6 @@ const layerServerRestart = Layer.effect(
 );
 
 const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
-  AgentAwarenessRelay.layer,
-  HeldHooksWaker.layer,
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
@@ -652,7 +564,6 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
     Layer.provide(layerServerRestart),
   ),
   layerThreadPullRequestWorker,
-  DelegatedTaskAnalytics.layer,
   Layer.effectDiscard(
     Effect.gen(function* () {
       const service = yield* PullRequestSyncReactor.PullRequestSyncReactor;
@@ -682,7 +593,6 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
   ProviderInstallation.layer,
-  ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
@@ -742,17 +652,9 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
   Layer.provideMerge(CodexManagedTokenBroker.layer),
   Layer.provideMerge(layerServerEnvironment),
   Layer.provideMerge(layerAuth),
-  Layer.provideMerge(Layer.mergeAll(AssetSigner.layer, EnvironmentKeys.layer)),
+  Layer.provideMerge(AssetSigner.layer),
   Layer.provideMerge(ServerSecretStore.layer),
-  Layer.provideMerge(
-    Layer.mergeAll(
-      CloudCliTokenManager.layer.pipe(
-        Layer.provide(ServerSecretStore.layer),
-        Layer.provide(ExternalLauncher.layer),
-      ),
-      layerCloudManagedEndpointRuntime,
-    ),
-  ),
+  Layer.provideMerge(PublicAccess.layer),
 );
 
 const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
@@ -761,8 +663,6 @@ const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(
   Layer.provideMerge(layerResourceDiagnostics),
   Layer.provideMerge(TraceDiagnostics.layer),
   Layer.provideMerge(TriageService.layer.pipe(Layer.provide(GitVcsDriver.layer))),
-  // Layers memoize by reference, so this is the same policy the settings layer reads.
-  Layer.provideMerge(AnalyticsService.layer.pipe(Layer.provide(ManagedPolicy.layer))),
   Layer.provideMerge(ExternalLauncher.layer),
   Layer.provideMerge(RemoteOpenTargets.layer),
   Layer.provideMerge(DirectEndpoints.layer),
@@ -783,19 +683,17 @@ const layerMakeRoutes = Layer.mergeAll(
     HttpApiBuilder.layer(EnvironmentHttpApi).pipe(
       Layer.provide(AuthHttp.layer),
       Layer.provide(McpOAuthHttp.layer.pipe(Layer.provide(McpOAuth.layer))),
-      Layer.provide(CloudHttp.layer),
       Layer.provide(OrchestrationHttp.layer),
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
       Layer.provide(speechHttpApiLayer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
-      Layer.provide(WebhookRoute.layer.pipe(Layer.provide(RelayDeliveryProof.layer))),
+      Layer.provide(WebhookRoute.layer),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
     ),
     ServerHttp.layerOtlpTracesProxyRoute,
     ServerHttp.layerAssetRoute,
     ServerHttp.layerAttachmentUploadRoute,
-    GuestHttp.layer,
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
@@ -849,6 +747,13 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerHttp.layerHttpCompression),
 );
 
+/** All that the public listener serves: guest links, the guest page, and webhooks. */
+const layerPublicRoutes = Layer.mergeAll(
+  GuestHttp.layer,
+  HttpApiBuilder.layer(EnvironmentPublicHttpApi).pipe(Layer.provide(WebhookRoute.layerPublic)),
+  ServerHttp.layerPublicStaticRoute,
+).pipe(Layer.provide(ServerHttp.layerHttpCompression));
+
 const layerMakeServer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -859,7 +764,6 @@ const layerMakeServer = Layer.unwrap(
     const layerActivation = Layer.succeed(ServerActivation.ServerActivation, awaitActivation);
     const runtimeStateParked = yield* Deferred.make<void>();
     const tailscaleParked = yield* Deferred.make<void>();
-    const cloudLinkParked = yield* Deferred.make<void>();
     const routesReady = yield* Deferred.make<void>();
     const layerLauncher = ServiceLauncherClient.layer;
 
@@ -989,190 +893,18 @@ const layerMakeServer = Layer.unwrap(
           ),
         )
       : Layer.empty;
-    const layerCloudDesiredLinkReconcile = Layer.effectDiscard(
-      Effect.gen(function* () {
-        const cloudLink = yield* CloudLink.CloudLink;
-        // CloudLink unlinks on startup when the policy turns Connect off; nothing to restore.
-        if (!ManagedLimits.allowsConnect(yield* ManagedPolicy.ManagedPolicy)) {
-          yield* Deferred.succeed(cloudLinkParked, undefined).pipe(Effect.orDie);
-          return;
-        }
-        const releaseManagedTunnel = cloudLink.releaseManagedTunnelOnShutdown().pipe(
-          Effect.timeout("10 seconds"),
-          Effect.tap((released) =>
-            released ? Effect.logInfo("Released the managed tunnel on shutdown") : Effect.void,
-          ),
-          Effect.catchCause((cause) =>
-            Effect.logWarning(
-              "Failed to release the managed tunnel on shutdown; the next link reuses it",
-              { errors: Cause.prettyErrors(cause).map((error) => error.message) },
-            ),
-          ),
-          Effect.asVoid,
-        );
-        // Trials own cleanup immediately after the old server exits, retaining tunnels for commit/rollback unless explicitly stopped.
-        // Other runtimes wait for activation so failed standbys cannot tear down active tunnels.
-        const cleanupBeforeActivation = yield* pendingServiceUpdateExists;
-        if (cleanupBeforeActivation) {
-          yield* Effect.addFinalizer(() => releaseManagedTunnel);
-        }
-        yield* ServerActivation.forkParked(
-          Effect.gen(function* () {
-            if (!cleanupBeforeActivation) {
-              yield* Effect.addFinalizer(() => releaseManagedTunnel);
-            }
-            const server = yield* HttpServer.HttpServer;
-            const address = server.address;
-            if (typeof address === "string" || !("port" in address)) return;
-            const localOrigin = `http://${loopbackUrlHostForAddress(address)}:${address.port}`;
-            const endpointRuntime = yield* CloudManagedEndpointRuntime.CloudManagedEndpointRuntime;
-            const runManagedTunnelRecovery = yield* makeManagedTunnelRecovery({
-              recover: (config: RelayManagedEndpointRuntimeConfig) =>
-                cloudLink.recoverManagedTunnel(localOrigin, config, {
-                  retryRuntimeFailures: true,
-                }),
-              isRetryable: (error) =>
-                CloudLink.shouldRetryCloudLink(error) &&
-                error._tag !== "CloudLinkEndpointUnavailableError",
-            });
-            const recoverManagedTunnel = (config: RelayManagedEndpointRuntimeConfig) =>
-              runManagedTunnelRecovery(config).pipe(
-                Effect.tap((recovered) =>
-                  recovered ? Effect.logInfo("T3 Connect managed tunnel recovered") : Effect.void,
-                ),
-                Effect.catchCause((cause) =>
-                  Cause.hasInterrupts(cause)
-                    ? Effect.interrupt
-                    : Effect.logWarning("Failed to recover the T3 Connect managed tunnel", {
-                        cause,
-                      }),
-                ),
-              );
-            yield* endpointRuntime.recoveryRequests.pipe(
-              Stream.runForEach(recoverManagedTunnel),
-              Effect.forkScoped,
-            );
-            const wantsCliLink = hasCloudPublicConfig
-              ? yield* CloudCliState.readCliDesiredCloudLink.pipe(
-                  Effect.catch((cause) =>
-                    Effect.logWarning("Failed to read the desired T3 Connect link", { cause }).pipe(
-                      Effect.as(false),
-                    ),
-                  ),
-                )
-              : false;
-            // Recover reads so this fiber still registers and consumes recovery requests.
-            const desiredCliLinkMode = wantsCliLink
-              ? yield* CloudCliState.readCliDesiredLinkMode.pipe(
-                  Effect.catch((cause) =>
-                    Effect.logWarning("Failed to read the desired T3 Connect link mode", {
-                      cause,
-                    }).pipe(Effect.as("managed" as const)),
-                  ),
-                )
-              : null;
-            // Publish-only links must not expose the host through old managed configs.
-            const startedConfirmed =
-              desiredCliLinkMode === "publish_only"
-                ? false
-                : yield* cloudLink.startManagedTunnelIfOriginConfirmed(localOrigin).pipe(
-                    Effect.catch((cause) =>
-                      Effect.logWarning("Failed to start the confirmed T3 Connect tunnel", {
-                        cause,
-                      }).pipe(Effect.as(false)),
-                    ),
-                  );
-            const startStoredManagedTunnel = cloudLink
-              .startManagedTunnelIfOriginConfirmed(localOrigin, {
-                requireConfirmedOrigin: false,
-              })
-              .pipe(
-                Effect.tap((started) =>
-                  started
-                    ? Effect.logWarning(
-                        "T3 Connect started the stored tunnel without relay confirmation",
-                      )
-                    : Effect.void,
-                ),
-                Effect.catch((cause) =>
-                  Effect.logWarning("Failed to start the stored T3 Connect tunnel", { cause }),
-                ),
-                Effect.asVoid,
-              );
-            const registerManagedTunnel = retryManagedTunnelRegistration(
-              cloudLink.registerManagedTunnelRecovery(localOrigin, {
-                retryRuntimeFailures: true,
-              }),
-              (error) =>
-                CloudLink.shouldRetryCloudLink(error) &&
-                error._tag !== "CloudLinkEndpointUnavailableError",
-              startedConfirmed ? Effect.void : startStoredManagedTunnel,
-            ).pipe(
-              Effect.tap((result) =>
-                result.status === "ready"
-                  ? Effect.logInfo("T3 Connect managed tunnel recovery registered")
-                  : Effect.void,
-              ),
-              Effect.catchCause((cause) =>
-                Cause.hasInterrupts(cause)
-                  ? Effect.interrupt
-                  : Effect.logWarning("Failed to register T3 Connect managed tunnel recovery", {
-                      cause,
-                    }).pipe(Effect.as({ status: "unavailable" as const })),
-              ),
-            );
-            // Jitter registrations so update waves do not hit the relay simultaneously.
-            if (!startedConfirmed && desiredCliLinkMode !== "publish_only") {
-              const jitter = yield* Random.nextIntBetween(
-                0,
-                Duration.toMillis(MANAGED_TUNNEL_FIRST_REGISTRATION_JITTER),
-              );
-              yield* Effect.sleep(Duration.millis(jitter));
-            }
-            const registration =
-              desiredCliLinkMode === "publish_only"
-                ? { status: "not_linked" as const }
-                : yield* registerManagedTunnel;
-            if (registration.status === "unavailable" && !startedConfirmed) {
-              yield* startStoredManagedTunnel;
-            }
-            const startupAction = managedTunnelStartupAction({ wantsCliLink, registration });
-            if (startupAction.action === "request_recovery") {
-              yield* endpointRuntime.requestRecovery(startupAction.config);
-            }
-            if (startupAction.action === "reconcile_link") {
-              const reconciledMode = yield* cloudLink
-                .reconcileDesiredLinkIfStillDesired(localOrigin)
-                .pipe(
-                  (reconcile) =>
-                    retryDesiredLinkReconcile(reconcile, CloudLink.shouldRetryCloudLink, (cause) =>
-                      Effect.logWarning(
-                        "T3 Connect relay is still unavailable; retrying the desired link in the background",
-                        { cause },
-                      ),
-                    ),
-                  Effect.tap((mode) =>
-                    mode === null
-                      ? Effect.void
-                      : Effect.logInfo("T3 Connect desired link reconciled on startup"),
-                  ),
-                  Effect.catch((cause) =>
-                    Effect.logWarning("Failed to reconcile T3 Connect desired link on startup", {
-                      cause,
-                    }).pipe(Effect.as(null)),
-                  ),
-                );
-              if (reconciledMode === "managed") {
-                const afterReconcile = yield* registerManagedTunnel;
-                if (afterReconcile.status === "recovery_required") {
-                  yield* endpointRuntime.requestRecovery(afterReconcile.config);
-                }
-              }
-            }
-          }),
-        );
-        yield* Deferred.succeed(cloudLinkParked, undefined).pipe(Effect.orDie);
-      }),
+    // Funnel forwards only to this listener, never to the main one, whose loopback trust it would
+    // otherwise inherit. It follows the public access setting from activation until shutdown.
+    const layerPublicAccess = Layer.effectDiscard(
+      Effect.forkScoped(
+        Effect.gen(function* () {
+          yield* awaitActivation;
+          const app = yield* HttpRouter.toHttpEffect(layerPublicRoutes);
+          yield* PublicAccess.run(app);
+        }).pipe(
+          Effect.catchCause((cause) => Effect.logWarning("Public access stopped", { cause })),
+        ),
+      ),
     );
 
     const layerRuntimeServices = ServerRuntimeStartup.layerWithOptions({
@@ -1181,7 +913,6 @@ const layerMakeServer = Layer.unwrap(
       awaitAuxiliaryParked: Effect.all(
         [
           Deferred.await(runtimeStateParked),
-          Deferred.await(cloudLinkParked),
           Deferred.await(routesReady),
           ...(config.tailscaleServeEnabled ? [Deferred.await(tailscaleParked)] : []),
         ],
@@ -1201,12 +932,12 @@ const layerMakeServer = Layer.unwrap(
       layerHttpListening,
       layerRuntimeState.pipe(Layer.provide(layerLauncher)),
       layerTailscaleServe,
-      layerCloudDesiredLinkReconcile,
+      layerPublicAccess,
       HeapSnapshot.layer,
     );
 
     return layerServerApplication.pipe(
-      Layer.provide(CloudLink.layer.pipe(Layer.provideMerge(ConnectReachability.layer))),
+      Layer.provide(layerTailscaleFunnel),
       Layer.provideMerge(layerRuntimeServices),
       Layer.provideMerge(
         McpSessionRegistry.layer.pipe(
@@ -1214,9 +945,6 @@ const layerMakeServer = Layer.unwrap(
         ),
       ),
       Layer.provide(layerActivation),
-      Layer.provideMerge(
-        RelayTracing.layerServerRelayBroker.pipe(Layer.provide(ManagedPolicy.layer)),
-      ),
       Layer.provideMerge(layerHttpServer),
       Layer.provide(layerApplicationObservability),
       Layer.provideMerge(FetchHttpClient.layer),

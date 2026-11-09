@@ -49,7 +49,6 @@ import * as AcpRegistryRuntimeCoordinator from "@onicode/provider-acp-registry/s
 import * as AcpRegistrySupport from "@onicode/provider-acp-registry/server/AcpRegistrySupport";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
-import * as AnalyticsService from "./telemetry/AnalyticsService.ts";
 import * as AntigravityInstallation from "./provider/AntigravityInstallation.ts";
 import * as ProviderInstallation from "./provider/providerInstallation.ts";
 import * as BackgroundPolicy from "./background/BackgroundPolicy.ts";
@@ -76,6 +75,7 @@ import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as PublicAccess from "./publicAccess/PublicAccess.ts";
 import * as ProcessDiagnostics from "./diagnostics/ProcessDiagnostics.ts";
 import * as ProcessResourceMonitor from "./diagnostics/ProcessResourceMonitor.ts";
 import * as ProjectCloneTracker from "./project/ProjectCloneTracker.ts";
@@ -89,7 +89,6 @@ import * as ProviderSessionManager from "./orchestration-v2/ProviderSessionManag
 import * as PullRequestReviewGuideService from "./pullRequest/PullRequestReviewGuideService.ts";
 import * as PullRequestService from "./pullRequest/PullRequestService.ts";
 import * as PullRequestSyncReactor from "./orchestration-v2/PullRequestSyncReactor.ts";
-import * as RelayClient from "@onicode/shared/relayClient";
 import * as RemoteOpenTargets from "./environment/RemoteOpenTargets.ts";
 import * as RepositoryIdentityResolver from "./project/RepositoryIdentityResolver.ts";
 import * as ResourceTelemetry from "./resourceTelemetry/ResourceTelemetry.ts";
@@ -100,8 +99,8 @@ import * as GuestShareService from "./guest/GuestShareService.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
-import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
-import * as NpmRelease from "./cloud/npmRelease.ts";
+import * as ServerSelfUpdate from "./service/selfUpdate.ts";
+import * as NpmRelease from "./service/npmRelease.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
 import * as SourceControlRepositoryService from "./sourceControl/SourceControlRepositoryService.ts";
@@ -775,7 +774,6 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(AcpRegistrySupport.AcpRegistryCatalog)({}),
   Layer.mock(AgentSessionImporter.AgentSessionImporter)({}),
   Layer.mock(AgentSessionScanner.AgentSessionScanner)({}),
-  Layer.mock(AnalyticsService.AnalyticsService)({}),
   Layer.mock(AntigravityInstallation.AntigravityInstallation)({ managedDirectory: "/unused" }),
   Layer.mock(BackgroundPolicy.BackgroundPolicy)({}),
   Layer.mock(CheckpointDiffQuery.CheckpointDiffQuery)({}),
@@ -810,8 +808,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({}),
   Layer.mock(PullRequestReviewGuideService.PullRequestReviewGuideService)({}),
   Layer.mock(PullRequestService.PullRequestService)({}),
+  Layer.mock(PublicAccess.PublicAccess)({}),
   Layer.mock(PullRequestSyncReactor.PullRequestSyncReactor)({}),
-  Layer.mock(RelayClient.RelayClient)({}),
   Layer.mock(RepositoryIdentityResolver.RepositoryIdentityResolver)({}),
   Layer.mock(ResourceTelemetry.ResourceTelemetry)({}),
   Layer.mock(ReviewService.ReviewService)({}),
@@ -993,7 +991,6 @@ it.effect.each([
               method: "browser-session-cookie",
               scopes: [],
             },
-            {},
             yield* ServerBrowser.ServerBrowser,
             () => Effect.void,
             { secretReferences: true },
@@ -1235,7 +1232,6 @@ it.effect("on-demand clients get provider config without workspace snapshots", (
             method: "browser-session-cookie",
             scopes: [],
           },
-          {},
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },
@@ -1397,7 +1393,6 @@ it.effect("a publish whose push fails still refreshes the new remote", () =>
             method: "browser-session-cookie",
             scopes: [AuthSourceControlWriteScope],
           },
-          {},
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },

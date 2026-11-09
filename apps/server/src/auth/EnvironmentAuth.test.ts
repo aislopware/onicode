@@ -1,16 +1,7 @@
-// @effect-diagnostics-next-line nodeBuiltinImport:off -- Effect's Crypto has no generateKeyPairSync or sign.
-import * as NodeCrypto from "node:crypto";
-
 import * as NodePlatformCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { authScopeResponse, AuthStandardClientScopes } from "@onicode/contracts";
-import {
-  computeDpopAccessTokenHash,
-  computeDpopJwkThumbprint,
-  type DpopPublicJwk,
-} from "@onicode/shared/dpop";
 import { expect, it } from "@effect/vitest";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -78,36 +69,6 @@ const requestMetadata = {
   os: "macOS",
   browser: "Chrome",
   ipAddress: "192.168.1.23",
-};
-
-const makeDpopKey = () => {
-  const { privateKey, publicKey } = NodeCrypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
-  const publicJwk = publicKey.export({ format: "jwk" }) as DpopPublicJwk;
-  let proofCount = 0;
-  return {
-    thumbprint: computeDpopJwkThumbprint(publicJwk),
-    sign: (input: {
-      readonly method: string;
-      readonly url: string;
-      readonly token: string;
-      readonly iat: number;
-    }) => {
-      const encode = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
-      const header = encode({ typ: "dpop+jwt", alg: "ES256", jwk: publicJwk });
-      const payload = encode({
-        htm: input.method,
-        htu: input.url,
-        jti: `proof-${++proofCount}`,
-        iat: input.iat,
-        ath: computeDpopAccessTokenHash(input.token),
-      });
-      const signature = NodeCrypto.sign("sha256", Buffer.from(`${header}.${payload}`), {
-        key: privateKey,
-        dsaEncoding: "ieee-p1363",
-      }).toString("base64url");
-      return `${header}.${payload}.${signature}`;
-    },
-  };
 };
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
@@ -235,17 +196,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
 
         expect(exchanged.access_token).not.toBe(token);
         expect(exchanged.scope).toBe("orchestration:read");
-        const dpop = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
-          token,
-          ["orchestration:read"],
-          requestMetadata,
-          { proofKeyThumbprint: "test-proof-key" },
-        );
-        expect(dpop.access_token).not.toBe(token);
-        expect(dpop.access_token).not.toBe(exchanged.access_token);
-        expect(dpop.token_type).toBe("DPoP");
-        expect(dpop.scope).toBe("orchestration:read");
-
         const secondBearer = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
           token,
           ["orchestration:read"],
@@ -714,59 +664,33 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         }).pipe(Effect.provide(layerEnvironmentAuth({ mode: "web", host: "192.168.1.50" }))),
     );
 
-    it.effect("binds a DPoP session's RPC socket ticket to its proof key", () =>
+    it.effect("binds a socket ticket to the route it was issued for", () =>
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
         const sessions = yield* SessionStore.SessionStore;
-        const key = makeDpopKey();
-        const other = makeDpopKey();
         const exchanged = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
           "desktop-bootstrap-token",
           ["orchestration:read"],
           requestMetadata,
-          { proofKeyThumbprint: key.thumbprint },
         );
         const session = yield* sessions.verify(exchanged.access_token);
-        const host = "192.168.1.50:3773";
-        const socketUrl = `http://${host}/ws`;
-        const iat = Math.floor((yield* DateTime.now).epochMilliseconds / 1_000);
-        const upgrade = (ticket: string, use: "rpc" | "media", proof?: string) =>
+        const upgrade = (ticket: string, use: "rpc" | "media") =>
           serverAuth.authenticateWebSocketUpgrade(
             {
               method: "GET",
-              url: `/ws?orchestrationProtocol=2&wsTicket=${ticket}${proof ? `&dpop=${proof}` : ""}`,
+              url: `/ws?orchestrationProtocol=2&wsTicket=${ticket}`,
               cookies: {},
-              headers: { host },
+              headers: { host: "192.168.1.50:3773" },
             } as never,
             use,
           );
 
         const rpc = yield* serverAuth.issueWebSocketTicket(session, { use: "rpc" });
-        const bare = yield* Effect.flip(upgrade(Redacted.value(rpc.ticket), "rpc"));
-        expect(bare._tag).toBe("ServerAuthInvalidCredentialError");
-        const signed = yield* upgrade(
-          Redacted.value(rpc.ticket),
-          "rpc",
-          key.sign({ method: "GET", url: socketUrl, token: Redacted.value(rpc.ticket), iat }),
+        expect((yield* upgrade(Redacted.value(rpc.ticket), "rpc")).sessionId).toBe(
+          session.sessionId,
         );
-        expect(signed.sessionId).toBe(session.sessionId);
-
-        const wrongKey = yield* Effect.flip(
-          upgrade(
-            Redacted.value(rpc.ticket),
-            "rpc",
-            other.sign({ method: "GET", url: socketUrl, token: Redacted.value(rpc.ticket), iat }),
-          ),
-        );
-        expect(wrongKey._tag).toBe("ServerAuthInvalidCredentialError");
-        const onMedia = yield* Effect.flip(
-          upgrade(
-            Redacted.value(rpc.ticket),
-            "media",
-            key.sign({ method: "GET", url: socketUrl, token: Redacted.value(rpc.ticket), iat }),
-          ),
-        );
-        expect(onMedia._tag).toBe("ServerAuthInvalidCredentialError");
+        const rpcOnMedia = yield* Effect.flip(upgrade(Redacted.value(rpc.ticket), "media"));
+        expect(rpcOnMedia._tag).toBe("ServerAuthInvalidCredentialError");
 
         const media = yield* serverAuth.issueWebSocketTicket(session, { use: "media" });
         expect((yield* upgrade(Redacted.value(media.ticket), "media")).sessionId).toBe(
@@ -780,83 +704,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         expect((yield* upgrade(Redacted.value(legacy.ticket), "rpc")).sessionId).toBe(
           session.sessionId,
         );
-      }).pipe(
-        Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
-      ),
-    );
-
-    it.effect.each(["DPoP", "dpop", "dPoP"])(
-      "accepts %s for a proof-bound HTTP request",
-      (scheme) =>
-        Effect.gen(function* () {
-          const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-          const key = makeDpopKey();
-          const { access_token: token } =
-            yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
-              "desktop-bootstrap-token",
-              ["orchestration:read"],
-              requestMetadata,
-              { proofKeyThumbprint: key.thumbprint },
-            );
-          const iat = Math.floor((yield* DateTime.now).epochMilliseconds / 1_000);
-          const request = {
-            method: "GET",
-            url: "/api/auth/session",
-            cookies: {},
-            headers: {
-              host: "192.168.1.50:3773",
-              authorization: `${scheme} ${token}`,
-              dpop: key.sign({
-                method: "GET",
-                url: "http://192.168.1.50:3773/api/auth/session",
-                token,
-                iat,
-              }),
-            },
-          } as never;
-          expect((yield* serverAuth.authenticateHttpRequest(request)).sessionId).toBeTypeOf(
-            "string",
-          );
-        }).pipe(
-          Effect.provide(
-            layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" }),
-          ),
-        ),
-    );
-
-    it.effect("rejects a replayed proof on a bound RPC socket ticket", () =>
-      Effect.gen(function* () {
-        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
-        const sessions = yield* SessionStore.SessionStore;
-        const key = makeDpopKey();
-        const exchanged = yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
-          "desktop-bootstrap-token",
-          ["orchestration:read"],
-          requestMetadata,
-          { proofKeyThumbprint: key.thumbprint },
-        );
-        const session = yield* sessions.verify(exchanged.access_token);
-        const rpc = yield* serverAuth.issueWebSocketTicket(session, { use: "rpc" });
-        const request = {
-          method: "GET",
-          url: `/ws?wsTicket=${Redacted.value(rpc.ticket)}&dpop=${key.sign({
-            method: "GET",
-            url: "http://192.168.1.50:3773/ws",
-            token: Redacted.value(rpc.ticket),
-            iat: Math.floor((yield* DateTime.now).epochMilliseconds / 1_000),
-          })}`,
-          cookies: {},
-          headers: { host: "192.168.1.50:3773" },
-        } as never;
-
-        yield* serverAuth.authenticateWebSocketUpgrade(request, "rpc");
-        const replayed = yield* Effect.flip(
-          serverAuth.authenticateWebSocketUpgrade(request, "rpc"),
-        );
-        expect(replayed._tag).toBe("ServerAuthInvalidCredentialError");
-        if (replayed._tag === "ServerAuthInvalidCredentialError") {
-          expect(replayed.dpopFailureReason).toBe("replay");
-        }
       }).pipe(
         Effect.provide(layerEnvironmentAuth({ desktopBootstrapToken: "desktop-bootstrap-token" })),
       ),

@@ -9,7 +9,9 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 
 import {
   ensureTailscaleServe,
-  parseTailscaleExitNode,
+  layerTailscaleFunnel,
+  parseTailscaleFunnelState,
+  TailscaleFunnel,
   parseTailscaleServeRoutesTo,
   parseTailscaleSshEnabled,
   parseTailscaleStatus,
@@ -197,31 +199,8 @@ describe("tailscale", () => {
         magicDnsName: "desktop.tail.ts.net",
         tailnetIpv4Addresses: ["100.100.100.100"],
         httpsServeEnabled: null,
+        funnelAllowed: null,
       });
-    }),
-  );
-
-  it.effect("names the exit node in use", () =>
-    Effect.gen(function* () {
-      const inUse = yield* parseTailscaleExitNode(
-        JSON.stringify({
-          ExitNodeStatus: { ID: "nX", Online: true, TailscaleIPs: ["100.101.102.103/32"] },
-          Peer: {
-            "nodekey:a": { HostName: "laptop", DNSName: "laptop.tail.ts.net.", ExitNode: false },
-            "nodekey:b": {
-              HostName: "raspberrypi",
-              DNSName: "home-pi.tail.ts.net.",
-              ExitNode: true,
-            },
-          },
-        }),
-      );
-      assert.deepEqual(inUse, { name: "home-pi", online: true });
-
-      const unnamed = yield* parseTailscaleExitNode(`{"ExitNodeStatus":{"Online":false}}`);
-      assert.deepEqual(unnamed, { name: null, online: false });
-
-      assert.equal(yield* parseTailscaleExitNode(tailscaleStatusJson), null);
     }),
   );
 
@@ -232,8 +211,11 @@ describe("tailscale", () => {
       );
       assert.equal(enabled.httpsServeEnabled, true);
 
+      assert.equal(enabled.funnelAllowed, true);
+
       const disabled = yield* parseTailscaleStatus(`{"Self":{"CapMap":{"funnel":null}}}`);
       assert.equal(disabled.httpsServeEnabled, false);
+      assert.equal((yield* parseTailscaleStatus(`{"Self":{"CapMap":{}}}`)).funnelAllowed, false);
     }),
   );
 
@@ -340,6 +322,108 @@ describe("tailscale", () => {
       yield* readTailscaleSshEnabled.pipe(Effect.provide(layer));
       yield* ensureTailscaleServe({ localPort: 45_678 }).pipe(Effect.provide(layer));
       assert.deepEqual(killGraces, [500, 500, 500]);
+    });
+  });
+
+  it("tells a Funnel port that dials the target from one that would publish something else", () => {
+    const target = { localHost: "127.0.0.1", localPort: 4100, funnelPort: 8443 as const };
+    const host = "box.tailnet.ts.net";
+    const status = (value: unknown) => JSON.stringify(value);
+    const ours = { "/": { Proxy: "http://127.0.0.1:4100" } };
+    assert.deepEqual(parseTailscaleFunnelState("null", { ...target, host }), {
+      funnel: false,
+      port: "free",
+    });
+    assert.deepEqual(
+      parseTailscaleFunnelState(
+        status({
+          Web: { "box.tailnet.ts.net:8443": { Handlers: ours } },
+          AllowFunnel: { "box.tailnet.ts.net:8443": true },
+        }),
+        { ...target, host },
+      ),
+      { funnel: true, port: "ours" },
+    );
+    // The tailnet app on 443 is not this port's business.
+    assert.deepEqual(
+      parseTailscaleFunnelState(
+        status({ Web: { "box.tailnet.ts.net:443": { Handlers: { "/": { Proxy: "3773" } } } } }),
+        { ...target, host },
+      ),
+      { funnel: false, port: "free" },
+    );
+    for (const taken of [
+      { Web: { "box.tailnet.ts.net:8443": { Handlers: { "/": { Proxy: "3773" } } } } },
+      {
+        Web: { "box.tailnet.ts.net:8443": { Handlers: { ...ours, "/admin": { Proxy: "9000" } } } },
+      },
+      { Web: { "box.tailnet.ts.net:8443": { Handlers: { "/": { Proxy: "localhost:4100" } } } } },
+      { TCP: { "8443": { TCPForward: "127.0.0.1:22" } } },
+    ]) {
+      assert.deepEqual(parseTailscaleFunnelState(status(taken), { ...target, host }), {
+        funnel: false,
+        port: "taken",
+      });
+    }
+    assert.isUndefined(parseTailscaleFunnelState("not json", { ...target, host }));
+  });
+
+  it.effect("turns Funnel on only for a free port on a node the policy allows", () => {
+    const target = { localHost: "127.0.0.1", localPort: 4100, funnelPort: 8443 as const };
+    const run = (input: { capMap: object; serve: unknown; funnelStderr?: string }) => {
+      const calls: Array<ReadonlyArray<string>> = [];
+      const layer = layerTailscaleFunnel.pipe(
+        Layer.provide(
+          layerMockSpawner((_command, args) => {
+            calls.push(args);
+            if (args[0] === "status") {
+              return {
+                stdout: JSON.stringify({
+                  Self: { DNSName: "box.tailnet.ts.net.", CapMap: input.capMap },
+                }),
+              };
+            }
+            if (args[0] === "serve") return { stdout: JSON.stringify(input.serve) };
+            return input.funnelStderr === undefined ? {} : { code: 1, stderr: input.funnelStderr };
+          }),
+        ),
+      );
+      return TailscaleFunnel.use((funnel) => funnel.enable(target)).pipe(
+        Effect.provide(layer),
+        Effect.map((origin) => ({ origin, calls })),
+        Effect.mapError((error) => ({ reason: error.reason, calls })),
+      );
+    };
+    const allowed = { https: null, funnel: null };
+    return Effect.gen(function* () {
+      const enabled = yield* run({ capMap: allowed, serve: null });
+      assert.equal(enabled.origin, "https://box.tailnet.ts.net:8443");
+      assert.deepEqual(enabled.calls.at(-1), [
+        "funnel",
+        "--bg",
+        "--https=8443",
+        "http://127.0.0.1:4100",
+      ]);
+
+      const notAllowed = yield* run({ capMap: { https: null }, serve: null }).pipe(Effect.flip);
+      assert.equal(notAllowed.reason, "funnel-not-allowed");
+      assert.isFalse(notAllowed.calls.some((args) => args[0] === "funnel"));
+
+      const noHttps = yield* run({ capMap: { funnel: null }, serve: null }).pipe(Effect.flip);
+      assert.equal(noHttps.reason, "https-disabled");
+
+      const taken = yield* run({
+        capMap: allowed,
+        serve: { Web: { "box.tailnet.ts.net:8443": { Handlers: { "/": { Proxy: "3773" } } } } },
+      }).pipe(Effect.flip);
+      assert.equal(taken.reason, "port-in-use");
+
+      const refused = yield* run({
+        capMap: allowed,
+        serve: null,
+        funnelStderr: 'Funnel not available; "funnel" node attribute not set.',
+      }).pipe(Effect.flip);
+      assert.equal(refused.reason, "funnel-not-allowed");
     });
   });
 });

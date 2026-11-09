@@ -22,7 +22,9 @@ it("stays byte-identical to .github/triage/PLAYBOOK.md", () => {
 
 it("launch prompt stays a single argv-safe line naming the prompt file", () => {
   // Windows .cmd shims cannot carry multiline argv.
-  const launch = buildTriageLaunchPrompt(String.raw`C:\Users\a b\.onicode\userdata\triage\x\prompt.md`);
+  const launch = buildTriageLaunchPrompt(
+    String.raw`C:\Users\a b\.onicode\userdata\triage\x\prompt.md`,
+  );
   assert.notInclude(launch, "\n");
   assert.include(launch, String.raw`C:\Users\a b\.onicode\userdata\triage\x\prompt.md`);
   assert.isBelow(launch.length, 1_000);
@@ -72,7 +74,6 @@ const contextInput = {
     logsDir: "/home/u/.onicode/userdata/logs",
     serviceLogPath: "/home/u/.onicode/userdata/logs/boot-service.log",
     desktopBackendLogGlob: "/home/u/.onicode/userdata/logs/server-child*.log*",
-    relayClientLogPath: "/home/u/.onicode/userdata/logs/relay-client.ndjson",
     serverTracePath: "/home/u/.onicode/userdata/logs/server.trace.ndjson",
     providerEventLogPath: "/home/u/.onicode/userdata/logs/provider/events.log",
     terminalLogsDir: "/home/u/.onicode/userdata/logs/terminals",

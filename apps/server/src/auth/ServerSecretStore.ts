@@ -127,7 +127,7 @@ export const SecretStoreError = Schema.Union([
   SecretStoreEncodeError,
 ]);
 export type SecretStoreError = typeof SecretStoreError.Type;
-export const isSecretStoreError = Schema.is(SecretStoreError);
+const isSecretStoreError = Schema.is(SecretStoreError);
 
 const isPlatformError = (value: unknown): value is PlatformError.PlatformError =>
   Predicate.isTagged(value, "PlatformError");

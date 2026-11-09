@@ -21,7 +21,7 @@ import { Argument, Command, Flag, GlobalFlag, Prompt } from "effect/cli";
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 
 import packageJson from "../../package.json" with { type: "json" };
-import * as BootService from "../cloud/bootService.ts";
+import * as BootService from "../service/bootService.ts";
 import {
   ensurePinnedRuntimeInstalled,
   launcherOwnsVersionsDir,
@@ -33,8 +33,8 @@ import {
   prunePinnedRuntimes,
   recordPinnedRuntimeLauncher,
   windowsShimTarget,
-} from "../cloud/pinnedRuntime.ts";
-import { compareExactServiceVersions, isExactServiceVersion } from "../cloud/serviceProtocol.ts";
+} from "../service/pinnedRuntime.ts";
+import { compareExactServiceVersions, isExactServiceVersion } from "../service/serviceProtocol.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { managedUpdateMirror, managedUpdateRefusal } from "../policy/managedUpdates.ts";
 import * as ProcessRunner from "../processRunner.ts";
@@ -82,7 +82,8 @@ export const resolveNewestVersion = Effect.fn("cli.update.resolve_newest")(funct
       Effect.mapError(() => new CliUpdateError({ reason: "Could not list onicode releases." })),
       Effect.timeoutOrElse({
         duration: RELEASE_INDEX_TIMEOUT,
-        orElse: () => Effect.fail(new CliUpdateError({ reason: "Timed out listing onicode releases." })),
+        orElse: () =>
+          Effect.fail(new CliUpdateError({ reason: "Timed out listing onicode releases." })),
       }),
     );
     const releases = yield* decodeReleaseIndex(body).pipe(
@@ -157,7 +158,8 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
   const remember = (launcher: string) =>
     recordPinnedRuntimeLauncher({ baseDir: input.baseDir, launcher }).pipe(
       Effect.mapError(
-        () => new CliUpdateError({ reason: `Could not record the onicode launcher at ${launcher}.` }),
+        () =>
+          new CliUpdateError({ reason: `Could not record the onicode launcher at ${launcher}.` }),
       ),
     );
 
@@ -172,7 +174,10 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
       .writeFileString(shimPath, `@echo off\r\n"${input.targetEntryPath}" %*`)
       .pipe(
         Effect.mapError(
-          () => new CliUpdateError({ reason: `Could not rewrite the onicode launcher at ${shimPath}.` }),
+          () =>
+            new CliUpdateError({
+              reason: `Could not rewrite the onicode launcher at ${shimPath}.`,
+            }),
         ),
       );
     return Option.some(shimPath);
@@ -188,7 +193,9 @@ export const repointLauncher = Effect.fn("cli.update.repoint_launcher")(function
     Effect.andThen(fs.rename(tempLink, input.launchedAs)),
     Effect.mapError(
       () =>
-        new CliUpdateError({ reason: `Could not repoint the onicode launcher at ${input.launchedAs}.` }),
+        new CliUpdateError({
+          reason: `Could not repoint the onicode launcher at ${input.launchedAs}.`,
+        }),
     ),
   );
   return Option.some(input.launchedAs);

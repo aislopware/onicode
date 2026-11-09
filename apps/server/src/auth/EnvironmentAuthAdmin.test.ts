@@ -101,23 +101,14 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
       }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
 
-    it.effect("revokes only T3 Connect clients when the policy keeps remote clients", () =>
+    it.effect("revokes leftover T3 Connect clients on startup and keeps remote clients", () =>
       Effect.gen(function* () {
         const sessions = yield* SessionStore.SessionStore;
         const phone = yield* sessions.issue({ subject: "one-time-token" });
         const connect = yield* sessions.issue({ subject: "cloud-connect" });
 
         yield* EnvironmentAuth.make.pipe(
-          Effect.provide(
-            Layer.merge(
-              ManagedPolicy.layerTest({
-                schemaVersion: 1,
-                organization: "Example Corp",
-                limits: { connect: false },
-              }),
-              layerServerConfig(),
-            ),
-          ),
+          Effect.provide(Layer.merge(ManagedPolicy.layerTest(), layerServerConfig())),
         );
 
         const remaining = (yield* sessions.listActive()).map((session) => session.sessionId);

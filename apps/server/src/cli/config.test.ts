@@ -25,11 +25,11 @@ import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import packageJson from "../../package.json" with { type: "json" };
-import { ServiceLauncherHostProcess } from "../cloud/serviceLauncherClient.ts";
+import { ServiceLauncherHostProcess } from "../service/serviceLauncherClient.ts";
 import {
   SERVICE_LAUNCHER_CONTEXT_ENV,
   SERVICE_LAUNCHER_PROTOCOL,
-} from "../cloud/serviceProtocol.ts";
+} from "../service/serviceProtocol.ts";
 import { deriveServerPaths } from "../config.ts";
 import { resolveServerConfig } from "./config.ts";
 
@@ -494,7 +494,9 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-cli-config-otlp-settings-" });
+      const baseDir = yield* fs.makeTempDirectoryScoped({
+        prefix: "oni-cli-config-otlp-settings-",
+      });
       const derivedPaths = yield* deriveExplicitServerPaths(baseDir, undefined);
       yield* fs.makeDirectory(path.dirname(derivedPaths.settingsPath), { recursive: true });
       yield* fs.writeFileString(

@@ -13,12 +13,12 @@ describe("resolveOniMcpToolPresentation", () => {
       const presentation = resolveOniMcpToolPresentation(tool);
       for (const prefix of [
         "mcp__onicode__",
-        "mcp__t3_code__",
-        "mcp__onicode__",
-        "Onicode-code.",
+        "mcp__oni_code__",
+        "mcp__onicode_direct__",
+        "Onicode.",
         "onicode.",
         "onicode-direct.",
-        "mcp__t3_code_direct__",
+        "mcp__oni_code_direct__",
         "oni_code/",
         "onicode:",
         "mcp_onicode_",
@@ -46,9 +46,9 @@ describe("resolveOniMcpToolDefinition", () => {
     expect(
       resolveOniMcpToolDefinition("mcp__onicode__preview_act", { action: "type" })?.labels,
     ).toEqual(resolveOniMcpToolDefinition("preview_type")?.labels);
-    expect(resolveOniMcpToolDefinition("oni_thread_transfer", { action: "fork" })?.displayName).toBe(
-      resolveOniMcpToolDefinition("oni_thread_fork")?.displayName,
-    );
+    expect(
+      resolveOniMcpToolDefinition("oni_thread_transfer", { action: "fork" })?.displayName,
+    ).toBe(resolveOniMcpToolDefinition("oni_thread_fork")?.displayName);
     expect(resolveOniMcpToolDefinition("preview_act", { action: "unknown" })?.labels[2]).toBe(
       "Used",
     );
@@ -57,7 +57,7 @@ describe("resolveOniMcpToolDefinition", () => {
 
 describe("resolveOniMcpSummaryAction", () => {
   it("summarizes an action tool by the action each call ran", () => {
-    expect(resolveOniMcpSummaryAction("mcp__onicode__t3_queue", { action: "list" })).toBe(
+    expect(resolveOniMcpSummaryAction("mcp__onicode__oni_queue", { action: "list" })).toBe(
       "queue-list",
     );
     expect(resolveOniMcpSummaryAction("oni_queue", { action: "edit" })).toBe("queue-edit");

@@ -1,4 +1,3 @@
-import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -10,7 +9,6 @@ import {
   sanitizeLinkedPrompt,
   withoutPromptLinkParams,
 } from "./promptLinks.ts";
-import { hostedThreadLink } from "./threadLinks.ts";
 
 describe("sanitizeLinkedPrompt", () => {
   it("removes characters a reader cannot see and counts them", () => {
@@ -48,7 +46,7 @@ describe("parseNewThreadLink", () => {
       value: {
         kind: "new",
         prompt: { text: "Rate me", hiddenCharacters: 0 },
-        repository: { owner: "pingdotgg", name: "onicode" },
+        repository: { owner: "pingdotgg", name: "t3code" },
         provider: "codex",
         model: "gpt-5",
       },
@@ -65,7 +63,7 @@ describe("parseNewThreadLink", () => {
         ok: true,
         value: {
           kind: "pull-request",
-          pullRequest: { owner: "pingdotgg", name: "onicode", number: 42 },
+          pullRequest: { owner: "pingdotgg", name: "t3code", number: 42 },
           prompt: null,
         },
       });
@@ -93,50 +91,48 @@ describe("thread links", () => {
 });
 
 describe("link round trips", () => {
-  it("builds a link that parses back to the same prompt", () => {
+  it("builds an app link that parses back to the same prompt", () => {
     const link = buildNewThreadLink({
       prompt: "Swear count & rating?",
       repository: { owner: "pingdotgg", name: "onicode" },
       provider: "claudeAgent",
       model: "opus",
     });
+    expect(link.startsWith("onicode://new?")).toBe(true);
     const path = promptLinkAppPath(link);
-    expect(path).toBe(new URL(link).pathname + new URL(link).search);
+    expect(path).toBe(`/new${new URL(link).search}`);
     const parsed = parseNewThreadLink(new URL(link).search);
     expect(parsed.ok && parsed.value.kind === "new" && parsed.value.prompt.text).toBe(
       "Swear count & rating?",
     );
   });
 
-  it("opens a copied thread link in the app at that thread", () => {
-    const link = hostedThreadLink({
-      environmentId: EnvironmentId.make("env-1"),
-      threadId: ThreadId.make("mcp:1"),
-    });
-    const path = promptLinkAppPath(link);
-    expect(path).toBe("/env-1/mcp%3A1");
-    const deepLink = promptLinkDeepLink(path!);
-    expect(deepLink).toBe("onicode://threads/env-1/mcp%3A1");
-    expect(promptLinkAppPath(deepLink)).toBe(path);
+  it("builds a web link on the origin it is given", () => {
+    const link = buildNewThreadLink({ prompt: "hi", origin: "http://box.tailnet.ts.net:3773" });
+    expect(link).toBe("http://box.tailnet.ts.net:3773/new?prompt=hi");
+    expect(promptLinkAppPath(link, "http://box.tailnet.ts.net:3773")).toBe("/new?prompt=hi");
+    expect(promptLinkAppPath(link)).toBeNull();
   });
 
-  it("maps app scheme and hosted links to in-app paths, and nothing else", () => {
+  it("round trips a thread path through the app scheme", () => {
+    const deepLink = promptLinkDeepLink("/env-1/mcp%3A1");
+    expect(deepLink).toBe("onicode://threads/env-1/mcp%3A1");
+    expect(promptLinkAppPath(deepLink)).toBe("/env-1/mcp%3A1");
+  });
+
+  it("maps app scheme links and the given web app's links to in-app paths, and nothing else", () => {
+    const web = "https://box.tailnet.ts.net";
     expect(promptLinkAppPath("onicode://new?prompt=hi")).toBe("/new?prompt=hi");
     expect(promptLinkAppPath("onicode-dev://threads/env-1/thread-1")).toBe("/env-1/thread-1");
-    expect(promptLinkAppPath("https://app.t3.codes/env-1/thread-1?prompt=go")).toBe(
+    expect(promptLinkAppPath(`${web}/env-1/thread-1?prompt=go`, web)).toBe(
       "/env-1/thread-1?prompt=go",
     );
-    expect(promptLinkAppPath("https://app.t3.codes/threads/env-1/thread-1")).toBe(
-      "/env-1/thread-1",
-    );
-    expect(promptLinkAppPath("https://app.t3.codes/threads/env-1/thread-1?prompt=go")).toBe(
-      "/env-1/thread-1?prompt=go",
-    );
+    expect(promptLinkAppPath(`${web}/threads/env-1/thread-1`, web)).toBe("/env-1/thread-1");
     // The web app's own thread route, reloaded, is no link.
-    expect(promptLinkAppPath("https://app.t3.codes/env-1/thread-1")).toBeNull();
-    expect(promptLinkAppPath("https://app.t3.codes/threads/env-1")).toBeNull();
-    expect(promptLinkAppPath("https://app.t3.codes/settings/general")).toBeNull();
-    expect(promptLinkAppPath("https://evil.test/new?prompt=hi")).toBeNull();
+    expect(promptLinkAppPath(`${web}/env-1/thread-1`, web)).toBeNull();
+    expect(promptLinkAppPath(`${web}/threads/env-1`, web)).toBeNull();
+    expect(promptLinkAppPath(`${web}/settings/general`, web)).toBeNull();
+    expect(promptLinkAppPath("https://evil.test/new?prompt=hi", web)).toBeNull();
     expect(promptLinkAppPath("onicode://app/index.html")).toBeNull();
   });
 });

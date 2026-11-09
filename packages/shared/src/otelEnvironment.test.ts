@@ -26,7 +26,12 @@ describe("OtelEnvironment", () => {
       disabled: false,
       warnings: [specIgnored("1")],
     },
-    { name: "onicode 1", env: { ONICODE_OTEL_SDK_DISABLED: "1" }, disabled: true, warnings: [ONICODE_OFF] },
+    {
+      name: "onicode 1",
+      env: { ONICODE_OTEL_SDK_DISABLED: "1" },
+      disabled: true,
+      warnings: [ONICODE_OFF],
+    },
     {
       name: "onicode false overrides spec true",
       env: { ONICODE_OTEL_SDK_DISABLED: "false", OTEL_SDK_DISABLED: "true" },
@@ -384,47 +389,4 @@ describe("OtelEnvironment", () => {
       }),
     );
   });
-});
-
-describe("isRelayTracingEnabled", () => {
-  it("defaults on and respects the ONICODE SDK override of the standard kill switch", () => {
-    assert.isTrue(OtelEnvironment.isRelayTracingEnabled({}));
-    assert.isFalse(OtelEnvironment.isRelayTracingEnabled({ OTEL_SDK_DISABLED: "true" }));
-    assert.isTrue(
-      OtelEnvironment.isRelayTracingEnabled({
-        OTEL_SDK_DISABLED: "true",
-        ONICODE_OTEL_SDK_DISABLED: "false",
-      }),
-    );
-    assert.isFalse(
-      OtelEnvironment.isRelayTracingEnabled({
-        OTEL_SDK_DISABLED: "false",
-        ONICODE_OTEL_SDK_DISABLED: "true",
-      }),
-    );
-  });
-
-  it.effect("product opt-out beats SDK enable without disabling user-configured tracing", () =>
-    Effect.gen(function* () {
-      const env = {
-        ONICODE_TELEMETRY_ENABLED: "false",
-        ONICODE_OTEL_SDK_DISABLED: "false",
-        OTEL_SDK_DISABLED: "true",
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://user.example.test/v1/traces",
-      };
-      assert.isFalse(OtelEnvironment.isRelayTracingEnabled(env));
-
-      const otel = yield* load(env);
-      assert.isFalse(otel.disabled);
-      assert.deepStrictEqual(
-        otel.traces,
-        OtelEnvironment.OtelSignal.Export({
-          url: env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
-          variable: "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-          protocol: "http/protobuf",
-          headers: undefined,
-        }),
-      );
-    }),
-  );
 });

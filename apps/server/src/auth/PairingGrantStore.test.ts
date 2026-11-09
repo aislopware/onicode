@@ -99,36 +99,24 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStor
     }).pipe(Effect.provide(layerPairingGrantStore())),
   );
 
-  it.effect("requires the bound proof key thumbprint when present", () =>
+  it.effect("refuses requested scopes the credential does not grant", () =>
     Effect.gen(function* () {
       const bootstrapCredentials = yield* PairingGrantStore.PairingGrantStore;
       const token = yield* bootstrapCredentials.issueOneTimeToken({
-        proofKeyThumbprint: "client-proof-key-thumbprint",
         scopes: ["orchestration:read"],
       });
 
-      const missing = yield* Effect.flip(bootstrapCredentials.consume(token.credential));
-      const wrong = yield* Effect.flip(
-        bootstrapCredentials.consume(token.credential, {
-          proofKeyThumbprint: "other-proof-key-thumbprint",
-          requestedScopes: ["access:write"],
-        }),
-      );
       const forbiddenScope = yield* Effect.flip(
         bootstrapCredentials.consume(token.credential, {
-          proofKeyThumbprint: "client-proof-key-thumbprint",
           requestedScopes: ["access:write"],
         }),
       );
       const consumed = yield* bootstrapCredentials.consume(token.credential, {
-        proofKeyThumbprint: "client-proof-key-thumbprint",
         requestedScopes: ["orchestration:read"],
       });
 
-      expect(missing.message).toContain("proof key mismatch");
-      expect(wrong.message).toContain("proof key mismatch");
       expect(forbiddenScope._tag).toBe("BootstrapCredentialScopeNotGrantedError");
-      expect(consumed.proofKeyThumbprint).toBe("client-proof-key-thumbprint");
+      expect(consumed.scopes).toEqual(["orchestration:read"]);
     }).pipe(Effect.provide(layerPairingGrantStore())),
   );
 

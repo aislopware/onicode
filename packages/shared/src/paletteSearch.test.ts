@@ -200,7 +200,9 @@ describe("scoreThreadSearch", () => {
 
   it("finds a branch pasted with the app's worktree prefix", () => {
     const subject = thread("Cmd+K search", { branch: "onicode/cmdk-search-v2" });
-    expect(scoreThreadSearch(foldSearchQuery("onicode/cmdk-search-v2"), subject, NOW)).not.toBeNull();
+    expect(
+      scoreThreadSearch(foldSearchQuery("onicode/cmdk-search-v2"), subject, NOW),
+    ).not.toBeNull();
     expect(scoreThreadSearch(foldSearchQuery("onicode/cmdk"), subject, NOW)).not.toBeNull();
   });
 
@@ -454,7 +456,7 @@ describe("scoreThreadSearch with heavy use and loose input", () => {
       ],
     });
     for (const query of [
-      "onicode#22889",
+      "t3code#22889",
       "github.com/pingdotgg/t3code/pull/22889",
       "https://github.com/pingdotgg/t3code/pull/22889/files",
       "5fe6f59c",

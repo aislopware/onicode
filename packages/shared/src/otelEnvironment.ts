@@ -318,19 +318,6 @@ export const load: Effect.Effect<OtelEnvironment> = Config.all({
   Effect.orDie,
 );
 
-export const isRelayTracingEnabled = (env: Readonly<Record<string, string | undefined>>) =>
-  Config.all({
-    ...sdkFlags,
-    telemetry: flag("ONICODE_TELEMETRY_ENABLED", ONICODE_TRUE, ONICODE_FALSE, String),
-  }).pipe(
-    Effect.map(
-      ({ telemetry, onicode, spec }) => telemetry.value !== false && !(onicode.value ?? spec.value ?? false),
-    ),
-    Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord(env))),
-    Effect.orDie,
-    Effect.runSync,
-  );
-
 export type SignalName = "traces" | "metrics" | "logs";
 
 export interface SignalEndpoint {
@@ -373,7 +360,11 @@ export const resolveSignalEndpoint = (
       // the desktop's own.
       const url = blankAsUnset(fallback.bootstrapUrl) ?? settingsUrl;
       if (url === undefined) return undefined;
-      return { url, export: onicode.export, source: url === settingsUrl ? "settings" : "bootstrap" };
+      return {
+        url,
+        export: onicode.export,
+        source: url === settingsUrl ? "settings" : "bootstrap",
+      };
     },
   });
 };

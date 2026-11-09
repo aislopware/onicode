@@ -1369,6 +1369,8 @@ export const ServerSettings = Schema.Struct({
   hideTaggedThreads: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Beta: guest links for this machine's threads. Off refuses new links and pauses existing ones. */
   guestSharingEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Publishes guest links and webhook addresses to the internet through Tailscale Funnel. */
+  publicAccessEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /**
    * Beta: links to the user's other machines, both ways. Off refuses new links, calls over links
    * and tasks on another machine; tasks already running there finish.
@@ -1768,6 +1770,7 @@ export const ServerSettingsPatch = Schema.Struct({
   hiddenThreadTags: Schema.optionalKey(Schema.Array(Schema.String)),
   hideTaggedThreads: Schema.optionalKey(Schema.Boolean),
   guestSharingEnabled: Schema.optionalKey(Schema.Boolean),
+  publicAccessEnabled: Schema.optionalKey(Schema.Boolean),
   linkedEnvironmentsEnabled: Schema.optionalKey(Schema.Boolean),
   promptSuggestionsEnabled: Schema.optionalKey(Schema.Boolean),
   backgroundActivity: Schema.optionalKey(

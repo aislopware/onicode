@@ -16,46 +16,9 @@ import { Command } from "effect/cli";
 import { afterEach, vi } from "vite-plus/test";
 
 import packageJson from "../../package.json" with { type: "json" };
-import * as BootService from "../cloud/bootService.ts";
+import * as BootService from "../service/bootService.ts";
 import { upsertServiceEnv } from "./service.ts";
-import { connectEnabled, planRoutes, statusCommand, upCommand } from "./up.ts";
-
-const none = Option.none<boolean>();
-
-it.each([
-  {
-    label: "a new machine starts from T3 Connect and asks",
-    setup: { installed: false, connect: false, lan: false },
-    flags: { connect: none, lan: none },
-    expected: { routes: { connect: true, lan: false }, ask: ["connect", "lan"] },
-  },
-  {
-    label: "a build without T3 Connect never offers it",
-    setup: { installed: false, connect: null, lan: false },
-    flags: { connect: none, lan: none },
-    expected: { routes: { connect: false, lan: false }, ask: ["lan"] },
-  },
-  {
-    label: "a rerun starts from the current setup",
-    setup: { installed: true, connect: false, lan: true },
-    flags: { connect: none, lan: none },
-    expected: { routes: { connect: false, lan: true }, ask: ["connect", "lan"] },
-  },
-  {
-    label: "a route flag on a new machine turns on only that route",
-    setup: { installed: false, connect: false, lan: false },
-    flags: { connect: none, lan: Option.some(true) },
-    expected: { routes: { connect: false, lan: true }, ask: [] },
-  },
-  {
-    label: "a route flag asks nothing and keeps the other route",
-    setup: { installed: true, connect: true, lan: true },
-    flags: { connect: none, lan: Option.some(false) },
-    expected: { routes: { connect: true, lan: false }, ask: [] },
-  },
-])("$label", ({ setup, flags, expected }) => {
-  expect(planRoutes(setup, flags)).toEqual(expected);
-});
+import { statusCommand, upCommand } from "./up.ts";
 
 const SERVICE = {
   supported: true,
@@ -64,59 +27,6 @@ const SERVICE = {
   unitPath: "/home/me/.config/systemd/user/onicode.service",
   logPath: "/home/me/.onicode/userdata/logs/boot-service.log",
 } as const;
-
-it.each([
-  {
-    label: "a CLI managed link",
-    cliDesired: true,
-    cliMode: "managed",
-    managedTunnel: false,
-    revoked: false,
-    on: true,
-  },
-  {
-    label: "a link the app made",
-    cliDesired: false,
-    cliMode: "managed",
-    managedTunnel: true,
-    revoked: false,
-    on: true,
-  },
-  {
-    label: "a publish-only link",
-    cliDesired: true,
-    cliMode: "publish_only",
-    managedTunnel: false,
-    revoked: false,
-    on: false,
-  },
-  {
-    label: "a publish-only link with an old tunnel config",
-    cliDesired: true,
-    cliMode: "publish_only",
-    managedTunnel: true,
-    revoked: false,
-    on: false,
-  },
-  {
-    label: "a revoked link",
-    cliDesired: true,
-    cliMode: "managed",
-    managedTunnel: true,
-    revoked: true,
-    on: false,
-  },
-  {
-    label: "no link",
-    cliDesired: false,
-    cliMode: "managed",
-    managedTunnel: false,
-    revoked: false,
-    on: false,
-  },
-] as const)("T3 Connect is on for $label: $on", ({ label: _, on, ...link }) => {
-  expect(connectEnabled(link)).toBe(on);
-});
 
 // Prompts run only when both streams are terminals.
 const asTerminal = Effect.acquireRelease(
@@ -153,246 +63,257 @@ const answering = (text: string) =>
     display: () => Effect.void,
   });
 
-it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))("onicode up", (it) => {
-  afterEach(() => vi.restoreAllMocks());
+it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, NetService.layer))(
+  "onicode up",
+  (it) => {
+    afterEach(() => vi.restoreAllMocks());
 
-  it.effect.each<{
-    readonly label: string;
-    readonly installed: boolean;
-    readonly status?: Partial<BootService.BootServiceStatus>;
-    readonly installFails?: boolean;
-    readonly restartFails?: boolean;
-    readonly fails?: boolean;
-    readonly reportStatus?: boolean;
-    /** Runs as if in a terminal, answering each question with this text. */
-    readonly answer?: string;
-    readonly prints?: string;
-    readonly env: string;
-    readonly args: ReadonlyArray<string>;
-    readonly installs: number;
-    readonly restarts: number;
-    readonly envAfter: string;
-  }>([
-    {
-      label: "nothing changed",
-      installed: true,
-      env: "ONICODE_LAN=false\n",
-      args: ["--no-lan"],
-      installs: 0,
-      restarts: 0,
-      envAfter: "ONICODE_LAN=false\n",
-    },
-    {
-      label: "the local network opens",
-      prints: "Run `onicode pair --base-dir <baseDir>`.",
-      installed: true,
-      env: "ONICODE_LAN=false\n",
-      args: ["--lan"],
-      installs: 0,
-      restarts: 1,
-      envAfter: "ONICODE_LAN=true\n",
-    },
-    {
-      label: "a new service starts with its settings",
-      installed: false,
-      env: "",
-      args: ["--lan"],
-      installs: 1,
-      restarts: 0,
-      envAfter: "ONICODE_LAN=true\n",
-    },
-    {
-      label: "a route turns off with no service to run",
-      installed: false,
-      env: "ONICODE_LAN=true\n",
-      args: ["--no-lan"],
-      installs: 0,
-      restarts: 0,
-      envAfter: "ONICODE_LAN=false\n",
-    },
-    {
-      label: "a stopped newer service starts as it is",
-      installed: true,
-      status: { current: false, installedVersion: "999.0.0", problems: ["service-stopped"] },
-      env: "ONICODE_LAN=false\n",
-      args: ["--yes"],
-      installs: 0,
-      restarts: 1,
-      envAfter: "ONICODE_LAN=false\n",
-    },
-    {
-      label: "a failed update keeps service.env matching the old service",
-      // The old service still runs, so no foreground server is offered.
-      prints: "Fix that, then run `onicode up --base-dir <baseDir>` again.",
-      installed: true,
-      status: { current: false },
-      installFails: true,
-      env: "",
-      args: ["--no-lan"],
-      installs: 0,
-      restarts: 0,
-      envAfter: "",
-    },
-    {
-      label: "a failed restart puts service.env back and restarts on it",
-      installed: true,
-      restartFails: true,
-      env: "ONICODE_LAN=false\n",
-      args: ["--lan"],
-      installs: 0,
-      restarts: 2,
-      envAfter: "ONICODE_LAN=false\n",
-    },
-    {
-      label: "declining an update changes nothing",
-      installed: true,
-      status: { current: false },
-      answer: "n",
-      env: "ONICODE_LAN=false\n",
-      args: ["--lan"],
-      installs: 0,
-      restarts: 0,
-      envAfter: "ONICODE_LAN=false\n",
-    },
-    {
-      label: "a service for another home is refused without a restart",
-      installed: true,
-      status: { current: false, otherBaseDir: "/srv/onicode home" },
-      fails: true,
-      answer: "y",
-      env: "ONICODE_LAN=false\n",
-      args: ["--lan"],
-      installs: 0,
-      restarts: 0,
-      envAfter: "ONICODE_LAN=false\n",
-    },
-    {
-      label: "another home's service supplies no local network default",
-      installed: true,
-      status: { current: false, otherBaseDir: "/srv/onicode home" },
-      reportStatus: true,
-      env: "",
-      args: ["--json"],
-      installs: 0,
-      restarts: 0,
-      envAfter: "",
-    },
-    {
-      label: "no service manager still records the choice",
-      installed: false,
-      status: { supported: false },
-      env: "",
-      args: ["--lan"],
-      installs: 0,
-      restarts: 0,
-      envAfter: "ONICODE_LAN=true\n",
-    },
-    {
-      label: "the old default is kept",
-      installed: true,
-      env: "",
-      args: ["--yes"],
-      installs: 0,
-      restarts: 0,
-      envAfter: "ONICODE_LAN=true\n",
-    },
-  ])("keeps service changes and access settings consistent: $label", (input) =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-up-test-" });
-      yield* fs.writeFileString(`${baseDir}/service.env`, input.env);
-      let installs = 0;
-      let restarts = 0;
-      const status = {
-        ...SERVICE,
-        installed: input.installed,
-        current: input.installed,
-        ...input.status,
-      };
-      vi.spyOn(BootService, "layer").mockReturnValue(
-        Layer.succeed(
-          BootService.BootService,
-          BootService.BootService.of({
-            status: Effect.succeed(status),
-            withStopped: (operation) => operation,
-            restart: Effect.sync(() => restarts++).pipe(
-              Effect.andThen(
-                input.restartFails === true
-                  ? Effect.fail(new BootService.BootServiceCommandError({ step: "restart" }))
-                  : Effect.succeed("restarted" as const),
+    it.effect.each<{
+      readonly label: string;
+      readonly installed: boolean;
+      readonly status?: Partial<BootService.BootServiceStatus>;
+      readonly installFails?: boolean;
+      readonly restartFails?: boolean;
+      readonly fails?: boolean;
+      readonly reportStatus?: boolean;
+      /** Runs as if in a terminal, answering each question with this text. */
+      readonly answer?: string;
+      readonly prints?: string;
+      readonly env: string;
+      readonly args: ReadonlyArray<string>;
+      readonly installs: number;
+      readonly restarts: number;
+      readonly envAfter: string;
+    }>([
+      {
+        label: "nothing changed",
+        installed: true,
+        env: "ONICODE_LAN=false\n",
+        args: ["--no-lan"],
+        installs: 0,
+        restarts: 0,
+        envAfter: "ONICODE_LAN=false\n",
+      },
+      {
+        label: "the local network opens",
+        prints: "Run `onicode pair --base-dir <baseDir>`.",
+        installed: true,
+        env: "ONICODE_LAN=false\n",
+        args: ["--lan"],
+        installs: 0,
+        restarts: 1,
+        envAfter: "ONICODE_LAN=true\n",
+      },
+      {
+        label: "a new service starts with its settings",
+        installed: false,
+        env: "",
+        args: ["--lan"],
+        installs: 1,
+        restarts: 0,
+        envAfter: "ONICODE_LAN=true\n",
+      },
+      {
+        label: "a route turns off with no service to run",
+        installed: false,
+        env: "ONICODE_LAN=true\n",
+        args: ["--no-lan"],
+        installs: 0,
+        restarts: 0,
+        envAfter: "ONICODE_LAN=false\n",
+      },
+      {
+        label: "a stopped newer service starts as it is",
+        installed: true,
+        status: { current: false, installedVersion: "999.0.0", problems: ["service-stopped"] },
+        env: "ONICODE_LAN=false\n",
+        args: ["--yes"],
+        installs: 0,
+        restarts: 1,
+        envAfter: "ONICODE_LAN=false\n",
+      },
+      {
+        label: "a failed update keeps service.env matching the old service",
+        // The old service still runs, so no foreground server is offered.
+        prints: "Fix that, then run `onicode up --base-dir <baseDir>` again.",
+        installed: true,
+        status: { current: false },
+        installFails: true,
+        env: "",
+        args: ["--no-lan"],
+        installs: 0,
+        restarts: 0,
+        envAfter: "",
+      },
+      {
+        label: "a failed restart puts service.env back and restarts on it",
+        installed: true,
+        restartFails: true,
+        env: "ONICODE_LAN=false\n",
+        args: ["--lan"],
+        installs: 0,
+        restarts: 2,
+        envAfter: "ONICODE_LAN=false\n",
+      },
+      {
+        label: "declining an update changes nothing",
+        installed: true,
+        status: { current: false },
+        answer: "n",
+        env: "ONICODE_LAN=false\n",
+        args: ["--lan"],
+        installs: 0,
+        restarts: 0,
+        envAfter: "ONICODE_LAN=false\n",
+      },
+      {
+        label: "a service for another home is refused without a restart",
+        installed: true,
+        status: { current: false, otherBaseDir: "/srv/onicode home" },
+        fails: true,
+        answer: "y",
+        env: "ONICODE_LAN=false\n",
+        args: ["--lan"],
+        installs: 0,
+        restarts: 0,
+        envAfter: "ONICODE_LAN=false\n",
+      },
+      {
+        label: "another home's service supplies no local network default",
+        installed: true,
+        status: { current: false, otherBaseDir: "/srv/onicode home" },
+        reportStatus: true,
+        env: "",
+        args: ["--json"],
+        installs: 0,
+        restarts: 0,
+        envAfter: "",
+      },
+      {
+        label: "no service manager still records the choice",
+        installed: false,
+        status: { supported: false },
+        env: "",
+        args: ["--lan"],
+        installs: 0,
+        restarts: 0,
+        envAfter: "ONICODE_LAN=true\n",
+      },
+      {
+        label: "the old default is kept",
+        installed: true,
+        env: "",
+        args: ["--yes"],
+        installs: 0,
+        restarts: 0,
+        envAfter: "ONICODE_LAN=true\n",
+      },
+    ])("keeps service changes and access settings consistent: $label", (input) =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-up-test-" });
+        yield* fs.writeFileString(`${baseDir}/service.env`, input.env);
+        let installs = 0;
+        let restarts = 0;
+        const status = {
+          ...SERVICE,
+          installed: input.installed,
+          current: input.installed,
+          ...input.status,
+        };
+        vi.spyOn(BootService, "layer").mockReturnValue(
+          Layer.succeed(
+            BootService.BootService,
+            BootService.BootService.of({
+              status: Effect.succeed(status),
+              withStopped: (operation) => operation,
+              restart: Effect.sync(() => restarts++).pipe(
+                Effect.andThen(
+                  input.restartFails === true
+                    ? Effect.fail(new BootService.BootServiceCommandError({ step: "restart" }))
+                    : Effect.succeed("restarted" as const),
+                ),
               ),
-            ),
-            install: () =>
-              status.otherBaseDir !== undefined
-                ? Effect.fail(
-                    new BootService.BootServiceOtherBaseDirError({
-                      installedBaseDir: status.otherBaseDir,
-                      baseDir,
-                    }),
-                  )
-                : input.installFails === true
+              install: () =>
+                status.otherBaseDir !== undefined
                   ? Effect.fail(
-                      new BootService.BootServicePrerequisiteError({ problem: "linger-disabled" }),
-                    )
-                  : Effect.sync(() => {
-                      installs++;
-                      return {
-                        program: ["onicode"],
+                      new BootService.BootServiceOtherBaseDirError({
+                        installedBaseDir: status.otherBaseDir,
                         baseDir,
-                        unitPath: status.unitPath,
-                        logPath: status.logPath,
-                      };
-                    }),
-            uninstall: Effect.succeed(false),
-          }),
-        ),
-      );
-
-      if (input.answer !== undefined) yield* asTerminal;
-      const run = input.reportStatus
-        ? Command.runWith(statusCommand, { version: packageJson.version })
-        : Command.runWith(upCommand, { version: packageJson.version });
-      const { exit, lines } = yield* run(["--base-dir", baseDir, ...input.args]).pipe(
-        Effect.provideService(HostProcess.Environment, {}),
-        input.answer === undefined
-          ? (effect) => effect
-          : Effect.provideService(Terminal.Terminal, answering(input.answer)),
-        Effect.exit,
-        Effect.flatMap((exit) =>
-          Effect.map(TestConsole.logLines, (lines) => ({ exit, lines: lines.map(String) })),
-        ),
-        Effect.provide(
-          Layer.mergeAll(
-            ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })),
-            Layer.fresh(TestConsole.layer),
+                      }),
+                    )
+                  : input.installFails === true
+                    ? Effect.fail(
+                        new BootService.BootServicePrerequisiteError({
+                          problem: "linger-disabled",
+                        }),
+                      )
+                    : Effect.sync(() => {
+                        installs++;
+                        return {
+                          program: ["onicode"],
+                          baseDir,
+                          unitPath: status.unitPath,
+                          logPath: status.logPath,
+                        };
+                      }),
+              uninstall: Effect.succeed(false),
+            }),
           ),
-        ),
-      );
-      if (input.prints !== undefined) {
-        expect(lines.join("\n")).toContain(input.prints.replace("<baseDir>", baseDir));
-      }
-      if (input.reportStatus) {
-        expect(JSON.parse(lines.join("\n"))).toMatchObject({
-          service: { otherBaseDir: "/srv/onicode home" },
-          lan: { enabled: false, inheritedDefault: false },
+        );
+
+        if (input.answer !== undefined) yield* asTerminal;
+        const run = input.reportStatus
+          ? Command.runWith(statusCommand, { version: packageJson.version })
+          : Command.runWith(upCommand, { version: packageJson.version });
+        const { exit, lines } = yield* run(["--base-dir", baseDir, ...input.args]).pipe(
+          Effect.provideService(HostProcess.Environment, {}),
+          input.answer === undefined
+            ? (effect) => effect
+            : Effect.provideService(Terminal.Terminal, answering(input.answer)),
+          Effect.exit,
+          Effect.flatMap((exit) =>
+            Effect.map(TestConsole.logLines, (lines) => ({ exit, lines: lines.map(String) })),
+          ),
+          Effect.provide(
+            Layer.mergeAll(
+              ConfigProvider.layer(ConfigProvider.fromEnv({ env: {} })),
+              Layer.fresh(TestConsole.layer),
+            ),
+          ),
+        );
+        if (input.prints !== undefined) {
+          expect(lines.join("\n")).toContain(input.prints.replace("<baseDir>", baseDir));
+        }
+        if (input.reportStatus) {
+          expect(JSON.parse(lines.join("\n"))).toMatchObject({
+            service: { otherBaseDir: "/srv/onicode home" },
+            lan: { enabled: false, inheritedDefault: false },
+          });
+        }
+        expect(exit._tag).toBe(
+          input.restartFails === true || input.fails === true ? "Failure" : "Success",
+        );
+        expect({ installs, restarts }).toEqual({
+          installs: input.installs,
+          restarts: input.restarts,
         });
-      }
-      expect(exit._tag).toBe(
-        input.restartFails === true || input.fails === true ? "Failure" : "Success",
-      );
-      expect({ installs, restarts }).toEqual({
-        installs: input.installs,
-        restarts: input.restarts,
-      });
-      expect(yield* fs.readFileString(`${baseDir}/service.env`)).toBe(input.envAfter);
-    }),
-  );
-});
+        expect(yield* fs.readFileString(`${baseDir}/service.env`)).toBe(input.envAfter);
+      }),
+    );
+  },
+);
 
 it("rewrites only the named service.env keys and keeps the user's lines", () => {
-  const before = ["# my settings", "ONICODE_PORT=4000", "export ONICODE_LAN=0", "ONICODE_LAN=1", ""];
-  expect(upsertServiceEnv(before.join("\n"), { ONICODE_LAN: "true", ONICODE_HOST: undefined })).toBe(
-    ["# my settings", "ONICODE_PORT=4000", "ONICODE_LAN=true", ""].join("\n"),
-  );
+  const before = [
+    "# my settings",
+    "ONICODE_PORT=4000",
+    "export ONICODE_LAN=0",
+    "ONICODE_LAN=1",
+    "",
+  ];
+  expect(
+    upsertServiceEnv(before.join("\n"), { ONICODE_LAN: "true", ONICODE_HOST: undefined }),
+  ).toBe(["# my settings", "ONICODE_PORT=4000", "ONICODE_LAN=true", ""].join("\n"));
   expect(upsertServiceEnv("", { ONICODE_LAN: "false" })).toBe("ONICODE_LAN=false\n");
 });

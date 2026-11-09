@@ -90,8 +90,8 @@ function tool(
 const ONICODE_MCP_SERVER_ALIASES = new Set([
   "onicode",
   "oni_code",
-  "onicode",
   "onicode-direct",
+  "onicode_direct",
   "oni_code_direct",
 ]);
 
@@ -330,7 +330,10 @@ const ONICODE_MCP_TOOLS: Readonly<Record<string, OniMcpToolDefinition>> = {
   oni_thread_search: tool(["Search", "Searching", "Searched", "thread content"], "thread-search"),
   oni_thread_transfers: tool(["Read", "Reading", "Read", "thread transfers"], "thread-transfers"),
   oni_thread_organize: tool(["Organize", "Organizing", "Organized", "a thread"], "thread-organize"),
-  oni_thread_update: tool(["Update", "Updating", "Updated", "Onicode thread metadata"], "thread-update"),
+  oni_thread_update: tool(
+    ["Update", "Updating", "Updated", "Onicode thread metadata"],
+    "thread-update",
+  ),
   oni_worktree_list: tool(["List", "Listing", "Listed", "workspace branches"], "worktree-list"),
   oni_preview_list: tool(["List", "Listing", "Listed", "preview tabs"], "browser", "browser"),
   oni_preview_close: tool(["Close", "Closing", "Closed", "a preview tab"], "browser", "browser"),
@@ -357,7 +360,10 @@ const ONICODE_MCP_TOOLS: Readonly<Record<string, OniMcpToolDefinition>> = {
   oni_thread_launch: tool(["Launch", "Launching", "Launched", "a project thread"], "thread-create"),
   oni_project_list: tool(["List", "Listing", "Listed", "projects"], "project-list"),
   oni_project_read: tool(["Read", "Reading", "Read", "a project"], "project-read"),
-  oni_project_create: tool(["Register", "Registering", "Registered", "a project"], "project-create"),
+  oni_project_create: tool(
+    ["Register", "Registering", "Registered", "a project"],
+    "project-create",
+  ),
   oni_project_update: tool(["Update", "Updating", "Updated", "a project"], "project-update"),
   oni_project_delete: tool(["Delete", "Deleting", "Deleted", "a project"], "project-delete"),
   oni_project_clone: tool(["Clone", "Cloning", "Cloned", "a repository"], "project-clone"),
@@ -410,14 +416,16 @@ function parseOniMcpToolName(value: string): string | null {
   }
 
   const namespaceMatch =
-    /^(?<server>onicode[-_]code[-_]direct|onicode|oni_code|onicode)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
+    /^(?<server>onicode[-_]direct|oni_code_direct|onicode|oni_code)(?:[.:/]|\s*·\s*)(?<tool>.+)$/i.exec(
       label,
     );
   if (namespaceMatch?.groups) {
     return namespaceMatch.groups.tool ?? null;
   }
 
-  const prefixed = /^(?:mcp[-_]{1,2})?onicode[-_ ]?code(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(label);
+  const prefixed = /^(?:mcp[-_]{1,2})?(?:onicode|oni[-_ ]code)(?:__|[-_.:/ ])(?<tool>.+)$/i.exec(
+    label,
+  );
   const candidate = prefixed?.groups?.tool ?? label;
   if (Object.hasOwn(ONICODE_MCP_TOOLS, candidate)) return candidate;
   // OpenCode 2 thread prefixes can contain underscores; choose the longest known tool-name suffix.
@@ -445,9 +453,11 @@ const ACTION_TOOLS: Readonly<Record<string, (action: string) => string | undefin
   oni_queue: (action) => `oni_queue_${action}`,
   oni_pending_request: (action) => `oni_pending_request_${action}`,
   oni_thread_transfer: (action) =>
-    ({ fork: "oni_thread_fork", merge_back: "oni_thread_merge_back", status: "oni_thread_transfers" })[
-      action
-    ],
+    ({
+      fork: "oni_thread_fork",
+      merge_back: "oni_thread_merge_back",
+      status: "oni_thread_transfers",
+    })[action],
 };
 
 /** Pass the call's input so an action tool resolves to the labels and summary of its action. */

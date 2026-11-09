@@ -117,11 +117,9 @@ describe("browser API CORS", () => {
           headers: {
             origin: "https://app.t3.codes",
             "access-control-request-method": "GET",
-            "access-control-request-headers": [
-              ORCHESTRATION_PROTOCOL_HEADER,
-              "authorization",
-              "dpop",
-            ].join(", "),
+            "access-control-request-headers": [ORCHESTRATION_PROTOCOL_HEADER, "authorization"].join(
+              ", ",
+            ),
           },
         }),
       );
@@ -135,7 +133,6 @@ describe("browser API CORS", () => {
       );
       expect(allowedHeaders.has(ORCHESTRATION_PROTOCOL_HEADER)).toBe(true);
       expect(allowedHeaders.has("authorization")).toBe(true);
-      expect(allowedHeaders.has("dpop")).toBe(true);
     } finally {
       await dispose();
     }
@@ -204,13 +201,15 @@ describe("untraced requests", () => {
 
 const layerFileResponse = Layer.mergeAll(NodeHttpPlatform.layer, NodeServices.layer);
 
-const makeStaticRequest = Effect.fn("HttpTest.makeStaticRequest")(function* (staticDir: string) {
+const makeStaticRequest = Effect.fn("HttpTest.makeStaticRequest")(function* (
+  staticDir: string,
+  route: typeof ServerHttp.layerStaticAndDevRoute = ServerHttp.layerStaticAndDevRoute,
+) {
   const config = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
-  const layerApp = Layer.merge(
-    ServerHttp.layerStaticAndDevRoute,
-    ServerHttp.layerHttpCompression,
-  ).pipe(Layer.provideMerge(NodeHttpPlatform.layer));
+  const layerApp = Layer.merge(route, ServerHttp.layerHttpCompression).pipe(
+    Layer.provideMerge(NodeHttpPlatform.layer),
+  );
   // HttpRouter.serve prefers outer services; inject the test FileSystem between it and NodeHttpServer.layerTest.
   const services = yield* Layer.build(
     HttpRouter.serve(layerApp, { disableListenLog: true }).pipe(
@@ -229,6 +228,23 @@ it.layer(
     Layer.provideMerge(NodeServices.layer),
   ),
 )("static HTTP responses", (it) => {
+  it.effect("serves the internet only the guest page and its files", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const staticDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-public-static-" });
+      yield* fs.writeFileString(path.join(staticDir, "index.html"), "<html>app</html>");
+      yield* fs.writeFileString(path.join(staticDir, "app.js"), "export {};");
+      const request = yield* makeStaticRequest(staticDir, ServerHttp.layerPublicStaticRoute);
+
+      expect((yield* request("/guest")).status).toBe(200);
+      expect((yield* request("/app.js")).status).toBe(200);
+      for (const resource of ["/", "/settings", "/threads/1", "/mcp", "/api/state.json"]) {
+        expect((yield* request(resource)).status, resource).toBe(404);
+      }
+    }),
+  );
+
   it.effect("revalidates non-HTML files and returns changed contents", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -545,7 +561,9 @@ describe("video asset byte ranges", () => {
       Effect.gen(function* () {
         const fs = yield* FileSystem.FileSystem;
         const path = yield* Path.Path;
-        const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-guarded-offset-limit-" });
+        const directory = yield* fs.makeTempDirectoryScoped({
+          prefix: "oni-guarded-offset-limit-",
+        });
         const filePath = path.join(directory, "clip.mp4");
         yield* fs.writeFileString(filePath, "0123456789");
         const canonicalPath = yield* fs.realPath(filePath);

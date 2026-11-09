@@ -32,8 +32,6 @@ describe("authorization grants", () => {
       "review:write",
       "access:read",
       "access:write",
-      "relay:read",
-      "relay:write",
     ]),
   );
 

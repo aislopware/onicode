@@ -7,8 +7,6 @@ import type { ProjectScopedServerSettingKey, ServerSettings } from "./settings.t
 
 export const ONICODE_PROJECT_FILE_NAME = "onicode.json";
 
-export const ONICODE_PROJECT_FILE_SCHEMA_URL = "https://t3.codes/schema/onicode.json";
-
 const ONICODE_PROJECT_FILE_PATH_MAX_LENGTH = 512;
 const ONICODE_PROJECT_FILE_MAX_SCRIPTS = 50;
 
@@ -77,9 +75,7 @@ export type OniProjectFileScript = typeof OniProjectFileScript.Type;
 
 export const OniProjectFile = Schema.Struct({
   $schema: Schema.optionalKey(
-    Schema.String.annotate({
-      description: `URL of the JSON Schema for this file, typically "${ONICODE_PROJECT_FILE_SCHEMA_URL}".`,
-    }),
+    Schema.String.annotate({ description: "URL of a JSON Schema for this file." }),
   ),
   iconPath: Schema.optionalKey(
     trimmedNonEmpty(
@@ -112,7 +108,7 @@ export const OniProjectFile = Schema.Struct({
 }).annotate({
   title: "Onicode project file",
   description:
-    "Checked-in project configuration for Onicode (onicode.json at the repository root). See https://t3.codes for documentation.",
+    "Checked-in project configuration for Onicode (onicode.json at the repository root).",
 });
 export type OniProjectFile = typeof OniProjectFile.Type;
 

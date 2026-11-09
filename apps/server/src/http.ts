@@ -39,7 +39,6 @@ import {
 } from "./assets/AttachmentUpload.ts";
 import * as BrowserTraceCollector from "./observability/BrowserTraceCollector.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
-import { traceRelayRequest } from "./cloud/traceRelayRequest.ts";
 import {
   annotateEnvironmentRequest,
   failEnvironmentScopeRequired,
@@ -297,10 +296,7 @@ const authenticateRawRouteWithScope =
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
     const session = yield* serverAuth.authenticateHttpRequest(request).pipe(
       Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>
-        failEnvironmentAuthInvalid(
-          EnvironmentAuth.serverAuthCredentialReason(error),
-          EnvironmentAuth.serverAuthDpopFailureReason(error),
-        ),
+        failEnvironmentAuthInvalid(EnvironmentAuth.serverAuthCredentialReason(error)),
       ),
       Effect.catchIf(EnvironmentAuth.isServerAuthInternalError, (error) =>
         failEnvironmentInternal("internal_error", error),
@@ -321,7 +317,7 @@ export const layerServerEnvironmentHttpApi = HttpApiBuilder.group(
       Effect.fn("environment.metadata.descriptor")(function* (args) {
         yield* annotateEnvironmentRequest(args.endpoint.name);
         return yield* serverEnvironment.getDescriptor;
-      }, traceRelayRequest),
+      }),
     );
   }),
 );
@@ -725,5 +721,35 @@ const handleStaticAndDevRequest = Effect.fn("handleStaticAndDevRequest")(
 export const layerStaticAndDevRoute = Layer.unwrap(
   loadImmutableBuildAssets.pipe(
     Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
+  ),
+);
+
+/**
+ * The web build on the public listener: the guest page and the files it loads, never another
+ * app route. The build holds nothing private; the routes behind it are what need a session.
+ */
+// apps/web routes guest links here; the page needs no Onicode session.
+const GUEST_PAGE_PATH = "/guest";
+
+export const layerPublicStaticRoute = Layer.unwrap(
+  loadImmutableBuildAssets.pipe(
+    Effect.map((assets) =>
+      HttpRouter.add(
+        "GET",
+        "*",
+        Effect.gen(function* () {
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          const pathname = Option.match(requestUrl(request), {
+            onNone: () => "",
+            onSome: (url) => url.pathname,
+          });
+          const isFile = /\/[^/]+\.[A-Za-z0-9]+$/.test(pathname) && !pathname.startsWith("/api/");
+          if (pathname !== GUEST_PAGE_PATH && !isFile) {
+            return HttpServerResponse.text("Not Found", { status: 404 });
+          }
+          return yield* handleStaticAndDevRequest(assets);
+        }),
+      ),
+    ),
   ),
 );

@@ -205,18 +205,10 @@ describe("isTemporaryWorktreeBranch", () => {
     );
   });
 
-  it("matches legacy onicode temporary worktree refs", () => {
-    expect(isTemporaryWorktreeBranch("onicode/deadbeef")).toBe(true);
-    expect(isTemporaryWorktreeBranch("onicode-deadbeef")).toBe(true);
-    expect(isTemporaryWorktreeBranch("onicode/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12")).toBe(true);
+  it("does not treat a UUID-named ref as temporary", () => {
     expect(
       isTemporaryWorktreeBranch(`${WORKTREE_BRANCH_PREFIX}/f4ae4e0e-f971-4d48-b4f2-9cf0aa54ab12`),
     ).toBe(false);
-  });
-
-  it("rejects UUID-shaped refs that are not RFC 4122 v4", () => {
-    expect(isTemporaryWorktreeBranch("onicode/f4ae4e0e-f971-1d48-b4f2-9cf0aa54ab12")).toBe(false);
-    expect(isTemporaryWorktreeBranch("onicode/f4ae4e0e-f971-4d48-c4f2-9cf0aa54ab12")).toBe(false);
   });
 
   it("matches the flat fallback used when a plain onicode branch exists", () => {

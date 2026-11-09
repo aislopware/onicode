@@ -15,7 +15,7 @@ export interface RenderedWebhookPrompt {
 }
 
 const CREDENTIAL_NAME =
-  /^(authorization|proxy-authorization|cookie|set-cookie|x-oni-relay-.*)$|token|secret|signature|key|password|auth|credential|hmac|jwt|assertion/i;
+  /^(authorization|proxy-authorization|cookie|set-cookie)$|token|secret|signature|key|password|auth|credential|hmac|jwt|assertion/i;
 const REDACTED = "[redacted]";
 
 export function redactHeaders(headers: Readonly<Record<string, string>>): Record<string, string> {

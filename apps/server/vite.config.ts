@@ -4,7 +4,6 @@ import * as NodePath from "node:path";
 import { defineConfig, mergeConfig } from "vite-plus";
 
 import baseConfig from "../../vite.config.ts";
-import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import rootPackageJson from "../../package.json" with { type: "json" };
 import packageJson from "./package.json" with { type: "json" };
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
@@ -17,16 +16,15 @@ import {
 
 export { shouldBundleCliDependency };
 
-const repoEnv = loadRepoEnv();
 const cliBuildChannel = /^[^-+]+-(?:nightly|preview)\./.test(packageJson.version)
   ? "nightly"
   : "latest";
-// Official release workflows set the telemetry channel; local builds and forks use "dev".
-const TELEMETRY_CHANNELS = ["stable", "nightly", "preview", "dev"];
-const telemetryChannel = process.env.ONICODE_TELEMETRY_CHANNEL?.trim() || "dev";
-if (!TELEMETRY_CHANNELS.includes(telemetryChannel)) {
+// Official release workflows set the release channel; local builds and forks use "dev".
+const RELEASE_CHANNELS = ["stable", "nightly", "preview", "dev"];
+const releaseChannel = process.env.ONICODE_RELEASE_CHANNEL?.trim() || "dev";
+if (!RELEASE_CHANNELS.includes(releaseChannel)) {
   throw new Error(
-    `ONICODE_TELEMETRY_CHANNEL must be one of ${TELEMETRY_CHANNELS.join(", ")}, got "${telemetryChannel}".`,
+    `ONICODE_RELEASE_CHANNEL must be one of ${RELEASE_CHANNELS.join(", ")}, got "${releaseChannel}".`,
   );
 }
 
@@ -127,23 +125,7 @@ export default mergeConfig(
       },
       define: {
         __ONICODE_BUILD_CHANNEL__: JSON.stringify(cliBuildChannel),
-        __ONICODE_TELEMETRY_CHANNEL__: JSON.stringify(telemetryChannel),
-        __ONICODE_BUILD_RELAY_URL__: JSON.stringify(repoEnv.ONICODE_RELAY_URL?.trim() ?? ""),
-        __ONICODE_BUILD_CLERK_PUBLISHABLE_KEY__: JSON.stringify(
-          repoEnv.ONICODE_CLERK_PUBLISHABLE_KEY?.trim() ?? "",
-        ),
-        __ONICODE_BUILD_CLERK_CLI_OAUTH_CLIENT_ID__: JSON.stringify(
-          repoEnv.ONICODE_CLERK_CLI_OAUTH_CLIENT_ID?.trim() ?? "",
-        ),
-        __ONICODE_BUILD_RELAY_CLIENT_OTLP_TRACES_URL__: JSON.stringify(
-          repoEnv.ONICODE_RELAY_CLIENT_OTLP_TRACES_URL?.trim() ?? "",
-        ),
-        __ONICODE_BUILD_RELAY_CLIENT_OTLP_TRACES_DATASET__: JSON.stringify(
-          repoEnv.ONICODE_RELAY_CLIENT_OTLP_TRACES_DATASET?.trim() ?? "",
-        ),
-        __ONICODE_BUILD_RELAY_CLIENT_OTLP_TRACES_TOKEN__: JSON.stringify(
-          repoEnv.ONICODE_RELAY_CLIENT_OTLP_TRACES_TOKEN?.trim() ?? "",
-        ),
+        __ONICODE_RELEASE_CHANNEL__: JSON.stringify(releaseChannel),
       },
     },
     test: {

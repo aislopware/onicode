@@ -95,8 +95,7 @@ export const readManagedPolicyFile = Effect.fn("readManagedPolicyFile")(function
 });
 
 /** Where a configuration profile's managed preferences land on macOS. */
-export const MACOS_MANAGED_PREFERENCES_PATH =
-  "/Library/Managed Preferences/dev.onicode.app.plist";
+export const MACOS_MANAGED_PREFERENCES_PATH = "/Library/Managed Preferences/dev.onicode.app.plist";
 const WINDOWS_POLICY_SUBKEY = "SOFTWARE\\Policies\\Onicode\\Onicode";
 /**
  * The registry key Group Policy and Intune write to on Windows. It holds either the Group Policy
@@ -110,9 +109,7 @@ export const WINDOWS_POLICY_VALUES = {
   SupportUrl: { type: "string", path: ["supportUrl"] },
   Settings: { type: "json", path: ["settings"] },
   MaxRuntimeMode: { type: "string", path: ["limits", "maxRuntimeMode"] },
-  Connect: { type: "boolean", path: ["limits", "connect"] },
   WebhookTasks: { type: "boolean", path: ["limits", "webhookTasks"] },
-  Telemetry: { type: "boolean", path: ["limits", "telemetry"] },
   BrowserCookieImport: { type: "boolean", path: ["limits", "browserCookieImport"] },
   ProviderInstances: { type: "json", path: ["limits", "providers", "instances"] },
   UpdatesMode: { type: "string", path: ["limits", "updates", "mode"] },

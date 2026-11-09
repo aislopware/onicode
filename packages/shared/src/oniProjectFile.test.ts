@@ -24,7 +24,7 @@ describe("parseOniProjectFile", () => {
   it("reads project defaults from JSONC with a URL in a block comment", () => {
     expect(
       parseOniProjectFile(`{
-        /* See https://t3.codes/schema/onicode.json */
+        /* See https://example.com/schema/onicode.json */
         "defaultThreadEnvMode": "worktree"
       }`),
     ).toEqual({ defaultThreadEnvMode: "worktree" });

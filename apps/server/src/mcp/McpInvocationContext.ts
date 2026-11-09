@@ -12,7 +12,7 @@ import {
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
-import { formatThreadLink, hostedThreadLink } from "@onicode/shared/threadLinks";
+import { formatThreadLink } from "@onicode/shared/threadLinks";
 
 const ALL_MCP_CAPABILITIES = [
   "preview",
@@ -45,8 +45,6 @@ export interface McpClientCaller {
    * another environment passing on the limits of the agent it calls for.
    */
   readonly narrowedTo?: ClientModes | undefined;
-  /** An outside client's thread links go through this hosted app, as Copy thread's do. */
-  readonly hostedAppUrl?: string | undefined;
 }
 
 /**
@@ -133,18 +131,11 @@ export interface McpInvocationScope {
   readonly linkedEnvironments?: boolean;
 }
 
-/**
- * Onicode renders `oni-thread://` links as thread chips. Other MCP clients cannot open them, so
- * they get the hosted link Copy thread copies, which opens the thread in either app or a browser.
- */
+/** Onicode renders `oni-thread://` links as thread chips. */
 export const threadLinkFor = (
-  scope: Pick<McpInvocationScope, "environmentId" | "client">,
+  scope: Pick<McpInvocationScope, "environmentId">,
   threadId: ThreadId,
-): string => {
-  const hostedAppUrl = scope.client?.hostedAppUrl;
-  const ref = { environmentId: scope.environmentId, threadId };
-  return hostedAppUrl === undefined ? formatThreadLink(ref) : hostedThreadLink(ref, hostedAppUrl);
-};
+): string => formatThreadLink({ environmentId: scope.environmentId, threadId });
 
 export class McpInvocationContext extends Context.Service<
   McpInvocationContext,

@@ -177,7 +177,7 @@ function namedProjectReadme(name: string): string {
     "",
     `# ${name}`,
     "",
-    "Created in [Onicode](https://t3.codes).",
+    "Created in Onicode.",
     "",
   ].join("\n");
 }

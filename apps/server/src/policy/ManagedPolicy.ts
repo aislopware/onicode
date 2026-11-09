@@ -25,8 +25,7 @@ import {
   readManagedPolicyFile,
 } from "@onicode/shared/managedPolicyFile";
 
-import { telemetryChannel } from "../config.ts";
-import * as ManagedLimits from "./managedLimits.ts";
+import { releaseChannel } from "../config.ts";
 import * as ManagedProviders from "./managedProviders.ts";
 import * as ManagedSettings from "./managedSettings.ts";
 
@@ -70,7 +69,7 @@ export const loadedPolicy = Effect.fn("ManagedPolicy.loadedPolicy")(function* (
  */
 export function deniedBy(
   policy: Pick<ManagedPolicy["Service"], "document">,
-  capability: "webhookTasks" | "telemetry",
+  capability: "webhookTasks",
 ): string | undefined {
   return policy.document?.limits?.[capability] === false ? policy.document.organization : undefined;
 }
@@ -129,22 +128,12 @@ function summarizeLimits(
   document: ManagedPolicyDocument,
   lockedInstanceFields: Readonly<Record<string, ReadonlyArray<string>>>,
 ): LimitsSummary {
-  const {
-    maxRuntimeMode,
-    clients,
-    webhookTasks,
-    telemetry,
-    browserCookieImport,
-    providers,
-    updates,
-  } = document.limits ?? {};
-  const connect = ManagedLimits.allowsConnect({ document });
+  const { maxRuntimeMode, clients, webhookTasks, browserCookieImport, providers, updates } =
+    document.limits ?? {};
   return {
     ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
     ...(clients === undefined ? {} : { clients }),
-    ...(connect ? {} : { connect: false }),
     ...(webhookTasks === undefined ? {} : { webhookTasks }),
-    ...(telemetry === undefined ? {} : { telemetry }),
     ...(browserCookieImport === undefined ? {} : { browserCookieImport }),
     ...(providers?.allowedDrivers === undefined && Object.keys(lockedInstanceFields).length === 0
       ? {}
@@ -176,7 +165,7 @@ const make = Effect.gen(function* () {
   // Source builds may read a policy from elsewhere so it can be tried without root. Release
   // builds never do: any override a user can set is a way around the policy.
   const devPath =
-    telemetryChannel === "dev"
+    releaseChannel === "dev"
       ? yield* Config.option(Config.String("ONICODE_DEV_MANAGED_POLICY_PATH")).pipe(
           Effect.orElseSucceed(() => Option.none<string>()),
         )

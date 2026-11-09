@@ -60,10 +60,9 @@ const DROPPED_REQUEST_HEADERS = new Set([
   "sec-websocket-protocol",
   "cookie",
   "authorization",
-  "dpop",
   "content-length",
   "accept-encoding",
-  // The client's HTTPS hop makes the hub reject our loopback Origin over T3 Connect.
+  // The client's HTTPS hop (such as Tailscale Serve) makes the hub reject our loopback Origin.
   "x-forwarded-proto",
 ]);
 

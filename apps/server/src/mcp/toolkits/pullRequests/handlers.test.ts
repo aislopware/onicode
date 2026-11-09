@@ -395,10 +395,10 @@ describe("pull request toolkit handlers", () => {
           ]) {
             const harness = yield* makeHarness({ project });
             const result = yield* harness.call("link_pull_request", target);
-            const url = `https://${host}/pingdotgg/t3code/pulls/21353`;
+            const url = `https://${host}/pingdotgg/onicode/pulls/21353`;
             expect(result).toMatchObject({
               host,
-              repository: "pingdotgg/t3code",
+              repository: "pingdotgg/onicode",
               number: 21353,
               url,
             });
@@ -406,7 +406,7 @@ describe("pull request toolkit handlers", () => {
               {
                 type: "thread.pull-request.link",
                 host,
-                repository: "pingdotgg/t3code",
+                repository: "pingdotgg/onicode",
                 number: 21353,
                 url,
               },

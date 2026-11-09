@@ -34,7 +34,7 @@ import { assetFileResponse, downloadContentDisposition } from "../http.ts";
 import type { GuestUpload } from "./guestAttachments.ts";
 import { GuestShareAccessError, GuestShareService } from "./GuestShareService.ts";
 
-// Cloudflare closes idle streams after about 100 seconds.
+// Proxies on the way, Funnel included, may close streams that stay silent too long.
 const HEARTBEAT_INTERVAL = Duration.seconds(20);
 const NO_STORE = { "cache-control": "no-store" };
 // A file never runs as a page on this origin, whatever its bytes.
@@ -124,7 +124,7 @@ const eventStreamResponse = <A>(
   );
 };
 
-// Guest JSON bodies are a name or one message; anyone who can reach the tunnel can post them.
+// Guest JSON bodies are a name or one message; anyone who can reach the Funnel origin can post them.
 const JSON_MAX_BODY_BYTES = 64 * 1024;
 const readJson = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;

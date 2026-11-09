@@ -1,5 +1,5 @@
 /**
- * managedLimits - what `limits.clients` and `limits.connect` in the managed policy allow, and the
+ * managedLimits - what `limits.clients` in the managed policy allows, and the
  * one error every refusal uses so each transport can show the administrator's organization.
  *
  * @module managedLimits
@@ -72,18 +72,12 @@ export function allowsAuthPolicy(policy: PolicyDocument, authPolicy: ServerAuthP
 export const allowsRemoteClients = (policy: PolicyDocument) =>
   allowsAuthPolicy(policy, "remote-reachable");
 
-/** T3 Connect is a way for remote clients in, so a policy without `remote` turns it off too. */
-export const allowsConnect = (policy: PolicyDocument) =>
-  policy.document?.limits?.connect !== false && allowsRemoteClients(policy);
-
 const refuse = (policy: PolicyDocument, action: string, detail?: string) =>
   new ManagedPolicyRefusedError({
     organization: policy.document?.organization ?? "Your organization",
     action,
     ...(detail === undefined ? {} : { detail }),
   });
-
-export const refuseConnect = (policy: PolicyDocument) => refuse(policy, "T3 Connect");
 
 // Node throws ENOTDIR, outside the spawner's error mapping, when PATH ends in a file.
 const isMissingCli = (cause: unknown) =>

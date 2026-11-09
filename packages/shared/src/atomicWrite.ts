@@ -8,7 +8,7 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 import { resolveSymlinkTarget } from "@onicode/shared/symlink";
 
 /** Windows open-file locks block renames; the same codes can mean permanent denial, so bound retries. */
-export const isWindowsRenameLock = (error: PlatformError.PlatformError) => {
+const isWindowsRenameLock = (error: PlatformError.PlatformError) => {
   const code = (error.reason.cause as NodeJS.ErrnoException | undefined)?.code;
   return code === "EBUSY" || code === "EPERM" || code === "EACCES";
 };

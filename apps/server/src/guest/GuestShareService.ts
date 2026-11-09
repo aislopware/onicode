@@ -44,7 +44,6 @@ import {
   threadHtmlRenderAttachmentIds,
 } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
-import { CloudManagedEndpointRuntime } from "../cloud/ManagedEndpointRuntime.ts";
 import * as CommandOutputHub from "../orchestration-v2/CommandOutputHub.ts";
 import { GUEST_FAILURE } from "../orchestration-v2/GuestShareDecider.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
@@ -57,7 +56,7 @@ import {
 } from "../orchestration-v2/WireProjection.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
+import * as PublicAccess from "../publicAccess/PublicAccess.ts";
 import { guestShareView, guestThreadModel } from "./guestView.ts";
 import {
   classifyGuestUploads,
@@ -75,7 +74,7 @@ const SNAPSHOT_ROW_LIMIT = 600;
 const SNAPSHOT_USER_TURN_LIMIT = 20;
 // Shares with no open guest stream whose sent image replies are still kept.
 const SHARED_THREAD_REPLIES_LIMIT = 64;
-// How soon an open read notices that its link stopped working, such as Connect no longer serving
+// How soon an open read notices that its link stopped working, such as Funnel no longer serving
 // the host. Closing or replacing the link ends the main stream at once.
 const ACCESS_RECHECK_INTERVAL = Duration.seconds(30);
 
@@ -222,11 +221,10 @@ const make = Effect.gen(function* () {
   const commandOutputs = yield* CommandOutputHub.CommandOutputHub;
   const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
   const serverSettings = yield* ServerSettings.ServerSettingsService;
-  const managedEndpoint = yield* CloudManagedEndpointRuntime;
+  const publicAccess = yield* PublicAccess.PublicAccess;
   const { attachmentsDir } = yield* ServerConfig.ServerConfig;
   const fileSystem = yield* FileSystem.FileSystem;
   const random = yield* SecureRandom.SecureRandom;
-  const analytics = yield* AnalyticsService.AnalyticsService;
   const signer = yield* PayloadSigner.make(SIGNING_SECRET_NAME);
   /** A truncated HMAC keeps invite links short. 128 bits is still far beyond guessing range. */
   const inviteSignature = (shareId: string) =>
@@ -279,8 +277,9 @@ const make = Effect.gen(function* () {
     return decodeSessionClaims(base64UrlDecodeUtf8(parts.payload));
   });
 
-  const connectHostname = managedEndpoint.inspectConnector.pipe(
-    Effect.map((facts) => facts?.hostname ?? null),
+  // `host[:port]` of the Funnel origin; a link names it, so it stops working when Funnel moves.
+  const publicHost = publicAccess.origin.pipe(
+    Effect.map((origin) => (origin === null ? null : new URL(origin).host)),
   );
   // A beta: while it is off, no link opens and every guest request is refused.
   const sharingEnabled = serverSettings.getSettings.pipe(
@@ -306,7 +305,7 @@ const make = Effect.gen(function* () {
       Effect.orDie,
     );
 
-  /** Checks a token against the live share: same id, not expired, and Connect still serving it. */
+  /** Checks a token against the live share: same id, not expired, and Funnel still serving it. */
   const authorize = Effect.fn("GuestShareService.authorize")(function* (
     token: string,
     kind: "invite" | "session",
@@ -328,7 +327,7 @@ const make = Effect.gen(function* () {
       thread.deletedAt !== null ||
       DateTime.toEpochMillis(now) >= Date.parse(share.expiresAt) ||
       (kind === "session" && share.guestName === null) ||
-      (yield* connectHostname) !== share.host
+      (yield* publicHost) !== share.host
     ) {
       return yield* inactive;
     }
@@ -339,9 +338,9 @@ const make = Effect.gen(function* () {
     if (!(yield* sharingEnabled)) {
       return yield* new GuestShareCreateError({ reason: "disabled" });
     }
-    const host = yield* connectHostname;
+    const host = yield* publicHost;
     if (host === null) {
-      return yield* new GuestShareCreateError({ reason: "connect_unavailable" });
+      return yield* new GuestShareCreateError({ reason: "public_access_off" });
     }
     const shareId = GuestShareId.make(base64UrlEncode(yield* random.randomBytes(SHARE_ID_BYTES)));
     const now = yield* DateTime.now;
@@ -375,8 +374,6 @@ const make = Effect.gen(function* () {
       shareId: share.id,
       guestName: request.name,
     });
-    // Guests have no client connection, so their events carry no surface.
-    yield* analytics.record("feature.used", { feature: "guest_share.join" });
     const token = yield* signSession({ kind: "session", threadId: thread.id, shareId: share.id });
     return { token, shareId: share.id };
   });
@@ -467,10 +464,6 @@ const make = Effect.gen(function* () {
       text: request.text,
       ...(attachments.length === 0 ? {} : { attachments }),
     }).pipe(Effect.onError(() => removeStored(attachments)));
-    yield* analytics.record("feature.used", {
-      feature: "guest_message.submit",
-      variant: attachments.length === 0 ? "text_only" : "with_files",
-    });
   });
 
   /** Completes once the session no longer opens its share, so open reads end with it. */
@@ -590,11 +583,11 @@ const make = Effect.gen(function* () {
         }),
       ),
       Stream.takeUntil((event) => event.type === "ended"),
-      // Unlinking T3 Connect closes it quietly, so a tunnel that comes back on the same host
+      // Turning public access off closes it quietly, so Funnel coming back on the same host
       // keeps the guest in. Turning the beta off closes it the same way. Closing and expiry end
       // it above, with `ended`.
       Stream.interruptWhen(
-        Effect.all([connectHostname, sharingEnabled]).pipe(
+        Effect.all([publicHost, sharingEnabled]).pipe(
           Effect.repeat({
             schedule: Schedule.spaced(ACCESS_RECHECK_INTERVAL),
             until: ([host, enabled]) => host !== share.host || !enabled,

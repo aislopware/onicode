@@ -415,81 +415,62 @@ it.live("rejects a wrong PKCE verifier and spends the code", () =>
   ),
 );
 
-it.live(
-  "denies and refuses codes bound to another client's key or without the scopes it grants",
-  () =>
-    withRoutes((handler, auth) =>
-      Effect.gen(function* () {
-        const clientId = yield* registeredClientId(handler);
-        const params = authorizeParams(clientId);
+it.live("denies and refuses codes without the scopes it grants", () =>
+  withRoutes((handler, auth) =>
+    Effect.gen(function* () {
+      const clientId = yield* registeredClientId(handler);
+      const params = authorizeParams(clientId);
 
-        const denied = yield* decide(handler, params, { _tag: "deny" });
-        const deniedUrl = new URL(denied.redirectTo!);
-        expect(deniedUrl.searchParams.get("error")).toBe("access_denied");
-        expect(deniedUrl.searchParams.get("state")).toBe("state-1");
+      const denied = yield* decide(handler, params, { _tag: "deny" });
+      const deniedUrl = new URL(denied.redirectTo!);
+      expect(deniedUrl.searchParams.get("error")).toBe("access_denied");
+      expect(deniedUrl.searchParams.get("state")).toBe("state-1");
 
-        const approveWith = (code: string) =>
-          decide(handler, params, { _tag: "pairing-code", access: "auto", code });
+      const approveWith = (code: string) =>
+        decide(handler, params, { _tag: "pairing-code", access: "auto", code });
 
-        const bound = yield* auth.createPairingLink({
-          proofKeyThumbprint: "device-key-thumbprint",
-        });
-        expect((yield* approveWith(bound.credential)).status).toBe(400);
-        const stillValid = yield* auth
-          .exchangeBootstrapCredentialForAccessToken(
-            bound.credential,
-            undefined,
-            { deviceType: "mobile" },
-            { proofKeyThumbprint: "device-key-thumbprint" },
-          )
-          .pipe(
-            Effect.as(true),
-            Effect.orElseSucceed(() => false),
-          );
-        expect(stillValid).toBe(true);
+      const readOnly = yield* auth.issuePairingCredential({ scopes: ["orchestration:read"] });
+      const readOnlyResponse = yield* approveWith(readOnly.credential);
+      expect(readOnlyResponse.status).toBe(400);
+      expect(readOnlyResponse.message).toContain("cannot grant this access");
+      const operator = yield* auth.issuePairingCredential({
+        scopes: ["orchestration:read", "orchestration:operate"],
+      });
+      const operatorFull = yield* decide(handler, params, {
+        _tag: "pairing-code",
+        access: "full-access",
+        code: operator.credential,
+      });
+      expect(operatorFull.status).toBe(400);
 
-        const readOnly = yield* auth.issuePairingCredential({ scopes: ["orchestration:read"] });
-        const readOnlyResponse = yield* approveWith(readOnly.credential);
-        expect(readOnlyResponse.status).toBe(400);
-        expect(readOnlyResponse.message).toContain("cannot grant this access");
-        const operator = yield* auth.issuePairingCredential({
-          scopes: ["orchestration:read", "orchestration:operate"],
-        });
-        const operatorFull = yield* decide(handler, params, {
-          _tag: "pairing-code",
-          access: "full-access",
-          code: operator.credential,
-        });
-        expect(operatorFull.status).toBe(400);
-
-        const readOnlyApproval = yield* decide(handler, params, {
-          _tag: "pairing-code",
-          access: "read-only",
-          code: readOnly.credential,
-        });
-        expect(readOnlyApproval.status).toBe(200);
-        const readOnlyToken = yield* handler(
-          at(
-            "/oauth/mcp/token",
-            form({
-              grant_type: "authorization_code",
-              code: new URL(readOnlyApproval.redirectTo!).searchParams.get("code")!,
-              redirect_uri: params.redirect_uri,
-              client_id: clientId,
-              code_verifier: verifier,
-              resource: `${ORIGIN}/mcp`,
-            }),
-          ),
-        ).pipe(Effect.flatMap(json<{ access_token: string; scope: string }>));
-        expect(readOnlyToken.scope).toBe("orchestration:read");
-        const readOnlyClient = yield* auth.authenticateMcpClient(
-          HttpServerRequest.fromWeb(
-            at("/mcp", { headers: { authorization: `Bearer ${readOnlyToken.access_token}` } }),
-          ),
-        );
-        expect(readOnlyClient.access).toBe("read-only");
-      }),
-    ),
+      const readOnlyApproval = yield* decide(handler, params, {
+        _tag: "pairing-code",
+        access: "read-only",
+        code: readOnly.credential,
+      });
+      expect(readOnlyApproval.status).toBe(200);
+      const readOnlyToken = yield* handler(
+        at(
+          "/oauth/mcp/token",
+          form({
+            grant_type: "authorization_code",
+            code: new URL(readOnlyApproval.redirectTo!).searchParams.get("code")!,
+            redirect_uri: params.redirect_uri,
+            client_id: clientId,
+            code_verifier: verifier,
+            resource: `${ORIGIN}/mcp`,
+          }),
+        ),
+      ).pipe(Effect.flatMap(json<{ access_token: string; scope: string }>));
+      expect(readOnlyToken.scope).toBe("orchestration:read");
+      const readOnlyClient = yield* auth.authenticateMcpClient(
+        HttpServerRequest.fromWeb(
+          at("/mcp", { headers: { authorization: `Bearer ${readOnlyToken.access_token}` } }),
+        ),
+      );
+      expect(readOnlyClient.access).toBe("read-only");
+    }),
+  ),
 );
 
 it.live("a code minted with an access level's scopes approves that access", () =>

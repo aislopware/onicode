@@ -45,7 +45,6 @@ export interface IssuedSession {
   readonly client: AuthClientMetadata;
   readonly expiresAt: DateTime.DateTime;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
-  readonly proofKeyThumbprint?: string;
 }
 
 export interface VerifiedSession {
@@ -56,7 +55,6 @@ export interface VerifiedSession {
   readonly expiresAt?: DateTime.DateTime;
   readonly subject: string;
   readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
-  readonly proofKeyThumbprint?: string;
   readonly runtimeModeCeiling?: RuntimeMode;
   /** An MCP client that is another Onicode environment's peer link. */
   readonly peerLink?: true;
@@ -379,7 +377,6 @@ export class SessionStore extends Context.Service<
       readonly method?: ServerAuthSessionMethod;
       readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
       readonly client?: AuthClientMetadata;
-      readonly proofKeyThumbprint?: string;
       readonly runtimeModeCeiling?: RuntimeMode;
       readonly peerLink?: boolean;
       readonly replaceActiveForSubjectAndMethod?: boolean;
@@ -391,7 +388,6 @@ export class SessionStore extends Context.Service<
       input?: {
         readonly ttl?: Duration.Duration;
         readonly audience?: AuthWebSocketTicketUse;
-        readonly proofKeyThumbprint?: string;
       },
     ) => Effect.Effect<
       {
@@ -408,10 +404,9 @@ export class SessionStore extends Context.Service<
       SessionCredentialInternalError
     >;
     readonly streamChanges: Stream.Stream<SessionCredentialChange>;
-    /** Completes when a live socket's session is revoked or expires without a renewal for its DPoP key. */
+    /** Completes when a live socket's session is revoked or expires. */
     readonly awaitInvalidation: (
       sessionId: AuthSessionId,
-      proofKeyThumbprint?: string,
     ) => Effect.Effect<void, SessionCredentialVerificationError>;
     readonly revoke: (
       sessionId: AuthSessionId,
@@ -434,8 +429,7 @@ const SessionClaims = Schema.Struct({
   sid: AuthSessionId,
   sub: Schema.String,
   scopes: AuthEnvironmentScopes,
-  method: Schema.Literals(["browser-session-cookie", "bearer-access-token", "dpop-access-token"]),
-  jkt: Schema.optionalKey(Schema.String),
+  method: Schema.Literals(["browser-session-cookie", "bearer-access-token"]),
   rtc: Schema.optionalKey(RuntimeMode),
   /** Signed, so a client cannot shed its peer link's limits. */
   plk: Schema.optionalKey(Schema.Literal(1)),
@@ -449,7 +443,6 @@ const WebSocketClaims = Schema.Struct({
   kind: Schema.Literal("websocket"),
   sid: AuthSessionId,
   aud: Schema.optionalKey(AuthWebSocketTicketUse),
-  jkt: Schema.optionalKey(Schema.String),
   iat: Schema.Number,
   exp: Schema.Number,
 });
@@ -500,9 +493,6 @@ const make = Effect.gen(function* () {
   );
   const connectedSessionsRef = yield* Ref.make(new Map<AuthSessionId, number>());
   const changesPubSub = yield* PubSub.unbounded<SessionCredentialChange>();
-  // Newest session per DPoP key. A live socket moves to it at expiry, so a
-  // client that renews its short-lived token keeps its socket.
-  const latestSessionByProofKey = new Map<string, AuthSessionId>();
   const cookieInput = {
     mode: serverConfig.mode,
     port: serverConfig.port,
@@ -659,7 +649,6 @@ const make = Effect.gen(function* () {
         sub: input?.subject ?? "browser",
         scopes: input?.scopes ?? AuthStandardClientScopes,
         method: input?.method ?? "browser-session-cookie",
-        ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),
         ...(input?.runtimeModeCeiling ? { rtc: input.runtimeModeCeiling } : {}),
         ...(input?.peerLink === true ? { plk: 1 as const } : {}),
         iat: issuedAt.epochMilliseconds,
@@ -709,7 +698,6 @@ const make = Effect.gen(function* () {
             })
           : authSessions.create(sessionRecord).pipe(Effect.as([] as ReadonlyArray<AuthSessionId>))
       ).pipe(Effect.mapError((cause) => new SessionCredentialIssueError({ sessionId, cause })));
-      if (claims.jkt) latestSessionByProofKey.set(claims.jkt, sessionId);
       if (replacedSessionIds.length > 0) {
         yield* Ref.update(connectedSessionsRef, (current) => {
           const next = new Map(current);
@@ -744,7 +732,6 @@ const make = Effect.gen(function* () {
         client,
         expiresAt: expiresAt,
         scopes: claims.scopes,
-        ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
       } satisfies IssuedSession;
     },
   );
@@ -841,7 +828,6 @@ const make = Effect.gen(function* () {
         expiresAt: expiresAt.value,
         subject: claims.sub,
         scopes: row.value.scopes,
-        ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
         ...(claims.rtc ? { runtimeModeCeiling: claims.rtc } : {}),
         ...(claims.plk === 1 ? { peerLink: true as const } : {}),
       } satisfies VerifiedSession;
@@ -861,7 +847,6 @@ const make = Effect.gen(function* () {
       kind: "websocket",
       sid: sessionId,
       ...(input?.audience ? { aud: input.audience } : {}),
-      ...(input?.proofKeyThumbprint ? { jkt: input.proofKeyThumbprint } : {}),
       iat: issuedAt.epochMilliseconds,
       exp: expiresAt.epochMilliseconds,
     };
@@ -954,7 +939,6 @@ const make = Effect.gen(function* () {
       subject: row.value.subject,
       scopes: row.value.scopes,
       ...(claims.aud ? { audience: claims.aud } : {}),
-      ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),
     } satisfies VerifiedWebSocketTicket;
   });
 
@@ -1039,60 +1023,32 @@ const make = Effect.gen(function* () {
     return revokedSessionIds.length;
   });
 
-  const awaitInvalidation = Effect.fn(function* (
-    sessionId: AuthSessionId,
-    proofKeyThumbprint?: string,
-  ) {
+  const awaitInvalidation = Effect.fn(function* (sessionId: AuthSessionId) {
     return yield* Effect.scoped(
       Effect.gen(function* () {
         // Subscribe before reading: revocation can race with the WebSocket upgrade.
         const subscription = yield* PubSub.subscribe(changesPubSub);
-        const readRow = (id: AuthSessionId) =>
-          authSessions
-            .getById({ sessionId: id })
-            .pipe(
-              Effect.mapError(
-                (cause) => new SessionCredentialVerificationError({ sessionId: id, cause }),
-              ),
-            );
-        const original = yield* readRow(sessionId);
-        if (Option.isNone(original)) return;
-        // Revoking any session the socket has used closes it. Events only wake this loop
-        // and the rows decide: revocations are written before they are published, and
-        // clientRemoved also reports an expired session losing its last socket.
-        const chain = [sessionId];
+        // Events only wake this loop and the row decides: revocations are written before they
+        // are published, and clientRemoved also reports an expired session losing its last socket.
         const nextRemoval = Effect.gen(function* () {
           while (true) {
             const change = yield* PubSub.take(subscription);
-            if (change.type === "clientRemoved" && chain.includes(change.sessionId)) return;
+            if (change.type === "clientRemoved" && change.sessionId === sessionId) return;
           }
         });
-        let current = original.value;
         while (true) {
-          const rows = yield* Effect.forEach(chain, readRow);
-          if (rows.some((row) => Option.isNone(row) || row.value.revokedAt !== null)) return;
+          const row = yield* authSessions
+            .getById({ sessionId })
+            .pipe(
+              Effect.mapError(
+                (cause) => new SessionCredentialVerificationError({ sessionId, cause }),
+              ),
+            );
+          if (Option.isNone(row) || row.value.revokedAt !== null) return;
           const now = yield* DateTime.now;
-          const remaining = current.expiresAt.epochMilliseconds - now.epochMilliseconds;
-          if (remaining > 0) {
-            yield* Effect.raceFirst(nextRemoval, Effect.sleep(Duration.millis(remaining)));
-            continue;
-          }
-          const successorId =
-            proofKeyThumbprint === undefined
-              ? undefined
-              : latestSessionByProofKey.get(proofKeyThumbprint);
-          if (successorId === undefined || successorId === current.sessionId) return;
-          const successor = yield* readRow(successorId);
-          // The socket keeps its original scopes, so the renewal must still grant all of them.
-          if (
-            Option.isNone(successor) ||
-            successor.value.subject !== original.value.subject ||
-            !original.value.scopes.every((scope) => successor.value.scopes.includes(scope))
-          ) {
-            return;
-          }
-          chain.push(successorId);
-          current = successor.value;
+          const remaining = row.value.expiresAt.epochMilliseconds - now.epochMilliseconds;
+          if (remaining <= 0) return;
+          yield* Effect.raceFirst(nextRemoval, Effect.sleep(Duration.millis(remaining)));
         }
       }),
     );

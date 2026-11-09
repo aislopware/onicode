@@ -17,7 +17,6 @@ import {
   ThreadId,
   TurnItemId,
 } from "@onicode/contracts";
-import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
@@ -27,7 +26,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
-import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -38,7 +36,6 @@ import {
   sweepStalePendingAttachments,
 } from "../attachmentStore.ts";
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
-import { CloudManagedEndpointRuntime } from "../cloud/ManagedEndpointRuntime.ts";
 import * as ServerConfig from "../config.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { CodexProviderCapabilitiesV2 } from "../orchestration-v2/Adapters/CodexAdapterV2.ts";
@@ -52,8 +49,8 @@ import * as ProviderAdapterRegistry from "../orchestration-v2/ProviderAdapterReg
 import * as ResourceCleanupService from "../orchestration-v2/ResourceCleanupService.ts";
 import * as ProviderReplayHarness from "../orchestration-v2/testkit/ProviderReplayHarness.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
+import * as PublicAccess from "../publicAccess/PublicAccess.ts";
 import * as ServerSettings from "../serverSettings.ts";
-import * as AnalyticsService from "../telemetry/AnalyticsService.ts";
 import * as GuestShareService from "./GuestShareService.ts";
 
 const instanceId = ProviderInstanceId.make("codex");
@@ -76,16 +73,12 @@ const layerOrchestration = Layer.mergeAll(
   ),
 );
 
-// The Connect hostname the fake tunnel reports. Tests set it to null to simulate an unlink.
-const hostname = Ref.makeUnsafe<string | null>("env.onicode.test");
-const layerConnect = Layer.mock(CloudManagedEndpointRuntime)({
-  inspectConnector: Effect.map(Ref.get(hostname), (value) => ({
-    pid: 1,
-    readyConnections: 1,
-    hostname: value,
-    protocol: "http2",
-  })),
-});
+const FUNNEL_ORIGIN = "https://box.tailnet.ts.net:8443";
+// Tests turn public access off to simulate Funnel no longer serving the link's host.
+const setPublicAccess = (on: boolean) =>
+  PublicAccess.PublicAccess.use((access) =>
+    access.set(on ? { _tag: "on", origin: FUNNEL_ORIGIN } : { _tag: "off" }),
+  );
 const layerProviders = Layer.mock(ProviderRegistry.ProviderRegistry)({
   getProviders: Effect.succeed([]),
 });
@@ -115,26 +108,6 @@ const layerCleanup = Layer.effect(
   Layer.provide(layerConfig),
   Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
 );
-class RecordedAnalytics extends Context.Service<
-  RecordedAnalytics,
-  Ref.Ref<ReadonlyArray<Readonly<Record<string, unknown>>>>
->()("onicode/guest/GuestShareService.test/RecordedAnalytics") {}
-const layerAnalytics = Layer.effectContext(
-  Effect.gen(function* () {
-    const recorded = yield* Ref.make<ReadonlyArray<Readonly<Record<string, unknown>>>>([]);
-    return Context.make(RecordedAnalytics, recorded).pipe(
-      Context.add(
-        AnalyticsService.AnalyticsService,
-        AnalyticsService.AnalyticsService.of({
-          record: (event, properties) =>
-            Ref.update(recorded, (events) => [...events, { event, ...properties }]),
-          flush: Effect.void,
-          recordOwners: () => Effect.void,
-        }),
-      ),
-    );
-  }),
-);
 const layerTest = GuestShareService.layer.pipe(
   Layer.provideMerge(
     CommandOutputHub.layer.pipe(
@@ -143,8 +116,7 @@ const layerTest = GuestShareService.layer.pipe(
   ),
   Layer.provide(layerProviders),
   Layer.provideMerge(ServerSettings.layerTest({ guestSharingEnabled: true })),
-  Layer.provide(layerConnect),
-  Layer.provideMerge(layerAnalytics),
+  Layer.provideMerge(PublicAccess.layer),
   Layer.provide(ServerSecretStore.layer),
   Layer.provideMerge(layerConfig),
   Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
@@ -153,7 +125,7 @@ const layerTest = GuestShareService.layer.pipe(
 const threadId = ThreadId.make("thread:guest-share-service");
 
 const shareThreadFor = Effect.fn(function* (threadId: ThreadId) {
-  yield* Ref.set(hostname, "env.onicode.test");
+  yield* setPublicAccess(true);
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   yield* orchestrator.dispatch({
     type: "thread.create",
@@ -170,8 +142,9 @@ const shareThreadFor = Effect.fn(function* (threadId: ThreadId) {
     creationSource: "web",
   });
   const guestShares = yield* GuestShareService.GuestShareService;
-  const { url } = yield* guestShares.create({ threadId });
-  assert.isTrue(url.startsWith("https://env.onicode.test/guest#"));
+  const { url, share } = yield* guestShares.create({ threadId });
+  assert.isTrue(url.startsWith(`${FUNNEL_ORIGIN}/guest#`));
+  assert.equal(share.host, "box.tailnet.ts.net:8443");
   const credential = url.slice(url.indexOf("#") + 1);
   return { orchestrator, guestShares, credential };
 });
@@ -201,18 +174,6 @@ it.effect("spends an invite once and ends the guest stream when the owner stops 
     );
     assert.isTrue(Exit.isFailure(yield* Effect.exit(guestShares.stream(session))));
     assert.isTrue(Exit.isFailure(yield* Effect.exit(guestShares.check(session))));
-  }).pipe(Effect.provide(layerTest)),
-);
-
-it.effect("counts a guest joining and sending, without their name or text", () =>
-  Effect.gen(function* () {
-    const { guestShares, credential } = yield* shareThread;
-    const { token: session, shareId } = yield* guestShares.redeem({ credential, name: "Sam" });
-    yield* guestShares.submit(session, { shareId, text: "Hello" }, []);
-    assert.deepEqual(yield* Ref.get(yield* RecordedAnalytics), [
-      { event: "feature.used", feature: "guest_share.join" },
-      { event: "feature.used", feature: "guest_message.submit", variant: "text_only" },
-    ]);
   }).pipe(Effect.provide(layerTest)),
 );
 
@@ -302,38 +263,42 @@ it.effect("redeems only a short invite whose signature and share id are both cur
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("refuses guest requests once T3 Connect no longer serves the link's host", () =>
+it.effect("refuses links and guest requests once Funnel no longer serves the link's host", () =>
   Effect.gen(function* () {
     const { guestShares, credential } = yield* shareThread;
     const { token: session } = yield* guestShares.redeem({ credential, name: "Sam" });
     const { id: shareId } = (yield* Orchestrator.OrchestratorV2.use((orchestrator) =>
       orchestrator.getThreadRecords(threadId, []),
     )).thread.guestShare!;
-    yield* Ref.set(hostname, null);
+    yield* setPublicAccess(false);
     const submitted = yield* Effect.exit(
       guestShares.submit(session, { shareId, text: "Hello" }, []),
     );
     assert.isTrue(Exit.isFailure(submitted));
+    assert.equal(
+      (yield* Effect.flip(guestShares.create({ threadId }))).reason,
+      "public_access_off",
+    );
   }).pipe(Effect.provide(layerTest)),
 );
 
-it.effect("closes an open guest stream when T3 Connect stops serving the link's host", () =>
+it.effect("closes an open guest stream when Funnel stops serving the link's host", () =>
   Effect.gen(function* () {
     const { guestShares, credential } = yield* shareThread;
     const { token: session } = yield* guestShares.redeem({ credential, name: "Sam" });
     const collecting = yield* Stream.runCollect(yield* guestShares.stream(session)).pipe(
       Effect.forkChild,
     );
-    yield* Ref.set(hostname, null);
+    yield* setPublicAccess(false);
     yield* TestClock.adjust("30 seconds");
-    // No `ended`: the browser reconnects, and the host check refuses it while Connect is gone.
+    // No `ended`: the browser reconnects, and the host check refuses it while Funnel is off.
     const received = Array.from(yield* Fiber.join(collecting));
     assert.deepEqual(
       received.map((event) => (event.type === "thread" ? event.item.kind : event.type)),
       ["view", "snapshot"],
     );
     assert.isTrue(Exit.isFailure(yield* Effect.exit(guestShares.stream(session))));
-    yield* Ref.set(hostname, "env.onicode.test");
+    yield* setPublicAccess(true);
     assert.isTrue(Exit.isSuccess(yield* Effect.exit(guestShares.stream(session))));
   }).pipe(Effect.provide(layerTest)),
 );
