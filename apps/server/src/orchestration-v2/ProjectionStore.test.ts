@@ -863,7 +863,7 @@ it.effect("SQL shells flag only an active turn blocked solely on Onicode thread 
       id: TurnItemId.make("item:thread-wait:active"),
       runId: run.id,
       type: "dynamic_tool" as const,
-      toolName: "mcp__t3_code__t3_thread_wait",
+      toolName: "mcp__onicode__oni_thread_wait",
       input: { threadId: "child-thread" },
       status: "running" as const,
     };

@@ -790,7 +790,7 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentVoiceHttpApi)
   .add(EnvironmentWebhooksHttpApi) {}
 
-/** What the public listener serves to the internet through Tailscale Funnel, beside guest links. */
+/** What the public listener serves to the internet through Tailscale Funnel. */
 export class EnvironmentPublicHttpApi extends HttpApi.make("public").add(
   EnvironmentWebhooksHttpApi,
 ) {}

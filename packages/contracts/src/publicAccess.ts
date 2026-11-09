@@ -1,8 +1,8 @@
 import * as Schema from "effect/Schema";
 
 /**
- * Public access publishes guest links and webhook addresses to the internet through Tailscale
- * Funnel. Only those routes are reachable from outside the tailnet; the app and API never are.
+ * Public access publishes webhook addresses to the internet through Tailscale Funnel. Only
+ * those routes are reachable from outside the tailnet; the API never is.
  */
 
 /** Why Funnel could not be turned on. Mirrors the Tailscale CLI failures the server can tell apart. */

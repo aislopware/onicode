@@ -21,8 +21,6 @@ import {
   type InterruptThreadTurnInput,
   type UpdateThreadMetadataInput,
   archiveThread,
-  closeGuestShare,
-  resolveGuestMessage,
   cancelQueuedRun,
   createThread,
   deleteThread,
@@ -129,18 +127,6 @@ export function createThreadEnvironmentAtoms<R, E>(
     delete: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:thread:delete",
       execute: deleteThread,
-      scheduler,
-      concurrency,
-    }),
-    closeGuestShare: createEnvironmentCommand(runtime, {
-      label: "environment-data:commands:thread:close-guest-share",
-      execute: closeGuestShare,
-      scheduler,
-      concurrency,
-    }),
-    resolveGuestMessage: createEnvironmentCommand(runtime, {
-      label: "environment-data:commands:thread:resolve-guest-message",
-      execute: resolveGuestMessage,
       scheduler,
       concurrency,
     }),

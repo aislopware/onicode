@@ -478,18 +478,11 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
-    id: "guest-links",
-    title: "Guest links",
-    to: "/settings/labs",
-    scope: "environment",
-    searchTerms: ["beta share guest invite link teammate watch"],
-  },
-  {
     id: "public-access",
     title: "Public access",
     to: "/settings/labs",
     scope: "environment",
-    searchTerms: ["beta tailscale funnel internet public guest webhook url"],
+    searchTerms: ["beta tailscale funnel internet public webhook url"],
   },
   {
     id: "linked-environments-beta",

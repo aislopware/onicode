@@ -1,6 +1,5 @@
 // @effect-diagnostics nodeBuiltinImport:off - The public listener is a Node HTTP server.
-// Funnel forwards to a second, loopback-only listener serving only the guest routes, the guest
-// page and the webhook route. The main listener (app, API, /mcp) is never published: Funnel's
+// Funnel forwards to a second, loopback-only listener serving only the webhook route. The main listener (app, API, /mcp) is never published: Funnel's
 // requests arrive from loopback, which the main listener trusts.
 import * as NodeHttp from "node:http";
 

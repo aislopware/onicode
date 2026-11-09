@@ -122,15 +122,15 @@ it.effect("a command id reused concurrently for two threads succeeds for only on
         return yield* getThreadRecords(...args);
       }),
     );
-    const closeShare = (threadId: ThreadId) =>
+    const stopIdle = (threadId: ThreadId) =>
       orchestrator.dispatch({
-        type: "thread.guest-share.close",
+        type: "thread.stop",
         commandId: CommandId.make("command:shared-noop"),
         threadId,
       });
     const noOpExits = yield* Effect.forEach(
       threadIds,
-      (threadId) => Effect.exit(closeShare(threadId)),
+      (threadId) => Effect.exit(stopIdle(threadId)),
       {
         concurrency: "unbounded",
       },
@@ -147,7 +147,7 @@ it.effect("a command id reused concurrently for two threads succeeds for only on
         assert.equal(error.value._tag, "OrchestratorCommandIdConflictError");
       }
     }
-    const noOpReplay = yield* closeShare(threadIds[noOpWinner]!);
+    const noOpReplay = yield* stopIdle(threadIds[noOpWinner]!);
     const noOpSuccess = noOpExits[noOpWinner]!;
     if (Exit.isSuccess(noOpSuccess)) {
       assert.equal(noOpReplay.sequence, noOpSuccess.value.sequence);

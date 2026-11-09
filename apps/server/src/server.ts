@@ -141,7 +141,6 @@ import { ScheduledTaskWebhookOrigin } from "./scheduledTasks/ScheduledTaskServic
 import * as PublicAccess from "./publicAccess/PublicAccess.ts";
 import * as EnvironmentAuth from "./auth/EnvironmentAuth.ts";
 import * as EnvironmentAuthPolicy from "./auth/EnvironmentAuthPolicy.ts";
-import * as GuestHttp from "./guest/http.ts";
 import { EnvironmentPublicHttpApi } from "@onicode/contracts";
 import * as ServerSelfUpdate from "./service/selfUpdate.ts";
 import * as DesktopAppUpdate from "./desktopUpdate/DesktopAppUpdate.ts";
@@ -747,12 +746,11 @@ const layerMakeRoutes = Layer.mergeAll(
   Layer.provide(ServerHttp.layerHttpCompression),
 );
 
-/** All that the public listener serves: guest links, the guest page, and webhooks. */
-const layerPublicRoutes = Layer.mergeAll(
-  GuestHttp.layer,
-  HttpApiBuilder.layer(EnvironmentPublicHttpApi).pipe(Layer.provide(WebhookRoute.layerPublic)),
-  ServerHttp.layerPublicStaticRoute,
-).pipe(Layer.provide(ServerHttp.layerHttpCompression));
+/** All that the public listener serves: webhooks. */
+const layerPublicRoutes = HttpApiBuilder.layer(EnvironmentPublicHttpApi).pipe(
+  Layer.provide(WebhookRoute.layerPublic),
+  Layer.provide(ServerHttp.layerHttpCompression),
+);
 
 const layerMakeServer = Layer.unwrap(
   Effect.gen(function* () {

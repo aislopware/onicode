@@ -230,7 +230,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
           No messages waiting in this queue.
         </Text>
       ) : null}
-      {queuedRuns.map(({ run, text, attachments, context, message }, index) => {
+      {queuedRuns.map(({ run, text, attachments, message }, index) => {
         const controls = resolveThreadQueueRowControls({
           busy: busyRunId !== null,
           // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
@@ -240,7 +240,6 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
           canSendNow: workflow?.canSendNow ?? false,
           editBlocked: editBlockedReason !== null,
           isEditing: editing?.runId === run.id,
-          isGuestMessage: context?.guest !== undefined,
           text,
         });
         const title =
@@ -312,11 +311,6 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                         }
                         numberOfLines={1}
                       >
-                        {context?.guest === undefined ? null : (
-                          <Text className="font-oni-medium text-adaptive-fuchsia-600-300">
-                            {`${context.guest.name}  `}
-                          </Text>
-                        )}
                         {title}
                       </Text>
                     </View>

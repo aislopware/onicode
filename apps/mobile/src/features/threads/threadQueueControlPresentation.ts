@@ -20,8 +20,6 @@ export function resolveThreadQueueRowControls(input: {
   /** Something else holds the composer, such as an open question. */
   readonly editBlocked?: boolean;
   readonly isEditing?: boolean;
-  /** A guest's message keeps the guest's words; the owner can cancel it, not rewrite it. */
-  readonly isGuestMessage?: boolean;
   readonly text: string;
 }): ThreadQueueRowControls {
   const mutationEnabled = !input.busy;
@@ -31,8 +29,7 @@ export function resolveThreadQueueRowControls(input: {
     canDismiss: !input.busy,
     // Re-opening the row already in the composer would reload it and throw
     // away whatever has been typed since.
-    canEdit:
-      mutationEnabled && !isEditing && input.isGuestMessage !== true && input.editBlocked !== true,
+    canEdit: mutationEnabled && !isEditing && input.editBlocked !== true,
     canSend: mutationEnabled && (input.canPromoteToSteer || input.canSendNow) && !isEditing,
     dismissAccessibilityLabel: REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL,
     // Editing and sending keep the original text so quoted citations stay linked.

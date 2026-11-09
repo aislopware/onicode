@@ -723,33 +723,3 @@ export const layerStaticAndDevRoute = Layer.unwrap(
     Effect.map((assets) => HttpRouter.add("GET", "*", handleStaticAndDevRequest(assets))),
   ),
 );
-
-/**
- * The web build on the public listener: the guest page and the files it loads, never another
- * app route. The build holds nothing private; the routes behind it are what need a session.
- */
-// apps/web routes guest links here; the page needs no Onicode session.
-const GUEST_PAGE_PATH = "/guest";
-
-export const layerPublicStaticRoute = Layer.unwrap(
-  loadImmutableBuildAssets.pipe(
-    Effect.map((assets) =>
-      HttpRouter.add(
-        "GET",
-        "*",
-        Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          const pathname = Option.match(requestUrl(request), {
-            onNone: () => "",
-            onSome: (url) => url.pathname,
-          });
-          const isFile = /\/[^/]+\.[A-Za-z0-9]+$/.test(pathname) && !pathname.startsWith("/api/");
-          if (pathname !== GUEST_PAGE_PATH && !isFile) {
-            return HttpServerResponse.text("Not Found", { status: 404 });
-          }
-          return yield* handleStaticAndDevRequest(assets);
-        }),
-      ),
-    ),
-  ),
-);

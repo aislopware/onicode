@@ -24,7 +24,6 @@ export function LabsSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="beta" title="Beta">
         <BoringSidebarRow />
-        <GuestLinksRow />
         <PublicAccessRow />
         <LinkedEnvironmentsRow />
         <PromptSuggestionsRow />
@@ -80,7 +79,7 @@ function BoringSidebarMultilineRow() {
   );
 }
 
-/** A policy that keeps clients on this machine turns guest links and public access off. */
+/** A policy that keeps clients on this machine turns public access off. */
 function useRemoteClientsDenial() {
   const scope = useOptionalSettingsScope();
   const primaryPolicy = usePrimaryManagedPolicy();
@@ -89,29 +88,6 @@ function useRemoteClientsDenial() {
       ? scope.connectedEnvironments.map((environment) => environment.serverConfig?.managedPolicy)
       : [primaryPolicy],
     (policy) => managedCapabilityDenial(policy, "remoteClients"),
-  );
-}
-
-function GuestLinksRow() {
-  const settings = useScopedSettings();
-  const updateSettings = useUpdateScopedSettings();
-  const remoteClientsDenial = useRemoteClientsDenial();
-  return (
-    <SettingsRow
-      serverScoped
-      {...searchableSetting("guest-links")}
-      settingKeys={["guestSharingEnabled"]}
-      managed={settings.guestSharingEnabled ? undefined : remoteClientsDenial}
-      description="Share a thread with a guest who watches it live in a browser and sends messages you approve. Guests need public access. Turning it off stops every guest link."
-      control={
-        <ScopedSwitch
-          settingKeys={["guestSharingEnabled"]}
-          checked={settings.guestSharingEnabled}
-          onCheckedChange={(checked) => updateSettings({ guestSharingEnabled: Boolean(checked) })}
-          aria-label="Guest links"
-        />
-      }
-    />
   );
 }
 
@@ -133,7 +109,7 @@ function publicAccessStatusText(status: PublicAccessStatus): string | null {
   }
 }
 
-/** Publishes only guest links and webhook addresses, through Tailscale Funnel. */
+/** Publishes only webhook addresses, through Tailscale Funnel. */
 function PublicAccessRow() {
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -156,7 +132,7 @@ function PublicAccessRow() {
       {...searchableSetting("public-access")}
       settingKeys={["publicAccessEnabled"]}
       managed={settings.publicAccessEnabled ? undefined : remoteClientsDenial}
-      description="Let guest links and webhook addresses reach this machine from the internet through Tailscale Funnel. Nothing else is published. The tailnet needs HTTPS certificates and the funnel node attribute."
+      description="Let webhook addresses reach this machine from the internet through Tailscale Funnel. Nothing else is published. The tailnet needs HTTPS certificates and the funnel node attribute."
       control={
         <ScopedSwitch
           settingKeys={["publicAccessEnabled"]}

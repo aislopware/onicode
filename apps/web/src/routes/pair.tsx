@@ -5,11 +5,7 @@ import { PairingPendingSurface, PairingRouteSurface } from "../components/auth/P
 export const Route = createFileRoute("/pair")({
   beforeLoad: async ({ context }) => {
     const { authGateState } = context;
-    if (
-      authGateState.status === "authenticated" ||
-      authGateState.status === "hosted-static" ||
-      authGateState.status === "guest"
-    ) {
+    if (authGateState.status === "authenticated" || authGateState.status === "hosted-static") {
       throw redirect({ to: "/", replace: true });
     }
     return {

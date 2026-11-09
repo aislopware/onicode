@@ -228,23 +228,6 @@ it.layer(
     Layer.provideMerge(NodeServices.layer),
   ),
 )("static HTTP responses", (it) => {
-  it.effect("serves the internet only the guest page and its files", () =>
-    Effect.gen(function* () {
-      const fs = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const staticDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-public-static-" });
-      yield* fs.writeFileString(path.join(staticDir, "index.html"), "<html>app</html>");
-      yield* fs.writeFileString(path.join(staticDir, "app.js"), "export {};");
-      const request = yield* makeStaticRequest(staticDir, ServerHttp.layerPublicStaticRoute);
-
-      expect((yield* request("/guest")).status).toBe(200);
-      expect((yield* request("/app.js")).status).toBe(200);
-      for (const resource of ["/", "/settings", "/threads/1", "/mcp", "/api/state.json"]) {
-        expect((yield* request(resource)).status, resource).toBe(404);
-      }
-    }),
-  );
-
   it.effect("revalidates non-HTML files and returns changed contents", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

@@ -1,7 +1,6 @@
 import {
   type ChatAttachment,
   type ChatFileAttachment,
-  type GuestMessageAttribution,
   type OrchestrationMessageContext,
   type OrchestrationV2Actor,
   type OrchestrationV2CreationSource,
@@ -65,26 +64,13 @@ export function resolveUserMessagePresentation(message: {
   readonly createdBy?: OrchestrationV2Actor;
   readonly creationSource?: OrchestrationV2CreationSource;
   readonly scheduledTaskId?: ScheduledTaskId | undefined;
-  readonly context?: { readonly guest?: GuestMessageAttribution | undefined } | undefined;
 }): {
   readonly text: string;
-  readonly attribution: "automation" | "agent" | "onicode" | "guest" | null;
+  readonly attribution: "automation" | "agent" | "onicode" | null;
   readonly scheduledTaskId: ScheduledTaskId | undefined;
-  /** Set when `attribution` is "guest". */
-  readonly guestName?: string;
 } {
   if (message.role !== "user") {
     return { text: message.text, attribution: null, scheduledTaskId: undefined };
-  }
-  // The stored text names the guest for the agent; people see the guest's own words.
-  const guest = message.context?.guest;
-  if (guest !== undefined) {
-    return {
-      text: guest.text,
-      attribution: "guest",
-      scheduledTaskId: undefined,
-      guestName: guest.name,
-    };
   }
   if (message.scheduledTaskId !== undefined) {
     return {

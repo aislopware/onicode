@@ -167,11 +167,6 @@ import {
   ProviderUploadFeedbackResult,
 } from "./provider.ts";
 import { ProviderInstanceId, ProviderInstanceMutation } from "./providerInstance.ts";
-import {
-  GuestShareCreateError,
-  GuestShareCreateInput,
-  GuestShareCreateResult,
-} from "./guestShare.ts";
 import { PublicAccessStatus } from "./publicAccess.ts";
 import { PullRequestReviewGuideResult } from "./pullRequestReviewGuide.ts";
 import {
@@ -547,7 +542,6 @@ export const WS_METHODS = {
   scheduledTasksRunNow: "scheduledTasks.runNow",
   scheduledTasksRotateWebhookToken: "scheduledTasks.rotateWebhookToken",
   secretsAnswerRequest: "secrets.answerRequest",
-  guestShareCreate: "guestShare.create",
   publicAccessSubscribeStatus: "publicAccess.subscribeStatus",
   scheduledTasksListWebhookDeliveries: "scheduledTasks.listWebhookDeliveries",
   scheduledTasksGetWebhookDelivery: "scheduledTasks.getWebhookDelivery",
@@ -1982,12 +1976,6 @@ const WsScheduledTasksRotateWebhookTokenRpc = Rpc.make(
   },
 );
 
-const WsGuestShareCreateRpc = Rpc.make(WS_METHODS.guestShareCreate, {
-  payload: GuestShareCreateInput,
-  success: GuestShareCreateResult,
-  error: Schema.Union([GuestShareCreateError, EnvironmentAuthorizationError]),
-});
-
 const WsPublicAccessSubscribeStatusRpc = Rpc.make(WS_METHODS.publicAccessSubscribeStatus, {
   payload: Schema.Struct({}),
   success: PublicAccessStatus,
@@ -2038,7 +2026,6 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
-  WsGuestShareCreateRpc,
   WsPublicAccessSubscribeStatusRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,
