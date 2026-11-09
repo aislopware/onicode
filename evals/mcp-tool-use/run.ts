@@ -390,7 +390,7 @@ const toolResult = (id: string, content: unknown): Block => ({
 });
 const texts = (content: typeof Content.Type) =>
   typeof content === "string" ? [content] : content.flatMap((block) => block.text ?? []);
-const isOniName = (name: string) => name.startsWith(ONICODE_PREFIX) || name.startsWith("mcp__t3_code__");
+const isOniName = (name: string) => name.startsWith(ONICODE_PREFIX);
 const hasTool = (tools: ReadonlyArray<ApiTool>, name: string) =>
   tools.some((tool) => tool.name === name);
 
@@ -503,7 +503,7 @@ const claudeQueryOptions = (model: Model, device = true) => {
     nativeThreadId: "mcp-tool-use-eval",
     resume: false,
     cwd: null,
-    mcpServers: { "onicode": { type: "http", url: "http://127.0.0.1/mcp" } },
+    mcpServers: { onicode: { type: "http", url: "http://127.0.0.1/mcp" } },
     deviceToolsAvailable: device,
   };
   return makeClaudeQueryOptions(input);
@@ -771,7 +771,7 @@ const codexCall = (name: string, input: unknown) => {
           : `python3 -c ${JSON.stringify(`from pathlib import Path; p=Path(${JSON.stringify(file)}); p.write_text(p.read_text().replace(${JSON.stringify(args.old_string)}, ${JSON.stringify(args.new_string)}))`)}`;
     return `text(await tools.exec_command(${JSON.stringify({ cmd: command })}));`;
   }
-  return `text(await tools.${name.replace("mcp__onicode__", "mcp__t3_code__")}(${JSON.stringify(input)}));`;
+  return `text(await tools.${name}(${JSON.stringify(input)}));`;
 };
 const codexMessages = (messages: ReadonlyArray<ApiMessage>): Array<Block> =>
   messages.flatMap((message) =>
@@ -986,7 +986,9 @@ export const buildMessages = (sample: Sample) => {
       const tool = findTool(base, call.tool);
       if (tool === undefined) throw new Error(`${testCase.id}: unknown prior tool ${call.tool}.`);
       if (call.result === "default" && isDeviceTool(call.tool) && !sample.priorResults.has(call)) {
-        throw new Error(`${testCase.id}: prior ${call.tool} needs Onicode's result; run withDevices.`);
+        throw new Error(
+          `${testCase.id}: prior ${call.tool} needs Onicode's result; run withDevices.`,
+        );
       }
       return { ...call, id: `toolu_prior_${nextId++}`, name: tool.name, tool, prior: call };
     });
@@ -1918,7 +1920,7 @@ export const executeCodex = async (
 
 const codexCatalog = (base: Base) => [
   ...base.onicode.map((tool) => ({
-    name: tool.name.replace("mcp__onicode__", "mcp__t3_code__"),
+    name: tool.name,
     description: `${valueText(tool.description)}\nInput JSON schema: ${JSON.stringify(tool.input_schema)}`,
   })),
   ...[

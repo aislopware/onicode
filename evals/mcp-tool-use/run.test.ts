@@ -43,7 +43,7 @@ it("grades Codex shell and subagent calls with the shared rules", () => {
   const calls = [
     { name: "exec_command", input: { cmd: "sleep 60" } },
     { name: "collaboration.spawn_agent", input: { task: "review" } },
-    { name: "mcp__t3_code__delegate_task", input: {} },
+    { name: "mcp__onicode__delegate_task", input: {} },
     { name: "request_user_input", input: { questions: [{ question: "What's the PIN?" }] } },
     { name: "request_user_input_async", input: { questions: [] } },
   ].map(({ name, input }) => ({
@@ -545,11 +545,11 @@ it("lists link tools only while a case turns the beta on, and sends chips as Oni
   });
   assert.notInclude(
     off.onicode.map((tool) => tool.name),
-    "mcp__onicode__t3_environment_link",
+    "mcp__onicode__oni_environment_link",
   );
   assert.include(
     on.onicode.map((tool) => tool.name),
-    "mcp__onicode__t3_environment_link",
+    "mcp__onicode__oni_environment_link",
   );
 
   const testCase: McpToolUseCase = {
@@ -1819,7 +1819,8 @@ it("keeps the shared recovery budget when a case is decoded and graded", () => {
     step,
     tool,
     failed: true,
-    input: tool === "Bash" ? { command: "/home/user/.onicode/device/bin/agent-device snapshot -i" } : {},
+    input:
+      tool === "Bash" ? { command: "/home/user/.onicode/device/bin/agent-device snapshot -i" } : {},
   }));
   const run = { calls, text: "Canvas is blocked: daemon unavailable.", stopReason: "end_turn" };
   assert.isTrue(
@@ -2406,7 +2407,11 @@ it("does not credit a capture attempt on a different host", () => {
 });
 
 it.each([
-  ["Onicode's result names the remote device", { hostId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" }, true],
+  [
+    "Onicode's result names the remote device",
+    { hostId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" },
+    true,
+  ],
   ["Onicode's result names a local device", { hostId: "local" }, false],
   ["failed attempt uses the matching open session", undefined, true],
 ] as const)(
@@ -2510,7 +2515,8 @@ it.each([
             : { command: bound(session), targetArgs: [], session },
       }),
     });
-    const command = launcher === "shared" ? shared : bound(launcher === "spare" ? "oni-b" : "oni-a");
+    const command =
+      launcher === "shared" ? shared : bound(launcher === "spare" ? "oni-b" : "oni-a");
     const run = {
       calls: [
         open(0, primary, "oni-a"),
@@ -3995,7 +4001,9 @@ it.each(["bound", "shared"])(
     const c = deviceCases().find((c) => c.id === "SESS-01")!;
     const good = fleetTrace(c.id);
     const launcher =
-      form === "bound" ? good.launchers![0]! : "/home/user/.onicode/userdata/device/bin/agent-device";
+      form === "bound"
+        ? good.launchers![0]!
+        : "/home/user/.onicode/userdata/device/bin/agent-device";
     const flags =
       form === "shared"
         ? " --platform ios --udid BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB --config /home/user/host.json --session oni-acme"
@@ -4266,7 +4274,9 @@ const capRun6 = [
   },
   {
     ref: "api-dec6-cand-claude-opus-5-5#36",
-    launchers: ["/home/user/.onicode/userdata/device/targets/oni-2b48b357cf96fdad64f0dd3f/agent-device"],
+    launchers: [
+      "/home/user/.onicode/userdata/device/targets/oni-2b48b357cf96fdad64f0dd3f/agent-device",
+    ],
     calls: [
       {
         step: 4,
@@ -4357,7 +4367,9 @@ it.each(["bound", "shared"])(
     const c = deviceCases().find((c) => c.id === "SESS-01")!;
     const good = fleetTrace(c.id);
     const launcher =
-      form === "bound" ? good.launchers![0]! : "/home/user/.onicode/userdata/device/bin/agent-device";
+      form === "bound"
+        ? good.launchers![0]!
+        : "/home/user/.onicode/userdata/device/bin/agent-device";
     const flags =
       form === "shared"
         ? " --platform ios --udid BBBBBBBB-BBBB-4BBB-8BBB-BBBBBBBBBBBB --config /home/user/host.json --session oni-acme"
