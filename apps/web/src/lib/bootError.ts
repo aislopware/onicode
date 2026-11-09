@@ -1,7 +1,7 @@
 import type { DesktopBridge, DesktopUpdateState } from "@onicode/contracts";
 
 const FALLBACK_TRIAGE_COMMAND = "npx onicode triage";
-const ISSUE_URL = "https://github.com/pingdotgg/t3code/issues/new";
+const ISSUE_URL = "https://github.com/aislopware/onicode/issues/new";
 const LAST_FAILURE_KEY = "onicode:boot-failed-at";
 const REPEAT_FAILURE_MS = 5 * 60_000;
 const MAX_CAUSES = 3;

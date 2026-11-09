@@ -396,7 +396,7 @@ function createFakeSourceControlProvider(scenario: FakeProviderScenario = {}): {
     scenario.pullRequest ?? {
       number: 101,
       title: "Pull request",
-      url: "https://github.com/pingdotgg/codething-mvp/pull/101",
+      url: "https://github.com/aislopware/sample-app/pull/101",
       baseRefName: "main",
       headRefName: "feature/pull-request",
       state: "open",
@@ -761,7 +761,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const oldPr = {
           number: 613,
           title: "Release PR",
-          url: "https://github.com/pingdotgg/codething-mvp/pull/613",
+          url: "https://github.com/aislopware/sample-app/pull/613",
           baseRefName: "main",
           headRefName: "release",
         };
@@ -865,14 +865,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 14,
                 title: "Another branch",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/14",
+                url: "https://github.com/aislopware/sample-app/pull/14",
                 baseRefName: "main",
                 headRefName: "feature/another-branch",
               },
               {
                 number: 15,
                 title: "Valid PR title",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/15",
+                url: "https://github.com/aislopware/sample-app/pull/15",
                 baseRefName: "main",
                 headRefName: "feature/status-valid-pr-entry",
               },
@@ -886,7 +886,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(status.pr).toEqual({
         number: 15,
         title: "Valid PR title",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/15",
+        url: "https://github.com/aislopware/sample-app/pull/15",
         baseRef: "main",
         headRef: "feature/status-valid-pr-entry",
         state: "open",
@@ -911,7 +911,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 16,
                 title: "Closed PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/16",
+                url: "https://github.com/aislopware/sample-app/pull/16",
                 baseRefName: "main",
                 headRefName: "feature/status-lowercase-state",
                 state: "closed",
@@ -920,7 +920,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 17,
                 title: "Merged PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/17",
+                url: "https://github.com/aislopware/sample-app/pull/17",
                 baseRefName: "main",
                 headRefName: "feature/status-lowercase-state",
                 state: "merged",
@@ -936,7 +936,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(status.pr).toEqual({
         number: 17,
         title: "Merged PR",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/17",
+        url: "https://github.com/aislopware/sample-app/pull/17",
         baseRef: "main",
         headRef: "feature/status-lowercase-state",
         state: "merged",
@@ -988,7 +988,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         {
           number,
           title: headRefName,
-          url: `https://github.com/pingdotgg/codething-mvp/pull/${number}`,
+          url: `https://github.com/aislopware/sample-app/pull/${number}`,
           baseRefName: "main",
           headRefName,
           state: "open",
@@ -1038,7 +1038,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const pullRequest: FakeChangeRequest = {
         number: 1,
         title: "Draft status",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/1",
+        url: "https://github.com/aislopware/sample-app/pull/1",
         baseRefName: "main",
         headRefName: "feature/draft-status",
         state: "open",
@@ -1051,7 +1051,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 ...pullRequest,
                 number: 2,
-                url: "https://github.com/pingdotgg/codething-mvp/pull/2",
+                url: "https://github.com/aislopware/sample-app/pull/2",
                 state: "merged",
               },
             ],
@@ -1075,9 +1075,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         changes.pipe(Stream.takeUntil((event) => event.number === 2, { excludeLast: true })),
       );
       expect(events).toEqual([
-        { host: "github.com", repository: "pingdotgg/codething-mvp", number: 1 },
-        { host: "github.com", repository: "pingdotgg/codething-mvp", number: 1 },
-        { host: "github.com", repository: "pingdotgg/codething-mvp", number: 1 },
+        { host: "github.com", repository: "aislopware/sample-app", number: 1 },
+        { host: "github.com", repository: "aislopware/sample-app", number: 1 },
+        { host: "github.com", repository: "aislopware/sample-app", number: 1 },
       ]);
     }),
   );
@@ -1094,7 +1094,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const pullRequest = (number: number, state: "open" | "merged"): FakeChangeRequest => ({
         number,
         title: "Settled",
-        url: `https://github.com/pingdotgg/codething-mvp/pull/${number}`,
+        url: `https://github.com/aislopware/sample-app/pull/${number}`,
         baseRefName: "main",
         headRefName: "feature/settled",
         state,
@@ -1172,7 +1172,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 216,
                 title: "Saved branch PR",
-                url: "https://github.com/pingdotgg/t3code/pull/216",
+                url: "https://github.com/aislopware/onicode/pull/216",
                 baseRefName: "main",
                 headRefName: "feature/saved-branch",
                 headSha: "a".repeat(40),
@@ -1192,7 +1192,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(pullRequest).toMatchObject({
         number: 216,
         title: "Saved branch PR",
-        url: "https://github.com/pingdotgg/t3code/pull/216",
+        url: "https://github.com/aislopware/onicode/pull/216",
         baseRef: "main",
         headRef: "feature/saved-branch",
         headSha: "a".repeat(40),
@@ -1224,7 +1224,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 221,
                 title: "Merged main PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/221",
+                url: "https://github.com/aislopware/sample-app/pull/221",
                 baseRefName: "develop",
                 headRefName: "main",
                 state: "merged",
@@ -1273,7 +1273,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 217,
                 title: "Deleted local branch PR",
-                url: "https://github.com/pingdotgg/t3code/pull/217",
+                url: "https://github.com/aislopware/onicode/pull/217",
                 baseRefName: "main",
                 headRefName: "feature/deleted-local-branch",
                 state: "merged",
@@ -1315,13 +1315,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@github.com:aislopware/sample-app.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "team/fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@github.com:contributor/sample-app.git",
         forkDir,
       );
 
@@ -1332,13 +1332,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 218,
                 title: "Deleted fork branch PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/218",
+                url: "https://github.com/aislopware/sample-app/pull/218",
                 baseRefName: "main",
                 headRefName: "feature/deleted-fork-branch",
                 state: "merged",
                 updatedAt: "2026-04-05T15:00:00Z",
                 isCrossRepository: true,
-                headRepositoryNameWithOwner: "contributor/codething-mvp",
+                headRepositoryNameWithOwner: "contributor/sample-app",
                 headRepositoryOwnerLogin: "contributor",
               },
             ],
@@ -1409,13 +1409,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@github.com:aislopware/sample-app.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@github.com:contributor/sample-app.git",
         forkDir,
       );
 
@@ -1425,23 +1425,23 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             {
               number: 40,
               title: "Another fork's PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/40",
+              url: "https://github.com/aislopware/sample-app/pull/40",
               baseRefName: "main",
               headRefName: "feature/no-upstream-fork",
               state: "open",
               isCrossRepository: true,
-              headRepositoryNameWithOwner: "someone-else/codething-mvp",
+              headRepositoryNameWithOwner: "someone-else/sample-app",
               headRepositoryOwnerLogin: "someone-else",
             },
             {
               number: 41,
               title: "Our fork's PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/41",
+              url: "https://github.com/aislopware/sample-app/pull/41",
               baseRefName: "main",
               headRefName: "feature/no-upstream-fork",
               state: "open",
               isCrossRepository: true,
-              headRepositoryNameWithOwner: "contributor/codething-mvp",
+              headRepositoryNameWithOwner: "contributor/sample-app",
               headRepositoryOwnerLogin: "contributor",
             },
           ],
@@ -1523,19 +1523,19 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@github.com:aislopware/sample-app.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "first-fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@github.com:contributor/sample-app.git",
         firstForkDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "second-fork",
-        "git@github.com:someone-else/codething-mvp.git",
+        "git@github.com:someone-else/sample-app.git",
         secondForkDir,
       );
 
@@ -1545,12 +1545,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             {
               number: 41,
               title: "One fork's PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/41",
+              url: "https://github.com/aislopware/sample-app/pull/41",
               baseRefName: "main",
               headRefName: "feature/ambiguous-fork",
               state: "open",
               isCrossRepository: true,
-              headRepositoryNameWithOwner: "contributor/codething-mvp",
+              headRepositoryNameWithOwner: "contributor/sample-app",
               headRepositoryOwnerLogin: "contributor",
             },
           ],
@@ -1613,13 +1613,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@github.com:aislopware/sample-app.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@github.com:contributor/sample-app.git",
         forkDir,
       );
 
@@ -1629,12 +1629,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             {
               number: 43,
               title: "Failed probe PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/43",
+              url: "https://github.com/aislopware/sample-app/pull/43",
               baseRefName: "main",
               headRefName: "feature/failed-probe",
               state: "open",
               isCrossRepository: true,
-              headRepositoryNameWithOwner: "contributor/codething-mvp",
+              headRepositoryNameWithOwner: "contributor/sample-app",
               headRepositoryOwnerLogin: "contributor",
             },
           ],
@@ -1661,13 +1661,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@github.com:aislopware/sample-app.git",
         originDir,
       );
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "team/fork",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@github.com:contributor/sample-app.git",
         forkDir,
       );
 
@@ -1678,12 +1678,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 42,
                 title: "Slash remote PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+                url: "https://github.com/aislopware/sample-app/pull/42",
                 baseRefName: "main",
                 headRefName: "feature/slash-remote",
                 state: "open",
                 isCrossRepository: true,
-                headRepositoryNameWithOwner: "contributor/codething-mvp",
+                headRepositoryNameWithOwner: "contributor/sample-app",
                 headRepositoryOwnerLogin: "contributor",
               },
             ],
@@ -1824,7 +1824,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 215,
                 title: "Merged branch was deleted",
-                url: "https://github.com/pingdotgg/t3code/pull/215",
+                url: "https://github.com/aislopware/onicode/pull/215",
                 baseRefName: "main",
                 headRefName: "feature/merged-branch-deleted",
                 state: "merged",
@@ -1842,7 +1842,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(status.pr).toEqual({
         number: 215,
         title: "Merged branch was deleted",
-        url: "https://github.com/pingdotgg/t3code/pull/215",
+        url: "https://github.com/aislopware/onicode/pull/215",
         baseRef: "main",
         headRef: "feature/merged-branch-deleted",
         state: "merged",
@@ -1877,7 +1877,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
   const squashMergedPr = (branch: string, headSha: string): FakeChangeRequest => ({
     number: 217,
     title: "Feature work",
-    url: "https://github.com/pingdotgg/t3code/pull/217",
+    url: "https://github.com/aislopware/onicode/pull/217",
     baseRefName: "main",
     headRefName: branch,
     headSha,
@@ -2277,7 +2277,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 1661,
                   title: "Fork PR from main",
-                  url: "https://github.com/pingdotgg/t3code/pull/1661",
+                  url: "https://github.com/aislopware/onicode/pull/1661",
                   baseRefName: "main",
                   headRefName: "main",
                   state: "open",
@@ -2308,7 +2308,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         "remote",
         "add",
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@github.com:aislopware/sample-app.git",
       ]);
       yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
       NodeFS.writeFileSync(NodePath.join(repoDir, "fork-pr.txt"), "fork pr\n");
@@ -2320,7 +2320,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "fork-seed",
-        "git@github.com:jasonLaster/codething-mvp.git",
+        "git@github.com:jasonLaster/sample-app.git",
         forkDir,
       );
 
@@ -2331,13 +2331,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 488,
                 title: "Rebase this PR on latest main",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/488",
+                url: "https://github.com/aislopware/sample-app/pull/488",
                 baseRefName: "main",
                 headRefName: "statemachine",
                 state: "open",
                 updatedAt: "2026-03-10T07:00:00Z",
                 isCrossRepository: true,
-                headRepositoryNameWithOwner: "jasonLaster/codething-mvp",
+                headRepositoryNameWithOwner: "jasonLaster/sample-app",
                 headRepositoryOwnerLogin: "jasonLaster",
               },
             ],
@@ -2350,7 +2350,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(status.pr).toEqual({
         number: 488,
         title: "Rebase this PR on latest main",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/488",
+        url: "https://github.com/aislopware/sample-app/pull/488",
         baseRef: "main",
         headRef: "statemachine",
         state: "open",
@@ -2381,7 +2381,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "fork-seed",
-        "git@github.com:contributor/codething-mvp.git",
+        "git@github.com:contributor/sample-app.git",
         forkDir,
       );
 
@@ -2392,13 +2392,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 777,
                 title: "Fork PR from main",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/777",
+                url: "https://github.com/aislopware/sample-app/pull/777",
                 baseRefName: "main",
                 headRefName: "main",
                 state: "open",
                 updatedAt: "2026-03-10T07:00:00Z",
                 isCrossRepository: true,
-                headRepositoryNameWithOwner: "contributor/codething-mvp",
+                headRepositoryNameWithOwner: "contributor/sample-app",
                 headRepositoryOwnerLogin: "contributor",
               },
             ],
@@ -2411,7 +2411,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(status.pr).toEqual({
         number: 777,
         title: "Fork PR from main",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/777",
+        url: "https://github.com/aislopware/sample-app/pull/777",
         baseRef: "main",
         headRef: "main",
         state: "open",
@@ -2443,14 +2443,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* configureVisibleRemoteUrlWithLocalRewrite(
           repoDir,
           "origin",
-          "git@github.com:pingdotgg/codething-mvp.git",
+          "git@github.com:aislopware/sample-app.git",
           originDir,
         );
         yield* runGit(repoDir, ["config", "remote.origin.pushurl", originDir]);
         yield* configureVisibleRemoteUrlWithLocalRewrite(
           repoDir,
           "my-org/upstream",
-          "ssh://git@github.com/pingdotgg/codething-mvp.git",
+          "ssh://git@github.com/aislopware/sample-app.git",
           upstreamDir,
         );
         yield* runGit(repoDir, ["config", "remote.my-org/upstream.pushurl", upstreamDir]);
@@ -2465,7 +2465,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 1618,
                   title: "Correct PR",
-                  url: "https://github.com/pingdotgg/t3code/pull/1618",
+                  url: "https://github.com/aislopware/onicode/pull/1618",
                   baseRefName: "main",
                   headRefName: "effect-atom",
                   state: "open",
@@ -2476,7 +2476,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 1518,
                   title: "Wrong PR",
-                  url: "https://github.com/pingdotgg/t3code/pull/1518",
+                  url: "https://github.com/aislopware/onicode/pull/1518",
                   baseRefName: "main",
                   headRefName: "upstream/effect-atom",
                   state: "open",
@@ -2492,14 +2492,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         expect(status.pr).toEqual({
           number: 1618,
           title: "Correct PR",
-          url: "https://github.com/pingdotgg/t3code/pull/1618",
+          url: "https://github.com/aislopware/onicode/pull/1618",
           baseRef: "main",
           headRef: "effect-atom",
           state: "open",
           updatedAt: "2026-03-01T10:00:00.000Z",
         });
         expect(listedSelectors(providerCalls).includes("upstream/effect-atom")).toBe(false);
-        expect(listedSelectors(providerCalls).includes("pingdotgg:upstream/effect-atom")).toBe(
+        expect(listedSelectors(providerCalls).includes("aislopware:upstream/effect-atom")).toBe(
           false,
         );
         expect(
@@ -2520,7 +2520,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 23,
                 title: "Merged PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/23",
+                url: "https://github.com/aislopware/sample-app/pull/23",
                 baseRefName: "feature/status-default-branch-target",
                 headRefName: "main",
                 state: "merged",
@@ -2555,7 +2555,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 54,
                 title: "Reverse merge from main",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/54",
+                url: "https://github.com/aislopware/sample-app/pull/54",
                 baseRefName: "je-filter-list",
                 headRefName: "main",
                 state: "merged",
@@ -2594,7 +2594,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 61,
                 title: "Release develop",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/61",
+                url: "https://github.com/aislopware/sample-app/pull/61",
                 baseRefName: "main",
                 headRefName: "develop",
                 state: "open",
@@ -2606,7 +2606,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 62,
                 title: "Another local base",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/62",
+                url: "https://github.com/aislopware/sample-app/pull/62",
                 baseRefName: "main",
                 headRefName: "feature/local-base",
                 state: "open",
@@ -2648,7 +2648,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 88,
                 title: "Pushed without -u",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/88",
+                url: "https://github.com/aislopware/sample-app/pull/88",
                 baseRefName: "main",
                 headRefName: "feature/pushed-plain",
                 state: "open",
@@ -2683,13 +2683,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         yield* configureVisibleRemoteUrlWithLocalRewrite(
           repoDir,
           "origin",
-          "git@github.com:pingdotgg/codething-mvp.git",
+          "git@github.com:aislopware/sample-app.git",
           originDir,
         );
         yield* configureVisibleRemoteUrlWithLocalRewrite(
           repoDir,
           "team/fork",
-          "git@github.com:contributor/codething-mvp.git",
+          "git@github.com:contributor/sample-app.git",
           forkDir,
         );
 
@@ -2700,13 +2700,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 89,
                   title: "Fork PR pushed without -u",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/89",
+                  url: "https://github.com/aislopware/sample-app/pull/89",
                   baseRefName: "main",
                   headRefName: "feature/fork-plain",
                   state: "open",
                   updatedAt: "2026-05-01T10:00:00Z",
                   isCrossRepository: true,
-                  headRepositoryNameWithOwner: "contributor/codething-mvp",
+                  headRepositoryNameWithOwner: "contributor/sample-app",
                   headRepositoryOwnerLogin: "contributor",
                 },
               ],
@@ -2737,7 +2737,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 45,
                 title: "Merged PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/45",
+                url: "https://github.com/aislopware/sample-app/pull/45",
                 baseRefName: "main",
                 headRefName: "feature/status-open-over-merged",
                 state: "merged",
@@ -2747,7 +2747,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 46,
                 title: "Open PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/46",
+                url: "https://github.com/aislopware/sample-app/pull/46",
                 baseRefName: "main",
                 headRefName: "feature/status-open-over-merged",
                 state: "open",
@@ -2763,7 +2763,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       expect(status.pr).toEqual({
         number: 46,
         title: "Open PR",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/46",
+        url: "https://github.com/aislopware/sample-app/pull/46",
         baseRef: "main",
         headRef: "feature/status-open-over-merged",
         state: "open",
@@ -2784,7 +2784,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       const existingPr = {
         number: 214,
         title: "Sticky PR",
-        url: "https://github.com/pingdotgg/codething-mvp/pull/214",
+        url: "https://github.com/aislopware/sample-app/pull/214",
         baseRefName: "main",
         headRefName: "feature/pr-sticky",
       };
@@ -2820,7 +2820,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const existingPr = {
           number: 214,
           title: "Sticky PR",
-          url: "https://github.com/pingdotgg/codething-mvp/pull/214",
+          url: "https://github.com/aislopware/sample-app/pull/214",
           baseRefName: "main",
           headRefName: "feature/pr-retarget",
         };
@@ -3342,7 +3342,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 77,
                   title: "Add no-upstream PR flow",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/77",
+                  url: "https://github.com/aislopware/sample-app/pull/77",
                   baseRefName: "main",
                   headRefName: "feature/no-upstream-pr",
                 },
@@ -3480,7 +3480,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 505,
                 title: "Master default",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/505",
+                url: "https://github.com/aislopware/sample-app/pull/505",
                 baseRefName: "master",
                 headRefName: "feature/master-default",
               },
@@ -3569,7 +3569,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 42,
                 title: "Existing PR",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+                url: "https://github.com/aislopware/sample-app/pull/42",
                 baseRefName: "main",
                 headRefName: "feature/existing-pr",
               },
@@ -3591,7 +3591,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         cta: {
           kind: "open_pr",
           label: "View PR",
-          url: "https://github.com/pingdotgg/codething-mvp/pull/42",
+          url: "https://github.com/aislopware/sample-app/pull/42",
         },
       });
       expect(providerCalls.some((call) => call.operation === "getChangeRequest")).toBe(false);
@@ -3652,8 +3652,8 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     Effect.sync(() => {
       const headContext = {
         headBranch: "statemachine",
-        headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
-        headRepositoryOwnerLogin: "pingdotgg",
+        headRepositoryNameWithOwner: "aislopware/sample-app",
+        headRepositoryOwnerLogin: "aislopware",
         isCrossRepository: true,
       };
 
@@ -3662,14 +3662,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           {
             number: 41,
             title: "Same-repo PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/41",
+            url: "https://github.com/aislopware/sample-app/pull/41",
             baseRefName: "main",
             headRefName: "statemachine",
             state: "open",
             updatedAt: Option.none(),
             isCrossRepository: false,
-            headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
-            headRepositoryOwnerLogin: "pingdotgg",
+            headRepositoryNameWithOwner: "aislopware/sample-app",
+            headRepositoryOwnerLogin: "aislopware",
           },
           headContext,
         ),
@@ -3680,14 +3680,14 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           {
             number: 142,
             title: "Fork PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/142",
+            url: "https://github.com/aislopware/sample-app/pull/142",
             baseRefName: "main",
             headRefName: "statemachine",
             state: "open",
             updatedAt: Option.none(),
             isCrossRepository: true,
-            headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
-            headRepositoryOwnerLogin: "pingdotgg",
+            headRepositoryNameWithOwner: "aislopware/sample-app",
+            headRepositoryOwnerLogin: "aislopware",
           },
           headContext,
         ),
@@ -3709,7 +3709,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           {
             number: 2284,
             title: "Improve branch mismatch warnings",
-            url: "https://github.com/pingdotgg/t3code/pull/2284",
+            url: "https://github.com/aislopware/onicode/pull/2284",
             baseRefName: "main",
             headRefName: "onicode/git-audit-stability",
             state: "open",
@@ -4237,7 +4237,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 1661,
                   title: "Fork PR with same branch name",
-                  url: "https://github.com/pingdotgg/t3code/pull/1661",
+                  url: "https://github.com/aislopware/onicode/pull/1661",
                   baseRefName: "main",
                   headRefName: "feature/no-fork-match",
                   state: "open",
@@ -4250,7 +4250,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 188,
                   title: "Add stacked git actions",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/188",
+                  url: "https://github.com/aislopware/sample-app/pull/188",
                   baseRefName: "main",
                   headRefName: "feature/no-fork-match",
                   state: "open",
@@ -4273,7 +4273,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           cta: {
             kind: "open_pr",
             label: "View PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/188",
+            url: "https://github.com/aislopware/sample-app/pull/188",
           },
         });
         expect(
@@ -4295,7 +4295,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         "remote",
         "add",
         "origin",
-        "git@github.com:pingdotgg/codething-mvp.git",
+        "git@github.com:aislopware/sample-app.git",
       ]);
       yield* runGit(repoDir, ["checkout", "-b", "statemachine"]);
       NodeFS.writeFileSync(NodePath.join(repoDir, "changes.txt"), "change\n");
@@ -4307,7 +4307,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       yield* configureVisibleRemoteUrlWithLocalRewrite(
         repoDir,
         "fork-seed",
-        "git@github.com:octocat/codething-mvp.git",
+        "git@github.com:octocat/sample-app.git",
         forkDir,
       );
 
@@ -4320,12 +4320,12 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
                 {
                   number: 188,
                   title: "Add stacked git actions",
-                  url: "https://github.com/pingdotgg/codething-mvp/pull/188",
+                  url: "https://github.com/aislopware/sample-app/pull/188",
                   baseRefName: "main",
                   headRefName: "statemachine",
                   state: "open",
                   isCrossRepository: true,
-                  headRepositoryNameWithOwner: "octocat/codething-mvp",
+                  headRepositoryNameWithOwner: "octocat/sample-app",
                   headRepositoryOwnerLogin: "octocat",
                 },
               ],
@@ -4557,7 +4557,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         pullRequest: {
           number: 91,
           title: "Safe checkout PR",
-          url: "https://github.com/pingdotgg/codething-mvp/pull/91",
+          url: "https://github.com/aislopware/sample-app/pull/91",
           baseRefName: "main",
           headRefName: "feature/pr-safe",
           state: "open",
@@ -4872,16 +4872,16 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             pullRequest: {
               number: 65,
               title: "Local upstream PR",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/65",
+              url: "https://github.com/aislopware/sample-app/pull/65",
               baseRefName: "main",
               headRefName: "feature/pr-local-upstream",
               state: "open",
               isCrossRepository: false,
-              headRepositoryNameWithOwner: "pingdotgg/codething-mvp",
-              headRepositoryOwnerLogin: "pingdotgg",
+              headRepositoryNameWithOwner: "aislopware/sample-app",
+              headRepositoryOwnerLogin: "aislopware",
             },
             repositoryCloneUrls: {
-              "pingdotgg/codething-mvp": {
+              "aislopware/sample-app": {
                 url: remoteDir,
                 sshUrl: remoteDir,
               },
@@ -4930,7 +4930,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
             pullRequest: {
               number: 66,
               title: "Local upstream PR without repo metadata",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/66",
+              url: "https://github.com/aislopware/sample-app/pull/66",
               baseRefName: "main",
               headRefName: "feature/pr-local-no-head-repo",
               state: "open",
@@ -5070,16 +5070,16 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 81,
             title: "Fork PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/81",
+            url: "https://github.com/aislopware/sample-app/pull/81",
             baseRefName: "main",
             headRefName: "feature/pr-fork",
             state: "open",
             isCrossRepository: true,
-            headRepositoryNameWithOwner: "octocat/codething-mvp",
+            headRepositoryNameWithOwner: "octocat/sample-app",
             headRepositoryOwnerLogin: "octocat",
           },
           repositoryCloneUrls: {
-            "octocat/codething-mvp": {
+            "octocat/sample-app": {
               url: forkDir,
               sshUrl: forkDir,
             },
@@ -5144,7 +5144,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 84,
             title: "Reused stale PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/84",
+            url: "https://github.com/aislopware/sample-app/pull/84",
             baseRefName: "main",
             headRefName: "feature/pr-reused-stale",
             state: "open",
@@ -5210,7 +5210,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 86,
             title: "Force-pushed PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/86",
+            url: "https://github.com/aislopware/sample-app/pull/86",
             baseRefName: "main",
             headRefName: "feature/pr-force-pushed",
             state: "open",
@@ -5289,7 +5289,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 87,
             title: "Local commit PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/87",
+            url: "https://github.com/aislopware/sample-app/pull/87",
             baseRefName: "main",
             headRefName: "feature/pr-local-commit",
             state: "open",
@@ -5364,7 +5364,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 89,
             title: "Dirty worktree PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/89",
+            url: "https://github.com/aislopware/sample-app/pull/89",
             baseRefName: "main",
             headRefName: "feature/pr-dirty-worktree",
             state: "open",
@@ -5438,19 +5438,19 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         const { manager } = yield* makeManager({
           providerScenario: {
             repositoryCloneUrls: forkDir
-              ? { "contributor/codething-mvp": { url: forkDir, sshUrl: forkDir } }
+              ? { "contributor/sample-app": { url: forkDir, sshUrl: forkDir } }
               : {},
             pullRequest: {
               number: 78,
               title: "Paginated PR worktree",
-              url: "https://github.com/pingdotgg/codething-mvp/pull/78",
+              url: "https://github.com/aislopware/sample-app/pull/78",
               baseRefName: "main",
               headRefName: headBranch,
               state: "open",
               isCrossRepository,
               ...(isCrossRepository
                 ? {
-                    headRepositoryNameWithOwner: "contributor/codething-mvp",
+                    headRepositoryNameWithOwner: "contributor/sample-app",
                     headRepositoryOwnerLogin: "contributor",
                   }
                 : {}),
@@ -5495,7 +5495,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 90,
             title: "Pull ref only PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/90",
+            url: "https://github.com/aislopware/sample-app/pull/90",
             baseRefName: "main",
             headRefName: "feature/pr-ref-only",
             state: "open",
@@ -5558,7 +5558,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 93,
             title: "Merge request ref only",
-            url: "https://gitlab.com/pingdotgg/codething-mvp/-/merge_requests/93",
+            url: "https://gitlab.com/aislopware/sample-app/-/merge_requests/93",
             baseRefName: "main",
             headRefName: "feature/mr-ref-only",
             state: "open",
@@ -5615,16 +5615,16 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 94,
             title: "Fork main collision PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/94",
+            url: "https://github.com/aislopware/sample-app/pull/94",
             baseRefName: "main",
             headRefName: "main",
             state: "open",
             isCrossRepository: true,
-            headRepositoryNameWithOwner: "octocat/codething-mvp",
+            headRepositoryNameWithOwner: "octocat/sample-app",
             headRepositoryOwnerLogin: "octocat",
           },
           repositoryCloneUrls: {
-            "octocat/codething-mvp": {
+            "octocat/sample-app": {
               url: forkDir,
               sshUrl: forkDir,
             },
@@ -5717,16 +5717,16 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 83,
             title: "Reused Fork PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/83",
+            url: "https://github.com/aislopware/sample-app/pull/83",
             baseRefName: "main",
             headRefName: "feature/pr-reused-fork",
             state: "open",
             isCrossRepository: true,
-            headRepositoryNameWithOwner: "octocat/codething-mvp",
+            headRepositoryNameWithOwner: "octocat/sample-app",
             headRepositoryOwnerLogin: "octocat",
           },
           repositoryCloneUrls: {
-            "octocat/codething-mvp": {
+            "octocat/sample-app": {
               url: forkDir,
               sshUrl: forkDir,
             },
@@ -5773,7 +5773,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 184,
             title: "Setup failure PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/184",
+            url: "https://github.com/aislopware/sample-app/pull/184",
             baseRefName: "main",
             headRefName: "feature/pr-setup-failure",
             state: "open",
@@ -5816,7 +5816,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
           pullRequest: {
             number: 79,
             title: "Root-only PR",
-            url: "https://github.com/pingdotgg/codething-mvp/pull/79",
+            url: "https://github.com/aislopware/sample-app/pull/79",
             baseRefName: "main",
             headRefName: "feature/pr-root-only",
             state: "open",
@@ -5871,7 +5871,7 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
               {
                 number: 201,
                 title: "PR only branch",
-                url: "https://github.com/pingdotgg/codething-mvp/pull/201",
+                url: "https://github.com/aislopware/sample-app/pull/201",
                 baseRefName: "main",
                 headRefName: "feature/pr-only-follow-up",
                 state: "open",

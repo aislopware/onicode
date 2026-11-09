@@ -108,11 +108,11 @@ describe("cloneUrlForProtocol", () => {
   });
 
   it("switches between scp-style SSH and HTTPS", () => {
-    expect(cloneUrlForProtocol("git@github.com:pingdotgg/t3code.git", "https")).toBe(
-      "https://github.com/pingdotgg/t3code.git",
+    expect(cloneUrlForProtocol("git@github.com:aislopware/onicode.git", "https")).toBe(
+      "https://github.com/aislopware/onicode.git",
     );
-    expect(cloneUrlForProtocol("https://github.com/pingdotgg/t3code.git", "ssh")).toBe(
-      "git@github.com:pingdotgg/t3code.git",
+    expect(cloneUrlForProtocol("https://github.com/aislopware/onicode.git", "ssh")).toBe(
+      "git@github.com:aislopware/onicode.git",
     );
     expect(cloneUrlForProtocol("ssh://git@gitlab.com/group/sub/repo.git", "https")).toBe(
       "https://gitlab.com/group/sub/repo.git",

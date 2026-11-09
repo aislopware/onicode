@@ -68,7 +68,7 @@ describe("thread links", () => {
   });
 
   it("rejects other links and an empty id", () => {
-    expect(parseThreadLinkHref("https://t3.codes")).toBeNull();
+    expect(parseThreadLinkHref("https://github.com/aislopware/onicode")).toBeNull();
     expect(parseThreadLinkHref("oni-thread://v1/")).toBeNull();
     expect(parseThreadLinkHref("oni-thread://v1/ ")).toBeNull();
     expect(parseThreadLinkHref("oni-thread://v2/env-1")).toBeNull();

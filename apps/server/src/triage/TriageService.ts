@@ -16,7 +16,7 @@ import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import { buildTriageAppPrompt, type TriageSourceClone } from "./triagePrompt.ts";
 import { triageSourceCacheDir, writeTriageSession } from "./triageSession.ts";
 
-const ONICODE_REPOSITORY_URL = "https://github.com/pingdotgg/t3code";
+const ONICODE_REPOSITORY_URL = "https://github.com/aislopware/onicode";
 
 // No tty: a credential prompt would hang until the timeout, so git must fail
 // instead. An empty GIT_ASKPASS also skips core.askPass and SSH_ASKPASS helpers.

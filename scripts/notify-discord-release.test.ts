@@ -24,14 +24,14 @@ const latestAnnouncement = {
   releaseName: "Onicode v1.2.3",
   version: "1.2.3",
   tag: "v1.2.3",
-  releaseUrl: new URL("https://github.com/pingdotgg/t3code/releases/tag/v1.2.3"),
+  releaseUrl: new URL("https://github.com/aislopware/onicode/releases/tag/v1.2.3"),
   timestamp: "2026-05-01T01:41:00.000Z",
 } as const;
 const nightlyAnnouncement = { ...latestAnnouncement, target: "prerelease" } as const;
 const webhookUrl = new URL("https://discord.com/api/webhooks/123456/test-secret-token");
 const intro = "A new Onicode prerelease is available for nightly testers.";
-const notes = `## What's Changed\n* Fix remote reconnection by @contributor in https://github.com/pingdotgg/t3code/pull/10\n* Improve thread search in https://github.com/pingdotgg/t3code/pull/11\n\n**Full Changelog**: https://github.com/pingdotgg/t3code/compare/v1.2.2...v1.2.3`;
-const formattedNotes = `## What's Changed\n* [Fix remote reconnection](https://github.com/pingdotgg/t3code/pull/10) by [@contributor](https://github.com/contributor)\n* [Improve thread search](https://github.com/pingdotgg/t3code/pull/11)\n\n[Full Changelog](https://github.com/pingdotgg/t3code/compare/v1.2.2...v1.2.3)`;
+const notes = `## What's Changed\n* Fix remote reconnection by @contributor in https://github.com/aislopware/onicode/pull/10\n* Improve thread search in https://github.com/aislopware/onicode/pull/11\n\n**Full Changelog**: https://github.com/aislopware/onicode/compare/v1.2.2...v1.2.3`;
+const formattedNotes = `## What's Changed\n* [Fix remote reconnection](https://github.com/aislopware/onicode/pull/10) by [@contributor](https://github.com/contributor)\n* [Improve thread search](https://github.com/aislopware/onicode/pull/11)\n\n[Full Changelog](https://github.com/aislopware/onicode/compare/v1.2.2...v1.2.3)`;
 const runCli = Command.runWith(notifyDiscordReleaseCommand, { version: "0.0.0" });
 const cliArgs = (target: "latest" | "prerelease") => [
   target,
@@ -115,17 +115,17 @@ it("keeps stable announcements short even when a long changelog is provided", ()
 
 it("links contributor profiles and escapes brackets in change titles and bot handles", () => {
   const releaseNotes =
-    "* Fix [web] links by @octo-user in https://github.com/pingdotgg/t3code/pull/12\n* Bump dependencies by @dependabot[bot] in https://github.com/pingdotgg/t3code/pull/13";
+    "* Fix [web] links by @octo-user in https://github.com/aislopware/onicode/pull/12\n* Bump dependencies by @dependabot[bot] in https://github.com/aislopware/onicode/pull/13";
   const payloads = buildDiscordReleaseAnnouncement({ ...nightlyAnnouncement, releaseNotes });
   assert.equal(
     payloadDescription(payloads),
-    `${intro}\n\n* [Fix \\[web\\] links](https://github.com/pingdotgg/t3code/pull/12) by [@octo-user](https://github.com/octo-user)\n* [Bump dependencies](https://github.com/pingdotgg/t3code/pull/13) by [@dependabot\\[bot\\]](https://github.com/apps/dependabot)`,
+    `${intro}\n\n* [Fix \\[web\\] links](https://github.com/aislopware/onicode/pull/12) by [@octo-user](https://github.com/octo-user)\n* [Bump dependencies](https://github.com/aislopware/onicode/pull/13) by [@dependabot\\[bot\\]](https://github.com/apps/dependabot)`,
   );
 });
 
 it("preserves custom notes and links outside generated GitHub pull request entries", () => {
   const releaseNotes =
-    "## Migration\n* Written by @someone in the docs\n* Commit https://github.com/pingdotgg/t3code/commit/abc123\n[Guide](https://example.com/guide)";
+    "## Migration\n* Written by @someone in the docs\n* Commit https://github.com/aislopware/onicode/commit/abc123\n[Guide](https://example.com/guide)";
   assert.equal(
     payloadDescription(buildDiscordReleaseAnnouncement({ ...nightlyAnnouncement, releaseNotes })),
     `${intro}\n\n${releaseNotes}`,
@@ -134,10 +134,10 @@ it("preserves custom notes and links outside generated GitHub pull request entri
 
 it("posts a generated summary without its folded full list", () => {
   const summary = "**v1.2.3** · 4 changes\n\n## Fixes\n- Stop works again (#1)";
-  const releaseNotes = `${summary}\n\n<details>\n<summary>Full changelog</summary>\n\n* fix: raw by @someone in https://github.com/pingdotgg/t3code/pull/1\n\n</details>\n`;
+  const releaseNotes = `${summary}\n\n<details>\n<summary>Full changelog</summary>\n\n* fix: raw by @someone in https://github.com/aislopware/onicode/pull/1\n\n</details>\n`;
   assert.equal(
     payloadDescription(buildDiscordReleaseAnnouncement({ ...nightlyAnnouncement, releaseNotes })),
-    `${intro}\n\n**v1.2.3** · 4 changes\n\n## Fixes\n- Stop works again ([#1](https://github.com/pingdotgg/t3code/pull/1))\n\n[Full changelog](${nightlyAnnouncement.releaseUrl.href})`,
+    `${intro}\n\n**v1.2.3** · 4 changes\n\n## Fixes\n- Stop works again ([#1](https://github.com/aislopware/onicode/pull/1))\n\n[Full changelog](${nightlyAnnouncement.releaseUrl.href})`,
   );
 });
 
@@ -158,7 +158,7 @@ it("splits long notes at line boundaries without dropping changes or the compari
   const longNotes =
     Array.from(
       { length: 150 },
-      (_, i) => `* Change ${i} in https://github.com/pingdotgg/t3code/pull/${i}\n`,
+      (_, i) => `* Change ${i} in https://github.com/aislopware/onicode/pull/${i}\n`,
     ).join("") + notes;
   const payloads = buildDiscordReleaseAnnouncement({
     ...nightlyAnnouncement,
@@ -167,7 +167,7 @@ it("splits long notes at line boundaries without dropping changes or the compari
   assert.ok(payloads.length > 2);
   const formattedChanges = Array.from(
     { length: 150 },
-    (_, i) => `* [Change ${i}](https://github.com/pingdotgg/t3code/pull/${i})\n`,
+    (_, i) => `* [Change ${i}](https://github.com/aislopware/onicode/pull/${i})\n`,
   ).join("");
   assert.equal(payloadDescription(payloads), `${intro}\n\n${formattedChanges}${formattedNotes}`);
   assertDiscordLimits(payloads);
@@ -368,7 +368,7 @@ it.layer(NodeServices.layer)("Discord release CLI and workflow", (it) => {
         "needs.preflight.outputs.release_name": latestAnnouncement.releaseName,
         "needs.preflight.outputs.version": latestAnnouncement.version,
         "needs.preflight.outputs.tag": latestAnnouncement.tag,
-        "github.repository": "pingdotgg/t3code",
+        "github.repository": "aislopware/onicode",
       };
       const announce = workflowRun(workflow, "Announce prerelease on Discord").replace(
         /\$\{\{ (.*?) \}\}/g,

@@ -2711,7 +2711,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       icon: "icons",
       category: "Development",
       synopsis: "Desktop GUI for coding agents",
-      maintainer: "Onicode Tools <hello@t3.codes>",
+      maintainer: "Onicode Tools <hello@onicode.dev>",
       protocols: [
         {
           name: "Onicode",
@@ -3679,7 +3679,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     description:
       "Onicode is an open-source desktop app for coding agents. Work with your existing agent subscriptions, review code changes, and run commands in your projects. Connect from desktop, web, or mobile to continue working remotely.",
     license: "MIT",
-    homepage: "https://t3.codes",
+    homepage: "https://github.com/aislopware/onicode",
     author: "Onicode Tools",
     main: "apps/desktop/dist-electron/boot.cjs",
     build: yield* createBuildConfig(

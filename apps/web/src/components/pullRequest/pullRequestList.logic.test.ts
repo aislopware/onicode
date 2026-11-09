@@ -54,9 +54,9 @@ function entry(
     host: "github.com",
     projectId: "project-1",
     projectTitle: "onicode",
-    repository: "pingdotgg/t3code",
+    repository: "aislopware/onicode",
     title: "Add the pull requests page",
-    url: `https://github.com/pingdotgg/t3code/pull/${overrides.number}`,
+    url: `https://github.com/aislopware/onicode/pull/${overrides.number}`,
     author: { login: "octocat", name: null, avatarUrl: null },
     headBranch: `feat/branch-${overrides.number}`,
     baseBranch: "main",
@@ -100,7 +100,7 @@ describe("visible pull request line-count targets", () => {
     );
     expect([...keys]).toEqual([secondKey]);
     expect(pullRequestStatsBatches(entriesByKey, keys)[0]?.input.refs).toEqual([
-      { projectId: "project-1", repository: "pingdotgg/t3code", number: 2 },
+      { projectId: "project-1", repository: "aislopware/onicode", number: 2 },
     ]);
   });
 
@@ -573,7 +573,7 @@ describe("pull request list overrides", () => {
   const entry = (number: number, state: "open" | "closed" | "merged") =>
     ({
       host: "github.com",
-      repository: "pingdotgg/t3code",
+      repository: "aislopware/onicode",
       number,
       state,
       isDraft: false,
@@ -706,7 +706,7 @@ describe("refresh page size", () => {
         entry({
           number: index + 1,
           provider: SourceControlProviderKind.make(provider),
-          repository: `pingdotgg/${name}`,
+          repository: `aislopware/${name}`,
         }),
       ),
     );

@@ -11,7 +11,7 @@ describe("promptLinkSearchFromParams", () => {
   it("round-trips decoded route params into the shared parser", () => {
     const search = promptLinkSearchFromParams({
       prompt: "Fix the bug & add tests = done?",
-      repo: ["pingdotgg/t3code", "ignored/second"],
+      repo: ["aislopware/onicode", "ignored/second"],
       provider: "codex",
       screen: "NewTask",
     });
@@ -21,7 +21,7 @@ describe("promptLinkSearchFromParams", () => {
       value: {
         kind: "new",
         prompt: { text: "Fix the bug & add tests = done?", hiddenCharacters: 0 },
-        repository: { owner: "pingdotgg", name: "onicode" },
+        repository: { owner: "aislopware", name: "onicode" },
         provider: "codex",
         model: null,
       },

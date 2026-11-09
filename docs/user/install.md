@@ -11,13 +11,13 @@ launch Onicode and configure providers afterwards.
 ## Command line
 
 ```bash
-curl -fsSL https://t3.codes/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://t3.codes/install.ps1 | iex
+irm https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.ps1 | iex
 ```
 
 This installs the `onicode` binary to `~/.local/bin`. If that folder is not on your
@@ -57,10 +57,10 @@ the nightly train, run your installed `onicode` (for example `t3 connect`), not
 
 There is no `onicode` executable for Intel Macs (the desktop app is available). To
 run a server there, build it from source with `vp`, which provides the Node version it needs
-([Install vp](https://github.com/pingdotgg/t3code#install-vp)):
+([Install vp](https://github.com/aislopware/onicode#install-vp)):
 
 ```bash
-git clone https://github.com/pingdotgg/t3code
+git clone https://github.com/aislopware/onicode
 cd onicode && vp i && vp run build:desktop
 node apps/server/dist/bin.mjs
 ```
@@ -70,7 +70,7 @@ update it with `git pull` and a rebuild.
 
 ## Desktop app
 
-Download a release from [GitHub Releases](https://github.com/pingdotgg/t3code/releases),
+Download a release from [GitHub Releases](https://github.com/aislopware/onicode/releases),
 or use a package manager:
 
 | Platform           | Install                                                      |
@@ -171,7 +171,7 @@ on web and desktop. The store apps work with both stable and Nightly servers. Te
 
 - **iPhone and iPad:** TestFlight is invite-only.
 - **Android:** download an APK from the
-  [Android beta releases](https://github.com/pingdotgg/t3code/releases?q=android-beta-).
+  [Android beta releases](https://github.com/aislopware/onicode/releases?q=android-beta-).
 
 If the app crashes during launch, open Settings → Diagnostics on the next launch
 that succeeds. It lists startup crashes from the last 7 days with the error and

@@ -12,14 +12,14 @@ const project = (environmentId: string, id: string, canonicalKey: string) =>
   }) as unknown as EnvironmentProject;
 
 const projects = [
-  project("laptop", "onicode", "github.com/pingdotgg/t3code"),
-  project("desktop", "other", "github.com/pingdotgg/other"),
-  project("server", "oni-copy", "github.com/pingdotgg/t3code"),
+  project("laptop", "onicode", "github.com/aislopware/onicode"),
+  project("desktop", "other", "github.com/aislopware/other"),
+  project("server", "oni-copy", "github.com/aislopware/onicode"),
 ];
 const target = {
   environmentId: "laptop",
   projectId: "onicode",
-  repository: "pingdotgg/t3code",
+  repository: "aislopware/onicode",
   host: "github.com",
 };
 const environment = (

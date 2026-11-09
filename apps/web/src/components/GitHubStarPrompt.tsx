@@ -12,7 +12,7 @@ import { toastManager } from "./ui/toast";
 // Separate keys so a count written by another tab can never undo a dismissal.
 const SENT_KEY = "onicode:github-star-prompt:sent";
 const DISMISSED_KEY = "onicode:github-star-prompt:dismissed";
-const REPOSITORY = "pingdotgg/t3code";
+const REPOSITORY = "aislopware/onicode";
 const PROMPTS_BEFORE_ASKING = 5;
 const IDLE_MS = 30_000;
 // User-driven actions (send, navigate, type, scroll) start with one of these; touch fires pointerdown.

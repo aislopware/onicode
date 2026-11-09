@@ -1,6 +1,6 @@
 # Onicode
 
-Onicode is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/onicode-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=dev.onicode.app)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+Onicode is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/onicode-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=dev.onicode.app)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://github.com/aislopware/onicode).
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, Onicode can control them.
 
@@ -26,13 +26,13 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 ### Command line
 
 ```bash
-curl -fsSL https://t3.codes/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://t3.codes/install.ps1 | iex
+irm https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.ps1 | iex
 ```
 
 Then run `onicode` to start the server and open the local web app. `onicode service install` keeps it running in the background, `onicode update` moves to a newer release, and `onicode --help` has the full reference.
@@ -41,7 +41,7 @@ To try it once without installing, run `npx onicode@latest`. It offers to instal
 
 ### Desktop app
 
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
+Install the latest version of the desktop app from [GitHub Releases](https://github.com/aislopware/onicode/releases), or from your favorite package registry:
 
 #### Windows (`winget`)
 
@@ -63,7 +63,7 @@ brew install --cask onicode
 
 #### Debian, Ubuntu (`.deb`)
 
-Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
+Download the `.deb` from [GitHub Releases](https://github.com/aislopware/onicode/releases), then:
 
 ```bash
 sudo apt install ./Onicode-*.deb
@@ -148,6 +148,6 @@ vp i
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
 
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
+Have a feature request? Start an [Ideas discussion](https://github.com/aislopware/onicode/discussions/categories/ideas).
 
 Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).

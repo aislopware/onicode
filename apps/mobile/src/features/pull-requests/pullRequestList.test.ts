@@ -412,7 +412,7 @@ describe("pullRequestProjectChoices", () => {
     environmentId,
     title: "onicode",
     workspaceRoot: `/work/${id}`,
-    repositoryIdentity: { canonicalKey: "github.com/pingdotgg/t3code" },
+    repositoryIdentity: { canonicalKey: "github.com/aislopware/onicode" },
   });
   const projects = [project("main", laptop), project("worktree", laptop), project("main", desktop)];
   const choices = (

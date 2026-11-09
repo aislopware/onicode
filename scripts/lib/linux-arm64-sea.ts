@@ -1,7 +1,7 @@
 // TEMPORARY one-time workaround for a Node --build-sea bug on Linux arm64.
 // It breaks kernels with 16 KiB or 64 KiB pages. Revert when Node ships a fix.
 // Node issue: https://github.com/nodejs/node/issues/67048
-// Workaround PR: https://github.com/pingdotgg/t3code/pull/25825
+// Workaround PR: https://github.com/aislopware/onicode/pull/25825
 import * as NodeModule from "node:module";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";

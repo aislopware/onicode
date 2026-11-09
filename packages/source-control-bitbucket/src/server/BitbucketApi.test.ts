@@ -32,7 +32,7 @@ const bitbucketPullRequest = {
   updated_on: "2026-01-02T00:00:00.000Z",
   links: {
     html: {
-      href: "https://bitbucket.org/pingdotgg/t3code/pull-requests/42",
+      href: "https://bitbucket.org/aislopware/onicode/pull-requests/42",
     },
   },
   source: {
@@ -45,19 +45,19 @@ const bitbucketPullRequest = {
   destination: {
     branch: { name: "main" },
     repository: {
-      full_name: "pingdotgg/t3code",
-      workspace: { slug: "pingdotgg" },
+      full_name: "aislopware/onicode",
+      workspace: { slug: "aislopware" },
     },
   },
 };
 
 const repositoryJson = {
-  full_name: "pingdotgg/t3code",
+  full_name: "aislopware/onicode",
   links: {
-    html: { href: "https://bitbucket.org/pingdotgg/t3code" },
+    html: { href: "https://bitbucket.org/aislopware/onicode" },
     clone: [
-      { name: "https", href: "https://bitbucket.org/pingdotgg/t3code.git" },
-      { name: "ssh", href: "git@bitbucket.org:pingdotgg/t3code.git" },
+      { name: "https", href: "https://bitbucket.org/aislopware/onicode.git" },
+      { name: "ssh", href: "git@bitbucket.org:aislopware/onicode.git" },
     ],
   },
   mainbranch: { name: "main" },
@@ -86,7 +86,7 @@ function makeLayer(input: {
   );
   const gitMock = {
     readConfigValue: vi.fn<HostGit["readConfigValue"]>(() =>
-      Effect.succeed<string | null>("git@bitbucket.org:pingdotgg/t3code.git"),
+      Effect.succeed<string | null>("git@bitbucket.org:aislopware/onicode.git"),
     ),
     resolvePrimaryRemoteName: vi.fn<HostGit["resolvePrimaryRemoteName"]>(() =>
       Effect.succeed("origin"),
@@ -110,7 +110,7 @@ function makeLayer(input: {
       remotes: [
         {
           name: "origin",
-          url: input.remoteUrl ?? "git@bitbucket.org:pingdotgg/t3code.git",
+          url: input.remoteUrl ?? "git@bitbucket.org:aislopware/onicode.git",
           pushUrl: Option.none(),
           isPrimary: true,
         },
@@ -169,7 +169,7 @@ it.effect("parses pull request responses from the Bitbucket REST API", () => {
     assert.deepStrictEqual(result, {
       number: 42,
       title: "Add Bitbucket provider",
-      url: "https://bitbucket.org/pingdotgg/t3code/pull-requests/42",
+      url: "https://bitbucket.org/aislopware/onicode/pull-requests/42",
       baseRefName: "main",
       headRefName: "feature/source-control",
       state: "open",
@@ -180,7 +180,7 @@ it.effect("parses pull request responses from the Bitbucket REST API", () => {
     });
     assert.strictEqual(
       execute.mock.calls[0]?.[0].url,
-      "https://api.test.local/2.0/repositories/pingdotgg/t3code/pullrequests/42",
+      "https://api.test.local/2.0/repositories/aislopware/onicode/pullrequests/42",
     );
   }).pipe(Effect.provide(layer));
 });
@@ -219,7 +219,7 @@ it.effect.each([false, true])("honors PR URL repositories, context=%s", (withCon
                 baseUrl: "https://bitbucket.org",
               },
               remoteName: "origin",
-              remoteUrl: "git@bitbucket.org:pingdotgg/t3code.git",
+              remoteUrl: "git@bitbucket.org:aislopware/onicode.git",
             },
           }
         : {}),
@@ -260,7 +260,7 @@ it.effect.each([false, true])(
       response: () =>
         Response.json({
           ...bitbucketPullRequest,
-          source: { ...bitbucketPullRequest.source, repository: { full_name: "pingdotgg/t3code" } },
+          source: { ...bitbucketPullRequest.source, repository: { full_name: "aislopware/onicode" } },
         }),
     });
     return Effect.gen(function* () {
@@ -277,7 +277,7 @@ it.effect.each([false, true])(
                   baseUrl: "https://bitbucket.org",
                 },
                 remoteName: "upstream",
-                remoteUrl: "git@bitbucket.org:PingDotGG/Onicode.git",
+                remoteUrl: "git@bitbucket.org:AislopWare/OniCode.git",
               },
             }
           : {}),
@@ -304,7 +304,7 @@ it.effect("lists pull requests with Bitbucket state and source branch query para
             state: "MERGED",
             source: {
               branch: { name: "feature/merged" },
-              repository: { full_name: "pingdotgg/t3code" },
+              repository: { full_name: "aislopware/onicode" },
             },
           },
         ],
@@ -324,7 +324,7 @@ it.effect("lists pull requests with Bitbucket state and source branch query para
     const request = execute.mock.calls[0]?.[0];
     assert.strictEqual(
       request?.url,
-      "https://api.test.local/2.0/repositories/pingdotgg/t3code/pullrequests",
+      "https://api.test.local/2.0/repositories/aislopware/onicode/pullrequests",
     );
     assert.deepStrictEqual(request?.urlParams.params, [
       ["pagelen", "10"],
@@ -355,14 +355,14 @@ it.effect("reads repository clone URLs and default branch", () => {
     const bitbucket = yield* BitbucketApi.BitbucketApi;
     const cloneUrls = yield* bitbucket.getRepositoryCloneUrls({
       cwd: "/repo",
-      repository: "pingdotgg/t3code",
+      repository: "aislopware/onicode",
     });
     const defaultBranch = yield* bitbucket.getDefaultBranch({ cwd: "/repo" });
 
     assert.deepStrictEqual(cloneUrls, {
-      nameWithOwner: "pingdotgg/t3code",
-      url: "https://bitbucket.org/pingdotgg/t3code.git",
-      sshUrl: "git@bitbucket.org:pingdotgg/t3code.git",
+      nameWithOwner: "aislopware/onicode",
+      url: "https://bitbucket.org/aislopware/onicode.git",
+      sshUrl: "git@bitbucket.org:aislopware/onicode.git",
     });
     assert.strictEqual(defaultBranch, "main");
   }).pipe(Effect.provide(layer));
@@ -391,7 +391,7 @@ it.effect.each([false, true])(
                       baseUrl: "https://bitbucket.org",
                     },
                     remoteName: "origin",
-                    remoteUrl: "git@bitbucket.org:pingdotgg/t3code.git",
+                    remoteUrl: "git@bitbucket.org:aislopware/onicode.git",
                   },
                 }
               : {}),
@@ -428,7 +428,7 @@ it.effect("prefers an explicit repository and uses context when the repository i
       remoteName: "origin",
       remoteUrl: "git@bitbucket.org:another/context.git",
     };
-    for (const repository of ["pingdotgg/t3code", "https://bitbucket.org/pingdotgg/t3code.git"]) {
+    for (const repository of ["aislopware/onicode", "https://bitbucket.org/aislopware/onicode.git"]) {
       yield* bitbucket.getRepositoryCloneUrls({ cwd: "/repo", context, repository });
     }
     yield* bitbucket.getDefaultBranch({ cwd: "/repo", context });
@@ -436,8 +436,8 @@ it.effect("prefers an explicit repository and uses context when the repository i
     assert.deepStrictEqual(
       execute.mock.calls.map(([request]) => request.url).toSorted(),
       [
-        "https://api.test.local/2.0/repositories/pingdotgg/t3code",
-        "https://api.test.local/2.0/repositories/pingdotgg/t3code",
+        "https://api.test.local/2.0/repositories/aislopware/onicode",
+        "https://api.test.local/2.0/repositories/aislopware/onicode",
         "https://api.test.local/2.0/repositories/another/context",
         "https://api.test.local/2.0/repositories/another/context/branching-model",
       ].toSorted(),
@@ -506,8 +506,8 @@ it.effect("sends a self-hosted Bitbucket remote nowhere unless an API base url i
     const cloud = makeLayer({ response, env: cloudEnv });
     yield* defaultBranch(cloud, false);
     assert.deepStrictEqual(requestedUrls(cloud), [
-      "https://api.bitbucket.org/2.0/repositories/pingdotgg/t3code",
-      "https://api.bitbucket.org/2.0/repositories/pingdotgg/t3code/branching-model",
+      "https://api.bitbucket.org/2.0/repositories/aislopware/onicode",
+      "https://api.bitbucket.org/2.0/repositories/aislopware/onicode/branching-model",
     ]);
 
     const configured = makeLayer({ response, remoteUrl });
@@ -545,8 +545,8 @@ it.effect(
       assert.deepStrictEqual(
         execute.mock.calls.map((call) => call[0].url).toSorted(),
         [
-          "https://api.test.local/2.0/repositories/pingdotgg/t3code",
-          "https://api.test.local/2.0/repositories/pingdotgg/t3code/branching-model",
+          "https://api.test.local/2.0/repositories/aislopware/onicode",
+          "https://api.test.local/2.0/repositories/aislopware/onicode/branching-model",
         ].toSorted(),
       );
     }).pipe(Effect.provide(layer));
@@ -602,7 +602,7 @@ it.effect("creates pull requests using the official REST payload shape", () => {
     const request = execute.mock.calls[0]?.[0];
     assert.strictEqual(
       request?.url,
-      "https://api.test.local/2.0/repositories/pingdotgg/t3code/pullrequests",
+      "https://api.test.local/2.0/repositories/aislopware/onicode/pullrequests",
     );
     assert.strictEqual(request?.method, "POST");
     assert.ok(request);

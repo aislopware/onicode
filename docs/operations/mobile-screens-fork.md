@@ -1,13 +1,13 @@
 # Building the mobile Screens dependency
 
 The mobile v5 stack uses a committed tarball from the
-[Onicode Screens fork](https://github.com/pingdotgg/react-native-screens/tree/oni-v5.0.0-t3.45).
+[Onicode Screens fork](https://github.com/aislopware/react-native-screens/tree/oni-v5.0.0-t3.45).
 The fork owns the integration changes; the app does not patch this package.
 Each archive includes compiled JavaScript, declarations, native source and
-`oni-fork.json` recording its version, source commit and upstream base.
+`t3-fork.json` recording its version, source commit and upstream base.
 
 To reproduce an archive, use Node 24 and the repository's pinned Yarn from a
-clean fork checkout at the source commit recorded in its `oni-fork.json`:
+clean fork checkout at the source commit recorded in its `t3-fork.json`:
 
 ```sh
 yarn --cwd /tmp/oni-screens-fork pack:onicode /absolute/path/to/onicode/apps/mobile/deps

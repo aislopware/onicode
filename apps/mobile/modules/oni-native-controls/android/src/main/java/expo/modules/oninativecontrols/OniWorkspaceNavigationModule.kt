@@ -425,7 +425,7 @@ class OniWorkspaceNavigationView(
   @Composable
   private fun tabIconPainter(tab: String) = painterResource(
     when (tab) {
-      "threads" -> R.drawable.t3_chats
+      "threads" -> R.drawable.oni_chats
       "pullRequests" -> R.drawable.oni_pull_requests
       "usage" -> R.drawable.oni_usage
       else -> R.drawable.oni_settings

@@ -971,9 +971,9 @@ it.effect("keeps delegated child pull-request links independent of the parent", 
     const projectId = ProjectId.make("project:parent-pr");
     const parentPullRequest = {
       projectId,
-      repository: "pingdotgg/t3code",
+      repository: "aislopware/onicode",
       number: 123,
-      url: "https://github.com/pingdotgg/t3code/pull/123",
+      url: "https://github.com/aislopware/onicode/pull/123",
     };
     yield* orchestrator.dispatch({
       type: "thread.create",
@@ -1033,7 +1033,7 @@ it.effect("keeps delegated child pull-request links independent of the parent", 
     const childPullRequest = {
       ...parentPullRequest,
       number: 456,
-      url: "https://github.com/pingdotgg/t3code/pull/456",
+      url: "https://github.com/aislopware/onicode/pull/456",
     };
     yield* orchestrator.dispatch({
       type: "thread.metadata.update",

@@ -50,7 +50,7 @@ jobs:
   # have already run. Scheduled runs also decide here whether a nightly is due.
   resolve_commit:
     name: Resolve release commit
-    if: github.repository == 'pingdotgg/t3code'
+    if: github.repository == 'aislopware/onicode'
     runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 5
     outputs:
@@ -593,7 +593,7 @@ jobs:
       # other repositories report "dev" telemetry.
       - name: Build JS bundle
         env:
-          ONICODE_TELEMETRY_CHANNEL: ${{ github.repository == 'pingdotgg/t3code' && needs.preflight.outputs.release_channel || 'dev' }}
+          ONICODE_TELEMETRY_CHANNEL: ${{ github.repository == 'aislopware/onicode' && needs.preflight.outputs.release_channel || 'dev' }}
         run: vp run ${{ steps.bundle_build.outputs.script }}
 
       # Two paths under apps/ so the artifact root is apps/; consumers download
@@ -990,7 +990,7 @@ jobs:
           > [!WARNING]
           > **This is a preview build. Do not install it unless you know exactly why you are here.**
           >
-          > Preview builds are cut by maintainers from unreleased branches to exercise the release pipeline. They can be broken, receive no fixes, are never offered as updates, and are not supported. If you want Onicode, install the [latest release](https://github.com/pingdotgg/t3code/releases/latest) or a nightly instead.
+          > Preview builds are cut by maintainers from unreleased branches to exercise the release pipeline. They can be broken, receive no fixes, are never offered as updates, and are not supported. If you want Onicode, install the [latest release](https://github.com/aislopware/onicode/releases/latest) or a nightly instead.
 
           Built from `${{ needs.preflight.outputs.ref }}`.
           EOF

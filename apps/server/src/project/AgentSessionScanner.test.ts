@@ -837,7 +837,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         yield* fileSystem.makeDirectory(path.join(repo, ".git"));
         yield* fileSystem.writeFileString(
           path.join(repo, ".git", "config"),
-          '[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:pingdotgg/t3code.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n',
+          '[core]\n\tbare = false\n[remote "origin"]\n\turl = git@github.com:aislopware/onicode.git\n\tfetch = +refs/heads/*:refs/remotes/origin/*\n',
         );
         const worktreeGitDir = path.join(repo, ".git", "worktrees", "wt");
         yield* fileSystem.makeDirectory(worktreeGitDir, { recursive: true });
@@ -852,7 +852,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         yield* fileSystem.makeDirectory(submoduleGitDir, { recursive: true });
         yield* fileSystem.writeFileString(
           path.join(submoduleGitDir, "config"),
-          '[remote "origin"]\n\turl = ssh://gitlab.com/pingdotgg/libs/vendor.git\n',
+          '[remote "origin"]\n\turl = ssh://gitlab.com/aislopware/libs/vendor.git\n',
         );
         yield* fileSystem.writeFileString(
           path.join(submodule, ".git"),
@@ -875,15 +875,15 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           {
             path: submodule,
             git: {
-              remoteKey: "gitlab.com/pingdotgg/libs/vendor",
-              repository: "pingdotgg/libs/vendor",
+              remoteKey: "gitlab.com/aislopware/libs/vendor",
+              repository: "aislopware/libs/vendor",
             },
           },
           { path: noRemote, git: { remoteKey: null, repository: null } },
           { path: plain, git: null },
           {
             path: repo,
-            git: { remoteKey: "github.com/pingdotgg/t3code", repository: "pingdotgg/t3code" },
+            git: { remoteKey: "github.com/aislopware/onicode", repository: "aislopware/onicode" },
           },
         ]);
       }),
@@ -905,7 +905,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           yield* fileSystem.makeDirectory(bareGitDir);
           yield* fileSystem.writeFileString(
             path.join(bareGitDir, "config"),
-            '[core] bare = "true" ; bare repository\n[remote "origin"]\nurl = git@github.com:pingdotgg/t3code.git\n',
+            '[core] bare = "true" ; bare repository\n[remote "origin"]\nurl = git@github.com:aislopware/onicode.git\n',
           );
           const dev = path.join(bare, "dev");
           const prod = path.join(bare, "prod");
@@ -943,7 +943,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
 
           const input = { claudeHomePath, codexHomePath, configBaseDir };
           const result = yield* runScan(input);
-          const git = { remoteKey: "github.com/pingdotgg/t3code", repository: "pingdotgg/t3code" };
+          const git = { remoteKey: "github.com/aislopware/onicode", repository: "aislopware/onicode" };
           expect(
             result.candidates.map((candidate) => ({ path: candidate.path, git: candidate.git })),
           ).toEqual([
@@ -2043,7 +2043,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
           else
             yield* fileSystem.writeFileString(
               configPath,
-              `[remote "origin"]\n\turl = git@github.com:pingdotgg/repo-${index}.git\n`,
+              `[remote "origin"]\n\turl = git@github.com:aislopware/repo-${index}.git\n`,
             );
           yield* writeTranscript({
             filePath: path.join(claudeHomePath, "projects", `-slug-${index}`, "a.jsonl"),
@@ -2094,12 +2094,12 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
           ).toEqual([
             {
               path: repos[2],
-              git: { remoteKey: "github.com/pingdotgg/repo-2", repository: "pingdotgg/repo-2" },
+              git: { remoteKey: "github.com/aislopware/repo-2", repository: "aislopware/repo-2" },
             },
             { path: repos[1], git: { remoteKey: null, repository: null } },
             {
               path: repos[0],
-              git: { remoteKey: "github.com/pingdotgg/repo-0", repository: "pingdotgg/repo-0" },
+              git: { remoteKey: "github.com/aislopware/repo-0", repository: "aislopware/repo-0" },
             },
           ]);
         }
@@ -2245,7 +2245,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
           yield* fileSystem.remove(configPath);
           yield* fileSystem.writeFileString(
             configPath,
-            `[remote "origin"]\n\turl = git@github.com:pingdotgg/unblocked.git\n`,
+            `[remote "origin"]\n\turl = git@github.com:aislopware/unblocked.git\n`,
           );
           expect(yield* gitOfScan(scanner.scan), "a blocked path is skipped for a while").toEqual([
             { remoteKey: null, repository: null },
@@ -2253,7 +2253,7 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")(
 
           yield* TestClock.adjust("10 minutes");
           expect(yield* gitOfScan(scanner.scan)).toEqual([
-            { remoteKey: "github.com/pingdotgg/unblocked", repository: "pingdotgg/unblocked" },
+            { remoteKey: "github.com/aislopware/unblocked", repository: "aislopware/unblocked" },
           ]);
         }).pipe(Effect.provide(layerScannerTest({ claudeHomePath, codexHomePath })));
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),

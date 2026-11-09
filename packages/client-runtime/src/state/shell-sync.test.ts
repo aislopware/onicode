@@ -944,9 +944,9 @@ describe("environment shell synchronization", () => {
     Effect.gen(function* () {
       const link = (number: number): ThreadPullRequestLink => ({
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "aislopware/onicode",
         number,
-        url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+        url: `https://github.com/aislopware/onicode/pull/${number}`,
         source: "agent",
         linkedAt: "2026-06-20T00:00:00.000Z",
         snapshot: null,
@@ -1039,9 +1039,9 @@ describe("environment shell synchronization", () => {
     Effect.gen(function* () {
       const link = (number: number): ThreadPullRequestLink => ({
         host: "github.com",
-        repository: "pingdotgg/t3code",
+        repository: "aislopware/onicode",
         number,
-        url: `https://github.com/pingdotgg/t3code/pull/${number}`,
+        url: `https://github.com/aislopware/onicode/pull/${number}`,
         source: "agent",
         linkedAt: "2026-06-20T00:00:00.000Z",
         snapshot: null,

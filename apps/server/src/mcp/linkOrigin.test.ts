@@ -174,7 +174,7 @@ const layerTools = Layer.mergeAll(
       cloneRepository: (input) =>
         Effect.succeed({
           cwd: input.destinationPath,
-          remoteUrl: "https://github.com/pingdotgg/t3code.git",
+          remoteUrl: "https://github.com/aislopware/onicode.git",
           repository: null,
         }),
     }),

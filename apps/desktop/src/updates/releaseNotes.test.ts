@@ -18,7 +18,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         "- fix(opencode): handle child approvals, stops, and model catalogs by @human in #8480",
         "## New Contributors",
         "- @human made their first contribution in #8435",
-        "**Full Changelog**: https://github.com/pingdotgg/t3code/compare/old...new",
+        "**Full Changelog**: https://github.com/aislopware/onicode/compare/old...new",
       ].join("\n"),
       "0.0.36-nightly.20260828.1213",
       "nightly",
@@ -72,7 +72,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
         ...fixes,
         "<details>",
         "<summary>Full changelog</summary>",
-        "* fix: raw entry by @human in https://github.com/pingdotgg/t3code/pull/1",
+        "* fix: raw entry by @human in https://github.com/aislopware/onicode/pull/1",
         "</details>",
       ].join("\n"),
       "1.2.4",
@@ -255,7 +255,7 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
 
   it("ignores the Full Changelog paragraph that ends GitHub's generated notes", () => {
     const fullChangelog = (from: string, to: string) =>
-      `<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/pingdotgg/t3code/compare/v${from}...v${to}"><tt>v${from}...v${to}</tt></a></p>`;
+      `<p><strong>Full Changelog</strong>: <a class="commit-link" href="https://github.com/aislopware/onicode/compare/v${from}...v${to}"><tt>v${from}...v${to}</tt></a></p>`;
     const result = normalizeDesktopUpdateReleaseNotes(
       [
         {
@@ -266,8 +266,8 @@ describe("normalizeDesktopUpdateReleaseNotes", () => {
           version: "0.1.3-nightly.20261023.3592",
           note:
             "<h2>What's Changed</h2>\n<ul>\n" +
-            '<li>fix(web): A by <a href="https://github.com/a">@a</a> in <a href="https://github.com/pingdotgg/t3code/pull/1">#1</a></li>\n' +
-            '<li>fix(web): B by <a href="https://github.com/b">@b</a> in <a href="https://github.com/pingdotgg/t3code/pull/2">#2</a></li>\n' +
+            '<li>fix(web): A by <a href="https://github.com/a">@a</a> in <a href="https://github.com/aislopware/onicode/pull/1">#1</a></li>\n' +
+            '<li>fix(web): B by <a href="https://github.com/b">@b</a> in <a href="https://github.com/aislopware/onicode/pull/2">#2</a></li>\n' +
             "<li>Full Changelog: links open in the browser in #3</li>\n" +
             "</ul>\n" +
             fullChangelog("0.1.3-nightly.20261023.3579", "0.1.3-nightly.20261023.3592"),

@@ -117,7 +117,7 @@ export const SHOWCASE_PROJECTS = [
     id: "onicode",
     title: "Onicode",
     directory: "onicode",
-    repositoryUrl: "https://github.com/pingdotgg/t3code.git",
+    repositoryUrl: "https://github.com/aislopware/onicode.git",
     favicon: PROJECT_FAVICONS.onicode,
   },
   {
@@ -301,7 +301,7 @@ async function seedOnicodeWorkspace(workspaceRoot: string): Promise<void> {
   );
   await initializeRepository({
     workspaceRoot,
-    repositoryUrl: "https://github.com/pingdotgg/t3code.git",
+    repositoryUrl: "https://github.com/aislopware/onicode.git",
     commitMessage: "Show connected environments",
   });
   await runGit(workspaceRoot, ["checkout", "-b", "feat/remote-command-center"]);

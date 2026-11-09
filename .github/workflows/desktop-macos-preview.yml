@@ -92,7 +92,7 @@ jobs:
       # channel. The Linux browser secret helper is not part of a macOS app.
       - name: Build JS bundle
         env:
-          ONICODE_TELEMETRY_CHANNEL: ${{ github.repository == 'pingdotgg/t3code' && 'preview' || 'dev' }}
+          ONICODE_TELEMETRY_CHANNEL: ${{ github.repository == 'aislopware/onicode' && 'preview' || 'dev' }}
         run: vp run ${{ steps.bundle_build.outputs.script }}
 
       # Same layout as release.yml's js-bundle so release-desktop.yml can

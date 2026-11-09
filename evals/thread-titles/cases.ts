@@ -3,15 +3,15 @@ import type { ThreadTitleMessage } from "@onicode/provider-core/server/threadTit
 export const threadTitleEvaluationCases = [
   {
     id: "linked-reset-credits",
-    source: "https://github.com/pingdotgg/t3code/pull/10462",
+    source: "https://github.com/aislopware/onicode/pull/10462",
     request: "Review the reset credit routing change.",
     previousTitle: "Review PR 10462",
-    messages: [{ role: "user", text: "Review https://github.com/pingdotgg/t3code/pull/10462" }],
+    messages: [{ role: "user", text: "Review https://github.com/aislopware/onicode/pull/10462" }],
     rubric: "Name reset credit routing. Distinguish it from displaying credit balances.",
   },
   {
     id: "onboarding-merge",
-    source: "https://github.com/pingdotgg/t3code/pull/10465",
+    source: "https://github.com/aislopware/onicode/pull/10465",
     request: "Make onboarding one shared wizard across computers, then merge when green.",
     previousTitle: "Finish onboarding PR",
     messages: [

@@ -1,7 +1,7 @@
 # Installs the Onicode CLI from a GitHub Release archive on Windows. Needs
 # only PowerShell 5.1+; no Node, npm, or compiler.
 #
-#   irm https://t3.codes/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.ps1 | iex
 #
 # Environment:
 #   ONICODE_CHANNEL           release train to follow: stable, nightly, or preview
@@ -16,7 +16,7 @@
 $ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-$repo = "pingdotgg/t3code"
+$repo = "aislopware/onicode"
 $baseUrl = if ($env:ONICODE_RELEASE_BASE_URL) { $env:ONICODE_RELEASE_BASE_URL.TrimEnd("/") } else { "https://github.com/$repo/releases/download" }
 $oniHome = if ($env:ONICODE_HOME) { $env:ONICODE_HOME } else { Join-Path $HOME ".onicode" }
 $binDir = if ($env:ONICODE_INSTALL_BIN_DIR) { $env:ONICODE_INSTALL_BIN_DIR } else { Join-Path $HOME ".local\bin" }

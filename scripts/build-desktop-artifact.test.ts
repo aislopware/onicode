@@ -531,7 +531,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
       assert.deepStrictEqual(release.publish, [
         {
           provider: "github",
-          owner: "pingdotgg",
+          owner: "aislopware",
           repo: "onicode",
           releaseType: "release",
         },
@@ -539,7 +539,7 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }).pipe(
       Effect.provide(
         ConfigProvider.layer(
-          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "pingdotgg/t3code" } }),
+          ConfigProvider.fromEnv({ env: { GITHUB_REPOSITORY: "aislopware/onicode" } }),
         ),
       ),
     ),

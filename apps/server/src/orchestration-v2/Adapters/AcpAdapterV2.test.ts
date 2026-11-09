@@ -3651,10 +3651,10 @@ describe("AcpAdapterV2", () => {
       assert.deepEqual(webItem("grok-web-search", "completed"), {
         title: "Web search: onicode code",
         patterns: ["onicode code"],
-        results: [{ url: "https://t3.codes" }, { url: "https://github.com/pingdotgg/t3code" }],
+        results: [{ url: "https://github.com/aislopware/onicode" }, { url: "https://github.com/aislopware/onicode" }],
       });
       assert.deepEqual(webItem("grok-web-fetch", "completed")?.results, [
-        { url: "https://t3.codes", snippet: "Onicode page" },
+        { url: "https://github.com/aislopware/onicode", snippet: "Onicode page" },
       ]);
       const completedCompaction = items.find(
         (item) =>
