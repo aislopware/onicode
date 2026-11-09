@@ -29,3 +29,4 @@ b07fdeb143	take	fix(mobile): iOS terminal can copy, paste, and stop freezing (#2
 c45cbd742b	take	fix(server): delegated Claude tasks report the model that ran (#27753)
 ea876cc4ac	take	fix(mobile): nested code blocks no longer overlap the next message on Android (#28524)
 4df0c1302a	take	refactor: upgrade Legend List to 3.7.2 and drop our list workarounds (#28125)
+8f144827f6	take	fix(mobile): select file text across lines on Android (#31286)
