@@ -416,6 +416,8 @@ export const make = Effect.gen(function* () {
         nodeIntegration: false,
         sandbox: true,
         webviewTag: true,
+        // Bundled assets change only on update, so cache compiled code from the first load.
+        v8CacheOptions: "bypassHeatCheck",
         // Guest fullscreen propagates to the embedder; both must opt out to keep it inside the webview.
         disableHtmlFullscreenWindowResize: true,
       },
