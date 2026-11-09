@@ -8,9 +8,11 @@ import { environmentMismatchError, mapRemoteEnvironmentError } from "../connecti
 import type { ConnectionAttemptError, PreparedHttpAuthorization } from "../connection/model.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import * as ClientCapabilities from "../platform/capabilities.ts";
+import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as HttpClient from "effect/http/HttpClient";
 
 export interface AuthorizedRemoteEnvironment {
@@ -32,12 +34,27 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       readonly bearerToken: string;
       readonly connectionMethod: ClientConnectionMethod;
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
+    /** Lets the next direct authorization of this address skip its own descriptor read. */
+    readonly rememberCheckedDescriptor: (
+      httpBaseUrl: string,
+      descriptor: Option.Option<ExecutionEnvironmentDescriptor>,
+    ) => Effect.Effect<void>;
   }
 >()("@onicode/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
+
+const CHECKED_DESCRIPTOR_TTL_NANOS = 5_000_000_000n;
 
 const make = Effect.gen(function* () {
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const httpClient = yield* HttpClient.HttpClient;
+
+  // A route or host check hands its descriptor to the connect it leads to, once,
+  // so the connect skips a round trip. Only over HTTPS: a plain LAN address can
+  // belong to another machine after a network change.
+  const checkedDescriptors = new Map<
+    string,
+    { readonly descriptor: ExecutionEnvironmentDescriptor; readonly at: bigint }
+  >();
 
   /**
    * A saved LAN address can belong to another machine on a different network.
@@ -47,12 +64,19 @@ const make = Effect.gen(function* () {
       readonly expectedEnvironmentId: EnvironmentId;
       readonly httpBaseUrl: string;
     }) {
-      const descriptor = yield* fetchRemoteEnvironmentDescriptor({
-        httpBaseUrl: input.httpBaseUrl,
-      }).pipe(
-        Effect.mapError(mapRemoteEnvironmentError),
-        Effect.provideService(HttpClient.HttpClient, httpClient),
-      );
+      const checked = checkedDescriptors.get(input.httpBaseUrl);
+      checkedDescriptors.delete(input.httpBaseUrl);
+      // A remembered mismatch still reads again, so a host that answers for the
+      // right environment a moment later is not blocked.
+      const descriptor =
+        checked !== undefined &&
+        checked.descriptor.environmentId === input.expectedEnvironmentId &&
+        (yield* Clock.monotonicTimeNanos) - checked.at <= CHECKED_DESCRIPTOR_TTL_NANOS
+          ? checked.descriptor
+          : yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl: input.httpBaseUrl }).pipe(
+              Effect.mapError(mapRemoteEnvironmentError),
+              Effect.provideService(HttpClient.HttpClient, httpClient),
+            );
       if (descriptor.environmentId !== input.expectedEnvironmentId) {
         return yield* environmentMismatchError({
           expected: input.expectedEnvironmentId,
@@ -90,7 +114,20 @@ const make = Effect.gen(function* () {
     };
   });
 
-  return RemoteEnvironmentAuthorization.of({ authorizeBearer });
+  return RemoteEnvironmentAuthorization.of({
+    authorizeBearer,
+    // Untraced: it runs on every route and host check.
+    rememberCheckedDescriptor: Effect.fnUntraced(function* (httpBaseUrl, descriptor) {
+      if (Option.isNone(descriptor) || !httpBaseUrl.startsWith("https:")) {
+        checkedDescriptors.delete(httpBaseUrl);
+        return;
+      }
+      checkedDescriptors.set(httpBaseUrl, {
+        descriptor: descriptor.value,
+        at: yield* Clock.monotonicTimeNanos,
+      });
+    }),
+  });
 });
 
 export const layer = Layer.effect(RemoteEnvironmentAuthorization, make);
