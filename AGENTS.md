@@ -2,50 +2,54 @@
 
 Onicode is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity, Kiro) and serves web, desktop, and mobile clients.
 
-You can think of Onicode as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
+It is an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor. Onicode is maintained by [aislopware](https://github.com/aislopware/onicode).
 
-## What makes Onicode special?
+Onicode is a fork of t3code, kept as the `upstream` git remote. Never `git merge upstream/main`; port upstream commits one at a time with `node scripts/upstream-sync.ts`, following [Upstream sync](docs/operations/upstream-sync.md).
 
-We have over 500,000 users who love Onicode. It's important we maintain the things they love as we continue to iterate on the product. Here's a brief list of the things we can never compromise on.
+## What Onicode cares about
+
+These are the things we do not compromise on as the product changes.
 
 ### 1. Open at the core
 
-Onicode is truly open. We share our roadmap, we share how we think about things, and of course we share all our code. A large number of our users run forks. We work in the open, and should strive to stay that way.
+All of Onicode's code is public, and people run their own forks. Keep it that way: no hosted dependency the user cannot run themselves.
 
 ### 2. Performance without compromise
 
-Lots of apps have gotten bogged down with bad tech decisions and "slop". We have not, and we're proud of the performance of Onicode. We regularly audit for performance regressions, often caused by sending too much data over websockets, css animations causing gpu spikes, lists being hard to render, and more. Make sure all changes are considerate of performance impact.
+Onicode stays fast because we refuse slop. Watch for the usual regressions: too much data over websockets, CSS animations causing GPU spikes, lists that are expensive to render. Make sure every change is considerate of performance.
 
 ### 3. Remote ready
 
-The architecture of Onicode's websocket layer (`onicode`) enables a lot of awesome remote features. These have become core to the product. Whether users are connecting directly over their local network, using Tailscale, or leaning in fully with T3 Connect (our tunnel solution, also in this repo), we need to make sure new features are properly supported.
+The websocket layer (`onicode`) lets any client drive an environment on another machine. Users connect over their local network or Tailscale. Public access, for guest links and webhooks, goes through Tailscale Funnel (Settings → Labs). New features need to work over all of these, not just on localhost.
 
 ### 4. Multi-surface
 
-Onicode has 3 key app surfaces: **web**, **desktop**, and **mobile**.
+Onicode has 3 app surfaces: **desktop**, **mobile**, and **web**.
 
-**Web** is kind of two surfaces, as we have the public facing "app.t3.codes" as well as locally hosting the web app through the `onicode` command. Both need to be supported by all new features where reasonable.
+**Desktop** is the main surface most users install first. It is an Electron app that bundles the server runner. It can also act as the host server for other clients.
 
-**Desktop** is the main surface most users install first. It's a full Electron app that bundles the server runner as well. The desktop app can also be used as the host server, allowing remote connections from app.t3.codes or the mobile app.
+**Mobile** is a React Native app for iOS and Android that connects to any Onicode server to control work remotely.
 
-**Mobile** is a React Native app for both iOS and Android, available on the App Store and Google Play. The mobile app allows for connecting to any Onicode server to control work remotely.
+**Web** is the web app the `onicode` server serves itself, locally or to other devices on the network. There is no hosted web app.
 
-## A note from Theo
+New features should work on all three where reasonable.
 
-I like ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.
+## How we build
 
-Channel both "measure twice, cut once" and "yagni". Fight scope creep. Try to honor the dev's intent in both a minimal and realistic fashion.
+Ambitious ideas, simple systems, and software that feels obvious. Do not preserve complexity just because it already exists. Do not introduce machinery because it looks architecturally impressive. Understand the real constraint, then fight for the smallest model that makes the correct behavior unsurprising.
 
-The rest of this document is meant to help you navigate the codebase and make changes effectively. Think of these instructions less as "hard rules", more as "good defaults". The developer's preferences should be able to override anything here.
+Measure twice, cut once, and yagni. Fight scope creep. Honor the developer's intent in a minimal and realistic way.
 
-Of note: Most Onicode contributions will come from Onicode itself, often controlled remotely. This means you should be careful about accessing data, killing dev servers, and other things that may damage the Onicode instance that the contributor is using.
+The rest of this document helps you navigate the codebase and make changes effectively. Treat it as good defaults rather than hard rules. The developer's preferences override anything here.
+
+Most Onicode contributions come from Onicode itself, often controlled remotely. Be careful about accessing data, killing dev servers, and anything else that may damage the Onicode instance the contributor is using.
 
 ## A small glossary
 
 We need to be on the same page with terminology. When communicating, use this language:
 
 - **you** means the agent reading this file and changing Onicode.
-- **we, us, and maintainers** mean Theo, Julius and the people building Onicode. These are who you are talking to now.
+- **we, us, and maintainers** mean the aislopware maintainers building Onicode. These are who you are talking to now.
 - **user** means the person using Onicode to direct coding agents.
 - **agent** means the coding agent a user runs inside Onicode. Depending on context, that may also include you.
 - **provider** means the agent runtime or harness Onicode talks to, such as Codex, Claude, Cursor, or OpenCode.
@@ -72,7 +76,7 @@ The most common defect in this repo is a change that works on the path you teste
 - **Agents.** A capability a user can trigger is usually one an agent should reach through MCP tools, and scheduled tasks run the same paths. That only works when it is a service method, not handler code.
 - **Contracts.** Anything crossing the wire is typed in `packages/contracts`. Change the schema and the server, web, mobile, and desktop all follow.
 - **Reverse states.** If you added a way in, add the way out and the way to see it. Snooze needs unsnooze. Close needs reopen. A one-way door is a bug.
-- **Connection modes.** Local, remote/relay, and tunnel behave differently. Multi-device and multi-environment cases are real.
+- **Connection modes.** Local, LAN or Tailscale, and public access through Tailscale Funnel behave differently. Multi-device and multi-environment cases are real.
 - **Docs.** Check whether the change makes existing guidance inaccurate. Apply the [documentation rules](#documentation) before adding anything.
 
 ## Dev servers
@@ -148,12 +152,11 @@ For mobile verification, a missing or outdated native client is an install step,
 ## Pull requests
 
 - Never make a PR unless the developer explicitly asks you to do so.
-- If `origin` is git.cafe, follow [GitCafe mirror](docs/operations/development.md#gitcafe-mirror-optional): push to `origin`, open and track PRs with `cafe` and their git.cafe URLs, and keep `gh` for merging.
 - Conventional commit titles, plain language: `fix(web): new threads no longer spike CPU`.
 - Body: the problem in a sentence or two, then how you fixed it. End with the model and harness that did the work.
 - UI changes need before/after images. Motion or timing needs a short video.
 - Upload PR evidence to GitHub. Never commit PR-only screenshots or assets such as `.github/pr-assets/`.
-- One request is one PR. Split it only when the maintainer asks. Outside contributions follow the stricter [one problem per PR](CONTRIBUTING.md#one-problem) rule.
+- One request is one PR. Split it only when the maintainer asks.
 - When babysitting: call `watch_pull_request` and end your turn. Onicode wakes you on checks, comments, or conflicts. Do not poll or sleep. Verify each bot finding against the source, fix real ones, dismiss false positives with a written reason. Stay quiet when nothing is new. Stop when the bots are green on the latest commit.
 
 ## Documentation
@@ -171,7 +174,7 @@ Most code changes do not need an internal documentation change. Agents can read 
 ## Plans and work artifacts
 
 - Do not commit implementation plans, research notes, or agent scratch files. Keep temporary working material outside the worktree. `.plans/` is gitignored only as a safety net for legacy tooling.
-- Track active maintainer work in the GitHub issue or project item that owns it. External proposals follow `CONTRIBUTING.md` and belong in Ideas discussions.
+- Track active maintainer work in the GitHub issue that owns it.
 - A merged PR is the implementation record. Close or update its tracking item when the work lands; do not preserve a second checklist in the repository.
 
 ## How it works
