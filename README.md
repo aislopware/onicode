@@ -30,7 +30,13 @@ Then run `onicode` to start the server and open the web app it serves. `onicode 
 
 ### Desktop and mobile
 
-The desktop app bundles the server. Desktop and mobile releases are published through Onicode's own update feeds, and installed apps update themselves from there. See [Install and first run](./docs/user/install.md) and [Remote access](./docs/user/remote-access.md) to connect a phone or another machine.
+The desktop app bundles the server. On a Mac with Apple silicon, install it with [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask aislopware/tap/onicode
+```
+
+or [download it](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/macos/latest/download) and move **Onicode** to Applications. Desktop and mobile releases are published through Onicode's own update feeds, and installed apps update themselves from there. See [Install and first run](./docs/user/install.md) and [Remote access](./docs/user/remote-access.md) to connect a phone or another machine.
 
 ### From source
 

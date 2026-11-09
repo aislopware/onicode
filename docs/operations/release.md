@@ -11,7 +11,7 @@ mobile (iOS and Android) build and release through better-update at
 
 On the release Mac:
 
-- `better-update login`. The vault holds team `UK58J62H8L`'s Developer ID Application
+- `better-update login`, and `gh` logged in with push access to `aislopware/homebrew-tap`. The vault holds team `UK58J62H8L`'s Developer ID Application
   certificate and App Store Connect key; builds ask for the vault passphrase.
 - Xcode Command Line Tools, Rust stable, and the repo's Node and pnpm.
 - Docker Desktop or OrbStack running, for the Linux build.
@@ -33,8 +33,10 @@ From a clean checkout of `main` as pushed, with the release notes in a file:
 scripts/release/publish.sh notes.md
 ```
 
-It builds both platforms, checks the macOS zip, then releases both builds to `latest`. The steps
-it runs, for doing one by hand from the repo root:
+It builds both platforms, checks the macOS zip, releases both builds to `latest`, then points the
+`onicode` cask in `aislopware/homebrew-tap` at the new macOS release. The cask's version is
+`<version>,<release id>` because the download URL carries the release id. The steps it runs, for
+doing one by hand from the repo root:
 
 ```sh
 better-update build --platform macos --profile production

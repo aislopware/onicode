@@ -75,9 +75,15 @@ Download the newest release:
 | Linux AppImage | [AppImage](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/linux/latest/download)        |
 | Debian, Ubuntu | [.deb](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/linux/latest/download?format=deb) |
 
-On macOS, unzip the download and move **Onicode** to Applications. The app updates
-itself from then on. If you used the earlier native Onicode, it updates to this
-app on its own.
+On macOS, unzip the download and move **Onicode** to Applications, or install it
+with [Homebrew](https://brew.sh):
+
+```bash
+brew install --cask aislopware/tap/onicode
+```
+
+The app updates itself from then on, so `brew upgrade` skips it unless you pass
+`--greedy`. If you used the earlier native Onicode, it updates to this app on its own.
 
 ### Linux
 

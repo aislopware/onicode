@@ -5,11 +5,12 @@
 #   1. checks the tree is clean and HEAD is main as pushed;
 #   2. builds macOS (signed and notarized by better-update) and Linux;
 #   3. checks the notarized zip the way the updater of the native Onicode does before it installs it;
-#   4. releases the macOS and Linux builds to `latest` with the notes file.
+#   4. releases the macOS and Linux builds to `latest` with the notes file;
+#   5. points the Homebrew cask in aislopware/homebrew-tap at the new macOS release.
 #
 #   scripts/release/publish.sh <notes-file>
 #
-# Run on the release Mac with better-update logged in and Docker (or OrbStack) running.
+# Run on the release Mac with better-update and gh logged in and Docker (or OrbStack) running.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$root"
@@ -61,4 +62,15 @@ reported="$("$app/Contents/MacOS/onicode" --version </dev/null)"
 # 4. Release.
 better-update macos release create "$mac_build" --channel latest --notes-file "$notes"
 better-update linux release create "${linux_builds[@]}" --channel latest --notes-file "$notes"
-echo "publish.sh: Onicode $version is on the latest macOS and Linux feeds"
+
+# 5. The cask's download URL needs the release id, so its version is `<version>,<release id>`.
+release="$(better-update macos release list --json |
+  jq -r --arg v "$version" '[.data.items[] | select(.Channel == "latest" and .Version == $v)][0].ID // empty')"
+[[ -n "$release" ]] || fail "better-update lists no latest macOS release of $version"
+sha256="$(shasum -a 256 "$work/Onicode.zip" | cut -d' ' -f1)"
+gh repo clone aislopware/homebrew-tap "$work/tap" -- --quiet --depth 1
+sed -i '' -e "s/^  version \".*\"$/  version \"$version,$release\"/" \
+  -e "s/^  sha256 \".*\"$/  sha256 \"$sha256\"/" "$work/tap/Casks/onicode.rb"
+git -C "$work/tap" commit --quiet -am "onicode $version"
+git -C "$work/tap" push --quiet
+echo "publish.sh: Onicode $version is on the latest macOS and Linux feeds and in aislopware/tap"
