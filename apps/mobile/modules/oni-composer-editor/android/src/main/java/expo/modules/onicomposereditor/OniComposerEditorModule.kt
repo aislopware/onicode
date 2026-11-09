@@ -66,6 +66,7 @@ internal object OniComposerClipboard {
 }
 
 class OniComposerEditorModule : Module() {
+  @Suppress("LongMethod") // A flat list of the view's props and events.
   override fun definition() = ModuleDefinition {
     Name("OniComposerEditor")
 
@@ -108,6 +109,12 @@ class OniComposerEditorModule : Module() {
       Prop("readOnly") { view: OniComposerEditorView, readOnly: Boolean ->
         view.setReadOnly(readOnly)
       }
+      Prop("enterBehavior") { view: OniComposerEditorView, behavior: String ->
+        view.setEnterBehavior(behavior)
+      }
+      Prop("submitEnabled") { view: OniComposerEditorView, enabled: Boolean ->
+        view.setSubmitEnabled(enabled)
+      }
       Prop("scrollEnabled") { view: OniComposerEditorView, scrollEnabled: Boolean ->
         view.setScrollEnabled(scrollEnabled)
       }
@@ -132,6 +139,7 @@ class OniComposerEditorModule : Module() {
         "onComposerSelectionChange",
         "onComposerFocus",
         "onComposerBlur",
+        "onComposerSubmit",
         "onComposerPasteImages",
         "onComposerContextPress",
         "onComposerPasteContext",

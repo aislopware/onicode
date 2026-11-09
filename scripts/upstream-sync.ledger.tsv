@@ -33,3 +33,4 @@ ea876cc4ac	take	fix(mobile): nested code blocks no longer overlap the next messa
 b87abfb200	take	fix(mobile): restore the sidebar toggle and drop the inspector toggle on iPhone Duo (#33213)
 60514be911	skip	subagent approval pushes go through AgentAwarenessRelay; Onicode removed the relay, and nothing else reads agent awareness
 c6ca605630	take	fix(deps): update vulnerable dependencies and lockfile resolutions (#33226)
+c73b38b379	take	fix(mobile): Android sends with Return on a hardware keyboard (#21687)
