@@ -26,3 +26,4 @@ c4ce7b0fd7	take	fix(desktop): update xa11y to 0.15.4 so App Shots read window te
 445efb6dfc	skip	native DPoP signing serves the T3 Connect relay and cloud sign-in, which Onicode removed
 b07fdeb143	take	fix(mobile): iOS terminal can copy, paste, and stop freezing (#25828)
 88109cea46	take	feat(web,mobile): @-mention a model to name it for the agent (#31207)
+c45cbd742b	take	fix(server): delegated Claude tasks report the model that ran (#27753)
