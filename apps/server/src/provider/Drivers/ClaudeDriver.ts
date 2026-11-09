@@ -54,7 +54,6 @@ import {
   makeClaudeCapabilitiesCacheKey,
   makeClaudeContinuationGroupKey,
   mergeClaudeProcessEnvironment,
-  resolveClaudeHomePath,
 } from "./ClaudeHome.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { makeClaudeMaintenanceResolution } from "./ClaudeMaintenance.ts";
@@ -131,7 +130,6 @@ export const ClaudeDriver: ProviderDriver<ClaudeSettings, ClaudeDriverEnv, Path.
       Effect.provideService(HttpClient.HttpClient, httpClient),
     );
     const continuationGroupKey = yield* makeClaudeContinuationGroupKey(effectiveConfig, processEnv);
-    const configDir = yield* resolveClaudeHomePath(effectiveConfig, processEnv);
     const stampIdentity = withInstanceIdentity({
       instanceId,
       driverKind: DRIVER_KIND,
