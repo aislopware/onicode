@@ -20,3 +20,5 @@ c7c2bcc3a6	take	fix(mobile): compose button no longer covers the last tab on iPh
 97c6773cc6	skip	Agent Activity widget reads T3 Connect relay state; Onicode removed the relay and the widget
 42b2df9995	take	fix(mobile): Android navigation bar follows the app theme (#27576)
 eb3e95cfbc	take	fix(android): keep diagonal horizontal swipes inside HTML blocks (#21652)
+06f8b99f46	skip	Android live activity and relay FCM deliveries; Onicode removed agent-awareness notifications and the relay
+c4ce7b0fd7	take	fix(desktop): update xa11y to 0.15.4 so App Shots read window text faster (#33135)
