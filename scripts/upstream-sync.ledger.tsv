@@ -22,3 +22,4 @@ c7c2bcc3a6	take	fix(mobile): compose button no longer covers the last tab on iPh
 eb3e95cfbc	take	fix(android): keep diagonal horizontal swipes inside HTML blocks (#21652)
 06f8b99f46	skip	Android live activity and relay FCM deliveries; Onicode removed agent-awareness notifications and the relay
 c4ce7b0fd7	take	fix(desktop): update xa11y to 0.15.4 so App Shots read window text faster (#33135)
+9fcfd4c16e	take	feat(source-control): add Cursor Origin provider (#33093)

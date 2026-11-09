@@ -56,6 +56,7 @@
     "@onicode/source-control-azure-devops": "workspace:*",
     "@onicode/source-control-bitbucket": "workspace:*",
     "@onicode/source-control-core": "workspace:*",
+    "@onicode/source-control-cursor-origin": "workspace:*",
     "@onicode/source-control-definitions": "workspace:*",
     "@onicode/source-control-forgejo": "workspace:*",
     "@onicode/source-control-gitcafe": "workspace:*",
