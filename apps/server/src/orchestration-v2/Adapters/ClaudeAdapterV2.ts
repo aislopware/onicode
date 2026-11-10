@@ -272,6 +272,26 @@ function claudeAutoCompactThreshold(autoCompactWindow: string, maxTokens: number
     : {};
 }
 
+interface ClaudeContextLimits {
+  readonly maxTokens: number | null;
+  readonly autoCompactThreshold?: number;
+}
+
+function claudeReportedContextLimits(
+  usage: Pick<
+    SDKControlGetContextUsageResponse,
+    "maxTokens" | "autoCompactThreshold" | "isAutoCompactEnabled"
+  >,
+): ClaudeContextLimits | undefined {
+  if (!(usage.maxTokens > 0)) return undefined;
+  return {
+    maxTokens: usage.maxTokens,
+    ...(usage.isAutoCompactEnabled && usage.autoCompactThreshold !== undefined
+      ? { autoCompactThreshold: usage.autoCompactThreshold }
+      : {}),
+  };
+}
+
 function claudeMessageInputTokens(usage: {
   readonly input_tokens: number;
   readonly cache_creation_input_tokens?: number | null;
@@ -292,9 +312,8 @@ export function claudeProviderTurnTokenUsage(
     readonly cache_creation?: ClaudeCacheCreation | null;
     readonly output_tokens: number;
   },
-  maxTokens: number | null,
+  limits: ClaudeContextLimits,
   updatedAt: string,
-  autoCompactWindow = "",
   requestedAt?: DateTime.Utc,
 ) {
   const inputTokens = claudeMessageInputTokens(usage);
@@ -307,13 +326,15 @@ export function claudeProviderTurnTokenUsage(
       : DateTime.formatIso(DateTime.add(requestedAt, { milliseconds: promptCacheTtlMs }));
   return {
     usedTokens: inputTokens + outputTokens,
-    maxTokens,
+    maxTokens: limits.maxTokens,
     inputTokens,
     cachedInputTokens: usage.cache_read_input_tokens ?? 0,
     outputTokens,
     reasoningOutputTokens: 0,
     ...(promptCacheTtlMs === undefined ? {} : { promptCacheTtlMs }),
-    ...claudeAutoCompactThreshold(autoCompactWindow, maxTokens),
+    ...(limits.autoCompactThreshold === undefined
+      ? {}
+      : { autoCompactThreshold: limits.autoCompactThreshold }),
     ...(promptCacheExpiresAt === undefined ? {} : { promptCacheExpiresAt }),
     updatedAt,
   };
@@ -5055,12 +5076,42 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   let modelCatalog = yield* loadModelCatalog;
   // Results report the window Claude Code compacts against; outside the catalog it is the only source.
   const reportedContextWindows = new Map<string, number>();
-  const claudeContextWindow = (modelSelection: ModelSelection): number | null =>
-    resolveClaudeCatalogContextWindowTokens(modelCatalog, modelSelection) ??
-    reportedContextWindows.get(
+  // Claude's own /context limits by API model id. Settings such as autoCompactWindow, and
+  // account caps, shrink the window Claude works in below the model's, so these win.
+  const effectiveContextLimits = new Map<string, ClaudeContextLimits>();
+  // Query processes already asked, so each process measures each model once.
+  const measuredContextLimits = new WeakMap<ClaudeAgentSdkQuerySession, Set<string>>();
+  const claudeContextWindow = (modelSelection: ModelSelection): number | null => {
+    const apiModelId = compileClaudeModelSelection(modelSelection, modelCatalog).apiModelId;
+    return (
+      effectiveContextLimits.get(apiModelId)?.maxTokens ??
+      resolveClaudeCatalogContextWindowTokens(modelCatalog, modelSelection) ??
+      reportedContextWindows.get(apiModelId) ??
+      null
+    );
+  };
+  const claudeContextLimits = (
+    modelSelection: ModelSelection,
+    autoCompactWindow: string,
+  ): ClaudeContextLimits => {
+    const effective = effectiveContextLimits.get(
       compileClaudeModelSelection(modelSelection, modelCatalog).apiModelId,
-    ) ??
-    null;
+    );
+    if (effective !== undefined) return effective;
+    const maxTokens = claudeContextWindow(modelSelection);
+    return { maxTokens, ...claudeAutoCompactThreshold(autoCompactWindow, maxTokens) };
+  };
+  /** Records Claude's reported limits; true when they changed what the context meter shows. */
+  const recordContextLimits = (apiModelId: string, usage: SDKControlGetContextUsageResponse) => {
+    const next = claudeReportedContextLimits(usage);
+    if (next === undefined) return false;
+    const previous = effectiveContextLimits.get(apiModelId);
+    effectiveContextLimits.set(apiModelId, next);
+    return (
+      previous?.maxTokens !== next.maxTokens ||
+      previous.autoCompactThreshold !== next.autoCompactThreshold
+    );
+  };
   const continuationRequests = adapterOptions.continuationRequests ?? {
     offer: () => Effect.void,
   };
@@ -5639,20 +5690,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           // Only message_start marks the request start; an assistant snapshot
           // arrives after generation, so it leaves the cache expiry unknown.
           if (requestStarted && context.streamUsage !== null) context.streamUsage.requestedAt = now;
-          const maxTokens = claudeContextWindow(context.input.modelSelection);
+          const limits = claudeContextLimits(
+            context.input.modelSelection,
+            context.autoCompactWindow,
+          );
           const tokenUsage =
             typeof usage === "number"
-              ? {
-                  usedTokens: usage,
-                  maxTokens,
-                  ...claudeAutoCompactThreshold(context.autoCompactWindow, maxTokens),
-                  updatedAt: DateTime.formatIso(now),
-                }
+              ? { usedTokens: usage, ...limits, updatedAt: DateTime.formatIso(now) }
               : claudeProviderTurnTokenUsage(
                   usage,
-                  maxTokens,
+                  limits,
                   DateTime.formatIso(now),
-                  context.autoCompactWindow,
                   context.streamUsage?.requestedAt,
                 );
           if (typeof usage !== "number") {
@@ -7699,6 +7747,22 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             Effect.timeout("3 minutes"),
             Effect.mapError(sessionProtocolError("Claude Code's plugin command could not run.")),
           );
+        });
+        // A local control request; the bound keeps a stuck CLI from holding the turn's completion.
+        const measureContextLimits = Effect.fnUntraced(function* (
+          liveQuery: ClaudeLiveQueryContext,
+        ) {
+          const apiModelId = liveQuery.selection.apiModelId;
+          const measured = measuredContextLimits.get(liveQuery.query) ?? new Set<string>();
+          if (measured.has(apiModelId)) return false;
+          measured.add(apiModelId);
+          measuredContextLimits.set(liveQuery.query, measured);
+          const usage = yield* liveQuery.query.getContextUsage.pipe(
+            Effect.timeout("2 seconds"),
+            Effect.asSome,
+            Effect.catchCause(() => Effect.succeedNone),
+          );
+          return Option.isSome(usage) && recordContextLimits(apiModelId, usage.value);
         });
         const sessionRequestFailed = (detail: string) => (cause: ClaudeAgentSdkQueryRunnerError) =>
           new ProviderAdapter.ProviderAdapterProtocolError({
@@ -10355,7 +10419,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
 
           if (message.type === "result") {
             const contextUsage = context.streamUsage?.usage ?? context.compactionTokens;
-            if (resultsReportingNewContextWindow.has(message) && contextUsage !== undefined) {
+            const learnedContextLimits = yield* measureContextLimits(liveQuery);
+            if (
+              (resultsReportingNewContextWindow.has(message) || learnedContextLimits) &&
+              contextUsage !== undefined
+            ) {
               yield* emitContextUsage(context, contextUsage);
             }
             const completedAt = yield* DateTime.now;
@@ -12378,10 +12446,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             }),
           },
           contextUsage: Effect.fn("ClaudeAdapterV2.contextUsage")(function* ({ providerThread }) {
-            const query = yield* liveSessionQuery(providerThread);
-            const usage = yield* query.getContextUsage.pipe(
+            const liveQuery = yield* liveSessionContext(providerThread);
+            const usage = yield* liveQuery.query.getContextUsage.pipe(
               Effect.mapError(sessionRequestFailed("Claude could not report its context usage.")),
             );
+            // The next turn's meter uses it; a settled turn's usage is not reopened.
+            recordContextLimits(liveQuery.selection.apiModelId, usage);
             return claudeContextUsage(usage);
           }),
           mcpServers: {

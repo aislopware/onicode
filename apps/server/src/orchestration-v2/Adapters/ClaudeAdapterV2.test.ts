@@ -766,9 +766,8 @@ describe("ClaudeAdapterV2 context usage", () => {
         output_tokens: 1,
         cache_creation: { ephemeral_1h_input_tokens: 0, ephemeral_5m_input_tokens: 300 },
       },
-      null,
+      { maxTokens: null },
       "2026-08-29T00:03:00.000Z",
-      "",
       DateTime.makeUnsafe("2026-08-29T00:00:00.000Z"),
     );
     assert.strictEqual(usage.promptCacheExpiresAt, "2026-08-29T00:05:00.000Z");
@@ -8198,6 +8197,112 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       );
       assert.deepEqual(windows, [null, 1_048_576]);
       assert.strictEqual(harness.runtime.getModelContextWindow?.(modelSelection), 1_048_576);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
+  it.effect("measures context against the window Claude itself works in", () =>
+    Effect.gen(function* () {
+      const contextUsageReads: Array<"read"> = [];
+      const harness = yield* makeWakeHarnessWithOptions({
+        settings: AUTO_COMPACT_CLAUDE_SETTINGS,
+        mcp: {
+          mcpServerStatus: Effect.succeed([]),
+          readMcpResource: () => Effect.die("unexpected MCP resource read"),
+          callMcpTool: () => Effect.die("unexpected MCP tool call"),
+          // autoCompactWindow and account caps shrink the window below the model's 1M.
+          getContextUsage: Effect.sync(() => {
+            contextUsageReads.push("read");
+            return {
+              categories: [],
+              totalTokens: 9_669,
+              maxTokens: 400_000,
+              rawMaxTokens: 1_048_576,
+              percentage: 2,
+              gridRows: [],
+              model: "gateway-model",
+              memoryFiles: [],
+              mcpTools: [],
+              agents: [],
+              isAutoCompactEnabled: true,
+              autoCompactThreshold: 367_000,
+              apiUsage: null,
+            };
+          }),
+        },
+      });
+      const modelSelection = {
+        instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
+        model: "gateway-model",
+      } satisfies ModelSelection;
+      const usage = { ...zeroUsage, input_tokens: 9_667, output_tokens: 2 };
+      const runTurn = (attempt: string, uuid: string) =>
+        Effect.gen(function* () {
+          yield* harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: yield* DateTime.now,
+              attemptId: RunAttemptId.make(attempt),
+              text: "Continue.",
+              attachments: [],
+              modelSelection,
+            }),
+          );
+          yield* Queue.offer(
+            harness.sdkMessages,
+            usageStreamFrame({ type: "message_start", message: { id: `msg_${attempt}`, usage } }),
+          );
+          yield* Queue.offer(
+            harness.sdkMessages,
+            makeResultFrame({
+              uuid,
+              result: "OK",
+              modelUsage: {
+                "gateway-model": {
+                  inputTokens: 9_667,
+                  outputTokens: 2,
+                  cacheReadInputTokens: 0,
+                  cacheCreationInputTokens: 0,
+                  webSearchRequests: 0,
+                  costUSD: 0,
+                  contextWindow: 1_048_576,
+                  maxOutputTokens: 32_000,
+                },
+              },
+            }),
+          );
+          assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+        });
+      yield* runTurn("attempt-effective-window-1", "00000000-0000-4000-8000-000000000690");
+      yield* runTurn("attempt-effective-window-2", "00000000-0000-4000-8000-000000000691");
+      const limits = harness.events.flatMap((event) =>
+        event.type === "provider_turn.updated" && event.providerTurn.tokenUsage
+          ? [
+              [
+                event.providerTurn.tokenUsage.maxTokens,
+                event.providerTurn.tokenUsage.autoCompactThreshold,
+              ],
+            ]
+          : [],
+      );
+      // Before Claude answers, the threshold is estimated from the 300,000 setting.
+      assert.deepEqual(limits, [
+        [null, 267_000],
+        [400_000, 367_000],
+        [400_000, 367_000],
+      ]);
+      assert.strictEqual(harness.runtime.getModelContextWindow?.(modelSelection), 400_000);
+      // One process asks once per model; later turns reuse the answer.
+      assert.deepEqual(contextUsageReads, ["read"]);
     }).pipe(
       Effect.provide(
         Layer.mergeAll(
