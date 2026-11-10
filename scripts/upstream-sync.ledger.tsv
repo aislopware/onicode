@@ -81,3 +81,4 @@ d7c52f9f86	take	fix(mobile): the thread feed re-wraps once when an iOS column re
 6b02cbff3a	take	fix(speech): match reference benchmarks to transcription hardware (#31956)
 12f3244e05	take	feat(models): add Claude Fable 5.2 (#33500)
 f6203ffbc6	take	fix(mobile): the chat inset resets after the keyboard closes while frozen (#33501)
+7078dcbfbe	take	fix(mobile): a full swipe on a thread row finishes even if the pan is cancelled (#33492)

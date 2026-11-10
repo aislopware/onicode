@@ -337,7 +337,7 @@ patchedDependencies:
   micromark-extension-llm-math@3.1.0: 4eeb9d9e27ebc75e98795e21c0719005483dad7d233055698257f7d10e91603b
   micromark@4.0.2: cb79edde7eca83bbcaaafb6ceb7b044b81b987314cde4910823b15257ecada67
   node-pty@1.2.0-beta.18: 2cbbaadd6c5c28ddae217bf65cf02fb40c392788be6006196f79c43b1d61a759
-  react-native-gesture-handler@3.5.0: 8c2237b47e4f2186a2ad03527df51978a472cc8d59bec19ad4d09f6215291872
+  react-native-gesture-handler@3.5.0: 171379dd378f8f11e9187876dec2116e5cbf5f21cef6576cdde6956518324f98
   react-native-image-viewing@0.2.2: 4aa038d541c7ddcc8f1437eb3e7b4f769f61de78e7f91b53f9805dfca608474d
   react-native-keyboard-controller@1.23.0: 1c7c80317ef050e08d4aabe034a0813d03b497dff2dc8b37fb5f4a6e3b20fddb
   react-native-reanimated@4.7.1: 95ee26e5fcab5f50bc4b4c47b3f7e6278a0b20850205efb9f6ee7e70a22d2b59
@@ -636,7 +636,7 @@ importers:
         version: file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-t3.18-497fbe63.tgz(katex@0.16.47)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
       react-native-gesture-handler:
         specifier: 3.5.0
-        version: 3.5.0(patch_hash=8c2237b47e4f2186a2ad03527df51978a472cc8d59bec19ad4d09f6215291872)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
+        version: 3.5.0(patch_hash=171379dd378f8f11e9187876dec2116e5cbf5f21cef6576cdde6956518324f98)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
       react-native-image-viewing:
         specifier: 0.2.2
         version: 0.2.2(patch_hash=4aa038d541c7ddcc8f1437eb3e7b4f769f61de78e7f91b53f9805dfca608474d)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0)
@@ -17526,7 +17526,7 @@ snapshots:
     optionalDependencies:
       katex: 0.16.47
 
-  react-native-gesture-handler@3.5.0(patch_hash=8c2237b47e4f2186a2ad03527df51978a472cc8d59bec19ad4d09f6215291872)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0):
+  react-native-gesture-handler@3.5.0(patch_hash=171379dd378f8f11e9187876dec2116e5cbf5f21cef6576cdde6956518324f98)(react-native@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.7(supports-color@8.1.1))(bufferutil@4.1.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(@types/react@19.3.0)(bufferutil@4.1.0)(react@19.3.0)(supports-color@8.1.1)(utf-8-validate@6.0.6))(react@19.3.0):
     dependencies:
       '@types/react-test-renderer': 19.1.0
       invariant: 2.2.4
