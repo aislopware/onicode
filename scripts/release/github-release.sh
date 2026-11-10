@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Publishes the GitHub release v<version> at HEAD with the notes and the desktop builds attached,
-# downloaded from better-update, plus a SHA256SUMS of them.
+# Publishes the GitHub release for the pushed tag v<version> with the notes and the desktop builds
+# attached, downloaded from better-update, plus a SHA256SUMS of them.
 #
 #   scripts/release/github-release.sh <version> <notes-file> <macos-build> <linux-build>...
 #
-# Needs gh with write access to aislopware/onicode (GH_TOKEN on Actions).
+# Needs gh with write access to aislopware/onicode (GH_TOKEN on Actions). The tag must exist: GitHub
+# refuses a token without the workflow scope a new tag once main's workflows have moved past it.
 set -euo pipefail
 [[ $# -ge 4 ]] || { echo 'usage: github-release.sh <version> <notes-file> <macos-build> <linux-build>...' >&2; exit 2; }
 version="$1"
@@ -27,5 +28,5 @@ for id in "$@"; do
 done
 (cd "$assets" && shasum -a 256 Onicode-* > SHA256SUMS)
 
-gh release create "v$version" "$assets"/* --repo aislopware/onicode --target "$(git rev-parse HEAD)" \
+gh release create "v$version" "$assets"/* --repo aislopware/onicode --verify-tag \
   --title "Onicode $version" --notes-file "$notes" --latest

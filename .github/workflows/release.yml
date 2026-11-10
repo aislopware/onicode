@@ -106,9 +106,33 @@ jobs:
       - name: Build
         run: scripts/release/build.sh ${{ matrix.platform }} "$ONICODE_RELEASE_MESSAGE"
 
+  # Tags at dispatch, while this is main's head: GitHub refuses GITHUB_TOKEN a new tag on a commit
+  # whose workflows differ from main's, so tagging after an hour of builds fails if main moved.
+  tag:
+    name: Tag
+    if: github.ref == 'refs/heads/main' && inputs.notes != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Tag v<version>
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="v$(node -p 'require("./apps/desktop/package.json").version')"
+          tagged="$(git ls-remote origin "refs/tags/$tag" | cut -f1)"
+          if [[ -z "$tagged" ]]; then
+            gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" > /dev/null
+          elif [[ "$tagged" != "$GITHUB_SHA" ]]; then
+            echo "::error::$tag already tags $tagged. Bump the version first."
+            exit 1
+          fi
+
   release:
     name: Release to latest
-    needs: [macos, linux]
+    needs: [tag, macos, linux]
     if: github.ref == 'refs/heads/main' && inputs.notes != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 30

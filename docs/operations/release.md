@@ -47,10 +47,11 @@ gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
 Without notes it only builds, which is how to try a build before releasing it. From a Mac, a clean
 checkout of `main` as pushed does the same with `scripts/release/publish.sh notes.md`.
 
-Both build macOS and Linux, check the macOS zip, release both builds to `latest`, publish the
-GitHub release `v<version>` at the released commit with the zip, AppImage, deb and their
-`SHA256SUMS` attached (`scripts/release/github-release.sh`), then point the `onicode` cask in `aislopware/homebrew-tap` at the new macOS release. The cask's version is
-`<version>,<release id>` because the download URL carries the release id. The steps it runs, for
+Both tag the commit `v<version>` first, build macOS and Linux, check the macOS zip, release both
+builds to `latest`, publish the GitHub release for that tag with the zip, AppImage, deb and their
+`SHA256SUMS` attached (`scripts/release/github-release.sh`), then point the `onicode` cask in
+`aislopware/homebrew-tap` at the new macOS release. The cask's version is `<version>,<release id>`
+because the download URL carries the release id. The steps it runs, for
 doing one by hand from the repo root:
 
 ```sh

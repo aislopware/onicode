@@ -2,7 +2,7 @@
 # Publishes the desktop app at apps/desktop's version to better-update's `latest` feeds from this
 # machine. The Release workflow does the same on GitHub Actions (docs/operations/release.md):
 #
-#   1. checks the tree is clean and HEAD is main as pushed;
+#   1. checks the tree is clean and HEAD is main as pushed, and tags it v<version>;
 #   2. builds macOS (signed and notarized by better-update) and Linux;
 #   3. checks the notarized zip the way the updater of the native Onicode does before it installs it;
 #   4. releases the macOS and Linux builds to `latest` with the notes file;
@@ -28,6 +28,12 @@ version="$(node -p 'require("./apps/desktop/package.json").version')"
 [[ "$(git rev-parse --abbrev-ref HEAD)" == main ]] || fail 'not on main'
 git fetch --quiet origin main
 [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] || fail 'HEAD is not origin/main'
+# Tag now, while HEAD is main's head; github-release.sh publishes the release for this tag.
+if tagged="$(git ls-remote --exit-code origin "refs/tags/v$version")"; then
+  [[ "${tagged%%$'\t'*}" == "$(git rev-parse HEAD)" ]] || fail "v$version already tags another commit"
+else
+  git push --quiet origin "HEAD:refs/tags/v$version"
+fi
 message="Onicode $version ($(git rev-parse --short HEAD))"
 work="$(mktemp -d)"
 trap '/bin/rm -rf "$work"' EXIT
