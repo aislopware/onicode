@@ -115,3 +115,4 @@ f6a8a635df	take	fix(mobile): distinguish local ACP instances by name (#32467)
 5e59ece720	take	fix(mobile): Android feed stays at its end after the keyboard or sidebar changes (#33611)
 12085f0b0c	take	fix(server): Antigravity install no longer fails on a stale Windows Crashpad pipe (#26374)
 b78c04d3e1	skip	T3 mobile EAS PR preview pipeline on Blacksmith (mobile-eas-preview workflows, preview comment script); Onicode has no EAS preview workflows
+046efd791e	take	fix(web): scrolling pans expanded images and Mermaid diagrams (#26630)
