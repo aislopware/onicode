@@ -128,6 +128,7 @@ vi.mock("@onicode/client-runtime/voice-input", async (importOriginal) => ({
         acceleration: "auto",
         modelUnloadTimeout: "min_15",
         gpuDevices: [],
+        benchmarkTier: "cpu",
       };
     }),
   downloadEnvironmentSpeechModel: (_prepared: PreparedConnection, modelId: string) =>
