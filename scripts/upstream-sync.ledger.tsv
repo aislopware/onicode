@@ -83,3 +83,4 @@ d7c52f9f86	take	fix(mobile): the thread feed re-wraps once when an iOS column re
 f6203ffbc6	take	fix(mobile): the chat inset resets after the keyboard closes while frozen (#33501)
 7078dcbfbe	take	fix(mobile): a full swipe on a thread row finishes even if the pan is cancelled (#33492)
 077fd62222	take	fix(client): finishing a long background thread no longer freezes the app (#33503)
+d0f7a509cc	take	feat(models): the model picker checks for new models when it opens (#33511)
