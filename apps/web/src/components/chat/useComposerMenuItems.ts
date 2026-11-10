@@ -1,4 +1,8 @@
 import {
+  PROVIDER_SESSION_VIEW_COMMANDS,
+  type ProviderSessionView,
+} from "@onicode/client-runtime/provider-session-views";
+import {
   matchComposerEnvironmentItems,
   matchComposerThreadItems,
 } from "@onicode/client-runtime/composerThreadItems";
@@ -71,6 +75,7 @@ export function useComposerMenuItems({
   sideChatDisabledReason,
   freshSessionAvailable,
   compactSlashCommandAvailable,
+  providerSessionViews,
   selectedProvider,
   selectedProviderSkills,
   selectedProviderSlashCommands,
@@ -91,6 +96,7 @@ export function useComposerMenuItems({
   readonly sideChatDisabledReason: string | null;
   readonly freshSessionAvailable: boolean;
   readonly compactSlashCommandAvailable: boolean;
+  readonly providerSessionViews: ReadonlyArray<ProviderSessionView>;
   readonly selectedProvider: ProviderDriverKind;
   readonly selectedProviderSkills: ServerProvider["skills"];
   readonly selectedProviderSlashCommands: ServerProvider["slashCommands"];
@@ -267,6 +273,13 @@ export function useComposerMenuItems({
               },
             ] as const)
           : []),
+        ...providerSessionViews.map((view) => ({
+          id: `slash:${view}`,
+          type: "slash-command" as const,
+          command: view,
+          label: `/${view}`,
+          description: PROVIDER_SESSION_VIEW_COMMANDS[view].description,
+        })),
       ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;
       const slashMenuSkills = getProviderSkillsForSlashMenu(
         selectedProviderSkills,
@@ -299,7 +312,8 @@ export function useComposerMenuItems({
       const visibleProviderSlashCommandItems = providerSlashCommandItems.filter(
         (item) =>
           (item.command.name !== "compact" || compactSlashCommandAvailable) &&
-          (item.command.name !== "clear" || !freshSessionAvailable),
+          (item.command.name !== "clear" || !freshSessionAvailable) &&
+          !providerSessionViews.some((view) => view === item.command.name),
       );
       const slashCommandItems = slashCommandItemsForPromptPosition(
         [...builtInSlashCommandItems, ...visibleProviderSlashCommandItems, ...skillItems],

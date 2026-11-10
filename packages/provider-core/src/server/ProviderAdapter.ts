@@ -1,4 +1,10 @@
-import type { OrchestrationV2HistoricalMessage } from "@onicode/contracts";
+import type {
+  OrchestrationV2HistoricalMessage,
+  ProviderContextUsage,
+  ProviderMcpServer,
+  ProviderMcpServerAction,
+  ProviderMcpServerActionResult,
+} from "@onicode/contracts";
 import {
   ChatAttachment,
   CheckpointId,
@@ -608,6 +614,23 @@ export interface ProviderAdapterV2McpApps {
   }) => Effect.Effect<{ readonly contents: ReadonlyArray<unknown> }, ProviderAdapterV2Error>;
 }
 
+/** Native views over the live session; absent means the provider cannot report them. */
+export interface ProviderAdapterV2McpServers {
+  readonly list: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+  }) => Effect.Effect<ReadonlyArray<ProviderMcpServer>, ProviderAdapterV2Error>;
+  readonly act: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+    readonly action: ProviderMcpServerAction;
+  }) => Effect.Effect<ProviderMcpServerActionResult, ProviderAdapterV2Error>;
+  readonly submitOAuthCallback: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly server: string;
+    readonly callbackUrl: string;
+  }) => Effect.Effect<void, ProviderAdapterV2Error>;
+}
+
 export type ProviderAdapterV2SubagentOutcome = {
   readonly status: "completed" | "failed" | "cancelled";
   readonly completedAt: NonNullable<OrchestrationV2Subagent["completedAt"]>;
@@ -698,6 +721,10 @@ export interface ProviderAdapterV2SessionRuntime {
   }) => Effect.Effect<{ readonly feedbackId: string }, ProviderAdapterV2Error>;
   /** Absent means non-interactive apps with plain tool rows. */
   readonly mcpApps?: ProviderAdapterV2McpApps;
+  readonly contextUsage?: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+  }) => Effect.Effect<ProviderContextUsage, ProviderAdapterV2Error>;
+  readonly mcpServers?: ProviderAdapterV2McpServers;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;

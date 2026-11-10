@@ -105,6 +105,28 @@ describe("mobile slash commands", () => {
     expect(build(false)).toEqual(["pcmd:clear"]);
     expect(build(true, false)).toEqual([]);
   });
+
+  it("opens Onicode's /context and /mcp views in place of the provider's text output", () => {
+    const claude = {
+      driver: ProviderDriverKind.make("claudeAgent"),
+      slashCommands: [
+        { name: "context", description: "Show context usage" },
+        { name: "mcp", description: "Manage MCP servers" },
+      ],
+    };
+    const build = (providerSessionViews?: ReadonlyArray<"context" | "mcp">) =>
+      buildComposerSlashCommandItems({
+        query: "",
+        atMessageStart: true,
+        hasThread: true,
+        ...(providerSessionViews ? { providerSessionViews } : {}),
+        selectedProviderStatus: claude,
+      })
+        .filter((item) => item.id !== "cmd:model")
+        .map((item) => item.id);
+    expect(build(["context", "mcp"])).toEqual(["cmd:context", "cmd:mcp"]);
+    expect(build()).toEqual(["pcmd:context", "pcmd:mcp"]);
+  });
 });
 
 describe("mobile model mentions", () => {

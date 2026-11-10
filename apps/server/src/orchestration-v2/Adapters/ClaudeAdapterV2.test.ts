@@ -773,6 +773,84 @@ describe("ClaudeAdapterV2 context usage", () => {
     );
     assert.strictEqual(usage.promptCacheExpiresAt, "2026-08-29T00:05:00.000Z");
   });
+
+  it("translates Claude's /context breakdown and marks deferred tools", () => {
+    const usage = ClaudeAdapterV2.claudeContextUsage({
+      categories: [
+        { id: "mcp_tools", name: "MCP tools", tokens: 900, color: "cyan", kind: "used" },
+        {
+          id: "system_tools_deferred",
+          name: "System tools (deferred)",
+          tokens: 400,
+          color: "grey",
+          isDeferred: true,
+          kind: "used",
+        },
+        { id: "free_space", name: "Free space", tokens: 150_000, color: "grey", kind: "free" },
+      ],
+      totalTokens: 50_000,
+      maxTokens: 200_000,
+      rawMaxTokens: 200_000,
+      percentage: 25,
+      gridRows: [],
+      model: "claude-sonnet-5-5",
+      memoryFiles: [{ path: "/repo/CLAUDE.md", type: "Project", tokens: 120 }],
+      mcpTools: [{ name: "search", serverName: "docs", tokens: 900 }],
+      agents: [{ agentType: "reviewer", source: "projectSettings", tokens: 80 }],
+      skills: {
+        totalSkills: 1,
+        includedSkills: 1,
+        tokens: 60,
+        skillFrontmatter: [{ name: "deploy", source: "plugin", pluginName: "ops", tokens: 60 }],
+      },
+      isAutoCompactEnabled: true,
+      autoCompactThreshold: 167_000,
+      apiUsage: null,
+    });
+    assert.deepEqual(
+      usage.categories.map(({ id, kind }) => ({ id, kind })),
+      [
+        { id: "mcp_tools", kind: "used" },
+        { id: "system_tools_deferred", kind: "deferred" },
+        { id: "free_space", kind: "free" },
+      ],
+    );
+    assert.deepEqual(usage.mcpTools, [{ server: "docs", name: "search", tokens: 900 }]);
+    assert.deepEqual(usage.agents, [{ name: "reviewer", source: "projectSettings", tokens: 80 }]);
+    assert.deepEqual(usage.skills, [{ name: "deploy", source: "ops", tokens: 60 }]);
+    assert.strictEqual(usage.autoCompactThreshold, 167_000);
+  });
+
+  it("lists the user's MCP servers without Onicode's own and names each transport", () => {
+    const servers = ClaudeAdapterV2.claudeMcpServers([
+      { name: "onicode", status: "connected", config: { type: "http", url: "http://x/mcp" } },
+      {
+        name: "linear",
+        status: "needs-auth",
+        scope: "user",
+        config: { type: "http", url: "https://mcp.linear.app/mcp" },
+      },
+      {
+        name: "fs",
+        status: "connected",
+        scope: "project",
+        config: { command: "npx", args: ["fs-mcp"] },
+        tools: [{ name: "read", description: "Read a file" }],
+      },
+      { name: "broken", status: "failed", error: "spawn ENOENT" },
+    ]);
+    assert.deepEqual(servers, [
+      { name: "linear", status: "needs-auth", scope: "user", transport: "http", tools: [] },
+      {
+        name: "fs",
+        status: "connected",
+        scope: "project",
+        transport: "stdio",
+        tools: [{ name: "read", description: "Read a file" }],
+      },
+      { name: "broken", status: "failed", error: "spawn ENOENT", tools: [] },
+    ]);
+  });
 });
 
 describe("ClaudeAdapterV2 approval presentation", () => {
@@ -946,6 +1024,12 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
@@ -1072,6 +1156,12 @@ describe("ClaudeAdapterV2 append-system-prompt-file launch argument", () => {
               readMcpResource: () => Effect.die("unexpected MCP resource read"),
               callMcpTool: () => Effect.die("unexpected MCP tool call"),
               listPermissionRules: Effect.die("unexpected permission rules read"),
+              getContextUsage: Effect.die("unexpected context usage read"),
+              reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+              toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+              authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+              clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+              submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
               stopTask: () => Effect.void,
               interrupt: Effect.void,
               close: Effect.void,
@@ -1385,6 +1475,12 @@ const captureSdkExecutablePaths = Effect.fn("captureSdkExecutablePaths")(functio
             readMcpResource: () => Effect.die("unexpected MCP resource read"),
             callMcpTool: () => Effect.die("unexpected MCP tool call"),
             listPermissionRules: Effect.die("unexpected permission rules read"),
+            getContextUsage: Effect.die("unexpected context usage read"),
+            reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+            toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+            authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+            clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+            submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
             stopTask: () => Effect.void,
             interrupt: Effect.void,
             close: Effect.void,
@@ -1576,6 +1672,12 @@ describe("ClaudeAdapterV2 resume compaction", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
@@ -1966,6 +2068,12 @@ describe("ClaudeAdapterV2 attachments", () => {
                     readMcpResource: () => Effect.die("unexpected MCP resource read"),
                     callMcpTool: () => Effect.die("unexpected MCP tool call"),
                     listPermissionRules: Effect.die("unexpected permission rules read"),
+                    getContextUsage: Effect.die("unexpected context usage read"),
+                    reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                    toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                    authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                    clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                    submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                     stopTask: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(messages),
@@ -2477,6 +2585,12 @@ describe("ClaudeAdapterV2 native fork", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
@@ -2819,6 +2933,12 @@ describe("ClaudeAdapterV2 native session identity", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.void,
@@ -3156,7 +3276,18 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       ClaudeAdapterV2.ClaudeAgentSdkQuerySession,
       "mcpServerStatus" | "readMcpResource" | "callMcpTool"
     > &
-      Partial<Pick<ClaudeAdapterV2.ClaudeAgentSdkQuerySession, "listPermissionRules">>;
+      Partial<
+        Pick<
+          ClaudeAdapterV2.ClaudeAgentSdkQuerySession,
+          | "listPermissionRules"
+          | "getContextUsage"
+          | "reconnectMcpServer"
+          | "toggleMcpServer"
+          | "authenticateMcpServer"
+          | "clearMcpServerAuth"
+          | "submitMcpOAuthCallback"
+        >
+      >;
     readonly environment?: NodeJS.ProcessEnv;
     readonly subagentLaunchToolUseId?: string;
     readonly nativeSessionId?: string;
@@ -3286,6 +3417,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: options?.stopTask ?? (() => Effect.void),
                   interrupt: Effect.void,
                   close: Queue.shutdown(processMessages),
@@ -3320,6 +3457,22 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 callMcpTool:
                   options?.mcp?.callMcpTool ?? (() => Effect.die("unexpected MCP tool call")),
                 listPermissionRules: options?.mcp?.listPermissionRules ?? Effect.succeed([]),
+                getContextUsage:
+                  options?.mcp?.getContextUsage ?? Effect.die("unexpected context usage read"),
+                reconnectMcpServer:
+                  options?.mcp?.reconnectMcpServer ??
+                  (() => Effect.die("unexpected MCP reconnect")),
+                toggleMcpServer:
+                  options?.mcp?.toggleMcpServer ?? (() => Effect.die("unexpected MCP toggle")),
+                authenticateMcpServer:
+                  options?.mcp?.authenticateMcpServer ??
+                  (() => Effect.die("unexpected MCP authenticate")),
+                clearMcpServerAuth:
+                  options?.mcp?.clearMcpServerAuth ??
+                  (() => Effect.die("unexpected MCP clear auth")),
+                submitMcpOAuthCallback:
+                  options?.mcp?.submitMcpOAuthCallback ??
+                  (() => Effect.die("unexpected MCP OAuth callback")),
                 stopTask: options?.stopTask ?? (() => Effect.void),
                 interrupt: options?.interrupt ?? Effect.void,
                 close: options?.close?.(sdkMessages) ?? Effect.void,
@@ -10957,6 +11110,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: () => Effect.void,
                   interrupt: Effect.void,
                   close: isFirstProcess
@@ -11152,6 +11311,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
               readMcpResource: () => Effect.die("unexpected MCP resource read"),
               callMcpTool: () => Effect.die("unexpected MCP tool call"),
               listPermissionRules: Effect.die("unexpected permission rules read"),
+              getContextUsage: Effect.die("unexpected context usage read"),
+              reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+              toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+              authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+              clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+              submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
               stopTask: () => Effect.void,
               interrupt: Effect.void,
               close: Queue.shutdown(sdkMessages),
@@ -11286,6 +11451,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     readMcpResource: () => Effect.die("unexpected MCP resource read"),
                     callMcpTool: () => Effect.die("unexpected MCP tool call"),
                     listPermissionRules: Effect.die("unexpected permission rules read"),
+                    getContextUsage: Effect.die("unexpected context usage read"),
+                    reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                    toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                    authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                    clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                    submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                     stopTask: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(queue),
@@ -13534,6 +13705,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 readMcpResource: () => Effect.die("unexpected MCP resource read"),
                 callMcpTool: () => Effect.die("unexpected MCP tool call"),
                 listPermissionRules: Effect.die("unexpected permission rules read"),
+                getContextUsage: Effect.die("unexpected context usage read"),
+                reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                 interrupt: Effect.void,
                 close:
                   closeSignal === undefined
@@ -16474,6 +16651,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: () => Effect.void,
                   interrupt: Effect.void,
                   close: Queue.shutdown(sdkMessages),
@@ -16652,6 +16835,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     readMcpResource: () => Effect.die("unexpected MCP resource read"),
                     callMcpTool: () => Effect.die("unexpected MCP tool call"),
                     listPermissionRules: Effect.die("unexpected permission rules read"),
+                    getContextUsage: Effect.die("unexpected context usage read"),
+                    reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                    toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                    authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                    clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                    submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                     stopTask: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),
@@ -16833,6 +17022,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: () => Effect.void,
                   interrupt: Effect.void,
                   close: Queue.shutdown(sdkMessages),
@@ -17032,6 +17227,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   readMcpResource: () => Effect.die("unexpected MCP resource read"),
                   callMcpTool: () => Effect.die("unexpected MCP tool call"),
                   listPermissionRules: Effect.die("unexpected permission rules read"),
+                  getContextUsage: Effect.die("unexpected context usage read"),
+                  reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                  toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                  authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                  clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                  submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                   stopTask: () => Effect.void,
                   interrupt: Effect.void,
                   close: Effect.sync(() => {
@@ -17179,6 +17380,12 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     readMcpResource: () => Effect.die("unexpected MCP resource read"),
                     callMcpTool: () => Effect.die("unexpected MCP tool call"),
                     listPermissionRules: Effect.die("unexpected permission rules read"),
+                    getContextUsage: Effect.die("unexpected context usage read"),
+                    reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+                    toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+                    authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+                    clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+                    submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
                     stopTask: () => Effect.void,
                     interrupt: Effect.void,
                     close: Queue.shutdown(sdkMessages),

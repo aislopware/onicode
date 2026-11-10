@@ -55,6 +55,7 @@ import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@onicode/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@onicode/shared/usageLimits";
+import type { ProviderSessionView } from "@onicode/client-runtime/provider-session-views";
 import {
   memo,
   use,
@@ -374,6 +375,8 @@ export interface ChatComposerProps {
   keepFullHistory: boolean;
   onToggleKeepFullHistory: () => void;
   onUsageLimitsCommand?: (() => void) | undefined;
+  providerSessionViews?: ReadonlyArray<ProviderSessionView> | undefined;
+  onProviderSessionView?: ((view: ProviderSessionView) => void) | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
   /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
@@ -485,6 +488,7 @@ export interface ChatComposerProps {
 
 const NO_PROVIDER_SKILLS: ServerProvider["skills"] = [];
 const NO_PROVIDER_SLASH_COMMANDS: ServerProvider["slashCommands"] = [];
+const NO_PROVIDER_SESSION_VIEWS: ReadonlyArray<ProviderSessionView> = [];
 
 export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps) {
   const {
@@ -1107,6 +1111,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     sideChatDisabledReason: props.sideChatDisabledReason ?? null,
     freshSessionAvailable: props.onFreshSession !== undefined,
     compactSlashCommandAvailable,
+    providerSessionViews: props.providerSessionViews ?? NO_PROVIDER_SESSION_VIEWS,
     selectedProvider,
     selectedProviderSkills,
     selectedProviderSlashCommands,
@@ -1879,6 +1884,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         if (applied) {
           setComposerHighlightedItemId(null);
           setIsComposerModelPickerOpen(true);
+        }
+        return;
+      }
+      if (item.command === "context" || item.command === "mcp") {
+        const view = item.command;
+        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {
+          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),
+          focusEditorAfterReplace: false,
+        });
+        if (applied) {
+          setComposerHighlightedItemId(null);
+          props.onProviderSessionView?.(view);
         }
         return;
       }

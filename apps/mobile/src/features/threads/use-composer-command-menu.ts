@@ -30,6 +30,10 @@ import {
 } from "../../state/use-composer-drafts";
 import { USAGE_LIMITS_COMMAND } from "@onicode/shared/usageLimits";
 import {
+  PROVIDER_SESSION_VIEW_COMMANDS,
+  type ProviderSessionView,
+} from "@onicode/client-runtime/provider-session-views";
+import {
   detectComposerTrigger,
   replaceTextRange,
   serializeComposerFileLink,
@@ -86,6 +90,8 @@ function composerSelectionAtEnd(draftMessage: string): ComposerEditorSelection {
  * still has the text it was placed in. Otherwise the composer's own caret is
  * clamped to the draft, and a caret from another owner starts at the end.
  */
+const NO_PROVIDER_SESSION_VIEWS: ReadonlyArray<ProviderSessionView> = [];
+
 export function resolveComposerMenuSelection(input: {
   readonly draftMessage: string;
   readonly ownerKey: string | null;
@@ -111,6 +117,8 @@ export function buildComposerSlashCommandItems(input: {
   /** Onicode's `/clear` replaces the provider's, which would clear a session Onicode still treats as live. */
   readonly offersFreshSession?: boolean;
   readonly offersSideChat?: boolean;
+  /** Onicode's `/context` and `/mcp` views replace the provider's text output. */
+  readonly providerSessionViews?: ReadonlyArray<ProviderSessionView>;
   readonly selectedProviderStatus: Pick<ServerProvider, "driver" | "slashCommands"> | null;
 }): ComposerCommandItem[] {
   const query = input.query.toLowerCase();
@@ -153,9 +161,21 @@ export function buildComposerSlashCommandItems(input: {
       description: "Start a fresh session",
     });
   }
+  const sessionViews = input.providerSessionViews ?? [];
+  for (const view of sessionViews) {
+    if (!view.includes(query)) continue;
+    items.push({
+      id: `cmd:${view}`,
+      type: "slash-command",
+      command: view,
+      label: `/${view}`,
+      description: PROVIDER_SESSION_VIEW_COMMANDS[view].description,
+    });
+  }
   for (const command of input.selectedProviderStatus?.slashCommands ?? []) {
     if (!command.name.toLowerCase().includes(query)) continue;
     if (command.name === "clear" && input.offersFreshSession) continue;
+    if (sessionViews.some((view) => view === command.name)) continue;
     if (command.name === "compact" && !input.hasCompactableConversation) continue;
     if (command.name === USAGE_LIMITS_COMMAND.name && input.offersUsageLimits && !input.hasThread) {
       continue;
@@ -265,6 +285,8 @@ export function useComposerCommandMenu({
   modelProviders,
   onFreshSession,
   offersSideChat = false,
+  providerSessionViews = NO_PROVIDER_SESSION_VIEWS,
+  onProviderSessionView,
 }: {
   readonly draftMessage: string;
   readonly ownerKey: string | null;
@@ -290,6 +312,8 @@ export function useComposerCommandMenu({
   /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
   readonly onFreshSession?: () => void;
   readonly offersSideChat?: boolean;
+  readonly providerSessionViews?: ReadonlyArray<ProviderSessionView>;
+  readonly onProviderSessionView?: (view: ProviderSessionView) => void;
 }) {
   const [localSelection, setLocalSelection] = useState(() => ({
     ownerKey,
@@ -395,6 +419,7 @@ export function useComposerCommandMenu({
         offersUsageLimits,
         offersFreshSession: onFreshSession !== undefined,
         offersSideChat,
+        providerSessionViews: onProviderSessionView ? providerSessionViews : undefined,
         selectedProviderStatus: selectedProviderStatus
           ? {
               ...selectedProviderStatus,
@@ -632,6 +657,17 @@ export function useComposerCommandMenu({
       return;
     }
 
+    const sessionView =
+      item.type === "slash-command"
+        ? providerSessionViews.find((view) => view === item.command)
+        : undefined;
+    if (sessionView !== undefined && onProviderSessionView) {
+      const cleared = replaceTextRange(draftMessage, trigger.rangeStart, trigger.rangeEnd, "");
+      setSelection({ start: cleared.cursor, end: cleared.cursor });
+      onChangeDraftMessage(cleared.text);
+      onProviderSessionView(sessionView);
+      return;
+    }
     if (item.type === "slash-command" && item.command === "clear" && onFreshSession) {
       const cleared = replaceTextRange(draftMessage, trigger.rangeStart, trigger.rangeEnd, "");
       setSelection({ start: cleared.cursor, end: cleared.cursor });

@@ -215,6 +215,10 @@ export const ServerProvider = Schema.Struct({
   continuation: Schema.optional(ServerProviderContinuation),
   showInteractionModeToggle: Schema.optional(Schema.Boolean),
   reportsContextWindow: Schema.optional(Schema.Boolean),
+  /** The live session answers `providerSession.contextUsage` with a per-category breakdown. */
+  reportsContextUsage: Schema.optional(Schema.Boolean),
+  /** The live session lists and manages its MCP servers through `providerSession.mcp*`. */
+  managesMcpServers: Schema.optional(Schema.Boolean),
   supportedRuntimeModes: Schema.optional(ForwardCompatibleArray(RuntimeMode)),
   supportsConversationRollback: Schema.optional(Schema.Boolean),
   supportsTextGeneration: Schema.optional(Schema.Boolean),

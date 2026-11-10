@@ -46,6 +46,9 @@ import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
+import { ProviderSessionDialogs } from "./chat/ProviderSessionDialogs";
+import { providerSessionViews } from "@onicode/client-runtime/provider-session-views";
+import { useProviderSessionViewStore } from "../providerSessionViewStore";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
 import { useChatShortcuts } from "./chat/useChatShortcuts";
 import { ChatBannerLane } from "./chat/ChatBannerLane";
@@ -2499,6 +2502,12 @@ export default function ChatView(props: ChatViewProps) {
   const freshSessionCommandAvailable =
     freshSessionAvailable && activePendingApproval === null && pendingUserInputs.length === 0;
   const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
+  const sessionViews =
+    isServerThread && activeThreadKey !== null ? providerSessionViews(activeProviderStatus) : [];
+  const openSessionViewStable = useStableCallback((view: "context" | "mcp") => {
+    if (activeThreadKey !== null)
+      useProviderSessionViewStore.getState().show(activeThreadKey, view);
+  });
   const toggleKeepFullHistory = () => setKeepFullHistory(routeThreadKey, !keepFullHistory);
   const toggleKeepFullHistoryStable = useStableCallback(toggleKeepFullHistory);
   const armFreshSessionStable = useStableCallback(() => armFreshSession(routeThreadKey));
@@ -2910,6 +2919,8 @@ export default function ChatView(props: ChatViewProps) {
     usageLimitsKey,
     usageLimitsOffered,
     openUsageLimits,
+    providerSessionViews: sessionViews,
+    openProviderSessionView: openSessionViewStable,
     clearUsageLimitsFor,
     needsLoadBalancing,
     loadBalancing,
@@ -3585,6 +3596,8 @@ export default function ChatView(props: ChatViewProps) {
                                 onFreshSession={
                                   freshSessionCommandAvailable ? armFreshSessionStable : undefined
                                 }
+                                providerSessionViews={sessionViews}
+                                onProviderSessionView={openSessionViewStable}
                                 onUsageLimitsCommand={
                                   usageLimitsOffered &&
                                   usageLimitsKey !== null &&
@@ -3772,6 +3785,17 @@ export default function ChatView(props: ChatViewProps) {
 
             {embedded ? null : (
               <>
+                {isServerThread && activeThreadRef !== null && activeThreadKey !== null ? (
+                  <ProviderSessionDialogs
+                    environmentId={activeThreadRef.environmentId}
+                    threadId={activeThreadRef.threadId}
+                    threadRef={activeThreadRef}
+                    threadKey={activeThreadKey}
+                    cwd={gitCwd}
+                    availableEditors={availableEditors}
+                  />
+                ) : null}
+
                 <BranchRestoreConfirmHost
                   threadKey={activeThreadKey}
                   threadBranch={localCheckoutBranchMismatch?.threadBranch ?? ""}
