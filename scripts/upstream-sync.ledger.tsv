@@ -172,3 +172,4 @@ f12bb6229c	take	fix(server): a restart that misses its turn starts as a new turn
 ebb0240603	take	fix(mobile): medium Android windows keep the rail's room and the sidebar's place (#33021)
 ac5e48c612	take	fix(web): notify when a new request replaces the pending one in a run (#32719)
 80e1e4d14d	take	fix(server): Codex first-request usage limits keep their reset time (#27791)
+57d5e98272	take	fix(web): minimap next turn is disabled at the bottom of a thread (#33038)
