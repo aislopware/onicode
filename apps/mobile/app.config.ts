@@ -369,6 +369,8 @@ const config: ExpoConfig = {
         },
         ios: {
           deploymentTarget: "18.0",
+          // A no-op unless ccache is installed; release builds keep its cache between runs.
+          ccacheEnabled: true,
           // AppCheckCore 11.3+ includes Swift and needs module maps for these Objective-C dependencies.
           extraPods: [
             { name: "GoogleUtilities", modular_headers: true },
