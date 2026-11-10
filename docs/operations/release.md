@@ -112,7 +112,9 @@ better-update build --platform android --profile production
 
 Android store builds contain arm64-v8a only (`apps/mobile/eas.json`), since every ABI adds a full
 native compile. Store build numbers follow the version (0.4.0 builds as 400), so every store build
-needs a new version. Submit to the stores through `better-update submit` when ready.
+needs a new version. The workflow sends each iOS build to TestFlight with the release notes (or the
+build message) as What to Test, through the `production` submit profile's ASC API key; submit Android
+with `better-update submit --platform android` when ready.
 
 Over-the-air updates come from better-update's manifest on the `production` channel. Production
 builds use the fingerprint runtime version, so an update reaches only builds with the same native

@@ -32,6 +32,9 @@
   },
   "submit": {
     "production": {
+      "ios": {
+        "ascApiKeyId": "64547ded-03b1-43a8-8405-22f7cfab816c"
+      },
       "android": {
         "track": "internal"
       }
