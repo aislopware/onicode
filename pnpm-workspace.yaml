@@ -24,7 +24,7 @@ allowBuilds:
   objc-js: false
   # Its postinstall only prints a banner.
   react-native-pdf-jsi: false
-  "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-t3.18-497fbe63.tgz": true
+  "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.18-52a0ddec.tgz": true
   sharp: true
   utf-8-validate: false
 
