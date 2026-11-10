@@ -11,14 +11,17 @@ mobile (iOS and Android) build and release through better-update at
 
 The [Release workflow](../../.github/workflows/release.yml) needs two repository secrets:
 
-- `BETTER_UPDATE_ROBOT`: a robot account of project `onicode` with vault access. Mint it with
-  `better-update credentials robot create --name github-actions --role maintainer`; it prints the
-  credential once.
-- `HOMEBREW_TAP_TOKEN`: a fine-grained token with contents write on `aislopware/homebrew-tap`.
+- `BETTER_UPDATE_ROBOT`: the `onicode-release` robot of project `onicode`, a developer with vault
+  access. `better-update credentials robot create` prints it once; `credentials access grant` gives
+  it the vault.
+- `HOMEBREW_TAP_DEPLOY_KEY`: the private half of a write deploy key on `aislopware/homebrew-tap`.
+  The org refuses fine-grained tokens that live over a year, and a deploy key never expires.
+
+Both are also in Bitwarden, as `onicode GitHub Actions - <secret name>`.
 
 To release from a Mac instead, on that Mac:
 
-- `better-update login`, and `gh` logged in with push access to `aislopware/homebrew-tap`. The vault holds team `UK58J62H8L`'s Developer ID Application
+- `better-update login`, and SSH push access to `aislopware/homebrew-tap`. The vault holds team `UK58J62H8L`'s Developer ID Application
   certificate and App Store Connect key; builds ask for the vault passphrase.
 - Xcode Command Line Tools, Rust stable, and the repo's Node and pnpm.
 - Docker Desktop or OrbStack running, for the Linux build.

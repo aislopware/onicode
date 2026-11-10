@@ -4,7 +4,7 @@
 #
 #   scripts/release/bump-cask.sh <version> <zip sha256>
 #
-# Needs `gh` with push access to aislopware/homebrew-tap.
+# Needs SSH push access to aislopware/homebrew-tap (the Release workflow uses a deploy key).
 set -euo pipefail
 [[ $# -eq 2 ]] || { echo 'usage: bump-cask.sh <version> <sha256>' >&2; exit 2; }
 version="$1"
@@ -15,7 +15,7 @@ release="$(better-update macos release list --json |
 tap="$(mktemp -d)"
 trap '/bin/rm -rf "$tap"' EXIT
 
-gh repo clone aislopware/homebrew-tap "$tap" -- --quiet --depth 1
+git clone --quiet --depth 1 git@github.com:aislopware/homebrew-tap.git "$tap"
 sed -i.bak -e "s/^  version \".*\"$/  version \"$version,$release\"/" \
   -e "s/^  sha256 \".*\"$/  sha256 \"$sha256\"/" "$tap/Casks/onicode.rb"
 /bin/rm "$tap/Casks/onicode.rb.bak"

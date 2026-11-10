@@ -125,12 +125,14 @@ jobs:
 
       - name: Point the Homebrew cask at the release
         env:
-          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           SHA256: ${{ needs.macos.outputs.sha256 }}
           GIT_AUTHOR_NAME: github-actions[bot]
           GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
           GIT_COMMITTER_NAME: github-actions[bot]
           GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
         run: |
-          gh auth setup-git
+          key="$RUNNER_TEMP/homebrew-tap-key"
+          (umask 077 && printf '%s\n' "$DEPLOY_KEY" > "$key")
+          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
           scripts/release/bump-cask.sh "$ONICODE_VERSION" "$SHA256"
