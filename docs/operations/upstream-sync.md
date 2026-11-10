@@ -15,7 +15,7 @@ node scripts/upstream-sync.ts record <sha> take|skip "<Onicode commit, or why sk
 For every commit:
 
 1. Read it with `show` and decide. Skip anything that only serves T3's services or T3's release pipeline (`pending` flags commits whose paths are all in removed areas, but read them anyway). Take product fixes and features.
-2. After `port`, read the whole `git diff`, not only the conflicts. A clean merge can still call a module we deleted, re-add a T3 URL, or put back a nightly-channel branch. `git grep -nE 't3\.codes|pingdotgg|T3 Connect|telemetry'` on the result is a quick check.
+2. After `port`, read the whole `git diff`, not only the conflicts. A clean merge can still call a module we deleted, re-add a T3 URL, or put back a nightly-channel branch. `git diff | grep -nE '(^|[^A-Za-z0-9])[Tt]3([^0-9]|$)|pingdotgg|telemetry'` is a quick check for names the translation missed.
 3. Resolve `CONFLICT` files by hand. For `MISSING`, check whether the change matters for something Onicode kept somewhere else; usually it doesn't, and the commit is taken without that file.
 4. Typecheck the affected packages and run the tests beside the change, as for any other change.
 5. Commit with the upstream subject and a `Ported from pingdotgg/t3code@<sha>.` line, then `record` it. Record skips too, with the reason, so nobody reviews the same commit twice. The ledger is `scripts/upstream-sync.ledger.tsv`.

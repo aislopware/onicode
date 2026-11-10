@@ -21,6 +21,20 @@ describe("upstream-sync translation", () => {
       "runInNewContext(`${source}\\nt3McpExtension(pi)`)",
       "runInNewContext(`${source}\\noniMcpExtension(pi)`)",
     ],
+    [
+      "PI_T3_MCP_EXTENSION_SOURCE ?? __T3_SETUP_DONE__",
+      "PI_ONI_MCP_EXTENSION_SOURCE ?? __ONI_SETUP_DONE__",
+    ],
+    [
+      "globalThis.__t3Recorder ?? msg_t3_turn_ ?? _t3/empty",
+      "globalThis.__oniRecorder ?? msg_oni_turn_ ?? _oni/empty",
+    ],
+    ['first_t3="$(command -v t3)"', 'first_onicode="$(command -v onicode)"'],
+    ["mcp__t3_code__delegate_task", "mcp__onicode__delegate_task"],
+    [
+      'T3_CHAT_THEME.id === "t3-chat" && host === "t3.chat"',
+      'SAKURA_THEME.id === "sakura" && host === "t3.chat"',
+    ],
     ["com.t3tools.t3code.widgets", "dev.aislopware.onicode.widgets"],
     ["java/com/t3tools/t3code/MainActivity.kt", "java/dev/aislopware/onicode/MainActivity.kt"],
   ])("%s", (upstream, onicode) => {
