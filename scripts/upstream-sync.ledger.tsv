@@ -149,3 +149,4 @@ d47591f613	take	fix(acp): OMP threads show html_render pages (#33677)
 56064fc4f6	take	fix(ssh): Intel Mac hosts no longer try to download a missing onicode archive (#33325)
 a22068f371	take	fix(server): opening the branch menu no longer wipes PR status (#33263)
 633438d54f	skip	T3 cloud self-update (apps/server/src/cloud); Onicode removed it and updates through better-update
+e4d86abca9	take	fix(web): remote Lineage rows keep their title when the environment name is long (#33181)
