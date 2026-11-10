@@ -175,3 +175,4 @@ ac5e48c612	take	fix(web): notify when a new request replaces the pending one in 
 57d5e98272	take	fix(web): minimap next turn is disabled at the bottom of a thread (#33038)
 d313b2aff3	take	fix(cursor): a steer keeps the prompt it interrupted (#32583)
 b718643e83	take	test: remove redundant short-string truncation test (#33867)
+c7a0931537	take	fix(pi): Pi models whose provider ID contains a slash can be selected (#32585)
