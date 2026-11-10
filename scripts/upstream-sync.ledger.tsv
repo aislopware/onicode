@@ -57,3 +57,4 @@ dca297cd1a	take	perf(web): Appearance settings no longer re-probe fonts on every
 e26decde28	take	fix(desktop): annotating inside a page's dialog no longer closes it (#29287)
 a72481fb4c	take	fix(desktop): preserve concurrent downloads with the same name (#29308)
 ceed427d79	take	fix(web): removing a queued message's attachment counts as an edit when its run starts (#29601)
+e74b410e29	take	fix(web): keybinding settings recognize the previewOpen condition (#29642)
