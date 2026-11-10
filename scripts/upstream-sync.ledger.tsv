@@ -204,3 +204,4 @@ e8d3075e48	take	fix(antigravity): recognize Gemini 4 Carbon and its quota (#3399
 05020d6fa9	take	perf(client): reopening a finished command row no longer refetches its output (#34002)
 5f2bb934d8	take	perf(server): user-only message reads use the user-message index for ordinals (#33009)
 a88a0adfa1	take	fix(web): keep HTML previews anchored when accordions expand (#34003)
+44e894ffd7	take	fix(web): preserve search result titles in drag previews (#34017)
