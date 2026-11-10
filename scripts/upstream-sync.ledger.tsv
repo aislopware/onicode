@@ -60,3 +60,4 @@ ceed427d79	take	fix(web): removing a queued message's attachment counts as an ed
 e74b410e29	take	fix(web): keybinding settings recognize the previewOpen condition (#29642)
 75200f45c6	take	fix(web): thread navigation shortcuts honor previewFocus and previewOpen conditions (#29678)
 8395f20124	take	fix(web): editing a scheduled task shows its saved time when the hour has one digit (#29851)
+2dc07510e2	take	perf(web): long reasoning previews format in linear time (600 ms → 1.3 ms median) (#30038)
