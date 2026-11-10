@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
+import { Text } from "react-native";
 
-import { AppText as Text } from "../../components/ui/AppText";
 import type { HighlightedLines } from "../../lib/highlights";
 
 /** Highlighted lines as nested text runs, keyed by each token's character offset. */
@@ -14,6 +14,7 @@ export function highlightedCodeNodes(lines: HighlightedLines): ReactNode[] {
       ...line.map((token) => {
         const start = offset;
         offset += token.content.length;
+        // Plain RN Text inherits the parent's mono font; AppText would reset it to sans.
         return (
           <Text key={start} style={token.color ? { color: token.color } : undefined}>
             {token.content}
