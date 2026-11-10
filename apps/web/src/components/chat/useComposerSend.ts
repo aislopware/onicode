@@ -17,6 +17,10 @@ import {
 } from "../ChatView.logic";
 import { isUsageLimitsCommand } from "@onicode/shared/usageLimits";
 import {
+  providerSessionViewForPrompt,
+  type ProviderSessionView,
+} from "@onicode/client-runtime/provider-session-views";
+import {
   AuthOrchestrationOperateScope,
   DEFAULT_MODEL,
   type EnvironmentId,
@@ -205,6 +209,8 @@ interface ComposerSendInput {
   readonly usageLimitsKey: string | null;
   readonly usageLimitsOffered: boolean;
   readonly openUsageLimits: UsageLimitsPanel["open"];
+  readonly providerSessionViews: ReadonlyArray<ProviderSessionView>;
+  readonly openProviderSessionView: (view: ProviderSessionView) => void;
   readonly clearUsageLimitsFor: UsageLimitsPanel["clearFor"];
   readonly needsLoadBalancing: boolean;
   readonly loadBalancing: DraftEnvironmentRouting["loadBalancing"];
@@ -298,6 +304,8 @@ export function useComposerSend(input: ComposerSendInput) {
     usageLimitsKey,
     usageLimitsOffered,
     openUsageLimits,
+    providerSessionViews,
+    openProviderSessionView,
     clearUsageLimitsFor,
     needsLoadBalancing,
     loadBalancing,
@@ -387,6 +395,16 @@ export function useComposerSend(input: ComposerSendInput) {
         setComposerDraftPrompt(composerDraftTarget, "");
         composerRef.current?.resetCursorState();
       }
+      return;
+    }
+    const sessionView = directAnnotation
+      ? null
+      : providerSessionViewForPrompt(promptRef.current, providerSessionViews);
+    if (sessionView !== null && !draftHasNonPromptContent(composerDraftTarget)) {
+      promptRef.current = "";
+      setComposerDraftPrompt(composerDraftTarget, "");
+      composerRef.current?.resetCursorState();
+      openProviderSessionView(sessionView);
       return;
     }
 

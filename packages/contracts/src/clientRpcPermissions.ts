@@ -70,6 +70,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.stopWorkflow]: AuthOrchestrationOperateScope,
   // Force stop kills agent processes, as Stop on a terminal does.
   [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.providerSessionMcpServerAction]: AuthOrchestrationOperateScope,
+  [WS_METHODS.providerSessionMcpOAuthCallback]: AuthOrchestrationOperateScope,
   [WS_METHODS.peerLinksLink]: AuthAccessWriteScope,
   [WS_METHODS.peerLinksUnlink]: AuthAccessWriteScope,
   // A link lets every agent here reach the other environment: Settings' bar.

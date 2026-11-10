@@ -1903,6 +1903,16 @@ function ThreadDetailBody(
                         onResumeQueue={props.onResumeQueue}
                         onSendMessage={handleSendMessage}
                         onShowUsageLimits={showUsageLimits}
+                        onProviderSessionView={(view) => {
+                          Keyboard.dismiss();
+                          navigation.navigate(
+                            view === "context" ? "ThreadContextUsage" : "ThreadMcpServers",
+                            {
+                              environmentId: props.environmentId,
+                              threadId: props.selectedThread.id,
+                            },
+                          );
+                        }}
                         canSwitchProvider={props.canSwitchThreadProvider}
                         onHeightChange={handleComposerHeightChange}
                         onEditorFocusChange={handleOwnedInputFocusChange}

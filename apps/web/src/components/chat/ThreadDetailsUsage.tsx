@@ -12,7 +12,7 @@ import {
   paceOf,
   remainingPercent,
 } from "@onicode/shared/usageLimits";
-import type { ReactNode } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -83,7 +83,14 @@ export function ThreadDetailsUsage({
 }
 
 /** The thread's context window. The bar fills as context is used; the tick marks auto-compaction. */
-export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowSnapshot }) {
+export function ThreadDetailsContext({
+  usage,
+  onOpenBreakdown,
+}: {
+  readonly usage: ContextWindowSnapshot;
+  /** Opens the provider's full breakdown, when it reports one. */
+  readonly onOpenBreakdown?: (() => void) | undefined;
+}) {
   const maxTokens = usage.maxTokens != null && usage.maxTokens > 0 ? usage.maxTokens : null;
   const used =
     maxTokens !== null && usage.usedPercentage !== null
@@ -114,6 +121,7 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
               : usedTokens
           }
           ariaValue={used !== null ? `${used}% used` : `${usedTokens} tokens used`}
+          onClick={onOpenBreakdown}
           tooltip={
             <>
               <span className="text-foreground">
@@ -129,6 +137,9 @@ export function ThreadDetailsContext({ usage }: { readonly usage: ContextWindowS
                 <span className="text-muted-foreground">
                   {formatContextWindowCompactionMessage(threshold)}
                 </span>
+              ) : null}
+              {onOpenBreakdown ? (
+                <span className="text-muted-foreground">Click for the breakdown</span>
               ) : null}
             </>
           }
@@ -184,6 +195,7 @@ function UsageRow({
   ariaValue = value,
   tooltip,
   muted = false,
+  onClick,
 }: {
   readonly label: string;
   /** Bar fill from 0 to 100. Null hides the bar. */
@@ -195,6 +207,7 @@ function UsageRow({
   readonly ariaValue?: string;
   readonly tooltip: ReactNode;
   readonly muted?: boolean;
+  readonly onClick?: (() => void) | undefined;
 }) {
   return (
     <Tooltip>
@@ -203,6 +216,17 @@ function UsageRow({
           <div
             tabIndex={0}
             aria-label={`${label}: ${ariaValue}`}
+            {...(onClick
+              ? {
+                  role: "button",
+                  onClick,
+                  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    onClick();
+                  },
+                }
+              : {})}
             className="col-span-3 grid h-6 cursor-default grid-cols-subgrid items-center rounded-lg px-2.5 outline-none hover:bg-black/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-black/[0.035] dark:hover:bg-white/[0.08] dark:data-popup-open:bg-white/[0.08]"
           />
         }

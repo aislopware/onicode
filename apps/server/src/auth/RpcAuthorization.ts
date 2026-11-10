@@ -158,6 +158,11 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.attachmentsCreateUploadUrl]: AuthOrchestrationOperateScope,
   [WS_METHODS.attachmentsDelete]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerUploadFeedback]: AuthOrchestrationOperateScope,
+  [WS_METHODS.providerSessionContextUsage]: AuthOrchestrationReadScope,
+  [WS_METHODS.providerSessionMcpServers]: AuthOrchestrationReadScope,
+  // Turning an MCP server on or signing it in changes what the agent can reach.
+  [WS_METHODS.providerSessionMcpServerAction]: AuthOrchestrationOperateScope,
+  [WS_METHODS.providerSessionMcpOAuthCallback]: AuthOrchestrationOperateScope,
   [WS_METHODS.mcpAppsCallTool]: AuthOrchestrationOperateScope,
   [WS_METHODS.mcpAppsToolInfo]: AuthOrchestrationReadScope,
   [WS_METHODS.mcpAppsReadResource]: AuthOrchestrationReadScope,

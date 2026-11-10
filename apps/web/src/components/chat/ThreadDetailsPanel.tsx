@@ -7,7 +7,10 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 
+import { scopedThreadKey } from "@onicode/client-runtime/environment";
+import { providerSessionViews } from "@onicode/client-runtime/provider-session-views";
 import type { DraftId } from "../../composerDraftStore";
+import { useProviderSessionViewStore } from "../../providerSessionViewStore";
 import { useOniProjectFileScripts } from "../../hooks/useOniProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
@@ -261,7 +264,27 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               {visible.usage ? <ThreadDetailsUsage {...props.usage} /> : null}
 
               {visible.context && props.usage.contextWindow ? (
-                <ThreadDetailsContext usage={props.usage.contextWindow} />
+                <ThreadDetailsContext
+                  usage={props.usage.contextWindow}
+                  onOpenBreakdown={
+                    props.isServerThread &&
+                    !props.draftId &&
+                    providerSessionViews(
+                      props.usage.providers.find(
+                        (provider) => provider.instanceId === props.usage.providerInstanceId,
+                      ),
+                    ).includes("context")
+                      ? () =>
+                          useProviderSessionViewStore.getState().show(
+                            scopedThreadKey({
+                              environmentId: props.environmentId,
+                              threadId: props.threadId,
+                            }),
+                            "context",
+                          )
+                      : undefined
+                  }
+                />
               ) : null}
 
               {/* Shown only when no section above has content, so an emptied card can be refilled. */}

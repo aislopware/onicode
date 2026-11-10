@@ -850,6 +850,12 @@ function makeReplayQueryRunner(
         readMcpResource: () => Effect.die("unexpected MCP resource read in replay"),
         callMcpTool: () => Effect.die("unexpected MCP tool call in replay"),
         listPermissionRules: Effect.die("unexpected permission rules read in replay"),
+        getContextUsage: Effect.die("unexpected context usage read"),
+        reconnectMcpServer: () => Effect.die("unexpected MCP reconnect"),
+        toggleMcpServer: () => Effect.die("unexpected MCP toggle"),
+        authenticateMcpServer: () => Effect.die("unexpected MCP authenticate"),
+        clearMcpServerAuth: () => Effect.die("unexpected MCP clear auth"),
+        submitMcpOAuthCallback: () => Effect.die("unexpected MCP OAuth callback"),
         interrupt: replayEffect(() => {
           assertNextOutboundFrame({ type: "query.interrupt" });
         }),

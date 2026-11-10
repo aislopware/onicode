@@ -479,6 +479,14 @@
       "types": "./src/state/mcpApps.ts",
       "default": "./src/state/mcpApps.ts"
     },
+    "./state/provider-session": {
+      "types": "./src/state/providerSession.ts",
+      "default": "./src/state/providerSession.ts"
+    },
+    "./provider-session-views": {
+      "types": "./src/providerSessionViews.ts",
+      "default": "./src/providerSessionViews.ts"
+    },
     "./source-control-clients": {
       "types": "./src/sourceControlClients.ts",
       "default": "./src/sourceControlClients.ts"

@@ -166,6 +166,15 @@ import {
   ProviderUploadFeedbackInput,
   ProviderUploadFeedbackResult,
 } from "./provider.ts";
+import {
+  ProviderContextUsage,
+  ProviderMcpOAuthCallbackInput,
+  ProviderMcpServerActionInput,
+  ProviderMcpServerActionResult,
+  ProviderMcpServerList,
+  ProviderSessionRequestError,
+  ProviderSessionThreadInput,
+} from "./providerSession.ts";
 import { ProviderInstanceId, ProviderInstanceMutation } from "./providerInstance.ts";
 import { PullRequestReviewGuideResult } from "./pullRequestReviewGuide.ts";
 import {
@@ -423,6 +432,10 @@ export const WS_METHODS = {
   mcpAppsUpdateModelContext: "mcpApps.updateModelContext",
 
   providerUploadFeedback: "provider.uploadFeedback",
+  providerSessionContextUsage: "providerSession.contextUsage",
+  providerSessionMcpServers: "providerSession.mcpServers",
+  providerSessionMcpServerAction: "providerSession.mcpServerAction",
+  providerSessionMcpOAuthCallback: "providerSession.mcpOAuthCallback",
   providerAuthStart: "provider.auth.start",
   providerConsumeResetCredit: "provider.consumeResetCredit",
   providerAuthComplete: "provider.auth.complete",
@@ -1428,6 +1441,29 @@ const WsMcpAppsReadResourceRpc = Rpc.make(WS_METHODS.mcpAppsReadResource, {
   error: Schema.Union([McpAppRequestError, EnvironmentAuthorizationError]),
 });
 
+const WsProviderSessionContextUsageRpc = Rpc.make(WS_METHODS.providerSessionContextUsage, {
+  payload: ProviderSessionThreadInput,
+  success: ProviderContextUsage,
+  error: Schema.Union([ProviderSessionRequestError, EnvironmentAuthorizationError]),
+});
+
+const WsProviderSessionMcpServersRpc = Rpc.make(WS_METHODS.providerSessionMcpServers, {
+  payload: ProviderSessionThreadInput,
+  success: ProviderMcpServerList,
+  error: Schema.Union([ProviderSessionRequestError, EnvironmentAuthorizationError]),
+});
+
+const WsProviderSessionMcpServerActionRpc = Rpc.make(WS_METHODS.providerSessionMcpServerAction, {
+  payload: ProviderMcpServerActionInput,
+  success: ProviderMcpServerActionResult,
+  error: Schema.Union([ProviderSessionRequestError, EnvironmentAuthorizationError]),
+});
+
+const WsProviderSessionMcpOAuthCallbackRpc = Rpc.make(WS_METHODS.providerSessionMcpOAuthCallback, {
+  payload: ProviderMcpOAuthCallbackInput,
+  error: Schema.Union([ProviderSessionRequestError, EnvironmentAuthorizationError]),
+});
+
 const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, {
   payload: ProviderUploadFeedbackInput,
   success: ProviderUploadFeedbackResult,
@@ -2122,6 +2158,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsMcpAppsReadResourceRpc,
   WsMcpAppsUpdateModelContextRpc,
   WsProviderUploadFeedbackRpc,
+  WsProviderSessionContextUsageRpc,
+  WsProviderSessionMcpServersRpc,
+  WsProviderSessionMcpServerActionRpc,
+  WsProviderSessionMcpOAuthCallbackRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeVcsBranchRpc,
   WsVcsRefreshBranchRpc,

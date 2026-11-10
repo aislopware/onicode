@@ -29,6 +29,11 @@ import {
   hasProviderUsageLimits,
   isUsageLimitsCommand,
 } from "@onicode/shared/usageLimits";
+import {
+  providerSessionViewForPrompt,
+  providerSessionViews,
+  type ProviderSessionView,
+} from "@onicode/client-runtime/provider-session-views";
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
@@ -216,6 +221,8 @@ export interface ThreadComposerProps {
   /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
   readonly onFreshSession?: () => void;
   readonly offersSideChat?: boolean;
+  /** Opens the thread's `/context` or `/mcp` view. */
+  readonly onProviderSessionView?: (view: ProviderSessionView) => void;
   readonly serverConfig: OniServerConfig | null;
   readonly queueCount: number;
   readonly activeThreadBusy: boolean;
@@ -521,6 +528,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       props.serverConfig?.providers ?? [],
       props.serverConfig?.usageLimitSources ?? [],
     );
+  const sessionViews =
+    props.isDraft || props.onProviderSessionView === undefined
+      ? providerSessionViews(null)
+      : providerSessionViews(selectedProviderStatus);
   const openUsageLimits = () => {
     const report = collectProviderUsageLimits(
       currentModelSelection.instanceId,
@@ -568,6 +579,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     modelProviders: props.serverConfig?.providers,
     ...(props.onFreshSession === undefined ? {} : { onFreshSession: props.onFreshSession }),
     offersSideChat: props.offersSideChat === true,
+    providerSessionViews: sessionViews,
+    ...(props.onProviderSessionView === undefined
+      ? {}
+      : { onProviderSessionView: props.onProviderSessionView }),
   });
   const voiceInput = useVoiceInputController({
     ownerKey: composerDraftKey,
@@ -675,6 +690,12 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       return;
     if (usageLimitsOffered && isUsageLimitsCommand(draftMessage) && draftAttachments.length === 0) {
       if (openUsageLimits()) onChangeDraftMessage("");
+      return;
+    }
+    const sessionView = providerSessionViewForPrompt(draftMessage, sessionViews);
+    if (sessionView !== null && draftAttachments.length === 0 && props.onProviderSessionView) {
+      onChangeDraftMessage("");
+      props.onProviderSessionView(sessionView);
       return;
     }
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
