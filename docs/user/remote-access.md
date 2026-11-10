@@ -45,8 +45,10 @@ If a server is already running, generate a fresh link without restarting it:
 onicode pair
 ```
 
-Scan the QR code on your phone or paste the pairing URL into **Add environment**
-in the receiving app. Connection settings are under **Settings → Environments**
+Scan the QR code in **Add environment** on your phone and it pairs right away.
+Scanned with the phone's camera instead, the code opens Onicode with the address
+filled in for you to confirm. You can also paste the pairing URL into **Add
+environment**. Connection settings are under **Settings → Environments**
 on desktop and **Settings → Environments** on mobile. A loopback address
 such as `127.0.0.1` reaches only the device opening the link.
 

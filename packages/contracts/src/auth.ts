@@ -158,6 +158,9 @@ export const AuthEnvironmentBootstrapTokenType =
 export const ServerAuthDescriptor = Schema.Struct({
   policy: ServerAuthPolicy,
   bootstrapMethods: Schema.Array(ServerAuthBootstrapMethod),
+  /** Clients before 0.5.0 cannot decode a descriptor without these two, so servers still send them. */
+  sessionMethods: Schema.optionalKey(Schema.Array(Schema.Literal("bearer-access-token"))),
+  sessionCookieName: Schema.optionalKey(TrimmedNonEmptyString),
   /** Older servers omit this and authorize self-updates with orchestration:operate. */
   serverUpdateScope: Schema.optionalKey(Schema.Literal(AuthEnvironmentMaintainScope)),
 });

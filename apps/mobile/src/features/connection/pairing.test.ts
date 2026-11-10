@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { buildPairingUrl, extractPairingUrlFromQrPayload, parsePairingUrl } from "./pairing";
+import {
+  buildPairingUrl,
+  extractPairingUrlFromQrPayload,
+  pairingFormLinkPath,
+  parsePairingUrl,
+} from "./pairing";
 
 describe("buildPairingUrl", () => {
   it("uses HTTP for a schemeless IP address", () => {
@@ -29,6 +34,20 @@ describe("extractPairingUrlFromQrPayload", () => {
         "onicode://pair?pairingUrl=https%3A%2F%2Fremote.example.com%2Fpair%23token%3Dpairing-token",
       ),
     ).toBe("https://remote.example.com/pair#token=pairing-token");
+  });
+});
+
+describe("pairingFormLinkPath", () => {
+  it.each([
+    [
+      "pair?pairingUrl=http%3A%2F%2F100.64.0.2%3A3773",
+      "connections/new?pairingUrl=http%3A%2F%2F100.64.0.2%3A3773",
+    ],
+    ["/pair/?pairingUrl=x", "connections/new?pairingUrl=x"],
+    ["pairing?x=1", "pairing?x=1"],
+    ["settings/pair", "settings/pair"],
+  ])("maps %s to %s", (path, expected) => {
+    expect(pairingFormLinkPath(path)).toBe(expected);
   });
 });
 

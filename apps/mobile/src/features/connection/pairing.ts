@@ -79,3 +79,8 @@ export function extractPairingUrlFromQrPayload(payload: string): string {
 
   return trimmed;
 }
+
+/** Pairing QR codes carry `onicode://pair?pairingUrl=…`; the link opens the pairing form. */
+export function pairingFormLinkPath(path: string): string {
+  return path.replace(/^\/*pair\/?(?=[?#]|$)/, "connections/new");
+}
