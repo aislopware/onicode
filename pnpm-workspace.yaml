@@ -298,3 +298,4 @@ minimumReleaseAgeExclude:
   - "@oxlint/binding-win32-x64-msvc@1.93.0"
   - "@oxlint/plugins@1.93.0"
   - oxlint@1.93.0
+  - "@anthropic-ai/claude-agent-sdk@0.3.321"
