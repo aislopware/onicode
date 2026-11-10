@@ -44,3 +44,4 @@ dc3fdc6a3e	take	perf(mobile): threads open over the socket without an extra HTTP
 4f0b74e190	take	feat(web): first run is one Welcome page instead of a 3-step wizard (#33209)
 c5b869f29e	take	fix(desktop): chat videos go fullscreen across the whole screen again (#25835)
 062b33275d	take	fix(desktop): recording cursor stays above modal dialogs and popovers (#27046)
+c1463af205	take	perf(web): changing file counts no longer re-render the chat view (#28571)
