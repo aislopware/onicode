@@ -98,3 +98,4 @@ ff7aa5ace3	take	fix(mobile): Android PDF preview double-tap zoom and easier link
 dd0737d3e2	skip	T3 Connect sign-in approval (CloudLink, relay, hosted app, outside-agent approval page); no independent product fix in it
 ee59ab22a8	take	fix(mobile): the composer and search bars move with their iOS columns (#33543)
 9110dc2c93	skip	T3 mobile store release pipeline (mobile-eas-production on Blacksmith, EAS production build profile)
+45e0143cf1	take	fix(web): thread title menu opens without a half-second wait on desktop (#33598)
