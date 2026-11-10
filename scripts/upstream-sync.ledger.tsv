@@ -201,3 +201,4 @@ f06bfa69c7	take	fix(web): drag command palette threads into the composer (#33990
 a11ad7424d	take	fix(web): show app bundle icons and open apps from markdown links
 71a1c49b75	take	feat(opencode): project native todo updates into checklists
 e8d3075e48	take	fix(antigravity): recognize Gemini 4 Carbon and its quota (#33991)
+05020d6fa9	take	perf(client): reopening a finished command row no longer refetches its output (#34002)
