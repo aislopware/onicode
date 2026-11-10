@@ -12,6 +12,8 @@
     "start:prod": "APP_VARIANT=production expo start",
     "showcase": "APP_VARIANT=production EXPO_PUBLIC_SHOWCASE=1 expo start --dev-client --scheme onicode",
     "screenshots": "node ../../scripts/mobile-showcase.ts",
+    "test:e2e:ios": "E2E_TELEMETRY_DISABLED=1 e2e run --target ios",
+    "test:e2e:android": "E2E_TELEMETRY_DISABLED=1 e2e run --target android",
     "android": "EXPO_NO_GIT_STATUS=1 expo prebuild --clean --platform android && expo run:android",
     "android:dev": "APP_VARIANT=development EXPO_NO_GIT_STATUS=1 expo prebuild --clean --platform android && REACT_NATIVE_PACKAGER_HOSTNAME=localhost expo run:android",
     "android:prod": "APP_VARIANT=production EXPO_NO_GIT_STATUS=1 expo prebuild --clean --platform android && expo run:android",
@@ -115,6 +117,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.29.7",
+    "@e2e-dev/mobile": "0.12.6",
     "@effect/platform-node": "catalog:",
     "@effect/vitest": "catalog:",
     "@pierre/trees": "1.0.0-beta.6",
@@ -122,6 +125,7 @@
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "babel-preset-expo": "~58.0.24",
+    "e2e": "0.23.0",
     "jsdom": "^31.0.0",
     "nitrogen": "0.37.2",
     "tailwindcss": "^4.0.0"

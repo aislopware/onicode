@@ -105,6 +105,10 @@
         "fingerprint.config.js",
         "plugins/*.cjs",
         "scripts/generate-device-stream.mts",
+        // The device suite: the e2e CLI loads its config, tests, and the stack script by path.
+        "e2e.config.ts",
+        "e2e/*.e2e.ts",
+        "e2e/stack.ts",
         "src/features/devices/device-stream.browser.ts!",
         "src/features/browser/preview-stream.browser.ts!",
       ],
