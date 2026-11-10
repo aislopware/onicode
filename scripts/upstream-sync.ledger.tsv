@@ -181,3 +181,4 @@ c7a0931537	take	fix(pi): Pi models whose provider ID contains a slash can be sel
 80e62619f5	take	fix(mobile): iOS 18 iPad sidebar and thread feed start below the header (#32936)
 e509db3a2f	take	fix(web): Tab reaches the add-project and new-project submit buttons (#32605)
 7389423507	take	fix(web): screen readers hear the add-project submit shortcut (#32576)
+047d492736	take	fix(server): Antigravity limits read the quota host the account is metered on (#32425)
