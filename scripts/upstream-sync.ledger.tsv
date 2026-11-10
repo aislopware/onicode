@@ -217,3 +217,4 @@ d290c1f1b6	take	fix(github): a proxy's 403 with Retry-After is no longer reporte
 8fc6fd01d7	take	fix(web): preserve previews during attachment preparation (#33949)
 3725817edc	take	fix(desktop): input during window teardown no longer throws in the main process (#33620)
 d6d1763d41	take	fix(web): sent messages keep the numbers written on list items (#33820)
+1a2a4a5e96	take	fix(server): quitting stops an agent-device daemon left by an earlier server (#33587)
