@@ -39,7 +39,7 @@ export function usePullRequestDiffHighlightFiles(
   const { environmentId, projectId, repository, number, host, commit } = params;
   const cache = createPullRequestDiffHighlightCache();
   return useMemo(() => {
-    if (process.env.EXPO_PUBLIC_T3_DIFF_TRACE === "1") {
+    if (process.env.EXPO_PUBLIC_ONI_DIFF_TRACE === "1") {
       const catalog = appAtomRegistry.get(environmentCatalog.catalogValueAtom);
       const entry = catalog.entries.get(EnvironmentId.make(environmentId));
       const profile = entry && Option.getOrUndefined(entry.profile);

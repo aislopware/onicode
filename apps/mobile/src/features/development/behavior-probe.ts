@@ -9,7 +9,7 @@ interface Fiber {
 }
 interface DevToolsHook {
   onCommitFiberRoot?: (id: unknown, root: { current: Fiber }, ...rest: unknown[]) => unknown;
-  __t3BehaviorProbe?: true;
+  __oniBehaviorProbe?: true;
 }
 interface ListState {
   readonly scroll: number;
@@ -41,8 +41,8 @@ function installCommitHook() {
     setTimeout(installCommitHook, 50);
     return;
   }
-  if (hook.__t3BehaviorProbe) return;
-  hook.__t3BehaviorProbe = true;
+  if (hook.__oniBehaviorProbe) return;
+  hook.__oniBehaviorProbe = true;
   const original = hook.onCommitFiberRoot.bind(hook);
   hook.onCommitFiberRoot = (id, next, ...rest) => {
     roots.add(next);
@@ -237,12 +237,12 @@ function jsFrame(time: number) {
 
 function uiFramesStart() {
   "worklet";
-  const ui = globalThis as { __t3UiFrames?: number[]; __t3UiFramesOn?: boolean };
-  ui.__t3UiFrames = [];
-  ui.__t3UiFramesOn = true;
+  const ui = globalThis as { __oniUiFrames?: number[]; __oniUiFramesOn?: boolean };
+  ui.__oniUiFrames = [];
+  ui.__oniUiFramesOn = true;
   const tick = (time: number) => {
-    if (!ui.__t3UiFramesOn) return;
-    ui.__t3UiFrames!.push(time);
+    if (!ui.__oniUiFramesOn) return;
+    ui.__oniUiFrames!.push(time);
     requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
@@ -250,9 +250,9 @@ function uiFramesStart() {
 
 function uiFramesStop() {
   "worklet";
-  const ui = globalThis as { __t3UiFrames?: number[]; __t3UiFramesOn?: boolean };
-  ui.__t3UiFramesOn = false;
-  return ui.__t3UiFrames ?? [];
+  const ui = globalThis as { __oniUiFrames?: number[]; __oniUiFramesOn?: boolean };
+  ui.__oniUiFramesOn = false;
+  return ui.__oniUiFrames ?? [];
 }
 
 let samples: Array<Record<string, unknown>> = [];
@@ -274,7 +274,7 @@ function visibleFeed(feeds: ReadonlyArray<Feed>) {
 installCommitHook();
 
 Object.assign(globalThis, {
-  __t3Behavior: {
+  __oniBehavior: {
     open(url: string) {
       const { Linking } = require("react-native") as typeof import("react-native");
       void Linking.openURL(url);

@@ -222,7 +222,7 @@ const measureStreamReply = Effect.fn("measure.streamReply")(function* (
   );
   if (Option.isNone(route))
     yield* evaluate(
-      `__t3RenderCounterOpen(${encodeJson(`${options.scheme}://threads/${environmentId}/${threadId}`)})`,
+      `__oniRenderCounterOpen(${encodeJson(`${options.scheme}://threads/${environmentId}/${threadId}`)})`,
     );
   const projectionOf = (item: { kind: string; projection?: OrchestrationV2ThreadProjection }) =>
     item.kind === "snapshot" && item.projection
@@ -236,9 +236,9 @@ const measureStreamReply = Effect.fn("measure.streamReply")(function* (
   );
   if (Option.isNone(streaming))
     return yield* new MeasureError({ message: `Run ${run}: the reply never started streaming.` });
-  yield* evaluate("__t3RenderCounterStart()");
+  yield* evaluate("__oniRenderCounterStart()");
   yield* Effect.sleep(`${options.windowSeconds} seconds`);
-  const report = yield* decodeReport(yield* evaluate("JSON.stringify(__t3RenderCounterStop())"));
+  const report = yield* decodeReport(yield* evaluate("JSON.stringify(__oniRenderCounterStop())"));
   // An in-view streaming thread must commit; out-of-view streaming may commit nothing.
   if (report.commits === 0 && Option.isNone(route))
     return yield* new MeasureError({
@@ -249,7 +249,7 @@ const measureStreamReply = Effect.fn("measure.streamReply")(function* (
 }, Effect.scoped);
 
 const appLink = (options: Options, route: string) =>
-  `__t3RenderCounterOpen(${encodeJson(`${options.scheme}://${route.replace(/^\//, "")}`)})`;
+  `__oniRenderCounterOpen(${encodeJson(`${options.scheme}://${route.replace(/^\//, "")}`)})`;
 
 const reloadAndOpen = Effect.fn("measure.reloadAndOpen")(function* (
   options: Options,
@@ -258,7 +258,7 @@ const reloadAndOpen = Effect.fn("measure.reloadAndOpen")(function* (
   // A link to an already-open screen only refocuses it, so each run starts from a reload.
   yield* Effect.scoped(
     Effect.flatMap(connectInspector(options.metro), (evaluate) =>
-      evaluate("__t3RenderCounterReload()"),
+      evaluate("__oniRenderCounterReload()"),
     ),
   );
   yield* Effect.sleep("15 seconds");
@@ -278,15 +278,15 @@ const measureRouteOpen = Effect.fn("measure.routeOpen")(function* (
 ) {
   yield* Effect.scoped(
     Effect.flatMap(connectInspector(options.metro), (evaluate) =>
-      evaluate("__t3RenderCounterReload()"),
+      evaluate("__oniRenderCounterReload()"),
     ),
   );
   yield* Effect.sleep("15 seconds");
   const evaluate = yield* connectInspector(options.metro);
-  yield* evaluate("__t3RenderCounterStart()");
+  yield* evaluate("__oniRenderCounterStart()");
   yield* evaluate(appLink(options, route));
   yield* Effect.sleep(`${options.windowSeconds} seconds`);
-  const report = yield* decodeReport(yield* evaluate("JSON.stringify(__t3RenderCounterStop())"));
+  const report = yield* decodeReport(yield* evaluate("JSON.stringify(__oniRenderCounterStop())"));
   if (report.commits === 0)
     return yield* new MeasureError({
       message: `Run ${run}: no React commits in the window. Check that ${route} is a valid app path.`,

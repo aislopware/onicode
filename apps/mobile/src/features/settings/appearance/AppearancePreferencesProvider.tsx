@@ -199,7 +199,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
   const androidNavigationStyle = resolveAndroidNavigationStyle(
     storedPreferences?.androidNavigationStyle,
     manufacturer,
-    process.env.EXPO_PUBLIC_T3_FLOATING_TABS === "1",
+    process.env.EXPO_PUBLIC_ONI_FLOATING_TABS === "1",
   );
   const themeMode = normalizeMobileThemeMode(storedPreferences?.themeMode);
   const themeAppearance = themeMode === "system" ? systemColorScheme : themeMode;

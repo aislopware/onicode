@@ -5,7 +5,7 @@ import { subagentCardDetail, subagentCardElapsed } from "./subagent-card-present
 describe("subagent card", () => {
   it.each([
     ["![screenshot](screenshots/shot.png) Verified", "screenshot Verified"],
-    ["[docs](https://en.wikipedia.org/wiki/T3_(protocol))", "docs"],
+    ["[docs](https://en.wikipedia.org/wiki/Mercury_(planet))", "docs"],
     ["[report](outputs/report%20(final).md)", "report"],
     ["[report](outputs/report\\(final.md)", "report"],
   ])("strips image and link markup from %s", (detail, expected) => {

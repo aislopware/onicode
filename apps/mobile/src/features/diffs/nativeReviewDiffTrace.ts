@@ -35,7 +35,7 @@ function appendTraceLine(line: string) {
 }
 
 export function diffHighlightTraceId(value: unknown): number {
-  if (process.env.EXPO_PUBLIC_T3_DIFF_TRACE !== "1" || eventCount >= MAX_TRACE_EVENTS) return 0;
+  if (process.env.EXPO_PUBLIC_ONI_DIFF_TRACE !== "1" || eventCount >= MAX_TRACE_EVENTS) return 0;
   if ((typeof value === "object" && value !== null) || typeof value === "function") {
     let id = objectIds.get(value);
     if (id === undefined) {
@@ -56,7 +56,7 @@ export function traceDiffHighlight(
   event: string,
   fields: Readonly<Record<string, number | boolean | string | undefined>> = {},
 ) {
-  if (process.env.EXPO_PUBLIC_T3_DIFF_TRACE !== "1" || eventCount >= MAX_TRACE_EVENTS) return;
+  if (process.env.EXPO_PUBLIC_ONI_DIFF_TRACE !== "1" || eventCount >= MAX_TRACE_EVENTS) return;
   eventCount += 1;
   const line = JSON.stringify({
     event,

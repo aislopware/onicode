@@ -18,7 +18,7 @@ interface HookSlot {
 }
 interface DevToolsHook {
   onCommitFiberRoot?: (id: unknown, root: { current: Fiber }, ...rest: unknown[]) => unknown;
-  __t3RenderCounter?: true;
+  __oniRenderCounter?: true;
 }
 interface RenderCounterState {
   on: boolean;
@@ -99,8 +99,8 @@ function install(state: RenderCounterState) {
     setTimeout(() => install(state), 50);
     return;
   }
-  if (hook.__t3RenderCounter) return;
-  hook.__t3RenderCounter = true;
+  if (hook.__oniRenderCounter) return;
+  hook.__oniRenderCounter = true;
   const original = hook.onCommitFiberRoot.bind(hook);
 
   const visit = (fiber: Fiber | null, parentName: string) => {
@@ -136,25 +136,25 @@ const sorted = (map: Map<string, number>) =>
 install(state);
 
 Object.assign(globalThis, {
-  __t3RenderCounterOpen(url: string) {
+  __oniRenderCounterOpen(url: string) {
     const { Linking } = require("react-native") as typeof import("react-native");
     void Linking.openURL(url);
     return true;
   },
   /** Restarts the JS app on Home; deferred so the inspector call can reply first. */
-  __t3RenderCounterReload() {
+  __oniRenderCounterReload() {
     const { DevSettings } = require("react-native") as typeof import("react-native");
     setTimeout(() => DevSettings.reload(), 100);
     return true;
   },
-  __t3RenderCounterStart() {
+  __oniRenderCounterStart() {
     state.commits = 0;
     state.counts = new Map();
     state.causes = new Map();
     state.on = true;
     return true;
   },
-  __t3RenderCounterStop(): RenderCounterReport {
+  __oniRenderCounterStop(): RenderCounterReport {
     state.on = false;
     const components = sorted(state.counts);
     return {

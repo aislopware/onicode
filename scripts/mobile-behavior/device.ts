@@ -195,7 +195,7 @@ export function makeDevice(options: DeviceOptions) {
     ),
   );
 
-  const state = evaluate("__t3Behavior.state()").pipe(
+  const state = evaluate("__oniBehavior.state()").pipe(
     Effect.map((value) => JSON.parse(String(value)) as ProbeState),
   );
 
@@ -246,14 +246,14 @@ export function makeDevice(options: DeviceOptions) {
     nodes,
     center,
     open: (path: string) =>
-      evaluate(`__t3Behavior.open(${JSON.stringify(`${SCHEME}://${path.replace(/^\//, "")}`)})`),
-    openUrl: (url: string) => evaluate(`__t3Behavior.open(${JSON.stringify(url)})`),
+      evaluate(`__oniBehavior.open(${JSON.stringify(`${SCHEME}://${path.replace(/^\//, "")}`)})`),
+    openUrl: (url: string) => evaluate(`__oniBehavior.open(${JSON.stringify(url)})`),
     /** Reloads JS, then opens Home; the app restores the last thread, and split layouts keep one open. */
     reload: Effect.fn("device.reload")(function* (ready: (state: ProbeState) => boolean) {
-      yield* evaluate("__t3Behavior.reload()").pipe(Effect.ignore);
+      yield* evaluate("__oniBehavior.reload()").pipe(Effect.ignore);
       yield* Effect.sleep("2 seconds");
       yield* waitFor("the thread list after reload", ready, 60_000);
-      yield* evaluate(`__t3Behavior.open(${JSON.stringify(`${SCHEME}://`)})`);
+      yield* evaluate(`__oniBehavior.open(${JSON.stringify(`${SCHEME}://`)})`);
       // Split layouts may keep a thread beside Home, so they get a short wait for the Home route.
       const home = (value: ProbeState) => ready(value) && value.route?.name === "Home";
       const state = yield* waitFor("Home", home, 5_000).pipe(Effect.option);
@@ -263,8 +263,8 @@ export function makeDevice(options: DeviceOptions) {
         (value) => ready(value) && value.route?.columns === true,
       );
     }),
-    recordStart: (withFeed: boolean) => evaluate(`__t3Behavior.recordStart(${withFeed})`),
-    recordStop: evaluate("__t3Behavior.recordStop()").pipe(
+    recordStart: (withFeed: boolean) => evaluate(`__oniBehavior.recordStart(${withFeed})`),
+    recordStop: evaluate("__oniBehavior.recordStop()").pipe(
       Effect.map((value) => JSON.parse(String(value)) as Recording),
     ),
     press: (selector: string) => run(["press", selector]),

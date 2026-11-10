@@ -34,7 +34,7 @@ directly. A JavaScript change that "has no effect" on device is usually this.
 [`render-counter.ts`](../../apps/mobile/src/features/development/render-counter.ts) counts the
 components React rendered in each commit and why: a changed state slot, changed props, or
 context. It wraps the DevTools hook from the first import in `index.ts` and loads only when
-`__DEV__` and `EXPO_PUBLIC_T3_RENDER_COUNTER=1`, so release bundles never contain it. The walk
+`__DEV__` and `EXPO_PUBLIC_ONI_RENDER_COUNTER=1`, so release bundles never contain it. The walk
 skips subtrees React bailed out of. A probe that checks `flags & 1` on every fiber reports
 renders that never happened, because bailed-out fibers keep flags from older commits.
 
@@ -46,7 +46,7 @@ mid-stream, and prints the median renders, commits, top components and top cause
 pass that URL (the LAN address with `--lan`) as `--metro`.
 
 ```bash
-EXPO_PUBLIC_T3_RENDER_COUNTER=1 vp run dev:client   # in apps/mobile, then pair the app
+EXPO_PUBLIC_ONI_RENDER_COUNTER=1 vp run dev:client   # in apps/mobile, then pair the app
 node apps/server/src/bin.ts auth session issue --base-dir <base-dir> --token-only
 node apps/mobile/scripts/measure-renders.mts --server <server-origin> --token <token> \
   --metro http://<metro-lan-host>:8081 --project-root <scratch-dir>

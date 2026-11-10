@@ -10,7 +10,7 @@
 
 namespace {
 
-constexpr uint32_t kSnapshotMagic = 0x54563354;  // "ONIVT" in little endian.
+constexpr uint32_t kSnapshotMagic = 0x54564E4F;  // "ONVT" in little endian.
 constexpr uint16_t kSnapshotVersion = 1;
 constexpr size_t kMaxScrollbackRows = 10000;
 
@@ -198,7 +198,7 @@ uint16_t StyleFlags(const GhosttyStyle& style, bool selected) {
 }  // namespace
 
 extern "C" JNIEXPORT jlong JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeCreate(
+Java_expo_modules_oniterminal_GhosttyBridge_nativeCreate(
     JNIEnv* env, jclass, jint cols, jint rows, jint cell_width, jint cell_height,
     jint foreground, jint background, jint cursor, jintArray palette) {
   auto* session = new Session();
@@ -226,12 +226,12 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeCreate(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeDestroy(JNIEnv*, jclass, jlong handle) {
+Java_expo_modules_oniterminal_GhosttyBridge_nativeDestroy(JNIEnv*, jclass, jlong handle) {
   FreeSession(FromHandle(handle));
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeFeed(JNIEnv* env, jclass, jlong handle,
+Java_expo_modules_oniterminal_GhosttyBridge_nativeFeed(JNIEnv* env, jclass, jlong handle,
                                                        jbyteArray data) {
   auto* session = FromHandle(handle);
   if (session == nullptr || data == nullptr) return env->NewByteArray(0);
@@ -246,7 +246,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeFeed(JNIEnv* env, jclass, jlong
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeResize(
+Java_expo_modules_oniterminal_GhosttyBridge_nativeResize(
     JNIEnv* env, jclass, jlong handle, jint cols, jint rows, jint cell_width, jint cell_height) {
   auto* session = FromHandle(handle);
   if (session == nullptr) return env->NewByteArray(0);
@@ -260,7 +260,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeResize(
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeScroll(JNIEnv*, jclass, jlong handle,
+Java_expo_modules_oniterminal_GhosttyBridge_nativeScroll(JNIEnv*, jclass, jlong handle,
                                                          jint rows) {
   auto* session = FromHandle(handle);
   if (session == nullptr || rows == 0) return;
@@ -273,7 +273,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeScroll(JNIEnv*, jclass, jlong h
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeSetTheme(
+Java_expo_modules_oniterminal_GhosttyBridge_nativeSetTheme(
     JNIEnv* env, jclass, jlong handle, jint foreground, jint background, jint cursor,
     jintArray palette) {
   auto* session = FromHandle(handle);
@@ -283,7 +283,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeSetTheme(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeSelectWordAt(JNIEnv*, jclass,
+Java_expo_modules_oniterminal_GhosttyBridge_nativeSelectWordAt(JNIEnv*, jclass,
                                                                jlong handle, jint x,
                                                                jint y) {
   auto* session = FromHandle(handle);
@@ -305,7 +305,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeSelectWordAt(JNIEnv*, jclass,
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeExtendSelection(
+Java_expo_modules_oniterminal_GhosttyBridge_nativeExtendSelection(
     JNIEnv*, jclass, jlong handle, jint anchor_x, jint anchor_y, jint x, jint y) {
   auto* session = FromHandle(handle);
   if (session == nullptr) return;
@@ -318,7 +318,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeExtendSelection(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeSelectAll(JNIEnv*, jclass,
+Java_expo_modules_oniterminal_GhosttyBridge_nativeSelectAll(JNIEnv*, jclass,
                                                             jlong handle) {
   auto* session = FromHandle(handle);
   if (session == nullptr) return JNI_FALSE;
@@ -335,7 +335,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeSelectAll(JNIEnv*, jclass,
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeClearSelection(JNIEnv*, jclass,
+Java_expo_modules_oniterminal_GhosttyBridge_nativeClearSelection(JNIEnv*, jclass,
                                                                  jlong handle) {
   auto* session = FromHandle(handle);
   if (session == nullptr) return;
@@ -346,7 +346,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeClearSelection(JNIEnv*, jclass,
 // Returns the active selection as UTF-8 bytes (soft-wrapped lines unwrapped,
 // trailing whitespace trimmed), or null when there is no selection.
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeGetSelectionText(JNIEnv* env, jclass,
+Java_expo_modules_oniterminal_GhosttyBridge_nativeGetSelectionText(JNIEnv* env, jclass,
                                                                    jlong handle) {
   auto* session = FromHandle(handle);
   if (session == nullptr) return nullptr;
@@ -373,7 +373,7 @@ Java_expo_modules_t3terminal_GhosttyBridge_nativeGetSelectionText(JNIEnv* env, j
 }
 
 extern "C" JNIEXPORT jbyteArray JNICALL
-Java_expo_modules_t3terminal_GhosttyBridge_nativeSnapshot(JNIEnv* env, jclass,
+Java_expo_modules_oniterminal_GhosttyBridge_nativeSnapshot(JNIEnv* env, jclass,
                                                            jlong handle) {
   auto* session = FromHandle(handle);
   if (session == nullptr) return env->NewByteArray(0);

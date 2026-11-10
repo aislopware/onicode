@@ -14,7 +14,7 @@
 # ```
 
 # Define a flag to check if we are building properly
-add_definitions(-DBUILDING_T3HIGHLIGHTS_WITH_GENERATED_CMAKE_PROJECT)
+add_definitions(-DBUILDING_ONIHIGHLIGHTS_WITH_GENERATED_CMAKE_PROJECT)
 
 # Enable Raw Props parsing in react-native (for Nitro Views)
 add_definitions(-DRN_SERIALIZABLE_STATE)
