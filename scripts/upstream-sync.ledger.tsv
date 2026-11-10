@@ -147,3 +147,4 @@ cec8d73a1f	take	fix(server): a background agent tab survives a desktop window re
 ad91636f0b	take	fix(server): Commit, push & PR no longer pushes the default branch into itself (#33695)
 d47591f613	take	fix(acp): OMP threads show html_render pages (#33677)
 56064fc4f6	take	fix(ssh): Intel Mac hosts no longer try to download a missing onicode archive (#33325)
+a22068f371	take	fix(server): opening the branch menu no longer wipes PR status (#33263)
