@@ -129,3 +129,4 @@ d1909d68f8	skip	T3 mobile app version bump (2.3.0); Onicode has its own app vers
 f6a32dbc7f	take	fix(server): stop PR watch flapping while workflows await approval (#24599)
 e89abadaee	take	fix(server): show idle paragraphs before the assistant turn ends (#28221)
 6c9adfb273	take	fix(mobile): fit usage view selector beside the date range at large text (#33682)
+934c7f8d8e	take	fix(web): center short PR titles in thread details (#33724)
