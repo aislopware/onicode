@@ -106,3 +106,4 @@ e6fa2e35c3	take	fix(web): expanding hidden diff context works after a diff refre
 9a0d02723c	skip	T3 Connect agent sign-in approval on app.t3.codes (CloudLink, hosted app, outside-agent approval); no independent product fix
 53bcb9af7a	take	perf(cursor): improve account usage scanning (#33636)
 ad989057ba	take	fix(web): dropdown items over the desktop title bar respond to clicks (#32643)
+eb381a7d4f	skip	Fixes the hosted app's DPoP browser-session MCP approval (csrf bound to session id) and T3 Connect's connectMcpApproval; Onicode's McpOAuth has no browser-session approval or csrf token, and connectMcpApproval came with the skipped 9a0d02723c
