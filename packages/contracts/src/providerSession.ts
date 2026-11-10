@@ -114,6 +114,149 @@ export const ProviderMcpOAuthCallbackInput = Schema.Struct({
 });
 export type ProviderMcpOAuthCallbackInput = typeof ProviderMcpOAuthCallbackInput.Type;
 
+export const ProviderSessionInfoView = Schema.Literals([
+  "status",
+  "agents",
+  "skills",
+  "memory",
+  "output-styles",
+  "hooks",
+  "permissions",
+  "plugins",
+]);
+export type ProviderSessionInfoView = typeof ProviderSessionInfoView.Type;
+
+export const ProviderSessionInfoInput = Schema.Struct({
+  threadId: ThreadId,
+  view: ProviderSessionInfoView,
+});
+export type ProviderSessionInfoInput = typeof ProviderSessionInfoInput.Type;
+
+export const ProviderPermissionBehavior = Schema.Literals(["allow", "ask", "deny"]);
+export type ProviderPermissionBehavior = typeof ProviderPermissionBehavior.Type;
+
+const ProviderSessionStatusInfo = Schema.TaggedStruct("status", {
+  sections: Schema.Array(
+    Schema.Struct({
+      title: Schema.String,
+      rows: Schema.Array(Schema.Struct({ label: Schema.String, value: Schema.String })),
+    }),
+  ),
+});
+
+const ProviderSessionAgentsInfo = Schema.TaggedStruct("agents", {
+  agents: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      description: Schema.String,
+      model: Schema.optional(Schema.String),
+    }),
+  ),
+});
+
+const ProviderSessionSkillsInfo = Schema.TaggedStruct("skills", {
+  skills: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      description: Schema.String,
+      source: Schema.String,
+      tokens: Schema.optional(Schema.Number),
+      enabled: Schema.Boolean,
+    }),
+  ),
+});
+
+const ProviderSessionMemoryInfo = Schema.TaggedStruct("memory", {
+  files: Schema.Array(
+    Schema.Struct({
+      kind: Schema.String,
+      path: Schema.String,
+      label: Schema.String,
+      description: Schema.String,
+      exists: Schema.Boolean,
+    }),
+  ),
+  /** Notes the agent saved for itself (auto memory). */
+  memories: Schema.Array(
+    Schema.Struct({ name: Schema.String, path: Schema.String, description: Schema.String }),
+  ),
+  autoMemory: Schema.optional(Schema.String),
+});
+
+const ProviderSessionOutputStylesInfo = Schema.TaggedStruct("output-styles", {
+  current: Schema.String,
+  available: Schema.Array(Schema.String),
+});
+
+const ProviderSessionHooksInfo = Schema.TaggedStruct("hooks", {
+  hooks: Schema.Array(
+    Schema.Struct({
+      event: Schema.String,
+      eventSummary: Schema.String,
+      matcher: Schema.String,
+      sourceLabel: Schema.String,
+      type: Schema.String,
+      displayText: Schema.String,
+      commandText: Schema.String,
+      contentLabel: Schema.String,
+    }),
+  ),
+  disabledByPolicy: Schema.Boolean,
+});
+
+const ProviderSessionPermissionsInfo = Schema.TaggedStruct("permissions", {
+  rules: Schema.Array(
+    Schema.Struct({
+      behavior: ProviderPermissionBehavior,
+      rule: Schema.String,
+      description: Schema.String,
+      source: Schema.String,
+    }),
+  ),
+  directories: Schema.Array(Schema.Struct({ path: Schema.String, source: Schema.String })),
+});
+
+const ProviderSessionPluginsInfo = Schema.TaggedStruct("plugins", {
+  installed: Schema.Array(
+    Schema.Struct({
+      id: Schema.String,
+      version: Schema.optional(Schema.String),
+      scope: Schema.String,
+      enabled: Schema.Boolean,
+    }),
+  ),
+  marketplaces: Schema.Array(Schema.Struct({ name: Schema.String, source: Schema.String })),
+});
+
+export const ProviderSessionInfo = Schema.Union([
+  ProviderSessionStatusInfo,
+  ProviderSessionAgentsInfo,
+  ProviderSessionSkillsInfo,
+  ProviderSessionMemoryInfo,
+  ProviderSessionOutputStylesInfo,
+  ProviderSessionHooksInfo,
+  ProviderSessionPermissionsInfo,
+  ProviderSessionPluginsInfo,
+]);
+export type ProviderSessionInfo = typeof ProviderSessionInfo.Type;
+export type ProviderSessionInfoOf<View extends ProviderSessionInfoView> = Extract<
+  ProviderSessionInfo,
+  { readonly _tag: View }
+>;
+
+export const ProviderMemoryFileInput = Schema.Struct({
+  threadId: ThreadId,
+  path: TrimmedNonEmptyString,
+});
+export type ProviderMemoryFileInput = typeof ProviderMemoryFileInput.Type;
+
+export const ProviderMemoryFile = Schema.Struct({
+  path: Schema.String,
+  content: Schema.String,
+  exists: Schema.Boolean,
+});
+export type ProviderMemoryFile = typeof ProviderMemoryFile.Type;
+
 export const ProviderSessionRequestErrorReason = Schema.Literals([
   "no-session",
   "provider-unsupported",

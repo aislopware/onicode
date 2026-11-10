@@ -2,31 +2,93 @@ import type {
   ProviderContextUsage,
   ProviderContextUsageCategory,
   ProviderMcpServer,
+  ProviderSessionInfoView,
   ServerProvider,
 } from "@onicode/contracts";
 
-export type ProviderSessionView = "context" | "mcp";
+export type ProviderSessionView =
+  | "context"
+  | "mcp"
+  | "status"
+  | "memory"
+  | "agents"
+  | "skills"
+  | "hooks"
+  | "permissions"
+  | "plugin"
+  | "output-style";
 
 export const PROVIDER_SESSION_VIEW_COMMANDS = {
   context: { name: "context", description: "Show what fills the context window" },
   mcp: { name: "mcp", description: "Manage MCP servers" },
+  status: { name: "status", description: "Show the session's version, account and model" },
+  memory: { name: "memory", description: "Show memory files" },
+  agents: { name: "agents", description: "List subagents" },
+  skills: { name: "skills", description: "List skills" },
+  hooks: { name: "hooks", description: "List hooks" },
+  permissions: { name: "permissions", description: "Show allow, ask and deny rules" },
+  plugin: { name: "plugin", description: "List plugins and marketplaces" },
+  "output-style": { name: "output-style", description: "Show output styles" },
 } as const satisfies Record<ProviderSessionView, { name: string; description: string }>;
 
-const NO_VIEWS: ReadonlyArray<ProviderSessionView> = [];
-const CONTEXT_VIEWS: ReadonlyArray<ProviderSessionView> = ["context"];
-const MCP_VIEWS: ReadonlyArray<ProviderSessionView> = ["mcp"];
-const ALL_VIEWS: ReadonlyArray<ProviderSessionView> = ["context", "mcp"];
+const SETTINGS_VIEWS = [
+  "status",
+  "memory",
+  "agents",
+  "skills",
+  "hooks",
+  "permissions",
+  "plugin",
+  "output-style",
+] as const satisfies ReadonlyArray<ProviderSessionView>;
+
+/** The `providerSession.info` view behind each settings view. */
+export const PROVIDER_SESSION_INFO_VIEWS = {
+  status: "status",
+  memory: "memory",
+  agents: "agents",
+  skills: "skills",
+  hooks: "hooks",
+  permissions: "permissions",
+  plugin: "plugins",
+  "output-style": "output-styles",
+} as const satisfies Record<(typeof SETTINGS_VIEWS)[number], ProviderSessionInfoView>;
+
+export type ProviderSessionSettingsView = (typeof SETTINGS_VIEWS)[number];
+
+export const isProviderSessionView = (value: string): value is ProviderSessionView =>
+  Object.hasOwn(PROVIDER_SESSION_VIEW_COMMANDS, value);
+
+export const isProviderSessionSettingsView = (
+  view: ProviderSessionView,
+): view is ProviderSessionSettingsView => Object.hasOwn(PROVIDER_SESSION_INFO_VIEWS, view);
+
+const viewsByFlags = new Map<string, ReadonlyArray<ProviderSessionView>>();
 
 /** Shared arrays, so memoized readers see the same value across renders. */
 export function providerSessionViews(
-  provider: Pick<ServerProvider, "reportsContextUsage" | "managesMcpServers"> | null | undefined,
+  provider:
+    | Pick<ServerProvider, "reportsContextUsage" | "managesMcpServers" | "managesSessionSettings">
+    | null
+    | undefined,
 ): ReadonlyArray<ProviderSessionView> {
   const context = provider?.reportsContextUsage === true;
   const mcp = provider?.managesMcpServers === true;
-  return context ? (mcp ? ALL_VIEWS : CONTEXT_VIEWS) : mcp ? MCP_VIEWS : NO_VIEWS;
+  const settings = provider?.managesSessionSettings === true;
+  const key = `${context}|${mcp}|${settings}`;
+  let views = viewsByFlags.get(key);
+  if (views === undefined) {
+    views = [
+      ...(context ? (["context"] as const) : []),
+      ...(mcp ? (["mcp"] as const) : []),
+      ...(settings ? SETTINGS_VIEWS : []),
+    ];
+    viewsByFlags.set(key, views);
+  }
+  return views;
 }
 
-/** A bare `/context` or `/mcp` opens the view; with arguments the provider runs the command. */
+/** A bare `/context`, `/mcp`, `/status`… opens the view; with arguments the provider runs the command. */
 export function providerSessionViewForPrompt(
   prompt: string,
   views: ReadonlyArray<ProviderSessionView>,

@@ -88,6 +88,16 @@ describe("ProviderSessionRequests", () => {
         "provider-unsupported",
       );
       assert.strictEqual(
+        yield* reason(
+          Effect.flatMap(ProviderSessionRequests.ProviderSessionRequests, (requests) =>
+            requests.info({ threadId, view: "status" }),
+          ),
+        ).pipe(
+          Effect.provide(makeLayer({ session: { contextUsage: () => Effect.die("unused") } })),
+        ),
+        "provider-unsupported",
+      );
+      assert.strictEqual(
         yield* reason(contextUsage).pipe(
           Effect.provide(
             makeLayer({

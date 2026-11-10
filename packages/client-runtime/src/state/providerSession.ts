@@ -29,5 +29,17 @@ export function createProviderSessionEnvironmentAtoms<R, E>(
       label: "environment-command:provider-session:mcp-oauth-callback",
       tag: WS_METHODS.providerSessionMcpOAuthCallback,
     }),
+    info: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:provider-session:info",
+      tag: WS_METHODS.providerSessionInfo,
+      staleTimeMs: 0,
+      idleTtlMs: 0,
+    }),
+    memoryFile: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:provider-session:memory-file",
+      tag: WS_METHODS.providerSessionMemoryFile,
+      staleTimeMs: 0,
+      idleTtlMs: 0,
+    }),
   };
 }

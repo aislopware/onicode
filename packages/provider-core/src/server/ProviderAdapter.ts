@@ -4,6 +4,9 @@ import type {
   ProviderMcpServer,
   ProviderMcpServerAction,
   ProviderMcpServerActionResult,
+  ProviderMemoryFile,
+  ProviderSessionInfo,
+  ProviderSessionInfoView,
 } from "@onicode/contracts";
 import {
   ChatAttachment,
@@ -631,6 +634,18 @@ export interface ProviderAdapterV2McpServers {
   }) => Effect.Effect<void, ProviderAdapterV2Error>;
 }
 
+/** The provider's own read-only settings views (`/status`, `/memory`, `/plugin`…) over the live session. */
+export interface ProviderAdapterV2SessionSettings {
+  readonly info: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly view: ProviderSessionInfoView;
+  }) => Effect.Effect<ProviderSessionInfo, ProviderAdapterV2Error>;
+  readonly memoryFile: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+    readonly path: string;
+  }) => Effect.Effect<ProviderMemoryFile, ProviderAdapterV2Error>;
+}
+
 export type ProviderAdapterV2SubagentOutcome = {
   readonly status: "completed" | "failed" | "cancelled";
   readonly completedAt: NonNullable<OrchestrationV2Subagent["completedAt"]>;
@@ -725,6 +740,7 @@ export interface ProviderAdapterV2SessionRuntime {
     readonly providerThread: OrchestrationV2ProviderThread;
   }) => Effect.Effect<ProviderContextUsage, ProviderAdapterV2Error>;
   readonly mcpServers?: ProviderAdapterV2McpServers;
+  readonly sessionSettings?: ProviderAdapterV2SessionSettings;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;

@@ -1905,13 +1905,17 @@ function ThreadDetailBody(
                         onShowUsageLimits={showUsageLimits}
                         onProviderSessionView={(view) => {
                           Keyboard.dismiss();
-                          navigation.navigate(
-                            view === "context" ? "ThreadContextUsage" : "ThreadMcpServers",
-                            {
-                              environmentId: props.environmentId,
-                              threadId: props.selectedThread.id,
-                            },
-                          );
+                          const target = {
+                            environmentId: props.environmentId,
+                            threadId: props.selectedThread.id,
+                          };
+                          if (view === "context") {
+                            navigation.navigate("ThreadContextUsage", target);
+                          } else if (view === "mcp") {
+                            navigation.navigate("ThreadMcpServers", target);
+                          } else {
+                            navigation.navigate("ThreadSessionSettings", { ...target, view });
+                          }
                         }}
                         canSwitchProvider={props.canSwitchThreadProvider}
                         onHeightChange={handleComposerHeightChange}

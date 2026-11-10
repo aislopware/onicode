@@ -26,6 +26,7 @@ const LISTED_OVERLAY_ROUTES: ReadonlySet<string> = new Set([
   "ThreadAgents",
   "ThreadContextUsage",
   "ThreadMcpServers",
+  "ThreadSessionSettings",
   "ThreadBackgroundWork",
   "ThreadPullRequests",
   "ThreadQueue",

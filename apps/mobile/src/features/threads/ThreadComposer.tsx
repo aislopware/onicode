@@ -76,6 +76,7 @@ import { scopeProjectRef } from "@onicode/client-runtime/environment";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { ComposerAttachmentButton } from "./ComposerAttachmentButton";
+import { ComposerContextRing } from "./ComposerContextRing";
 import {
   ComposerAttachmentStrip,
   ComposerAttachmentThumbnail,
@@ -1105,6 +1106,17 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                 }
               >
                 {modelControl}
+                {props.isDraft ? null : (
+                  <ComposerContextRing
+                    environmentId={props.environmentId}
+                    threadId={props.selectedThread.id}
+                    onOpen={
+                      sessionViews.includes("context") && props.onProviderSessionView
+                        ? () => props.onProviderSessionView?.("context")
+                        : undefined
+                    }
+                  />
+                )}
                 <ComposerDictationStartAction
                   size={usesLargeControls ? "large" : "regular"}
                   state={voiceInput.state}
