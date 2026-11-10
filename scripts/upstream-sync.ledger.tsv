@@ -167,3 +167,4 @@ f12bb6229c	take	fix(server): a restart that misses its turn starts as a new turn
 4c924ff4e6	take	fix(desktop): new browser tabs no longer lose waits, clicks and snapshots for good (#32861)
 46015ec958	take	fix(web): Go to source on a side chat quote keeps you on its parent thread (#33160)
 6b96956c30	take	fix(server): removing a queued completion message keeps its siblings' wakes (#32815)
+0a9abddaee	take	fix(server): dev database seed drops active pull request watches (#32744)
