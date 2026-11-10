@@ -18,7 +18,7 @@ on:
         type: string
         default: ""
       mobile:
-        description: Store builds to make (uploaded to better-update, not submitted).
+        description: Store builds to make. iOS also goes to TestFlight; Android is not submitted.
         type: choice
         options: [none, both, ios, android]
         default: none
@@ -185,7 +185,20 @@ jobs:
       - name: Install the mobile workspace
         run: pnpm install --frozen-lockfile --prefer-offline --filter "@onicode/mobile..."
       - name: Build
-        run: scripts/release/build.sh ${{ matrix.platform }} "$ONICODE_RELEASE_MESSAGE"
+        id: build
+        run: |
+          ids="$(scripts/release/build.sh ${{ matrix.platform }} "$ONICODE_RELEASE_MESSAGE")"
+          echo "build=${ids%%$'\n'*}" >> "$GITHUB_OUTPUT"
+      # Apple caps What to Test at 4000 bytes; better-update checks that before the upload.
+      - name: Send to TestFlight
+        if: matrix.platform == 'ios'
+        working-directory: apps/mobile
+        env:
+          BUILD: ${{ steps.build.outputs.build }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          what="${NOTES:-$ONICODE_RELEASE_MESSAGE}"
+          better-update submit --platform ios --id "$BUILD" --what-to-test "${what:0:3000}" --non-interactive
       - name: ccache stats
         if: always()
         run: ccache --show-stats
