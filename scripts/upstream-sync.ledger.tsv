@@ -72,3 +72,4 @@ cddfc8db21	take	fix(composer): bound long path search requests on web and mobile
 b8c2cfad6b	take	fix(web): deleting a thread clears its side chats' drafts (#29832)
 7a328c47ca	take	fix(mobile): thread row timers no longer reflow the title every second (#33447)
 7b248349bd	take	fix(mobile): smooth expand/collapse when the feed is at the bottom (#33449)
+33db45effd	take	fix(mobile): keep project and environment pickers reachable with the keyboard up (#33456)
