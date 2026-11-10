@@ -1,22 +1,12 @@
 name: Mobile Fingerprint Check
 
-# Detects whether a PR changes the native fingerprint — i.e. whether merging
-# it would leave main un-OTA-able until a new store build ships. Native-change
-# PRs get the "📱 Native Change" label (applied by mobile-fingerprint-label.yml,
-# which runs from main so fork PRs get it too) so they can be held and merged as a
-# batch right before the next store submission, keeping main OTA-able for
-# everything else in between. (Once one native PR merges, every later merge
-# inherits the drifted fingerprint and loses OTA reach too — that is why the
-# signal has to fire before merge, not after.)
-#
-# The check is advisory: it always passes, the label is the signal. Both
-# fingerprints are computed in this one job (same OS, same corepack-pinned
-# pnpm), so the comparison is self-consistent; no EXPO_TOKEN needed.
+# Reports in the job summary whether a PR changes the native fingerprint, i.e.
+# whether merging it leaves main un-OTA-able until a new store build ships.
+# Hold such PRs and merge them together right before the next store build. The
+# check is advisory and always passes. Both fingerprints are computed in this one
+# job (same OS, same pinned pnpm), so the comparison is self-consistent.
 on:
   pull_request:
-    # Run even when a rebase or base change removes every native input from the
-    # diff, so the label can be cleared without installing Expo dependencies.
-    types: [opened, synchronize, reopened, edited]
 
 concurrency:
   group: mobile-fingerprint-check-${{ github.event.pull_request.number }}
@@ -25,7 +15,7 @@ concurrency:
 jobs:
   fingerprint:
     name: Native fingerprint diff
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     env:
@@ -53,7 +43,7 @@ jobs:
             echo "relevant=true" >> "$GITHUB_OUTPUT"
           else
             echo "relevant=false" >> "$GITHUB_OUTPUT"
-            echo "No native fingerprint inputs changed; clearing any stale native change label." >> "$GITHUB_STEP_SUMMARY"
+            echo "No native fingerprint inputs changed." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Setup Vite+
@@ -124,21 +114,6 @@ jobs:
                   | "  - \(.type): `\(.filePath // .id)`"'
             done
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "changed_platforms=${changed# }" >> "$GITHUB_OUTPUT"
-
-      # mobile-fingerprint-label.yml reads this from main with a write token
-      # and syncs the label; this job's token is read-only for fork PRs.
-      - name: Record changed platforms
-        env:
-          CHANGED_PLATFORMS: ${{ steps.compare.outputs.changed_platforms }}
-        run: |
-          mkdir -p "$RUNNER_TEMP/fingerprint-result"
-          printf '%s\n' "$CHANGED_PLATFORMS" > "$RUNNER_TEMP/fingerprint-result/changed-platforms"
-
-      - name: Upload changed platforms
-        uses: actions/upload-artifact@v7
-        with:
-          name: fingerprint-result
-          path: ${{ runner.temp }}/fingerprint-result
-          if-no-files-found: error
-          retention-days: 1
+          if [ -n "$changed" ]; then
+            echo "::notice title=Native change::Changes the native fingerprint for${changed}"
+          fi

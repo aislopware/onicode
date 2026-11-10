@@ -9,7 +9,14 @@ mobile (iOS and Android) build and release through better-update at
 
 ## Setup
 
-On the release Mac:
+The [Release workflow](../../.github/workflows/release.yml) needs two repository secrets:
+
+- `BETTER_UPDATE_ROBOT`: a robot account of project `onicode` with vault access. Mint it with
+  `better-update credentials robot create --name github-actions --role maintainer`; it prints the
+  credential once.
+- `HOMEBREW_TAP_TOKEN`: a fine-grained token with contents write on `aislopware/homebrew-tap`.
+
+To release from a Mac instead, on that Mac:
 
 - `better-update login`, and `gh` logged in with push access to `aislopware/homebrew-tap`. The vault holds team `UK58J62H8L`'s Developer ID Application
   certificate and App Store Connect key; builds ask for the vault passphrase.
@@ -27,13 +34,16 @@ push to `main`.
 
 ## Desktop
 
-From a clean checkout of `main` as pushed, with the release notes in a file:
+Run the Release workflow on `main` with the release notes:
 
 ```sh
-scripts/release/publish.sh notes.md
+gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
 ```
 
-It builds both platforms, checks the macOS zip, releases both builds to `latest`, then points the
+Without notes it only builds, which is how to try a build before releasing it. From a Mac, a clean
+checkout of `main` as pushed does the same with `scripts/release/publish.sh notes.md`.
+
+Both build macOS and Linux, check the macOS zip, release both builds to `latest`, then point the
 `onicode` cask in `aislopware/homebrew-tap` at the new macOS release. The cask's version is
 `<version>,<release id>` because the download URL carries the release id. The steps it runs, for
 doing one by hand from the repo root:
@@ -77,7 +87,8 @@ The version must also be newer than the native app's last release, 0.3.0.
 
 ## Mobile
 
-From `apps/mobile`, whose `eas.json` holds the profiles:
+`gh workflow run release.yml --ref main -f mobile=true` makes both store builds on GitHub Actions.
+Locally, from `apps/mobile`, whose `eas.json` holds the profiles:
 
 ```sh
 better-update build --platform ios --profile production

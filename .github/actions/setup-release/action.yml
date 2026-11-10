@@ -1,0 +1,26 @@
+name: Setup release
+description: Install Node.js, pnpm and the better-update CLI, and export ONICODE_VERSION and ONICODE_RELEASE_MESSAGE.
+runs:
+  using: composite
+  steps:
+    # better-update installs the workspace with pnpm in its own staged copy of the repo, so this
+    # sets up plain Node.js and pnpm rather than Vite+.
+    - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+      with:
+        node-version-file: package.json
+
+    - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+
+    - name: Install better-update
+      shell: bash
+      run: |
+        curl -fsSL https://raw.githubusercontent.com/aislopware/better-update/main/install.sh \
+          | BETTER_UPDATE_INSTALL_DIR="$HOME/.local/bin" sh
+        echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+    - name: Resolve version
+      shell: bash
+      run: |
+        version="$(node -p 'require("./apps/desktop/package.json").version')"
+        echo "ONICODE_VERSION=$version" >> "$GITHUB_ENV"
+        echo "ONICODE_RELEASE_MESSAGE=Onicode $version (${GITHUB_SHA::10})" >> "$GITHUB_ENV"

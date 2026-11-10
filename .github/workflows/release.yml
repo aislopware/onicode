@@ -1,0 +1,136 @@
+name: Release
+
+# Builds the desktop app at apps/desktop's version through better-update. With notes, it then
+# releases the builds to the `latest` feeds and points the Homebrew cask at the new macOS release.
+# See docs/operations/release.md; scripts/release/publish.sh is the same release from a Mac.
+#
+#   gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
+#   gh workflow run release.yml --ref main -f mobile=true
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: Release notes in Markdown. Leave empty to build without releasing.
+        type: string
+        default: ""
+      mobile:
+        description: Also make iOS and Android store builds (uploaded to better-update, not submitted).
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  BETTER_UPDATE_URL: https://updates.jmango360.dev
+  BETTER_UPDATE_ROBOT: ${{ secrets.BETTER_UPDATE_ROBOT }}
+  BETTER_UPDATE_DISABLE_UPDATE_NOTIFIER: "1"
+
+jobs:
+  macos:
+    name: Build macOS
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 90
+    outputs:
+      build: ${{ steps.build.outputs.build }}
+      sha256: ${{ steps.verify.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: ./.github/actions/setup-release
+
+      - name: Build
+        id: build
+        run: |
+          ids="$(scripts/release/build.sh macos "$ONICODE_RELEASE_MESSAGE")"
+          echo "build=${ids%%$'\n'*}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the zip as the native Onicode's updater does
+        id: verify
+        env:
+          BUILD: ${{ steps.build.outputs.build }}
+        run: |
+          zip="$RUNNER_TEMP/Onicode.zip"
+          better-update builds download "$BUILD" --output "$zip"
+          scripts/release/verify-macos-zip.sh "$zip" "$ONICODE_VERSION"
+          echo "sha256=$(shasum -a 256 "$zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+  linux:
+    name: Build Linux
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    outputs:
+      builds: ${{ steps.build.outputs.builds }}
+    steps:
+      # The staged install on the host and the container build each hold a full workspace.
+      - name: Free disk space
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ./.github/actions/setup-release
+
+      - name: Build
+        id: build
+        run: |
+          ids="$(scripts/release/build.sh linux "$ONICODE_RELEASE_MESSAGE")"
+          echo "builds=${ids//$'\n'/ }" >> "$GITHUB_OUTPUT"
+
+  mobile:
+    name: Build ${{ matrix.platform }}
+    if: github.ref == 'refs/heads/main' && inputs.mobile
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ios
+            runner: macos-26
+          - platform: android
+            runner: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ./.github/actions/setup-release
+      - name: Build
+        run: scripts/release/build.sh ${{ matrix.platform }} "$ONICODE_RELEASE_MESSAGE"
+
+  release:
+    name: Release to latest
+    needs: [macos, linux]
+    if: github.ref == 'refs/heads/main' && inputs.notes != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: ./.github/actions/setup-release
+
+      - name: Release
+        env:
+          NOTES: ${{ inputs.notes }}
+          MAC_BUILD: ${{ needs.macos.outputs.build }}
+          LINUX_BUILDS: ${{ needs.linux.outputs.builds }}
+        run: |
+          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
+          better-update macos release create "$MAC_BUILD" --channel latest --notes-file "$RUNNER_TEMP/notes.md"
+          read -ra linux_builds <<< "$LINUX_BUILDS"
+          better-update linux release create "${linux_builds[@]}" --channel latest --notes-file "$RUNNER_TEMP/notes.md"
+
+      - name: Point the Homebrew cask at the release
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SHA256: ${{ needs.macos.outputs.sha256 }}
+          GIT_AUTHOR_NAME: github-actions[bot]
+          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: |
+          gh auth setup-git
+          scripts/release/bump-cask.sh "$ONICODE_VERSION" "$SHA256"
