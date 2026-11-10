@@ -53,7 +53,7 @@ import {
 } from "./adapter.ts";
 import { makePiRpcConnection, type PiRpcRecord } from "./rpc.ts";
 import { loadMcpBridge } from "./mcpBridge.testkit.ts";
-import { PI_T3_SERVICE_TIER_COMMAND } from "./mcpExtensionSource.ts";
+import { PI_ONI_SERVICE_TIER_COMMAND } from "./mcpExtensionSource.ts";
 import { turnItemOutputText } from "../../../client-runtime/src/work-log/itemDetail.ts";
 
 const layerTest = Layer.mergeAll(
@@ -241,7 +241,7 @@ const makeFakePi: Effect.Effect<FakePi> = Effect.gen(function* () {
   let serviceTier: string | null = null;
   let promptDisposition = true;
   let currentModel = "default";
-  const serviceTierCommand = `/${PI_T3_SERVICE_TIER_COMMAND}`;
+  const serviceTierCommand = `/${PI_ONI_SERVICE_TIER_COMMAND}`;
 
   const emit = (record: PiRpcRecord, chunkBytes?: number) =>
     Effect.gen(function* () {
@@ -2372,15 +2372,15 @@ describe("PiAdapterV2", () => {
         fake
           .allRequests()
           .flatMap((request) =>
-            String(request["message"]).startsWith(`/${PI_T3_SERVICE_TIER_COMMAND}`)
+            String(request["message"]).startsWith(`/${PI_ONI_SERVICE_TIER_COMMAND}`)
               ? [request["message"]]
               : [],
           ),
         [
-          `/${PI_T3_SERVICE_TIER_COMMAND} priority`,
-          `/${PI_T3_SERVICE_TIER_COMMAND} priority`,
-          `/${PI_T3_SERVICE_TIER_COMMAND} ultrafast`,
-          `/${PI_T3_SERVICE_TIER_COMMAND}`,
+          `/${PI_ONI_SERVICE_TIER_COMMAND} priority`,
+          `/${PI_ONI_SERVICE_TIER_COMMAND} priority`,
+          `/${PI_ONI_SERVICE_TIER_COMMAND} ultrafast`,
+          `/${PI_ONI_SERVICE_TIER_COMMAND}`,
         ],
       );
     }).pipe(Effect.scoped, Effect.provide(layerTest)),

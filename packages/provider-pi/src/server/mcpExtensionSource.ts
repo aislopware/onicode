@@ -1,18 +1,18 @@
 // No Onicode imports inside the string; resolve Pi and typebox from the user's Pi install.
 import { ONICODE_CODE_ORCHESTRATION_INSTRUCTIONS } from "@onicode/provider-core/server/orchestrationInstructions";
 
-export const PI_T3_MCP_EXTENSION_FILENAME = "pi-oni-mcp-extension.ts";
+export const PI_ONI_MCP_EXTENSION_FILENAME = "pi-oni-mcp-extension.ts";
 
 export const ONICODE_MCP_URL_ENV = "ONICODE_MCP_URL";
 export const ONICODE_MCP_BEARER_ENV = "ONICODE_MCP_BEARER_TOKEN";
 export const ONICODE_PI_RUNTIME_MODE_ENV = "ONICODE_PI_RUNTIME_MODE";
 export const ONICODE_PI_MCP_EXTENSION_PATH_ENV = "ONICODE_PI_MCP_EXTENSION_PATH";
-export const PI_T3_SERVICE_TIER_COMMAND = "oni-service-tier";
+export const PI_ONI_SERVICE_TIER_COMMAND = "oni-service-tier";
 
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
 export const PI_FILE_CHANGE_TOOLS = ["edit", "write"] as const;
 
-export const PI_T3_MCP_EXTENSION_SOURCE = `\
+export const PI_ONI_MCP_EXTENSION_SOURCE = `\
 import { stripFrontmatter, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
@@ -23,7 +23,7 @@ const TOKEN_ENV = ${JSON.stringify(ONICODE_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(ONICODE_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(ONICODE_PI_MCP_EXTENSION_PATH_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(ONICODE_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
-const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_T3_SERVICE_TIER_COMMAND)};
+const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_ONI_SERVICE_TIER_COMMAND)};
 const PROTOCOL = "2025-06-18";
 const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
 const FILE_CHANGE_TOOLS = new Set(${JSON.stringify(PI_FILE_CHANGE_TOOLS)});
@@ -392,42 +392,37 @@ export default async function oniMcpExtension(pi: ExtensionAPI) {
   let started: Promise<void> | undefined;
 
   const registerTools = () => {
-    // Preserve public names for saved loadouts and tool selectors. Hidden
-    // canonical names reserve ownership against Pi's configured MCP servers.
-    const prefixes = supportsExposure ? ["mcp__onicode__", "mcp__t3_code__"] : ["mcp__onicode__"];
     readOnlyMcpTools.clear();
     for (const tool of catalog) {
       const name = tool.name;
-      for (const prefix of prefixes) {
-        if (tool.annotations?.readOnlyHint === true) readOnlyMcpTools.add(\`\${prefix}\${name}\`);
-        const exposure = prefix === "mcp__t3_code__" ? "hidden" :
-          deferOptionalTools && !directTools.has(name) ? "deferred" : "direct";
-        pi.registerTool({
-          name: \`\${prefix}\${name}\`,
-          label: name,
-          description: tool.description ?? name,
-          parameters: jsonSchemaToTypebox(tool.inputSchema),
-          ...(supportsExposure ? { outputSchema: mcpOutputSchema(tool) } : {}),
-          ...(supportsExposure ? { exposure } : {}),
-          async execute(_toolCallId, params, signal) {
-            const result = await client.callTool(
-              name,
-              (params ?? {}) as Record<string, unknown>,
-              signal,
-            );
-            const content = mcpModelContent(result);
-            if (isMcpToolError(result) && !content.some((part) => part.type === "text" && part.text.length > 0)) {
-              content.push({ type: "text", text: "MCP tool onicode/" + name + " returned an error" });
-            }
-            return {
-              content,
-              structuredContent: mcpScriptResult(result),
-              details: { server: "onicode", tool: name },
-              ...(isMcpToolError(result) ? { isError: true } : {}),
-            };
-          },
-        });
-      }
+      const toolName = \`mcp__onicode__\${name}\`;
+      if (tool.annotations?.readOnlyHint === true) readOnlyMcpTools.add(toolName);
+      const exposure = deferOptionalTools && !directTools.has(name) ? "deferred" : "direct";
+      pi.registerTool({
+        name: toolName,
+        label: name,
+        description: tool.description ?? name,
+        parameters: jsonSchemaToTypebox(tool.inputSchema),
+        ...(supportsExposure ? { outputSchema: mcpOutputSchema(tool) } : {}),
+        ...(supportsExposure ? { exposure } : {}),
+        async execute(_toolCallId, params, signal) {
+          const result = await client.callTool(
+            name,
+            (params ?? {}) as Record<string, unknown>,
+            signal,
+          );
+          const content = mcpModelContent(result);
+          if (isMcpToolError(result) && !content.some((part) => part.type === "text" && part.text.length > 0)) {
+            content.push({ type: "text", text: "MCP tool onicode/" + name + " returned an error" });
+          }
+          return {
+            content,
+            structuredContent: mcpScriptResult(result),
+            details: { server: "onicode", tool: name },
+            ...(isMcpToolError(result) ? { isError: true } : {}),
+          };
+        },
+      });
     }
   };
 

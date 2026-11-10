@@ -6,7 +6,7 @@ import * as NodeModule from "node:module";
 import * as NodeVM from "node:vm";
 import { assert, describe, it } from "@effect/vitest";
 
-import { PI_T3_MCP_EXTENSION_SOURCE, PI_T3_SERVICE_TIER_COMMAND } from "./mcpExtensionSource.ts";
+import { PI_ONI_MCP_EXTENSION_SOURCE, PI_ONI_SERVICE_TIER_COMMAND } from "./mcpExtensionSource.ts";
 import { loadMcpBridge } from "./mcpBridge.testkit.ts";
 
 type RequestHook = (
@@ -33,7 +33,7 @@ async function loadHooks(
 ) {
   const handlers = new Map<string, unknown>();
   const source = NodeModule.stripTypeScriptTypes(
-    PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
+    PI_ONI_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
       "export default async function",
       "async function",
     ),
@@ -176,26 +176,15 @@ describe("Pi MCP tool exposure", () => {
     const prompt = await start!({ systemPrompt: "Pi system prompt" }, discoveryContext);
     assert.include(prompt?.systemPrompt ?? "", "orchestrator_capabilities");
     assert.equal(bridge.servers.length, 0);
-    assert.equal(bridge.tools.length, 8);
+    assert.equal(bridge.tools.length, 4);
     assert.deepEqual(bridge.getActiveTools(), ["read", "tool_search"]);
     assert.deepEqual(
-      bridge.tools
-        .filter((tool) => tool.exposure !== "hidden")
-        .map((tool) => [tool.name, tool.exposure]),
+      bridge.tools.map((tool) => [tool.name, tool.exposure]),
       [
         ["mcp__onicode__orchestrator_capabilities", "direct"],
         ["mcp__onicode__delegate_task", "direct"],
         ["mcp__onicode__task_status", "direct"],
         ["mcp__onicode__preview_snapshot", "deferred"],
-      ],
-    );
-    assert.deepEqual(
-      bridge.tools.filter((tool) => tool.exposure === "hidden").map((tool) => tool.name),
-      [
-        "mcp__t3_code__orchestrator_capabilities",
-        "mcp__t3_code__delegate_task",
-        "mcp__t3_code__task_status",
-        "mcp__t3_code__preview_snapshot",
       ],
     );
     const result = await bridge.tools
@@ -244,11 +233,9 @@ describe("Pi MCP tool exposure", () => {
         const start = bridge.handlers.get("session_start");
         await start!({ systemPrompt: "Pi system prompt" }, discoveryContext);
       }
-      assert.equal(bridge.tools.filter((tool) => tool.exposure !== "hidden").length, 4);
+      assert.equal(bridge.tools.length, 4);
       assert.isTrue(
-        bridge.tools
-          .filter((tool) => tool.exposure !== "hidden")
-          .every((tool) => tool.exposure === undefined || tool.exposure === "direct"),
+        bridge.tools.every((tool) => tool.exposure === undefined || tool.exposure === "direct"),
       );
       const tool = bridge.tools.find((tool) => tool.name === "mcp__onicode__preview_snapshot");
       assert.isDefined(tool);
@@ -314,20 +301,18 @@ describe("Pi tool discovery permissions", () => {
           },
         },
       };
-      for (const prefix of ["mcp__onicode__", "mcp__t3_code__"]) {
-        assert.isUndefined(
-          await hook({ toolName: prefix + "orchestrator_capabilities", input: {} }, ctx),
-        );
-        assert.equal(
-          (await hook({ toolName: prefix + "delegate_task", input: {} }, ctx))?.block,
-          true,
-        );
-        assert.equal(
-          (await hook({ toolName: prefix + "task_status", input: {} }, ctx))?.block,
-          true,
-        );
-      }
-      assert.equal(confirmations.length, 4);
+      assert.isUndefined(
+        await hook({ toolName: "mcp__onicode__orchestrator_capabilities", input: {} }, ctx),
+      );
+      assert.equal(
+        (await hook({ toolName: "mcp__onicode__delegate_task", input: {} }, ctx))?.block,
+        true,
+      );
+      assert.equal(
+        (await hook({ toolName: "mcp__onicode__task_status", input: {} }, ctx))?.block,
+        true,
+      );
+      assert.equal(confirmations.length, 2);
       bridge.setBridgeSourcePath("/user/extensions/replacement.ts");
       assert.equal(
         (await hook({ toolName: "mcp__onicode__orchestrator_capabilities", input: {} }, ctx))
@@ -338,7 +323,7 @@ describe("Pi tool discovery permissions", () => {
         (await hook({ toolName: "mcp__other__orchestrator_capabilities", input: {} }, ctx))?.block,
         true,
       );
-      assert.equal(confirmations.length, 6);
+      assert.equal(confirmations.length, 4);
     },
   );
 
@@ -359,7 +344,7 @@ describe("Pi tool discovery permissions", () => {
     let toolCall: ToolCallHook | undefined;
     let searchPath = "builtin:tool-search";
     const source = NodeModule.stripTypeScriptTypes(
-      PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
+      PI_ONI_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
         "export default async function",
         "async function",
       ),
@@ -406,7 +391,7 @@ async function loadRequestHook() {
   const handlers = new Map<string, RequestHook>();
   const commands = new Map<string, CommandHandler>();
   const source = NodeModule.stripTypeScriptTypes(
-    PI_T3_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
+    PI_ONI_MCP_EXTENSION_SOURCE.replace(/^import .*;$/gm, "").replace(
       "export default async function",
       "async function",
     ),
@@ -420,7 +405,7 @@ async function loadRequestHook() {
     },
   });
   const hook = handlers.get("before_provider_request");
-  const setServiceTier = commands.get(PI_T3_SERVICE_TIER_COMMAND);
+  const setServiceTier = commands.get(PI_ONI_SERVICE_TIER_COMMAND);
   assert.isDefined(hook);
   assert.isDefined(setServiceTier);
   return Object.assign(hook!, { setServiceTier: setServiceTier! });

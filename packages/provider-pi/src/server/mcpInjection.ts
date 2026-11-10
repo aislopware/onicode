@@ -4,8 +4,8 @@ import * as FileSystem from "effect/FileSystem";
 
 import type { McpProviderSessionConfig } from "@onicode/provider-core/server/mcpSession";
 import {
-  PI_T3_MCP_EXTENSION_FILENAME,
-  PI_T3_MCP_EXTENSION_SOURCE,
+  PI_ONI_MCP_EXTENSION_FILENAME,
+  PI_ONI_MCP_EXTENSION_SOURCE,
   ONICODE_MCP_BEARER_ENV,
   ONICODE_MCP_URL_ENV,
   ONICODE_PI_RUNTIME_MODE_ENV,
@@ -221,7 +221,7 @@ function withoutToolSelectionArgs(args: ReadonlyArray<string>): ReadonlyArray<st
 }
 
 function piOniMcpExtensionDestPath(cacheDir: string): string {
-  return `${cacheDir.replace(/\\/g, "/")}/${PI_T3_MCP_EXTENSION_FILENAME}`;
+  return `${cacheDir.replace(/\\/g, "/")}/${PI_ONI_MCP_EXTENSION_FILENAME}`;
 }
 
 export const materializePiOniMcpExtension = Effect.fn("materializePiOniMcpExtension")(function* (
@@ -231,14 +231,14 @@ export const materializePiOniMcpExtension = Effect.fn("materializePiOniMcpExtens
   yield* fs.makeDirectory(cacheDir, { recursive: true });
   const dest = piOniMcpExtensionDestPath(cacheDir);
   const existing = yield* fs.readFileString(dest).pipe(Effect.orElseSucceed(() => ""));
-  if (existing !== PI_T3_MCP_EXTENSION_SOURCE) {
+  if (existing !== PI_ONI_MCP_EXTENSION_SOURCE) {
     // Concurrent pi launches read this file: stage it in a per-call directory
     // and rename so readers and other writers never see a partial file.
     yield* Effect.scoped(
       Effect.gen(function* () {
         const stagingDir = yield* fs.makeTempDirectoryScoped({ directory: cacheDir });
-        const staging = `${stagingDir.replace(/\\/g, "/")}/${PI_T3_MCP_EXTENSION_FILENAME}`;
-        yield* fs.writeFileString(staging, PI_T3_MCP_EXTENSION_SOURCE);
+        const staging = `${stagingDir.replace(/\\/g, "/")}/${PI_ONI_MCP_EXTENSION_FILENAME}`;
+        yield* fs.writeFileString(staging, PI_ONI_MCP_EXTENSION_SOURCE);
         yield* fs.rename(staging, dest).pipe(Effect.retry({ times: 3 }));
       }),
     );

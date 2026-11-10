@@ -18,7 +18,7 @@ import {
   materializePiOniMcpExtension,
   resolvePiLaunchArgs,
 } from "./mcpInjection.ts";
-import { PI_T3_MCP_EXTENSION_SOURCE } from "./mcpExtensionSource.ts";
+import { PI_ONI_MCP_EXTENSION_SOURCE } from "./mcpExtensionSource.ts";
 
 const threadId = ThreadId.make("thread-pi-oni-mcp");
 
@@ -69,7 +69,10 @@ describe("pi Onicode MCP injection", () => {
     assert.equal(launch.env[ONICODE_MCP_URL_ENV], "http://127.0.0.1:43123/mcp");
     assert.equal(launch.env[ONICODE_MCP_BEARER_ENV], "secret-pi-token");
     assert.equal(launch.env[ONICODE_PI_RUNTIME_MODE_ENV], "approval-required");
-    assert.equal(launch.env[ONICODE_PI_MCP_EXTENSION_PATH_ENV], "/tmp/cache/pi-oni-mcp-extension.ts");
+    assert.equal(
+      launch.env[ONICODE_PI_MCP_EXTENSION_PATH_ENV],
+      "/tmp/cache/pi-oni-mcp-extension.ts",
+    );
 
     const permissionOnly = buildPiRpcLaunch({
       launchArgs: [],
@@ -192,9 +195,9 @@ describe("materializePiOniMcpExtension", () => {
             // partial read means the writer truncated the file mid-write.
             if (text.value.length === 0) {
               anomalies.push("empty: truncated mid-write");
-            } else if (text.value.length !== PI_T3_MCP_EXTENSION_SOURCE.length) {
+            } else if (text.value.length !== PI_ONI_MCP_EXTENSION_SOURCE.length) {
               anomalies.push(
-                `partial: ${text.value.length} of ${PI_T3_MCP_EXTENSION_SOURCE.length} chars`,
+                `partial: ${text.value.length} of ${PI_ONI_MCP_EXTENSION_SOURCE.length} chars`,
               );
             }
           }),
