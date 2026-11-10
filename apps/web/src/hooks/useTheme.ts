@@ -7,7 +7,6 @@ import {
   applyThemePalette,
   CUSTOM_THEMES_STORAGE_KEY,
   invalidateCustomThemes,
-  canonicalThemePreference,
   isKnownThemePreference,
   getThemePreferenceMode,
   getThemePreviewAppearance,
@@ -194,7 +193,7 @@ export function readThemePreference(): Theme {
     });
   }
   if (raw !== null && isKnownThemePreference(raw)) {
-    return canonicalThemePreference(raw);
+    return raw;
   }
   return DEFAULT_THEME_SNAPSHOT.theme;
 }

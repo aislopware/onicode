@@ -38,7 +38,7 @@ vi.mock("~/hooks/useActiveProjectTarget", () => ({
 }));
 vi.mock("~/hooks/useTheme", () => ({
   useRenderedAppearance: () => "light",
-  useTheme: () => ({ theme: "t3-chat", resolvedTheme: "light", appearanceMode: "light" }),
+  useTheme: () => ({ theme: "sakura", resolvedTheme: "light", appearanceMode: "light" }),
 }));
 vi.mock("~/state/session", async (original) => ({
   ...(await original<typeof import("~/state/session")>()),

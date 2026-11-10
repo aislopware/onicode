@@ -56,7 +56,7 @@ Every configured device defaults to dark appearance and the `onicode` palette, s
 `--appearance both` to override the configured appearance; `both` produces 90 PNGs.
 
 Pass `--theme <id>` (repeatable) or `--theme all` to capture the app's other palettes: `onicode`,
-`t3-chat`, `grove`, `ocean`, `ember`, and `iris`. The runner hands the palette to the app as a launch
+`sakura`, `grove`, `ocean`, `ember`, and `iris`. The runner hands the palette to the app as a launch
 argument, the app applies it to both color schemes, and a scene only reports itself ready once the
 requested palette is active — so a capture can never show the previous theme. `--theme all`
 multiplies the run by six; only the native build is shared.

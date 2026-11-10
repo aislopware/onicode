@@ -47,7 +47,7 @@
         // Keep this small boot-time copy in sync with the built-in palettes so
         // the selected theme is visible before the app has mounted.
         const BUILT_IN_THEME_PALETTES = {
-          "t3-chat": {
+          sakura: {
             light: {
               background: "oklch(0.982446 0.010114 325.653)",
               foreground: "oklch(0.325698 0.116116 325.037)",
@@ -128,16 +128,11 @@
           "system",
           "light",
           "dark",
-          "t3-chat",
+          "sakura",
           "grove",
           "ocean",
           "ember",
           "iris",
-          "t3-chat-dark",
-          "oni-grove",
-          "oni-ocean",
-          "oni-ember",
-          "oni-iris",
         ];
         // The runtime decodes the same literal CSS formats into OKLCH. Keep
         // contextual colors out: they cannot be resolved from stored data.
@@ -205,17 +200,7 @@
         try {
           const storedTheme = window.localStorage.getItem("onicode:theme");
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-          const LEGACY_THEME_IDS = {
-            "t3-chat-dark": "t3-chat",
-            "oni-grove": "grove",
-            "oni-ocean": "ocean",
-            "oni-ember": "ember",
-            "oni-iris": "iris",
-          };
-          const isLegacyT3ChatDark = storedTheme === "t3-chat-dark";
-          const themeId =
-            storedTheme === null ? "" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);
-          const legacyMode = isLegacyT3ChatDark ? "dark" : null;
+          const themeId = storedTheme ?? "";
           const builtInModes = BUILT_IN_THEME_MODES[themeId] ?? null;
           const customTheme = builtInModes ? null : findCustomTheme(themeId);
           const themeModes =
@@ -238,8 +223,7 @@
             THEME_APPEARANCE_MODE_STORAGE_KEY,
           );
           const storedFollowSystem = window.localStorage.getItem(THEME_FOLLOW_SYSTEM_STORAGE_KEY);
-          const preferenceMode =
-            theme === "light" || theme === "dark" ? theme : (legacyMode ?? baseAppearance);
+          const preferenceMode = theme === "light" || theme === "dark" ? theme : baseAppearance;
           const appearanceMode = isThemePreferenceMode(storedAppearanceMode)
             ? storedAppearanceMode
             : storedFollowSystem === "true"
@@ -261,9 +245,8 @@
             );
             const candidate = isRecord(halvesRaw) ? halvesRaw[wantedMode] : null;
             if (typeof candidate === "string") {
-              const halfId = LEGACY_THEME_IDS[candidate] ?? candidate;
-              const halfBuiltIn = BUILT_IN_THEME_MODES[halfId] ?? null;
-              const halfCustom = halfBuiltIn ? null : findCustomTheme(halfId);
+              const halfBuiltIn = BUILT_IN_THEME_MODES[candidate] ?? null;
+              const halfCustom = halfBuiltIn ? null : findCustomTheme(candidate);
               const halfModes =
                 halfBuiltIn ??
                 (halfCustom
@@ -272,7 +255,7 @@
                     )
                   : null);
               if (halfModes && halfModes.includes(wantedMode)) {
-                halfThemeId = halfId;
+                halfThemeId = candidate;
                 halfCustomTheme = halfCustom;
               }
             }
