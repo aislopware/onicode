@@ -130,3 +130,4 @@ f6a32dbc7f	take	fix(server): stop PR watch flapping while workflows await approv
 e89abadaee	take	fix(server): show idle paragraphs before the assistant turn ends (#28221)
 6c9adfb273	take	fix(mobile): fit usage view selector beside the date range at large text (#33682)
 934c7f8d8e	take	fix(web): center short PR titles in thread details (#33724)
+4c361199f4	take	fix(server): Claude threads can allow an MCP app for the session (#33707)
