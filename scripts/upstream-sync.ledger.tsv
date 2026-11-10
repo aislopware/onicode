@@ -79,3 +79,4 @@ d4111100c0	take	chore(mobile): update gesture handler and keyboard controller (#
 dc72705818	take	fix(source-control): nightly CLI builds again without Cursor Origin's undici import (#33483)
 d7c52f9f86	take	fix(mobile): the thread feed re-wraps once when an iOS column resizes (#33459)
 6b02cbff3a	take	fix(speech): match reference benchmarks to transcription hardware (#31956)
+12f3244e05	take	feat(models): add Claude Fable 5.2 (#33500)
