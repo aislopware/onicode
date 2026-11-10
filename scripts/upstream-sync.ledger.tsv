@@ -119,3 +119,4 @@ b78c04d3e1	skip	T3 mobile EAS PR preview pipeline on Blacksmith (mobile-eas-prev
 5ae957848a	take	fix(desktop): agents see visible:true while the desktop shows their tab (#23589)
 0c832589a0	take	fix(server): allow requested WebMCP writes (#26570)
 e2aa223229	take	fix(antigravity): resolve model names from usage metadata (#33661)
+16a6c1c41f	take	fix(web): show details for background commands (#33647)
