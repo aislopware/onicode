@@ -146,3 +146,4 @@ b37c7f6fa4	take	fix(forgejo): find merged pull requests whose head branch was de
 cec8d73a1f	take	fix(server): a background agent tab survives a desktop window reload (#33666)
 ad91636f0b	take	fix(server): Commit, push & PR no longer pushes the default branch into itself (#33695)
 d47591f613	take	fix(acp): OMP threads show html_render pages (#33677)
+56064fc4f6	take	fix(ssh): Intel Mac hosts no longer try to download a missing onicode archive (#33325)
