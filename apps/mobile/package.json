@@ -136,6 +136,7 @@
         "react-native-keyboard-controller",
         "react-native-screens",
         "react-native-enriched-markdown",
+        "react-native-gesture-handler",
         "react-native-svg",
         "react-native-worklets"
       ]

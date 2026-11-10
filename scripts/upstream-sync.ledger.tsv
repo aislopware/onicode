@@ -75,3 +75,4 @@ b8c2cfad6b	take	fix(web): deleting a thread clears its side chats' drafts (#2983
 33db45effd	take	fix(mobile): keep project and environment pickers reachable with the keyboard up (#33456)
 4bfa2c1c80	take	chore(mobile): update Expo SDK 58 and React Native native modules (#33228)
 5067b8865a	skip	T3 Release Smoke CI job; Onicode has no Release Smoke
+d4111100c0	take	chore(mobile): update gesture handler and keyboard controller (#33229)
