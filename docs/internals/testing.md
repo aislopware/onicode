@@ -41,3 +41,10 @@ Rules for writing tests, and for asking for them in review. AGENTS.md carries th
     expect(onSave).toHaveBeenCalledWith("Title");
   });
   ```
+
+## Device end-to-end tests
+
+- `apps/mobile/e2e/` runs whole flows on a simulator or emulator with [tester-army/e2e](https://github.com/tester-army/e2e): a real server on a throwaway home, Metro, the installed dev client, and the cheapest model of the provider under test. `vp run mobile:install <ios|android>`, then `vp run test:e2e:ios` or `test:e2e:android` from `apps/mobile`. Set `E2E_IOS_DEVICE` or `E2E_ANDROID_DEVICE` when more than one device is booted.
+- Keep this suite to golden paths a user takes across the server, provider, and app. Decoding, error, and edge cases belong in the unit tests of the layer that owns them.
+- Tests use locators and `expect`, not agent steps, so a run needs no model and reads the same every time. `retries` stays 0.
+- `vp run mobile:e2e` (layout poses) and `vp run mobile:behavior` (scroll, frames, and composer state) are separate harnesses on the Simlock pool.

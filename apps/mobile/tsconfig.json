@@ -18,6 +18,8 @@
               "scripts/*.ts",
               "scripts/*.mts",
               "fingerprint.config.js",
+              "e2e.config.ts",
+              "e2e/*.ts",
               "**/*.test.ts",
               "**/*.test.tsx",
               "**/*.test-support.ts"
