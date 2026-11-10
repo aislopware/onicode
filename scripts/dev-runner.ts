@@ -36,7 +36,7 @@ const DEV_PORT_PROBE_HOSTS = ["127.0.0.1", "::1"] as const;
 // Migration prunes after copying, so large sources also need an automatic-seeding limit.
 const LARGE_DEV_DATABASE_BYTES = 500 * 1024 * 1024;
 
-export const DEFAULT_T3_HOME = Effect.map(Effect.service(Path.Path), (path) =>
+export const DEFAULT_ONICODE_HOME = Effect.map(Effect.service(Path.Path), (path) =>
   path.join(NodeOS.homedir(), ".onicode"),
 );
 
@@ -215,7 +215,7 @@ const resolveBaseDir = Effect.fn("dev-runner.resolveBaseDir")(function* (
     return path.resolve(configured);
   }
 
-  return yield* DEFAULT_T3_HOME;
+  return yield* DEFAULT_ONICODE_HOME;
 });
 
 interface CreateDevRunnerEnvInput {
@@ -612,7 +612,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     serverOffset !== offset || webOffset !== offset
       ? ` selectedOffset(server=${serverOffset},web=${webOffset})`
       : "";
-  const baseDir = env.ONICODE_HOME ?? (yield* DEFAULT_T3_HOME);
+  const baseDir = env.ONICODE_HOME ?? (yield* DEFAULT_ONICODE_HOME);
 
   yield* Effect.logInfo(
     `[dev-runner] mode=${input.mode} source=${source}${selectionSuffix} serverPort=${String(env.ONICODE_PORT)}${

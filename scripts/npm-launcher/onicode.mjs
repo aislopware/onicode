@@ -50,7 +50,7 @@ async function download(url, file) {
         shown = step;
         const percent = total ? ` ${step}%` : "";
         process.stderr.write(
-          `\r\x1b[2Kt3: downloading Onicode ${version}${percent} (${(received / 1048576).toFixed(1)} MB)`,
+          `\r\x1b[2Konicode: downloading Onicode ${version}${percent} (${(received / 1048576).toFixed(1)} MB)`,
         );
       }
     }
@@ -64,7 +64,8 @@ async function download(url, file) {
 async function install(dir, key) {
   const archive = `oni-${version}-${key}.${process.platform === "win32" ? "zip" : "tar.gz"}`;
   const base = (
-    process.env.ONICODE_RELEASE_BASE_URL || "https://github.com/aislopware/onicode/releases/download"
+    process.env.ONICODE_RELEASE_BASE_URL ||
+    "https://github.com/aislopware/onicode/releases/download"
   ).replace(/\/+$/, "");
   const sums = await (await get(`${base}/v${version}/SHA256SUMS`)).text();
   const expected = /^([0-9a-f]{64})\s+\*?(.+)$/im;

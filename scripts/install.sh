@@ -215,7 +215,7 @@ mkdir -p "$bin_dir"
 # Replace only this home's own onicode links: into its versions, or the desktop app's launcher.
 # Anything that is not a symlink (a script, a copied binary) belongs to someone else.
 # Exactly <versions>/<version>/onicode ($1 under $2), never another program inside a version.
-version_t3() {
+version_onicode() {
   case "$1" in "$2"/*) ;; *) return 1 ;; esac
   case "${1#"$2"/}" in */*/*) return 1 ;; */onicode) return 0 ;; *) return 1 ;; esac
 }
@@ -233,11 +233,11 @@ if [ -e "${bin_dir}/onicode" ] || [ -L "${bin_dir}/onicode" ]; then
     case "$existing" in
       */./* | */../* | */. | */..) ;;
       *)
-        if version_t3 "$existing" "$versions_dir" || version_t3 "$existing" "$real_versions_dir" ||
+        if version_onicode "$existing" "$versions_dir" || version_onicode "$existing" "$real_versions_dir" ||
           [ "$existing" = "${oni_home}/bin/onicode" ]; then owned=true; fi
         ;;
     esac
-    if [ -n "$existing_dir" ] && version_t3 "${existing_dir}/${existing##*/}" "$real_versions_dir"; then
+    if [ -n "$existing_dir" ] && version_onicode "${existing_dir}/${existing##*/}" "$real_versions_dir"; then
       owned=true
     fi
   fi
@@ -290,10 +290,10 @@ if [ -n "$path_rest" ]; then
 fi
 # A onicode earlier on PATH runs instead; the PATH command adds this folder last.
 # A PATH entry with a trailing slash gives `dir//onicode`.
-first_t3="$(command -v onicode 2>/dev/null | tr -s / || true)"
-case "$first_t3" in "" | "${bin_dir}/onicode") first_t3= ;; esac
-if [ -n "$first_t3" ]; then
-  printf '  Another onicode at %s runs first, so run %s%s/onicode%s to use this one.\n\n' "$first_t3" "$bold" "$bin_dir" "$reset"
+first_onicode="$(command -v onicode 2>/dev/null | tr -s / || true)"
+case "$first_onicode" in "" | "${bin_dir}/onicode") first_onicode= ;; esac
+if [ -n "$first_onicode" ]; then
+  printf '  Another onicode at %s runs first, so run %s%s/onicode%s to use this one.\n\n' "$first_onicode" "$bold" "$bin_dir" "$reset"
 else
   case ":${PATH}:" in
     *":${bin_dir}:"* | *":${bin_dir}/:"*) printf '  Run %sonicode%s to use Onicode here, or %sonicode up%s to use it from your other devices.\n\n' "$bold" "$reset" "$bold" "$reset" ;;
