@@ -1248,7 +1248,7 @@ const program = Effect.gen(function* () {
                 sources: [
                   { type: "url", url: "https://github.com/aislopware/onicode" },
                   { type: "url", url: "https://github.com/aislopware/onicode" },
-                  { type: "url", url: "https://github.com/aislopware/onicode" },
+                  { type: "url", url: "https://github.com/aislopware" },
                 ],
               },
               id: "grok-web-search",

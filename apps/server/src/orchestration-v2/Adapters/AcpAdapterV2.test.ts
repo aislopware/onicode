@@ -3656,7 +3656,7 @@ describe("AcpAdapterV2", () => {
         patterns: ["onicode code"],
         results: [
           { url: "https://github.com/aislopware/onicode" },
-          { url: "https://github.com/aislopware/onicode" },
+          { url: "https://github.com/aislopware" },
         ],
       });
       assert.deepEqual(webItem("grok-web-fetch", "completed")?.results, [
