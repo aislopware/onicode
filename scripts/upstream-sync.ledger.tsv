@@ -186,3 +186,4 @@ e509db3a2f	take	fix(web): Tab reaches the add-project and new-project submit but
 151d5f817c	take	fix(opencode): show questions asked while OpenCode wakes a session on its own (#32434)
 e5b0718a8a	take	fix(server): blank .gitignore lines no longer make checkpoints drop new files (#32374)
 8ee7183e6c	skip	test(web): minimap next-turn test no longer flakes after a resize (#33964) — already fixed by a09864a7cf, which releases the opening end anchor the same way
+0e2841d5a7	take	feat(opencode): mirror native goals across clients (#33758)
