@@ -53,3 +53,4 @@ c1463af205	take	perf(web): changing file counts no longer re-render the chat vie
 a0056dddb1	take	perf(web): switching threads no longer re-renders every sidebar row (#29150)
 a3cd0aa823	take	fix(web): deleting an archived thread also clears its draft, staged uploads and terminal state (#29164)
 dca297cd1a	take	perf(web): Appearance settings no longer re-probe fonts on every open (#29171)
+220a7439b6	take	fix(desktop): discover browser profiles in XDG config home (#29243)
