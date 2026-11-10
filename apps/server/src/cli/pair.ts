@@ -169,7 +169,7 @@ const formatPairOutput = (input: {
   [
     `Pairing with ${input.serverLabel} (${input.origin}).`,
     "",
-    renderTerminalQrCode(input.pairingUrl),
+    renderTerminalQrCode(buildPairingAppLink(input.pairingUrl)),
     "",
     `Pairing URL: ${input.pairingUrl}`,
     `App link: ${buildPairingAppLink(input.pairingUrl)}`,

@@ -38,8 +38,8 @@ export function ConnectionsNewRouteScreen({
   route,
 }: StaticScreenProps<ConnectionsNewRouteParams | undefined>) {
   const params = route.params ?? {};
-  // Dev-only prefill prevents production links from supplying an attacker-chosen host and token.
-  const routePairingUrl = __DEV__ ? (params.pairingUrl?.trim() ?? "") : "";
+  // A link only fills the form; the user still confirms the address before it pairs.
+  const routePairingUrl = params.pairingUrl?.trim() ?? "";
   // A new prefill link replaces whatever the form held.
   return (
     <PairingForm
@@ -117,35 +117,7 @@ function PairingForm({
     );
   };
 
-  const handleQrScan = ({ data }: { readonly data: string }) => {
-    if (scannerLocked) {
-      return;
-    }
-
-    setScannerLocked(true);
-
-    try {
-      const pairingUrl = extractPairingUrlFromQrPayload(data);
-      const { host, code } = parsePairingUrl(pairingUrl);
-      setHostInput(host);
-      setCodeInput(code);
-      onChangeConnectionPairingUrl(pairingUrl);
-      setScanComplete(true);
-      setScannerLocked(false);
-    } catch (error) {
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Dialog.alert(
-        "Invalid QR code",
-        error instanceof Error ? error.message : "Scanned QR code was not recognized.",
-      );
-      setTimeout(() => {
-        setScannerLocked(false);
-      }, 600);
-    }
-  };
-
-  const handleSubmit = async () => {
-    const pairingUrl = buildPairingUrl(hostInput, codeInput);
+  const connect = async (pairingUrl: string) => {
     setOwnAttempt(true);
     setSubmitError(null);
     setIsSubmitting(true);
@@ -169,6 +141,34 @@ function PairingForm({
     }
   };
 
+  const handleQrScan = ({ data }: { readonly data: string }) => {
+    if (scannerLocked) {
+      return;
+    }
+
+    setScannerLocked(true);
+
+    try {
+      const pairingUrl = extractPairingUrlFromQrPayload(data);
+      const { host, code } = parsePairingUrl(pairingUrl);
+      setHostInput(host);
+      setCodeInput(code);
+      onChangeConnectionPairingUrl(pairingUrl);
+      setScanComplete(true);
+      setScannerLocked(false);
+      if (code) void connect(pairingUrl);
+    } catch (error) {
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Dialog.alert(
+        "Invalid QR code",
+        error instanceof Error ? error.message : "Scanned QR code was not recognized.",
+      );
+      setTimeout(() => {
+        setScannerLocked(false);
+      }, 600);
+    }
+  };
+
   return (
     <SettingsScreen
       title="Add environment"
@@ -180,7 +180,7 @@ function PairingForm({
           tintColor: headerIconColor,
           disabled: connectDisabled,
           onPress: () => {
-            void handleSubmit();
+            void connect(buildPairingUrl(hostInput, codeInput));
           },
         },
       ]}
@@ -230,7 +230,7 @@ function PairingForm({
                 value={codeInput}
                 onChangeText={handleCodeChange}
                 onSubmitEditing={() => {
-                  if (!connectDisabled) void handleSubmit();
+                  if (!connectDisabled) void connect(buildPairingUrl(hostInput, codeInput));
                 }}
               />
             </View>

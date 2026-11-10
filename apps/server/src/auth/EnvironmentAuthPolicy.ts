@@ -40,6 +40,8 @@ export const make = Effect.gen(function* () {
   const descriptor: ServerAuthDescriptor = {
     policy,
     bootstrapMethods,
+    sessionMethods: ["bearer-access-token"],
+    sessionCookieName: "onicode_session",
     serverUpdateScope: AuthEnvironmentMaintainScope,
   };
 

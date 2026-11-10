@@ -9,6 +9,7 @@ const { Children, harness } = vi.hoisted(() => ({
     // The app-wide error slot other features (composer sends, branch refreshes) write to.
     pendingConnectionError: null as string | null,
     connectPress: vi.fn(),
+    scan: null as ((event: { readonly data: string }) => void) | null,
   },
 }));
 
@@ -34,8 +35,11 @@ vi.mock("@react-navigation/native", () => ({
 }));
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => null }));
 vi.mock("expo-camera", () => ({
-  CameraView: () => null,
-  useCameraPermissions: () => [null, vi.fn()],
+  CameraView: (props: { onBarcodeScanned: (event: { readonly data: string }) => void }) => {
+    harness.scan = props.onBarcodeScanned;
+    return null;
+  },
+  useCameraPermissions: () => [{ granted: true }, vi.fn()],
 }));
 vi.mock("expo-haptics", () => ({
   notificationAsync: vi.fn(async () => {}),
@@ -96,4 +100,25 @@ it("does not show another feature's error as a pairing failure", () => {
   act(() => root.unmount());
   // Leaving the form must not wipe an error that belongs to another screen.
   expect(harness.pendingConnectionError).toBe("Could not send the message.");
+});
+
+it("pairs as soon as a pairing QR code is scanned", async () => {
+  (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+  harness.pendingConnectionError = null;
+  harness.connectPress.mockResolvedValue({ ok: false, error: null });
+  const container = document.createElement("div");
+  const root = createRoot(container);
+  act(() => root.render(<ConnectionsNewRouteScreen route={{ params: undefined }} />));
+
+  await act(async () =>
+    harness.scan?.({
+      data: "onicode://pair?pairingUrl=http%3A%2F%2F100.64.0.2%3A3773%2Fpair%23token%3Dabc",
+    }),
+  );
+  expect(harness.connectPress).toHaveBeenCalledWith(
+    "http://100.64.0.2:3773/pair#token=abc",
+    undefined,
+  );
+
+  act(() => root.unmount());
 });

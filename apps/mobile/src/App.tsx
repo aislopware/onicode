@@ -53,6 +53,7 @@ import {
   startDevAutoConnect,
   withoutPairingTarget,
 } from "./features/connection/devAutoConnect";
+import { pairingFormLinkPath } from "./features/connection/pairing";
 import {
   resolvePendingNewTaskPromptLink,
   takeNewTaskPromptLink,
@@ -105,7 +106,7 @@ const linkingConfig = {
 
 function getAppStateFromPath(path: string, options: Parameters<typeof getStateFromPath>[1]) {
   return pipe(
-    getStateFromPath(path, options),
+    getStateFromPath(pairingFormLinkPath(path), options),
     (state) => restoreDraftLinkState(state, path),
     (state) => restoreSettingsLinkState(state, settingsLinkPage()),
     takeThreadPromptLink,

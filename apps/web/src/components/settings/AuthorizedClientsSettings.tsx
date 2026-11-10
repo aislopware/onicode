@@ -1,4 +1,5 @@
 import { AUTH_SCOPE_OPTIONS as PAIRING_SCOPE_OPTIONS } from "@onicode/shared/authScopeOptions";
+import { buildPairingAppLink } from "@onicode/shared/remote";
 import { PlusIcon, QrCodeIcon } from "lucide-react";
 import { type ReactNode, memo, useId, useState } from "react";
 import {
@@ -331,7 +332,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
                 {isRevealValueUrl && isRevealValueQrShareable ? (
                   <div className="flex justify-center rounded-xl border border-border/60 bg-muted/30 p-4">
                     <QRCodeSvg
-                      value={revealValue}
+                      value={buildPairingAppLink(revealValue)}
                       size={132}
                       level="M"
                       marginSize={2}
@@ -434,7 +435,7 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
           {canRenderQrForSelection ? (
             <div className="w-fit shrink-0 self-center rounded-xl bg-white p-3 sm:self-start">
               <QRCodeSvg
-                value={qrPairingUrl}
+                value={buildPairingAppLink(qrPairingUrl)}
                 size={168}
                 level="M"
                 marginSize={1}

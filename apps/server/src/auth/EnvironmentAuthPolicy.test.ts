@@ -3,9 +3,22 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 import * as ServerConfig from "../config.ts";
 import * as EnvironmentAuthPolicy from "./EnvironmentAuthPolicy.ts";
+
+// The descriptor as clients before 0.5.0 decode it; phones on an older build still pair with new desktops.
+const decodePre050Descriptor = Schema.decodeUnknownSync(
+  Schema.Struct({
+    policy: Schema.Literals(["desktop-managed-local", "loopback-browser", "remote-reachable"]),
+    bootstrapMethods: Schema.Array(Schema.Literals(["desktop-bootstrap", "one-time-token"])),
+    sessionMethods: Schema.Array(
+      Schema.Literals(["browser-session-cookie", "bearer-access-token"]),
+    ),
+    sessionCookieName: Schema.NonEmptyString,
+  }),
+);
 
 const layerEnvironmentAuthPolicy = (overrides?: Partial<ServerConfig.ServerConfig["Service"]>) =>
   EnvironmentAuthPolicy.layer.pipe(
@@ -35,6 +48,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
 
         expect(descriptor.policy).toBe("remote-reachable");
         expect(descriptor.bootstrapMethods).toEqual(["desktop-bootstrap", "one-time-token"]);
+        expect(() => decodePre050Descriptor(descriptor)).not.toThrow();
       }).pipe(
         Effect.provide(
           layerEnvironmentAuthPolicy({
