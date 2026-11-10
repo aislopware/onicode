@@ -88,3 +88,4 @@ d0f7a509cc	take	feat(models): the model picker checks for new models when it ope
 167631328a	take	chore(mobile): update react-native-pdf-jsi to 6.1.0 and link it on Android only (#33504)
 2da1b7431d	take	fix(mobile): the unfolded Duo sidebar no longer pops back in while resizing Files (#33510)
 eb6e7fa2f6	take	fix(models): new models also surface the CLI update that supports them (#33515)
+6e4711d376	take	fix(web): clicked workspace areas no longer show the focus ring after a stray key (#33525)
