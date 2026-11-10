@@ -142,3 +142,4 @@ eff45664fa	take	fix(opencode): long command turns no longer fail when the comman
 8d54c8b1a7	take	fix(server): a steer that restarts a completion wake no longer strands later subagent results (#33469)
 5dcf69ebfa	take	fix(server): provider status checks no longer make mise download missing CLIs (#33448)
 b37c7f6fa4	take	fix(forgejo): find merged pull requests whose head branch was deleted (#33675)
+65ffcbf647	take	perf(shared): speed up escaped Markdown in long PR descriptions (#33438)
