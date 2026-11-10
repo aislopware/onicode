@@ -170,3 +170,4 @@ f12bb6229c	take	fix(server): a restart that misses its turn starts as a new turn
 0a9abddaee	take	fix(server): dev database seed drops active pull request watches (#32744)
 41443e5706	take	fix(server): capture iOS screenshots on Xcode 26's simctl (#28353)
 ebb0240603	take	fix(mobile): medium Android windows keep the rail's room and the sidebar's place (#33021)
+ac5e48c612	take	fix(web): notify when a new request replaces the pending one in a run (#32719)
