@@ -1,0 +1,18 @@
+name: Cache the pnpm store
+description: Restore and save the pnpm store that better-update's staged install reads from.
+inputs:
+  key:
+    description: Which build the store serves; each installs a different set of packages.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Locate the pnpm store
+      id: store
+      shell: bash
+      run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ steps.store.outputs.path }}
+        key: pnpm-store-${{ inputs.key }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+        restore-keys: pnpm-store-${{ inputs.key }}-${{ runner.os }}-

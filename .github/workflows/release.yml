@@ -7,6 +7,9 @@ name: Release
 #
 #   gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
 #   gh workflow run release.yml --ref main -f mobile=both -f desktop=false
+#
+# iOS builds on the self-hosted runner labelled onicode-ios (a macOS VM that keeps its ccache, pnpm
+# store and CocoaPods cache between runs); -f ios_runner=github falls back to a hosted macOS runner.
 on:
   workflow_dispatch:
     inputs:
@@ -23,6 +26,11 @@ on:
         description: Build macOS and Linux. Releasing needs them.
         type: boolean
         default: true
+      ios_runner:
+        description: Where the iOS store build runs.
+        type: choice
+        options: [self-hosted, github]
+        default: self-hosted
 
 permissions:
   contents: read
@@ -51,6 +59,9 @@ jobs:
         with:
           toolchain: stable
       - uses: ./.github/actions/setup-release
+      - uses: ./.github/actions/pnpm-store-cache
+        with:
+          key: desktop
 
       - name: Build
         id: build
@@ -82,6 +93,9 @@ jobs:
 
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: ./.github/actions/setup-release
+      - uses: ./.github/actions/pnpm-store-cache
+        with:
+          key: desktop
 
       - name: Build
         id: build
@@ -92,7 +106,7 @@ jobs:
   mobile:
     name: Build ${{ matrix.platform }}
     if: github.ref == 'refs/heads/main' && inputs.mobile != 'none'
-    runs-on: ${{ matrix.platform == 'ios' && 'macos-26' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.platform == 'android' && 'ubuntu-24.04' || inputs.ios_runner == 'github' && 'macos-26' || fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -103,10 +117,6 @@ jobs:
       # staged copy rather than every desktop package.
       BETTER_UPDATE_BUILD_DISABLE_EXPO_DOCTOR_STEP: "1"
       BETTER_UPDATE_INSTALL_SCOPE: app
-      # React Native's iOS ccache wrapper swaps in its own config file, which drops the cache_dir
-      # ccache-action configures, so the directory it saves is named here instead.
-      CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 5G
       # ccache checks compilers by content because the NDK installs fresh on every runner.
       CCACHE_NOHASHDIR: "true"
       CCACHE_COMPILERCHECK: content
@@ -116,28 +126,32 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       # better-update stages into a new $TMPDIR/better-update-* each run; ccache strips this base so
-      # paths under it still hit.
-      - name: Pin the staging base
+      # paths under it still hit. React Native's iOS ccache wrapper swaps in its own config file,
+      # so the cache directory and size go in the environment. Hosted runners save the directory
+      # with ccache-action; the self-hosted runner keeps its own outside the cleaned workspace.
+      - name: Pin the staging base and ccache
         run: |
           echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
           echo "CCACHE_BASEDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+          if [[ "$RUNNER_ENVIRONMENT" == github-hosted ]]; then
+            echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
+            echo "CCACHE_MAXSIZE=5G" >> "$GITHUB_ENV"
+          else
+            echo "CCACHE_DIR=$HOME/Library/Caches/onicode-ccache" >> "$GITHUB_ENV"
+            echo "CCACHE_MAXSIZE=30G" >> "$GITHUB_ENV"
+          fi
       - uses: ./.github/actions/setup-release
       # better-update fingerprints the native project with bunx @expo/fingerprint.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
+      - if: runner.environment == 'github-hosted'
+        uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         with:
           key: mobile-${{ matrix.platform }}
           max-size: 5G
-
-      # better-update installs the whole workspace again in its staged copy, from this store.
-      - name: Locate the pnpm store
-        id: pnpm-store
-        run: echo "path=$(pnpm store path)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/pnpm-store-cache
         with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: pnpm-store-${{ runner.os }}-
+          key: mobile
 
       - name: Cache Gradle
         if: matrix.platform == 'android'
@@ -156,7 +170,7 @@ jobs:
           printf '%s\n' org.gradle.caching=true org.gradle.parallel=true >> ~/.gradle/gradle.properties
 
       - name: Cache CocoaPods
-        if: matrix.platform == 'ios'
+        if: matrix.platform == 'ios' && runner.environment == 'github-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/Library/Caches/CocoaPods
