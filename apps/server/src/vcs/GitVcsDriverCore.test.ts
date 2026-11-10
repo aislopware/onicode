@@ -4331,23 +4331,23 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           const cwd = yield* makeTmpDir();
           yield* initRepoWithCommit(cwd);
           const driver = yield* GitVcsDriver.GitVcsDriver;
-          // A local `onicode` branch is why launches start on the flat `oni-<hex>` temporary branch.
+          // A local `onicode` branch is why launches start on the flat `onicode-<hex>` temporary branch.
           yield* git(cwd, ["branch", parent]);
-          yield* git(cwd, ["checkout", "-b", "oni-abcd1234"]);
-          yield* git(cwd, ["branch", "oni-fix-login"]);
+          yield* git(cwd, ["checkout", "-b", "onicode-abcd1234"]);
+          yield* git(cwd, ["branch", "onicode-fix-login"]);
 
           const renamed = yield* driver.renameBranch({
             cwd,
-            oldBranch: "oni-abcd1234",
+            oldBranch: "onicode-abcd1234",
             newBranch: "onicode/fix-login",
           });
 
-          assert.equal(renamed.branch, "oni-fix-login-1");
-          assert.equal(yield* git(cwd, ["branch", "--show-current"]), "oni-fix-login-1");
+          assert.equal(renamed.branch, "onicode-fix-login-1");
+          assert.equal(yield* git(cwd, ["branch", "--show-current"]), "onicode-fix-login-1");
         }),
     );
 
-    it.effect.each(["oni-fix-login/child", "Onicode-Fix-Login/child", "Onicode-FIX-LOGIN"])(
+    it.effect.each(["onicode-fix-login/child", "Onicode-Fix-Login/child", "Onicode-FIX-LOGIN"])(
       "skips a flattened name blocked by %s",
       (occupied) =>
         Effect.gen(function* () {
@@ -4355,17 +4355,17 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
           yield* initRepoWithCommit(cwd);
           const driver = yield* GitVcsDriver.GitVcsDriver;
           yield* git(cwd, ["branch", "onicode"]);
-          yield* git(cwd, ["checkout", "-b", "oni-abcd1234"]);
+          yield* git(cwd, ["checkout", "-b", "onicode-abcd1234"]);
           yield* git(cwd, ["branch", occupied]);
 
           const renamed = yield* driver.renameBranch({
             cwd,
-            oldBranch: "oni-abcd1234",
+            oldBranch: "onicode-abcd1234",
             newBranch: "onicode/fix-login",
           });
 
-          assert.equal(renamed.branch, "oni-fix-login-1");
-          assert.equal(yield* git(cwd, ["branch", "--show-current"]), "oni-fix-login-1");
+          assert.equal(renamed.branch, "onicode-fix-login-1");
+          assert.equal(yield* git(cwd, ["branch", "--show-current"]), "onicode-fix-login-1");
         }),
     );
 
@@ -5109,7 +5109,9 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         const pathService = yield* Path.Path;
         const cwd = yield* makeTmpDir();
         const { initialBranch } = yield* initRepoWithCommit(cwd);
-        const worktreesDirectory = yield* makeTmpDir("custom-worktrees-");
+        const worktreesDirectory = NodeFS.realpathSync.native(
+          yield* makeTmpDir("custom-worktrees-"),
+        );
         const driver = yield* GitVcsDriver.GitVcsDriver;
         const folders = new Set<string>();
         const branches = [

@@ -595,11 +595,15 @@ it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
       yield* fs.chmod(path.join(bin, name), 0o755);
     }
 
-    let spawned: ChildProcess.StandardCommand | undefined;
+    const spawned: string[] = [];
     const editors = yield* Effect.gen(function* () {
       const launcher = yield* ExternalLauncher.ExternalLauncher;
       const available = yield* launcher.resolveAvailableEditors();
       yield* launcher.launchEditor({ editor: "vscode-insiders", cwd: "/workspace/file.ts" });
+      // The host's /Applications may hold stable VS Code; it must not come from this bundle.
+      yield* launcher
+        .launchEditor({ editor: "vscode", cwd: "/workspace/file.ts" })
+        .pipe(Effect.ignore);
       return available;
     }).pipe(
       Effect.provide(
@@ -607,15 +611,15 @@ it.effect("keeps the macOS VS Code Insiders bundle out of stable VS Code", () =>
           platform: "darwin",
           env: { HOME: home, PATH: path.join(home, "empty") },
           onSpawn: (command) => {
-            spawned = command;
+            spawned.push(command.command);
           },
         }),
       ),
     );
 
-    assert.notInclude(editors, "vscode");
     assert.include(editors, "vscode-insiders");
-    assert.equal(spawned?.command, path.join(bin, "code-insiders"));
+    assert.equal(spawned[0], path.join(bin, "code-insiders"));
+    assert.notInclude(spawned, path.join(bin, "code"));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
