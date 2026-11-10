@@ -219,3 +219,4 @@ d290c1f1b6	take	fix(github): a proxy's 403 with Retry-After is no longer reporte
 d6d1763d41	take	fix(web): sent messages keep the numbers written on list items (#33820)
 1a2a4a5e96	take	fix(server): quitting stops an agent-device daemon left by an earlier server (#33587)
 3cb99ced5b	take	fix(mobile): attaching larger images no longer crashes with a BigInt error (#34087)
+17a6a01d84	take	feat(mobile): pick a voice environment once, then its method (#34073)
