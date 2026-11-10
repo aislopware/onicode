@@ -210,3 +210,4 @@ d256170b34	take	fix: file links with line ranges open at their first line (#3400
 871b00907d	take	fix(pi): a steer Pi has not read yet shows as waiting, not steered (#33982)
 d756fed7aa	take	fix(server): provider switches hand off started cancelled runs (#34016)
 f86e21f7cc	take	fix(web,mobile): replace sparkles icons and ban them with a lint rule (#25422)
+d290c1f1b6	take	fix(github): a proxy's 403 with Retry-After is no longer reported as a rate limit (#33676)
