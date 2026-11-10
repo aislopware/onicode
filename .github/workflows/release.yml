@@ -103,6 +103,10 @@ jobs:
       # staged copy rather than every desktop package.
       BETTER_UPDATE_BUILD_DISABLE_EXPO_DOCTOR_STEP: "1"
       BETTER_UPDATE_INSTALL_SCOPE: app
+      # React Native's iOS ccache wrapper swaps in its own config file, which drops the cache_dir
+      # ccache-action configures, so the directory it saves is named here instead.
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 2G
       # ccache checks compilers by content because the NDK installs fresh on every runner.
       CCACHE_NOHASHDIR: "true"
       CCACHE_COMPILERCHECK: content
