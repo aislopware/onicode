@@ -161,9 +161,9 @@ it.layer(NodeServices.layer)("service state persistence", (it) => {
             "ONICODE_HOME=/bad",
             "onicode_home=/bad",
             "ONICODE_BOOT_SERVICE_UNIT=bad",
-            "oni_boot_service_unit=bad",
+            "onicode_boot_service_unit=bad",
             "ONICODE_SERVICE_LAUNCHER_CONTEXT=bad",
-            "oni_service_launcher_context=bad",
+            "onicode_service_launcher_context=bad",
           ].join("\n"),
         );
         assert.deepEqual(yield* Effect.promise(() => readServiceEnvironment(root, inherited)), {
