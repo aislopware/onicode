@@ -212,3 +212,4 @@ d756fed7aa	take	fix(server): provider switches hand off started cancelled runs (
 f86e21f7cc	take	fix(web,mobile): replace sparkles icons and ban them with a lint rule (#25422)
 d290c1f1b6	take	fix(github): a proxy's 403 with Retry-After is no longer reported as a rate limit (#33676)
 9cd7a04797	take	fix(web): sending from an empty citation comment clears the composer (#33440)
+78201b07d0	take	fix(server): text generation fallback respects project provider settings (#33741)
