@@ -480,17 +480,14 @@ if ! oni_runtime_ready; then
   trap 'rm -rf "$ONICODE_LOCK"' EXIT
 fi
 if ! oni_runtime_ready; then
-  case "$(uname -s)" in
-    Darwin) ONICODE_PLATFORM="darwin" ;;
-    Linux) ONICODE_PLATFORM="linux" ;;
-    *) printf 'Remote host %s has no onicode release archive.\\n' "$(uname -s)" >&2; exit 1 ;;
+  # Keep aligned with CLI_ARCHIVE_PLATFORM_KEYS in packages/shared/src/cliRelease.ts.
+  case "$(uname -s) $(uname -m)" in
+    "Darwin arm64") ONICODE_PLATFORM_KEY="darwin-arm64" ;;
+    "Linux arm64" | "Linux aarch64") ONICODE_PLATFORM_KEY="linux-arm64" ;;
+    "Linux x86_64" | "Linux amd64") ONICODE_PLATFORM_KEY="linux-x64" ;;
+    *) printf 'Remote host %s has no onicode release archive.\\n' "$(uname -s) $(uname -m)" >&2; exit 1 ;;
   esac
-  case "$(uname -m)" in
-    arm64 | aarch64) ONICODE_ARCH="arm64" ;;
-    x86_64 | amd64) ONICODE_ARCH="x64" ;;
-    *) printf 'Remote host %s has no onicode release archive.\\n' "$(uname -m)" >&2; exit 1 ;;
-  esac
-  ONICODE_ARCHIVE="oni-$ONICODE_ARCHIVE_VERSION-$ONICODE_PLATFORM-$ONICODE_ARCH.tar.gz"
+  ONICODE_ARCHIVE="oni-$ONICODE_ARCHIVE_VERSION-$ONICODE_PLATFORM_KEY.tar.gz"
   ONICODE_STAGING="$(mktemp -d "$HOME/.onicode/runtime/versions/.staging-XXXXXX")"
   trap 'rm -rf "$ONICODE_STAGING" "$ONICODE_LOCK"' EXIT
   oni_fetch() {
