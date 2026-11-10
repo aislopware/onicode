@@ -58,3 +58,4 @@ e26decde28	take	fix(desktop): annotating inside a page's dialog no longer closes
 a72481fb4c	take	fix(desktop): preserve concurrent downloads with the same name (#29308)
 ceed427d79	take	fix(web): removing a queued message's attachment counts as an edit when its run starts (#29601)
 e74b410e29	take	fix(web): keybinding settings recognize the previewOpen condition (#29642)
+75200f45c6	take	fix(web): thread navigation shortcuts honor previewFocus and previewOpen conditions (#29678)
