@@ -173,3 +173,4 @@ ebb0240603	take	fix(mobile): medium Android windows keep the rail's room and the
 ac5e48c612	take	fix(web): notify when a new request replaces the pending one in a run (#32719)
 80e1e4d14d	take	fix(server): Codex first-request usage limits keep their reset time (#27791)
 57d5e98272	take	fix(web): minimap next turn is disabled at the bottom of a thread (#33038)
+d313b2aff3	take	fix(cursor): a steer keeps the prompt it interrupted (#32583)
