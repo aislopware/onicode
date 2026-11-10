@@ -135,7 +135,9 @@
       "exclude": [
         "react-native-keyboard-controller",
         "react-native-screens",
-        "react-native-enriched-markdown"
+        "react-native-enriched-markdown",
+        "react-native-svg",
+        "react-native-worklets"
       ]
     },
     "autolinking": {
