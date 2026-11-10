@@ -33,7 +33,9 @@
   "submit": {
     "production": {
       "ios": {
-        "ascApiKeyId": "64547ded-03b1-43a8-8405-22f7cfab816c"
+        "ascApiKeyId": "64547ded-03b1-43a8-8405-22f7cfab816c",
+        "ascAppId": "6832999338",
+        "bundleIdentifier": "dev.aislopware.onicode"
       },
       "android": {
         "track": "internal"
