@@ -1,7 +1,8 @@
 name: Release
 
 # Builds the desktop app at apps/desktop's version through better-update. With notes, it then
-# releases the builds to the `latest` feeds and points the Homebrew cask at the new macOS release.
+# releases the builds to the `latest` feeds, publishes the GitHub release v<version> with them, and
+# points the Homebrew cask at the new macOS release.
 # See docs/operations/release.md; scripts/release/publish.sh is the same release from a Mac.
 #
 #   gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
@@ -107,7 +108,9 @@ jobs:
     needs: [macos, linux]
     if: github.ref == 'refs/heads/main' && inputs.notes != ''
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: ./.github/actions/setup-release
@@ -122,6 +125,15 @@ jobs:
           better-update macos release create "$MAC_BUILD" --channel latest --notes-file "$RUNNER_TEMP/notes.md"
           read -ra linux_builds <<< "$LINUX_BUILDS"
           better-update linux release create "${linux_builds[@]}" --channel latest --notes-file "$RUNNER_TEMP/notes.md"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAC_BUILD: ${{ needs.macos.outputs.build }}
+          LINUX_BUILDS: ${{ needs.linux.outputs.builds }}
+        run: |
+          read -ra linux_builds <<< "$LINUX_BUILDS"
+          scripts/release/github-release.sh "$ONICODE_VERSION" "$RUNNER_TEMP/notes.md" "$MAC_BUILD" "${linux_builds[@]}"
 
       - name: Point the Homebrew cask at the release
         env:

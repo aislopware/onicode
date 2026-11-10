@@ -21,7 +21,8 @@ Both are also in Bitwarden, as `onicode GitHub Actions - <secret name>`.
 
 To release from a Mac instead, on that Mac:
 
-- `better-update login`, and SSH push access to `aislopware/homebrew-tap`. The vault holds team `UK58J62H8L`'s Developer ID Application
+- `better-update login`, `gh` logged in with write access to `aislopware/onicode`, and SSH push
+  access to `aislopware/homebrew-tap`. The vault holds team `UK58J62H8L`'s Developer ID Application
   certificate and App Store Connect key; builds ask for the vault passphrase.
 - Xcode Command Line Tools, Rust stable, and the repo's Node and pnpm.
 - Docker Desktop or OrbStack running, for the Linux build.
@@ -46,8 +47,9 @@ gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
 Without notes it only builds, which is how to try a build before releasing it. From a Mac, a clean
 checkout of `main` as pushed does the same with `scripts/release/publish.sh notes.md`.
 
-Both build macOS and Linux, check the macOS zip, release both builds to `latest`, then point the
-`onicode` cask in `aislopware/homebrew-tap` at the new macOS release. The cask's version is
+Both build macOS and Linux, check the macOS zip, release both builds to `latest`, publish the
+GitHub release `v<version>` at the released commit with the zip, AppImage, deb and their
+`SHA256SUMS` attached (`scripts/release/github-release.sh`), then point the `onicode` cask in `aislopware/homebrew-tap` at the new macOS release. The cask's version is
 `<version>,<release id>` because the download URL carries the release id. The steps it runs, for
 doing one by hand from the repo root:
 
@@ -111,6 +113,7 @@ better-update update publish --channel production --message "<what changed>"
 
 ## CLI
 
-`onicode update` and `install.sh` download the CLI archive from GitHub releases of
-`aislopware/onicode`. Nothing builds those archives at the moment; `scripts/build-cli-archive.ts`
-makes one per platform and architecture.
+`onicode update` and `install.sh` download the CLI archive (`oni-<version>-<platform>-<arch>.tar.gz`,
+listed in `SHA256SUMS`) from the newest GitHub release of `aislopware/onicode`. The release
+workflow does not build those archives yet, so both report that the release has no archive for the
+platform; `scripts/build-cli-archive.ts` makes one per platform and architecture.
