@@ -25,6 +25,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentProps,
@@ -55,6 +56,11 @@ import { toolActivityFaviconUrl } from "@onicode/shared/favicon";
 import { isJavaScriptReplTool } from "@onicode/shared/toolActivity";
 import { highlightedCodeNodes } from "./highlightedCodeNodes";
 import { useMarkdownCodeHighlight } from "./markdownCodeHighlightState";
+import { highlightCommand, type HighlightedLines } from "../../lib/highlights";
+import {
+  commandHighlightLanguage,
+  withVisibleControlCharacters,
+} from "@onicode/client-runtime/work-log/command-label";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { OniWordmark } from "../../components/OniWordmark";
@@ -811,6 +817,31 @@ function ToolCodeText({
   readonly theme: "light" | "dark";
 }) {
   const lines = useMarkdownCodeHighlight({ code, language, theme, enabled: true });
+  return <HighlightedCodeText code={code} lines={lines} />;
+}
+
+function CommandCodeText({
+  command,
+  theme,
+}: {
+  readonly command: string;
+  readonly theme: "light" | "dark";
+}) {
+  const code = withVisibleControlCharacters(command.trim());
+  const lines = useMemo(
+    () => highlightCommand(code, commandHighlightLanguage(code), theme),
+    [code, theme],
+  );
+  return <HighlightedCodeText code={code} lines={lines} />;
+}
+
+function HighlightedCodeText({
+  code,
+  lines,
+}: {
+  readonly code: string;
+  readonly lines: HighlightedLines | null;
+}) {
   const highlighted = lines ? highlightedCodeNodes(lines) : undefined;
   return (
     <Text selectable className="font-mono text-2xs leading-normal text-foreground">
@@ -1167,7 +1198,13 @@ const ThreadWorkLogRow = function ThreadWorkLogRow(
               props.renderReasoning(reasoning.text)
             ) : call ? (
               [
-                call.command,
+                call.command ? (
+                  <CommandCodeText
+                    key="command"
+                    command={call.command}
+                    theme={props.themeAppearance}
+                  />
+                ) : null,
                 ...(call.args ?? []).map(([key, value]) => {
                   const language =
                     key === "html"
