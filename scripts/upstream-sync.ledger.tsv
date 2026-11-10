@@ -158,3 +158,4 @@ ca796d5211	take	fix(mobile): Android Files sheet scrolls its tree instead of dra
 b48b8ea2a0	take	fix(web): prompt suggestions show after a steered turn (#33706)
 0ca73a19f0	take	fix(server): usage prices Claude Mythos 5.2 from its Bedrock rate (#33721)
 bcee0f5d28	take	fix(server): Claude turns whose CLI exits before its first frame fail instead of running forever (#33008)
+fa2f4ff2a2	take	fix(web): panel resize handles follow touch drags (#33066)
