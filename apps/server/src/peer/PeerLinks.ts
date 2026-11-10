@@ -444,7 +444,7 @@ const make = Effect.gen(function* () {
     const descriptor = yield* describe(primary);
     if (Option.isNone(descriptor)) {
       return yield* new PeerLinkError({
-        reason: "not_a_t3_environment",
+        reason: "not_an_onicode_environment",
         message: `Nothing at ${primary} answered as a Onicode environment.`,
       });
     }

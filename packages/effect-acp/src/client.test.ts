@@ -1577,13 +1577,13 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
         sessionUpdate: "agent_message_chunk",
         messageId: "future-content",
         content: {
-          type: "_t3_unknown",
+          type: "_oni_unknown",
           originalType: "chart",
           raw: { type: "chart", points: [] },
         },
       });
       assert.deepEqual(received[1]?.update, {
-        sessionUpdate: "_t3_unknown",
+        sessionUpdate: "_oni_unknown",
         originalSessionUpdate: "timeline_update",
         raw: { sessionUpdate: "timeline_update", entries: [] },
       });
@@ -1633,7 +1633,7 @@ it.layer(NodeServices.layer)("effect-acp client", (it) => {
         Array.from(received, (event) =>
           event._tag === "SessionUpdate" ? event.params.update : undefined,
         ),
-        [notice, { sessionUpdate: "_t3_unknown", originalSessionUpdate: "notice", raw: untitled }],
+        [notice, { sessionUpdate: "_oni_unknown", originalSessionUpdate: "notice", raw: untitled }],
       );
       yield* Scope.close(scope, Exit.void);
     }),

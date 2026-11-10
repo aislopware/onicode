@@ -87,8 +87,8 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       yield* fs.makeDirectory(path.dirname(shim), { recursive: true });
       yield* fs.writeFileString(shim, "#!/bin/sh\n", { mode: 0o755 });
       const desktop = {
-        node: "/tmp/.mount_T3abc/onicode",
-        entry: "/tmp/.mount_T3abc/resources/app.asar/apps/server/dist/bin.mjs",
+        node: "/tmp/.mount_Oniabc/onicode",
+        entry: "/tmp/.mount_Oniabc/resources/app.asar/apps/server/dist/bin.mjs",
         env: { ONICODE_CLI_PATH: shim },
       };
 

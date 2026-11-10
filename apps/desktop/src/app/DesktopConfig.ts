@@ -40,7 +40,7 @@ export const DesktopConfig = Config.all({
   oniHome: trimmedString("ONICODE_HOME"),
   devServerUrl: Config.URL("VITE_DEV_SERVER_URL").pipe(Config.option),
   appUserModelIdOverride: trimmedString("ONICODE_DESKTOP_APP_USER_MODEL_ID"),
-  devRemoteOniServerEntryPath: trimmedString("ONICODE_DEV_REMOTE_T3_SERVER_ENTRY_PATH"),
+  devRemoteOniServerEntryPath: trimmedString("ONICODE_DEV_REMOTE_ONI_SERVER_ENTRY_PATH"),
   configuredBackendPort: Config.Port("ONICODE_PORT").pipe(Config.option),
   commitHashOverride: trimmedString("ONICODE_COMMIT_HASH"),
   desktopLanHostOverride: trimmedString("ONICODE_DESKTOP_LAN_HOST"),

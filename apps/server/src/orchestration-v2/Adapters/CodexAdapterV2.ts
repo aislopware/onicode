@@ -1397,11 +1397,11 @@ export const CODEX_THREAD_CONFIG = {
 } as const;
 
 // Onicode waits can block for an hour; keep Codex's MCP timeout above that.
-const CODEX_T3_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
+const CODEX_ONI_MCP_TOOL_TIMEOUT_SEC = 65 * 60;
 // Holds Onicode tools Codex must call directly, never from Code Mode. Calls arrive as
 // `onicode-direct.<tool>`; oniMcpToolPresentation.ts must keep resolving that form.
-const CODEX_T3_DIRECT_MCP_SERVER = "onicode-direct";
-const CODEX_DIRECT_ONLY_T3_TOOL = "oni_thread_wait";
+const CODEX_ONI_DIRECT_MCP_SERVER = "onicode-direct";
+const CODEX_DIRECT_ONLY_ONI_TOOL = "oni_thread_wait";
 
 function codexThreadRuntimeParams(input: {
   readonly threadId: ThreadId | null;
@@ -1419,7 +1419,7 @@ function codexThreadRuntimeParams(input: {
       ? undefined
       : {
           url: mcpSession.endpoint,
-          tool_timeout_sec: CODEX_T3_MCP_TOOL_TIMEOUT_SEC,
+          tool_timeout_sec: CODEX_ONI_MCP_TOOL_TIMEOUT_SEC,
           http_headers: { Authorization: mcpSession.authorizationHeader },
         };
   return {
@@ -1435,12 +1435,12 @@ function codexThreadRuntimeParams(input: {
         ? {}
         : {
             // Override only Onicode's servers so launch-argument MCP servers survive.
-            "mcp_servers.onicode": { ...oniServer, disabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL] },
+            "mcp_servers.onicode": { ...oniServer, disabled_tools: [CODEX_DIRECT_ONLY_ONI_TOOL] },
             // Code Mode runs a blocking wait as a nested call, and the model keeps working
             // around it. A second, direct-only registration makes it a plain tool call.
-            [`mcp_servers.${CODEX_T3_DIRECT_MCP_SERVER}`]: {
+            [`mcp_servers.${CODEX_ONI_DIRECT_MCP_SERVER}`]: {
               ...oniServer,
-              enabled_tools: [CODEX_DIRECT_ONLY_T3_TOOL],
+              enabled_tools: [CODEX_DIRECT_ONLY_ONI_TOOL],
               omit_tools_from: ["code_mode", "deferred"],
             },
           }),

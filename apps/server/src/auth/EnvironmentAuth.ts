@@ -909,8 +909,6 @@ export const make = Effect.gen(function* () {
 });
 
 const LINK_PAIRED_SUBJECT = "one-time-token";
-/** Clients T3 Connect paired. Connect is gone, so they are revoked on every start. */
-const CLOUD_CONNECT_SUBJECT = "cloud-connect";
 
 /**
  * Revokes sessions and unused links from pairing the policy no longer allows, so a policy rolled
@@ -925,20 +923,17 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
     readonly pairingLinks: PairingGrantStore.PairingGrantStore["Service"];
   },
 ) {
-  const remoteAllowed = ManagedLimits.allowsRemoteClients(policy);
-  const disallowed = new Set<string>([CLOUD_CONNECT_SUBJECT]);
-  if (!remoteAllowed) disallowed.add(LINK_PAIRED_SUBJECT);
+  if (ManagedLimits.allowsRemoteClients(policy)) return;
   const sessions = (yield* stores.sessions.listActive()).filter(
     (session) =>
-      disallowed.has(session.subject) ||
+      session.subject === LINK_PAIRED_SUBJECT ||
       // The startup link also pairs clients on this machine; only a device elsewhere goes.
-      (!remoteAllowed &&
-        session.subject === INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT &&
+      (session.subject === INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT &&
         session.client.ipAddress !== undefined &&
         !isLocalLoopbackHost(session.client.ipAddress)),
   );
-  const links = (yield* stores.pairingLinks.listActive()).filter((link) =>
-    disallowed.has(link.subject),
+  const links = (yield* stores.pairingLinks.listActive()).filter(
+    (link) => link.subject === LINK_PAIRED_SUBJECT,
   );
   yield* Effect.forEach(sessions, (session) => stores.sessions.revoke(session.sessionId), {
     discard: true,

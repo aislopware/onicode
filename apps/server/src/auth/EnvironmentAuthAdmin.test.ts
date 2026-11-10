@@ -101,22 +101,6 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
       }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
 
-    it.effect("revokes leftover T3 Connect clients on startup and keeps remote clients", () =>
-      Effect.gen(function* () {
-        const sessions = yield* SessionStore.SessionStore;
-        const phone = yield* sessions.issue({ subject: "one-time-token" });
-        const connect = yield* sessions.issue({ subject: "cloud-connect" });
-
-        yield* EnvironmentAuth.make.pipe(
-          Effect.provide(Layer.merge(ManagedPolicy.layerTest(), layerServerConfig())),
-        );
-
-        const remaining = (yield* sessions.listActive()).map((session) => session.sessionId);
-        assert.include(remaining, phone.sessionId);
-        assert.notInclude(remaining, connect.sessionId);
-      }).pipe(Effect.provide(layerEnvironmentAuth())),
-    );
-
     it.effect("creates, lists, and revokes client pairing links", () =>
       Effect.gen(function* () {
         const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;

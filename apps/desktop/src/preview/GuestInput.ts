@@ -93,7 +93,7 @@ const evaluate = async (debuggee: Electron.Debugger, expression: string) => {
 };
 
 /** Host focus shared by the presses in flight in one window, so a later press keeps the field an earlier one saved. */
-const HOST_FOCUS = "globalThis.__t3PreviewFocus";
+const HOST_FOCUS = "globalThis.__oniPreviewFocus";
 
 /** A CDP pointer press focuses the guest's native view even with focus emulation enabled. */
 const sendPointerPress = async (

@@ -209,15 +209,15 @@ describe("scoreThreadSearch", () => {
   it("ranks a title holding the words above the app's own branch prefix and project name", () => {
     const busy = { activityAt: NOW, opens: { openedAt: NOW, score: 6, picks: [] } };
     expect(
-      rankTitles("t3 connect", [
+      rankTitles("oni connect", [
         thread("Diagnose Connect provisioning failures", {
           ...busy,
           branch: "onicode/diagnose-connect",
           projectTitle: "onicode",
         }),
-        thread("T3 Connect Tunnel Lifecycle Review", { projectTitle: "onicode" }),
+        thread("Oni Connect Tunnel Lifecycle Review", { projectTitle: "onicode" }),
       ])[0],
-    ).toBe("T3 Connect Tunnel Lifecycle Review");
+    ).toBe("Oni Connect Tunnel Lifecycle Review");
     expect(
       rankTitles("onicode", [
         thread("Fix sidebar lag", { ...busy, projectTitle: "onicode", branch: "onicode/sidebar" }),

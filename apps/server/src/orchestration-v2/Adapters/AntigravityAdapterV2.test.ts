@@ -1092,7 +1092,7 @@ describe("AntigravityAdapterV2 runtime mode ceiling", () => {
         modelSelection: {
           instanceId,
           model: "gemini-test-low",
-          options: [{ id: "_t3/session-mode", value: pickedMode }],
+          options: [{ id: "_oni/session-mode", value: pickedMode }],
         },
         runtimePolicy: ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
           runtimeMode: "approval-required",

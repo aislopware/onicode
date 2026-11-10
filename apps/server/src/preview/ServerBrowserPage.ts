@@ -1039,7 +1039,7 @@ export const recordingEncoderScript = (frameRate: BrowserRecordingFrameRate) => 
       context.restore();
     }
   };
-  window.__t3Recorder = {
+  window.__oniRecorder = {
     async frame(base64, cssWidth) {
       if (tooLarge) return false;
       const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
