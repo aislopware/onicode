@@ -49,3 +49,4 @@ c1463af205	take	perf(web): changing file counts no longer re-render the chat vie
 2b1db482d0	take	fix(web): open citation comments with the caret at the end (#28667)
 0e65e63324	take	fix(desktop): page redirects during loading no longer show a navigation error (#28814)
 50e176dba5	take	fix(web): banner button hover follows the banner's rounded corners (#29018)
+739aba73b7	take	fix(web,mobile): per-thread auto-settle menu says what it does (#29025)
