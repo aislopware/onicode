@@ -151,3 +151,4 @@ a22068f371	take	fix(server): opening the branch menu no longer wipes PR status (
 633438d54f	skip	T3 cloud self-update (apps/server/src/cloud); Onicode removed it and updates through better-update
 e4d86abca9	take	fix(web): remote Lineage rows keep their title when the environment name is long (#33181)
 580503ed30	take	fix(web): custom snooze footer stays inside the dialog (#33759)
+2922e8fb59	take	fix(desktop): right-clicking a mailto link offers Copy Email Address (#33262)
