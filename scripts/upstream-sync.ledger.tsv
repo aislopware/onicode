@@ -183,3 +183,4 @@ e509db3a2f	take	fix(web): Tab reaches the add-project and new-project submit but
 7389423507	take	fix(web): screen readers hear the add-project submit shortcut (#32576)
 047d492736	take	fix(server): Antigravity limits read the quota host the account is metered on (#32425)
 30c11a3c74	take	fix(web): the thread menu works for an older settled thread the sidebar hasn't loaded (#32507)
+151d5f817c	take	fix(opencode): show questions asked while OpenCode wakes a session on its own (#32434)
