@@ -99,6 +99,10 @@ jobs:
       matrix:
         platform: ${{ inputs.mobile == 'both' && fromJSON('["ios", "android"]') || fromJSON(format('["{0}"]', inputs.mobile)) }}
     env:
+      # Skip expo-doctor's advisory checks, and install only the app's workspace closure in the
+      # staged copy rather than every desktop package.
+      BETTER_UPDATE_BUILD_DISABLE_EXPO_DOCTOR_STEP: "1"
+      BETTER_UPDATE_INSTALL_SCOPE: app
       # ccache checks compilers by content because the NDK installs fresh on every runner.
       CCACHE_NOHASHDIR: "true"
       CCACHE_COMPILERCHECK: content
