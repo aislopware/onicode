@@ -320,7 +320,7 @@ patchedDependencies:
   '@ff-labs/fff-node@0.11.0': cc71fcec015f4d39bc96ae2e2bf6b0ca678124c722c66a7841efce9d34b5983c
   '@legendapp/list@3.7.2': 246448703dd58e35ae296ad5de952565fe65445a888b97398d842d7412a42bf0
   '@muse-code/sdk@1.4.14': 6613a36786b1278616ca2c142ad93cd8b30be4311c3ecc192c3cbc9fe3a41f4a
-  '@pierre/diffs@1.7.0-beta.3': 3e7450ff0dc97cbb7c54927d8b0cc4bcab0207b451994dd20af8fbbd47ccc905
+  '@pierre/diffs@1.7.0-beta.3': 1fbb8f0b9e0de411252c448f1911fe80c36748c8c6b46362271399cb7f65a914
   '@react-native-ai/apple@0.12.0': 2d09870c2848d185cb05b53ed823a46e12dba519324d8dd8e584e28731990f9d
   '@react-native-menu/menu@2.0.0': 6872ba71b9847c5a0210b1b896923dadc3860faedfe28d9f062bcedfe786ef1d
   '@react-navigation/native-stack@7.21.0': 990d575444c4af2ce8218b3b7a8280fe244c03abbdb32b822a2e862f791dbf42
@@ -488,7 +488,7 @@ importers:
         version: link:../../packages/shared
       '@pierre/diffs':
         specifier: 1.7.0-beta.3
-        version: 1.7.0-beta.3(patch_hash=3e7450ff0dc97cbb7c54927d8b0cc4bcab0207b451994dd20af8fbbd47ccc905)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 1.7.0-beta.3(patch_hash=1fbb8f0b9e0de411252c448f1911fe80c36748c8c6b46362271399cb7f65a914)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/highlights':
         specifier: 'catalog:'
         version: 0.5.0
@@ -970,7 +970,7 @@ importers:
         version: link:../../packages/shared
       '@pierre/diffs':
         specifier: 1.7.0-beta.3
-        version: 1.7.0-beta.3(patch_hash=3e7450ff0dc97cbb7c54927d8b0cc4bcab0207b451994dd20af8fbbd47ccc905)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 1.7.0-beta.3(patch_hash=1fbb8f0b9e0de411252c448f1911fe80c36748c8c6b46362271399cb7f65a914)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/trees':
         specifier: 1.0.0-beta.6
         version: 1.0.0-beta.6(@pierre/theme@2.0.0)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.2.0)
@@ -1291,7 +1291,7 @@ importers:
         version: link:../source-control-definitions
       '@pierre/diffs':
         specifier: 1.7.0-beta.3
-        version: 1.7.0-beta.3(patch_hash=3e7450ff0dc97cbb7c54927d8b0cc4bcab0207b451994dd20af8fbbd47ccc905)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        version: 1.7.0-beta.3(patch_hash=1fbb8f0b9e0de411252c448f1911fe80c36748c8c6b46362271399cb7f65a914)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       effect:
         specifier: 4.1.2
         version: 4.1.2
@@ -12778,7 +12778,7 @@ snapshots:
       tslib: 2.8.1
       webcrypto-core: 1.9.2
 
-  '@pierre/diffs@1.7.0-beta.3(patch_hash=3e7450ff0dc97cbb7c54927d8b0cc4bcab0207b451994dd20af8fbbd47ccc905)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@pierre/diffs@1.7.0-beta.3(patch_hash=1fbb8f0b9e0de411252c448f1911fe80c36748c8c6b46362271399cb7f65a914)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@pierre/highlights': 0.5.0
       '@pierre/patches': 0.0.1
