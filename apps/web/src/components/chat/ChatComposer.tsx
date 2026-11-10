@@ -187,7 +187,11 @@ import { useThreadContextDrop, threadContextDropTargetProps } from "./threadCont
 import { readThreadShell } from "~/state/entities";
 import { useLinkedEnvironments } from "~/state/peerLinks";
 import { encodeComposerContextFragment } from "@onicode/shared/composerContextClipboard";
-import type { ComposerContextRecord, ThreadPullRequestLink } from "@onicode/contracts";
+import type {
+  ComposerContextRecord,
+  OrchestrationV2Run,
+  ThreadPullRequestLink,
+} from "@onicode/contracts";
 import { threadContextAttachment } from "~/lib/threadContextAttachment";
 import {
   type ComposerCommandItem,
@@ -352,6 +356,7 @@ export interface ChatComposerProps {
 
   activeThreadId: ThreadId | null;
   activeThread: Thread | undefined;
+  activeThreadRuns: ReadonlyArray<OrchestrationV2Run>;
   promptHistoryEntries: ReadonlyArray<TimelineEntry>;
   forceExpandedOnMobile: boolean;
   projectSelectionRequired: boolean;
@@ -498,6 +503,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     onMultipleModelSelectionsChange: setMultipleModelSelections,
     activeThreadId,
     activeThread,
+    activeThreadRuns,
     promptHistoryEntries,
     forceExpandedOnMobile,
     projectSelectionRequired,
@@ -2222,6 +2228,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const { suggestion: promptSuggestion, dismiss: dismissPromptSuggestion } = usePromptSuggestion(
     environmentId,
     activeThread,
+    activeThreadRuns,
   );
   // After /clear the next message starts a fresh session that cannot see what the suggestion refers to.
   const freshSessionArmed = useFreshSessionArmed(scopedThreadKey(routeThreadRef));

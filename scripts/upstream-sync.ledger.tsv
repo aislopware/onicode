@@ -155,3 +155,4 @@ e4d86abca9	take	fix(web): remote Lineage rows keep their title when the environm
 7171fdd771	take	fix(acp-registry): commands past the 128th are no longer dropped (#33768)
 f8fbc199ae	take	fix(server): one finished turn looks up its branch's pull request once (#33752)
 ca796d5211	take	fix(mobile): Android Files sheet scrolls its tree instead of dragging the sheet (#33223)
+b48b8ea2a0	take	fix(web): prompt suggestions show after a steered turn (#33706)
