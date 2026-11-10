@@ -131,3 +131,4 @@ e89abadaee	take	fix(server): show idle paragraphs before the assistant turn ends
 6c9adfb273	take	fix(mobile): fit usage view selector beside the date range at large text (#33682)
 934c7f8d8e	take	fix(web): center short PR titles in thread details (#33724)
 4c361199f4	take	fix(server): Claude threads can allow an MCP app for the session (#33707)
+25da7ebca6	take	fix(web): reclaim notice says the machine will be offline (#33730)
