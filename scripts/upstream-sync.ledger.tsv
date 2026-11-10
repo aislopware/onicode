@@ -188,3 +188,4 @@ e5b0718a8a	take	fix(server): blank .gitignore lines no longer make checkpoints d
 8ee7183e6c	skip	test(web): minimap next-turn test no longer flakes after a resize (#33964) — already fixed by a09864a7cf, which releases the opening end anchor the same way
 0e2841d5a7	take	feat(opencode): mirror native goals across clients (#33758)
 cfb7cae2b9	take	feat(web): bindable shortcut to regenerate a thread's title (#33987)
+3cdc504cc9	take	fix(server): linked projects keep their repository identity while it refreshes (#32359)
