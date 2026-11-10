@@ -93,7 +93,8 @@ The version must also be newer than the native app's last release, 0.3.0.
 
 ## Mobile
 
-`gh workflow run release.yml --ref main -f mobile=true` makes both store builds on GitHub Actions.
+`gh workflow run release.yml --ref main -f mobile=true -f desktop=false` makes both store builds on
+GitHub Actions; add `mobile=true` to a desktop release to build them alongside it.
 Locally, from `apps/mobile`, whose `eas.json` holds the profiles:
 
 ```sh
