@@ -223,3 +223,4 @@ d6d1763d41	take	fix(web): sent messages keep the numbers written on list items (
 d91915db9e	take	fix(server): a t3 thread send to a finished delegated child notifies its parent (#33446)
 43915a4064	take	fix(web): question panel header text sits centered in its row (#34095)
 ae142932d0	skip	Scenario tooling: web scenarios drive the removed browser web client; iOS scenarios duplicate apps/mobile/e2e (tester-army). Its agent-device 0.21.36 / expo-device-hub 0.22.1 bump is left for a separate change.
+9e1f81c788	skip	Extends Claude banked resets, which Onicode removed (4c47939f9d: Claude is read only through the Agent SDK); the creditId/options plumbing only serves that.
