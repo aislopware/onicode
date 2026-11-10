@@ -120,3 +120,6 @@ b78c04d3e1	skip	T3 mobile EAS PR preview pipeline on Blacksmith (mobile-eas-prev
 0c832589a0	take	fix(server): allow requested WebMCP writes (#26570)
 e2aa223229	take	fix(antigravity): resolve model names from usage metadata (#33661)
 16a6c1c41f	take	fix(web): show details for background commands (#33647)
+f7281124ba	skip	T3 mobile store-build workflow (mobile-eas-production.yml); Onicode has no store/EAS workflows
+8226715813	skip	"Use T3 Code in another app" outside-app MCP wizard (declined by the maintainer); its ElectronShell grokbot:// allowance only serves that wizard
+73fb49d0b3	skip	T3 Android store AAB artifact in mobile-eas-production.yml; Onicode has no store/EAS workflows
