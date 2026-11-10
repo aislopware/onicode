@@ -46,3 +46,4 @@ c5b869f29e	take	fix(desktop): chat videos go fullscreen across the whole screen 
 062b33275d	take	fix(desktop): recording cursor stays above modal dialogs and popovers (#27046)
 c1463af205	take	perf(web): changing file counts no longer re-render the chat view (#28571)
 9c7750dc16	take	fix(desktop): a window saved 1px past a display edge reopens where it was (#28638)
+2b1db482d0	take	fix(web): open citation comments with the caret at the end (#28667)
