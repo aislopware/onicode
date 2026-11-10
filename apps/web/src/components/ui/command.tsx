@@ -72,9 +72,10 @@ function CommandDialogPopup({
           // The first tabbable can be an input addon, such as a submenu's Back button.
           initialFocus={() => popupRef.current?.querySelector("input") ?? true}
           ref={popupRef}
+          // No fade: half-faded glass only half-blurs, so the text behind shows through the rows.
           className={cn(
             DIALOG_POPUP_CLASS,
-            "pointer-events-auto max-h-105 max-w-xl text-foreground",
+            "pointer-events-auto max-h-105 max-w-xl text-foreground transition-none",
             className,
           )}
           data-slot="command-dialog-popup"

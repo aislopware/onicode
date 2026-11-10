@@ -14,7 +14,7 @@ import {
 import { primaryServerKeybindingsAtom } from "../../state/server";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
-import { OniWordmark } from "../OniWordmark";
+import { animateOniIdle, OniWordmark } from "../OniWordmark";
 import { APP_STAGE_LABEL } from "../../branding";
 import { resolveSidebarStageBackdropVariant, SidebarStageBackdrop } from "../SidebarStageBackdrop";
 import { Badge } from "../ui/badge";
@@ -146,6 +146,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
         "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
         onBackdrop ? "text-white" : "text-foreground",
       )}
+      ref={animateOniIdle}
       to="/"
     >
       <SidebarBrandMark onBackdrop={onBackdrop} />

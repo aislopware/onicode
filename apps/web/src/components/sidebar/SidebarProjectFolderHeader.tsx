@@ -38,6 +38,8 @@ export function sidebarFolderRowId(projectKey: string) {
 export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHeader(props: {
   group: SidebarProjectSnapshot;
   collapsed: boolean;
+  /** A closed folder still lists the open thread; its chevron stays open so the row isn't misread. */
+  keepsOpenThread: boolean;
   hiddenThreads: readonly EnvironmentThreadShell[];
   onToggle: (group: SidebarProjectSnapshot) => void;
   onNewThread: (group: SidebarProjectSnapshot) => void;
@@ -93,7 +95,7 @@ export const SidebarProjectFolderHeader = memo(function SidebarProjectFolderHead
           aria-hidden
           className={cn(
             "size-3 shrink-0 text-sidebar-muted-foreground transition-transform",
-            collapsed && "-rotate-90",
+            collapsed && !props.keepsOpenThread && "-rotate-90",
           )}
         />
       </button>
