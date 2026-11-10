@@ -50,3 +50,4 @@ c1463af205	take	perf(web): changing file counts no longer re-render the chat vie
 0e65e63324	take	fix(desktop): page redirects during loading no longer show a navigation error (#28814)
 50e176dba5	take	fix(web): banner button hover follows the banner's rounded corners (#29018)
 739aba73b7	take	fix(web,mobile): per-thread auto-settle menu says what it does (#29025)
+a0056dddb1	take	perf(web): switching threads no longer re-renders every sidebar row (#29150)
