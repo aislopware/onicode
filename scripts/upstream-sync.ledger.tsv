@@ -63,3 +63,4 @@ e74b410e29	take	fix(web): keybinding settings recognize the previewOpen conditio
 2dc07510e2	take	perf(web): long reasoning previews format in linear time (600 ms → 1.3 ms median) (#30038)
 8913a4a254	take	fix(web): keep typed unpublished variable rows across settings re-deliveries (#30115)
 915676ee6a	take	fix(web): deleting the open thread no longer opens a side chat or subagent (#30370)
+daa6984fd6	take	fix(web): review findings handed to a thread no longer end in a broken character (#30392)
