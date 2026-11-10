@@ -96,6 +96,13 @@ The version must also be newer than the native app's last release, 0.3.0.
 `gh workflow run release.yml --ref main -f mobile=both -f desktop=false` makes both store builds on
 GitHub Actions (`ios` or `android` makes one); add `mobile=both` to a desktop release to build them
 alongside it.
+
+iOS builds on the self-hosted runner labelled `onicode-ios`, a macOS VM on the maintainers' Mac Studio
+that keeps ccache, the pnpm store and CocoaPods between runs. If it is offline the job waits in the
+queue; cancel it and rerun with `-f ios_runner=github` for a hosted macOS runner, which is far slower.
+The repository is public, so the organization's runner group admits only
+`.github/workflows/release.yml` on `main`, and the runner's job-started hook refuses any other
+repository, workflow or event.
 Locally, from `apps/mobile`, whose `eas.json` holds the profiles:
 
 ```sh

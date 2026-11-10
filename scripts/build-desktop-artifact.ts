@@ -2606,6 +2606,9 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
     };
   }
 
+  // The dir build's zip only carries app-update.yml; better-update zips the .app itself.
+  if (platform === "mac" && target === "dir") buildConfig.compression = "store";
+
   if (platform === "mac" && target === "dmg") {
     buildConfig.dmg = {
       // Finder caches DMG backgrounds by volume name; give each installer its own.
