@@ -165,3 +165,4 @@ d1aeed2492	take	fix(server): repos without a remote no longer record failed span
 5a9866d501	take	fix(mobile): missing files in previews name the checked path instead of asking to reconnect (#32994)
 f12bb6229c	take	fix(server): a restart that misses its turn starts as a new turn (#32899)
 4c924ff4e6	take	fix(desktop): new browser tabs no longer lose waits, clicks and snapshots for good (#32861)
+46015ec958	take	fix(web): Go to source on a side chat quote keeps you on its parent thread (#33160)
