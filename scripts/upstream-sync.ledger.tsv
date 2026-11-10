@@ -134,3 +134,4 @@ e89abadaee	take	fix(server): show idle paragraphs before the assistant turn ends
 25da7ebca6	take	fix(web): reclaim notice says the machine will be offline (#33730)
 577c524089	take	fix(server): detaching a session no longer strands its pending approval (#33535)
 eff45664fa	take	fix(opencode): long command turns no longer fail when the command request times out (#27677)
+4168c14c7d	take	fix(server): a queued message that names no model keeps the model picked ahead of it (#33591)
