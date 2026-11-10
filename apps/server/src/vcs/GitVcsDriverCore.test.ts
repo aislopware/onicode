@@ -2219,6 +2219,23 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
         assert.deepStrictEqual(refs.refs, []);
       }),
     );
+
+    it.effect("treats a worktree whose gitdir is gone as a non-repository", () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeTmpDir();
+        const pathService = yield* Path.Path;
+        yield* writeTextFile(cwd, ".git", `gitdir: ${pathService.join(cwd, "gone")}\n`);
+        const driver = yield* GitVcsDriver.GitVcsDriver;
+
+        const [localStatus, refs] = yield* Effect.all([
+          driver.statusDetails(cwd),
+          driver.listRefs({ cwd }),
+        ]);
+
+        assert.equal(localStatus.isRepo, false);
+        assert.equal(refs.isRepo, false);
+      }),
+    );
   });
 
   describe("review diff previews", () => {

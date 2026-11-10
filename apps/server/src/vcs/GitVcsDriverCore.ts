@@ -562,8 +562,12 @@ function isMissingGitCwdError(error: GitCommandError): boolean {
   );
 }
 
-function isNonRepositoryGitStderr(stderr: string): boolean {
-  return stderr.toLowerCase().includes("not a git repository");
+// Git 2.5x reports a .git file whose gitdir is gone as "gitfile does not point to a valid repository".
+export function isNonRepositoryGitStderr(stderr: string): boolean {
+  const normalized = stderr.toLowerCase();
+  return (
+    normalized.includes("not a git repository") || normalized.includes("gitfile does not point")
+  );
 }
 function isUnbornHeadStderr(stderr: string): boolean {
   const normalized = stderr.toLowerCase();

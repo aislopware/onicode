@@ -47,6 +47,7 @@ import * as Settings from "./serverSettings.ts";
 import * as TerminalManager from "./terminal/Manager.ts";
 import { isFilesystemRoot, managedWorktreesDirectories } from "./worktreesDirectory.ts";
 import * as GitVcsDriver from "./vcs/GitVcsDriver.ts";
+import { isNonRepositoryGitStderr } from "./vcs/GitVcsDriverCore.ts";
 import { removeLinkedWorktree } from "./vcs/worktreeRemoval.ts";
 import { withWorkspaceLease } from "./workspace/workspaceLease.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
@@ -618,10 +619,7 @@ const make = Effect.gen(function* () {
         );
       if (result === null) return null;
       if (result.exitCode === 0 || result.exitCode === allowedExitCode) return result;
-      // Newer Git reports a broken .git file as "gitfile does not point to a valid repository".
-      const stderr = result.stderr.toLowerCase();
-      if (stderr.includes("not a git repository") || stderr.includes("gitfile does not point"))
-        return null;
+      if (isNonRepositoryGitStderr(result.stderr)) return null;
       return yield* failure(
         result.stderr.trim().split(/\r?\n/)[0]?.slice(0, 1000) || "command failed",
       );
