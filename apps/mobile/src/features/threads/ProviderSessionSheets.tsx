@@ -28,9 +28,9 @@ import { providerSessionEnvironment } from "../../state/providerSession";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
 
-type SessionTarget = { readonly environmentId: EnvironmentId; readonly threadId: ThreadId };
+export type SessionTarget = { readonly environmentId: EnvironmentId; readonly threadId: ThreadId };
 
-function SheetBody(props: { readonly children: React.ReactNode }) {
+export function SheetBody(props: { readonly children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
   return (
     <ScreenContent>
@@ -47,9 +47,17 @@ function SheetBody(props: { readonly children: React.ReactNode }) {
   );
 }
 
-function Muted(props: { readonly children: React.ReactNode; readonly className?: string }) {
+export function Muted(props: {
+  readonly children: React.ReactNode;
+  readonly className?: string;
+  readonly numberOfLines?: number;
+}) {
   return (
-    <Text textRole="footnote" className={cn("text-foreground-muted", props.className)}>
+    <Text
+      textRole="footnote"
+      numberOfLines={props.numberOfLines}
+      className={cn("text-foreground-muted", props.className)}
+    >
       {props.children}
     </Text>
   );

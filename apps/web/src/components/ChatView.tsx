@@ -47,7 +47,11 @@ import { freshSessionBannerItem } from "./chat/ComposerFreshSession";
 import { armFreshSession, disarmFreshSession, useFreshSessionArmed } from "./chat/freshSessionArms";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
 import { ProviderSessionDialogs } from "./chat/ProviderSessionDialogs";
-import { providerSessionViews } from "@onicode/client-runtime/provider-session-views";
+import { ProviderSessionSettingsDialog } from "./chat/ProviderSessionSettingsDialog";
+import {
+  providerSessionViews,
+  type ProviderSessionView,
+} from "@onicode/client-runtime/provider-session-views";
 import { useProviderSessionViewStore } from "../providerSessionViewStore";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
 import { useChatShortcuts } from "./chat/useChatShortcuts";
@@ -2504,7 +2508,7 @@ export default function ChatView(props: ChatViewProps) {
   const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
   const sessionViews =
     isServerThread && activeThreadKey !== null ? providerSessionViews(activeProviderStatus) : [];
-  const openSessionViewStable = useStableCallback((view: "context" | "mcp") => {
+  const openSessionViewStable = useStableCallback((view: ProviderSessionView) => {
     if (activeThreadKey !== null)
       useProviderSessionViewStore.getState().show(activeThreadKey, view);
   });
@@ -3598,6 +3602,7 @@ export default function ChatView(props: ChatViewProps) {
                                 }
                                 providerSessionViews={sessionViews}
                                 onProviderSessionView={openSessionViewStable}
+                                contextWindow={isServerThread ? activeContextWindow : null}
                                 onUsageLimitsCommand={
                                   usageLimitsOffered &&
                                   usageLimitsKey !== null &&
@@ -3786,14 +3791,24 @@ export default function ChatView(props: ChatViewProps) {
             {embedded ? null : (
               <>
                 {isServerThread && activeThreadRef !== null && activeThreadKey !== null ? (
-                  <ProviderSessionDialogs
-                    environmentId={activeThreadRef.environmentId}
-                    threadId={activeThreadRef.threadId}
-                    threadRef={activeThreadRef}
-                    threadKey={activeThreadKey}
-                    cwd={gitCwd}
-                    availableEditors={availableEditors}
-                  />
+                  <>
+                    <ProviderSessionDialogs
+                      environmentId={activeThreadRef.environmentId}
+                      threadId={activeThreadRef.threadId}
+                      threadRef={activeThreadRef}
+                      threadKey={activeThreadKey}
+                      cwd={gitCwd}
+                      availableEditors={availableEditors}
+                    />
+                    <ProviderSessionSettingsDialog
+                      environmentId={activeThreadRef.environmentId}
+                      threadId={activeThreadRef.threadId}
+                      threadRef={activeThreadRef}
+                      threadKey={activeThreadKey}
+                      cwd={gitCwd}
+                      availableEditors={availableEditors}
+                    />
+                  </>
                 ) : null}
 
                 <BranchRestoreConfirmHost

@@ -61,6 +61,7 @@ import {
   type SDKAssistantMessage,
   type SDKAPIRetryMessage,
   type SDKControlGetContextUsageResponse,
+  type SDKControlInitializeResponse,
   type SDKMessage,
   type SDKRateLimitInfo,
   type SDKResultMessage,
@@ -162,6 +163,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
+import * as ClaudeSessionSettings from "./ClaudeSessionSettings.ts";
 import {
   planClaudeSkillDispatch,
   type ClaudeSkillTarget,
@@ -179,6 +181,7 @@ import * as PortScanner from "../../preview/PortScanner.ts";
 import * as ServerSettings from "../../serverSettings.ts";
 import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import { spawnAndCollect } from "@onicode/provider-core/server/snapshotProbe";
+import { resolveSpawnCommand } from "@onicode/shared/shell";
 import { signalProcessGroup } from "@onicode/provider-core/server/processGroup";
 import {
   claudeSignedOutMessage,
@@ -591,6 +594,15 @@ export interface ClaudeAgentSdkQuerySession {
     SDKControlGetContextUsageResponse,
     ClaudeAgentSdkQueryRunnerError
   >;
+  /** Untyped dialog replies; ClaudeSessionSettings decodes them. */
+  readonly sessionDialog: (
+    subtype: ClaudeSessionSettings.ClaudeSessionDialog,
+  ) => Effect.Effect<unknown, ClaudeAgentSdkQueryRunnerError>;
+  readonly initializationResult: Effect.Effect<
+    SDKControlInitializeResponse,
+    ClaudeAgentSdkQueryRunnerError
+  >;
+  readonly reloadOutputStyles: Effect.Effect<ReadonlyArray<string>, ClaudeAgentSdkQueryRunnerError>;
   readonly reconnectMcpServer: (
     server: string,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
@@ -758,7 +770,8 @@ async function sendClaudeControlRequest(
       | "list_permission_rules"
       | "mcp_authenticate"
       | "mcp_clear_auth"
-      | "mcp_oauth_callback_url";
+      | "mcp_oauth_callback_url"
+      | ClaudeSessionSettings.ClaudeSessionDialog;
     readonly [key: string]: unknown;
   },
 ): Promise<unknown> {
@@ -1622,6 +1635,19 @@ export const layerQueryRunner: Layer.Layer<
               try: () => queryRuntime.getContextUsage({ detail: "full" }),
               catch: (cause) => queryRunnerError(cause, "getContextUsage"),
             }),
+            sessionDialog: (subtype) =>
+              Effect.tryPromise({
+                try: () => sendClaudeControlRequest(queryRuntime, { subtype }),
+                catch: (cause) => queryRunnerError(cause, subtype),
+              }),
+            initializationResult: Effect.tryPromise({
+              try: () => queryRuntime.initializationResult(),
+              catch: (cause) => queryRunnerError(cause, "initializationResult"),
+            }),
+            reloadOutputStyles: Effect.tryPromise({
+              try: () => queryRuntime.reloadOutputStyles(),
+              catch: (cause) => queryRunnerError(cause, "reloadOutputStyles"),
+            }).pipe(Effect.map((reply) => reply.available_output_styles)),
             reconnectMcpServer: (server) =>
               Effect.tryPromise({
                 try: () => queryRuntime.reconnectMcpServer(server),
@@ -7631,7 +7657,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         });
 
         // Session views never start a CLI; a thread whose process is gone reports no session.
-        const liveSessionQuery = Effect.fn("ClaudeAdapterV2.liveSessionQuery")(function* (
+        const liveSessionContext = Effect.fn("ClaudeAdapterV2.liveSessionContext")(function* (
           providerThread: OrchestrationV2ProviderThread,
         ) {
           const liveQuery = yield* Ref.get(queryContext);
@@ -7644,7 +7670,35 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               driver: CLAUDE_PROVIDER,
             });
           }
-          return liveQuery.query;
+          return liveQuery;
+        });
+        const liveSessionQuery = (providerThread: OrchestrationV2ProviderThread) =>
+          liveSessionContext(providerThread).pipe(Effect.map((liveQuery) => liveQuery.query));
+        const sessionProtocolError = (detail: string) => (cause: unknown) =>
+          new ProviderAdapter.ProviderAdapterProtocolError({
+            driver: CLAUDE_PROVIDER,
+            detail,
+            cause,
+          });
+        const runPluginCommand = Effect.fn("ClaudeAdapterV2.runPluginCommand")(function* (
+          args: ReadonlyArray<string>,
+          cwd: string | null,
+        ) {
+          const { binaryPath } = adapterOptions.settings;
+          const environment = adapterOptions.environment;
+          const spawnCommand = yield* resolveSpawnCommand(binaryPath, args, { env: environment });
+          return yield* spawnAndCollect(
+            binaryPath,
+            ChildProcess.make(spawnCommand.command, spawnCommand.args, {
+              env: environment,
+              shell: spawnCommand.shell,
+              ...(cwd === null ? {} : { cwd }),
+            }),
+          ).pipe(
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.timeout("3 minutes"),
+            Effect.mapError(sessionProtocolError("Claude Code's plugin command could not run.")),
+          );
         });
         const sessionRequestFailed = (detail: string) => (cause: ClaudeAgentSdkQueryRunnerError) =>
           new ProviderAdapter.ProviderAdapterProtocolError({
@@ -12383,6 +12437,133 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     sessionRequestFailed(`Claude could not finish signing in to ${server}.`),
                   ),
                 );
+            }),
+          },
+          sessionSettings: {
+            info: Effect.fn("ClaudeAdapterV2.sessionInfo")(function* ({ providerThread, view }) {
+              const liveQuery = yield* liveSessionContext(providerThread);
+              const { query, settingsCwd } = liveQuery;
+              const dialog = (subtype: ClaudeSessionSettings.ClaudeSessionDialog) =>
+                query
+                  .sessionDialog(subtype)
+                  .pipe(
+                    Effect.mapError(sessionRequestFailed(`Claude could not answer ${subtype}.`)),
+                  );
+              const unreadable = sessionProtocolError("Claude's reply was not understood.");
+              switch (view) {
+                case "status": {
+                  const reply = yield* dialog("get_status").pipe(
+                    Effect.flatMap(ClaudeSessionSettings.decodeClaudeStatus),
+                    Effect.mapError(unreadable),
+                  );
+                  return { _tag: "status", sections: reply.sections };
+                }
+                case "agents": {
+                  const init = yield* query.initializationResult.pipe(
+                    Effect.mapError(sessionRequestFailed("Claude could not list its agents.")),
+                  );
+                  return {
+                    _tag: "agents",
+                    agents: init.agents.map((agent) => ({
+                      name: agent.name,
+                      description: agent.description,
+                      ...(agent.model === undefined ? {} : { model: agent.model }),
+                    })),
+                  };
+                }
+                case "skills":
+                  return ClaudeSessionSettings.claudeSkillsInfo(
+                    yield* dialog("get_skills_dialog").pipe(
+                      Effect.flatMap(ClaudeSessionSettings.decodeClaudeSkills),
+                      Effect.mapError(unreadable),
+                    ),
+                  );
+                case "memory":
+                  return ClaudeSessionSettings.claudeMemoryInfo(
+                    yield* dialog("get_memory_dialog").pipe(
+                      Effect.flatMap(ClaudeSessionSettings.decodeClaudeMemory),
+                      Effect.mapError(unreadable),
+                    ),
+                  );
+                case "output-styles": {
+                  const [available, settings] = yield* Effect.all([
+                    query.reloadOutputStyles.pipe(
+                      Effect.mapError(
+                        sessionRequestFailed("Claude could not list its output styles."),
+                      ),
+                    ),
+                    dialog("get_settings").pipe(
+                      Effect.flatMap(ClaudeSessionSettings.decodeClaudeSettings),
+                      Effect.mapError(unreadable),
+                    ),
+                  ]);
+                  return {
+                    _tag: "output-styles",
+                    current: settings.effective.outputStyle ?? "default",
+                    available,
+                  };
+                }
+                case "hooks":
+                  return ClaudeSessionSettings.claudeHooksInfo(
+                    yield* dialog("get_hooks_listing").pipe(
+                      Effect.flatMap(ClaudeSessionSettings.decodeClaudeHooks),
+                      Effect.mapError(unreadable),
+                    ),
+                  );
+                case "permissions":
+                  return ClaudeSessionSettings.claudePermissionsInfo(
+                    yield* dialog("list_permission_rules").pipe(
+                      Effect.flatMap(ClaudeSessionSettings.decodeClaudePermissions),
+                      Effect.mapError(unreadable),
+                    ),
+                  );
+                case "plugins": {
+                  const [installed, marketplaces] = yield* Effect.all(
+                    [
+                      runPluginCommand(["plugin", "list", "--json"], settingsCwd),
+                      runPluginCommand(["plugin", "marketplace", "list", "--json"], settingsCwd),
+                    ],
+                    { concurrency: 2 },
+                  );
+                  return ClaudeSessionSettings.claudePluginsInfo(
+                    yield* ClaudeSessionSettings.decodeClaudeInstalledPlugins(
+                      installed.stdout,
+                    ).pipe(Effect.mapError(unreadable)),
+                    yield* ClaudeSessionSettings.decodeClaudeMarketplaces(marketplaces.stdout).pipe(
+                      Effect.mapError(unreadable),
+                    ),
+                  );
+                }
+              }
+            }),
+            memoryFile: Effect.fn("ClaudeAdapterV2.memoryFile")(function* ({
+              providerThread,
+              path: filePath,
+            }) {
+              const query = yield* liveSessionQuery(providerThread);
+              const memory = yield* query
+                .sessionDialog("get_memory_dialog")
+                .pipe(
+                  Effect.flatMap(ClaudeSessionSettings.decodeClaudeMemory),
+                  Effect.mapError(
+                    sessionProtocolError("Claude's memory files could not be listed."),
+                  ),
+                );
+              if (!ClaudeSessionSettings.claudeMemoryPaths(memory).has(filePath)) {
+                return yield* sessionProtocolError("Claude does not list this file as memory.")(
+                  filePath,
+                );
+              }
+              const content = yield* fileSystem.readFileString(filePath).pipe(
+                Effect.asSome,
+                Effect.catchReason("PlatformError", "NotFound", () => Effect.succeedNone),
+                Effect.mapError(sessionProtocolError(`Could not read ${filePath}.`)),
+              );
+              return {
+                path: filePath,
+                content: Option.getOrElse(content, () => ""),
+                exists: Option.isSome(content),
+              };
             }),
           },
           stopTask: Effect.fn("ClaudeAdapterV2.stopTask")(function* ({ providerThread, taskId }) {

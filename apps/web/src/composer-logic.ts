@@ -16,9 +16,10 @@ import {
 } from "./composer-editor-mentions";
 
 import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
+import type { ProviderSessionView } from "@onicode/client-runtime/provider-session-views";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
-export type ComposerSlashCommand = "model" | "side" | "btw" | "clear" | "context" | "mcp";
+export type ComposerSlashCommand = "model" | "side" | "btw" | "clear" | ProviderSessionView;
 export type ComposerSubmissionIntent = "foreground" | "background" | "alternate";
 
 export interface ComposerTrigger {

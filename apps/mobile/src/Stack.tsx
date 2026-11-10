@@ -65,6 +65,7 @@ import {
   ThreadContextUsageSheet,
   ThreadMcpServersSheet,
 } from "./features/threads/ProviderSessionSheets";
+import { ThreadSessionSettingsSheet } from "./features/threads/ProviderSessionSettingsSheets";
 import { ThreadBackgroundWorkSheet } from "./features/threads/ThreadBackgroundWorkSheet";
 import { ThreadQueueSheet } from "./features/threads/ThreadQueueControl";
 import {
@@ -668,6 +669,10 @@ const RootStackConfig = createWorkspaceStackNavigator({
     }),
     ThreadMcpServers: createNativeStackScreen({
       screen: ThreadMcpServersSheet,
+      options: sheetRoute({ detent: 0.65, androidMaxDetent: 0.95 }),
+    }),
+    ThreadSessionSettings: createNativeStackScreen({
+      screen: ThreadSessionSettingsSheet,
       options: sheetRoute({ detent: 0.65, androidMaxDetent: 0.95 }),
     }),
     GitOverview: createNativeStackScreen({

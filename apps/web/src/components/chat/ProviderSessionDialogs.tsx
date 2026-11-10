@@ -42,7 +42,7 @@ import { Input } from "../ui/input";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 
-interface SessionTarget {
+export interface SessionTarget {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly threadRef: ScopedThreadRef;
@@ -106,7 +106,7 @@ function percentOf(tokens: number, max: number): string {
   return percent < 0.1 ? "<0.1%" : `${percent.toFixed(1)}%`;
 }
 
-function SessionError(props: { readonly error: string }) {
+export function SessionError(props: { readonly error: string }) {
   return <p className="text-sm text-destructive-foreground">{props.error}</p>;
 }
 
@@ -295,6 +295,16 @@ function CategoryDetail(props: {
     });
   };
   const empty = <p className="px-2 py-1 text-xs text-muted-foreground">Nothing listed.</p>;
+  const manage = (view: "mcp" | "memory" | "skills" | "agents", label: string) => (
+    <Button
+      className="mt-1 self-start"
+      size="xs"
+      variant="outline"
+      onClick={() => show(target.threadKey, view)}
+    >
+      {label}
+    </Button>
+  );
   switch (props.detail) {
     case "mcp": {
       const servers = contextUsageMcpTokensByServer(usage);
@@ -310,51 +320,59 @@ function CategoryDetail(props: {
                   tokens={server.tokens}
                 />
               ))}
-          <Button
-            className="mt-1 self-start"
-            size="xs"
-            variant="outline"
-            onClick={() => show(target.threadKey, "mcp")}
-          >
-            Manage MCP servers
-          </Button>
+          {manage("mcp", "Manage MCP servers")}
         </div>
       );
     }
     case "memory":
-      return usage.memoryFiles.length === 0
-        ? empty
-        : usage.memoryFiles.map((file) => (
-            <DetailRow
-              key={file.path}
-              label={file.path}
-              hint={file.type}
-              tokens={file.tokens}
-              onClick={() => openMemoryFile(file.path)}
-            />
-          ));
+      return (
+        <div className="flex flex-col">
+          {usage.memoryFiles.length === 0
+            ? empty
+            : usage.memoryFiles.map((file) => (
+                <DetailRow
+                  key={file.path}
+                  label={file.path}
+                  hint={file.type}
+                  tokens={file.tokens}
+                  onClick={() => openMemoryFile(file.path)}
+                />
+              ))}
+          {manage("memory", "Show memory")}
+        </div>
+      );
     case "skills":
-      return usage.skills.length === 0
-        ? empty
-        : usage.skills.map((skill) => (
-            <DetailRow
-              key={`${skill.source ?? ""}:${skill.name}`}
-              label={skill.name}
-              hint={skill.source}
-              tokens={skill.tokens}
-            />
-          ));
+      return (
+        <div className="flex flex-col">
+          {usage.skills.length === 0
+            ? empty
+            : usage.skills.map((skill) => (
+                <DetailRow
+                  key={`${skill.source ?? ""}:${skill.name}`}
+                  label={skill.name}
+                  hint={skill.source}
+                  tokens={skill.tokens}
+                />
+              ))}
+          {manage("skills", "Show skills")}
+        </div>
+      );
     case "agents":
-      return usage.agents.length === 0
-        ? empty
-        : usage.agents.map((agent) => (
-            <DetailRow
-              key={`${agent.source ?? ""}:${agent.name}`}
-              label={agent.name}
-              hint={agent.source}
-              tokens={agent.tokens}
-            />
-          ));
+      return (
+        <div className="flex flex-col">
+          {usage.agents.length === 0
+            ? empty
+            : usage.agents.map((agent) => (
+                <DetailRow
+                  key={`${agent.source ?? ""}:${agent.name}`}
+                  label={agent.name}
+                  hint={agent.source}
+                  tokens={agent.tokens}
+                />
+              ))}
+          {manage("agents", "Show agents")}
+        </div>
+      );
   }
 }
 

@@ -163,6 +163,9 @@ export const RPC_REQUIRED_SCOPES = {
   // Turning an MCP server on or signing it in changes what the agent can reach.
   [WS_METHODS.providerSessionMcpServerAction]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerSessionMcpOAuthCallback]: AuthOrchestrationOperateScope,
+  [WS_METHODS.providerSessionInfo]: AuthOrchestrationReadScope,
+  [WS_METHODS.providerSessionMemoryFile]: AuthOrchestrationReadScope,
+  // Memory, permission rules, plugins and skills change what the agent is told and may do.
   [WS_METHODS.mcpAppsCallTool]: AuthOrchestrationOperateScope,
   [WS_METHODS.mcpAppsToolInfo]: AuthOrchestrationReadScope,
   [WS_METHODS.mcpAppsReadResource]: AuthOrchestrationReadScope,

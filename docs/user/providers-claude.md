@@ -53,7 +53,7 @@ window. Leave it empty for Claude Code's default.
 
 You can also send `/compact` in an existing conversation. Claude Code also
 compacts automatically. To see what fills the context window, see
-[Context and MCP servers](#context-and-mcp-servers).
+[Context, MCP servers and Claude Code settings](#context-mcp-servers-and-claude-code-settings).
 
 When you return to a large thread after Claude's prompt cache expires, a
 **Compact** chip with the thread's token count shows
@@ -77,12 +77,13 @@ over 200,000 tokens. Each Claude provider's settings can override it:
 - **Never** skips idle compaction and Claude's resume prompt. **Auto-compact after**
   still applies, and you can still compact by hand.
 
-## Context and MCP servers
+## Context, MCP servers and Claude Code settings
 
 Send `/context` in a thread to see what fills Claude's context window by category: the
 system prompt, tools, MCP tools, memory files such as `CLAUDE.md`, skills, custom agents,
 and the conversation. Expand a category to see what it holds. On desktop, select a memory
-file to open it, or click the context row in the thread details card to open the same view.
+file to open it. The ring beside the composer's send button shows how full the window is;
+select it, or the context row in the thread details card, to open the same view.
 
 Send `/mcp` to see the MCP servers the thread's Claude session loaded, their status and
 tools. From there you can reconnect a server, turn it off or on, and sign in to or out of
@@ -90,9 +91,14 @@ a remote server. Turning a server off and signing out are saved in Claude Code's
 settings, so they also apply when you use Claude Code outside Onicode. When signing in from another device, the browser can end
 on a page that fails to load. Copy that page's address and paste it in Onicode to finish.
 
-Both views read the thread's running Claude session, so send a message first if the
-thread has none. `/mcp` followed by arguments, such as `/mcp reconnect github`, goes to
-Claude as a normal command.
+`/status`, `/agents`, `/skills`, `/memory`, `/output-style`, `/hooks`, `/permissions` and
+`/plugin` show what the session is using: its version and account, subagents, skills,
+memory files, output styles, hooks, permission rules, and installed plugins and
+marketplaces. These views are read-only. To change a setting, ask the agent to do it.
+
+All of these views read the thread's running Claude session, so send a message first if
+the thread has none. A command followed by arguments, such as `/mcp reconnect github`,
+goes to Claude as a normal command.
 
 ## Usage limits
 

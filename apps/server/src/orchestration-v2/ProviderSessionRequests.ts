@@ -5,6 +5,10 @@ import {
   type ProviderMcpServerActionInput,
   type ProviderMcpServerActionResult,
   type ProviderMcpServerList,
+  type ProviderMemoryFile,
+  type ProviderMemoryFileInput,
+  type ProviderSessionInfo,
+  type ProviderSessionInfoInput,
   type ProviderSessionThreadInput,
   type ThreadId,
 } from "@onicode/contracts";
@@ -33,6 +37,12 @@ export class ProviderSessionRequests extends Context.Service<
     readonly mcpOAuthCallback: (
       input: ProviderMcpOAuthCallbackInput,
     ) => Effect.Effect<void, ProviderSessionRequestError>;
+    readonly info: (
+      input: ProviderSessionInfoInput,
+    ) => Effect.Effect<ProviderSessionInfo, ProviderSessionRequestError>;
+    readonly memoryFile: (
+      input: ProviderMemoryFileInput,
+    ) => Effect.Effect<ProviderMemoryFile, ProviderSessionRequestError>;
   }
 >()("onicode/orchestration-v2/ProviderSessionRequests") {}
 
@@ -88,6 +98,16 @@ const make = Effect.gen(function* () {
     return { providerThread, mcpServers: runtime.mcpServers };
   });
 
+  const resolveSettings = Effect.fn("ProviderSessionRequests.resolveSettings")(function* (
+    threadId: ThreadId,
+  ) {
+    const { providerThread, runtime } = yield* resolve(threadId);
+    if (runtime.sessionSettings === undefined) {
+      return yield* fail(threadId, "provider-unsupported");
+    }
+    return { providerThread, settings: runtime.sessionSettings };
+  });
+
   const contextUsage = Effect.fn("ProviderSessionRequests.contextUsage")(function* (
     input: ProviderSessionThreadInput,
   ) {
@@ -132,11 +152,31 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError(adapterFailure(input.threadId)));
   });
 
+  const info = Effect.fn("ProviderSessionRequests.info")(function* (
+    input: ProviderSessionInfoInput,
+  ) {
+    const { providerThread, settings } = yield* resolveSettings(input.threadId);
+    return yield* settings
+      .info({ providerThread, view: input.view })
+      .pipe(Effect.mapError(adapterFailure(input.threadId)));
+  });
+
+  const memoryFile = Effect.fn("ProviderSessionRequests.memoryFile")(function* (
+    input: ProviderMemoryFileInput,
+  ) {
+    const { providerThread, settings } = yield* resolveSettings(input.threadId);
+    return yield* settings
+      .memoryFile({ providerThread, path: input.path })
+      .pipe(Effect.mapError(adapterFailure(input.threadId)));
+  });
+
   return ProviderSessionRequests.of({
     contextUsage,
     mcpServers,
     mcpServerAction,
     mcpOAuthCallback,
+    info,
+    memoryFile,
   });
 });
 
