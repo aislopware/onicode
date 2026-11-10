@@ -215,3 +215,4 @@ d290c1f1b6	take	fix(github): a proxy's 403 with Retry-After is no longer reporte
 78201b07d0	take	fix(server): text generation fallback respects project provider settings (#33741)
 44ebb2fe57	take	feat(usage): show Muse Code limits, and xAI and Antigravity accounts from a CLIProxyAPI hub (#33800)
 8fc6fd01d7	take	fix(web): preserve previews during attachment preparation (#33949)
+3725817edc	take	fix(desktop): input during window teardown no longer throws in the main process (#33620)
