@@ -110,3 +110,4 @@ eb381a7d4f	skip	Fixes the hosted app's DPoP browser-session MCP approval (csrf b
 6f8c7433d0	take	fix(web): new threads use the last used project
 f6a8a635df	take	fix(mobile): distinguish local ACP instances by name (#32467)
 83862afe74	skip	Blacksmith Mobile Dev Client workflow; the mobile:install change only dispatches and waits on that workflow (gh workflow run mobile-dev-client.yml), which Onicode does not have, so no part stands alone
+9318fdbe30	take	fix(mobile): Android sidebar and composer transitions no longer reflow at rest (#33599)
