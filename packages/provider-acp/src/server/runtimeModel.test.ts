@@ -1342,7 +1342,7 @@ describe("extractMcpToolCallIdentity", () => {
     for (const title of [
       "onicode___delegate_task",
       "onicode-delegate_task",
-      'mcp__t3_code__delegate_task: {"mode":"async"}',
+      'mcp__onicode__delegate_task: {"mode":"async"}',
       'onicode__delegate_task: {"mode":"async"}',
       "delegate_task_onicode",
       "onicode/delegate_task",
