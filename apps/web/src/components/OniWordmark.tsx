@@ -1,18 +1,120 @@
-import type { SVGProps } from "react";
+import { useId, type SVGProps } from "react";
 
-/** The mochi oni in one ink (`currentColor`); its eyes are holes, so the background shows through. */
-const MARK =
-  "M6699 14264 c-465 -84 -855 -511 -1123 -1226 -20 -53 -48 -139 -62 -190 -44 -162 -22 -142 -270 -243 -1485 -605 -2685 -1711 -3375 -3108 -488 -987 -590 -1968 -303 -2896 158 -511 479 -1089 929 -1676 257 -335 725 -806 1058 -1063 45 -35 120 -94 165 -130 233 -186 688 -478 1027 -659 874 -466 1906 -792 2990 -944 669 -94 1529 -105 2210 -28 2311 258 3992 1487 4548 3324 373 1234 166 2791 -550 4120 -313 583 -624 996 -1176 1565 -99 101 -183 194 -187 206 -5 12 -4 51 1 86 5 34 12 153 15 263 26 874 -325 1537 -890 1680 -243 62 -470 34 -673 -81 -170 -97 -264 -194 -416 -433 -51 -79 -115 -168 -144 -199 -63 -67 -60 -67 -274 16 -679 262 -1388 409 -2114 438 -101 4 -157 11 -172 20 -28 17 -64 132 -92 294 -106 600 -577 963 -1122 864zM4450 9184 L4513 9215 L4575 9241 L4635 9263 L4694 9281 L4752 9294 L4810 9304 L4866 9309 L4923 9311 L4979 9310 L5036 9304 L5093 9295 L5151 9282 L5211 9265 L5271 9243 L5333 9217 L5396 9187 L5461 9151 L5526 9111 L5594 9065 L5662 9014 L5731 8958 L5802 8896 L5874 8828 L5946 8756 L6023 8695 L6112 8656 L6209 8641 L6306 8652 L6398 8688 L6476 8746 L6537 8823 L6576 8912 L6591 9009 L6580 9106 L6544 9198 L6486 9276 L6396 9366 L6306 9451 L6215 9531 L6122 9606 L6029 9676 L5934 9740 L5838 9799 L5741 9853 L5642 9900 L5542 9942 L5441 9978 L5339 10008 L5235 10031 L5131 10048 L5026 10058 L4921 10061 L4816 10058 L4711 10047 L4607 10030 L4503 10006 L4401 9976 L4300 9939 L4200 9896 L4102 9848 L4022 9792 L3959 9716 L3918 9628 L3901 9531 L3910 9434 L3944 9342 L4000 9262 L4076 9199 L4164 9158 L4261 9141 L4358 9150zM8865 7872 L8937 7915 L9008 7953 L9078 7987 L9147 8018 L9216 8044 L9284 8067 L9351 8086 L9417 8102 L9483 8114 L9548 8123 L9613 8128 L9678 8130 L9743 8129 L9807 8124 L9873 8116 L9938 8105 L10004 8090 L10071 8072 L10138 8050 L10207 8024 L10276 7995 L10346 7961 L10416 7924 L10488 7882 L10581 7841 L10682 7826 L10783 7837 L10878 7874 L10960 7935 L11024 8014 L11065 8107 L11080 8208 L11069 8309 L11032 8404 L10971 8486 L10892 8550 L10795 8606 L10696 8658 L10597 8705 L10497 8748 L10396 8786 L10295 8819 L10192 8847 L10089 8870 L9986 8888 L9882 8901 L9778 8908 L9673 8910 L9569 8907 L9465 8898 L9361 8884 L9257 8865 L9154 8841 L9052 8812 L8950 8778 L8850 8739 L8750 8695 L8651 8647 L8553 8594 L8455 8536 L8376 8472 L8317 8389 L8281 8294 L8270 8193 L8286 8092 L8328 7999 L8392 7920 L8475 7861 L8570 7825 L8671 7814 L8772 7830z";
+const BODY =
+  "M391 192C420 192 446 194 466 199C500 207 530 218 555.4 233.9C596.6 260.7 627.2 296.6 644.7 338.9C660.6 377.1 664.1 418 654.7 456.7C645.4 495.4 625 527.7 592.9 554.3C544.4 594.7 468.4 618 391 619" +
+  "C313.6 618 237.6 594.7 189.1 554.3C157 527.7 136.6 495.4 127.3 456.7C117.9 418 121.4 377.1 137.3 338.9C154.8 296.6 185.4 260.7 226.6 233.9C252 218 282 207 316 199C336 194 362 192 391 192Z";
+const EARS = {
+  left: "M316 199C307.8 200.6 305.7 199.6 297.2 190.8C289.5 182.5 284.1 173.1 278.6 158.3C274.2 146.3 271.8 143.2 266.1 141.8C255.2 139.3 243.2 155.3 237.7 179.6C234.4 194 234 204.7 236.2 222.4C236.8 227.1 236.4 227.5 226.6 233.9L242 252L306 236Z",
+  right: "M466 199C474.2 200.6 476.3 199.6 484.8 190.8C492.5 182.5 497.9 173.1 503.4 158.3C507.8 146.3 510.2 143.2 515.9 141.8C526.8 139.3 538.8 155.3 544.3 179.6C547.6 194 548 204.7 545.8 222.4C545.2 227.1 545.6 227.5 555.4 233.9L540 252L476 236Z",
+};
+const EYES = {
+  left: "M227.2 378.4Q276.9 344.8 326.6 378.4",
+  right: "M455.4 378.4Q505.1 344.8 554.8 378.4",
+};
+const SIDES = ["left", "right"] as const;
 
+/** The mochi oni, front-on, in one ink (`currentColor`); its eyes are holes, so the background shows through. */
 export function OniWordmark(props: SVGProps<SVGSVGElement>) {
+  const maskId = `oni-eyes-${useId().replace(/[^\w-]/g, "")}`;
   return (
-    <svg {...props} viewBox="62 102 680 628" xmlns="http://www.w3.org/2000/svg">
-      <path
-        transform="scale(0.05 -0.05) translate(0 -16480)"
-        fillRule="evenodd"
-        d={MARK}
+    <svg {...props} viewBox="108 128 566 500" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+      <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="800" height="800">
+        <rect width="800" height="800" fill="#fff" />
+        {SIDES.map((side) => (
+          <path
+            key={side}
+            data-oni-eye={side}
+            d={EYES[side]}
+            fill="none"
+            stroke="#000"
+            strokeWidth="38"
+            strokeLinecap="round"
+            style={{ transformBox: "fill-box", transformOrigin: "50% 60%" }}
+          />
+        ))}
+      </mask>
+      <g
+        data-oni-body=""
         fill="currentColor"
-      />
+        style={{ transformBox: "fill-box", transformOrigin: "50% 100%" }}
+      >
+        {SIDES.map((side) => (
+          <path
+            key={side}
+            data-oni-ear={side}
+            d={EARS[side]}
+            style={{ transformBox: "fill-box", transformOrigin: "50% 70%" }}
+          />
+        ))}
+        <path d={BODY} mask={`url(#${maskId})`} />
+      </g>
     </svg>
   );
+}
+
+const BLINK: Keyframe[] = [
+  { transform: "scale(1, 1)" },
+  { transform: "scale(1.12, 0.3)", offset: 0.4 },
+  { transform: "scale(1.12, 0.3)", offset: 0.55 },
+  { transform: "scale(0.96, 1.2)", offset: 0.8 },
+  { transform: "scale(1, 1)" },
+];
+
+const HOP: Keyframe[] = [
+  { transform: "translateY(0) scale(1, 1)", easing: "ease-out" },
+  { transform: "translateY(0) scale(1.08, 0.9)", offset: 0.15, easing: "ease-out" },
+  { transform: "translateY(-28%) scale(0.95, 1.06)", offset: 0.5, easing: "ease-in" },
+  { transform: "translateY(0) scale(1.07, 0.92)", offset: 0.8, easing: "ease-out" },
+  { transform: "translateY(0) scale(1, 1)" },
+];
+
+// Skew, not rotate: a rotated ear lifts its inner base off the head and opens a gap.
+const earFlap = (outward: 1 | -1): Keyframe[] =>
+  [0, 18, -8, 12, -4, 0].map((deg) => ({ transform: `skewX(${-deg * outward}deg)` }));
+const EAR_FLAP = { left: earFlap(-1), right: earFlap(1) };
+
+/**
+ * Ref callback for an element containing an `OniWordmark`: now and then it blinks, winks,
+ * flaps its ears or hops. Idle time is a plain timer so nothing animates between moves.
+ */
+export function animateOniIdle(root: Element) {
+  const body = root.querySelector("[data-oni-body]");
+  const eyes = SIDES.map((side) => root.querySelector(`[data-oni-eye="${side}"]`));
+  const ears = SIDES.map((side) => root.querySelector(`[data-oni-ear="${side}"]`));
+  if (!body || eyes.includes(null) || ears.includes(null)) return;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let timer: ReturnType<typeof setTimeout>;
+
+  const blink = (delay = 0, only?: number) =>
+    eyes.forEach((eye, i) => {
+      if (only === undefined || only === i) eye?.animate(BLINK, { duration: 220, delay });
+    });
+  const flap = (delay = 0, only?: number) =>
+    ears.forEach((ear, i) => {
+      if (only === undefined || only === i)
+        ear?.animate(EAR_FLAP[SIDES[i]!], { duration: 520, delay, easing: "ease-in-out" });
+    });
+  const side = () => (Math.random() < 0.5 ? 0 : 1);
+
+  const moves = [
+    { weight: 30, run: () => blink() },
+    { weight: 15, run: () => (blink(), blink(300)) },
+    { weight: 10, run: () => blink(0, side()) },
+    { weight: 15, run: () => flap() },
+    { weight: 10, run: () => flap(0, side()) },
+    { weight: 20, run: () => (body.animate(HOP, { duration: 560 }), flap(200), blink(420)) },
+  ];
+  const totalWeight = moves.reduce((sum, move) => sum + move.weight, 0);
+
+  const act = () => {
+    if (!document.hidden && !reducedMotion.matches) {
+      let pick = Math.random() * totalWeight;
+      const move = moves.find((candidate) => (pick -= candidate.weight) < 0) ?? moves[0]!;
+      move.run();
+    }
+    timer = setTimeout(act, 4_000 + Math.random() * 6_000);
+  };
+
+  timer = setTimeout(act, 4_000 + Math.random() * 6_000);
+  return () => clearTimeout(timer);
 }
