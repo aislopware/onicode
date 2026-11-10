@@ -209,3 +209,4 @@ d256170b34	take	fix: file links with line ranges open at their first line (#3400
 5be6bc99c2	take	fix(codex): show image generation tool calls
 871b00907d	take	fix(pi): a steer Pi has not read yet shows as waiting, not steered (#33982)
 d756fed7aa	take	fix(server): provider switches hand off started cancelled runs (#34016)
+f86e21f7cc	take	fix(web,mobile): replace sparkles icons and ban them with a lint rule (#25422)
