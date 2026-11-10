@@ -161,3 +161,4 @@ bcee0f5d28	take	fix(server): Claude turns whose CLI exits before its first frame
 fa2f4ff2a2	take	fix(web): panel resize handles follow touch drags (#33066)
 feb9c6b842	take	fix(server): signed-out Claude instances with their own config dir name it in the sign-in hint (#32951)
 61cb845d96	take	perf(server): opening a long thread reads from its latest segments, not its whole history (#33305)
+d1aeed2492	take	fix(server): repos without a remote no longer record failed spans on status refresh (#32905)
