@@ -199,3 +199,4 @@ f06bfa69c7	take	fix(web): drag command palette threads into the composer (#33990
 3051b32502	take	fix: chat file links open the file agents cite (#33943)
 283fa1f1cd	take	fix(clients): scroll truncated command output notice with logs (#34011)
 a11ad7424d	take	fix(web): show app bundle icons and open apps from markdown links
+71a1c49b75	take	feat(opencode): project native todo updates into checklists
