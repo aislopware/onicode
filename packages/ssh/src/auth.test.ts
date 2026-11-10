@@ -81,7 +81,10 @@ describe("ssh auth", () => {
       assert.equal(env.ONICODE_SSH_AUTH_SECRET, "super-secret");
       assert.equal(env.DISPLAY, "onicode");
       assert.equal(yield* fs.exists(askpassPath), true);
-      assert.include(yield* fs.readFileString(askpassPath), 'printf "%s\\n" "$ONICODE_SSH_AUTH_SECRET"');
+      assert.include(
+        yield* fs.readFileString(askpassPath),
+        'printf "%s\\n" "$ONICODE_SSH_AUTH_SECRET"',
+      );
     }).pipe(
       Effect.provide(Layer.merge(NodeServices.layer, Layer.succeed(HostProcess.Platform, "linux"))),
       Effect.scoped,

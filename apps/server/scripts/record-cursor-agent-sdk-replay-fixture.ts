@@ -149,7 +149,9 @@ const recordScenario = Effect.fn("recordScenario")(function* (
   const model = yield* Config.NonEmptyString("ONICODE_CURSOR_REPLAY_MODEL").pipe(
     Config.withDefault(CURSOR_MODEL_SELECTION.model),
   );
-  const configuredCwd = yield* Config.NonEmptyString("ONICODE_CURSOR_REPLAY_CWD").pipe(Config.option);
+  const configuredCwd = yield* Config.NonEmptyString("ONICODE_CURSOR_REPLAY_CWD").pipe(
+    Config.option,
+  );
   const recording = RECORDINGS[scenario];
 
   const owned = Option.isNone(configuredCwd);

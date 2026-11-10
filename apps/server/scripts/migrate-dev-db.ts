@@ -550,7 +550,9 @@ export const migrateDevDbCommand = Command.make(
     ),
     baseDir: Flag.String("base-dir").pipe(
       Flag.optional,
-      Flag.withDescription("Isolated .onicode directory. Defaults to the current worktree's .onicode."),
+      Flag.withDescription(
+        "Isolated .onicode directory. Defaults to the current worktree's .onicode.",
+      ),
     ),
     source: Flag.String("source").pipe(
       Flag.optional,

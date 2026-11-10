@@ -33,7 +33,11 @@ describe("Self invocation", () => {
       const invocation = yield* resolveSelfInvocation().pipe(
         Effect.provideService(HostProcess.ExecutablePath, "/packaged/onicode"),
         Effect.provideService(HostProcess.IsExecutable, true),
-        Effect.provideService(HostProcess.Arguments, ["/packaged/onicode", "/packaged/onicode", "serve"]),
+        Effect.provideService(HostProcess.Arguments, [
+          "/packaged/onicode",
+          "/packaged/onicode",
+          "serve",
+        ]),
       );
       expect(invocation).toEqual({ command: "/packaged/onicode", entrypoint: undefined });
       expect(selfInvocationArgs(invocation, ["acp-mcp-bridge"])).toEqual(["acp-mcp-bridge"]);

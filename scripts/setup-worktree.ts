@@ -43,7 +43,9 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 
 const projectRoot = process.env.ONICODE_PROJECT_ROOT;
 if (!projectRoot) {
-  throw new Error("ONICODE_PROJECT_ROOT is not set. Run this through the onicode.json setup action.");
+  throw new Error(
+    "ONICODE_PROJECT_ROOT is not set. Run this through the onicode.json setup action.",
+  );
 }
 
 // Use the shell for Windows vp shims. Unattended installs need pnpm's confirmation

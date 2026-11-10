@@ -1929,7 +1929,7 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
             ? {
                 mcpServers: {
                   // Muse's required default fails runs if Onicode tools are unreachable; make them optional.
-                  "onicode": {
+                  onicode: {
                     transport: "streamableHttp",
                     mode: "optional",
                     url: mcpSession.endpoint,

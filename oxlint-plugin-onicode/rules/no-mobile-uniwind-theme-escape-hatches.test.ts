@@ -2,9 +2,12 @@ import { assert, describe, expect } from "@effect/vitest";
 
 import { createOxlintRuleHarness } from "../test/utils.ts";
 
-const guardedMobileFile = createOxlintRuleHarness("onicode/no-mobile-uniwind-theme-escape-hatches", {
-  filename: "apps/mobile/src/features/settings/NewThemeSurface.tsx",
-});
+const guardedMobileFile = createOxlintRuleHarness(
+  "onicode/no-mobile-uniwind-theme-escape-hatches",
+  {
+    filename: "apps/mobile/src/features/settings/NewThemeSurface.tsx",
+  },
+);
 const reviewedInteropFile = createOxlintRuleHarness(
   "onicode/no-mobile-uniwind-theme-escape-hatches",
   {

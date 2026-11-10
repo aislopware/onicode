@@ -157,9 +157,10 @@ export const install = Effect.gen(function* () {
     return Option.some(shimPath);
   }).pipe(
     Effect.catchCause((cause) =>
-      logWarning("could not install onicode launcher", { shimPath, cause: Cause.pretty(cause) }).pipe(
-        Effect.as(Option.none<string>()),
-      ),
+      logWarning("could not install onicode launcher", {
+        shimPath,
+        cause: Cause.pretty(cause),
+      }).pipe(Effect.as(Option.none<string>())),
     ),
     Effect.withSpan("desktop.cliShim.install"),
   );

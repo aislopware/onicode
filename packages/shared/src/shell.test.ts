@@ -1197,7 +1197,11 @@ describe("pathSetupCommand", () => {
   });
 
   it("writes the startup file fish and zsh read, under XDG_CONFIG_HOME or ZDOTDIR", () => {
-    const setup = { directory: "/opt/onicode/bin", home: "/home/theo", shell: "/usr/bin/fish" } as const;
+    const setup = {
+      directory: "/opt/onicode/bin",
+      home: "/home/theo",
+      shell: "/usr/bin/fish",
+    } as const;
     expect(pathSetup({ ...setup, platform: "linux", configHome: "/home/theo/cfg" })?.file).toBe(
       "/home/theo/cfg/fish/config.fish",
     );

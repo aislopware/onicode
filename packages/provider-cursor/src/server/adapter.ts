@@ -206,7 +206,7 @@ export function cursorMcpServers(
     return undefined;
   }
   return {
-    "onicode": {
+    onicode: {
       type: "http",
       url: session.endpoint,
       headers: {

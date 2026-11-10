@@ -67,7 +67,8 @@ const CODEX_CLIENT_CAPABILITIES = {
   extensions: { "io.modelcontextprotocol/ui": { mimeTypes: ["text/html;profile=mcp-app"] } },
 } as const;
 const CODEX_REPLAY_DEFAULT_MODEL = "gpt-6-luna";
-const CODEX_REPLAY_MODEL_OVERRIDE = readArgValue("--model") ?? process.env.ONICODE_CODEX_REPLAY_MODEL;
+const CODEX_REPLAY_MODEL_OVERRIDE =
+  readArgValue("--model") ?? process.env.ONICODE_CODEX_REPLAY_MODEL;
 
 const SCENARIO_NAMES = [
   "simple",
@@ -198,7 +199,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function parseScenarios(): ReadonlyArray<ScenarioName> {
   const rawValues = [
     ...readArgValues("--scenario"),
-    ...(process.env.ONICODE_CODEX_REPLAY_SCENARIOS ? [process.env.ONICODE_CODEX_REPLAY_SCENARIOS] : []),
+    ...(process.env.ONICODE_CODEX_REPLAY_SCENARIOS
+      ? [process.env.ONICODE_CODEX_REPLAY_SCENARIOS]
+      : []),
   ];
   const requested = rawValues.length > 0 ? rawValues : ["simple"];
   const names = requested.flatMap((value) =>
@@ -1512,7 +1515,9 @@ const program = Effect.gen(function* () {
     throw new Error("No replay scenarios selected.");
   }
   if (singleOutPath && selected.length !== 1) {
-    throw new Error("--out / ONICODE_CODEX_REPLAY_OUT can only be used with exactly one --scenario.");
+    throw new Error(
+      "--out / ONICODE_CODEX_REPLAY_OUT can only be used with exactly one --scenario.",
+    );
   }
 
   yield* Effect.forEach(

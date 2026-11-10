@@ -83,7 +83,10 @@ describe("renderCliShim", () => {
     });
     expect(run(shim, []).stdout).toContain(`home=${root}/home`);
     expect(run(shim, [], { ONICODE_HOME: "/elsewhere" }).stdout).toContain("home=/elsewhere");
-    const relative = NodeChildProcess.spawnSync("./bin/onicode", [], { cwd: root, encoding: "utf8" });
+    const relative = NodeChildProcess.spawnSync("./bin/onicode", [], {
+      cwd: root,
+      encoding: "utf8",
+    });
     expect(relative.stdout).toContain(`cli=${shim}`);
   });
 

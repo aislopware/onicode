@@ -442,7 +442,9 @@ export const make = Effect.gen(function* () {
           const present =
             (yield* exists(other)) || Option.isSome(yield* fs.readLink(other).pipe(Effect.option));
           if (present && (windows || !(yield* isOurLink(other)))) {
-            return yield* logInfo("left the onicode command to Settings beside another onicode", { other });
+            return yield* logInfo("left the onicode command to Settings beside another onicode", {
+              other,
+            });
           }
         }
       }
