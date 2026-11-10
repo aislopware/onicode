@@ -129,16 +129,17 @@ jobs:
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      # better-update stages into a new $TMPDIR/better-update-* each run; ccache strips this base so
-      # paths under it still hit. React Native's iOS ccache wrapper swaps in its own config file,
-      # so the cache directory and size go in the environment. It also execs $CCACHE_BINARY, a
-      # build setting Xcode never exports to the compiler, so without it here clang runs uncached.
-      # Hosted runners save the directory with ccache-action; the self-hosted runner keeps its own
-      # outside the cleaned workspace.
+      # BETTER_UPDATE_BUILD_DIR keeps better-update's staging copy and DerivedData at the same paths
+      # every run, so compiler arguments repeat and ccache hits. React Native's iOS ccache wrapper
+      # swaps in its own config file, so the cache directory and size go in the environment. It
+      # also execs $CCACHE_BINARY, a build setting Xcode never exports to the compiler, so without
+      # it here clang runs uncached. Hosted runners save the directory with ccache-action; the
+      # self-hosted runner keeps its own outside the cleaned workspace.
       - name: Pin the staging base and ccache
         run: |
           {
             echo "TMPDIR=$RUNNER_TEMP"
+            echo "BETTER_UPDATE_BUILD_DIR=$RUNNER_TEMP/bu-build"
             echo "CCACHE_BASEDIR=$RUNNER_TEMP"
             echo "CCACHE_BINARY=ccache"
           } >> "$GITHUB_ENV"
