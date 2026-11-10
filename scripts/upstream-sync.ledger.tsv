@@ -55,3 +55,4 @@ a3cd0aa823	take	fix(web): deleting an archived thread also clears its draft, sta
 dca297cd1a	take	perf(web): Appearance settings no longer re-probe fonts on every open (#29171)
 220a7439b6	take	fix(desktop): discover browser profiles in XDG config home (#29243)
 e26decde28	take	fix(desktop): annotating inside a page's dialog no longer closes it (#29287)
+a72481fb4c	take	fix(desktop): preserve concurrent downloads with the same name (#29308)
