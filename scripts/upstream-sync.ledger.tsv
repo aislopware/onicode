@@ -207,3 +207,4 @@ a88a0adfa1	take	fix(web): keep HTML previews anchored when accordions expand (#3
 44e894ffd7	take	fix(web): preserve search result titles in drag previews (#34017)
 d256170b34	take	fix: file links with line ranges open at their first line (#34006)
 5be6bc99c2	take	fix(codex): show image generation tool calls
+871b00907d	take	fix(pi): a steer Pi has not read yet shows as waiting, not steered (#33982)
