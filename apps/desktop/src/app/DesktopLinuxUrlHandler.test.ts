@@ -557,66 +557,73 @@ const themeIconFixture = (source: Uint8Array) =>
 const iconCacheRuns = (run: ThemeIconRun) =>
   run.commands.filter(({ command }) => command === "gtk-update-icon-cache").length;
 
+// The two app id spellings differ only by case, so they collide on macOS and Windows temp dirs.
+const caseInsensitiveHost = HostProcess.Platform.defaultValue() !== "linux";
+
 it.layer(NodeServices.layer)("DesktopLinuxUrlHandler theme icons", (it) => {
-  it.effect("installs both app id spellings without creating an icon cache", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const icon = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
-      const fixture = yield* themeIconFixture(icon);
-      const run: ThemeIconRun = { root: fixture.root, commands: [] };
+  it.effect.skipIf(caseInsensitiveHost)(
+    "installs both app id spellings without creating an icon cache",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const icon = new Uint8Array([137, 80, 78, 71, 1, 2, 3]);
+        const fixture = yield* themeIconFixture(icon);
+        const run: ThemeIconRun = { root: fixture.root, commands: [] };
 
-      yield* registerWithRealFileSystem(run);
-      assert.deepEqual([...(yield* fileSystem.readDirectory(fixture.appsDir))].sort(), [
-        "dev.onicode.Onicode.png",
-        "dev.onicode.onicode.png",
-      ]);
-      for (const name of ["dev.onicode.onicode", "dev.onicode.Onicode"]) {
-        const target = path.join(fixture.appsDir, `${name}.png`);
-        assert.deepEqual([...(yield* fileSystem.readFile(target))], [...icon]);
-        yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
-      }
+        yield* registerWithRealFileSystem(run);
+        assert.deepEqual([...(yield* fileSystem.readDirectory(fixture.appsDir))].sort(), [
+          "dev.onicode.Onicode.png",
+          "dev.onicode.onicode.png",
+        ]);
+        for (const name of ["dev.onicode.onicode", "dev.onicode.Onicode"]) {
+          const target = path.join(fixture.appsDir, `${name}.png`);
+          assert.deepEqual([...(yield* fileSystem.readFile(target))], [...icon]);
+          yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
+        }
 
-      yield* registerWithRealFileSystem(run);
-      for (const name of ["dev.onicode.onicode", "dev.onicode.Onicode"]) {
-        const info = yield* fileSystem.stat(path.join(fixture.appsDir, `${name}.png`));
-        assert.equal(Option.getOrThrow(info.mtime).getTime(), fixture.pastSeconds * 1000);
-      }
-      assert.isFalse(yield* fileSystem.exists(fixture.cachePath));
-      assert.equal(iconCacheRuns(run), 0);
-    }).pipe(Effect.scoped),
+        yield* registerWithRealFileSystem(run);
+        for (const name of ["dev.onicode.onicode", "dev.onicode.Onicode"]) {
+          const info = yield* fileSystem.stat(path.join(fixture.appsDir, `${name}.png`));
+          assert.equal(Option.getOrThrow(info.mtime).getTime(), fixture.pastSeconds * 1000);
+        }
+        assert.isFalse(yield* fileSystem.exists(fixture.cachePath));
+        assert.equal(iconCacheRuns(run), 0);
+      }).pipe(Effect.scoped),
   );
 
-  it.effect("replaces same-length stale icons and refreshes an existing cache once", () =>
-    Effect.gen(function* () {
-      const fileSystem = yield* FileSystem.FileSystem;
-      const path = yield* Path.Path;
-      const fixture = yield* themeIconFixture(new Uint8Array([1, 2, 3]));
-      yield* fixture.seedCache;
-      const lower = path.join(fixture.appsDir, "dev.onicode.onicode.png");
-      const upper = path.join(fixture.appsDir, "dev.onicode.Onicode.png");
-      yield* fileSystem.writeFile(lower, new Uint8Array([3, 2, 1]));
-      yield* fileSystem.writeFile(upper, new Uint8Array([1, 2, 3]));
-      for (const target of [lower, upper]) {
-        yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
-      }
-      const run: ThemeIconRun = {
-        root: fixture.root,
-        commands: [],
-        onIconCacheRefresh: fixture.rewriteCache,
-      };
+  it.effect.skipIf(caseInsensitiveHost)(
+    "replaces same-length stale icons and refreshes an existing cache once",
+    () =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const fixture = yield* themeIconFixture(new Uint8Array([1, 2, 3]));
+        yield* fixture.seedCache;
+        const lower = path.join(fixture.appsDir, "dev.onicode.onicode.png");
+        const upper = path.join(fixture.appsDir, "dev.onicode.Onicode.png");
+        yield* fileSystem.writeFile(lower, new Uint8Array([3, 2, 1]));
+        yield* fileSystem.writeFile(upper, new Uint8Array([1, 2, 3]));
+        for (const target of [lower, upper]) {
+          yield* fileSystem.utimes(target, fixture.pastSeconds, fixture.pastSeconds);
+        }
+        const run: ThemeIconRun = {
+          root: fixture.root,
+          commands: [],
+          onIconCacheRefresh: fixture.rewriteCache,
+        };
 
-      yield* registerWithRealFileSystem(run);
-      yield* registerWithRealFileSystem(run);
+        yield* registerWithRealFileSystem(run);
+        yield* registerWithRealFileSystem(run);
 
-      assert.deepEqual([...(yield* fileSystem.readFile(lower))], [1, 2, 3]);
-      const upperInfo = yield* fileSystem.stat(upper);
-      assert.equal(Option.getOrThrow(upperInfo.mtime).getTime(), fixture.pastSeconds * 1000);
-      assert.deepEqual(
-        run.commands.filter(({ command }) => command === "gtk-update-icon-cache"),
-        [{ command: "gtk-update-icon-cache", args: ["-f", "-t", fixture.hicolorDir] }],
-      );
-    }).pipe(Effect.scoped),
+        assert.deepEqual([...(yield* fileSystem.readFile(lower))], [1, 2, 3]);
+        const upperInfo = yield* fileSystem.stat(upper);
+        assert.equal(Option.getOrThrow(upperInfo.mtime).getTime(), fixture.pastSeconds * 1000);
+        assert.deepEqual(
+          run.commands.filter(({ command }) => command === "gtk-update-icon-cache"),
+          [{ command: "gtk-update-icon-cache", args: ["-f", "-t", fixture.hicolorDir] }],
+        );
+      }).pipe(Effect.scoped),
   );
 
   it.effect("refreshes when this launch changed an icon even if the cache looks newer", () =>
