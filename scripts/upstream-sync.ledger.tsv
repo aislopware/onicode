@@ -193,3 +193,4 @@ cfb7cae2b9	take	feat(web): bindable shortcut to regenerate a thread's title (#33
 20723d6d9b	take	fix: Claude monitor wakes no longer fire a completion alert per line (#32520)
 81c3da3856	take	fix(server): removed thread worktrees keep their project's skills in the picker (#32471)
 f06bfa69c7	take	fix(web): drag command palette threads into the composer (#33990)
+08af12da49	take	fix(shared): show zero seconds in minute durations (#33994)
