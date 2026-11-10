@@ -66,3 +66,4 @@ e74b410e29	take	fix(web): keybinding settings recognize the previewOpen conditio
 daa6984fd6	take	fix(web): review findings handed to a thread no longer end in a broken character (#30392)
 a4c2684a0f	take	fix(web): project content search no longer opens a result on an IME Enter (#30448)
 d3e0e8b8ab	take	refactor(shared): simplify remote branch filtering (#30456)
+69c217fb15	take	fix(web): an IME Escape no longer sends the file picker or content search back to the palette (#30467)
