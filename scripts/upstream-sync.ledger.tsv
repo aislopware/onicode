@@ -103,3 +103,4 @@ b10cdded50	take	fix(web): a new side chat focuses its message input (#32929)
 bbdc7dca32	take	perf(opencode): bound usage reads to in-window messages (#33612)
 d655e2cca6	take	chore(web): upgrade @pierre/diffs to 1.7 and use its built-in find (#33627)
 e6fa2e35c3	take	fix(web): expanding hidden diff context works after a diff refresh (#33629)
+9a0d02723c	skip	T3 Connect agent sign-in approval on app.t3.codes (CloudLink, hosted app, outside-agent approval); no independent product fix
