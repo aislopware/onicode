@@ -42,3 +42,4 @@ cd87cce900	take	fix(server): include thread titles in MCP links (#33255)
 dc3fdc6a3e	take	perf(mobile): threads open over the socket without an extra HTTP round trip (#33306)
 965ddc1d6c	skip	maintainer decision: Onicode does not let outside cloud apps connect, and /mcp stays off the public Funnel listener
 4f0b74e190	take	feat(web): first run is one Welcome page instead of a 3-step wizard (#33209)
+c5b869f29e	take	fix(desktop): chat videos go fullscreen across the whole screen again (#25835)
