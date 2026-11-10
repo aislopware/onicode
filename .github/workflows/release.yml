@@ -6,7 +6,7 @@ name: Release
 # See docs/operations/release.md; scripts/release/publish.sh is the same release from a Mac.
 #
 #   gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
-#   gh workflow run release.yml --ref main -f mobile=true -f desktop=false
+#   gh workflow run release.yml --ref main -f mobile=both -f desktop=false
 on:
   workflow_dispatch:
     inputs:
@@ -15,9 +15,10 @@ on:
         type: string
         default: ""
       mobile:
-        description: Also make iOS and Android store builds (uploaded to better-update, not submitted).
-        type: boolean
-        default: false
+        description: Store builds to make (uploaded to better-update, not submitted).
+        type: choice
+        options: [none, both, ios, android]
+        default: none
       desktop:
         description: Build macOS and Linux. Releasing needs them.
         type: boolean
@@ -90,17 +91,13 @@ jobs:
 
   mobile:
     name: Build ${{ matrix.platform }}
-    if: github.ref == 'refs/heads/main' && inputs.mobile
-    runs-on: ${{ matrix.runner }}
+    if: github.ref == 'refs/heads/main' && inputs.mobile != 'none'
+    runs-on: ${{ matrix.platform == 'ios' && 'macos-26' || 'ubuntu-24.04' }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: ios
-            runner: macos-26
-          - platform: android
-            runner: ubuntu-24.04
+        platform: ${{ inputs.mobile == 'both' && fromJSON('["ios", "android"]') || fromJSON(format('["{0}"]', inputs.mobile)) }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: ./.github/actions/setup-release
