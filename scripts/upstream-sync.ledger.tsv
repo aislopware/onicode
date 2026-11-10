@@ -220,3 +220,4 @@ d6d1763d41	take	fix(web): sent messages keep the numbers written on list items (
 1a2a4a5e96	take	fix(server): quitting stops an agent-device daemon left by an earlier server (#33587)
 3cb99ced5b	take	fix(mobile): attaching larger images no longer crashes with a BigInt error (#34087)
 17a6a01d84	take	feat(mobile): pick a voice environment once, then its method (#34073)
+d91915db9e	take	fix(server): a t3 thread send to a finished delegated child notifies its parent (#33446)
