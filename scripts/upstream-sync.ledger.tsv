@@ -91,3 +91,4 @@ eb6e7fa2f6	take	fix(models): new models also surface the CLI update that support
 6e4711d376	take	fix(web): clicked workspace areas no longer show the focus ring after a stray key (#33525)
 bf469bb196	take	chore(server): update Claude Agent SDK to 0.3.321 (#33530)
 e85e0094dd	take	fix(web): checking for updates finds provider updates on every machine (#33538)
+8ab427c607	take	fix(web): settings say custom instructions cover pull request descriptions (#33113)
