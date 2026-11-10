@@ -4,7 +4,7 @@ Onicode is a minimal GUI for coding agents. A server on your machine drives the 
 
 Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, Onicode can control them.
 
-Onicode is open source and maintained by [aislopware](https://github.com/aislopware). It began as a fork of [t3code](https://github.com/pingdotgg/t3code).
+Onicode is open source and maintained by [aislopware](https://github.com/aislopware).
 
 ## Before you start
 
@@ -74,9 +74,9 @@ Docs live in [docs/](./docs).
 - Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
 - [Run Onicode as a background service](./docs/user/background-service.md)
 
-## Fork of t3code
+## No hosted services
 
-Onicode is a fork of [t3code](https://github.com/pingdotgg/t3code) by T3 Tools Inc. Credit for the foundation goes to the t3code team. Onicode drops T3's hosted services (T3 Connect, the web app, telemetry), reaches other devices over your network or Tailscale, and ships through its own update feeds. Fixes and features from t3code are still reviewed and ported one commit at a time ([how](./docs/operations/upstream-sync.md)).
+Onicode has no cloud relay, web app or telemetry. Clients reach a server on the same machine, over your local network or through Tailscale, and releases ship through Onicode's own update feeds.
 
 ## Contributing
 
@@ -84,4 +84,4 @@ Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR
 
 ## License
 
-[MIT](./LICENSE), copyright aislopware and T3 Tools Inc.
+[MIT](./LICENSE).

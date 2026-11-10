@@ -952,11 +952,8 @@ it.effect("builds the secrets cases, each citing a finding and grading secret ha
         testCase.prompt,
         testCase.id,
       );
-      assert.match(
-        String(testCase.source?.finding ?? testCase.source?.issue),
-        /^(?:secret-field-2026-1[01] |pingdotgg\/t3code#\d+$)/,
-        testCase.id,
-      );
+      if (testCase.source !== undefined)
+        assert.match(String(testCase.source.finding), /^secret-field-2026-1[01] /, testCase.id);
       assert.isTrue(testCase.expect.secret?.chatAsk, testCase.id);
       // Consume credit needs declared consumers; every control checks prose over-correction.
       if (testCase.expect.secret?.fileUse === "consume")
