@@ -124,3 +124,5 @@ f7281124ba	skip	T3 mobile store-build workflow (mobile-eas-production.yml); Onic
 8226715813	skip	"Use T3 Code in another app" outside-app MCP wizard (declined by the maintainer); its ElectronShell grokbot:// allowance only serves that wizard
 73fb49d0b3	skip	T3 Android store AAB artifact in mobile-eas-production.yml; Onicode has no store/EAS workflows
 331889a135	take	fix(mobile): hide compose in the detail rail while starting a task (#33678)
+d1909d68f8	skip	T3 mobile app version bump (2.3.0); Onicode has its own app versions
+20bb685e68	skip	T3 mobile store workflow commit credit (mobile-eas-production.yml); Onicode has no store/EAS workflows
