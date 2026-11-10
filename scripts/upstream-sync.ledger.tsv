@@ -95,3 +95,4 @@ e85e0094dd	take	fix(web): checking for updates finds provider updates on every m
 ad9e87111f	take	feat(web): send messages while attachments upload (#33092)
 ff7aa5ace3	take	fix(mobile): Android PDF preview double-tap zoom and easier link taps (#33570)
 3e4d449308	skip	T3 version bump; Onicode has its own app versions
+dd0737d3e2	skip	T3 Connect sign-in approval (CloudLink, relay, hosted app, outside-agent approval page); no independent product fix in it
