@@ -1082,7 +1082,13 @@ function rootProviderThreadsForProvider(
 }
 
 function isHandoffSourceRun(run: OrchestrationV2Run): boolean {
-  return run.status === "completed" || run.status === "failed" || run.status === "interrupted";
+  return (
+    run.status === "completed" ||
+    run.status === "failed" ||
+    run.status === "interrupted" ||
+    // A queued request cancelled before it started never reached any provider.
+    (run.status === "cancelled" && run.startedAt !== null)
+  );
 }
 
 function lastDeliveredRunForProviderThread(
