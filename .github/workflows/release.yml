@@ -106,7 +106,7 @@ jobs:
       # React Native's iOS ccache wrapper swaps in its own config file, which drops the cache_dir
       # ccache-action configures, so the directory it saves is named here instead.
       CCACHE_DIR: ${{ github.workspace }}/.ccache
-      CCACHE_MAXSIZE: 2G
+      CCACHE_MAXSIZE: 5G
       # ccache checks compilers by content because the NDK installs fresh on every runner.
       CCACHE_NOHASHDIR: "true"
       CCACHE_COMPILERCHECK: content
@@ -127,7 +127,7 @@ jobs:
       - uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         with:
           key: mobile-${{ matrix.platform }}
-          max-size: 2G
+          max-size: 5G
 
       # better-update installs the whole workspace again in its staged copy, from this store.
       - name: Locate the pnpm store
