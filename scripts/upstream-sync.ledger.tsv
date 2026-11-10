@@ -196,3 +196,4 @@ f06bfa69c7	take	fix(web): drag command palette threads into the composer (#33990
 08af12da49	take	fix(shared): show zero seconds in minute durations (#33994)
 350ecd63be	take	fix(web): closing the right panel returns focus to where it was (#32569)
 1fed70cd19	take	fix(server): say why threads without a project are unavailable (#32342)
+3051b32502	take	fix: chat file links open the file agents cite (#33943)
