@@ -499,6 +499,10 @@ describe("MessagesTimeline messages", () => {
     viewport.scrollTop -= 30;
     await vi.waitFor(() => expect(screen.button("Next turn")).not.toBeDisabled());
 
+    // A list opened at its end holds that end through resizes until the reader leaves it.
+    viewport.scrollTop = 0;
+    await vi.waitFor(() => expect(screen.button("Previous turn")).toBeDisabled());
+
     // Shrinking a detached viewport moves the bottom away without a scroll event.
     await screen.rerender(
       <MessagesTimeline {...props} timelineEntries={entries} liveFollowEnabled={false} />,
