@@ -100,6 +100,9 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: ./.github/actions/setup-release
+      # better-update loads the Expo config and its plugins from here before it stages the build.
+      - name: Install the mobile workspace
+        run: pnpm install --frozen-lockfile --filter "@onicode/mobile..."
       - name: Build
         run: scripts/release/build.sh ${{ matrix.platform }} "$ONICODE_RELEASE_MESSAGE"
 
