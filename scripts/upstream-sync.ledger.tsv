@@ -48,3 +48,4 @@ c1463af205	take	perf(web): changing file counts no longer re-render the chat vie
 9c7750dc16	take	fix(desktop): a window saved 1px past a display edge reopens where it was (#28638)
 2b1db482d0	take	fix(web): open citation comments with the caret at the end (#28667)
 0e65e63324	take	fix(desktop): page redirects during loading no longer show a navigation error (#28814)
+50e176dba5	take	fix(web): banner button hover follows the banner's rounded corners (#29018)
