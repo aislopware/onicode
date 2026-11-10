@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/org/wonday/pdf/viewer/PdfViewerView.kt b/android/src/main/java/org/wonday/pdf/viewer/PdfViewerView.kt
-index c51515507544fb7a56f029fff8ea2b1ee35cbe9d..2de8b3ecfa0b75d55f0868c700a0a56b83c17053 100644
+index e1f9635aa52606725888ecd2d2a4d12ba314b2c4..aec33203b76b981340ef0fdf0cde2d70249e2ee6 100644
 --- a/android/src/main/java/org/wonday/pdf/viewer/PdfViewerView.kt
 +++ b/android/src/main/java/org/wonday/pdf/viewer/PdfViewerView.kt
 @@ -21,6 +21,7 @@ import org.json.JSONArray
@@ -35,7 +35,7 @@ index c51515507544fb7a56f029fff8ea2b1ee35cbe9d..2de8b3ecfa0b75d55f0868c700a0a56b
  
          override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
              if (!scrollEnabled || scaling) return false
-@@ -694,6 +698,7 @@ class PdfViewerView(context: Context) : View(context) {
+@@ -695,6 +699,7 @@ class PdfViewerView(context: Context) : View(context) {
          when (event.actionMasked) {
              MotionEvent.ACTION_DOWN -> {
                  touching = true
@@ -43,7 +43,7 @@ index c51515507544fb7a56f029fff8ea2b1ee35cbe9d..2de8b3ecfa0b75d55f0868c700a0a56b
                  if (scrollEnabled) parent?.requestDisallowInterceptTouchEvent(true)
              }
              MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> touching = false
-@@ -804,7 +809,11 @@ class PdfViewerView(context: Context) : View(context) {
+@@ -806,7 +811,11 @@ class PdfViewerView(context: Context) : View(context) {
              val pointX = (x - rect.left) / scale
              val pointY = (y - rect.top) / scale
              val docPage = pageBase + index
@@ -56,7 +56,7 @@ index c51515507544fb7a56f029fff8ea2b1ee35cbe9d..2de8b3ecfa0b75d55f0868c700a0a56b
              when {
                  hit?.uri != null -> emit(JSONObject().put("type", "link").put("url", hit.uri))
                  hit != null && hit.page >= 0 -> goToPage(hit.page, true)
-@@ -818,7 +827,11 @@ class PdfViewerView(context: Context) : View(context) {
+@@ -820,7 +829,11 @@ class PdfViewerView(context: Context) : View(context) {
      }
  
      private class PageLinkHit(val x: Float, val y: Float, val width: Float, val height: Float, val page: Int, val uri: String?) {
