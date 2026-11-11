@@ -237,3 +237,4 @@ ccc7b2d96f	take	fix(web): MCP App cards no longer flash white in dark mode while
 c90b67859a	take	fix(server): Find frees searched thread text after one idle minute (#34132)
 f7b81e1d11	take	fix(web): settings search shortcuts follow the physical key on non-US layouts (#33395)
 bbd51f74b4	take	fix(server): import Codex chats moved into a project from the scratch folder (#32880)
+5c97adaf6b	take	fix(desktop): clear stale GPU caches when the Electron version changes (#33641)
