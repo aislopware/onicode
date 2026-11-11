@@ -388,3 +388,4 @@ bd02e64b5f	take	fix(web): expanding a diff whose files changed no longer crashes
 303903acd9	take	fix(server): a steer during a delegate_task wait no longer drops the child's result (#27387)
 20081ef95f	take	fix(server): subagent threads settle with their parent instead of sweeping on their own (#19665)
 9d7384d096	take	fix(client-runtime): reopening a folder picker refreshes its listing (#23289)
+1843c93e39	take	fix(chat): keep scratch file links usable (#30768)
