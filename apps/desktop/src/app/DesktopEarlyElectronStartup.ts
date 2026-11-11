@@ -133,10 +133,25 @@ export function resolveLinuxDisableFeaturesSwitch(input: {
   if (featureListNames(input.enableFeatures).includes(WAYLAND_COLOR_MANAGER_FEATURE)) return null;
   if (featureListNames(input.disableFeatures).includes(WAYLAND_COLOR_MANAGER_FEATURE)) return null;
   if (!hasBrokenColorManager(input.readHyprctlVersionJson)) return null;
-  return input.disableFeatures === null
-    ? WAYLAND_COLOR_MANAGER_FEATURE
-    : `${input.disableFeatures},${WAYLAND_COLOR_MANAGER_FEATURE}`;
+  return appendFeature(input.disableFeatures, WAYLAND_COLOR_MANAGER_FEATURE);
 }
+
+// Holding scroll frames for the next CVDisplayLink tick makes Chromium on macOS
+// present single frames with layers, or the whole window, missing (pingdotgg/t3code#25552).
+const MAC_VSYNC_ALIGNED_SCROLLING_FEATURE = "VSyncAlignedPresentationForScrolling";
+
+export function resolveMacDisableFeaturesSwitch(input: {
+  readonly enableFeatures: string | null;
+  readonly disableFeatures: string | null;
+}): string | null {
+  const feature = MAC_VSYNC_ALIGNED_SCROLLING_FEATURE;
+  if (featureListNames(input.enableFeatures).includes(feature)) return null;
+  if (featureListNames(input.disableFeatures).includes(feature)) return null;
+  return appendFeature(input.disableFeatures, feature);
+}
+
+const appendFeature = (list: string | null, feature: string): string =>
+  list === null ? feature : `${list},${feature}`;
 
 export function resolveEarlyLinuxElectronOptions(
   input: EarlyLinuxElectronOptionsInput,

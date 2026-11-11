@@ -241,7 +241,9 @@ describe("DesktopPreReadyPlatform", () => {
       });
       assert.deepEqual(events, ["pre-ready", "later"]);
       assert.equal(registerSchemesMock.mock.calls.length, 1);
-      assert.equal(appendSwitchMock.mock.calls.length, 0);
+      assert.deepEqual(appendSwitchMock.mock.calls, [
+        ["disable-features", "VSyncAlignedPresentationForScrolling"],
+      ]);
       assert.equal(setDesktopNameMock.mock.calls.length, 0);
     }),
   );
