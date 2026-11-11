@@ -1210,7 +1210,10 @@ describe("AcpRegistryAdapterV2", () => {
           type: "http",
           name: "onicode",
           url: endpoint,
-          headers: [{ name: "Authorization", value: authorization }],
+          headers: [
+            { name: "Authorization", value: authorization },
+            { name: "oni-tool-exposure", value: "deferred" },
+          ],
         },
       ];
       const stdio = (authorization: string) => [
