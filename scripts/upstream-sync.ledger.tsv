@@ -285,3 +285,4 @@ f697d4db3e	take	fix(web): local server cards in the browser empty state take poi
 8c9af5418a	take	fix(web): disable the git actions menu when nothing in it is usable (#31972)
 94f54a5710	take	fix(server): preserve active turns when switching provider instances (#22755)
 46afd69a8b	take	fix(server): scheduled task updates keep the saved workspace unless the binding changes (#32494)
+5bb5d53312	take	fix(web): full-screen HTML pages fit their content and zoom by reflowing (#22349)
