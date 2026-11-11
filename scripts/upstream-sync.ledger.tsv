@@ -250,3 +250,4 @@ ba4d01cf7f	take	fix(shared): login-shell environment probe ignores DEBUG trap ou
 4363d0bf65	take	fix(web): mouse tilt wheel no longer switches threads on Windows and Linux desktop (#32963)
 32fdad5f49	take	fix(web): timeline minimap preview no longer steals hover or jumps around (#32151)
 c192c67867	take	fix(server): auto thread sends queue while a turn is stopping (#34163)
+c03f84bcde	take	fix(server): stream the usage-scan cache to disk instead of one string (#34030)
