@@ -28,6 +28,7 @@ const emitInterleavedAssistantToolCalls =
   process.env.ONICODE_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
 const emitV2Fidelity = process.env.ONICODE_ACP_EMIT_V2_FIDELITY === "1";
 const emitNotice = process.env.ONICODE_ACP_EMIT_NOTICE === "1";
+const hangCloseSession = process.env.ONICODE_ACP_HANG_CLOSE_SESSION === "1";
 const vibeRetryOutcome = process.env.ONICODE_ACP_VIBE_RETRY_OUTCOME;
 const emitGenericToolPlaceholders = process.env.ONICODE_ACP_EMIT_GENERIC_TOOL_PLACEHOLDERS === "1";
 const emitInTurnTaskOutputThenLateDuplicate =
@@ -733,6 +734,9 @@ const program = Effect.gen(function* () {
   yield* agent.handleCloseSession(() =>
     Effect.gen(function* () {
       yield* requireAuthentication();
+      if (hangCloseSession) {
+        return yield* Effect.never;
+      }
       return {};
     }),
   );
