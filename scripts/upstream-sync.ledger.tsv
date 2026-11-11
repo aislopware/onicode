@@ -414,3 +414,4 @@ f796df8fd2	take	fix(server,desktop): browser tools report why a page failed to l
 faed05d817	take	fix(server): usage prices long-context requests at above-tier rates (#25430)
 f495217e92	take	fix(server): Simlock open failures show what agent-device reported (#27564)
 3aea6553d3	take	fix(clients): show the right app name and thread context (#18442); desktop-only window title, no hosted-channel or guest-page parts
+c4cf58511b	take	fix(server): long Claude sessions import instead of being skipped (#29183)
