@@ -376,3 +376,4 @@ bff276e786	take	fix(server): Git failures no longer record checkpoints as missin
 26ccb935ab	take	fix(server): failed provider updates show the updater's error, not its closing hint
 3c7424ee39	take	fix(server): a busy embedded frame no longer holds copy keys back (#34204)
 ddc3cefbc4	take	fix(clients): collapsed turns show one context-compacted divider (#34177)
+1fa250eb1f	take	fix(mobile): un-settle while a settle is pending is no longer ignored (#26578)
