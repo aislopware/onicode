@@ -403,3 +403,4 @@ cff8bfcef0	take	fix(web): keep model favorites usable after disabling a provider
 621f0e7e71	take	fix(server): workspace search no longer indexes the home directory (#26126)
 cdbfae86cd	take	fix(claude): a killed Claude process names its signal on the failed turn (#26086); test stub gains Onicode's extra Claude query session methods
 546036ec0c	take	fix(server): onicode service install works on Linux hosts without a login session (#29923); cloud/ changes applied to service/
+cdd1c6a2af	take	fix(server): Copilot threads load optional Onicode tools on demand (#34245)
