@@ -107,6 +107,8 @@ describe("CommandPalette open intents", () => {
     await expect
       .element(page.getByPlaceholder("Search commands, projects, and threads..."))
       .toHaveFocus();
+    // ArrowDown before the first row's auto-highlight lands moves to the first row instead.
+    await expect.element(page.getByRole("option").first()).toHaveAttribute("data-highlighted");
     await userEvent.keyboard("{ArrowDown}");
     await expect
       .element(page.getByRole("option", { name: /^New thread in\.\.\./ }))
