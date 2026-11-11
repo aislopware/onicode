@@ -82,8 +82,8 @@ over 200,000 tokens. Each Claude provider's settings can override it:
 Send `/context` in a thread to see what fills Claude's context window by category: the
 system prompt, tools, MCP tools, memory files such as `CLAUDE.md`, skills, custom agents,
 and the conversation. Expand a category to see what it holds. On desktop, select a memory
-file to open it. The ring beside the composer's send button shows how full the window is;
-select it, or the context row in the thread details card, to open the same view.
+file to open it. On desktop, select the Context row in the thread details card to show the
+same breakdown under it.
 
 Send `/mcp` to see the MCP servers the thread's Claude session loaded, their status and
 tools. From there you can reconnect a server, turn it off or on, and sign in to or out of

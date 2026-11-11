@@ -5,20 +5,8 @@ import { test } from "./claudeThread.ts";
 // Golden paths through the real server, Claude session and app. The decoding, mapping and
 // error cases live in ClaudeSessionSettings.test.ts and ClaudeAdapterV2.test.ts.
 
-test("the context ring opens Claude's breakdown and agrees with its window", async ({
-  claudeThread: _thread,
-  screen,
-}) => {
-  await screen.getByRole("button", /of context used/).tap();
-  await expect(screen.getByText("System prompt")).toBeVisible();
-  const summary = await screen.getByText(/ of [\d.]+[KM]? tokens \(\d+%\)$/).textContent();
-  const window = / of ([\d.]+[KM]?) tokens/.exec(summary ?? "")?.[1];
-  expect(window).toBeDefined();
-  await screen.getByRole("button", "Close").tap();
-  await expect(screen.getByRole("button", new RegExp(`/ ${window} tokens$`))).toBeVisible();
-});
-
 const VIEWS = [
+  { command: "context", title: "Context window", loaded: "System prompt" },
   { command: "status", title: "Status", loaded: "Version" },
   { command: "agents", title: "Agents", loaded: "general-purpose" },
   { command: "skills", title: "Skills", loaded: /tokens$|^No skills are installed\.$/ },

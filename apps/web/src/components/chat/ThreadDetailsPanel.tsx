@@ -10,7 +10,6 @@ import type {
 import { scopedThreadKey } from "@onicode/client-runtime/environment";
 import { providerSessionViews } from "@onicode/client-runtime/provider-session-views";
 import type { DraftId } from "../../composerDraftStore";
-import { useProviderSessionViewStore } from "../../providerSessionViewStore";
 import { useOniProjectFileScripts } from "../../hooks/useOniProjectFileScripts";
 import { type EnvMode, type EnvironmentOption } from "../BranchToolbar.logic";
 import { BranchToolbar } from "../BranchToolbar";
@@ -21,6 +20,7 @@ import ProjectScriptsControl, {
 } from "../ProjectScriptsControl";
 import { memo, useState, type ComponentProps } from "react";
 import { ThreadDetailsCard } from "./ThreadDetailsCard";
+import type { SessionTarget } from "./ProviderSessionDialogs";
 import { OpenInPicker } from "./OpenInPicker";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import { ThreadAutomationsPanel } from "./ThreadAutomationsPanel";
@@ -97,6 +97,14 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
     props.activeProjectScripts && visible.scripts ? props.gitCwd : null,
   );
   const activeThreadRef = { environmentId: props.environmentId, threadId: props.threadId };
+  const sessionTarget: SessionTarget = {
+    environmentId: props.environmentId,
+    threadId: props.threadId,
+    threadRef: activeThreadRef,
+    threadKey: scopedThreadKey(activeThreadRef),
+    cwd: props.gitCwd,
+    availableEditors: props.availableEditors,
+  };
   const branchToolbarProps = {
     showGitControls: props.isGitRepo,
     environmentId: props.environmentId,
@@ -266,7 +274,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
               {visible.context && props.usage.contextWindow ? (
                 <ThreadDetailsContext
                   usage={props.usage.contextWindow}
-                  onOpenBreakdown={
+                  breakdown={
                     props.isServerThread &&
                     !props.draftId &&
                     providerSessionViews(
@@ -274,14 +282,7 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         (provider) => provider.instanceId === props.usage.providerInstanceId,
                       ),
                     ).includes("context")
-                      ? () =>
-                          useProviderSessionViewStore.getState().show(
-                            scopedThreadKey({
-                              environmentId: props.environmentId,
-                              threadId: props.threadId,
-                            }),
-                            "context",
-                          )
+                      ? sessionTarget
                       : undefined
                   }
                 />

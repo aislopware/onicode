@@ -55,7 +55,6 @@ import { folderDropTarget, resolveDroppedFolderPath } from "./folderDrop";
 import { splitTransferredFiles } from "./workspaceFileDrop";
 import { createModelSelection, normalizeModelSlug } from "@onicode/shared/model";
 import { USAGE_LIMITS_COMMAND } from "@onicode/shared/usageLimits";
-import type { ContextWindowSnapshot } from "@onicode/client-runtime/state/context-window";
 import {
   isProviderSessionView,
   type ProviderSessionView,
@@ -212,7 +211,6 @@ import {
   ComposerRestingImagePreviews,
 } from "./ComposerAttachmentStrip";
 import { ComposerPrimaryActions } from "./ComposerPrimaryActions";
-import { ComposerContextMeter } from "./ComposerContextMeter";
 import { ComposerFooterPrimaryActions } from "./ComposerFooterControls";
 import { ComposerPendingUserInputPanel } from "./ComposerPendingUserInputPanel";
 import { resolveComposerMenuActiveItemId } from "./composerMenuHighlight";
@@ -382,7 +380,6 @@ export interface ChatComposerProps {
   onUsageLimitsCommand?: (() => void) | undefined;
   providerSessionViews?: ReadonlyArray<ProviderSessionView> | undefined;
   onProviderSessionView?: ((view: ProviderSessionView) => void) | undefined;
-  contextWindow?: ContextWindowSnapshot | null | undefined;
   sideChatAvailable?: boolean;
   sideChatDisabledReason?: string | null;
   /** Arms a fresh session for the next message; absent where `/clear` is unavailable. */
@@ -1185,9 +1182,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     scheduleComposerFocus();
   };
   const editPromptFromTraitsStable = useStableCallback(editPromptFromTraits);
-  const openContextBreakdownStable = useStableCallback(() =>
-    props.onProviderSessionView?.("context"),
-  );
   const promptUltrathink = readPromptUltrathink(prompt);
 
   const [inlineRestingControlsHost, setInlineRestingControlsHost] = useState<HTMLDivElement | null>(
@@ -3609,16 +3603,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     keepFullHistory={props.keepFullHistory}
                     onToggleKeepFullHistory={props.onToggleKeepFullHistory}
                   >
-                    {props.contextWindow ? (
-                      <ComposerContextMeter
-                        usage={props.contextWindow}
-                        onOpen={
-                          props.providerSessionViews?.includes("context") === true
-                            ? openContextBreakdownStable
-                            : undefined
-                        }
-                      />
-                    ) : null}
                     {speechInput.available ? (
                       <>
                         <ComposerSpeechRecordingPill

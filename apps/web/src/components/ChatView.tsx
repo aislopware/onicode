@@ -3602,7 +3602,6 @@ export default function ChatView(props: ChatViewProps) {
                                 }
                                 providerSessionViews={sessionViews}
                                 onProviderSessionView={openSessionViewStable}
-                                contextWindow={isServerThread ? activeContextWindow : null}
                                 onUsageLimitsCommand={
                                   usageLimitsOffered &&
                                   usageLimitsKey !== null &&
