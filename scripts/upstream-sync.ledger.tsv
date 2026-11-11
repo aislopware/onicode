@@ -348,3 +348,4 @@ a68bd772a0	take	fix(grok): apply the selected reasoning effort to ACP sessions
 429c0ac2d3	take	fix(server): timed-out git commands that ignore SIGTERM no longer stall other git work
 1d152c3df4	take	fix(desktop): Group Linux windows under the installed launcher (AUR PKGBUILDs not in Onicode)
 479ee74135	take	fix(web): a thread started from a pull request links it
+5534467f2b	take	fix(mobile): browser address bar and Take control no longer hide under the header
