@@ -383,3 +383,4 @@ e6afd2a24b	take	fix(web): render citation chips in the collapsed composer (#2214
 4599e55bdd	take	fix(server): agents settle this thread when asked (#26765); kept Onicode's request_secret sudo wording
 6f2ce81958	take	fix(web): copying commands with prose no longer adds code fences (#24433)
 a91d6c8821	take	fix(server): Claude effort picker marks levels capped by maxEffortLevel (#23629); merged with Onicode's probe stderr tail and fast-mode model filter
+1a1a57376c	take	fix(web): start clone when destination is picked in file manager (#22226)
