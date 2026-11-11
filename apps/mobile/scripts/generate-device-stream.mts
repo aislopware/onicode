@@ -5,8 +5,14 @@ import { build } from "vite-plus";
 
 const mobileRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(import.meta.url)), "..");
 
-async function generateWebViewScript(feature: string, name: string) {
-  const stem = `${name.toLowerCase()}-stream`;
+// Each document calls its script's global; the test keeps these names matched to theirs.
+const STREAM_SCRIPTS = {
+  device: { entry: "devices/device-stream.browser.ts", global: "OniDeviceStream" },
+  preview: { entry: "browser/preview-stream.browser.ts", global: "OniPreviewStream" },
+} as const;
+
+export async function buildWebViewScript(stream: keyof typeof STREAM_SCRIPTS) {
+  const { entry, global } = STREAM_SCRIPTS[stream];
   const result = await build({
     configFile: false,
     logLevel: "silent",
@@ -15,8 +21,8 @@ async function generateWebViewScript(feature: string, name: string) {
       target: "es2022",
       minify: true,
       lib: {
-        entry: NodePath.join(mobileRoot, "src/features", feature, `${stem}.browser.ts`),
-        name: `Onicode${name}Stream`,
+        entry: NodePath.join(mobileRoot, "src/features", entry),
+        name: global,
         formats: ["iife"],
       },
     },
@@ -25,11 +31,16 @@ async function generateWebViewScript(feature: string, name: string) {
   const chunk = bundles
     .flatMap((bundle) => ("output" in bundle ? bundle.output : []))
     .find((output) => output.type === "chunk");
-  if (!chunk) throw new Error(`${name} build did not emit a script.`);
-  const root = NodePath.join(mobileRoot, ".generated", stem);
+  if (!chunk) throw new Error(`${global} build did not emit a script.`);
+  return chunk.code;
+}
+
+async function generateWebViewScript(stream: keyof typeof STREAM_SCRIPTS) {
+  const code = await buildWebViewScript(stream);
+  const root = NodePath.join(mobileRoot, ".generated", `${stream}-stream`);
   await NodeFSP.mkdir(root, { recursive: true });
   for (const [file, contents] of [
-    ["index.js", `module.exports = ${JSON.stringify(chunk.code)};\n`],
+    ["index.js", `module.exports = ${JSON.stringify(code)};\n`],
     ["package.json", '{"main":"index.js"}\n'],
   ] as const) {
     const destination = NodePath.join(root, file);
@@ -38,5 +49,5 @@ async function generateWebViewScript(feature: string, name: string) {
   }
 }
 
-export const generateDeviceStreamScript = () => generateWebViewScript("devices", "Device");
-export const generatePreviewStreamScript = () => generateWebViewScript("browser", "Preview");
+export const generateDeviceStreamScript = () => generateWebViewScript("device");
+export const generatePreviewStreamScript = () => generateWebViewScript("preview");
