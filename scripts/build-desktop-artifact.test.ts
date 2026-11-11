@@ -523,6 +523,22 @@ it.layer(NodeServices.layer)("build-desktop-artifact", (it) => {
     }),
   );
 
+  it.effect("names the Electron window class in the Linux desktop entry", () =>
+    Effect.gen(function* () {
+      const linux = yield* createBuildConfig(
+        "linux",
+        "AppImage",
+        "0.0.33",
+        false,
+        false,
+        undefined,
+        undefined,
+      );
+
+      assert.nestedPropertyVal(linux, "linux.desktop.entry.StartupWMClass", "dev.onicode.Onicode");
+    }),
+  );
+
   it.effect("declares Calendar access for hosted commands in macOS builds", () =>
     Effect.gen(function* () {
       for (const signed of [false, true]) {
