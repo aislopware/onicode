@@ -345,3 +345,4 @@ d2c25950b4	take	fix(server): tell outside agents which MCP tools need a thread a
 fb7e558943	take	test(web): theme search test no longer flakes on slow runners
 afa617b465	take	fix(web): branch picker no longer interrupts a running turn
 a68bd772a0	take	fix(grok): apply the selected reasoning effort to ACP sessions
+429c0ac2d3	take	fix(server): timed-out git commands that ignore SIGTERM no longer stall other git work
