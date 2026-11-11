@@ -1,4 +1,5 @@
 import {
+  contextCategoryAccents,
   contextCategoryDetail,
   contextUsageMcpTokensByServer,
   mcpServerCanAuthenticate,
@@ -24,6 +25,8 @@ import { ScreenContent } from "../../components/ui/ScreenContent";
 import { SheetHeader } from "../../components/ui/SheetHeader";
 import { ThemedSwitch } from "../../components/ui/ThemedSwitch";
 import { cn } from "../../lib/cn";
+import { contextChipAccent, contextChipPresentation } from "../../lib/composerChipPresentation";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { providerSessionEnvironment } from "../../state/providerSession";
 import { useEnvironmentQuery } from "../../state/query";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -63,17 +66,6 @@ export function Muted(props: {
   );
 }
 
-const USED_COLORS = [
-  "bg-sky-500",
-  "bg-violet-500",
-  "bg-amber-500",
-  "bg-emerald-500",
-  "bg-rose-500",
-  "bg-cyan-500",
-  "bg-fuchsia-500",
-  "bg-lime-500",
-];
-
 /** `/context`: what the thread's live agent session carries, by category. */
 export function ThreadContextUsageSheet({ route }: StaticScreenProps<SessionTarget>) {
   const target = route.params;
@@ -111,14 +103,25 @@ function ContextBreakdown(props: {
 }) {
   const { usage } = props;
   const [expanded, setExpanded] = useState<string | null>(null);
-  const categories = usage.categories.filter((category) => category.tokens > 0);
-  const colorOf = (index: number) => {
-    const category = categories[index]!;
-    if (category.kind === "free") return "bg-subtle";
-    if (category.kind !== "used") return "bg-subtle-strong";
-    const usedBefore = categories.slice(0, index).filter((item) => item.kind === "used").length;
-    return USED_COLORS[usedBefore % USED_COLORS.length]!;
-  };
+  const theme = useUniwindTheme();
+  // Parts wear the context chip colors, solved for this theme like the chips; the rest stay grey.
+  const categories = contextCategoryAccents(usage.categories)
+    .filter(({ category }) => category.tokens > 0)
+    .map(({ category, accent }) => ({
+      category,
+      color:
+        accent !== null
+          ? contextChipAccent(
+              contextChipPresentation(accent).accent,
+              theme,
+              theme["--color-foreground"],
+            )
+          : category.kind === "used"
+            ? theme["--color-foreground-muted"]
+            : category.kind === "free"
+              ? theme["--color-subtle"]
+              : theme["--color-foreground-tertiary"],
+    }));
   const max = Math.max(usage.maxTokens, 1);
   return (
     <View className="gap-3">
@@ -127,24 +130,23 @@ function ContextBreakdown(props: {
       </Muted>
       <View className="h-2 flex-row overflow-hidden rounded-full bg-subtle">
         {/* Deferred tools load on demand, so they take no room until used. */}
-        {categories.map((category, index) =>
+        {categories.map(({ category, color }) =>
           category.kind === "deferred" ? null : (
             <View
               key={category.id ?? category.name}
-              className={colorOf(index)}
-              style={{ width: `${(category.tokens / max) * 100}%` }}
+              style={{ width: `${(category.tokens / max) * 100}%`, backgroundColor: color }}
             />
           ),
         )}
       </View>
       <View>
-        {categories.map((category, index) => {
+        {categories.map(({ category, color }) => {
           const key = category.id ?? category.name;
           const detail = contextCategoryDetail(category);
           const isOpen = expanded === key;
           const row = (
             <View className="flex-row items-center gap-2 py-2.5">
-              <View className={cn("size-2.5 rounded-full", colorOf(index))} />
+              <View className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
               <Text className="min-w-0 flex-1" numberOfLines={1}>
                 {category.name}
               </Text>

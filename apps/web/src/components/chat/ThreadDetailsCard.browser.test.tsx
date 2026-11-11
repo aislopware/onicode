@@ -44,7 +44,7 @@ function Card({
   fixture,
   rows = 1,
   automationRows = 0,
-  serverOverflowRows = 0,
+  overflow,
 }: {
   threadRef: ScopedThreadRef;
   inline: boolean;
@@ -53,8 +53,8 @@ function Card({
   rows?: number;
   /** Rows of 100px in an automations list shown at full density. */
   automationRows?: number;
-  /** Rows of 100px that expanded server lists add, which density ignores. */
-  serverOverflowRows?: number;
+  /** Rows of 100px that an expanded list marked with this attribute adds, which density ignores. */
+  overflow?: { readonly marker: string; readonly rows: number };
 }) {
   return (
     // The web root renders in StrictMode, which re-runs ref callbacks on every mount.
@@ -86,11 +86,8 @@ function Card({
               {density === "full" && automationRows > 0 ? (
                 <section data-thread-automations-panel style={{ height: automationRows * 100 }} />
               ) : null}
-              {density === "full" && serverOverflowRows > 0 ? (
-                <div
-                  data-thread-details-server-overflow
-                  style={{ height: serverOverflowRows * 100 }}
-                />
+              {density === "full" && overflow ? (
+                <div {...{ [overflow.marker]: "" }} style={{ height: overflow.rows * 100 }} />
               ) : null}
             </>
           )}
@@ -187,10 +184,13 @@ it("keeps full density when many automations make the content tall", async () =>
     .toHaveAttribute("data-density", "full");
 });
 
-it("stays full while expanded server rows overflow", async () => {
+it.each([
+  ["the expanded server list", "data-thread-details-server-overflow"],
+  ["the context breakdown", "data-thread-details-context-breakdown"],
+])("stays full while %s overflows", async (_name, marker) => {
   using fixture = setup();
   await using _screen = await render(
-    <Card threadRef={threadB} inline fixture={fixture} rows={2} serverOverflowRows={4} />,
+    <Card threadRef={threadB} inline fixture={fixture} rows={2} overflow={{ marker, rows: 4 }} />,
   );
   await expect
     .element(page.getByRole("region", { name: "Thread details" }))

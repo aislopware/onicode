@@ -22,7 +22,12 @@ import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { formatContextWindowCompactionMessage } from "./compaction.logic";
-import { ContextUsageDetails, type SessionTarget } from "./ProviderSessionDialogs";
+import {
+  ContextUsageDetails,
+  contextUsedParts,
+  type SessionTarget,
+  useContextUsageBreakdown,
+} from "./ProviderSessionDialogs";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 
 const PACE_LABEL: Record<LimitPace, string> = {
@@ -104,6 +109,9 @@ export function ThreadDetailsContext({
       ? (threshold / maxTokens) * 100
       : null;
   const usedTokens = formatContextWindowTokens(usage.usedTokens);
+  const target = breakdown && expanded ? breakdown : null;
+  const query = useContextUsageBreakdown(target, usage.updatedAt);
+  const details = target !== null ? query.data : null;
   return (
     <ThreadDetailsSection
       headingId="thread-details-context-heading"
@@ -117,6 +125,15 @@ export function ThreadDetailsContext({
           tone={used === null ? null : used >= 90 ? "error" : used >= 80 ? "warning" : null}
           tick={tick}
           muted
+          segments={
+            details
+              ? contextUsedParts(details).map(({ category, color }) => ({
+                  key: category.id ?? category.name,
+                  color,
+                  tokens: category.tokens,
+                }))
+              : null
+          }
           value={
             maxTokens !== null
               ? `${usedTokens} / ${formatContextWindowTokens(maxTokens)}`
@@ -149,9 +166,20 @@ export function ThreadDetailsContext({
           }
         />
       </div>
-      {breakdown && expanded ? (
-        <div className="px-0.5 pt-1 pb-1.5">
-          <ContextUsageDetails {...breakdown} />
+      {target !== null ? (
+        <div className="pt-0.5" data-thread-details-context-breakdown>
+          {details ? (
+            <ContextUsageDetails usage={details} target={target} />
+          ) : (
+            <p
+              className={cn(
+                "px-2.5 py-1 text-xs",
+                query.error !== null ? "text-destructive-foreground" : "text-muted-foreground",
+              )}
+            >
+              {query.error ?? "Reading the session…"}
+            </p>
+          )}
         </div>
       ) : null}
     </ThreadDetailsSection>
@@ -200,6 +228,7 @@ function UsageRow({
   fill,
   tone,
   tick = null,
+  segments = null,
   value,
   ariaValue = value,
   tooltip,
@@ -213,6 +242,12 @@ function UsageRow({
   readonly tone: UsageTone;
   /** A marker on the bar, from 0 to 100. */
   readonly tick?: number | null;
+  /** Splits the fill into colored parts, sized by their tokens. */
+  readonly segments?: ReadonlyArray<{
+    readonly key: string;
+    readonly color: string;
+    readonly tokens: number;
+  }> | null;
   readonly value: string;
   readonly ariaValue?: string;
   readonly tooltip: ReactNode;
@@ -246,7 +281,19 @@ function UsageRow({
         <span className="max-w-28 truncate text-muted-foreground">{label}</span>
         {fill !== null ? (
           <span className="relative h-[3px] rounded-full bg-muted-foreground/30 dark:bg-muted-foreground/20">
-            {fill > 0 ? (
+            {fill > 0 && segments !== null && segments.length > 0 ? (
+              <span
+                className="absolute inset-y-0 left-0 flex overflow-hidden rounded-full"
+                style={{ width: `max(${fill}%, 6px)` }}
+              >
+                {segments.map((segment) => (
+                  <span
+                    key={segment.key}
+                    style={{ flexGrow: segment.tokens, backgroundColor: segment.color }}
+                  />
+                ))}
+              </span>
+            ) : fill > 0 ? (
               <span
                 className={cn(
                   "absolute inset-y-0 left-0 rounded-full",
