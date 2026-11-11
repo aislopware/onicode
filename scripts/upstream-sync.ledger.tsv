@@ -261,3 +261,4 @@ c82e1ba515	take	fix(gitlab): review comments can cover a range of lines (#30535)
 034f3ba918	take	fix(server): updates copy the database while the server still runs when it cannot be cloned (#33058)
 a03d9bce02	take	fix(mobile): file links in question cards open the file viewer (#29151)
 37452eeaa3	take	fix(server): cloning into a stranded clone project's empty folder reuses that project (#33439)
+492f711971	skip	Fixes nightly notes leaking through electron-updater's GitHub releases feed; Onicode updates from the better-update generic feed and has no nightly channel
