@@ -263,3 +263,4 @@ a03d9bce02	take	fix(mobile): file links in question cards open the file viewer (
 37452eeaa3	take	fix(server): cloning into a stranded clone project's empty folder reuses that project (#33439)
 492f711971	skip	Fixes nightly notes leaking through electron-updater's GitHub releases feed; Onicode updates from the better-update generic feed and has no nightly channel
 2163d41409	take	fix(shared): Open in Zed ignores the OpenZFS zed daemon on Linux (#33479)
+7e45dcdd61	take	fix(mobile): chat code blocks colour diff, kotlin, sql and other languages again (#33680)
