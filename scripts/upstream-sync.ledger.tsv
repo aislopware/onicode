@@ -361,3 +361,4 @@ f5fe0790e7	take	fix(web): Office previews say "1 page", "1 sheet", "1 slide" and
 bc3eb6d2b2	take	fix(web): fix japanese text in file viewer not rendering (#29051); fonts-cjk pinned to 0.4.2 to match Onicode fonts 0.4.2
 bc9c84e4f6	take	docs(mcp): oni_thread_update lists only its rename and title actions (#26130)
 60efd7c869	take	fix(server): oni_thread_launch refuses models the provider does not advertise (#26625)
+15695ee78f	take	fix(opencode): omit unsupported reasoning options from catalog models (#19000)
