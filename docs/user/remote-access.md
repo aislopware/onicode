@@ -139,8 +139,9 @@ Onicode fills in its address and asks for a pairing code.
 
 To let devices sign in without a code, open **Settings → Sharing & access** on the host and
 turn on **Tailscale sign-in**. Network access must be **Tailnet only** or **LAN and tailnet**.
-For a command-line host, choose that machine in the same page from a connected desktop app, or
-set `"tailnetSignIn": true` in its `settings.json` under `~/.onicode/userdata`. Onicode then
+On mobile, open the machine under **Settings → Environments** and use the switch under
+**Sharing**. For a command-line host, use either switch from a connected app, or set
+`"tailnetSignIn": true` in its `settings.json` under `~/.onicode/userdata`. Onicode then
 asks Tailscale who each connecting device is and signs in:
 
 - Devices logged in to Tailscale as the same user as the host. A tagged host has no user, so
