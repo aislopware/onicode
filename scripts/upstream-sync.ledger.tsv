@@ -317,3 +317,4 @@ fcddd737e2	take	fix(web): don't save retention age until committed
 faa8ad6818	take	fix(server): one dropped probe no longer lists a live linked peer as unreachable
 ab9df1d6ff	skip	T3 release version bump; Onicode versions its own releases
 36f4e07e03	take	fix(server): preview automation reports ambiguous selectors instead of calling them invalid
+1530bec29a	take	fix(opencode): a context overflow that OpenCode compacts no longer fails the turn
