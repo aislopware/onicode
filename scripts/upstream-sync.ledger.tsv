@@ -401,3 +401,4 @@ ee21337d84	take	fix(shared): a zero-credit cap no longer marks seat-based Codex 
 b125e89768	take	fix(server): Codex forks no longer request full turn history (#24537)
 cff8bfcef0	take	fix(web): keep model favorites usable after disabling a provider (#23479)
 621f0e7e71	take	fix(server): workspace search no longer indexes the home directory (#26126)
+cdbfae86cd	take	fix(claude): a killed Claude process names its signal on the failed turn (#26086); test stub gains Onicode's extra Claude query session methods
