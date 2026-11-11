@@ -327,3 +327,4 @@ b3f5d52701	take	fix(composer): steer instead of queueing during automatic compac
 f3da8ff63b	take	feat(gitlab): resolve overview threads from Summary and Timeline (#30575)
 27188274e7	take	fix(web): pull request search keeps partial-word matches after GitHub answers (#26992)
 835e72683b	take	fix(server): Claude subagents no longer show the parent's effort (#17042)
+d806251188	take	fix(server): runs cancelled by a server restart say why in the thread (#27192)
