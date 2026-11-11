@@ -1,0 +1,37 @@
+name: Start installing apt packages
+description: Install apt packages in the background. apt-install-finish waits for them.
+inputs:
+  packages:
+    description: Space-separated apt packages
+    required: true
+runs:
+  using: composite
+  steps:
+    # The .debs only fit the image they were resolved against, so the image version is in the key.
+    - name: Resolve apt package cache
+      shell: bash
+      env:
+        PACKAGES: ${{ inputs.packages }}
+      run: |
+        echo "APT_DEB_CACHE_DIR=$RUNNER_TEMP/apt-debs" >> "$GITHUB_ENV"
+        echo "APT_DEB_CACHE_KEY=apt-debs-v1-$ImageOS-$ImageVersion-$(printf '%s' "$PACKAGES" | cksum | cut -d' ' -f1)" >> "$GITHUB_ENV"
+
+    - name: Restore apt packages
+      id: cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ env.APT_DEB_CACHE_DIR }}
+        key: ${{ env.APT_DEB_CACHE_KEY }}
+
+    - name: Start installing apt packages
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.cache.outputs.cache-hit }}
+        PACKAGES: ${{ inputs.packages }}
+      # Unquoted so each package is its own argument.
+      run: |
+        echo "APT_DEB_CACHE_HIT=$CACHE_HIT" >> "$GITHUB_ENV"
+        (
+          bash "$GITHUB_WORKSPACE/.github/scripts/install-apt-packages.sh" "$APT_DEB_CACHE_DIR" $PACKAGES
+          echo "$?" > "$RUNNER_TEMP/apt-status"
+        ) > "$RUNNER_TEMP/apt.log" 2>&1 < /dev/null &
