@@ -391,3 +391,4 @@ bd02e64b5f	take	fix(web): expanding a diff whose files changed no longer crashes
 1843c93e39	take	fix(chat): keep scratch file links usable (#30768)
 9cb45ec0b7	take	fix(server): text generation falls back to an enabled custom instance instead of a disabled default (#28918)
 c75a58e57c	take	fix(server): peer link migrations 71 and 72 rerun safely (#26834)
+a48d7c6cd0	take	fix(ssh): explain how to recover from failed host key checks (#23785)
