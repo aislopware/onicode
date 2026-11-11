@@ -228,3 +228,4 @@ ae142932d0	skip	Scenario tooling: web scenarios drive the removed browser web cl
 79bca436b2	take	feat(server): voice models reuse copies already on disk (#34096)
 1d80047048	take	fix(web): scroll project picker to top on first result (#34113)
 3a8c250cb0	take	feat(opencode): track native image job outcomes and previews (#34089)
+b883156e26	skip	Only touches the scenarios tooling (scripts/scenarios, e2e.config, scenarios doc), which Onicode removed.
