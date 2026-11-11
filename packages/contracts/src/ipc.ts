@@ -478,10 +478,11 @@ export const PersistedSavedEnvironmentRecordSchema = Schema.Struct({
 });
 export type PersistedSavedEnvironmentRecord = typeof PersistedSavedEnvironmentRecordSchema.Type;
 
-export type DesktopServerExposureMode = "local-only" | "network-accessible";
+export type DesktopServerExposureMode = "local-only" | "tailnet-only" | "network-accessible";
 
 export const DesktopServerExposureModeSchema = Schema.Literals([
   "local-only",
+  "tailnet-only",
   "network-accessible",
 ]);
 

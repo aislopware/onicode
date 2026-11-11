@@ -26,6 +26,7 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import * as ServerHttp from "../http.ts";
+import * as TailnetAccess from "../tailnet/TailnetAccess.ts";
 import * as McpHttpServer from "../mcp/McpHttpServer.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as Sqlite from "../persistence/Sqlite.ts";
@@ -104,6 +105,7 @@ export const servePeer = <E, R>(
         Layer.provide(McpOAuthHttp.layer.pipe(Layer.provide(McpOAuth.layer))),
         Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
         Layer.provide(AuthHttp.layerAuthenticatedAuth),
+        Layer.provide(TailnetAccess.layerUnavailable),
       ),
       McpHttpServer.layerMcpTransport(tools).pipe(
         Layer.provide(

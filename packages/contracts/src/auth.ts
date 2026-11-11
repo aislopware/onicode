@@ -154,6 +154,9 @@ export const AuthTokenExchangeGrantType =
 export const AuthAccessTokenType = "urn:ietf:params:oauth:token-type:access_token" as const;
 export const AuthEnvironmentBootstrapTokenType =
   "urn:onicode:params:oauth:token-type:environment-bootstrap" as const;
+/** The caller proves who it is by its tailnet address; the subject token is ignored. */
+export const AuthTailnetIdentityTokenType =
+  "urn:onicode:params:oauth:token-type:tailnet-identity" as const;
 
 export const ServerAuthDescriptor = Schema.Struct({
   policy: ServerAuthPolicy,
@@ -189,7 +192,10 @@ export type AuthClientPresentationMetadata = typeof AuthClientPresentationMetada
 export const AuthTokenExchangeRequest = Schema.Struct({
   grant_type: Schema.Literal(AuthTokenExchangeGrantType),
   subject_token: TrimmedNonEmptyString,
-  subject_token_type: Schema.Literal(AuthEnvironmentBootstrapTokenType),
+  subject_token_type: Schema.Literals([
+    AuthEnvironmentBootstrapTokenType,
+    AuthTailnetIdentityTokenType,
+  ]),
   requested_token_type: Schema.Literal(AuthAccessTokenType),
   scope: Schema.optionalKey(TrimmedNonEmptyString),
   client_label: Schema.optionalKey(TrimmedNonEmptyString),

@@ -147,6 +147,7 @@ export class ServePortOccupiedError extends Schema.TaggedError<ServePortOccupied
 const resolveDirectPairingBaseUrl = (state: PersistedServerRuntimeState): string =>
   resolveHeadlessConnectionString(state.host, state.port, {
     privateNetworkOnly: state.privateNetworkOnly,
+    tailnetOnly: state.tailnetOnly,
   });
 
 export const resolveTailscaleLocalTarget = (
@@ -487,6 +488,8 @@ export const pairCommand = Command.make("pair", {
           notes.push(
             "This URL is only reachable from this machine. To reach it from your other devices, run `onicode up`, or re-run with --tailscale.",
           );
+        } else if (target.state.tailnetOnly) {
+          notes.push("This URL works only from devices on this machine's tailnet.");
         } else if (target.state.privateNetworkOnly) {
           notes.push(
             "This URL works only from this machine's local network. From elsewhere, re-run with --tailscale.",

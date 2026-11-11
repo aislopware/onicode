@@ -73,6 +73,7 @@ import * as PeerForwarding from "./peer/PeerForwarding.ts";
 import * as RemoteDelegation from "./peer/RemoteDelegation.ts";
 import * as PeerLinkRequests from "./peer/PeerLinkRequests.ts";
 import * as PeerLinks from "./peer/PeerLinks.ts";
+import * as TailnetAccess from "./tailnet/TailnetAccess.ts";
 import * as PeerMcpClient from "./peer/PeerMcpClient.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
@@ -168,7 +169,11 @@ import * as RunFinalizationService from "./orchestration-v2/RunFinalizationServi
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStoreV2 from "./orchestration-v2/ProjectionStore.ts";
 import { makePersistedServerRuntimeState } from "./serverRuntimeState.ts";
-import { acceptsPrivateNetworkConnection, loopbackUrlHostForAddress } from "./startupAccess.ts";
+import {
+  acceptsPrivateNetworkConnection,
+  acceptsTailnetConnection,
+  loopbackUrlHostForAddress,
+} from "./startupAccess.ts";
 import * as OrchestrationHttp from "./orchestration-v2/http.ts";
 import * as ProjectHttp from "./project/http.ts";
 import * as NetService from "@onicode/shared/Net";
@@ -278,7 +283,7 @@ const layerHttpServer = Layer.unwrap(
       authPolicy: EnvironmentAuthPolicy.resolveServerAuthPolicy(config),
       host: config.host,
       tailscaleServeEnabled: config.tailscaleServeEnabled,
-      privateNetworkOnly: config.privateNetworkOnly,
+      privateNetworkOnly: config.privateNetworkOnly || config.tailnetOnly,
     });
     yield* ManagedLimits.closeTailscaleServeTo(policy, { host: bindHost, port: config.port });
     return NodeHttpServer.layer(
@@ -286,7 +291,13 @@ const layerHttpServer = Layer.unwrap(
         const server = rejectRequestsUntilServing(
           guardHttpResponseWriteErrors(NodeHttp.createServer()),
         );
-        if (config.privateNetworkOnly) {
+        if (config.tailnetOnly) {
+          server.on("connection", (socket) => {
+            if (!acceptsTailnetConnection(socket)) {
+              socket.destroy();
+            }
+          });
+        } else if (config.privateNetworkOnly) {
           server.on("connection", (socket) => {
             if (!acceptsPrivateNetworkConnection(socket)) {
               socket.destroy();
@@ -707,6 +718,8 @@ const layerMakeRoutes = Layer.mergeAll(
     ),
   ),
   Layer.provide(PreviewBrowser.layer),
+  // Tailnet devices and sign-in, shared by the descriptor, /oauth/token and WebSocket.
+  Layer.provide(TailnetAccess.layer),
   // Links to other environments, shared by Settings (WebSocket) and agents (/mcp).
   Layer.provide(
     PeerForwarding.layer.pipe(

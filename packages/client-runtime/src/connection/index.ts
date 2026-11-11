@@ -21,3 +21,4 @@ export * as Wakeups from "./wakeups.ts";
 
 // Flat so consumers' inferred command types can name it.
 export { OutdatedHostUpdateError } from "./outdatedHostUpdate.ts";
+export * from "./tailnetDevices.ts";

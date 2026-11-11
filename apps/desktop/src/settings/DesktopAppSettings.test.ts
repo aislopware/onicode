@@ -169,7 +169,7 @@ describe("DesktopSettings", () => {
           environment.desktopSettingsPath,
           `{
             // JSONC-style comments and trailing commas match server settings parsing.
-            "serverExposureMode": "network-accessible",
+            "serverExposureMode": "tailnet-only",
             "tailscaleServeEnabled": true,
             "tailscaleServePort": 8443,
             "mainWindowBounds": { "x": 120, "y": 80, "width": 1280, "height": 900 },
@@ -181,7 +181,7 @@ describe("DesktopSettings", () => {
           localEnvironmentEnabled: true,
           mainWindowBounds: { x: 120, y: 80, width: 1280, height: 900 },
           mainWindowMaximized: false,
-          serverExposureMode: "network-accessible",
+          serverExposureMode: "tailnet-only",
           tailscaleServeEnabled: true,
           tailscaleServePort: 8443,
           wslBackendEnabled: false,

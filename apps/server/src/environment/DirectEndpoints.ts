@@ -62,6 +62,8 @@ export function resolveBoundEndpoints(input: {
   readonly interfaces: NetworkInterfacesMap;
   /** A cloud VM's private network is its provider's, which no client shares. */
   readonly onCloudVm?: boolean;
+  /** The listener refuses LAN connections, so only tailnet addresses work. */
+  readonly tailnetOnly?: boolean;
 }): ReadonlyArray<ServerDirectEndpoint> {
   if (isLoopbackHost(input.host)) return [];
   const tailscaleAddresses = new Set(
@@ -82,7 +84,7 @@ export function resolveBoundEndpoints(input: {
         .map((entry) => entry.address)
     : [input.host!].filter(isAdvertisableAddress);
   return [...new Set(addresses)]
-    .filter((address) => !input.onCloudVm || tailscaleAddresses.has(address))
+    .filter((address) => !(input.onCloudVm || input.tailnetOnly) || tailscaleAddresses.has(address))
     .map((address) => ({
       kind: tailscaleAddresses.has(address) ? "tailnet" : "lan",
       httpBaseUrl: `http://${formatHostForUrl(address)}:${input.port}/`,
@@ -139,6 +141,7 @@ export const make = Effect.gen(function* () {
         port: config.port,
         interfaces: NodeOS.networkInterfaces(),
         onCloudVm: yield* onCloudVm,
+        tailnetOnly: config.tailnetOnly === true,
       }),
     ];
     const servedUrl = yield* Ref.get(servedEndpoint);

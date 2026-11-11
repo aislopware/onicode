@@ -43,6 +43,7 @@ import {
   failEnvironmentInternal,
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
+import * as TailnetAccess from "./tailnet/TailnetAccess.ts";
 import { apiCorsAllowedHeaders, apiCorsAllowedMethods } from "./httpCors.ts";
 import { requestUrl } from "./requestUrl.ts";
 
@@ -275,11 +276,15 @@ export const layerServerEnvironmentHttpApi = HttpApiBuilder.group(
   "metadata",
   Effect.fnUntraced(function* (handlers) {
     const serverEnvironment = yield* ServerEnvironment.ServerEnvironment;
+    const tailnet = yield* TailnetAccess.TailnetAccess;
     return handlers.handle(
       "descriptor",
       Effect.fn("environment.metadata.descriptor")(function* (args) {
         yield* annotateEnvironmentRequest(args.endpoint.name);
-        return yield* serverEnvironment.getDescriptor;
+        const descriptor = yield* serverEnvironment.getDescriptor;
+        return (yield* tailnet.signInEnabled())
+          ? { ...descriptor, capabilities: { ...descriptor.capabilities, tailnetSignIn: true } }
+          : descriptor;
       }),
     );
   }),

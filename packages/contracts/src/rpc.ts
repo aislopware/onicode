@@ -38,6 +38,7 @@ import * as Rpc from "effect/rpc/Rpc";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 import * as RpcMiddleware from "effect/rpc/RpcMiddleware";
 import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { TailnetDevicesResult } from "./tailnet.ts";
 import {
   ProviderAuthCancelInput,
   ProviderAuthCompleteInput,
@@ -521,6 +522,7 @@ export const WS_METHODS = {
   peerLinksLink: "peerLinks.link",
   peerLinksUnlink: "peerLinks.unlink",
   peerLinksAnswerRequest: "peerLinks.answerRequest",
+  tailnetListDevices: "tailnet.listDevices",
   serverUpdateSettings: "server.updateSettings",
   serverDiscoverSourceControl: "server.discoverSourceControl",
   serverSearchAcpRegistry: "server.searchAcpRegistry",
@@ -818,6 +820,12 @@ const WsPeerLinksListRpc = Rpc.make(WS_METHODS.peerLinksList, {
   payload: Schema.Struct({}),
   success: Schema.Struct({ links: Schema.Array(PeerLinkSummary) }),
   error: Schema.Union([PeerLinkError, EnvironmentAuthorizationError]),
+});
+
+const WsTailnetListDevicesRpc = Rpc.make(WS_METHODS.tailnetListDevices, {
+  payload: Schema.Struct({}),
+  success: TailnetDevicesResult,
+  error: EnvironmentAuthorizationError,
 });
 
 const WsPeerLinksLinkRpc = Rpc.make(WS_METHODS.peerLinksLink, {
@@ -2071,6 +2079,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerReclaimDatabaseSpaceRpc,
   WsServerUpdateSettingsRpc,
   WsPeerLinksListRpc,
+  WsTailnetListDevicesRpc,
   WsPeerLinksLinkRpc,
   WsPeerLinksUnlinkRpc,
   WsPeerLinksAnswerRequestRpc,

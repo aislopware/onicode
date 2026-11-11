@@ -26,7 +26,10 @@ import * as DesktopManagedPolicy from "../app/DesktopManagedPolicy.ts";
 import * as DesktopAppSettings from "../settings/DesktopAppSettings.ts";
 import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopNetworkInterfaces from "./DesktopNetworkInterfaces.ts";
-import { resolveTailscaleAdvertisedEndpoints } from "./tailscaleEndpointProvider.ts";
+import {
+  isTailscaleInterface,
+  resolveTailscaleAdvertisedEndpoints,
+} from "./tailscaleEndpointProvider.ts";
 
 const TAILSCALE_STATUS_CACHE_TTL = Duration.seconds(60);
 
@@ -106,6 +109,28 @@ const resolveLanAdvertisedHost = (
   return preferred?.address ?? null;
 };
 
+// Only a Tailscale adapter's address, so another CGNAT VPN or a LAN host is never advertised.
+const resolveTailnetAdvertisedHost = (
+  networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces,
+  explicitHost: string | undefined,
+): string | null => {
+  const normalizedExplicitHost = normalizeOptionalHost(explicitHost);
+  if (normalizedExplicitHost && isTailscaleIpv4Address(normalizedExplicitHost)) {
+    return normalizedExplicitHost;
+  }
+  for (const [name, addresses] of Object.entries(networkInterfaces)) {
+    if (!isTailscaleInterface(name, addresses)) continue;
+    const address = addresses?.find(
+      (candidate) =>
+        !candidate.internal &&
+        candidate.family === "IPv4" &&
+        isTailscaleIpv4Address(candidate.address),
+    );
+    if (address) return address.address;
+  }
+  return null;
+};
+
 const resolveDesktopServerExposure = (input: {
   readonly mode: DesktopServerExposureMode;
   readonly port: number;
@@ -126,10 +151,9 @@ const resolveDesktopServerExposure = (input: {
     };
   }
 
-  const advertisedHost = resolveLanAdvertisedHost(
-    input.networkInterfaces,
-    input.advertisedHostOverride,
-  );
+  const advertisedHost = (
+    input.mode === "tailnet-only" ? resolveTailnetAdvertisedHost : resolveLanAdvertisedHost
+  )(input.networkInterfaces, input.advertisedHostOverride);
 
   return {
     mode: input.mode,
@@ -173,7 +197,8 @@ const resolveDesktopCoreAdvertisedEndpoints = (
     }),
   ];
 
-  if (input.exposure.endpointUrl) {
+  // Tailnet-only leaves the tailnet address to the Tailscale provider.
+  if (input.exposure.mode === "network-accessible" && input.exposure.endpointUrl) {
     endpoints.push(
       createDesktopEndpoint({
         id: `desktop-lan:${input.exposure.endpointUrl}`,
@@ -262,6 +287,7 @@ export interface DesktopServerExposureBackendConfig {
   readonly port: number;
   readonly bindHost: string;
   readonly httpBaseUrl: URL;
+  readonly tailnetOnly: boolean;
   readonly tailscaleServeEnabled: boolean;
   readonly tailscaleServePort: number;
 }
@@ -333,6 +359,7 @@ const toBackendConfig = (state: RuntimeState): DesktopServerExposureBackendConfi
   port: state.port,
   bindHost: state.bindHost,
   httpBaseUrl: state.httpBaseUrl,
+  tailnetOnly: state.mode === "tailnet-only",
   tailscaleServeEnabled: state.tailscaleServeEnabled,
   tailscaleServePort: state.tailscaleServePort,
 });
@@ -381,6 +408,7 @@ function resolveRuntimeState(input: {
     networkInterfaces: input.networkInterfaces,
     ...(advertisedHostOverride ? { advertisedHostOverride } : {}),
   });
+  // Tailnet-only binds even before Tailscale is up; the server's filter keeps the LAN out.
   const unavailable =
     input.requestedMode === "network-accessible" &&
     requestedExposure.endpointUrl === null &&
@@ -410,14 +438,14 @@ function resolveRuntimeState(input: {
   };
 }
 
-// A network-accessible backend binds every interface, so a new Wi-Fi network
-// or DHCP lease changes only the address worth advertising, not the binding.
+// A remote-reachable backend binds every interface, so a new Wi-Fi network,
+// DHCP lease, or Tailscale login changes only the address worth advertising.
 const withCurrentAdvertisedHost = (
   state: RuntimeState,
   networkInterfaces: DesktopNetworkInterfaces.NetworkInterfaces,
   advertisedHostOverride: Option.Option<string>,
 ): RuntimeState => {
-  if (state.mode !== "network-accessible") {
+  if (state.mode === "local-only") {
     return state;
   }
   const override = Option.getOrUndefined(advertisedHostOverride);
@@ -456,6 +484,7 @@ const tailscaleIpv4AddressKey = (
 const requiresBackendRelaunch = (previous: RuntimeState, next: RuntimeState): boolean =>
   previous.port !== next.port ||
   previous.bindHost !== next.bindHost ||
+  (previous.mode === "tailnet-only") !== (next.mode === "tailnet-only") ||
   previous.localHttpUrl !== next.localHttpUrl;
 
 /** @public */
@@ -611,7 +640,7 @@ export const make = Effect.gen(function* () {
     });
 
     // Spawning Mac App Store Tailscale can prompt for TCC access even when exposure is disabled.
-    if (state.mode !== "network-accessible" && !state.tailscaleServeEnabled) {
+    if (state.mode === "local-only" && !state.tailscaleServeEnabled) {
       return coreEndpoints;
     }
 

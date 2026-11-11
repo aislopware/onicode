@@ -1172,7 +1172,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     title: "Network access",
     to: "/settings/access",
     targetId: "connections-environment",
-    searchTerms: ["expose backend remote pairing local machine interfaces host restart"],
+    searchTerms: [
+      "expose backend remote pairing local machine interfaces host restart lan tailnet tailscale only",
+    ],
     localBackendManagementOnly: true,
   },
   {
@@ -1182,6 +1184,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     targetId: "connections-environment",
     searchTerms: ["serve magicdns endpoint remote secure network"],
     localBackendManagementOnly: true,
+  },
+  {
+    id: "tailnet-sign-in",
+    title: "Tailscale sign-in",
+    to: "/settings/access",
+    targetId: "connections-environment",
+    searchTerms: [
+      "tailnet identity pairing code skip without same user devices acl grant capability policy",
+    ],
+    environmentOnly: true,
   },
   {
     id: "wsl-backend",
@@ -1214,7 +1226,9 @@ export const SETTINGS_SEARCH_ITEMS = [
     id: "remote-environments",
     title: "Environments",
     to: "/settings/connections",
-    searchTerms: ["add pair backend host code ssh config agent tunnel saved"],
+    searchTerms: [
+      "add pair backend host code ssh config agent tunnel saved tailscale tailnet devices",
+    ],
   },
   {
     id: "load-balancing",

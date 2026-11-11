@@ -15,7 +15,10 @@ import { environmentSession } from "./session";
 import { environmentCatalog } from "../connection/catalog";
 import { createRemoteEnvironmentProjectionAtoms } from "./remote-environment-projections";
 import { serverEnvironment } from "./server";
-import { connectPairingUrl as connectPairingUrlCommand } from "../connection/onboarding";
+import {
+  connectPairingUrl as connectPairingUrlCommand,
+  connectTailnet as connectTailnetCommand,
+} from "../connection/onboarding";
 
 const connectionPairingUrlAtom = Atom.make("").pipe(
   Atom.keepAlive,
@@ -52,18 +55,44 @@ export async function pairEnvironment(
     appAtomRegistry.set(connectionPairingUrlAtom, "");
     return { ok: true, error: null };
   }
-  const error = Cause.squash(result.cause);
+  return pairingFailure(Cause.squash(result.cause));
+}
+
+function failureReason(error: unknown): unknown {
+  return error !== null && typeof error === "object" && "reason" in error
+    ? error.reason
+    : undefined;
+}
+
+function pairingFailure(error: unknown): PairingOutcome {
   const message = error instanceof Error ? error.message : "Failed to pair with the environment.";
-  if (
-    error !== null &&
-    typeof error === "object" &&
-    "reason" in error &&
-    error.reason === "unsupported"
-  ) {
+  if (failureReason(error) === "unsupported") {
     Dialog.alert("Client not supported", message);
     return { ok: false, error: null };
   }
   return { ok: false, error: message };
+}
+
+export interface TailnetSignInOutcome extends PairingOutcome {
+  /** The server would not sign this device in by its tailnet identity; a pairing code still can. */
+  readonly refused: boolean;
+}
+
+/** Signs in to an environment found on the tailnet by this device's tailnet identity and saves it. */
+export async function signInWithTailnet(
+  httpBaseUrl: string,
+  expectedEnvironmentId?: EnvironmentId,
+): Promise<TailnetSignInOutcome> {
+  const result = await runAtomCommand(
+    appAtomRegistry,
+    connectTailnetCommand,
+    { httpBaseUrl, ...(expectedEnvironmentId === undefined ? {} : { expectedEnvironmentId }) },
+    { reportFailure: false },
+  );
+  if (AsyncResult.isSuccess(result)) return { ok: true, error: null, refused: false };
+  const error = Cause.squash(result.cause);
+  if (failureReason(error) === "authentication") return { ok: false, error: null, refused: true };
+  return { ...pairingFailure(error), refused: false };
 }
 
 const remoteEnvironmentProjections = createRemoteEnvironmentProjectionAtoms({

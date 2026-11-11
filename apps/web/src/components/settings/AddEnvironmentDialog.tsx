@@ -1,10 +1,12 @@
 import { pipe } from "effect/Function";
-import { ChevronsLeftRightEllipsisIcon, PlusIcon, TerminalIcon } from "lucide-react";
+import { ChevronsLeftRightEllipsisIcon, NetworkIcon, PlusIcon, TerminalIcon } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 import {
   type DesktopDiscoveredSshHost,
   type DesktopSshEnvironmentTarget,
+  type EnvironmentId,
+  type TailnetDevice,
 } from "@onicode/contracts";
 import {
   isAtomCommandInterrupted,
@@ -41,10 +43,11 @@ import { AnimatedHeight } from "../AnimatedHeight";
 import {
   connectPairing as connectPairingAtom,
   connectSshEnvironment as connectSshEnvironmentAtom,
+  connectTailnet as connectTailnetAtom,
 } from "~/connection/onboarding";
 import { useEnvironmentQuery } from "~/state/query";
 import { desktopSshHostsStateAtom, filterDiscoveredSshHosts } from "~/state/desktopSshHosts";
-import { type EnvironmentPresentation } from "~/state/environments";
+import { type EnvironmentPresentation, useEnvironments } from "~/state/environments";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 import {
@@ -59,6 +62,7 @@ import {
   parseRemotePairingFields,
   formatDesktopSshConnectionError,
 } from "./ConnectionsSettings.logic";
+import { TailnetDevicePicker } from "./TailnetDevicePicker";
 
 const EMPTY_DISCOVERED_SSH_HOSTS: ReadonlyArray<DesktopDiscoveredSshHost> = [];
 
@@ -83,6 +87,14 @@ export function AddEnvironmentDialog({
   const connectSshEnvironment = useAtomCommand(connectSshEnvironmentAtom, {
     reportFailure: false,
   });
+  const connectTailnet = useAtomCommand(connectTailnetAtom, { reportFailure: false });
+  const { environments } = useEnvironments();
+  // A route target is already added, yet it is the one machine a route can lead to.
+  const addedEnvironmentIds = new Set<EnvironmentId>(
+    environments
+      .map((environment) => environment.environmentId)
+      .filter((environmentId) => environmentId !== routeTarget?.environmentId),
+  );
   const savedDesktopSshEnvironmentKeys = (() => {
     const keys = new Set<string>();
     for (const environment of savedEnvironments) {
@@ -100,7 +112,11 @@ export function AddEnvironmentDialog({
     }
     return keys;
   })();
-  const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh">("remote");
+  const [savedBackendMode, setSavedBackendMode] = useState<"remote" | "ssh" | "tailscale">(
+    "remote",
+  );
+  const [remoteHint, setRemoteHint] = useState<string | null>(null);
+  const [pendingTailnetDeviceId, setPendingTailnetDeviceId] = useState<string | null>(null);
   const [savedBackendHost, setSavedBackendHost] = useState("");
   const [savedBackendPairingCode, setSavedBackendPairingCode] = useState("");
   const [savedBackendSshHost, setSavedBackendSshHost] = useState("");
@@ -142,6 +158,7 @@ export function AddEnvironmentDialog({
     if (!nextOpen) {
       savedBackendSessionRef.current += 1;
       setSavedBackendMode("remote");
+      setRemoteHint(null);
       setSavedBackendHost("");
       setSavedBackendPairingCode("");
       setSavedBackendSshHost("");
@@ -256,6 +273,64 @@ export function AddEnvironmentDialog({
     setIsAddingSavedBackend(false);
   };
 
+  const continueWithPairingCode = (host: string, hint: string) => {
+    setSavedBackendHost(host);
+    setSavedBackendPairingCode("");
+    setRemoteHint(hint);
+    setSavedBackendMode("remote");
+  };
+
+  const handlePickTailnetDevice = async (device: TailnetDevice) => {
+    if (isAddingSavedBackend) return;
+    const onicode = device.onicode;
+    if (!onicode) {
+      const address = device.addresses[0];
+      continueWithPairingCode(
+        address ? `http://${address}:3773` : (device.dnsName ?? device.name),
+        `No Onicode server answered on ${device.name}. Check the port, then enter a pairing code from it.`,
+      );
+      return;
+    }
+    if (!onicode.tailnetSignIn) {
+      continueWithPairingCode(
+        onicode.httpBaseUrl,
+        `${onicode.label} needs a pairing code. Turn on Tailscale sign-in in its Sharing & access to skip this.`,
+      );
+      return;
+    }
+
+    const session = savedBackendSessionRef.current;
+    setIsAddingSavedBackend(true);
+    setPendingTailnetDeviceId(device.id);
+    onErrorChange(null);
+    const result = await connectTailnet({
+      httpBaseUrl: onicode.httpBaseUrl,
+      ...(routeTarget ? { expectedEnvironmentId: routeTarget.environmentId } : {}),
+    });
+    setPendingTailnetDeviceId(null);
+    setIsAddingSavedBackend(false);
+    if (result._tag === "Failure") {
+      if (session === savedBackendSessionRef.current && !isAtomCommandInterrupted(result)) {
+        const error = squashAtomCommandFailure(result);
+        continueWithPairingCode(
+          onicode.httpBaseUrl,
+          `${onicode.label} didn't sign this device in over Tailscale. Enter a pairing code from it instead.`,
+        );
+        onErrorChange(error instanceof Error ? error.message : null);
+      }
+      return;
+    }
+
+    handleOpenChange(false);
+    toastManager.add({
+      type: "success",
+      title: routeTarget ? "Route added" : "Environment connected",
+      description: routeTarget
+        ? `${routeTarget.label} can now be reached over Tailscale.`
+        : `${onicode.label} signed this device in over Tailscale.`,
+    });
+  };
+
   const handleSavedBackendSshFieldKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
     if (event.key === "Enter" && savedBackendSshHost.trim().length > 0) {
@@ -339,7 +414,7 @@ export function AddEnvironmentDialog({
     setSavedBackendHost(value);
   };
   const renderConnectionModeCard = (input: {
-    readonly mode: "remote" | "ssh";
+    readonly mode: "remote" | "ssh" | "tailscale";
     readonly title: string;
     readonly description: string;
     readonly icon?: ReactNode;
@@ -356,6 +431,7 @@ export function AddEnvironmentDialog({
         disabled={isAddingSavedBackend}
         onClick={() => {
           setSavedBackendMode(input.mode);
+          setRemoteHint(null);
         }}
       >
         {input.icon ? (
@@ -398,6 +474,7 @@ export function AddEnvironmentDialog({
           <Input
             value={savedBackendPairingCode}
             onChange={(event) => setSavedBackendPairingCode(event.target.value)}
+            autoFocus={remoteHint !== null}
             placeholder="PAIRCODE"
             disabled={isAddingSavedBackend}
             spellCheck={false}
@@ -406,7 +483,7 @@ export function AddEnvironmentDialog({
       </div>
       <div>
         <span className="mt-1 block text-2xs text-muted-foreground">
-          Paste a full pairing URL here to fill both fields automatically.
+          {remoteHint ?? "Paste a full pairing URL here to fill both fields automatically."}
         </span>
       </div>
     </div>
@@ -579,7 +656,7 @@ export function AddEnvironmentDialog({
         </DialogHeader>
         <DialogPanel>
           <div className="space-y-4">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className={cn("grid gap-3", desktopBridge ? "sm:grid-cols-3" : "sm:grid-cols-2")}>
               {renderConnectionModeCard({
                 mode: "remote",
                 title: "Remote link",
@@ -594,9 +671,27 @@ export function AddEnvironmentDialog({
                     icon: <TerminalIcon aria-hidden className="size-4" />,
                   })
                 : null}
+              {renderConnectionModeCard({
+                mode: "tailscale",
+                title: "Tailscale",
+                description:
+                  "Pick a device on your tailnet. Servers with Tailscale sign-in need no code.",
+                icon: <NetworkIcon aria-hidden className="size-4" />,
+              })}
             </div>
             <AnimatedHeight>
-              {savedBackendMode === "ssh" ? renderSshFields() : renderRemoteModeBody()}
+              {savedBackendMode === "ssh" ? (
+                renderSshFields()
+              ) : savedBackendMode === "tailscale" ? (
+                <TailnetDevicePicker
+                  addedEnvironmentIds={addedEnvironmentIds}
+                  pendingDeviceId={pendingTailnetDeviceId}
+                  disabled={isAddingSavedBackend}
+                  onPick={(device) => void handlePickTailnetDevice(device)}
+                />
+              ) : (
+                renderRemoteModeBody()
+              )}
             </AnimatedHeight>
           </div>
         </DialogPanel>

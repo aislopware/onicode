@@ -11,7 +11,10 @@ import {
   ensureTailscaleServe,
   parseTailscaleServeRoutesTo,
   parseTailscaleSshEnabled,
+  parseTailnetStatus,
   parseTailscaleStatus,
+  parseTailscaleWhois,
+  readTailnetStatus,
   readTailscaleSshEnabled,
   readTailscaleStatus,
   TailscaleCommandExitError,
@@ -209,6 +212,153 @@ describe("tailscale", () => {
       assert.equal(disabled.httpsServeEnabled, false);
     }),
   );
+
+  it.effect("lists tailnet machines by machine name, owner and tags, without sharee nodes", () =>
+    Effect.gen(function* () {
+      const status = yield* parseTailnetStatus(
+        JSON.stringify({
+          BackendState: "Running",
+          MagicDNSSuffix: "ts.example.dev",
+          CurrentTailnet: { Name: "example.dev" },
+          Self: {
+            ID: "nSelf",
+            HostName: "Alice’s Mac mini",
+            DNSName: "alice-mac-mini.ts.example.dev.",
+            OS: "macOS",
+            TailscaleIPs: ["fd7a:115c:a1e0::43", "100.64.0.67"],
+            Online: true,
+            UserID: 2,
+          },
+          Peer: {
+            k1: {
+              ID: "nPhone",
+              // iOS 17+ reports localhost; the machine name comes from DNSName.
+              HostName: "localhost",
+              DNSName: "alice-iphone.ts.example.dev.",
+              OS: "iOS",
+              TailscaleIPs: ["100.64.0.6"],
+              Online: false,
+              UserID: 2,
+            },
+            k2: {
+              ID: "nHost",
+              HostName: "host-1",
+              DNSName: "host-1.ts.example.dev.",
+              TailscaleIPs: ["100.64.0.70"],
+              Online: true,
+              UserID: 2147455555,
+              Tags: ["tag:host"],
+            },
+            k3: { ID: "nShared", DNSName: "guest.other.ts.net.", ShareeNode: true, UserID: 9 },
+          },
+          User: {
+            "2": { LoginName: "alice@example.dev", DisplayName: "Alice" },
+            "2147455555": { LoginName: "tagged-devices", DisplayName: "Tagged Devices" },
+          },
+        }),
+      );
+      assert.isTrue(status.running);
+      assert.equal(status.tailnetName, "example.dev");
+      assert.deepInclude(status.self, {
+        id: "nSelf",
+        name: "alice-mac-mini",
+        addresses: ["100.64.0.67", "fd7a:115c:a1e0::43"],
+        userId: 2,
+        owner: { loginName: "alice@example.dev", displayName: "Alice" },
+      });
+      assert.deepEqual(
+        status.peers.map((peer) => [
+          peer.name,
+          peer.online,
+          peer.owner?.loginName ?? null,
+          peer.tags,
+        ]),
+        [
+          ["alice-iphone", false, "alice@example.dev", []],
+          ["host-1", true, null, ["tag:host"]],
+        ],
+      );
+
+      const stopped = yield* parseTailnetStatus(
+        '{"BackendState":"Stopped","Self":null,"Peer":null}',
+      );
+      assert.isFalse(stopped.running);
+      assert.deepEqual(stopped.peers, []);
+    }),
+  );
+
+  it.effect("reads the caller's user, tags and app capabilities from whois", () =>
+    Effect.gen(function* () {
+      const user = yield* parseTailscaleWhois(
+        JSON.stringify({
+          Node: {
+            StableID: "nLaptop",
+            Name: "laptop.ts.example.dev.",
+            ComputedName: "laptop",
+            Hostinfo: { OS: "macOS" },
+          },
+          UserProfile: { ID: 2, LoginName: "alice@example.dev", DisplayName: "Alice" },
+          CapMap: { "onicode.com/cap/environment": [{ access: "read" }], other: null },
+        }),
+      );
+      assert.deepEqual(user, {
+        nodeId: "nLaptop",
+        name: "laptop",
+        os: "macOS",
+        tags: [],
+        user: { id: 2, loginName: "alice@example.dev", displayName: "Alice" },
+        capabilities: { "onicode.com/cap/environment": [{ access: "read" }] },
+      });
+
+      // A tagged node carries a placeholder profile, which is not a person.
+      const tagged = yield* parseTailscaleWhois(
+        JSON.stringify({
+          Node: { StableID: "nHost", Name: "host-1.ts.example.dev.", Tags: ["tag:host"] },
+          UserProfile: { ID: 2147455555, LoginName: "tagged-devices" },
+          CapMap: null,
+        }),
+      );
+      assert.isNull(tagged.user);
+      assert.deepEqual(tagged.tags, ["tag:host"]);
+
+      const error = yield* parseTailscaleWhois('{"UserProfile":{}}').pipe(Effect.flip);
+      assert.instanceOf(error, TailscaleStatusParseError);
+    }),
+  );
+
+  it.effect("falls back to the CLI inside the macOS app when none is on PATH", () => {
+    const spawned: Array<{ command: string; env: unknown }> = [];
+    const layer = Layer.merge(
+      Layer.succeed(
+        ChildProcessSpawner.ChildProcessSpawner,
+        ChildProcessSpawner.make((command) => {
+          const standard = command as unknown as {
+            readonly command: string;
+            readonly options: { readonly env?: unknown };
+          };
+          spawned.push({ command: standard.command, env: standard.options.env });
+          return standard.command === "tailscale"
+            ? Effect.callback<never, never>(() => {
+                throw Object.assign(new Error("spawn tailscale ENOENT"), { code: "ENOENT" });
+              })
+            : Effect.succeed(mockHandle({ stdout: '{"BackendState":"Running"}' }));
+        }),
+      ),
+      Layer.succeed(HostProcess.Platform, "darwin"),
+    );
+
+    return Effect.gen(function* () {
+      const status = yield* readTailnetStatus.pipe(Effect.provide(layer));
+      assert.isTrue(status.running);
+      assert.deepEqual(spawned, [
+        { command: "tailscale", env: undefined },
+        {
+          command: "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+          env: { TAILSCALE_BE_CLI: "1" },
+        },
+      ]);
+    });
+  });
 
   it.effect("reads Tailscale SSH enablement from local prefs", () => {
     const prefsJson =

@@ -109,6 +109,31 @@ function readRemoteAddressFromSource(source: unknown): string | undefined {
   return normalizeIpAddress(candidate.socket?.remoteAddress ?? candidate.remoteAddress);
 }
 
+/** The socket's own view of both ends, which a proxy cannot rewrite. */
+export function readRequestSocketPeer(source: unknown): {
+  readonly remoteAddress: string | undefined;
+  readonly remotePort: number | undefined;
+  readonly localAddress: string | undefined;
+} {
+  const socket =
+    source && typeof source === "object"
+      ? (
+          source as {
+            readonly socket?: {
+              readonly remoteAddress?: string;
+              readonly remotePort?: number;
+              readonly localAddress?: string;
+            };
+          }
+        ).socket
+      : undefined;
+  return {
+    remoteAddress: socket?.remoteAddress,
+    remotePort: socket?.remotePort,
+    localAddress: socket?.localAddress,
+  };
+}
+
 export function deriveAuthClientMetadata(input: {
   readonly request: HttpServerRequest.HttpServerRequest;
   readonly presented?: AuthClientPresentationMetadata;

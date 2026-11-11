@@ -2,6 +2,7 @@ import {
   AuthAccessTokenType,
   type AuthClientPresentationMetadata,
   AuthEnvironmentBootstrapTokenType,
+  AuthTailnetIdentityTokenType,
   AuthTokenExchangeGrantType,
   type AuthEnvironmentScope,
   type AuthWebSocketTicketResult,
@@ -42,20 +43,24 @@ export const bootstrapRemoteBearerSession = Effect.fn(
   "clientRuntime.authorization.bootstrapRemoteBearerSession",
 )(function* (input: {
   readonly httpBaseUrl: string;
-  readonly credential: string;
+  /** A pairing code, or `{ tailnet: true }` to sign in by this device's tailnet identity. */
+  readonly credential: string | { readonly tailnet: true };
   readonly scopes?: ReadonlyArray<AuthEnvironmentScope>;
   readonly clientMetadata?: AuthClientPresentationMetadata;
   readonly timeoutMs?: number;
 }) {
   const client = yield* makeEnvironmentHttpApiGroupClient(input.httpBaseUrl, "auth");
+  const tailnet = typeof input.credential !== "string";
   return yield* executeEnvironmentHttpRequest(
     environmentEndpointUrl(input.httpBaseUrl, "/oauth/token"),
     input.timeoutMs ?? DEFAULT_REMOTE_REQUEST_TIMEOUT_MS,
     client.token({
       payload: {
         grant_type: AuthTokenExchangeGrantType,
-        subject_token: input.credential,
-        subject_token_type: AuthEnvironmentBootstrapTokenType,
+        subject_token: typeof input.credential === "string" ? input.credential : "tailnet",
+        subject_token_type: tailnet
+          ? AuthTailnetIdentityTokenType
+          : AuthEnvironmentBootstrapTokenType,
         requested_token_type: AuthAccessTokenType,
         ...(input.scopes ? { scope: encodeOAuthScope(input.scopes) } : {}),
         ...clientMetadataTokenExchangeFields(input.clientMetadata),

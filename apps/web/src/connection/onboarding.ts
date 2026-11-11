@@ -23,6 +23,19 @@ export const connectPairing = createRuntimeCommand(connectionAtomRuntime, {
     ),
 });
 
+export const connectTailnet = createRuntimeCommand(connectionAtomRuntime, {
+  label: "web:connection:connect-tailnet",
+  scheduler: onboardingScheduler,
+  concurrency: {
+    mode: "singleFlight",
+    key: (input: ConnectionOnboarding.TailnetConnectionInput) => JSON.stringify(input),
+  },
+  execute: (input: ConnectionOnboarding.TailnetConnectionInput) =>
+    ConnectionOnboarding.ConnectionOnboarding.pipe(
+      Effect.flatMap((onboarding) => onboarding.registerTailnet(input)),
+    ),
+});
+
 export const connectSshEnvironment = createRuntimeCommand(connectionAtomRuntime, {
   label: "web:connection:connect-ssh",
   scheduler: onboardingScheduler,

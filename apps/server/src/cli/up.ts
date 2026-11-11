@@ -26,8 +26,22 @@ interface Setup {
   readonly lan: boolean;
   /** An installed service with no ONICODE_LAN keeps the old default: on. */
   readonly lanFromOldDefault: boolean;
+  /** Only tailnet devices reach the port; this wins over `lan`. */
+  readonly tailnetOnly: boolean;
   readonly host: string | undefined;
 }
+
+/** Who other than this machine can reach the server. */
+type Access = "off" | "tailnet" | "lan";
+
+const accessOf = (setup: { readonly lan: boolean; readonly tailnetOnly: boolean }): Access =>
+  setup.tailnetOnly ? "tailnet" : setup.lan ? "lan" : "off";
+
+/** The service.env entries for `access`; tailnet-only is left out unless chosen. */
+const accessEnv = (access: Access) => ({
+  ONICODE_LAN: String(access === "lan"),
+  ONICODE_TAILNET_ONLY: access === "tailnet" ? "true" : undefined,
+});
 
 const readSetup = Effect.fn("cli.up.read_setup")(function* () {
   const { baseDir } = yield* ServerConfig.ServerConfig;
@@ -37,21 +51,30 @@ const readSetup = Effect.fn("cli.up.read_setup")(function* () {
   const lan = yield* Config.Boolean("ONICODE_LAN")
     .pipe(Config.option)
     .parse(ConfigProvider.fromEnv({ env: entries }));
+  const tailnetOnly = yield* Config.Boolean("ONICODE_TAILNET_ONLY")
+    .pipe(Config.withDefault(false))
+    .parse(ConfigProvider.fromEnv({ env: entries }));
   // Another home's service doesn't read this home's service.env.
   const servesThisHome = service.installed && service.otherBaseDir === undefined;
   return {
     service,
     lan: Option.getOrElse(lan, () => servesThisHome),
-    lanFromOldDefault: Option.isNone(lan) && servesThisHome,
+    lanFromOldDefault: Option.isNone(lan) && servesThisHome && !tailnetOnly,
+    tailnetOnly,
     host: entries.ONICODE_HOST,
   } satisfies Setup;
 });
 
-/** The LAN choice `onicode up` applies: the flag, or what is set now. */
-const planLan = (setup: { readonly lan: boolean }, flag: Option.Option<boolean>) => ({
-  lan: Option.getOrElse(flag, () => setup.lan),
-  ask: Option.isNone(flag),
-});
+/** The access `onicode up` applies: the flags, or what is set now. */
+const planAccess = (
+  setup: { readonly lan: boolean; readonly tailnetOnly: boolean },
+  flags: { readonly lan: Option.Option<boolean>; readonly tailnetOnly: Option.Option<boolean> },
+): { readonly access: Access; readonly ask: boolean } => {
+  if (Option.getOrElse(flags.tailnetOnly, () => false)) return { access: "tailnet", ask: false };
+  if (Option.isSome(flags.lan)) return { access: flags.lan.value ? "lan" : "off", ask: false };
+  if (Option.isSome(flags.tailnetOnly)) return { access: "off", ask: false };
+  return { access: accessOf(setup), ask: true };
+};
 
 const formatSetup = (setup: Setup) => {
   const { service } = setup;
@@ -78,14 +101,21 @@ const formatSetup = (setup: Setup) => {
         ? `overridden · ONICODE_HOST=${setup.host}`
         : setup.lanFromOldDefault
           ? "on · kept from an older install"
-          : setup.lan
-            ? "on · pairing code only"
-            : "off",
+          : setup.tailnetOnly
+            ? "off · tailnet only"
+            : setup.lan
+              ? "on · pairing code only"
+              : "off",
     ],
   ];
   const notes = [
-    ...(setup.host === undefined && setup.lan
+    ...(setup.host === undefined && accessOf(setup) === "lan"
       ? ["Anyone on your LAN or tailnet can reach the port. A pairing code is the only lock."]
+      : []),
+    ...(setup.host === undefined && setup.tailnetOnly
+      ? [
+          "Devices on your tailnet can reach the port with a pairing code, or with Tailscale sign-in if it is on.",
+        ]
       : []),
     ...(setup.lanFromOldDefault
       ? ["Older installs keep LAN access on. Turn it off: `onicode up --no-lan`."]
@@ -97,8 +127,8 @@ const formatSetup = (setup: Setup) => {
   ].join("\n");
 };
 
-const formatNextSteps = (lan: boolean, serviceInstalled: boolean, pairCommand: string) =>
-  lan
+const formatNextSteps = (access: Access, serviceInstalled: boolean, pairCommand: string) =>
+  access !== "off"
     ? `Run \`${pairCommand}\`. Use the code on your other device.`
     : serviceInstalled
       ? "Remote access is off. Onicode still runs here in the background."
@@ -109,6 +139,7 @@ const interactiveTerminal = () => Boolean(process.stdin.isTTY && process.stdout.
 const setUp = Effect.fn("cli.up")(function* (flags: {
   readonly baseDir: Option.Option<string>;
   readonly lan: Option.Option<boolean>;
+  readonly tailnetOnly: Option.Option<boolean>;
   readonly yes: boolean;
 }) {
   const { baseDir } = yield* ServerConfig.ServerConfig;
@@ -126,37 +157,50 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
       baseDir,
     });
   }
-  const current = before.lan;
-  const plan = planLan(before, flags.lan);
+  const current = accessOf(before);
+  const plan = planAccess(before, flags);
   const interactive = !flags.yes && interactiveTerminal();
-  let lan = plan.lan;
+  let access = plan.access;
   if (plan.ask && interactive) {
     if (before.service.installed) yield* Console.log(`Current setup\n${formatSetup(before)}\n`);
+    const choices: ReadonlyArray<{ value: Access; title: string; description: string }> = [
+      { value: "off", title: "Off", description: "Only this machine" },
+      {
+        value: "tailnet",
+        title: "Tailnet only",
+        description: "Devices on your tailnet, with a pairing code or Tailscale sign-in",
+      },
+      {
+        value: "lan",
+        title: "LAN and tailnet",
+        description: "Devices on your local network or tailnet, with a pairing code",
+      },
+    ];
     const picked = yield* Prompt.run(
-      Prompt.Confirm({
-        message: "Allow LAN and tailnet connections? A pairing code is required.",
-        initial: plan.lan,
+      Prompt.Select({
+        message: "Which devices may connect?",
+        choices: choices.map((choice) => ({ ...choice, selected: choice.value === plan.access })),
       }),
     ).pipe(Effect.catchTags({ QuitError: () => Effect.succeed(null) }));
     if (picked === null) return yield* Console.log("Nothing changed.");
-    lan = picked;
+    access = picked;
   } else if (plan.ask && !flags.yes && !before.service.installed) {
     return yield* new CliError.UserError({
       cause: "routes",
       userMessage:
-        "No terminal. Choose access with --lan or --no-lan, or use --yes for the default. See `onicode up --help`.",
+        "No terminal. Choose access with --lan, --tailnet-only or --no-lan, or use --yes for the default. See `onicode up --help`.",
     });
   }
-  if (lan && !current) {
+  if (access !== "off" && current === "off") {
     const policy = yield* ManagedPolicy.ManagedPolicy;
     if (!ManagedLimits.allowsRemoteClients(policy)) {
       return yield* ManagedLimits.refuseRemoteClients(policy);
     }
   }
   // Nothing to run in the background, but a route left on still gets turned off.
-  if (!before.service.installed && !lan) {
-    if (current) yield* CliService.writeServiceEnv(baseDir, { ONICODE_LAN: "false" });
-    return yield* Console.log(formatNextSteps(lan, false, pairCommand));
+  if (!before.service.installed && access === "off") {
+    if (current !== "off") yield* CliService.writeServiceEnv(baseDir, accessEnv("off"));
+    return yield* Console.log(formatNextSteps(access, false, pairCommand));
   }
   const { installedVersion } = before.service;
   const newer =
@@ -168,7 +212,9 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
   // a newer one is left alone and needs this restart to start.
   const stopped = before.service.problems?.includes("service-stopped") === true;
   const restart =
-    before.service.installed && (before.service.current || newer) && (lan !== current || stopped);
+    before.service.installed &&
+    (before.service.current || newer) &&
+    (access !== current || stopped);
   // An older or broken service is reinstalled, which restarts it too.
   const update = before.service.installed && !before.service.current && !newer && !stopped;
   if ((restart || update) && interactive && !stopped) {
@@ -183,13 +229,16 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     if (!confirmed) return yield* Console.log("Nothing changed.");
   }
 
-  const previousLan = (yield* CliService.readServiceEnv(baseDir)).entries.ONICODE_LAN;
+  const previous = (yield* CliService.readServiceEnv(baseDir)).entries;
   // Also with no service manager: the file records the choice that `onicode status` shows.
-  yield* CliService.writeServiceEnv(baseDir, { ONICODE_LAN: String(lan) });
+  yield* CliService.writeServiceEnv(baseDir, accessEnv(access));
   // When the service step fails, an installed service still runs with the old
   // value, so the file goes back to match it.
   const restoreServiceEnv = before.service.installed
-    ? CliService.writeServiceEnv(baseDir, { ONICODE_LAN: previousLan })
+    ? CliService.writeServiceEnv(baseDir, {
+        ONICODE_LAN: previous.ONICODE_LAN,
+        ONICODE_TAILNET_ONLY: previous.ONICODE_TAILNET_ONLY,
+      })
     : Effect.void;
   // A failed update or restart may still have started the service with the new
   // settings, so restart it once more on the old ones.
@@ -205,8 +254,9 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
   const printServeCommand = Effect.fn(function* (reason: string) {
     const { command } = yield* resolveHostCliCommand("serve", [
       ...baseDirArgs,
-      // Explicit either way, so a ONICODE_LAN in the shell cannot override the choice.
-      lan ? "--lan" : "--no-lan",
+      // Explicit either way, so ONICODE_LAN or ONICODE_TAILNET_ONLY in the shell cannot override it.
+      access === "lan" ? "--lan" : "--no-lan",
+      access === "tailnet" ? "--tailnet-only" : "--no-tailnet-only",
     ]);
     yield* Console.log(`${reason} Keep this command running:\n  ${command}`);
     // A host wins over --lan and --no-lan, as it does in service.env.
@@ -266,7 +316,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
   yield* Console.log(
     // From what took effect: a failed service step can undo a choice.
     `\nThis machine\n${formatSetup(after)}\n\n${formatNextSteps(
-      after.lan,
+      accessOf(after),
       after.service.installed,
       pairCommand,
     )}`,
@@ -278,6 +328,12 @@ export const upCommand = Command.make("up", {
   lan: Flag.Boolean("lan").pipe(
     Flag.withDescription(
       "Allow LAN and tailnet connections. Anyone there can reach the port; a pairing code is the only lock. Turn off with --no-lan.",
+    ),
+    Flag.optional,
+  ),
+  tailnetOnly: Flag.Boolean("tailnet-only").pipe(
+    Flag.withDescription(
+      "Allow tailnet connections only, not the local network. Devices connect with a pairing code, or with Tailscale sign-in when it is on.",
     ),
     Flag.optional,
   ),
@@ -295,6 +351,7 @@ export const upCommand = Command.make("up", {
   Command.withExamples([
     { command: "onicode up", description: "Choose remote access." },
     { command: "onicode up --lan", description: "Allow LAN access with pairing codes." },
+    { command: "onicode up --tailnet-only", description: "Allow only devices on your tailnet." },
     { command: "onicode up --no-lan", description: "Stop LAN access." },
     { command: "onicode up --yes", description: "Take the defaults with no questions." },
     { command: "onicode status --json", description: "Read the settings from a script." },
@@ -331,6 +388,7 @@ const setupJson = (setup: Setup) =>
         inheritedDefault: setup.lanFromOldDefault,
         hostOverride: setup.host ?? null,
       },
+      tailnetOnly: setup.tailnetOnly,
     },
     null,
     2,
