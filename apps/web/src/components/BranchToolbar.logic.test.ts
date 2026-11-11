@@ -8,6 +8,7 @@ import {
   resolveEffectiveEnvMode,
   resolveBranchToolbarPrBranch,
   resolveLocalCheckoutBranchMismatch,
+  resolveLockedWorkspaceLabel,
   sanitizeNewRefName,
   shouldIncludeBranchPickerItem,
 } from "./BranchToolbar.logic";
@@ -89,6 +90,16 @@ describe("resolveEffectiveEnvMode", () => {
         draftThreadEnvMode: undefined,
       }),
     ).toBe("local");
+  });
+});
+
+describe("resolveLockedWorkspaceLabel", () => {
+  it.each([
+    ["/home/me/.onicode/worktrees/app/oni-ff466c42", "oni-ff466c42"],
+    ["/home/me/.onicode/worktrees/app/oni-ff466c42/", "oni-ff466c42"],
+    ["C:\\Users\\me\\worktrees\\feature-x", "feature-x"],
+  ])("names the worktree at %s", (path, label) => {
+    expect(resolveLockedWorkspaceLabel(path, "worktree")).toBe(label);
   });
 });
 
