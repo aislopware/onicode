@@ -307,3 +307,4 @@ ba32aabf62	take	fix(scheduler): show short server timezone on fixed-time labels;
 49bab9936e	take	fix(web): Changes row matches the diff comparison
 75c7fb28af	take	fix(server): imported ACP sessions show their native history; ws.test layerWsRpc call adapted to Onicode signature
 c266631bde	take	fix(preview): always return evaluated results by value; context budget rebased on Onicode's values
+afb4f91a7d	take	fix(provider-core): a model reply of "title" no longer replaces the thread title
