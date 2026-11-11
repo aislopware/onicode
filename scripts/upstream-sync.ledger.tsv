@@ -232,3 +232,4 @@ b883156e26	skip	Only touches the scenarios tooling (scripts/scenarios, e2e.confi
 768f17c518	take	ci: browser secret helper apt step fetches fewer indexes (#33966)
 d152d2c824	take	fix(client-runtime): a search query pasted from github.com lists pull requests again (#30150)
 4ca10398b1	take	fix(web): tighter outdated-conversation cards in the PR code panel (#34140)
+ccc7b2d96f	take	fix(web): MCP App cards no longer flash white in dark mode while the app loads (#33352)
