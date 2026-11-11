@@ -294,3 +294,4 @@ e2a781477a	take	fix(usage): Grok and Cursor usage limits show pace and the even-
 0d36f2b48e	take	fix(mobile): subscription widget no longer expires on a window that already reset (#22993)
 b5256ad09c	take	fix(opencode): verify CLI updates when loopback server is still running (#22839)
 729f6757d9	take	fix(usage): Claude subagent output is no longer undercounted (#20276)
+d0d0608b6b	take	fix(server): a remote update points the service unit at the runtime it committed (#19652); cloud/ changes applied to service/
