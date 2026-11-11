@@ -244,3 +244,4 @@ facd190640	take	fix(web): opening the terminal with Cmd+J no longer re-renders t
 0f13d2ccbd	take	refactor(web): remove icon morphing (#33985)
 ed52af3a47	take	feat(opencode): track native shell jobs across turns
 631ea1b6df	take	fix(server): restart send stops a Claude turn and runs the message next (#32902)
+ba4d01cf7f	take	fix(shared): login-shell environment probe ignores DEBUG trap output (#32646)
