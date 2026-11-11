@@ -919,8 +919,11 @@ importers:
         version: 1.9.0(@date-fns/tz@1.5.0)(@types/react@19.3.0)(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@betteroffice/docx':
         specifier: 0.5.1
-        version: 0.5.1(@betteroffice/fonts@0.4.2)
+        version: 0.5.1(@betteroffice/fonts@0.4.2(@betteroffice/fonts-cjk@0.4.2))
       '@betteroffice/fonts':
+        specifier: 0.4.2
+        version: 0.4.2(@betteroffice/fonts-cjk@0.4.2)
+      '@betteroffice/fonts-cjk':
         specifier: 0.4.2
         version: 0.4.2
       '@betteroffice/pptx':
@@ -2803,6 +2806,9 @@ packages:
     peerDependenciesMeta:
       '@betteroffice/fonts':
         optional: true
+
+  '@betteroffice/fonts-cjk@0.4.2':
+    resolution: {integrity: sha512-7emT0WTfmk7hNovU9CyjSDoLo8kNp7RnqICYJ1WT8KgIlPDhfvpVZIBlk258PTbIwe1UTW2lYPTrk5veglawIQ==}
 
   '@betteroffice/fonts@0.4.2':
     resolution: {integrity: sha512-OBumyWSLgyJjbElgHrE+lIcAoqNnXJ08ycOvH0vIs9JVzCDY5L0AirbpSUHn2A1NMTrHt0j8E0PmMFA3vhJkFw==}
@@ -11223,11 +11229,15 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.3.0
 
-  '@betteroffice/docx@0.5.1(@betteroffice/fonts@0.4.2)':
+  '@betteroffice/docx@0.5.1(@betteroffice/fonts@0.4.2(@betteroffice/fonts-cjk@0.4.2))':
     optionalDependencies:
-      '@betteroffice/fonts': 0.4.2
+      '@betteroffice/fonts': 0.4.2(@betteroffice/fonts-cjk@0.4.2)
 
-  '@betteroffice/fonts@0.4.2': {}
+  '@betteroffice/fonts-cjk@0.4.2': {}
+
+  '@betteroffice/fonts@0.4.2(@betteroffice/fonts-cjk@0.4.2)':
+    optionalDependencies:
+      '@betteroffice/fonts-cjk': 0.4.2
 
   '@betteroffice/pptx@0.5.1': {}
 
