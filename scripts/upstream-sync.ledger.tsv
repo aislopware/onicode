@@ -269,3 +269,4 @@ a03d9bce02	take	fix(mobile): file links in question cards open the file viewer (
 dea8472438	take	feat(web): label chips show the label's description on hover (#28732)
 b6d3097379	take	feat(web): composer strip names the worktree folder (#28459)
 362ef9a88a	take	feat(gitlab): revert a merged merge request (#30556)
+399df485a4	take	fix(claude): version errors from a custom endpoint no longer say to run claude update (#34176)
