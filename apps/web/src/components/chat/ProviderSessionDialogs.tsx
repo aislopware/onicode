@@ -1,5 +1,8 @@
 import {
+  contextCategoryAccents,
   contextCategoryDetail,
+  type ContextCategoryAccent,
+  contextUsedCategories,
   contextUsageMcpTokensByServer,
   mcpServerCanAuthenticate,
 } from "@onicode/client-runtime/provider-session-views";
@@ -15,10 +18,11 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import { ChevronRightIcon } from "lucide-react";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { resolveDiffPathForWorkspace } from "../../diffFileActions";
 import { useOpenInPreferredEditor } from "../../editorPreferences";
+import { contextChipColorVariable } from "../../lib/contextChipAccents";
 import { formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
@@ -76,28 +80,36 @@ export function ProviderSessionDialogs(props: SessionTarget) {
   );
 }
 
-const USED_COLORS = [
-  "bg-sky-500",
-  "bg-violet-500",
-  "bg-amber-500",
-  "bg-emerald-500",
-  "bg-rose-500",
-  "bg-cyan-500",
-  "bg-fuchsia-500",
-  "bg-lime-500",
-];
+const neutral = (percent: number) =>
+  `color-mix(in oklab, var(--color-muted-foreground) ${percent}%, transparent)`;
 
-function categoryColor(category: ProviderContextUsageCategory, usedIndex: number): string {
+// Each theme solves chip colors for contrast; the chroma floor keeps parts apart where a light
+// solve washes them out.
+function categoryColor(
+  category: ProviderContextUsageCategory,
+  accent: ContextCategoryAccent | null,
+): string {
+  if (accent !== null) {
+    return `oklch(from var(${contextChipColorVariable(accent)}) l max(c, 0.12) h / 80%)`;
+  }
   switch (category.kind) {
     case "free":
-      return "bg-muted-foreground/15";
+      return neutral(15);
     case "buffer":
-      return "bg-muted-foreground/35";
+      return neutral(35);
     case "deferred":
-      return "bg-muted-foreground/25";
+      return neutral(25);
     case "used":
-      return USED_COLORS[usedIndex % USED_COLORS.length]!;
+      return neutral(60);
   }
+}
+
+/** What fills the used context, largest first, with the colors the breakdown uses. */
+export function contextUsedParts(usage: ProviderContextUsage) {
+  return contextUsedCategories(usage).map(({ category, accent }) => ({
+    category,
+    color: categoryColor(category, accent),
+  }));
 }
 
 function percentOf(tokens: number, max: number): string {
@@ -110,21 +122,148 @@ export function SessionError(props: { readonly error: string }) {
   return <p className="text-sm text-destructive-foreground">{props.error}</p>;
 }
 
-function useContextUsage(target: SessionTarget) {
+function useContextUsage(target: SessionTarget | null) {
   return useEnvironmentQuery(
-    providerSessionEnvironment.contextUsage({
-      environmentId: target.environmentId,
-      input: { threadId: target.threadId },
-    }),
+    target === null
+      ? null
+      : providerSessionEnvironment.contextUsage({
+          environmentId: target.environmentId,
+          input: { threadId: target.threadId },
+        }),
   );
 }
 
-/** The `/context` breakdown without dialog chrome, for the thread details card. */
-export function ContextUsageDetails(props: SessionTarget) {
-  const query = useContextUsage(props);
-  if (query.error !== null) return <SessionError error={query.error} />;
-  if (query.data === null) return <p className="text-xs text-muted-foreground">Loading…</p>;
-  return <ContextBreakdown usage={query.data} target={props} dense />;
+/** The `/context` breakdown while `target` is set, asked again whenever the live total moves. */
+export function useContextUsageBreakdown(target: SessionTarget | null, updatedAt: string) {
+  const query = useContextUsage(target);
+  const { refresh } = query;
+  const enabled = target !== null;
+  const seenUpdatedAt = useRef(updatedAt);
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- asks the provider again when the live context total moves, so the rows match the Context row
+  useEffect(() => {
+    if (seenUpdatedAt.current === updatedAt) return;
+    seenUpdatedAt.current = updatedAt;
+    if (enabled) refresh();
+  }, [enabled, updatedAt, refresh]);
+  return query;
+}
+
+/**
+ * The `/context` breakdown in the thread details card, largest first. Bars compare the parts of
+ * the used context; free space and the compaction buffer stay with the Context row.
+ */
+export function ContextUsageDetails(props: {
+  readonly usage: ProviderContextUsage;
+  readonly target: SessionTarget;
+}) {
+  const { usage, target } = props;
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const used = contextUsedParts(usage);
+  const deferred = usage.categories.filter(
+    (category) => category.kind === "deferred" && category.tokens > 0,
+  );
+  const largest = used[0]?.category.tokens ?? 0;
+  const row = (category: ProviderContextUsageCategory, color: string | null) => {
+    const key = category.id ?? category.name;
+    return (
+      <CompactCategoryRow
+        key={key}
+        category={category}
+        bar={color !== null && largest > 0 ? { color, size: category.tokens / largest } : null}
+        open={expanded === key}
+        onToggle={() => setExpanded(expanded === key ? null : key)}
+        renderDetail={(detail) => (
+          <CategoryDetail detail={detail} usage={usage} target={target} compact />
+        )}
+      />
+    );
+  };
+  return (
+    <div className="flex flex-col text-xs">
+      <ul className="flex flex-col">{used.map(({ category, color }) => row(category, color))}</ul>
+      {deferred.length > 0 ? (
+        <>
+          <p className="px-2.5 pt-2 pb-0.5 text-2xs text-muted-foreground/70">Loaded on use</p>
+          <ul className="flex flex-col">{deferred.map((category) => row(category, null))}</ul>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function CompactCategoryRow(props: {
+  readonly category: ProviderContextUsageCategory;
+  /** Bar color and length from 0 to 1, or null for rows that take no room yet. */
+  readonly bar: { readonly color: string; readonly size: number } | null;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly renderDetail: (
+    detail: NonNullable<ReturnType<typeof contextCategoryDetail>>,
+  ) => ReactNode;
+}) {
+  const { category, bar } = props;
+  const detail = contextCategoryDetail(category);
+  const name = category.name.replace(/\s*\(deferred\)$/i, "");
+  const content = (
+    <>
+      <span
+        className={cn(
+          "flex min-w-0 items-center gap-1",
+          bar === null ? "text-muted-foreground/70" : "text-muted-foreground",
+        )}
+      >
+        <span className="truncate">{name}</span>
+        {detail !== null ? (
+          <ChevronRightIcon
+            className={cn("size-3 shrink-0 opacity-60", props.open && "rotate-90")}
+            aria-hidden
+          />
+        ) : null}
+      </span>
+      <span className="flex h-[3px]">
+        {bar !== null ? (
+          <span
+            className="rounded-full"
+            style={{ width: `max(${bar.size * 100}%, 3px)`, backgroundColor: bar.color }}
+          />
+        ) : null}
+      </span>
+      <span
+        className={cn(
+          "text-end tabular-nums",
+          bar === null ? "text-muted-foreground/70" : "text-foreground/80",
+        )}
+      >
+        {formatContextWindowTokens(category.tokens)}
+      </span>
+    </>
+  );
+  const rowClass =
+    "grid h-6 w-full grid-cols-[minmax(0,1fr)_2.5rem_2.25rem] items-center gap-x-3 rounded-lg px-2.5 text-start";
+  return (
+    <li>
+      {detail !== null ? (
+        <button
+          type="button"
+          aria-expanded={props.open}
+          className={cn(
+            rowClass,
+            "outline-none hover:bg-black/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:hover:bg-white/[0.08]",
+          )}
+          onClick={props.onToggle}
+        >
+          {content}
+        </button>
+      ) : (
+        <div className={rowClass}>{content}</div>
+      )}
+      {detail !== null && props.open ? (
+        <div className="ms-2.5 mb-1 border-s border-border/65 ps-1">
+          {props.renderDetail(detail)}
+        </div>
+      ) : null}
+    </li>
+  );
 }
 
 function ContextUsageContent(props: SessionTarget) {
@@ -161,19 +300,12 @@ function ContextUsageContent(props: SessionTarget) {
 function ContextBreakdown(props: {
   readonly usage: ProviderContextUsage;
   readonly target: SessionTarget;
-  /** The thread details card's narrower, text-xs rows. */
-  readonly dense?: boolean;
 }) {
   const { usage } = props;
   const [expanded, setExpanded] = useState<string | null>(null);
-  const categories = usage.categories.filter((category) => category.tokens > 0);
-  const colored = categories.map((category, index) => ({
-    category,
-    color: categoryColor(
-      category,
-      categories.slice(0, index).filter((previous) => previous.kind === "used").length,
-    ),
-  }));
+  const colored = contextCategoryAccents(usage.categories)
+    .filter(({ category }) => category.tokens > 0)
+    .map(({ category, accent }) => ({ category, color: categoryColor(category, accent) }));
   return (
     <div className="flex flex-col gap-3">
       <div
@@ -187,29 +319,30 @@ function ContextBreakdown(props: {
           .map(({ category, color }) => (
             <span
               key={category.id ?? category.name}
-              className={color}
-              style={{ width: `${(category.tokens / Math.max(usage.maxTokens, 1)) * 100}%` }}
+              style={{
+                width: `${(category.tokens / Math.max(usage.maxTokens, 1)) * 100}%`,
+                backgroundColor: color,
+              }}
             />
           ))}
       </div>
-      <ul className={cn("flex flex-col", props.dense ? "text-xs" : "text-sm")}>
+      <ul className="flex flex-col text-sm">
         {colored.map(({ category, color }) => {
           const key = category.id ?? category.name;
           const detail = contextCategoryDetail(category);
           const isOpen = expanded === key;
           const row = (
             <>
-              <span className={cn("size-2 shrink-0 rounded-full", color)} aria-hidden />
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: color }}
+                aria-hidden
+              />
               <span className="min-w-0 flex-1 truncate">{category.name}</span>
               <span className="tabular-nums text-muted-foreground">
                 {formatContextWindowTokens(category.tokens)}
               </span>
-              <span
-                className={cn(
-                  "text-end tabular-nums text-muted-foreground",
-                  props.dense ? "w-10" : "w-12",
-                )}
-              >
+              <span className="w-12 text-end tabular-nums text-muted-foreground">
                 {category.kind === "deferred"
                   ? "on use"
                   : percentOf(category.tokens, usage.maxTokens)}
@@ -219,9 +352,7 @@ function ContextBreakdown(props: {
           return (
             <li key={key}>
               {detail === null ? (
-                <div
-                  className={cn("flex items-center gap-2 px-2", props.dense ? "py-1" : "py-1.5")}
-                >
+                <div className="flex items-center gap-2 px-2 py-1.5">
                   <span className="size-3.5 shrink-0" aria-hidden />
                   {row}
                 </div>
@@ -229,10 +360,7 @@ function ContextBreakdown(props: {
                 <button
                   type="button"
                   aria-expanded={isOpen}
-                  className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2 text-start hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                    props.dense ? "py-1" : "py-1.5",
-                  )}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                   onClick={() => setExpanded(isOpen ? null : key)}
                 >
                   <ChevronRightIcon
@@ -267,26 +395,40 @@ function DetailRow(props: {
   readonly hint?: string | undefined;
   readonly tokens: number;
   readonly onClick?: (() => void) | undefined;
+  readonly compact?: boolean | undefined;
 }) {
   const content = (
     <>
-      <span className="min-w-0 flex-1 truncate">{props.label}</span>
-      {props.hint ? <span className="truncate text-muted-foreground">{props.hint}</span> : null}
+      <span className={cn("min-w-0 flex-1 truncate", props.compact && "text-muted-foreground")}>
+        {props.label}
+      </span>
+      {props.hint ? (
+        <span className={cn("truncate text-muted-foreground", props.compact && "opacity-70")}>
+          {props.hint}
+        </span>
+      ) : null}
       <span className="tabular-nums text-muted-foreground">
         {formatContextWindowTokens(props.tokens)}
       </span>
     </>
   );
+  const rowClass = props.compact
+    ? "flex h-6 items-center gap-2 rounded-lg ps-2 pe-2.5 text-xs"
+    : "flex items-center gap-2 rounded-md px-2 py-1 text-xs";
   return props.onClick ? (
     <button
       type="button"
-      className="flex w-full items-center gap-2 rounded-md px-2 py-1 text-start text-xs hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      className={cn(
+        rowClass,
+        "w-full text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+        props.compact ? "hover:bg-black/[0.035] dark:hover:bg-white/[0.08]" : "hover:bg-accent",
+      )}
       onClick={props.onClick}
     >
       {content}
     </button>
   ) : (
-    <div className="flex items-center gap-2 px-2 py-1 text-xs">{content}</div>
+    <div className={rowClass}>{content}</div>
   );
 }
 
@@ -294,8 +436,10 @@ function CategoryDetail(props: {
   readonly detail: NonNullable<ReturnType<typeof contextCategoryDetail>>;
   readonly usage: ProviderContextUsage;
   readonly target: SessionTarget;
+  /** The thread details card's rows. */
+  readonly compact?: boolean;
 }) {
-  const { usage, target } = props;
+  const { usage, target, compact } = props;
   const show = useProviderSessionViewStore((state) => state.show);
   const openInPreferredEditor = useOpenInPreferredEditor(
     target.environmentId,
@@ -321,9 +465,9 @@ function CategoryDetail(props: {
   const empty = <p className="px-2 py-1 text-xs text-muted-foreground">Nothing listed.</p>;
   const manage = (view: "mcp" | "memory" | "skills" | "agents", label: string) => (
     <Button
-      className="mt-1 self-start"
+      className={compact ? "self-start" : "mt-1 self-start"}
       size="xs"
-      variant="outline"
+      variant={compact ? "ghost-muted" : "outline"}
       onClick={() => show(target.threadKey, view)}
     >
       {label}
@@ -342,6 +486,7 @@ function CategoryDetail(props: {
                   label={server.server}
                   hint={`${server.tools} ${server.tools === 1 ? "tool" : "tools"}`}
                   tokens={server.tokens}
+                  compact={compact}
                 />
               ))}
           {manage("mcp", "Manage MCP servers")}
@@ -356,9 +501,11 @@ function CategoryDetail(props: {
             : usage.memoryFiles.map((file) => (
                 <DetailRow
                   key={file.path}
-                  label={file.path}
+                  // The card is too narrow for a path; its user/project/local hint tells them apart.
+                  label={compact ? (file.path.split(/[\\/]/).pop() ?? file.path) : file.path}
                   hint={file.type}
                   tokens={file.tokens}
+                  compact={compact}
                   onClick={() => openMemoryFile(file.path)}
                 />
               ))}
@@ -376,6 +523,7 @@ function CategoryDetail(props: {
                   label={skill.name}
                   hint={skill.source}
                   tokens={skill.tokens}
+                  compact={compact}
                 />
               ))}
           {manage("skills", "Show skills")}
@@ -392,6 +540,7 @@ function CategoryDetail(props: {
                   label={agent.name}
                   hint={agent.source}
                   tokens={agent.tokens}
+                  compact={compact}
                 />
               ))}
           {manage("agents", "Show agents")}

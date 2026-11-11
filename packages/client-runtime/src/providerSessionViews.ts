@@ -117,6 +117,52 @@ export function contextCategoryDetail(
   }
 }
 
+// Context chip kinds both clients theme; skills wear the skill chip's color. System tools have none,
+// so they stay grey with the free space.
+const CONTEXT_CATEGORY_ACCENTS = {
+  messages: "file",
+  system_prompt: "video",
+  skills: "skill",
+  memory_files: "element",
+  mcp_tools: "environment",
+  mcp_instructions: "thread",
+  custom_agents: "review-comment",
+} as const;
+const OTHER_CONTEXT_ACCENTS = ["mention", "terminal"] as const;
+
+export type ContextCategoryAccent =
+  | (typeof CONTEXT_CATEGORY_ACCENTS)[keyof typeof CONTEXT_CATEGORY_ACCENTS]
+  | (typeof OTHER_CONTEXT_ACCENTS)[number];
+
+/** Each category with the chip accent its bar wears, in the provider's order; null stays grey. */
+export function contextCategoryAccents(
+  categories: ReadonlyArray<ProviderContextUsageCategory>,
+): ReadonlyArray<{
+  readonly category: ProviderContextUsageCategory;
+  readonly accent: ContextCategoryAccent | null;
+}> {
+  let others = 0;
+  return categories.map((category) => {
+    if (category.kind !== "used" || category.id === "system_tools") {
+      return { category, accent: null };
+    }
+    const known = Object.hasOwn(CONTEXT_CATEGORY_ACCENTS, category.id ?? "")
+      ? CONTEXT_CATEGORY_ACCENTS[category.id as keyof typeof CONTEXT_CATEGORY_ACCENTS]
+      : undefined;
+    return {
+      category,
+      accent: known ?? OTHER_CONTEXT_ACCENTS[others++ % OTHER_CONTEXT_ACCENTS.length]!,
+    };
+  });
+}
+
+/** What fills the used context, largest first, with each part's accent. */
+export function contextUsedCategories(usage: ProviderContextUsage) {
+  return contextCategoryAccents(usage.categories)
+    .filter(({ category }) => category.kind === "used" && category.tokens > 0)
+    .sort((a, b) => b.category.tokens - a.category.tokens);
+}
+
 export function contextUsageMcpTokensByServer(
   usage: ProviderContextUsage,
 ): ReadonlyArray<{ readonly server: string; readonly tokens: number; readonly tools: number }> {
