@@ -21,19 +21,22 @@ export function OniWordmark(props: SVGProps<SVGSVGElement>) {
       <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="800" height="800">
         {/* oxlint-disable-next-line shadcn/no-raw-colors -- mask luminance */}
         <rect width="800" height="800" fill="#fff" />
-        {SIDES.map((side) => (
-          <path
-            key={side}
-            data-oni-eye={side}
-            d={EYES[side]}
-            fill="none"
-            // oxlint-disable-next-line shadcn/no-raw-colors -- mask luminance
-            stroke="#000"
-            strokeWidth={ONI_MARK_EYE_STROKE_WIDTH}
-            strokeLinecap="round"
-            style={{ transformBox: "fill-box", transformOrigin: "50% 60%" }}
-          />
-        ))}
+        {/* Glances move the pair; blinks transform each eye, so the two never fight. */}
+        <g data-oni-eyes="">
+          {SIDES.map((side) => (
+            <path
+              key={side}
+              data-oni-eye={side}
+              d={EYES[side]}
+              fill="none"
+              // oxlint-disable-next-line shadcn/no-raw-colors -- mask luminance
+              stroke="#000"
+              strokeWidth={ONI_MARK_EYE_STROKE_WIDTH}
+              strokeLinecap="round"
+              style={{ transformBox: "fill-box", transformOrigin: "50% 60%" }}
+            />
+          ))}
+        </g>
       </mask>
       <g
         data-oni-body=""
@@ -75,17 +78,35 @@ const earFlap = (outward: 1 | -1): Keyframe[] =>
   [0, 18, -8, 12, -4, 0].map((deg) => ({ transform: `skewX(${-deg * outward}deg)` }));
 const EAR_FLAP = { left: earFlap(-1), right: earFlap(1) };
 
+// The app icon's pose: facing left, the head cocks clockwise and the eyes slide left.
+const holdThenReturn = (rest: string, turned: string): Keyframe[] => [
+  { transform: rest, easing: "cubic-bezier(0.3, 1.4, 0.5, 1)" },
+  { transform: turned, offset: 0.2, easing: "ease-in-out" },
+  { transform: turned, offset: 0.75 },
+  { transform: rest },
+];
+const look = (toward: 1 | -1) => ({
+  head: holdThenReturn("rotate(0deg)", `rotate(${-toward * 10}deg)`).map((frame) => ({
+    ...frame,
+    transformOrigin: "50% 55%",
+  })),
+  eyes: holdThenReturn("translateX(0px)", `translateX(${toward * 50}px)`),
+});
+const LOOK = { left: look(-1), right: look(1) };
+
 /**
  * Ref callback for an element containing an `OniWordmark`: now and then it blinks, winks,
- * flaps its ears or hops. Idle time is a plain timer so nothing animates between moves.
+ * flaps its ears, hops or looks to one side. Idle time is a plain timer so nothing animates
+ * between moves.
  */
 export function animateOniIdle(root: Element | null) {
   // React calls a ref with null on detach when it returned no cleanup.
   if (!root) return;
   const body = root.querySelector("[data-oni-body]");
+  const eyePair = root.querySelector("[data-oni-eyes]");
   const eyes = SIDES.map((side) => root.querySelector(`[data-oni-eye="${side}"]`));
   const ears = SIDES.map((side) => root.querySelector(`[data-oni-ear="${side}"]`));
-  if (!body || eyes.includes(null) || ears.includes(null)) return;
+  if (!body || !eyePair || eyes.includes(null) || ears.includes(null)) return;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let timer: ReturnType<typeof setTimeout>;
 
@@ -99,6 +120,12 @@ export function animateOniIdle(root: Element | null) {
         ear?.animate(EAR_FLAP[SIDES[i]!], { duration: 520, delay, easing: "ease-in-out" });
     });
   const side = () => (Math.random() < 0.5 ? 0 : 1);
+  const lookAside = () => {
+    const pose = LOOK[SIDES[side()]!];
+    body.animate(pose.head, { duration: 1_800 });
+    eyePair.animate(pose.eyes, { duration: 1_800 });
+    if (Math.random() < 0.5) blink(800);
+  };
 
   const moves = [
     { weight: 30, run: () => blink() },
@@ -107,6 +134,7 @@ export function animateOniIdle(root: Element | null) {
     { weight: 15, run: () => flap() },
     { weight: 10, run: () => flap(0, side()) },
     { weight: 20, run: () => (body.animate(HOP, { duration: 560 }), flap(200), blink(420)) },
+    { weight: 20, run: lookAside },
   ];
   const totalWeight = moves.reduce((sum, move) => sum + move.weight, 0);
 
