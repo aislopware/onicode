@@ -309,3 +309,4 @@ ba32aabf62	take	fix(scheduler): show short server timezone on fixed-time labels;
 c266631bde	take	fix(preview): always return evaluated results by value; context budget rebased on Onicode's values
 afb4f91a7d	take	fix(provider-core): a model reply of "title" no longer replaces the thread title
 52d621a6f1	take	fix(desktop,web): Open in runs locally for a background service sharing the desktop's Onicode home; dropped isDesktopRenderer arg and T3 Connect wording, tests use BearerConnectionTarget
+d835e430db	take	fix(web): question answers submit while normal sends are blocked; kept Onicode's composer without the mobile-web blur helpers
