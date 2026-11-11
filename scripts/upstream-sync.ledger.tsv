@@ -364,3 +364,4 @@ bc9c84e4f6	take	docs(mcp): oni_thread_update lists only its rename and title act
 15695ee78f	take	fix(opencode): omit unsupported reasoning options from catalog models (#19000)
 84478e09c1	take	fix(web): long merged spreadsheet selections no longer crash (#34331)
 d0c7147a8e	take	fix(pi): rewinding works after the Pi session was released (#26322)
+787c59c802	take	fix(web): Word previews no longer cut ordinary documents short
