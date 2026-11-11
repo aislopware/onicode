@@ -385,3 +385,4 @@ e6afd2a24b	take	fix(web): render citation chips in the collapsed composer (#2214
 a91d6c8821	take	fix(server): Claude effort picker marks levels capped by maxEffortLevel (#23629); merged with Onicode's probe stderr tail and fast-mode model filter
 1a1a57376c	take	fix(web): start clone when destination is picked in file manager (#22226)
 bd02e64b5f	take	fix(web): expanding a diff whose files changed no longer crashes (#28056)
+303903acd9	take	fix(server): a steer during a delegate_task wait no longer drops the child's result (#27387)
