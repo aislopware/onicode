@@ -335,3 +335,4 @@ e0379fbf5c	take	fix(web): collapsed reasoning previews no longer process the who
 dab06c0be1	take	fix(terminal): use a byte budget for Ghostty scrollback (#8766)
 bc8583bc64	take	fix(server): storage cleanup keeps worktrees whose file listing exceeds the inspection limit (#26593)
 a577e9404e	take	fix(server): delete temporary ACP health probe sessions (#25397)
+ad0b2a9d2f	take	perf(client): streamed text no longer republishes thread queue and checkpoints (#27425)
