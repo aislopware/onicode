@@ -410,3 +410,4 @@ f15fbdef2e	take	fix(server): branch switch no longer kills a slow git checkout (
 f796df8fd2	take	fix(server,desktop): browser tools report why a page failed to load (#18588)
 7d8f6c9481	take	fix(server): show a context handoff when a provider conversation can't be resumed (#28195)
 335d8b5601	take	fix(server): Claude --settings and prompt-file launch args expand ~ (#26649)
+458a792087	take	fix(server): a Claude thread waiting on a ScheduleWakeup stays in Working (#23648)
