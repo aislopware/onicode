@@ -291,3 +291,4 @@ f697d4db3e	take	fix(web): local server cards in the browser empty state take poi
 25631c3c83	take	fix(server): new worktrees refresh their index once, so captures and status stop re-hashing every file (#21341)
 e2a781477a	take	fix(usage): Grok and Cursor usage limits show pace and the even-spend line (#21897)
 996b43f01b	take	fix(web): retain diff selection across navigation (#22347)
+0d36f2b48e	take	fix(mobile): subscription widget no longer expires on a window that already reset (#22993)
