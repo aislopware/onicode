@@ -288,3 +288,4 @@ f697d4db3e	take	fix(web): local server cards in the browser empty state take poi
 5bb5d53312	take	fix(web): full-screen HTML pages fit their content and zoom by reflowing (#22349)
 1bdf470328	take	fix(web): project actions auto-open Preview in web clients (#34048); no-op on desktop, aligns with other preview checks
 24e77473ec	take	fix(server): a follow-up delegated task waits for a run its child queued on its own thread (#32504)
+25631c3c83	take	fix(server): new worktrees refresh their index once, so captures and status stop re-hashing every file (#21341)
