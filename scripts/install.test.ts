@@ -61,11 +61,14 @@ describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer home
 });
 
 describe.skipIf(HostProcess.Platform.defaultValue() !== "linux")("installer release lookup", () => {
-  it("installs the release GitHub marks latest", async () => {
+  // regression: #32897
+  it("installs the release GitHub marks latest through an HTTP 504", async () => {
     const version = "1.2.3";
+    let failures = 1;
     const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "oni-install-index-"));
     const target = NodePath.join(root, "home/runtime/versions", version);
     const server = NodeHttp.createServer((request, response) => {
+      if (failures-- > 0) return response.writeHead(504).end();
       const url = new URL(request.url ?? "/", "http://fixture");
       const body =
         url.pathname === "/aislopware/onicode/releases/latest" &&

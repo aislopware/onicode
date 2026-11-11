@@ -62,17 +62,35 @@ function Draw-Download([long] $bytes, [long] $total) {
     [Console]::Error.Write("`r$esc[2K" + $line.Substring(0, [Math]::Min($line.Length, $columns - 1)))
   }
 }
+# Waits 1, 2, then 4 s before retrying a 408, 429, 5xx, or network error (status 0).
+# Retry-After is ignored so a throttled GitHub cannot stall the install for minutes.
+function Wait-Retry([int] $status, [int] $attempt) {
+  if ($attempt -ge 4 -or ($status -ge 400 -and $status -lt 500 -and $status -ne 408 -and $status -ne 429)) { return $false }
+  Start-Sleep -Seconds ([Math]::Pow(2, $attempt - 1))
+  return $true
+}
+function Invoke-Retrying([scriptblock] $request) {
+  for ($attempt = 1; ; $attempt++) {
+    try { return & $request }
+    catch { if (-not (Wait-Retry ([int]$_.Exception.Response.StatusCode) $attempt)) { throw } }
+  }
+}
 function Fetch([string] $uri, [string] $destination, [switch] $progress) {
   if (-not $progress -or -not $interactive) {
     $ProgressPreference = if ($progress -and $terminal) { "Continue" } else { "SilentlyContinue" }
-    Invoke-WebRequest -Uri $uri -OutFile $destination -UseBasicParsing
+    Invoke-Retrying { Invoke-WebRequest -Uri $uri -OutFile $destination -UseBasicParsing }
     return
   }
   Add-Type -AssemblyName System.Net.Http
   $client = New-Object System.Net.Http.HttpClient
   $response = $source = $file = $null
   try {
-    $response = $client.GetAsync($uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+    for ($attempt = 1; ; $attempt++) {
+      try { $response = $client.GetAsync($uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult() }
+      catch { if (Wait-Retry 0 $attempt) { continue } throw }
+      if ($response.IsSuccessStatusCode -or -not (Wait-Retry ([int]$response.StatusCode) $attempt)) { break }
+      $response.Dispose()
+    }
     $response.EnsureSuccessStatusCode() | Out-Null
     $source = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
     $file = [IO.File]::Create($destination)
@@ -127,7 +145,7 @@ $arch = switch ($rawArch) {
 $version = $env:ONICODE_VERSION
 if (-not $version) {
   # A github.com page, so it is not subject to the API quota.
-  $release = Invoke-RestMethod -Uri "https://github.com/$repo/releases/latest" -Headers @{ "User-Agent" = "oni-install"; "Accept" = "application/json" }
+  $release = Invoke-Retrying { Invoke-RestMethod -Uri "https://github.com/$repo/releases/latest" -Headers @{ "User-Agent" = "oni-install"; "Accept" = "application/json" } }
   $tag = ($release | Where-Object { $_.tag_name -match '^v\d+\.\d+\.\d+$' }).tag_name
   if (-not $tag) { Fail "could not find a release; set ONICODE_VERSION" }
   $version = $tag.Substring(1)

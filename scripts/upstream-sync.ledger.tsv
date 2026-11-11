@@ -239,3 +239,4 @@ f7b81e1d11	take	fix(web): settings search shortcuts follow the physical key on n
 bbd51f74b4	take	fix(server): import Codex chats moved into a project from the scratch folder (#32880)
 5c97adaf6b	take	fix(desktop): clear stale GPU caches when the Electron version changes (#33641)
 b3fdf2b10f	take	fix(web): PR links jump to the comment, diff line, checks or commits they name (#33989)
+fae2d204a2	take	fix(cli): installers retry transient GitHub errors (#32913)
