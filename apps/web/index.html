@@ -639,6 +639,12 @@
         white-space: nowrap;
       }
     </style>
+    <script>
+      // Desktop's preload injects branding before page scripts. Titling before the <title> below
+      // parses keeps Electron from showing the bare web build name first.
+      const desktopDisplayName = window.desktopBridge?.getAppBranding?.()?.displayName;
+      if (desktopDisplayName) document.title = desktopDisplayName;
+    </script>
     <title>Onicode</title>
   </head>
   <body>

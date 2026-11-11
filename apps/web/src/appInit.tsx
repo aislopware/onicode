@@ -1,4 +1,9 @@
-import { scopedThreadKey, scopeThreadRef } from "@onicode/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@onicode/client-runtime/environment";
+import type { ScopedThreadRef } from "@onicode/contracts";
 import type { ClientSettings } from "@onicode/contracts/settings";
 import { createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
@@ -45,13 +50,14 @@ import {
 } from "./lib/windowControlsOverlay";
 import { getRouter, type AppRouter } from "./router";
 import { appAtomRegistry } from "./rpc/atomRegistry";
+import { environmentProjects } from "./state/projects";
 import { environmentShell } from "./state/shell";
 import { installChatRouteCommands } from "./shortcuts/chatRouteCommands";
 import { startWorkspaceFocus } from "./lib/workspaceFocus";
 import { installCommandPaletteCommands } from "./shortcuts/commandPaletteCommands";
 import { registerOpenFavoriteEditorCommand } from "./components/chat/OpenInPickerShortcut";
 import { environmentThreadShells, threadEnvironment } from "./state/threads";
-import { resolveThreadRouteTarget } from "./threadRoutes";
+import { resolveActiveThreadRouteRef, resolveThreadRouteTarget } from "./threadRoutes";
 
 /** Writes appearance settings onto the document, touching only the groups that changed. */
 function startClientAppearance(): void {
@@ -113,6 +119,72 @@ function startClientAppearance(): void {
   apply();
 }
 
+function readOpenThreadRef(router: AppRouter): ScopedThreadRef | null {
+  const target = resolveThreadRouteTarget(router.state.matches.at(-1)?.params ?? {});
+  const draft =
+    target?.kind === "draft"
+      ? useComposerDraftStore.getState().getDraftSession(target.draftId)
+      : null;
+  return resolveActiveThreadRouteRef(target, draft);
+}
+
+/** Names the open thread and its project in the window title, or the app when none is open. */
+function startDocumentTitle(router: AppRouter): void {
+  let openThreadRef = readOpenThreadRef(router);
+  const write = () => {
+    const thread =
+      openThreadRef === null
+        ? null
+        : appAtomRegistry.get(environmentThreadShells.quietThreadShellAtom(openThreadRef));
+    const project =
+      thread === null
+        ? null
+        : appAtomRegistry.get(
+            environmentProjects.projectAtom(
+              scopeProjectRef(thread.environmentId, thread.projectId),
+            ),
+          );
+    const threadTitle = thread?.title.trim() ?? "";
+    const projectTitle = project?.title.trim() ?? "";
+    // The OS already shows the app name beside a desktop window's title.
+    const title =
+      threadTitle === ""
+        ? APP_DISPLAY_NAME
+        : projectTitle === ""
+          ? threadTitle
+          : `${projectTitle} / ${threadTitle}`;
+    // Projects change whenever any project does; most changes leave the title alone.
+    if (document.title !== title) document.title = title;
+  };
+  // The open thread's own shell, since the shell lists skip threads hidden by a tag filter.
+  let unsubscribeOpenThread = () => {};
+  const watchOpenThread = () => {
+    unsubscribeOpenThread();
+    unsubscribeOpenThread =
+      openThreadRef === null
+        ? () => {}
+        : appAtomRegistry.subscribe(
+            environmentThreadShells.quietThreadShellAtom(openThreadRef),
+            write,
+          );
+  };
+  // The draft store changes on every keystroke; only a new open thread matters here.
+  const updateOpenThread = () => {
+    const next = readOpenThreadRef(router);
+    if ((next && scopedThreadKey(next)) === (openThreadRef && scopedThreadKey(openThreadRef))) {
+      return;
+    }
+    openThreadRef = next;
+    watchOpenThread();
+    write();
+  };
+  watchOpenThread();
+  write();
+  appAtomRegistry.subscribe(environmentProjects.projectsAtom, write);
+  router.subscribe("onResolved", updateOpenThread);
+  useComposerDraftStore.subscribe(updateOpenThread);
+}
+
 /**
  * Each route paints its own surface, which the document background copies once it is on screen.
  * onRendered only fires for a new href; onResolved also covers `router.invalidate()`, which
@@ -156,7 +228,7 @@ export function startAppServices(): AppRouter {
   installDesktopPasteAsText(window.desktopBridge, window);
 
   startClientAppearance();
-  document.title = APP_DISPLAY_NAME;
+  startDocumentTitle(router);
   startHostEnvironmentLookup();
   startEnvironmentThemeRepaint();
   startDocumentBackgroundSync(router);
