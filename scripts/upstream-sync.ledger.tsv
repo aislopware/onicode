@@ -335,3 +335,10 @@ e0379fbf5c	take	fix(web): collapsed reasoning previews no longer process the who
 dab06c0be1	take	fix(terminal): use a byte budget for Ghostty scrollback (#8766)
 bc8583bc64	take	fix(server): storage cleanup keeps worktrees whose file listing exceeds the inspection limit (#26593)
 a577e9404e	take	fix(server): delete temporary ACP health probe sessions (#25397)
+ad0b2a9d2f	take	perf(client): streamed text no longer republishes thread queue and checkpoints (#27425)
+8f4166b28c	take	fix(web): convert composer list markers completed later (#22997); normalization registers its conversion as an input rule for Tiptap 3.33
+49013438a9	take	test: remove tests that repeat another case or restate the source (#34170); Clerk and relay test files absent
+0af2d21647	take	fix(server): drop stale queued pull-request watch wakes (#21239)
+d50a6fdc30	take	fix(web): preview recordings stay decodable after a viewport resize (#10495)
+896e64f82d	take	fix(server): only offer claude update for native Claude installs (#14170); test conflict kept Onicode's settingsFile rows
+d2c25950b4	take	fix(server): tell outside agents which MCP tools need a thread and that oni_thread_list takes allProjects (#26525)
