@@ -440,6 +440,9 @@ importers:
       electron-builder:
         specifier: 26.18.1
         version: 26.18.1(electron-builder-squirrel-windows@26.18.1)(supports-color@8.1.1)
+      jsdom:
+        specifier: ^31.0.0
+        version: 31.0.0(@napi-rs/canvas@1.0.13)(@noble/hashes@2.4.0)
       tailwindcss:
         specifier: 4.3.5
         version: 4.3.5
