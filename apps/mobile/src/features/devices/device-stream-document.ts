@@ -2,6 +2,9 @@ import type { DeviceHubAccess } from "@onicode/client-runtime/device/hub-access"
 import type { DevicePlatform } from "@onicode/contracts";
 import type { PlatformOSType } from "react-native";
 
+/** The global the generated device stream script defines. */
+export const DEVICE_STREAM_GLOBAL = "OniDeviceStream";
+
 export interface DeviceStreamConfiguration {
   readonly access: DeviceHubAccess;
   readonly platform: DevicePlatform;
@@ -35,7 +38,7 @@ export function deviceStreamDocument(configuration: string, script: string) {
   const safeConfiguration = configuration.replace(/</g, "\\u003c");
   const safeScript = script.replace(/<\/script/gi, "<\\/script");
   const failure = `window.ReactNativeWebView.postMessage(JSON.stringify({type:"status",status:"error",detail:"Device viewer stopped unexpectedly."}));`;
-  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"></head><body><script>window.addEventListener("error",function(){${failure}});window.addEventListener("unhandledrejection",function(){${failure}});\n${safeScript}\ntry{OniDeviceStream.start(${safeConfiguration});}catch{${failure}}</script></body></html>`;
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"></head><body><script>window.addEventListener("error",function(){${failure}});window.addEventListener("unhandledrejection",function(){${failure}});\n${safeScript}\ntry{${DEVICE_STREAM_GLOBAL}.start(${safeConfiguration});}catch{${failure}}</script></body></html>`;
 }
 
 export function deviceStreamMessage(data: string) {

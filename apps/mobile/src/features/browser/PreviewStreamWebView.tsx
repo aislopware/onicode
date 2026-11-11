@@ -31,6 +31,7 @@ import { usePreviewStreamAccess } from "../../state/preview";
 import { previewPromptText } from "./previewPromptText";
 
 import {
+  PREVIEW_STREAM_GLOBAL,
   previewStreamDocument,
   previewStreamMessage,
   type PreviewStreamConfiguration,
@@ -258,7 +259,7 @@ function PreviewStreamDocumentView({
   };
   const command = (input: PreviewStreamInput) =>
     webView.current?.injectJavaScript(
-      `window.OniPreviewStream?.command(${JSON.stringify(input)}); true;`,
+      `window.${PREVIEW_STREAM_GLOBAL}?.command(${JSON.stringify(input)}); true;`,
     );
   // Reads here rather than in the screen: a tab switch during the iOS paste prompt unmounts
   // this view and nulls its WebView ref, so the text can never type into another tab.
@@ -278,7 +279,7 @@ function PreviewStreamDocumentView({
     if (!active.current || failed.current) return;
     failed.current = true;
     clearBootstrapTimer();
-    webView.current?.injectJavaScript("window.OniPreviewStream?.stop(); true;");
+    webView.current?.injectJavaScript(`window.${PREVIEW_STREAM_GLOBAL}?.stop(); true;`);
     onStreamingChange?.(false);
     setControl(null);
     setFileChooser(null);
@@ -303,7 +304,7 @@ function PreviewStreamDocumentView({
       if (bootstrapTimer.current !== null) clearTimeout(bootstrapTimer.current);
       bootstrapTimer.current = null;
       active.current = false;
-      view?.injectJavaScript("window.OniPreviewStream?.stop(); true;");
+      view?.injectJavaScript(`window.${PREVIEW_STREAM_GLOBAL}?.stop(); true;`);
       streamEnded();
     };
   }, []);
@@ -315,7 +316,9 @@ function PreviewStreamDocumentView({
     command,
     paste,
     togglePictureInPicture: () =>
-      webView.current?.injectJavaScript("window.OniPreviewStream?.pictureInPicture(); true;"),
+      webView.current?.injectJavaScript(
+        `window.${PREVIEW_STREAM_GLOBAL}?.pictureInPicture(); true;`,
+      ),
   }));
   const processTerminated = () => {
     if (!active.current || failed.current) return;

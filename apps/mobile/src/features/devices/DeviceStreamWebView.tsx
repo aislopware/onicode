@@ -16,6 +16,7 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppText } from "../../components/ui/AppText";
 
 import {
+  DEVICE_STREAM_GLOBAL,
   deviceStreamBaseUrl,
   deviceStreamDocument,
   deviceStreamMessage,
@@ -110,7 +111,7 @@ function DeviceStreamDocumentView({
     failed.current = true;
     clearBootstrapTimer();
     void onInputConnected(false);
-    webView.current?.injectJavaScript("window.OniDeviceStream?.stop(); true;");
+    webView.current?.injectJavaScript(`window.${DEVICE_STREAM_GLOBAL}?.stop(); true;`);
     setError(message);
     setStatus("error");
   };
@@ -129,7 +130,7 @@ function DeviceStreamDocumentView({
       if (bootstrapTimer.current !== null) clearTimeout(bootstrapTimer.current);
       bootstrapTimer.current = null;
       active.current = false;
-      view?.injectJavaScript("window.OniDeviceStream?.stop(); true;");
+      view?.injectJavaScript(`window.${DEVICE_STREAM_GLOBAL}?.stop(); true;`);
       resetInput();
     };
   }, []);
@@ -139,7 +140,7 @@ function DeviceStreamDocumentView({
   };
   const command = (button: keyof DeviceStreamRef) => {
     webView.current?.injectJavaScript(
-      `window.OniDeviceStream?.command(${JSON.stringify(button)}); true;`,
+      `window.${DEVICE_STREAM_GLOBAL}?.command(${JSON.stringify(button)}); true;`,
     );
   };
   useImperativeHandle(ref, () => ({
