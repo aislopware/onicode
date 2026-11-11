@@ -1,40 +1,42 @@
+import {
+  ONI_MARK_BODY as BODY,
+  ONI_MARK_EARS as EARS,
+  ONI_MARK_EYE_STROKE_WIDTH,
+  ONI_MARK_EYES as EYES,
+  ONI_MARK_SIDES as SIDES,
+  ONI_MARK_VIEW_BOX,
+} from "@onicode/shared/oniMark";
 import { useId, type SVGProps } from "react";
-
-const BODY =
-  "M391 192C420 192 446 194 466 199C500 207 530 218 555.4 233.9C596.6 260.7 627.2 296.6 644.7 338.9C660.6 377.1 664.1 418 654.7 456.7C645.4 495.4 625 527.7 592.9 554.3C544.4 594.7 468.4 618 391 619" +
-  "C313.6 618 237.6 594.7 189.1 554.3C157 527.7 136.6 495.4 127.3 456.7C117.9 418 121.4 377.1 137.3 338.9C154.8 296.6 185.4 260.7 226.6 233.9C252 218 282 207 316 199C336 194 362 192 391 192Z";
-const EARS = {
-  left: "M316 199C307.8 200.6 305.7 199.6 297.2 190.8C289.5 182.5 284.1 173.1 278.6 158.3C274.2 146.3 271.8 143.2 266.1 141.8C255.2 139.3 243.2 155.3 237.7 179.6C234.4 194 234 204.7 236.2 222.4C236.8 227.1 236.4 227.5 226.6 233.9L242 252L306 236Z",
-  right:
-    "M466 199C474.2 200.6 476.3 199.6 484.8 190.8C492.5 182.5 497.9 173.1 503.4 158.3C507.8 146.3 510.2 143.2 515.9 141.8C526.8 139.3 538.8 155.3 544.3 179.6C547.6 194 548 204.7 545.8 222.4C545.2 227.1 545.6 227.5 555.4 233.9L540 252L476 236Z",
-};
-const EYES = {
-  left: "M227.2 378.4Q276.9 344.8 326.6 378.4",
-  right: "M455.4 378.4Q505.1 344.8 554.8 378.4",
-};
-const SIDES = ["left", "right"] as const;
 
 /** The mochi oni, front-on, in one ink (`currentColor`); its eyes are holes, so the background shows through. */
 export function OniWordmark(props: SVGProps<SVGSVGElement>) {
   const maskId = `oni-eyes-${useId().replace(/[^\w-]/g, "")}`;
   return (
-    <svg {...props} viewBox="108 128 566 500" overflow="visible" xmlns="http://www.w3.org/2000/svg">
+    <svg
+      {...props}
+      viewBox={ONI_MARK_VIEW_BOX}
+      overflow="visible"
+      xmlns="http://www.w3.org/2000/svg"
+    >
       <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="800" height="800">
         {/* oxlint-disable-next-line shadcn/no-raw-colors -- mask luminance */}
         <rect width="800" height="800" fill="#fff" />
-        {SIDES.map((side) => (
-          <path
-            key={side}
-            data-oni-eye={side}
-            d={EYES[side]}
-            fill="none"
-            // oxlint-disable-next-line shadcn/no-raw-colors -- mask luminance
-            stroke="#000"
-            strokeWidth="38"
-            strokeLinecap="round"
-            style={{ transformBox: "fill-box", transformOrigin: "50% 60%" }}
-          />
-        ))}
+        {/* Glances move the pair; blinks transform each eye, so the two never fight. */}
+        <g data-oni-eyes="">
+          {SIDES.map((side) => (
+            <path
+              key={side}
+              data-oni-eye={side}
+              d={EYES[side]}
+              fill="none"
+              // oxlint-disable-next-line shadcn/no-raw-colors -- mask luminance
+              stroke="#000"
+              strokeWidth={ONI_MARK_EYE_STROKE_WIDTH}
+              strokeLinecap="round"
+              style={{ transformBox: "fill-box", transformOrigin: "50% 60%" }}
+            />
+          ))}
+        </g>
       </mask>
       <g
         data-oni-body=""
@@ -76,17 +78,35 @@ const earFlap = (outward: 1 | -1): Keyframe[] =>
   [0, 18, -8, 12, -4, 0].map((deg) => ({ transform: `skewX(${-deg * outward}deg)` }));
 const EAR_FLAP = { left: earFlap(-1), right: earFlap(1) };
 
+// The app icon's pose: facing left, the head cocks clockwise and the eyes slide left.
+const holdThenReturn = (rest: string, turned: string): Keyframe[] => [
+  { transform: rest, easing: "cubic-bezier(0.3, 1.4, 0.5, 1)" },
+  { transform: turned, offset: 0.2, easing: "ease-in-out" },
+  { transform: turned, offset: 0.75 },
+  { transform: rest },
+];
+const look = (toward: 1 | -1) => ({
+  head: holdThenReturn("rotate(0deg)", `rotate(${-toward * 10}deg)`).map((frame) => ({
+    ...frame,
+    transformOrigin: "50% 55%",
+  })),
+  eyes: holdThenReturn("translateX(0px)", `translateX(${toward * 50}px)`),
+});
+const LOOK = { left: look(-1), right: look(1) };
+
 /**
  * Ref callback for an element containing an `OniWordmark`: now and then it blinks, winks,
- * flaps its ears or hops. Idle time is a plain timer so nothing animates between moves.
+ * flaps its ears, hops or looks to one side. Idle time is a plain timer so nothing animates
+ * between moves.
  */
 export function animateOniIdle(root: Element | null) {
   // React calls a ref with null on detach when it returned no cleanup.
   if (!root) return;
   const body = root.querySelector("[data-oni-body]");
+  const eyePair = root.querySelector("[data-oni-eyes]");
   const eyes = SIDES.map((side) => root.querySelector(`[data-oni-eye="${side}"]`));
   const ears = SIDES.map((side) => root.querySelector(`[data-oni-ear="${side}"]`));
-  if (!body || eyes.includes(null) || ears.includes(null)) return;
+  if (!body || !eyePair || eyes.includes(null) || ears.includes(null)) return;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let timer: ReturnType<typeof setTimeout>;
 
@@ -100,6 +120,12 @@ export function animateOniIdle(root: Element | null) {
         ear?.animate(EAR_FLAP[SIDES[i]!], { duration: 520, delay, easing: "ease-in-out" });
     });
   const side = () => (Math.random() < 0.5 ? 0 : 1);
+  const lookAside = () => {
+    const pose = LOOK[SIDES[side()]!];
+    body.animate(pose.head, { duration: 1_800 });
+    eyePair.animate(pose.eyes, { duration: 1_800 });
+    if (Math.random() < 0.5) blink(800);
+  };
 
   const moves = [
     { weight: 30, run: () => blink() },
@@ -108,6 +134,7 @@ export function animateOniIdle(root: Element | null) {
     { weight: 15, run: () => flap() },
     { weight: 10, run: () => flap(0, side()) },
     { weight: 20, run: () => (body.animate(HOP, { duration: 560 }), flap(200), blink(420)) },
+    { weight: 20, run: lookAside },
   ];
   const totalWeight = moves.reduce((sum, move) => sum + move.weight, 0);
 

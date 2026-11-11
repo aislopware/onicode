@@ -50,7 +50,7 @@ export function CompactBrandTitle(
         props.fit && { flexShrink: 0 },
       ]}
     >
-      <OniWordmark colorClassName="accent-icon" height={Math.round(15 * scale)} />
+      <OniWordmark colorClassName="accent-icon" height={Math.round(20 * scale)} strokeWidth={20} />
       {/* A logo beside a fixed-size wordmark: it may grow with Dynamic Type, not crowd the bar. */}
       <Text
         allowFontScaling={props.allowFontScaling}
@@ -58,7 +58,7 @@ export function CompactBrandTitle(
         className="font-oni-medium text-foreground-muted"
         style={{ fontSize: 21 * scale, letterSpacing: -0.5 * scale }}
       >
-        Onicode
+        Oni
       </Text>
       {showStage ? (
         <View
