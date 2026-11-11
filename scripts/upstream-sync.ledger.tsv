@@ -257,3 +257,4 @@ c03f84bcde	take	fix(server): stream the usage-scan cache to disk instead of one 
 a0efdaeb89	take	fix: new threads move from draft to Working in one step (#33783)
 c82e1ba515	take	fix(gitlab): review comments can cover a range of lines (#30535)
 42185a6206	take	test(web): right panel tab swipe test runs as macOS on any CI host (#34191)
+1c17285e58	take	fix(shared): cite assistant messages with IDs over 512 characters (#28084)
