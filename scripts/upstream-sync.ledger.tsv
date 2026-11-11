@@ -331,3 +331,4 @@ d806251188	take	fix(server): runs cancelled by a server restart say why in the t
 a74ee4cc7c	take	fix(client-runtime): server updates stop waiting 32 minutes when the host returns without this update's outcome (#27275)
 cbc68c9dc1	take	fix(web): Stop shows a pending state and repeat clicks no longer resume (#20809)
 e0379fbf5c	take	fix(web): collapsed reasoning previews no longer process the whole block (#23001)
+52e878829c	take	fix(server): storage cleanup skips stale worktree paths under a regular file (#26594)
