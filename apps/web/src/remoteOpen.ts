@@ -13,6 +13,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { useLocalStorage } from "~/hooks/useLocalStorage";
 import { environmentPresentations } from "~/state/presentation";
+import { hostEnvironmentIdAtom } from "~/state/primaryEnvironment";
 
 export interface RemoteOpenHost {
   readonly kind: "ssh-alias" | RemoteOpenTarget["kind"];
@@ -43,9 +44,10 @@ export function resolveRemoteOpenState(input: {
   readonly target: ConnectionTarget | null;
   readonly sshTarget: { readonly alias: string; readonly username: string | null } | null;
   readonly remoteOpenTargets: ReadonlyArray<RemoteOpenTarget> | undefined;
+  readonly hostEnvironmentId: string | null;
 }): RemoteOpenState {
   const { target } = input;
-  if (target === null) {
+  if (target === null || target.environmentId === input.hostEnvironmentId) {
     return LOCAL_EXEC;
   }
   // Desktop owns its primary even at a non-loopback WSL2 NAT address.
@@ -101,6 +103,7 @@ const remoteOpenResolutionAtom = Atom.family((environmentId: EnvironmentId) =>
         sshTarget:
           profile !== null && profile._tag === "SshConnectionProfile" ? profile.target : null,
         remoteOpenTargets: presentation?.serverConfig?.remoteOpenTargets,
+        hostEnvironmentId: get(hostEnvironmentIdAtom),
       }),
       isResolved: true,
     };
