@@ -296,3 +296,4 @@ b5256ad09c	take	fix(opencode): verify CLI updates when loopback server is still 
 729f6757d9	take	fix(usage): Claude subagent output is no longer undercounted (#20276)
 d0d0608b6b	take	fix(server): a remote update points the service unit at the runtime it committed (#19652); cloud/ changes applied to service/
 8d236998d0	take	fix(server): a limited provider's queue stays held after another provider's turn succeeds (#22425)
+9ef52de293	take	fix(shared): keep spreadsheet shorthand as inline code (#23203)
