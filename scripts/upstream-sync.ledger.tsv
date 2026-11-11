@@ -293,3 +293,4 @@ e2a781477a	take	fix(usage): Grok and Cursor usage limits show pace and the even-
 996b43f01b	take	fix(web): retain diff selection across navigation (#22347)
 0d36f2b48e	take	fix(mobile): subscription widget no longer expires on a window that already reset (#22993)
 b5256ad09c	take	fix(opencode): verify CLI updates when loopback server is still running (#22839)
+729f6757d9	take	fix(usage): Claude subagent output is no longer undercounted (#20276)
