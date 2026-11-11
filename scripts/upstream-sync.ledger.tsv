@@ -301,3 +301,4 @@ d0d0608b6b	take	fix(server): a remote update points the service unit at the runt
 c9dfc404cc	take	fix(server): custom Codex providers no longer report native quota (#18622)
 e93f6ea361	take	fix(desktop): Cmd+F now searches the page in the integrated browser; dropped web-app mention from docs
 f6433dba45	take	fix(desktop): an SSH password prompt that ended leaves the dialog instead of stacking
+2c74ea6915	take	fix(web): render Claude insight blocks as a callout
