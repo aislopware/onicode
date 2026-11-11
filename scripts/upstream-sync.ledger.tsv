@@ -270,3 +270,4 @@ dea8472438	take	feat(web): label chips show the label's description on hover (#2
 b6d3097379	take	feat(web): composer strip names the worktree folder (#28459)
 362ef9a88a	take	feat(gitlab): revert a merged merge request (#30556)
 399df485a4	take	fix(claude): version errors from a custom endpoint no longer say to run claude update (#34176)
+8cbc95923a	take	fix(web): files marked Viewed stay folded when a pull request's Code tab opens again (#34168)
