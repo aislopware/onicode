@@ -281,3 +281,4 @@ a536ff7ac0	take	fix(server): thread search finds phrases inside quotes and their
 c50dd8e12d	take	fix(server): agent continuations preserve the working timer start (#22947)
 6e21f81461	take	fix(desktop): wait for the local server to exit when quitting (#22996)
 fc5edd347b	take	fix(server): worktrees cut from a non-default base no longer show the base's PR (#22861)
+f697d4db3e	take	fix(web): local server cards in the browser empty state take pointer clicks (#34050)
