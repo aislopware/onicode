@@ -247,3 +247,4 @@ ed52af3a47	take	feat(opencode): track native shell jobs across turns
 ba4d01cf7f	take	fix(shared): login-shell environment probe ignores DEBUG trap output (#32646)
 0815d98cd7	take	fix(web): make Q&A option outlines visible across themes (#34178)
 05adc163fc	take	fix(web): hide empty replies when renders show the result (#34182)
+4363d0bf65	take	fix(web): mouse tilt wheel no longer switches threads on Windows and Linux desktop (#32963)
