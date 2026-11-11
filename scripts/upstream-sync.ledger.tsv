@@ -235,3 +235,4 @@ d152d2c824	take	fix(client-runtime): a search query pasted from github.com lists
 ccc7b2d96f	take	fix(web): MCP App cards no longer flash white in dark mode while the app loads (#33352)
 92f1b8ec25	take	fix(peer): link requests use the addresses the app already has for a machine (#34139)
 c90b67859a	take	fix(server): Find frees searched thread text after one idle minute (#34132)
+f7b81e1d11	take	fix(web): settings search shortcuts follow the physical key on non-US layouts (#33395)
