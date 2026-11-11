@@ -394,3 +394,4 @@ c75a58e57c	take	fix(server): peer link migrations 71 and 72 rerun safely (#26834
 a48d7c6cd0	take	fix(ssh): explain how to recover from failed host key checks (#23785)
 a50ebef78b	take	fix(server): show when a Claude steer is waiting for acceptance (#24785)
 0e1f01ec85	take	fix(web): keep grouped project icons consistent in settings (#14493)
+0ceaa9a48c	take	fix(server): update branch labels after terminal checkouts (#23422)
