@@ -252,3 +252,4 @@ ba4d01cf7f	take	fix(shared): login-shell environment probe ignores DEBUG trap ou
 c192c67867	take	fix(server): auto thread sends queue while a turn is stopping (#34163)
 c03f84bcde	take	fix(server): stream the usage-scan cache to disk instead of one string (#34030)
 5b11efe5df	take	fix(clients): images the agent opens stay visible in the chat (#30473)
+31bf2f7f34	take	fix(client-runtime): pasted repository page URLs clone the repository into its own folder (#32681)
