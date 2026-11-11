@@ -7,6 +7,7 @@ import {
 } from "@onicode/contracts";
 import { resolveWorktreeOniHome } from "@onicode/shared/devHome";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import { formatHostForUrl, isWildcardHost } from "@onicode/shared/hostClassification";
 import { DEFAULT_SIGNAL_EXPORT } from "@onicode/shared/observability";
 import { buildPairingAppLink } from "@onicode/shared/remote";
 import * as OtelEnvironment from "@onicode/shared/otelEnvironment";
@@ -40,9 +41,7 @@ import {
 } from "../serverRuntimeState.ts";
 import {
   buildPairingUrl,
-  formatHostForUrl,
   isLoopbackHost,
-  isWildcardHost,
   renderTerminalQrCode,
   resolveHeadlessConnectionString,
 } from "../startupAccess.ts";
