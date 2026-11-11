@@ -30,6 +30,7 @@ import {
   threadWokeAt,
 } from "@onicode/client-runtime/state/thread-settled";
 import {
+  asLaunchingThread,
   createInboxReturnTracker,
   isThreadWorking,
 } from "@onicode/client-runtime/state/thread-inbox";
@@ -243,7 +244,12 @@ import { SidebarContent, SidebarGroup, useSidebar } from "./ui/sidebar";
 import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";
 import { SidebarHeaderIconButton, SidebarThreadHeader } from "./sidebar/SidebarThreadHeader";
 import { TooltipProvider } from "./ui/tooltip";
-import { composerDraftHasUserContent, DraftId, useComposerDraftStore } from "../composerDraftStore";
+import {
+  composerDraftHasUserContent,
+  DraftId,
+  useComposerDraftStore,
+  usePromotingDraftThreadKeys,
+} from "../composerDraftStore";
 import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import {
   SidebarSearchResultRow,
@@ -1090,6 +1096,15 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           ),
         );
   const threads = useQuietThreadShells();
+  const promotingDraftThreadKeys = usePromotingDraftThreadKeys();
+  const listedThreads =
+    promotingDraftThreadKeys.length === 0
+      ? threads
+      : threads.map((thread) =>
+          promotingDraftThreadKeys.includes(threadShellKey(thread))
+            ? asLaunchingThread(thread)
+            : thread,
+        );
   const routeRowThreadKey =
     routeThreadRef === null
       ? null
@@ -1321,7 +1336,7 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     serverConfigs,
     connectedEnvironmentIds,
     optimisticDrop,
-    threads,
+    threads: listedThreads,
     delegatedUnderParent,
     routeRowThreadKey,
     folderGroups: boringSidebarEnabled
