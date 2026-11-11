@@ -339,3 +339,4 @@ ad0b2a9d2f	take	perf(client): streamed text no longer republishes thread queue a
 8f4166b28c	take	fix(web): convert composer list markers completed later (#22997); normalization registers its conversion as an input rule for Tiptap 3.33
 49013438a9	take	test: remove tests that repeat another case or restate the source (#34170); Clerk and relay test files absent
 0af2d21647	take	fix(server): drop stale queued pull-request watch wakes (#21239)
+d50a6fdc30	take	fix(web): preview recordings stay decodable after a viewport resize (#10495)
