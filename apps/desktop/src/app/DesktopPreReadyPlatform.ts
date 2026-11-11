@@ -154,6 +154,15 @@ export const make = Effect.gen(function* () {
         Electron.app.commandLine.appendSwitch("disable-features", disableFeatures);
       }
     }
+    if (platform === "darwin") {
+      const disableFeatures = DesktopEarlyElectronStartup.resolveMacDisableFeaturesSwitch({
+        enableFeatures: readCommandLineSwitchValue(Electron.app.commandLine, "enable-features"),
+        disableFeatures: readCommandLineSwitchValue(Electron.app.commandLine, "disable-features"),
+      });
+      if (disableFeatures !== null) {
+        Electron.app.commandLine.appendSwitch("disable-features", disableFeatures);
+      }
+    }
 
     return { linux, linuxPasswordStoreCommandLine };
   });

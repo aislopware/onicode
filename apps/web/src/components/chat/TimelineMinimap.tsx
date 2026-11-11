@@ -49,6 +49,8 @@ export function TimelineMinimap({
   onSelect: (item: TimelineMinimapItem) => void;
 }) {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  // Only the hit strip takes pointer events. A non-passive listener on the full-height
+  // gutter makes the compositor wait on the main thread for every wheel over it.
   const wheelTargetRef = (node: HTMLDivElement | null) => {
     if (!node) return;
     node.addEventListener("wheel", onWheel, { passive: false });
@@ -112,10 +114,10 @@ export function TimelineMinimap({
       )}
       data-testid="timeline-minimap"
       data-persistent-gutter={hasPersistentGutter ? "true" : "false"}
-      ref={wheelTargetRef}
     >
       <div className="relative h-full w-full select-none">
         <div
+          ref={wheelTargetRef}
           className={cn(
             "absolute top-1/2 left-3 -translate-y-1/2",
             hitStripWidth > 0 && !passThrough ? "pointer-events-auto" : "pointer-events-none",

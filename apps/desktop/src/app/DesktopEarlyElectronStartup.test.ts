@@ -6,6 +6,7 @@ import {
   restoreEarlyLinuxDeviceScaleFactor,
   resolveEarlyLinuxPasswordStorePreference,
   resolveLinuxDisableFeaturesSwitch,
+  resolveMacDisableFeaturesSwitch,
 } from "./DesktopEarlyElectronStartup.ts";
 
 describe("DesktopEarlyElectronStartup", () => {
@@ -129,6 +130,34 @@ describe("DesktopEarlyElectronStartup", () => {
       );
     });
   });
+
+  it.each([
+    {
+      enableFeatures: null,
+      disableFeatures: null,
+      expected: "VSyncAlignedPresentationForScrolling",
+    },
+    {
+      enableFeatures: null,
+      disableFeatures: "Foo,Bar",
+      expected: "Foo,Bar,VSyncAlignedPresentationForScrolling",
+    },
+    {
+      enableFeatures: null,
+      disableFeatures: "VSyncAlignedPresentationForScrolling",
+      expected: null,
+    },
+    {
+      enableFeatures: "VSyncAlignedPresentationForScrolling",
+      disableFeatures: null,
+      expected: null,
+    },
+  ])(
+    "merges the macOS scroll presentation workaround into $disableFeatures",
+    ({ expected, ...switches }) => {
+      assert.equal(resolveMacDisableFeaturesSwitch(switches), expected);
+    },
+  );
 });
 
 describe("Linux device scale persistence failures", () => {
