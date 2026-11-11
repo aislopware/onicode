@@ -60,6 +60,10 @@ import {
 } from "./claudeUsageLimits.ts";
 import {
   BUNDLED_CLAUDE_MODEL_CATALOG,
+  CLAUDE_EFFORT_LEVELS,
+  capClaudeCatalogEffort,
+  type ClaudeEffortCapSource,
+  type ClaudeEffortLevel,
   type ClaudeModelCatalog,
   claudeModelsOfferedByReport,
   claudeReportedModels,
@@ -282,7 +286,72 @@ export type ClaudeCapabilitiesProbe = {
   /** Undefined means get_usage failed; absent windows on success mean no subscription windows, as with API keys. */
   readonly usage?: Pick<SDKControlGetUsageResponse, "rate_limits_available" | "rate_limits">;
   readonly usageCheckedAt?: string;
+  /** Each settings source's `maxEffortLevel` caps; Claude Code clamps every higher effort. */
+  readonly effortCapSources?: ReadonlyArray<ClaudeEffortCapSource>;
 };
+
+// `getSettings` exists at runtime but is missing from the SDK's `Query` type, and older CLIs
+// reject the control request.
+type ClaudeSettingsQuery = {
+  readonly getSettings?: () => Promise<{
+    readonly effective?: unknown;
+    readonly sources?: unknown;
+  }>;
+};
+
+function parseClaudeMaxEffortLevel(value: unknown): ClaudeEffortLevel | undefined {
+  return CLAUDE_EFFORT_LEVELS.find((level) => level === value);
+}
+
+function parseClaudeModelMaxEffortLevels(
+  modelSettings: unknown,
+): ReadonlyMap<string, ClaudeEffortLevel> | undefined {
+  if (!modelSettings || typeof modelSettings !== "object") return undefined;
+  const levels = new Map<string, ClaudeEffortLevel>();
+  for (const [model, settings] of Object.entries(modelSettings)) {
+    const level = parseClaudeMaxEffortLevel(
+      settings && typeof settings === "object"
+        ? (settings as { readonly maxEffortLevel?: unknown }).maxEffortLevel
+        : undefined,
+    );
+    if (level) levels.set(model, level);
+  }
+  return levels.size > 0 ? levels : undefined;
+}
+
+function parseClaudeEffortCapSource(settings: unknown): ClaudeEffortCapSource | undefined {
+  if (!settings || typeof settings !== "object") return undefined;
+  const { maxEffortLevel, modelSettings } = settings as {
+    readonly maxEffortLevel?: unknown;
+    readonly modelSettings?: unknown;
+  };
+  const level = parseClaudeMaxEffortLevel(maxEffortLevel);
+  const modelMaxEffortLevels = parseClaudeModelMaxEffortLevels(modelSettings);
+  return level || modelMaxEffortLevels
+    ? {
+        ...(level ? { maxEffortLevel: level } : {}),
+        ...(modelMaxEffortLevels ? { modelMaxEffortLevels } : {}),
+      }
+    : undefined;
+}
+
+// `sources` holds each settings file's raw settings. CLIs that report only the merged `effective`
+// settings are read as a single source.
+function parseClaudeEffortCapSources(
+  settings: { readonly effective?: unknown; readonly sources?: unknown } | undefined,
+): ReadonlyArray<ClaudeEffortCapSource> | undefined {
+  const sources = Array.isArray(settings?.sources)
+    ? settings.sources.flatMap((source) => {
+        const parsed = parseClaudeEffortCapSource(
+          source && typeof source === "object"
+            ? (source as { readonly settings?: unknown }).settings
+            : undefined,
+        );
+        return parsed ? [parsed] : [];
+      })
+    : [parseClaudeEffortCapSource(settings?.effective)].filter((source) => source !== undefined);
+  return sources.length > 0 ? sources : undefined;
+}
 
 function parseClaudeInitializationCommands(
   commands: ReadonlyArray<ClaudeSlashCommand> | undefined,
@@ -373,7 +442,7 @@ function claudeGatewayDiscoveryGraceMs(environment: Readonly<Record<string, unkn
 class ClaudeCapabilitiesProbeSdkError extends Schema.TaggedError<ClaudeCapabilitiesProbeSdkError>()(
   "ClaudeCapabilitiesProbeSdkError",
   {
-    operation: Schema.Literals(["initialize", "usage"]),
+    operation: Schema.Literals(["initialize", "usage", "settings"]),
     cause: Schema.Defect(),
     stderrTail: Schema.optional(Schema.String),
   },
@@ -388,7 +457,7 @@ const probeClaudeCapabilities = (
   claudeSettings: ClaudeSettings,
   environment?: NodeJS.ProcessEnv,
   cwd?: string,
-  includeUsage = true,
+  includeStatus = true,
 ) => {
   const abort = new AbortController();
   // Launchers explain refusals (not enrolled, proxy down) only on stderr.
@@ -407,7 +476,7 @@ const probeClaudeCapabilities = (
     );
     const managedMcpConfig = yield* hasClaudeManagedMcpConfig();
     // Workspace probes (no usage) discard models; the machine probe refreshes the shared cache.
-    const graceMs = includeUsage
+    const graceMs = includeStatus
       ? claudeGatewayDiscoveryGraceMs({
           ...claudeEnvironment,
           ...(yield* readClaudeSettingsEnv(claudeSettings, cwd, claudeEnvironment)),
@@ -448,16 +517,31 @@ const probeClaudeCapabilities = (
         // Usage has its own deadline so a slow optional request cannot discard initialization.
         // Only the rate limits are read, so skip the local transcript scan that fills
         // `behaviors`: with a few GB of transcripts it outlasts the deadline.
+        // The effort caps are read in parallel under the same deadline; workspace probes skip both.
         const usageCheckedAt = DateTime.formatIso(yield* DateTime.now);
-        const usageResult = includeUsage
-          ? yield* Effect.tryPromise({
-              try: () =>
-                q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({
-                  skipBehaviors: true,
-                }),
-              catch: (cause) => new ClaudeCapabilitiesProbeSdkError({ operation: "usage", cause }),
-            }).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
-          : undefined;
+        const { getSettings } = q as ClaudeSettingsQuery;
+        const [usageResult, settingsResult] = yield* Effect.all(
+          [
+            includeStatus
+              ? Effect.tryPromise({
+                  try: () =>
+                    q.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({
+                      skipBehaviors: true,
+                    }),
+                  catch: (cause) =>
+                    new ClaudeCapabilitiesProbeSdkError({ operation: "usage", cause }),
+                }).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
+              : Effect.undefined,
+            includeStatus && getSettings
+              ? Effect.tryPromise({
+                  try: () => getSettings.call(q),
+                  catch: (cause) =>
+                    new ClaudeCapabilitiesProbeSdkError({ operation: "settings", cause }),
+                }).pipe(Effect.timeout(DEFAULT_TIMEOUT_MS), Effect.result)
+              : Effect.undefined,
+          ],
+          { concurrency: "unbounded" },
+        );
         const usage =
           usageResult && Result.isSuccess(usageResult)
             ? {
@@ -465,6 +549,9 @@ const probeClaudeCapabilities = (
                 rate_limits: usageResult.success.rate_limits,
               }
             : undefined;
+        const effortCapSources = parseClaudeEffortCapSources(
+          settingsResult && Result.isSuccess(settingsResult) ? settingsResult.success : undefined,
+        );
         const account = init.account as
           | {
               readonly email?: string;
@@ -488,6 +575,7 @@ const probeClaudeCapabilities = (
             ? { fastModeDisabledReason: init.fast_mode_disabled_reason }
             : {}),
           ...(usage ? { usage, usageCheckedAt } : {}),
+          ...(effortCapSources ? { effortCapSources } : {}),
         } satisfies ClaudeCapabilitiesProbe;
       }).pipe(
         Effect.tap(() =>
@@ -675,15 +763,19 @@ export const checkClaudeProviderStatus = Effect.fn("checkClaudeProviderStatus")(
     probeResult && Result.isSuccess(probeResult) ? probeResult.success : undefined;
   const probeFailure =
     probeResult && Result.isFailure(probeResult) ? probeResult.failure : undefined;
-  const offeredModels = claudeProviderModels(
-    [
-      ...claudeModelsOfferedByReport(
-        resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
-        capabilities?.models,
-      ),
-      ...claudeReportedModels(modelCatalog, claudeSettings.customModels, capabilities?.models),
-    ],
-    claudeSettings.customModels,
+  const offeredModels = capClaudeCatalogEffort(
+    modelCatalog,
+    claudeProviderModels(
+      [
+        ...claudeModelsOfferedByReport(
+          resolveClaudeModelsForVersion(modelCatalog, parsedVersion),
+          capabilities?.models,
+        ),
+        ...claudeReportedModels(modelCatalog, claudeSettings.customModels, capabilities?.models),
+      ],
+      claudeSettings.customModels,
+    ),
+    capabilities?.effortCapSources ?? [],
   );
   const models = isClaudeFastModeBlocked(capabilities?.fastModeDisabledReason)
     ? withoutClaudeFastMode(offeredModels)
