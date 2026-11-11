@@ -902,6 +902,7 @@ export function PullRequestSummaryTab({
                       label={label}
                       size="default"
                       className="max-w-48"
+                      focusable
                     />
                   ))
                 )}

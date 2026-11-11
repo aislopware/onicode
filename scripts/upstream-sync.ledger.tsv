@@ -266,3 +266,4 @@ a03d9bce02	take	fix(mobile): file links in question cards open the file viewer (
 7e45dcdd61	take	fix(mobile): chat code blocks colour diff, kotlin, sql and other languages again (#33680)
 543ee27fa8	take	fix(server): fork Claude threads after project root changes (#22836)
 8030067470	take	fix(web): snooze times read naturally in context menus (#24945)
+dea8472438	take	feat(web): label chips show the label's description on hover (#28732)
