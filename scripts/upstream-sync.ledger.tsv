@@ -329,3 +329,4 @@ f3da8ff63b	take	feat(gitlab): resolve overview threads from Summary and Timeline
 835e72683b	take	fix(server): Claude subagents no longer show the parent's effort (#17042)
 d806251188	take	fix(server): runs cancelled by a server restart say why in the thread (#27192)
 a74ee4cc7c	take	fix(client-runtime): server updates stop waiting 32 minutes when the host returns without this update's outcome (#27275)
+cbc68c9dc1	take	fix(web): Stop shows a pending state and repeat clicks no longer resume (#20809)
