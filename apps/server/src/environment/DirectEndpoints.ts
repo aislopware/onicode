@@ -16,16 +16,14 @@ import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { isTailnetHost } from "@onicode/shared/hostClassification";
-
-import * as ServerConfig from "../config.ts";
 import {
   formatHostForUrl,
-  isLoopbackHost,
-  isPrivateNetworkAddress,
+  isTailnetHost,
   isWildcardHost,
-  VIRTUAL_INTERFACE,
-} from "../startupAccess.ts";
+} from "@onicode/shared/hostClassification";
+
+import * as ServerConfig from "../config.ts";
+import { isLoopbackHost, isPrivateNetworkAddress, VIRTUAL_INTERFACE } from "../startupAccess.ts";
 
 type NetworkInterfacesMap = ReturnType<typeof NodeOS.networkInterfaces>;
 

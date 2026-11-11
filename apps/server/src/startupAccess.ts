@@ -1,7 +1,12 @@
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
-import { isPrivateNetworkHost, isSharedAddressSpaceHost } from "@onicode/shared/hostClassification";
+import {
+  formatHostForUrl,
+  isPrivateNetworkHost,
+  isSharedAddressSpaceHost,
+  isWildcardHost,
+} from "@onicode/shared/hostClassification";
 import { QrCode } from "@onicode/shared/qrCode";
 import { buildPairingAppLink } from "@onicode/shared/remote";
 import * as Effect from "effect/Effect";
@@ -32,12 +37,6 @@ export const isLoopbackHost = (host: string | undefined): boolean => {
     host.startsWith("127.")
   );
 };
-
-export const isWildcardHost = (host: string | undefined): boolean =>
-  host === "0.0.0.0" || host === "::" || host === "[::]";
-
-export const formatHostForUrl = (host: string): string =>
-  host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
 
 /**
  * Container and VM networks (Docker, libvirt, VMware, VirtualBox, Hyper-V, and
