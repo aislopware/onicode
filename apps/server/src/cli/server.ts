@@ -86,12 +86,18 @@ export const startCommand = Command.make("start", { ...sharedServerCommandFlags 
   Command.withHandler((flags) => runServerCommand(flags, { rejectRunningServer: true })),
 );
 
-export const serveCommand = Command.make("serve", { ...sharedServerCommandFlags }).pipe(
+// Serve never bootstraps a project, so it does not offer the flag that asks for one.
+const { autoBootstrapProjectFromCwd: _, ...serveCommandFlags } = sharedServerCommandFlags;
+
+export const serveCommand = Command.make("serve", serveCommandFlags).pipe(
   Command.withShortDescription("Run Onicode in this terminal without adding a project."),
   Command.withDescription(
     "Run Onicode in this terminal and print pairing details, without adding the current directory as a project. The background service runs this. To set up access from your other devices, run `onicode up`.",
   ),
   Command.withHandler((flags) =>
-    runServerCommand(flags, { forceAutoBootstrapProjectFromCwd: false }),
+    runServerCommand(
+      { ...flags, autoBootstrapProjectFromCwd: Option.none() },
+      { forceAutoBootstrapProjectFromCwd: false },
+    ),
   ),
 );
