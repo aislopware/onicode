@@ -249,3 +249,4 @@ ba4d01cf7f	take	fix(shared): login-shell environment probe ignores DEBUG trap ou
 05adc163fc	take	fix(web): hide empty replies when renders show the result (#34182)
 4363d0bf65	take	fix(web): mouse tilt wheel no longer switches threads on Windows and Linux desktop (#32963)
 32fdad5f49	take	fix(web): timeline minimap preview no longer steals hover or jumps around (#32151)
+c192c67867	take	fix(server): auto thread sends queue while a turn is stopping (#34163)
