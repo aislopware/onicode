@@ -5002,6 +5002,9 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         expect(NodeFS.readFileSync(NodePath.join(repoDir, "untracked.txt"), "utf8")).toBe(
           "keep me\n",
         );
+        expect(
+          (yield* runGit(repoDir, ["config", "branch.feature/pr-safe.oni-pull-request"])).stdout,
+        ).toBe("https://github.com/aislopware/sample-app/pull/91\n");
       }),
   );
 
