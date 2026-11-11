@@ -355,3 +355,4 @@ a68bd772a0	take	fix(grok): apply the selected reasoning effort to ACP sessions
 a625e0b531	take	fix(terminal): identify Onicode terminal sessions (#9954)
 7e565c510d	take	fix(git): stop new threads inheriting historical branch PRs (#34218)
 2dfbad7381	take	fix(server): onicode serve no longer offers --auto-bootstrap-project-from-cwd (#34227)
+31eea883c7	take	fix(rewind): allow conversation-only rewind in non-git workspaces (#18379)
