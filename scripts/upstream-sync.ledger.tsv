@@ -413,3 +413,4 @@ f796df8fd2	take	fix(server,desktop): browser tools report why a page failed to l
 458a792087	take	fix(server): a Claude thread waiting on a ScheduleWakeup stays in Working (#23648)
 faed05d817	take	fix(server): usage prices long-context requests at above-tier rates (#25430)
 f495217e92	take	fix(server): Simlock open failures show what agent-device reported (#27564)
+3aea6553d3	take	fix(clients): show the right app name and thread context (#18442); desktop-only window title, no hosted-channel or guest-page parts
