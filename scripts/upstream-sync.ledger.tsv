@@ -242,3 +242,4 @@ b3fdf2b10f	take	fix(web): PR links jump to the comment, diff line, checks or com
 fae2d204a2	take	fix(cli): installers retry transient GitHub errors (#32913)
 facd190640	take	fix(web): opening the terminal with Cmd+J no longer re-renders the whole sidebar (#33129)
 0f13d2ccbd	take	refactor(web): remove icon morphing (#33985)
+ed52af3a47	take	feat(opencode): track native shell jobs across turns
