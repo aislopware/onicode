@@ -351,3 +351,4 @@ a68bd772a0	take	fix(grok): apply the selected reasoning effort to ACP sessions
 5534467f2b	take	fix(mobile): browser address bar and Take control no longer hide under the header
 0629735d37	take	fix(web): thread controls hide while the mobile sidebar is open
 4c68fdcaa9	take	fix(web): the terminal cursor no longer leaves faint lines when it blinks off (#21641)
+3ed5fb29bd	take	fix(shared): Claude plugin skills no longer show their name twice (#26311)
