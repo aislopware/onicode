@@ -381,3 +381,4 @@ d5dc111599	take	fix(ssh): reconnect and disconnect ignore a remote pid file that
 1278628870	take	fix(server): device setup names a missing npm instead of a generic failure (#28258)
 e6afd2a24b	take	fix(web): render citation chips in the collapsed composer (#22148)
 4599e55bdd	take	fix(server): agents settle this thread when asked (#26765); kept Onicode's request_secret sudo wording
+6f2ce81958	take	fix(web): copying commands with prose no longer adds code fences (#24433)
