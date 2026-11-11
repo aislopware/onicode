@@ -370,3 +370,4 @@ d0c7147a8e	take	fix(pi): rewinding works after the Pi session was released (#263
 1a3fbee6c2	take	fix(cursor): Cursor no longer adds attribution when cli-config turns it off (patch rebased onto @cursor/sdk 1.3.1)
 7c12233d02	take	fix(server): listing linked environments no longer waits out an asleep peer
 bff276e786	take	fix(server): Git failures no longer record checkpoints as missing
+77d17b157e	take	fix(provider-acp-registry): prepared binary agents stay ready when the registry advances
