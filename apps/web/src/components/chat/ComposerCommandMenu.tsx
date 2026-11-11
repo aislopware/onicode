@@ -29,7 +29,7 @@ import { memo, useLayoutEffect, useRef } from "react";
 import { type ComposerSlashCommand, type ComposerTriggerKind } from "../../composer-logic";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
-import { Command, CommandGroup, CommandItem, CommandList } from "../ui/command";
+import { Command, CommandGroup, CommandGroupLabel, CommandItem, CommandList } from "../ui/command";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
@@ -42,6 +42,15 @@ export type ComposerCommandItem =
       type: "path";
       path: string;
       pathKind: ProjectEntry["kind"];
+      searchTarget: ComposerPathSearchTarget;
+      label: string;
+      description: string;
+    }
+  | {
+      id: string;
+      // A host folder outside the workspace, from zoxide.
+      type: "folder";
+      path: string;
       searchTarget: ComposerPathSearchTarget;
       label: string;
       description: string;
@@ -147,20 +156,23 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
             aria-label={props.triggerKind ? LISTBOX_LABEL_BY_TRIGGER[props.triggerKind] : undefined}
             className="max-h-72 min-h-0 scroll-pb-6"
           >
-            <CommandGroup>
-              {props.items.map((item) => (
-                <ComposerCommandMenuItem
-                  key={item.id}
-                  optionId={composerSuggestionOptionId(props.listId, item.id)}
-                  item={item}
-                  triggerKind={props.triggerKind}
-                  resolvedTheme={props.resolvedTheme}
-                  isActive={props.activeItemId === item.id}
-                  onHighlight={props.onHighlightedItemChange}
-                  onSelect={props.onSelect}
-                />
-              ))}
-            </CommandGroup>
+            {groupComposerCommandItems(props.items).map((group) => (
+              <CommandGroup key={group.label ?? ""}>
+                {group.label ? <CommandGroupLabel>{group.label}</CommandGroupLabel> : null}
+                {group.items.map((item) => (
+                  <ComposerCommandMenuItem
+                    key={item.id}
+                    optionId={composerSuggestionOptionId(props.listId, item.id)}
+                    item={item}
+                    triggerKind={props.triggerKind}
+                    resolvedTheme={props.resolvedTheme}
+                    isActive={props.activeItemId === item.id}
+                    onHighlight={props.onHighlightedItemChange}
+                    onSelect={props.onSelect}
+                  />
+                ))}
+              </CommandGroup>
+            ))}
           </CommandList>
         ) : (
           <div className="px-5 pt-3.5 pb-7">
@@ -184,6 +196,17 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
     </Command>
   );
 });
+
+// Folders come last in `items`, so splitting them off keeps keyboard order.
+function groupComposerCommandItems(items: ReadonlyArray<ComposerCommandItem>) {
+  const folders = items.filter((item) => item.type === "folder");
+  if (folders.length === 0) return [{ label: null, items }];
+  const rest = items.filter((item) => item.type !== "folder");
+  return [
+    ...(rest.length > 0 ? [{ label: null, items: rest }] : []),
+    { label: "Folders", items: folders },
+  ];
+}
 
 const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
   optionId: string;
@@ -224,6 +247,9 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
           kind={props.item.pathKind}
           theme={props.resolvedTheme}
         />
+      ) : null}
+      {props.item.type === "folder" ? (
+        <PierreEntryIcon pathValue={props.item.path} kind="directory" theme={props.resolvedTheme} />
       ) : null}
       {props.item.type === "thread" ? (
         <MessagesSquareIcon aria-hidden="true" className="size-4 shrink-0 text-secondary-label" />

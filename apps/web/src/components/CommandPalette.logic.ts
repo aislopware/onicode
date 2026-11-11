@@ -30,6 +30,7 @@ import {
   THREAD_JUMP_KEYBINDING_COMMANDS,
 } from "@onicode/contracts";
 import { filterFilesystemBrowseEntries } from "@onicode/client-runtime/state/filesystem";
+import { findProjectByPath } from "@onicode/client-runtime/state/projects";
 import { type ReactNode } from "react";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import { type Project, type SidebarThreadSummary, type Thread } from "../types";
@@ -238,6 +239,8 @@ export interface CommandPaletteView {
   readonly addonIcon: ReactNode;
   readonly groups: ReadonlyArray<CommandPaletteGroup>;
   readonly initialQuery?: string;
+  /** Add project's local folder step, where a non-path query searches recent folders. */
+  readonly searchesFolders?: true;
 }
 
 // Child search unmounts the palette; retain search data without its view closures.
@@ -733,6 +736,40 @@ export function buildBrowseGroups(input: {
   }
 
   return [{ value: "directories", label: "Directories", items }];
+}
+
+export const FOLDER_SEARCH_MIN_QUERY_LENGTH = 2;
+
+/** Server-ranked folders, kept in the server's order; `skipProjects` leaves out folders already added. */
+export function buildFolderSearchGroup(input: {
+  readonly value: string;
+  readonly label: string;
+  readonly entries: ReadonlyArray<FilesystemBrowseEntry>;
+  readonly skipProjects?: ReadonlyArray<{
+    readonly workspaceRoot: string;
+    readonly archivedAt?: unknown;
+  }>;
+  readonly icon: ReactNode;
+  readonly disabled?: boolean;
+  readonly run: (entry: FilesystemBrowseEntry) => void | Promise<void>;
+}): CommandPaletteGroup | null {
+  const activeProjects = input.skipProjects?.filter((project) => project.archivedAt == null) ?? [];
+  const items = input.entries
+    .filter((entry) => findProjectByPath(activeProjects, entry.fullPath) === undefined)
+    .map((entry): CommandPaletteActionItem => ({
+      kind: "action",
+      value: `folder:${entry.fullPath}`,
+      searchTerms: [entry.name, entry.fullPath],
+      title: entry.name,
+      description: entry.fullPath,
+      icon: input.icon,
+      ...(input.disabled ? { disabled: true } : {}),
+      keepOpen: true,
+      run: async () => {
+        await input.run(entry);
+      },
+    }));
+  return items.length > 0 ? { value: input.value, label: input.label, items } : null;
 }
 
 export function filterPinnedBrowseEntries(input: {

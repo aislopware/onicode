@@ -59,6 +59,7 @@ vi.mock("../../state/presentation", () => ({
   useEnvironmentPresentation: mocks.presentation,
 }));
 vi.mock("../../state/orchestration", () => ({ orchestrationEnvironment: {} }));
+vi.mock("../../state/filesystem", () => ({ filesystemEnvironment: {} }));
 vi.mock("../../state/threads", () => ({ olderSettledThreads: {}, threadFamilies: {} }));
 vi.mock("../../state/pull-requests", () => ({ composerPullRequests: {} }));
 vi.mock("../../state/olderSettledShelf", () => ({ useOlderSettledCount: () => 0 }));

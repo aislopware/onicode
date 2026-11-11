@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { NonNegativeInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { NonNegativeInt, PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 const FILESYSTEM_PATH_MAX_LENGTH = 512;
 
@@ -43,6 +43,23 @@ export const FilesystemBrowseResult = Schema.Struct({
   entries: Schema.Array(FilesystemBrowseEntry),
 });
 export type FilesystemBrowseResult = typeof FilesystemBrowseResult.Type;
+
+const FILESYSTEM_FIND_DIRECTORIES_MAX_LIMIT = 50;
+
+// Searches the host's zoxide database, ranked by fzf when installed.
+export const FilesystemFindDirectoriesInput = Schema.Struct({
+  query: TrimmedNonEmptyString.check(Schema.isMaxLength(256)),
+  limit: Schema.optional(
+    PositiveInt.check(Schema.isLessThanOrEqualTo(FILESYSTEM_FIND_DIRECTORIES_MAX_LIMIT)),
+  ),
+});
+export type FilesystemFindDirectoriesInput = typeof FilesystemFindDirectoriesInput.Type;
+
+// Empty when zoxide is missing or nothing matches.
+export const FilesystemFindDirectoriesResult = Schema.Struct({
+  entries: Schema.Array(FilesystemBrowseEntry),
+});
+export type FilesystemFindDirectoriesResult = typeof FilesystemFindDirectoriesResult.Type;
 
 export const FilesystemBrowseFailure = Schema.Literals([
   "windows_path_unsupported",

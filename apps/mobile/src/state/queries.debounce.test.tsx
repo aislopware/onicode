@@ -28,6 +28,7 @@ vi.mock("./projects", () => ({
 }));
 vi.mock("./atom-registry", () => ({ appAtomRegistry: { refresh: mocks.refresh } }));
 vi.mock("./orchestration", () => ({ orchestrationEnvironment: {} }));
+vi.mock("./filesystem", () => ({ filesystemEnvironment: {} }));
 vi.mock("./vcs", () => ({ vcsEnvironment: { listRefs: mocks.listRefs } }));
 vi.mock("./threads", () => ({ olderSettledThreads: {}, threadFamilies: {} }));
 vi.mock("./query", () => ({

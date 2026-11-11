@@ -57,17 +57,19 @@ import {
   formatComposerModelMention,
   rankComposerModelMentions,
 } from "@onicode/client-runtime/composer-model-mentions";
-import { useAtomRefresh } from "@effect/atom-react";
+import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { serverEnvironment } from "../../state/server";
 import {
+  useComposerFolderSearch,
   useComposerPathSearch,
   useComposerPullRequestSearch,
   useThreadSearch,
 } from "../../state/queries";
+import { composerFolderParentPath } from "@onicode/client-runtime/composer-folder-mentions";
 import type { ModelOption } from "../../lib/modelOptions";
 import type { ComposerCommandItem } from "./ComposerCommandPopover";
 import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
@@ -369,6 +371,18 @@ export function useComposerCommandMenu({
     cwd: trigger?.kind === "path" ? projectCwd : null,
     query: trigger?.kind === "path" ? trigger.query : null,
   });
+  const findsFolders = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.findDirectories === true,
+  );
+  const folderSearch = useComposerFolderSearch(
+    {
+      environmentId,
+      cwd: trigger?.kind === "path" ? projectCwd : null,
+      query: trigger?.kind === "path" ? trigger.query : null,
+    },
+    trigger?.kind === "path" && findsFolders,
+  );
   // Mounts older settled threads matching the mention, which shells may leave out.
   useThreadSearch(
     trigger?.kind === "path" && environmentId ? [environmentId] : [],
@@ -560,6 +574,14 @@ export function useComposerCommandMenu({
             description: parts.length > 1 ? parts.slice(0, -1).join("/") : "",
           };
         }),
+        ...folderSearch.entries.map((entry) => ({
+          id: `folder:${entry.fullPath}`,
+          type: "path" as const,
+          path: entry.fullPath,
+          kind: "directory" as const,
+          label: entry.name,
+          description: composerFolderParentPath(entry.fullPath),
+        })),
       ];
     }
 
@@ -699,7 +721,9 @@ export function useComposerCommandMenu({
     items,
     skills,
     isLoading:
-      trigger?.kind === "pull-request" ? pullRequestSearch.isPending : pathSearch.isPending,
+      trigger?.kind === "pull-request"
+        ? pullRequestSearch.isPending
+        : pathSearch.isPending || folderSearch.isPending,
     error:
       trigger?.kind === "pull-request"
         ? pullRequestProjectId === null || pullRequestRepository === null

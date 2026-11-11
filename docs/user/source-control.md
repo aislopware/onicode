@@ -153,6 +153,14 @@ like `pinball-stats` for "Pinball Stats". Turn on **Create private repository on
 publish it. If Git has no name or email on that machine, the project is created without the
 first commit.
 
+If [zoxide](https://github.com/ajeetdsouza/zoxide) is installed on the machine, **Add Project →
+Local folder** also searches the folders you visit often: type a few letters instead of a path,
+such as `onic`, and pick a folder (or press Enter for the best match) to browse into it, then add
+it. Matches are ranked by
+[fzf](https://github.com/junegunn/fzf) when it is installed, so its search syntax works too. On
+desktop, the same folders appear under **Folders** when you type in the command palette, and
+choosing one adds it as a project.
+
 Use **Add Project** in the command palette (`Cmd/Ctrl+K`) to clone a repository. Choose a hosting
 provider or paste a Git URL, then choose where to save it. A branch or file page copied from GitHub,
 GitLab, GitCafe, Codeberg or Bitbucket also works: Onicode clones that repository's default branch.

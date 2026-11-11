@@ -9,6 +9,7 @@ import {
   buildThreadActionItems,
   buildLinkedThreadActionItems,
   filterPinnedBrowseEntries,
+  buildFolderSearchGroup,
   filterCommandPaletteGroups,
   reduceCommandPaletteUiState,
   resolveAddProjectEntry,
@@ -840,6 +841,41 @@ it.each([
   expect(groups.flatMap((group) => group.items.map((item) => item.title))).toEqual([
     "Implementation",
   ]);
+});
+
+describe("buildFolderSearchGroup", () => {
+  it("keeps the server's order and leaves out folders that are already active projects", () => {
+    const entries = [
+      { name: "onicode", fullPath: "/home/u/work/onicode" },
+      { name: "old", fullPath: "/home/u/work/old" },
+      { name: "notes", fullPath: "/home/u/notes" },
+    ];
+    const group = buildFolderSearchGroup({
+      value: "folders",
+      label: "Folders",
+      entries,
+      skipProjects: [
+        { workspaceRoot: "/home/u/work/onicode/", archivedAt: null },
+        { workspaceRoot: "/home/u/work/old", archivedAt: "2026-09-01T00:00:00.000Z" },
+      ],
+      icon: null,
+      run: () => {},
+    });
+    expect(group?.items.map((item) => item.value)).toEqual([
+      "folder:/home/u/work/old",
+      "folder:/home/u/notes",
+    ]);
+    expect(
+      buildFolderSearchGroup({
+        value: "folders",
+        label: "Folders",
+        entries: entries.slice(0, 1),
+        skipProjects: [{ workspaceRoot: "/home/u/work/onicode", archivedAt: null }],
+        icon: null,
+        run: () => {},
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("command palette search return", () => {

@@ -38,6 +38,12 @@ import { orchestrationEnvironment } from "./orchestration";
 import { olderSettledThreads, threadFamilies } from "./threads";
 import { projectEnvironment } from "./projects";
 import { useEnvironmentQuery } from "./query";
+import { filesystemEnvironment } from "./filesystem";
+import {
+  COMPOSER_FOLDER_SEARCH_LIMIT,
+  composerFolderMatches,
+  composerFolderSearchQuery,
+} from "@onicode/client-runtime/composer-folder-mentions";
 import { vcsEnvironment } from "./vcs";
 import { composerPullRequests } from "./pull-requests";
 import {
@@ -439,6 +445,38 @@ export function useComposerPathSearch(target: ComposerPathSearchTarget) {
       normalizedTarget.query !== debouncedTarget.query ||
       (hasTarget && (fileAccess.isPending || result.isPending)),
     refresh: result.refresh,
+  };
+}
+
+/** zoxide folders ranked by fzf on the host, for `@` mentions outside the workspace. */
+export function useComposerFolderSearch(target: ComposerPathSearchTarget, enabled: boolean) {
+  const query = enabled ? composerFolderSearchQuery(target.query) : null;
+  const normalizedTarget = { environmentId: target.environmentId, cwd: target.cwd, query };
+  const debouncedTarget = useDebouncedValue(normalizedTarget, COMPOSER_PATH_SEARCH_DEBOUNCE_MS);
+  const searchEnvironmentId = debouncedTarget.query === null ? null : debouncedTarget.environmentId;
+  const fileAccessSession = useEnvironmentQuery(
+    searchEnvironmentId === null ? null : environmentSession.sessionStateAtom(searchEnvironmentId),
+  );
+  const fileEnvironment = useEnvironmentPresentation(searchEnvironmentId);
+  const { canReadFiles } = resolveFilesystemReadAccess({
+    isCatalogReady: fileEnvironment.isReady,
+    connection: fileEnvironment.presentation?.connection ?? null,
+    session: fileAccessSession.data,
+    sessionError: fileAccessSession.error,
+  });
+  const result = useEnvironmentQuery(
+    canReadFiles && searchEnvironmentId !== null && debouncedTarget.query !== null
+      ? filesystemEnvironment.findDirectories({
+          environmentId: searchEnvironmentId,
+          input: { query: debouncedTarget.query, limit: COMPOSER_FOLDER_SEARCH_LIMIT },
+        })
+      : null,
+  );
+
+  return {
+    entries: composerFolderMatches(result.data?.entries ?? [], debouncedTarget.cwd),
+    isPending:
+      query !== null && (normalizedTarget.query !== debouncedTarget.query || result.isPending),
   };
 }
 
