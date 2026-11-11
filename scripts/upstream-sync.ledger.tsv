@@ -312,3 +312,4 @@ afb4f91a7d	take	fix(provider-core): a model reply of "title" no longer replaces 
 d835e430db	take	fix(web): question answers submit while normal sends are blocked; kept Onicode's composer without the mobile-web blur helpers
 fd9b2c3eaa	take	fix(server): cancelling a background-only delegated task reports it interrupted; relay test dropped (relay removed)
 54a5c51a58	take	fix(web): fall back to a readable server for shared repositories
+2828f28145	take	fix(web): composer follows an optionless thread instead of the settings default
