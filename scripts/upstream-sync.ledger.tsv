@@ -378,3 +378,4 @@ bff276e786	take	fix(server): Git failures no longer record checkpoints as missin
 ddc3cefbc4	take	fix(clients): collapsed turns show one context-compacted divider (#34177)
 1fa250eb1f	take	fix(mobile): un-settle while a settle is pending is no longer ignored (#26578)
 d5dc111599	take	fix(ssh): reconnect and disconnect ignore a remote pid file that no longer names the server (#26963)
+1278628870	take	fix(server): device setup names a missing npm instead of a generic failure (#28258)
