@@ -281,9 +281,21 @@ it.each([true, false])(
       value: { sessions: [session], nextCursor: "page-2" },
     });
     await using screen = await renderSection({ canList, projects: [project, second] });
-    await screen.getByRole("combobox").click();
-    if (canList) await userEvent.keyboard("{ArrowDown}{Enter}");
-    else await screen.getByRole("option", { name: "Second", exact: true }).click();
+    const secondOption = screen.getByRole("option", { name: "Second", exact: true });
+    if (canList) {
+      // A pointer-opened popup sits under the cursor, whose hover can take the highlight back.
+      screen.getByRole("combobox").element().focus();
+      await userEvent.keyboard("{Enter}");
+      await expect
+        .element(screen.getByRole("option", { name: "Antigravity", exact: true }))
+        .toHaveAttribute("data-highlighted");
+      await userEvent.keyboard("{ArrowDown}");
+      await expect.element(secondOption).toHaveAttribute("data-highlighted");
+      await userEvent.keyboard("{Enter}");
+    } else {
+      await screen.getByRole("combobox").click();
+      await secondOption.click();
+    }
     await expect
       .element(
         screen.getByRole("combobox", {
