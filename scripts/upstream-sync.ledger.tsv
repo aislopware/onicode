@@ -299,3 +299,4 @@ d0d0608b6b	take	fix(server): a remote update points the service unit at the runt
 9ef52de293	take	fix(shared): keep spreadsheet shorthand as inline code (#23203)
 25f4c9d44e	take	fix(web): offer retry while an environment reconnects (#23194)
 c9dfc404cc	take	fix(server): custom Codex providers no longer report native quota (#18622)
+e93f6ea361	take	fix(desktop): Cmd+F now searches the page in the integrated browser; dropped web-app mention from docs
