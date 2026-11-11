@@ -398,3 +398,4 @@ a50ebef78b	take	fix(server): show when a Claude steer is waiting for acceptance 
 477845733d	skip	Update track switch dialog serves the nightly channel; Onicode has no nightly track or track switch dialog
 ee21337d84	take	fix(shared): a zero-credit cap no longer marks seat-based Codex out of usage (#34243)
 940b7a4160	take	fix(web): screen readers can browse and Tab through the settings sections again (#30841)
+b125e89768	take	fix(server): Codex forks no longer request full turn history (#24537)
