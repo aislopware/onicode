@@ -280,6 +280,15 @@ export class OrchestratorThreadAboveModeLimitError extends Schema.TaggedError<Or
   }
 }
 
+export class OrchestratorProviderSelectionBusyError extends Schema.TaggedError<OrchestratorProviderSelectionBusyError>()(
+  "OrchestratorProviderSelectionBusyError",
+  { commandId: CommandId, threadId: ThreadId },
+) {
+  override get message(): string {
+    return `Thread ${this.threadId} has an active turn. Wait for it to finish, then retry the provider selection change.`;
+  }
+}
+
 const isOrchestratorDispatchError = Schema.is(OrchestratorDispatchError);
 
 /** The ceiling refusal under however many dispatch errors wrapped it on the way out. */
@@ -344,6 +353,7 @@ export const OrchestratorV2Error = Schema.Union([
   OrchestratorCommandIdConflictError,
   OrchestratorSubagentThreadReadOnlyError,
   OrchestratorThreadAboveModeLimitError,
+  OrchestratorProviderSelectionBusyError,
   OrchestratorRuntimeModeAboveCeilingError,
 ]);
 export type OrchestratorV2Error = typeof OrchestratorV2Error.Type;
@@ -3719,12 +3729,24 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   }),
               ),
             );
-            return yield* providerSwitchService
+            const plan = yield* providerSwitchService
               .plan({
                 projection: providerContext!,
                 targetModelSelection: command.modelSelection,
               })
               .pipe(mapDispatchError(command));
+            if (plan.instanceChanged || plan.releaseProviderSessionIds.length > 0) {
+              const projection = yield* loadProjectionForCommand(command, ["runs"], {
+                turnItemTypes: [],
+              });
+              if (projection.runs.some(isActiveRun)) {
+                return yield* new OrchestratorProviderSelectionBusyError({
+                  commandId: command.commandId,
+                  threadId: command.threadId,
+                });
+              }
+            }
+            return plan;
           })
         : null;
 
