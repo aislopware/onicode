@@ -400,3 +400,4 @@ ee21337d84	take	fix(shared): a zero-credit cap no longer marks seat-based Codex 
 940b7a4160	take	fix(web): screen readers can browse and Tab through the settings sections again (#30841)
 b125e89768	take	fix(server): Codex forks no longer request full turn history (#24537)
 cff8bfcef0	take	fix(web): keep model favorites usable after disabling a provider (#23479)
+621f0e7e71	take	fix(server): workspace search no longer indexes the home directory (#26126)
