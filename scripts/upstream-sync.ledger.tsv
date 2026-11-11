@@ -229,3 +229,4 @@ ae142932d0	skip	Scenario tooling: web scenarios drive the removed browser web cl
 1d80047048	take	fix(web): scroll project picker to top on first result (#34113)
 3a8c250cb0	take	feat(opencode): track native image job outcomes and previews (#34089)
 b883156e26	skip	Only touches the scenarios tooling (scripts/scenarios, e2e.config, scenarios doc), which Onicode removed.
+768f17c518	take	ci: browser secret helper apt step fetches fewer indexes (#33966)
