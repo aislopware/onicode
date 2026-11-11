@@ -374,3 +374,4 @@ bff276e786	take	fix(server): Git failures no longer record checkpoints as missin
 4bf4ae74ac	take	fix(desktop): annotation tool keys work after clicking a toolbar button (jsdom ^31 to match mobile; test shows the editor before focusing it)
 7f65c9c393	take	fix(server): PR sync stops reading missing pull requests every minute
 26ccb935ab	take	fix(server): failed provider updates show the updater's error, not its closing hint
+3c7424ee39	take	fix(server): a busy embedded frame no longer holds copy keys back (#34204)
