@@ -125,16 +125,9 @@ jobs:
       # Runs in the background while Vite+ installs; the step before the build waits for it.
       - name: Start installing browser secret helper build libraries
         if: needs.changes.outputs.build != 'false'
-        run: |
-          (
-            set +e
-            # Skip translations and the DEP-11 and command-not-found indexes these packages don't need.
-            sudo apt-get update -o Acquire::Languages=none \
-              -o Acquire::IndexTargets::deb::DEP-11::DefaultEnabled=false \
-              -o Acquire::IndexTargets::deb::CNF::DefaultEnabled=false &&
-              sudo apt-get install -y libsecret-1-dev pkg-config
-            echo "$?" > "$RUNNER_TEMP/apt-status"
-          ) > "$RUNNER_TEMP/apt.log" 2>&1 < /dev/null &
+        uses: ./.github/actions/apt-install-start
+        with:
+          packages: libsecret-1-dev pkg-config
 
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
@@ -166,11 +159,8 @@ jobs:
       - name: Finish installing browser secret helper build libraries
         id: apt
         if: ${{ !cancelled() && needs.changes.outputs.build != 'false' }}
-        timeout-minutes: 5
-        run: |
-          until test -s "$RUNNER_TEMP/apt-status"; do sleep 1; done
-          cat "$RUNNER_TEMP/apt.log"
-          exit "$(cat "$RUNNER_TEMP/apt-status")"
+        timeout-minutes: 10
+        uses: ./.github/actions/apt-install-finish
 
       - name: Build desktop pipeline
         id: build
@@ -249,16 +239,9 @@ jobs:
       # The desktop tests compile the browser secret helper. The install runs in
       # the background while Vite+ installs; the step before the tests waits for it.
       - name: Start installing browser secret helper build libraries
-        run: |
-          (
-            set +e
-            # Skip translations and the DEP-11 and command-not-found indexes these packages don't need.
-            sudo apt-get update -o Acquire::Languages=none \
-              -o Acquire::IndexTargets::deb::DEP-11::DefaultEnabled=false \
-              -o Acquire::IndexTargets::deb::CNF::DefaultEnabled=false &&
-              sudo apt-get install -y libsecret-1-dev pkg-config
-            echo "$?" > "$RUNNER_TEMP/apt-status"
-          ) > "$RUNNER_TEMP/apt.log" 2>&1 < /dev/null &
+        uses: ./.github/actions/apt-install-start
+        with:
+          packages: libsecret-1-dev pkg-config
 
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
@@ -275,11 +258,8 @@ jobs:
         run: vp run --filter @onicode/desktop ensure:electron
 
       - name: Finish installing browser secret helper build libraries
-        timeout-minutes: 5
-        run: |
-          until test -s "$RUNNER_TEMP/apt-status"; do sleep 1; done
-          cat "$RUNNER_TEMP/apt.log"
-          exit "$(cat "$RUNNER_TEMP/apt-status")"
+        timeout-minutes: 10
+        uses: ./.github/actions/apt-install-finish
 
       # `changes` lists the affected packages, or nothing when all of them are.
       - name: Test

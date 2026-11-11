@@ -1,0 +1,18 @@
+name: Finish installing apt packages
+description: Wait for apt-install-start, print its log, and cache the downloaded packages.
+runs:
+  using: composite
+  steps:
+    - name: Wait for apt packages
+      shell: bash
+      run: |
+        until test -s "$RUNNER_TEMP/apt-status"; do sleep 1; done
+        cat "$RUNNER_TEMP/apt.log"
+        exit "$(cat "$RUNNER_TEMP/apt-status")"
+
+    - name: Save apt packages
+      if: env.APT_DEB_CACHE_HIT != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      with:
+        path: ${{ env.APT_DEB_CACHE_DIR }}
+        key: ${{ env.APT_DEB_CACHE_KEY }}
