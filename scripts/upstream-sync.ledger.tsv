@@ -343,3 +343,4 @@ d50a6fdc30	take	fix(web): preview recordings stay decodable after a viewport res
 896e64f82d	take	fix(server): only offer claude update for native Claude installs (#14170); test conflict kept Onicode's settingsFile rows
 d2c25950b4	take	fix(server): tell outside agents which MCP tools need a thread and that oni_thread_list takes allProjects (#26525)
 fb7e558943	take	test(web): theme search test no longer flakes on slow runners
+afa617b465	take	fix(web): branch picker no longer interrupts a running turn
