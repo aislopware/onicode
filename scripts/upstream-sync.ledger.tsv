@@ -311,3 +311,4 @@ afb4f91a7d	take	fix(provider-core): a model reply of "title" no longer replaces 
 52d621a6f1	take	fix(desktop,web): Open in runs locally for a background service sharing the desktop's Onicode home; dropped isDesktopRenderer arg and T3 Connect wording, tests use BearerConnectionTarget
 d835e430db	take	fix(web): question answers submit while normal sends are blocked; kept Onicode's composer without the mobile-web blur helpers
 fd9b2c3eaa	take	fix(server): cancelling a background-only delegated task reports it interrupted; relay test dropped (relay removed)
+54a5c51a58	take	fix(web): fall back to a readable server for shared repositories
