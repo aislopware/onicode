@@ -371,3 +371,4 @@ d0c7147a8e	take	fix(pi): rewinding works after the Pi session was released (#263
 7c12233d02	take	fix(server): listing linked environments no longer waits out an asleep peer
 bff276e786	take	fix(server): Git failures no longer record checkpoints as missing
 77d17b157e	take	fix(provider-acp-registry): prepared binary agents stay ready when the registry advances
+4bf4ae74ac	take	fix(desktop): annotation tool keys work after clicking a toolbar button (jsdom ^31 to match mobile; test shows the editor before focusing it)
