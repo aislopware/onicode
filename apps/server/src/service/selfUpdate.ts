@@ -37,6 +37,7 @@ import {
   PinnedRuntimePreflightBlockedError,
   prunePinnedRuntimes,
 } from "./pinnedRuntime.ts";
+import { bootServiceProgramOf, bootServiceUnitPath } from "./bootService.ts";
 import { decodeServicePreflightResult } from "./servicePreflight.ts";
 import * as ServiceLauncherClient from "./serviceLauncherClient.ts";
 import { isExactServiceVersion, SERVICE_LAUNCHER_PROTOCOL } from "./serviceProtocol.ts";
@@ -86,9 +87,24 @@ export const pruneRuntimesOnStart = Effect.fn("service.server_self_update.prune_
     if (!input.managed && executablePath !== entryPath && executablePath !== realEntryPath) {
       return [];
     }
+    const unitPath = yield* bootServiceUnitPath();
+    // A stopped service's unit still names the launcher runtime it will start.
+    const unit =
+      unitPath === undefined
+        ? Option.none<string>()
+        : yield* fs.readFileString(unitPath).pipe(Effect.option);
+    const program = Option.flatMapNullishOr(unit, bootServiceProgramOf);
+    // The unit may name it through another spelling of a symlinked Onicode home.
+    const references = Option.isNone(program)
+      ? []
+      : [
+          program.value,
+          yield* fs.realPath(program.value).pipe(Effect.orElseSucceed(() => program.value)),
+        ];
     const removed = yield* prunePinnedRuntimes({
       baseDir: input.baseDir,
       keep: [packageJson.version],
+      references,
     });
     if (removed.length > 0) {
       yield* Effect.logInfo("Removed unused onicode runtimes.", { versions: removed });
