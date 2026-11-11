@@ -12,12 +12,13 @@ your [Tailscale](https://tailscale.com) tailnet.
 onicode up
 ```
 
-It asks whether other devices on your network or tailnet may connect, then on Linux and macOS
+It asks which devices may connect: only this machine, devices on your tailnet, or devices on
+your local network and tailnet. Then on Linux and macOS it
 runs Onicode as a [background service](./background-service.md). Run `onicode up` again to
 change your choice, and `onicode status` to see it. The background service is not available on
 Windows, so there `onicode up` prints the `onicode serve` command to keep running in a terminal.
 
-`onicode up --lan` or `--no-lan` answers without asking, and `--yes` takes the default. Without a
+`onicode up --lan`, `--tailnet-only`, or `--no-lan` answers without asking, and `--yes` takes the default. Without a
 terminal and with no choice named, `onicode up` stops and names the flags. `onicode status --json`
 prints the settings, and `onicode up --help` lists every flag.
 
@@ -25,9 +26,10 @@ prints the settings, and `onicode up --help` lists every flag.
 
 Use direct pairing when the other device can reach the host's network address.
 
-On a desktop host, open **Settings → Sharing & access**, enable **Network access**,
-then create a pairing link using an address the other device can reach. Changing
-network access restarts the desktop app. You can turn it off in the same place.
+On a desktop host, open **Settings → Sharing & access** and set **Network access** to
+**Tailnet only** or **LAN and tailnet**, then create a pairing link using an address the
+other device can reach. Changing network access restarts the desktop app. Set it back to
+**Off** in the same place.
 
 For a command-line host, choose the local network in `onicode up`, or run:
 
@@ -37,7 +39,8 @@ onicode up --lan
 
 For a server in a terminal, run `onicode serve --lan`. Either way, Onicode then
 accepts connections from your local network and tailnet, so a pairing code is
-all that keeps other devices on them out.
+all that keeps other devices on them out. Use `--tailnet-only` instead of
+`--lan` to accept only devices on your tailnet.
 
 If a server is already running, generate a fresh link without restarting it:
 
@@ -83,7 +86,7 @@ machine's current LAN and Tailscale addresses and adds them as routes, so
 pairing once over Tailscale is enough to use the LAN at home. When the
 machine's LAN address changes, for example after it joins another Wi-Fi network,
 the learned route follows it. The machine must allow network access for its LAN
-address to be learned: **Network access** in the desktop app, or the
+address to be learned: **LAN and tailnet** under **Network access** in the desktop app, or the
 [local network](./background-service.md#local-network-access) choice in `onicode up`.
 You can reorder a learned route, but not remove it; it
 goes away with the route it was learned through, or when the machine stops
@@ -123,6 +126,47 @@ a specific machine to override it. Choosing a branch or worktree also keeps the 
 on that machine. Existing threads stay where they started. If resource checks are
 unavailable or all eligible machines are full, choose a machine manually to continue.
 Mobile keeps its manual environment selection.
+
+### Connect from your tailnet
+
+When a connected machine runs Tailscale, choose **Add environment → Tailscale** to see the
+devices on its tailnet, grouped by owner, with tagged devices last. Devices running an Onicode
+server that answers on its default port, 3773, are marked. On mobile, the list appears in
+**Add environment** once the phone is connected to a machine on the tailnet.
+
+Picking a server with **Tailscale sign-in** on connects right away. For any other server,
+Onicode fills in its address and asks for a pairing code.
+
+To let devices sign in without a code, open **Settings → Sharing & access** on the host and
+turn on **Tailscale sign-in**. Network access must be **Tailnet only** or **LAN and tailnet**.
+On mobile, open the machine under **Settings → Environments** and use the switch under
+**Sharing**. For a command-line host, use either switch from a connected app, or set
+`"tailnetSignIn": true` in its `settings.json` under `~/.onicode/userdata`. Onicode then
+asks Tailscale who each connecting device is and signs in:
+
+- Devices logged in to Tailscale as the same user as the host. A tagged host has no user, so
+  this does not apply to it.
+- Devices your tailnet policy grants the `onicode.com/cap/environment` capability.
+
+A grant also works with Headscale 0.29 and later. For example, to let a group reach tagged
+Onicode hosts read-only:
+
+```json
+"grants": [
+  {
+    "src": ["group:reviewers"],
+    "dst": ["tag:onicode"],
+    "ip": ["tcp:3773"],
+    "app": { "onicode.com/cap/environment": [{ "access": "read" }] }
+  }
+]
+```
+
+`{ "access": "read" }` lets those devices view threads, terminals, and files. Any other value,
+such as `{}`, gives the same permissions as a default pairing code. Sign-in only works when
+the connection arrives over the tailnet itself; `tailscale serve`, and Tailscale running in
+userspace networking mode, hide who is connecting, so those devices still need a pairing
+code. Signed-in devices appear under **Authorized clients**, where you can revoke them.
 
 ### Tailscale HTTPS
 

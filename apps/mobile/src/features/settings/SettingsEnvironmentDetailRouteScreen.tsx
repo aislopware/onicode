@@ -2,8 +2,11 @@ import * as Dialog from "../../components/ui/Dialog";
 import { useAtom, useAtomValue } from "@effect/atom-react";
 import { useNavigation, type StaticScreenProps } from "@react-navigation/native";
 import {
+  AuthAccessWriteScope,
   AuthProvidersManageScope,
   AuthOrchestrationReadScope,
+  AuthSettingsWriteScope,
+  TAILNET_APP_CAPABILITY,
   managedUpdatesDenial,
   type EnvironmentId,
   type ServerProvider,
@@ -32,6 +35,7 @@ import { OutdatedServerUpdateSection } from "./OutdatedServerUpdateSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
 import { SettingsScreen } from "./components/SettingsScreen";
 import { SettingsSection } from "./components/SettingsSection";
+import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import {
   canMaintainEnvironment,
   canUpdateEnvironmentProvider,
@@ -69,6 +73,7 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
   const updateServer = useAtomCommand(serverEnvironment.updateServer);
   const updateProvider = useAtomCommand(serverEnvironment.updateProvider);
   const refreshProviders = useAtomCommand(serverEnvironment.refreshProviders);
+  const updateSettings = useAtomCommand(serverEnvironment.updateSettings);
   const [connectionExpanded, setConnectionExpanded] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   const pendingRef = useRef(false);
@@ -90,6 +95,8 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
     ) ?? false;
   const canManageProviders = useEnvironmentScope(environmentId, AuthProvidersManageScope);
   const canRead = useEnvironmentScope(environmentId, AuthOrchestrationReadScope);
+  const canWriteAccess = useEnvironmentScope(environmentId, AuthAccessWriteScope);
+  const canWriteSettings = useEnvironmentScope(environmentId, AuthSettingsWriteScope);
   const busy = !connected || pending !== null || running || providerBusy;
   const disabled = !allowed || busy;
   const version = config?.environment.serverVersion;
@@ -307,6 +314,25 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                     />
                   ) : null}
                 </SettingsSection>
+                {capabilities?.tailnetDevices === true ? (
+                  <SettingsSection title="Sharing">
+                    <SettingsSwitchRow
+                      label="Tailscale sign-in"
+                      subtitle={`Devices signed in to Tailscale as this machine's user, and devices your tailnet policy grants ${TAILNET_APP_CAPABILITY}, connect without a pairing code.`}
+                      value={config.settings.tailnetSignIn}
+                      disabled={busy || !canWriteAccess || !canWriteSettings}
+                      onValueChange={(tailnetSignIn) =>
+                        void run("tailnet-sign-in", async () => {
+                          const result = await updateSettings({
+                            environmentId,
+                            input: { patch: { tailnetSignIn } },
+                          });
+                          if (AsyncResult.isFailure(result)) throw squashAtomCommandFailure(result);
+                        })
+                      }
+                    />
+                  </SettingsSection>
+                ) : null}
                 <SettingsSection title="Providers">
                   <SettingsActionRow
                     icon="arrow.clockwise"

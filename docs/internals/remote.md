@@ -60,7 +60,9 @@ whose public address is NATed to a private interface. It is not a firewall:
 Tailscale Serve reaches the server over loopback by design, and a proxy that
 rewrites the source address looks private, so nothing may proxy the public
 internet to it. One listener per address would
-miss a DHCP change, and the wildcard keeps the reported addresses current.
+miss a DHCP change, and the wildcard keeps the reported addresses current. Tailnet-only mode uses the
+same wildcard with a stricter filter: both addresses loopback, or both tailnet
+IPv4. A LAN address is never reported in that mode.
 
 Pull request routing trust covers the whole route list. Adding or changing a route
 revokes it; reordering does not, because the same addresses remain trusted.

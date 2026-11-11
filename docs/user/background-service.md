@@ -49,6 +49,10 @@ tailnet connect directly. It still does not answer on public addresses. Anyone
 on the same network can reach the port, so a pairing code is all that keeps them
 out.
 
+Choose the tailnet in `onicode up` (or run `onicode up --tailnet-only`, which sets
+`ONICODE_TAILNET_ONLY=true`) to answer only on this machine and its Tailscale addresses.
+Devices on your local network can't connect then.
+
 A service installed before `ONICODE_LAN` existed keeps listening on the local
 network. `onicode status` says so, and `onicode up --no-lan` turns it off. Any
 `ONICODE_HOST` value replaces this setting.

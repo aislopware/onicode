@@ -65,6 +65,7 @@ vi.mock("../settings/settings-navigation", () => ({
 vi.mock("../layout/workspace/workspace-selection-store", () => ({
   workspaceHasColumns: () => false,
 }));
+vi.mock("./TailnetDevicesSection", () => ({ TailnetDevicesSection: () => null }));
 vi.mock("./devAutoConnect", () => ({
   autoConnectReport: () => ({ connecting: false, error: null }),
   devAutoConnectAttemptAtom: {},

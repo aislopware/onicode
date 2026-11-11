@@ -4,6 +4,7 @@ import { describe, expect, it } from "@effect/vitest";
 
 import {
   acceptsPrivateNetworkConnection,
+  acceptsTailnetConnection,
   resolveHeadlessConnectionString,
 } from "./startupAccess.ts";
 
@@ -71,5 +72,21 @@ describe("acceptsPrivateNetworkConnection", () => {
     expect(accepts("203.0.113.7", "192.168.1.31")).toBe(false);
     expect(accepts("169.254.10.1", "169.254.10.2")).toBe(false);
     expect(accepts(undefined, "192.168.1.31")).toBe(false);
+  });
+});
+
+describe("acceptsTailnetConnection", () => {
+  const accepts = (localAddress: string | undefined, remoteAddress: string | undefined) =>
+    acceptsTailnetConnection({ localAddress, remoteAddress });
+
+  it("serves loopback, which Tailscale Serve uses, and tailnet peers only", () => {
+    expect(accepts("127.0.0.1", "127.0.0.1")).toBe(true);
+    expect(accepts("::1", "::1")).toBe(true);
+    expect(accepts("::ffff:100.101.102.103", "::ffff:100.90.1.2")).toBe(true);
+    expect(accepts("192.168.1.20", "192.168.1.31")).toBe(false);
+    // A LAN client that reaches the tailnet address through this machine's routes.
+    expect(accepts("100.101.102.103", "192.168.1.31")).toBe(false);
+    expect(accepts("127.0.0.1", "100.90.1.2")).toBe(false);
+    expect(accepts(undefined, "100.90.1.2")).toBe(false);
   });
 });

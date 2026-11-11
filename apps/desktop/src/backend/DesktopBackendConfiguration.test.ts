@@ -40,6 +40,7 @@ const layerServerExposure = Layer.succeed(DesktopServerExposure.DesktopServerExp
     port: 4888,
     bindHost: "0.0.0.0",
     httpBaseUrl: new URL("http://127.0.0.1:4888"),
+    tailnetOnly: true,
     tailscaleServeEnabled: true,
     tailscaleServePort: 8443,
   }),
@@ -245,6 +246,7 @@ describe("DesktopBackendConfiguration", () => {
         assert.equal(first.bootstrap.mode, "desktop");
         assert.equal(first.bootstrap.port, 4888);
         assert.equal(first.bootstrap.host, "0.0.0.0");
+        assert.isTrue(first.bootstrap.tailnetOnly);
         assert.equal(first.bootstrap.oniHome, environment.baseDir);
         assert.equal(first.bootstrap.tailscaleServeEnabled, true);
         assert.equal(first.bootstrap.tailscaleServePort, 8443);

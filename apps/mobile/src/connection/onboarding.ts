@@ -28,6 +28,25 @@ export const connectPairingUrl = createRuntimeCommand(connectionAtomRuntime, {
     ),
 });
 
+export const connectTailnet = createRuntimeCommand(connectionAtomRuntime, {
+  label: "mobile:connection:connect-tailnet",
+  scheduler: onboardingScheduler,
+  concurrency: {
+    mode: "singleFlight",
+    key: (input: {
+      readonly httpBaseUrl: string;
+      readonly expectedEnvironmentId?: EnvironmentId;
+    }) => JSON.stringify([input.httpBaseUrl, input.expectedEnvironmentId ?? null]),
+  },
+  execute: (input: {
+    readonly httpBaseUrl: string;
+    readonly expectedEnvironmentId?: EnvironmentId;
+  }) =>
+    ConnectionOnboarding.ConnectionOnboarding.pipe(
+      Effect.flatMap((onboarding) => onboarding.registerTailnet(input)),
+    ),
+});
+
 export const updateBearerConnection = createRuntimeCommand(connectionAtomRuntime, {
   label: "mobile:connection:update-bearer",
   scheduler: onboardingScheduler,

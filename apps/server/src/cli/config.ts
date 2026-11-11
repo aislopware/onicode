@@ -88,6 +88,13 @@ const lanFlag = Flag.Boolean("lan").pipe(
   Flag.optional,
 );
 
+const tailnetOnlyFlag = Flag.Boolean("tailnet-only").pipe(
+  Flag.withDescription(
+    "Accept connections from your tailnet and this machine, not your local network (equivalent to ONICODE_TAILNET_ONLY).",
+  ),
+  Flag.optional,
+);
+
 export const traceFileConfig = Config.String("ONICODE_TRACE_FILE").pipe(
   Config.option,
   Config.map(Option.getOrUndefined),
@@ -155,6 +162,10 @@ const EnvServerConfig = Config.all({
     Config.map(Option.getOrUndefined),
   ),
   lan: Config.Boolean("ONICODE_LAN").pipe(Config.option, Config.map(Option.getOrUndefined)),
+  tailnetOnly: Config.Boolean("ONICODE_TAILNET_ONLY").pipe(
+    Config.option,
+    Config.map(Option.getOrUndefined),
+  ),
 });
 
 export interface CliServerFlags {
@@ -170,6 +181,7 @@ export interface CliServerFlags {
   readonly tailscaleServeEnabled: Option.Option<boolean>;
   readonly tailscaleServePort: Option.Option<number>;
   readonly lan: Option.Option<boolean>;
+  readonly tailnetOnly: Option.Option<boolean>;
 }
 
 export interface CliAuthLocationFlags {
@@ -204,6 +216,7 @@ export const sharedServerCommandFlags = {
   tailscaleServeEnabled: tailscaleServeFlag,
   tailscaleServePort: tailscaleServePortFlag,
   lan: lanFlag,
+  tailnetOnly: tailnetOnlyFlag,
 } as const;
 
 const resolveOptionPrecedence = <Value>(
@@ -250,6 +263,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     tailscaleServeEnabled: flags.tailscaleServeEnabled ?? Option.none(),
     tailscaleServePort: flags.tailscaleServePort ?? Option.none(),
     lan: flags.lan ?? Option.none(),
+    tailnetOnly: flags.tailnetOnly ?? Option.none(),
   } satisfies CliServerFlags;
   const bootstrapFd = Option.getOrUndefined(normalizedFlags.bootstrapFd) ?? env.bootstrapFd;
   const bootstrapEnvelope =
@@ -381,8 +395,16 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
           Effect.map((launcher) => launcher.managed),
           Effect.orElseSucceed(() => false),
         ));
+  const tailnetOnly = Option.getOrElse(
+    resolveOptionPrecedence(
+      normalizedFlags.tailnetOnly,
+      Option.fromUndefinedOr(env.tailnetOnly),
+      Option.fromUndefinedOr(bootstrap?.tailnetOnly),
+    ),
+    () => false,
+  );
   const host = Option.getOrElse(explicitHost, () =>
-    privateNetworkOnly ? "0.0.0.0" : mode === "desktop" ? "127.0.0.1" : undefined,
+    privateNetworkOnly || tailnetOnly ? "0.0.0.0" : mode === "desktop" ? "127.0.0.1" : undefined,
   );
   const logLevel = Option.getOrElse(cliLogLevel, () => env.logLevel);
 
@@ -449,6 +471,7 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
     serverTracePath,
     host,
     ...(privateNetworkOnly ? { privateNetworkOnly } : {}),
+    ...(tailnetOnly ? { tailnetOnly } : {}),
     dev,
     desktopBootstrapToken,
     ...(desktopBootstrapSecret === undefined ? {} : { desktopBootstrapSecret }),
@@ -486,6 +509,7 @@ export const resolveCliAuthConfig = (
       tailscaleServeEnabled: Option.none(),
       tailscaleServePort: Option.none(),
       lan: Option.none(),
+      tailnetOnly: Option.none(),
     },
     cliLogLevel,
   );

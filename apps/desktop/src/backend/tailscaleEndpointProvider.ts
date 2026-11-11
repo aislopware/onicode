@@ -22,6 +22,17 @@ const TAILSCALE_ENDPOINT_PROVIDER: AdvertisedEndpointProvider = {
   isAddon: true,
 };
 
+// CGNAT is shared with other VPNs; adapter identity works without current CLI status.
+export const isTailscaleInterface = (
+  interfaceName: string,
+  addresses: NetworkInterfaces[string],
+): boolean =>
+  /^tailscale(?:\d+|ipv[46])?$/iu.test(interfaceName) ||
+  (addresses ?? []).some(
+    (address) =>
+      !address.internal && address.family === "IPv6" && /^fd7a:115c:a1e0:/iu.test(address.address),
+  );
+
 function resolveTailscaleIpAdvertisedEndpoints(input: {
   readonly port: number;
   readonly networkInterfaces: NetworkInterfaces;
@@ -33,21 +44,13 @@ function resolveTailscaleIpAdvertisedEndpoints(input: {
   for (const [interfaceName, interfaceAddresses] of Object.entries(input.networkInterfaces)) {
     if (!interfaceAddresses) continue;
 
-    // CGNAT is shared with other VPNs; adapter identity works without current CLI status.
-    const isTailscaleInterface =
-      /^tailscale(?:\d+|ipv[46])?$/iu.test(interfaceName) ||
-      interfaceAddresses.some(
-        (address) =>
-          !address.internal &&
-          address.family === "IPv6" &&
-          /^fd7a:115c:a1e0:/iu.test(address.address),
-      );
+    const isTailscale = isTailscaleInterface(interfaceName, interfaceAddresses);
 
     for (const address of interfaceAddresses) {
       if (address.internal) continue;
       if (address.family !== "IPv4") continue;
       if (!isTailscaleIpv4Address(address.address)) continue;
-      if (!isTailscaleInterface && !input.status?.tailnetIpv4Addresses.includes(address.address)) {
+      if (!isTailscale && !input.status?.tailnetIpv4Addresses.includes(address.address)) {
         continue;
       }
       if (seen.has(address.address)) continue;

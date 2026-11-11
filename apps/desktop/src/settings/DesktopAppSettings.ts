@@ -194,8 +194,7 @@ function normalizeDesktopSettingsDocument(parsed: DesktopSettingsDocument): Desk
     linuxPasswordStore: normalizeLinuxPasswordStorePreference(parsed.linuxPasswordStore),
     mainWindowBounds,
     mainWindowMaximized: mainWindowBounds !== null && parsed.mainWindowMaximized === true,
-    serverExposureMode:
-      parsed.serverExposureMode === "network-accessible" ? "network-accessible" : "local-only",
+    serverExposureMode: parsed.serverExposureMode ?? DEFAULT_DESKTOP_SETTINGS.serverExposureMode,
     tailscaleServeEnabled: parsed.tailscaleServeEnabled === true,
     tailscaleServePort: normalizeTailscaleServePort(parsed.tailscaleServePort),
     wslBackendEnabled,

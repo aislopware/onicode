@@ -71,6 +71,27 @@ export const acceptsPrivateNetworkConnection = (socket: {
     (address) => address !== undefined && isPrivateNetworkAddress(address),
   );
 
+/**
+ * A tailnet-only listener binds every interface but serves only loopback, which Tailscale Serve
+ * also uses, and connections between tailnet addresses. Other VPNs share the 100.64.0.0/10 range,
+ * so on a machine running one this admits that VPN too.
+ */
+export const acceptsTailnetConnection = (socket: {
+  readonly localAddress?: string | undefined;
+  readonly remoteAddress?: string | undefined;
+}): boolean => {
+  const ends = [socket.localAddress, socket.remoteAddress].map((address) =>
+    address?.replace(/^::ffff:/i, ""),
+  );
+  return (
+    ends.every((address) => address !== undefined && isLoopbackHost(address)) ||
+    ends.every(
+      (address) =>
+        address !== undefined && NodeNet.isIPv4(address) && isSharedAddressSpaceHost(address),
+    )
+  );
+};
+
 export const loopbackUrlHostForAddress = (address: NetAddress.InetAddress): string =>
   address._tag === "InetAddressV6" && NetAddress.isLoopback(address.address)
     ? "[::1]"
@@ -87,6 +108,7 @@ const resolveHeadlessConnectionHost = (
   host: string | undefined,
   interfaces: NetworkInterfacesMap,
   privateNetworkOnly: boolean,
+  tailnetOnly = false,
 ): string => {
   if (!host) {
     return "localhost";
@@ -103,7 +125,8 @@ const resolveHeadlessConnectionHost = (
     (entry) =>
       !entry.internal &&
       isIpv4Family(entry.family) &&
-      (!privateNetworkOnly || isPrivateNetworkAddress(entry.address)),
+      (!privateNetworkOnly || isPrivateNetworkAddress(entry.address)) &&
+      (!tailnetOnly || isSharedAddressSpaceHost(entry.address)),
   );
   // A tailnet or other CGNAT address reaches fewer devices than the LAN one.
   const externalIpv4 = privateNetworkOnly
@@ -113,7 +136,7 @@ const resolveHeadlessConnectionHost = (
   if (externalIpv4) {
     return externalIpv4.address;
   }
-  if (privateNetworkOnly) {
+  if (privateNetworkOnly || tailnetOnly) {
     return "localhost";
   }
 
@@ -129,12 +152,14 @@ export const resolveHeadlessConnectionString = (
   options: {
     readonly interfaces?: NetworkInterfacesMap;
     readonly privateNetworkOnly?: boolean | undefined;
+    readonly tailnetOnly?: boolean | undefined;
   } = {},
 ): string => {
   const connectionHost = resolveHeadlessConnectionHost(
     host,
     options.interfaces ?? NodeOS.networkInterfaces(),
     options.privateNetworkOnly === true,
+    options.tailnetOnly === true,
   );
   return `http://${formatHostForUrl(connectionHost)}:${port}`;
 };
@@ -200,7 +225,7 @@ export const issueHeadlessServeAccessInfo = Effect.fn("issueHeadlessServeAccessI
   const connectionString = resolveHeadlessConnectionString(
     serverConfig.host,
     resolveListeningPort(httpServer.address, serverConfig.port),
-    { privateNetworkOnly: serverConfig.privateNetworkOnly },
+    { privateNetworkOnly: serverConfig.privateNetworkOnly, tailnetOnly: serverConfig.tailnetOnly },
   );
   const issued = yield* serverAuth.issueStartupPairingCredential();
 

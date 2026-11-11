@@ -324,6 +324,12 @@ export class EnvironmentAuth extends Context.Service<
       AuthAccessTokenResult,
       ServerAuthInvalidCredentialError | ServerAuthInvalidRequestError | ServerAuthInternalError
     >;
+    /** Issues a client session the caller already authorized, such as a tailnet identity. */
+    readonly issueAccessToken: (input: {
+      readonly subject: string;
+      readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+      readonly client: AuthClientMetadata;
+    }) => Effect.Effect<AuthAccessTokenResult, ServerAuthInternalError>;
     readonly createPairingLink: (input?: {
       readonly ttl?: Duration.Duration;
       readonly label?: string;
@@ -545,6 +551,27 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+  const toAccessTokenResult = (session: {
+    readonly token: string;
+    readonly expiresAt: DateTime.DateTime;
+    readonly scopes: ReadonlyArray<AuthEnvironmentScope>;
+  }) =>
+    DateTime.now.pipe(
+      Effect.map(
+        (now) =>
+          ({
+            access_token: session.token,
+            issued_token_type: AuthAccessTokenType,
+            token_type: "Bearer",
+            expires_in: Math.max(
+              0,
+              Math.floor((session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000),
+            ),
+            scope: encodeOAuthScope(session.scopes),
+          }) satisfies AuthAccessTokenResult,
+      ),
+    );
+
   const exchangeBootstrapCredentialForAccessToken: EnvironmentAuth["Service"]["exchangeBootstrapCredentialForAccessToken"] =
     (credential, requestedScopes, requestMetadata) => {
       return consumeBootstrapGrant(
@@ -577,28 +604,17 @@ export const make = Effect.gen(function* () {
               );
           }),
         ),
-        Effect.flatMap((session) =>
-          DateTime.now.pipe(
-            Effect.map(
-              (now) =>
-                ({
-                  access_token: session.token,
-                  issued_token_type: AuthAccessTokenType,
-                  token_type: "Bearer",
-                  expires_in: Math.max(
-                    0,
-                    Math.floor(
-                      (session.expiresAt.epochMilliseconds - now.epochMilliseconds) / 1000,
-                    ),
-                  ),
-                  scope: encodeOAuthScope(session.scopes),
-                }) satisfies AuthAccessTokenResult,
-            ),
-          ),
-        ),
+        Effect.flatMap(toAccessTokenResult),
         Effect.withSpan("EnvironmentAuth.exchangeBootstrapCredentialForAccessToken"),
       );
     };
+
+  const issueAccessToken: EnvironmentAuth["Service"]["issueAccessToken"] = (input) =>
+    sessions.issue(input).pipe(
+      Effect.mapError((cause) => new ServerAuthAuthenticatedAccessTokenIssueError({ cause })),
+      Effect.flatMap(toAccessTokenResult),
+      Effect.withSpan("EnvironmentAuth.issueAccessToken"),
+    );
 
   const toPairingCredential = (issued: IssuedPairingLink): AuthPairingCredentialResult => ({
     id: issued.id,
@@ -899,6 +915,7 @@ export const make = Effect.gen(function* () {
     listClientSessions,
     revokeClientSession,
     revokeOtherClientSessions,
+    issueAccessToken,
     authenticateHttpRequest,
     authenticateWebSocketUpgrade,
     issueWebSocketTicket,
@@ -909,6 +926,8 @@ export const make = Effect.gen(function* () {
 });
 
 const LINK_PAIRED_SUBJECT = "one-time-token";
+/** Followed by the Tailscale node ID of the device a tailnet sign-in session belongs to. */
+export const TAILNET_SESSION_SUBJECT_PREFIX = "tailnet:";
 
 /**
  * Revokes sessions and unused links from pairing the policy no longer allows, so a policy rolled
@@ -927,6 +946,7 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
   const sessions = (yield* stores.sessions.listActive()).filter(
     (session) =>
       session.subject === LINK_PAIRED_SUBJECT ||
+      session.subject.startsWith(TAILNET_SESSION_SUBJECT_PREFIX) ||
       // The startup link also pairs clients on this machine; only a device elsewhere goes.
       (session.subject === INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT &&
         session.client.ipAddress !== undefined &&

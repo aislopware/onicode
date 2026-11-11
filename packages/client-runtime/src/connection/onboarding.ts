@@ -41,6 +41,12 @@ export interface PairingConnectionInput {
   readonly expectedEnvironmentId?: EnvironmentId;
 }
 
+/** A server found on the tailnet, which signs this device in by its tailnet identity. */
+export interface TailnetConnectionInput {
+  readonly httpBaseUrl: string;
+  readonly expectedEnvironmentId?: EnvironmentId;
+}
+
 export interface SshConnectionInput {
   readonly target: DesktopSshEnvironmentTarget;
   readonly label?: string;
@@ -58,6 +64,12 @@ export class ConnectionOnboarding extends Context.Service<
   {
     readonly registerPairing: (
       input: PairingConnectionInput,
+    ) => Effect.Effect<
+      EnvironmentId,
+      ConnectionAttemptError | Persistence.ConnectionPersistenceError
+    >;
+    readonly registerTailnet: (
+      input: TailnetConnectionInput,
     ) => Effect.Effect<
       EnvironmentId,
       ConnectionAttemptError | Persistence.ConnectionPersistenceError
@@ -98,10 +110,31 @@ function differentMachineError(label: string) {
   });
 }
 
+const resolveTailnetTarget = Effect.fn("clientRuntime.connection.onboarding.resolveTailnetTarget")(
+  function* (input: TailnetConnectionInput) {
+    const httpBaseUrl = yield* Effect.try({
+      try: () => normalizeHttpBaseUrl(input.httpBaseUrl),
+      catch: (cause) =>
+        new ConnectionBlockedError({
+          reason: "configuration",
+          detail: cause instanceof Error ? cause.message : "The environment URL is invalid.",
+        }),
+    });
+    return {
+      httpBaseUrl,
+      wsBaseUrl: deriveWsBaseUrl(httpBaseUrl),
+      credential: { tailnet: true } as const,
+    };
+  },
+);
+
 export const preparePairingRegistration = Effect.fn(
   "clientRuntime.connection.onboarding.preparePairingRegistration",
-)(function* (input: PairingConnectionInput) {
-  const target = yield* resolvePairingTarget(input);
+)(function* (
+  input: PairingConnectionInput | ({ readonly tailnet: true } & TailnetConnectionInput),
+) {
+  const tailnet = "tailnet" in input;
+  const target = tailnet ? yield* resolveTailnetTarget(input) : yield* resolvePairingTarget(input);
   const presentation = yield* ClientCapabilities.ClientPresentation;
   const descriptor = yield* fetchRemoteEnvironmentDescriptor({
     httpBaseUrl: target.httpBaseUrl,
@@ -112,6 +145,12 @@ export const preparePairingRegistration = Effect.fn(
     descriptor.environmentId !== input.expectedEnvironmentId
   ) {
     return yield* differentMachineError(descriptor.label);
+  }
+  if (tailnet && descriptor.capabilities.tailnetSignIn !== true) {
+    return yield* new ConnectionBlockedError({
+      reason: "authentication",
+      detail: `${descriptor.label} does not sign in tailnet devices. Pair it with a code from that machine instead.`,
+    });
   }
   const connectionId = bearerConnectionId(descriptor.environmentId, target.httpBaseUrl);
   const route = {
@@ -126,6 +165,7 @@ export const preparePairingRegistration = Effect.fn(
       label: descriptor.label,
       httpBaseUrl: target.httpBaseUrl,
       wsBaseUrl: target.wsBaseUrl,
+      ...(tailnet ? { network: "tailscale" as const } : {}),
     }),
   };
   // The registry checks again under its lease; this early check keeps a refused code unspent.
@@ -154,7 +194,9 @@ export const preparePairingRegistration = Effect.fn(
 
 const registerPairingConnection = Effect.fn(
   "clientRuntime.connection.onboarding.registerPairingConnection",
-)(function* (input: PairingConnectionInput) {
+)(function* (
+  input: PairingConnectionInput | ({ readonly tailnet: true } & TailnetConnectionInput),
+) {
   const registration = yield* preparePairingRegistration(input);
   const registry = yield* EnvironmentRegistry.EnvironmentRegistry;
   const knownAddressOnly = input.expectedEnvironmentId === undefined;
@@ -310,6 +352,14 @@ export const make = Effect.gen(function* () {
     registerPairing: Effect.fnUntraced(
       function* (input) {
         return yield* registerPairingConnection(input);
+      },
+      Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, registry),
+      Effect.provideService(ClientCapabilities.ClientPresentation, presentation),
+      Effect.provideService(HttpClient.HttpClient, httpClient),
+    ),
+    registerTailnet: Effect.fnUntraced(
+      function* (input) {
+        return yield* registerPairingConnection({ ...input, tailnet: true });
       },
       Effect.provideService(EnvironmentRegistry.EnvironmentRegistry, registry),
       Effect.provideService(ClientCapabilities.ClientPresentation, presentation),

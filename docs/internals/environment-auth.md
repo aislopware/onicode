@@ -51,6 +51,21 @@ The issuer URL comes from the request's Host and `X-Forwarded-Proto`, so one
 server answers links over loopback, the LAN and Tailscale Serve. A proxy that
 rewrites Host or drops the protocol header breaks linking.
 
+### Tailnet identity is a credential only on a direct tailnet socket
+
+[TailnetAccess](../../apps/server/src/tailnet/TailnetAccess.ts) signs a device in
+with no pairing code by asking `tailscale whois` about the request's socket peer.
+It trusts the answer only when both ends of the socket are tailnet addresses:
+tailscaled drops packets whose source does not match the sending node. Over
+loopback the peer is unknown, because `tailscale serve`, a userspace tailscaled
+and any local process all arrive from 127.0.0.1, so those are refused. Never take
+the peer from `X-Forwarded-For` or another header.
+
+The host's owner is its Tailscale user, so a tagged host admits only devices an
+ACL grant gives `onicode.com/cap/environment`. Sessions use subject
+`tailnet:<nodeId>` and are revoked with the other remote sessions when a
+managed policy keeps clients local.
+
 Bearer clients obtain short-lived WebSocket tickets through authenticated HTTP so
 long-lived tokens stay out of socket URLs. A ticket names the route it opens: the
 RPC socket, or the media routes (device hub, preview stream), which share one

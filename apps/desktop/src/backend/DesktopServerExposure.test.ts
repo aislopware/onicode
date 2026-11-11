@@ -267,6 +267,52 @@ describe("DesktopServerExposure", () => {
     ),
   );
 
+  it.effect("binds tailnet-only to every interface but advertises only the tailnet", () => {
+    const networkInterfaces: Record<
+      string,
+      readonly DesktopNetworkInterfaces.DesktopNetworkInterfaceInfo[] | undefined
+    > = {
+      ...lanNetworkInterfaces,
+      pvpnksintrf1: [{ address: "100.85.0.1", family: "IPv4", internal: false }],
+    };
+
+    return withHarness(
+      networkInterfaces,
+      Effect.gen(function* () {
+        const serverExposure = yield* DesktopServerExposure.DesktopServerExposure;
+        const settings = yield* DesktopAppSettings.DesktopAppSettings;
+        yield* serverExposure.configureFromSettings({ port: 4173 });
+
+        const change = yield* serverExposure.setMode("tailnet-only");
+        assert.isTrue(change.requiresRelaunch);
+        assert.equal(change.state.mode, "tailnet-only");
+        assert.equal(change.state.endpointUrl, null);
+        assert.equal((yield* settings.get).serverExposureMode, "tailnet-only");
+        const backendConfig = yield* serverExposure.backendConfig;
+        assert.equal(backendConfig.bindHost, "0.0.0.0");
+        assert.isTrue(backendConfig.tailnetOnly);
+
+        Object.assign(networkInterfaces, tailnetNetworkInterfaces);
+
+        const state = yield* serverExposure.getState;
+        assert.equal(state.advertisedHost, "100.90.1.2");
+        assert.equal(state.endpointUrl, "http://100.90.1.2:4173");
+        const endpoints = yield* serverExposure.getAdvertisedEndpoints;
+        assert.deepEqual(
+          endpoints.map((endpoint) => [endpoint.reachability, endpoint.httpBaseUrl]),
+          [
+            ["loopback", "http://127.0.0.1:4173/"],
+            ["private-network", "http://100.90.1.2:4173/"],
+          ],
+        );
+
+        const toNetwork = yield* serverExposure.setMode("network-accessible");
+        assert.isTrue(toNetwork.requiresRelaunch);
+        assert.isFalse((yield* serverExposure.backendConfig).tailnetOnly);
+      }),
+    );
+  });
+
   it.effect("advertises the Wi-Fi or Ethernet address ahead of bridges and tunnels", () =>
     withHarness(
       {

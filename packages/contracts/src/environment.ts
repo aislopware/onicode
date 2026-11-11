@@ -174,6 +174,10 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   /** Server can transcribe 16 kHz mono PCM audio on the environment machine. */
   voiceTranscription: Schema.optionalKey(Schema.Boolean),
   cloudVoiceTranscription: Schema.optionalKey(Schema.Boolean),
+  /** Server answers tailnet.listDevices. */
+  tailnetDevices: Schema.optionalKey(Schema.Boolean),
+  /** Server signs in tailnet devices its policy allows through the tailnet-identity token type. */
+  tailnetSignIn: Schema.optionalKey(Schema.Boolean),
 });
 export type ExecutionEnvironmentCapabilities = typeof ExecutionEnvironmentCapabilities.Type;
 

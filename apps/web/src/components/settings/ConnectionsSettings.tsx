@@ -6,10 +6,13 @@ import {
   AuthAccessReadScope,
   AuthAccessWriteScope,
   AuthEnvironmentMaintainScope,
+  AuthSettingsWriteScope,
+  TAILNET_APP_CAPABILITY,
   type AuthClientSession,
   type AuthPairingLink,
   type AuthPairingCredentialResult,
   type AdvertisedEndpoint,
+  type DesktopServerExposureMode,
   type DesktopServerExposureState,
   type DesktopWslState,
   type EnvironmentId,
@@ -102,6 +105,7 @@ import {
   usePrimaryEnvironmentId,
 } from "~/state/environments";
 import { requestConfirmDialog } from "~/confirmDialog";
+import { useUpdateEnvironmentSettings } from "~/hooks/useSettings";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom, serverEnvironment } from "~/state/server";
@@ -137,6 +141,38 @@ const EMPTY_ADVERTISED_ENDPOINTS: ReadonlyArray<AdvertisedEndpoint> = [];
 // Colons are invalid in distro names, keeping picker sentinels collision-free.
 const BACKEND_VALUE_DEFAULT_WSL = "backend:default-wsl";
 const BACKEND_VALUE_WSL_OFF = "backend:wsl-off";
+
+const NETWORK_ACCESS_MODES: Record<
+  DesktopServerExposureMode,
+  {
+    readonly label: string;
+    readonly confirmTitle: string;
+    readonly confirmDescription: string;
+    readonly confirmAction: string;
+  }
+> = {
+  "local-only": {
+    label: "Off",
+    confirmTitle: "Turn off network access?",
+    confirmDescription:
+      "Devices connected over your local network or tailnet will disconnect. Existing tunnels, such as Tailscale HTTPS, keep working. Onicode will restart.",
+    confirmAction: "Restart and turn off",
+  },
+  "tailnet-only": {
+    label: "Tailnet only",
+    confirmTitle: "Allow tailnet access only?",
+    confirmDescription:
+      "Only devices on your tailnet can connect; your local network can't. Pair devices or turn on Tailscale sign-in to give them access. Onicode will restart.",
+    confirmAction: "Restart and apply",
+  },
+  "network-accessible": {
+    label: "LAN and tailnet",
+    confirmTitle: "Allow LAN and tailnet access?",
+    confirmDescription:
+      "Let your other devices connect over your local network and tailnet. Pair devices to give them access. Onicode will restart.",
+    confirmAction: "Restart and apply",
+  },
+};
 
 // Subscribes on its own so desktop download progress does not re-render the page.
 function LocalVersionStatusLabel() {
@@ -379,6 +415,8 @@ function ConnectionsSettingsContent({
   const canReadAccess = useEnvironmentScope(accessEnvironmentId, AuthAccessReadScope);
   const canWriteAccess = useEnvironmentScope(accessEnvironmentId, AuthAccessWriteScope);
   const canMaintain = useEnvironmentScope(accessEnvironmentId, AuthEnvironmentMaintainScope);
+  const canWriteSettings = useEnvironmentScope(accessEnvironmentId, AuthSettingsWriteScope);
+  const updateAccessEnvironmentSettings = useUpdateEnvironmentSettings(accessEnvironmentId);
   const canManageLocalBackend = isPrimaryAccess && !isLocalEnvironmentDisabled() && canMaintain;
   const showsAccess = view === "access";
   const authAccessChanges = useEnvironmentQuery(
@@ -433,7 +471,7 @@ function ConnectionsSettingsContent({
     );
   })();
   const isLocalBackendNetworkAccessible = desktopBridge
-    ? desktopServerExposureState?.mode === "network-accessible"
+    ? desktopServerExposureState !== null && desktopServerExposureState.mode !== "local-only"
     : currentAuthPolicy === "remote-reachable";
   const trimmedTailscaleServePortInput = tailscaleServePortInput.trim();
   const parsedTailscaleServePort = Number(trimmedTailscaleServePortInput);
@@ -449,7 +487,7 @@ function ConnectionsSettingsContent({
     isTailscaleServePortValid,
   );
 
-  const handleDesktopServerExposureChange = async (checked: boolean) => {
+  const handleDesktopServerExposureChange = async (mode: DesktopServerExposureMode) => {
     if (
       !desktopBridge ||
       primaryEnvironmentId === null ||
@@ -459,7 +497,7 @@ function ConnectionsSettingsContent({
     setIsUpdatingDesktopServerExposure(true);
     setDesktopServerExposureMutationError(null);
     try {
-      await desktopBridge.setServerExposureMode(checked ? "network-accessible" : "local-only");
+      await desktopBridge.setServerExposureMode(mode);
       refreshDesktopNetworkAccessState();
       setPendingDesktopServerExposureMode(null);
       setIsUpdatingDesktopServerExposure(false);
@@ -480,8 +518,7 @@ function ConnectionsSettingsContent({
 
   const handleConfirmDesktopServerExposureChange = () => {
     if (pendingDesktopServerExposureMode === null) return;
-    const checked = pendingDesktopServerExposureMode === "network-accessible";
-    void handleDesktopServerExposureChange(checked);
+    void handleDesktopServerExposureChange(pendingDesktopServerExposureMode);
   };
 
   const handleConfirmTailscaleServeSetup = async () => {
@@ -714,15 +751,35 @@ function ConnectionsSettingsContent({
     setDefaultAdvertisedEndpointKey(endpointDefaultPreferenceKey(endpoint));
   };
 
-  const renderNetworkAccessToggle = () => (
-    <Switch
-      checked={desktopServerExposureState?.mode === "network-accessible"}
-      disabled={!desktopServerExposureState || isUpdatingDesktopServerExposure}
-      onCheckedChange={(checked) => {
-        setPendingDesktopServerExposureMode(checked ? "network-accessible" : "local-only");
+  const renderNetworkAccessSelect = () => (
+    <Select
+      value={desktopServerExposureState?.mode ?? null}
+      onValueChange={(mode) => {
+        if (mode !== null && mode !== desktopServerExposureState?.mode) {
+          setPendingDesktopServerExposureMode(mode);
+        }
       }}
-      aria-label="Enable network access"
-    />
+    >
+      <SelectTrigger
+        size="sm"
+        className="w-full sm:w-44"
+        aria-label="Network access"
+        disabled={!desktopServerExposureState || isUpdatingDesktopServerExposure}
+      >
+        <SelectValue>
+          {(mode: DesktopServerExposureMode | null) =>
+            mode === null ? "Loading…" : NETWORK_ACCESS_MODES[mode].label
+          }
+        </SelectValue>
+      </SelectTrigger>
+      <SelectPopup align="end" alignItemWithTrigger={false}>
+        {(["local-only", "tailnet-only", "network-accessible"] as const).map((mode) => (
+          <SelectItem hideIndicator key={mode} value={mode}>
+            {NETWORK_ACCESS_MODES[mode].label}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
   );
   const renderEndpointRows = () =>
     isAdvertisedEndpointListExpanded
@@ -1074,7 +1131,7 @@ function ConnectionsSettingsContent({
           <span className="block text-destructive">{desktopServerExposureError}</span>
         ) : null
       }
-      control={renderNetworkAccessToggle()}
+      control={renderNetworkAccessSelect()}
       managed={isLocalBackendNetworkAccessible ? undefined : remoteClientsDenial}
     />
   );
@@ -1116,6 +1173,20 @@ function ConnectionsSettingsContent({
   );
 
   const accessServerConfig = accessEnvironment?.serverConfig ?? null;
+  const renderTailnetSignInRow = () => (
+    <SettingsRow
+      title={searchableSetting("tailnet-sign-in").title}
+      description={`Devices signed in to Tailscale as this machine's user, and devices your tailnet policy grants ${TAILNET_APP_CAPABILITY}, connect without a pairing code.`}
+      control={
+        <Switch
+          checked={accessServerConfig?.settings.tailnetSignIn ?? false}
+          disabled={!canWriteAccess || !canWriteSettings}
+          onCheckedChange={(checked) => updateAccessEnvironmentSettings({ tailnetSignIn: checked })}
+          aria-label="Enable Tailscale sign-in"
+        />
+      }
+    />
+  );
   const primarySettings = (
     <>
       {accessEnvironmentPicker}
@@ -1218,6 +1289,9 @@ function ConnectionsSettingsContent({
             ) : canManageLocalBackend ? (
               renderDisabledNetworkAccessRow()
             ) : null}
+            {accessServerConfig?.environment.capabilities.tailnetDevices === true
+              ? renderTailnetSignInRow()
+              : null}
             {accessEnvironment ? (
               <details className="group px-3 sm:px-4">
                 <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
@@ -1293,14 +1367,14 @@ function ConnectionsSettingsContent({
             <AlertDialogPopup>
               <AlertDialogHeader>
                 <AlertDialogTitle>
-                  {pendingDesktopServerExposureMode === "network-accessible"
-                    ? "Enable network access?"
-                    : "Disable network access?"}
+                  {pendingDesktopServerExposureMode
+                    ? NETWORK_ACCESS_MODES[pendingDesktopServerExposureMode].confirmTitle
+                    : null}
                 </AlertDialogTitle>
                 <AlertDialogDescription>
-                  {pendingDesktopServerExposureMode === "network-accessible"
-                    ? "Let your other devices connect to Onicode over the network. Pair devices to give them access. Onicode will restart."
-                    : "Devices connected over your local network will disconnect. Existing tunnels, such as Tailscale HTTPS, keep working. Onicode will restart."}
+                  {pendingDesktopServerExposureMode
+                    ? NETWORK_ACCESS_MODES[pendingDesktopServerExposureMode].confirmDescription
+                    : null}
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -1323,9 +1397,9 @@ function ConnectionsSettingsContent({
                   <span className="[text-box:trim-both_cap_alphabetic]">
                     {isUpdatingDesktopServerExposure
                       ? "Restarting…"
-                      : pendingDesktopServerExposureMode === "network-accessible"
-                        ? "Restart and enable"
-                        : "Restart and disable"}
+                      : pendingDesktopServerExposureMode
+                        ? NETWORK_ACCESS_MODES[pendingDesktopServerExposureMode].confirmAction
+                        : null}
                   </span>
                 </Button>
               </AlertDialogFooter>

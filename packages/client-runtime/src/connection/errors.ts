@@ -39,7 +39,10 @@ export function mapRemoteEnvironmentError(
     case "EnvironmentAuthInvalidError":
       return new ConnectionBlockedError({
         reason: "authentication",
-        detail: "The environment credential is invalid.",
+        detail:
+          error.reason === "tailnet_identity_refused"
+            ? "That machine does not sign in this device from the tailnet. Pair it with a code from that machine instead."
+            : "The environment credential is invalid.",
         traceId: error.traceId,
         hop: "server",
       });

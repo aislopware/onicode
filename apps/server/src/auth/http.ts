@@ -3,6 +3,7 @@ import {
   AuthAccessWriteScope,
   AuthStandardClientScopes,
   AuthGrantScope,
+  AuthTailnetIdentityTokenType,
   EnvironmentAuthInvalidError,
   type EnvironmentAuthInvalidReason,
   EnvironmentHttpApi,
@@ -29,7 +30,8 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import * as HttpApiBuilder from "effect/http-api/HttpApiBuilder";
 
 import * as EnvironmentAuth from "./EnvironmentAuth.ts";
-import { deriveAuthClientMetadata } from "./utils.ts";
+import { deriveAuthClientMetadata, readRequestSocketPeer } from "./utils.ts";
+import * as TailnetAccess from "../tailnet/TailnetAccess.ts";
 import { requestUrl } from "../requestUrl.ts";
 
 const CREDENTIAL_RESPONSE_HEADERS = {
@@ -211,6 +213,7 @@ export const layer = HttpApiBuilder.group(
   "auth",
   Effect.fnUntraced(function* (handlers) {
     const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+    const tailnet = yield* TailnetAccess.TailnetAccess;
 
     return handlers
       .handle(
@@ -240,19 +243,32 @@ export const layer = HttpApiBuilder.group(
               return yield* failEnvironmentInvalidRequest("invalid_scope");
             }
             yield* appendCredentialResponseHeaders;
+            const client = deriveAuthClientMetadata({
+              request,
+              presented: {
+                ...(args.payload.client_label ? { label: args.payload.client_label } : {}),
+                ...(args.payload.client_device_type
+                  ? { deviceType: args.payload.client_device_type }
+                  : {}),
+                ...(args.payload.client_os ? { os: args.payload.client_os } : {}),
+              },
+            });
+            if (args.payload.subject_token_type === AuthTailnetIdentityTokenType) {
+              return yield* tailnet
+                .signIn({ peer: readRequestSocketPeer(request.source), client })
+                .pipe(
+                  Effect.catchTags({
+                    TailnetSignInRefusedError: (refusal) =>
+                      Effect.logInfo("tailnet sign-in refused", { reason: refusal.reason }).pipe(
+                        Effect.andThen(failEnvironmentAuthInvalid("tailnet_identity_refused")),
+                      ),
+                  }),
+                );
+            }
             return yield* serverAuth.exchangeBootstrapCredentialForAccessToken(
               args.payload.subject_token,
               requestedScopes,
-              deriveAuthClientMetadata({
-                request,
-                presented: {
-                  ...(args.payload.client_label ? { label: args.payload.client_label } : {}),
-                  ...(args.payload.client_device_type
-                    ? { deviceType: args.payload.client_device_type }
-                    : {}),
-                  ...(args.payload.client_os ? { os: args.payload.client_os } : {}),
-                },
-              }),
+              client,
             );
           },
           Effect.catchIf(EnvironmentAuth.isServerAuthCredentialError, (error) =>

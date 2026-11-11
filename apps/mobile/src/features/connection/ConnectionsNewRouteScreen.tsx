@@ -10,8 +10,15 @@ import {
 } from "@react-navigation/native";
 import type { EnvironmentId } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { useState } from "react";
-import { Linking, Pressable, StyleSheet, View } from "react-native";
+import { useRef, useState } from "react";
+import {
+  Linking,
+  Pressable,
+  type ScrollViewInstance,
+  StyleSheet,
+  type TextInputInstance,
+  View,
+} from "react-native";
 import Svg, { Defs, RadialGradient, Rect, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
@@ -26,6 +33,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { autoConnectReport, devAutoConnectAttemptAtom } from "./devAutoConnect";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
+import { TailnetDevicesSection, type TailnetPairingPrefill } from "./TailnetDevicesSection";
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
@@ -66,6 +74,10 @@ function PairingForm({
   const [codeInput, setCodeInput] = useState(initialPairing.code);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Why a device picked from the tailnet still needs a pairing code.
+  const [pairingNotice, setPairingNotice] = useState<string | null>(null);
+  const codeInputRef = useRef<TextInputInstance>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
   // The user's own edit or submit dismisses the dev auto-connect report.
   const [ownAttempt, setOwnAttempt] = useState(false);
   const autoConnect = autoConnectReport(
@@ -88,6 +100,26 @@ function PairingForm({
   const clearError = () => {
     setSubmitError(null);
     setOwnAttempt(true);
+  };
+
+  const leave = () => {
+    // Replacing with Home would nest it inside any sheet below; return to the opener.
+    if (!navigation.canGoBack()) {
+      navigation.dispatch(StackActions.replace("Home"));
+    } else {
+      // Added from the Settings list, the new environment shows on Environments.
+      leaveSettingsPage(navigation, workspaceHasColumns(), "SettingsEnvironments");
+    }
+  };
+
+  const handleTailnetPairing = (prefill: TailnetPairingPrefill) => {
+    setHostInput(prefill.host);
+    setCodeInput("");
+    clearError();
+    setPairingNotice(prefill.notice);
+    // The device list sits below the form; bring the code field back into view.
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+    codeInputRef.current?.focus();
   };
 
   const handleHostChange = (value: string) => {
@@ -130,15 +162,7 @@ function PairingForm({
         ? Haptics.NotificationFeedbackType.Success
         : Haptics.NotificationFeedbackType.Error,
     );
-    if (outcome.ok) {
-      // Replacing with Home would nest it inside any sheet below; return to the opener.
-      if (!navigation.canGoBack()) {
-        navigation.dispatch(StackActions.replace("Home"));
-      } else {
-        // Added from the Settings list, the new environment shows on Environments.
-        leaveSettingsPage(navigation, workspaceHasColumns(), "SettingsEnvironments");
-      }
-    }
+    if (outcome.ok) leave();
   };
 
   const handleQrScan = ({ data }: { readonly data: string }) => {
@@ -186,6 +210,7 @@ function PairingForm({
       ]}
     >
       <ScrollView
+        ref={scrollRef}
         nestedScrollEnabled
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
@@ -224,6 +249,7 @@ function PairingForm({
               />
               <View className="ml-4 border-t border-border-subtle" />
               <PairingInputRow
+                ref={codeInputRef}
                 label="Code"
                 placeholder="Pairing code"
                 returnKeyType="go"
@@ -242,9 +268,31 @@ function PairingForm({
               )}
             >
               {pairingConnectionError ??
+                pairingNotice ??
                 "For machines on your local network or tailnet. The machine keeps its own provider credentials."}
             </Text>
           </View>
+
+          <TailnetDevicesSection
+            routeFor={routeFor}
+            busy={connecting}
+            onSigningIn={(signingIn) => {
+              setIsSubmitting(signingIn);
+              if (!signingIn) return;
+              clearError();
+              setPairingNotice(null);
+            }}
+            onSignedIn={() => {
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              leave();
+            }}
+            onError={(message) => {
+              void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              setOwnAttempt(true);
+              setSubmitError(message);
+            }}
+            onNeedsPairing={handleTailnetPairing}
+          />
         </View>
       </ScrollView>
     </SettingsScreen>

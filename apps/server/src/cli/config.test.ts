@@ -48,6 +48,7 @@ const minimalDesktopFlags = (baseDir: string) => ({
   tailscaleServeEnabled: Option.none<boolean>(),
   tailscaleServePort: Option.none<number>(),
   lan: Option.none<boolean>(),
+  tailnetOnly: Option.none<boolean>(),
 });
 
 const encodeDesktopBootstrap = Schema.encodeEffect(Schema.fromJsonString(DesktopBackendBootstrap));
@@ -236,6 +237,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
           lan: Option.none(),
+          tailnetOnly: Option.none(),
         },
         Option.none(),
       ).pipe(
@@ -304,6 +306,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
           lan: Option.none(),
+          tailnetOnly: Option.none(),
         },
         Option.some("Debug"),
       ).pipe(
@@ -449,6 +452,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
           lan: Option.none(),
+          tailnetOnly: Option.none(),
         },
         Option.none(),
       ).pipe(
@@ -497,6 +501,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
           lan: Option.none(),
+          tailnetOnly: Option.none(),
         },
         Option.none(),
       ).pipe(
@@ -536,6 +541,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
           tailscaleServeEnabled: Option.none(),
           tailscaleServePort: Option.none(),
           lan: Option.none(),
+          tailnetOnly: Option.none(),
         },
         Option.none(),
       ).pipe(
@@ -575,6 +581,7 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
     tailscaleServeEnabled: Option.none<boolean>(),
     tailscaleServePort: Option.none<number>(),
     lan: Option.none<boolean>(),
+    tailnetOnly: Option.none<boolean>(),
   });
 
   it.effect("uses the automatic port selector only when no port is configured", () =>
@@ -742,7 +749,11 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         readonly env?: Record<string, string>;
       }) =>
         resolveServerConfig(minimalWebFlags(baseDir), Option.none()).pipe(
-          Effect.map(({ host, privateNetworkOnly }) => ({ host, privateNetworkOnly })),
+          Effect.map(({ host, privateNetworkOnly, tailnetOnly }) => ({
+            host,
+            privateNetworkOnly,
+            ...(tailnetOnly ? { tailnetOnly } : {}),
+          })),
           Effect.provide(
             Layer.mergeAll(
               ConfigProvider.layer(ConfigProvider.fromEnv({ env: input.env ?? {} })),
@@ -781,6 +792,12 @@ it.layer(NodeServices.layer)("cli config resolution", (it) => {
         host: "0.0.0.0",
         privateNetworkOnly: true,
       });
+      expect(
+        yield* resolveHost({
+          connected: true,
+          env: { ONICODE_LAN: "false", ONICODE_TAILNET_ONLY: "true" },
+        }),
+      ).toEqual({ host: "0.0.0.0", privateNetworkOnly: undefined, tailnetOnly: true });
       // Without the launcher's IPC channel the context was inherited, e.g. by
       // `onicode serve` started from an agent inside the service.
       expect(yield* resolveHost({ connected: false })).toEqual({
