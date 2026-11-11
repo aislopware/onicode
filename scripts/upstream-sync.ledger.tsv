@@ -325,3 +325,4 @@ d56b82c708	take	fix(web): keep saved default model when changing effort (#22193)
 6700cf6f89	take	fix(web): reveal expanded work rows hidden behind the composer (#21968); dropped upstream's TurnItemSource plumbing, test mocks streaming capability instead
 b3f5d52701	take	fix(composer): steer instead of queueing during automatic compaction (#24138)
 f3da8ff63b	take	feat(gitlab): resolve overview threads from Summary and Timeline (#30575)
+27188274e7	take	fix(web): pull request search keeps partial-word matches after GitHub answers (#26992)
