@@ -36,7 +36,7 @@ export function useSelectedThreadDetailState() {
   );
 }
 
-export function useThreadProjection(target: ThreadDetailTarget): EnvironmentThread | null {
+function useThreadProjection(target: ThreadDetailTarget): EnvironmentThread | null {
   return useAtomValue(
     target.environmentId === null || target.threadId === null
       ? EMPTY_THREAD_PROJECTION_ATOM

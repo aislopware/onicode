@@ -12,7 +12,7 @@ import {
   paceOf,
   remainingPercent,
 } from "@onicode/shared/usageLimits";
-import type { KeyboardEvent, ReactNode } from "react";
+import { type KeyboardEvent, type ReactNode, useState } from "react";
 
 import { usePrimarySettings } from "../../hooks/useSettings";
 import { useNowMinute } from "../../hooks/useNowMinute";
@@ -22,6 +22,7 @@ import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { formatContextWindowCompactionMessage } from "./compaction.logic";
+import { ContextUsageDetails, type SessionTarget } from "./ProviderSessionDialogs";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 
 const PACE_LABEL: Record<LimitPace, string> = {
@@ -85,12 +86,13 @@ export function ThreadDetailsUsage({
 /** The thread's context window. The bar fills as context is used; the tick marks auto-compaction. */
 export function ThreadDetailsContext({
   usage,
-  onOpenBreakdown,
+  breakdown,
 }: {
   readonly usage: ContextWindowSnapshot;
-  /** Opens the provider's full breakdown, when it reports one. */
-  readonly onOpenBreakdown?: (() => void) | undefined;
+  /** The live session whose `/context` breakdown the row expands into, when the provider has one. */
+  readonly breakdown?: SessionTarget | undefined;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const maxTokens = usage.maxTokens != null && usage.maxTokens > 0 ? usage.maxTokens : null;
   const used =
     maxTokens !== null && usage.usedPercentage !== null
@@ -121,7 +123,7 @@ export function ThreadDetailsContext({
               : usedTokens
           }
           ariaValue={used !== null ? `${used}% used` : `${usedTokens} tokens used`}
-          onClick={onOpenBreakdown}
+          {...(breakdown ? { onClick: () => setExpanded(!expanded), expanded } : {})}
           tooltip={
             <>
               <span className="text-foreground">
@@ -138,13 +140,20 @@ export function ThreadDetailsContext({
                   {formatContextWindowCompactionMessage(threshold)}
                 </span>
               ) : null}
-              {onOpenBreakdown ? (
-                <span className="text-muted-foreground">Click for the breakdown</span>
+              {breakdown ? (
+                <span className="text-muted-foreground">
+                  {expanded ? "Click to hide what fills it" : "Click to show what fills it"}
+                </span>
               ) : null}
             </>
           }
         />
       </div>
+      {breakdown && expanded ? (
+        <div className="px-0.5 pt-1 pb-1.5">
+          <ContextUsageDetails {...breakdown} />
+        </div>
+      ) : null}
     </ThreadDetailsSection>
   );
 }
@@ -196,6 +205,7 @@ function UsageRow({
   tooltip,
   muted = false,
   onClick,
+  expanded,
 }: {
   readonly label: string;
   /** Bar fill from 0 to 100. Null hides the bar. */
@@ -208,6 +218,7 @@ function UsageRow({
   readonly tooltip: ReactNode;
   readonly muted?: boolean;
   readonly onClick?: (() => void) | undefined;
+  readonly expanded?: boolean;
 }) {
   return (
     <Tooltip>
@@ -219,6 +230,7 @@ function UsageRow({
             {...(onClick
               ? {
                   role: "button",
+                  "aria-expanded": expanded,
                   onClick,
                   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
                     if (event.key !== "Enter" && event.key !== " ") return;

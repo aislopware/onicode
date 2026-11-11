@@ -110,13 +110,25 @@ export function SessionError(props: { readonly error: string }) {
   return <p className="text-sm text-destructive-foreground">{props.error}</p>;
 }
 
-function ContextUsageContent(props: SessionTarget) {
-  const query = useEnvironmentQuery(
+function useContextUsage(target: SessionTarget) {
+  return useEnvironmentQuery(
     providerSessionEnvironment.contextUsage({
-      environmentId: props.environmentId,
-      input: { threadId: props.threadId },
+      environmentId: target.environmentId,
+      input: { threadId: target.threadId },
     }),
   );
+}
+
+/** The `/context` breakdown without dialog chrome, for the thread details card. */
+export function ContextUsageDetails(props: SessionTarget) {
+  const query = useContextUsage(props);
+  if (query.error !== null) return <SessionError error={query.error} />;
+  if (query.data === null) return <p className="text-xs text-muted-foreground">Loading…</p>;
+  return <ContextBreakdown usage={query.data} target={props} dense />;
+}
+
+function ContextUsageContent(props: SessionTarget) {
+  const query = useContextUsage(props);
   const usage = query.data;
   return (
     <>
@@ -149,6 +161,8 @@ function ContextUsageContent(props: SessionTarget) {
 function ContextBreakdown(props: {
   readonly usage: ProviderContextUsage;
   readonly target: SessionTarget;
+  /** The thread details card's narrower, text-xs rows. */
+  readonly dense?: boolean;
 }) {
   const { usage } = props;
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -178,7 +192,7 @@ function ContextBreakdown(props: {
             />
           ))}
       </div>
-      <ul className="flex flex-col text-sm">
+      <ul className={cn("flex flex-col", props.dense ? "text-xs" : "text-sm")}>
         {colored.map(({ category, color }) => {
           const key = category.id ?? category.name;
           const detail = contextCategoryDetail(category);
@@ -190,7 +204,12 @@ function ContextBreakdown(props: {
               <span className="tabular-nums text-muted-foreground">
                 {formatContextWindowTokens(category.tokens)}
               </span>
-              <span className="w-12 text-end tabular-nums text-muted-foreground">
+              <span
+                className={cn(
+                  "text-end tabular-nums text-muted-foreground",
+                  props.dense ? "w-10" : "w-12",
+                )}
+              >
                 {category.kind === "deferred"
                   ? "on use"
                   : percentOf(category.tokens, usage.maxTokens)}
@@ -200,7 +219,9 @@ function ContextBreakdown(props: {
           return (
             <li key={key}>
               {detail === null ? (
-                <div className="flex items-center gap-2 px-2 py-1.5">
+                <div
+                  className={cn("flex items-center gap-2 px-2", props.dense ? "py-1" : "py-1.5")}
+                >
                   <span className="size-3.5 shrink-0" aria-hidden />
                   {row}
                 </div>
@@ -208,7 +229,10 @@ function ContextBreakdown(props: {
                 <button
                   type="button"
                   aria-expanded={isOpen}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                  className={cn(
+                    "flex w-full items-center gap-2 rounded-md px-2 text-start hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                    props.dense ? "py-1" : "py-1.5",
+                  )}
                   onClick={() => setExpanded(isOpen ? null : key)}
                 >
                   <ChevronRightIcon
