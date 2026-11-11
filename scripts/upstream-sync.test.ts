@@ -1,6 +1,11 @@
+// @effect-diagnostics nodeBuiltinImport:off
+import * as NodeChildProcess from "node:child_process";
+import * as NodeFS from "node:fs";
+import * as NodeOS from "node:os";
+import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-import { translatePath, translateText } from "./upstream-sync.ts";
+import { portCommitCommand, translatePath, translateText } from "./upstream-sync.ts";
 
 describe("upstream-sync translation", () => {
   it.each([
@@ -46,5 +51,44 @@ describe("upstream-sync translation", () => {
       "apps/mobile/modules/oni-terminal/ios/OniTerminalView.swift",
     );
     expect(translatePath("packages/shared/src/git.ts")).toBe("packages/shared/src/git.ts");
+  });
+});
+
+describe("upstream-sync port commit", () => {
+  it("keeps the upstream author and co-authors on the Onicode commit", () => {
+    const repo = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "upstream-sync-commit-"));
+    try {
+      const git = (...args: ReadonlyArray<string>) =>
+        NodeChildProcess.execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
+      git("init", "-q");
+      git("config", "user.name", "Onicode Maintainer");
+      git("config", "user.email", "maintainer@example.test");
+      git("config", "commit.gpgsign", "false");
+      git("config", "core.hooksPath", "/dev/null");
+      NodeFS.writeFileSync(NodePath.join(repo, "file.txt"), "before\n");
+      git("add", "file.txt");
+      git("commit", "-qm", "seed");
+      NodeFS.writeFileSync(NodePath.join(repo, "file.txt"), "after\n");
+
+      const author = "Julius O'Brien <julius@example.test>";
+      NodeChildProcess.execSync(
+        portCommitCommand({
+          sha: "7e45dcdd61942973b4f026d01ca89b4128d438c8",
+          subject: "fix(web): T3 Code's `$HOME` stays put (#1)",
+          author,
+          coAuthors: ["Claude Opus 5.5 <noreply@anthropic.com>", author, ""],
+        }),
+        { cwd: repo, stdio: "ignore" },
+      );
+
+      expect(git("log", "-1", "--format=%an <%ae>|%cn")).toBe(`${author}|Onicode Maintainer`);
+      expect(git("log", "-1", "--format=%B")).toBe(
+        "fix(web): Onicode's `$HOME` stays put (#1)\n\n" +
+          "Ported from pingdotgg/t3code@7e45dcdd61.\n\n" +
+          "Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>",
+      );
+    } finally {
+      NodeFS.rmSync(repo, { recursive: true, force: true });
+    }
   });
 });

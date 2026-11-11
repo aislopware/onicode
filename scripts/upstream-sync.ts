@@ -155,6 +155,25 @@ const mergeFile = (ours: Buffer, base: Buffer, theirs: Buffer) => {
   }
 };
 
+const shellQuote = (value: string) => `'${value.replaceAll("'", `'\\''`)}'`;
+
+/** The port's commit keeps the upstream author and co-authors, as `git cherry-pick` would. */
+export const portCommitCommand = (input: {
+  readonly sha: string;
+  readonly subject: string;
+  readonly author: string;
+  readonly coAuthors: ReadonlyArray<string>;
+}) =>
+  [
+    "git commit -a",
+    `--author=${shellQuote(input.author)}`,
+    `-m ${shellQuote(translateText(input.subject))}`,
+    `-m ${shellQuote(`Ported from pingdotgg/t3code@${input.sha.slice(0, 10)}.`)}`,
+    ...[...new Set(input.coAuthors.map((name) => name.trim()))]
+      .filter((name) => name !== "" && name !== input.author)
+      .map((name) => `--trailer ${shellQuote(`Co-authored-by: ${name}`)}`),
+  ].join(" ");
+
 const port = (sha: string) => {
   if (gitText(["status", "--porcelain", "--untracked-files=no"]) !== "") {
     throw new Error("Commit or stash your changes first: a port must land on a clean tree.");
@@ -227,10 +246,15 @@ const port = (sha: string) => {
     }
   }
   console.log(report.join("\n"));
-  const subject = gitText(["log", "-1", "--format=%s", full]);
+  const [subject = "", author = "", ...coAuthors] = gitText([
+    "log",
+    "-1",
+    "--format=%s%n%an <%ae>%n%(trailers:key=Co-authored-by,valueonly)",
+    full,
+  ]).split("\n");
   console.log(
     `\n${problems === 0 ? "Applied cleanly." : `${problems} file(s) need a decision.`} Review \`git diff\` line by line, run the tests beside it, then:\n` +
-      `  git commit -am ${JSON.stringify(translateText(subject))} -m "Ported from pingdotgg/t3code@${full.slice(0, 10)}."\n` +
+      `  ${portCommitCommand({ sha: full, subject, author, coAuthors })}\n` +
       `  node scripts/upstream-sync.ts record ${full.slice(0, 10)} take "<onicode commit or note>"`,
   );
 };
