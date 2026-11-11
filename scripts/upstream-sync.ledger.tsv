@@ -332,3 +332,4 @@ a74ee4cc7c	take	fix(client-runtime): server updates stop waiting 32 minutes when
 cbc68c9dc1	take	fix(web): Stop shows a pending state and repeat clicks no longer resume (#20809)
 e0379fbf5c	take	fix(web): collapsed reasoning previews no longer process the whole block (#23001)
 52e878829c	take	fix(server): storage cleanup skips stale worktree paths under a regular file (#26594)
+dab06c0be1	take	fix(terminal): use a byte budget for Ghostty scrollback (#8766)
