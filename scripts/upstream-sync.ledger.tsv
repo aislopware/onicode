@@ -321,3 +321,4 @@ ab9df1d6ff	skip	T3 release version bump; Onicode versions its own releases
 691b9709b0	take	fix(web): Ctrl + "+" zooms on keyboard layouts with a dedicated plus key
 ea5f85e7cc	skip	T3 release pipeline: Onicode's release.yml has no version-bump push to main
 5da53f87d9	take	fix(server): CLI commands no longer migrate the database of a running server (#26763)
+d56b82c708	take	fix(web): keep saved default model when changing effort (#22193)
