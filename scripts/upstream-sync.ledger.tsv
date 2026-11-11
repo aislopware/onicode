@@ -408,3 +408,4 @@ cc6c0d2957	take	fix(server): runtime prune no longer keeps a version whose direc
 f15fbdef2e	take	fix(server): branch switch no longer kills a slow git checkout (#23539)
 362ac8d6d5	take	fix(server): fail Codex turns stuck in a provider retry (#33130)
 f796df8fd2	take	fix(server,desktop): browser tools report why a page failed to load (#18588)
+7d8f6c9481	take	fix(server): show a context handoff when a provider conversation can't be resumed (#28195)
