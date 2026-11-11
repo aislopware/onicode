@@ -31,7 +31,12 @@ import { AsyncResult, Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";
 
 import { appAtomRegistry } from "../rpc/atomRegistry";
-import { useFilesystemReadAccess } from "./filesystem";
+import {
+  COMPOSER_FOLDER_SEARCH_LIMIT,
+  composerFolderMatches,
+  composerFolderSearchQuery,
+} from "@onicode/client-runtime/composer-folder-mentions";
+import { filesystemEnvironment, useFilesystemReadAccess } from "./filesystem";
 import { orchestrationEnvironment } from "./orchestration";
 import { olderSettledThreads, threadFamilies } from "./threads";
 import { isPaginatedBranchesNextPagePending } from "./paginatedBranches";
@@ -345,6 +350,37 @@ export function useProjectPathSearch(
 
 export function useComposerPathSearch(target: ComposerPathSearchTarget) {
   return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
+}
+
+/** zoxide folders ranked by fzf on the host, for `@` mentions outside the workspace. */
+export function useComposerFolderSearch(target: ComposerPathSearchTarget, enabled: boolean) {
+  const normalizedTarget = {
+    environmentId: target.environmentId,
+    cwd: target.cwd,
+    query: target.query == null ? null : target.query.trim(),
+  };
+  const debouncedTarget = useDebouncedValue(normalizedTarget, PROJECT_PATH_SEARCH_DEBOUNCE_MS);
+  const folderQuery = enabled ? composerFolderSearchQuery(debouncedTarget.query) : null;
+  const fileAccess = useFilesystemReadAccess(
+    folderQuery === null ? null : debouncedTarget.environmentId,
+  );
+  const result = useEnvironmentQuery(
+    fileAccess.canReadFiles && debouncedTarget.environmentId !== null && folderQuery !== null
+      ? filesystemEnvironment.findDirectories({
+          environmentId: debouncedTarget.environmentId,
+          input: { query: folderQuery, limit: COMPOSER_FOLDER_SEARCH_LIMIT },
+        })
+      : null,
+  );
+
+  return {
+    entries: composerFolderMatches(result.data?.entries ?? [], debouncedTarget.cwd),
+    searchedTarget: debouncedTarget,
+    isPending:
+      enabled &&
+      composerFolderSearchQuery(normalizedTarget.query) !== null &&
+      (!areProjectPathSearchTargetsEqual(normalizedTarget, debouncedTarget) || result.isPending),
+  };
 }
 
 interface ProjectContentSearchTarget {

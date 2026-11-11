@@ -337,6 +337,11 @@ by any part of its pull request numbers. A complete number is also resolved dire
 pull request is older than the recent list. Type a single word after `#` to search pull requests in
 the repository by text. Choose a result to insert it as a chip.
 
+When [zoxide](https://github.com/ajeetdsouza/zoxide) is installed on the machine running the
+project, typing `@` and a few letters also lists matching folders you visit often, after the
+project's files. They are ranked by [fzf](https://github.com/junegunn/fzf)
+when it is installed. Choose one to mention that folder by its full path.
+
 Another thread can be context too. Type `@` followed by part of its title to pick one from
 the same server, or from a machine it links to while the Linked environments beta is on; those
 show the machine's name. On desktop you can also drag a thread out of the sidebar and

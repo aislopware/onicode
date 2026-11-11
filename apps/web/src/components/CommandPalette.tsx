@@ -112,6 +112,7 @@ import { desktopLocalBackendId } from "../connection/desktopLocal";
 import { filesystemEnvironment, useFilesystemReadAccess } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
 import { useEnvironmentQuery } from "../state/query";
+import { useDebouncedValue } from "../state/queries";
 import { serverEnvironment } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { readEnvironmentScope, useEnvironmentScope } from "~/state/session";
@@ -195,6 +196,8 @@ import {
   type CommandPaletteReturnContext,
   type CommandPaletteSubmenuItem,
   type CommandPaletteView,
+  buildFolderSearchGroup,
+  FOLDER_SEARCH_MIN_QUERY_LENGTH,
   filterCommandPaletteGroups,
   buildNestedSearchItems,
   filterPinnedBrowseEntries,
@@ -264,6 +267,7 @@ import { useThreadRouteTarget } from "../hooks/useThreadRouteTarget";
 import { threadRecentUse } from "@onicode/shared/paletteSearch";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
+const FOLDER_SEARCH_DEBOUNCE_MS = 150;
 const ADD_PROJECT_ENTRY_GROUP = "add-project";
 const NEW_THREAD_IN_GROUP = "projects";
 
@@ -735,6 +739,76 @@ function OpenCommandPaletteDialog(props: {
         })
       : filterFilesystemBrowseEntries(browseEntries, browsePath.filterQuery);
 
+  const searchesFoldersInView =
+    currentView?.searchesFolders === true &&
+    newProjectFlow === null &&
+    addProjectCloneFlow === null;
+  const opensLinkedThreadSearch =
+    linkedThreadSearch?.linkedThreads !== undefined && query === linkedThreadSearch.query;
+  const folderSearchEnvironmentId = searchesFoldersInView
+    ? browseEnvironmentId
+    : currentView === null && !opensLinkedThreadSearch
+      ? defaultAddProjectEnvironmentId
+      : null;
+  const folderSearchEnvironment =
+    environments.find((environment) => environment.environmentId === folderSearchEnvironmentId) ??
+    null;
+  const folderSearchAvailable = folderSearchEnvironment?.serverConfig?.findDirectories === true;
+  const trimmedFolderQuery = query.trim();
+  const folderSearchQuery =
+    folderSearchAvailable &&
+    !isBrowsing &&
+    !query.startsWith(">") &&
+    trimmedFolderQuery.length >= (searchesFoldersInView ? 1 : FOLDER_SEARCH_MIN_QUERY_LENGTH)
+      ? trimmedFolderQuery.slice(0, 256)
+      : "";
+  const debouncedFolderSearchQuery = useDebouncedValue(
+    folderSearchQuery,
+    FOLDER_SEARCH_DEBOUNCE_MS,
+  );
+  const folderSearchAccess = useFilesystemReadAccess(
+    folderSearchAvailable ? folderSearchEnvironmentId : null,
+  );
+  const canCreateFolderProject = useEnvironmentScope(
+    folderSearchEnvironmentId,
+    AuthOrchestrationOperateScope,
+  );
+  const folderSearch = useEnvironmentQuery(
+    folderSearchAccess.canReadFiles &&
+      folderSearchEnvironmentId !== null &&
+      folderSearchQuery.length > 0 &&
+      debouncedFolderSearchQuery.length > 0
+      ? filesystemEnvironment.findDirectories({
+          environmentId: folderSearchEnvironmentId,
+          input: { query: debouncedFolderSearchQuery },
+        })
+      : null,
+  );
+  // Each query is its own atom, so keep the last answer on screen until the next one lands.
+  const [lastFolderSearch, setLastFolderSearch] = useState<{
+    readonly environmentId: EnvironmentId;
+    readonly query: string;
+    readonly entries: FilesystemBrowseResult["entries"];
+  } | null>(null);
+  const freshFolderEntries = folderSearch.data?.entries ?? null;
+  if (
+    freshFolderEntries !== null &&
+    folderSearchEnvironmentId !== null &&
+    lastFolderSearch?.entries !== freshFolderEntries
+  ) {
+    setLastFolderSearch({
+      environmentId: folderSearchEnvironmentId,
+      query: debouncedFolderSearchQuery,
+      entries: freshFolderEntries,
+    });
+  }
+  const folderSearchEntries =
+    folderSearchQuery.length > 0 && lastFolderSearch?.environmentId === folderSearchEnvironmentId
+      ? lastFolderSearch.entries
+      : EMPTY_BROWSE_ENTRIES;
+  // Rows from an earlier query stay visible while typing, but must not act for the new one.
+  const folderSearchIsCurrent = lastFolderSearch?.query === folderSearchQuery;
+
   const prefetchBrowsePath = async (
     partialPath: string,
     environmentId: EnvironmentId | null = browseEnvironmentId,
@@ -947,7 +1021,12 @@ function OpenCommandPaletteDialog(props: {
       };
     }
     setQuery(resolvedQuery);
-    if (nextQuery === "" && currentView?.initialQuery) {
+    // Clearing the starting path is how the folder search begins, so it keeps the view.
+    if (
+      nextQuery === "" &&
+      currentView?.initialQuery &&
+      !(searchesFoldersInView && folderSearchAvailable)
+    ) {
       popView();
     }
   }
@@ -960,6 +1039,7 @@ function OpenCommandPaletteDialog(props: {
       addonIcon: <FolderPlusIcon className={ADDON_ICON_CLASS} />,
       groups: [],
       initialQuery,
+      searchesFolders: true,
     };
 
     await browseNavigation.run(
@@ -2197,6 +2277,18 @@ function OpenCommandPaletteDialog(props: {
     );
   };
 
+  const jumpToFolder = async (fullPath: string): Promise<void> => {
+    const nextQuery = ensureBrowseDirectoryPath(fullPath);
+    await browseNavigation.run(
+      () => prefetchBrowsePath(getBrowseDirectoryPath(nextQuery)),
+      () => {
+        setHighlightedItemValue(null);
+        setQuery(nextQuery);
+        setBrowseGeneration((generation) => generation + 1);
+      },
+    );
+  };
+
   const resolvedAddProjectPath = hasTrailingPathSeparator(query)
     ? (browseResult?.parentPath ?? query.trim())
     : (exactBrowseEntry?.fullPath ?? query.trim());
@@ -2344,7 +2436,46 @@ function OpenCommandPaletteDialog(props: {
           },
         ];
 
+  const folderSearchGroup =
+    folderSearchEntries.length === 0 || folderSearchEnvironmentId === null
+      ? null
+      : searchesFoldersInView
+        ? buildFolderSearchGroup({
+            value: "recent-folders",
+            label: "Recent folders",
+            entries: folderSearchEntries,
+            icon: <FolderIcon className={ITEM_ICON_CLASS} />,
+            run: (entry) => (folderSearchIsCurrent ? jumpToFolder(entry.fullPath) : undefined),
+          })
+        : buildFolderSearchGroup({
+            value: "folders",
+            label: "Folders",
+            entries: folderSearchEntries,
+            skipProjects: projects.filter(
+              (project) => project.environmentId === folderSearchEnvironmentId,
+            ),
+            icon: <FolderPlusIcon className={ITEM_ICON_CLASS} />,
+            disabled:
+              !canCreateFolderProject ||
+              !canCreateProjectInEnvironment(folderSearchEnvironment?.connection.phase),
+            run: (entry) =>
+              folderSearchIsCurrent
+                ? handleAddProjectForEnvironment({
+                    environmentId: folderSearchEnvironmentId,
+                    rawCwd: entry.fullPath,
+                    platform: getEnvironmentBrowsePlatform(
+                      folderSearchEnvironment?.serverConfig?.environment.platform.os,
+                    ),
+                    currentProjectCwd: null,
+                  })
+                : undefined,
+          });
+
   let displayedGroups: CommandPaletteView["groups"] = filteredGroups;
+  if (currentView === null && folderSearchGroup !== null) {
+    // Last, so the server's folders never take the first row from local matches.
+    displayedGroups = [...filteredGroups, folderSearchGroup];
+  }
   if (newProjectFlow !== null) {
     displayedGroups = [
       ...(newProjectMachineGroup ? [newProjectMachineGroup] : []),
@@ -2357,6 +2488,8 @@ function OpenCommandPaletteDialog(props: {
     displayedGroups = relativePathNeedsActiveProject ? [] : cloneDestinationBrowseGroups;
   } else if (isBrowsing) {
     displayedGroups = relativePathNeedsActiveProject ? [] : browseGroups;
+  } else if (searchesFoldersInView && folderSearchAvailable) {
+    displayedGroups = folderSearchGroup === null ? [] : [folderSearchGroup];
   }
   const resultRows = buildCommandPaletteRows(displayedGroups);
   const autoHighlightsFirstRow =
@@ -2366,7 +2499,9 @@ function OpenCommandPaletteDialog(props: {
     newProjectFlow !== null
       ? "Project name"
       : (remoteProjectInputPlaceholder(addProjectCloneFlow) ??
-        getCommandPaletteInputPlaceholder(paletteMode));
+        (searchesFoldersInView && folderSearchAvailable && !isBrowsing
+          ? "Enter a path, or search recent folders"
+          : getCommandPaletteInputPlaceholder(paletteMode)));
   const isSubmenu = paletteMode === "submenu" || paletteMode === "submenu-browse";
   const hasHighlightedBrowseItem = highlightedItemValue?.startsWith("browse:") ?? false;
   const canWriteSourceControl = useEnvironmentScope(
@@ -2932,7 +3067,17 @@ function OpenCommandPaletteDialog(props: {
                   }
                 : isThreadSearchPending
                   ? { emptyStateMessage: "Searching thread messages…" }
-                  : {})}
+                  : searchesFoldersInView && folderSearchAvailable && !isBrowsing
+                    ? {
+                        emptyStateMessage:
+                          folderSearchQuery.length === 0
+                            ? "Type a few letters to search recent folders, or ~/ to browse."
+                            : folderSearch.isPending ||
+                                folderSearchQuery !== debouncedFolderSearchQuery
+                              ? "Searching recent folders…"
+                              : "No recent folder matches. Type a path such as ~/ to browse.",
+                      }
+                    : {})}
       />
     </CommandPaletteContent>
   );

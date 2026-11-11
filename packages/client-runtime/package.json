@@ -23,6 +23,10 @@
       "types": "./src/composerThreadItems.ts",
       "default": "./src/composerThreadItems.ts"
     },
+    "./composer-folder-mentions": {
+      "types": "./src/composerFolderMentions.ts",
+      "default": "./src/composerFolderMentions.ts"
+    },
     "./composer-model-mentions": {
       "types": "./src/composerModelMentions.ts",
       "default": "./src/composerModelMentions.ts"

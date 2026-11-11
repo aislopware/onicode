@@ -42,7 +42,14 @@ import {
   type EnvironmentQueryTarget,
 } from "~/state/pullRequests";
 import { useEnvironmentQuery } from "~/state/query";
-import { useComposerPathSearch, useDebouncedValue, useThreadSearch } from "~/state/queries";
+import {
+  useComposerFolderSearch,
+  useComposerPathSearch,
+  useDebouncedValue,
+  useThreadSearch,
+} from "~/state/queries";
+import { composerFolderParentPath } from "@onicode/client-runtime/composer-folder-mentions";
+import { serverEnvironment } from "~/state/server";
 import {
   matchesPullRequestQuery,
   rankPullRequestMatches,
@@ -140,6 +147,18 @@ export function useComposerMenuItems({
     cwd: isPathTrigger ? gitCwd : null,
     query: isPathTrigger ? pathTriggerQuery : null,
   });
+  const findsFolders = useAtomValue(
+    serverEnvironment.configValueAtom(environmentId),
+    (config) => config?.findDirectories === true,
+  );
+  const folderEntries = useComposerFolderSearch(
+    {
+      environmentId,
+      cwd: isPathTrigger ? gitCwd : null,
+      query: isPathTrigger ? pathTriggerQuery : null,
+    },
+    isPathTrigger && findsFolders,
+  );
 
   const pullRequestListTargets =
     composerTriggerKind !== "pull-request" ||
@@ -232,6 +251,14 @@ export function useComposerMenuItems({
           searchTarget: workspaceEntries.searchedTarget,
           label: basenameOfPath(entry.path),
           description: entry.path.slice(0, Math.max(0, entry.path.lastIndexOf("/"))),
+        })),
+        ...folderEntries.entries.map((entry) => ({
+          id: `folder:${entry.fullPath}`,
+          type: "folder" as const,
+          path: entry.fullPath,
+          searchTarget: folderEntries.searchedTarget,
+          label: entry.name,
+          description: composerFolderParentPath(entry.fullPath),
         })),
       ];
     }
@@ -398,7 +425,9 @@ export function useComposerMenuItems({
     return [];
   })();
   const isLoading =
-    (composerTriggerKind === "path" && pathTriggerQuery.length > 0 && workspaceEntries.isPending) ||
+    (composerTriggerKind === "path" &&
+      pathTriggerQuery.length > 0 &&
+      (workspaceEntries.isPending || folderEntries.isPending)) ||
     ((composerTriggerKind === "skill" || composerTriggerKind === "slash-command") &&
       workspaceSkillsScanning) ||
     (composerTriggerKind === "pull-request" &&

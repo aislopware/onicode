@@ -45,6 +45,7 @@ import {
 } from "@onicode/client-runtime/state/filesystem";
 import {
   appendBrowsePathSegment,
+  ensureBrowseDirectoryPath,
   inferProjectTitleFromPath,
   isWindowsPlatform,
 } from "@onicode/client-runtime/state/projects";
@@ -56,6 +57,7 @@ import {
   CommandId,
   type EnvironmentId,
   type EnvironmentMachineKind,
+  type FilesystemBrowseEntry,
   ProjectId,
   resolveEnvironmentMachineKind,
   SourceControlProviderKind,
@@ -79,6 +81,7 @@ import { useProjects, useServerConfigs, waitForProject } from "../../state/entit
 import { filesystemEnvironment } from "../../state/filesystem";
 import { projectEnvironment } from "../../state/projects";
 import { useEnvironmentQuery } from "../../state/query";
+import { useDebouncedValue } from "../../state/queries";
 import { environmentSession, useEnvironmentScope, readEnvironmentScope } from "../../state/session";
 import { useEnvironmentPresentation } from "../../state/presentation";
 import { sourceControlEnvironment } from "../../state/sourceControl";
@@ -118,6 +121,7 @@ interface EnvironmentOption {
   readonly connectionError: string | null;
   readonly connectionErrorTraceId: string | null;
   readonly ghqCloneLayout: boolean;
+  readonly findDirectories: boolean;
 }
 
 const environmentOptionOrder = Order.mapInput(
@@ -413,6 +417,7 @@ function useEnvironmentOptions(
         connectionError: runtime?.connectionError ?? null,
         connectionErrorTraceId: runtime?.connectionErrorTraceId ?? null,
         ghqCloneLayout: config?.settings.ghqCloneLayout === true,
+        findDirectories: config?.findDirectories === true,
       };
     });
     return Arr.sort(
@@ -915,6 +920,43 @@ export function AddProjectRepositoryScreen(props: {
   );
 }
 
+const FIND_DIRECTORIES_DEBOUNCE_MS = 150;
+const FIND_DIRECTORIES_QUERY_MAX_LENGTH = 256;
+const EMPTY_RECENT_FOLDERS: ReadonlyArray<FilesystemBrowseEntry> = [];
+
+/** zoxide folders matching text that is not a path; `isSearching` while the input is such text. */
+function useRecentFolderSearch(environment: EnvironmentOption | null, pathInput: string) {
+  const environmentId = environment?.findDirectories ? environment.environmentId : null;
+  const query =
+    environment === null || getFilesystemBrowsePath(pathInput, environment.platform).isBrowsing
+      ? ""
+      : pathInput.trim().slice(0, FIND_DIRECTORIES_QUERY_MAX_LENGTH);
+  const debouncedQuery = useDebouncedValue(query, FIND_DIRECTORIES_DEBOUNCE_MS);
+  const session = useEnvironmentQuery(
+    environmentId === null ? null : environmentSession.sessionStateAtom(environmentId),
+  );
+  const presentation = useEnvironmentPresentation(environmentId);
+  const { canReadFiles } = resolveFilesystemReadAccess({
+    isCatalogReady: presentation.isReady,
+    connection: presentation.presentation?.connection ?? null,
+    session: session.data,
+    sessionError: session.error,
+  });
+  const result = useEnvironmentQuery(
+    environmentId === null || !canReadFiles || debouncedQuery.length === 0
+      ? null
+      : filesystemEnvironment.findDirectories({
+          environmentId,
+          input: { query: debouncedQuery },
+        }),
+  );
+  const isSearching = environmentId !== null && query.length > 0;
+  return {
+    isSearching,
+    entries: isSearching ? (result.data?.entries ?? EMPTY_RECENT_FOLDERS) : EMPTY_RECENT_FOLDERS,
+  };
+}
+
 function FolderBrowser(props: {
   readonly environment: EnvironmentOption;
   readonly pathInput: string;
@@ -925,6 +967,7 @@ function FolderBrowser(props: {
   }) => Promise<boolean>;
   readonly pinnedDirectoryName?: string;
   readonly cloning?: boolean;
+  readonly recentFolders?: ReadonlyArray<FilesystemBrowseEntry>;
 }) {
   const browsePath = getFilesystemBrowsePath(props.pathInput, props.environment.platform);
   const browseInput =
@@ -957,9 +1000,39 @@ function FolderBrowser(props: {
     browseState.data?.entries ?? [],
     browseFilterQuery,
   );
+  const recentFolders = props.recentFolders ?? EMPTY_RECENT_FOLDERS;
 
   return (
     <>
+      {recentFolders.length > 0 ? (
+        <>
+          <SectionTitle>Recent folders</SectionTitle>
+          <ListSection>
+            {recentFolders.map((entry, index) => (
+              <ListRow
+                key={entry.fullPath}
+                title={entry.name}
+                subtitle={entry.fullPath}
+                icon={
+                  <SymbolView
+                    name="folder"
+                    size={Platform.OS === "android" ? 24 : 17}
+                    tintColorClassName="accent-icon-muted"
+                    type="monochrome"
+                  />
+                }
+                isFirst={index === 0}
+                right={null}
+                onPress={() => {
+                  void props.navigateToBrowsePath({
+                    browseDirectoryPath: ensureBrowseDirectoryPath(entry.fullPath),
+                  });
+                }}
+              />
+            ))}
+          </ListSection>
+        </>
+      ) : null}
       <SectionTitle>Browse folders</SectionTitle>
       {!canReadFiles && !fileAccess.isPending ? (
         <ErrorBanner message={fileAccess.error ?? "This connection cannot browse host folders."} />
@@ -1304,11 +1377,22 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
   const createProject = useCreateProject(environment);
   const { isBrowseNavigating, navigateToBrowsePath, pathInput, setPathInput } =
     useBrowsePathInput(environment);
+  const recentFolders = useRecentFolderSearch(environment, pathInput);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submitPath = async () => {
     if (!environment || isBrowseNavigating || isSubmitting) return;
+    if (recentFolders.isSearching) {
+      // Search text is not a path to create; Return opens the best match instead.
+      const [best] = recentFolders.entries;
+      if (best) {
+        await navigateToBrowsePath({
+          browseDirectoryPath: ensureBrowseDirectoryPath(best.fullPath),
+        });
+      }
+      return;
+    }
     setError(null);
     const resolved = resolveAddProjectPath({
       rawPath: pathInput,
@@ -1339,7 +1423,9 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
           <ProjectPathInput value={pathInput} onChangeText={setPathInput} onSubmit={submitPath} />
           <PrimaryActionButton
             label="Add project"
-            disabled={!canCreateProject || isBrowseNavigating || isSubmitting}
+            disabled={
+              !canCreateProject || isBrowseNavigating || isSubmitting || recentFolders.isSearching
+            }
             onPress={submitPath}
             loading={isSubmitting}
           />
@@ -1348,6 +1434,7 @@ export function AddProjectLocalFolderScreen(props: { readonly environmentId?: st
             navigateToBrowsePath={navigateToBrowsePath}
             pathInput={pathInput}
             setPathInput={setPathInput}
+            recentFolders={recentFolders.entries}
           />
         </>
       ) : (
