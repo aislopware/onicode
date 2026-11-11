@@ -5,10 +5,12 @@ import type {
   ProjectId,
   WorktreeSubmodules,
 } from "@onicode/contracts";
+import type { ThreadStructureRuntime } from "@onicode/client-runtime/state/shell";
 import * as Schema from "effect/Schema";
 import { sanitizeNewRefName } from "@onicode/shared/git";
 import { workspaceRelativeFilePath } from "@onicode/shared/path";
 import { toSortableTimestamp } from "@onicode/client-runtime/state/thread-sort";
+import { deriveCanInterruptRunningThread } from "../session-logic";
 export { deriveLocalBranchNameFromRemoteRef, sanitizeNewRefName } from "@onicode/shared/git";
 
 export interface EnvironmentOption {
@@ -279,6 +281,17 @@ export function resolveBranchSelectionTarget(input: {
     nextWorktreePath,
     reuseExistingWorktree: false,
   };
+}
+
+export function isWorktreeChangeBlocked(input: {
+  runtime: ThreadStructureRuntime | null;
+  currentWorktreePath: string | null;
+  nextWorktreePath: string | null;
+}): boolean {
+  return (
+    input.nextWorktreePath !== input.currentWorktreePath &&
+    deriveCanInterruptRunningThread(true, input.runtime)
+  );
 }
 
 export function shouldIncludeBranchPickerItem(input: {
