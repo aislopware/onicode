@@ -65,6 +65,7 @@ describe("V2 preview upgrade", () => {
         [83, "RemoveWebhookTasks"],
         [84, "RemoveBrowserSessions"],
         [85, "RemoveClientBrowser"],
+        [86, "ProjectionMessageSearchText"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -173,6 +174,7 @@ describe("V2 preview upgrade", () => {
         [83, "RemoveWebhookTasks"],
         [84, "RemoveBrowserSessions"],
         [85, "RemoveClientBrowser"],
+        [86, "ProjectionMessageSearchText"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
