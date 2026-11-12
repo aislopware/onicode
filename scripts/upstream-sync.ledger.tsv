@@ -562,3 +562,4 @@ b3ce149be5	take	fix(mobile): Fast can be turned on for an existing thread (#2976
 7315c60b95	take	fix(server): a failed Claude wake dispatch no longer drops every later wake (#28173)
 e5b5da3a7c	take	fix(web): reopening a guide with many cached diff pages no longer crashes (#27550)
 ed57b9b5ec	take	fix(server): a follow-up to a finished remote task is a new task that wakes the parent (#26776)
+ea3e20a0e2	take	fix(web): double-clicking another thread in the sidebar renames it instead of focusing its composer (#27287)
