@@ -13,10 +13,9 @@ onicode up
 ```
 
 It asks which devices may connect: only this machine, devices on your tailnet, or devices on
-your local network and tailnet. Then on Linux and macOS it
-runs Onicode as a [background service](./background-service.md). Run `onicode up` again to
-change your choice, and `onicode status` to see it. The background service is not available on
-Windows, so there `onicode up` prints the `onicode serve` command to keep running in a terminal.
+your local network and tailnet. Then it runs Onicode as a
+[background service](./background-service.md). Run `onicode up` again to change your choice,
+and `onicode status` to see it.
 
 `onicode up --lan`, `--tailnet-only`, or `--no-lan` answers without asking, and `--yes` takes the default. Without a
 terminal and with no choice named, `onicode up` stops and names the flags. `onicode status --json`
