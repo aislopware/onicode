@@ -657,3 +657,4 @@ d63db06436	take	fix(contracts): side chats open after an abandoned worktree setu
 ccc9aaf10b	take	fix(server): a cancelled queued Claude continuation no longer drops later wakes (#30114)
 32882540fb	take	fix(web): interruption footer label sits on the reason's baseline (#34685)
 e304dab94b	take	fix(server): t3 theme updates a dev server running in the default home (#34700)
+7462f234e8	take	fix(server): preserve delegated results across wake turns (#34568)
