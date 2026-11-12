@@ -422,3 +422,4 @@ c4cf58511b	take	fix(server): long Claude sessions import instead of being skippe
 173374c4a7	take	fix(server): opening a pull request loads while its host is rate-limited (#27595)
 8b21cbdf1e	take	fix(server): Codex turns that auto-compact end instead of looping on restored context (#25911)
 3cfbc3607b	take	fix(server): keep queued Claude workflow members pending (#25325)
+b264e118cf	take	fix(server): onicode doctor warns how long reclaiming takes and shows each step (#29956)
