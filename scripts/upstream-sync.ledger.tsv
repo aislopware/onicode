@@ -717,3 +717,4 @@ c085a0aa5d	take	fix(server): a slow baseline checkpoint no longer holds every pr
 101e5f99a2	take	fix(web): review comments in question answers reach the agent with their text (#34855)
 0b6f482dc5	skip	T3 Connect only; Onicode removed Connect
 6b2591b252	take	fix(source-control): a query or fragment after .git keeps the repository identity (#34857)
+dcad1942a9	take	fix(client-runtime): provider toggles no longer wait for another provider's update (#34858)
