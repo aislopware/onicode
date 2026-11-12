@@ -445,3 +445,4 @@ c2300780e0	take	fix(server): reject worktree launches in non-Git projects (#3427
 462eeac63b	take	fix(mobile): stale Claude threads show a compact-before-send notice (#34263)
 80d8623fc3	take	fix(cursor): retry a timed-out catalog read before reporting an error (#34553)
 21a9aa1d79	take	fix(web): wrapping a selection in backticks formats it as code (#14870)
+330b9f4840	take	fix(web): arrow keys and buttons step through the images an agent viewed (#34333)
