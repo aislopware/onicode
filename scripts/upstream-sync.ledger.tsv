@@ -522,3 +522,4 @@ b43a1b4b93	take	fix(server): a Claude tool call interrupted by a new message sho
 5c9a01b747	take	fix(server): archiving or deleting a thread releases its devices (#34175)
 b859968cab	take	fix(web): a pending approval is announced once, not once per queued message (#25866)
 905311d37e	take	test(server): keep the OpenZFS zed launch test off host system bins (#34277)
+96a2f0a776	skip	relay client install; Onicode removed the relay
