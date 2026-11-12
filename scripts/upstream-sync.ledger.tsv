@@ -452,3 +452,4 @@ a9f2d7d5f4	take	fix(web): "Show full message" only appears when it at least doub
 fcc25c8bb2	take	ci: split web tests over two runners so every run finishes sooner (#34554)
 a02bc75737	take	fix(web): keep background toast Open button inline (#34572)
 d6e5f2e06f	take	fix(server): Claude effort changes apply to the running turn (#34563)
+323c0a8d0d	take	fix(web): keep wide terminal glyphs on the cell grid (#27948)
