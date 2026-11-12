@@ -588,3 +588,4 @@ de21fbcff3	take	fix(client): a thread whose subscription dies on a defect resubs
 86e2cb21c9	take	fix(server): Claude turns on busy hosts no longer time out registering MCP tools
 52da4e5098	take	fix(server): reuse timeline indexes while paging long threads
 aeaf19cc61	take	fix(server): a slow or broken hosting CLI is no longer told to install itself
+1d61dd3fd6	take	fix(server): recurring tasks keep one queued occurrence while their thread is busy
