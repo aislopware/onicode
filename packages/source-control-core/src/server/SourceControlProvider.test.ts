@@ -19,6 +19,8 @@ it.each([
   ["github.com:Onicode/onicode.git", "Onicode/onicode"],
   ["gitlab.com:Onicode/platform/onicode", "Onicode/platform/onicode"],
   ["https://github.com/Onicode/onicode.git", "Onicode/onicode"],
+  ["https://github.com/Onicode/onicode.git?view=compact", "Onicode/onicode"],
+  ["https://github.com/Onicode/onicode.git#section", "Onicode/onicode"],
   ["C:/repos/onicode", null],
 ])("reads the repository path of %s", (remoteUrl, expected) => {
   assert.strictEqual(repositoryPathFromRemoteUrl(remoteUrl), expected);
