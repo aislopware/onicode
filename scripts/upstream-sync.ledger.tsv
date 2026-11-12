@@ -690,3 +690,4 @@ a25654c396	take	fix(server): block incompatible migration history in preflight; 
 62dc589d6d	skip	upstream repo governance (VOUCHED.td denounce list); Onicode has no vouching file
 a18a458f25	take	fix(cursor): resume moved threads from their original session store (#34794)
 ed54f30644	skip	upstream contribution policy (CONTRIBUTING, PR template, contribution-triage skill); Onicode keeps its own CONTRIBUTING and has no triage skill
+6ba3de70af	take	fix(server): remote delegate_task runs on the driver it names (#34790)
