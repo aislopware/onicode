@@ -667,3 +667,4 @@ d9a54ec645	take	fix(web): file breadcrumbs keep backslashes in POSIX folder name
 c0c7405b04	take	fix(server): oni_thread_list says when its project does not exist
 fd033dfec3	take	fix(web): improve Word document previews; kept Onicode's newer @betteroffice/fonts 0.4.2 (docx 0.5.1 already present)
 55a94e2029	take	fix(web): voice settings and dictation match the rest of the app
+c0f85e7f79	take	feat(web): reply to an assistant response from its hover actions
