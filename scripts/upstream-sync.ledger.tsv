@@ -705,3 +705,4 @@ a86ffacc37	take	fix(server): Claude sets a /goal that also mentions a skill (#34
 9e716b694a	take	fix(server): resumed Claude sessions wait for their MCP servers (#34822)
 7466707a83	take	fix(server): re-import no longer marks a continued transcript imported without its new messages (#34809)
 3c68642354	take	fix(server): file links relative to a gitignored git worktree open the file (#34831)
+bfec2754b8	take	fix(server): restart recovery wakes delegated children waiting on background work (#34833)
