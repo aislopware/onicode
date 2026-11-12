@@ -498,3 +498,4 @@ c092c6eb1e	take	fix(server): generated thread titles leave out the project name 
 7e796802aa	take	fix(codex): keep the launcher error that precedes an exit summary (#33290)
 3f402e3ae4	take	fix(server): explain why /compact fails on providers without compaction (#33269)
 517c9fcd09	take	fix(git): push publishes a branch that tracks a local branch (#33581)
+c6969f8f73	take	fix(acp): a resumed message keeps the text streamed before it (#33604)
