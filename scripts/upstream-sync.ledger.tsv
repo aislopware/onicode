@@ -799,3 +799,4 @@ bf13d60e83	take	fix(opencode): OpenCode 2 threads see Onicode's MCP tools on the
 12d4c62214	take	fix(web): every settings nav group has a name for screen readers (#35101)
 b2e86d7902	take	fix(web): an invalid provider setting is refused at its field instead of taking the provider offline (#35100)
 abbd967c4b	take	fix(web): PR comment hover excerpts no longer end in a replacement character (#35111)
+9c5b6f3d77	take	fix(mobile): Android composer keeps its cursor after a drag-scroll (#35092)
