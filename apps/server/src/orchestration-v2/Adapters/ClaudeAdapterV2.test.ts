@@ -12340,6 +12340,128 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect.each([
+    { holds: "a background shell" },
+    { holds: "a scheduled wakeup" },
+    { holds: "a turn Claude started by itself" },
+  ] as const)(
+    "resumes an idle process on a newer installed Claude build, unless it holds $holds",
+    ({ holds }) =>
+      Effect.gen(function* () {
+        const fileSystem = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-claude-build-" });
+        const binaryPath = path.join(home, "claude");
+        const install = Effect.fnUntraced(function* (contents: string) {
+          // A rename, as the native installer and a managed launcher replace themselves.
+          const staged = path.join(home, ".claude-staged");
+          yield* fileSystem.writeFileString(staged, `#!/bin/sh\n# ${contents}\n`);
+          yield* fileSystem.chmod(staged, 0o755);
+          yield* fileSystem.rename(staged, binaryPath);
+        });
+        const managedDirectory = path.join(home, ".local", "share", "claude-managed");
+        yield* fileSystem.makeDirectory(managedDirectory, { recursive: true });
+        yield* fileSystem.writeFileString(path.join(home, ".claude-managed"), "");
+        const publish = (version: string) =>
+          fileSystem.writeFileString(
+            path.join(managedDirectory, "published.json"),
+            JSON.stringify({ build: { published: version } }),
+          );
+        yield* install("first");
+        yield* publish("2.1.322");
+
+        yield* Effect.gen(function* () {
+          const harness = yield* makeWakeHarnessWithOptions({
+            freshQueueOnReopen: true,
+            close: (queue) => Queue.shutdown(queue),
+            settings: { ...DEFAULT_CLAUDE_SETTINGS, binaryPath },
+          });
+          let ordinal = 0;
+          const runTurn = Effect.fnUntraced(function* (
+            frames: ReadonlyArray<SDKMessage> = [],
+            reportsVersion?: string,
+          ) {
+            ordinal += 1;
+            yield* harness.runtime.startTurn(
+              makeClaudeTestTurnInput({
+                threadId: harness.threadId,
+                providerThread: harness.providerThread,
+                now: yield* DateTime.now,
+                attemptId: RunAttemptId.make(`build-refresh-${ordinal}`),
+                text: `Request ${ordinal}`,
+                attachments: [],
+                providerTurnOrdinal: ordinal,
+              }),
+            );
+            if (reportsVersion !== undefined) {
+              yield* harness.offerAndWait(
+                claudeSdkFrame({
+                  type: "system",
+                  subtype: "init",
+                  uuid: `00000000-0000-4000-8000-00000000b0${String(ordinal).padStart(2, "0")}`,
+                  session_id: WAKE_NATIVE_SESSION,
+                  claude_code_version: reportsVersion,
+                }),
+              );
+            }
+            for (const frame of frames) yield* harness.offerAndWait(frame);
+            yield* harness.offerAndWait(turnOneResult);
+            yield* Queue.take(harness.terminalReceipts);
+          });
+
+          yield* runTurn([], "2.1.322");
+          yield* runTurn();
+          assert.equal(harness.processQueues.length, 1);
+
+          yield* install("second");
+          yield* runTurn([], "2.1.322");
+          assert.equal(harness.processQueues.length, 2);
+          assert.equal(harness.getOpenedOptions()?.resume, WAKE_NATIVE_SESSION);
+
+          // The relaunch fell back to the old build; retrying it every turn would never end.
+          yield* publish("2.1.323");
+          yield* runTurn([], "2.1.322");
+          assert.equal(harness.processQueues.length, 3);
+          yield* runTurn();
+          assert.equal(harness.processQueues.length, 3);
+
+          if (holds === "a background shell") {
+            yield* runTurn([wakeTaskStarted]);
+          } else if (holds === "a scheduled wakeup") {
+            yield* runTurn(
+              scheduleWakeupFrames({
+                toolUseId: "toolu_build_refresh_wakeup",
+                uuids: [
+                  "00000000-0000-4000-8000-00000000b101",
+                  "00000000-0000-4000-8000-00000000b102",
+                ],
+                toolInput: { delaySeconds: 60, prompt: "say WOKE", reason: "wake", noop: false },
+                scheduledFor: DateTime.toEpochMillis(yield* DateTime.now) + 60_000,
+              }),
+            );
+          } else {
+            yield* harness.offerAndWait(wakeTurnInit);
+            yield* harness.offerAndWait(wakeAssistant);
+          }
+          yield* publish("2.1.324");
+          yield* install("third");
+          yield* runTurn();
+          assert.equal(harness.processQueues.length, 3);
+          assert.isTrue(yield* harness.hasPendingBackgroundWork);
+        }).pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+  );
+
   it.effect.skipIf(process.getuid === undefined)(
     "tails foreground Bash output under the physical cwd the query launched in",
     () =>
