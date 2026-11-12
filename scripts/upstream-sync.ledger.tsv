@@ -805,3 +805,4 @@ efd683ccc3	take	fix(web): a failed send leaves the timeline when a new draft was
 cb931fcbe2	take	fix(web): a save in one tab no longer erases what another tab saved (#35110)
 80cccdcef3	take	fix(server): projects read their own Git repository when the server inherited GIT_DIR (#35119)
 3d6ece2b29	take	fix(web): file links the agent cited from another project open that project's file (#35036)
+ced85c64ff	take	fix(client): a message the host never answers fails after 60 seconds instead of spinning forever (#35076)
