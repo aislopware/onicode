@@ -598,3 +598,4 @@ cf65084c97	take	fix(server): Antigravity install names network failures and 16 K
 94f7984d2c	take	fix(web): preserve typed question answers when Stop cancels a turn
 60ec7fc7f4	take	fix(desktop): check Onicode home ownership before starting the local backend
 3af501840b	take	fix(server): open projects in a new VS Code window
+c0b67b7631	take	fix(web): wrap interruption footers as one sentence
