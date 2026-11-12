@@ -986,7 +986,6 @@ export const makeVcsDriverShape = Effect.fn("makeGitVcsDriverShape")(function* (
       const tempIndexPath = path.join(gitCommonDir, `oni-checkpoint-index-${indexId}`);
       const hostEnv = yield* HostProcess.Environment;
       const commitEnv: NodeJS.ProcessEnv = {
-        ...hostEnv,
         GIT_INDEX_FILE: tempIndexPath,
         GIT_AUTHOR_NAME: "Onicode",
         GIT_AUTHOR_EMAIL: "onicode@users.noreply.github.com",
