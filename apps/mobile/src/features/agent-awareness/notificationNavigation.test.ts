@@ -5,6 +5,7 @@ import { consumeLastAgentNotificationResponse } from "./notificationResponseCons
 
 import {
   extractAgentNotificationDeepLink,
+  notificationIdsForThread,
   routeAgentNotificationResponseOnce,
 } from "./notificationPayload";
 
@@ -101,6 +102,22 @@ describe("extractAgentNotificationDeepLink", () => {
       extractAgentNotificationDeepLink(responseWithData({ deepLink: "/threads/env/thread?x=1" })),
     ).toBeNull();
     expect(extractAgentNotificationDeepLink({})).toBeNull();
+  });
+});
+
+describe("notificationIdsForThread", () => {
+  it("picks every delivered notification of the open thread and leaves the rest", () => {
+    const delivered = [
+      responseWithData({ deepLink: "/threads/env/thread" }, "tapped").notification,
+      responseWithData({ environmentId: "env", threadId: "thread" }, "earlier").notification,
+      responseWithData({ deepLink: "/threads/env/other" }, "other-thread").notification,
+      responseWithData({}, "not-a-thread").notification,
+    ];
+
+    expect(notificationIdsForThread(delivered, "/threads/env/thread")).toEqual([
+      "tapped",
+      "earlier",
+    ]);
   });
 });
 

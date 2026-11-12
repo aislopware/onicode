@@ -18,13 +18,20 @@ does not need to reach it at that moment.
 ## Follow work on the Lock Screen
 
 **Live Activity** on iOS, **Live Updates** on Android 16 and newer, and **Ongoing notification**
-on older Android show an environment's running agents, with the ones waiting for you first. Each
+on older Android show an environment's agents in the order they matter to you: the ones waiting
+for you, then ones that failed, then ones that finished, then ones still working. Each
 environment gets its own. A finished result stays for up to 15 minutes.
 
 If you swipe one away, it stays away until that environment has finished everything and starts
 new work. Turning the switch off stops them and leaves alerts on.
 
-An alert for the thread you are looking at in the app is not shown.
+## Alerts
+
+A thread has at most one alert on the phone: when it has more news, the new alert takes the old
+one's place. Alerts from the same environment stack together.
+
+Opening a thread in the app clears its alert, however you got there. An alert for the thread you
+are looking at in the app is not shown.
 
 ## What leaves your machine
 

@@ -50,6 +50,8 @@ function truncate(value: string, maxLength: number): string {
 
 export function apnsNotificationRequest(input: {
   readonly notification: PushNotification;
+  /** At most 64 bytes. Alerts that share it replace one another on the device. */
+  readonly collapseId: string;
   readonly nowSeconds: number;
 }): ApnsRequest {
   const { notification } = input;
@@ -60,7 +62,8 @@ export function apnsNotificationRequest(input: {
         body: truncate(notification.body, maxLength * 2),
       },
       sound: "default",
-      "thread-id": `${notification.environmentId}/${notification.threadId}`,
+      // One machine's threads gather in one stack.
+      "thread-id": notification.environmentId,
     },
     // Expo exposes userInfo.body as the notification's data on iOS.
     body: {
@@ -80,8 +83,7 @@ export function apnsNotificationRequest(input: {
     pushType: "alert",
     priority: "10",
     expiration: input.nowSeconds + NOTIFICATION_TTL_SECONDS,
-    // APNs caps the collapse id at 64 bytes; environments send a 43-character digest.
-    collapseId: notification.id.slice(0, 64),
+    collapseId: input.collapseId,
     payload,
   };
 }

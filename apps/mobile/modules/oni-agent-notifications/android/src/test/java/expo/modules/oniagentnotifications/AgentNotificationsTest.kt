@@ -64,6 +64,8 @@ abstract class AgentNotificationsFixture {
     "alert_body" to "Done: Test project",
     "alert_path" to "/threads/environment/thread",
   )
+
+  protected val threadAlertId = "/threads/environment/thread".hashCode()
 }
 
 @RunWith(RobolectricTestRunner::class)
@@ -77,13 +79,16 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
     for (id in 1..64) AgentNotifications.receive(context, update("alert-$id", false))
     assertTrue(manager.activeNotifications.isEmpty())
     AgentNotifications.receive(context, update("alert-0", false))
-    assertEquals("alert-0".hashCode(), manager.activeNotifications.single().id)
+    assertEquals(threadAlertId, manager.activeNotifications.single().id)
   }
 
   @Test
-  fun alertsStackByThreadGroup() {
+  fun alertsStackByEnvironment() {
     AgentNotifications.receive(context, update("grouped", false))
-    assertEquals("environment/thread", manager.activeNotifications.single().notification.group)
+    assertEquals(
+      "oni-agent-alert:environment",
+      manager.activeNotifications.single().notification.group
+    )
   }
 
   @Test
@@ -133,7 +138,7 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
 
     AgentNotifications.receive(context, update("later-background-completion", false))
 
-    assertEquals("later-background-completion".hashCode(), manager.activeNotifications.single().id)
+    assertEquals(threadAlertId, manager.activeNotifications.single().id)
   }
 
   @Test
@@ -143,23 +148,7 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
 
     AgentNotifications.receive(context, update("foreground-completion", false))
 
-    assertEquals("background-completion".hashCode(), manager.activeNotifications.single().id)
-  }
-
-  @Test
-  fun repeatedThreadAlertsHaveOneSilentSummaryAndClearTogether() {
-    AgentNotifications.receive(context, update("first", false) + ("alert_group" to "thread-group"))
-    AgentNotifications.receive(context, update("second", false) + ("alert_group" to "thread-group"))
-
-    val summary = manager.activeNotifications.single {
-      it.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0
-    }
-    assertEquals("thread-group", summary.notification.group)
-    assertEquals(3, manager.activeNotifications.size)
-    assertEquals(null, summary.notification.sound)
-
-    AgentNotifications.clear(context)
-    assertTrue(manager.activeNotifications.isEmpty())
+    assertEquals(threadAlertId, manager.activeNotifications.single().id)
   }
 
   @Test
@@ -456,6 +445,18 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
       "Working Build feature\nDone Write tests",
       card.extras.getCharSequence(Notification.EXTRA_BIG_TEXT).toString()
     )
+    AgentNotifications.receive(
+      context,
+      data + mapOf(
+        "activity_line_0" to "Done	Write tests	Project",
+        "activity_line_1" to "Working	Build feature	Project",
+        "activity_phase" to "completed",
+        "activity_active_count" to "1",
+      )
+    )
+    val leading = manager.activeNotifications.single().notification
+    assertEquals("Done", leading.extras.getString(NotificationCompat.EXTRA_SHORT_CRITICAL_TEXT))
+    assertEquals("1 done", leading.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
     AgentNotifications.receive(context, data + ("activity_active_count" to "15"))
     assertEquals(
       "9+ live",
@@ -531,7 +532,7 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
     AgentNotifications.receive(context, update("work", true))
     AgentNotifications.receive(context, update("alert-only", false) - "active")
     assertEquals(1, manager.activeNotifications.count { it.tag == "oni-agent-activity" })
-    assertTrue(manager.activeNotifications.any { it.id == "alert-only".hashCode() })
+    assertTrue(manager.activeNotifications.any { it.id == threadAlertId })
   }
 
   @Test
@@ -572,7 +573,7 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
     AgentNotifications.expire(context, "environment", expiresAt + 60_000)
     assertEquals(1, manager.activeNotifications.count { it.tag == "oni-agent-activity" })
     AgentNotifications.expire(context, "environment", expiresAt + 2 * 60 * 60 * 1000L)
-    assertEquals(2, manager.activeNotifications.count { it.tag == "oni-agent-alert" })
+    assertEquals(1, manager.activeNotifications.count { it.tag == "oni-agent-alert" })
     assertTrue(manager.activeNotifications.none { it.tag == "oni-agent-activity" })
     assertTrue(alarms.scheduledAlarms.isEmpty())
   }
@@ -750,15 +751,19 @@ class AgentNotificationsCompletionTest : AgentNotificationsFixture() {
   }
 
   @Test
-  fun reorderedActivityDoesNotEraseNewerCardOrDropAnIndependentAlert() {
+  fun reorderedPushesNeitherEraseANewerCardNorPutOlderNewsOverNewer() {
     val now = System.currentTimeMillis()
     AgentNotifications.receive(context, update("new", true) + ("updated_at" to now.toString()))
     AgentNotifications.receive(
       context,
       finished("older-alert", now + 900000) + ("updated_at" to (now - 1000).toString())
     )
-    assertEquals(4, manager.activeNotifications.size)
+    assertEquals(2, manager.activeNotifications.size)
     assertEquals(1, manager.activeNotifications.count { it.tag == "oni-agent-activity" })
+    assertEquals(
+      now,
+      manager.activeNotifications.single { it.id == threadAlertId }.notification.`when`
+    )
     // A newer replay of a finish can show its card before the original alert lands.
     val finish = finished("finish", now + 960000)
     AgentNotifications.receive(
@@ -768,7 +773,10 @@ class AgentNotificationsCompletionTest : AgentNotificationsFixture() {
     assertEquals(1, manager.activeNotifications.count { it.tag == "oni-agent-activity" })
     AgentNotifications.receive(context, finish + ("updated_at" to (now + 1000).toString()))
     assertTrue(manager.activeNotifications.none { it.tag == "oni-agent-activity" })
-    assertTrue(manager.activeNotifications.any { it.id == "finish".hashCode() })
+    assertEquals(
+      now + 1000,
+      manager.activeNotifications.single { it.id == threadAlertId }.notification.`when`
+    )
     AgentNotifications.receive(
       context,
       finished("previous-run", now + 900000) + ("updated_at" to now.toString())
@@ -780,6 +788,54 @@ class AgentNotificationsCompletionTest : AgentNotificationsFixture() {
     assertTrue(manager.activeNotifications.none { it.tag == "oni-agent-activity" })
     shadowOf(manager).setNotificationsEnabled(false)
     AgentNotifications.receive(context, update("revoked-permission", true))
-    assertEquals(5, manager.activeNotifications.size)
+    assertEquals(now + 1000, manager.activeNotifications.single().notification.`when`)
+  }
+}
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [24, 26, 33, 36], manifest = Config.NONE)
+class AgentNotificationsThreadAlertTest : AgentNotificationsFixture() {
+  @Test
+  fun aThreadKeepsOneAlertAndAnEnvironmentsThreadsShareOneSilentSummary() {
+    val other = "/threads/environment/other"
+    AgentNotifications.receive(context, update("first", false))
+    AgentNotifications.receive(
+      context,
+      update("second", false) + ("alert_body" to "Needs approval: Test project")
+    )
+
+    val alert = manager.activeNotifications.single()
+    assertEquals(
+      "Needs approval: Test project",
+      alert.notification.extras.getString(Notification.EXTRA_TEXT)
+    )
+
+    AgentNotifications.receive(context, update("elsewhere", false) + ("alert_path" to other))
+
+    val summary = manager.activeNotifications.single {
+      it.notification.flags and Notification.FLAG_GROUP_SUMMARY != 0
+    }
+    assertEquals("oni-agent-alert:environment", summary.notification.group)
+    assertEquals(3, manager.activeNotifications.size)
+    assertEquals(null, summary.notification.sound)
+
+    AgentNotifications.clear(context)
+    assertTrue(manager.activeNotifications.isEmpty())
+  }
+
+  @Test
+  fun openingAThreadClearsItsAlertAndASummaryWithNothingLeftToGather() {
+    val other = "/threads/environment/other"
+    AgentNotifications.configure(context, "device", "onicode-dev", false)
+    AgentNotifications.receive(context, update("here", false))
+    AgentNotifications.receive(context, update("elsewhere", false) + ("alert_path" to other))
+    assertEquals(3, manager.activeNotifications.size)
+
+    AgentNotifications.clearThread(context, other)
+
+    assertEquals(threadAlertId, manager.activeNotifications.single().id)
+
+    AgentNotifications.clearThread(context, "/threads/environment/thread")
+    assertTrue(manager.activeNotifications.isEmpty())
   }
 }

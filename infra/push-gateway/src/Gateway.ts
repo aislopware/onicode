@@ -453,8 +453,22 @@ export const layer = Layer.effect(
 
         let apnsRequest;
         if (grant.k === "notification") {
-          if (message.notification === undefined) return yield* invalid("message-not-allowed");
-          apnsRequest = apnsNotificationRequest({ notification: message.notification, nowSeconds });
+          const { notification } = message;
+          if (notification === undefined) return yield* invalid("message-not-allowed");
+          apnsRequest = apnsNotificationRequest({
+            notification,
+            // A thread keeps one alert: its newest news replaces what it said before. A test alert
+            // belongs to no thread. APNs caps the id at 64 bytes, and both forms are 43 characters.
+            collapseId:
+              notification.threadId === ""
+                ? notification.id.slice(0, 64)
+                : toBase64Url(
+                    yield* Effect.promise(() =>
+                      sha256(utf8(`${notification.environmentId}/${notification.threadId}`)),
+                    ),
+                  ),
+            nowSeconds,
+          });
         } else {
           const state = message.activity?.state;
           if (state === undefined) return yield* invalid("message-not-allowed");

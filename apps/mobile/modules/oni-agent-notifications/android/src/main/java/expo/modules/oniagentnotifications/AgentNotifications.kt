@@ -112,6 +112,22 @@ object AgentNotifications {
     threadOnScreen = path
   }
 
+  /** Someone looking at a thread has seen its news, so the alert it left behind goes. */
+  @Synchronized
+  fun clearThread(context: Context, path: String) {
+    val manager = manager(context)
+    val id = path.hashCode()
+    val alert = manager.activeNotifications.firstOrNull { it.tag == ALERT_TAG && it.id == id }
+      ?: return
+    val group = alert.notification.group
+    manager.cancel(ALERT_TAG, id)
+    // A summary over one alert, or none, has nothing left to gather.
+    val others = manager.activeNotifications.count {
+      it.tag == ALERT_TAG && it.id != id && it.notification.group == group
+    }
+    if (others < 2) manager.cancel("$ALERT_TAG-summary:$group", 0)
+  }
+
   @Synchronized
   fun dismiss(context: Context, environmentId: String) {
     store(context).edit().putBoolean(key(environmentId, "dismissed"), true).apply()
@@ -191,9 +207,18 @@ object AgentNotifications {
     val title = data["alert_title"].orEmpty().take(120)
     // Grouped alerts list up to five 120-character thread titles.
     val body = data["alert_body"].orEmpty().take(608)
-    val id = alertId.hashCode()
-    val group = data["alert_group"]?.takeIf { it.isNotBlank() } ?: ALERT_TAG
+    // A thread keeps one alert: its newest news replaces what it said before.
+    val id = (data["alert_path"]?.takeIf { it.startsWith("/threads/") } ?: alertId).hashCode()
+    // One machine's threads gather in one stack.
+    val group = "$ALERT_TAG:${data["environment_id"].orEmpty()}"
+    val updatedAt = data["updated_at"]?.toLongOrNull() ?: 0L
+    val shown = manager(context).activeNotifications.firstOrNull {
+      it.tag == ALERT_TAG && it.id == id
+    }
+    // Pushes can arrive out of order; a late one must not put older news over newer.
+    if (shown != null && shown.notification.`when` > updatedAt) return
     val notification = base(context, ALERT_CHANNEL)
+      .setWhen(updatedAt)
       .setContentTitle(title).setContentText(body)
       .setStyle(NotificationCompat.BigTextStyle().bigText(body))
       .setAutoCancel(true)
@@ -207,7 +232,11 @@ object AgentNotifications {
     if (children.size > 1) {
       val style = NotificationCompat.InboxStyle()
       children.forEach {
-        style.addLine(it.notification.extras.getCharSequence(Notification.EXTRA_TEXT))
+        val extras = it.notification.extras
+        style.addLine(
+          "${extras.getCharSequence(Notification.EXTRA_TITLE)} · " +
+            "${extras.getCharSequence(Notification.EXTRA_TEXT)}"
+        )
       }
       val summary = base(context, ALERT_CHANNEL)
         .setContentTitle(title)

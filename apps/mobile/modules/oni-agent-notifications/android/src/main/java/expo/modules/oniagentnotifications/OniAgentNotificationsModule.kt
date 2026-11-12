@@ -27,6 +27,7 @@ class OniAgentNotificationsModule : Module() {
 
     Function("setThreadOnScreen") { path: String? ->
       AgentNotifications.setThreadOnScreen(path)
+      if (path != null) appContext.reactContext?.let { AgentNotifications.clearThread(it, path) }
     }
 
     Function("openLiveUpdateSettings") {

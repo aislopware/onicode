@@ -99,6 +99,19 @@ export function extractAgentNotificationDeepLink(response: unknown): string | nu
   return null;
 }
 
+/** The delivered notifications that belong to the thread at `deepLink`. */
+export function notificationIdsForThread(
+  presented: ReadonlyArray<unknown>,
+  deepLink: string,
+): ReadonlyArray<string> {
+  return presented.flatMap((notification) => {
+    const identifier = identifierFromNotificationResponse({ notification });
+    return identifier !== null && extractAgentNotificationDeepLink({ notification }) === deepLink
+      ? [identifier]
+      : [];
+  });
+}
+
 export function routeAgentNotificationResponseOnce(input: {
   readonly handledResponseIds: Set<string>;
   readonly response: unknown;

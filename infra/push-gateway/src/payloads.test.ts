@@ -56,7 +56,7 @@ describe("push payloads at the contract's limits", () => {
   });
 
   it("fits the longest alert in APNs whole", () => {
-    const { payload } = apnsNotificationRequest({ notification, nowSeconds: 0 });
+    const { payload } = apnsNotificationRequest({ notification, collapseId: "id", nowSeconds: 0 });
     expect(bytes(payload)).toBeLessThanOrEqual(4096);
     expect(payload).toMatchObject({
       aps: { alert: { title: notification.title, body: notification.body } },

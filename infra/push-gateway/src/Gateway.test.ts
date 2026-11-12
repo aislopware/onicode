@@ -236,6 +236,34 @@ describe("Gateway", () => {
     },
   );
 
+  it.effect(
+    "lets a thread's newer iOS alert replace its older one, and stacks a machine's threads",
+    () => {
+      const { layer, apnsCalls } = setup();
+      return Effect.gen(function* () {
+        const { grants, deliver } = yield* register("ios");
+        const alert = (id: string, threadId: string) =>
+          deliver(grants[0]!.grant, { notification: { ...NOTIFICATION, id, threadId } });
+        yield* alert("approval", "thread-1");
+        yield* alert("completion", "thread-1");
+        yield* alert("elsewhere", "thread-2");
+        yield* alert("test-alert", "");
+
+        const [approval, completion, elsewhere, test] = apnsCalls.map((call) => call.request);
+        assert.strictEqual(approval!.collapseId, completion!.collapseId);
+        assert.notStrictEqual(approval!.collapseId, elsewhere!.collapseId);
+        assert.strictEqual(test!.collapseId, "test-alert");
+        assert.isAtMost(approval!.collapseId!.length, 64);
+        assert.deepStrictEqual(
+          apnsCalls.map(
+            (call) => (call.request.payload as { aps: Record<string, unknown> }).aps["thread-id"],
+          ),
+          ["env-1", "env-1", "env-1", "env-1"],
+        );
+      }).pipe(Effect.provide(layer));
+    },
+  );
+
   it.effect("starts, updates and ends a Live Activity through the matching grants", () => {
     const { layer, apnsCalls } = setup();
     return Effect.gen(function* () {
