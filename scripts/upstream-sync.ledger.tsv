@@ -753,3 +753,4 @@ f423a4dba0	skip	Update-track switch persistence serves the nightly channel; Onic
 5922408c3b	take	fix(server): custom Claude models named like a Claude Code alias reach the API unchanged (#34938)
 d7454f7e39	take	fix(server): finished Claude delegates release their process (#34934)
 59ff986634	take	fix(mobile): iPhone Settings search keeps its query after switching tabs (#34893)
+b85a21e240	take	fix(mobile): Android review sheet scrolls to Submit review (#34887)
