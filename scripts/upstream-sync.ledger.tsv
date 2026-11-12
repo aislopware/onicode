@@ -551,3 +551,4 @@ a6c26d3e77	take	fix(web): the composer shows arrow ligatures like sent messages 
 85f0419d5e	take	fix(desktop): dev supervisor stops when its parent process dies (#23571)
 6e8851cc43	take	fix(server): Antigravity sign-in no longer blames the network when the runtime never starts (#29057)
 b3ce149be5	take	fix(mobile): Fast can be turned on for an existing thread (#29761)
+5099695673	take	fix(web): price dialog no longer flags a model before a price is entered (#25755)
