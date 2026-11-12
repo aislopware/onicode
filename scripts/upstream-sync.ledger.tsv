@@ -669,3 +669,4 @@ fd033dfec3	take	fix(web): improve Word document previews; kept Onicode's newer @
 55a94e2029	take	fix(web): voice settings and dictation match the rest of the app
 c0f85e7f79	take	feat(web): reply to an assistant response from its hover actions
 bc647ed535	take	fix(server): title requests about referenced threads accurately
+3a30b011c3	take	fix(web): cancelled PR checks show a gray stop sign instead of the failed X
