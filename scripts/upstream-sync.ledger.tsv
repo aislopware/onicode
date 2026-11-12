@@ -792,3 +792,4 @@ beaf28459b	take	fix(provider-core): Vite+ system_first shims update the install 
 f39c4405fa	take	fix(web): diff tab keeps its scroll position across thread switches (#35090)
 5fae2b5124	take	test(web): command palette tests clear a leaked last-used project (#35107)
 bf13d60e83	take	fix(opencode): OpenCode 2 threads see Onicode's MCP tools on their first turn (#35084)
+40526f96f6	take	fix(server): a finished turn refreshes only its own project's PR listings (#35070)
