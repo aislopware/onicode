@@ -7,6 +7,7 @@ import type {
 import {
   latestExecutedRun,
   latestRootProviderFailure,
+  orchestrationV2WorktreePending,
   runRanAfter,
   usageLimitBlockedRun,
 } from "@onicode/shared/orchestrationV2ThreadError";
@@ -60,7 +61,6 @@ import {
   latestProviderTurnForAttempt,
   parseGoalCommand,
   orchestrationV2RunWorkStartedAt,
-  orchestrationV2WorktreePending,
   ProviderInstanceId,
   ProviderInteractionMode,
   isRuntimeModeAbove,

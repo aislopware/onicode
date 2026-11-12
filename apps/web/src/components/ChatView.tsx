@@ -70,7 +70,6 @@ import {
   type AssistantCitation,
   type ChatFileAttachment,
   isProviderNativeSubagentThread,
-  orchestrationV2WorktreePending,
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
@@ -123,6 +122,7 @@ import {
 import { formatModelSlugName, resolveSelectableModel } from "@onicode/shared/model";
 import { projectScriptCwd, resolveProjectScripts } from "@onicode/shared/projectScripts";
 import { resolveProjectSettings } from "@onicode/shared/projectSettings";
+import { orchestrationV2WorktreePending } from "@onicode/shared/orchestrationV2ThreadError";
 import { resolveThreadReferenceCopyTarget } from "@onicode/client-runtime/thread-reference";
 import { resolveTerminalSessionLabel } from "@onicode/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";

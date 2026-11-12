@@ -651,3 +651,4 @@ af2421f23a	skip	fixes upstream's PR limits workflow script, which Onicode does n
 7d71f852a8	take	fix(mobile): screen readers hear when the open thread needs you or finishes (#34431)
 d47f2e03ff	take	fix(server): providers keep their saved status until the first check finishes (#34678)
 a21b43fc70	take	fix(mobile): choosing a project for a draft whose project is gone keeps the draft (#26800)
+d63db06436	take	fix(contracts): side chats open after an abandoned worktree setup (#34686)
