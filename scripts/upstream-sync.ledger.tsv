@@ -795,3 +795,4 @@ bf13d60e83	take	fix(opencode): OpenCode 2 threads see Onicode's MCP tools on the
 40526f96f6	take	fix(server): a finished turn refreshes only its own project's PR listings (#35070)
 8f54d4b1a9	take	fix(desktop): exits that skip quit are recorded in the trace and logs (#35097)
 2b7e975a97	take	fix(clients): say "Starting Claude" until the provider actually starts (#35008)
+01200aaf8e	take	fix(mobile): long thread titles in the @ picker keep their Thread marker (#35062)
