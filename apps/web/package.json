@@ -7,8 +7,10 @@
     "build:ghostty-wasm": "bash scripts/build-libghostty-wasm.sh",
     "dev": "vp dev",
     "build": "vp build",
+    "i18n:generate": "gt generate",
     "preview": "vp preview",
-    "test": "vp test run --passWithNoTests --project unit --project browser"
+    "test": "vp test run --passWithNoTests --project unit --project browser",
+    "i18n:translate": "gt translate"
   },
   "dependencies": {
     "@base-ui/react": "^1.9.0",
@@ -58,6 +60,7 @@
     "effect": "catalog:",
     "entities": "9.0.0",
     "fast-xml-parser": "5.12.0",
+    "gt-react": "11.4.18",
     "hast-util-to-html": "^9.0.6",
     "hast-util-to-jsx-runtime": "^2.3.7",
     "heic-to": "^1.6.7",
@@ -101,6 +104,7 @@
     "@types/use-sync-external-store": "^1.7.0",
     "@vitejs/plugin-react": "^6.3.0",
     "@vitest/browser-playwright": "5.1.0",
+    "gt": "2.27.0",
     "micromark-util-types": "catalog:",
     "oxc-transform-react": "~0.156.0",
     "playwright": "1.65.0",

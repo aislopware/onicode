@@ -599,3 +599,4 @@ cf65084c97	take	fix(server): Antigravity install names network failures and 16 K
 60ec7fc7f4	take	fix(desktop): check Onicode home ownership before starting the local backend
 3af501840b	take	fix(server): open projects in a new VS Code window
 c0b67b7631	take	fix(web): wrap interruption footers as one sentence
+2a6b2c8298	take	feat(web): switch the UI language from Settings, with Spanish and Chinese (#31313)

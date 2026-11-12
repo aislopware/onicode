@@ -6,6 +6,7 @@ import "./index.css";
 
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
+import { whenLocaleReady } from "./i18n/runtime";
 import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 
 const router = startAppServices();
@@ -22,8 +23,10 @@ window.addEventListener("vite:preloadError", (event) => {
 
 const app = <AppRoot router={router} />;
 
+// Chained so settings have usually hydrated; English resolves without a chunk load.
 export const startup = router
   .load()
+  .then(whenLocaleReady)
   .then(() => {
     // Route chunk failures resolve router.load() and surface later through the error boundary.
     if (reloadScheduled) return;
