@@ -804,3 +804,4 @@ abbd967c4b	take	fix(web): PR comment hover excerpts no longer end in a replaceme
 efd683ccc3	take	fix(web): a failed send leaves the timeline when a new draft was typed (#35102)
 cb931fcbe2	take	fix(web): a save in one tab no longer erases what another tab saved (#35110)
 80cccdcef3	take	fix(server): projects read their own Git repository when the server inherited GIT_DIR (#35119)
+3d6ece2b29	take	fix(web): file links the agent cited from another project open that project's file (#35036)
