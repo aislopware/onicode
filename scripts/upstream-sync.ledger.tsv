@@ -769,3 +769,4 @@ a4d0a06e7f	take	perf(server): sending to a very long thread reads about 5x less 
 25123c28d4	take	fix(shared): html_render pages from OpenCode 2 Code Mode show and are cleaned up (#35022)
 c17ec829d0	take	fix(web): overlong content search queries explain the 256-character limit (#35020)
 1a5d3737b7	take	fix(server): Claude replies stream paragraph by paragraph again (#35037)
+37e0fd378a	take	fix(server): a run whose recovery state can't be read fails instead of staying starting (#35013)
