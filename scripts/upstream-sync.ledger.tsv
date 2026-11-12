@@ -821,3 +821,4 @@ e6119fdf68	take	fix(web): browser settings changed in project scope no longer ov
 1de3c3c68c	take	fix(server): a pass that changes several watched pull requests wakes their thread once (#35109)
 51b1858b0e	take	fix(server): a slow file read in the search watcher no longer freezes the server (#35059)
 1c9d32fe3c	take	fix(shared): composer # suggestions sort by update instant, not timestamp text (#35137)
+3a815e9749	take	fix(client-runtime): relative Markdown images in a remote thread no longer show the desktop's file (#35031)
