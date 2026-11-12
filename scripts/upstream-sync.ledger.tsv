@@ -481,3 +481,4 @@ f1d402009a	take	perf(server): trace database reclamation once per pass (#32923)
 43ba03c82a	take	fix(server): preview_wait_for stops at its timeout when the page stops answering (#32846)
 fdaf883293	skip	AUR packaging; Onicode ships no AUR packages
 669aa32e0d	take	fix(server): keep Codex loaded when reasoning effort changes (#32915)
+6a5d6085ba	take	fix(web): prompt links work for encoded thread IDs (#32959)
