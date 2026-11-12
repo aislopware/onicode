@@ -437,3 +437,4 @@ f31ce3eeb5	skip	Onicode's service/bootService.ts already passes the process runn
 00766e2c02	take	fix(server): fail any provider turn stuck in a retry (#33152)
 074b452d29	take	fix(server): migrate compatible legacy service install state (#19449)
 fdcf27211e	take	docs(orchestration-v2): task_cancel describes queued-only tasks and when it rejects (#34517)
+a8ccf14d06	take	fix(server): stop a Codex app-server that ignores SIGTERM (#34461)
