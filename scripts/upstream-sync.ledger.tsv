@@ -503,3 +503,4 @@ f04a9e14c7	take	fix(server): refresh stale model catalogs before refusing delega
 009c9e6bd7	take	fix(server): an agent's Stop no longer reads as the user's (#33420)
 e8afdb0624	take	fix(server): idle compaction no longer runs in the middle of delegated work (#33863)
 4eb20e4d38	take	fix(shared): clicked HTML images keep whole emoji in capped names (#33829)
+84265950ea	take	fix(server): large tool summaries no longer split an emoji at the cap (#33832)
