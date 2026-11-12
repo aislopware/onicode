@@ -776,3 +776,4 @@ becc7d3510	take	fix(server): Tailscale Serve no longer takes a live server's rou
 ac781dcb77	take	fix(server): delegate_task wait returns its task handle before Node fetch's 300 s timeout (#35032)
 7a39060072	take	fix(server): a damaged state database fails startup with its path and how to recover (#35057)
 e1fad19018	take	fix(desktop): a login shell slower than 5s at launch still yields its PATH (#35033)
+3ec8347a69	take	fix(opencode): a slow OpenCode 2 server start no longer leaves the model list empty (#35049)
