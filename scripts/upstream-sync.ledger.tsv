@@ -702,3 +702,4 @@ c833a60de2	take	fix(server): tell the thread when its worktree branch keeps the 
 7fc9aa6ed9	take	fix(shared): typing after a skill chip no longer reparses the prompt as math (#34816)
 9786b82b09	take	fix(provider-acp): wait_for_exit answers when a background child holds the output pipes (#34825)
 a86ffacc37	take	fix(server): Claude sets a /goal that also mentions a skill (#34818)
+9e716b694a	take	fix(server): resumed Claude sessions wait for their MCP servers (#34822)
