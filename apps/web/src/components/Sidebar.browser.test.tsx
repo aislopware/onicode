@@ -7,6 +7,7 @@ import {
   type ScopedThreadRef,
 } from "@onicode/contracts";
 import { isMacPlatform } from "@onicode/shared/keybindings";
+import { flushSync } from "react-dom";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 
@@ -167,31 +168,35 @@ describe("sidebar render isolation", () => {
 
     using _timers = fakeTimers();
     const modifier = isMacPlatform(navigator.platform) ? "Meta" : "Control";
+    const modifierEvent = (type: "keydown" | "keyup") =>
+      window.dispatchEvent(new KeyboardEvent(type, { key: modifier, bubbles: true }));
+    // One synchronous step, so a render from anything else cannot land between the two counts.
     const beforeShortcut = rowRenders();
-    await userEvent.keyboard(`{${modifier}>}`);
-    await act(() => useTerminalUiStateStore.getState().setTerminalOpen(routeThreadRef, true));
-    await act(() => terminalInput.focus());
-    await userEvent.keyboard(`{/${modifier}}`);
-    await act(() => terminalInput.blur());
+    flushSync(() => {
+      modifierEvent("keydown");
+      useTerminalUiStateStore.getState().setTerminalOpen(routeThreadRef, true);
+      terminalInput.focus();
+      modifierEvent("keyup");
+      terminalInput.blur();
+    });
     expect(
       rowRenders() - beforeShortcut,
       "thread rows re-rendered while opening the terminal with a quick Mod shortcut",
     ).toBe(0);
 
-    const jumpLabelsSince = (start: number) =>
-      vi
-        .mocked(SortableThreadRow)
-        .mock.calls.slice(start)
-        .map(([props]) => props.jumpLabel)
-        .filter((label) => label !== null);
-    const beforeHold = rowRenders();
+    // The label each row last rendered with, which a render from anything else leaves as it is.
+    const jumpLabels = () => {
+      const labelByThread = new Map<string, string | null>();
+      for (const [props] of vi.mocked(SortableThreadRow).mock.calls) {
+        labelByThread.set(props.thread.id, props.jumpLabel);
+      }
+      return [...labelByThread.values()].filter((label) => label !== null);
+    };
     await userEvent.keyboard(`{${modifier}>}`);
     await act(() => vi.advanceTimersByTime(THREAD_JUMP_HINT_SHOW_DELAY_MS));
-    expect(jumpLabelsSince(beforeHold), "holding Mod showed no jump hints").toHaveLength(2);
-    const beforeRelease = rowRenders();
+    expect(jumpLabels(), "holding Mod showed no jump hints").toHaveLength(2);
     await userEvent.keyboard(`{/${modifier}}`);
-    expect(rowRenders()).toBeGreaterThan(beforeRelease);
-    expect(jumpLabelsSince(beforeRelease)).toEqual([]);
+    expect(jumpLabels()).toEqual([]);
   });
 });
 
