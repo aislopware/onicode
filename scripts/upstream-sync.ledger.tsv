@@ -813,3 +813,4 @@ e89c8ce014	take	fix(server): a file ticked Viewed before loading a push shows Ch
 a33d50a539	take	fix(server): committing a large selection of files no longer fails with spawn E2BIG (#35128)
 86ae1747ad	take	fix(server): Claude threads resume the session /clear started (#35054)
 8b2763f638	take	perf(mobile): each environment sends about 85% less data at launch (#35072)
+7d3635e572	take	perf(server): oversized transcript exports fail fast and thread opens skip unused handoff bodies (#34547)
