@@ -787,3 +787,4 @@ f10a5029f5	take	fix(web): Files tree keeps expanded folders across remounts (#35
 4ff329d108	take	fix(server): fork PRs into gh's upstream base use an owner-qualified head (#35055)
 002dc9b644	take	fix(web): file names with a backslash no longer split into folders in the Changes card (#35075)
 6da3ff23d2	take	fix(server): automatic pulls and pull request refresh let slow checkouts finish (#35014)
+12b29eb71d	take	fix(server): Codex turns use the configured reasoning summary instead of forcing detailed (#35089)
