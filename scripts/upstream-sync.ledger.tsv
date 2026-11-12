@@ -736,3 +736,4 @@ c9211b6abb	take	fix(server): favicon lookups for a missing project folder are ca
 74ffe35c73	take	fix(provider-core): Codex turns refused by a managed access policy say so instead of 'retry' (#34871)
 e77384bf00	take	fix(server): Claude forked skills record the model they run on (#34848)
 96905b9cf4	skip	Onicode has no @vercel dependencies to override
+080b10c408	take	fix(server): new worktrees survive git printing over 1 MB (#34889)
