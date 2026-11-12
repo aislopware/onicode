@@ -811,3 +811,4 @@ e89c8ce014	take	fix(server): a file ticked Viewed before loading a push shows Ch
 06274896ee	take	fix(server): selected-file commits during a cherry-pick or revert are refused (#35120)
 83ee96f485	take	fix(web): chat text selection stays continuous while scrolling (#35074)
 a33d50a539	take	fix(server): committing a large selection of files no longer fails with spawn E2BIG (#35128)
+86ae1747ad	take	fix(server): Claude threads resume the session /clear started (#35054)
