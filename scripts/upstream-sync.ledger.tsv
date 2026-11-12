@@ -719,3 +719,4 @@ c085a0aa5d	take	fix(server): a slow baseline checkpoint no longer holds every pr
 6b2591b252	take	fix(source-control): a query or fragment after .git keeps the repository identity (#34857)
 dcad1942a9	take	fix(client-runtime): provider toggles no longer wait for another provider's update (#34858)
 555bb2f973	take	fix(desktop): Linux desktop builds run the packaged-server self-check (#34863)
+db04d3abe9	take	fix(server): subagent threads get short ids agents can quote back (#34877)
