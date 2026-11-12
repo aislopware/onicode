@@ -627,3 +627,4 @@ a24f7a1150	take	fix(web): code blocks always show their own highlighted source (
 b9d9aab234	take	fix(pi): long tool calls no longer share a session approval with different calls (#34528)
 35557e648f	take	fix(cli): thread, project, and connect commands skip a server that is gone (#34529)
 9c7f6ebf31	take	fix(server): file metadata lookups skip the server's own state files (#34530)
+8df455c09b	take	fix(acp-registry): ACP Registry installs only change the mode of a contained command (#34531)
