@@ -631,3 +631,4 @@ b9d9aab234	take	fix(pi): long tool calls no longer share a session approval with
 76b3e3390e	take	fix(server): MCP tokens still expire after the clock steps back (#34532)
 2bcbdae06a	take	fix(server): ChatGPT sign-in keeps listening after a stray callback request (#34533)
 3e90486b75	take	fix(mobile): show and let users skip compaction before sending to stale Claude threads (#34482)
+1c65ad032e	take	fix(web): Cmd+A in the rendered Markdown preview selects only the file (#30738)
