@@ -13,6 +13,7 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
+    "@onicode/contracts": "workspace:*",
     "@onicode/shared": "workspace:*",
     "effect": "catalog:"
   },

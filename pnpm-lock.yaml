@@ -2233,6 +2233,9 @@ importers:
 
   packages/tailscale:
     dependencies:
+      '@onicode/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@onicode/shared':
         specifier: workspace:*
         version: link:../shared
