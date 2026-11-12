@@ -529,3 +529,4 @@ a4ab7dd707	take	fix(server): close scratch browser contexts when page creation f
 b9381c257d	take	fix(server): Claude Plan mode runs t3_background_wait without asking (#34343)
 1b42b169a3	take	fix(server): preserve spaces in Git remote URLs (#34324)
 8e89fe1918	take	fix(server): usage no longer waits on Muse home discovery (#30859)
+214f1baf71	take	fix(server): capture device screenshots through their selected host (#34313)
