@@ -828,3 +828,4 @@ a94846d4c5	take	fix(web): file editor carets and selections follow code font cha
 e93f2a5181	take	fix(server): schedule_task no longer tells agents bindToCurrentThread always defaults to true (#34950); kept Onicode budget, mcpToolListJsonBytes 46085->46081
 71dfe27e45	take	fix(web): an untouched sidebar thread rename keeps a title that arrived while it was open (#35174)
 fc6c7c8b27	take	fix(server): usage model details count the real unpriced tokens (#35179)
+3e03072eb6	take	perf(server): thread list reads no longer scan a long thread's runs and items (#35167); migrations renumbered 084/085 -> 090/091
