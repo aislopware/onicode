@@ -456,3 +456,4 @@ d6e5f2e06f	take	fix(server): Claude effort changes apply to the running turn (#3
 e63d80a065	take	test(web): check custom worksheet targets at the preparation layer (#34586)
 6464729c56	take	fix(web): improve PowerPoint slide font rendering (#34453)
 1264c206ae	take	fix(server): worktree launches refuse branch names an existing branch blocks (#29328)
+eceeab4d5c	take	fix(web): Cmd+F in the Files panel focuses its search (#34346)
