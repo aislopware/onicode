@@ -576,3 +576,4 @@ bd5ed4dac8	take	fix(provider-cursor): Cursor sign-in shows why it failed (#25938
 c8ddb2203e	take	fix(desktop): middle-click paste follows gtk-enable-primary-paste on Linux
 c501ccad57	take	fix(server): PR watch waits for queued GitHub workflow runs
 6e6b6a7365	take	fix(opencode): stopped sessions can fork after a lost end event
+ea6af468a7	take	fix(server): @ file search matches paths containing square brackets
