@@ -653,3 +653,4 @@ d47f2e03ff	take	fix(server): providers keep their saved status until the first c
 a21b43fc70	take	fix(mobile): choosing a project for a draft whose project is gone keeps the draft (#26800)
 d63db06436	take	fix(contracts): side chats open after an abandoned worktree setup (#34686)
 4ae66e2e86	take	fix(opencode): project-defined models appear in that project's picker (#24585)
+2cd799642b	skip	reads ~/.claude.json for claude.ai account IDs; Onicode reads Claude only through the Agent SDK
