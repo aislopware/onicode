@@ -490,3 +490,4 @@ d7fedc5743	take	fix(server): Claude live command output no longer starts with ï¿
 3430a77b1c	take	fix(server): Linux startup no longer waits up to a minute on hostnamectl (#33068)
 98837f1a5e	take	docs(claude): explain enabling Claude in Chrome with --chrome (#32871)
 2b6eb63a4d	take	perf(opencode): stopping an OpenCode server no longer always waits a full second (#33621)
+301999c325	take	fix(server): git 2.56 broken-gitfile worktrees count as non-repositories again (#33423)
