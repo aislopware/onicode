@@ -509,3 +509,4 @@ e8afdb0624	take	fix(server): idle compaction no longer runs in the middle of del
 e9eb473d52	take	perf(server): Storage Cleanup sizes leftover worktrees about 4.8x faster (median 13,343 ms -> 2,759 ms) (#33937)
 3a0bcba00a	take	fix(shared): GitLab merge request file and line links open that file (#34607)
 fb4bf0722a	take	fix(server): provider update commands get no stdin, so one that reads it fails fast (#33974)
+0c6b5afef2	take	fix(server): keep the last page state in agent recordings (#33931)
