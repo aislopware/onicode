@@ -205,6 +205,7 @@ const layerBrowserSession = Layer.succeed(
     isPartition: (partition) => partition.startsWith("persist:onicode-preview-"),
     getSession: () => Effect.succeed(previewSession as unknown as Electron.Session),
     clearCookies: () => Effect.void,
+    cookiesCleared: () => Effect.void,
     clearCache: () => Effect.void,
   }),
 );
