@@ -835,3 +835,4 @@ f419698aea	take	feat(web): drop folders on the sidebar to add them as projects (
 d412871f27	take	fix(server): a task on a linked environment stays under its parent in trimmed shell snapshots (#34870)
 64959eb969	take	fix(web): terminal Ctrl+Shift+C copies on non-Latin keyboard layouts (#35210)
 5e2438ce94	take	perf(server): sending to a thread with thousands of finished subagents reads about half as much (#35178)
+65c0195b46	take	fix(mobile): the thread list no longer reshuffles once per environment on startup (#34596)
