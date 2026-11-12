@@ -471,3 +471,4 @@ a98466b3f8	take	docs: remove the broken composer banner reference (#34443)
 b703fdbfdb	take	fix(server): a git action that fails partway refreshes the Git panel (#29651)
 358bb71048	skip	T3 Connect link proofs; Onicode removed Connect and the relay
 23132f8338	take	fix(github): pull requests missing refs/pull/N/head no longer show as not found (#25947)
+1f6d9e789a	take	fix(acp): preserve outgoing error data (#32390)
