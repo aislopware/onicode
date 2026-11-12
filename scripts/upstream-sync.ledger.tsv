@@ -698,3 +698,4 @@ dbfbe3993f	take	fix(web): questions without options no longer mention a selected
 71e1f2ac51	take	fix(server): threads launched in the project folder record its branch (#34812)
 c833a60de2	take	fix(server): tell the thread when its worktree branch keeps the temporary name (#34813)
 2ed6f109f4	take	fix(server): fresh-session schedules start while an old session has background work (#34811)
+1a1f9ac18e	take	fix(web): Ctrl/Cmd+Enter sends new threads when the send shortcut needs it (#34810)
