@@ -12,6 +12,7 @@ import * as DesktopConfig from "../app/DesktopConfig.ts";
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
 import * as ElectronUpdater from "../electron/ElectronUpdater.ts";
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
+import * as DesktopSshEnvironment from "../ssh/DesktopSshEnvironment.ts";
 import * as DesktopState from "../app/DesktopState.ts";
 import * as DesktopUpdatePolicy from "./DesktopUpdatePolicy.ts";
 import * as DesktopUpdates from "./DesktopUpdates.ts";
@@ -119,6 +120,12 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     syncAllAppearance: () => Effect.void,
   } satisfies ElectronWindow.ElectronWindow["Service"]);
 
+  const layerSshEnvironment = Layer.mock(DesktopSshEnvironment.DesktopSshEnvironment, {
+    closeAllTunnels: Effect.sync(() => {
+      installSteps.push("closeSshTunnels");
+    }),
+  });
+
   let backendDesiredRunning = options.backendDesiredRunning ?? true;
   const stubBackendInstance: DesktopBackendPool.DesktopBackendInstance = {
     id: DesktopBackendPool.PRIMARY_INSTANCE_ID,
@@ -208,6 +215,7 @@ export function makeHarness(options: UpdatesHarnessOptions = {}) {
     Layer.provideMerge(layerUpdater),
     Layer.provideMerge(layerWindow),
     Layer.provideMerge(layerBackend),
+    Layer.provideMerge(layerSshEnvironment),
     Layer.provideMerge(DesktopState.layer),
     Layer.provideMerge(
       DesktopConfig.layerTest({
