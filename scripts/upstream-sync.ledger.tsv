@@ -617,3 +617,4 @@ cacdbb2163	take	fix(desktop): a maximized window reopens on the display it was l
 d21daa78e0	take	fix(cli): t3 thread finds the project from inside its git worktrees (#30802)
 8af1fc110e	take	fix(dev): import seed snapshots with peer preview migrations (#25058)
 98fd5f2fe2	take	fix(desktop): AppImage updates no longer leave old runtimes and mounts running (#29672)
+6d35d09060	take	fix(cli): t3 triage points at the prompt when the agent fails to start (#28192)
