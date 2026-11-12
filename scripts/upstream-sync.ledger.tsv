@@ -439,3 +439,4 @@ f31ce3eeb5	skip	Onicode's service/bootService.ts already passes the process runn
 fdcf27211e	take	docs(orchestration-v2): task_cancel describes queued-only tasks and when it rejects (#34517)
 a8ccf14d06	take	fix(server): stop a Codex app-server that ignores SIGTERM (#34461)
 9994396504	take	fix(server): branch totals stop relisting untracked files after a failed listing (#34460)
+06bd84623b	take	test(server): wire budget covers stale todo lists in long threads (#34522)
