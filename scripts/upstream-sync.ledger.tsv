@@ -582,3 +582,4 @@ d27d03b6d3	take	fix(provider-core): recheck a failed sign-in when settings are a
 52ba328982	take	fix(server): avoid reparsing streamed replies from the beginning
 50952beccc	take	fix(server): No project behind a symlinked scratch folder stays No project
 04be2b365f	take	fix(server): Codex and Pi runs report the model the provider ran
+c642c4b57d	take	fix(server): settling a Codex thread stops its MCP servers right away
