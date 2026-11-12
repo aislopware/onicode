@@ -679,3 +679,4 @@ a41b882060	take	fix(server): advertise the tailnet name when sshd listens only o
 ea22b5ffc7	take	fix(web): preview address bar waits for the IME to finish before navigating (#34750)
 82465ed26a	take	fix(tailscale): Tailscale HTTPS is advertised only when it reaches this Onicode server (#34744)
 f991781872	take	fix(server,web,mobile): messages from a linked environment name the thread that sent them (#34721)
+bb646d2cad	take	fix(shared): links to bracketed filenames keep their folder labels (#34759)
