@@ -524,3 +524,4 @@ b859968cab	take	fix(web): a pending approval is announced once, not once per que
 905311d37e	take	test(server): keep the OpenZFS zed launch test off host system bins (#34277)
 96a2f0a776	skip	relay client install; Onicode removed the relay
 2597756eec	take	fix(server): re-probe Codex when its auth.json changes (#34320)
+a4ab7dd707	take	fix(server): close scratch browser contexts when page creation fails (#34310)
