@@ -419,3 +419,4 @@ c4cf58511b	take	fix(server): long Claude sessions import instead of being skippe
 731c87334c	take	fix(desktop): a hidden preview tab no longer keeps the display awake after a screenshot (#25978)
 52c1491c8a	take	fix(server): successful worktree handoffs complete normally (#24545)
 81e9368c4a	take	fix(mobile): swipe action labels stay whole at larger Android text sizes (#27335)
+173374c4a7	take	fix(server): opening a pull request loads while its host is rate-limited (#27595)
