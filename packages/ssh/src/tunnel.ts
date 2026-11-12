@@ -508,7 +508,10 @@ if ! oni_runtime_ready; then
     if command -v curl >/dev/null 2>&1; then curl -fsSL --connect-timeout 30 --max-time "$3" "$1" -o "$2"
     elif command -v wget >/dev/null 2>&1; then wget -q --timeout=30 --tries=1 "$1" -O "$2"
     else printf 'Remote host needs curl or wget to download %s.\\n' "$ONICODE_ARCHIVE" >&2; exit 1
-    fi
+    fi || {
+      printf 'Could not download onicode %s from %s. If this host cannot reach it, install onicode %s on it with https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.sh (ONICODE_VERSION=%s; ONICODE_RELEASE_BASE_URL selects a mirror).\\n' "$ONICODE_ARCHIVE_VERSION" "$1" "$ONICODE_ARCHIVE_VERSION" "$ONICODE_ARCHIVE_VERSION" >&2
+      exit 1
+    }
   }
   oni_fetch "$ONICODE_RELEASE_BASE_URL/v$ONICODE_ARCHIVE_VERSION/SHA256SUMS" "$ONICODE_STAGING/SHA256SUMS" @@ONICODE_ARCHIVE_CHECKSUMS_SECONDS@@
   oni_fetch "$ONICODE_RELEASE_BASE_URL/v$ONICODE_ARCHIVE_VERSION/$ONICODE_ARCHIVE" "$ONICODE_STAGING/$ONICODE_ARCHIVE" @@ONICODE_ARCHIVE_DOWNLOAD_SECONDS@@
