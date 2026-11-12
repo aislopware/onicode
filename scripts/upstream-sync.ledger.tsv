@@ -767,3 +767,4 @@ a4d0a06e7f	take	perf(server): sending to a very long thread reads about 5x less 
 09e1751a16	take	fix(server): Codex sign-in hint names the instance's CODEX_HOME (#35004)
 3126806749	take	fix(server): project identity follows gh repo set-default (#35005)
 25123c28d4	take	fix(shared): html_render pages from OpenCode 2 Code Mode show and are cleaned up (#35022)
+c17ec829d0	take	fix(web): overlong content search queries explain the 256-character limit (#35020)
