@@ -688,3 +688,4 @@ a25654c396	take	fix(server): block incompatible migration history in preflight; 
 8212aaaf4d	take	fix(server): a new worktree thread's agent starts on its renamed branch (#34781)
 6de770c1e6	take	fix(server): ACP retries a config option whose write failed for a reason other than refusal (#34782)
 62dc589d6d	skip	upstream repo governance (VOUCHED.td denounce list); Onicode has no vouching file
+a18a458f25	take	fix(cursor): resume moved threads from their original session store (#34794)
