@@ -756,3 +756,4 @@ d7454f7e39	take	fix(server): finished Claude delegates release their process (#3
 b85a21e240	take	fix(mobile): Android review sheet scrolls to Submit review (#34887)
 26433ac070	take	fix(server): boot service log is emptied in place once it passes 10 MiB (#34886); cloud/ hunks applied to Onicode's service/
 5c0eb5124e	take	fix(server): a missed fixed-time slot shows as failed on its scheduled task (#34815); webhook-area conflict resolved by hand, tests drop the SecretRequests mock
+2de337003d	take	fix(server): Stop interrupts a provider turn that starts while it lands (#34912); conflict dropped upstream's turnAnalytics line
