@@ -592,3 +592,4 @@ aeaf19cc61	take	fix(server): a slow or broken hosting CLI is no longer told to i
 35f5398445	take	fix(server): only offer desktop app updates the desktop can install
 d9805b2ca6	take	fix(server): closing preview tabs runs beforeunload handlers
 fe565c8958	take	fix(server): storage cleanup keeps edits hidden from git status
+1de5fee69c	take	fix(server): price OpenCode Go usage from opencode_go rates
