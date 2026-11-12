@@ -505,6 +505,8 @@ it.layer(layer)("OpenCodeDriver runtime selection", (it) => {
           "/api/debug/location": "[]",
           "/api/command": OPENCODE_2_WORKSPACE_RESPONSES["/api/command"].body,
           "/api/skill": OPENCODE_2_WORKSPACE_RESPONSES["/api/skill"].body,
+          "/api/model": '{"location":{"directory":"/work"},"data":[]}',
+          "/api/provider": '{"location":{"directory":"/work"},"data":[]}',
         };
         const http = HttpClient.make((request) => {
           const path = new URL(request.url).pathname;
