@@ -700,3 +700,4 @@ c833a60de2	take	fix(server): tell the thread when its worktree branch keeps the 
 2ed6f109f4	take	fix(server): fresh-session schedules start while an old session has background work (#34811)
 1a1f9ac18e	take	fix(web): Ctrl/Cmd+Enter sends new threads when the send shortcut needs it (#34810)
 7fc9aa6ed9	take	fix(shared): typing after a skill chip no longer reparses the prompt as math (#34816)
+9786b82b09	take	fix(provider-acp): wait_for_exit answers when a background child holds the output pipes (#34825)
