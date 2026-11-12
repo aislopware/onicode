@@ -662,3 +662,4 @@ e304dab94b	take	fix(server): t3 theme updates a dev server running in the defaul
 489fa8c052	take	fix(cursor): hide duplicate pooled usage limits
 afe0528039	take	fix(web): keep git action loading rows at idle height
 2248ca8db9	take	fix(cursor): steer the live run without reconnecting
+d9a54ec645	take	fix(web): file breadcrumbs keep backslashes in POSIX folder names
