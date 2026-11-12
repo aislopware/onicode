@@ -742,3 +742,4 @@ e77384bf00	take	fix(server): Claude forked skills record the model they run on (
 2b07556d71	take	fix(web): a stashed prompt ending in a skill or file chip restores as a chip (#28352)
 34de974868	take	fix(web): clicking the timeline's empty padding keeps following a streaming reply (#34899)
 b63b559c05	take	fix(server): browser setup command names the running onicode executable, not another onicode on PATH (#34936)
+0b1b9d471a	take	fix(desktop): app opens after an update while the old server shuts down (#34932)
