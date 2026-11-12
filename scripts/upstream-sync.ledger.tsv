@@ -649,3 +649,4 @@ af2421f23a	skip	fixes upstream's PR limits workflow script, which Onicode does n
 8214342385	take	fix(web): collapsed PR comments no longer show raw HTML (#32283)
 34e7b6601b	take	fix(server): oni_thread_list counts threads waiting on background work as live (#34674)
 7d71f852a8	take	fix(mobile): screen readers hear when the open thread needs you or finishes (#34431)
+d47f2e03ff	take	fix(server): providers keep their saved status until the first check finishes (#34678)
