@@ -433,3 +433,4 @@ f31ce3eeb5	skip	Onicode's service/bootService.ts already passes the process runn
 9ef259e517	take	fix(mobile): sidebar empty states and repeated usage notices (#33188)
 34b50df534	take	ci: stop uploading per-shard test cache reports (#34525)
 11f61a5327	take	refactor(mobile): lists use LegendList, FlatList is a restricted import (#34513)
+836b86a5d6	take	fix(chat): keep final replies visible after steering (#34501)
