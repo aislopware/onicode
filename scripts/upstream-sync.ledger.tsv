@@ -738,3 +738,4 @@ e77384bf00	take	fix(server): Claude forked skills record the model they run on (
 96905b9cf4	skip	Onicode has no @vercel dependencies to override
 080b10c408	take	fix(server): new worktrees survive git printing over 1 MB (#34889)
 4be96e0514	take	fix(server): status of a new repository no longer waits on huge untracked files (#34916)
+1e848876ee	take	fix(web): a sidebar click no longer gets lost when the release reports no buttons (#34929)
