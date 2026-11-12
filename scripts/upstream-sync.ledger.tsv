@@ -774,3 +774,4 @@ c17ec829d0	take	fix(web): overlong content search queries explain the 256-charac
 805251b670	take	fix(server): thread setting changes no longer end a Claude session's background work (#35029)
 becc7d3510	take	fix(server): Tailscale Serve no longer takes a live server's route and repairs one left on a dead port (#35042)
 ac781dcb77	take	fix(server): delegate_task wait returns its task handle before Node fetch's 300 s timeout (#35032)
+7a39060072	take	fix(server): a damaged state database fails startup with its path and how to recover (#35057)
