@@ -797,3 +797,4 @@ bf13d60e83	take	fix(opencode): OpenCode 2 threads see Onicode's MCP tools on the
 2b7e975a97	take	fix(clients): say "Starting Claude" until the provider actually starts (#35008)
 01200aaf8e	take	fix(mobile): long thread titles in the @ picker keep their Thread marker (#35062)
 12d4c62214	take	fix(web): every settings nav group has a name for screen readers (#35101)
+b2e86d7902	take	fix(web): an invalid provider setting is refused at its field instead of taking the provider offline (#35100)
