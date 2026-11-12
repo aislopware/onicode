@@ -634,3 +634,4 @@ b9d9aab234	take	fix(pi): long tool calls no longer share a session approval with
 1c65ad032e	take	fix(web): Cmd+A in the rendered Markdown preview selects only the file (#30738)
 cd8fc91a57	skip	only serves phone/tablet browsers running the web renderer; Onicode's renderer is Electron-only (browser identity code removed), and the 'Open from a computer' message would mislead on a desktop with no remote editors
 1c3d5f7e82	take	fix(web): a link to a thread on a linked machine no longer opens a blank pane (#34657)
+f6b260df15	take	fix(server): self-update moves the onicode command to the new runtime (#14875); cloud/ hunks applied to service/
