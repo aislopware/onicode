@@ -25,6 +25,7 @@ import { assetResponseHeaders } from "../http.ts";
 import * as PreviewBrowserHost from "./PreviewBrowserHost.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
 import { requestUrl } from "../requestUrl.ts";
+import { declineSocketCompression } from "../socketCompression.ts";
 
 const PREVIEW_STREAM_ROUTE_PREFIX = "/api/preview-stream";
 const TAB_GONE_CODE = 4404;
@@ -103,9 +104,8 @@ const makeHandler = Effect.fnUntraced(function* (browser: ServerBrowser.ServerBr
           }),
         );
       const incoming = NodeHttpServerRequest.toIncomingMessage(request);
-      // JPEGs are already compressed. Disabling deflate also keeps all
-      // pending writes in the socket buffer we bound below, not a zlib queue.
-      delete incoming.headers["sec-websocket-extensions"];
+      // Without deflate, pending writes also stay in the socket buffer bounded below, not a zlib queue.
+      declineSocketCompression(request);
       const transport = incoming.socket;
       const socket = yield* request.upgrade;
       const reader = yield* socket.reader;

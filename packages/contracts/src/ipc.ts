@@ -3,6 +3,7 @@ import type { PreviewCaptureFailureEncoded } from "./previewCapture.ts";
 
 import { SnapShotSource } from "./chatAttachment.ts";
 import { EnvironmentId, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import type { RemoteDesktopHostCapabilities, RemoteDesktopInputBatch } from "./remoteDesktop.ts";
 import { BrowserProfileId } from "./browserProfile.ts";
 import type {
   BrowserImportResult,
@@ -1068,6 +1069,25 @@ export interface DesktopBridge {
   setConnectionCatalog: (catalog: string) => Promise<boolean>;
   discoverSshHosts: () => Promise<readonly DesktopDiscoveredSshHost[]>;
   resolveSshHost: (alias: string) => Promise<DesktopSshEnvironmentTarget>;
+  remoteDesktop: {
+    capabilities: () => Promise<RemoteDesktopHostCapabilities>;
+    /** Prompts for what is missing and reports what the OS allows afterwards. */
+    requestPermissions: () => Promise<RemoteDesktopHostCapabilities>;
+    /** While active, closing the window hides it on macOS: its renderer is the host. */
+    setHosting: (active: boolean) => Promise<void>;
+    /** Makes this renderer's next `getDisplayMedia` call capture the display; null disarms it. */
+    armCapture: (displayId: string | null) => Promise<boolean>;
+    input: (batch: RemoteDesktopInputBatch) => Promise<void>;
+    /** Releases the keys and buttons a viewer still held when it went away. */
+    endSession: (sessionId: string) => Promise<void>;
+    /** Lets a focused viewer receive menu shortcuts such as Cmd+Q instead of this app. */
+    captureKeyboard: (capture: boolean) => Promise<void>;
+    /** How many viewers are connected; the display stays awake while any is. */
+    setViewers: (count: number) => Promise<void>;
+    /** The clipboard's text if it changed since the last call, while viewers may control. */
+    readClipboard: () => Promise<string | null>;
+    writeClipboard: (text: string) => Promise<void>;
+  };
   requestSnapShotPermissions: (includeAccessibility: boolean) => Promise<void>;
   getSnapShotState: () => Promise<DesktopSnapShotState>;
   setupSnapShot: (action: DesktopSnapShotSetupAction) => Promise<void>;

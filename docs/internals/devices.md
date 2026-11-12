@@ -79,7 +79,10 @@ bearer and DPoP clients mint over authenticated HTTP. The ticket is stripped
 before the request reaches the hub.
 
 Stream responses carry `Cache-Control: no-transform`; the compression
-middleware would otherwise buffer an MJPEG body that never ends. Browsers paint an
+middleware would otherwise buffer an MJPEG body that never ends. The proxied
+WebSocket likewise [declines permessage-deflate](../../apps/server/src/socketCompression.ts):
+its frames are H.264 and input bytes, which deflate cannot shrink and which
+cost about a millisecond of CPU per video frame to try. Browsers paint an
 MJPEG part only once the next part begins and the hub writes one only when the
 screen changes, so the proxy
 [re-sends the last part](../../apps/server/src/device/mjpegStillFrame.ts) after a

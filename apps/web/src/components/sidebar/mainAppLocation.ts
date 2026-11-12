@@ -8,7 +8,11 @@ export function isAppModalPage(pathname: string) {
 }
 
 export function isSidebarUtilityPage(pathname: string) {
-  return pathname.startsWith("/projects/") || pathname === "/pull-requests";
+  return (
+    pathname.startsWith("/projects/") ||
+    pathname === "/pull-requests" ||
+    pathname.startsWith("/remote-desktop/")
+  );
 }
 
 let mainAppHref: string | null = null;

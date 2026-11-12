@@ -138,6 +138,25 @@ contextBridge.exposeInMainWorld("desktopBridge", {
   getClientSettings: () => ipcRenderer.invoke(IpcChannels.GET_CLIENT_SETTINGS_CHANNEL),
   setClientSettings: (settings) =>
     ipcRenderer.invoke(IpcChannels.SET_CLIENT_SETTINGS_CHANNEL, settings),
+  remoteDesktop: {
+    capabilities: () => ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_CAPABILITIES_CHANNEL),
+    requestPermissions: () =>
+      ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_REQUEST_PERMISSIONS_CHANNEL),
+    setHosting: (active) =>
+      ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_SET_HOSTING_CHANNEL, active),
+    armCapture: (displayId) =>
+      ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_ARM_CAPTURE_CHANNEL, displayId),
+    input: (batch) => ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_INPUT_CHANNEL, batch),
+    endSession: (sessionId) =>
+      ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_END_SESSION_CHANNEL, sessionId),
+    captureKeyboard: (capture) =>
+      ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_CAPTURE_KEYBOARD_CHANNEL, capture),
+    setViewers: (count) =>
+      ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_SET_VIEWERS_CHANNEL, count),
+    readClipboard: () => ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_READ_CLIPBOARD_CHANNEL),
+    writeClipboard: (text) =>
+      ipcRenderer.invoke(IpcChannels.REMOTE_DESKTOP_WRITE_CLIPBOARD_CHANNEL, text),
+  },
   requestSnapShotPermissions: (includeAccessibility) =>
     ipcRenderer.invoke(IpcChannels.REQUEST_SNAP_SHOT_PERMISSIONS_CHANNEL, includeAccessibility),
   getSnapShotState: () => ipcRenderer.invoke(IpcChannels.GET_SNAP_SHOT_STATE_CHANNEL),

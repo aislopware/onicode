@@ -64,7 +64,8 @@ export const AUTH_SCOPE_OPTIONS: ReadonlyArray<{
   {
     scope: AuthTerminalOperateScope,
     title: "Use terminals",
-    description: "Create terminals and send input to running shells.",
+    description:
+      "Create terminals and send input to running shells. Also view and control the screen when that machine shares it.",
   },
   {
     scope: AuthSourceControlWriteScope,

@@ -1,4 +1,5 @@
 import { requestUrl } from "../requestUrl.ts";
+import { declineSocketCompression } from "../socketCompression.ts";
 // Loopback-only hubs expose shell execution or unauthenticated actions.
 // Proxy with environment read scope for streams and operate scope for input and tuning.
 import { AuthOrchestrationReadScope, AuthOrchestrationOperateScope } from "@onicode/contracts";
@@ -100,6 +101,7 @@ const proxyWebSocket = Effect.fn("DeviceHubProxy.proxyWebSocket")(function* (
   protocols: ReadonlyArray<string> = [],
   headers: Readonly<Record<string, string>> = {},
 ) {
+  declineSocketCompression(request);
   const client = yield* request.upgrade;
   const upstream = yield* Socket.makeWebSocket(upstreamUrl, {
     openTimeout: "10 seconds",

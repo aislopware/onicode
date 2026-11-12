@@ -333,6 +333,16 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                     />
                   </SettingsSection>
                 ) : null}
+                {connected && config.remoteDesktop === true ? (
+                  <SettingsSection title="Remote desktop">
+                    <SettingsActionRow
+                      icon="desktopcomputer"
+                      label="View screen"
+                      description="Watch and control this machine while its desktop app shares it."
+                      onPress={() => navigation.navigate("RemoteDesktop", { environmentId })}
+                    />
+                  </SettingsSection>
+                ) : null}
                 <SettingsSection title="Providers">
                   <SettingsActionRow
                     icon="arrow.clockwise"

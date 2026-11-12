@@ -63,6 +63,7 @@ import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
+import { claimDisplayMediaRequests } from "../electron/displayMediaClaims.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import {
   MENU_ACTION_CHANNEL,
@@ -3208,23 +3209,16 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
   const installDisplayMediaRequestHandler = (session: Session) => {
     if (displayMediaHandlerSessions.has(session)) return;
     displayMediaHandlerSessions.add(session);
-    session.setDisplayMediaRequestHandler((request, callback) => {
+    claimDisplayMediaRequests(session, (request) => {
       const armed = pendingRecording;
-      if (!armed) {
-        callback({});
-        return;
-      }
+      if (!armed) return null;
       if (armed.webContents.isDestroyed()) {
         pendingRecording = null;
-        callback({});
-        return;
+        return null;
       }
-      if (request.frame?.frameTreeNodeId !== armed.requestingFrameTreeNodeId) {
-        callback({});
-        return;
-      }
+      if (request.frame?.frameTreeNodeId !== armed.requestingFrameTreeNodeId) return null;
       pendingRecording = null;
-      callback({ video: armed.webContents.mainFrame });
+      return { video: armed.webContents.mainFrame };
     });
   };
 

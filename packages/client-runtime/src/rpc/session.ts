@@ -8,6 +8,7 @@ import {
   joinSocketFrameParts,
   SOCKET_FRAME_PARTS_QUERY_PARAM,
 } from "@onicode/shared/socketFrameParts";
+import { SOCKET_COMPRESSION_QUERY_PARAM } from "@onicode/shared/socketCompression";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -215,6 +216,10 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
     };
     const socketUrl = new URL(connection.socketUrl);
     socketUrl.searchParams.set(SOCKET_FRAME_PARTS_QUERY_PARAM, "1");
+    // The desktop's own server shares its machine, so deflate would only spend CPU on both ends.
+    if (connection.target._tag === "PrimaryConnectionTarget") {
+      socketUrl.searchParams.set(SOCKET_COMPRESSION_QUERY_PARAM, "off");
+    }
     const layerSocket = Layer.effect(
       Socket.Socket,
       Effect.map(Effect.service(Socket.Socket), joinSocketFrameParts),

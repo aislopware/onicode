@@ -255,6 +255,7 @@ import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Checkbox } from "./ui/checkbox";
 import { ProjectFilePicker } from "./files/ProjectFilePicker";
 import { openLinkPullRequestDialog } from "./pullRequest/LinkPullRequestDialog";
+import { canOpenRemoteDesktop } from "./remoteDesktop/remoteDesktopPage.logic";
 import { ProjectContentSearchDialog } from "./search/ProjectContentSearchDialog";
 import { settingsForThisPlatform, SETTINGS_SECTION_LABELS } from "./settings/settingsSearch";
 import { primaryServerKeybindingsAtom } from "../state/server";
@@ -1688,6 +1689,24 @@ function OpenCommandPaletteDialog(props: {
       icon: <PullRequestGlyph.pullRequest className={ITEM_ICON_CLASS} />,
       run: async () => {
         await navigate({ to: "/pull-requests", search: readPullRequestListPreferences() });
+      },
+    });
+  }
+
+  for (const environment of environments) {
+    if (!canOpenRemoteDesktop(environment, primaryEnvironmentId, import.meta.env.DEV)) continue;
+    actionItems.push({
+      kind: "action",
+      value: `action:remote-desktop:${environment.environmentId}`,
+      searchTerms: ["remote desktop", "screen", "share", "control", "vnc", environment.label],
+      title: "Open remote desktop",
+      description: environment.label,
+      icon: <MonitorIcon className={ITEM_ICON_CLASS} />,
+      run: async () => {
+        await navigate({
+          to: "/remote-desktop/$environmentId",
+          params: { environmentId: environment.environmentId },
+        });
       },
     });
   }

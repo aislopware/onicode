@@ -18,6 +18,7 @@ const licenseGeneratorSource = path.join(
 const escapedWorkspaceRoot = workspaceRoot.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const generatedDeviceStreamRoot = path.join(__dirname, ".generated", "device-stream");
 const generatedPreviewStreamRoot = path.join(__dirname, ".generated", "preview-stream");
+const generatedRemoteDesktopRoot = path.join(__dirname, ".generated", "remote-desktop-stream");
 
 config.watchFolders = [...new Set([...(config.watchFolders ?? []), workspaceRoot])];
 config.resolver = {
@@ -35,6 +36,7 @@ config.resolver = {
     "@onicode/mobile-third-party-licenses": generatedLicenseModuleRoot,
     "@onicode/mobile-device-stream": generatedDeviceStreamRoot,
     "@onicode/mobile-preview-stream": generatedPreviewStreamRoot,
+    "@onicode/mobile-remote-desktop": generatedRemoteDesktopRoot,
   },
 };
 
@@ -71,11 +73,14 @@ async function generateMobileThirdPartyLicenses() {
 }
 
 async function prepareStreamScripts() {
-  const { generateDeviceStreamScript, generatePreviewStreamScript } = await import(
-    pathToFileURL(path.join(__dirname, "scripts", "generate-device-stream.mts")).href
-  );
+  const { generateDeviceStreamScript, generatePreviewStreamScript, generateRemoteDesktopScript } =
+    await import(pathToFileURL(path.join(__dirname, "scripts", "generate-device-stream.mts")).href);
   const generateAll = () =>
-    Promise.all([generateDeviceStreamScript(), generatePreviewStreamScript()]);
+    Promise.all([
+      generateDeviceStreamScript(),
+      generatePreviewStreamScript(),
+      generateRemoteDesktopScript(),
+    ]);
   await generateAll();
   if (process.env.NODE_ENV !== "production") {
     let rebuild = Promise.resolve();
@@ -95,6 +100,16 @@ async function prepareStreamScripts() {
         "packages/client-runtime/src/preview",
         ["serverBrowserStream.ts"],
         generatePreviewStreamScript,
+      ],
+      [
+        "apps/mobile/src/features/remote-desktop",
+        ["remote-desktop.browser.ts"],
+        generateRemoteDesktopScript,
+      ],
+      [
+        "packages/client-runtime/src/remoteDesktop",
+        ["viewer.ts", "protocol.ts"],
+        generateRemoteDesktopScript,
       ],
     ]) {
       fs.watch(path.join(workspaceRoot, directory), { persistent: false }, (_event, filename) => {

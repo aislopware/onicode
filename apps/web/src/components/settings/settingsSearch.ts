@@ -1223,6 +1223,15 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "remote-desktop-host",
+    title: "Share this screen",
+    to: "/settings/access",
+    searchTerms: [
+      "remote desktop screen sharing view control mouse keyboard vnc viewers watching disconnect screen recording accessibility",
+    ],
+    primaryEnvironmentOnly: true,
+  },
+  {
     id: "linked-environments",
     peerLinksOnly: true,
     title: "Linked environments",

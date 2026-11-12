@@ -303,6 +303,78 @@ For a systemd service, add `Environment=ONICODE_SERVER_BROWSER_SANDBOX=0` under
 your Onicode service. Setting the variable in an agent's terminal does not change the
 environment of an already running Onicode server.
 
+## Remote desktop
+
+See and control a machine's whole screen from the desktop app or your phone,
+for the moments an agent's work needs a GUI: a permission prompt, a simulator
+that will not boot, an installer.
+
+On the machine you want to reach, open the Onicode desktop app and turn on
+**Settings → Sharing & access → Remote desktop → Share this screen**. macOS
+asks for Screen Recording, and for Accessibility so viewers can use the mouse
+and keyboard. The setting is per machine and can only be turned on from that
+machine. Keep the app running there; while sharing is on, closing its window on
+macOS hides it instead.
+
+Then, from another device:
+
+- **Desktop:** open the command palette and choose **Open remote desktop**, or
+  use the screen button on the machine's row in **Settings → Environments**.
+  The header has a full screen button; in full screen, hold Esc to leave.
+- **Phone:** **Settings → Environments →** the machine **→ Remote desktop →
+  View screen**.
+
+On a phone the screen works like a laptop trackpad. Your finger moves the
+pointer from wherever it is, and taps click at the pointer, so a small target
+is easy to hit:
+
+| Gesture                        | Result                             |
+| ------------------------------ | ---------------------------------- |
+| Drag with one finger           | Move the pointer                   |
+| Tap                            | Click                              |
+| Tap twice                      | Double-click                       |
+| Tap with two fingers           | Right-click                        |
+| Tap with three fingers         | Middle-click                       |
+| Tap, then touch again and drag | Drag, or select                    |
+| Touch and hold, then drag      | Drag, or select                    |
+| Drag with two fingers          | Scroll                             |
+| Pinch                          | Zoom; the view follows the pointer |
+
+The **⋯** menu switches to **Direct touch**, where a tap clicks under your
+finger, a long press right-clicks, and one finger drags. It also has
+**Paste from this device**, which pastes your phone's clipboard into the
+machine, and the shortcuts a phone cannot type, such as ⌘Tab. The toolbar
+opens the keyboard and has the keys a phone keyboard lacks, through F12;
+⌃ ⌥ ⇧ ⌘ apply to the next key you press.
+
+Things to know:
+
+- The picture travels directly between the two devices, not through the
+  Onicode server, so they need a route to each other: the same network or the
+  same tailnet. A connection that only reaches the server through SSH
+  forwarding or a public HTTPS proxy cannot open the screen.
+- Anyone whose connection may use that machine's terminals can view and
+  control its screen while sharing is on. **Sharing & access** lists who is
+  watching and can disconnect them.
+- Control works on macOS hosts. Windows and Linux hosts share their screen
+  view-only for now.
+- A host with several displays shows one at a time; pick it in the header on
+  desktop or the toolbar on a phone.
+- Shortcuts your own device reserves, such as ⌘Tab, never reach the app. On
+  desktop, send them from the keyboard menu in the header.
+- Text you copy on one side can be pasted on the other. A copy on the shared
+  machine reaches every connected viewer; the desktop app sends its own
+  clipboard when you click into the picture, and a phone sends it when you
+  choose **Paste from this device**. Only text is shared, up to 64,000
+  characters. If macOS on the shared machine asks before apps read the
+  clipboard, **Settings → Sharing & access → Remote desktop** there says so
+  and names the setting to change.
+- A dropped connection, such as a phone moving from Wi-Fi to mobile data,
+  reconnects by itself for up to 30 seconds. If the shared machine ends the
+  session, the viewer stops and offers **Retry**.
+- The shared machine's display stays awake while someone is connected.
+- Sound is not sent.
+
 ## Link another environment
 
 Link two machines, such as your laptop and a VPS, and agents on one can work on

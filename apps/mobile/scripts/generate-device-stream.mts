@@ -9,6 +9,10 @@ const mobileRoot = NodePath.resolve(NodePath.dirname(NodeURL.fileURLToPath(impor
 const STREAM_SCRIPTS = {
   device: { entry: "devices/device-stream.browser.ts", global: "OniDeviceStream" },
   preview: { entry: "browser/preview-stream.browser.ts", global: "OniPreviewStream" },
+  "remote-desktop": {
+    entry: "remote-desktop/remote-desktop.browser.ts",
+    global: "OniRemoteDesktop",
+  },
 } as const;
 
 export async function buildWebViewScript(stream: keyof typeof STREAM_SCRIPTS) {
@@ -51,3 +55,4 @@ async function generateWebViewScript(stream: keyof typeof STREAM_SCRIPTS) {
 
 export const generateDeviceStreamScript = () => generateWebViewScript("device");
 export const generatePreviewStreamScript = () => generateWebViewScript("preview");
+export const generateRemoteDesktopScript = () => generateWebViewScript("remote-desktop");

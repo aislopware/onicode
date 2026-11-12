@@ -178,6 +178,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { terminalOutputStream, withOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DeviceService from "./device/DeviceService.ts";
+import * as RemoteDesktop from "./remoteDesktop/RemoteDesktop.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
@@ -260,6 +261,7 @@ import * as AgentSessionScanner from "./project/AgentSessionScanner.ts";
 import * as AgentSessionImporter from "./project/AgentSessionImporter.ts";
 import * as UsageLimitSources from "./usage/UsageLimitSources.ts";
 import { requestUrl } from "./requestUrl.ts";
+import { clientDeclinesSocketCompression, declineSocketCompression } from "./socketCompression.ts";
 
 const CONFIG_DISCOVERY_TIMEOUT = Duration.seconds(5);
 const isProviderUploadFeedbackError = Schema.is(ProviderUploadFeedbackError);
@@ -1339,6 +1341,7 @@ export const layerWsRpc = (
       const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
+      const remoteDesktop = yield* RemoteDesktop.RemoteDesktop;
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
       const orchestrationEngine = yield* Orchestrator.OrchestratorV2;
@@ -1723,6 +1726,7 @@ export const layerWsRpc = (
           shellThreadFamilies: true,
           threadLinkMetadata: true,
           shellOlderSettled: true,
+          remoteDesktop: true,
           threadResumeCompletionMarker: true,
           threadSnapshotPagination: true,
           threadFind: true,
@@ -2973,6 +2977,11 @@ export const layerWsRpc = (
         [WS_METHODS.deviceDetail]: (input) => deviceService.detail(input),
         [WS_METHODS.deviceAction]: (input) => deviceService.action(input),
         [WS_METHODS.subscribeDeviceState]: (_input) => DeviceService.stateStream(deviceService),
+        [WS_METHODS.remoteDesktopHost]: (input) => remoteDesktop.host(input),
+        [WS_METHODS.remoteDesktopAnswer]: (input) => remoteDesktop.answer(input),
+        [WS_METHODS.remoteDesktopConnect]: (input) =>
+          remoteDesktop.connect(input, currentSessionId),
+        [WS_METHODS.subscribeRemoteDesktop]: (_input) => remoteDesktop.state,
         [WS_METHODS.previewStopLocalServer]: (input) => portDiscovery.stopServer(input),
         [WS_METHODS.subscribeDiscoveredLocalServers]: (input) =>
           Stream.callback<DiscoveredLocalServerList>((queue) =>
@@ -3310,6 +3319,7 @@ export const layer = Layer.unwrap(
             ),
           ),
         );
+        if (clientDeclinesSocketCompression(url.value)) declineSocketCompression(request);
         const framedRpcWebSocketHttpEffect = url.value.searchParams.has(
           SOCKET_FRAME_PARTS_QUERY_PARAM,
         )

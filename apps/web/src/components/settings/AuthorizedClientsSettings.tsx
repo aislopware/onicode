@@ -456,6 +456,10 @@ const PairingLinkListRow = memo(function PairingLinkListRow({
   );
 });
 
+export function clientSessionLabel(clientSession: ServerClientSessionRecord): string {
+  return clientSession.client.label ?? clientSession.client.os ?? clientSession.subject;
+}
+
 type ConnectedClientListRowProps = {
   clientSession: ServerClientSessionRecord;
   revokingClientSessionId: string | null;
@@ -486,8 +490,7 @@ const ConnectedClientListRow = memo(function ConnectedClientListRow({
     clientSession.client.os ?? null,
     clientSession.client.ipAddress ?? null,
   ].filter((value): value is string => value !== null);
-  const primaryLabel =
-    clientSession.client.label ?? clientSession.client.os ?? clientSession.subject;
+  const primaryLabel = clientSessionLabel(clientSession);
 
   return (
     <div className={ITEM_ROW_CLASSNAME}>

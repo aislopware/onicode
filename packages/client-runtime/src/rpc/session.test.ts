@@ -312,7 +312,8 @@ describe("RpcSessionFactory", () => {
       const readyFiber = yield* Effect.forkChild(session.ready);
       const socket = yield* awaitSocket(sockets);
 
-      expect(socket.url).toBe(`${PREPARED.socketUrl}&frameParts=1`);
+      // The primary target is this machine's own server, so the client declines deflate.
+      expect(socket.url).toBe(`${PREPARED.socketUrl}&frameParts=1&compression=off`);
       socket.open();
       yield* completeInitialConfig(socket);
       yield* Fiber.join(readyFiber);
