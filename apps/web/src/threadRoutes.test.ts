@@ -49,7 +49,7 @@ describe("threadRoutes", () => {
     ).toBe(true);
   });
 
-  it("matches encoded MCP thread IDs from router navigation", async () => {
+  it("matches encoded MCP thread IDs from router locations", () => {
     const root = createRootRoute();
     const thread = createRoute({ getParentRoute: () => root, path: "$environmentId/$threadId" });
     const newThread = createRoute({ getParentRoute: () => root, path: "new" });
@@ -57,17 +57,16 @@ describe("threadRoutes", () => {
       routeTree: root.addChildren([thread, newThread]),
       history: createMemoryHistory({ initialEntries: ["/new"] }),
     });
-    await router.load();
     const ref = scopeThreadRef("local" as never, ThreadId.make("mcp:example"));
-    await router.navigate({
+    // Navigation does not commit in this unit environment, so build and match the location.
+    const location = router.buildLocation({
       to: "/$environmentId/$threadId",
       params: { environmentId: ref.environmentId, threadId: ref.threadId },
     });
-    expect(router.state.location.pathname).toBe("/local/mcp%3Aexample");
-    expect(router.state.matches.at(-1)?.params).toEqual(ref);
-    expect(isThreadRoutePathname(router.state.location.pathname, ref)).toBe(true);
-    await router.navigate({ to: "/new" });
-    expect(isThreadRoutePathname(router.state.location.pathname, ref)).toBe(false);
+    expect(location.pathname).toBe("/local/mcp%3Aexample");
+    expect(router.matchRoutes(location).at(-1)?.params).toEqual(ref);
+    expect(isThreadRoutePathname(location.pathname, ref)).toBe(true);
+    expect(isThreadRoutePathname("/new", ref)).toBe(false);
   });
 
   it("resolves the backing thread while a draft route is being promoted", () => {
