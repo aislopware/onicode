@@ -517,3 +517,4 @@ ddbc525f1c	take	fix(speech): removing filler words no longer joins paragraphs (#
 5a3e368c1b	take	fix(server): detach errored provider sessions when deleting threads (#34199)
 9b6c77fb0d	take	fix(opencode): pass --method curl to the native updater (#34169)
 b43a1b4b93	take	fix(server): a Claude tool call interrupted by a new message shows as stopped, not failed (#34183)
+05e835378f	take	fix(acp-registry): model refresh picks up models an agent adds upstream (#34246)
