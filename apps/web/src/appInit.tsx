@@ -14,6 +14,7 @@ import { startElectronBrowserHost } from "./browser/ElectronBrowserHost";
 import { startBrowserProfileReporting } from "./browser/BrowserProfileReporter";
 import { startPreviewTitleRecording } from "./browserHistoryStore";
 import { retainThreadOverlaysForThread } from "./components/chat/threadOverlayRetention";
+import { resolveWindowTitleThreadStatus } from "./components/Sidebar.logic";
 import { startBackgroundThreadAnnouncements } from "./components/BackgroundThreadAnnouncer";
 import { startSshPasswordPromptQueue } from "./components/desktop/SshPasswordPromptDialog";
 import { startHostFreezeToasts } from "./components/HostFreezeToastCoordinator";
@@ -129,7 +130,10 @@ function readOpenThreadRef(router: AppRouter): ScopedThreadRef | null {
   return resolveActiveThreadRouteRef(target, draft);
 }
 
-/** Names the open thread and its project in the window title, or the app when none is open. */
+/**
+ * Names the open thread and its project in the window title, or the app when none is open.
+ * Screen readers read it on Alt+Tab, so it can lead with the thread and what it's doing.
+ */
 function startDocumentTitle(router: AppRouter): void {
   let openThreadRef = readOpenThreadRef(router);
   const write = () => {
@@ -147,13 +151,19 @@ function startDocumentTitle(router: AppRouter): void {
           );
     const threadTitle = thread?.title.trim() ?? "";
     const projectTitle = project?.title.trim() ?? "";
+    // Screen readers read from the start, so that title leads with the status, then the thread.
+    const screenReader = getClientSettings().screenReaderWindowTitle;
+    const status = screenReader && thread !== null ? resolveWindowTitleThreadStatus(thread) : null;
     // The OS already shows the app name beside a desktop window's title.
-    const title =
+    const context =
       threadTitle === ""
         ? APP_DISPLAY_NAME
         : projectTitle === ""
           ? threadTitle
-          : `${projectTitle} / ${threadTitle}`;
+          : screenReader
+            ? `${threadTitle} - ${projectTitle}`
+            : `${projectTitle} / ${threadTitle}`;
+    const title = status ? `${status}: ${context}` : context;
     // Projects change whenever any project does; most changes leave the title alone.
     if (document.title !== title) document.title = title;
   };
@@ -182,6 +192,7 @@ function startDocumentTitle(router: AppRouter): void {
   watchOpenThread();
   write();
   appAtomRegistry.subscribe(environmentProjects.projectsAtom, write);
+  subscribeClientSettings(write);
   router.subscribe("onResolved", updateOpenThread);
   useComposerDraftStore.subscribe(updateOpenThread);
 }
