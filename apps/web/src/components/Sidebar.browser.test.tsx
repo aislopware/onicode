@@ -126,31 +126,54 @@ function threadShell(projectId: ProjectId, index: number): EnvironmentThreadShel
   });
 }
 
+function mockSidebarThreads(): ScopedThreadRef {
+  const activeProject = project("active");
+  const threads = Array.from({ length: 5 }, (_, index) => threadShell(activeProject.id, index));
+  const routeThreadRef: ScopedThreadRef = {
+    environmentId: activeProject.environmentId,
+    threadId: threads[0]!.id,
+  };
+  vi.mocked(useProjects).mockReturnValue([activeProject]);
+  vi.mocked(useQuietThreadShells).mockReturnValue(threads);
+  vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: routeThreadRef });
+  vi.mocked(useHandleNewThread).mockReturnValue({
+    activeDraftThread: null,
+    activeThread: null,
+    defaultProjectRef: {
+      environmentId: activeProject.environmentId,
+      projectId: activeProject.id,
+    },
+    defaultProjectFallbackReady: true,
+    handleNewThread: vi.fn().mockResolvedValue(null),
+    routeDraftId: null,
+    routeThreadRef,
+  });
+  return routeThreadRef;
+}
+
 describe("sidebar render isolation", () => {
+  // regression: any sidebar render rebuilt the thread list, so every row re-rendered with it
+  it("does not re-render thread rows when the sidebar renders with nothing changed", async () => {
+    mockSidebarThreads();
+    const routeReveal = { observedKey: null, pendingKey: null };
+    const sidebar = () => (
+      <SidebarProvider>
+        <Sidebar routeReveal={routeReveal} />
+      </SidebarProvider>
+    );
+    await using screen = await render(sidebar());
+    await expect.element(screen.getByText("Thread 4").first()).toBeInTheDocument();
+    const rowRenders = () => vi.mocked(SortableThreadRow).mock.calls.length;
+
+    const beforeRender = rowRenders();
+    await screen.rerender(sidebar());
+    expect(rowRenders() - beforeRender).toBe(0);
+  });
+
   // regression: #33100 Cmd+J re-rendered every sidebar row, which took hundreds of ms with many threads
   it("does not re-render thread rows when a quick Mod shortcut opens and focuses the terminal", async () => {
     using stack = new DisposableStack();
-    const activeProject = project("active");
-    const threads = Array.from({ length: 5 }, (_, index) => threadShell(activeProject.id, index));
-    const routeThreadRef: ScopedThreadRef = {
-      environmentId: activeProject.environmentId,
-      threadId: threads[0]!.id,
-    };
-    vi.mocked(useProjects).mockReturnValue([activeProject]);
-    vi.mocked(useQuietThreadShells).mockReturnValue(threads);
-    vi.mocked(useThreadRouteTarget).mockReturnValue({ kind: "server", threadRef: routeThreadRef });
-    vi.mocked(useHandleNewThread).mockReturnValue({
-      activeDraftThread: null,
-      activeThread: null,
-      defaultProjectRef: {
-        environmentId: activeProject.environmentId,
-        projectId: activeProject.id,
-      },
-      defaultProjectFallbackReady: true,
-      handleNewThread: vi.fn().mockResolvedValue(null),
-      routeDraftId: null,
-      routeThreadRef,
-    });
+    const routeThreadRef = mockSidebarThreads();
     const terminal = document.createElement("div");
     terminal.dataset.terminalOwner = "drawer";
     const terminalInput = document.createElement("textarea");

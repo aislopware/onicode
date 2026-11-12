@@ -28,10 +28,23 @@ export function useOlderSettledShelf(input: {
   /** Rows the shelf shows; pages are read until it lists that many. */
   readonly visibleCount: number;
 }) {
-  const scopes = sortOlderSettledScopes(input.scopes);
+  // The compiler caches what a hook derives from its arguments, which it knows are never mutated,
+  // but not from a list sorted between hook calls. So the sorted scopes arrive as an argument.
+  return useSortedOlderSettledShelf(
+    sortOlderSettledScopes(input.scopes),
+    input.expanded,
+    input.visibleCount,
+  );
+}
+
+function useSortedOlderSettledShelf(
+  scopes: ReadonlyArray<OlderSettledScope>,
+  expanded: boolean,
+  visibleCount: number,
+) {
   const scopeKey = JSON.stringify(scopes);
   const [requested, setRequested] = useState({ scopeKey, pages: NO_PAGES });
-  const pages = requested.scopeKey === scopeKey && input.expanded ? requested.pages : NO_PAGES;
+  const pages = requested.scopeKey === scopeKey && expanded ? requested.pages : NO_PAGES;
   const shelfScopes = scopes.map((scope) => ({
     scope,
     pages: pages.get(scope.environmentId) ?? 0,
@@ -60,10 +73,13 @@ export function useOlderSettledShelf(input: {
   const olderOf = (environmentId: EnvironmentId) => shelf.get(environmentId)?.older ?? null;
   const pagesOf = (environmentId: EnvironmentId) => shelf.get(environmentId)?.pages;
   const frontier = settledShelfFrontier([...shelf.values()]);
-  const loaded = shelfScopes.filter(({ pages }) => pages > 0);
+  const loaded = scopes.flatMap((scope) => {
+    const count = pages.get(scope.environmentId) ?? 0;
+    return count > 0 ? [{ scope, pages: count }] : [];
+  });
   return {
     environments: shelf,
-    visibleCount: input.expanded ? input.visibleCount : 0,
+    visibleCount: expanded ? visibleCount : 0,
     pages,
     grow: (next: ReadonlyMap<EnvironmentId, number>) => setRequested({ scopeKey, pages: next }),
     isListed: (thread: EnvironmentThreadShell) => isListedSettledThread(thread.source, frontier),

@@ -418,8 +418,6 @@ function useSidebarThreads(input: {
   readonly routeRowThreadKey: string | null;
   // Set in boring mode: the project groups to fold active threads into, in order.
   readonly folderGroups: readonly SidebarProjectSnapshot[] | null;
-  // Keeps folders with no active threads, so a project the user filtered to or pinned can start one.
-  readonly keepEmptyFolders: (group: SidebarProjectSnapshot) => boolean;
 }) {
   const {
     projectScopeKey,
@@ -431,7 +429,6 @@ function useSidebarThreads(input: {
     delegatedUnderParent,
     routeRowThreadKey,
     folderGroups,
-    keepEmptyFolders: keepEmpty,
   } = input;
   // Folders already separate the work, so boring mode has no Working shelf.
   const workingShelfEnabled =
@@ -471,6 +468,12 @@ function useSidebarThreads(input: {
   const settledVisibleCount =
     settledTail.scopeKey === projectScopeKey ? settledTail.count : SETTLED_TAIL_INITIAL_COUNT;
 
+  // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
+  const olderSettledShelf = useOlderSettledShelf({
+    scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
+    expanded: settledShelfExpanded,
+    visibleCount: settledVisibleCount,
+  });
   const partition = partitionSidebarThreads({
     threads,
     scopedProjectKeys,
@@ -485,14 +488,7 @@ function useSidebarThreads(input: {
 
   const { pinnedThreads, activeThreads, workingThreads, snoozedThreads, settledThreads } =
     partition;
-  // Older settled threads load in pages; the shelf lists them only as far as they are loaded.
-  const olderSettledShelf = useOlderSettledShelf({
-    scopes: olderSettledScopes([...serverConfigs.keys()], scopedProjectKeys),
-    expanded: settledShelfExpanded,
-    visibleCount: settledVisibleCount,
-  });
   const listedSettledThreads = settledThreads.filter(olderSettledShelf.isListed);
-  useOlderSettledShelfGrowth(olderSettledShelf, listedSettledThreads);
   const settledCount =
     settledThreads.length + olderSettledShelf.unloadedCount(partition.visibleThreads);
   const visibleSettledThreads = (() => {
@@ -520,7 +516,12 @@ function useSidebarThreads(input: {
   const projectFolders =
     folderGroups === null
       ? null
-      : groupSidebarThreadsByProject(folderGroups, activeThreads, keepEmpty).map((folder) => {
+      : groupSidebarThreadsByProject(
+          folderGroups,
+          activeThreads,
+          // An empty folder stays when its project is filtered to or pinned, so it can start a thread.
+          (group) => scopedProjectKeys !== null || (group.pinned && !group.archived),
+        ).map((folder) => {
           const collapsed = !resolveProjectExpanded(
             projectExpandedById,
             sidebarFolderExpansionKeys(folder.group),
@@ -556,7 +557,7 @@ function useSidebarThreads(input: {
   ] as const) {
     for (const thread of list) sectionByThreadKey.set(threadShellKey(thread), section);
   }
-  return {
+  const sidebarThreads = {
     ...partition,
     threads,
     workingShelfEnabled,
@@ -604,6 +605,10 @@ function useSidebarThreads(input: {
       threads.map((thread) => [threadShellKey(thread), thread.activeOrderKey ?? null] as const),
     ),
   };
+  // Last on purpose: the compiler caches the partition only while every plain use of it sits on
+  // one side of each hook call.
+  useOlderSettledShelfGrowth(olderSettledShelf, listedSettledThreads);
+  return sidebarThreads;
 }
 
 function partitionSidebarThreads(input: SidebarThreadPartitionInput) {
@@ -839,6 +844,107 @@ function useSidebarLookups() {
   };
 }
 
+// Reads its own sources, like the hooks around it, so the compiler caches the scope instead of
+// rebuilding it on every sidebar render.
+function useSidebarProjectScope(projectGroups: readonly SidebarProjectSnapshot[]) {
+  const persistedProjectScopeKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
+  const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
+  const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
+  const allProjectConfigsReady = useAtomValue(environmentProjects.projectConfigsReadyAtom);
+  // A scope whose project is gone reads as all projects once every snapshot has
+  // loaded. The stored keys are left alone, so the scope returns with its project.
+  // An archived project's scope reads as all projects, matching the menu.
+  const scopeGroups = pickableProjectGroups(projectGroups);
+  const archivedProjectKeys = new Set(
+    projectGroups.filter((project) => project.archived).map((project) => project.projectKey),
+  );
+  const chosenProjectScopeKeys = resolveSidebarProjectScopeKeys({
+    groups: projectGroups,
+    keys: persistedProjectScopeKeys,
+    settings: projectGroupingSettings,
+    canClearMissingScope: allProjectSnapshotsReady && allProjectConfigsReady,
+  }).filter((key) => !archivedProjectKeys.has(key));
+  const chosenProjectGroups = scopeGroups.filter((project) =>
+    chosenProjectScopeKeys.includes(project.projectKey),
+  );
+  const chosenScopeProjectKeys =
+    chosenProjectGroups.length === 0
+      ? null
+      : new Set(
+          chosenProjectGroups.flatMap((project) =>
+            project.memberProjectRefs.map(
+              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
+            ),
+          ),
+        );
+  return { scopeGroups, chosenProjectScopeKeys, chosenProjectGroups, chosenScopeProjectKeys };
+}
+
+// Its own hook, with the state first, so the compiler caches the results instead of searching
+// again on every sidebar render.
+function useSidebarThreadSearchResults(
+  threadSearch: ReturnType<typeof useThreadSearch>,
+  searchableThreads: ReturnType<typeof useSidebarThreads>["searchableThreads"],
+  query: string,
+) {
+  const [shownMessageOrder, setShownMessageOrder] = useState<ShownOrder | null>(null);
+  // Ranked across environments as the palette ranks them, so one
+  // environment's list does not sit above another's better matches; rows
+  // already shown keep their places while slower environments answer.
+  const threadByMatchKey =
+    threadSearch.matches.length === 0
+      ? null
+      : new Map(
+          searchableThreads.map((thread) => [
+            threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
+            thread,
+          ]),
+        );
+  const rankedServerMatches =
+    threadByMatchKey === null
+      ? []
+      : rankMessageMatches(
+          threadSearch.matches,
+          (match) => {
+            const thread = threadByMatchKey.get(threadSearchMatchKey(match));
+            return thread ? threadSearchSubject(thread, null) : undefined;
+          },
+          foldSearchQuery(query),
+          // oxlint-disable-next-line react/purity -- Recency ranking samples the clock when the search matches change; the compiler recomputes it only then.
+          Date.now(),
+          // A list filter, as on mobile: a pick would move rows unexplained.
+          { picks: false },
+        );
+  const serverMatchByKey = new Map(
+    rankedServerMatches.map((match) => [threadSearchMatchKey(match), match] as const),
+  );
+  const messageOrder = nextShownOrder(
+    shownMessageOrder,
+    threadSearch.query,
+    [...serverMatchByKey.keys()],
+    Number.POSITIVE_INFINITY,
+  );
+  if (messageOrder !== shownMessageOrder) setShownMessageOrder(messageOrder);
+  const { titleMatches: threadTitleResults, contentMatches: threadContentResults } =
+    searchSidebarThreads(searchableThreads, query, new Set(messageOrder.keys));
+  const threadSearchResults = [...threadTitleResults, ...threadContentResults];
+  // Only rows listed for their messages show one, and open find on it.
+  const threadSearchMatchByKey = new Map(
+    threadContentResults.flatMap((thread) => {
+      const key = threadSearchMatchKey({
+        environmentId: thread.environmentId,
+        threadId: thread.id,
+      });
+      const match = serverMatchByKey.get(key);
+      return match ? [[key, match] as const] : [];
+    }),
+  );
+  const threadSearchResultKeys = threadSearchResults.map((thread) =>
+    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
+  );
+  return { threadSearchResults, threadSearchMatchByKey, threadSearchResultKeys };
+}
+
 function ProjectScopeRowIcon(props: { isSelected: boolean; children: ReactNode }) {
   return (
     <span className="relative flex shrink-0">
@@ -1003,15 +1109,12 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   );
   const environmentMachineById = useEnvironmentMachines();
   const projectGroupsRef = useRef(projectGroups);
-  const persistedProjectScopeKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
   const setPersistedProjectScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
   const [projectScopeMenuState, dispatchProjectScopeMenu] = useReducer(
     reduceSidebarProjectScopeMenuState,
     { open: false, query: "" },
   );
   const projectScopeFilter = useComboboxFilter();
-  const allProjectSnapshotsReady = useAllEnvironmentProjectSnapshotsReady();
-  const allProjectConfigsReady = useAtomValue(environmentProjects.projectConfigsReadyAtom);
   // Safari may click after Ctrl+click opens settings; suppress that selection until the picker reopens.
   const suppressNextScopeChangeRef = useRef(false);
   const highlightedProjectScopeKeyRef = useRef<string | null>(null);
@@ -1071,32 +1174,8 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     setPersistedProjectScopeKeys(keys);
     scrollSidebarToTop(sidebarContentRef.current);
   };
-  // A scope whose project is gone reads as all projects once every snapshot has
-  // loaded. The stored keys are left alone, so the scope returns with its project.
-  // An archived project's scope reads as all projects, matching the menu.
-  const scopeGroups = pickableProjectGroups(projectGroups);
-  const archivedProjectKeys = new Set(
-    projectGroups.filter((project) => project.archived).map((project) => project.projectKey),
-  );
-  const chosenProjectScopeKeys = resolveSidebarProjectScopeKeys({
-    groups: projectGroups,
-    keys: persistedProjectScopeKeys,
-    settings: projectGroupingSettings,
-    canClearMissingScope: allProjectSnapshotsReady && allProjectConfigsReady,
-  }).filter((key) => !archivedProjectKeys.has(key));
-  const chosenProjectGroups = scopeGroups.filter((project) =>
-    chosenProjectScopeKeys.includes(project.projectKey),
-  );
-  const chosenScopeProjectKeys =
-    chosenProjectGroups.length === 0
-      ? null
-      : new Set(
-          chosenProjectGroups.flatMap((project) =>
-            project.memberProjectRefs.map(
-              (projectRef) => `${projectRef.environmentId}:${projectRef.projectId}`,
-            ),
-          ),
-        );
+  const { scopeGroups, chosenProjectScopeKeys, chosenProjectGroups, chosenScopeProjectKeys } =
+    useSidebarProjectScope(projectGroups);
   const threads = useQuietThreadShells();
   const promotingDraftThreadKeys = usePromotingDraftThreadKeys();
   const listedThreads =
@@ -1347,65 +1426,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           [...scopeGroups, ...projectGroups.filter((project) => project.archived)]
         : scopedProjectGroups
       : null,
-    keepEmptyFolders: (group) =>
-      scopedProjectGroups.length > 0 || (group.pinned && !group.archived),
   });
 
-  // Ranked across environments as the palette ranks them, so one
-  // environment's list does not sit above another's better matches; rows
-  // already shown keep their places while slower environments answer.
-  const threadByMatchKey =
-    threadSearch.matches.length === 0
-      ? null
-      : new Map(
-          searchableThreads.map((thread) => [
-            threadSearchMatchKey({ environmentId: thread.environmentId, threadId: thread.id }),
-            thread,
-          ]),
-        );
-  const rankedServerMatches =
-    threadByMatchKey === null
-      ? []
-      : rankMessageMatches(
-          threadSearch.matches,
-          (match) => {
-            const thread = threadByMatchKey.get(threadSearchMatchKey(match));
-            return thread ? threadSearchSubject(thread, null) : undefined;
-          },
-          foldSearchQuery(threadSearchQuery),
-          // oxlint-disable-next-line react/purity -- Recency ranking samples the clock when the search matches change; the compiler recomputes it only then.
-          Date.now(),
-          // A list filter, as on mobile: a pick would move rows unexplained.
-          { picks: false },
-        );
-  const serverMatchByKey = new Map(
-    rankedServerMatches.map((match) => [threadSearchMatchKey(match), match] as const),
-  );
-  const [shownMessageOrder, setShownMessageOrder] = useState<ShownOrder | null>(null);
-  const messageOrder = nextShownOrder(
-    shownMessageOrder,
-    threadSearch.query,
-    [...serverMatchByKey.keys()],
-    Number.POSITIVE_INFINITY,
-  );
-  if (messageOrder !== shownMessageOrder) setShownMessageOrder(messageOrder);
-  const { titleMatches: threadTitleResults, contentMatches: threadContentResults } =
-    searchSidebarThreads(searchableThreads, threadSearchQuery, new Set(messageOrder.keys));
-  const threadSearchResults = [...threadTitleResults, ...threadContentResults];
-  // Only rows listed for their messages show one, and open find on it.
-  const threadSearchMatchByKey = new Map(
-    threadContentResults.flatMap((thread) => {
-      const key = threadSearchMatchKey({
-        environmentId: thread.environmentId,
-        threadId: thread.id,
-      });
-      const match = serverMatchByKey.get(key);
-      return match ? [[key, match] as const] : [];
-    }),
-  );
-  const threadSearchResultKeys = threadSearchResults.map((thread) =>
-    scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id)),
-  );
+  const { threadSearchResults, threadSearchMatchByKey, threadSearchResultKeys } =
+    useSidebarThreadSearchResults(threadSearch, searchableThreads, threadSearchQuery);
 
   // The highlight follows its thread, so rows that arrive late do not move
   // it under Enter; a new query starts at the top.
@@ -1526,12 +1550,14 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
     }
   };
 
-  const startThreadRename = (threadRef: ScopedThreadRef, title: string) => {
+  // The compiler leaves a ref-writing function unmemoised once a hook's callback calls it, and
+  // every row takes this as a prop.
+  const startThreadRename = useStableCallback((threadRef: ScopedThreadRef, title: string) => {
     if (!readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)) return;
     setRenamingThreadRef(threadRef);
     setRenamingTitle(title);
     renamingOriginalTitleRef.current = title;
-  };
+  });
   const cancelThreadRename = () => setRenamingThreadRef(null);
   const commitThreadRename = (threadRef: ScopedThreadRef, title: string) => {
     const originalTitle = renamingOriginalTitleRef.current;
