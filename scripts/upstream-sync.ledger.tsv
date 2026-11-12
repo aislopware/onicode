@@ -559,3 +559,4 @@ b3ce149be5	take	fix(mobile): Fast can be turned on for an existing thread (#2976
 9b98bd07ba	take	fix(shared): new chats use the global default when the project default model is hidden (#23615)
 25d2239f9b	take	fix(web): screen readers hear when a thread is pinned or an action is undone (#25901)
 658367016c	take	fix(desktop): Linux launches no longer leave an icon copy in /tmp (#25775)
+7315c60b95	take	fix(server): a failed Claude wake dispatch no longer drops every later wake (#28173)
