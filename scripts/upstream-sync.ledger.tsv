@@ -693,3 +693,4 @@ ed54f30644	skip	upstream contribution policy (CONTRIBUTING, PR template, contrib
 6ba3de70af	take	fix(server): remote delegate_task runs on the driver it names (#34790)
 18866e52e4	take	fix(server): schedule_task updates apply freshSession (#34801)
 661a3e2a47	take	fix(web): Backspace right after a list shortcut keeps the typed marker (#34802)
+31a108c195	take	fix(contracts): Space shortcuts reach clients instead of reverting to defaults (#34799)
