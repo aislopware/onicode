@@ -89,6 +89,7 @@ import Migration0083 from "./Migrations/083_RemoveWebhookTasks.ts";
 import Migration0084 from "./Migrations/084_RemoveBrowserSessions.ts";
 import Migration0085 from "./Migrations/085_RemoveClientBrowser.ts";
 import Migration0086 from "./Migrations/086_ProjectionMessageSearchText.ts";
+import Migration0087 from "./Migrations/087_TurnItemConversationIndex.ts";
 
 const migrationEntries = [
   [1, "OrchestrationEvents", Migration0001],
@@ -178,6 +179,7 @@ const migrationEntries = [
   [84, "RemoveBrowserSessions", Migration0084],
   [85, "RemoveClientBrowser", Migration0085],
   [86, "ProjectionMessageSearchText", Migration0086],
+  [87, "TurnItemConversationIndex", Migration0087],
 ] as const;
 
 export const migrationManifest = migrationEntries.map(([id, name]) => [id, name] as const);
