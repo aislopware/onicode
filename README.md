@@ -1,44 +1,38 @@
 # Onicode
 
-Onicode is a minimal GUI for coding agents. A server on your machine drives the agent CLIs you already use, and the desktop and mobile apps connect to it, on the same machine or from anywhere on your network.
+Onicode is a fork of [T3 Code](https://github.com/pingdotgg/t3code): a desktop and mobile GUI for the coding agents you already pay for. A server on your machine drives Claude Code, Codex, Cursor, Grok Build, OpenCode, Antigravity, fx and other agent CLIs, and the apps connect to it from the same machine, your local network or your tailnet.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, Google Antigravity, and fx. If they're set up on your computer, Onicode can control them.
+We keep porting T3 Code's fixes and features, one reviewed commit at a time, and go our own way on the points below.
 
-Onicode is open source and maintained by [aislopware](https://github.com/aislopware).
+## What's different from T3 Code
 
-## Before you start
-
-Install and authenticate at least one provider on the machine that runs the Onicode server:
-
-- Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-- Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-- Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-- Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-- OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-- Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
-- fx: install [fx](https://fx.sh) and run `fx login` ([setup guide](./docs/user/providers-fx.md))
+- **No account, no relay, no telemetry.** T3 Connect, the hosted web app and analytics are gone. The apps reach your machine directly, over your local network or Tailscale.
+- **Tailscale sign-in.** Pick a machine from your tailnet and connect without a pairing code. A host can also accept tailnet connections only.
+- **Remote desktop.** See and control a machine's whole screen from another desktop or your phone, peer to peer, for the moments an agent's work needs a GUI.
+- **More of Claude Code.** Claude threads open `/context`, `/mcp`, `/status`, `/agents`, `/skills`, `/memory`, `/hooks`, `/permissions` and `/plugin`, on desktop and mobile.
+- **Faster project picking.** Add project, the command palette and `@` mentions find folders through zoxide and fzf.
+- **A snappier desktop app.** Quicker cold starts and no window flashes on high-refresh Macs.
+- **One release channel.** No nightly track. The apps update themselves from Onicode's own feeds.
 
 ## Install
 
-### Command line
-
-```bash
-npm install -g onicode
-```
-
-Then run `onicode` to start the server and print pairing details for the desktop and mobile apps. `onicode service install` keeps it running in the background, and `onicode --help` has the full reference.
-
-### Desktop and mobile
-
-The desktop app bundles the server. On a Mac with Apple silicon, install it with [Homebrew](https://brew.sh):
+Desktop app, which bundles the server, on a Mac with Apple silicon:
 
 ```bash
 brew install --cask aislopware/tap/onicode
 ```
 
-or [download it](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/macos/latest/download) and move **Onicode** to Applications. Desktop and mobile releases are published through Onicode's own update feeds, and installed apps update themselves from there. See [Install and first run](./docs/user/install.md) and [Remote access](./docs/user/remote-access.md) to connect a phone or another machine.
+Server only:
 
-### From source
+```bash
+curl -fsSL https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.sh | sh
+```
+
+[Install and first run](./docs/user/install.md) covers other platforms, the mobile apps and signing in to a provider. [Remote access](./docs/user/remote-access.md) connects a phone or another machine.
+
+## From source
+
+Install [Vite+](https://viteplus.dev/guide/) for the `vp` command, then:
 
 ```bash
 git clone https://github.com/aislopware/onicode.git
@@ -47,41 +41,8 @@ vp i
 vp run dev
 ```
 
-Onicode uses [Vite+](https://viteplus.dev/guide/), so install the global `vp` command first:
+See [Development](./docs/operations/development.md) for the rest.
 
-```bash
-# macOS / Linux
-curl -fsSL https://vite.plus | bash
-# Windows (PowerShell)
-irm https://vite.plus/ps1 | iex
-```
+---
 
-`vp run dev` starts the server and web app with state in the checkout's own `.onicode` directory. [Development](./docs/operations/development.md) covers ports, test data and the desktop and mobile apps. [docs/internals/overview.md](./docs/internals/overview.md) explains the architecture.
-
-## Documentation
-
-Docs live in [docs/](./docs).
-
-- [FAQ](./docs/user/faq.md)
-- [Install and first run](./docs/user/install.md)
-- [Permission modes](./docs/user/permission-modes.md)
-- [Keyboard shortcuts](./docs/user/keybindings.md)
-- [Project settings](./docs/user/project-settings.md)
-- [Appearance preferences](./docs/user/appearance.md)
-- [Remote access from a phone or another machine](./docs/user/remote-access.md)
-- [Keeping app and server in sync](./docs/user/updating.md)
-- [Source control integrations](./docs/user/source-control.md)
-- Multiple accounts: [Codex](./docs/user/providers-codex.md) · [Claude](./docs/user/providers-claude.md)
-- [Run Onicode as a background service](./docs/user/background-service.md)
-
-## No hosted services
-
-Onicode has no cloud relay, web app or telemetry. Clients reach a server on the same machine, over your local network or through Tailscale, and releases ship through Onicode's own update feeds.
-
-## Contributing
-
-Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR. Report security issues privately as described in [SECURITY.md](./.github/SECURITY.md).
-
-## License
-
-[MIT](./LICENSE).
+[Docs](./docs) · [Contributing](./CONTRIBUTING.md) · [Security](./.github/SECURITY.md) · [MIT license](./LICENSE)
