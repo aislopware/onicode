@@ -578,3 +578,4 @@ c501ccad57	take	fix(server): PR watch waits for queued GitHub workflow runs
 6e6b6a7365	take	fix(opencode): stopped sessions can fork after a lost end event
 ea6af468a7	take	fix(server): @ file search matches paths containing square brackets
 4d52d321cb	take	fix(client-runtime): MCP App requests with undefined values reach the server
+d27d03b6d3	take	fix(provider-core): recheck a failed sign-in when settings are applied
