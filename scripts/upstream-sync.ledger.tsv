@@ -723,3 +723,4 @@ db04d3abe9	take	fix(server): subagent threads get short ids agents can quote bac
 204b140073	take	fix(web): context row under the composer hides chat text scrolling behind it (#34846)
 0ac41eecad	take	fix(web): sidebar rows drop a branch and worktree that were deleted (#34878)
 8024e50c6f	take	fix(server): a fork made after Edit from here no longer shows the rewound turns (#34823)
+9359081c24	take	fix(server): a pull request watch started after a pending self-settle survives the turn end (#34884)
