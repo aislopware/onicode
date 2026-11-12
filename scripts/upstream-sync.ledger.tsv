@@ -728,3 +728,4 @@ db04d3abe9	take	fix(server): subagent threads get short ids agents can quote bac
 eeae0b2783	take	fix(server): finished delegated Codex children no longer pile up in Codex Recents (#34829)
 07efa5bdac	take	fix(acp): ask forms with a free-text companion field show one step per question (#34867)
 eeccecff74	take	fix(server): deleting a source thread keeps the pages its live fork still shows (#34879)
+415e1cabe6	take	fix(web): html render images open with the rest of their page in the viewer (#34883)
