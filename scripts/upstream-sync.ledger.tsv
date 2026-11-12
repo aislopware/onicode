@@ -671,3 +671,4 @@ c0f85e7f79	take	feat(web): reply to an assistant response from its hover actions
 bc647ed535	take	fix(server): title requests about referenced threads accurately
 3a30b011c3	take	fix(web): cancelled PR checks show a gray stop sign instead of the failed X
 8c15be97dd	take	fix(cursor): recover restarted threads with older runs
+d353fba97e	take	fix(desktop): stalled update downloads time out and say why; patch regenerated for Onicode's electron-updater 6.8.12, exported downloadLocalUpdate, test uses latest channel
