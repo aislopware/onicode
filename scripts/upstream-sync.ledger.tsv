@@ -479,3 +479,4 @@ eeb31c11b7	take	fix(server): settling a thread refreshes its pull request status
 acbe050e77	take	test(evals): browser routing cases for requested QA vs project browser CLIs (#31536)
 f1d402009a	take	perf(server): trace database reclamation once per pass (#32923)
 43ba03c82a	take	fix(server): preview_wait_for stops at its timeout when the page stops answering (#32846)
+fdaf883293	skip	AUR packaging; Onicode ships no AUR packages
