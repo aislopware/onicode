@@ -778,3 +778,4 @@ ac781dcb77	take	fix(server): delegate_task wait returns its task handle before N
 e1fad19018	take	fix(desktop): a login shell slower than 5s at launch still yields its PATH (#35033)
 3ec8347a69	take	fix(opencode): a slow OpenCode 2 server start no longer leaves the model list empty (#35049)
 cbc38a1b0f	take	fix(server): one unresponsive provider no longer stalls every thread's effects (#35027)
+68f1bc58d5	take	fix(desktop): SnapShot shortcut rebinds after the desktop portal restarts (#35048)
