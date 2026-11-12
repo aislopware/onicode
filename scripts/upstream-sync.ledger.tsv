@@ -801,3 +801,4 @@ b2e86d7902	take	fix(web): an invalid provider setting is refused at its field in
 abbd967c4b	take	fix(web): PR comment hover excerpts no longer end in a replacement character (#35111)
 9c5b6f3d77	take	fix(mobile): Android composer keeps its cursor after a drag-scroll (#35092)
 32f3d8b160	take	fix(client-runtime): Diagnostics Resource History keeps updating while open (#35116)
+efd683ccc3	take	fix(web): a failed send leaves the timeline when a new draft was typed (#35102)
