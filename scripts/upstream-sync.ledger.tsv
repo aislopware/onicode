@@ -448,3 +448,4 @@ c2300780e0	take	fix(server): reject worktree launches in non-Git projects (#3427
 330b9f4840	take	fix(web): arrow keys and buttons step through the images an agent viewed (#34333)
 01b815ffc2	take	fix(web): draw rounded powerline caps to fill the terminal cell (#34552)
 a9f2d7d5f4	take	fix(web): "Show full message" only appears when it at least doubles the message (#34306)
+694076dcf3	take	fix(server): show when Stop leaves a Claude steer unconfirmed (#23807)
