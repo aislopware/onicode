@@ -647,3 +647,4 @@ cf906e1fcf	take	feat(web): resolved review conversations fold into avatars on th
 7c76c9ddc2	take	fix(web): mouse back/forward over the right panel no longer moves the main chat (#30882)
 af2421f23a	skip	fixes upstream's PR limits workflow script, which Onicode does not have (1e25ef9e57 skipped)
 8214342385	take	fix(web): collapsed PR comments no longer show raw HTML (#32283)
+34e7b6601b	take	fix(server): oni_thread_list counts threads waiting on background work as live (#34674)
