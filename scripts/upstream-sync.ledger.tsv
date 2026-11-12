@@ -496,3 +496,4 @@ e805ce3712	take	fix(server): Update server works again on services installed bef
 5ba59520b6	skip	marketing site; Onicode removed it
 c092c6eb1e	take	fix(server): generated thread titles leave out the project name (#33418)
 7e796802aa	take	fix(codex): keep the launcher error that precedes an exit summary (#33290)
+3f402e3ae4	take	fix(server): explain why /compact fails on providers without compaction (#33269)
