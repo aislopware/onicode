@@ -14,18 +14,6 @@ We keep porting T3 Code's fixes and features, one reviewed commit at a time, and
 - **A snappier desktop app.** Quicker cold starts and no window flashes on high-refresh Macs.
 - **One release channel.** No nightly track. The apps update themselves from Onicode's own feeds.
 
-## Install
-
-Desktop app, which bundles the server: [download it for a Mac with Apple silicon](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/macos/latest/download), unzip it and move **Onicode** to Applications. It updates itself from then on.
-
-Server only:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.sh | sh
-```
-
-[Install and first run](./docs/user/install.md) covers other platforms, the mobile apps and signing in to a provider. [Remote access](./docs/user/remote-access.md) connects a phone or another machine.
-
 ## From source
 
 Install [Vite+](https://viteplus.dev/guide/) for the `vp` command, then:
