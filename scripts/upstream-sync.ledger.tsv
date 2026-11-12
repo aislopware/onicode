@@ -534,3 +534,4 @@ f89af364ec	take	fix(web): avoid false errors when cancelling preview popouts (#3
 e9df5914d4	take	fix(cursor): a completed catalog refresh drops models it no longer lists (#28018)
 62e68f3166	take	fix(provider-core): isolate npm version caches by lookup environment (#34309)
 a308715773	take	fix(provider-acp): Hermes html_render pages show in the thread (#29141)
+c2ff84a4bb	take	fix(client): trim model-reference delimiters in linear time (#34311)
