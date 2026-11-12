@@ -744,3 +744,4 @@ e77384bf00	take	fix(server): Claude forked skills record the model they run on (
 b63b559c05	take	fix(server): browser setup command names the running onicode executable, not another onicode on PATH (#34936)
 0b1b9d471a	take	fix(desktop): app opens after an update while the old server shuts down (#34932)
 5fb9ee5c42	take	fix(server): standalone Codex is checked against the native release channel (#34910)
+fb2580a571	take	fix(provider-muse): an unfinished Muse install says how to finish setup (#34927)
