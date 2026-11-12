@@ -554,3 +554,4 @@ b3ce149be5	take	fix(mobile): Fast can be turned on for an existing thread (#2976
 5099695673	take	fix(web): price dialog no longer flags a model before a price is entered (#25755)
 3445b0b400	take	fix(web): terminal output no longer edits a hidden question draft (#24773)
 4d1808dc4c	take	fix(opencode): show prompts other OpenCode 2 clients send into a T3 session (#27839)
+2a8ec9c8e1	take	fix(web): single-digit numbered lists no longer clip in wide fonts (#23573)
