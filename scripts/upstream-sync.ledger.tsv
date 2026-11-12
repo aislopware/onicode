@@ -715,3 +715,4 @@ ff599f0bef	take	fix(server): Claude subagent results drop Claude Code's tools-us
 c085a0aa5d	take	fix(server): a slow baseline checkpoint no longer holds every prompt for 30 seconds (#34849)
 3b732f4d37	take	fix(server): Codex subagent rows show the child's current command (#34862)
 101e5f99a2	take	fix(web): review comments in question answers reach the agent with their text (#34855)
+0b6f482dc5	skip	T3 Connect only; Onicode removed Connect
