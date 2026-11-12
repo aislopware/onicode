@@ -470,3 +470,4 @@ a98466b3f8	take	docs: remove the broken composer banner reference (#34443)
 586c790eeb	take	fix(server): Codex network waits no longer show a stale retry limit (#29224)
 b703fdbfdb	take	fix(server): a git action that fails partway refreshes the Git panel (#29651)
 358bb71048	skip	T3 Connect link proofs; Onicode removed Connect and the relay
+23132f8338	take	fix(github): pull requests missing refs/pull/N/head no longer show as not found (#25947)
