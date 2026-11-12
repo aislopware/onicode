@@ -444,3 +444,4 @@ c2300780e0	take	fix(server): reject worktree launches in non-Git projects (#3427
 1ab3afe892	take	fix(web): opening a file focuses its editor so Cmd+F searches it (#34360)
 462eeac63b	take	fix(mobile): stale Claude threads show a compact-before-send notice (#34263)
 80d8623fc3	take	fix(cursor): retry a timed-out catalog read before reporting an error (#34553)
+21a9aa1d79	take	fix(web): wrapping a selection in backticks formats it as code (#14870)
