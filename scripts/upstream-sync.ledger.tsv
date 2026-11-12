@@ -537,3 +537,4 @@ a308715773	take	fix(provider-acp): Hermes html_render pages show in the thread (
 c2ff84a4bb	take	fix(client): trim model-reference delimiters in linear time (#34311)
 c7618f6c10	take	fix(server): a steer that cuts off a streaming Claude reply marks it interrupted (#34597)
 7a64505a21	take	fix(server): preserve message order across lineage reads (#24442)
+3de3c9ffff	take	fix(web): keep a leading blank line selected when indenting code (#34307)
