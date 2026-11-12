@@ -418,3 +418,4 @@ c4cf58511b	take	fix(server): long Claude sessions import instead of being skippe
 675d2bd3b2	take	fix(server): closed PR watches end even when the activity read fails (#27953)
 731c87334c	take	fix(desktop): a hidden preview tab no longer keeps the display awake after a screenshot (#25978)
 52c1491c8a	take	fix(server): successful worktree handoffs complete normally (#24545)
+81e9368c4a	take	fix(mobile): swipe action labels stay whole at larger Android text sizes (#27335)
