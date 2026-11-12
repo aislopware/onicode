@@ -421,3 +421,4 @@ c4cf58511b	take	fix(server): long Claude sessions import instead of being skippe
 81e9368c4a	take	fix(mobile): swipe action labels stay whole at larger Android text sizes (#27335)
 173374c4a7	take	fix(server): opening a pull request loads while its host is rate-limited (#27595)
 8b21cbdf1e	take	fix(server): Codex turns that auto-compact end instead of looping on restored context (#25911)
+3cfbc3607b	take	fix(server): keep queued Claude workflow members pending (#25325)
