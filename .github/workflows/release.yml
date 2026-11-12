@@ -295,6 +295,8 @@ jobs:
             exit 1
           fi
       # Apple caps What to Test at 4000 bytes; better-update checks that before the upload.
+      # App Store Connect can call a build valid minutes before a group may have it. Submitting
+      # again would upload the same build number, so only the group assignment is tried again.
       - name: Send to TestFlight
         if: steps.plan.outputs.native == 'true' && matrix.platform == 'ios'
         working-directory: apps/mobile
@@ -303,7 +305,25 @@ jobs:
           NOTES: ${{ inputs.notes }}
         run: |
           what="${NOTES:-$ONICODE_RELEASE_MESSAGE}"
-          better-update submit --platform ios --id "$BUILD" --what-to-test "${what:0:3000}" --non-interactive
+          if better-update submit --platform ios --id "$BUILD" --what-to-test "${what:0:3000}" --non-interactive; then
+            exit 0
+          fi
+          IFS=.- read -r major minor patch _ <<< "$ONICODE_VERSION"
+          number=$((major * 10000 + minor * 100 + patch))
+          assign() {
+            local group
+            while read -r group; do
+              better-update testflight group add-build --build-version "$number" --group "$group" --non-interactive || return 1
+            done < <(jq -r '.submit.production.ios.groups[]' eas.json)
+          }
+          for attempt in {1..10}; do
+            echo "TestFlight would not take build $number yet. Trying its groups again in a minute ($attempt/10)."
+            sleep 60
+            if assign; then
+              exit 0
+            fi
+          done
+          exit 1
       # The submit profile's service account can release to Play's testing tracks and nothing else.
       - name: Send to Google Play internal testing
         if: steps.plan.outputs.native == 'true' && matrix.platform == 'android'

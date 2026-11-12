@@ -10,8 +10,10 @@ mobile (iOS and Android) build and release through better-update at
 ## Setup
 
 The [Release workflow](../../.github/workflows/release.yml) needs one repository secret,
-`BETTER_UPDATE_ROBOT`: the `onicode-release` robot of project `onicode`, a developer with vault
-access. `better-update credentials robot create` prints it once; `credentials access grant` gives
+`BETTER_UPDATE_ROBOT`: the `onicode-release` robot of project `onicode`, a maintainer with vault
+access. A developer can build, but publishing an update to the protected `production` environment
+needs the maintainer role (`better-update credentials robot update <id> --role maintainer`).
+`better-update credentials robot create` prints the secret once; `credentials access grant` gives
 it the vault. It is also in Bitwarden, as `onicode GitHub Actions - BETTER_UPDATE_ROBOT`.
 
 Our [push gateway](./push-gateway.md) and Firebase project are not in the repository, so release
@@ -113,6 +115,11 @@ would repeat. `-f mobile_store_build=true` builds even when the fingerprint alre
 A build that exists in better-update counts as shipped, whether or not it reached the stores. If a
 store build's submit step fails, do not rerun the release, which would publish an update instead:
 send that build with `better-update submit --platform <ios|android> --id <build>` from `apps/mobile`.
+
+When the log says the upload was delivered and TestFlight configuration then failed, App Store
+Connect was not ready to give the build to a group. The workflow tries the assignment again for ten
+minutes. After that, do not submit again, which would upload the same build number:
+`better-update testflight group add-build --build-version <number> --group "Onicode Team"`.
 
 The workflow passes the planned fingerprint to the native build as
 `EXPO_UPDATES_FINGERPRINT_OVERRIDE`, as EAS Build does. A build made by hand lets expo-updates
