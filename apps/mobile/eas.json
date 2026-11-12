@@ -39,6 +39,8 @@
         "groups": ["Onicode Team"]
       },
       "android": {
+        "serviceAccountKeyId": "2fa2dd35-4b16-46e9-a8ef-574753f8ca09",
+        "applicationId": "dev.aislopware.onicode",
         "track": "internal"
       }
     }

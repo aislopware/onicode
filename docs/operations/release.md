@@ -110,9 +110,9 @@ changed, so it publishes an OTA update to the `production` channel instead of bu
 makes a store build, and fails early when the version already has one, because the build number
 would repeat. `-f mobile_store_build=true` builds even when the fingerprint already has a build.
 
-A build that exists in better-update counts as shipped, whether or not it reached the stores. An
-update only helps people who installed a build with its runtime version, so submit the Android build
-before relying on updates for it.
+A build that exists in better-update counts as shipped, whether or not it reached the stores. If a
+store build's submit step fails, do not rerun the release, which would publish an update instead:
+send that build with `better-update submit --platform <ios|android> --id <build>` from `apps/mobile`.
 
 The workflow passes the planned fingerprint to the native build as
 `EXPO_UPDATES_FINGERPRINT_OVERRIDE`, as EAS Build does. A build made by hand lets expo-updates
@@ -133,9 +133,10 @@ better-update build --platform android --profile production
 
 Android store builds contain arm64-v8a only (`apps/mobile/eas.json`), since every ABI adds a full
 native compile. Store build numbers follow the version (0.4.0 builds as 400), so every store build
-needs a new version. The workflow sends each iOS build to TestFlight with the release notes (or the
-build message) as What to Test, through the `production` submit profile's ASC API key; submit Android
-with `better-update submit --platform android` when ready.
+needs a new version. The workflow submits each store build through the `production` submit profile:
+iOS to TestFlight with the release notes (or the build message) as What to Test, Android to Google
+Play's internal testing track. The Google service account behind it may release to testing tracks
+only, so promoting a build further is done by hand in Play Console.
 
 Over-the-air updates come from better-update's manifest on the `production` channel. Production
 builds use the fingerprint runtime version, so an update reaches only builds with the same native

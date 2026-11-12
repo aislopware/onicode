@@ -21,7 +21,7 @@ on:
         type: string
         default: ""
       mobile:
-        description: Mobile platforms to ship. A native change makes a store build (iOS also goes to TestFlight; Android is not submitted); a JS-only change publishes an OTA update.
+        description: Mobile platforms to ship. A native change makes a store build (iOS goes to TestFlight, Android to Google Play internal testing); a JS-only change publishes an OTA update.
         type: choice
         options: [none, both, ios, android]
         default: none
@@ -304,6 +304,13 @@ jobs:
         run: |
           what="${NOTES:-$ONICODE_RELEASE_MESSAGE}"
           better-update submit --platform ios --id "$BUILD" --what-to-test "${what:0:3000}" --non-interactive
+      # The submit profile's service account can release to Play's testing tracks and nothing else.
+      - name: Send to Google Play internal testing
+        if: steps.plan.outputs.native == 'true' && matrix.platform == 'android'
+        working-directory: apps/mobile
+        env:
+          BUILD: ${{ steps.build.outputs.build }}
+        run: better-update submit --platform android --id "$BUILD" --non-interactive
       - name: ccache stats
         if: always() && steps.plan.outputs.native == 'true'
         run: ccache --show-stats
