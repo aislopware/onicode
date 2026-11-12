@@ -508,3 +508,4 @@ e8afdb0624	take	fix(server): idle compaction no longer runs in the middle of del
 34600bd24b	take	perf(server): thread opens stay fast during concurrent transcript exports (median 4.0× faster with eight running) (#33935)
 e9eb473d52	take	perf(server): Storage Cleanup sizes leftover worktrees about 4.8x faster (median 13,343 ms -> 2,759 ms) (#33937)
 3a0bcba00a	take	fix(shared): GitLab merge request file and line links open that file (#34607)
+fb4bf0722a	take	fix(server): provider update commands get no stdin, so one that reads it fails fast (#33974)
