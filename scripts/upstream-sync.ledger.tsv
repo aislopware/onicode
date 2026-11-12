@@ -773,3 +773,4 @@ c17ec829d0	take	fix(web): overlong content search queries explain the 256-charac
 84e69da395	take	fix(web): No project threads offer no Initialize Git, and their linked PRs show and act in the thread (#34788)
 805251b670	take	fix(server): thread setting changes no longer end a Claude session's background work (#35029)
 becc7d3510	take	fix(server): Tailscale Serve no longer takes a live server's route and repairs one left on a dead port (#35042)
+ac781dcb77	take	fix(server): delegate_task wait returns its task handle before Node fetch's 300 s timeout (#35032)
