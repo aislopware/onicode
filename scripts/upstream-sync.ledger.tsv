@@ -746,3 +746,4 @@ b63b559c05	take	fix(server): browser setup command names the running onicode exe
 5fb9ee5c42	take	fix(server): standalone Codex is checked against the native release channel (#34910)
 fb2580a571	take	fix(provider-muse): an unfinished Muse install says how to finish setup (#34927)
 7aaf5ce21d	take	fix(ssh): a failed remote onicode download says what failed and how to install it (#34928)
+d8b0a05a74	take	fix(clients): Claude question option previews are shown under their option (#34784)
