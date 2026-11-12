@@ -695,3 +695,4 @@ ed54f30644	skip	upstream contribution policy (CONTRIBUTING, PR template, contrib
 661a3e2a47	take	fix(web): Backspace right after a list shortcut keeps the typed marker (#34802)
 31a108c195	take	fix(contracts): Space shortcuts reach clients instead of reverting to defaults (#34799)
 dbfbe3993f	take	fix(web): questions without options no longer mention a selected option (#34806)
+71e1f2ac51	take	fix(server): threads launched in the project folder record its branch (#34812)
