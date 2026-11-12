@@ -114,6 +114,37 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
         }),
       ).toBe("sudo /opt/onicode/onicode browser setup");
 
+      // A standalone executable started directly (systemd, no launcher) is still this install.
+      expect(
+        yield* rootCommand({
+          node: "/opt/onicode/onicode",
+          entry: "/opt/onicode/onicode",
+          executable: true,
+          path: yield* pathWithOni,
+        }),
+      ).toBe("sudo /opt/onicode/onicode browser setup");
+
+      // A global npm launcher runs the downloaded executable; PATH's `onicode` is that launcher.
+      const prefix = path.join(home, "npm");
+      const npmLauncher = path.join(prefix, "lib/node_modules/onicode/bin/onicode.mjs");
+      yield* fs.makeDirectory(path.dirname(npmLauncher), { recursive: true });
+      yield* fs.makeDirectory(path.join(prefix, "bin"));
+      yield* fs.writeFileString(npmLauncher, "", { mode: 0o755 });
+      yield* fs.writeFileString(
+        path.join(prefix, "lib/node_modules/onicode/package.json"),
+        `{"name":"onicode","version":"${packageJson.version}"}`,
+      );
+      yield* fs.symlink(npmLauncher, path.join(prefix, "bin/onicode"));
+      expect(
+        yield* rootCommand({
+          node: "/home/theo/.onicode/runtime/versions/1.0.0/onicode",
+          entry: "/home/theo/.onicode/runtime/versions/1.0.0/onicode",
+          executable: true,
+          path: path.join(prefix, "bin"),
+          env: { ONICODE_NPM_LAUNCHER_PATH: npmLauncher },
+        }),
+      ).toBe('sudo env "PATH=$PATH" onicode browser setup');
+
       expect(
         yield* rootCommand({ ...desktop, env: { ONICODE_CLI_PATH: path.join(home, "gone") } }),
       ).toBe('sudo env "PATH=$PATH" onicode browser setup');
