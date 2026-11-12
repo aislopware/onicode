@@ -724,3 +724,4 @@ db04d3abe9	take	fix(server): subagent threads get short ids agents can quote bac
 0ac41eecad	take	fix(web): sidebar rows drop a branch and worktree that were deleted (#34878)
 8024e50c6f	take	fix(server): a fork made after Edit from here no longer shows the rewound turns (#34823)
 9359081c24	take	fix(server): a pull request watch started after a pending self-settle survives the turn end (#34884)
+1df9c91230	take	fix(server): thread reads list only open linked PRs and show their watch state (#34895)
