@@ -570,3 +570,4 @@ a2a3388c5e	take	fix(server): keep writes moving while readers pin the WAL (#2349
 bd5ed4dac8	take	fix(provider-cursor): Cursor sign-in shows why it failed (#25938)
 52f0988cd6	take	fix(mobile): iPad sidebar shows new threads after switching tabs (#27894)
 289078a535	take	fix(opencode): wait for a cold directory's scan before caching its skills (#31074)
+962eeefa03	take	fix(client-runtime): retry messages after socket loss with the same command ID (#24761)
