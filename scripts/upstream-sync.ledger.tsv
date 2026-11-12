@@ -637,3 +637,4 @@ cd8fc91a57	skip	only serves phone/tablet browsers running the web renderer; Onic
 f6b260df15	take	fix(server): self-update moves the onicode command to the new runtime (#14875); cloud/ hunks applied to service/
 9c96180aa3	take	fix(server): oni_thread_launch says when its project does not exist (#29109)
 fd64128014	take	fix(mobile): iOS web previews keep their flick momentum (#27671)
+1e25ef9e57	skip	upstream repo governance (vouching, PR limits workflow, contribution-triage skill); Onicode has none of these
