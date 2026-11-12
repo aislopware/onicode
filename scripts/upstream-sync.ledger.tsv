@@ -440,3 +440,4 @@ fdcf27211e	take	docs(orchestration-v2): task_cancel describes queued-only tasks 
 a8ccf14d06	take	fix(server): stop a Codex app-server that ignores SIGTERM (#34461)
 9994396504	take	fix(server): branch totals stop relisting untracked files after a failed listing (#34460)
 06bd84623b	take	test(server): wire budget covers stale todo lists in long threads (#34522)
+c2300780e0	take	fix(server): reject worktree launches in non-Git projects (#34279)
