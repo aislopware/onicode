@@ -505,3 +505,4 @@ e8afdb0624	take	fix(server): idle compaction no longer runs in the middle of del
 4eb20e4d38	take	fix(shared): clicked HTML images keep whole emoji in capped names (#33829)
 84265950ea	take	fix(server): large tool summaries no longer split an emoji at the cap (#33832)
 168bcd630c	take	fix(github): `gh pr new` links the new pull request to the thread (#33474)
+34600bd24b	take	perf(server): thread opens stay fast during concurrent transcript exports (median 4.0× faster with eight running) (#33935)
