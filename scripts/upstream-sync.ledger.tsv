@@ -572,3 +572,4 @@ bd5ed4dac8	take	fix(provider-cursor): Cursor sign-in shows why it failed (#25938
 289078a535	take	fix(opencode): wait for a cold directory's scan before caching its skills (#31074)
 962eeefa03	take	fix(client-runtime): retry messages after socket loss with the same command ID (#24761)
 25c599839a	take	fix(provider-core): Nix store provider installs no longer offer an update that can't run
+4ea32cb62e	take	fix(server): load balancing reads container cgroup limits instead of the host's
