@@ -602,3 +602,4 @@ c0b67b7631	take	fix(web): wrap interruption footers as one sentence
 2a6b2c8298	take	feat(web): switch the UI language from Settings, with Spanish and Chinese (#31313)
 afade9b562	take	feat(web): add Brazilian Portuguese translation (#33161)
 93d502f237	take	feat(web): add French translation (#33162)
+d8631c8711	take	feat(web): add German translation (#33163)
