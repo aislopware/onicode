@@ -731,3 +731,4 @@ eeccecff74	take	fix(server): deleting a source thread keeps the pages its live f
 415e1cabe6	take	fix(web): html render images open with the rest of their page in the viewer (#34883)
 9bcca0443c	take	fix(provider-core): one failed status check no longer marks a ready provider unavailable (#34885)
 1e438c8f80	take	fix(server): Codex goals wait for a delegated task instead of re-prompting (#34898)
+2e18418abf	take	fix(web): Incognito browser visits stay out of project history (#34859)
