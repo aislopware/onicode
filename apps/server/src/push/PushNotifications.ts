@@ -21,6 +21,8 @@ import { type AgentAwarenessState, projectThreadAwarenessV2 } from "@onicode/sha
 import { makeDrainableWorker } from "@onicode/shared/DrainableWorker";
 import { turnItemUpdateCanEndBackgroundWork } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import {
+  PUSH_ACTIVITY_KEEPALIVE_MS,
+  PUSH_ACTIVITY_KEEPALIVE_RETRY_MS,
   pushActivityIdentity,
   pushActivityState,
   pushAlertAllowed,
@@ -215,9 +217,12 @@ const make = Effect.gen(function* () {
   const confirmDeadlines = new Map<ThreadId, number>();
   /** The activity each device last received, to skip what would look the same. */
   const delivered = new Map<PushDeviceId, string>();
+  /** When each Live Activity with work under way last heard from here. */
+  const refreshedAt = new Map<PushDeviceId, number>();
   /** Set while thread changes wait for the queue to empty before the activity is published. */
   let activityStale = false;
   let expiry: Fiber.Fiber<void> | undefined;
+  let keepalive: Fiber.Fiber<void> | undefined;
 
   const nowIso = DateTime.now.pipe(Effect.map(DateTime.formatIso));
 
@@ -246,6 +251,7 @@ const make = Effect.gen(function* () {
     states.clear();
     confirmDeadlines.clear();
     delivered.clear();
+    refreshedAt.clear();
     activityStale = false;
   });
 
@@ -320,10 +326,12 @@ const make = Effect.gen(function* () {
       pushAlertAllowed(device.preferences, input.alert.kind)
         ? input.alert.notification
         : undefined;
+    const refreshed = refreshedAt.get(deviceId);
     const activity =
       input.activity !== undefined &&
       device.preferences.activity &&
-      delivered.get(deviceId) !== input.activity.identity
+      (delivered.get(deviceId) !== input.activity.identity ||
+        (refreshed !== undefined && now - refreshed >= PUSH_ACTIVITY_KEEPALIVE_MS))
         ? input.activity
         : undefined;
 
@@ -371,11 +379,15 @@ const make = Effect.gen(function* () {
       });
       if (result.outcome === "delivered") {
         delivered.set(deviceId, identity);
-        // The gateway ended the activity, so its token is spent.
-        if (!working) {
+        if (working) {
+          refreshedAt.set(deviceId, now);
+        } else {
+          refreshedAt.delete(deviceId);
+          // The gateway ended the activity, so its token is spent.
           yield* devices.setGrant({ deviceId, kind: "liveActivityUpdate", grant: null });
         }
-      } else if (result.outcome === "unregistered" && working) {
+      } else if (result.outcome === "unregistered") refreshedAt.delete(deviceId);
+      if (result.outcome === "unregistered" && working) {
         // Swiped away: leave it gone until this stretch of work is over.
         yield* settle(true);
       }
@@ -402,6 +414,7 @@ const make = Effect.gen(function* () {
     device: PushDevices.PushDeviceRecord,
   ) {
     delivered.delete(device.deviceId);
+    refreshedAt.delete(device.deviceId);
     const now = yield* Clock.currentTimeMillis;
     const grant =
       device.platform === "android"
@@ -474,6 +487,20 @@ const make = Effect.gen(function* () {
         ),
       { concurrency: 4, discard: true },
     );
+
+    // iOS marks a card out of date when nothing reaches it, even while its agents keep working.
+    if (keepalive !== undefined) yield* Fiber.interrupt(keepalive);
+    const oldest = Math.min(...refreshedAt.values());
+    keepalive =
+      refreshedAt.size === 0
+        ? undefined
+        : yield* Effect.sleep(
+            // A delivery that keeps failing must not turn this into a tight loop.
+            Math.max(PUSH_ACTIVITY_KEEPALIVE_RETRY_MS, oldest + PUSH_ACTIVITY_KEEPALIVE_MS - now),
+          ).pipe(
+            Effect.andThen(Effect.suspend(() => enqueue({ _tag: "refresh" }))),
+            Effect.forkIn(scope),
+          );
   });
 
   const processThread = Effect.fn("PushNotifications.processThread")(function* (

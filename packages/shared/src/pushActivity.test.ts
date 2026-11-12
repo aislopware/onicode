@@ -40,23 +40,33 @@ const activity = (states: ReadonlyArray<AgentAwarenessState>, nowMs = NOW) =>
   pushActivityState({ title: "mac-mini", states, nowMs });
 
 describe("pushActivityState", () => {
-  it("puts agents that need someone first and counts only running work", () => {
+  it("orders by what needs someone, then results, then work still going", () => {
     const result = activity([
       agent("running", "running", at(-1_000)),
       agent("done", "completed", at(-60_000)),
       agent("approval", "waiting_for_approval", at(-5_000)),
       agent("failed", "failed", at(-2_000)),
+      agent("stale", "stale", at(0)),
     ]);
 
     expect(result?.state.activities.map((row) => row.threadId)).toEqual([
       "approval",
-      "running",
       "failed",
       "done",
+      "running",
+      "stale",
     ]);
-    expect(result?.state.activeCount).toBe(2);
-    expect(result?.state.subtitle).toBe("2 agents working");
+    expect(result?.state.activeCount).toBe(3);
+    expect(result?.state.subtitle).toBe("3 agents working");
     expect(result?.expiresAt).toBeUndefined();
+  });
+
+  it("keeps working agents in place while they take turns", () => {
+    const first = activity([agent("a", "running", at(-9_000)), agent("b", "starting", at(0))]);
+    const second = activity([agent("a", "running", at(0)), agent("b", "running", at(-9_000))]);
+
+    expect(first?.state.activities.map((row) => row.threadId)).toEqual(["a", "b"]);
+    expect(second?.state.activities.map((row) => row.threadId)).toEqual(["a", "b"]);
   });
 
   it("keeps finished work for a while, then shows nothing", () => {

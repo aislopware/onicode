@@ -382,13 +382,21 @@ describe("PushNotifications", () => {
         yield* push.drain;
         assert.deepStrictEqual(taken(), [{ grant: "grant_update", alert: undefined, active: 1 }]);
 
+        // Work that goes on unchanged is sent again before iOS calls the card out of date.
+        yield* TestClock.adjust("7 minutes");
+        yield* push.drain;
+        assert.deepStrictEqual(taken(), []);
+        yield* TestClock.adjust("1 minute");
+        yield* push.drain;
+        assert.deepStrictEqual(taken(), [{ grant: "grant_update", alert: undefined, active: 1 }]);
+
         yield* change({ pendingRuntimeRequest: approval });
         assert.deepStrictEqual(taken(), [
           { grant: "grant_notification", alert: "Approval needed · onicode", active: undefined },
           { grant: "grant_update", alert: undefined, active: 1 },
         ]);
 
-        yield* change({ status: "failed", latestRunCompletedAt: DateTime.makeUnsafe(0) });
+        yield* change({ status: "failed", latestRunCompletedAt: DateTime.makeUnsafe(8 * 60_000) });
         assert.deepStrictEqual(taken(), [
           { grant: "grant_notification", alert: "Agent failed · onicode", active: undefined },
           { grant: "grant_update", alert: undefined, active: 0 },

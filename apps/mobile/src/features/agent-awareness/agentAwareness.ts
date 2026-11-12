@@ -24,6 +24,7 @@ import { mobilePreferencesAtom } from "../../state/preferences";
 import { environmentSession } from "../../state/session";
 import type { AgentActivityProps } from "../../widgets/AgentActivity";
 import { getAgentLiveActivities, observeAgentLiveActivityStartToken } from "./agentLiveActivity";
+import { duplicateActivityIds } from "./liveActivityDuplicates";
 import {
   clearAndroidAgentNotifications,
   clearAndroidEnvironmentNotifications,
@@ -121,7 +122,9 @@ function setEnvironmentStatus(
 }
 
 const decodeActivityEnvironment = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Struct({ environmentId: Schema.String })),
+  Schema.fromJsonString(
+    Schema.Struct({ environmentId: Schema.String, updatedAt: Schema.optional(Schema.String) }),
+  ),
 );
 
 interface ObservedActivity {
@@ -357,12 +360,35 @@ const reconcile = coalescedRun(async () => {
   if (loaded !== null) await reconcileLiveActivities(loaded);
 });
 
+async function endDuplicateActivities(
+  activities: ReadonlyArray<LiveActivity<AgentActivityProps>>,
+): Promise<ReadonlyArray<LiveActivity<AgentActivityProps>>> {
+  if (activities.length < 2) return activities;
+  const described = await Promise.all(
+    activities.map(async (activity) => {
+      const props = await activity.getProps().catch(() => null);
+      const decoded = props === null ? Option.none() : decodeActivityEnvironment(props);
+      return Option.isNone(decoded)
+        ? []
+        : [{ id: activity.getId(), updatedAt: "", ...decoded.value }];
+    }),
+  );
+  const duplicates = duplicateActivityIds(described.flat());
+  if (duplicates.size === 0) return activities;
+  await Promise.all(
+    activities.filter((activity) => duplicates.has(activity.getId())).map(endActivity),
+  );
+  // The environment holds one update grant, which may name a card that just ended.
+  for (const observed of observedActivities.values()) observed.grant = undefined;
+  return activities.filter((activity) => !duplicates.has(activity.getId()));
+}
+
 async function reconcileLiveActivities(input: Context): Promise<void> {
   if (Platform.OS !== "ios") return;
   const preferences = readAgentNotificationPreferences();
   const { ready, saved } = connectedEnvironments();
   if (!ready) return;
-  const activities = getAgentLiveActivities();
+  const activities = await endDuplicateActivities(getAgentLiveActivities());
   const live = new Set(activities.map((activity) => activity.getId()));
   for (const [id, observed] of observedActivities) {
     if (!live.has(id)) {

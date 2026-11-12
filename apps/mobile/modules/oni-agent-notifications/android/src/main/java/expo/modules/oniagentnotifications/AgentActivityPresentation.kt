@@ -95,6 +95,7 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
   private val attentionCount = data["activity_attention_count"]?.toIntOrNull()?.coerceAtLeast(0)
     ?: rows.count { ActivityPhase.forStatus(it.status)?.needsUser == true }
   private val failedCount = rows.count { it.status == ActivityPhase.FAILED.status }
+  private val completedCount = rows.count { it.status == ActivityPhase.COMPLETED.status }
   val threadCount =
     activeCount + rows.count { ActivityPhase.forStatus(it.status)?.finished == true }
   private val singleProject = rows.map { it.project }.distinct().size == 1
@@ -109,6 +110,8 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
     attentionCount == 1 -> "1 needs you"
     attentionCount > 1 -> "$attentionCount need you"
     activeCount > 0 && failedCount > 0 -> "$failedCount failed"
+    // The environment leads with a result while others still work; the summary says which.
+    activeCount > 0 && phase == ActivityPhase.COMPLETED -> "$completedCount done"
     activeCount > 0 -> "$activeCount working"
     failedCount > 0 -> "Finished, $failedCount failed"
     else -> "All finished"

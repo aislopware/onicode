@@ -11,6 +11,12 @@ import type { AgentAwarenessPhase, AgentAwarenessState } from "./agentAwareness.
 
 /** How long finished work stays on the Live Activity and the ongoing notification. */
 export const PUSH_TERMINAL_DISPLAY_MS = 15 * 60_000;
+/**
+ * How often a Live Activity with work under way is sent again unchanged. The gateway tells iOS a
+ * card is out of date 10 minutes after its last update, so this stays under that.
+ */
+export const PUSH_ACTIVITY_KEEPALIVE_MS = 8 * 60_000;
+export const PUSH_ACTIVITY_KEEPALIVE_RETRY_MS = 60_000;
 /** A run that ended longer ago than this is history, not news. */
 const PUSH_TERMINAL_ALERT_FRESH_MS = 2 * 60_000;
 const TEXT_MAX_LENGTH = 120;
@@ -45,10 +51,15 @@ function statusForPhase(phase: AgentAwarenessPhase): string {
   }
 }
 
+const isInFlight = (phase: AgentAwarenessPhase) =>
+  phase === "starting" || phase === "running" || phase === "stale";
+
+/** What someone has to act on or look at comes before what is still going. */
 function phasePriority(phase: AgentAwarenessPhase): number {
   if (isAttention(phase)) return 0;
   if (phase === "failed") return 1;
-  if (phase === "starting" || phase === "running") return 2;
+  if (phase === "completed") return 2;
+  if (phase === "stale") return 4;
   return 3;
 }
 
@@ -80,6 +91,12 @@ function row(state: AgentAwarenessState): PushActivityRow {
 const newestFirst = (a: AgentAwarenessState, b: AgentAwarenessState) =>
   b.updatedAt.localeCompare(a.updatedAt);
 
+// A working thread's timestamp moves with every step. Ordering those by it would swap rows, and
+// push an update, each time two agents took turns.
+const displayOrder = (a: AgentAwarenessState, b: AgentAwarenessState) =>
+  phasePriority(a.phase) - phasePriority(b.phase) ||
+  (isInFlight(a.phase) ? a.threadId.localeCompare(b.threadId) : newestFirst(a, b));
+
 /**
  * One environment's agents as a phone shows them, or null when there is nothing worth showing.
  * `expiresAt` is when finished work stops being worth showing with nothing running.
@@ -89,9 +106,7 @@ export function pushActivityState(input: {
   readonly states: ReadonlyArray<AgentAwarenessState>;
   readonly nowMs: number;
 }): { readonly state: PushActivityState; readonly expiresAt: number | undefined } | null {
-  const active = input.states
-    .filter((state) => !isTerminal(state.phase))
-    .sort((a, b) => phasePriority(a.phase) - phasePriority(b.phase) || newestFirst(a, b));
+  const active = input.states.filter((state) => !isTerminal(state.phase));
   const finished = input.states
     .filter(
       (state) =>
@@ -99,7 +114,7 @@ export function pushActivityState(input: {
         input.nowMs - Date.parse(state.updatedAt) <= PUSH_TERMINAL_DISPLAY_MS,
     )
     .sort(newestFirst);
-  const shown = [...active, ...finished];
+  const shown = [...active, ...finished].sort(displayOrder);
   const newest = [...shown].sort(newestFirst)[0];
   if (newest === undefined) return null;
 
