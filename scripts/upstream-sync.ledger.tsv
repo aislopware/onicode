@@ -675,3 +675,4 @@ d353fba97e	take	fix(desktop): stalled update downloads time out and say why; pat
 8ea4a88097	take	fix(server): Tailscale Serve forwards to the address a specific --host binds (#34741)
 9c19aa9160	take	fix(tailscale): serve setup no longer times out on a long success summary (#34743)
 b75f117aa1	take	fix(server): Rescan finds tools installed after Onicode started (#23610)
+a41b882060	take	fix(server): advertise the tailnet name when sshd listens only on the tailnet address (#34745)
