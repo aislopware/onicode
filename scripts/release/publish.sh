@@ -6,8 +6,7 @@
 #   2. builds macOS (signed and notarized by better-update) and Linux;
 #   3. checks the notarized zip the way the updater of the native Onicode does before it installs it;
 #   4. releases the macOS and Linux builds to `latest` with the notes file;
-#   5. publishes the GitHub release v<version> with those builds attached;
-#   6. points the Homebrew cask in aislopware/homebrew-tap at the new macOS release.
+#   5. publishes the GitHub release v<version> with the notes.
 #
 #   scripts/release/publish.sh <notes-file>
 #
@@ -52,8 +51,5 @@ better-update macos release create "$mac_build" --channel latest --notes-file "$
 better-update linux release create "${linux_builds[@]}" --channel latest --notes-file "$notes"
 
 # 5. GitHub release.
-scripts/release/github-release.sh "$version" "$notes" "$mac_build" "${linux_builds[@]}"
-
-# 6. Homebrew.
-scripts/release/bump-cask.sh "$version" "$(shasum -a 256 "$work/Onicode.zip" | cut -d' ' -f1)"
-echo "publish.sh: Onicode $version is on the latest macOS and Linux feeds, on GitHub releases and in aislopware/tap"
+scripts/release/github-release.sh "$version" "$notes"
+echo "publish.sh: Onicode $version is on the latest macOS and Linux feeds"

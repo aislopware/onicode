@@ -24,6 +24,11 @@ declare const __ONICODE_RELEASE_CHANNEL__: ReleaseChannel | undefined;
 export const releaseChannel: ReleaseChannel =
   typeof __ONICODE_RELEASE_CHANNEL__ === "undefined" ? "dev" : __ONICODE_RELEASE_CHANNEL__;
 
+// The push gateways named when this server was built. The repository names none.
+declare const __ONICODE_PUSH_GATEWAY_URLS__: string | undefined;
+export const builtInPushGatewayUrls =
+  typeof __ONICODE_PUSH_GATEWAY_URLS__ === "undefined" ? "" : __ONICODE_PUSH_GATEWAY_URLS__;
+
 export const DEFAULT_PORT = 3773;
 
 export const RuntimeMode = Schema.Literals(["standalone", "desktop"]);

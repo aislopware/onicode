@@ -27,6 +27,7 @@ docker run --rm --platform "$platform" \
   --volume "onicode-linux-pnpm-$arch:/root/.local/share/pnpm" \
   --volume "onicode-linux-cargo-$arch:/usr/local/cargo/registry" \
   --env ONICODE_RELEASE_CHANNEL="${ONICODE_RELEASE_CHANNEL:-stable}" --env ARCH="$arch" \
+  --env ONICODE_PUSH_GATEWAY_URLS="${ONICODE_PUSH_GATEWAY_URLS:-}" \
   "$image" bash -euo pipefail -c '
     mkdir /work
     tar -C /src --exclude=node_modules --exclude=./release --exclude="./native/*/target" -cf - . \

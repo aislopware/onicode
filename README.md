@@ -16,11 +16,7 @@ We keep porting T3 Code's fixes and features, one reviewed commit at a time, and
 
 ## Install
 
-Desktop app, which bundles the server, on a Mac with Apple silicon:
-
-```bash
-brew install --cask aislopware/tap/onicode
-```
+Desktop app, which bundles the server: [download it for a Mac with Apple silicon](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/macos/latest/download), unzip it and move **Onicode** to Applications. It updates itself from then on.
 
 Server only:
 

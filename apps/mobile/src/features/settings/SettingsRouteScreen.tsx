@@ -240,6 +240,7 @@ function useSettingsIndexSections(): SettingsListSection[] {
         ...(navigationCustomizationAvailable()
           ? [page("SettingsNavigation", "line.3.horizontal", gt("Navigation tabs"))]
           : []),
+        page("SettingsNotifications", "bell.badge", gt("Notifications")),
         page("SettingsKeyboard", "keyboard", gt("Keyboard")),
         page("SettingsVoice", "mic", gt("Voice")),
       ],

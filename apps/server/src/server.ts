@@ -35,6 +35,11 @@ import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
+import * as PushDevices from "./push/PushDevices.ts";
+import * as PushGatewayClient from "./push/PushGatewayClient.ts";
+import * as PushHttp from "./push/http.ts";
+import * as PushNotifications from "./push/PushNotifications.ts";
+import * as PushSigningKey from "./push/PushSigningKey.ts";
 import * as SpeechModelStore from "./speech/SpeechModelStore.ts";
 import * as SpeechService from "./speech/SpeechService.ts";
 import * as CloudSpeech from "./speech/CloudSpeech.ts";
@@ -590,6 +595,17 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
       yield* service.start();
     }),
   ).pipe(Layer.provide(DelegatedTaskQuestionReactor.layer), Layer.provide(ProjectionStoreV2.layer)),
+  Layer.effectDiscard(
+    Effect.gen(function* () {
+      const service = yield* PushNotifications.PushNotifications;
+      yield* service.start();
+    }),
+  ).pipe(
+    Layer.provideMerge(PushNotifications.layer),
+    Layer.provide(PushGatewayClient.layer),
+    Layer.provide(PushSigningKey.layer),
+    Layer.provide(PushDevices.layer),
+  ),
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
   ProviderInstallation.layer,
@@ -689,6 +705,7 @@ const layerMakeRoutes = Layer.mergeAll(
       Layer.provide(PullRequestHttp.layer),
       Layer.provide(ProjectHttp.layer),
       Layer.provide(speechHttpApiLayer),
+      Layer.provide(PushHttp.layer),
       Layer.provide(ServerHttp.layerServerEnvironmentHttpApi),
       Layer.provide(AuthHttp.layerAuthenticatedAuth),
     ),

@@ -63,6 +63,10 @@
       "types": "./src/agentAwareness.ts",
       "import": "./src/agentAwareness.ts"
     },
+    "./pushActivity": {
+      "types": "./src/pushActivity.ts",
+      "import": "./src/pushActivity.ts"
+    },
     "./git": {
       "types": "./src/git.ts",
       "import": "./src/git.ts"

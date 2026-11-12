@@ -1,8 +1,8 @@
 name: Release
 
 # Builds the desktop app at apps/desktop's version through better-update. With notes, it then
-# releases the builds to the `latest` feeds, publishes the GitHub release v<version> with them, and
-# points the Homebrew cask at the new macOS release.
+# releases the builds to the `latest` feeds and publishes the GitHub release v<version> with the
+# notes. The feeds are the only place the app is downloaded from.
 # See docs/operations/release.md; scripts/release/publish.sh is the same release from a Mac.
 #
 #   gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
@@ -63,7 +63,6 @@ jobs:
       BETTER_UPDATE_INSTALL_FILTER: "!@onicode/mobile"
     outputs:
       build: ${{ steps.build.outputs.build }}
-      sha256: ${{ steps.verify.outputs.sha256 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
@@ -81,14 +80,12 @@ jobs:
           echo "build=${ids%%$'\n'*}" >> "$GITHUB_OUTPUT"
 
       - name: Check the zip as the native Onicode's updater does
-        id: verify
         env:
           BUILD: ${{ steps.build.outputs.build }}
         run: |
           zip="$RUNNER_TEMP/Onicode.zip"
           better-update builds download "$BUILD" --output "$zip"
           scripts/release/verify-macos-zip.sh "$zip" "$ONICODE_VERSION"
-          echo "sha256=$(shasum -a 256 "$zip" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
   linux:
     name: Build Linux
@@ -134,6 +131,9 @@ jobs:
       # Gradle's native builds (CMake) pick these up; iOS uses ccache through ios.ccacheEnabled.
       CMAKE_C_COMPILER_LAUNCHER: ccache
       CMAKE_CXX_COMPILER_LAUNCHER: ccache
+      # The push gateway these builds register with. A gateway serves only the builds signed for
+      # it, so ours is a secret rather than a default in the repository.
+      ONICODE_PUSH_GATEWAY_URL: ${{ secrets.ONICODE_PUSH_GATEWAY_URL }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       # BETTER_UPDATE_BUILD_DIR keeps better-update's staging copy and DerivedData at the same paths
@@ -167,6 +167,26 @@ jobs:
       # better-update loads the Expo config and its plugins from here before it stages the build.
       - name: Install the mobile workspace
         run: pnpm install --frozen-lockfile --prefer-offline --filter "@onicode/mobile..."
+
+      # The Firebase client file is part of the Android fingerprint, so it is in place before the
+      # plan and stays for the build or update that follows. It is kept out of the checkout.
+      - name: Supply the push settings
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          GOOGLE_SERVICES_JSON: ${{ matrix.platform == 'android' && secrets.ONICODE_ANDROID_GOOGLE_SERVICES_JSON || '' }}
+        run: |
+          if [[ -z "$ONICODE_PUSH_GATEWAY_URL" ]]; then
+            echo "::warning::ONICODE_PUSH_GATEWAY_URL is not set, so this $PLATFORM release has push notifications off."
+          fi
+          [[ "$PLATFORM" == android ]] || exit 0
+          if [[ -z "$GOOGLE_SERVICES_JSON" ]]; then
+            echo "::warning::ONICODE_ANDROID_GOOGLE_SERVICES_JSON is not set, so this Android release cannot receive pushes."
+            exit 0
+          fi
+          file="$RUNNER_TEMP/google-services.json"
+          printf '%s' "$GOOGLE_SERVICES_JSON" > "$file"
+          jq -e '.client | arrays | length > 0' "$file" > /dev/null || { echo "::error::ONICODE_ANDROID_GOOGLE_SERVICES_JSON is not a google-services.json."; exit 1; }
+          echo "ONICODE_ANDROID_GOOGLE_SERVICES_FILE=$file" >> "$GITHUB_ENV"
 
       # The production runtime version is the native fingerprint, so a production build with this
       # one can take the JS as an update. This runs on the build's own runner, from the checkout
@@ -338,22 +358,4 @@ jobs:
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          MAC_BUILD: ${{ needs.macos.outputs.build }}
-          LINUX_BUILDS: ${{ needs.linux.outputs.builds }}
-        run: |
-          read -ra linux_builds <<< "$LINUX_BUILDS"
-          scripts/release/github-release.sh "$ONICODE_VERSION" "$RUNNER_TEMP/notes.md" "$MAC_BUILD" "${linux_builds[@]}"
-
-      - name: Point the Homebrew cask at the release
-        env:
-          DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
-          SHA256: ${{ needs.macos.outputs.sha256 }}
-          GIT_AUTHOR_NAME: github-actions[bot]
-          GIT_AUTHOR_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-          GIT_COMMITTER_NAME: github-actions[bot]
-          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
-        run: |
-          key="$RUNNER_TEMP/homebrew-tap-key"
-          (umask 077 && printf '%s\n' "$DEPLOY_KEY" > "$key")
-          export GIT_SSH_COMMAND="ssh -i $key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
-          scripts/release/bump-cask.sh "$ONICODE_VERSION" "$SHA256"
+        run: scripts/release/github-release.sh "$ONICODE_VERSION" "$RUNNER_TEMP/notes.md"

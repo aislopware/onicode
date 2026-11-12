@@ -9,21 +9,29 @@ mobile (iOS and Android) build and release through better-update at
 
 ## Setup
 
-The [Release workflow](../../.github/workflows/release.yml) needs two repository secrets:
+The [Release workflow](../../.github/workflows/release.yml) needs one repository secret,
+`BETTER_UPDATE_ROBOT`: the `onicode-release` robot of project `onicode`, a developer with vault
+access. `better-update credentials robot create` prints it once; `credentials access grant` gives
+it the vault. It is also in Bitwarden, as `onicode GitHub Actions - BETTER_UPDATE_ROBOT`.
 
-- `BETTER_UPDATE_ROBOT`: the `onicode-release` robot of project `onicode`, a developer with vault
-  access. `better-update credentials robot create` prints it once; `credentials access grant` gives
-  it the vault.
-- `HOMEBREW_TAP_DEPLOY_KEY`: the private half of a write deploy key on `aislopware/homebrew-tap`.
-  The org refuses fine-grained tokens that live over a year, and a deploy key never expires.
+Our [push gateway](./push-gateway.md) and Firebase project are not in the repository, so release
+builds are told about them. Without these a release still ships, with push notifications off:
 
-Both are also in Bitwarden, as `onicode GitHub Actions - <secret name>`.
+- `ONICODE_PUSH_GATEWAY_URLS`, a variable of better-update's `production` environment
+  (`better-update env set`): the gateway origin desktop builds bake into their server, so an
+  installed app delivers through it with no setup. better-update passes it to the build command,
+  from the workflow and from a Mac alike.
+- `ONICODE_PUSH_GATEWAY_URL`, a repository secret: the gateway origin mobile builds register
+  with. The workflow warns when it is missing.
+- `ONICODE_ANDROID_GOOGLE_SERVICES_JSON`, a repository secret: the contents of the Firebase
+  project's `google-services.json`. It is part of the Android fingerprint, so adding, changing or
+  removing it makes the next Android release a store build.
 
 To release from a Mac instead, on that Mac:
 
-- `better-update login`, `gh` logged in with write access to `aislopware/onicode`, and SSH push
-  access to `aislopware/homebrew-tap`. The vault holds team `UK58J62H8L`'s Developer ID Application
-  certificate and App Store Connect key; builds ask for the vault passphrase.
+- `better-update login` and `gh` logged in with write access to `aislopware/onicode`. The vault
+  holds team `UK58J62H8L`'s Developer ID Application certificate and App Store Connect key; builds
+  ask for the vault passphrase.
 - Xcode Command Line Tools, Rust stable, and the repo's Node and pnpm.
 - Docker Desktop or OrbStack running, for the Linux build.
 
@@ -48,11 +56,10 @@ Without notes it only builds, which is how to try a build before releasing it. F
 checkout of `main` as pushed does the same with `scripts/release/publish.sh notes.md`.
 
 Both tag the commit `v<version>` first, build macOS and Linux, check the macOS zip, release both
-builds to `latest`, publish the GitHub release for that tag with the zip, AppImage, deb and their
-`SHA256SUMS` attached (`scripts/release/github-release.sh`), then point the `onicode` cask in
-`aislopware/homebrew-tap` at the new macOS release. The cask's version is `<version>,<release id>`
-because the download URL carries the release id. The steps it runs, for
-doing one by hand from the repo root:
+builds to `latest`, then publish the GitHub release for that tag with the notes
+(`scripts/release/github-release.sh`). The feeds are the only place the app is downloaded from:
+the GitHub release carries no builds, and there is no Homebrew cask. The steps it runs, for doing
+one by hand from the repo root:
 
 ```sh
 better-update build --platform macos --profile production

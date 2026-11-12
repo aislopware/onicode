@@ -7,6 +7,10 @@ node_modules
 apps/*/dist
 apps/*/dist-exe
 infra/*/dist
+infra/*/.cloudflare
+.dev.vars*
+!.dev.vars.example
+google-services.json
 .astro
 packages/*/dist
 .env

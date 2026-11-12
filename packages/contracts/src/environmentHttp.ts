@@ -63,6 +63,14 @@ import {
 } from "./orchestrationV2.ts";
 import { Project, ProjectMutation, ProjectSnapshot } from "./project.ts";
 import {
+  PushDeviceId,
+  PushDeviceList,
+  PushGrant,
+  PushRegisterDeviceRequest,
+  PushRegistrationInfo,
+  PushTestResult,
+} from "./push.ts";
+import {
   PullRequestDiffInput,
   PullRequestDiffResult,
   PullRequestOperationError,
@@ -87,6 +95,7 @@ export const EnvironmentRequestInvalidReason = Schema.Literals([
   "invalid_audio",
   "speech_unavailable",
   "speech_busy",
+  "push_gateway_not_allowed",
 ]);
 export type EnvironmentRequestInvalidReason = typeof EnvironmentRequestInvalidReason.Type;
 
@@ -212,7 +221,10 @@ export class EnvironmentInternalError extends Schema.TaggedError<EnvironmentInte
   }
 }
 
-export const EnvironmentResourceNotFoundReason = Schema.Literals(["thread_not_found"]);
+export const EnvironmentResourceNotFoundReason = Schema.Literals([
+  "thread_not_found",
+  "push_device_not_found",
+]);
 export type EnvironmentResourceNotFoundReason = typeof EnvironmentResourceNotFoundReason.Type;
 
 export class EnvironmentResourceNotFoundError extends Schema.TaggedError<EnvironmentResourceNotFoundError>()(
@@ -726,6 +738,64 @@ export class EnvironmentVoiceHttpApi extends HttpApiGroup.make("voice")
     }).middleware(EnvironmentAuthenticatedAuth),
   ) {}
 
+const PushDeviceParams = Schema.Struct({ deviceId: PushDeviceId });
+const EnvironmentPushDeviceErrors = [
+  EnvironmentRequestInvalidError,
+  EnvironmentResourceNotFoundError,
+  ...EnvironmentScopedOperationErrors,
+] as const;
+
+/** Push registration is HTTP so a client in the background can reach it without a socket. */
+export class EnvironmentPushHttpApi extends HttpApiGroup.make("push")
+  .add(
+    HttpApiEndpoint.get("registration", "/api/push/registration", {
+      headers: OptionalBearerHeaders,
+      success: PushRegistrationInfo,
+      error: EnvironmentScopedOperationErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.get("devices", "/api/push/devices", {
+      headers: OptionalBearerHeaders,
+      success: PushDeviceList,
+      error: EnvironmentPushDeviceErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.put("registerDevice", "/api/push/devices/:deviceId", {
+      headers: OptionalBearerHeaders,
+      params: PushDeviceParams,
+      payload: PushRegisterDeviceRequest,
+      success: HttpApiSchema.NoContent,
+      error: EnvironmentPushDeviceErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.put("registerLiveActivity", "/api/push/devices/:deviceId/live-activity", {
+      headers: OptionalBearerHeaders,
+      params: PushDeviceParams,
+      payload: PushGrant,
+      success: HttpApiSchema.NoContent,
+      error: EnvironmentPushDeviceErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.delete("unregisterDevice", "/api/push/devices/:deviceId", {
+      headers: OptionalBearerHeaders,
+      params: PushDeviceParams,
+      success: HttpApiSchema.NoContent,
+      error: EnvironmentPushDeviceErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  )
+  .add(
+    HttpApiEndpoint.post("sendTest", "/api/push/devices/:deviceId/test", {
+      headers: OptionalBearerHeaders,
+      params: PushDeviceParams,
+      success: PushTestResult,
+      error: EnvironmentPushDeviceErrors,
+    }).middleware(EnvironmentAuthenticatedAuth),
+  ) {}
+
 export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentMetadataHttpApi)
   .add(EnvironmentAuthHttpApi)
@@ -733,4 +803,5 @@ export class EnvironmentHttpApi extends HttpApi.make("environment")
   .add(EnvironmentOrchestrationHttpApi)
   .add(EnvironmentPullRequestsHttpApi)
   .add(EnvironmentProjectsHttpApi)
-  .add(EnvironmentVoiceHttpApi) {}
+  .add(EnvironmentVoiceHttpApi)
+  .add(EnvironmentPushHttpApi) {}

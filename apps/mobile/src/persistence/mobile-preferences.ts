@@ -10,6 +10,7 @@ import {
   PullRequestInvolvement,
   PullRequestListFilters,
   PullRequestListState,
+  PushDevicePreferences,
   type ProviderInstanceId,
   type PullRequestMergeMethod,
   type SidebarProjectGroupingMode,
@@ -81,6 +82,14 @@ export type WorkspaceSelections = typeof WorkspaceSelections.Type;
 
 const isThreadListFilters = Schema.is(ThreadListFilters);
 const isWorkspaceSelections = Schema.is(WorkspaceSelections);
+
+/** Push alerts and agent activity for this device, sent to every environment it registers with. */
+export const AgentNotificationPreferences = Schema.Struct({
+  enabled: Schema.Boolean,
+  ...PushDevicePreferences.fields,
+});
+export type AgentNotificationPreferences = typeof AgentNotificationPreferences.Type;
+const isAgentNotificationPreferences = Schema.is(AgentNotificationPreferences);
 const isPullRequestListPreferences = Schema.is(PullRequestListPreferences);
 const ThreadProject = Schema.Struct({
   environmentId: Schema.NonEmptyString,
@@ -128,6 +137,7 @@ export interface Preferences {
   readonly threadListFilters?: ThreadListFilters;
   readonly pullRequestListFilters?: PullRequestListPreferences;
   readonly workspaceSelections?: WorkspaceSelections;
+  readonly agentNotifications?: AgentNotificationPreferences;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -207,6 +217,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     threadListFilters?: ThreadListFilters;
     pullRequestListFilters?: PullRequestListPreferences;
     workspaceSelections?: WorkspaceSelections;
+    agentNotifications?: AgentNotificationPreferences;
   } = {};
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
@@ -350,6 +361,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (isWorkspaceSelections(parsed.workspaceSelections)) {
     preferences.workspaceSelections = parsed.workspaceSelections;
+  }
+  if (isAgentNotificationPreferences(parsed.agentNotifications)) {
+    preferences.agentNotifications = parsed.agentNotifications;
   }
   return preferences;
 }

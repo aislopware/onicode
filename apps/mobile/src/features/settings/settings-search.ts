@@ -33,6 +33,7 @@ const SETTINGS_SEARCH_TERMS = {
   ],
   SettingsLanguage: ["language", "locale", "translation", "english"],
   SettingsNavigation: ["tabs", "tab order", "reorder", "hide tabs"],
+  SettingsNotifications: ["push", "alerts", "live activity", "live updates", "agent activity"],
   SettingsKeyboard: ["return key", "send message", "new line", "hardware keyboard"],
   SettingsVoice: [
     "microphone",

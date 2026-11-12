@@ -75,15 +75,8 @@ Download the newest release:
 | Linux AppImage | [AppImage](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/linux/latest/download)        |
 | Debian, Ubuntu | [.deb](https://updates.jmango360.dev/feeds/59625ece-aea5-49b4-8978-1f045f907d92/linux/latest/download?format=deb) |
 
-On macOS, unzip the download and move **Onicode** to Applications, or install it
-with [Homebrew](https://brew.sh):
-
-```bash
-brew install --cask aislopware/tap/onicode
-```
-
-The app updates itself from then on, so `brew upgrade` skips it unless you pass
-`--greedy`. If you used the earlier native Onicode, it updates to this app on its own.
+On macOS, unzip the download and move **Onicode** to Applications. The app updates
+itself from then on. If you used the earlier native Onicode, it updates to this app on its own.
 
 ### Linux
 
@@ -125,9 +118,10 @@ command cannot reach the app, start or update the desktop app and try again.
 
 ## Mobile app
 
-The iOS and Android apps come through Onicode's own update feed and receive updates from it.
-The phone connects to a server on another machine. Follow
-[remote access](./remote-access.md) to link it with a pairing URL.
+The iOS and Android apps are not distributed publicly. Build one for your own phone from
+source, following [Onicode Mobile](../../apps/mobile/README.md#your-own-app). The phone connects
+to a server on another machine. Follow [remote access](./remote-access.md) to link it with a
+pairing URL.
 
 If the app crashes during launch, open Settings → Diagnostics on the next launch
 that succeeds. It lists startup crashes from the last 7 days with the error and

@@ -52,7 +52,10 @@ const REPO_RULES: ReadonlyArray<readonly [RegExp, string]> = [
     /https:\/\/t3\.codes\/install\.(sh|ps1)/g,
     "https://raw.githubusercontent.com/aislopware/onicode/main/scripts/install.$1",
   ],
-  [/https:\/\/t3\.codes\/download/g, "https://github.com/aislopware/onicode/releases/latest"],
+  [
+    /https:\/\/t3\.codes\/download/g,
+    "https://github.com/aislopware/onicode/blob/main/docs/user/install.md",
+  ],
   [/pingdotgg\/t3code/g, "aislopware/onicode"],
   [/PingDotGG\/(?:T3Code|T3code|Onicode)/g, "AislopWare/OniCode"],
   [/codething-mvp/g, "sample-app"],

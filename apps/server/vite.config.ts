@@ -4,6 +4,7 @@ import * as NodePath from "node:path";
 import { defineConfig, mergeConfig } from "vite-plus";
 
 import baseConfig from "../../vite.config.ts";
+import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
 import rootPackageJson from "../../package.json" with { type: "json" };
 import { WeightedShardSequencer } from "./src/testUtils/weightedShardSequencer.ts";
 
@@ -121,6 +122,10 @@ export default mergeConfig(
       },
       define: {
         __ONICODE_RELEASE_CHANNEL__: JSON.stringify(releaseChannel),
+        // A build of the app with its own push gateway names it here, so its installs need no setup.
+        __ONICODE_PUSH_GATEWAY_URLS__: JSON.stringify(
+          loadRepoEnv().ONICODE_PUSH_GATEWAY_URLS?.trim() ?? "",
+        ),
       },
     },
     test: {
