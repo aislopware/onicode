@@ -547,3 +547,4 @@ c3e5bfc027	take	fix(server): forks whose source session is gone start fresh inst
 d9c0920449	take	fix(server): malformed legacy timestamps no longer block startup (#30823)
 5f8294246c	take	fix(client): reveal earlier agent turns in one load (#24417)
 bba1c13d87	take	fix(web): opening a thread dismisses its notification toasts (#24313)
+a6c26d3e77	take	fix(web): the composer shows arrow ligatures like sent messages (#27909)
