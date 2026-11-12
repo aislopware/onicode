@@ -639,3 +639,4 @@ f6b260df15	take	fix(server): self-update moves the onicode command to the new ru
 fd64128014	take	fix(mobile): iOS web previews keep their flick momentum (#27671)
 1e25ef9e57	skip	upstream repo governance (vouching, PR limits workflow, contribution-triage skill); Onicode has none of these
 4e6924753c	take	fix(web): pasted CRLF text keeps its blank lines and caret in the composer (#27280)
+6a03ef6568	take	fix(web): app keybindings on Mod+B, Mod+I and Mod+E win over composer formatting (#34493)
