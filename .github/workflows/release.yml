@@ -237,8 +237,10 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           RUNTIME: ${{ steps.plan.outputs.runtime }}
         run: |
-          published="$(better-update update publish --channel production --profile production \
-            --platform "$PLATFORM" --message "$ONICODE_RELEASE_MESSAGE" --non-interactive --json)" || { echo "$published"; exit 1; }
+          output="$(better-update update publish --channel production --profile production \
+            --platform "$PLATFORM" --message "$ONICODE_RELEASE_MESSAGE" --non-interactive --json)" || { echo "$output"; exit 1; }
+          # The bundler's export listing shares stdout with the one line of JSON.
+          published="$(jq -cR 'fromjson? | select(type == "object" and .command == "update.publish")' <<< "$output" | tail -n 1)"
           jq . <<< "$published"
           if ! jq -e --arg r "$RUNTIME" '.data.results | length > 0 and all(.runtimeVersion == $r)' > /dev/null <<< "$published"; then
             echo "::error::The update was not published for the planned runtime $RUNTIME."
