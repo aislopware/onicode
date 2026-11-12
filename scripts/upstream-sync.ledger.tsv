@@ -762,3 +762,4 @@ b68aedfdb7	take	fix(opencode): updating restarts the background service on the n
 ee90bdc940	take	fix(web): CSV/TSV and large-text previews say "1 row", "1 column" and "1 line" (#34992)
 52273b7a04	take	fix(desktop): browser panel can approve local HTTPS certificates (#24425)
 a4d0a06e7f	take	perf(server): sending to a very long thread reads about 5x less of its history (#35130)
+56c4e20fff	take	fix(cursor): user-invoked skills hidden from the model reach the Cursor prompt (#34999)
