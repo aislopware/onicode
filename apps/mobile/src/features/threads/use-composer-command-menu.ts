@@ -62,6 +62,7 @@ import { useEffect, useState } from "react";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
 import { providerWorkspaceSnapshotRefresh } from "../../state/provider-workspace-snapshot-refresh";
+import { serverEnvironment } from "../../state/server";
 import {
   useComposerFolderSearch,
   useComposerPathSearch,
