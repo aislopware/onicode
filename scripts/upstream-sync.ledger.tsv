@@ -712,3 +712,4 @@ bfec2754b8	take	fix(server): restart recovery wakes delegated children waiting o
 3bd7b04544	take	fix(web): Escape and tool keys work as soon as preview annotation starts (#34796)
 ff599f0bef	take	fix(server): Claude subagent results drop Claude Code's tools-used note (#34821)
 9f1e97de60	take	fix(server): context handoff names omitted items instead of a read from the thread's start (#34847)
+c085a0aa5d	take	fix(server): a slow baseline checkpoint no longer holds every prompt for 30 seconds (#34849)
