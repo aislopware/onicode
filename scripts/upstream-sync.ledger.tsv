@@ -681,3 +681,4 @@ ea22b5ffc7	take	fix(web): preview address bar waits for the IME to finish before
 f991781872	take	fix(server,web,mobile): messages from a linked environment name the thread that sent them (#34721)
 bb646d2cad	take	fix(shared): links to bracketed filenames keep their folder labels (#34759)
 ddc4f57602	take	fix(server): a Claude resume rejected before the prompt keeps the native session (#34762)
+5c6f2f1229	take	fix(server): Codex MCP servers that fail to start show a notice in the thread
