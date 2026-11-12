@@ -525,3 +525,4 @@ b859968cab	take	fix(web): a pending approval is announced once, not once per que
 96a2f0a776	skip	relay client install; Onicode removed the relay
 2597756eec	take	fix(server): re-probe Codex when its auth.json changes (#34320)
 a4ab7dd707	take	fix(server): close scratch browser contexts when page creation fails (#34310)
+4a075c9667	take	fix(desktop): keep AppImage mounted while t3 shuts down (#24421)
