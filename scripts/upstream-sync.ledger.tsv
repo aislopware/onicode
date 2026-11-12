@@ -664,3 +664,4 @@ afe0528039	take	fix(web): keep git action loading rows at idle height
 2248ca8db9	take	fix(cursor): steer the live run without reconnecting
 d9a54ec645	take	fix(web): file breadcrumbs keep backslashes in POSIX folder names
 2ab87e16ad	take	fix(server): Pi usage and session import read the instance's home
+c0c7405b04	take	fix(server): oni_thread_list says when its project does not exist
