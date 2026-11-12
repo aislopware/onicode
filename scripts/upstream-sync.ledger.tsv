@@ -760,3 +760,4 @@ b85a21e240	take	fix(mobile): Android review sheet scrolls to Submit review (#348
 dc032d7c8f	take	feat(web,mobile): Add project lists only GitHub until you turn other hosts on (#34978); mobile conflict kept Onicode's findDirectories beside the new field
 b68aedfdb7	take	fix(opencode): updating restarts the background service on the new version (#34606); driver.ts conflict kept Onicode's consumeResetCredit signature
 ee90bdc940	take	fix(web): CSV/TSV and large-text previews say "1 row", "1 column" and "1 line" (#34992)
+52273b7a04	take	fix(desktop): browser panel can approve local HTTPS certificates (#24425)
