@@ -725,3 +725,4 @@ db04d3abe9	take	fix(server): subagent threads get short ids agents can quote bac
 8024e50c6f	take	fix(server): a fork made after Edit from here no longer shows the rewound turns (#34823)
 9359081c24	take	fix(server): a pull request watch started after a pending self-settle survives the turn end (#34884)
 1df9c91230	take	fix(server): thread reads list only open linked PRs and show their watch state (#34895)
+eeae0b2783	take	fix(server): finished delegated Codex children no longer pile up in Codex Recents (#34829)
