@@ -826,3 +826,4 @@ e6119fdf68	take	fix(web): browser settings changed in project scope no longer ov
 a30cb3283a	take	fix(web): Esc in the keybindings search clears it without closing Settings (#35161)
 a94846d4c5	take	fix(web): file editor carets and selections follow code font changes (#35144); lockfile patch hash regenerated with vp i
 e93f2a5181	take	fix(server): schedule_task no longer tells agents bindToCurrentThread always defaults to true (#34950); kept Onicode budget, mcpToolListJsonBytes 46085->46081
+71dfe27e45	take	fix(web): an untouched sidebar thread rename keeps a title that arrived while it was open (#35174)
