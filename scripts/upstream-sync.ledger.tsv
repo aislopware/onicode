@@ -699,3 +699,4 @@ dbfbe3993f	take	fix(web): questions without options no longer mention a selected
 c833a60de2	take	fix(server): tell the thread when its worktree branch keeps the temporary name (#34813)
 2ed6f109f4	take	fix(server): fresh-session schedules start while an old session has background work (#34811)
 1a1f9ac18e	take	fix(web): Ctrl/Cmd+Enter sends new threads when the send shortcut needs it (#34810)
+7fc9aa6ed9	take	fix(shared): typing after a skill chip no longer reparses the prompt as math (#34816)
