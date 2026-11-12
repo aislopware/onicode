@@ -499,3 +499,4 @@ c092c6eb1e	take	fix(server): generated thread titles leave out the project name 
 3f402e3ae4	take	fix(server): explain why /compact fails on providers without compaction (#33269)
 517c9fcd09	take	fix(git): push publishes a branch that tracks a local branch (#33581)
 c6969f8f73	take	fix(acp): a resumed message keeps the text streamed before it (#33604)
+f04a9e14c7	take	fix(server): refresh stale model catalogs before refusing delegation (#33426)
