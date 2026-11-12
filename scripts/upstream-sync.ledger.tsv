@@ -581,3 +581,4 @@ ea6af468a7	take	fix(server): @ file search matches paths containing square brack
 d27d03b6d3	take	fix(provider-core): recheck a failed sign-in when settings are applied
 52ba328982	take	fix(server): avoid reparsing streamed replies from the beginning
 50952beccc	take	fix(server): No project behind a symlinked scratch folder stays No project
+04be2b365f	take	fix(server): Codex and Pi runs report the model the provider ran
