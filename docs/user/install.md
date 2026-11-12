@@ -116,6 +116,12 @@ Pass a path, such as `onicode app ../my-project`, to open another directory. It 
 the desktop app, so a standalone server or an SSH session is not enough. If the
 command cannot reach the app, start or update the desktop app and try again.
 
+### Drop a folder on the sidebar
+
+Drag one or more folders from Finder, Explorer, or your file manager onto the
+sidebar. Each one opens as a project on this computer, the same as `onicode app`.
+Files dropped on a thread still attach to that thread.
+
 ## Mobile app
 
 The iOS and Android apps are not distributed publicly. Build one for your own phone from
