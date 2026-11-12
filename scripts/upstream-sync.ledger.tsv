@@ -561,3 +561,4 @@ b3ce149be5	take	fix(mobile): Fast can be turned on for an existing thread (#2976
 658367016c	take	fix(desktop): Linux launches no longer leave an icon copy in /tmp (#25775)
 7315c60b95	take	fix(server): a failed Claude wake dispatch no longer drops every later wake (#28173)
 e5b5da3a7c	take	fix(web): reopening a guide with many cached diff pages no longer crashes (#27550)
+ed57b9b5ec	take	fix(server): a follow-up to a finished remote task is a new task that wakes the parent (#26776)
