@@ -494,3 +494,4 @@ d7fedc5743	take	fix(server): Claude live command output no longer starts with ï¿
 e805ce3712	take	fix(server): Update server works again on services installed before the launcher protocol bump (#34603)
 561d62825b	skip	marketing site; Onicode removed it
 5ba59520b6	skip	marketing site; Onicode removed it
+c092c6eb1e	take	fix(server): generated thread titles leave out the project name (#33418)
