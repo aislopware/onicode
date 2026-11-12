@@ -7,6 +7,7 @@ import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
+import { HttpClient, HttpClientResponse } from "effect/http";
 import * as TestClock from "effect/testing/TestClock";
 import { ChildProcessSpawner } from "effect/process";
 import * as HostProcess from "@onicode/shared/HostProcess";
@@ -18,6 +19,7 @@ import {
   parseTailnetStatus,
   parseTailscaleStatus,
   parseTailscaleWhois,
+  probeTailscaleHttpsEndpoint,
   readTailnetStatus,
   readTailscaleSshEnabled,
   readTailscaleStatus,
@@ -101,6 +103,27 @@ function layerMockSpawner(
 }
 
 describe("tailscale", () => {
+  it.effect("does not treat a non-Onicode response on the HTTPS probe path as reachable", () =>
+    Effect.gen(function* () {
+      for (const [body, status] of [
+        ["<!doctype html><title>Other application</title>", 200],
+        [null, 204],
+      ] as const) {
+        const reachable = yield* probeTailscaleHttpsEndpoint({
+          baseUrl: "https://desktop.example.ts.net",
+        }).pipe(
+          Effect.provideService(
+            HttpClient.HttpClient,
+            HttpClient.make((request) =>
+              Effect.succeed(HttpClientResponse.fromWeb(request, new Response(body, { status }))),
+            ),
+          ),
+        );
+        assert.isFalse(reachable, `HTTP ${status} without a Onicode descriptor`);
+      }
+    }),
+  );
+
   it("finds the Serve routes that forward to the bound address, and only those", () => {
     const status = JSON.stringify({
       TCP: {
