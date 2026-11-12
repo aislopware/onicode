@@ -423,3 +423,4 @@ c4cf58511b	take	fix(server): long Claude sessions import instead of being skippe
 8b21cbdf1e	take	fix(server): Codex turns that auto-compact end instead of looping on restored context (#25911)
 3cfbc3607b	take	fix(server): keep queued Claude workflow members pending (#25325)
 b264e118cf	take	fix(server): onicode doctor warns how long reclaiming takes and shows each step (#29956)
+686121d470	take	fix(server): recover service PATH after a slow login shell probe (#23356)
