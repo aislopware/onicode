@@ -686,3 +686,4 @@ a25654c396	take	fix(server): block incompatible migration history in preflight; 
 6419422f94	take	fix(server): a reset credit's limits refresh when the first read after it fails (#34780)
 4bf5d53d93	take	fix(forgejo): HTTP-only fj logins are no longer reported unauthenticated (#34777)
 8212aaaf4d	take	fix(server): a new worktree thread's agent starts on its renamed branch (#34781)
+6de770c1e6	take	fix(server): ACP retries a config option whose write failed for a reason other than refusal (#34782)
