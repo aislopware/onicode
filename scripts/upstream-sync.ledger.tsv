@@ -483,3 +483,4 @@ fdaf883293	skip	AUR packaging; Onicode ships no AUR packages
 669aa32e0d	take	fix(server): keep Codex loaded when reasoning effort changes (#32915)
 6a5d6085ba	take	fix(web): prompt links work for encoded thread IDs (#32959)
 7a7b8d7ad2	take	fix(forgejo): tea's `pull` and `co` aliases count as checkout commands (#32713)
+de26b6db3c	take	fix(server): providers read cited assistant text again (#32702)
