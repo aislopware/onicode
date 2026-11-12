@@ -92,7 +92,8 @@ import {
   SettingsSection,
 } from "./settingsLayout";
 import { searchableSetting, type SettingsSearchItemId } from "./settingsSearch";
-import { nativeLanguageName, SUPPORTED_LOCALES, SYSTEM_LANGUAGE } from "../../i18n/locales";
+import { nativeLanguageName, SYSTEM_LANGUAGE } from "@onicode/client-runtime/locales";
+import { SUPPORTED_LOCALES } from "../../i18n/locales";
 import { BackgroundActivitySettingsRow } from "./BackgroundActivitySettings";
 import { AdvancedSettings } from "./AdvancedSettings";
 import { PullRequestLinksOpenInAppSetting } from "./IntegrationsSettings";
