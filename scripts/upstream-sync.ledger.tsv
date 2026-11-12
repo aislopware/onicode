@@ -790,3 +790,4 @@ f10a5029f5	take	fix(web): Files tree keeps expanded folders across remounts (#35
 12b29eb71d	take	fix(server): Codex turns use the configured reasoning summary instead of forcing detailed (#35089)
 beaf28459b	take	fix(provider-core): Vite+ system_first shims update the install they actually run (#35086)
 f39c4405fa	take	fix(web): diff tab keeps its scroll position across thread switches (#35090)
+5fae2b5124	take	test(web): command palette tests clear a leaked last-used project (#35107)
