@@ -586,3 +586,4 @@ c642c4b57d	take	fix(server): settling a Codex thread stops its MCP servers right
 0ad9c9adae	take	fix(server): a full disk no longer crashes the server through a failed log write
 de21fbcff3	take	fix(client): a thread whose subscription dies on a defect resubscribes instead of staying blank
 86e2cb21c9	take	fix(server): Claude turns on busy hosts no longer time out registering MCP tools
+52da4e5098	take	fix(server): reuse timeline indexes while paging long threads
