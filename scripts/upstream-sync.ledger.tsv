@@ -458,3 +458,4 @@ e63d80a065	take	test(web): check custom worksheet targets at the preparation lay
 1264c206ae	take	fix(server): worktree launches refuse branch names an existing branch blocks (#29328)
 eceeab4d5c	take	fix(web): Cmd+F in the Files panel focuses its search (#34346)
 3a25643192	take	fix(contracts): Open in VS Code keeps a plus in the SSH username (#34578)
+02f89d85ab	take	fix(server): a desktop tab detached during setup no longer blocks later browser tabs (#34252)
