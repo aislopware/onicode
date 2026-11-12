@@ -794,3 +794,4 @@ f39c4405fa	take	fix(web): diff tab keeps its scroll position across thread switc
 bf13d60e83	take	fix(opencode): OpenCode 2 threads see Onicode's MCP tools on their first turn (#35084)
 40526f96f6	take	fix(server): a finished turn refreshes only its own project's PR listings (#35070)
 8f54d4b1a9	take	fix(desktop): exits that skip quit are recorded in the trace and logs (#35097)
+2b7e975a97	take	fix(clients): say "Starting Claude" until the provider actually starts (#35008)
