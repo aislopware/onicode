@@ -7,6 +7,7 @@ import {
   extractAgentNotificationDeepLink,
   notificationIdsForThread,
   routeAgentNotificationResponseOnce,
+  threadDeepLinkOnScreen,
 } from "./notificationPayload";
 
 function responseWithData(data: Record<string, unknown>, identifier = "notification-1") {
@@ -118,6 +119,24 @@ describe("notificationIdsForThread", () => {
       "tapped",
       "earlier",
     ]);
+  });
+
+  it("matches a thread whose id the navigator and the server write differently", () => {
+    const delivered = [
+      responseWithData({ deepLink: "/threads/env/mcp%3Athread" }, "from-server").notification,
+      responseWithData({ environmentId: "env", threadId: "mcp:thread" }, "from-ids").notification,
+      responseWithData({ deepLink: "/threads/env/mcp%3Aother" }, "other-thread").notification,
+    ];
+
+    for (const pathname of ["/threads/env/mcp:thread", "/threads/env/mcp%3Athread/files"]) {
+      const onScreen = threadDeepLinkOnScreen(pathname);
+      expect(onScreen).not.toBeNull();
+      expect(notificationIdsForThread(delivered, onScreen ?? "")).toEqual([
+        "from-server",
+        "from-ids",
+      ]);
+    }
+    expect(threadDeepLinkOnScreen("/settings/notifications")).toBeNull();
   });
 });
 

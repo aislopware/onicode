@@ -73,12 +73,14 @@ function normalizeThreadDeepLink(value: string): string | null {
   }
 }
 
+// The navigator leaves characters such as ":" as they are and the server escapes them, so both
+// sides go through one spelling before they are compared.
 export function threadDeepLinkOnScreen(pathname: string): string | null {
   const match = /^\/threads\/([^/]+)\/([^/]+)(?:\/|$)/.exec(pathname);
   if (!match?.[1] || !match[2]) {
     return null;
   }
-  return `/threads/${match[1]}/${match[2]}`;
+  return normalizeThreadDeepLink(`/threads/${match[1]}/${match[2]}`);
 }
 
 export function extractAgentNotificationDeepLink(response: unknown): string | null {
