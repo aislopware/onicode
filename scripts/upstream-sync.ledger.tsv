@@ -590,3 +590,4 @@ de21fbcff3	take	fix(client): a thread whose subscription dies on a defect resubs
 aeaf19cc61	take	fix(server): a slow or broken hosting CLI is no longer told to install itself
 1d61dd3fd6	take	fix(server): recurring tasks keep one queued occurrence while their thread is busy
 35f5398445	take	fix(server): only offer desktop app updates the desktop can install
+d9805b2ca6	take	fix(server): closing preview tabs runs beforeunload handlers
