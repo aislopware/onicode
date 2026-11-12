@@ -785,3 +785,4 @@ dd9c2f8e21	take	fix(desktop): installing an update closes SSH port forwards befo
 f10a5029f5	take	fix(web): Files tree keeps expanded folders across remounts (#35067)
 22910ffdd2	take	fix(ssh): an ssh config alias keeps following its Port after it changes (#35063)
 4ff329d108	take	fix(server): fork PRs into gh's upstream base use an owner-qualified head (#35055)
+002dc9b644	take	fix(web): file names with a backslash no longer split into folders in the Changes card (#35075)
