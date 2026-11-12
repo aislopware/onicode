@@ -566,3 +566,4 @@ ea3e20a0e2	take	fix(web): double-clicking another thread in the sidebar renames 
 3ffd240fc7	take	fix(server): a turn that adds a Git remote shows "Add to another machine" right away (#29947)
 a2a3388c5e	take	fix(server): keep writes moving while readers pin the WAL (#23496)
 8851e307d8	take	fix(client-runtime): slow foreground probes keep live sessions connected (#24309)
+6e3ada1a27	take	fix(server): wake Codex callers when restart cancels commands (#24538)
