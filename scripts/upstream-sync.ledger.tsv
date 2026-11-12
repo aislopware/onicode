@@ -766,3 +766,4 @@ a4d0a06e7f	take	perf(server): sending to a very long thread reads about 5x less 
 9f4b42e750	take	fix(server): thread find skips empty replies hidden beside an HTML render (#34991)
 09e1751a16	take	fix(server): Codex sign-in hint names the instance's CODEX_HOME (#35004)
 3126806749	take	fix(server): project identity follows gh repo set-default (#35005)
+25123c28d4	take	fix(shared): html_render pages from OpenCode 2 Code Mode show and are cleaned up (#35022)
