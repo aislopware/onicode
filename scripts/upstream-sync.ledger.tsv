@@ -780,3 +780,4 @@ e1fad19018	take	fix(desktop): a login shell slower than 5s at launch still yield
 cbc38a1b0f	take	fix(server): one unresponsive provider no longer stalls every thread's effects (#35027)
 68f1bc58d5	take	fix(desktop): SnapShot shortcut rebinds after the desktop portal restarts (#35048)
 5bb44523a6	take	fix(server): desktop browser tabs on System appearance follow the system color scheme (#35038)
+d6ac53ead2	take	fix(server): a project whose origin URL contains a space gets a repository identity (#35080)
