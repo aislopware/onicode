@@ -763,3 +763,4 @@ ee90bdc940	take	fix(web): CSV/TSV and large-text previews say "1 row", "1 column
 52273b7a04	take	fix(desktop): browser panel can approve local HTTPS certificates (#24425)
 a4d0a06e7f	take	perf(server): sending to a very long thread reads about 5x less of its history (#35130)
 56c4e20fff	take	fix(cursor): user-invoked skills hidden from the model reach the Cursor prompt (#34999)
+9f4b42e750	take	fix(server): thread find skips empty replies hidden beside an HTML render (#34991)
