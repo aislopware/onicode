@@ -961,6 +961,7 @@ export const make = Effect.gen(function* () {
       }
 
       const disabledReason = yield* resolveDisabledReason;
+      yield* Ref.set(desktopState.canInstallUpdates, Option.isNone(disabledReason));
       yield* setState(yield* baseUpdateState(disabledReason));
       if (Option.isSome(disabledReason)) {
         return;

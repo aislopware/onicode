@@ -45,7 +45,6 @@ import {
   scoreQueryMatch,
 } from "@onicode/shared/searchRanking";
 import {
-  createProviderWorkspaceSnapshotRefreshAtomFamily,
   dedupeProviderSkillsByName,
   getProviderSkillsForSlashMenu,
   getProviderSlashCommandsForSlashMenu,
@@ -62,6 +61,7 @@ import { Atom } from "effect/reactivity";
 import { useEffect, useState } from "react";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
+import { providerWorkspaceSnapshotRefresh } from "../../state/provider-workspace-snapshot-refresh";
 import { serverEnvironment } from "../../state/server";
 import {
   useComposerFolderSearch,
@@ -73,11 +73,6 @@ import { composerFolderParentPath } from "@onicode/client-runtime/composer-folde
 import type { ModelOption } from "../../lib/modelOptions";
 import type { ComposerCommandItem } from "./ComposerCommandPopover";
 import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
-
-const providerWorkspaceSnapshotRefresh = createProviderWorkspaceSnapshotRefreshAtomFamily({
-  providers: serverEnvironment.providersValueAtom,
-  refreshProviders: serverEnvironment.refreshProviders,
-});
 
 const idleWorkspaceSnapshotRefreshAtom: Atom.Atom<unknown> = Atom.make<void>(undefined).pipe(
   Atom.withLabel("mobile:provider-workspace-snapshot-refresh:idle"),

@@ -27,15 +27,15 @@ away; add the folder to your `PATH` for new windows. If a `onicode` that the
 installer or the desktop app did not create is already there, it leaves that
 one alone and stops. Set `ONICODE_VERSION` to pin an exact version.
 
-| Task                                             | Command                                                                      |
-| ------------------------------------------------ | ---------------------------------------------------------------------------- |
-| Start the server and print pairing details       | `onicode`                                                                    |
-| Same, without adding this folder as a project    | `onicode serve`                                                              |
-| Use it from your other devices                   | `onicode up` ([details](./remote-access.md))                                 |
-| Keep it running in the background (macOS, Linux) | `onicode service install` ([details](./background-service.md))               |
-| Move to the newest release                       | `onicode update`                                                             |
-| Reclaim database space                           | `onicode doctor` ([details](./background-service.md#reclaim-database-space)) |
-| Remove it again                                  | `onicode uninstall`                                                          |
+| Task                                          | Command                                                                      |
+| --------------------------------------------- | ---------------------------------------------------------------------------- |
+| Start the server and print pairing details    | `onicode`                                                                    |
+| Same, without adding this folder as a project | `onicode serve`                                                              |
+| Use it from your other devices                | `onicode up` ([details](./remote-access.md))                                 |
+| Keep it running in the background             | `onicode service install` ([details](./background-service.md))               |
+| Move to the newest release                    | `onicode update`                                                             |
+| Reclaim database space                        | `onicode doctor` ([details](./background-service.md#reclaim-database-space)) |
+| Remove it again                               | `onicode uninstall`                                                          |
 
 Run `onicode help` or `onicode --help` for the full reference. To start in a new working
 directory, use an explicit path such as `onicode ./my-project`. A bare directory name
@@ -176,6 +176,7 @@ installer you used. Onicode runs `mise upgrade`
 only for a tool your mise config requests as `latest` when the provider's binary
 path is a mise shim or under the tool's `installs/<tool>/latest` link; update a
 pinned version, or a path into one version's directory, through mise yourself.
+Update a CLI installed with Nix through Nix.
 Cursor and Antigravity update with Onicode. Homebrew and Chocolatey installs
 compare against the version their package manager offers, which can trail the
 npm release; update Claude installed with Chocolatey through Chocolatey.
@@ -195,6 +196,6 @@ For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 - [Working with threads](./thread-sidebar.md): start tasks and organize parallel work.
 - [Permission modes](./permission-modes.md): choose when agents ask before acting.
 - [Remote access](./remote-access.md): connect from another device.
-- [Running in the background](./background-service.md): keep a Linux or macOS host available.
+- [Running in the background](./background-service.md): keep a host available.
 - [Updating Onicode](./updating.md): update the app and connected servers.
 - [Managed policy](./managed-policy.md): configure Onicode for everyone on a machine.

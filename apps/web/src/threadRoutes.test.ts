@@ -1,3 +1,9 @@
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRoute,
+  createRouter,
+} from "@tanstack/react-router";
 import { describe, expect, it } from "vite-plus/test";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@onicode/client-runtime/state/threads";
@@ -25,6 +31,42 @@ describe("threadRoutes", () => {
     expect(isThreadRoutePathname("/env-2/thread-1", ref)).toBe(false);
     expect(isThreadRoutePathname("/draft/thread-1", ref)).toBe(false);
     expect(isThreadRoutePathname("/env-1/thread-1/extra", ref)).toBe(false);
+
+    const encodedRef = scopeThreadRef("env space" as never, ThreadId.make("mcp:example/part"));
+    expect(isThreadRoutePathname("/env%20space/mcp%3Aexample%2Fpart", encodedRef)).toBe(true);
+    expect(isThreadRoutePathname("/env%20space/mcp%3Aexample%2Fpart/", encodedRef)).toBe(true);
+    expect(isThreadRoutePathname("/env%20space/mcp%3Aexample/part", encodedRef)).toBe(false);
+    expect(isThreadRoutePathname("/env%20space/mcp%253Aexample%2Fpart", encodedRef)).toBe(false);
+    expect(isThreadRoutePathname("/env%20space/mcp%ZZexample", encodedRef)).toBe(false);
+    expect(isThreadRoutePathname("/env%20space/mcp%3Aexample%2Fpart/extra", encodedRef)).toBe(
+      false,
+    );
+    expect(
+      isThreadRoutePathname(
+        "/env-1/mcp%253Aexample",
+        scopeThreadRef("env-1" as never, ThreadId.make("mcp%3Aexample")),
+      ),
+    ).toBe(true);
+  });
+
+  it("matches encoded MCP thread IDs from router locations", () => {
+    const root = createRootRoute();
+    const thread = createRoute({ getParentRoute: () => root, path: "$environmentId/$threadId" });
+    const newThread = createRoute({ getParentRoute: () => root, path: "new" });
+    const router = createRouter({
+      routeTree: root.addChildren([thread, newThread]),
+      history: createMemoryHistory({ initialEntries: ["/new"] }),
+    });
+    const ref = scopeThreadRef("local" as never, ThreadId.make("mcp:example"));
+    // Navigation does not commit in this unit environment, so build and match the location.
+    const location = router.buildLocation({
+      to: "/$environmentId/$threadId",
+      params: { environmentId: ref.environmentId, threadId: ref.threadId },
+    });
+    expect(location.pathname).toBe("/local/mcp%3Aexample");
+    expect(router.matchRoutes(location).at(-1)?.params).toEqual(ref);
+    expect(isThreadRoutePathname(location.pathname, ref)).toBe(true);
+    expect(isThreadRoutePathname("/new", ref)).toBe(false);
   });
 
   it("resolves the backing thread while a draft route is being promoted", () => {

@@ -194,7 +194,8 @@ it.effect.each([
         }),
         Layer.mock(ServiceLauncherClient.ServiceLauncherClient)({
           managed: false,
-          prepareTrial: Effect.undefined,
+          protocol: undefined,
+          prepareTrial: () => Effect.undefined,
         }),
         Layer.mock(GitVcsDriver.GitVcsDriver)({}),
         // No provider logins or Connect link, so startup records no owners.
