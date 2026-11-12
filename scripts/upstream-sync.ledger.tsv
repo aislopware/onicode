@@ -750,3 +750,4 @@ d8b0a05a74	take	fix(clients): Claude question option previews are shown under th
 e2f1a21262	take	fix(server): a failed delegated task keeps its child's final report (#34915)
 b53cd67681	take	fix(server): handoff budget estimates stored history in tokens, not bytes (#34926)
 f423a4dba0	skip	Update-track switch persistence serves the nightly channel; Onicode ships one release channel with no setChannel
+5922408c3b	take	fix(server): custom Claude models named like a Claude Code alias reach the API unchanged (#34938)
