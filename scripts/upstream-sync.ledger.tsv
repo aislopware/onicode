@@ -531,3 +531,4 @@ b9381c257d	take	fix(server): Claude Plan mode runs t3_background_wait without as
 8e89fe1918	take	fix(server): usage no longer waits on Muse home discovery (#30859)
 214f1baf71	take	fix(server): capture device screenshots through their selected host (#34313)
 f89af364ec	take	fix(web): avoid false errors when cancelling preview popouts (#34315)
+e9df5914d4	take	fix(cursor): a completed catalog refresh drops models it no longer lists (#28018)
