@@ -528,3 +528,4 @@ a4ab7dd707	take	fix(server): close scratch browser contexts when page creation f
 4a075c9667	take	fix(desktop): keep AppImage mounted while t3 shuts down (#24421)
 b9381c257d	take	fix(server): Claude Plan mode runs t3_background_wait without asking (#34343)
 1b42b169a3	take	fix(server): preserve spaces in Git remote URLs (#34324)
+8e89fe1918	take	fix(server): usage no longer waits on Muse home discovery (#30859)
