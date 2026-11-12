@@ -620,3 +620,4 @@ d21daa78e0	take	fix(cli): t3 thread finds the project from inside its git worktr
 6d35d09060	take	fix(cli): t3 triage points at the prompt when the agent fails to start (#28192)
 cc624432ac	take	fix(web): formatted link labels wrap inside table cells (#27781)
 2904fea7d5	take	fix(web): Mod+B toggles bold at a collapsed cursor when the sidebar toggle is remapped (#29445)
+42d645ae9e	take	fix(web): update Retry stops re-sending servers already on the target version (#32924)
