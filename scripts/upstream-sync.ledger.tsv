@@ -486,3 +486,4 @@ fdaf883293	skip	AUR packaging; Onicode ships no AUR packages
 de26b6db3c	take	fix(server): providers read cited assistant text again (#32702)
 46002808e2	take	fix(github): find pull requests for SSH aliases (#32932)
 d7fedc5743	take	fix(server): Claude live command output no longer starts with � after skipping ahead (#33246)
+5216576aed	take	test(server): keep the Claude probe fixture executable in CommonJS homes (#32860)
