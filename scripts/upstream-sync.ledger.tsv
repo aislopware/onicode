@@ -453,3 +453,4 @@ fcc25c8bb2	take	ci: split web tests over two runners so every run finishes soone
 a02bc75737	take	fix(web): keep background toast Open button inline (#34572)
 d6e5f2e06f	take	fix(server): Claude effort changes apply to the running turn (#34563)
 323c0a8d0d	take	fix(web): keep wide terminal glyphs on the cell grid (#27948)
+e63d80a065	take	test(web): check custom worksheet targets at the preparation layer (#34586)
