@@ -808,3 +808,4 @@ cb931fcbe2	take	fix(web): a save in one tab no longer erases what another tab sa
 ced85c64ff	take	fix(client): a message the host never answers fails after 60 seconds instead of spinning forever (#35076)
 e6a8b48389	take	fix(server): a new worktree no longer fails when its generated folder is left over from an earlier one (#35121)
 e89c8ce014	take	fix(server): a file ticked Viewed before loading a push shows Changed (#35114)
+06274896ee	take	fix(server): selected-file commits during a cherry-pick or revert are refused (#35120)
