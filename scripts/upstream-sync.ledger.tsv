@@ -722,3 +722,4 @@ dcad1942a9	take	fix(client-runtime): provider toggles no longer wait for another
 db04d3abe9	take	fix(server): subagent threads get short ids agents can quote back (#34877)
 204b140073	take	fix(web): context row under the composer hides chat text scrolling behind it (#34846)
 0ac41eecad	take	fix(web): sidebar rows drop a branch and worktree that were deleted (#34878)
+8024e50c6f	take	fix(server): a fork made after Edit from here no longer shows the rewound turns (#34823)
