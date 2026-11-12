@@ -426,3 +426,4 @@ b264e118cf	take	fix(server): onicode doctor warns how long reclaiming takes and 
 686121d470	take	fix(server): recover service PATH after a slow login shell probe (#23356)
 28bbc91c7c	take	fix(server): say Git isn't installed when a new project can't run git (#28219)
 0318eadc32	take	fix(server): agent clones are no longer cut off after 2 minutes (#27588)
+1a8ecc64b7	take	feat(web): a quote in a sent message shows as an inset card (#34181)
