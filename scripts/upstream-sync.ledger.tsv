@@ -666,3 +666,4 @@ d9a54ec645	take	fix(web): file breadcrumbs keep backslashes in POSIX folder name
 2ab87e16ad	take	fix(server): Pi usage and session import read the instance's home
 c0c7405b04	take	fix(server): oni_thread_list says when its project does not exist
 fd033dfec3	take	fix(web): improve Word document previews; kept Onicode's newer @betteroffice/fonts 0.4.2 (docx 0.5.1 already present)
+55a94e2029	take	fix(web): voice settings and dictation match the rest of the app
