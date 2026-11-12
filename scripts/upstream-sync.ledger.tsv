@@ -473,3 +473,4 @@ b703fdbfdb	take	fix(server): a git action that fails partway refreshes the Git p
 23132f8338	take	fix(github): pull requests missing refs/pull/N/head no longer show as not found (#25947)
 1f6d9e789a	take	fix(acp): preserve outgoing error data (#32390)
 a5f1c51e38	take	fix(provider): expand a leading ~ in GROK_HOME for provider and terminal spawns (#32560)
+20b934c830	take	fix(server): codex text generation keeps local provider launch args (#32597)
