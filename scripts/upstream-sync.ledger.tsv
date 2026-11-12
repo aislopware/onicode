@@ -838,3 +838,4 @@ d412871f27	take	fix(server): a task on a linked environment stays under its pare
 65c0195b46	take	fix(mobile): the thread list no longer reshuffles once per environment on startup (#34596)
 bf8e5e61b6	take	fix(web): a failed page in the floating browser preview shows the error instead of a blank panel (#35066)
 1d218d1525	take	feat(web): screen reader window title leads with the thread's status and name (#34697); title built inline in appInit (no branding.logic.ts), guest-link handling dropped
+476fc9be66	take	test(server): wire budget measures what clients fetch today (#35225); PR-comment reporter and CI artifact upload not ported (Onicode has neither)
