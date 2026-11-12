@@ -518,3 +518,4 @@ ddbc525f1c	take	fix(speech): removing filler words no longer joins paragraphs (#
 9b6c77fb0d	take	fix(opencode): pass --method curl to the native updater (#34169)
 b43a1b4b93	take	fix(server): a Claude tool call interrupted by a new message shows as stopped, not failed (#34183)
 05e835378f	take	fix(acp-registry): model refresh picks up models an agent adds upstream (#34246)
+10128e5925	take	fix(server): repeated session imports reach transcripts behind the scan budget (#27215)
