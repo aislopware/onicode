@@ -519,3 +519,4 @@ ddbc525f1c	take	fix(speech): removing filler words no longer joins paragraphs (#
 b43a1b4b93	take	fix(server): a Claude tool call interrupted by a new message shows as stopped, not failed (#34183)
 05e835378f	take	fix(acp-registry): model refresh picks up models an agent adds upstream (#34246)
 10128e5925	take	fix(server): repeated session imports reach transcripts behind the scan budget (#27215)
+5c9a01b747	take	fix(server): archiving or deleting a thread releases its devices (#34175)
