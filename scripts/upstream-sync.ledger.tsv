@@ -832,3 +832,4 @@ fc6c7c8b27	take	fix(server): usage model details count the real unpriced tokens 
 9771c5fd2d	take	fix(server): Kiro, fx and Antigravity find a ~/ Binary path (#35171); also expands ~/ in Onicode's Grok and Pi drivers
 f419698aea	take	feat(web): drop folders on the sidebar to add them as projects (#35202); dropped web-app sentence from user docs
 1032135cf7	take	fix(server): Edit from here recreates a worktree folder that lost its checkout (#35194)
+d412871f27	take	fix(server): a task on a linked environment stays under its parent in trimmed shell snapshots (#34870)
