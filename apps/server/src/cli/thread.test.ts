@@ -142,7 +142,7 @@ it.effect("does not sign in to whatever took over a dead server's port", () =>
     const path = yield* Path.Path;
     const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "oni-thread-dead-server-" });
     const state = yield* makePersistedServerRuntimeState({
-      config: { host: "127.0.0.1", devUrl: undefined },
+      config: { host: "127.0.0.1", dev: false },
       port: 3_773,
     });
     yield* persistServerRuntimeState({

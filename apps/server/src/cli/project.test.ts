@@ -198,7 +198,7 @@ it.effect("does not send a token to whatever took over a dead server's port", ()
     const workspaceRoot = NodePath.join(root, "workspace");
     yield* fs.makeDirectory(workspaceRoot);
     const state = yield* makePersistedServerRuntimeState({
-      config: { host: "127.0.0.1", devUrl: undefined },
+      config: { host: "127.0.0.1", dev: false },
       port: 3_773,
     });
     yield* persistServerRuntimeState({
