@@ -594,3 +594,4 @@ d9805b2ca6	take	fix(server): closing preview tabs runs beforeunload handlers
 fe565c8958	take	fix(server): storage cleanup keeps edits hidden from git status
 1de5fee69c	take	fix(server): price OpenCode Go usage from opencode_go rates
 fdd54b942d	take	fix(server): stop jobs a Claude CLI moved out of its process group when the session closes
+cf65084c97	take	fix(server): Antigravity install names network failures and 16 KiB-page kernels
