@@ -709,3 +709,4 @@ bfec2754b8	take	fix(server): restart recovery wakes delegated children waiting o
 28b4ceeeff	take	fix(opencode): a Stop OpenCode 2 never answers offers Force stop (#34840)
 6be26850fc	take	fix(server): side chat fork context recovers history from the parent thread (#34845)
 4e0b52806b	take	fix(cursor): agent shell commands stream their output while they run (#34843); SDK hook re-applied to patches/@cursor__sdk@1.3.1.patch
+3bd7b04544	take	fix(web): Escape and tool keys work as soon as preview annotation starts (#34796)
