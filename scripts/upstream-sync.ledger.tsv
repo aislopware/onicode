@@ -565,3 +565,4 @@ ed57b9b5ec	take	fix(server): a follow-up to a finished remote task is a new task
 ea3e20a0e2	take	fix(web): double-clicking another thread in the sidebar renames it instead of focusing its composer (#27287)
 3ffd240fc7	take	fix(server): a turn that adds a Git remote shows "Add to another machine" right away (#29947)
 a2a3388c5e	take	fix(server): keep writes moving while readers pin the WAL (#23496)
+8851e307d8	take	fix(client-runtime): slow foreground probes keep live sessions connected (#24309)
