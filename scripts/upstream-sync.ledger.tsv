@@ -747,3 +747,4 @@ b63b559c05	take	fix(server): browser setup command names the running onicode exe
 fb2580a571	take	fix(provider-muse): an unfinished Muse install says how to finish setup (#34927)
 7aaf5ce21d	take	fix(ssh): a failed remote onicode download says what failed and how to install it (#34928)
 d8b0a05a74	take	fix(clients): Claude question option previews are shown under their option (#34784)
+e2f1a21262	take	fix(server): a failed delegated task keeps its child's final report (#34915)
