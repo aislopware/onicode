@@ -3,9 +3,11 @@ import {
   ChevronRightIcon,
   ChevronsLeftRightEllipsisIcon,
   EllipsisIcon,
+  MonitorIcon,
   RouteIcon,
 } from "lucide-react";
 import { useAtomValue } from "@effect/atom-react";
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { type EnvironmentId, resolveEnvironmentMachineKind } from "@onicode/contracts";
 import {
@@ -38,10 +40,11 @@ import {
   supportsDesktopAppUpdate,
 } from "~/versionSkew";
 import { environmentCatalog } from "~/connection/catalog";
-import type { EnvironmentPresentation } from "~/state/environments";
+import { type EnvironmentPresentation, usePrimaryEnvironmentId } from "~/state/environments";
 import { APP_VERSION } from "~/branding";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { serverEnvironment } from "~/state/server";
+import { canOpenRemoteDesktop } from "../remoteDesktop/remoteDesktopPage.logic";
 import {
   OutdatedServerUpdateAction,
   ServerUpdateAction,
@@ -163,6 +166,12 @@ export function SavedBackendListRow({
   });
   const machineKind = resolveEnvironmentMachineKind(environment.serverConfig);
   const routeCount = connectionRoutes(environment.entry).length;
+  const navigate = useNavigate();
+  const remoteDesktopAvailable = canOpenRemoteDesktop(
+    environment,
+    usePrimaryEnvironmentId(),
+    import.meta.env.DEV,
+  );
   const subtitleText = [
     environmentTransportLabel(environment, connectedTarget),
     // The headline below names the failure in full.
@@ -330,6 +339,29 @@ export function SavedBackendListRow({
           label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
           appearance="icon"
         />
+      ) : null}
+      {remoteDesktopAvailable ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost-muted"
+                size="icon-xs"
+                aria-label={`Open remote desktop for ${environment.label}`}
+                onClick={() =>
+                  void navigate({
+                    to: "/remote-desktop/$environmentId",
+                    params: { environmentId },
+                  })
+                }
+              />
+            }
+          >
+            <MonitorIcon className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipPopup side="top">Open remote desktop</TooltipPopup>
+        </Tooltip>
       ) : null}
       <Tooltip>
         <TooltipTrigger

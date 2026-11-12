@@ -1,6 +1,9 @@
+// @effect-diagnostics nodeBuiltinImport:off - The compression test needs a server with the production WebSocket options.
 import { expect, it } from "@effect/vitest";
 import * as NodeWS from "@effect/platform-node/NodeWS";
+import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
+import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -87,6 +90,72 @@ it.effect("preserves binary input and admission frames through the real socket p
     });
     yield* Effect.promise(() => received.promise);
     expect(frames).toEqual([[0x83], [0x03, 1], [0x03, 2]]);
+  }),
+);
+
+it.effect("does not negotiate compression for proxied device frames", () =>
+  Effect.gen(function* () {
+    const hub = yield* Effect.acquireRelease(
+      Effect.sync(() => new NodeWS.WebSocketServer({ port: 0 })),
+      (server) =>
+        Effect.promise(
+          () =>
+            new Promise<void>((resolve) => {
+              for (const client of server.clients) client.terminate();
+              server.close(() => resolve());
+            }),
+        ),
+    );
+    if (!hub.address())
+      yield* Effect.promise(() => new Promise<void>((resolve) => hub.once("listening", resolve)));
+    const address = hub.address();
+    if (typeof address !== "object" || !address) throw new Error("Missing hub port");
+    const services = yield* Layer.build(
+      HttpRouter.serve(DeviceHubProxy.layer, { disableListenLog: true }).pipe(
+        // The production server offers deflate on every socket it upgrades.
+        Layer.provideMerge(
+          NodeHttpServer.layer(() => NodeHttp.createServer(), {
+            port: 0,
+            host: "127.0.0.1",
+            websocket: { perMessageDeflate: true },
+          }),
+        ),
+        Layer.provide(
+          Layer.succeed(EnvironmentAuth.EnvironmentAuth, {
+            authenticateWebSocketUpgrade: () =>
+              Effect.succeed({
+                sessionId: AuthSessionId.make("test"),
+                subject: "test",
+                scopes: [AuthOrchestrationOperateScope],
+              }),
+          } as unknown as EnvironmentAuth.EnvironmentAuth["Service"]),
+        ),
+        Layer.provide(
+          Layer.succeed(DeviceService.DeviceService, {
+            currentReadiness: () =>
+              Effect.succeed({
+                hostId: LOCAL_DEVICE_HOST_ID,
+                hub: { origin: `http://127.0.0.1:${address.port}` },
+              }),
+          } as DeviceService.DeviceService["Service"]),
+        ),
+        Layer.provide(NodeHttpClient.layerUndici),
+      ),
+    );
+    const origin = HttpServer.formatAddress(
+      Context.get(services, HttpServer.HttpServer).address,
+    ).replace(/^http/, "ws");
+    const client = yield* Effect.acquireRelease(
+      Effect.sync(
+        () => new NodeWS.WebSocket(`${origin}/api/device-hub/vendor/serve-emu/ws?wsTicket=test`),
+      ),
+      (socket) => Effect.sync(() => socket.close()),
+    );
+    const opened = Promise.withResolvers<void>();
+    client.once("open", () => opened.resolve());
+    client.once("error", (error) => opened.reject(error));
+    yield* Effect.promise(() => opened.promise);
+    expect(client.extensions).toBe("");
   }),
 );
 

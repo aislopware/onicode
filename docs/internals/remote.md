@@ -67,6 +67,70 @@ IPv4. A LAN address is never reported in that mode.
 Pull request routing trust covers the whole route list. Adding or changing a route
 revokes it; reordering does not, because the same addresses remain trusted.
 
+## Remote desktop is peer to peer
+
+Every other feature reaches a machine through its environment server. Remote
+desktop does not: the server only
+[relays one offer and one answer](../../apps/server/src/remoteDesktop/RemoteDesktop.ts),
+and the picture and input travel over a WebRTC connection between the viewer and
+the desktop app on the host. The reasons, and what follows from them:
+
+- **Why WebRTC and not the socket.** A screen is real-time media: a late frame
+  is worthless, and TCP would hold every later frame behind a lost packet.
+  WebRTC gives UDP transport, congestion control, and the platform's hardware
+  encoders and decoders in every client without a native module. A custom
+  QUIC transport for RPC was evaluated at the same time and rejected: neither
+  the Electron renderer nor React Native can speak it without native code in
+  three runtimes, and `ws://` inside a tailnet is already plaintext TCP inside
+  WireGuard, so removing TLS saves nothing there.
+- **The host is the desktop app's renderer**, not the server. Only a GUI
+  process can hold the Screen Recording and Accessibility grants, and only a
+  renderer has `getDisplayMedia` and a hardware encoder. A headless
+  `onicode up` host therefore cannot share a screen, and the server reports a
+  host only while a desktop app holds the
+  [`remoteDesktop.host`](../../packages/contracts/src/rpc.ts) stream open.
+- **No STUN or TURN.** Both peers offer host candidates only. Electron offers
+  its real addresses, including the tailnet one, which is what lets a WebView
+  viewer that hides its own addresses behind mDNS names connect: the viewer
+  dials the host, and the host learns the viewer's address from that packet.
+  The connection therefore needs a direct route (LAN or tailnet) and never
+  leaves through a third party.
+- **Signaling is one request.** Each side waits for ICE gathering to finish and
+  sends a complete description, so there is no trickle channel to keep ordered
+  across the relay.
+- **The host opt-in is a client setting on purpose.** A server setting could be
+  flipped by any client with settings access, from anywhere. Client settings
+  live on the host device, so sharing can only be turned on by someone at it.
+- **Frames are shown on arrival.** The desktop app starts with
+  `WebRTC-ForceSendPlayoutDelay` set to zero, which every libwebrtc receiver
+  honors. Without it the viewer's jitter buffer held frames for 10 to 60 ms
+  after each idle-to-motion change; `jitterBufferTarget = 0` alone does not
+  lower Chromium's floor.
+- **Codec choice can be refused.** The host prefers HEVC, then H.264 from the
+  highest profile down, but a viewer may negotiate a variant the host cannot
+  encode (WebKit's constrained-high H.264). `setParameters` rejects the whole
+  call for that, so [the host](../../apps/web/src/remoteDesktop/host.ts) sets
+  bitrate and scaling first and tries codecs one at a time afterwards.
+- **A lost path reconnects; a hang-up does not.** The host closes the input
+  channel when it ends a session, and a network change leaves it open and
+  silent. [The viewer](../../packages/client-runtime/src/remoteDesktop/viewer.ts)
+  retries only the second, so **Disconnect** on the host is not undone by the
+  viewer's own recovery.
+- **The clipboard is read around macOS's paste prompt.** A read that waited
+  behind that prompt in the main process would lock a remote user out, because
+  the same process posts their input and they could not dismiss it. The host
+  watches the pasteboard's change count, which never prompts, and
+  [reads the text](../../apps/desktop/src/remoteDesktop/MacHost.ts) in-process
+  only once macOS always allows it. Before the first prompt it reads through
+  `pbpaste`, so the prompt holds that child instead. Once macOS asks every
+  time, copies are left unread and Settings says why. What was copied before
+  a viewer connected is never sent.
+- **One display-media handler per session.** Electron allows a single
+  `setDisplayMediaRequestHandler`, and the browser preview needs it too.
+  Features register a claim through
+  [`claimDisplayMediaRequests`](../../apps/desktop/src/electron/displayMediaClaims.ts)
+  instead of installing their own.
+
 ## Peer links
 
 A [peer link](../../apps/server/src/peer/PeerLinks.ts) lets one environment's

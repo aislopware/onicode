@@ -23,6 +23,10 @@
       "types": "./src/delimitedPreview.ts",
       "import": "./src/delimitedPreview.ts"
     },
+    "./socketCompression": {
+      "types": "./src/socketCompression.ts",
+      "import": "./src/socketCompression.ts"
+    },
     "./socketFrameParts": {
       "types": "./src/socketFrameParts.ts",
       "import": "./src/socketFrameParts.ts"

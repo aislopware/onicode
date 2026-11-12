@@ -243,6 +243,7 @@ describe("DesktopPreReadyPlatform", () => {
       assert.equal(registerSchemesMock.mock.calls.length, 1);
       assert.deepEqual(appendSwitchMock.mock.calls, [
         ["disable-features", "VSyncAlignedPresentationForScrolling"],
+        ["force-fieldtrials", "WebRTC-ForceSendPlayoutDelay/min_ms:0,max_ms:0/"],
       ]);
       assert.equal(setDesktopNameMock.mock.calls.length, 0);
     }),

@@ -37,6 +37,7 @@ import * as DesktopClientSettings from "../settings/DesktopClientSettings.ts";
 import * as ElectronApp from "../electron/ElectronApp.ts";
 import * as DesktopRendererHistory from "../telemetry/DesktopRendererHistory.ts";
 import { makeQuitShortcutHandler } from "./QuitHold.ts";
+import { remoteDesktopCapturesKeyboard } from "../ipc/methods/remoteDesktop.ts";
 import { copyContextMenuImage } from "./ContextMenuImage.ts";
 
 const TITLEBAR_HEIGHT = 40;
@@ -706,14 +707,18 @@ export const make = Effect.gen(function* () {
       },
     });
     window.webContents.on("before-input-event", (event, input) => {
-      quitShortcutHandler(event, input);
+      // A focused remote desktop viewer sends Cmd+Q to the machine it drives.
+      const remoteKeyboard =
+        !window.isDestroyed() && remoteDesktopCapturesKeyboard(window.webContents);
+      if (!remoteKeyboard) quitShortcutHandler(event, input);
       if (window.isDestroyed()) return;
       // Cmd/Ctrl+W reaches the renderer; DevTools uses the native menu shortcut.
       window.webContents.setIgnoreMenuShortcuts(
-        (environment.platform === "darwin" ? input.meta : input.control) &&
-          !input.alt &&
-          !input.shift &&
-          input.key.toLowerCase() === "w",
+        remoteKeyboard ||
+          ((environment.platform === "darwin" ? input.meta : input.control) &&
+            !input.alt &&
+            !input.shift &&
+            input.key.toLowerCase() === "w"),
       );
       // A held Cmd/Ctrl+W closes one tab or terminal, not each one behind it.
       if (input.type !== "keyDown" || !input.isAutoRepeat) return;

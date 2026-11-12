@@ -42,6 +42,7 @@ import { LocalEnvironmentSetting } from "./LocalEnvironmentSetting";
 import { searchableSetting } from "./settingsSearch";
 import { EnvironmentIconMenu } from "./EnvironmentIconPicker";
 import { FoldedSettingsSection } from "./FoldedSettingsSection";
+import { RemoteDesktopHostSettings } from "./RemoteDesktopHostSettings";
 import { LinkedEnvironmentsSettings } from "./LinkedEnvironmentsSettings";
 import { usePeerLinkHosts } from "~/state/peerLinks";
 import { LoadBalancingSettings } from "./LoadBalancingSettings";
@@ -128,6 +129,7 @@ import {
 import {
   AdvertisedEndpointListRow,
   AuthorizedClientsHeaderAction,
+  clientSessionLabel,
   NetworkAccessDescription,
   PairingClientsList,
 } from "./AuthorizedClientsSettings";
@@ -1308,6 +1310,20 @@ function ConnectionsSettingsContent({
               </details>
             ) : null}
           </SettingsSection>
+
+          {isPrimaryAccess && desktopBridge?.remoteDesktop ? (
+            <RemoteDesktopHostSettings
+              bridge={desktopBridge.remoteDesktop}
+              clientLabels={
+                new Map(
+                  desktopClientSessions.map((session) => [
+                    session.sessionId,
+                    clientSessionLabel(session),
+                  ]),
+                )
+              }
+            />
+          ) : null}
 
           {canReadAccess || canWriteAccess ? (
             <FoldedSettingsSection

@@ -5,6 +5,7 @@ import {
   authScopeRequiredResponse,
   AssetCreateUrlInput,
   AuthAccessReadScope,
+  AuthAccessWriteScope,
   ServerSettingsPatch,
   ProviderInstanceMutation,
   requiredScopesForServerSettingsPatch,
@@ -214,6 +215,10 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.deviceDetail]: AuthOrchestrationReadScope,
   [WS_METHODS.deviceAction]: AuthOrchestrationOperateScope,
   [WS_METHODS.subscribeDeviceState]: AuthOrchestrationReadScope,
+  // Whoever registers as the host decides what viewers see and where their input lands.
+  [WS_METHODS.remoteDesktopHost]: AuthAccessWriteScope,
+  [WS_METHODS.remoteDesktopAnswer]: AuthAccessWriteScope,
+  [WS_METHODS.subscribeRemoteDesktop]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeServerLifecycle]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribeAuthAccess]: AuthAccessReadScope,

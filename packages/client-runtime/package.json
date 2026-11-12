@@ -43,6 +43,14 @@
       "types": "./src/handoff.ts",
       "default": "./src/handoff.ts"
     },
+    "./remote-desktop/viewer": {
+      "types": "./src/remoteDesktop/viewer.ts",
+      "default": "./src/remoteDesktop/viewer.ts"
+    },
+    "./remote-desktop/protocol": {
+      "types": "./src/remoteDesktop/protocol.ts",
+      "default": "./src/remoteDesktop/protocol.ts"
+    },
     "./device/stream": {
       "types": "./src/device/stream.ts",
       "default": "./src/device/stream.ts"
@@ -150,6 +158,10 @@
     "./oniToolSummary": {
       "types": "./src/oniToolSummary.ts",
       "default": "./src/oniToolSummary.ts"
+    },
+    "./state/remote-desktop": {
+      "types": "./src/state/remoteDesktop.ts",
+      "default": "./src/state/remoteDesktop.ts"
     },
     "./state/auth": {
       "types": "./src/state/auth.ts",

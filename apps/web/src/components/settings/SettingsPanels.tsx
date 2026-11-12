@@ -435,6 +435,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
       ? ["Agent browser access"]
       : []),
+    ...(settings.remoteDesktopHostEnabled !== DEFAULT_UNIFIED_SETTINGS.remoteDesktopHostEnabled
+      ? ["Share this screen"]
+      : []),
   ];
 
   const restoreDefaults = async () => {
@@ -558,6 +561,7 @@ export function useSettingsRestore(onRestored?: () => void) {
       browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
       pullRequestLinksOpenInApp: DEFAULT_UNIFIED_SETTINGS.pullRequestLinksOpenInApp,
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
+      remoteDesktopHostEnabled: DEFAULT_UNIFIED_SETTINGS.remoteDesktopHostEnabled,
     });
     onRestored?.();
   };

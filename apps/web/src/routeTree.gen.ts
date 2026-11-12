@@ -19,6 +19,7 @@ import { Route as ChatUsageRouteImport } from './routes/_chat.usage'
 import { Route as ProjectsProjectKeyRouteImport } from './routes/projects.$projectKey'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
+import { Route as ChatRemoteDesktopEnvironmentIdRouteImport } from './routes/_chat.remote-desktop.$environmentId'
 import { Route as ChatSettingsAboutRouteImport } from './routes/_chat.settings.about'
 import { Route as ChatSettingsAccessRouteImport } from './routes/_chat.settings.access'
 import { Route as ChatSettingsAppearanceRouteImport } from './routes/_chat.settings.appearance'
@@ -97,6 +98,12 @@ const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   path: '/draft/$draftId',
   getParentRoute: () => ChatRoute,
 } as any)
+const ChatRemoteDesktopEnvironmentIdRoute =
+  ChatRemoteDesktopEnvironmentIdRouteImport.update({
+    id: '/remote-desktop/$environmentId',
+    path: '/remote-desktop/$environmentId',
+    getParentRoute: () => ChatRoute,
+  } as any)
 const ChatSettingsAboutRoute = ChatSettingsAboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -247,6 +254,7 @@ export interface FileRoutesByFullPath {
   '/projects/$projectKey': typeof ProjectsProjectKeyRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/remote-desktop/$environmentId': typeof ChatRemoteDesktopEnvironmentIdRoute
   '/settings/about': typeof ChatSettingsAboutRoute
   '/settings/access': typeof ChatSettingsAccessRoute
   '/settings/appearance': typeof ChatSettingsAppearanceRoute
@@ -285,6 +293,7 @@ export interface FileRoutesByTo {
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/remote-desktop/$environmentId': typeof ChatRemoteDesktopEnvironmentIdRoute
   '/settings/about': typeof ChatSettingsAboutRoute
   '/settings/access': typeof ChatSettingsAccessRoute
   '/settings/appearance': typeof ChatSettingsAppearanceRoute
@@ -325,6 +334,7 @@ export interface FileRoutesById {
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/_chat/remote-desktop/$environmentId': typeof ChatRemoteDesktopEnvironmentIdRoute
   '/_chat/settings/about': typeof ChatSettingsAboutRoute
   '/_chat/settings/access': typeof ChatSettingsAccessRoute
   '/_chat/settings/appearance': typeof ChatSettingsAppearanceRoute
@@ -365,6 +375,7 @@ export interface FileRouteTypes {
     | '/projects/$projectKey'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/remote-desktop/$environmentId'
     | '/settings/about'
     | '/settings/access'
     | '/settings/appearance'
@@ -403,6 +414,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$environmentId/$threadId'
     | '/draft/$draftId'
+    | '/remote-desktop/$environmentId'
     | '/settings/about'
     | '/settings/access'
     | '/settings/appearance'
@@ -442,6 +454,7 @@ export interface FileRouteTypes {
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
     | '/_chat/draft/$draftId'
+    | '/_chat/remote-desktop/$environmentId'
     | '/_chat/settings/about'
     | '/_chat/settings/access'
     | '/_chat/settings/appearance'
@@ -547,6 +560,13 @@ declare module '@tanstack/react-router' {
       path: '/draft/$draftId'
       fullPath: '/draft/$draftId'
       preLoaderRoute: typeof ChatDraftDraftIdRouteImport
+      parentRoute: typeof ChatRoute
+    }
+    '/_chat/remote-desktop/$environmentId': {
+      id: '/_chat/remote-desktop/$environmentId'
+      path: '/remote-desktop/$environmentId'
+      fullPath: '/remote-desktop/$environmentId'
+      preLoaderRoute: typeof ChatRemoteDesktopEnvironmentIdRouteImport
       parentRoute: typeof ChatRoute
     }
     '/_chat/settings/about': {
@@ -813,6 +833,7 @@ interface ChatRouteChildren {
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
+  ChatRemoteDesktopEnvironmentIdRoute: typeof ChatRemoteDesktopEnvironmentIdRoute
 }
 
 const ChatRouteChildren: ChatRouteChildren = {
@@ -823,6 +844,7 @@ const ChatRouteChildren: ChatRouteChildren = {
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,
+  ChatRemoteDesktopEnvironmentIdRoute: ChatRemoteDesktopEnvironmentIdRoute,
 }
 
 const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)

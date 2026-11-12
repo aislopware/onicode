@@ -72,6 +72,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerSessionMcpServerAction]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerSessionMcpOAuthCallback]: AuthOrchestrationOperateScope,
+  // Seeing and driving the host's screen is at least what a terminal on it allows.
+  [WS_METHODS.remoteDesktopConnect]: AuthTerminalOperateScope,
   [WS_METHODS.peerLinksLink]: AuthAccessWriteScope,
   [WS_METHODS.peerLinksUnlink]: AuthAccessWriteScope,
   // A link lets every agent here reach the other environment: Settings' bar.

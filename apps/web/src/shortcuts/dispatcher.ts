@@ -84,12 +84,20 @@ function runScopes(scopes: readonly CommandScope[], event: KeyboardEvent): boole
   return false;
 }
 
+// A shortcut recorder or a remote desktop picture takes every key typed into it.
+function isCapturedByTarget(event: KeyboardEvent): boolean {
+  return (
+    event.target instanceof Element && event.target.closest("[data-keybinding-capture]") !== null
+  );
+}
+
 function dispatchCaptureKeyDown(event: KeyboardEvent): void {
-  runScopes(captureScopes, event);
+  if (!isCapturedByTarget(event)) runScopes(captureScopes, event);
 }
 
 function dispatchKeyDown(event: KeyboardEvent): void {
-  const consumed = runScopes(globalScopes, event) || event.defaultPrevented;
+  const consumed =
+    isCapturedByTarget(event) || runScopes(globalScopes, event) || event.defaultPrevented;
   for (const scope of observerScopes.slice()) scope.options.observe?.(event, consumed);
 }
 

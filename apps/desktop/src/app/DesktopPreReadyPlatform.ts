@@ -164,6 +164,14 @@ export const make = Effect.gen(function* () {
       }
     }
 
+    // Remote desktop viewers show each frame on arrival when the sender asks for it; left alone,
+    // their jitter buffer holds frames for tens of milliseconds after every idle-to-motion change.
+    const fieldTrials = readCommandLineSwitchValue(Electron.app.commandLine, "force-fieldtrials");
+    Electron.app.commandLine.appendSwitch(
+      "force-fieldtrials",
+      `${fieldTrials ?? ""}WebRTC-ForceSendPlayoutDelay/min_ms:0,max_ms:0/`,
+    );
+
     return { linux, linuxPasswordStoreCommandLine };
   });
 }).pipe(Effect.withSpan("desktop.electron.configureBeforeReady"));

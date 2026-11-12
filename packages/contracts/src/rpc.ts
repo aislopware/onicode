@@ -318,6 +318,15 @@ import {
   DeviceShutdownInput,
 } from "./device.ts";
 import {
+  RemoteDesktopAnswerInput,
+  RemoteDesktopConnectInput,
+  RemoteDesktopConnectResult,
+  RemoteDesktopError,
+  RemoteDesktopHost,
+  RemoteDesktopHostRequest,
+  RemoteDesktopState,
+} from "./remoteDesktop.ts";
+import {
   ServerConfigStreamEvent,
   DesktopUpdateCommitInput,
   OtlpEndpointCheckInput,
@@ -618,6 +627,10 @@ export const WS_METHODS = {
   subscribePreviewEvents: "subscribePreviewEvents",
   subscribeDiscoveredLocalServers: "subscribeDiscoveredLocalServers",
   subscribeDeviceState: "subscribeDeviceState",
+  remoteDesktopHost: "remoteDesktop.host",
+  remoteDesktopAnswer: "remoteDesktop.answer",
+  remoteDesktopConnect: "remoteDesktop.connect",
+  subscribeRemoteDesktop: "subscribeRemoteDesktop",
   subscribeServerConfig: "subscribeServerConfig",
   subscribeServerLifecycle: "subscribeServerLifecycle",
   subscribeAuthAccess: "subscribeAuthAccess",
@@ -1788,6 +1801,32 @@ const WsDeviceActionRpc = Rpc.make(WS_METHODS.deviceAction, {
   error: Schema.Union([DeviceError, EnvironmentAuthorizationError]),
 });
 
+// The desktop app on the host holds this open while it shares, and answers each request it yields.
+const WsRemoteDesktopHostRpc = Rpc.make(WS_METHODS.remoteDesktopHost, {
+  payload: RemoteDesktopHost,
+  success: RemoteDesktopHostRequest,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsRemoteDesktopAnswerRpc = Rpc.make(WS_METHODS.remoteDesktopAnswer, {
+  payload: RemoteDesktopAnswerInput,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsRemoteDesktopConnectRpc = Rpc.make(WS_METHODS.remoteDesktopConnect, {
+  payload: RemoteDesktopConnectInput,
+  success: RemoteDesktopConnectResult,
+  error: Schema.Union([RemoteDesktopError, EnvironmentAuthorizationError]),
+});
+
+const WsSubscribeRemoteDesktopRpc = Rpc.make(WS_METHODS.subscribeRemoteDesktop, {
+  payload: Schema.Struct({}),
+  success: RemoteDesktopState,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 const WsSubscribeDeviceStateRpc = Rpc.make(WS_METHODS.subscribeDeviceState, {
   payload: Schema.Struct({}),
   success: DeviceServiceState,
@@ -2250,6 +2289,10 @@ export const WsRpcGroup = RpcGroup.make(
   WsDeviceDetailRpc,
   WsDeviceActionRpc,
   WsSubscribeDeviceStateRpc,
+  WsRemoteDesktopHostRpc,
+  WsRemoteDesktopAnswerRpc,
+  WsRemoteDesktopConnectRpc,
+  WsSubscribeRemoteDesktopRpc,
   WsSubscribeServerConfigRpc,
   WsSubscribeServerLifecycleRpc,
   WsSubscribeAuthAccessRpc,

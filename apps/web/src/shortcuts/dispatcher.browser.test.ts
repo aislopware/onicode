@@ -130,6 +130,30 @@ describe("command dispatcher", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it("leaves keys typed into a capturing element to that element", () => {
+    const command = vi.fn();
+    const early = vi.fn();
+    const observed: boolean[] = [];
+    const picture = document.createElement("div");
+    picture.setAttribute("data-keybinding-capture", "");
+    const surface = document.createElement("button");
+    picture.append(surface);
+    document.body.append(picture);
+    using stack = new DisposableStack();
+    stack.defer(() => picture.remove());
+    stack.defer(registerCommands({ "chat.new": command }, { keybindings }));
+    stack.defer(registerCommands({ "chat.new": early }, { keybindings, capture: true }));
+    stack.defer(registerCommands({}, { observe: (_event, consumed) => observed.push(consumed) }));
+
+    const event = new KeyboardEvent("keydown", { key: "k", cancelable: true, bubbles: true });
+    surface.dispatchEvent(event);
+
+    expect(command).not.toHaveBeenCalled();
+    expect(early).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+    expect(observed).toEqual([true]);
+  });
+
   it("routes a menu action to its newest handler", () => {
     const older = vi.fn();
     const newer = vi.fn();

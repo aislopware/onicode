@@ -134,3 +134,14 @@ export const RECEIVE_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:receive-provider-
 export const CANCEL_PROVIDER_AUTH_CALLBACK_CHANNEL = "desktop:cancel-provider-auth-callback";
 export const TAKE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:take-legacy-local-storage";
 export const COMPLETE_LEGACY_LOCAL_STORAGE_CHANNEL = "desktop:complete-legacy-local-storage";
+export const REMOTE_DESKTOP_CAPABILITIES_CHANNEL = "desktop:remote-desktop-capabilities";
+export const REMOTE_DESKTOP_REQUEST_PERMISSIONS_CHANNEL =
+  "desktop:remote-desktop-request-permissions";
+export const REMOTE_DESKTOP_SET_HOSTING_CHANNEL = "desktop:remote-desktop-set-hosting";
+export const REMOTE_DESKTOP_ARM_CAPTURE_CHANNEL = "desktop:remote-desktop-arm-capture";
+export const REMOTE_DESKTOP_INPUT_CHANNEL = "desktop:remote-desktop-input";
+export const REMOTE_DESKTOP_END_SESSION_CHANNEL = "desktop:remote-desktop-end-session";
+export const REMOTE_DESKTOP_CAPTURE_KEYBOARD_CHANNEL = "desktop:remote-desktop-capture-keyboard";
+export const REMOTE_DESKTOP_SET_VIEWERS_CHANNEL = "desktop:remote-desktop-set-viewers";
+export const REMOTE_DESKTOP_READ_CLIPBOARD_CHANNEL = "desktop:remote-desktop-read-clipboard";
+export const REMOTE_DESKTOP_WRITE_CLIPBOARD_CHANNEL = "desktop:remote-desktop-write-clipboard";

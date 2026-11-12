@@ -640,6 +640,8 @@ export const ServerConfig = Schema.Struct({
    * `getOlderSettledThreads` serves them. Only servers that also advertise `shellThreadFamilies`.
    */
   shellOlderSettled: Schema.optionalKey(Schema.Boolean),
+  /** Serves the `remoteDesktop.*` methods. A host exists only while a desktop app shares. */
+  remoteDesktop: Schema.optionalKey(Schema.Boolean),
   shellRevealInFileManager: Schema.optionalKey(Schema.Boolean),
   shellRevealInFileManagerKind: Schema.optionalKey(FileManagerRevealKind),
   threadResumeCompletionMarker: Schema.optionalKey(Schema.Boolean),
