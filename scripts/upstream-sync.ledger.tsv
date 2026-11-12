@@ -575,3 +575,4 @@ bd5ed4dac8	take	fix(provider-cursor): Cursor sign-in shows why it failed (#25938
 4ea32cb62e	take	fix(server): load balancing reads container cgroup limits instead of the host's
 c8ddb2203e	take	fix(desktop): middle-click paste follows gtk-enable-primary-paste on Linux
 c501ccad57	take	fix(server): PR watch waits for queued GitHub workflow runs
+6e6b6a7365	take	fix(opencode): stopped sessions can fork after a lost end event
