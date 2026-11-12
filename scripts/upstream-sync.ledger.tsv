@@ -549,3 +549,4 @@ d9c0920449	take	fix(server): malformed legacy timestamps no longer block startup
 bba1c13d87	take	fix(web): opening a thread dismisses its notification toasts (#24313)
 a6c26d3e77	take	fix(web): the composer shows arrow ligatures like sent messages (#27909)
 85f0419d5e	take	fix(desktop): dev supervisor stops when its parent process dies (#23571)
+6e8851cc43	take	fix(server): Antigravity sign-in no longer blames the network when the runtime never starts (#29057)
