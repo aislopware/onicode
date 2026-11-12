@@ -1572,10 +1572,8 @@ it.effect("a git action that fails partway still refreshes the repository status
           {
             sessionId: AuthSessionId.make("git-test"),
             subject: "git-test",
-            method: "browser-session-cookie",
             scopes: [AuthSourceControlWriteScope],
           },
-          {},
           yield* ServerBrowser.ServerBrowser,
           () => Effect.void,
           { secretReferences: true },

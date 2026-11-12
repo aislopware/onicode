@@ -41,7 +41,7 @@ describe("ConnectionDriver", () => {
                   label: entry.target.label,
                   httpBaseUrl: "http://127.0.0.1:1",
                   socketUrl: "ws://127.0.0.1:1/ws",
-                  httpAuthorization: null,
+                  httpAuthorization: { _tag: "Bearer", token: "test-token" },
                   target: entry.target,
                 } satisfies PreparedConnection),
             }),
