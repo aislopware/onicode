@@ -485,3 +485,4 @@ fdaf883293	skip	AUR packaging; Onicode ships no AUR packages
 7a7b8d7ad2	take	fix(forgejo): tea's `pull` and `co` aliases count as checkout commands (#32713)
 de26b6db3c	take	fix(server): providers read cited assistant text again (#32702)
 46002808e2	take	fix(github): find pull requests for SSH aliases (#32932)
+d7fedc5743	take	fix(server): Claude live command output no longer starts with � after skipping ahead (#33246)
