@@ -683,3 +683,4 @@ bb646d2cad	take	fix(shared): links to bracketed filenames keep their folder labe
 ddc4f57602	take	fix(server): a Claude resume rejected before the prompt keeps the native session (#34762)
 5c6f2f1229	take	fix(server): Codex MCP servers that fail to start show a notice in the thread
 a25654c396	take	fix(server): block incompatible migration history in preflight; applied to service/servicePreflight.ts (upstream cloud/)
+6419422f94	take	fix(server): a reset credit's limits refresh when the first read after it fails (#34780)
