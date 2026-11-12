@@ -281,12 +281,19 @@ jobs:
 
   # The web suite is the largest outside the server. In the shared Test job it
   # started last and ran alone for about 40s after everything else finished.
+  # Browser tests are bound by the Vite server transforming modules for each
+  # file, not by Chromium, so a second runner (and Vite server) halves the job
+  # that gated every run.
   test_web:
-    name: Test Web
+    name: Test Web ${{ matrix.shard }}
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.test_web != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -326,7 +333,7 @@ jobs:
           fi
 
       - name: Test
-        run: vp run --filter @onicode/web test
+        run: vp run --filter @onicode/web test --shard ${{ matrix.shard }}/${{ strategy.job-total }}
 
   # apps/server sets `fileParallelism: false`, so its test files run strictly
   # one at a time. Sharding spreads them over separate runners instead of
@@ -394,6 +401,17 @@ jobs:
             node apps/server/node_modules/playwright-core/cli.js install-deps chromium
           fi
 
+      # Each server test file runs in its own Vitest process, and a fresh install starts
+      # Vitest's content-keyed module cache empty, so every file re-transformed its imports.
+      # Only pushes to main save it, so pull requests never evict each other's entries.
+      - name: Restore Vitest module cache
+        if: steps.changes.outputs.test_server != 'false'
+        uses: actions/cache/restore@v6
+        with:
+          path: node_modules/.vitest-cache
+          key: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+
       - name: Test
         if: steps.changes.outputs.test_server != 'false'
         env:
@@ -402,6 +420,13 @@ jobs:
           vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }}
           --uncached apps/server/integration/transferBudgetV2.integration.test.ts
           --verify-hits 1 apps/server
+
+      - name: Save Vitest module cache
+        if: github.event_name == 'push' && steps.changes.outputs.test_server != 'false'
+        uses: actions/cache/save@v6
+        with:
+          path: node_modules/.vitest-cache
+          key: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
 
       # integration/transferBudgetV2.integration.test.ts writes the report; exactly one shard runs it.
       - name: Publish transfer budget report
