@@ -515,3 +515,4 @@ ddbc525f1c	take	fix(speech): removing filler words no longer joins paragraphs (#
 86c379d07a	take	fix(server): drop a finished child's queued question wake (#25680)
 3dfc1a0d42	skip	T3 Connect managed relay endpoint; Onicode removed Connect and the relay
 5a3e368c1b	take	fix(server): detach errored provider sessions when deleting threads (#34199)
+9b6c77fb0d	take	fix(opencode): pass --method curl to the native updater (#34169)
