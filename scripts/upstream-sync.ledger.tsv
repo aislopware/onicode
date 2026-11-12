@@ -568,3 +568,4 @@ a2a3388c5e	take	fix(server): keep writes moving while readers pin the WAL (#2349
 8851e307d8	take	fix(client-runtime): slow foreground probes keep live sessions connected (#24309)
 6e3ada1a27	take	fix(server): wake Codex callers when restart cancels commands (#24538)
 bd5ed4dac8	take	fix(provider-cursor): Cursor sign-in shows why it failed (#25938)
+52f0988cd6	take	fix(mobile): iPad sidebar shows new threads after switching tabs (#27894)
