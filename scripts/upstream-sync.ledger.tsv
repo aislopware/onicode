@@ -513,3 +513,4 @@ fb4bf0722a	take	fix(server): provider update commands get no stdin, so one that 
 fe5b51e206	take	fix(server): an interrupted provider update ends failed instead of running forever (#33975)
 ddbc525f1c	take	fix(speech): removing filler words no longer joins paragraphs (#34101)
 86c379d07a	take	fix(server): drop a finished child's queued question wake (#25680)
+3dfc1a0d42	skip	T3 Connect managed relay endpoint; Onicode removed Connect and the relay
