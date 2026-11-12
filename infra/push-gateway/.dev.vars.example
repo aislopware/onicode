@@ -1,0 +1,16 @@
+# Copy to .dev.vars for `vp run dev`. A deployed gateway gets these from `cf deploy --secrets-file`.
+
+# 32 random bytes per key id: openssl rand -base64 32
+PUSH_SEALING_KEYS='{"current":"k1","keys":{"k1":"<base64>"}}'
+
+# iOS: an APNs auth key (.p8) with its newlines written as \n.
+APNS_KEY_ID=
+APNS_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+
+# Android: each package with its signing certificate SHA-256, and a Firebase service account.
+# An emulator's package is listed too. It cannot attest, so its digest is never compared.
+# ANDROID_APPS='[{"packageName":"dev.aislopware.onicode.dev","signingCertificateDigests":["<64 hex>"]}]'
+# FCM_SERVICE_ACCOUNT='{"project_id":"...","client_email":"...","private_key":"..."}'
+
+# Simulators and emulators cannot attest. Never set this on a deployed gateway.
+UNATTESTED_APP_IDS=dev.aislopware.onicode.dev

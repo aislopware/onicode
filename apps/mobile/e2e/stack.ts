@@ -117,5 +117,14 @@ NodeFS.writeFileSync(
 start(
   NodePath.join(mobileDir, "node_modules/.bin/expo"),
   ["start", "--dev-client", "--scheme", "onicode-dev", "--port", String(METRO_PORT)],
-  { cwd: mobileDir, env: { APP_VARIANT: "development", CI: "1", EXPO_NO_TELEMETRY: "1" } },
+  {
+    cwd: mobileDir,
+    env: {
+      APP_VARIANT: "development",
+      CI: "1",
+      EXPO_NO_TELEMETRY: "1",
+      // A build that names no gateway disables its notification settings. Nothing answers here.
+      ONICODE_PUSH_GATEWAY_URL: "https://push.invalid",
+    },
+  },
 );

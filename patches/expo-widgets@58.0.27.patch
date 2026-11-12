@@ -1,8 +1,18 @@
 diff --git a/build/ExpoWidgets.js b/build/ExpoWidgets.js
-index 85f3fbd..05b8dd8 100644
+index 85f3fbd..1919b47 100644
 --- a/build/ExpoWidgets.js
 +++ b/build/ExpoWidgets.js
-@@ -34,6 +34,7 @@ class LiveActivityFactoryStub {
+@@ -21,6 +21,9 @@ class LiveActivityStub {
+     async getPushToken() {
+         return null;
+     }
++    async getProps() {
++        return null;
++    }
+     addListener(_eventName, _listener) {
+         return noopSubscription;
+     }
+@@ -34,6 +37,7 @@ class LiveActivityFactoryStub {
      getInstances() {
          return [];
      }
@@ -11,10 +21,22 @@ index 85f3fbd..05b8dd8 100644
  class CustomNotificationStub {
      getId() {
 diff --git a/build/Widgets.d.ts b/build/Widgets.d.ts
-index fb37d5d..47a97af 100644
+index fb37d5d..4a7abdc 100644
 --- a/build/Widgets.d.ts
 +++ b/build/Widgets.d.ts
-@@ -100,6 +100,8 @@ export declare class LiveActivityFactory<T extends object = object> {
+@@ -63,6 +63,11 @@ export declare class LiveActivity<T extends object = object> {
+      * @platform ios
+      */
+     end(dismissalPolicy?: LiveActivityDismissalPolicy, props?: T, contentDate?: Date): Promise<void>;
++    /**
++     * Returns the props this Live Activity currently shows, as the JSON string a start, update or push set.
++     * @platform ios
++     */
++    getProps(): Promise<string | null>;
+     /**
+      * Returns the push token for this Live Activity, used to send push notification updates via APNs.
+      * Returns `null` if push notifications are not enabled or the token is not yet available.
+@@ -100,6 +105,8 @@ export declare class LiveActivityFactory<T extends object = object> {
       * @platform ios
       */
      getInstances(): LiveActivity<T>[];
@@ -24,10 +46,23 @@ index fb37d5d..47a97af 100644
  /**
   * Creates a dismissal policy that removes the Live Activity at the specified time within a four-hour window.
 diff --git a/build/Widgets.js b/build/Widgets.js
-index cc1efce..3ce8897 100644
+index cc1efce..d526eee 100644
 --- a/build/Widgets.js
 +++ b/build/Widgets.js
-@@ -134,6 +134,9 @@ import ExpoWidgetsModule from './ExpoWidgets';
+@@ -94,6 +94,12 @@ import ExpoWidgetsModule from './ExpoWidgets';
+         return this.nativeLiveActivity.end(dismissalPolicy, undefined, serializedProps, contentDate?.getTime());
+     }
+     /**
++   * Returns the props this Live Activity currently shows, as the JSON string a start, update or push set.
++   * @platform ios
++   */ getProps() {
++        return this.nativeLiveActivity.getProps();
++    }
++    /**
+    * Returns the push token for this Live Activity, used to send push notification updates via APNs.
+    * Returns `null` if push notifications are not enabled or the token is not yet available.
+    * @platform ios
+@@ -134,6 +140,9 @@ import ExpoWidgetsModule from './ExpoWidgets';
     */ getInstances() {
          return this.nativeLiveActivityFactory.getInstances().map((instance)=>new LiveActivity(instance));
      }
@@ -38,7 +73,7 @@ index cc1efce..3ce8897 100644
  /**
   * Creates a dismissal policy that removes the Live Activity at the specified time within a four-hour window.
 diff --git a/build/Widgets.types.d.ts b/build/Widgets.types.d.ts
-index 4c474bb..dbfb8b1 100644
+index 4c474bb..c958ed2 100644
 --- a/build/Widgets.types.d.ts
 +++ b/build/Widgets.types.d.ts
 @@ -98,6 +98,10 @@ export type LiveActivityEnvironment = {
@@ -52,7 +87,7 @@ index 4c474bb..dbfb8b1 100644
      /**
       * Whether the activity is displayed in a context with reduced luminance.
       * @platform iOS 16+
-@@ -307,6 +311,7 @@ export declare class NativeLiveActivityFactory extends SharedObject {
+@@ -307,10 +311,12 @@ export declare class NativeLiveActivityFactory extends SharedObject {
      constructor(name: string, layout: string);
      start(props?: string, url?: string, staleDate?: number): NativeLiveActivity;
      getInstances(): NativeLiveActivity[];
@@ -60,6 +95,30 @@ index 4c474bb..dbfb8b1 100644
  }
  export declare class NativeLiveActivity extends SharedObject<LiveActivityEvents> {
      getId(): string;
+     update(props?: string, staleDate?: number): Promise<void>;
+     end(dismissalPolicy?: string, afterDate?: number, state?: string, contentDate?: number): Promise<void>;
+     getPushToken(): Promise<string | null>;
++    getProps(): Promise<string | null>;
+ }
+diff --git a/ios/LiveActivity.swift b/ios/LiveActivity.swift
+index b80655d..e74d80a 100644
+--- a/ios/LiveActivity.swift
++++ b/ios/LiveActivity.swift
+@@ -50,6 +50,14 @@ final class LiveActivity: SharedObject {
+     return tokenData.reduce("") { $0 + String(format: "%02x", $1) }
+   }
+ 
++  func getProps() throws -> String? {
++    guard let activity = Activity<LiveActivityAttributes>.activities.first(where: { $0.id == id }) else {
++      throw LiveActivityNotFoundException(id)
++    }
++
++    return activity.content.state.props
++  }
++
+   func observePushTokenUpdates(for activity: Activity<LiveActivityAttributes>, pushNotificationsEnabled: Bool) {
+     guard pushNotificationsEnabled else {
+       return
 diff --git a/ios/LiveActivityFactory.swift b/ios/LiveActivityFactory.swift
 index 29e4f15..629e547 100644
 --- a/ios/LiveActivityFactory.swift
@@ -207,7 +266,7 @@ index 4d135c4..dae4744 100644
        LiveActivityBanner(context: context, nodes: nodes)
      } else if let node = nodes["banner"] as? [String: Any] {
 diff --git a/ios/WidgetsModule.swift b/ios/WidgetsModule.swift
-index 285136b..d36eac4 100644
+index 285136b..5a8c3fe 100644
 --- a/ios/WidgetsModule.swift
 +++ b/ios/WidgetsModule.swift
 @@ -97,6 +97,10 @@ public final class WidgetsModule: Module {
@@ -221,11 +280,32 @@ index 285136b..d36eac4 100644
      }
  
      Class("LiveActivity", LiveActivity.self) {
+@@ -115,6 +119,10 @@ public final class WidgetsModule: Module {
+       AsyncFunction("getPushToken") { (instance: LiveActivity) in
+         try instance.getPushToken()
+       }
++
++      AsyncFunction("getProps") { (instance: LiveActivity) in
++        try instance.getProps()
++      }
+     }
+   }
+ 
 diff --git a/src/ExpoWidgets.ts b/src/ExpoWidgets.ts
-index db15000..6863dc9 100644
+index db15000..34a40bf 100644
 --- a/src/ExpoWidgets.ts
 +++ b/src/ExpoWidgets.ts
-@@ -59,6 +59,7 @@ class LiveActivityFactoryStub {
+@@ -45,6 +45,9 @@ class LiveActivityStub {
+   async getPushToken(): Promise<string | null> {
+     return null;
+   }
++  async getProps(): Promise<string | null> {
++    return null;
++  }
+   addListener(_eventName: string, _listener: (...args: unknown[]) => void): EventSubscription {
+     return noopSubscription;
+   }
+@@ -59,6 +62,7 @@ class LiveActivityFactoryStub {
    getInstances(): NativeLiveActivity[] {
      return [];
    }
@@ -234,10 +314,25 @@ index db15000..6863dc9 100644
  
  class CustomNotificationStub {
 diff --git a/src/Widgets.ts b/src/Widgets.ts
-index 814b312..9818907 100644
+index 814b312..6ca9dfd 100644
 --- a/src/Widgets.ts
 +++ b/src/Widgets.ts
-@@ -213,6 +213,11 @@ export class LiveActivityFactory<T extends object = object> {
+@@ -155,6 +155,14 @@ export class LiveActivity<T extends object = object> {
+     );
+   }
+ 
++  /**
++   * Returns the props this Live Activity currently shows, as the JSON string a start, update or push set.
++   * @platform ios
++   */
++  getProps(): Promise<string | null> {
++    return this.nativeLiveActivity.getProps();
++  }
++
+   /**
+    * Returns the push token for this Live Activity, used to send push notification updates via APNs.
+    * Returns `null` if push notifications are not enabled or the token is not yet available.
+@@ -213,6 +221,11 @@ export class LiveActivityFactory<T extends object = object> {
        .getInstances()
        .map((instance) => new LiveActivity<T>(instance));
    }
@@ -250,7 +345,7 @@ index 814b312..9818907 100644
  
  /**
 diff --git a/src/Widgets.types.ts b/src/Widgets.types.ts
-index 690d069..c60dd79 100644
+index 690d069..2802e2e 100644
 --- a/src/Widgets.types.ts
 +++ b/src/Widgets.types.ts
 @@ -112,6 +112,10 @@ export type LiveActivityEnvironment = {
@@ -272,3 +367,9 @@ index 690d069..c60dd79 100644
  }
  
  export declare class NativeLiveActivity extends SharedObject<LiveActivityEvents> {
+@@ -349,4 +354,5 @@ export declare class NativeLiveActivity extends SharedObject<LiveActivityEvents>
+     contentDate?: number
+   ): Promise<void>;
+   getPushToken(): Promise<string | null>;
++  getProps(): Promise<string | null>;
+ }

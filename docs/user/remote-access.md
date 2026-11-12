@@ -3,8 +3,9 @@
 Connect a phone, browser, or another desktop app to Onicode running on a different
 machine. That machine must stay running and reachable while you work.
 
-Onicode has no cloud service. Other devices reach a machine over your local network or
-your [Tailscale](https://tailscale.com) tailnet.
+Your work never passes through an Onicode cloud service. Other devices reach a machine over
+your local network or your [Tailscale](https://tailscale.com) tailnet. Only
+[mobile notifications](./mobile-notifications.md) leave it, through a push gateway.
 
 ## Set up a command-line host
 

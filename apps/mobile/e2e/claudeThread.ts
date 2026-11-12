@@ -1,24 +1,21 @@
-import { test as base, type Device } from "@e2e-dev/mobile";
-import { expect, type TestFixtures } from "e2e";
+import { test as base } from "@e2e-dev/mobile";
+import { expect } from "e2e";
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
 import * as NodePath from "node:path";
 import * as NodeUtil from "node:util";
 
-import { BUNDLE_ID, METRO_PORT, STACK_STATE_FILE, type StackState } from "./stackState.ts";
+import { hostAddress, launchApp, type LaunchFixtures } from "./launchApp.ts";
+import { STACK_STATE_FILE, type StackState } from "./stackState.ts";
 
 const run = NodeUtil.promisify(NodeChildProcess.execFile);
 const repoRoot = NodePath.resolve(import.meta.dirname, "../../..");
 const serverBin = NodePath.join(repoRoot, "apps/server/src/bin.ts");
-// A fresh install bundles the whole app from Metro before its first screen.
-const FIRST_BUNDLE_TIMEOUT = 240_000;
 
 interface ClaudeThread {
   readonly environmentId: string;
   readonly threadId: string;
 }
-
-type Fixtures = TestFixtures & { readonly device: Device };
 
 const onicodeCli = async (stack: StackState, args: ReadonlyArray<string>) => {
   const { stdout } = await run(
@@ -52,42 +49,10 @@ const startClaudeThread = async (stack: StackState): Promise<ClaudeThread> => {
   return { environmentId: stack.environmentId, threadId: reply.threadId };
 };
 
-const pairApp = async (
-  stack: StackState,
-  { app, device, platform, screen }: Pick<Fixtures, "app" | "device" | "platform" | "screen">,
-) => {
-  // The emulator reaches the host's loopback at 10.0.2.2; the simulator shares it.
-  const host = platform === "android" ? "10.0.2.2" : "127.0.0.1";
-  await app.clearState();
-  if (platform === "android") {
-    // The dev launcher asks for local network access before it reaches Metro, and
-    // e2e's permission names do not cover it.
-    await run("adb", [
-      "-s",
-      device.unstable_raw.deviceId,
-      "shell",
-      "pm",
-      "grant",
-      BUNDLE_ID,
-      "android.permission.ACCESS_LOCAL_NETWORK",
-    ]);
-  }
-  await app.open();
-  if (platform === "android") {
-    // expo-dev-launcher on Android ignores --initialUrl, so the bundle loads from its link.
-    // The flags match the iOS launch arguments: no dev menu, onboarding sheet, or floating button.
-    const query = new URLSearchParams({
-      url: `http://${host}:${METRO_PORT}`,
-      disableOnboarding: "1",
-      disableAutoLaunch: "1",
-      disableFab: "1",
-    });
-    await device.openLink(`exp+onicode://expo-development-client/?${query}`);
-  }
+const pairApp = async (stack: StackState, fixtures: LaunchFixtures) => {
+  const host = hostAddress(fixtures.platform);
   // The simulator's keychain outlives clearState, so the app may still hold older pairings.
-  await expect(screen.getByTestId("adaptive-workspace-layout")).toBeVisible({
-    timeout: FIRST_BUNDLE_TIMEOUT,
-  });
+  await launchApp(fixtures);
   const pairing = await onicodeCli(stack, [
     "auth",
     "pairing",
@@ -102,7 +67,7 @@ const pairApp = async (
   const pairingUrl = /^Pair URL: (.+)$/m.exec(pairing)?.[1];
   if (pairingUrl === undefined) throw new Error("The server printed no pairing URL.");
   const query = new URLSearchParams({ pairingUrl, autoConnect: "1" });
-  await device.openLink(`onicode-dev://connections/new?${query}`);
+  await fixtures.device.openLink(`onicode-dev://connections/new?${query}`);
 };
 
 // One seeded thread and one pairing per worker: the app keeps both between tests.

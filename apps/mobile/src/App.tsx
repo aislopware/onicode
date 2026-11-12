@@ -1,3 +1,8 @@
+import { installAgentAwareness } from "./features/agent-awareness/agentAwareness";
+import {
+  installAgentNotificationNavigation,
+  setAgentNotificationPathname,
+} from "./features/agent-awareness/notificationNavigation";
 import { installPermissionUpdateNotice } from "./features/connection/permissionUpdateNotice";
 import { installComposerAttachmentUploads } from "./state/composer-attachment-uploads";
 import { installThreadOutboxDelivery } from "./state/threadOutboxDelivery";
@@ -154,6 +159,7 @@ function handleNavigationStateChange(state: NavigationState | undefined): void {
   resolvePendingNewTaskPromptLink(state);
   resolvePendingThreadPromptLink(state);
   if (!state) return;
+  setAgentNotificationPathname(rootPathnameFromState(state));
   recordAppShortcutNavigationState(state);
   pruneNewTaskFlowStates(state);
   pruneNewTaskBranchCheckouts(state);
@@ -183,6 +189,8 @@ const appServiceDisposers = [
   installComposerAttachmentUploads(),
   startIncomingShareInbox(),
   installAppShortcuts(linkToAppPath),
+  installAgentNotificationNavigation(linkToAppPath),
+  installAgentAwareness(),
   installAppUpdateChecks(),
   installShowcaseCapture(rootPathnameFromState),
 ];

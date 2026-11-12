@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - evals
+  - infra/*
   - oxlint-plugin-onicode
   - packages/*
   - scripts
@@ -27,6 +28,8 @@ allowBuilds:
   "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.18-52a0ddec.tgz": true
   sharp: true
   utf-8-validate: false
+  # Verifies the workerd binary for the push gateway's local dev server.
+  workerd: true
 
 catalog:
   "@effect/atom-react": 4.1.2

@@ -4,7 +4,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { afterEach, describe, expect, it } from "vite-plus/test";
 
-import { loadRepoEnv } from "./public-config.ts";
+import { loadRepoEnv, resolveMobileIdentity } from "./public-config.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -30,6 +30,46 @@ describe("loadRepoEnv", () => {
     expect(
       loadRepoEnv({ baseEnv: { ONICODE_SHARED_VALUE: "process" }, repoRoot }).ONICODE_SHARED_VALUE,
     ).toBe("process");
+  });
+});
+
+describe("resolveMobileIdentity", () => {
+  it("builds in no push gateway or Firebase project, even for the maintainers' app", () => {
+    expect(resolveMobileIdentity({})).toEqual({
+      own: false,
+      appId: "dev.aislopware.onicode",
+      appleTeamId: "UK58J62H8L",
+      androidGoogleServicesFile: undefined,
+      pushGatewayUrl: undefined,
+    });
+  });
+
+  it("does not inherit the maintainers' Apple team under another app id", () => {
+    expect(resolveMobileIdentity({ ONICODE_MOBILE_APP_ID: "com.example.onicode" })).toMatchObject({
+      own: true,
+      appId: "com.example.onicode",
+      appleTeamId: undefined,
+    });
+    expect(
+      resolveMobileIdentity({
+        ONICODE_MOBILE_APP_ID: "com.example.onicode",
+        ONICODE_APPLE_TEAM_ID: "ABCDE12345",
+        ONICODE_ANDROID_GOOGLE_SERVICES_FILE: "/keys/google-services.json",
+        ONICODE_PUSH_GATEWAY_URL: " https://push.example.com ",
+      }),
+    ).toEqual({
+      own: true,
+      appId: "com.example.onicode",
+      appleTeamId: "ABCDE12345",
+      androidGoogleServicesFile: "/keys/google-services.json",
+      pushGatewayUrl: "https://push.example.com",
+    });
+  });
+
+  it("refuses an id that is not valid on both platforms", () => {
+    expect(() => resolveMobileIdentity({ ONICODE_MOBILE_APP_ID: "com.example.my-app" })).toThrow(
+      "ONICODE_MOBILE_APP_ID",
+    );
   });
 });
 

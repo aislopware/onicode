@@ -1,7 +1,8 @@
 # Onicode Mobile
 
 > [!NOTE]
-> To install the released app from the App Store or Google Play, see [Mobile app](../../docs/user/install.md#mobile-app). This guide covers building it from source.
+> The mobile app is not distributed publicly. This guide covers building it from source, and
+> [Your own app](#your-own-app) covers a build you can install and keep.
 
 ## Quickstart
 
@@ -79,8 +80,9 @@ project. pnpm gives each patch hash a new package path; Pods can otherwise keep 
 previous directory.
 
 If your Xcode account only has a Personal Team, use a bundle identifier you control and opt into the
-reduced-capability local build. Personal Team builds omit the widget and share extensions; builds
-without this opt-in are unchanged.
+reduced-capability local build. Personal Team builds omit the widget and share extensions and the
+push and App Attest entitlements, so push notifications are unavailable; builds without this opt-in
+are unchanged.
 
 ```bash
 ONICODE_IOS_PERSONAL_TEAM=1 \
@@ -122,6 +124,36 @@ node ../../scripts/mobile-native-static-check.ts
 ```
 
 The native lint task runs SwiftLint for Swift plus ktlint and detekt for Kotlin. Missing native tools are reported as warnings and skipped locally. CI installs the default toolset from `apps/mobile/Brewfile` before running the native checks.
+
+## Your own app
+
+The maintainers' builds are signed for their Apple team and Play listing, and their update feed
+and push gateway serve only those builds. A build you install on your own phone is a different
+app, and you give it its identity in the repository-root `.env`:
+
+```dotenv
+ONICODE_MOBILE_APP_ID=com.example.onicode
+ONICODE_APPLE_TEAM_ID=ABCDE12345
+```
+
+`ONICODE_MOBILE_APP_ID` is the iOS bundle identifier and the Android package of the `production`
+variant. With it set, the build inherits nothing of the maintainers': no Apple team, and no update
+feed unless you name one with `ONICODE_MOBILE_UPDATES_URL`. The `development` variant keeps the
+shared `Onicode Dev` identity, so cached dev clients still match.
+
+Then run `vp run ios:release` or `vp run android:prod`.
+
+Push notifications are off in such a build until it names a push gateway. Apple and Google
+deliver pushes only from whoever holds the app's keys, so you run your own:
+
+1. Deploy the gateway from [`infra/push-gateway`](../../infra/push-gateway), following
+   [Push gateway](../../docs/operations/push-gateway.md). It reads the same `.env`.
+2. Add `ONICODE_PUSH_GATEWAY_URL` with the gateway's origin, and for Android
+   `ONICODE_ANDROID_GOOGLE_SERVICES_FILE` with your Firebase project's `google-services.json`,
+   then rebuild the app. On iOS the App ID needs the Push Notifications and App Attest
+   capabilities.
+3. Set `ONICODE_PUSH_GATEWAY_URLS` to the same origin, in `.env` before you build the desktop
+   app or server, or on each machine running Onicode.
 
 ## EAS Builds
 

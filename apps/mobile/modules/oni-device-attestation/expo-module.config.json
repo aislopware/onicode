@@ -1,0 +1,10 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["OniDeviceAttestationModule"],
+    "podspecPath": "ios/OniDeviceAttestation.podspec"
+  },
+  "android": {
+    "modules": ["expo.modules.onideviceattestation.OniDeviceAttestationModule"]
+  }
+}

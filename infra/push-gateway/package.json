@@ -1,0 +1,32 @@
+{
+  "name": "@onicode/push-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "cf dev",
+    "build": "cf build",
+    "deploy": "cf deploy",
+    "typecheck": "effect-tsgo tsrs --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "dependencies": {
+    "@noble/curves": "2.4.0",
+    "@onicode/contracts": "workspace:*",
+    "@peculiar/asn1-android": "3.0.0",
+    "@peculiar/asn1-schema": "3.0.0",
+    "@peculiar/x509": "3.1.0",
+    "cborg": "6.2.1",
+    "effect": "catalog:",
+    "reflect-metadata": "0.2.2"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "2.0.0-beta.v.14",
+    "@cloudflare/workers-types": "5.20261109.1",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "cf": "1.0.0-beta.29",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

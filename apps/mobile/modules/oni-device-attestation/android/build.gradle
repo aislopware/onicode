@@ -1,0 +1,18 @@
+apply plugin: 'com.android.library'
+apply plugin: 'org.jetbrains.kotlin.android'
+
+group = 'dev.onicode.deviceattestation'
+version = '0.0.0'
+
+android {
+  namespace 'expo.modules.onideviceattestation'
+  compileSdk rootProject.ext.compileSdkVersion
+  defaultConfig {
+    minSdkVersion rootProject.ext.minSdkVersion
+    targetSdkVersion rootProject.ext.targetSdkVersion
+  }
+}
+
+dependencies {
+  implementation project(':expo-modules-core')
+}

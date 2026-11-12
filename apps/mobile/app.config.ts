@@ -1,7 +1,7 @@
 import type { ExpoConfig } from "expo/config";
 
 import { BRAND_ASSET_PATHS } from "../../scripts/lib/brand-assets.ts";
-import { loadRepoEnv } from "../../scripts/lib/public-config.ts";
+import { loadRepoEnv, resolveMobileIdentity } from "../../scripts/lib/public-config.ts";
 import serverPackageJson from "../server/package.json";
 
 type AppVariant = "development" | "production";
@@ -14,6 +14,7 @@ Object.assign(process.env, repoEnv);
 process.env.EXPO_NO_TYPESCRIPT_SETUP = "1";
 
 const APP_VARIANT = resolveAppVariant(repoEnv.APP_VARIANT);
+const identity = resolveMobileIdentity(repoEnv);
 const isIosPersonalTeamBuild = repoEnv.ONICODE_IOS_PERSONAL_TEAM === "1";
 // Skip costly fingerprinting on dev launches; production OTAs require matching native projects.
 const runtimeVersionPolicy = APP_VARIANT === "development" ? "appVersion" : "fingerprint";
@@ -49,6 +50,8 @@ const DEVELOPMENT_ASSETS = {
   androidAdaptiveBackgroundImage: "./assets/android-icon-background-dev.png",
   androidSplashIcon: "./assets/android-splash-icon-dev.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
+  androidNotificationIcon: "./assets/android-notification-icon.png",
+  androidNotificationColor: "#00639B",
 } as const;
 
 const RELEASE_ASSETS = {
@@ -60,6 +63,8 @@ const RELEASE_ASSETS = {
   androidAdaptiveBackgroundImage: undefined,
   androidSplashIcon: "./assets/android-splash-icon-prod.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
+  androidNotificationIcon: "./assets/android-notification-icon.png",
+  androidNotificationColor: "#FFFFFF",
 } as const;
 
 const VARIANT_CONFIG = {
@@ -73,8 +78,8 @@ const VARIANT_CONFIG = {
   production: {
     appName: "Onicode",
     scheme: "onicode",
-    iosBundleIdentifier: "dev.aislopware.onicode",
-    androidPackage: "dev.aislopware.onicode",
+    iosBundleIdentifier: identity.appId,
+    androidPackage: identity.appId,
     assets: RELEASE_ASSETS,
   },
 } as const;
@@ -95,6 +100,15 @@ const variant = VARIANT_CONFIG[APP_VARIANT];
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
   : variant.iosBundleIdentifier;
+// App Attest and APNs must name the same environment, or the gateway seals tokens for the wrong one.
+const appleServicesEnvironment = APP_VARIANT === "development" ? "development" : "production";
+// Another app would only pull the maintainers' updates, so it names its own feed or has none.
+const updatesUrl =
+  repoEnv.ONICODE_MOBILE_UPDATES_URL?.trim() ||
+  (identity.own ? undefined : `https://updates.jmango360.dev/manifest/${BETTER_UPDATE_PROJECT_ID}`);
+// Push and App Attest need capabilities on the App ID, which another app with no gateway can skip.
+const iosPushEntitlements =
+  !isIosPersonalTeamBuild && (!identity.own || identity.pushGatewayUrl !== undefined);
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -107,6 +121,9 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
   {
     bundleIdentifier: `${iosBundleIdentifier}.widgets`,
     groupIdentifier: `group.${iosBundleIdentifier}`,
+    enablePushNotifications: true,
+    // Frequent updates need the iOS entitlement to avoid early throttling.
+    frequentUpdates: true,
     enableAndroid: true,
     widgets: [
       {
@@ -159,6 +176,13 @@ const widgetsPlugin: NonNullable<ExpoConfig["plugins"]>[number] = [
           initialLayout: "./src/widgets/SubscriptionUsage.android.tsx",
         },
       },
+      {
+        name: "AgentActivity",
+        displayName: "Agent Activity",
+        description: "Shows the current state of active Onicode agents.",
+        android: null,
+        ios: { supportedFamilies: ["systemSmall", "systemMedium", "accessoryRectangular"] },
+      },
     ],
   },
 ];
@@ -202,8 +226,8 @@ const config: ExpoConfig = {
   icon: variant.assets.appIcon,
   userInterfaceStyle: "automatic",
   updates: {
-    enabled: repoEnv.ONICODE_MOBILE_UPDATES_ENABLED !== "0",
-    url: `https://updates.jmango360.dev/manifest/${BETTER_UPDATE_PROJECT_ID}`,
+    enabled: updatesUrl !== undefined && repoEnv.ONICODE_MOBILE_UPDATES_ENABLED !== "0",
+    ...(updatesUrl === undefined ? {} : { url: updatesUrl }),
     checkAutomatically: "ON_LOAD",
     fallbackToCacheTimeout: 0,
   },
@@ -214,9 +238,16 @@ const config: ExpoConfig = {
     bundleIdentifier: iosBundleIdentifier,
     buildNumber: String(storeBuildNumber),
     // Avoid Personal Team fallback: it cannot sign App Groups.
-    appleTeamId: "UK58J62H8L",
+    ...(identity.appleTeamId === undefined ? {} : { appleTeamId: identity.appleTeamId }),
     entitlements: {
       "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],
+      // Personal Teams cannot sign push or App Attest; such builds report push unavailable.
+      ...(iosPushEntitlements
+        ? {
+            "aps-environment": appleServicesEnvironment,
+            "com.apple.developer.devicecheck.appattest-environment": appleServicesEnvironment,
+          }
+        : {}),
     },
     infoPlist: {
       UISupportedInterfaceOrientations: [
@@ -249,6 +280,9 @@ const config: ExpoConfig = {
   android: {
     icon: variant.assets.appIcon,
     package: variant.androidPackage,
+    ...(identity.androidGoogleServicesFile === undefined
+      ? {}
+      : { googleServicesFile: identity.androidGoogleServicesFile }),
     versionCode: storeBuildNumber,
     adaptiveIcon: {
       backgroundColor: variant.assets.androidAdaptiveBackgroundColor,
@@ -294,6 +328,14 @@ const config: ExpoConfig = {
     ],
     "expo-secure-store",
     "expo-sqlite",
+    [
+      "expo-notifications",
+      {
+        icon: variant.assets.androidNotificationIcon,
+        color: variant.assets.androidNotificationColor,
+        mode: appleServicesEnvironment,
+      },
+    ],
     ...(isIosPersonalTeamBuild
       ? [sharingPlugin]
       : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),
@@ -403,6 +445,7 @@ const config: ExpoConfig = {
       process.env.ONICODE_FEATURE_SECRETS?.trim().toLowerCase() ?? "",
     ),
     iosPersonalTeamBuild: isIosPersonalTeamBuild,
+    pushGatewayUrl: identity.pushGatewayUrl ?? null,
     betterUpdate: {
       projectId: BETTER_UPDATE_PROJECT_ID,
     },

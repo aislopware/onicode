@@ -118,6 +118,7 @@ import {
   ScheduledTaskThreadPickerRouteScreen,
 } from "./features/settings/ScheduledTaskPickerScreens";
 import { SettingsKeyboardRouteScreen } from "./features/settings/SettingsKeyboardRouteScreen";
+import { SettingsNotificationsRouteScreen } from "./features/settings/SettingsNotificationsRouteScreen";
 import { SettingsVoiceRouteScreen } from "./features/settings/SettingsVoiceRouteScreen";
 import { SettingsVoiceModelsRouteScreen } from "./features/settings/SettingsVoiceModelsRouteScreen";
 import {
@@ -264,6 +265,11 @@ const SETTINGS_SCREENS = {
     screen: SettingsProjectOverviewRouteScreen,
     linking: "settings/project",
     options: settingsPage("Projects"),
+  }),
+  SettingsNotifications: createNativeStackScreen({
+    screen: SettingsNotificationsRouteScreen,
+    linking: "settings/notifications",
+    options: settingsPage("Notifications"),
   }),
   SettingsKeyboard: createNativeStackScreen({
     screen: SettingsKeyboardRouteScreen,
