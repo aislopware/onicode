@@ -28,6 +28,7 @@ import {
   readThemeFileGuarded,
 } from "../environmentTheme.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
+import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
 import { baseDirFlag } from "./config.ts";
 
 const SparseSettings = Schema.Record(Schema.String, Schema.Unknown);
@@ -160,13 +161,29 @@ export class ThemeTargetMissingError extends Schema.TaggedError<ThemeTargetMissi
 
 const envOniHome = Config.String("ONICODE_HOME").pipe(Config.option);
 
+const hasLiveServer = (statePath: string) =>
+  readPersistedServerRuntimeState(statePath).pipe(
+    Effect.map((state) => Option.isSome(state) && isProcessAlive(state.value.pid)),
+    Effect.orElseSucceed(() => false),
+  );
+
 const resolveThemePaths = Effect.fn(function* (explicitBaseDir: Option.Option<string>) {
   const envHome = Option.filter(yield* envOniHome, (value) => value.trim().length > 0);
   const configuredBaseDir = Option.orElse(explicitBaseDir, () => envHome);
   const baseDir = yield* resolveBaseDir(Option.getOrUndefined(configuredBaseDir));
-  const derivedPaths = yield* ServerConfig.deriveServerPaths(baseDir, false, {
+  const userdataPaths = yield* ServerConfig.deriveServerPaths(baseDir, false, {
     baseDirIsExplicit: Option.isSome(configuredBaseDir),
   });
+  // A dev server with an implicit home keeps its state in `dev`; follow it unless a
+  // `userdata` server is running too, the same order `onicode pair` checks.
+  let derivedPaths = userdataPaths;
+  if (
+    Option.isNone(configuredBaseDir) &&
+    !(yield* hasLiveServer(userdataPaths.serverRuntimeStatePath))
+  ) {
+    const devPaths = yield* ServerConfig.deriveServerPaths(baseDir, true);
+    if (yield* hasLiveServer(devPaths.serverRuntimeStatePath)) derivedPaths = devPaths;
+  }
   return {
     settingsPath: derivedPaths.settingsPath,
     themesDir: derivedPaths.environmentThemesDir,
