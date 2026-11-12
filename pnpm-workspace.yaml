@@ -104,6 +104,7 @@ overrides:
   react-native-svg: 15.16.1
   react-native-pdf-jsi: 6.1.1
   app-builder-lib: 26.18.1
+  electron-updater: 6.8.12
   expo-modules-core: 58.0.30
   # Keep jsdom's optional peer consistent so Vite+ has one test-runner instance.
   "@exodus/bytes>@noble/hashes": "catalog:"
@@ -220,6 +221,9 @@ patchedDependencies:
   # Observe the owned host exit independently of descendants retaining its stdio.
   "@muse-code/sdk@1.4.14": patches/@muse-code__sdk@1.4.14.patch
   app-builder-lib@26.18.1: patches/app-builder-lib@26.18.1.patch
+  # Electron net requests never emit "socket", so upstream's idle timeout never fires and a
+  # stalled update download hangs forever.
+  electron-updater@6.8.12: patches/electron-updater@6.8.12.patch
   # Android: a marker orient other than "auto" or a number (auto-start-reverse) no longer throws.
   react-native-svg@15.16.1: patches/react-native-svg@15.16.1.patch
   # iOS: a feed following its end keeps the end through a size-only reflow in one pass.

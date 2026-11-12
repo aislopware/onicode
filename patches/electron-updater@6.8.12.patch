@@ -1,0 +1,40 @@
+diff --git a/out/electronHttpExecutor.js b/out/electronHttpExecutor.js
+index b701311..e2f8fec 100644
+--- a/out/electronHttpExecutor.js
++++ b/out/electronHttpExecutor.js
+@@ -61,6 +61,35 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
+         }
+         return request;
+     }
++    // Electron's net.ClientRequest never emits "socket", so the inherited socket idle timeout never
++    // arms and a stalled request stays pending forever. Reset an idle timer on every chunk instead.
++    addTimeOutHandler(request, callback, timeout) {
++        let timer = null;
++        const clear = () => {
++            if (timer != null) {
++                clearTimeout(timer);
++                timer = null;
++            }
++        };
++        const arm = () => {
++            clear();
++            timer = setTimeout(() => {
++                timer = null;
++                request.abort();
++                callback(new Error("Request timed out"));
++            }, timeout);
++        };
++        request.on("response", (response) => {
++            arm();
++            response.on("data", arm);
++            response.on("end", clear);
++            response.on("aborted", clear);
++            response.on("error", clear);
++        });
++        request.on("abort", clear);
++        request.on("error", clear);
++        arm();
++    }
+     /**
+      * A redirect aborts `request` and `handler` sends a new one to the target. Up to `maxRedirects` redirects are followed; `redirectCount`
+      * is the number already followed. A redirect to a protocol other than http(s) is rejected, and so is anything `handler` throws.
