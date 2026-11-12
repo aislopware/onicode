@@ -416,3 +416,4 @@ f495217e92	take	fix(server): Simlock open failures show what agent-device report
 3aea6553d3	take	fix(clients): show the right app name and thread context (#18442); desktop-only window title, no hosted-channel or guest-page parts
 c4cf58511b	take	fix(server): long Claude sessions import instead of being skipped (#29183)
 675d2bd3b2	take	fix(server): closed PR watches end even when the activity read fails (#27953)
+731c87334c	take	fix(desktop): a hidden preview tab no longer keeps the display awake after a screenshot (#25978)
