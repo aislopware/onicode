@@ -655,3 +655,4 @@ d63db06436	take	fix(contracts): side chats open after an abandoned worktree setu
 4ae66e2e86	take	fix(opencode): project-defined models appear in that project's picker (#24585)
 2cd799642b	skip	reads ~/.claude.json for claude.ai account IDs; Onicode reads Claude only through the Agent SDK
 ccc9aaf10b	take	fix(server): a cancelled queued Claude continuation no longer drops later wakes (#30114)
+32882540fb	take	fix(web): interruption footer label sits on the reason's baseline (#34685)
