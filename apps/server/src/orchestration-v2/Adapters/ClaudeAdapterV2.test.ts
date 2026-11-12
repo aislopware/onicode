@@ -611,6 +611,8 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
       .map((tool) => `mcp__onicode__${tool.name}`)
       .sort();
 
+    // regression: #32022 Claude Plan mode asks before every non-read-only MCP call
+    assert.include(readOnlyToolNames, "mcp__onicode__oni_background_wait");
     assert.deepEqual(
       [...ClaudeAdapterV2.CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS].sort(),
       readOnlyToolNames,

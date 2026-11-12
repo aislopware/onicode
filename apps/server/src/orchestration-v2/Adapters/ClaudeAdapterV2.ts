@@ -2217,6 +2217,7 @@ export const CLAUDE_ONI_MCP_TOOL_WILDCARD = "mcp__onicode__*";
 export const CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__onicode__orchestrator_capabilities",
   "mcp__onicode__list_scheduled_tasks",
+  "mcp__onicode__oni_background_wait",
   "mcp__onicode__oni_thread_list",
   "mcp__onicode__oni_thread_wait",
   "mcp__onicode__oni_worktree_status",
