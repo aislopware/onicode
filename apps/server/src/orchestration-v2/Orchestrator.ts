@@ -75,6 +75,7 @@ import {
   TrimmedNonEmptyString,
   managedRuntimeModeCeilingMessage,
 } from "@onicode/contracts";
+import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { modelSelectionsEqual } from "@onicode/shared/model";
 import { modelSwitchSince } from "./modelSwitch.ts";
 import { recordThreadOpen } from "@onicode/shared/paletteSearch";
@@ -1294,6 +1295,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   const runtimePolicy = yield* RuntimePolicyV2;
   const threadForkService = yield* ThreadForkServiceV2;
   const threadDispatch = yield* ThreadCommandExecutor.ThreadCommandExecutor;
+  const messageIntake = yield* KeyedLock.make<ThreadId>();
   // Read once: the policy is fixed for the server's life, and dispatch takes it as an input.
   const { managedPolicy } = serverSettings;
   const runtimeModeCeiling: RuntimeModeCeiling | undefined =
@@ -14514,6 +14516,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     } satisfies OrchestratorV2DispatchResult;
   }, withCommandMetrics);
 
+  // Follow-up intake and Stop serialize on the parent before taking the child lock.
+  const withSubagentParentLock = <A, E, R>(threadId: ThreadId, dispatch: Effect.Effect<A, E, R>) =>
+    appOwnedSubagentParentThreadId(threadId).pipe(
+      Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
+      Effect.flatMap((parentThreadId) =>
+        parentThreadId === undefined ? dispatch : threadDispatch.withLock(parentThreadId, dispatch),
+      ),
+    );
+
   // dispatchWithReceiptEffect owns the dispatch span; this wrapper selects the thread locks.
   const dispatchWithReceipt = Effect.fnUntraced(function* (command: OrchestrationV2ServerCommand) {
     const dispatch = threadDispatch.withLock(
@@ -14546,21 +14557,19 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           ),
         ),
       );
+    // Taken before the lineage read, so a message whose read yields keeps its
+    // place ahead of later messages to the same thread.
+    if (command.type === "message.dispatch")
+      return yield* messageIntake.withLock(
+        command.threadId,
+        mayStartSubagentFollowup(command)
+          ? withSubagentParentLock(command.threadId, dispatch)
+          : dispatch,
+      );
     // Answering a message-mode question can also start a follow-up.
-    if (
-      command.type !== "runtime-request.respond" &&
-      (command.type !== "message.dispatch" || !mayStartSubagentFollowup(command))
-    )
-      return yield* dispatch;
-    const parentThreadId = yield* appOwnedSubagentParentThreadId(command.threadId).pipe(
-      Effect.mapError(
-        (cause) => new OrchestratorProjectionError({ threadId: command.threadId, cause }),
-      ),
-    );
-    // Follow-up intake and Stop serialize on the parent before taking the child lock.
-    return yield* parentThreadId === undefined
-      ? dispatch
-      : threadDispatch.withLock(parentThreadId, dispatch);
+    return yield* command.type === "runtime-request.respond"
+      ? withSubagentParentLock(command.threadId, dispatch)
+      : dispatch;
   });
 
   const handleRunUpdate = Effect.fn("Orchestrator.handleRunUpdate")(
