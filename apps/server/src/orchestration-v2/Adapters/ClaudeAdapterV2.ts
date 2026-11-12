@@ -167,6 +167,11 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { resolveAttachmentPath } from "../../attachmentStore.ts";
 import { snapshotMcpApp } from "../../mcpApps/McpAppSnapshot.ts";
 import { resolveClaudeSdkExecutablePath } from "../../provider/Drivers/ClaudeExecutable.ts";
+import {
+  claudeOutdatedBuild,
+  readClaudeInstalledBuild,
+  type ClaudeInstalledBuild,
+} from "../../provider/Drivers/ClaudeInstalledBuild.ts";
 import * as ProviderInstallationGate from "../../provider/ProviderInstallationGate.ts";
 import * as ClaudeSessionSettings from "./ClaudeSessionSettings.ts";
 import {
@@ -4992,6 +4997,8 @@ interface ClaudeLiveQueryContext {
   // From system/init; feature-detects control requests such as MCP Apps.
   capabilities: ReadonlySet<string>;
   claudeCodeVersion: string | undefined;
+  // Read at init, once a self-updating launcher has replaced itself and started its build.
+  installedAtInit: ClaudeInstalledBuild | undefined;
   permissionMode: PermissionMode;
   stopping: boolean;
   readonly subagentsFromEarlierProcesses: ReadonlySet<ActiveClaudeSubagent>;
@@ -5434,6 +5441,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const effectiveContextLimits = new Map<string, ClaudeContextLimits>();
   // Query processes already asked, so each process measures each model once.
   const measuredContextLimits = new WeakMap<ClaudeAgentSdkQuerySession, Set<string>>();
+  const readInstalledBuild = readClaudeInstalledBuild(
+    adapterOptions.settings.binaryPath,
+    adapterOptions.environment,
+  ).pipe(
+    Effect.provideService(FileSystem.FileSystem, fileSystem),
+    Effect.provideService(Path.Path, path),
+  );
   const claudeContextWindow = (modelSelection: ModelSelection): number | null => {
     const apiModelId = compileClaudeModelSelection(modelSelection, modelCatalog).apiModelId;
     return (
@@ -12276,6 +12290,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           return false;
         });
 
+        // Nobody asked for this replacement, so unlike a model change it also yields to a
+        // scheduled wakeup, which dies with the process, and to a turn Claude started by itself.
+        const liveProcessOutdatedBuild = Effect.fnUntraced(function* (
+          live: ClaudeLiveQueryContext,
+        ) {
+          if (
+            live.installedAtInit === undefined ||
+            scheduledWakeupsByNativeThread.has(live.nativeThreadId) ||
+            ((yield* Ref.get(wakeBuffers)).get(live.nativeThreadId)?.messages.length ?? 0) > 0 ||
+            (yield* liveProcessRunsBackgroundWork(live))
+          ) {
+            return undefined;
+          }
+          return claudeOutdatedBuild({
+            atInit: live.installedAtInit,
+            current: yield* readInstalledBuild,
+            runningVersion: live.claudeCodeVersion,
+          });
+        });
+
         const applySelectionLive = Effect.fnUntraced(function* (
           live: ClaudeLiveQueryContext,
           selection: CompiledClaudeModelSelection,
@@ -12329,7 +12363,22 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           ) {
             return existing;
           }
+          // A newer installed build replaces an idle process, resuming the conversation on it.
+          const outdatedBuild =
+            existing !== null &&
+            existing.nativeThreadId === nativeThreadId &&
+            existing.queryPolicyKey === queryPolicyKey &&
+            !existing.stopping
+              ? yield* liveProcessOutdatedBuild(existing)
+              : undefined;
+          if (outdatedBuild !== undefined) {
+            yield* Effect.logInfo("Replacing a Claude process that runs an outdated build.", {
+              threadId: turnInput.threadId,
+              ...outdatedBuild,
+            });
+          }
           if (
+            outdatedBuild === undefined &&
             existing !== null &&
             existing.nativeThreadId === nativeThreadId &&
             existing.queryPolicyKey === queryPolicyKey &&
@@ -12342,6 +12391,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             yield* applySelectionLive(existing, compiledSelection);
           }
           if (
+            outdatedBuild === undefined &&
             existing !== null &&
             existing.nativeThreadId === nativeThreadId &&
             existing.queryPolicyKey === queryPolicyKey &&
@@ -12512,6 +12562,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             receivedInit: false,
             capabilities: new Set(),
             claudeCodeVersion: undefined,
+            installedAtInit: undefined,
             permissionMode: queryOptions.permissionMode,
             stopping: false,
             handedOffSubagents: new Set(),
@@ -12543,11 +12594,11 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             Stream.runForEach((message) =>
               sdkMessageLock.withPermits(1)(
                 Effect.suspend(() => {
-                  if (
+                  const firstInit =
                     message.type === "system" &&
                     message.subtype === "init" &&
-                    !context.receivedInit
-                  ) {
+                    !context.receivedInit;
+                  if (firstInit) {
                     context.openedPermissionMode =
                       message.permissionMode ?? context.openedPermissionMode;
                     context.receivedInit = true;
@@ -12586,7 +12637,15 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       resultsReportingNewContextWindow.add(message);
                     }
                   }
-                  return handleSdkMessage({ query: querySession, message });
+                  const handled = handleSdkMessage({ query: querySession, message });
+                  return firstInit
+                    ? readInstalledBuild.pipe(
+                        Effect.flatMap((installed) => {
+                          context.installedAtInit = installed;
+                          return handled;
+                        }),
+                      )
+                    : handled;
                 }),
               ),
             ),
