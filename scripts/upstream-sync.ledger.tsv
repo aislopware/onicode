@@ -752,3 +752,4 @@ b53cd67681	take	fix(server): handoff budget estimates stored history in tokens, 
 f423a4dba0	skip	Update-track switch persistence serves the nightly channel; Onicode ships one release channel with no setChannel
 5922408c3b	take	fix(server): custom Claude models named like a Claude Code alias reach the API unchanged (#34938)
 d7454f7e39	take	fix(server): finished Claude delegates release their process (#34934)
+59ff986634	take	fix(mobile): iPhone Settings search keeps its query after switching tabs (#34893)
