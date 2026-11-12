@@ -6,6 +6,7 @@ import {
   PreviewAutomationUnavailableError,
   type ProviderInstanceId,
   type ProviderInteractionMode,
+  type OrchestrationV2LinkedSender,
   type RuntimeMode,
   type ThreadId,
 } from "@onicode/contracts";
@@ -45,6 +46,8 @@ export interface McpClientCaller {
    * another environment passing on the limits of the agent it calls for.
    */
   readonly narrowedTo?: ClientModes | undefined;
+  /** A linked environment's thread this request is made for (`Onicode-Sender-Thread`). */
+  readonly senderThread?: OrchestrationV2LinkedSender | undefined;
 }
 
 /**
@@ -54,6 +57,13 @@ export interface McpClientCaller {
  * `clientModeCeiling`), so a client gains nothing by sending a broad one.
  */
 export const MODE_LIMIT_HEADER = "oni-mode-limit";
+
+/**
+ * `Onicode-Sender-Thread: <environmentId>/<threadId>/<title>`, each URI-encoded: the
+ * thread another environment makes a request for, so what it sends here can name
+ * it. Read only from a linked client.
+ */
+export const SENDER_THREAD_HEADER = "oni-sender-thread";
 
 export interface ClientModes {
   readonly runtimeMode: RuntimeMode;
