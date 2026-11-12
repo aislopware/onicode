@@ -626,3 +626,4 @@ a24f7a1150	take	fix(web): code blocks always show their own highlighted source (
 26f0a62f73	take	fix(acp): only approved execute requests let the agent open client terminals (#34526)
 b9d9aab234	take	fix(pi): long tool calls no longer share a session approval with different calls (#34528)
 35557e648f	take	fix(cli): thread, project, and connect commands skip a server that is gone (#34529)
+9c7f6ebf31	take	fix(server): file metadata lookups skip the server's own state files (#34530)
