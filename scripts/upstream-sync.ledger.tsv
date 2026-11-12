@@ -814,3 +814,4 @@ a33d50a539	take	fix(server): committing a large selection of files no longer fai
 86ae1747ad	take	fix(server): Claude threads resume the session /clear started (#35054)
 8b2763f638	take	perf(mobile): each environment sends about 85% less data at launch (#35072)
 7d3635e572	take	perf(server): oversized transcript exports fail fast and thread opens skip unused handoff bodies (#34547)
+d2b8f291d6	take	fix(web): icon-only chat header controls show their name on hover (#35045)
