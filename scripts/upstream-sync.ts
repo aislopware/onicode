@@ -257,8 +257,8 @@ const port = (sha: string) => {
   ]).split("\n");
   console.log(
     `\n${problems === 0 ? "Applied cleanly." : `${problems} file(s) need a decision.`} Review \`git diff\` line by line, run the tests beside it, then:\n` +
-      `  ${portCommitCommand({ sha: full, subject, author, coAuthors })}\n` +
-      `  node scripts/upstream-sync.ts record ${full.slice(0, 10)} take "<onicode commit or note>"`,
+      `  node scripts/upstream-sync.ts record ${full.slice(0, 10)} take "<onicode commit or note>"\n` +
+      `  ${portCommitCommand({ sha: full, subject, author, coAuthors })}`,
   );
 };
 
