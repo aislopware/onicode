@@ -28,6 +28,8 @@ import {
 } from "@onicode/provider-core/server/driver";
 import type { ServerProviderDraft } from "@onicode/provider-core/server/snapshotProbe";
 import { mergeProviderInstanceEnvironment } from "@onicode/provider-core/server/instanceEnvironment";
+import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import {
   makeCachedProviderMaintenanceResolution,
   makePackageManagedProviderMaintenanceResolver,
@@ -109,7 +111,11 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
       accentColor,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
-    const effectiveConfig = { ...config, enabled } satisfies PiSettings;
+    const effectiveConfig = {
+      ...config,
+      enabled,
+      binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
+    } satisfies PiSettings;
     const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
         binaryPath: effectiveConfig.binaryPath,
@@ -127,7 +133,7 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv, Path.Path> = {
       accentColor,
       environment,
       enabled,
-      config,
+      config: effectiveConfig,
     }).pipe(
       Effect.mapError(
         (cause) =>

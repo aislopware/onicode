@@ -829,3 +829,4 @@ e93f2a5181	take	fix(server): schedule_task no longer tells agents bindToCurrentT
 71dfe27e45	take	fix(web): an untouched sidebar thread rename keeps a title that arrived while it was open (#35174)
 fc6c7c8b27	take	fix(server): usage model details count the real unpriced tokens (#35179)
 3e03072eb6	take	perf(server): thread list reads no longer scan a long thread's runs and items (#35167); migrations renumbered 084/085 -> 090/091
+9771c5fd2d	take	fix(server): Kiro, fx and Antigravity find a ~/ Binary path (#35171); also expands ~/ in Onicode's Grok and Pi drivers

@@ -29,6 +29,8 @@ import {
 } from "@onicode/provider-core/server/driver";
 import { withInstanceIdentity } from "@onicode/provider-core/server/instanceIdentity";
 import { mergeProviderInstanceEnvironment } from "@onicode/provider-core/server/instanceEnvironment";
+import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { discoverGrokSkills } from "./skills.ts";
 import {
   homebrewOwnershipFromCommandPath,
@@ -152,7 +154,11 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       accentColor,
       continuationGroupKey: continuationIdentity.continuationKey,
     });
-    const effectiveConfig = { ...config, enabled } satisfies GrokSettings;
+    const effectiveConfig = {
+      ...config,
+      enabled,
+      binaryPath: expandHomePath(config.binaryPath, yield* HostProcess.HomeDirectory),
+    } satisfies GrokSettings;
     const resolveMaintenance = yield* makeCachedProviderMaintenanceResolution(
       resolveProviderMaintenanceCapabilitiesEffect(UPDATE, {
         binaryPath: effectiveConfig.binaryPath,
@@ -169,7 +175,7 @@ export const GrokDriver: ProviderDriver<GrokSettings, GrokDriverEnv, Path.Path> 
       accentColor,
       environment,
       enabled,
-      config,
+      config: effectiveConfig,
     }).pipe(
       Effect.mapError(
         (cause) =>
