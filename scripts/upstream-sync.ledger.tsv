@@ -684,3 +684,4 @@ ddc4f57602	take	fix(server): a Claude resume rejected before the prompt keeps th
 5c6f2f1229	take	fix(server): Codex MCP servers that fail to start show a notice in the thread
 a25654c396	take	fix(server): block incompatible migration history in preflight; applied to service/servicePreflight.ts (upstream cloud/)
 6419422f94	take	fix(server): a reset credit's limits refresh when the first read after it fails (#34780)
+4bf5d53d93	take	fix(forgejo): HTTP-only fj logins are no longer reported unauthenticated (#34777)
