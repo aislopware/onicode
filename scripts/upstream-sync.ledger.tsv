@@ -815,3 +815,4 @@ a33d50a539	take	fix(server): committing a large selection of files no longer fai
 8b2763f638	take	perf(mobile): each environment sends about 85% less data at launch (#35072)
 7d3635e572	take	perf(server): oversized transcript exports fail fast and thread opens skip unused handoff bodies (#34547)
 d2b8f291d6	take	fix(web): icon-only chat header controls show their name on hover (#35045)
+5574cca053	take	fix(web): panel resize handle no longer covers the chat scrollbar (#35043)
