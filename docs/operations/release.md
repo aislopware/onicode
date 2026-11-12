@@ -93,9 +93,23 @@ The version must also be newer than the native app's last release, 0.3.0.
 
 ## Mobile
 
-`gh workflow run release.yml --ref main -f mobile=both -f desktop=false` makes both store builds on
-GitHub Actions (`ios` or `android` makes one); add `mobile=both` to a desktop release to build them
+`gh workflow run release.yml --ref main -f mobile=both -f desktop=false` ships both platforms on
+GitHub Actions (`ios` or `android` ships one); add `mobile=both` to a desktop release to ship them
 alongside it.
+
+For each platform the workflow computes the production native fingerprint, which is the runtime
+version. If better-update already has a production build with that runtime version, only JS
+changed, so it publishes an OTA update to the `production` channel instead of building. Otherwise it
+makes a store build, and fails early when the version already has one, because the build number
+would repeat. `-f mobile_store_build=true` builds even when the fingerprint already has a build.
+
+A build that exists in better-update counts as shipped, whether or not it reached the stores. An
+update only helps people who installed a build with its runtime version, so submit the Android build
+before relying on updates for it.
+
+The workflow passes the planned fingerprint to the native build as
+`EXPO_UPDATES_FINGERPRINT_OVERRIDE`, as EAS Build does. A build made by hand lets expo-updates
+compute it again during the native build; pass the same variable if the two must agree.
 
 iOS builds on the self-hosted runner labelled `onicode-ios`, a macOS VM on the maintainers' Mac Studio
 that keeps ccache, the pnpm store and CocoaPods between runs. If it is offline the job waits in the
@@ -118,10 +132,10 @@ with `better-update submit --platform android` when ready.
 
 Over-the-air updates come from better-update's manifest on the `production` channel. Production
 builds use the fingerprint runtime version, so an update reaches only builds with the same native
-code:
+code. To publish one by hand:
 
 ```sh
-better-update update publish --channel production --message "<what changed>"
+better-update update publish --channel production --profile production --message "<what changed>"
 ```
 
 ## CLI

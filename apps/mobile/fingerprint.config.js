@@ -1,18 +1,24 @@
 // @ts-check
-const fs = require("node:fs");
-const path = require("node:path");
-
-// Include the major version, which Expo ignores, to prevent OTAs reaching older store binaries.
-const appConfig = fs.readFileSync(path.join(__dirname, "app.config.ts"), "utf8");
-const version =
-  process.env.ONICODE_MOBILE_VERSION ??
-  appConfig.match(/^ {2}version: repoEnv\.ONICODE_MOBILE_VERSION \?\? "([^"]+)"/m)?.[1];
-const majorVersion = version?.match(/^(\d+)\./)?.[1];
-if (!majorVersion) {
-  throw new Error("fingerprint.config.js could not read the app version from app.config.ts");
-}
+// The fingerprint is the production runtime version: it decides whether a release needs a store
+// build or can ship as an update. Expo drops this whole file without a word when it throws.
+const majorVersion = require("../server/package.json").version.split(".")[0];
 
 module.exports = {
+  // pnpm patches change native modules and config plugins without changing their versions.
   nativeModuleSourceType: "files",
+  configPluginSourceType: "files",
+  // Expo's default skips, plus package.json scripts and .gitignore: the native projects are
+  // generated on every build, so neither reaches one.
+  sourceSkips: [
+    "ExpoConfigVersions",
+    "ExpoConfigRuntimeVersionIfString",
+    "ExpoConfigExtraSection",
+    "EasJson",
+    "Easignore",
+    "AutolinkingConfigPaths",
+    "PackageJsonScriptsAll",
+    "GitIgnore",
+  ],
+  // Expo ignores the app version; the major keeps updates off older store binaries.
   extraSources: [{ type: "contents", id: "appMajorVersion", contents: majorVersion }],
 };

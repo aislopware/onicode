@@ -14,6 +14,10 @@ web-build/
 
 # Docs
 *.md
+**/*.md
+
+# Tests of a native module that is fingerprinted as a whole directory
+modules/*/tests/**/*
 
 # Local env
 .env

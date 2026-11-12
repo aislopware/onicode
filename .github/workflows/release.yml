@@ -8,6 +8,9 @@ name: Release
 #   gh workflow run release.yml --ref main -f notes="$(cat notes.md)"
 #   gh workflow run release.yml --ref main -f mobile=both -f desktop=false
 #
+# Mobile ships each chosen platform as a store build when its native fingerprint has no production
+# build yet, and otherwise as an OTA update to the builds that share it.
+#
 # iOS builds on the self-hosted runner labelled onicode-ios (a macOS VM that keeps its ccache, pnpm
 # store and CocoaPods cache between runs); -f ios_runner=github falls back to a hosted macOS runner.
 on:
@@ -18,10 +21,14 @@ on:
         type: string
         default: ""
       mobile:
-        description: Store builds to make. iOS also goes to TestFlight; Android is not submitted.
+        description: Mobile platforms to ship. A native change makes a store build (iOS also goes to TestFlight; Android is not submitted); a JS-only change publishes an OTA update.
         type: choice
         options: [none, both, ios, android]
         default: none
+      mobile_store_build:
+        description: Make the store build even when the native fingerprint already has one.
+        type: boolean
+        default: false
       desktop:
         description: Build macOS and Linux. Releasing needs them.
         type: boolean
@@ -108,7 +115,7 @@ jobs:
           echo "builds=${ids//$'\n'/ }" >> "$GITHUB_OUTPUT"
 
   mobile:
-    name: Build ${{ matrix.platform }}
+    name: Ship ${{ matrix.platform }}
     if: github.ref == 'refs/heads/main' && inputs.mobile != 'none'
     runs-on: ${{ matrix.platform == 'android' && 'ubuntu-24.04' || inputs.ios_runner == 'github' && 'macos-26' || fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') }}
     timeout-minutes: 120
@@ -154,17 +161,78 @@ jobs:
       # better-update fingerprints the native project with bunx @expo/fingerprint.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       - if: runner.environment == 'github-hosted'
+        uses: ./.github/actions/pnpm-store-cache
+        with:
+          key: mobile
+      # better-update loads the Expo config and its plugins from here before it stages the build.
+      - name: Install the mobile workspace
+        run: pnpm install --frozen-lockfile --prefer-offline --filter "@onicode/mobile..."
+
+      # The production runtime version is the native fingerprint, so a production build with this
+      # one can take the JS as an update. This runs on the build's own runner, from the checkout
+      # better-update fingerprints for the build it records and the update it publishes.
+      - name: Choose a store build or an OTA update
+        id: plan
+        working-directory: apps/mobile
+        env:
+          APP_VARIANT: production
+          PLATFORM: ${{ matrix.platform }}
+          FORCE: ${{ inputs.mobile_store_build }}
+        run: |
+          # Fails rather than counting zero when better-update answers with an error.
+          builds() {
+            local out
+            out="$(better-update builds list --platform "$PLATFORM" --profile production "$@" --json)" || true
+            jq -e '.data.items | arrays' <<< "$out" || { echo "::error::better-update builds list failed: $out" >&2; return 1; }
+          }
+          fingerprint="$(better-update fingerprint generate --platform "$PLATFORM" --json)" || { echo "$fingerprint"; exit 1; }
+          runtime="$(jq -er .data.hash <<< "$fingerprint")"
+          # Expo drops fingerprint.config.js without a word when it fails to load, and the default
+          # it falls back to does not see patched native modules.
+          if ! jq -e '.data.sources | any(.id == "appMajorVersion")' > /dev/null <<< "$fingerprint"; then
+            echo "::error::The fingerprint was computed without apps/mobile/fingerprint.config.js."
+            exit 1
+          fi
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+          matching="$(builds --runtime-version "$runtime" --limit 1)"
+          if [[ "$FORCE" != true && "$(jq length <<< "$matching")" -gt 0 ]]; then
+            echo "native=false" >> "$GITHUB_OUTPUT"
+            echo "$PLATFORM runtime \`$runtime\` has a store build, so this publishes an OTA update." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          # Store build numbers follow the version, so a second build of one version cannot ship.
+          recent="$(builds --limit 100)"
+          if jq -e --arg v "$ONICODE_VERSION" 'any(.[]; .Version == $v)' > /dev/null <<< "$recent"; then
+            echo "::error::$PLATFORM needs a store build for runtime $runtime, but $ONICODE_VERSION already has one. Bump the version first."
+            exit 1
+          fi
+          echo "native=true" >> "$GITHUB_OUTPUT"
+          echo "$PLATFORM runtime \`$runtime\` has no store build, so this builds $ONICODE_VERSION." >> "$GITHUB_STEP_SUMMARY"
+
+      # An update under any other runtime version than the planned one reaches no build.
+      - name: Publish the OTA update
+        if: steps.plan.outputs.native == 'false'
+        working-directory: apps/mobile
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          RUNTIME: ${{ steps.plan.outputs.runtime }}
+        run: |
+          published="$(better-update update publish --channel production --profile production \
+            --platform "$PLATFORM" --message "$ONICODE_RELEASE_MESSAGE" --non-interactive --json)" || { echo "$published"; exit 1; }
+          jq . <<< "$published"
+          if ! jq -e --arg r "$RUNTIME" '.data.results | length > 0 and all(.runtimeVersion == $r)' > /dev/null <<< "$published"; then
+            echo "::error::The update was not published for the planned runtime $RUNTIME."
+            exit 1
+          fi
+
+      - if: steps.plan.outputs.native == 'true' && runner.environment == 'github-hosted'
         uses: hendrikmuhs/ccache-action@f09c25b45002a07be2955cbe52e8cee55643f89d # v1.2.24
         with:
           key: mobile-${{ matrix.platform }}
           max-size: 5G
-      - if: runner.environment == 'github-hosted'
-        uses: ./.github/actions/pnpm-store-cache
-        with:
-          key: mobile
 
       - name: Cache Gradle
-        if: matrix.platform == 'android'
+        if: steps.plan.outputs.native == 'true' && matrix.platform == 'android'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: |
@@ -174,30 +242,41 @@ jobs:
           restore-keys: gradle-mobile-
       # The user gradle.properties outranks the generated project's, and better-update adds no flags.
       - name: Turn on the Gradle build cache
-        if: matrix.platform == 'android'
+        if: steps.plan.outputs.native == 'true' && matrix.platform == 'android'
         run: |
           mkdir -p ~/.gradle
           printf '%s\n' org.gradle.caching=true org.gradle.parallel=true >> ~/.gradle/gradle.properties
 
       - name: Cache CocoaPods
-        if: matrix.platform == 'ios' && runner.environment == 'github-hosted'
+        if: steps.plan.outputs.native == 'true' && matrix.platform == 'ios' && runner.environment == 'github-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/Library/Caches/CocoaPods
           key: cocoapods-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: cocoapods-
 
-      # better-update loads the Expo config and its plugins from here before it stages the build.
-      - name: Install the mobile workspace
-        run: pnpm install --frozen-lockfile --prefer-offline --filter "@onicode/mobile..."
+      # expo-updates would otherwise fingerprint again in the middle of the native build, where
+      # files a module generates into its own directory can change the hash. Like EAS Build, this
+      # embeds the planned one, and then checks that better-update recorded the build under it.
       - name: Build
         id: build
+        if: steps.plan.outputs.native == 'true'
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          EXPO_UPDATES_FINGERPRINT_OVERRIDE: ${{ steps.plan.outputs.runtime }}
         run: |
-          ids="$(scripts/release/build.sh ${{ matrix.platform }} "$ONICODE_RELEASE_MESSAGE")"
-          echo "build=${ids%%$'\n'*}" >> "$GITHUB_OUTPUT"
+          ids="$(scripts/release/build.sh "$PLATFORM" "$ONICODE_RELEASE_MESSAGE")"
+          build="${ids%%$'\n'*}"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+          recorded="$(better-update builds list --platform "$PLATFORM" --profile production \
+            --runtime-version "$EXPO_UPDATES_FINGERPRINT_OVERRIDE" --limit 20 --json)" || true
+          if ! jq -e --arg id "$build" '.data.items | arrays | any(.ID == $id)' > /dev/null <<< "$recorded"; then
+            echo "::error::Build $build embeds runtime $EXPO_UPDATES_FINGERPRINT_OVERRIDE but better-update recorded another, so updates would miss it."
+            exit 1
+          fi
       # Apple caps What to Test at 4000 bytes; better-update checks that before the upload.
       - name: Send to TestFlight
-        if: matrix.platform == 'ios'
+        if: steps.plan.outputs.native == 'true' && matrix.platform == 'ios'
         working-directory: apps/mobile
         env:
           BUILD: ${{ steps.build.outputs.build }}
@@ -206,7 +285,7 @@ jobs:
           what="${NOTES:-$ONICODE_RELEASE_MESSAGE}"
           better-update submit --platform ios --id "$BUILD" --what-to-test "${what:0:3000}" --non-interactive
       - name: ccache stats
-        if: always()
+        if: always() && steps.plan.outputs.native == 'true'
         run: ccache --show-stats
 
   # Tags at dispatch, while this is main's head: GitHub refuses GITHUB_TOKEN a new tag on a commit
