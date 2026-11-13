@@ -978,3 +978,4 @@ ac7c7f66d9	take	fix(acp): let agents that advertise /compact compact their own c
 2f9d93058d	take	test(acp-registry): subscribe to snapshot changes before triggering them (#35627)
 fbd77b9b37	take	fix(web): diff colors follow appearance contrast (#28947)
 dfded9d759	take	fix(web): keep the child thread open when its remote parent was deleted (#27436)
+731291ee1f	take	fix(desktop): poll for updates every 4 hours, not 4 minutes (#28481)
