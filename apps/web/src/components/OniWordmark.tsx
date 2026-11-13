@@ -1,6 +1,5 @@
 import {
   ONI_MARK_ANGLED as ANGLED,
-  ONI_MARK_EAR_POINTS as EAR_POINTS,
   ONI_MARK_FACE_STOPS,
   ONI_MARK_FRONT as FRONT,
   ONI_MARK_INK as INK,
@@ -8,6 +7,7 @@ import {
   ONI_MARK_VIEW_BOX,
   ONI_MARK_WEIGHTS,
   oniMarkEyePath,
+  oniMarkFrontOutline,
   oniMarkOutlinePath,
 } from "@onicode/shared/oniMark";
 import { useId, type SVGProps } from "react";
@@ -88,22 +88,7 @@ const HOP: Keyframe[] = [
 type Side = (typeof SIDES)[number];
 type Lean = Partial<Record<Side, number>>;
 
-/** The front outline with ears leaning outward by `lean` degrees. Their bases stay put. */
-function frontOutline(lean: Lean = {}) {
-  const points: number[] = [...FRONT.outline];
-  const count = points.length / 2;
-  for (const side of SIDES) {
-    const degrees = lean[side];
-    if (!degrees) continue;
-    const { from, count: earCount } = EAR_POINTS[side];
-    const indices = Array.from({ length: earCount }, (_, i) => (from + i) % count);
-    const baseY = Math.min(points[indices[0]! * 2 + 1]!, points[indices.at(-1)! * 2 + 1]!);
-    const slope = Math.tan((degrees * Math.PI) / 180) * (side === "left" ? -1 : 1);
-    for (const i of indices)
-      points[i * 2] = points[i * 2]! + Math.max(0, baseY - points[i * 2 + 1]!) * slope;
-  }
-  return oniMarkOutlinePath(points);
-}
+const frontOutline = (lean?: Lean) => oniMarkOutlinePath(oniMarkFrontOutline(lean));
 
 const cssPath = (path: string) => `path("${path}")`;
 const SWING = "cubic-bezier(0.37, 0, 0.63, 1)";

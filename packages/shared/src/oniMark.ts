@@ -57,13 +57,16 @@ export const ONI_MARK_FRONT = {
 } as const;
 
 /** Where each ear's outline points start (at one base) and how many run over the tip to the other. */
-export const ONI_MARK_EAR_POINTS = {
+const ONI_MARK_EAR_POINTS = {
   left: { from: 59, count: 15 },
   right: { from: 15, count: 15 },
 } as const;
 
-/** A closed smooth path through outline points. Same point count in, same path commands out. */
-export function oniMarkOutlinePath(points: ReadonlyArray<number>): string {
+/**
+ * A closed smooth curve through outline points: its start point, then six numbers per cubic
+ * segment. Curves of equal length blend number by number, which is how the poses morph.
+ */
+export function oniMarkOutlineCurve(points: ReadonlyArray<number>): number[] {
   const count = points.length / 2;
   const at = (i: number) => {
     const k = ((i % count) + count) % count;
@@ -75,17 +78,46 @@ export function oniMarkOutlinePath(points: ReadonlyArray<number>): string {
     const length = Math.hypot(bx - ax, by - ay) || 1;
     return [(bx - ax) / length, (by - ay) / length] as const;
   };
-  const n = (value: number) => Math.round(value * 10) / 10;
-  let path = `M${n(at(0)[0])} ${n(at(0)[1])}`;
+  const curve = [...at(0)];
   for (let i = 0; i < count; i += 1) {
     const [px, py] = at(i);
     const [qx, qy] = at(i + 1);
     const [tx, ty] = tangent(i);
     const [ux, uy] = tangent(i + 1);
     const reach = Math.hypot(qx - px, qy - py) / 3;
-    path += `C${n(px + tx * reach)} ${n(py + ty * reach)} ${n(qx - ux * reach)} ${n(qy - uy * reach)} ${n(qx)} ${n(qy)}`;
+    curve.push(px + tx * reach, py + ty * reach, qx - ux * reach, qy - uy * reach, qx, qy);
   }
+  return curve.map((value) => Math.round(value * 10) / 10);
+}
+
+/** The path of a curve from `oniMarkOutlineCurve`. */
+export function oniMarkCurvePath(curve: ReadonlyArray<number>): string {
+  let path = `M${curve[0]} ${curve[1]}`;
+  for (let i = 2; i < curve.length; i += 6) path += `C${curve.slice(i, i + 6).join(" ")}`;
   return `${path}Z`;
+}
+
+export function oniMarkOutlinePath(points: ReadonlyArray<number>): string {
+  return oniMarkCurvePath(oniMarkOutlineCurve(points));
+}
+
+/** The front outline's points with ears leaning outward by `lean` degrees. Their bases stay put. */
+export function oniMarkFrontOutline(
+  lean: Partial<Record<(typeof ONI_MARK_SIDES)[number], number>> = {},
+): number[] {
+  const points: number[] = [...ONI_MARK_FRONT.outline];
+  const count = points.length / 2;
+  for (const side of ONI_MARK_SIDES) {
+    const degrees = lean[side];
+    if (!degrees) continue;
+    const { from, count: earCount } = ONI_MARK_EAR_POINTS[side];
+    const indices = Array.from({ length: earCount }, (_, i) => (from + i) % count);
+    const baseY = Math.min(points[indices[0]! * 2 + 1]!, points[indices.at(-1)! * 2 + 1]!);
+    const slope = Math.tan((degrees * Math.PI) / 180) * (side === "left" ? -1 : 1);
+    for (const i of indices)
+      points[i * 2] = points[i * 2]! + Math.max(0, baseY - points[i * 2 + 1]!) * slope;
+  }
+  return points;
 }
 
 export function oniMarkEyePath(eye: ReadonlyArray<number>): string {
