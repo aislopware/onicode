@@ -1130,3 +1130,4 @@ b23f94e4a1	take	fix(server): preview resize and status report the real size of d
 6f108e8556	take	fix(codex): accept hook event names newer than the pinned protocol (#35885)
 e726a0898a	take	fix(opencode): /goal clear with no goal set finishes as a no-op (#35893)
 6bc3726eb3	take	fix(ssh): a slow reconnect no longer replaces a healthy port forward (#35874)
+be03b93bac	take	fix(desktop): one preview viewer or recording stopping no longer freezes the others (#31051)
