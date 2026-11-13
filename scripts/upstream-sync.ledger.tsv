@@ -998,3 +998,4 @@ c544c27981	take	fix(server): a failed Git version probe no longer advises instal
 c6995622d5	take	fix(web): branch labels keep the space before a middle-truncated name (#23627)
 13034bfad2	take	fix(server): stale provider update results clear once the provider is up to date (#24338)
 a0844eaec6	take	perf(server): merged-PR threads no longer re-read git state every minute (#24099)
+d9bed934d0	take	fix(server): pending request reads keep question option previews (#35644)
