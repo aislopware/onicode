@@ -168,7 +168,7 @@ const authorizeParams = (clientId: string, redirect = "http://localhost:51234/ca
   resource: `${ORIGIN}/mcp`,
 });
 
-it.live("registers only peer links and never redirects for an unverified client", () =>
+it.effect("registers only peer links and never redirects for an unverified client", () =>
   withRoutes((handler, auth) =>
     Effect.gen(function* () {
       for (const refused of [
