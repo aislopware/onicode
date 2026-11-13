@@ -935,3 +935,4 @@ d8f3feff0c	take	test(web): Mermaid rejection test waits for the viewer chunk to 
 977d613611	take	fix(web): command palette footer hints wrap instead of clipping on narrow viewports (#29288)
 ee9e36c8b2	take	feat(secrets): check a secret reference before saving it (#31723)
 d46b90c634	take	fix(server): the Welcome page offers repositories you only worked on in worktrees (#33923)
+1b133107a5	take	fix(web): a branch picked right after opening the picker no longer waits for its status read (#33877)
