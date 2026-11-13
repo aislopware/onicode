@@ -1116,3 +1116,4 @@ d6fc871b58	take	fix(desktop): update browser tab titles without navigation (#294
 d7a0b5371f	take	fix(web,mobile): triage follows the draft when you switch machines (#33782)
 a000973ccb	take	fix(server): storage cleanup treats symlinked spellings of a worktree as one checkout (#25735)
 1c44b29395	take	fix(server): migrate-dev-db refuses unimported legacy threads (#23191)
+87a772a3c6	take	fix(web): opening a thread on a touch tablet no longer focuses the composer (#29496)
