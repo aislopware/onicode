@@ -1009,3 +1009,4 @@ beaa647dc1	take	fix(ssh): distinguish incompatible Node from a missing executabl
 bd731da087	take	fix(server): linked calls fail fast when a peer stalls the MCP handshake (#28876)
 c6b18c4741	take	fix(web,mobile): keep line breaks in pending question text (#33353)
 ad2d22c809	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(mobile): opening a search result clears Home'\''s search on iPhone (#28324)' -m 'Ported from pingdotgg/t3code@ad2d22c809.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+a6b8f71443	take	fix(desktop): Escape during IME composition no longer cancels a preview annotation (#35645)
