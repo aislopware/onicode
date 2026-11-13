@@ -1,6 +1,6 @@
 # Triage an issue
 
-Triage lets your own coding agent investigate a Onicode problem. The agent
+Triage lets your own coding agent investigate an Onicode problem. The agent
 reads the logs and state of the machine, checks the Onicode source for that
 version, finds known issues, and can help you write a good GitHub issue. It asks
 before it applies a fix or posts anything.
@@ -17,7 +17,7 @@ nothing open, it uses your primary machine if that supports triage, or else the
 first connected machine that does. The new thread shows the machine name, and on
 mobile the palette row shows it before you start. If you change the machine
 before you send, triage moves to that machine. The agent runs inside that Onicode
-Code server, so it gives you any restart steps and does not do them itself.
+server, so it gives you any restart steps and does not do them itself.
 
 ## In a terminal
 
