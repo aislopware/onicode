@@ -416,8 +416,9 @@ jobs:
         if: steps.changes.outputs.test_server != 'false'
         env:
           ONICODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/onicode-transfer-budget.md
+        # One process per file spends ~2s starting before its tests run; one file per vCPU overlaps that.
         run: >-
-          vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+          vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }} --concurrency 4
           --uncached apps/server/integration/transferBudgetV2.integration.test.ts
           --verify-hits 1 apps/server
 

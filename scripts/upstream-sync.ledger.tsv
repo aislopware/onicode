@@ -970,3 +970,4 @@ cbf9e26bc6	take	fix(server): preserve filename whitespace when reading and savin
 6d535841a3	take	fix(web): a chunk that fails after boot no longer reloads the page in a loop (#29306); main.tsx resolved without the Clerk shell
 fd5cb99401	take	fix(opencode): keep ACP question choices and fold the custom answer (#25879)
 b63d3c5923	take	fix(web): sent messages honor their theme foreground (#26888)
+a3cde98425	take	perf(ci): run server test files in parallel on each shard (#35618); ci.yml: --concurrency 4 on Onicode's test step (no transfer-result env)
