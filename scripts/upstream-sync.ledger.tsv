@@ -1309,3 +1309,4 @@ aab388ddb1	take	fix(server): Claude can show the user mid-turn text in full (#36
 0b5f35cd65	take	fix(server): storage cleanup prunes idle No project folders under ~/.onicode/scratch (#36369)
 93cbca3fcb	take	fix(terminal): trimmed history no longer replays half of a control sequence (#36368)
 9ced4f1f45	take	fix(usage): a re-emitted Codex snapshot is no longer billed as a counter rewind (#36367)
+931cd3afab	take	fix(server): a Claude Monitor line no longer wakes a delegated child's parent (#36339)
