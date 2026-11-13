@@ -1050,3 +1050,4 @@ bb26e569ad	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>
 141de5e9f4	take	fix(web): a dismissed provider banner stays dismissed when you switch threads (#25513)
 c19b8f0401	take	fix(cli): onicode status no longer suggests --no-lan under a ONICODE_HOST override (#35691)
 2e741fc089	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(desktop): wait for the server'\''s database upgrade instead of reporting a failed start (#35056)' -m 'Ported from pingdotgg/t3code@2e741fc089.'
+39f465a926	take	fix(server): a C# dictionary term no longer rewrites standalone letters (#35700)
