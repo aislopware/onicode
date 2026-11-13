@@ -1243,3 +1243,4 @@ a4a8c61918	take	fix(server): preview click, hover and drag survive a target repl
 713731f848	take	fix(server): a timed-out preview call no longer evicts the shared server browser (#36241)
 5aea99a308	take	fix(server): turns recreate a worktree folder that lost its checkout (#34894)
 beb528ce4d	take	fix(server): queued scheduled deliveries follow the thread's current model (#34149)
+350753afac	take	fix(usage): Claude accounts with a $0 monthly cap no longer leave a blank cell (#35341)
