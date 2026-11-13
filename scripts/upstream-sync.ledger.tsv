@@ -1026,3 +1026,4 @@ e895a56c4b	take	git commit -a --author='Bin Jamshid <gut.commune-0e@icloud.com>'
 bc0befe90a	take	fix(mobile): show loading until existing threads are known (#28663)
 aa37097093	take	fix(web): streamed device toolbar starts at the panel size (#35664)
 1e6a251871	take	fix(acp): preserve OMP single-choice questions and custom answers (#24012)
+3de49baa70	take	fix(server): workspace search leaves out files Git ignores outside .gitignore (#35673)
