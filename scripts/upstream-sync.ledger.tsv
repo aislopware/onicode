@@ -928,3 +928,4 @@ e9a7c076f7	take	test(web): OpenRouter voice test fills the model picker instead 
 4099e62767	take	feat(antigravity): support native goals and managed CLI updates (#35409); docs say desktop provider settings; pair test uses dev: false
 932cbd4e44	take	fix(web): the Fix action on a thread details PR row stays inside the card (#31115)
 49b0cc3d3f	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(mobile): queue sheet'\''s Resume queue continues a usage-limited thread (#35576)' -m 'Ported from pingdotgg/t3code@49b0cc3d3f.'
+3406bd78d4	take	fix(server): background status fetch no longer breaks a concurrent git pull (#26568)
