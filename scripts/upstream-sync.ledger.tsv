@@ -991,3 +991,4 @@ a34427662b	take	fix(web): Enter on an empty prompt resumes an interrupted thread
 068563516a	take	fix(desktop): long annotation strokes stay cheap to draw (#24573)
 058d953646	take	fix(ssh): load remote profiles with the account login shell (#23934)
 da345d203c	take	fix(server): terminals recreate a worktree removed by storage cleanup (#24156)
+95f164d083	take	test(web): Mod+E bold-word test no longer drops its first arrow key (#35646)
