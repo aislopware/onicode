@@ -1111,3 +1111,4 @@ ed2a319814	take	fix(web): arrow and page keys scroll the conversation again afte
 8b23382191	take	fix(kiro): compaction is refused when Kiro does not advertise _kiro/session/compact (#35866)
 d20d535e32	take	fix(server): show self-resumed Claude subagents as running (#23831)
 f999dc1018	take	fix(web): preserve single tildes in sent user messages (#35859)
+e079ad9a85	take	fix(desktop): clicking inside the in-app browser closes open host menus (#23141)
