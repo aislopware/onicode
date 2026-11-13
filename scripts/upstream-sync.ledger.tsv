@@ -1181,3 +1181,4 @@ d63c0ec8eb	skip	Onicode has no agent-context-budget workflow
 a2be070f30	take	taken as is
 5f85768394	take	taken as is
 4596872940	take	taken as is; capability optional, older clients/servers keep polling
+60f70d98cd	skip	Only touches the scenarios tooling (scripts/scenarios, prove-scenario, e2e.config, scenarios doc), which Onicode removed.
