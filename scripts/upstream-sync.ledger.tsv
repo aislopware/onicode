@@ -859,12 +859,12 @@ f99b2835ef	take	fix(provider-core): a timed-out status probe stops a CLI that ig
 833a15b6c1	take	fix(opencode): a project opened mid-scan lists its OpenCode skills (#35384)
 a5bd0ba526	take	fix(ssh): SSH setup on a host without gzip says gzip is missing (#35389)
 f03db4fbef	take	fix(pi): blank extension dialog titles no longer fail the turn (#35271)
-c5f5efdbd2	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): text-generation fallback keeps the thread default'\''s custom model (#35391)' -m 'Ported from pingdotgg/t3code@c5f5efdbd2.'
+c5f5efdbd2	take	fix(server): text-generation fallback keeps the thread default's custom model (#35391)
 e96c96eafe	take	fix(server): storage cleanup stops holding usage-limited threads too overdue to auto-resume (#35397)
 167d41c094	take	fix(web): a numeric author or labels in the URL no longer crashes Pull Requests (#35376); test case added to Onicode's pullRequestsRouteSearch.browser.test.ts
 4d641633b2	take	fix(web): bare URLs end at Chinese and Japanese punctuation (#35267)
 88bf393b30	take	fix(server): @ file search finds filenames containing literal braces (#35239)
-2a1e43e89e	take	git commit -a --author='Joseph Vidal <135430578+josephv123@users.noreply.github.com>' -m 'fix(server): oni_thread_search says which thread is the caller'\''s (#35377)' -m 'Ported from pingdotgg/t3code@2a1e43e89e.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+2a1e43e89e	take	fix(server): t3_thread_search says which thread is the caller's (#35377)
 a909ea423c	take	perf(server): older history pages load without indexing the whole thread (#34573)
 f4cf69f522	take	fix(server): selecting a remote branch lands on its local branch (#35400)
 a2685e64d3	take	fix(web): SCP-style Git remotes no longer become terminal file links (#35404)
@@ -873,7 +873,7 @@ d0f9d4dcc0	take	fix(web): sidebar draft previews show cited assistant text, not 
 0b21a82aa3	take	fix(shared): pooled limits weight each account by its plan size (#35427)
 60c3b222db	take	fix(mobile): browser and MCP-app links with blank IDs no longer crash the screen (#35415)
 55081a1f7b	take	fix(shared): thread search ignores the onicode prefix of flat temporary branches (#35430); flat branch pattern uses Onicode's onicode-<hex>, no legacy prefix
-841f98d4d8	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(mobile): a steer splits a settled turn'\''s "Worked for" fold (#35408)' -m 'Ported from pingdotgg/t3code@841f98d4d8.'
+841f98d4d8	take	fix(mobile): a steer splits a settled turn's "Worked for" fold (#35408)
 ddd02848e6	take	fix(shared): html_render pages show for Grok threads (#35434)
 5ff3d3c0ec	take	fix(server): Claude 1-hour cache writes are priced at the 1-hour rate (#35423)
 662a1ce6e2	take	fix(opencode): OpenCode Go threads no longer fail on a reasoning level the model lacks (#35432)
@@ -883,8 +883,8 @@ c58450f2cf	take	fix(ssh): SSH environments connect over links with about a secon
 86ff9d073c	take	fix(web): Prompt Stash shrinks above the composer when vertical space is short (#35454)
 0fe71da30b	take	fix(acp-registry): each model keeps its own session options (#35458)
 68a564ef69	take	fix(server): ACP follow-ups sent while the agent is still busy are delivered, not failed (#35463)
-65057562b7	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(desktop): preview comment keystrokes no longer trigger the page'\''s shortcuts (#35431)' -m 'Ported from pingdotgg/t3code@65057562b7.'
-7b17bdbcef	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): file index refreshes no longer block the server on fff'\''s lock (#35460)' -m 'Ported from pingdotgg/t3code@7b17bdbcef.'; lock patch hash regenerated with vp i
+65057562b7	take	fix(desktop): preview comment keystrokes no longer trigger the page's shortcuts (#35431)
+7b17bdbcef	take	fix(server): file index refreshes no longer block the server on fff's lock (#35460)
 76e4cb5c8a	take	fix(server): removing a worktree on Windows no longer spins the server until it hangs (#34774); new test expects isRepo in branch status (folded from b42841808d / c1ea9782d2)
 63d5c6dfe4	take	feat(opencode): read usage limits from the connected server (#34146)
 fc2b5de20c	take	fix(web): a project filter that hides every active thread says so and offers Show all projects (#35426)
@@ -904,7 +904,7 @@ dbbd1d253c	take	fix(server): "Open in" stops offering the tailnet name after `ta
 13645b1904	take	fix(web): align timeline activity timestamps (#35549)
 fd344d88ff	take	fix(tailscale): Serve setup fails when the tailnet has not enabled HTTPS (#35538); dev-share.ts hunk dropped (Onicode has no --share)
 0c3a9982b1	skip	Onicode's dev-runner has no --share mode or shareDevServer
-77f40aff37	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): onicode pair --tailscale no longer replaces another app'\''s Serve route (#35547)' -m 'Ported from pingdotgg/t3code@77f40aff37.'; no dev-server proxy check (removed); test config uses dev: false
+77f40aff37	take	fix(server): t3 pair --tailscale no longer replaces another app's Serve route (#35547)
 a05a3cd584	take	fix(shared): voice cleanup falls back after removing an instance named like an Object key (#35489)
 7c57291c4b	take	fix(server): a bind address Tailscale Serve refuses says to bind 127.0.0.1 or 0.0.0.0 (#35545); dev-share.ts hunk dropped
 db63178ff7	take	fix(desktop): Tailscale HTTPS counts as on only when Serve reaches this backend (#35544)
@@ -927,7 +927,7 @@ e0d0fb33dd	take	fix(forgejo): renamed repositories keep syncing their pull reque
 e9a7c076f7	take	test(web): OpenRouter voice test fills the model picker instead of typing each key (#35581)
 4099e62767	take	feat(antigravity): support native goals and managed CLI updates (#35409); docs say desktop provider settings; pair test uses dev: false
 932cbd4e44	take	fix(web): the Fix action on a thread details PR row stays inside the card (#31115)
-49b0cc3d3f	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(mobile): queue sheet'\''s Resume queue continues a usage-limited thread (#35576)' -m 'Ported from pingdotgg/t3code@49b0cc3d3f.'
+49b0cc3d3f	take	fix(mobile): queue sheet's Resume queue continues a usage-limited thread (#35576)
 3406bd78d4	take	fix(server): background status fetch no longer breaks a concurrent git pull (#26568)
 d8f3feff0c	take	test(web): Mermaid rejection test waits for the viewer chunk to load (#35586)
 7fab4ef978	take	perf(usage): the Usage page shows cost and tokens at once instead of after a full scan (#33993)
@@ -936,8 +936,8 @@ d8f3feff0c	take	test(web): Mermaid rejection test waits for the viewer chunk to 
 ee9e36c8b2	take	feat(secrets): check a secret reference before saving it (#31723)
 d46b90c634	take	fix(server): the Welcome page offers repositories you only worked on in worktrees (#33923)
 1b133107a5	take	fix(web): a branch picked right after opening the picker no longer waits for its status read (#33877)
-a1e0e507e1	take	git commit -a --author='Andrei <108398860+Yuruzuu@users.noreply.github.com>' -m 'perf(server): status refresh on a fork'\''s default branch is 2.5x faster (median 7,826 to 3,168 ms) (#33954)' -m 'Ported from pingdotgg/t3code@a1e0e507e1.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
-91712ee56c	take	git commit -a --author='Ford Lascari <44952366+fjooord@users.noreply.github.com>' -m 'fix(server): agents can see a thread'\''s pending background work (#33858)' -m 'Ported from pingdotgg/t3code@91712ee56c.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+a1e0e507e1	take	perf(server): status refresh on a fork's default branch is 2.5x faster (median 7,826 to 3,168 ms) (#33954)
+91712ee56c	take	fix(server): agents can see a thread's pending background work (#33858)
 d90ac5c764	take	fix(ssh): timed-out SSH commands keep the output they already printed (#35589)
 18188ba0b8	take	fix(server): worktree dev servers no longer clean up real worktrees (#33902)
 47a9988299	take	fix(server): server updates retry when a release download fails briefly (#33896); applied to service/pinnedRuntime.ts (Onicode's home for cloud/); selfUpdate.test hunk not needed
@@ -954,12 +954,12 @@ c9f0caca1b	take	perf(server,client): attaching to a terminal with a large histor
 7eca0ed885	take	fix(web): hand-started onicode servers get an update command that updates them (#29462); resolveLauncherPath moved into service/pinnedRuntime.ts
 c00a373491	take	fix(web): Select All then Copy in a read-only file preview copies the whole file (#33903)
 a03f7185f2	take	perf(web): PDF Find jumps to the first match in long PDFs 3.1x faster (median) (#33956)
-96aa40ebcd	take	git commit -a --author='Mike Olson <mwolson@member.fsf.org>' -m 'fix(mobile): Keep a tall question'\''s Submit button above Android'\''s navigation bar (#33929)' -m 'Ported from pingdotgg/t3code@96aa40ebcd.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+96aa40ebcd	take	fix(mobile): Keep a tall question's Submit button above Android's navigation bar (#33929)
 4f555c746c	take	fix(web): choosing a project icon again re-reads it from disk (#28584)
 d9a97e7c49	take	fix(web): sidebar keeps the open thread active while Settings or Usage is open (#28703); Sidebar hooks swapped in place (Onicode hook order kept); no redirect import
 9c7618ba1c	take	fix(web): gitignore fences in the rich-text composer highlight as ini, as chat does (#35603)
 451e3756a5	take	fix(web): keep later navigation when thread deletion completes (#33953)
-0bc993ac09	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(server): Git status finds the default branch when the only remote isn'\''t origin (#28815)' -m 'Ported from pingdotgg/t3code@0bc993ac09.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+0bc993ac09	take	fix(server): Git status finds the default branch when the only remote isn't origin (#28815)
 f255158370	take	fix(pi): settle prompts consumed by input handlers (#28798)
 39ab6a2d2f	take	fix(cursor): honor HTTP/1.1 transport for proxy networks (#25338)
 5f4368165b	take	fix(client): hide Resume while a pending request blocks continuing the run (#28810)
@@ -1008,7 +1008,7 @@ beaa647dc1	take	fix(ssh): distinguish incompatible Node from a missing executabl
 05089062d4	take	fix(web): restore composer focus when returning to a thread (#29179)
 bd731da087	take	fix(server): linked calls fail fast when a peer stalls the MCP handshake (#28876)
 c6b18c4741	take	fix(web,mobile): keep line breaks in pending question text (#33353)
-ad2d22c809	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(mobile): opening a search result clears Home'\''s search on iPhone (#28324)' -m 'Ported from pingdotgg/t3code@ad2d22c809.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+ad2d22c809	take	fix(mobile): opening a search result clears Home's search on iPhone (#28324)
 a6b8f71443	take	fix(desktop): Escape during IME composition no longer cancels a preview annotation (#35645)
 b1c1e07ded	take	fix(web): a click no longer lands on the sidebar row that just slid under it (#23517)
 613d1ac4f9	take	fix(mcp): background wait fails when none of its task IDs exist (#29773)
@@ -1021,20 +1021,20 @@ c4e74fe767	take	Typeset equations that fail only because of an unescaped percent
 dbaef808d5	take	fix(server): wake PR watches when the merge queue drops a pull request (#24141)
 db470a3ebd	take	fix(web): legacy collapsed project folders stay collapsed after a save (#35659)
 c60aa1aaf9	take	fix(server): explain how to close unclaimed browser tabs (#29205)
-9ccc0f8a60	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(editors): JetBrains IDEs open file links in the thread'\''s project (#33558)' -m 'Ported from pingdotgg/t3code@9ccc0f8a60.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
-e895a56c4b	take	git commit -a --author='Bin Jamshid <gut.commune-0e@icloud.com>' -m 'fix(mobile): select part of a source file'\''s text on iOS (#33218)' -m 'Ported from pingdotgg/t3code@e895a56c4b.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+9ccc0f8a60	take	fix(editors): JetBrains IDEs open file links in the thread's project (#33558)
+e895a56c4b	take	fix(mobile): select part of a source file's text on iOS (#33218)
 bc0befe90a	take	fix(mobile): show loading until existing threads are known (#28663)
 aa37097093	take	fix(web): streamed device toolbar starts at the panel size (#35664)
 1e6a251871	take	fix(acp): preserve OMP single-choice questions and custom answers (#24012)
 3de49baa70	take	fix(server): workspace search leaves out files Git ignores outside .gitignore (#35673)
 12a62edd67	take	fix(server): worktree setup no longer hangs when the shell is Nushell (#29461)
 6641231797	take	fix(secrets): notify when a delegated agent asks for a secret (#33585)
-a98bc69676	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(web): Cursor threads keep a stored model the catalog doesn'\''t list (#24872)' -m 'Ported from pingdotgg/t3code@a98bc69676.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+a98bc69676	take	fix(web): Cursor threads keep a stored model the catalog doesn't list (#24872)
 1e20361c91	take	fix(server): workspace search keeps backslashes in POSIX file names (#35672)
 de77e61281	take	fix(provider): make readiness probe timeouts configurable (#33275)
 cc97303381	take	fix(cursor): mcp.json servers using ${workspaceFolder} now start (#24505)
 7d517188bd	take	fix(server): workspace search ignore filter follows the host path separator (#35697)
-6dfb1a8a18	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): onicode uninstall names another home'\''s service it leaves installed (#35684)' -m 'Ported from pingdotgg/t3code@6dfb1a8a18.'
+6dfb1a8a18	take	fix(server): t3 uninstall names another home's service it leaves installed (#35684)
 cfad310913	take	fix(client-runtime): long MCP app download names no longer split an emoji (#35680)
 e179cefe7a	take	fix(web): collapsed reasoning previews no longer split an emoji (#35677)
 4cfcfaf2fd	take	fix(web): a question answer restored with undo is no longer sent twice (#35574)
@@ -1046,10 +1046,10 @@ f6787e8537	take	fix(web): reuse timeline rows while thinking and plans stream (#
 56b6c2a8bf	take	fix(mobile): refreshing a review diff keeps unfolded files open (#35682)
 d76e06679b	take	fix(server): snooze no longer waits two minutes after a steered queued message (#35661)
 f70e349eca	take	test(server): count leaked PR cache caller data without WeakRefs (#35694)
-bb26e569ad	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(cli): onicode pair'\''s protocol mismatch hint keeps --base-dir (#35690)' -m 'Ported from pingdotgg/t3code@bb26e569ad.'
+bb26e569ad	take	fix(cli): t3 pair's protocol mismatch hint keeps --base-dir (#35690)
 141de5e9f4	take	fix(web): a dismissed provider banner stays dismissed when you switch threads (#25513)
 c19b8f0401	take	fix(cli): onicode status no longer suggests --no-lan under a ONICODE_HOST override (#35691)
-2e741fc089	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(desktop): wait for the server'\''s database upgrade instead of reporting a failed start (#35056)' -m 'Ported from pingdotgg/t3code@2e741fc089.'
+2e741fc089	take	fix(desktop): wait for the server's database upgrade instead of reporting a failed start (#35056)
 39f465a926	take	fix(server): a C# dictionary term no longer rewrites standalone letters (#35700)
 c1b42c17dc	take	fix(client-runtime): last user message sort ignores agent-posted messages (#33873)
 f8372d1baf	take	fix(web): long screen-reader announcements keep emoji whole at the cutoff (#35681)
@@ -1057,7 +1057,7 @@ f8372d1baf	take	fix(web): long screen-reader announcements keep emoji whole at t
 e0d6aadb88	take	feat(server): watched GitHub pull requests react when a check suite completes (#35709)
 9b0387d6cd	take	fix(web): triple-click selects the whole line around links and file chips (#32334)
 56d227836b	take	fix(projects): preserve grouped renames to repository names (#25244)
-5959787bae	take	git commit -a --author='Radu Stefan Popa <150839549+Radu028@users.noreply.github.com>' -m 'fix(acp): agents get Onicode'\''s runtime notes once per session, not on every message (#26959)' -m 'Ported from pingdotgg/t3code@5959787bae.' --trailer 'Co-authored-by: Mariusz Mazur <mmazur@redhat.com>' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+5959787bae	take	fix(acp): agents get T3's runtime notes once per session, not on every message (#26959)
 587deab7d3	take	feat(server): keep the computer awake while agents work (#34128)
 254e985e47	take	fix(web): find scheduled tasks in Settings search (#35715)
 fec3b3a227	take	fix(preview): bound stalled screenshot captures (#25862)
@@ -1068,7 +1068,7 @@ d4b77d2448	take	fix(server): Claude background commands show how long they have 
 c2931a6e9c	take	fix(server): honor worktree prefixes when automatic naming fails (#35718)
 7bf2a43c09	take	fix(git): refuse remote switches that would silently detach HEAD (#35687)
 0465d4a87d	take	fix(mobile): retain inline image zoom on iOS (#33852)
-b54dad1032	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): Claude'\''s auto-compact setting now wins over CLAUDE_CODE_AUTO_COMPACT_WINDOW (#35737)' -m 'Ported from pingdotgg/t3code@b54dad1032.'
+b54dad1032	take	fix(server): Claude's auto-compact setting now wins over CLAUDE_CODE_AUTO_COMPACT_WINDOW (#35737)
 79daf43c1c	take	fix(desktop): an SSH reconnect during a desktop update no longer locks the updated app out of its Onicode home (#26191)
 0bb6eaa546	take	fix(web): auto-balanced drafts recheck machine load before sending (#35658)
 4137412fe9	take	fix(web): screen readers at Everything hear context compaction start (#35739)
@@ -1085,7 +1085,7 @@ adf31511e6	take	fix(server): restored worktrees find pushed thread work on a non
 25feac254d	take	fix(ssh): an alias no longer hides known_hosts entries on other ports (#35779)
 368b4feb6d	take	fix(server): IPv4-mapped loopback SSH device targets count as this machine (#35774)
 c0b08fa1f5	take	fix(ssh): host discovery follows Include globs in directory components (#35771)
-8b9f8cac53	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): Commit finishes a merge resolved to the current branch'\''s tree (#35778)' -m 'Ported from pingdotgg/t3code@8b9f8cac53.'
+8b9f8cac53	take	fix(server): Commit finishes a merge resolved to the current branch's tree (#35778)
 b8c74f5a13	take	fix(server): gh default remote lookup ignores an inherited GIT_DIR (#35764)
 12421dadea	take	fix(ssh): timed-out SSH commands no longer leave a proxy helper running (#35775)
 7bc36845f6	skip	Edits a t3code FAQ entry (Theo's post, t3 version and issue links) that Onicode's FAQ does not carry.
