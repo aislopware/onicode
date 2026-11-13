@@ -1118,3 +1118,4 @@ a000973ccb	take	fix(server): storage cleanup treats symlinked spellings of a wor
 1c44b29395	take	fix(server): migrate-dev-db refuses unimported legacy threads (#23191)
 87a772a3c6	take	fix(web): opening a thread on a touch tablet no longer focuses the composer (#29496)
 c967d98cea	take	fix(acp): linked terminal output no longer reopens a completed tool call (#35844)
+15cf8b122c	take	fix(acp): root tool content replacements replace streamed output (#35862)
