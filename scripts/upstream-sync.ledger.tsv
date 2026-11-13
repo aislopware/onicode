@@ -1183,3 +1183,4 @@ a2be070f30	take	taken as is
 4596872940	take	taken as is; capability optional, older clients/servers keep polling
 60f70d98cd	skip	Only touches the scenarios tooling (scripts/scenarios, prove-scenario, e2e.config, scenarios doc), which Onicode removed.
 38c3b56c68	take	provider lists only; kept Onicode's desktop+mobile wording in AGENTS.md
+b80531d6fb	take	taken as is; mobile PR Files has no image preview yet (follow-up)
