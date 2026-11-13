@@ -1205,3 +1205,4 @@ eb7e63a822	take	fix(server): thread reads preview linked PRs and list_thread_pul
 ed05c0e43b	take	fix(server): preview drag moves the mouse during the drag
 bd7d264401	take	fix(server): a fresh-session scheduled run no longer takes over the thread's conversation
 10fbff5ab6	take	fix(server): deferred-steer check and queued cancel no longer read a thread's whole history
+21b0b7a057	take	fix(composer): keep reviews from different Git hosts in suggestions (import conflict in useComposerMenuItems.ts resolved, kept provider-session-views import)
