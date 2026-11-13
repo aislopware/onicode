@@ -199,6 +199,7 @@ const makeSshBroker = Effect.fn("clientRuntime.connection.broker.makeSsh")(funct
       httpBaseUrl: prepared.bootstrap.httpBaseUrl,
       wsBaseUrl: prepared.bootstrap.wsBaseUrl,
       bearerToken: prepared.bearerToken,
+      viaSsh: true,
     });
     return {
       ...authorized,
@@ -262,6 +263,7 @@ export const make = Effect.gen(function* () {
     }
     return {
       ...prepared,
+      descriptor,
       socketUrl: appendOrchestrationProtocol(prepared.socketUrl),
     };
   });

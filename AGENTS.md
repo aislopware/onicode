@@ -83,7 +83,8 @@ The most common defect in this repo is a change that works on the path you teste
 - `vp run dev` builds the server, starts the renderer's Vite server, and opens a dev desktop app that runs that server. `vp run dev:server` runs the server alone, for mobile and CLI work. In a worktree, state defaults to that worktree's gitignored `.onicode`, which deliberately outranks an ambient `ONICODE_HOME` so you cannot land on shared state by accident. An explicit `--home-dir` still wins.
 - Ports derive from the worktree path and are stable across restarts, but read the real ones from the `[dev-runner]` line since occupied ports shift. `cdpPort` is the dev desktop window's DevTools Protocol endpoint.
 - To pair a phone or another machine with a dev server, mint a pairing link with `node apps/server/src/bin.ts pair --base-dir <home>`. Do not consume the user's own pairing link.
-- Stop what you started, by the PID you tracked. See rule 1.
+- Stop what you started, by the PID you tracked. See rule 1. `vp` does not pass SIGTERM on, so signalling the `vp run dev` PID alone leaves Vite and the server running. Stop the background task with your harness's own stop, which ends the whole tree.
+- Run dev servers, Metro, and builds from your own shell so they end with your session. Do not detach them with `systemd-run`, `nohup`, `setsid`, or `tmux` unless the user asks for one that outlives the session. Detached servers ran for weeks and filled RAM and swap. The dev runner stops itself above `--memory-limit-gb` (half of RAM, at most 16 GiB) on Linux.
 - Need a second checkout? `git worktree add` it next to this worktree, not in `/tmp`. Remove it when done.
 
 ## Test data

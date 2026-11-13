@@ -9,10 +9,7 @@ import {
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import { exhaustedUsageWindow } from "@onicode/shared/usageLimits";
-import {
-  defaultTextGenerationModel,
-  fallbackTextGenerationModelSelection,
-} from "@onicode/shared/serverSettings";
+import { fallbackTextGenerationModelSelection } from "@onicode/shared/serverSettings";
 import * as ServerSettings from "../serverSettings.ts";
 import type { ProviderTextGeneration } from "@onicode/provider-core/server/textGeneration";
 import { TextGenerationError } from "@onicode/contracts";
@@ -111,8 +108,11 @@ export const make = Effect.gen(function* () {
     const unusable =
       textGeneratorCannotRun ||
       (selected?.enabled === true &&
-        selected.status === "error" &&
-        (!selected.installed || selected.auth.status === "unauthenticated"));
+        (!isProviderTextGenerationCapable(selected) ||
+          selected.models.find((model) => model.slug === selection.model)
+            ?.supportsTextGeneration === false ||
+          (selected.status === "error" &&
+            (!selected.installed || selected.auth.status === "unauthenticated"))));
     if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
       const settings = yield* serverSettings.getSettings.pipe(
         Effect.mapError(
@@ -125,21 +125,25 @@ export const make = Effect.gen(function* () {
         ),
       );
       selection =
-        fallbackTextGenerationModelSelection(settings.providerInstances, (instanceId, driver) => {
-          const provider = snapshots.find((candidate) => candidate.instanceId === instanceId);
-          return (
-            instanceId !== selection.instanceId &&
-            provider?.enabled === true &&
-            resolveProjectProviderInstanceEnabled(settings, projectId ?? null, instanceId) &&
-            provider.installed &&
-            provider.auth.status !== "unauthenticated" &&
-            provider.status !== "error" &&
-            isProviderAvailable(provider) &&
-            isProviderTextGenerationCapable(provider) &&
-            (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(driver)) &&
-            !exhaustedUsageWindow(provider, now, defaultTextGenerationModel(driver))
-          );
-        }) ?? selection;
+        fallbackTextGenerationModelSelection(
+          settings.providerInstances,
+          (instanceId, driver, model) => {
+            const provider = snapshots.find((candidate) => candidate.instanceId === instanceId);
+            return (
+              instanceId !== selection.instanceId &&
+              provider?.enabled === true &&
+              resolveProjectProviderInstanceEnabled(settings, projectId ?? null, instanceId) &&
+              provider.installed &&
+              provider.auth.status !== "unauthenticated" &&
+              provider.status !== "error" &&
+              isProviderAvailable(provider) &&
+              isProviderTextGenerationCapable(provider) &&
+              (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(driver)) &&
+              !exhaustedUsageWindow(provider, now, model)
+            );
+          },
+          { defaultModelSelection: settings.defaultModelSelection },
+        ) ?? selection;
     }
     if (textGeneratorCannotRun && selection.instanceId === textGeneratorId) {
       return yield* new TextGenerationError({

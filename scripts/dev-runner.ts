@@ -20,6 +20,7 @@ import * as Schema from "effect/Schema";
 import { Argument, Command, Flag } from "effect/cli";
 import { ChildProcess } from "effect/process";
 
+import { defaultDevMemoryLimitBytes, enforceDevMemoryLimit } from "./lib/dev-memory-limit.ts";
 import { loadRepoEnv } from "./lib/public-config.ts";
 
 Object.assign(process.env, loadRepoEnv());
@@ -551,6 +552,7 @@ interface DevRunnerCliInput {
   readonly devUrl: URL | undefined;
   readonly dryRun: boolean;
   readonly seed?: boolean | undefined;
+  readonly memoryLimitGb?: number | undefined;
   readonly runArgs: ReadonlyArray<string>;
 }
 
@@ -648,10 +650,9 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     env,
     extendEnv: false,
     shell: spawnCommand.shell,
-    // Keep Vite+ in the same process group so terminal signals (Ctrl+C)
-    // reach it directly. Effect defaults to detached: true on non-Windows,
-    // which would put the runner in a new group and require manual forwarding.
-    detached: false,
+    // Its own process group: teardown signals the whole group, because vp
+    // does not pass SIGTERM on to Vite and the server.
+    detached: true,
     forceKillAfter: "1500 millis",
   }).pipe(
     Effect.mapError(
@@ -664,6 +665,10 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     ),
   );
 
+  const memoryLimitBytes =
+    input.memoryLimitGb === undefined
+      ? defaultDevMemoryLimitBytes()
+      : input.memoryLimitGb * 1024 ** 3;
   const exitCode = yield* child.exitCode.pipe(
     Effect.mapError(
       (cause) =>
@@ -673,6 +678,7 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
           cause,
         }),
     ),
+    Effect.raceFirst(enforceDevMemoryLimit(memoryLimitBytes)),
   );
   if (exitCode !== 0) {
     return yield* new DevRunnerProcessExitError({
@@ -681,6 +687,8 @@ export const runDevRunnerWithInput = Effect.fn("dev-runner.runDevRunnerWithInput
     });
   }
 });
+
+const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 
 const devRunnerCli = Command.make("dev-runner", {
   mode: Argument.Literals("mode", DEV_RUNNER_MODES).pipe(
@@ -732,6 +740,18 @@ const devRunnerCli = Command.make("dev-runner", {
       "Seed an empty worktree database from ~/.onicode on first start (read-only, via migrate-dev-db) if the source is at most 500 MiB. On by default; --no-seed or ONICODE_DEV_SEED=0 skips it.",
     ),
     Flag.withFallbackConfig(optionalBooleanConfig("ONICODE_DEV_SEED")),
+  ),
+  memoryLimitGb: Flag.Int("memory-limit-gb").pipe(
+    Flag.withSchema(NonNegativeInt),
+    Flag.withDescription(
+      "Stop the dev server when it and its child processes use more than this many GiB of RAM plus swap (equivalent to ONICODE_DEV_MEMORY_LIMIT_GB). Defaults to half of RAM, at most 16. 0 turns it off. Linux only.",
+    ),
+    Flag.withFallbackConfig(
+      Config.schema(NonNegativeInt, "ONICODE_DEV_MEMORY_LIMIT_GB").pipe(
+        Config.option,
+        Config.map(Option.getOrUndefined),
+      ),
+    ),
   ),
   runArgs: Argument.String("run-arg").pipe(
     Argument.withDescription("Additional Vite+ run args (pass after `--`)."),

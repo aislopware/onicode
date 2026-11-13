@@ -1,5 +1,6 @@
 import { ExecutionEnvironmentDescriptor } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import * as NetService from "@onicode/shared/Net";
 import { isLocalLoopbackHost, normalizeHostname } from "@onicode/shared/hostClassification";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -73,6 +74,7 @@ export const TailscaleStderrDiagnostic = Schema.Literals([
   "not-logged-in",
   "not-running",
   "permission-denied",
+  "unsupported-target",
   "unknown",
 ]);
 export type TailscaleStderrDiagnostic = typeof TailscaleStderrDiagnostic.Type;
@@ -90,6 +92,8 @@ const STDERR_DIAGNOSTIC_PATTERNS: ReadonlyArray<
     "not-running",
   ],
   [/permission denied|access denied|must be root|operation not permitted/i, "permission-denied"],
+  // The macOS apps, and tailscaled without SO_MARK, proxy only to localhost, 127.0.0.1 and ::1.
+  [/doesn't support connecting to remote destinations/i, "unsupported-target"],
 ];
 
 const stderrDiagnosticOf = (stderr: string): TailscaleStderrDiagnostic | undefined => {
@@ -173,12 +177,18 @@ const TailscaleStatusSelf = Schema.Struct({
 });
 
 const TailscaleStatusJson = Schema.Struct({
+  BackendState: Schema.optional(Schema.Unknown),
   Self: Schema.optional(TailscaleStatusSelf),
 });
 
 export type TailscaleStatusJson = typeof TailscaleStatusJson.Type;
 
 export interface TailscaleStatus {
+  /**
+   * `tailscale down` keeps `Self` from the last netmap, so the DNS name alone
+   * does not mean the tailnet is reachable. `null` when the CLI omits BackendState.
+   */
+  readonly running: boolean | null;
   readonly magicDnsName: string | null;
   readonly tailnetIpv4Addresses: readonly string[];
   /**
@@ -252,6 +262,7 @@ export const parseTailscaleStatus = (
           ? Object.hasOwn(capMap, name)
           : null;
       return {
+        running: parsed.BackendState === undefined ? null : parsed.BackendState === "Running",
         magicDnsName: normalizeMagicDnsName(parsed),
         tailnetIpv4Addresses,
         httpsServeEnabled: hasCapability("https"),
@@ -433,16 +444,35 @@ const runTailscaleCommand = Effect.fn("tailscale.runTailscaleCommand")(function*
   );
 });
 
-export const ensureTailscaleServe = (input: {
+export class TailscaleServeHttpsDisabledError extends Schema.TaggedError<TailscaleServeHttpsDisabledError>()(
+  "TailscaleServeHttpsDisabledError",
+  {},
+) {
+  override get message(): string {
+    return "Tailscale Serve needs HTTPS enabled on the tailnet. Enable HTTPS certificates at https://login.tailscale.com/admin/dns.";
+  }
+}
+
+export const ensureTailscaleServe = Effect.fn("tailscale.ensureTailscaleServe")(function* (input: {
   readonly localPort: number;
   readonly servePort?: number;
   readonly localHost?: string;
-}): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> => {
+}): Effect.fn.Return<
+  void,
+  TailscaleCommandError | TailscaleServeHttpsDisabledError,
+  ChildProcessSpawner.ChildProcessSpawner
+> {
+  // Without the capability `tailscale serve` prints an enablement notice and exits 0, or blocks on
+  // it, having configured nothing either way.
+  const status = yield* Effect.option(readTailscaleStatus);
+  if (Option.isSome(status) && status.value.httpsServeEnabled === false) {
+    return yield* new TailscaleServeHttpsDisabledError();
+  }
   const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;
   const localHost = input.localHost ?? "127.0.0.1";
   const args = ["serve", "--bg", `--https=${servePort}`, `http://${localHost}:${input.localPort}`];
-  return runTailscaleCommand(args, TAILSCALE_SERVE_TIMEOUT);
-};
+  return yield* runTailscaleCommand(args, TAILSCALE_SERVE_TIMEOUT);
+});
 
 /** A Serve route: a web handler at `mount` on `servePort`, or a TCP forward without one. */
 export interface TailscaleServeRoute {
@@ -687,7 +717,7 @@ export const parseTailscaleServeRootHolders = (
   return [...tcp, ...web];
 };
 
-export const readTailscaleServeRootHolders = (
+const readTailscaleServeRootHolders = (
   servePort: number,
   target: { readonly host: string; readonly port: number },
 ) =>
@@ -700,19 +730,42 @@ export const readTailscaleServeRootHolders = (
     }),
   );
 
+/**
+ * Who holds the root of `servePort`: nobody, the server at `target`, only dead loopback ports (an
+ * unclean exit leaves one), or another live server or app, whose route must be left alone.
+ */
+export const readTailscaleServeRootHolder = Effect.fn("tailscale.readTailscaleServeRootHolder")(
+  function* (servePort: number, target: { readonly host: string; readonly port: number }) {
+    const net = yield* NetService.NetService;
+    const holders = yield* readTailscaleServeRootHolders(servePort, target);
+    if (holders.length === 0) return "none" as const;
+    if (holders.some((holder) => holder.ours)) return "ours" as const;
+    const live = yield* Effect.forEach(holders, (holder) =>
+      holder.ours || holder.loopback === undefined
+        ? Effect.succeed(true)
+        : net.hasListenerOnHost(holder.loopback.port, holder.loopback.host),
+    );
+    return live.includes(true) ? ("other" as const) : ("dead" as const);
+  },
+);
+
 export const probeTailscaleHttpsEndpoint = Effect.fn("tailscale.probeTailscaleHttpsEndpoint")(
-  function* (input: { readonly baseUrl: string; readonly timeout?: Duration.Input }) {
+  function* (input: {
+    readonly baseUrl: string;
+    readonly environmentId: string;
+    readonly timeout?: Duration.Input;
+  }) {
     const client = yield* HttpClient.HttpClient;
     const descriptor = yield* Effect.gen(function* () {
       const url = new URL("/.well-known/onicode/environment", input.baseUrl);
       const response = yield* client
         .execute(HttpClientRequest.get(url.toString()))
         .pipe(Effect.flatMap(HttpClientResponse.filterStatusOk));
-      // A Serve mapping to another app also answers 2xx; only a Onicode descriptor proves this server.
+      // Another app or another Onicode server can hold the Serve port; only our own descriptor counts.
       return yield* HttpClientResponse.schemaBodyJson(ExecutionEnvironmentDescriptor)(response);
     }).pipe(Effect.timeoutOption(input.timeout ?? TAILSCALE_PROBE_TIMEOUT));
 
-    return Option.isSome(descriptor);
+    return Option.isSome(descriptor) && descriptor.value.environmentId === input.environmentId;
   },
   Effect.orElseSucceed(() => false),
 );

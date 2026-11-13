@@ -141,6 +141,26 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("checks shortly after startup and then every four hours", () => {
+    const harness = makeHarness();
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+
+        yield* TestClock.adjust("15 seconds");
+        assert.equal(harness.checkCount(), 1);
+
+        yield* TestClock.adjust("3 hours");
+        assert.equal(harness.checkCount(), 1);
+
+        yield* TestClock.adjust("1 hour");
+        assert.equal(harness.checkCount(), 2);
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect(
     "rejects install while a refresh check is in progress and releases the reservation",
     () =>
@@ -410,6 +430,33 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("marks the backend stop for an install as an update in progress", () => {
+    let inProgressAtStop: string | undefined;
+    const harness = makeHarness({
+      stopBackend: Effect.sync(() => {
+        inProgressAtStop = harness.updateInProgressMarker();
+      }),
+    });
+
+    return Effect.scoped(
+      Effect.gen(function* () {
+        yield* TestClock.setTime(1_000);
+        const updates = yield* DesktopUpdates.DesktopUpdates;
+        yield* updates.configure;
+        harness.emit("update-downloaded", { version: "1.2.4" });
+        yield* flushCallbacks;
+
+        assert.isTrue((yield* updates.install).accepted);
+        // SSH launchers wait on this until the replacement backend publishes its runtime.
+        assert.deepEqual(JSON.parse(inProgressAtStop ?? "null"), {
+          startedAt: 1_000,
+          expiresAt: 61_000,
+        });
+        assert.isDefined(harness.updateInProgressMarker());
+      }),
+    ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+  });
+
   it.effect("records the version an install hands to the installer", () => {
     let recordsAtStop: ReadonlyArray<string> = [];
     const harness = makeHarness({
@@ -471,6 +518,31 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect("drops the update-in-progress marker when an install is interrupted", () =>
+    Effect.gen(function* () {
+      const stopping = yield* Deferred.make<void>();
+      const harness = makeHarness({
+        stopBackend: Deferred.succeed(stopping, undefined).pipe(Effect.andThen(Effect.never)),
+      });
+
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          harness.emit("update-downloaded", { version: "1.2.4" });
+          yield* flushCallbacks;
+
+          const installFiber = yield* updates.install.pipe(Effect.forkScoped);
+          yield* Deferred.await(stopping);
+          assert.isDefined(harness.updateInProgressMarker());
+
+          yield* Fiber.interrupt(installFiber);
+          assert.isUndefined(harness.updateInProgressMarker());
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    }),
+  );
+
   it.effect("keeps windows and restarts backends when quitAndInstall fails", () => {
     const harness = makeHarness({
       quitAndInstall: Effect.fail(
@@ -499,6 +571,7 @@ describe("DesktopUpdates", () => {
           "quitAndInstall",
           "startBackend",
         ]);
+        assert.isUndefined(harness.updateInProgressMarker());
         assert.equal(harness.installRecords.size, 0);
       }),
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));

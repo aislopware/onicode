@@ -110,7 +110,8 @@ project crumb.
 The Projects category, under Code, holds the project's name, icon, actions,
 checkouts and removal. Actions belong to a project: editing them creates the project's own list
 on each selected environment, and reset returns to the environment's shared list. A project's
-`onicode.json` actions can be imported there.
+`onicode.json` actions can be imported there. When a project has several checkouts on one environment,
+choose one in the scope line at the top to see or change only that checkout's settings.
 
 Settings a repository can also declare in `onicode.json`, such as the workspace for new threads,
 resolve in one order: a project override, then the environment setting, then `onicode.json`, then the

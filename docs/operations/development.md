@@ -95,7 +95,7 @@ covers agent-driven checks.
 ### Bundled dev
 
 `ONICODE_BUNDLED_DEV=1` serves the renderer through Rolldown's bundled dev mode instead of
-per-module requests. Two reload traps matter when changing this setup:
+per-module requests. These traps matter when changing this setup:
 
 - The web entry must dynamically import the app so React refresh initializes before application
   chunks. Static imports can work on first load and fail after a route split.
@@ -104,6 +104,9 @@ per-module requests. Two reload traps matter when changing this setup:
 - The app and its routes are lazy chunks, built on first request. A plugin pre-bundles the
   startup chain when the server starts. Renaming or moving a startup route or the app entry
   silently drops it from that list.
+- Bundled dev hands Rolldown its own watcher, which skips Vite's default `node_modules`
+  ignore. Those files are pnpm-store hardlinks, so another worktree's install or
+  removal rebuilds every long-running server and leaks memory. Keep `node_modules` excluded.
 
 The workarounds live in the [web entry](../../apps/web/src/bootstrap.ts),
 [Tailwind plugin](../../apps/web/vite/tailwind.ts), and

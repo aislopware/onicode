@@ -23,6 +23,12 @@ const copilotModesProfile = process.env.ONICODE_ACP_COPILOT_MODES === "1";
 const copilotModeId = (name: string) =>
   `https://agentclientprotocol.com/protocol/session-modes#${name}`;
 const modeOptionCategory = process.env.ONICODE_ACP_MODE_OPTION_CATEGORY ?? "mode";
+// Comma-separated command names the mock advertises, so `/compact` support is testable.
+const advertisedCommandNames = (process.env.ONICODE_ACP_AVAILABLE_COMMANDS ?? "")
+  .split(",")
+  .map((name) => name.trim())
+  .filter((name) => name.length > 0);
+const loadedCommandNames = process.env.ONICODE_ACP_LOADED_COMMANDS?.split(",").filter(Boolean);
 const emitToolCalls = process.env.ONICODE_ACP_EMIT_TOOL_CALLS === "1";
 const emitInterleavedAssistantToolCalls =
   process.env.ONICODE_ACP_EMIT_INTERLEAVED_ASSISTANT_TOOL_CALLS === "1";
@@ -78,6 +84,10 @@ const newSessionErrorData =
 const failPromptOrdinal = Number(process.env.ONICODE_ACP_FAIL_PROMPT_ORDINAL);
 const compactionPromptOrdinals = new Set(
   (process.env.ONICODE_ACP_COMPACTION_PROMPT_ORDINALS ?? "").split(",").map(Number),
+);
+// These prompts end while their compaction is still in progress.
+const openCompactionPromptOrdinals = new Set(
+  (process.env.ONICODE_ACP_OPEN_COMPACTION_PROMPT_ORDINALS ?? "").split(",").map(Number),
 );
 const failSetModeConfigOption = process.env.ONICODE_ACP_FAIL_SET_MODE_CONFIG_OPTION === "1";
 const emitEmptyDefaultAgentOption = process.env.ONICODE_ACP_EMIT_EMPTY_DEFAULT_AGENT_OPTION === "1";
@@ -612,6 +622,18 @@ const program = Effect.gen(function* () {
       if (antigravityProfile) {
         yield* publishAntigravityCommands(sessionId);
       }
+      if (advertisedCommandNames.length > 0) {
+        yield* agent.client.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "available_commands_update",
+            availableCommands: advertisedCommandNames.map((name) => ({
+              name,
+              description: `${name} command`,
+            })),
+          },
+        });
+      }
       return {
         sessionId,
         configOptions: configOptions(),
@@ -667,6 +689,15 @@ const program = Effect.gen(function* () {
   yield* agent.handleLoadSession((request) =>
     Effect.gen(function* () {
       const requestedSessionId = String(request.sessionId ?? sessionId);
+      if (loadedCommandNames !== undefined) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "available_commands_update",
+            availableCommands: loadedCommandNames.map((name) => ({ name, description: name })),
+          },
+        });
+      }
       if (failLoadSession) {
         return yield* AcpError.AcpRequestError.internalError("Mock load session failure");
       }
@@ -1344,6 +1375,16 @@ const program = Effect.gen(function* () {
         yield* Effect.sleep(`${promptDelayMs} millis`);
       }
 
+      if (openCompactionPromptOrdinals.has(promptCount)) {
+        yield* agent.client.sessionUpdate({
+          sessionId: requestedSessionId,
+          update: {
+            sessionUpdate: "compaction_update",
+            compactionId: `compact-${promptCount}`,
+            status: "in_progress",
+          },
+        });
+      }
       if (compactionPromptOrdinals.has(promptCount)) {
         for (const status of ["in_progress", "completed"] as const) {
           yield* agent.client.sessionUpdate({

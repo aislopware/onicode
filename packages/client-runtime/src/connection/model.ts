@@ -1,4 +1,4 @@
-import { EnvironmentId } from "@onicode/contracts";
+import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 
 const ConnectionTargetBase = {
@@ -116,6 +116,8 @@ export interface PreparedConnection {
   readonly socketUrl: string;
   readonly httpAuthorization: PreparedHttpAuthorization;
   readonly target: ConnectionTarget;
+  /** What the server said about itself while this connection was prepared. */
+  readonly descriptor?: ExecutionEnvironmentDescriptor;
 }
 
 export type SupervisorConnectionPhase =

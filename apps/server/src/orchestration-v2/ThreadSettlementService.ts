@@ -1,5 +1,6 @@
 import {
   backgroundWorkHoldsCompletion,
+  isPullRequestWatchTask,
   turnItemUpdateCanEndBackgroundWork,
 } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import { resolveProjectSettings } from "@onicode/shared/projectSettings";
@@ -152,7 +153,10 @@ export function isAutoSettlementCandidate(
   if (thread.pinnedAt != null || thread.autoSettleDisabledAt != null) return false;
   if (thread.pendingRuntimeRequest !== null) return false;
   if (thread.activityRunStatus != null) return false;
-  if (backgroundWorkHoldsCompletion(thread.pendingBackgroundTasks ?? [])) return false;
+  const pendingTasks = thread.pendingBackgroundTasks ?? [];
+  if (backgroundWorkHoldsCompletion(pendingTasks)) return false;
+  // Settling ends a watch, which would silently drop a reviewer's later comments.
+  if (pendingTasks.some(isPullRequestWatchTask)) return false;
   if (threadHasQueuedTurnStart(thread, nowMs)) return false;
   // Interrupted runs must keep the same snooze protection the sidebar shows.
   return !isSnoozed(thread, nowMs);
@@ -532,7 +536,15 @@ export const make = Effect.gen(function* () {
         return yield* Effect.die(new Error("thread project not found"));
       }
       const refresh = group.filter((member) => shellClosedThreads.delete(member.id)).length > 0;
-      return yield* git.branchPullRequest({ cwd, branch: thread.branch }, { refresh });
+      // Remembered git state is enough to rule a thread out; only an answer
+      // that would settle it is confirmed against fresh git state.
+      const remembered = yield* git.branchPullRequest(
+        { cwd, branch: thread.branch },
+        { refresh, confirmTerminal: false },
+      );
+      if (refresh || remembered === null || remembered.state === "open") return remembered;
+      if (!(yield* wouldSettle(group, remembered))) return undefined;
+      return yield* git.branchPullRequest({ cwd, branch: thread.branch }, { freshGitState: true });
     });
 
     yield* Effect.forEach(
