@@ -1015,3 +1015,4 @@ b1c1e07ded	take	fix(web): a click no longer lands on the sidebar row that just s
 e1d59d1884	take	fix(web): the collapsed mobile composer shows Stop while a turn runs (#29959)
 bce2bc048e	take	test(web): split the cloud voice cancel flow from the failed-then-saved setup (#35665)
 4cc6bebbac	skip	Nightly GitHub release feed and its electron-updater 6.8.9 patch; Onicode ships through better-update on one channel and has no githubUpdateFeed.
+ff045198dc	take	fix(web): PDF preview prerenders pages two viewports below the visible area (#35666)
