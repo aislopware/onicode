@@ -1163,3 +1163,4 @@ cc927400c7	take	fix(server): Simlock renewals no longer exceed the gateway's lea
 ee645553a9	take	test: drop redundant Effect.scoped wrappers; conflicted files re-merged ignoring whitespace; serviceLauncherClient test lives in service/; Clerk/relay tests skipped (removed)
 d06ba27166	take	fix(device): Simlock viewer stops retrying an ended lease and keeps its reason
 15d1ef5e09	take	fix(server): Stop waits for the turn to settle instead of polling
+a32cdde062	skip	upstream repo governance (issue vouch labelling, VOUCHED.td denounce); Onicode has no vouching workflow
