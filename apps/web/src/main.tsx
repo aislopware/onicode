@@ -7,14 +7,12 @@ import "./index.css";
 import { startAppServices } from "./appInit";
 import { AppRoot } from "./AppRoot";
 import { whenLocaleReady } from "./i18n/runtime";
-import { clearChunkReloadGuard, reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
+import { reloadOnceForChunkLoadError } from "./lib/chunkReloadGuard";
 
 const router = startAppServices();
 
-let chunkLoadFailed = false;
 let reloadScheduled = false;
 window.addEventListener("vite:preloadError", (event) => {
-  chunkLoadFailed = true;
   if (reloadOnceForChunkLoadError()) {
     reloadScheduled = true;
     event.preventDefault();
@@ -30,7 +28,6 @@ export const startup = router
   .then(() => {
     // Route chunk failures resolve router.load() and surface later through the error boundary.
     if (reloadScheduled) return;
-    if (!chunkLoadFailed) clearChunkReloadGuard();
     ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
       <React.StrictMode>{app}</React.StrictMode>,
     );

@@ -967,3 +967,4 @@ f255158370	take	fix(pi): settle prompts consumed by input handlers (#28798)
 cbf9e26bc6	take	fix(server): preserve filename whitespace when reading and saving files (#29314)
 70833b2f55	take	fix(server): tool calls a released session cuts off no longer keep the thread Waiting (#29036)
 85b160658f	take	fix(server): keep thread tool responses small by default (#29268)
+6d535841a3	take	fix(web): a chunk that fails after boot no longer reloads the page in a loop (#29306); main.tsx resolved without the Clerk shell
