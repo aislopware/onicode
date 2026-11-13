@@ -117,6 +117,28 @@ const readLedger = () =>
 const REMOVED_AREAS =
   /^(infra|apps\/marketing)\/|(^|\/)(cloud|relay|clerk|telemetry|analytics)(\/|[A-Z.]|$)|[Cc]onnect|vercel|nightly|\.github\/workflows\/(release|desktop-macos-preview|mobile-android-apk|web-preview)/;
 
+// Where Onicode diverges from upstream or ships to clients it cannot update in place.
+// A port touching these gets its checks per commit (docs/operations/upstream-sync.md).
+const RISK_AREAS: ReadonlyArray<readonly [string, RegExp]> = [
+  ["contracts", /^packages\/contracts\//],
+  ["migrations", /\/[Mm]igrations?\//],
+  ["sidebar", /^apps\/web\/src\/(components\/Sidebar\.tsx|state\/olderSettledShelf\.ts)$/],
+  ["mobile", /^apps\/mobile\//],
+  ["desktop", /^apps\/desktop\/|^apps\/server\/src\/desktopUpdate\//],
+  ["auth", /^apps\/server\/src\/(auth|peer)\//],
+  ["provider", /^apps\/server\/src\/provider\//],
+  ["ci", /^\.github\//],
+  ["deps", /(^|\/)package\.json$/],
+];
+const LARGE_CHANGE_LINES = 400;
+
+export const riskAreas = (paths: ReadonlyArray<string>, changedLines: number) => [
+  ...RISK_AREAS.filter(([, pattern]) => paths.some((path) => pattern.test(path))).map(
+    ([name]) => name,
+  ),
+  ...(changedLines > LARGE_CHANGE_LINES ? [`${changedLines} lines`] : []),
+];
+
 const pending = () => {
   const base = gitText(["merge-base", "HEAD", UPSTREAM]);
   const done = new Set(readLedger().flatMap(([sha]) => (sha ? [sha] : [])));
@@ -126,9 +148,15 @@ const pending = () => {
     .filter((sha) => ![...done].some((entry) => sha.startsWith(entry)));
   for (const sha of commits) {
     const subject = gitText(["log", "-1", "--format=%s", sha]);
-    const paths = gitText(["diff-tree", "-r", "--name-only", "--no-commit-id", sha])
+    const stats = gitText(["diff-tree", "-r", "--numstat", "--no-commit-id", sha])
       .split("\n")
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((line) => line.split("\t"));
+    const paths = stats.map(([, , path]) => path ?? "");
+    const changedLines = stats.reduce(
+      (total, [added, removed]) => total + (Number(added) || 0) + (Number(removed) || 0),
+      0,
+    );
     const removed = paths.filter((path) => REMOVED_AREAS.test(path));
     const hint =
       removed.length === 0
@@ -136,7 +164,9 @@ const pending = () => {
         : removed.length === paths.length
           ? "  [only touches areas Onicode removed]"
           : `  [${removed.length}/${paths.length} paths in removed areas]`;
-    console.log(`${sha.slice(0, 10)}  ${subject}${hint}`);
+    const risk = riskAreas(paths, changedLines);
+    const riskHint = risk.length === 0 ? "" : `  [risky: ${risk.join(", ")}]`;
+    console.log(`${sha.slice(0, 10)}  ${subject}${hint}${riskHint}`);
   }
   if (commits.length === 0) console.log("Nothing pending.");
 };
