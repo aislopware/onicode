@@ -840,3 +840,4 @@ bf8e5e61b6	take	fix(web): a failed page in the floating browser preview shows th
 1d218d1525	take	feat(web): screen reader window title leads with the thread's status and name (#34697); title built inline in appInit (no branding.logic.ts), guest-link handling dropped
 476fc9be66	take	test(server): wire budget measures what clients fetch today (#35225); PR-comment reporter and CI artifact upload not ported (Onicode has neither)
 4947db07d3	take	fix(github): PR templates in a lowercase pull_request_template/ directory are found (#35212)
+591188471a	take	perf(server): sending to a long compacted thread waits about 3x less on its history read (#35180)
