@@ -987,3 +987,4 @@ dfded9d759	take	fix(web): keep the child thread open when its remote parent was 
 9b242e4d07	take	fix(web): reveal full composer command descriptions (#27414)
 44ee2b9c34	take	fix(server): restart the service after Onicode home ownership clears (#25237); service/ import paths
 a34427662b	take	fix(web): Enter on an empty prompt resumes an interrupted thread (#27079)
+9ac4535b06	take	fix(shared): token counts just below a unit boundary use the next unit (#35634)
