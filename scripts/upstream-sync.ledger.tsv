@@ -1023,3 +1023,4 @@ db470a3ebd	take	fix(web): legacy collapsed project folders stay collapsed after 
 c60aa1aaf9	take	fix(server): explain how to close unclaimed browser tabs (#29205)
 9ccc0f8a60	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(editors): JetBrains IDEs open file links in the thread'\''s project (#33558)' -m 'Ported from pingdotgg/t3code@9ccc0f8a60.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 e895a56c4b	take	git commit -a --author='Bin Jamshid <gut.commune-0e@icloud.com>' -m 'fix(mobile): select part of a source file'\''s text on iOS (#33218)' -m 'Ported from pingdotgg/t3code@e895a56c4b.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+bc0befe90a	take	fix(mobile): show loading until existing threads are known (#28663)
