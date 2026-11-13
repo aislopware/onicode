@@ -1062,3 +1062,4 @@ e0d6aadb88	take	feat(server): watched GitHub pull requests react when a check su
 254e985e47	take	fix(web): find scheduled tasks in Settings search (#35715)
 fec3b3a227	take	fix(preview): bound stalled screenshot captures (#25862)
 48a56faaa2	take	test(server): idle-resume replays wait for the session release before the next prompt (#35720)
+ac1cb9232d	take	fix(server): archive refuses a thread with running delegated tasks (#26078)
