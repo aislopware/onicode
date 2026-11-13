@@ -1164,3 +1164,4 @@ ee645553a9	take	test: drop redundant Effect.scoped wrappers; conflicted files re
 d06ba27166	take	fix(device): Simlock viewer stops retrying an ended lease and keeps its reason
 15d1ef5e09	take	fix(server): Stop waits for the turn to settle instead of polling
 a32cdde062	skip	upstream repo governance (issue vouch labelling, VOUCHED.td denounce); Onicode has no vouching workflow
+f9cadccadf	take	fix(scripts): dev runner ignores the parent Onicode server's port and host; resolved onto Onicode's dev/standalone env split
