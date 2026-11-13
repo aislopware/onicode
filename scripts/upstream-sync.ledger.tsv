@@ -1237,3 +1237,4 @@ f62fa296f0	take	fix(web): Add to another machine can find ignored files past the
 b5c0ee56fa	take	fix(mobile): Android Back from Pulls or Usage returns to Threads (#36224)
 d19467a59e	take	fix(server): a thread visit stores only its read state (#36233)
 5cbdf00481	take	fix(web): mostly vertical trackpad scrolls no longer navigate back or forward (#30173)
+8bf0dc4753	take	fix(opencode): a resumed task subagent's turn no longer collides with its first (#34961)
