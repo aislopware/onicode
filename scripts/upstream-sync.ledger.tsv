@@ -974,3 +974,4 @@ a3cde98425	take	perf(ci): run server test files in parallel on each shard (#3561
 aa58dc6d22	take	chore(deps): bump the npm_and_yarn group across 2 directories with 1 update (#33945); effect catalog 4.1.2 -> 4.1.3, lockfile regenerated with vp i (Onicode's electron-webauthn kept)
 8753c74899	take	fix(server): keep worktrees containing nested repositories (#25241)
 f41e8b3c10	take	fix(shared): Windows-style paths stay out of the slash menu (#27851)
+ac7c7f66d9	take	fix(acp): let agents that advertise /compact compact their own context (#28822)
