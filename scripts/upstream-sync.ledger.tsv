@@ -1037,3 +1037,4 @@ cc97303381	take	fix(cursor): mcp.json servers using ${workspaceFolder} now start
 6dfb1a8a18	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): onicode uninstall names another home'\''s service it leaves installed (#35684)' -m 'Ported from pingdotgg/t3code@6dfb1a8a18.'
 cfad310913	take	fix(client-runtime): long MCP app download names no longer split an emoji (#35680)
 e179cefe7a	take	fix(web): collapsed reasoning previews no longer split an emoji (#35677)
+4cfcfaf2fd	take	fix(web): a question answer restored with undo is no longer sent twice (#35574)
