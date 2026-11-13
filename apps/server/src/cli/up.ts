@@ -24,7 +24,7 @@ import * as CliService from "./service.ts";
 interface Setup {
   readonly service: BootService.BootServiceStatus;
   readonly lan: boolean;
-  /** An installed service with no ONICODE_LAN keeps the old default: on. */
+  /** An installed service with no ONICODE_LAN or ONICODE_HOST keeps the old default: on. */
   readonly lanFromOldDefault: boolean;
   /** Only tailnet devices reach the port; this wins over `lan`. */
   readonly tailnetOnly: boolean;
@@ -59,7 +59,8 @@ const readSetup = Effect.fn("cli.up.read_setup")(function* () {
   return {
     service,
     lan: Option.getOrElse(lan, () => servesThisHome),
-    lanFromOldDefault: Option.isNone(lan) && servesThisHome && !tailnetOnly,
+    lanFromOldDefault:
+      Option.isNone(lan) && servesThisHome && !tailnetOnly && entries.ONICODE_HOST === undefined,
     tailnetOnly,
     host: entries.ONICODE_HOST,
   } satisfies Setup;
