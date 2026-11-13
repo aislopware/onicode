@@ -1238,3 +1238,4 @@ b5c0ee56fa	take	fix(mobile): Android Back from Pulls or Usage returns to Threads
 d19467a59e	take	fix(server): a thread visit stores only its read state (#36233)
 5cbdf00481	take	fix(web): mostly vertical trackpad scrolls no longer navigate back or forward (#30173)
 8bf0dc4753	take	fix(opencode): a resumed task subagent's turn no longer collides with its first (#34961)
+a4a8c61918	take	fix(server): preview click, hover and drag survive a target replaced while scrolling it into view (#30600)
