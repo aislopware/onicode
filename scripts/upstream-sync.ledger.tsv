@@ -1203,3 +1203,4 @@ e4025c8528	take	taken as is; kills only recorded pid+starttime pairs
 eb7e63a822	take	fix(server): thread reads preview linked PRs and list_thread_pull_requests pages (budget re-measured for Onicode tool list)
 74573fc29b	take	fix(web): new project publish option tells screen readers whether it is on
 ed05c0e43b	take	fix(server): preview drag moves the mouse during the drag
+bd7d264401	take	fix(server): a fresh-session scheduled run no longer takes over the thread's conversation
