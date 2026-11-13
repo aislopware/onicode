@@ -1136,3 +1136,4 @@ f5390209c2	take	test(server): windowed history pages are checked against the ful
 afff0d3efe	take	fix(clients): answer history no longer shows provider context from review comments (#35897)
 274474dd19	take	fix(server): refresh sync status after agent merges (#35919)
 7556047418	take	fix(web): copying an image with a spaced path keeps it an image (#35914)
+2e0bd97e86	take	fix(server): Force stop no longer tears down a queued follow-up that started during cleanup (#31038)
