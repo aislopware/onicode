@@ -1312,3 +1312,4 @@ aab388ddb1	take	fix(server): Claude can show the user mid-turn text in full (#36
 931cd3afab	take	fix(server): a Claude Monitor line no longer wakes a delegated child's parent (#36339)
 b35819caca	take	fix(opencode): a lost subagent report no longer leaves a resumed call running (#36386)
 bc7fe11002	take	fix(web): a new worktree thread opened during a clone bases on the real default branch (#36379)
+4ee3b602fc	skip	DPoP replay markers belong to the T3 Connect relay's proof-of-possession tokens; Onicode removed dpop.ts and its token exchange is bearer-only
