@@ -1310,3 +1310,4 @@ aab388ddb1	take	fix(server): Claude can show the user mid-turn text in full (#36
 93cbca3fcb	take	fix(terminal): trimmed history no longer replays half of a control sequence (#36368)
 9ced4f1f45	take	fix(usage): a re-emitted Codex snapshot is no longer billed as a counter rewind (#36367)
 931cd3afab	take	fix(server): a Claude Monitor line no longer wakes a delegated child's parent (#36339)
+b35819caca	take	fix(opencode): a lost subagent report no longer leaves a resumed call running (#36386)
