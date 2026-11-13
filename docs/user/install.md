@@ -195,6 +195,47 @@ For provider-specific setup and accounts, see [Codex](./providers-codex.md),
 [Antigravity](./providers-antigravity.md), [Kiro](./providers-kiro.md),
 [Pi](./providers-pi.md), [Muse Code](./providers-muse.md), and [fx](./providers-fx.md).
 
+### Provider check timeouts
+
+If a provider works in its CLI but Onicode reports a timeout while checking it,
+allow more time in the Onicode server's environment. For example, give Codex and
+Claude readiness checks 60 seconds:
+
+```bash
+ONICODE_CODEX_PROBE_TIMEOUT_MS=60000 ONICODE_CLAUDE_PROBE_TIMEOUT_MS=60000 onicode serve
+```
+
+For a remote environment, set these on the machine running the Onicode server.
+Keep them in your launcher or service configuration to retain them across
+updates, then restart the server. For systemd, add
+`Environment=ONICODE_CODEX_PROBE_TIMEOUT_MS=60000` under `[Service]` in a service
+override, reload systemd, and restart the service. Provider instances can also
+set their own overrides in Settings → Providers.
+
+Each variable extends that provider's readiness-probe deadlines; a phase whose
+default is already longer keeps its default. Providers with several phases can
+take longer than one deadline in total. Values must be whole milliseconds no
+greater than 2147483647; unset or invalid values keep the defaults.
+
+| Provider            | Environment variable                    |
+| ------------------- | --------------------------------------- |
+| Codex               | `ONICODE_CODEX_PROBE_TIMEOUT_MS`        |
+| Claude              | `ONICODE_CLAUDE_PROBE_TIMEOUT_MS`       |
+| Cursor              | `ONICODE_CURSOR_PROBE_TIMEOUT_MS`       |
+| Antigravity         | `ONICODE_ANTIGRAVITY_PROBE_TIMEOUT_MS`  |
+| Grok                | `ONICODE_GROK_PROBE_TIMEOUT_MS`         |
+| Kiro                | `ONICODE_KIRO_PROBE_TIMEOUT_MS`         |
+| fx                  | `ONICODE_FX_PROBE_TIMEOUT_MS`           |
+| Pi                  | `ONICODE_PI_PROBE_TIMEOUT_MS`           |
+| Muse Code           | `ONICODE_MUSE_PROBE_TIMEOUT_MS`         |
+| OpenCode            | `ONICODE_OPENCODE_PROBE_TIMEOUT_MS`     |
+| ACP Registry agents | `ONICODE_ACP_REGISTRY_PROBE_TIMEOUT_MS` |
+
+Longer deadlines also take longer to report a stalled check. These overrides
+cover readiness and discovery, including OpenCode server startup. Usage and
+config enrichment retain their own shorter limits. Turn execution, package
+installation, update checks, and shutdown limits keep their existing behavior.
+
 ## Next steps
 
 - [Working with threads](./thread-sidebar.md): start tasks and organize parallel work.
