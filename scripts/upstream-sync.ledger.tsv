@@ -925,3 +925,4 @@ cf82fb8584	take	fix(shared): preserve repository paths when switching clone prot
 5cff012416	take	feat(web): resize rows and columns in spreadsheet previews (#35548)
 e0d0fb33dd	take	fix(forgejo): renamed repositories keep syncing their pull request links (#32629)
 e9a7c076f7	take	test(web): OpenRouter voice test fills the model picker instead of typing each key (#35581)
+4099e62767	take	feat(antigravity): support native goals and managed CLI updates (#35409); docs say desktop provider settings; pair test uses dev: false
