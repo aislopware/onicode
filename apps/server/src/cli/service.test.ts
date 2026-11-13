@@ -115,6 +115,12 @@ it.layer(Layer.mergeAll(NodeServices.layer, NetService.layer))("service commands
       env: "ONICODE_HOST=::\n",
       expected: "ONICODE_HOST=::\n",
     },
+    {
+      label: "a quoted multiline value",
+      installed: false,
+      env: 'CUSTOM="first\nONICODE_LAN=example\nlast"\n',
+      expected: 'CUSTOM="first\nONICODE_LAN=example\nlast"\nONICODE_LAN=false\n',
+    },
   ])("install keeps $label off the local network only when it is new", (input) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

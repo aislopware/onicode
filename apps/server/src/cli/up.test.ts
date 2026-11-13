@@ -352,4 +352,18 @@ it("rewrites only the named service.env keys and keeps the user's lines", () => 
     upsertServiceEnv(before.join("\n"), { ONICODE_LAN: "true", ONICODE_HOST: undefined }),
   ).toBe(["# my settings", "ONICODE_PORT=4000", "ONICODE_LAN=true", ""].join("\n"));
   expect(upsertServiceEnv("", { ONICODE_LAN: "false" })).toBe("ONICODE_LAN=false\n");
+  expect(
+    upsertServiceEnv('ONICODE_LAN="a\nb"\nCUSTOM="x\nONICODE_LAN=y"\nONICODE_LAN=true\n', {
+      ONICODE_LAN: "false",
+    }),
+  ).toBe('ONICODE_LAN=false\nCUSTOM="x\nONICODE_LAN=y"\n');
+  expect(
+    upsertServiceEnv('ONICODE_LAN=\u00a0"unused\nCUSTOM=keep\nEND="\nONICODE_LAN=true\n', {
+      ONICODE_LAN: "false",
+    }),
+  ).toBe('ONICODE_LAN=false\nCUSTOM=keep\nEND="\n');
+  const long = `CUSTOM="${"\n".repeat(130_000)}"\n`;
+  expect(upsertServiceEnv(`${long}ONICODE_LAN=true\n`, { ONICODE_LAN: "false" })).toBe(
+    `${long}ONICODE_LAN=false\n`,
+  );
 });
