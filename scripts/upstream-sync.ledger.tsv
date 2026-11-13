@@ -915,3 +915,4 @@ c846833a6b	take	fix(server): provider instances named constructor, toString or v
 1001bc71fc	take	fix(voice): dictation survives draft changes and Escape in the citation box (#32682)
 1c9ea568a1	take	fix(clients): report title regeneration outcomes (#31418)
 abca54783c	take	test(server): bind-address Serve refusal test answers serve status (#35568)
+7f6ba5bd24	skip	only serves the outside-app MCP wizard (Grok Bot setup), which Onicode declined
