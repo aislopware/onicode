@@ -996,3 +996,4 @@ da345d203c	take	fix(server): terminals recreate a worktree removed by storage cl
 c544c27981	take	fix(server): a failed Git version probe no longer advises installing Git (#35638)
 14978e35a5	take	fix(server): PR worktrees keep local commits on an existing branch (#24674)
 c6995622d5	take	fix(web): branch labels keep the space before a middle-truncated name (#23627)
+13034bfad2	take	fix(server): stale provider update results clear once the provider is up to date (#24338)
