@@ -860,3 +860,4 @@ f99b2835ef	take	fix(provider-core): a timed-out status probe stops a CLI that ig
 a5bd0ba526	take	fix(ssh): SSH setup on a host without gzip says gzip is missing (#35389)
 f03db4fbef	take	fix(pi): blank extension dialog titles no longer fail the turn (#35271)
 c5f5efdbd2	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): text-generation fallback keeps the thread default'\''s custom model (#35391)' -m 'Ported from pingdotgg/t3code@c5f5efdbd2.'
+e96c96eafe	take	fix(server): storage cleanup stops holding usage-limited threads too overdue to auto-resume (#35397)
