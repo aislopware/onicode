@@ -1193,3 +1193,4 @@ dd7918e1e2	take	kept Onicode's desktop+mobile wording in html-renders doc
 0902adcc03	take	taken as is
 e4025c8528	take	taken as is; kills only recorded pid+starttime pairs
 08544ba3e5	take	taken as is
+84efa01f12	take	taken as is; kills only the app's own zygote children
