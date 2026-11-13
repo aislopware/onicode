@@ -1293,3 +1293,4 @@ af284672de	take	fix(mobile): reference links resolve across folds and artifact c
 41156481b1	take	fix(server): a folder that only holds a repository's worktrees is refused as a project (#36366)
 65e4272db1	take	fix(server): a hung network mount no longer freezes the server when it spawns a process (#36327); Claude probe's env trampoline forwards stderr so launcher refusals still show
 cfc71e1a99	take	fix(web): preview annotations in question answers reach the agent with their text (#36357)
+1721f187c6	take	fix(web): clearing a running terminal keeps its screen and input modes (#36380)
