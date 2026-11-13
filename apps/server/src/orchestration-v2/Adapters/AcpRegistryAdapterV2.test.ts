@@ -1832,10 +1832,15 @@ describe("AcpRegistryAdapterV2", () => {
           update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "ok" } }),
           sessionEvent("assistant.idle"),
           update({ sessionUpdate: "session_info_update", title: "after foreground idle" }),
-          // The shell never exits, so the first session/prompt is never answered.
+          // The shell never exits, so the first session/prompt is never answered. Its notes
+          // still reached Copilot, so the next prompt does not resend them.
           {
             type: "expect_outbound",
-            frame: { kind: "request", method: "session/prompt", params: "<any>" },
+            frame: {
+              kind: "request",
+              method: "session/prompt",
+              params: { sessionId, prompt: [{ type: "text", text: "test prompt" }] },
+            },
           },
           sessionEvent("assistant.turn_start"),
           update({ sessionUpdate: "agent_message_chunk", content: { type: "text", text: "two" } }),
