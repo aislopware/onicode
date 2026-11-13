@@ -1271,3 +1271,4 @@ be5f805964	take	fix(web): new desktop browser tabs open at the default zoom and 
 fcd06873e8	take	fix(web): removing a checkout moves its open draft to a remaining checkout (#36276)
 9efd960925	take	fix(mobile): a Settings link sent to the running app opens the Settings tab (#36262); test conflict: dropped upstream's sign-in link case (SettingsAuth removed in Onicode)
 c83e78fe07	take	fix(web): Shift+Return after closed inline code or bold starts a plain line (#36285)
+e94db17ead	take	fix(mobile): adding a folder that is already a project opens it (#34942)
