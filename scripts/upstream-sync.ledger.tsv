@@ -874,3 +874,4 @@ d0f9d4dcc0	take	fix(web): sidebar draft previews show cited assistant text, not 
 60c3b222db	take	fix(mobile): browser and MCP-app links with blank IDs no longer crash the screen (#35415)
 55081a1f7b	take	fix(shared): thread search ignores the onicode prefix of flat temporary branches (#35430); flat branch pattern uses Onicode's onicode-<hex>, no legacy prefix
 841f98d4d8	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(mobile): a steer splits a settled turn'\''s "Worked for" fold (#35408)' -m 'Ported from pingdotgg/t3code@841f98d4d8.'
+ddd02848e6	take	fix(shared): html_render pages show for Grok threads (#35434)
