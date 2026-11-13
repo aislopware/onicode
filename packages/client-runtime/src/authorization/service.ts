@@ -2,6 +2,7 @@ import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@onicode/con
 import { resolveRemoteWebSocketConnectionUrl } from "./remote.ts";
 import { environmentMismatchError, mapRemoteEnvironmentError } from "../connection/errors.ts";
 import type { ConnectionAttemptError, PreparedHttpAuthorization } from "../connection/model.ts";
+import { isNearbyAddress } from "../connection/routes.ts";
 import { fetchRemoteEnvironmentDescriptor } from "../environment/descriptor.ts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -27,23 +28,31 @@ export class RemoteEnvironmentAuthorization extends Context.Service<
       readonly httpBaseUrl: string;
       readonly wsBaseUrl: string;
       readonly bearerToken: string;
+      /** An SSH forward listens on loopback but reaches a remote host. */
+      readonly viaSsh?: true;
     }) => Effect.Effect<AuthorizedRemoteEnvironment, ConnectionAttemptError>;
-    /** Lets the next direct authorization of this address skip its own descriptor read. */
+    /**
+     * Lets the next direct authorization of this address skip its own descriptor
+     * read. Kept only where the address reaches the same machine on every network.
+     */
     readonly rememberCheckedDescriptor: (
       httpBaseUrl: string,
       descriptor: Option.Option<ExecutionEnvironmentDescriptor>,
+      keepsItsHost: boolean,
     ) => Effect.Effect<void>;
   }
 >()("@onicode/client-runtime/authorization/service/RemoteEnvironmentAuthorization") {}
 
 const CHECKED_DESCRIPTOR_TTL_NANOS = 5_000_000_000n;
+// A loopback or LAN host answers well inside this, so a dead one frees its attempt sooner.
+const NEARBY_DESCRIPTOR_TIMEOUT_MS = 3_000;
 
 const make = Effect.gen(function* () {
   const httpClient = yield* HttpClient.HttpClient;
 
   // A route or host check hands its descriptor to the connect it leads to, once,
-  // so the connect skips a round trip. Only over HTTPS: a plain LAN address can
-  // belong to another machine after a network change.
+  // so the connect skips a round trip. Only over HTTPS or loopback: any other
+  // plain http address can belong to another machine after a network change.
   const checkedDescriptors = new Map<
     string,
     { readonly descriptor: ExecutionEnvironmentDescriptor; readonly at: bigint }
@@ -56,6 +65,7 @@ const make = Effect.gen(function* () {
     function* (input: {
       readonly expectedEnvironmentId: EnvironmentId;
       readonly httpBaseUrl: string;
+      readonly viaSsh?: true;
     }) {
       const checked = checkedDescriptors.get(input.httpBaseUrl);
       checkedDescriptors.delete(input.httpBaseUrl);
@@ -66,7 +76,12 @@ const make = Effect.gen(function* () {
         checked.descriptor.environmentId === input.expectedEnvironmentId &&
         (yield* Clock.monotonicTimeNanos) - checked.at <= CHECKED_DESCRIPTOR_TTL_NANOS
           ? checked.descriptor
-          : yield* fetchRemoteEnvironmentDescriptor({ httpBaseUrl: input.httpBaseUrl }).pipe(
+          : yield* fetchRemoteEnvironmentDescriptor({
+              httpBaseUrl: input.httpBaseUrl,
+              ...(input.viaSsh !== true && isNearbyAddress(input.httpBaseUrl)
+                ? { timeoutMs: NEARBY_DESCRIPTOR_TIMEOUT_MS }
+                : {}),
+            }).pipe(
               Effect.mapError(mapRemoteEnvironmentError),
               Effect.provideService(HttpClient.HttpClient, httpClient),
             );
@@ -108,8 +123,8 @@ const make = Effect.gen(function* () {
   return RemoteEnvironmentAuthorization.of({
     authorizeBearer,
     // Untraced: it runs on every route and host check.
-    rememberCheckedDescriptor: Effect.fnUntraced(function* (httpBaseUrl, descriptor) {
-      if (Option.isNone(descriptor) || !httpBaseUrl.startsWith("https:")) {
+    rememberCheckedDescriptor: Effect.fnUntraced(function* (httpBaseUrl, descriptor, keepsItsHost) {
+      if (Option.isNone(descriptor) || !keepsItsHost) {
         checkedDescriptors.delete(httpBaseUrl);
         return;
       }

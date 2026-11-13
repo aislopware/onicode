@@ -845,3 +845,4 @@ e9e934bb3d	take	fix(acp): new Copilot threads run the model the composer shows (
 156dcd8c7a	take	perf(server): long threads open 2 to 6x faster from a cold cache (#35286)
 3ffd38ef7f	skip	nightly release pause; Onicode ships one channel via better-update and has no scheduled nightly
 6807c3fb86	take	fix(server): file search no longer crashes the server, and a failed Edit from here keeps your files (#35291)
+2482b03a01	take	perf(client): threads load while the socket connects, with fewer round trips (#35071); DPoP/relay token paths dropped; bearer-only service keeps keepsItsHost and the 3s nearby timeout (not for SSH forwards via viaSsh)
