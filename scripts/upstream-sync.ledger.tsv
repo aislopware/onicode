@@ -897,3 +897,4 @@ ad3d60f689	skip	nightly-only electron-updater GitHub feed patch; Onicode updates
 729687e23c	take	fix(web): device tab rename no longer saves on the Enter that confirms an IME candidate (#35468)
 c1ea9782d2	skip	upstream commit has no diff; its isRepo test fix is folded into the 76e4cb5c8a port
 a7779fc558	take	fix(web): a focused folder New thread button no longer draws over the hidden-thread count (#35499)
+3c9a54979a	take	fix(grok): Grok MCP calls store the real tool, arguments, and result (#35502)
