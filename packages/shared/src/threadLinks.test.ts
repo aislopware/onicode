@@ -198,4 +198,23 @@ describe("thread links", () => {
     );
     expect(formatThreadLink(ref("e", "t1"), " ] ")).toBe("<oni-thread://v2/e/t1>");
   });
+
+  it("leaves a thread link that is escaped or inside another link as written", () => {
+    const autolink = "<oni-thread://v2/there/t1>";
+    const relabeled = "[There](oni-thread://v2/there/t1)";
+    const title = titlesIn({ there: { t1: "There" } });
+    for (const [markdown, expected] of [
+      [`[ ${autolink} ](https://example.com)`],
+      [`[${autolink}](<https://example.com/a b> "Title")`],
+      [`[a](https://example.com/x_(y)) ${autolink}`, `[a](https://example.com/x_(y)) ${relabeled}`],
+      [`[[[ [old](oni-thread://v2/there/t1)`, `[[[ ${relabeled}`],
+      [`\\\\[old](oni-thread://v2/there/t1)`, `\\\\${relabeled}`],
+      [`\\[old](oni-thread://v2/there/t1) \\${autolink}`],
+    ] as const) {
+      expect(relabelThreadLinks(markdown, local, title)).toBe(expected ?? markdown);
+      expect(threadLinkRefs(markdown, local)).toEqual(
+        expected === undefined ? [] : [ref("there", "t1")],
+      );
+    }
+  });
 });
