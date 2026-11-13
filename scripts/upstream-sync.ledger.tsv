@@ -1314,3 +1314,4 @@ b35819caca	take	fix(opencode): a lost subagent report no longer leaves a resumed
 bc7fe11002	take	fix(web): a new worktree thread opened during a clone bases on the real default branch (#36379)
 4ee3b602fc	skip	DPoP replay markers belong to the T3 Connect relay's proof-of-possession tokens; Onicode removed dpop.ts and its token exchange is bearer-only
 94aa3d7736	skip	Adds frame headers to the server's static web app route; Onicode serves no UI to browsers and has no static route
+5df5b44309	take	fix(server): a server browser tab survives a renderer crash, and a service worker badge call no longer causes one (#36389)
