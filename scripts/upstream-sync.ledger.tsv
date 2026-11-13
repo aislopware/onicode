@@ -1158,3 +1158,4 @@ c54e5b31ce	take	fix(cli): service.env updates keep quoted multiline values intac
 a621be8d15	take	fix(web): open code blocks and diffs follow a changed word wrap default (#35922)
 e018563669	take	fix(desktop): keep WSL distros whose names start or end with a dot or hyphen (#35971)
 43ce39595b	take	test: run clock-free live tests on TestClock (#35868)
+939b2884f9	take	fix(server): SSH device test rejects Node below agent-device's 22.12 floor
