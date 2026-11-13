@@ -1273,3 +1273,4 @@ fcd06873e8	take	fix(web): removing a checkout moves its open draft to a remainin
 c83e78fe07	take	fix(web): Shift+Return after closed inline code or bold starts a plain line (#36285)
 e94db17ead	take	fix(mobile): adding a folder that is already a project opens it (#34942)
 41e69ffa06	take	fix(contracts): agents keep working after starting an async delegate (#34924)
+1a4a29998b	take	fix(server): reverting to a checkpoint restores skip-worktree files (#36308)
