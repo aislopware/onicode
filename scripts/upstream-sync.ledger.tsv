@@ -851,3 +851,4 @@ fd8e386f7f	take	fix(mobile): the thread list shows server changes after a tab ro
 2b4a9c744e	take	test(web): inline confirm tests no longer race the 3s disarm timer (#35361)
 69dd4d08ea	take	test(web): Add Environment dialog test fills fields instead of typing each key (#35360)
 4e48d9e6a5	skip	fixes the HTML preview accordion MessagesTimeline test, which Onicode left out when porting a88a0adfa1 (no renderHtmlRender prop)
+7c22095fcc	take	fix(client-runtime): a stalled sign-in token or dead route no longer holds a reconnect for 40 seconds (#34623); relay managedRelayState dropped; supervisor test rewritten on the LAN-then-SSH entry
