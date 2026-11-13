@@ -1033,3 +1033,4 @@ a98bc69676	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(
 1e20361c91	take	fix(server): workspace search keeps backslashes in POSIX file names (#35672)
 de77e61281	take	fix(provider): make readiness probe timeouts configurable (#33275)
 cc97303381	take	fix(cursor): mcp.json servers using ${workspaceFolder} now start (#24505)
+7d517188bd	take	fix(server): workspace search ignore filter follows the host path separator (#35697)
