@@ -1101,3 +1101,4 @@ bb9658d3a7	take	perf(shared): command output failure scan rejects clean output i
 7fb54eb051	take	feat(mobile): secret field gets an eye toggle to show what you typed (#35783)
 5ceabb3fe8	take	fix(mobile): a cold launch shows the cached thread rows with the first frame (#35683)
 45b0fe4a8e	take	fix(server): ACP terminal MCP calls answer interleaved server requests (#35805)
+2755a951a1	take	fix(web): "Try again" recovers from a failed page chunk load (#35806)
