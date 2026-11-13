@@ -1235,3 +1235,4 @@ d3ef7e8e52	take	fix(cursor): send the catalog's default model parameters on ever
 286eeea19f	take	test(desktop): AppImage shim test no longer writes into its temp dir after the shim exits (#36235)
 f62fa296f0	take	fix(web): Add to another machine can find ignored files past the first 200 (#36228)
 b5c0ee56fa	take	fix(mobile): Android Back from Pulls or Usage returns to Threads (#36224)
+d19467a59e	take	fix(server): a thread visit stores only its read state (#36233)
