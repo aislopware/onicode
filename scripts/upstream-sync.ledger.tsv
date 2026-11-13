@@ -1230,3 +1230,4 @@ c398b46af0	take	fix(server): Codex text generation runs when launch args define 
 d3ef7e8e52	take	fix(cursor): send the catalog's default model parameters on every Cursor run (#28722)
 0568a63aac	take	fix(server): agents point to Settings → Labs when the link tools are hidden (#30371)
 139ec8080f	take	fix(server): Claude no longer dispatches skill mentions from handoff history (#34497)
+4b316fd544	take	fix(web): clear deleted checkout labels from the sidebar (#25063)
