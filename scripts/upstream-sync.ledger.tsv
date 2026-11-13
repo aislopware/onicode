@@ -932,3 +932,4 @@ e9a7c076f7	take	test(web): OpenRouter voice test fills the model picker instead 
 d8f3feff0c	take	test(web): Mermaid rejection test waits for the viewer chunk to load (#35586)
 7fab4ef978	take	perf(usage): the Usage page shows cost and tokens at once instead of after a full scan (#33993)
 359daaf367	take	feat(codex): choose a cyber access program for Daybreak-eligible models (#27928)
+977d613611	take	fix(web): command palette footer hints wrap instead of clipping on narrow viewports (#29288)
