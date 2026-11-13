@@ -1209,3 +1209,4 @@ bd7d264401	take	fix(server): a fresh-session scheduled run no longer takes over 
 ed7e5010ba	take	fix(web): terminal "Add to chat" now adds to a queued message being edited
 a044f0c0b3	take	fix(mobile): a final answer followed by more work in the same run stays visible
 fa9d85fad5	take	fix(web): a server updated with the app reconnects as soon as it is ready
+7903b487ba	take	fix(acp): Copilot runs end when its reply is done, not when its async shells exit
