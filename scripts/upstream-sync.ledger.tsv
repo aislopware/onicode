@@ -1283,3 +1283,4 @@ ca6e09c3e1	take	fix(mobile): Duo feed scroll indicator stays left of the vertica
 b009582cc9	take	fix(web): picking the previous branch after an outside checkout switches to it (#36347)
 0c28045abb	take	fix(server): systemd service starts again after its start limit tripped (#36359); applied to apps/server/src/service/bootService.ts by hand
 eb8185560f	take	fix(server): branches in a fork checkout no longer show the fork main's PR (#36309)
+f8dc37d0b7	take	fix(web): floating preview resize holds its shape and ends when interrupted (#36315)
