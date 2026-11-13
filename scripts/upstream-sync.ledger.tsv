@@ -1156,3 +1156,4 @@ b7a224c7dd	take	perf(server): sending, editing and steering queued messages no l
 8fe745d7af	take	fix(server): Codex protocol records go to the log of the thread they belong to (#35975)
 c54e5b31ce	take	fix(cli): service.env updates keep quoted multiline values intact (#35976)
 a621be8d15	take	fix(web): open code blocks and diffs follow a changed word wrap default (#35922)
+e018563669	take	fix(desktop): keep WSL distros whose names start or end with a dot or hyphen (#35971)
