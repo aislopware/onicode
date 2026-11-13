@@ -6,6 +6,14 @@ import * as Path from "effect/Path";
 
 import { discoverFxSkills } from "./skills.ts";
 
+// fx compares HOME by its real path, and macOS temp directories sit behind a /var symlink.
+const makeHome = Effect.gen(function* () {
+  const fileSystem = yield* FileSystem.FileSystem;
+  return yield* fileSystem.realPath(
+    yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-fx-skills-home-" }),
+  );
+});
+
 describe("discoverFxSkills", () => {
   // fx 0.0.13 scans workspace roots from the workspace up to HOME, then
   // ~/.fx/skills, then home compatibility roots (src/builtins/skills.zig), and
@@ -16,7 +24,7 @@ describe("discoverFxSkills", () => {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       // The workspace sits under the fake HOME, so the upward walk stops there.
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-fx-skills-home-" });
+      const home = yield* makeHome;
       const parent = path.join(home, "projects");
       const workspace = path.join(parent, "app");
       const writeSkill = (root: string, name: string) =>
@@ -63,7 +71,7 @@ describe("discoverFxSkills", () => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-fx-skills-home-" });
+      const home = yield* makeHome;
       const workspace = path.join(home, "app");
       const writeSkillFile = (folder: string, contents: string) =>
         fileSystem
@@ -168,7 +176,7 @@ describe("discoverFxSkills", () => {
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
-      const home = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-fx-skills-home-" });
+      const home = yield* makeHome;
       for (const [root, name] of [
         ["dotfiles/fx-skills", "managed"],
         [".claude/skills", "compat"],
