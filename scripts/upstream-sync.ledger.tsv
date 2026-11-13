@@ -1085,3 +1085,4 @@ adf31511e6	take	fix(server): restored worktrees find pushed thread work on a non
 25feac254d	take	fix(ssh): an alias no longer hides known_hosts entries on other ports (#35779)
 368b4feb6d	take	fix(server): IPv4-mapped loopback SSH device targets count as this machine (#35774)
 c0b08fa1f5	take	fix(ssh): host discovery follows Include globs in directory components (#35771)
+8b9f8cac53	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): Commit finishes a merge resolved to the current branch'\''s tree (#35778)' -m 'Ported from pingdotgg/t3code@8b9f8cac53.'
