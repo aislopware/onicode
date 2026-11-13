@@ -1166,3 +1166,4 @@ d06ba27166	take	fix(device): Simlock viewer stops retrying an ended lease and ke
 a32cdde062	skip	upstream repo governance (issue vouch labelling, VOUCHED.td denounce); Onicode has no vouching workflow
 f9cadccadf	take	fix(scripts): dev runner ignores the parent Onicode server's port and host; resolved onto Onicode's dev/standalone env split
 0b0a61a01f	take	perf(server): reduce allocation while reading usage history
+2cb56cbf56	take	fix(web): terminal paste keeps a leading U+FEFF without bracketed paste
