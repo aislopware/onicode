@@ -912,3 +912,4 @@ db63178ff7	take	fix(desktop): Tailscale HTTPS counts as on only when Serve reach
 8b05078459	take	fix(scripts): mobile:e2e asks Tailscale for the address pool devices reach (#35553)
 c846833a6b	take	fix(server): provider instances named constructor, toString or valueOf can be added (#35492)
 78ee8a156d	take	fix(mobile): inline-code file paths with non-ASCII names become file pills (#35552)
+1001bc71fc	take	fix(voice): dictation survives draft changes and Escape in the citation box (#32682)
