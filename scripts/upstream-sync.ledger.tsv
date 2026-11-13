@@ -1005,3 +1005,4 @@ a135972c7e	take	fix(opencode): preserve owned turns during server recovery (#255
 beaa647dc1	take	fix(ssh): distinguish incompatible Node from a missing executable (#35607)
 817b92f13a	take	fix(pi): stop offering extension-only models for text generation (#24110)
 18aeb0fb91	take	fix(server): new worktrees show submodule downloads instead of a stuck checkout (#33687)
+05089062d4	take	fix(web): restore composer focus when returning to a thread (#29179)
