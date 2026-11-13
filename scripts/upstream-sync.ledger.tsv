@@ -963,3 +963,4 @@ d9a97e7c49	take	fix(web): sidebar keeps the open thread active while Settings or
 f255158370	take	fix(pi): settle prompts consumed by input handlers (#28798)
 39ab6a2d2f	take	fix(cursor): honor HTTP/1.1 transport for proxy networks (#25338)
 5f4368165b	take	fix(client): hide Resume while a pending request blocks continuing the run (#28810)
+2adda57f11	take	fix(server): onicode doctor holds off server launches and names the holder (#24963)
