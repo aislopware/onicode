@@ -144,6 +144,7 @@ const TRACKED_EVENTS: ReadonlySet<string> = new Set([
   "thread.metadata-updated",
   "thread.settled",
   "thread.visited",
+  "thread.visit-recorded",
   "thread.marked-unread",
   "thread.model-selection-updated",
   "thread.provider-switched",

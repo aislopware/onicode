@@ -640,7 +640,10 @@ describe("PushNotifications", () => {
       assert.deepStrictEqual(taken(), [
         { grant: "grant_notification", alert: "Agent finished · onicode", active: 0 },
       ]);
-      yield* change({ ...finishedAt(0), lastVisitedAt: DateTime.makeUnsafe(0) }, "thread.visited");
+      yield* change(
+        { ...finishedAt(0), lastVisitedAt: DateTime.makeUnsafe(0) },
+        "thread.visit-recorded",
+      );
       assert.deepStrictEqual(taken(), [
         { grant: "grant_notification", alert: undefined, active: null },
       ]);
