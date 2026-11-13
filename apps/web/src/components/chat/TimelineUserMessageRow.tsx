@@ -1,6 +1,9 @@
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@onicode/shared/filePreview";
-import { remarkEnableOrderedListNumbers } from "@onicode/shared/markdownPipeline";
+import {
+  CHAT_USER_MARKDOWN_REMARK_PLUGINS,
+  remarkEnableOrderedListNumbers,
+} from "@onicode/shared/markdownPipeline";
 import { findRevealRef } from "./markdownFindContext";
 import {
   type EnvironmentId,
@@ -1178,7 +1181,10 @@ const CollapsibleUserMessageBody = memo(function CollapsibleUserMessageBody(prop
   );
 });
 
-const USER_MESSAGE_REMARK_PLUGINS = [remarkEnableOrderedListNumbers];
+const USER_MESSAGE_REMARK_PLUGINS = [
+  ...CHAT_USER_MARKDOWN_REMARK_PLUGINS,
+  remarkEnableOrderedListNumbers,
+];
 
 const UserMessageBody = memo(function UserMessageBody(props: {
   text: string;
