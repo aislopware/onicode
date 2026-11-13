@@ -60,6 +60,8 @@ interface ScannerTestInput {
   readonly piAgentDir?: string;
   readonly importedWorkspaceRoots?: ReadonlyArray<string>;
   readonly configBaseDir?: string;
+  readonly worktreesDirectory?: string;
+  readonly previousWorktreesDirectories?: ReadonlyArray<string>;
   readonly providerInstances?: ContractServerSettings["providerInstances"];
   readonly importedTranscripts?: {
     readonly cwd: string;
@@ -98,6 +100,8 @@ const layerScannerTest = (input: ScannerTestInput) =>
     Layer.provide(
       Layer.mergeAll(
         ServerSettings.layerTest({
+          worktreesDirectory: input.worktreesDirectory ?? "",
+          previousWorktreesDirectories: input.previousWorktreesDirectories ?? [],
           providerInstances: {
             [ProviderInstanceId.make("claudeAgent")]: {
               driver: ProviderDriverKind.make("claudeAgent"),
@@ -1114,6 +1118,41 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           const result = yield* runScan({ claudeHomePath, codexHomePath, configBaseDir });
           expect(result.candidates).toEqual([]);
         }
+      }),
+    );
+
+    it.effect("excludes sandboxes in the current and previous worktrees folder settings", () =>
+      Effect.gen(function* () {
+        const path = yield* Path.Path;
+        const fileSystem = yield* FileSystem.FileSystem;
+        const claudeHomePath = yield* makeTempDir("onicode-claude-home-");
+        const codexHomePath = yield* makeTempDir("onicode-codex-home-");
+        const currentDir = yield* makeTempDir("onicode-worktrees-current-");
+        const previousDir = yield* makeTempDir("onicode-worktrees-previous-");
+        const linkParent = yield* makeTempDir("onicode-scanner-links-");
+
+        const currentCwd = path.join(currentDir, "onicode", "wt-1");
+        const previousCwd = path.join(previousDir, "onicode", "wt-2");
+        yield* fileSystem.makeDirectory(currentCwd, { recursive: true });
+        yield* fileSystem.makeDirectory(previousCwd, { recursive: true });
+        const linkedPreviousCwd = path.join(linkParent, "innocent-project");
+        yield* fileSystem.symlink(previousCwd, linkedPreviousCwd);
+        for (const [index, cwd] of [currentCwd, linkedPreviousCwd].entries()) {
+          yield* writeTranscript({
+            filePath: path.join(claudeHomePath, "projects", `-slug-${index}`, "a.jsonl"),
+            contents: claudeSessionLine(cwd),
+            mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
+          });
+        }
+
+        const result = yield* runScan({
+          claudeHomePath,
+          codexHomePath,
+          worktreesDirectory: currentDir,
+          previousWorktreesDirectories: [previousDir],
+        });
+
+        expect(result.candidates).toEqual([]);
       }),
     );
 
