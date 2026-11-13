@@ -53,7 +53,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
           path: yield* pathWithOni,
         }),
       ).toBe('sudo env "PATH=$PATH" onicode browser setup');
-    }).pipe(Effect.scoped),
+    }),
   );
 
   it.effect("keeps the arguments, so root runs setup on the same Onicode home", () =>
@@ -75,7 +75,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
           args,
         }),
       ).toBe("sudo /opt/onicode/onicode browser setup --base-dir '/srv/onicode home'");
-    }).pipe(Effect.scoped),
+    }),
   );
 
   it.effect("names this install's launcher when onicode is not on PATH", () =>
@@ -148,7 +148,7 @@ it.layer(NodeServices.layer)("root CLI commands", (it) => {
       expect(
         yield* rootCommand({ ...desktop, env: { ONICODE_CLI_PATH: path.join(home, "gone") } }),
       ).toBe('sudo env "PATH=$PATH" onicode browser setup');
-    }).pipe(Effect.scoped),
+    }),
   );
 });
 
@@ -195,7 +195,7 @@ it.layer(NodeServices.layer)("host CLI commands", (it) => {
       expect((yield* hostCommand("linux", { ONICODE_CLI_PATH: shim })).command).toMatch(
         / doctor --base-dir 'C:\\Users\\Jane Doe\\\.onicode'$/,
       );
-    }).pipe(Effect.scoped),
+    }),
   );
 });
 
