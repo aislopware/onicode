@@ -1266,3 +1266,4 @@ daed91f264	take	fix(shared): batch SQLite worker result transfers (#36067)
 ff30b16af4	take	fix(desktop): clicking above the Settings or Usage modal closes it again (#36266)
 065aca4889	take	test(web): code block highlight test waits for the highlighter, not a 1s poll (#36269); dropped upstream's HostImageUrlContext import (not in Onicode)
 be5f805964	take	fix(web): new desktop browser tabs open at the default zoom and appearance (#34943); test URLs t3.chat -> example.com
+8cd8a3ca5a	take	fix(server): file search no longer freezes the server while fff's watcher reads a large file (#36273); pnpm-lock patch hash regenerated for Onicode's patch text
