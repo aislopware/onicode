@@ -1249,3 +1249,4 @@ c5dfb8ffa3	take	fix(mobile): new thread starts in the thread list's filtered pro
 a877d40b74	take	fix(opencode): models load once OpenCode 2 finishes activating its plugins (#30263)
 497aac20f7	take	fix(server): include Cursor team usage in account history (#36237)
 764c0475b5	take	fix(web): terminal TypeScript links preserve error locations (#36174)
+79dd6d78d1	skip	empty upstream commit (no file changes); #36174 landed in 764c0475b5
