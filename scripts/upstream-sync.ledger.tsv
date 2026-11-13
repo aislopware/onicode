@@ -1013,3 +1013,4 @@ a6b8f71443	take	fix(desktop): Escape during IME composition no longer cancels a 
 b1c1e07ded	take	fix(web): a click no longer lands on the sidebar row that just slid under it (#23517)
 613d1ac4f9	take	fix(mcp): background wait fails when none of its task IDs exist (#29773)
 e1d59d1884	take	fix(web): the collapsed mobile composer shows Stop while a turn runs (#29959)
+bce2bc048e	take	test(web): split the cloud voice cancel flow from the failed-then-saved setup (#35665)
