@@ -1285,3 +1285,4 @@ b009582cc9	take	fix(web): picking the previous branch after an outside checkout 
 eb8185560f	take	fix(server): branches in a fork checkout no longer show the fork main's PR (#36309)
 f8dc37d0b7	take	fix(web): floating preview resize holds its shape and ends when interrupted (#36315)
 250d372e51	take	fix(web): images in expanded tool rows page through the group's viewed images (#36321); dropped upstream's turnItemSource prop Onicode lacks
+6bb9b7b323	take	fix(web): auto-settle days save when the edit is finished, not on every keystroke (#36303)
