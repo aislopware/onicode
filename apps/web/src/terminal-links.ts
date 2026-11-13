@@ -1,3 +1,11 @@
+import {
+  formatFilePathPosition,
+  parseFileUrlHref,
+  resolvePathLinkTarget,
+  splitFilePathPosition,
+} from "@onicode/shared/fileLinks";
+import { safeDecodeURIComponent } from "@onicode/shared/markdownLinks";
+import { stripSlashPrefixedWindowsDrive } from "@onicode/shared/path";
 import { isMacPlatform } from "./lib/utils";
 
 export type TerminalLinkKind = "url" | "path";
@@ -148,6 +156,18 @@ export function extractTerminalLinks(line: string): TerminalLinkMatch[] {
 
 export function isTerminalUrl(value: string): boolean {
   return /^https?:\/\//iu.test(value);
+}
+
+/** Explicit OSC 8 targets may be `file://` URIs; everything else is a path relative to `cwd`. */
+export function resolveTerminalLinkTarget(text: string, cwd: string): string {
+  const fileUrl = /^file:\/\//iu.test(text) ? parseFileUrlHref(text) : null;
+  if (!fileUrl) return resolvePathLinkTarget(text, cwd);
+  return formatFilePathPosition(
+    splitFilePathPosition(
+      stripSlashPrefixedWindowsDrive(safeDecodeURIComponent(fileUrl.path)),
+      fileUrl.hash,
+    ),
+  );
 }
 
 export function collectWrappedTerminalLinkLine(
