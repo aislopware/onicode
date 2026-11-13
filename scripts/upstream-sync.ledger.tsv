@@ -950,3 +950,4 @@ c9f0caca1b	take	perf(server,client): attaching to a terminal with a large histor
 05eff7f6f9	take	ci: pin GitHub Actions to full commit SHAs (#33696); pins taken for ci.yml, windows-tests.yml, mobile-fingerprint-check.yml and setup-ci-deps; release.yml (already pinned, Onicode's own) and removed workflows left out
 5b64e52917	take	fix(mcp): answer MCP 2026-07-28 discovery instead of a 400 (#28683)
 0d51d5bf6d	take	fix(server): a server published through Tailscale Serve no longer reports itself as local-only (#35543); auth policy is Onicode's "loopback"; desktop exposure check kept
+719707c354	take	perf(server): save large agent recordings faster (#33930)
