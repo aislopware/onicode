@@ -16,7 +16,11 @@ const descriptor = {
 describe("ExecutionEnvironmentDescriptor", () => {
   it("decodes old, recognized and future manual installation descriptors", () => {
     expect(decodeDescriptor(descriptor).capabilities.serverInstallation).toBeUndefined();
-    for (const installation of [{ kind: "npx" }, { kind: "npm-global", prefix: "/opt/node" }]) {
+    for (const installation of [
+      { kind: "npx" },
+      { kind: "npm-global", prefix: "/opt/node" },
+      { kind: "oni-launcher", launcher: "/opt/bin/onicode", baseDir: "/data/onicode" },
+    ]) {
       expect(
         decodeDescriptor({
           ...descriptor,
@@ -24,7 +28,22 @@ describe("ExecutionEnvironmentDescriptor", () => {
         }).capabilities.serverInstallation,
       ).toEqual(installation);
     }
-    for (const installation of [{ kind: "future-manager" }, { kind: "npm-global" }]) {
+    const spaced = {
+      kind: "oni-launcher",
+      launcher: "/opt/bin/onicode ",
+      baseDir: " /data/onicode ",
+    };
+    expect(
+      decodeDescriptor({
+        ...descriptor,
+        capabilities: { ...descriptor.capabilities, serverInstallation: spaced },
+      }).capabilities.serverInstallation,
+    ).toEqual(spaced);
+    for (const installation of [
+      { kind: "future-manager" },
+      { kind: "npm-global" },
+      { kind: "oni-launcher", launcher: "onicode" },
+    ]) {
       expect(
         decodeDescriptor({
           ...descriptor,

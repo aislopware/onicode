@@ -951,3 +951,4 @@ c9f0caca1b	take	perf(server,client): attaching to a terminal with a large histor
 5b64e52917	take	fix(mcp): answer MCP 2026-07-28 discovery instead of a 400 (#28683)
 0d51d5bf6d	take	fix(server): a server published through Tailscale Serve no longer reports itself as local-only (#35543); auth policy is Onicode's "loopback"; desktop exposure check kept
 719707c354	take	perf(server): save large agent recordings faster (#33930)
+7eca0ed885	take	fix(web): hand-started onicode servers get an update command that updates them (#29462); resolveLauncherPath moved into service/pinnedRuntime.ts

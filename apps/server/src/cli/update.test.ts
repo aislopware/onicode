@@ -17,12 +17,15 @@ import { afterEach, vi } from "vite-plus/test";
 
 import packageJson from "../../package.json" with { type: "json" };
 import * as BootService from "../service/bootService.ts";
-import { pinnedRuntimePaths, prunePinnedRuntimes } from "../service/pinnedRuntime.ts";
+import {
+  pinnedRuntimePaths,
+  prunePinnedRuntimes,
+  resolveLauncherPath,
+} from "../service/pinnedRuntime.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import {
   repointLauncher,
-  resolveLauncherPath,
   resolveMirrorVersion,
   resolveNewestVersion,
   runUpdate,
@@ -378,7 +381,7 @@ it.layer(NodeServices.layer)("onicode update launcher", (it) => {
       const root = yield* fs.makeTempDirectoryScoped({ prefix: "oni-update-" });
       const launcher = path.join(root, "bin/onicode");
       yield* fs.makeDirectory(path.dirname(launcher), { recursive: true });
-      yield* fs.writeFileString(launcher, "");
+      yield* fs.writeFileString(launcher, "", { mode: 0o755 });
 
       const bare = yield* resolveLauncherPath.pipe(
         Effect.provideService(HostProcess.InvokedAs, "onicode"),
