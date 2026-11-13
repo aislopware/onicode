@@ -1092,3 +1092,4 @@ b8c74f5a13	take	fix(server): gh default remote lookup ignores an inherited GIT_D
 336a8c10c9	take	fix(server): fork PR worktrees no longer fail when a local branch owns the onicode/pr-<n> prefix (#35768)
 05cc444a4a	take	fix(web): a failed commit keeps the commit message you typed (#35781)
 8a1811e269	take	fix(server): branches whose names start with a parenthesis are no longer reported as detached (#35780)
+49440b2f1a	take	test(ssh): launcher harness no longer races its background nohup (#35788)
