@@ -1068,3 +1068,4 @@ d4b77d2448	take	fix(server): Claude background commands show how long they have 
 c2931a6e9c	take	fix(server): honor worktree prefixes when automatic naming fails (#35718)
 7bf2a43c09	take	fix(git): refuse remote switches that would silently detach HEAD (#35687)
 0465d4a87d	take	fix(mobile): retain inline image zoom on iOS (#33852)
+b54dad1032	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): Claude'\''s auto-compact setting now wins over CLAUDE_CODE_AUTO_COMPACT_WINDOW (#35737)' -m 'Ported from pingdotgg/t3code@b54dad1032.'
