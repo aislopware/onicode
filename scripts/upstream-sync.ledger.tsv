@@ -1094,3 +1094,4 @@ b8c74f5a13	take	fix(server): gh default remote lookup ignores an inherited GIT_D
 8a1811e269	take	fix(server): branches whose names start with a parenthesis are no longer reported as detached (#35780)
 49440b2f1a	take	test(ssh): launcher harness no longer races its background nohup (#35788)
 442b1db161	take	fix(web): Resume replaces Stop without a lingering Stopped button (#35755)
+d86ee1e261	take	test(web): typecheck the project file refresh test (#34061)
