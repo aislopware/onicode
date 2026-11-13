@@ -907,3 +907,4 @@ fd344d88ff	take	fix(tailscale): Serve setup fails when the tailnet has not enabl
 77f40aff37	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): onicode pair --tailscale no longer replaces another app'\''s Serve route (#35547)' -m 'Ported from pingdotgg/t3code@77f40aff37.'; no dev-server proxy check (removed); test config uses dev: false
 a05a3cd584	take	fix(shared): voice cleanup falls back after removing an instance named like an Object key (#35489)
 7c57291c4b	take	fix(server): a bind address Tailscale Serve refuses says to bind 127.0.0.1 or 0.0.0.0 (#35545); dev-share.ts hunk dropped
+db63178ff7	take	fix(desktop): Tailscale HTTPS counts as on only when Serve reaches this backend (#35544)

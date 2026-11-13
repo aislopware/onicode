@@ -750,18 +750,22 @@ export const readTailscaleServeRootHolder = Effect.fn("tailscale.readTailscaleSe
 );
 
 export const probeTailscaleHttpsEndpoint = Effect.fn("tailscale.probeTailscaleHttpsEndpoint")(
-  function* (input: { readonly baseUrl: string; readonly timeout?: Duration.Input }) {
+  function* (input: {
+    readonly baseUrl: string;
+    readonly environmentId: string;
+    readonly timeout?: Duration.Input;
+  }) {
     const client = yield* HttpClient.HttpClient;
     const descriptor = yield* Effect.gen(function* () {
       const url = new URL("/.well-known/onicode/environment", input.baseUrl);
       const response = yield* client
         .execute(HttpClientRequest.get(url.toString()))
         .pipe(Effect.flatMap(HttpClientResponse.filterStatusOk));
-      // A Serve mapping to another app also answers 2xx; only a Onicode descriptor proves this server.
+      // Another app or another Onicode server can hold the Serve port; only our own descriptor counts.
       return yield* HttpClientResponse.schemaBodyJson(ExecutionEnvironmentDescriptor)(response);
     }).pipe(Effect.timeoutOption(input.timeout ?? TAILSCALE_PROBE_TIMEOUT));
 
-    return Option.isSome(descriptor);
+    return Option.isSome(descriptor) && descriptor.value.environmentId === input.environmentId;
   },
   Effect.orElseSucceed(() => false),
 );
