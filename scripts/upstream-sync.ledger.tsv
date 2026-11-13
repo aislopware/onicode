@@ -1226,3 +1226,4 @@ d0957bc4b0	take	fix(opencode): restarted server stops an orphaned OpenCode serve
 c398b46af0	take	fix(server): Codex text generation runs when launch args define an MCP server (#36223)
 759e649ea8	take	fix(server): agent recordings keep up with the page instead of the encoder (#36215)
 9b6dde9a23	take	fix(server): session import finds compressed Codex rollouts (#34947)
+148612e181	take	fix(opencode): usage scans reuse unchanged rows and run off the event loop (#34897)
