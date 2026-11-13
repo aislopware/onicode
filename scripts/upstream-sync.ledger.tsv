@@ -881,3 +881,4 @@ c58450f2cf	take	fix(ssh): SSH environments connect over links with about a secon
 315b06c5ec	take	feat(providers): managed Antigravity and Codex installs can update past their pin (#21249)
 7ab11f1871	take	fix(web): narrow-window sidebar sheet obeys disabled panel animations (#35442)
 86ff9d073c	take	fix(web): Prompt Stash shrinks above the composer when vertical space is short (#35454)
+0fe71da30b	take	fix(acp-registry): each model keeps its own session options (#35458)
