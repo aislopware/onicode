@@ -392,6 +392,36 @@ process.exit(0);
     }),
   );
 
+  it.effect("starts the runtime in a Onicode home whose name ends in a space", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const parent = yield* fs.makeTempDirectoryScoped({ prefix: "oni-service-launcher-space-" });
+      const root = path.join(parent, "Onicode data ");
+      const versionDir = path.join(root, "runtime", "versions", "1.0.0");
+      yield* writeFakeRuntime(
+        fs,
+        path,
+        versionDir,
+        `
+import { writeFileSync } from "node:fs";
+writeFileSync(new URL("./started", import.meta.url), "");
+process.exit(0);
+`,
+      );
+      yield* fs.writeFileString(
+        path.join(root, "runtime", "service-state.json"),
+        JSON.stringify({ protocol: 4, activeVersion: "1.0.0" }),
+      );
+
+      yield* Effect.promise(() =>
+        expect(runLauncher(root)).rejects.toThrow("Active child exited unexpectedly (0)."),
+      );
+
+      assert.isTrue(yield* fs.exists(path.join(versionDir, "started")));
+    }),
+  );
+
   it.effect("refuses non-install legacy documents without rewriting or spawning", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
