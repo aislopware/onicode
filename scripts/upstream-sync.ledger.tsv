@@ -1175,3 +1175,4 @@ c29c26afeb	take	fix(server): BEL inside a DCS no longer ends it in terminal hist
 0af8be3bb1	take	kept Onicode keyboard-controller imports in ReviewCommentComposerSheet; added Dialog import
 7179113617	take	taken as is (oni-terminal path)
 6237824a2c	take	taken as is
+3376c8da92	take	taken as is (Onicode ships Linux AppImage)
