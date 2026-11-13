@@ -1038,3 +1038,4 @@ cc97303381	take	fix(cursor): mcp.json servers using ${workspaceFolder} now start
 cfad310913	take	fix(client-runtime): long MCP app download names no longer split an emoji (#35680)
 e179cefe7a	take	fix(web): collapsed reasoning previews no longer split an emoji (#35677)
 4cfcfaf2fd	take	fix(web): a question answer restored with undo is no longer sent twice (#35574)
+f59aa4eba0	take	fix(server): reject PR watches when hosting dependencies are unavailable (#33389)
