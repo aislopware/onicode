@@ -212,7 +212,10 @@ function androidActivityData(input: {
 }): Record<string, string> {
   const rows = input.state?.activities ?? [];
   const activeCount = input.state?.activeCount ?? 0;
-  const attentionCount = rows.filter(isAttention).length;
+  // An older environment sends no counts, and its rows are all there is to count.
+  const attentionCount = input.state?.attentionCount ?? rows.filter(isAttention).length;
+  const count = (phase: PushActivityRow["phase"]) =>
+    rows.filter((row) => row.phase === phase).length;
   const clean = (value: string) => value.replace(/\s+/g, " ").trim();
   const hero = rows[0];
   const title =
@@ -232,6 +235,8 @@ function androidActivityData(input: {
     activity_phase: hero?.phase ?? "",
     activity_active_count: String(activeCount),
     activity_attention_count: String(attentionCount),
+    activity_failed_count: String(input.state?.failedCount ?? count("failed")),
+    activity_done_count: String(input.state?.doneCount ?? count("completed")),
     activity_body: hero
       ? `${hero.status}: ${clean(hero.threadTitle)} · ${clean(hero.projectTitle)}`
       : "",

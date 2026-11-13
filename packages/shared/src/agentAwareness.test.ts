@@ -9,7 +9,7 @@ import type {
 import { ProviderInstanceId, RuntimeRequestId } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 
-import { projectThreadAwarenessV2 } from "./agentAwareness.ts";
+import { childThreadRequest, projectThreadAwarenessV2 } from "./agentAwareness.ts";
 
 const NOW = "2026-05-22T12:00:00.000Z";
 
@@ -264,6 +264,29 @@ describe("projectThreadAwarenessV2", () => {
     });
   });
 
+  it("shows what a thread under it asks of the person, an approval first", () => {
+    const phase = (
+      childRequest: "approval" | "user_input",
+      pendingRuntimeRequest: OrchestrationV2ThreadShell["pendingRuntimeRequest"] = null,
+    ) =>
+      projectThreadAwarenessV2({
+        environmentId: "env-1" as EnvironmentId,
+        project,
+        thread: v2Thread({ pendingRuntimeRequest }),
+        childRequest,
+      })?.phase;
+    const own = (kind: "user_input" | "command") => ({
+      id: RuntimeRequestId.make("request-own"),
+      kind,
+      createdAt: updatedAt,
+    });
+
+    expect(phase("user_input")).toBe("waiting_for_input");
+    expect(phase("approval")).toBe("waiting_for_approval");
+    expect(phase("approval", own("user_input"))).toBe("waiting_for_approval");
+    expect(phase("user_input", own("command"))).toBe("waiting_for_approval");
+  });
+
   it("does not present authentication refreshes as user approvals", () => {
     expect(
       projectThreadAwarenessV2({
@@ -278,5 +301,61 @@ describe("projectThreadAwarenessV2", () => {
         }),
       }),
     ).toMatchObject({ phase: "running", headline: "Agent is working" });
+  });
+});
+
+describe("childThreadRequest", () => {
+  const createdAt = DateTime.makeUnsafe(NOW);
+  const parent = "thread-1" as ThreadId;
+  const request = (kind: "user_input" | "command" | "auth_refresh", userOnly?: true) => ({
+    id: RuntimeRequestId.make("request-1"),
+    kind,
+    createdAt,
+    ...(userOnly ? { userOnly } : {}),
+  });
+  const child = (
+    overrides: Partial<Parameters<typeof childThreadRequest>[0]> & {
+      readonly sideChat?: true;
+    } = {},
+  ) => {
+    const { sideChat, ...rest } = overrides;
+    return childThreadRequest({
+      lineage: {
+        rootThreadId: parent,
+        parentThreadId: parent,
+        relationshipToParent: sideChat ? null : "subagent",
+        ...(sideChat ? { sideChat } : {}),
+      },
+      creationSource: "server",
+      status: "running",
+      activityRunStatus: "running",
+      pendingRuntimeRequest: request("command"),
+      ...rest,
+    });
+  };
+
+  it("is a live subagent's approval or the card only a person can answer", () => {
+    expect(child()).toBe("approval");
+    expect(child({ pendingRuntimeRequest: request("user_input", true) })).toBe("user_input");
+    // The agent above answers its subagent's questions itself.
+    expect(child({ pendingRuntimeRequest: request("user_input") })).toBeNull();
+    expect(child({ pendingRuntimeRequest: request("auth_refresh") })).toBeNull();
+    expect(child({ pendingRuntimeRequest: null })).toBeNull();
+    // Once its run ends, nothing waits on the answer.
+    expect(child({ status: "completed", activityRunStatus: null })).toBeNull();
+    // A provider's own subagent asks on its parent.
+    expect(child({ creationSource: "provider" })).toBeNull();
+  });
+
+  it("is anything a side chat asks, and nothing a listed thread does", () => {
+    expect(child({ sideChat: true, pendingRuntimeRequest: request("user_input") })).toBe(
+      "user_input",
+    );
+    expect(child({ sideChat: true })).toBe("approval");
+    expect(
+      child({
+        lineage: { rootThreadId: parent, parentThreadId: null, relationshipToParent: null },
+      }),
+    ).toBeNull();
   });
 });

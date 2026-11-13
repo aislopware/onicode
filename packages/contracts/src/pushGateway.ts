@@ -82,10 +82,17 @@ export const PushActivityRow = Schema.Struct({
 export type PushActivityRow = typeof PushActivityRow.Type;
 
 /** One environment's agents as the Live Activity and the Android ongoing notification show them. */
+const PushActivityCount = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 9999 }));
+
 export const PushActivityState = Schema.Struct({
   title: text(120),
   subtitle: text(120),
-  activeCount: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 9999 })),
+  activeCount: PushActivityCount,
+  /** Of the active ones, those waiting for the person. Rows are capped, so they cannot say. */
+  attentionCount: Schema.optionalKey(PushActivityCount),
+  /** Results not yet opened. Absent, like the count above, from an older environment. */
+  failedCount: Schema.optionalKey(PushActivityCount),
+  doneCount: Schema.optionalKey(PushActivityCount),
   updatedAt: text(40),
   activities: Schema.Array(PushActivityRow).check(Schema.isMaxLength(PUSH_ACTIVITY_MAX_ROWS)),
 });
@@ -119,7 +126,7 @@ export const PushMessage = Schema.Struct({
       state: Schema.NullOr(PushActivityState),
       /** When the state stops being worth showing if no later update arrives. */
       expiresAt: Schema.optionalKey(EpochMillis),
-      /** A count on the card changed. iOS delivers any other update when it finds convenient. */
+      /** Must not arrive late: a changed count, or a keepalive. iOS holds any other update back. */
       urgent: Schema.optionalKey(Schema.Boolean),
     }),
   ),

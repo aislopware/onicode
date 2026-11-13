@@ -3,6 +3,7 @@ import * as NodeCrypto from "node:crypto";
 
 import {
   type AuthSessionId,
+  isListedThreadLineage,
   type OrchestrationV2DomainEvent,
   type PushDevice,
   type PushDeviceId,
@@ -17,7 +18,13 @@ import {
   type PushMessage,
   type PushNotification,
 } from "@onicode/contracts/pushGateway";
-import { type AgentAwarenessState, projectThreadAwarenessV2 } from "@onicode/shared/agentAwareness";
+import {
+  type AgentAwarenessState,
+  type ChildThreadRequest,
+  childThreadRequest,
+  projectThreadAwarenessV2,
+  turnItemCanChangeUserWait,
+} from "@onicode/shared/agentAwareness";
 import { makeDrainableWorker } from "@onicode/shared/DrainableWorker";
 import { turnItemUpdateCanEndBackgroundWork } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import {
@@ -157,7 +164,11 @@ const TRACKED_EVENTS: ReadonlySet<string> = new Set([
 
 /** Whether an event can change what a phone shows for its thread. */
 function changesPushActivity(event: OrchestrationV2DomainEvent): boolean {
-  if (event.type === "turn-item.updated") return turnItemUpdateCanEndBackgroundWork(event.payload);
+  if (event.type === "turn-item.updated") {
+    return (
+      turnItemUpdateCanEndBackgroundWork(event.payload) || turnItemCanChangeUserWait(event.payload)
+    );
+  }
   if (event.type === "thread.created" && event.payload.historyOrigin === "v1_import") return false;
   return TRACKED_EVENTS.has(event.type);
 }
@@ -227,6 +238,11 @@ const make = Effect.gen(function* () {
   let tracking = false;
   const states = new Map<ThreadId, AgentAwarenessState>();
   const confirmDeadlines = new Map<ThreadId, number>();
+  /** What each thread shown under another asks, and the listed thread that shows it. */
+  const childRequests = new Map<
+    ThreadId,
+    { readonly listed: ThreadId; readonly request: ChildThreadRequest }
+  >();
   /** The activity each device last received, to skip what would look the same. */
   const delivered = new Map<PushDeviceId, Activity>();
   /**
@@ -243,9 +259,51 @@ const make = Effect.gen(function* () {
 
   const project = Effect.fn("PushNotifications.project")(function* (thread: AgentAwarenessThread) {
     const owner = yield* projects.getById(thread.projectId);
-    return Option.isNone(owner)
-      ? null
-      : projectThreadAwarenessV2({ environmentId, project: owner.value, thread });
+    if (Option.isNone(owner)) return null;
+    const asked = [...childRequests.values()]
+      .filter((child) => child.listed === thread.id)
+      .map((child) => child.request);
+    return projectThreadAwarenessV2({
+      environmentId,
+      project: owner.value,
+      thread,
+      childRequest: asked.includes("approval") ? "approval" : (asked[0] ?? null),
+    });
+  });
+
+  const readThread = Effect.fn("PushNotifications.readThread")(function* (threadId: ThreadId) {
+    return (yield* threads.getAgentAwarenessSnapshot(threadId)).threads[0];
+  });
+
+  /**
+   * Records what a thread shown under another asks. Returns the listed thread whose row that
+   * changes, or null when nothing changed.
+   */
+  const noteChildRequest = Effect.fn("PushNotifications.noteChildRequest")(function* (
+    threadId: ThreadId,
+    thread: AgentAwarenessThread | undefined,
+  ) {
+    const before = childRequests.get(threadId);
+    const request =
+      thread === undefined || thread.archivedAt !== null ? null : childThreadRequest(thread);
+    if (thread === undefined || request === null) {
+      childRequests.delete(threadId);
+      return before?.listed ?? null;
+    }
+    if (before?.request === request) return null;
+    let listed = before?.listed ?? null;
+    const seen = new Set([threadId]);
+    let parentId = thread.lineage.parentThreadId;
+    while (listed === null && parentId !== null && !seen.has(parentId)) {
+      seen.add(parentId);
+      const parent = yield* readThread(parentId);
+      if (parent === undefined) return null;
+      if (isListedThreadLineage(parent.lineage)) listed = parent.id;
+      parentId = parent.lineage.parentThreadId;
+    }
+    if (listed === null) return null;
+    childRequests.set(threadId, { listed, request });
+    return listed;
   });
 
   const seed = Effect.fn("PushNotifications.seed")(function* () {
@@ -254,6 +312,12 @@ const make = Effect.gen(function* () {
     const snapshot = yield* threads.getAgentAwarenessSnapshot();
     states.clear();
     confirmDeadlines.clear();
+    childRequests.clear();
+    // The snapshot holds listed threads only, and their rows show what the others ask.
+    for (const entry of yield* threads.listActiveShellIndex()) {
+      if (!entry.mayBeLive || isListedThreadLineage(entry.lineage)) continue;
+      yield* noteChildRequest(entry.id, yield* readThread(entry.id));
+    }
     for (const thread of snapshot.threads) {
       if (thread.archivedAt !== null) continue;
       const state = yield* project(thread);
@@ -265,6 +329,7 @@ const make = Effect.gen(function* () {
     tracking = false;
     states.clear();
     confirmDeadlines.clear();
+    childRequests.clear();
     delivered.clear();
     refreshDueAt.clear();
     activityStale = false;
@@ -343,11 +408,11 @@ const make = Effect.gen(function* () {
         : undefined;
     if (!device.preferences.activity) refreshDueAt.delete(deviceId);
     const refreshDue = refreshDueAt.get(deviceId);
+    const overdue = refreshDue !== undefined && now >= refreshDue;
     const activity =
       input.activity !== undefined &&
       device.preferences.activity &&
-      (delivered.get(deviceId)?.identity !== input.activity.identity ||
-        (refreshDue !== undefined && now >= refreshDue))
+      (delivered.get(deviceId)?.identity !== input.activity.identity || overdue)
         ? input.activity
         : undefined;
 
@@ -400,15 +465,19 @@ const make = Effect.gen(function* () {
       ? null
       : usable(device.liveActivityUpdateGrant, device.liveActivityUpdateGrantExpiresAt, now);
     if (updateGrant !== null) {
-      // APNs holds a low-priority update back, sometimes for minutes, so a count must not ride one.
-      const urgent = delivered.get(deviceId)?.counts !== activity.counts;
+      // APNs holds a low-priority update back, sometimes for minutes: a count would lag, and a
+      // keepalive would arrive after the card had already called itself out of date.
+      const urgent = overdue || delivered.get(deviceId)?.counts !== activity.counts;
       const result = yield* send(device, "liveActivityUpdate", updateGrant, {
         activity: { state, ...(urgent ? { urgent } : {}) },
       });
       if (result.outcome === "delivered") {
         delivered.set(deviceId, activity);
         if (working) {
-          refreshDueAt.set(deviceId, now + PUSH_ACTIVITY_KEEPALIVE_MS);
+          // One iOS may hold back does not move the card's out-of-date time when it is sent.
+          if (urgent || !refreshDueAt.has(deviceId)) {
+            refreshDueAt.set(deviceId, now + PUSH_ACTIVITY_KEEPALIVE_MS);
+          }
         } else {
           refreshDueAt.delete(deviceId);
           // The gateway ended the activity, so its token is spent.
@@ -555,12 +624,21 @@ const make = Effect.gen(function* () {
           );
   });
 
-  const processThread = Effect.fn("PushNotifications.processThread")(function* (
-    threadId: ThreadId,
-  ) {
+  const processThread = Effect.fn("PushNotifications.processThread")(function* (changed: ThreadId) {
     if (!tracking) return null;
     const now = yield* Clock.currentTimeMillis;
-    const found = (yield* threads.getAgentAwarenessSnapshot(threadId)).threads[0];
+    let threadId = changed;
+    let found = yield* readThread(threadId);
+    if (
+      childRequests.has(threadId) ||
+      (found !== undefined && !isListedThreadLineage(found.lineage))
+    ) {
+      // A thread shown under another has no row: the listed thread above it shows what it asks.
+      const listed = yield* noteChildRequest(threadId, found);
+      if (listed === null) return null;
+      threadId = listed;
+      found = yield* readThread(listed);
+    }
     const thread = found === undefined || found.archivedAt !== null ? undefined : found;
     const next = thread === undefined ? null : yield* project(thread);
     const previous = states.get(threadId);

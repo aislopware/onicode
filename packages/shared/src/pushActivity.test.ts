@@ -136,12 +136,30 @@ describe("pushActivityState", () => {
     expect(counts([agent("a", "running"), agent("b", "running"), agent("c", "starting")])).not.toBe(
       before,
     );
-    expect(counts([agent("a", "running"), agent("b", "waiting_for_input")])).not.toBe(before);
+    const asking = counts([agent("a", "running"), agent("b", "waiting_for_input")]);
+    expect(asking).not.toBe(before);
+    // One thread stops waiting as another starts: the numbers hold, and the card must still move.
+    expect(counts([agent("a", "waiting_for_input"), agent("b", "running")])).not.toBe(asking);
+    expect(counts([agent("a", "running"), agent("b", "waiting_for_approval")])).not.toBe(asking);
     expect(counts([agent("a", "running"), agent("b", "completed")])).not.toBe(before);
     // More agents than rows: the count is all that tells the sixth from the seventh.
-    const many = (length: number) =>
-      counts(Array.from({ length }, (_, index) => agent(`t${index}`, "running")));
-    expect(many(7)).not.toBe(many(6));
+    const many = (length: number, phase: AgentAwarenessPhase) =>
+      Array.from({ length }, (_, index) => agent(`${phase}${index}`, phase));
+    expect(counts(many(7, "running"))).not.toBe(counts(many(6, "running")));
+    const crowded = [
+      ...many(4, "running"),
+      ...many(3, "completed"),
+      agent("failed", "failed"),
+      agent("input", "waiting_for_input"),
+    ];
+    expect(activity(crowded)?.state).toMatchObject({
+      activeCount: 5,
+      attentionCount: 1,
+      failedCount: 1,
+      doneCount: 3,
+    });
+    expect(activity(crowded)?.state.activities).toHaveLength(5);
+    expect(counts([...crowded, agent("late", "completed")])).not.toBe(counts(crowded));
   });
 });
 

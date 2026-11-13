@@ -100,6 +100,37 @@ describe("push payloads at the contract's limits", () => {
     expect(priority(true)).toBe("10");
   });
 
+  it("counts every agent for Android, from the rows when the environment sends no counts", () => {
+    const data = (counts: Partial<PushActivityState>) =>
+      fcmRequest({
+        deviceId: "device",
+        environmentId: "env-1",
+        notification: undefined,
+        activity: {
+          state: {
+            ...state,
+            ...counts,
+            activities: state.activities.map((row, index) => ({
+              ...row,
+              phase: index === 0 ? "waiting_for_input" : index === 1 ? "failed" : "completed",
+            })),
+          },
+        },
+        nowMillis: 0,
+      }).data;
+
+    expect(data({ attentionCount: 6, failedCount: 7, doneCount: 8 })).toMatchObject({
+      activity_attention_count: "6",
+      activity_failed_count: "7",
+      activity_done_count: "8",
+    });
+    expect(data({})).toMatchObject({
+      activity_attention_count: "1",
+      activity_failed_count: "1",
+      activity_done_count: "3",
+    });
+  });
+
   it("shortens text to fit FCM without touching ids or links", () => {
     const { data } = fcmRequest({
       deviceId: id(128),
