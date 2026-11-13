@@ -1002,3 +1002,4 @@ d9bed934d0	take	fix(server): pending request reads keep question option previews
 a135972c7e	take	fix(opencode): preserve owned turns during server recovery (#25596)
 072254ddd3	take	fix(server): baseline existing pull request checks when watching (#23522)
 2ff2770f42	take	fix(server): saved preview snapshot failures name the screenshot destination (#35649)
+beaa647dc1	take	fix(ssh): distinguish incompatible Node from a missing executable (#35607)
