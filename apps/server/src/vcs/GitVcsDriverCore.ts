@@ -2629,7 +2629,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
             cwd,
             ["rev-parse", "--git-path", "index", "--git-path", "objects"],
           )).split("\n");
-          const indexPath = path.resolve(cwd, indexValue.trim());
+          // Git's relative paths use the physical cwd, even when the project uses a symlink.
+          const physicalCwd = yield* fileSystem.realPath(cwd);
+          const indexPath = path.resolve(physicalCwd, indexValue.trim());
           const directory = yield* fileSystem.makeTempDirectoryScoped({
             prefix: "onicode-commit-index-",
           });
@@ -2647,7 +2649,7 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           const quoted = (entry: string) =>
             entry.startsWith('"') ? entry : `"${entry.replace(/[\\"]/g, "\\$&")}"`;
           const alternates = [
-            path.resolve(cwd, objectsValue.trim()),
+            path.resolve(physicalCwd, objectsValue.trim()),
             ...objectDirectories
               .split("\n")
               .flatMap((line) =>
