@@ -866,3 +866,4 @@ e96c96eafe	take	fix(server): storage cleanup stops holding usage-limited threads
 88bf393b30	take	fix(server): @ file search finds filenames containing literal braces (#35239)
 2a1e43e89e	take	git commit -a --author='Joseph Vidal <135430578+josephv123@users.noreply.github.com>' -m 'fix(server): oni_thread_search says which thread is the caller'\''s (#35377)' -m 'Ported from pingdotgg/t3code@2a1e43e89e.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 a909ea423c	take	perf(server): older history pages load without indexing the whole thread (#34573)
+f4cf69f522	take	fix(server): selecting a remote branch lands on its local branch (#35400)
