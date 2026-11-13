@@ -1180,3 +1180,4 @@ d63c0ec8eb	skip	Onicode has no agent-context-budget workflow
 2dd207aabc	take	taken as is
 a2be070f30	take	taken as is
 5f85768394	take	taken as is
+4596872940	take	taken as is; capability optional, older clients/servers keep polling
