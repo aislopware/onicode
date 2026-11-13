@@ -1,3 +1,6 @@
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- the SDK's spawn hook returns a Node child process.
+import * as NodeChildProcess from "node:child_process";
+
 import { resolveProviderProbeTimeoutMs } from "@onicode/provider-core/server/snapshotProbe";
 import {
   type ClaudeSettings,
@@ -17,6 +20,8 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { createModelCapabilities } from "@onicode/shared/model";
+import { envTrampoline, supportsEnvChdir } from "@onicode/shared/envTrampoline";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 import {
   query as claudeQuery,
@@ -27,6 +32,7 @@ import {
   type SDKControlGetUsageResponse,
   type SDKUserMessage,
   type SettingSource,
+  type SpawnOptions as ClaudeSpawnOptions,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import {
@@ -235,6 +241,27 @@ const CLAUDE_CAPABILITIES_PROBE_SETTING_SOURCES = [
   "local",
 ] as const satisfies ReadonlyArray<SettingSource>;
 
+/**
+ * The SDK's own spawn stats the executable and hands libuv the workspace as cwd, so a mount
+ * that stops answering freezes the server. `env` enters the cwd and finds the CLI in the child.
+ * A shell would not do: dash drops the exported Bash functions a launcher may call.
+ */
+export function spawnClaudeProbeThroughEnv(
+  { command, args, cwd, env, signal }: ClaudeSpawnOptions,
+  onStderr?: (chunk: string) => void,
+) {
+  const launch = envTrampoline(command, args, cwd) ?? { command, args, cwd };
+  const child = NodeChildProcess.spawn(launch.command, launch.args, {
+    ...("cwd" in launch ? { cwd: launch.cwd } : {}),
+    env,
+    signal,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  // The SDK reads stderr only from processes it spawns itself, so a custom spawn forwards it.
+  child.stderr.setEncoding("utf8").on("data", onStderr ?? (() => {}));
+  return child;
+}
+
 export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly executablePath: string;
   readonly abortController: AbortController;
@@ -242,8 +269,15 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly cwd: string | undefined;
   readonly managedMcpConfig: boolean;
   readonly onStderr: (chunk: string) => void;
+  readonly spawnThroughEnv: boolean;
 }): ClaudeQueryOptions {
   return {
+    ...(input.spawnThroughEnv
+      ? {
+          spawnClaudeCodeProcess: (options: ClaudeSpawnOptions) =>
+            spawnClaudeProbeThroughEnv(options, input.onStderr),
+        }
+      : {}),
     persistSession: false,
     pathToClaudeCodeExecutable: input.executablePath,
     abortController: input.abortController,
@@ -483,6 +517,8 @@ const probeClaudeCapabilities = (
           ...(yield* readClaudeSettingsEnv(claudeSettings, cwd, claudeEnvironment)),
         })
       : 0;
+    const spawnThroughEnv =
+      (yield* HostProcess.Platform) === "linux" && (yield* Effect.promise(supportsEnvChdir));
     return yield* Effect.tryPromise({
       try: async () => {
         const q = claudeQuery({
@@ -497,6 +533,7 @@ const probeClaudeCapabilities = (
             cwd,
             managedMcpConfig,
             onStderr,
+            spawnThroughEnv,
           }),
         });
         const init = await q.initializationResult();
