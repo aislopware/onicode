@@ -1100,3 +1100,4 @@ bb9658d3a7	take	perf(shared): command output failure scan rejects clean output i
 5ccc65be0a	take	test(web): sidebar drag test opens its folder past the shift guard (#35803)
 7fb54eb051	take	feat(mobile): secret field gets an eye toggle to show what you typed (#35783)
 5ceabb3fe8	take	fix(mobile): a cold launch shows the cached thread rows with the first frame (#35683)
+45b0fe4a8e	take	fix(server): ACP terminal MCP calls answer interleaved server requests (#35805)
