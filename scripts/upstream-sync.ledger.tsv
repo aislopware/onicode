@@ -1102,3 +1102,4 @@ bb9658d3a7	take	perf(shared): command output failure scan rejects clean output i
 5ceabb3fe8	take	fix(mobile): a cold launch shows the cached thread rows with the first frame (#35683)
 45b0fe4a8e	take	fix(server): ACP terminal MCP calls answer interleaved server requests (#35805)
 2755a951a1	take	fix(web): "Try again" recovers from a failed page chunk load (#35806)
+36371de910	take	fix(shared): read MCP event streams whatever the case of the content type (#35815)
