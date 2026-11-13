@@ -917,3 +917,4 @@ c846833a6b	take	fix(server): provider instances named constructor, toString or v
 abca54783c	take	test(server): bind-address Serve refusal test answers serve status (#35568)
 7f6ba5bd24	skip	only serves the outside-app MCP wizard (Grok Bot setup), which Onicode declined
 444ea535e3	take	test(web): split the cloud voice settings flow into independent cases (#35563); kept Onicode's bearer test target
+63edc304c0	take	fix(desktop): SSH suggestions from known_hosts keep their port (#35556)
