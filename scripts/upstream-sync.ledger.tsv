@@ -904,3 +904,4 @@ dbbd1d253c	take	fix(server): "Open in" stops offering the tailnet name after `ta
 13645b1904	take	fix(web): align timeline activity timestamps (#35549)
 fd344d88ff	take	fix(tailscale): Serve setup fails when the tailnet has not enabled HTTPS (#35538); dev-share.ts hunk dropped (Onicode has no --share)
 0c3a9982b1	skip	Onicode's dev-runner has no --share mode or shareDevServer
+77f40aff37	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): onicode pair --tailscale no longer replaces another app'\''s Serve route (#35547)' -m 'Ported from pingdotgg/t3code@77f40aff37.'; no dev-server proxy check (removed); test config uses dev: false
