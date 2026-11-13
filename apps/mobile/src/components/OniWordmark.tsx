@@ -1,36 +1,32 @@
 import {
-  ONI_MARK_BODY,
-  ONI_MARK_EARS,
-  ONI_MARK_EYE_STROKE_WIDTH,
-  ONI_MARK_EYES,
+  ONI_MARK_ANGLED,
+  ONI_MARK_FACE_STOPS,
+  ONI_MARK_INK,
   ONI_MARK_SIDES,
   ONI_MARK_VIEW_BOX,
+  ONI_MARK_WEIGHTS,
+  oniMarkEyePath,
+  oniMarkOutlinePath,
 } from "@onicode/shared/oniMark";
 import { useId } from "react";
-import type { ColorValue } from "react-native";
-import Svg, { Mask, Path, Rect } from "react-native-svg";
+import Svg, { Defs, LinearGradient, Path, Stop } from "react-native-svg";
 import { withUniwind } from "uniwind";
+
+import { useAppearancePreferences } from "../features/settings/appearance/AppearancePreferencesProvider";
 
 const ThemedPath = withUniwind(Path);
 const ASPECT_RATIO = 566 / 500;
+const OUTLINE = oniMarkOutlinePath(ONI_MARK_ANGLED.outline);
+const TINY_BELOW = 14;
 
-/** The mochi oni, front-on, in one ink; its eyes are holes, so the background shows through. */
-export function OniWordmark(props: {
-  readonly height: number;
-  readonly color?: ColorValue;
-  readonly colorClassName?: string;
-  /** Outline in mark units (the mark is 500 tall) that thickens the ink. */
-  readonly strokeWidth?: number;
-}) {
-  const maskId = `oni-eyes-${useId().replace(/[^\w-]/g, "")}`;
-  const ink = {
-    color: props.color,
-    colorClassName: props.colorClassName,
-    fill: "currentColor",
-    ...(props.strokeWidth
-      ? { stroke: "currentColor", strokeWidth: props.strokeWidth, strokeLinejoin: "round" as const }
-      : {}),
-  };
+/**
+ * The mochi oni from the app icon: a blush face with dark eyes. On light it sits inside a rim in
+ * the text colour; on dark the rim would only bloat a face that already stands out, so it is dropped.
+ */
+export function OniWordmark(props: { readonly height: number }) {
+  const faceId = `oni-face-${useId().replace(/[^\w-]/g, "")}`;
+  const light = useAppearancePreferences().themeAppearance === "light";
+  const weight = props.height < TINY_BELOW ? ONI_MARK_WEIGHTS.tiny : ONI_MARK_WEIGHTS.regular;
   return (
     <Svg
       accessibilityLabel="Onicode"
@@ -38,23 +34,34 @@ export function OniWordmark(props: {
       width={props.height * ASPECT_RATIO}
       viewBox={ONI_MARK_VIEW_BOX}
     >
-      <Mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="800" height="800">
-        <Rect width="800" height="800" fill="#fff" />
-        {ONI_MARK_SIDES.map((side) => (
-          <Path
-            key={side}
-            d={ONI_MARK_EYES[side]}
-            fill="none"
-            stroke="#000"
-            strokeWidth={ONI_MARK_EYE_STROKE_WIDTH}
-            strokeLinecap="round"
-          />
-        ))}
-      </Mask>
+      <Defs>
+        <LinearGradient id={faceId} x1="0" y1="1" x2="0" y2="0">
+          {ONI_MARK_FACE_STOPS.map((color, i) => (
+            <Stop key={color} offset={i} stopColor={color} />
+          ))}
+        </LinearGradient>
+      </Defs>
+      {light ? (
+        <ThemedPath
+          d={OUTLINE}
+          colorClassName="accent-foreground"
+          fill="currentColor"
+          stroke="currentColor"
+          strokeWidth={weight.rim}
+          strokeLinejoin="round"
+        />
+      ) : null}
+      <Path d={OUTLINE} fill={`url(#${faceId})`} />
       {ONI_MARK_SIDES.map((side) => (
-        <ThemedPath key={side} d={ONI_MARK_EARS[side]} {...ink} />
+        <Path
+          key={side}
+          d={oniMarkEyePath(ONI_MARK_ANGLED.eyes[side])}
+          fill="none"
+          stroke={ONI_MARK_INK}
+          strokeWidth={weight.eye}
+          strokeLinecap="round"
+        />
       ))}
-      <ThemedPath d={ONI_MARK_BODY} mask={`url(#${maskId})`} {...ink} />
     </Svg>
   );
 }
