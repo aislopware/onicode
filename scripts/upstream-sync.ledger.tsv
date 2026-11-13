@@ -1326,3 +1326,4 @@ c8db8be305	take	fix(web): a run waiting on foreground subagents says so instead 
 aaa3dbabb1	take	fix(server): a follow-up to a delegated child waits for its awaited background work
 08b8689a85	take	fix(provider-grok): Grok follow-ups queue instead of cancelling the running tool
 b537916099	take	fix(server): thread list builds metadata only for the page it returns
+3c1be119b9	take	fix(web): middle-clicking empty chat space on Linux no longer pastes into the composer
