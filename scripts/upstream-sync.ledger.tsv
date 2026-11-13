@@ -1225,3 +1225,4 @@ e41941779a	take	fix(server): stopping the service during the pre-update backup e
 d0957bc4b0	take	fix(opencode): restarted server stops an orphaned OpenCode server started through a wrapper (#34959)
 c398b46af0	take	fix(server): Codex text generation runs when launch args define an MCP server (#36223)
 759e649ea8	take	fix(server): agent recordings keep up with the page instead of the encoder (#36215)
+9b6dde9a23	take	fix(server): session import finds compressed Codex rollouts (#34947)
