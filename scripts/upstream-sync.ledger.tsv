@@ -1264,3 +1264,4 @@ a09e54a363	take	fix(server): proxied usage limits take their reset time from the
 daed91f264	take	fix(shared): batch SQLite worker result transfers (#36067)
 78b654f998	take	fix(server): Stop clears a finished delegated child's row held by a stale native subagent (#32307)
 ff30b16af4	take	fix(desktop): clicking above the Settings or Usage modal closes it again (#36266)
+065aca4889	take	test(web): code block highlight test waits for the highlighter, not a 1s poll (#36269); dropped upstream's HostImageUrlContext import (not in Onicode)
