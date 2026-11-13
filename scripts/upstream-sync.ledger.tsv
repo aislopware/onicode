@@ -1025,3 +1025,4 @@ c60aa1aaf9	take	fix(server): explain how to close unclaimed browser tabs (#29205
 e895a56c4b	take	git commit -a --author='Bin Jamshid <gut.commune-0e@icloud.com>' -m 'fix(mobile): select part of a source file'\''s text on iOS (#33218)' -m 'Ported from pingdotgg/t3code@e895a56c4b.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 bc0befe90a	take	fix(mobile): show loading until existing threads are known (#28663)
 aa37097093	take	fix(web): streamed device toolbar starts at the panel size (#35664)
+1e6a251871	take	fix(acp): preserve OMP single-choice questions and custom answers (#24012)
