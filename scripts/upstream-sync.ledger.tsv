@@ -900,3 +900,4 @@ a7779fc558	take	fix(web): a focused folder New thread button no longer draws ove
 3c9a54979a	take	fix(grok): Grok MCP calls store the real tool, arguments, and result (#35502)
 17ddf292aa	take	fix(server): Load earlier turns no longer drops the middle of threads an agent started (#35405)
 1113e4b510	skip	Onicode's dev-runner has no --share mode, so there is no tailnet mapping to clean up
+dbbd1d253c	take	fix(server): "Open in" stops offering the tailnet name after `tailscale down` (#35539)
