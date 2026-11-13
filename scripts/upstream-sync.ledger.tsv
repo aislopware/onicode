@@ -959,3 +959,4 @@ a03f7185f2	take	perf(web): PDF Find jumps to the first match in long PDFs 3.1x f
 d9a97e7c49	take	fix(web): sidebar keeps the open thread active while Settings or Usage is open (#28703); Sidebar hooks swapped in place (Onicode hook order kept); no redirect import
 9c7618ba1c	take	fix(web): gitignore fences in the rich-text composer highlight as ini, as chat does (#35603)
 451e3756a5	take	fix(web): keep later navigation when thread deletion completes (#33953)
+0bc993ac09	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(server): Git status finds the default branch when the only remote isn'\''t origin (#28815)' -m 'Ported from pingdotgg/t3code@0bc993ac09.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
