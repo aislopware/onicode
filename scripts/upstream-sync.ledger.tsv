@@ -871,3 +871,4 @@ a2685e64d3	take	fix(web): SCP-style Git remotes no longer become terminal file l
 d0f9d4dcc0	take	fix(web): sidebar draft previews show cited assistant text, not the raw link (#35406)
 0cd6a73433	take	fix(web): pasting an image the draft already has no longer flashes a preparing tile (#35265)
 0b21a82aa3	take	fix(shared): pooled limits weight each account by its plan size (#35427)
+60c3b222db	take	fix(mobile): browser and MCP-app links with blank IDs no longer crash the screen (#35415)
