@@ -1075,3 +1075,4 @@ b54dad1032	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>
 59e64eef88	take	fix(server): oni_thread_read returns the newest items and fits in agent context (#33428)
 a119af0079	take	fix(server): remote status keeps a local upstream named without a slash (#35766)
 36254ab82e	take	fix(server): a watched PR stops holding its thread once its checks finish (#33214)
+ce268642cc	take	fix(server): a slow database write no longer freezes the server (#35728)
