@@ -17,6 +17,8 @@ import { appAtomRegistry } from "./atom-registry";
 import {
   activeComposerDraftKey,
   beginQueuedRunEdit,
+  composerDraftKeyForThread,
+  endQueuedRunEdit,
   getQueuedRunEdit,
   queuedEditDraftKey,
   removeQueuedRunEditAttachment,
@@ -264,5 +266,22 @@ describe("activeComposerDraftKey", () => {
 
   it("falls back to the thread's draft once the edit has ended", () => {
     expect(activeComposerDraftKey(threadKey, editKey, null)).toBe(threadKey);
+  });
+});
+
+describe("composerDraftKeyForThread", () => {
+  it("targets the queued edit's draft only while an edit is open", () => {
+    const threadKey = "env:thread-outside-insert";
+    const runId = RunId.make("run-1");
+    const runs = Atom.make<ReadonlyArray<{ readonly id: RunId; readonly status: string }> | null>([
+      { id: runId, status: "queued" },
+    ]);
+    expect(composerDraftKeyForThread(threadKey)).toBe(threadKey);
+
+    beginQueuedRunEdit(threadKey, edit([]), runs);
+    expect(composerDraftKeyForThread(threadKey)).toBe(queuedEditDraftKey(threadKey, runId));
+
+    endQueuedRunEdit(threadKey);
+    expect(composerDraftKeyForThread(threadKey)).toBe(threadKey);
   });
 });

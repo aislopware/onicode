@@ -45,6 +45,12 @@ export { queuedEditDraftKey } from "./queued-edit-draft-key";
 
 export const getQueuedRunEdit = queuedRunEdits.get;
 
+/** The draft the thread's composer shows now; resolve per call so late inserts follow an edit. */
+export function composerDraftKeyForThread(threadKey: string): string {
+  const edit = getQueuedRunEdit(threadKey);
+  return edit === null ? threadKey : queuedEditDraftKey(threadKey, edit.runId);
+}
+
 /**
  * The draft a sheet opened for `requestedKey` should edit now: a queued edit's
  * draft only while that edit is still open, else the thread's own draft.

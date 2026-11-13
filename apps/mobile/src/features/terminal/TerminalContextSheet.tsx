@@ -14,6 +14,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { Sheet } from "../../components/ui/Sheet";
 import { Button } from "../../components/ui/Button";
 import { uuidv4 } from "../../lib/uuid";
+import { composerDraftKeyForThread } from "../../state/queued-run-edit";
 import { insertComposerDraftContext } from "../../state/use-composer-drafts";
 
 export function TerminalContextSheet(props: {
@@ -45,10 +46,13 @@ export function TerminalContextSheet(props: {
       text: selectedText,
     };
     if (
-      !insertComposerDraftContext(`${props.environmentId}:${props.threadId}`, {
-        text: formatComposerContextReference(record),
-        context: { version: 1, records: [record] },
-      })
+      !insertComposerDraftContext(
+        composerDraftKeyForThread(`${props.environmentId}:${props.threadId}`),
+        {
+          text: formatComposerContextReference(record),
+          context: { version: 1, records: [record] },
+        },
+      )
     ) {
       Dialog.alert("Too many context items", "Remove some context from the draft and try again.");
       return;

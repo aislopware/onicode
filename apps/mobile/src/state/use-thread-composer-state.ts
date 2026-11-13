@@ -104,6 +104,7 @@ import { DEFAULT_FOLLOW_UP_BEHAVIOR } from "../lib/followUpBehavior";
 import { mobilePreferencesAtom } from "./preferences";
 import { environmentThreadDetails } from "./threads";
 import {
+  composerDraftKeyForThread,
   endQueuedRunEdit,
   getQueuedRunEdit,
   queuedEditDraftKey,
@@ -147,11 +148,11 @@ export function appendReviewCommentToDraft(input: {
   readonly text: string;
   readonly attachments?: ReadonlyArray<DraftComposerImageAttachment>;
 }): void {
-  const threadKey = scopedThreadKey(input.environmentId, input.threadId);
+  const draftKey = composerDraftKeyForThread(scopedThreadKey(input.environmentId, input.threadId));
   const upgraded = upgradeLegacyContextMessage(input.text);
   if (
     !insertComposerDraftContext(
-      threadKey,
+      draftKey,
       reidentifyComposerContext(upgraded.text, upgraded.records, uuidv4),
     )
   ) {
@@ -159,7 +160,7 @@ export function appendReviewCommentToDraft(input: {
     return;
   }
   if (input.attachments && input.attachments.length > 0) {
-    const rejectedCount = appendComposerDraftAttachments(threadKey, input.attachments, {
+    const rejectedCount = appendComposerDraftAttachments(draftKey, input.attachments, {
       appendReference: true,
     });
     if (rejectedCount > 0) {
@@ -170,14 +171,11 @@ export function appendReviewCommentToDraft(input: {
   }
 }
 
-/** Resolve per call so callbacks created before editing still target the current draft. */
 function activeComposerDraftKey(thread: {
   readonly environmentId: EnvironmentId;
   readonly id: ThreadId;
 }): string {
-  const threadKey = scopedThreadKey(thread.environmentId, thread.id);
-  const edit = getQueuedRunEdit(threadKey);
-  return edit === null ? threadKey : queuedEditDraftKey(threadKey, edit.runId);
+  return composerDraftKeyForThread(scopedThreadKey(thread.environmentId, thread.id));
 }
 
 export function useThreadDraftForThread(input: {
