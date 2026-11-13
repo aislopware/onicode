@@ -945,3 +945,4 @@ d90ac5c764	take	fix(ssh): timed-out SSH commands keep the output they already pr
 fc533a6c6c	take	perf(server): avoid loading provider drivers for terminal imports (#33898)
 c0df40aa54	take	fix(web): queued message preview keeps inline image labels in place (#33405)
 fa8949a28c	take	fix(web): project settings can reach each checkout on one environment (#29441)
+c9f0caca1b	take	perf(server,client): attaching to a terminal with a large history over a slow link drops from 5,555 ms to 751 ms median (7.4x) (#33942)
