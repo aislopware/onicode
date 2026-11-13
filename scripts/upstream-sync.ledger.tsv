@@ -1073,3 +1073,4 @@ b54dad1032	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>
 0bb6eaa546	take	fix(web): auto-balanced drafts recheck machine load before sending (#35658)
 4137412fe9	take	fix(web): screen readers at Everything hear context compaction start (#35739)
 59e64eef88	take	fix(server): oni_thread_read returns the newest items and fits in agent context (#33428)
+a119af0079	take	fix(server): remote status keeps a local upstream named without a slash (#35766)
