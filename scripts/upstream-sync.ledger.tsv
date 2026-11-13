@@ -1298,3 +1298,4 @@ cfc71e1a99	take	fix(web): preview annotations in question answers reach the agen
 38072bdc81	take	fix(desktop): new tabs the agent opens from links no longer steal composer focus (#36300)
 9a455f02e2	take	fix(ssh): a renamed SSH connection keeps managing its remote server (#36351)
 af9b4e41de	take	fix(server): a worktree handoff on Claude or Pi completes its run and starts the continuation (#36360); guest-message attribution in the message.dispatch case dropped (Onicode removed guests)
+0a6b3ebe22	take	fix(forgejo): Gitea branch PR lookups no longer read the whole pull request list (#36387)
