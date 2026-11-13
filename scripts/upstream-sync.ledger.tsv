@@ -910,3 +910,4 @@ a05a3cd584	take	fix(shared): voice cleanup falls back after removing an instance
 db63178ff7	take	fix(desktop): Tailscale HTTPS counts as on only when Serve reaches this backend (#35544)
 4ca5b9cdb8	take	fix(server): long startup migrations log progress and resume after a restart (#35486); test migration ids renumbered to Onicode's (upstream 81/84 -> 86/90)
 8b05078459	take	fix(scripts): mobile:e2e asks Tailscale for the address pool devices reach (#35553)
+c846833a6b	take	fix(server): provider instances named constructor, toString or valueOf can be added (#35492)
