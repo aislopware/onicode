@@ -884,3 +884,4 @@ c58450f2cf	take	fix(ssh): SSH environments connect over links with about a secon
 0fe71da30b	take	fix(acp-registry): each model keeps its own session options (#35458)
 68a564ef69	take	fix(server): ACP follow-ups sent while the agent is still busy are delivered, not failed (#35463)
 65057562b7	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(desktop): preview comment keystrokes no longer trigger the page'\''s shortcuts (#35431)' -m 'Ported from pingdotgg/t3code@65057562b7.'
+7b17bdbcef	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): file index refreshes no longer block the server on fff'\''s lock (#35460)' -m 'Ported from pingdotgg/t3code@7b17bdbcef.'; lock patch hash regenerated with vp i
