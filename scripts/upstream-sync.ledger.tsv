@@ -1138,3 +1138,4 @@ afff0d3efe	take	fix(clients): answer history no longer shows provider context fr
 7556047418	take	fix(web): copying an image with a spaced path keeps it an image (#35914)
 2e0bd97e86	take	fix(server): Force stop no longer tears down a queued follow-up that started during cleanup (#31038)
 5f7bfe565d	take	fix(azure-devops): TF400733 throttling fails diffs as rate-limited (#35929)
+ed5afae179	take	fix(acp): v2 tool updates clear nulled fields and replace raw input (#35869)
