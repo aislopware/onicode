@@ -5,7 +5,7 @@ import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-import { portCommitCommand, translatePath, translateText } from "./upstream-sync.ts";
+import { portCommitCommand, riskAreas, translatePath, translateText } from "./upstream-sync.ts";
 
 describe("upstream-sync translation", () => {
   it.each([
@@ -90,5 +90,28 @@ describe("upstream-sync port commit", () => {
     } finally {
       NodeFS.rmSync(repo, { recursive: true, force: true });
     }
+  });
+});
+
+describe("upstream-sync risk areas", () => {
+  it.each([
+    [["apps/server/src/git/GitCore.ts"], 40, []],
+    [
+      ["packages/contracts/src/orchestration.ts", "apps/mobile/src/App.tsx"],
+      40,
+      ["contracts", "mobile"],
+    ],
+    [["apps/server/src/persistence/Migrations/082_Example.ts"], 40, ["migrations"]],
+    [["apps/web/src/components/Sidebar.tsx"], 40, ["sidebar"]],
+    [["apps/web/src/components/SidebarRow.tsx"], 40, []],
+    [
+      ["apps/server/src/desktopUpdate/Service.ts", "apps/server/src/peer/Link.ts"],
+      40,
+      ["desktop", "auth"],
+    ],
+    [["apps/server/package.json", ".github/workflows/ci.yml"], 40, ["ci", "deps"]],
+    [["apps/web/src/composer.ts"], 401, ["401 lines"]],
+  ])("%j with %i changed lines", (paths, changedLines, expected) => {
+    expect(riskAreas(paths, changedLines)).toEqual(expected);
   });
 });
