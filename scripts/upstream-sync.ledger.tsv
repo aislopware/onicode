@@ -1070,3 +1070,4 @@ c2931a6e9c	take	fix(server): honor worktree prefixes when automatic naming fails
 0465d4a87d	take	fix(mobile): retain inline image zoom on iOS (#33852)
 b54dad1032	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): Claude'\''s auto-compact setting now wins over CLAUDE_CODE_AUTO_COMPACT_WINDOW (#35737)' -m 'Ported from pingdotgg/t3code@b54dad1032.'
 79daf43c1c	take	fix(desktop): an SSH reconnect during a desktop update no longer locks the updated app out of its Onicode home (#26191)
+0bb6eaa546	take	fix(web): auto-balanced drafts recheck machine load before sending (#35658)
