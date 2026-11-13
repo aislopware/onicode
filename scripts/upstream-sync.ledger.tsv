@@ -923,3 +923,4 @@ bd8ea12990	take	fix(server): terminal history drops the tertiary Device Attribut
 f376f5cc1d	take	fix(web): J and K step the PR guide without clicking into it first (#32302)
 cf82fb8584	take	fix(shared): preserve repository paths when switching clone protocols (#35322)
 5cff012416	take	feat(web): resize rows and columns in spreadsheet previews (#35548)
+e0d0fb33dd	take	fix(forgejo): renamed repositories keep syncing their pull request links (#32629)
