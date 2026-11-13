@@ -1058,3 +1058,4 @@ e0d6aadb88	take	feat(server): watched GitHub pull requests react when a check su
 9b0387d6cd	take	fix(web): triple-click selects the whole line around links and file chips (#32334)
 56d227836b	take	fix(projects): preserve grouped renames to repository names (#25244)
 5959787bae	take	git commit -a --author='Radu Stefan Popa <150839549+Radu028@users.noreply.github.com>' -m 'fix(acp): agents get Onicode'\''s runtime notes once per session, not on every message (#26959)' -m 'Ported from pingdotgg/t3code@5959787bae.' --trailer 'Co-authored-by: Mariusz Mazur <mmazur@redhat.com>' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+587deab7d3	take	feat(server): keep the computer awake while agents work (#34128)
