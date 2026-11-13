@@ -894,3 +894,4 @@ b42841808d	take	fix(usage): count Codex request ledgers and replace archived cac
 4c255bc9c3	take	fix(preview): Browser pane navigates when the desktop backend has no browser channel (#35424)
 ad3d60f689	skip	nightly-only electron-updater GitHub feed patch; Onicode updates from better-update on one channel
 4f86f94e15	take	fix(mobile): files with # or ? in their path keep audio playback and Markdown Preview (#35448)
+729687e23c	take	fix(web): device tab rename no longer saves on the Enter that confirms an IME candidate (#35468)
