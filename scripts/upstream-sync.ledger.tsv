@@ -1246,3 +1246,4 @@ beb528ce4d	take	fix(server): queued scheduled deliveries follow the thread's cur
 350753afac	take	fix(usage): Claude accounts with a $0 monthly cap no longer leave a blank cell (#35341)
 93aaad5b45	take	fix(web): PR conversation headers wrap instead of overflowing (#36211)
 c5dfb8ffa3	take	fix(mobile): new thread starts in the thread list's filtered project (#36234)
+a877d40b74	take	fix(opencode): models load once OpenCode 2 finishes activating its plugins (#30263)
