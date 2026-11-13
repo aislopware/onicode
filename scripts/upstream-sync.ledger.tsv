@@ -969,3 +969,4 @@ cbf9e26bc6	take	fix(server): preserve filename whitespace when reading and savin
 85b160658f	take	fix(server): keep thread tool responses small by default (#29268)
 6d535841a3	take	fix(web): a chunk that fails after boot no longer reloads the page in a loop (#29306); main.tsx resolved without the Clerk shell
 fd5cb99401	take	fix(opencode): keep ACP question choices and fold the custom answer (#25879)
+b63d3c5923	take	fix(web): sent messages honor their theme foreground (#26888)
