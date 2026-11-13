@@ -1234,3 +1234,4 @@ d3ef7e8e52	take	fix(cursor): send the catalog's default model parameters on ever
 4582a3bc68	take	fix(server): MacPorts-owned agent CLIs are no longer updated through npm or their own updater (#36229)
 286eeea19f	take	test(desktop): AppImage shim test no longer writes into its temp dir after the shim exits (#36235)
 f62fa296f0	take	fix(web): Add to another machine can find ignored files past the first 200 (#36228)
+b5c0ee56fa	take	fix(mobile): Android Back from Pulls or Usage returns to Threads (#36224)
