@@ -1306,3 +1306,4 @@ b5b470542a	take	fix(server): a Codex Stop that never completes offers Force stop
 0517d15c41	take	fix(web): provider sign-in links only open web addresses (#36392)
 aab388ddb1	take	fix(server): Claude can show the user mid-turn text in full (#36384); agent context budget re-measured for Onicode
 9f94a876b7	skip	T3's release flow bumps manifests after tagging; Onicode's release job tags the commit whose apps/desktop/package.json already carries the version, so tagged source reports it correctly. Taking it would only add git calls to every build config load
+0b5f35cd65	take	fix(server): storage cleanup prunes idle No project folders under ~/.onicode/scratch (#36369)
