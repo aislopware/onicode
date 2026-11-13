@@ -1054,3 +1054,4 @@ c19b8f0401	take	fix(cli): onicode status no longer suggests --no-lan under a ONI
 c1b42c17dc	take	fix(client-runtime): last user message sort ignores agent-posted messages (#33873)
 f8372d1baf	take	fix(web): long screen-reader announcements keep emoji whole at the cutoff (#35681)
 82839de094	take	fix(server): Claude context meter honours CLAUDE_CODE_AUTO_COMPACT_WINDOW (#33806)
+e0d6aadb88	take	feat(server): watched GitHub pull requests react when a check suite completes (#35709)
