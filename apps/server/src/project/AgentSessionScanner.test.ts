@@ -1117,6 +1117,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         yield* TestClock.setTime(nowMs);
         const claudeHomePath = yield* makeTempDir("onicode-claude-home-");
         const codexHomePath = yield* makeTempDir("onicode-codex-home-");
+        const configBaseDir = yield* makeTempDir("onicode-scanner-base-");
         const repo = yield* makeTempDir("onicode-workspace-repo-");
         yield* fileSystem.makeDirectory(path.join(repo, ".git"));
         yield* fileSystem.writeFileString(path.join(repo, ".git", "config"), "[core]\n");
@@ -1133,10 +1134,18 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           path.join(worktree, ".git"),
           `gitdir: ${worktreeGitDir}\n`,
         );
+        // An Onicode-managed worktree of the same checkout is never imported with it.
+        const managedGitDir = path.join(repo, ".git", "worktrees", "managed");
+        yield* fileSystem.makeDirectory(managedGitDir, { recursive: true });
+        yield* fileSystem.writeFileString(path.join(managedGitDir, "commondir"), "../..\n");
+        const managed = path.join(configBaseDir, "worktrees", "onicode", "managed");
+        yield* fileSystem.makeDirectory(managed, { recursive: true });
+        yield* fileSystem.writeFileString(path.join(managed, ".git"), `gitdir: ${managedGitDir}\n`);
 
         for (const [index, [cwd, sessionId]] of [
           [repo, "at-root"],
           [worktree, "in-worktree"],
+          [managed, "in-managed"],
         ].entries()) {
           yield* writeTranscript({
             filePath: path.join(claudeHomePath, "projects", `-slug-${index}`, `${sessionId}.jsonl`),
@@ -1154,7 +1163,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
           });
         }
 
-        const input = { claudeHomePath, codexHomePath };
+        const input = { claudeHomePath, codexHomePath, configBaseDir };
         const { candidates } = yield* runScan(input);
         expect(candidates.map(({ path, threadCount }) => ({ path, threadCount }))).toEqual([
           { path: repo, threadCount: 2 },
