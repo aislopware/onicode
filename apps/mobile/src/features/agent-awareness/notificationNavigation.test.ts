@@ -195,6 +195,7 @@ describe("routeAgentNotificationResponseOnce", () => {
     const handledResponseIds = new Set<string>();
     const navigations: Array<string> = [];
     const response = responseWithData({
+      id: "approval",
       environmentId: "env",
       threadId: "thread",
     });
@@ -211,5 +212,14 @@ describe("routeAgentNotificationResponseOnce", () => {
     });
 
     expect(navigations).toEqual(["/threads/env/thread"]);
+
+    // iOS names an alert by its collapse id, which every alert of one thread shares.
+    routeAgentNotificationResponseOnce({
+      handledResponseIds,
+      response: responseWithData({ id: "finished", environmentId: "env", threadId: "thread" }),
+      navigate: (deepLink) => navigations.push(deepLink),
+    });
+
+    expect(navigations).toEqual(["/threads/env/thread", "/threads/env/thread"]);
   });
 });

@@ -13,6 +13,7 @@ import {
 } from "~/components/preview/thumbButtons";
 import { usePreviewBridge } from "~/components/preview/usePreviewBridge";
 import { useClientSettingsHydrated } from "~/hooks/useSettings";
+import { noteUserInput } from "~/lib/userPresence";
 import { cn, isMacPlatform } from "~/lib/utils";
 
 import { resolveBrowserSurfacePanelRect, useBrowserSurfaceStore } from "./browserSurfaceStore";
@@ -191,17 +192,17 @@ export function HostedBrowserWebview(props: {
         new PointerEvent("pointerdown", { bubbles: true, pointerType: "mouse" }),
       );
     };
-    const guestPointerDown = (event: Event) => {
-      // Mirrors POINTER_DOWN_HOST_CHANNEL in apps/desktop/src/preview/GuestProtocol.ts.
-      if ((event as Event & { channel?: string }).channel === "preview:pointer-down") {
-        dismissHostPopups();
-      }
+    const guestMessage = (event: Event) => {
+      // Mirror the two host channels in apps/desktop/src/preview/GuestProtocol.ts.
+      const { channel } = event as Event & { channel?: string };
+      if (channel === "preview:pointer-down") dismissHostPopups();
+      else if (channel === "preview:activity") noteUserInput();
     };
     webview.addEventListener("did-attach", register);
     webview.addEventListener("dom-ready", register);
     webview.addEventListener("render-process-gone", recoverGuest);
     webview.addEventListener("focus", dismissHostPopups);
-    webview.addEventListener("ipc-message", guestPointerDown);
+    webview.addEventListener("ipc-message", guestMessage);
     register();
     return () => {
       disposed = true;
@@ -210,7 +211,7 @@ export function HostedBrowserWebview(props: {
       webview.removeEventListener("dom-ready", register);
       webview.removeEventListener("render-process-gone", recoverGuest);
       webview.removeEventListener("focus", dismissHostPopups);
-      webview.removeEventListener("ipc-message", guestPointerDown);
+      webview.removeEventListener("ipc-message", guestMessage);
     };
   }, [
     clientSettingsHydrated,

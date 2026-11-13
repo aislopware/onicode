@@ -16,6 +16,11 @@ export const PUSH_TERMINAL_DISPLAY_MS = 15 * 60_000;
  * card is out of date 10 minutes after its last update, so this stays under that.
  */
 export const PUSH_ACTIVITY_KEEPALIVE_MS = 8 * 60_000;
+/**
+ * The same for Android's ongoing notification, which the app drops two hours after its last
+ * update so that a machine that went away leaves none behind. One missed push still leaves time.
+ */
+export const PUSH_ANDROID_ACTIVITY_KEEPALIVE_MS = 50 * 60_000;
 export const PUSH_ACTIVITY_KEEPALIVE_RETRY_MS = 60_000;
 /** A run that ended longer ago than this is history, not news. */
 const PUSH_TERMINAL_ALERT_FRESH_MS = 2 * 60_000;
@@ -54,13 +59,13 @@ function statusForPhase(phase: AgentAwarenessPhase): string {
 const isInFlight = (phase: AgentAwarenessPhase) =>
   phase === "starting" || phase === "running" || phase === "stale";
 
-/** What someone has to act on or look at comes before what is still going. */
+/** What someone has to act on comes first, and a result that can wait comes after work under way. */
 function phasePriority(phase: AgentAwarenessPhase): number {
   if (isAttention(phase)) return 0;
   if (phase === "failed") return 1;
-  if (phase === "completed") return 2;
-  if (phase === "stale") return 4;
-  return 3;
+  if (phase === "completed") return 4;
+  if (phase === "stale") return 3;
+  return 2;
 }
 
 function fit(value: string, fallback: string, maxLength = TEXT_MAX_LENGTH): string {
@@ -111,6 +116,7 @@ export function pushActivityState(input: {
     .filter(
       (state) =>
         isTerminal(state.phase) &&
+        !state.seen &&
         input.nowMs - Date.parse(state.updatedAt) <= PUSH_TERMINAL_DISPLAY_MS,
     )
     .sort(newestFirst);

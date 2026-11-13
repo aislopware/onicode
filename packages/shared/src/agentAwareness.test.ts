@@ -31,6 +31,8 @@ describe("projectThreadAwarenessV2", () => {
         | "pendingRuntimeRequest"
         | "lineage"
         | "settledOverride"
+        | "lastVisitedAt"
+        | "latestRunCompletedAt"
       >
     > = {},
   ) => ({
@@ -153,6 +155,18 @@ describe("projectThreadAwarenessV2", () => {
         }),
       }),
     ).toBeNull();
+  });
+
+  it.each(["completed", "failed"] as const)("marks %s work someone has opened since", (status) => {
+    const seenWhenVisited = (lastVisitedAt: DateTime.Utc | null) =>
+      projectThreadAwarenessV2({
+        environmentId: "env-1" as EnvironmentId,
+        project,
+        thread: v2Thread({ status, latestRunCompletedAt: updatedAt, lastVisitedAt }),
+      })?.seen;
+    expect(seenWhenVisited(null)).toBeUndefined();
+    expect(seenWhenVisited(DateTime.subtract(updatedAt, { milliseconds: 1 }))).toBeUndefined();
+    expect(seenWhenVisited(updatedAt)).toBe(true);
   });
 
   it.each(["starting", "running", "waiting"] as const)(

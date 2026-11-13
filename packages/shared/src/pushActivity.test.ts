@@ -40,7 +40,7 @@ const activity = (states: ReadonlyArray<AgentAwarenessState>, nowMs = NOW) =>
   pushActivityState({ title: "mac-mini", states, nowMs });
 
 describe("pushActivityState", () => {
-  it("orders by what needs someone, then results, then work still going", () => {
+  it("orders by what needs someone, then work still going, then results that can wait", () => {
     const result = activity([
       agent("running", "running", at(-1_000)),
       agent("done", "completed", at(-60_000)),
@@ -52,9 +52,9 @@ describe("pushActivityState", () => {
     expect(result?.state.activities.map((row) => row.threadId)).toEqual([
       "approval",
       "failed",
-      "done",
       "running",
       "stale",
+      "done",
     ]);
     expect(result?.state.activeCount).toBe(3);
     expect(result?.state.subtitle).toBe("3 agents working");
@@ -79,6 +79,8 @@ describe("pushActivityState", () => {
 
     expect(activity(finished, NOW + PUSH_TERMINAL_DISPLAY_MS)).toBeNull();
     expect(activity([])).toBeNull();
+    // A result someone has opened waits for no one.
+    expect(activity(finished.map((state) => ({ ...state, seen: true as const })))).toBeNull();
   });
 
   it("always fits the gateway's schema", () => {

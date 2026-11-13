@@ -49,11 +49,14 @@ decides what each registered device should see.
   finished for a moment between runs, so a move to finished waits five seconds for a contradiction.
 - **One activity per environment.** The gateway cannot merge across environments, since it keeps
   nothing, so each environment owns one Live Activity or ongoing notification on each device.
-- **A Live Activity is started by push once per stretch of work.** iOS budgets push-to-start, and
-  an activity the person swiped away should stay gone until all work has stopped and new work
-  begins. APNs is the only witness to a swipe and a late one: it keeps accepting updates for a
-  dismissed activity, then answers `410 Unregistered` after a delay Apple does not specify. So an
-  accepted update does not mean the card is on screen.
+- **A Live Activity is started by push once per stretch of work, and again after eight hours.**
+  iOS budgets push-to-start, and an activity the person swiped away should stay gone until all
+  work has stopped and new work begins. But iOS ends every activity eight hours after its start,
+  and an environment with a thread always waiting on someone never stops all work, so a start
+  holds back the next one for those eight hours only. APNs is the only witness to a swipe or an
+  ended card, and a late one: it keeps accepting updates for a card that is gone, then answers
+  `410 Unregistered` after a delay Apple does not specify. So an accepted update does not mean
+  the card is on screen, and a card's age, not APNs, says when to replace it.
 
 Registration is plain HTTP, not a WebSocket method, because the app registers a Live Activity's
 update token from the background, where it has no socket.

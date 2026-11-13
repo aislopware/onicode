@@ -95,11 +95,12 @@ export const agentAwarenessStatusAtom = Atom.make<AgentAwarenessStatus>({
   environments: new Map(),
 }).pipe(Atom.keepAlive, Atom.withLabel("mobile:agent-awareness:status"));
 
-function readAgentNotificationPreferences(): AgentNotificationPreferences {
+/** Null until the saved choice is read: the defaults would read as someone opting out. */
+function readAgentNotificationPreferences(): AgentNotificationPreferences | null {
   const preferences = appAtomRegistry.get(mobilePreferencesAtom);
   return AsyncResult.isSuccess(preferences)
     ? (preferences.value.agentNotifications ?? DEFAULT_AGENT_NOTIFICATION_PREFERENCES)
-    : DEFAULT_AGENT_NOTIFICATION_PREFERENCES;
+    : null;
 }
 
 function updateStatus(update: (status: AgentAwarenessStatus) => AgentAwarenessStatus): void {
@@ -234,7 +235,7 @@ function connectedEnvironments() {
 const syncAll = Effect.fn("AgentAwareness.syncAll")(function* (input: Context) {
   const preferences = readAgentNotificationPreferences();
   const environments = connectedEnvironments();
-  if (!environments.ready) return;
+  if (preferences === null || !environments.ready) return;
   const plan = planPushSync({
     enabled: preferences.enabled,
     saved: environments.saved,
@@ -387,7 +388,7 @@ async function reconcileLiveActivities(input: Context): Promise<void> {
   if (Platform.OS !== "ios") return;
   const preferences = readAgentNotificationPreferences();
   const { ready, saved } = connectedEnvironments();
-  if (!ready) return;
+  if (preferences === null || !ready) return;
   const activities = await endDuplicateActivities(getAgentLiveActivities());
   const live = new Set(activities.map((activity) => activity.getId()));
   for (const [id, observed] of observedActivities) {

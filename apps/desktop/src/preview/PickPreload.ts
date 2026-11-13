@@ -31,6 +31,7 @@ import { previewAnnotationStyles } from "./AnnotationStyles.generated.ts";
 import { installRecordingCursor } from "./RecordingCursor.ts";
 import { DEFAULT_RECORDING_INPUT_OPTIONS } from "./RecordingInput.ts";
 import {
+  ACTIVITY_HOST_CHANNEL,
   ANNOTATION_CAPTURED_CHANNEL,
   ANNOTATION_SEND_ENABLED_CHANNEL,
   ANNOTATION_THEME_CHANNEL,
@@ -216,6 +217,21 @@ const reportHumanKeyInput = (event: KeyboardEvent): void => {
 
 window.addEventListener("pointerdown", reportHumanPointerInput, true);
 window.addEventListener("keydown", reportHumanKeyInput, true);
+
+// The host tells whether someone is at its window from input, and a page's input stays in the
+// page. One report this often is enough for it, without a message for each pointer move.
+const ACTIVITY_REPORT_INTERVAL_MS = 15_000;
+let activityReportedAt = Number.NEGATIVE_INFINITY;
+const reportActivity = (event: Event): void => {
+  if (!event.isTrusted) return;
+  const now = Date.now();
+  if (now - activityReportedAt < ACTIVITY_REPORT_INTERVAL_MS) return;
+  activityReportedAt = now;
+  ipcRenderer.sendToHost(ACTIVITY_HOST_CHANNEL);
+};
+for (const type of ["pointermove", "keydown", "wheel"]) {
+  window.addEventListener(type, reportActivity, { capture: true, passive: true });
+}
 
 // Capture runs before a page can stop the event; the task delay lets every page
 // listener call preventDefault before the host is told the key went unhandled.

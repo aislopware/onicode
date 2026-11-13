@@ -114,12 +114,23 @@ export function notificationIdsForThread(
   });
 }
 
+/**
+ * What tells one tapped alert from the next. iOS names a delivered alert by its collapse id, which
+ * every alert of a thread shares, so the id the environment gave the alert comes first.
+ */
+function alertIdFromNotificationResponse(response: unknown): string | null {
+  const alertId = dataFromNotificationResponse(response)?.id;
+  return typeof alertId === "string" && alertId.length > 0
+    ? alertId
+    : identifierFromNotificationResponse(response);
+}
+
 export function routeAgentNotificationResponseOnce(input: {
   readonly handledResponseIds: Set<string>;
   readonly response: unknown;
   readonly navigate: (deepLink: string) => void;
 }): void {
-  const responseId = identifierFromNotificationResponse(input.response);
+  const responseId = alertIdFromNotificationResponse(input.response);
   if (responseId && input.handledResponseIds.has(responseId)) {
     return;
   }

@@ -57,6 +57,7 @@ import {
   type ApprovalResponder,
   type ThreadUserInputQuestion,
 } from "@onicode/client-runtime/state/thread-requests";
+import { isAppActive, subscribeAppState } from "../../lib/appState";
 import { useDeadlinePassed } from "../../lib/clock";
 import {
   BACKGROUND_WORK_STOP_RETRY_AFTER_MS,
@@ -346,12 +347,20 @@ const USER_INPUT_TOGGLE_TIMING = {
   easing: Easing.out(Easing.cubic),
 };
 
+const appActiveAtom = Atom.make((get) => {
+  get.addFinalizer(subscribeAppState(() => get.setSelf(isAppActive())));
+  return isAppActive();
+}).pipe(Atom.withLabel("mobile-app-active"));
+
 // A scheduled wake can happen without a newer server update, so the tracker
 // is told when one takes effect. The shell's updatedAt ticks while a run
 // streams; the tracker follows it outside React.
 const wakeAwareVisitShell = Atom.family((key: string) => {
   const ref = parseThreadKey(key);
   return Atom.make((get) => {
+    // A phone put away stays connected for a while, and a result that lands then has been shown
+    // to no one. The tracker stays mounted, so an open it has yet to send is not lost.
+    if (!get(appActiveAtom)) return null;
     const shell = get(environmentThreadShells.threadShellAtom(ref));
     if (shell === null) return null;
     const nowMs = Date.now();
