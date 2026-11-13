@@ -1253,3 +1253,4 @@ a877d40b74	take	fix(opencode): models load once OpenCode 2 finishes activating i
 daed1dd327	take	fix(server): a follow-up delegated task waits for the subagents its child starts (#34958)
 9b5d9979c8	take	fix(opencode): native forks no longer multiply usage (#23120)
 d70bfe6e97	take	fix(server): a send to a thread whose worktree can't be recreated now fails instead of reporting started (#36251)
+1ea523608b	take	fix(mobile): HTML file previews play video inline on iPhone (#32343)
