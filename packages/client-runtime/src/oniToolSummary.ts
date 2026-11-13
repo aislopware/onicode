@@ -472,6 +472,9 @@ export function summarizeOniToolCalls(
     case "html-render":
       label = phrase("Rendered", "render", quantity(selected.length, "HTML page"));
       break;
+    case "send-to-user":
+      label = phrase("Sent", "send", quantity(selected.length, "message"));
+      break;
     case "capabilities":
       label = phrase("Checked", "check", `orchestration capabilities ${times}`);
       break;

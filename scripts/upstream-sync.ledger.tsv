@@ -1304,3 +1304,4 @@ d772115e0d	take	fix(server): terminal history keeps text after a CSI cut off by 
 7ea6db49e4	take	fix(web): a mounted chat view no longer keeps every thread copy it replaced (#36390)
 b5b470542a	take	fix(server): a Codex Stop that never completes offers Force stop (#36331)
 0517d15c41	take	fix(web): provider sign-in links only open web addresses (#36392)
+aab388ddb1	take	fix(server): Claude can show the user mid-turn text in full (#36384); agent context budget re-measured for Onicode

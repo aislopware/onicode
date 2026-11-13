@@ -68,7 +68,8 @@ export type OniMcpToolSummaryAction =
   | "browser"
   | "device"
   | "html-preview"
-  | "html-render";
+  | "html-render"
+  | "send-to-user";
 
 export interface OniMcpToolDefinition {
   readonly displayName: string;
@@ -378,6 +379,7 @@ const ONICODE_MCP_TOOLS: Readonly<Record<string, OniMcpToolDefinition>> = {
   oni_thread_send_attachments: tool(["Send", "Sending", "Sent", "attachments"], "attachment-send"),
   html_preview: tool(["Preview", "Previewing", "Previewed", "an HTML page"], "html-preview"),
   html_render: tool(["Render", "Rendering", "Rendered", "an HTML page"], "html-render"),
+  send_to_user: tool(["Send", "Sending", "Sent", "a message"], "send-to-user"),
 };
 
 export const ONICODE_MCP_TOOL_NAMES: ReadonlySet<string> = new Set(Object.keys(ONICODE_MCP_TOOLS));
