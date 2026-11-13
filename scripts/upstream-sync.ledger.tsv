@@ -1201,3 +1201,4 @@ e4025c8528	take	taken as is; kills only recorded pid+starttime pairs
 5f69cac5c9	take	fix(web): turn diffs cut off at the size limit say changes are incomplete
 082a3e3c52	take	fix(web): narrow-window right panel dialog is named Workspace panel
 eb7e63a822	take	fix(server): thread reads preview linked PRs and list_thread_pull_requests pages (budget re-measured for Onicode tool list)
+74573fc29b	take	fix(web): new project publish option tells screen readers whether it is on
