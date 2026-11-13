@@ -976,3 +976,4 @@ aa58dc6d22	take	chore(deps): bump the npm_and_yarn group across 2 directories wi
 f41e8b3c10	take	fix(shared): Windows-style paths stay out of the slash menu (#27851)
 ac7c7f66d9	take	fix(acp): let agents that advertise /compact compact their own context (#28822)
 2f9d93058d	take	test(acp-registry): subscribe to snapshot changes before triggering them (#35627)
+fbd77b9b37	take	fix(web): diff colors follow appearance contrast (#28947)
