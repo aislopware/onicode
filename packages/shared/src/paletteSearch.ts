@@ -922,10 +922,20 @@ export interface SearchMatchHint {
   readonly ranges: ReadonlyArray<SearchRange>;
 }
 
-// Most threads' branches start with the app's own worktree prefix ("onicode/"), so
-// "oni connect" would match nearly every thread.
+// Most threads' branches start with the app's own worktree prefix ("onicode/", or
+// "onicode-<hex>" when an "onicode" branch blocks nested refs), so "oni connect"
+// would match nearly every thread.
 // Only before more text, so typing "onicode/" does not empty the list for a keystroke.
-const WORKTREE_BRANCH_PREFIX_PATTERN = new RegExp(`^${WORKTREE_BRANCH_PREFIX}/(?=\\S)`);
+const WORKTREE_BRANCH_PREFIX_PATTERN = new RegExp(
+  `^(?:${WORKTREE_BRANCH_PREFIX}/(?=\\S)|${WORKTREE_BRANCH_PREFIX}-(?=[0-9a-f]{8}$))`,
+);
+
+// The flat prefix anywhere in a query, while its hex is still being typed, so
+// "onicode-abcd" and "connect onicode-abcd1234" still reach the stripped branch field.
+const FLAT_BRANCH_QUERY_PREFIX_PATTERN = new RegExp(
+  `(^| )${WORKTREE_BRANCH_PREFIX}-(?=[0-9a-f]{1,8}(?: |$))`,
+  "g",
+);
 
 function searchableBranch(branch: string | null | undefined): string | null {
   return branch ? branch.replace(WORKTREE_BRANCH_PREFIX_PATTERN, "") : null;
@@ -1005,7 +1015,8 @@ function threadFieldQuery(normalizedQuery: string): string {
       fieldQuery: normalizedQuery
         .replace(/^(?:pr|pull request|pull)\s*(?=#?\d)/, "")
         .replace(/^#\s*/, "")
-        .replace(WORKTREE_BRANCH_PREFIX_PATTERN, ""),
+        .replace(WORKTREE_BRANCH_PREFIX_PATTERN, "")
+        .replace(FLAT_BRANCH_QUERY_PREFIX_PATTERN, "$1"),
     };
   }
   return lastFieldQuery.fieldQuery;

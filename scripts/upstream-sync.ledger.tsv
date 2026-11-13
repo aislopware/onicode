@@ -872,3 +872,4 @@ d0f9d4dcc0	take	fix(web): sidebar draft previews show cited assistant text, not 
 0cd6a73433	take	fix(web): pasting an image the draft already has no longer flashes a preparing tile (#35265)
 0b21a82aa3	take	fix(shared): pooled limits weight each account by its plan size (#35427)
 60c3b222db	take	fix(mobile): browser and MCP-app links with blank IDs no longer crash the screen (#35415)
+55081a1f7b	take	fix(shared): thread search ignores the onicode prefix of flat temporary branches (#35430); flat branch pattern uses Onicode's onicode-<hex>, no legacy prefix
