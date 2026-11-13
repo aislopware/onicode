@@ -868,3 +868,4 @@ e96c96eafe	take	fix(server): storage cleanup stops holding usage-limited threads
 a909ea423c	take	perf(server): older history pages load without indexing the whole thread (#34573)
 f4cf69f522	take	fix(server): selecting a remote branch lands on its local branch (#35400)
 a2685e64d3	take	fix(web): SCP-style Git remotes no longer become terminal file links (#35404)
+d0f9d4dcc0	take	fix(web): sidebar draft previews show cited assistant text, not the raw link (#35406)
