@@ -1081,3 +1081,4 @@ ce268642cc	take	fix(server): a slow database write no longer freezes the server 
 63426c415a	take	fix(dev): long-running dev servers no longer leak memory when other worktrees install (#35740)
 f5d0be65fe	take	fix(server): Changes totals no longer take index.lock (#35770)
 ad1c46ba42	take	fix(server): keep repository identity for roots whose name ends in a space (#35767)
+adf31511e6	take	fix(server): restored worktrees find pushed thread work on a non-origin remote (#35769)
