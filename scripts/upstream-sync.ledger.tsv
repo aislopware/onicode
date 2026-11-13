@@ -914,3 +914,4 @@ c846833a6b	take	fix(server): provider instances named constructor, toString or v
 78ee8a156d	take	fix(mobile): inline-code file paths with non-ASCII names become file pills (#35552)
 1001bc71fc	take	fix(voice): dictation survives draft changes and Escape in the citation box (#32682)
 1c9ea568a1	take	fix(clients): report title regeneration outcomes (#31418)
+abca54783c	take	test(server): bind-address Serve refusal test answers serve status (#35568)
