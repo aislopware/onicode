@@ -103,7 +103,7 @@ function LinkedEnvironmentRow({
   const [busy, setBusy] = useState(false);
   const forget = async () => {
     const confirmed = await (requestConfirmDialog(
-      `Forget ${link.label}? Agents here stop working there. Revoke "Onicode · …" in ${link.label}'s Connections to end the session there too.`,
+      `Forget ${link.label}? Agents here stop working there. Revoke "Onicode · …" in ${link.label}'s Sharing & access to end the session there too.`,
       { variant: "destructive" },
     ) ?? Promise.resolve(false));
     if (!confirmed) return;
@@ -273,8 +273,8 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
         <DialogHeader>
           <DialogTitle>Link an environment</DialogTitle>
           <DialogDescription>
-            Agents here can then launch, message and wait on threads there. It appears in that
-            environment's Connections, where it can be revoked.
+            Agents here can then launch, message and wait on threads there. It appears under
+            Authorized clients in that environment's Sharing & access, where it can be revoked.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -333,7 +333,7 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                   onChange={(event) => setPairingCode(event.target.value)}
                   placeholder={
                     machine === null
-                      ? "From that environment's Connections, or onicode pair there"
+                      ? "From Sharing & access there, or onicode pair"
                       : "Paste the code"
                   }
                   disabled={busy}
@@ -343,8 +343,8 @@ function LinkEnvironmentAction({ environmentId }: { readonly environmentId: Envi
                 />
                 {machine !== null ? (
                   <span className="block text-xs text-muted-foreground">
-                    Create a link on {machine.label}: Settings → Connections → Create link, then
-                    paste its code here.
+                    Create a link on {machine.label}: Settings → Sharing & access → Authorized
+                    clients → Create link, then paste its code here.
                   </span>
                 ) : null}
               </label>
