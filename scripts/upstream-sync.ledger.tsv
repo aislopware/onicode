@@ -1317,3 +1317,4 @@ bc7fe11002	take	fix(web): a new worktree thread opened during a clone bases on t
 5df5b44309	take	fix(server): a server browser tab survives a renderer crash, and a service worker badge call no longer causes one (#36389)
 1219f62845	skip	T3 Connect and Clerk sign-in retry; Onicode removed both
 dd2678d6e8	skip	Guards T3's macOS PR-preview publish workflow; Onicode has no PR-preview pipeline, so the untrusted-bundle flag would never be set
+134ab31276	take	fix(mobile): a new thread's first message no longer returns to the composer after a lost launch reply (#32330)
