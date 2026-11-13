@@ -993,3 +993,4 @@ a34427662b	take	fix(web): Enter on an empty prompt resumes an interrupted thread
 da345d203c	take	fix(server): terminals recreate a worktree removed by storage cleanup (#24156)
 95f164d083	take	test(web): Mod+E bold-word test no longer drops its first arrow key (#35646)
 3595b9e038	take	fix(server): access list keeps changes made while its stream opens (#35640)
+c544c27981	take	fix(server): a failed Git version probe no longer advises installing Git (#35638)
