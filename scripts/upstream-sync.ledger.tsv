@@ -1046,3 +1046,4 @@ f6787e8537	take	fix(web): reuse timeline rows while thinking and plans stream (#
 56b6c2a8bf	take	fix(mobile): refreshing a review diff keeps unfolded files open (#35682)
 d76e06679b	take	fix(server): snooze no longer waits two minutes after a steered queued message (#35661)
 f70e349eca	take	test(server): count leaked PR cache caller data without WeakRefs (#35694)
+bb26e569ad	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(cli): onicode pair'\''s protocol mismatch hint keeps --base-dir (#35690)' -m 'Ported from pingdotgg/t3code@bb26e569ad.'
