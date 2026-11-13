@@ -1161,3 +1161,4 @@ e018563669	take	fix(desktop): keep WSL distros whose names start or end with a d
 939b2884f9	take	fix(server): SSH device test rejects Node below agent-device's 22.12 floor
 cc927400c7	take	fix(server): Simlock renewals no longer exceed the gateway's lease TTL cap
 ee645553a9	take	test: drop redundant Effect.scoped wrappers; conflicted files re-merged ignoring whitespace; serviceLauncherClient test lives in service/; Clerk/relay tests skipped (removed)
+d06ba27166	take	fix(device): Simlock viewer stops retrying an ended lease and keeps its reason
