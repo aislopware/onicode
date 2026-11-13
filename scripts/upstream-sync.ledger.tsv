@@ -1168,3 +1168,4 @@ f9cadccadf	take	fix(scripts): dev runner ignores the parent Onicode server's por
 0b0a61a01f	take	perf(server): reduce allocation while reading usage history
 2cb56cbf56	take	fix(web): terminal paste keeps a leading U+FEFF without bracketed paste
 c29c26afeb	take	fix(server): BEL inside a DCS no longer ends it in terminal history
+431e53f322	take	fix(server): terminal history drops the ESC Z identity query
