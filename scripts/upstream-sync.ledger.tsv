@@ -1297,3 +1297,4 @@ cfc71e1a99	take	fix(web): preview annotations in question answers reach the agen
 1da05a8a98	take	fix(server): a default branch the remote deleted no longer starts worktree threads (#36268)
 38072bdc81	take	fix(desktop): new tabs the agent opens from links no longer steal composer focus (#36300)
 9a455f02e2	take	fix(ssh): a renamed SSH connection keeps managing its remote server (#36351)
+af9b4e41de	take	fix(server): a worktree handoff on Claude or Pi completes its run and starts the continuation (#36360); guest-message attribution in the message.dispatch case dropped (Onicode removed guests)
