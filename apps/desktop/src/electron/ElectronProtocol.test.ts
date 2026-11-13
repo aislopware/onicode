@@ -38,7 +38,7 @@ describe("ElectronProtocol", () => {
       assert.deepEqual(route.match, { host: "app" });
       assert.equal(route.source.root, "/app/client");
       assert.include(route.source.headers["Content-Security-Policy"], "default-src 'self'");
-    }).pipe(Effect.provide(layerProtocol), Effect.scoped),
+    }).pipe(Effect.provide(layerProtocol)),
   );
 
   it.effect("proxies the stable renderer origin to the current app server", () =>
