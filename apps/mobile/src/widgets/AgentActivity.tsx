@@ -77,9 +77,9 @@ function AgentActivity(
   const phasePriority = (phase: AgentActivityPhase): number => {
     if (needsUser(phase)) return 0;
     if (phase === "failed") return 1;
-    if (phase === "completed") return 2;
-    if (phase === "stale") return 4;
-    return 3;
+    if (phase === "completed") return 4;
+    if (phase === "stale") return 3;
+    return 2;
   };
   // Mark in-flight rows stale after expiry so they cannot claim agents still work.
   const activities: ReadonlyArray<AgentActivityRowProps> = environment.isStale
@@ -89,7 +89,7 @@ function AgentActivity(
           : { ...row, phase: "stale", status: "Out of date" },
       )
     : props.activities;
-  // An environment older than this order still sends working rows ahead of finished ones.
+  // An environment older than this order still sends finished rows ahead of working ones.
   const ordered = [...activities].sort((a, b) => phasePriority(a.phase) - phasePriority(b.phase));
   const hero = ordered[0];
   const row1 = ordered[1];
@@ -113,8 +113,8 @@ function AgentActivity(
   const pressing = [
     attentionCount > 0 ? `${attentionCount} need${attentionCount === 1 ? "s" : ""} you` : null,
     failedCount > 0 ? `${failedCount} failed` : null,
-    doneCount > 0 ? `${doneCount} done` : null,
   ].filter((entry): entry is string => entry !== null);
+  const doneLabel = doneCount > 0 ? `${doneCount} done` : null;
   const alone =
     hero === undefined
       ? ""
@@ -129,14 +129,19 @@ function AgentActivity(
               : hero.phase === "stale"
                 ? "Out of date"
                 : "Working";
-  // The rows spell out the rest, so the card names only the most pressing count and the work behind it.
-  const headline = threadCount > 1 ? (pressing[0] ?? workingLabel ?? "") : alone;
+  // The rows spell out the rest, so the card names only the most pressing count and what is behind
+  // it: the work under way, or the results that can wait.
+  const counts = [pressing[0], workingLabel, doneLabel].filter(
+    (entry): entry is string => entry != null,
+  );
+  const headline = threadCount > 1 ? (counts[0] ?? "") : alone;
   const headlineTint: Foreground =
     hero === undefined || isWorking(hero.phase) ? primaryForeground : accent;
-  const remainder =
-    threadCount > 1 && pressing.length > 0 && workingLabel !== null ? workingLabel : "";
+  const remainder = threadCount > 1 ? (counts[1] ?? "") : "";
   const spoken =
-    [...pressing, workingLabel ?? ""].filter(Boolean).join(", ") || alone || "No agent activity";
+    [...pressing, workingLabel, doneLabel].filter(Boolean).join(", ") ||
+    alone ||
+    "No agent activity";
   // How many agents share the state the island's glyph shows.
   const heroCount =
     hero === undefined

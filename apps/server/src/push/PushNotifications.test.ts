@@ -220,10 +220,9 @@ const setup = Effect.fn(function* (options?: {
         getAgentAwarenessSnapshot: (threadId) =>
           Effect.sync(() => ({
             snapshotSequence: 1,
-            threads:
-              threadId === undefined
-                ? [...threads.values()]
-                : [...threads.values()].filter((thread) => thread.id === threadId),
+            threads: [...threads.values()]
+              .filter((thread) => threadId === undefined || thread.id === threadId)
+              .map((thread) => ({ ...thread, lastVisitedAt: thread.lastVisitedAt ?? null })),
           })).pipe(
             Effect.tap(() =>
               threadId === undefined ? (options?.onSnapshot ?? Effect.void) : Effect.void,
@@ -267,18 +266,24 @@ const setup = Effect.fn(function* (options?: {
   });
 
   /** Lets the service see a thread change without waiting for it to act. */
-  const emit = Effect.fn(function* (overrides: Partial<OrchestrationV2ThreadShell>) {
+  const emit = Effect.fn(function* (
+    overrides: Partial<OrchestrationV2ThreadShell>,
+    type: OrchestrationV2DomainEvent["type"] = "run.updated",
+  ) {
     threads.set(overrides.id ?? THREAD, shell(overrides));
     // The service reads only an event's type and thread id.
     yield* Queue.offer(events, {
-      type: "run.updated",
+      type,
       threadId: overrides.id ?? THREAD,
     } as unknown as OrchestrationV2DomainEvent);
     yield* Queue.take(pulls);
   });
   /** Changes a thread the way the orchestrator would, and waits for the service to act on it. */
-  const change = Effect.fn(function* (overrides: Partial<OrchestrationV2ThreadShell>) {
-    yield* emit(overrides);
+  const change = Effect.fn(function* (
+    overrides: Partial<OrchestrationV2ThreadShell>,
+    type?: OrchestrationV2DomainEvent["type"],
+  ) {
+    yield* emit(overrides, type);
     yield* push.drain;
   });
   const register = Effect.fn(function* (
@@ -320,7 +325,8 @@ describe("PushNotifications", () => {
 
   it.effect("alerts an Android device on the transitions it asked for, in one message", () =>
     Effect.gen(function* () {
-      const { push, change, register, taken, messages } = yield* setup();
+      let outcome: "failed" | "delivered" = "delivered";
+      const { push, change, register, taken, messages } = yield* setup({ outcome: () => outcome });
       yield* register(
         registration({
           preferences: { ...registration().preferences, notifyOnCompletion: false },
@@ -357,6 +363,23 @@ describe("PushNotifications", () => {
       assert.deepStrictEqual(taken(), [
         { grant: "grant_notification", alert: undefined, active: null },
       ]);
+
+      // Android drops a card two hours after its last update, so unchanged work is sent again.
+      const working = [{ grant: "grant_notification", alert: undefined, active: 1 }];
+      // The first one may fail, with nothing changing afterwards to send it again.
+      outcome = "failed";
+      yield* change({});
+      assert.deepStrictEqual(taken(), working);
+      outcome = "delivered";
+      yield* TestClock.adjust("1 minute");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), working);
+      yield* TestClock.adjust("49 minutes");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), []);
+      yield* TestClock.adjust("1 minute");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), working);
     }),
   );
 
@@ -429,12 +452,20 @@ describe("PushNotifications", () => {
 
   it.effect("tries a Live Activity start again after one that failed, not one swiped away", () =>
     Effect.gen(function* () {
-      let outcome: "failed" | "delivered" | "unregistered" = "failed";
+      let outcome: "failed" | "delivered" | "unregistered" = "unregistered";
       const { push, change, register, taken } = yield* setup({ outcome: () => outcome });
       const started = [{ grant: "grant_start", alert: undefined, active: 1 }];
-      yield* register(
-        registration({ platform: "ios", label: "iPhone", liveActivityStart: grant("start") }),
-      );
+      const ios = registration({
+        platform: "ios",
+        label: "iPhone",
+        liveActivityStart: grant("start"),
+      });
+      yield* register(ios);
+      assert.deepStrictEqual(taken(), started);
+
+      // A token iOS retired started nothing, so the one the app registers next gets its try.
+      outcome = "failed";
+      yield* register(ios);
       assert.deepStrictEqual(taken(), started);
 
       outcome = "delivered";
@@ -453,6 +484,87 @@ describe("PushNotifications", () => {
       outcome = "delivered";
       yield* change({ title: "Renamed again" });
       assert.deepStrictEqual(taken(), []);
+
+      // iOS ends a card eight hours after its start, so that start holds nothing back any more,
+      // and work that goes on unchanged gets its new card without having to change first.
+      yield* TestClock.adjust("484 minutes");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), []);
+      yield* TestClock.adjust("1 minute");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), started);
+
+      // A first update that fails is tried again in a minute, not when the start's hold ends.
+      const updated = [{ grant: "grant_update", alert: undefined, active: 1 }];
+      outcome = "failed";
+      yield* push.registerLiveActivity({
+        caller: callerOf(SESSION),
+        deviceId: PHONE,
+        grant: grant("update"),
+      });
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), updated);
+      outcome = "delivered";
+      yield* TestClock.adjust("1 minute");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), updated);
+      // A card that reached that age has ended on the phone, whatever APNs still accepts for it.
+      yield* TestClock.adjust("488 minutes");
+      yield* push.drain;
+      // The keepalive goes on refreshing the card until the first one past that age replaces it.
+      const sent = taken();
+      assert.deepStrictEqual(sent.at(-1), started[0]);
+      assert.deepStrictEqual(
+        sent.filter((delivery) => delivery.grant === "grant_start"),
+        started,
+      );
+
+      // The app may never answer a start, as when it was closed: the next one still comes.
+      yield* TestClock.adjust("485 minutes");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), started);
+    }),
+  );
+
+  it.effect("starts a Live Activity again once it is turned back on", () =>
+    Effect.gen(function* () {
+      const gate = makeGate();
+      const { push, register, taken } = yield* setup({ onDeliver: gate.pass });
+      const ios = (activity: boolean) =>
+        registration({
+          platform: "ios",
+          label: "iPhone",
+          liveActivityStart: grant("start"),
+          preferences: { ...registration().preferences, activity },
+        });
+      yield* register(ios(true));
+      yield* push.registerLiveActivity({
+        caller: callerOf(SESSION),
+        deviceId: PHONE,
+        grant: grant("update"),
+      });
+      yield* push.drain;
+      taken();
+
+      // The app ends its card when the setting goes off, so the update grant names nothing.
+      yield* register(ios(false));
+      assert.deepStrictEqual(taken(), []);
+      const started = [{ grant: "grant_start", alert: undefined, active: 1 }];
+      yield* register(ios(true));
+      assert.deepStrictEqual(taken(), started);
+
+      // A start still on its way when the setting goes off must not hold back the next one.
+      yield* register(ios(false));
+      const held = yield* gate.hold;
+      const caller = callerOf(SESSION);
+      yield* push.registerDevice({ caller, deviceId: PHONE, request: ios(true) });
+      yield* Deferred.await(held.reached);
+      yield* push.registerDevice({ caller, deviceId: PHONE, request: ios(false) });
+      yield* Deferred.succeed(held.release, undefined);
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), started);
+      yield* register(ios(true));
+      assert.deepStrictEqual(taken(), started);
     }),
   );
 
@@ -508,6 +620,40 @@ describe("PushNotifications", () => {
       taken();
 
       yield* change({ ...finishedAt(0), settledOverride: "settled" });
+      yield* TestClock.adjust("5 seconds");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), [
+        { grant: "grant_notification", alert: "Agent finished · onicode", active: null },
+      ]);
+    }),
+  );
+
+  it.effect("drops finished work once someone opens it, and still alerts when they watch", () =>
+    Effect.gen(function* () {
+      const { push, change, register, taken } = yield* setup();
+      yield* register();
+      taken();
+
+      yield* change(finishedAt(0));
+      yield* TestClock.adjust("5 seconds");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), [
+        { grant: "grant_notification", alert: "Agent finished · onicode", active: 0 },
+      ]);
+      yield* change({ ...finishedAt(0), lastVisitedAt: DateTime.makeUnsafe(0) }, "thread.visited");
+      assert.deepStrictEqual(taken(), [
+        { grant: "grant_notification", alert: undefined, active: null },
+      ]);
+      // Marking it unread brings the result back, and is not news a second time.
+      yield* change(finishedAt(0), "thread.marked-unread");
+      assert.deepStrictEqual(taken(), [
+        { grant: "grant_notification", alert: undefined, active: 0 },
+      ]);
+
+      // A thread open on another screen is seen the moment it finishes.
+      yield* change({});
+      taken();
+      yield* change({ ...finishedAt(5_000), lastVisitedAt: DateTime.makeUnsafe(5_000) });
       yield* TestClock.adjust("5 seconds");
       yield* push.drain;
       assert.deepStrictEqual(taken(), [

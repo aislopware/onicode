@@ -36,8 +36,8 @@ export const PushDeviceRecord = Schema.Struct({
   liveActivityStartGrantExpiresAt: StoredExpiry,
   liveActivityUpdateGrant: StoredGrant,
   liveActivityUpdateGrantExpiresAt: StoredExpiry,
-  /** 1 once this stretch of work has started a Live Activity, or had one swiped away. */
-  liveActivitySettled: Schema.Literals([0, 1]),
+  /** When this stretch of work started a Live Activity. Null when work may start one. */
+  liveActivityStartedAt: StoredExpiry,
   registeredAt: Schema.DateTimeUtcFromString,
   lastDeliveredAt: Schema.NullOr(Schema.DateTimeUtcFromString),
   lastFailure: Schema.NullOr(Schema.String),
@@ -48,7 +48,7 @@ const Registration = PushDeviceRecord.mapFields(
   ({
     liveActivityUpdateGrant: _grant,
     liveActivityUpdateGrantExpiresAt: _expiresAt,
-    liveActivitySettled: _settled,
+    liveActivityStartedAt: _startedAt,
     lastDeliveredAt: _deliveredAt,
     lastFailure: _failure,
     ...fields
@@ -67,9 +67,9 @@ export class PushDevices extends Context.Service<
       readonly kind: PushDeviceGrantKind;
       readonly grant: { readonly grant: string; readonly expiresAt: number } | null;
     }) => Effect.Effect<boolean, PushDevicesError>;
-    readonly setLiveActivitySettled: (input: {
+    readonly setLiveActivityStartedAt: (input: {
       readonly deviceId: PushDeviceId;
-      readonly settled: boolean;
+      readonly at: number | null;
     }) => Effect.Effect<void, PushDevicesError>;
     readonly recordDelivery: (input: {
       readonly deviceId: PushDeviceId;
@@ -118,7 +118,7 @@ const make = Effect.gen(function* () {
     live_activity_start_grant_expires_at AS "liveActivityStartGrantExpiresAt",
     live_activity_update_grant AS "liveActivityUpdateGrant",
     live_activity_update_grant_expires_at AS "liveActivityUpdateGrantExpiresAt",
-    live_activity_settled AS "liveActivitySettled",
+    live_activity_started_at AS "liveActivityStartedAt",
     registered_at AS "registeredAt",
     last_delivered_at AS "lastDeliveredAt",
     last_failure AS "lastFailure"
@@ -170,10 +170,9 @@ const make = Effect.gen(function* () {
           WHEN push_devices.gateway_url = excluded.gateway_url
           THEN push_devices.live_activity_update_grant_expires_at
         END,
-        live_activity_settled = CASE
+        live_activity_started_at = CASE
           WHEN push_devices.gateway_url = excluded.gateway_url
-          THEN push_devices.live_activity_settled
-          ELSE 0
+          THEN push_devices.live_activity_started_at
         END,
         gateway_url = excluded.gateway_url,
         registered_at = excluded.registered_at,
@@ -231,12 +230,12 @@ const make = Effect.gen(function* () {
       );
     }),
 
-    setLiveActivitySettled: Effect.fn("PushDevices.setLiveActivitySettled")(function (input) {
+    setLiveActivityStartedAt: Effect.fn("PushDevices.setLiveActivityStartedAt")(function (input) {
       return sql`
         UPDATE push_devices
-        SET live_activity_settled = ${input.settled ? 1 : 0}
+        SET live_activity_started_at = ${input.at}
         WHERE device_id = ${input.deviceId}
-      `.pipe(Effect.asVoid, Effect.mapError(sqlError("setPushLiveActivitySettled")));
+      `.pipe(Effect.asVoid, Effect.mapError(sqlError("setPushLiveActivityStartedAt")));
     }),
 
     recordDelivery: Effect.fn("PushDevices.recordDelivery")(function ({ deviceId, at, failure }) {

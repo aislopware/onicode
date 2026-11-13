@@ -19,11 +19,13 @@ does not need to reach it at that moment.
 
 **Live Activity** on iOS, **Live Updates** on Android 16 and newer, and **Ongoing notification**
 on older Android show an environment's agents in the order they matter to you: the ones waiting
-for you, then ones that failed, then ones that finished, then ones still working. Each
-environment gets its own. A finished result stays for up to 15 minutes.
+for you, then ones that failed, then ones still working, then ones that finished. Each
+environment gets its own. A finished result stays for up to 15 minutes, or until you open its
+thread on any device.
 
 If you swipe one away, it stays away until that environment has finished everything and starts
-new work. Turning the switch off stops them and leaves alerts on.
+new work. iOS keeps a Live Activity for at most eight hours, so work that runs longer gets a new
+one then, also after a swipe. Turning the switch off stops them and leaves alerts on.
 
 ## Alerts
 

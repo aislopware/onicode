@@ -37,6 +37,8 @@ export interface AgentAwarenessState {
   readonly phase: AgentAwarenessPhase;
   readonly headline: string;
   readonly detail?: string;
+  /** A result someone has opened since it came in: it waits for no one, so nothing shows it. */
+  readonly seen?: true;
   readonly modelTitle: string;
   readonly updatedAt: string;
   readonly deepLink: string;
@@ -57,7 +59,9 @@ export interface ProjectThreadAwarenessV2Input {
     | "activityRunStatus"
     | "id"
     | "lineage"
+    | "lastVisitedAt"
     | "latestRunBackgroundWake"
+    | "latestRunCompletedAt"
     | "latestRunStopRequested"
     | "modelSelection"
     | "pendingBackgroundTasks"
@@ -90,6 +94,13 @@ export function projectThreadAwarenessV2(
   ) {
     return null;
   }
+  // The thread lists call a result read by the same rule.
+  const seen =
+    (phase === "completed" || phase === "failed") &&
+    thread.lastVisitedAt != null &&
+    thread.latestRunCompletedAt != null &&
+    DateTime.toEpochMillis(thread.lastVisitedAt) >=
+      DateTime.toEpochMillis(thread.latestRunCompletedAt);
   const detail =
     phase === "completed"
       ? "Review the completed task."
@@ -104,6 +115,7 @@ export function projectThreadAwarenessV2(
     phase,
     headline: headlineForPhase(phase),
     ...(detail === undefined ? {} : { detail }),
+    ...(seen ? { seen } : {}),
     modelTitle: thread.modelSelection.model,
     updatedAt: DateTime.formatIso(thread.updatedAt),
     deepLink: buildAgentAwarenessDeepLink({ environmentId, threadId: thread.id }),

@@ -1060,7 +1060,9 @@ export type AgentAwarenessThread = ProjectThreadAwarenessV2Input["thread"] &
     | "activeRunId"
     | "latestRunId"
     | "hasActionableProposedPlan"
-  >;
+  > &
+  // Optional on a shell for older servers. Here a snapshot that left it out would read as unseen.
+  Required<Pick<OrchestrationV2ThreadShell, "lastVisitedAt">>;
 
 type ShellThreadRow = {
   readonly thread_id: string;
@@ -8605,6 +8607,7 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               lineage: state.thread.lineage,
               modelSelection: state.thread.modelSelection,
               settledOverride: state.thread.settledOverride,
+              lastVisitedAt: state.thread.lastVisitedAt,
               updatedAt: state.updatedAt,
               status: state.latestRunStatus,
               activityRunStatus: state.activityRunStatus,

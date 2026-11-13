@@ -23,6 +23,7 @@ import { turnItemUpdateCanEndBackgroundWork } from "@onicode/shared/orchestratio
 import {
   PUSH_ACTIVITY_KEEPALIVE_MS,
   PUSH_ACTIVITY_KEEPALIVE_RETRY_MS,
+  PUSH_ANDROID_ACTIVITY_KEEPALIVE_MS,
   pushActivityIdentity,
   pushActivityState,
   pushAlertAllowed,
@@ -56,6 +57,10 @@ import * as PushSigningKey from "./PushSigningKey.ts";
 
 // A run can end moments before its continuation starts; wait before calling it finished.
 const CONFIRM_DELAY_MS = 5_000;
+// iOS ends a Live Activity eight hours after it starts, whatever its work is doing. A start may
+// take the gateway's five minutes to reach the phone, and a replacement that arrived before the
+// old card ended would make two live ones.
+const LIVE_ACTIVITY_LIFETIME_MS = 8 * 60 * 60_000 + 5 * 60_000;
 
 export class PushGatewayNotAllowedError extends Schema.TaggedError<PushGatewayNotAllowedError>()(
   "PushGatewayNotAllowedError",
@@ -138,6 +143,8 @@ const TRACKED_EVENTS: ReadonlySet<string> = new Set([
   "thread.deleted",
   "thread.metadata-updated",
   "thread.settled",
+  "thread.visited",
+  "thread.marked-unread",
   "thread.model-selection-updated",
   "thread.provider-switched",
   "run.created",
@@ -168,14 +175,17 @@ const isLive = (state: AgentAwarenessState | undefined) =>
 
 /** What a phone shows for one thread. */
 const shownAs = (state: AgentAwarenessState | undefined | null) =>
-  state == null
+  state == null || state.seen
     ? null
     : [state.phase, state.threadTitle, state.projectTitle, state.modelTitle].join("\n");
 
 type Work =
   | { readonly _tag: "thread"; readonly threadId: ThreadId }
-  /** Bring devices up to date, resending to `deviceId` even what it was already sent. */
-  | { readonly _tag: "sync"; readonly deviceId?: PushDeviceId }
+  /**
+   * Bring devices up to date, resending to `deviceId` even what it was already sent.
+   * `activityOff` when that device just registered with its activity turned off.
+   */
+  | { readonly _tag: "sync"; readonly deviceId?: PushDeviceId; readonly activityOff?: boolean }
   /** Publish again because time passed, not because a thread changed. */
   | { readonly _tag: "refresh" }
   /** Take the activity off a device that was just removed. */
@@ -217,8 +227,11 @@ const make = Effect.gen(function* () {
   const confirmDeadlines = new Map<ThreadId, number>();
   /** The activity each device last received, to skip what would look the same. */
   const delivered = new Map<PushDeviceId, string>();
-  /** When each Live Activity with work under way last heard from here. */
-  const refreshedAt = new Map<PushDeviceId, number>();
+  /**
+   * When each device with work under way next needs a publish though nothing changed: to refresh
+   * its card, or to send a start that had to wait.
+   */
+  const refreshDueAt = new Map<PushDeviceId, number>();
   /** Set while thread changes wait for the queue to empty before the activity is published. */
   let activityStale = false;
   let expiry: Fiber.Fiber<void> | undefined;
@@ -251,7 +264,7 @@ const make = Effect.gen(function* () {
     states.clear();
     confirmDeadlines.clear();
     delivered.clear();
-    refreshedAt.clear();
+    refreshDueAt.clear();
     activityStale = false;
   });
 
@@ -326,16 +339,19 @@ const make = Effect.gen(function* () {
       pushAlertAllowed(device.preferences, input.alert.kind)
         ? input.alert.notification
         : undefined;
-    const refreshed = refreshedAt.get(deviceId);
+    if (!device.preferences.activity) refreshDueAt.delete(deviceId);
+    const refreshDue = refreshDueAt.get(deviceId);
     const activity =
       input.activity !== undefined &&
       device.preferences.activity &&
       (delivered.get(deviceId) !== input.activity.identity ||
-        (refreshed !== undefined && now - refreshed >= PUSH_ACTIVITY_KEEPALIVE_MS))
+        (refreshDue !== undefined && now >= refreshDue))
         ? input.activity
         : undefined;
 
     if (device.platform === "android") {
+      // With nothing to send through, a refresh left due would wake the keepalive every minute.
+      if (notificationGrant === null) refreshDueAt.delete(deviceId);
       if (notificationGrant === null || (notification === undefined && activity === undefined)) {
         return;
       }
@@ -350,8 +366,14 @@ const make = Effect.gen(function* () {
               },
             }),
       });
+      const working = (activity?.state?.activeCount ?? 0) > 0;
       if (activity !== undefined && result.outcome === "delivered") {
         delivered.set(deviceId, activity.identity);
+        if (working) refreshDueAt.set(deviceId, now + PUSH_ANDROID_ACTIVITY_KEEPALIVE_MS);
+        else refreshDueAt.delete(deviceId);
+      } else if (working && result.outcome === "failed") {
+        // Work that goes on unchanged publishes nothing that would send this again.
+        refreshDueAt.set(deviceId, now);
       }
       return;
     }
@@ -362,17 +384,19 @@ const make = Effect.gen(function* () {
     if (activity === undefined) return;
     const { state, identity } = activity;
     const working = state !== null && state.activeCount > 0;
-    const settle = (settled: boolean) =>
-      (device.liveActivitySettled === 1) === settled
-        ? Effect.void
-        : devices.setLiveActivitySettled({ deviceId, settled });
+    const startedAt = device.liveActivityStartedAt;
+    // Nothing a start put on screen outlives it, so past that age the start holds nothing back.
+    const outlived = startedAt !== null && now - startedAt >= LIVE_ACTIVITY_LIFETIME_MS;
     // The stretch of work is over, so the next one may start an activity again.
-    if (!working) yield* settle(false);
-    const updateGrant = usable(
-      device.liveActivityUpdateGrant,
-      device.liveActivityUpdateGrantExpiresAt,
-      now,
-    );
+    if (startedAt !== null && (!working || outlived)) {
+      yield* devices.setLiveActivityStartedAt({ deviceId, at: null });
+    }
+    // APNs keeps accepting updates for a card iOS has ended, so its age is what says it is gone.
+    const replacing = working && outlived && device.liveActivityUpdateGrant !== null;
+    if (replacing) yield* devices.setGrant({ deviceId, kind: "liveActivityUpdate", grant: null });
+    const updateGrant = replacing
+      ? null
+      : usable(device.liveActivityUpdateGrant, device.liveActivityUpdateGrantExpiresAt, now);
     if (updateGrant !== null) {
       const result = yield* send(device, "liveActivityUpdate", updateGrant, {
         activity: { state },
@@ -380,19 +404,22 @@ const make = Effect.gen(function* () {
       if (result.outcome === "delivered") {
         delivered.set(deviceId, identity);
         if (working) {
-          refreshedAt.set(deviceId, now);
+          refreshDueAt.set(deviceId, now + PUSH_ACTIVITY_KEEPALIVE_MS);
         } else {
-          refreshedAt.delete(deviceId);
+          refreshDueAt.delete(deviceId);
           // The gateway ended the activity, so its token is spent.
           yield* devices.setGrant({ deviceId, kind: "liveActivityUpdate", grant: null });
         }
-      } else if (result.outcome === "unregistered") refreshedAt.delete(deviceId);
-      if (result.outcome === "unregistered" && working) {
-        // Swiped away: leave it gone until this stretch of work is over.
-        yield* settle(true);
+      } else if (working && result.outcome === "failed") {
+        // Whatever was due waits for something else, such as the end of a start's hold.
+        refreshDueAt.set(deviceId, now);
       }
-      return;
+      // A card swiped away is gone, and its start goes on holding back another one below.
+      if (result.outcome !== "unregistered") return;
     }
+    // With no card, nothing is shown to match, so every publish comes back here.
+    refreshDueAt.delete(deviceId);
+    delivered.delete(deviceId);
     if (!working) {
       delivered.set(deviceId, identity);
       return;
@@ -402,11 +429,24 @@ const make = Effect.gen(function* () {
       device.liveActivityStartGrantExpiresAt,
       now,
     );
-    if (startGrant === null || device.liveActivitySettled === 1) return;
+    if (startGrant === null) return;
     // One start per stretch of work: the app answers with an update grant, or ends the card.
     // It is kept in the database because a restart must not spend iOS's start budget again.
+    if (startedAt !== null && !outlived) {
+      // Work that goes on unchanged publishes nothing, so the end of the hold needs a wake-up.
+      refreshDueAt.set(deviceId, startedAt + LIVE_ACTIVITY_LIFETIME_MS);
+      return;
+    }
     const result = yield* send(device, "liveActivityStart", startGrant, { activity: { state } });
-    if (result.outcome !== "failed") yield* settle(true);
+    if (result.outcome === "delivered") {
+      // Read again: the gateway counts the push's five minutes from when it took the push.
+      const at = yield* Clock.currentTimeMillis;
+      yield* devices.setLiveActivityStartedAt({ deviceId, at });
+      refreshDueAt.set(deviceId, at + LIVE_ACTIVITY_LIFETIME_MS);
+    } else if (result.outcome === "failed") {
+      refreshDueAt.set(deviceId, now);
+    }
+    // Otherwise iOS has retired the token: it started nothing, so the app's next one may.
   });
 
   /** Best effort: a removed device keeps a card nothing would ever update. */
@@ -414,7 +454,7 @@ const make = Effect.gen(function* () {
     device: PushDevices.PushDeviceRecord,
   ) {
     delivered.delete(device.deviceId);
-    refreshedAt.delete(device.deviceId);
+    refreshDueAt.delete(device.deviceId);
     const now = yield* Clock.currentTimeMillis;
     const grant =
       device.platform === "android"
@@ -472,6 +512,13 @@ const make = Effect.gen(function* () {
     }
     const activity = alertOnly ? undefined : yield* currentActivity(now);
     if (!alertOnly) activityStale = false;
+    // A device whose session ended is no longer listed, and must not keep the keepalive awake.
+    const known = new Set(registered.map((device) => device.deviceId));
+    for (const deviceId of [...refreshDueAt.keys(), ...delivered.keys()]) {
+      if (known.has(deviceId)) continue;
+      refreshDueAt.delete(deviceId);
+      delivered.delete(deviceId);
+    }
 
     yield* Effect.forEach(
       registered,
@@ -488,15 +535,15 @@ const make = Effect.gen(function* () {
       { concurrency: 4, discard: true },
     );
 
-    // iOS marks a card out of date when nothing reaches it, even while its agents keep working.
+    // A phone calls a card out of date, or drops it, when nothing reaches it while agents work.
     if (keepalive !== undefined) yield* Fiber.interrupt(keepalive);
-    const oldest = Math.min(...refreshedAt.values());
+    const nextRefresh = Math.min(...refreshDueAt.values());
     keepalive =
-      refreshedAt.size === 0
+      refreshDueAt.size === 0
         ? undefined
         : yield* Effect.sleep(
             // A delivery that keeps failing must not turn this into a tight loop.
-            Math.max(PUSH_ACTIVITY_KEEPALIVE_RETRY_MS, oldest + PUSH_ACTIVITY_KEEPALIVE_MS - now),
+            Math.max(PUSH_ACTIVITY_KEEPALIVE_RETRY_MS, nextRefresh - now),
           ).pipe(
             Effect.andThen(Effect.suspend(() => enqueue({ _tag: "refresh" }))),
             Effect.forkIn(scope),
@@ -578,6 +625,13 @@ const make = Effect.gen(function* () {
           return yield* endActivity(work.device);
         case "sync":
           if (work.deviceId !== undefined) delivered.delete(work.deviceId);
+          if (work.deviceId !== undefined && work.activityOff) {
+            // The app ends its card with the setting, so turning it back on starts from nothing.
+            // Done in turn here, so a start still on its way cannot record itself afterwards.
+            const { deviceId } = work;
+            yield* devices.setGrant({ deviceId, kind: "liveActivityUpdate", grant: null });
+            yield* devices.setLiveActivityStartedAt({ deviceId, at: null });
+          }
           if (!tracking) yield* seed().pipe(Effect.tapCause(() => stopTracking));
           return yield* publish(null);
         case "refresh":
@@ -652,7 +706,11 @@ const make = Effect.gen(function* () {
         liveActivityStartGrantExpiresAt: liveActivityStart?.expiresAt ?? null,
         registeredAt: yield* DateTime.now,
       });
-      yield* enqueue({ _tag: "sync", deviceId: input.deviceId });
+      yield* enqueue({
+        _tag: "sync",
+        deviceId: input.deviceId,
+        activityOff: !request.preferences.activity,
+      });
     }),
 
     registerLiveActivity: Effect.fn("PushNotifications.registerLiveActivity")(function* (input) {
