@@ -942,3 +942,4 @@ d90ac5c764	take	fix(ssh): timed-out SSH commands keep the output they already pr
 18188ba0b8	take	fix(server): worktree dev servers no longer clean up real worktrees (#33902)
 47a9988299	take	fix(server): server updates retry when a release download fails briefly (#33896); applied to service/pinnedRuntime.ts (Onicode's home for cloud/); selfUpdate.test hunk not needed
 0951791089	take	fix(server): dev database seed no longer runs settle scripts in real worktrees (#33908)
+fc533a6c6c	take	perf(server): avoid loading provider drivers for terminal imports (#33898)
