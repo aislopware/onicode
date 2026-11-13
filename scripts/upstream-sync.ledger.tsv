@@ -1052,3 +1052,4 @@ c19b8f0401	take	fix(cli): onicode status no longer suggests --no-lan under a ONI
 2e741fc089	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(desktop): wait for the server'\''s database upgrade instead of reporting a failed start (#35056)' -m 'Ported from pingdotgg/t3code@2e741fc089.'
 39f465a926	take	fix(server): a C# dictionary term no longer rewrites standalone letters (#35700)
 c1b42c17dc	take	fix(client-runtime): last user message sort ignores agent-posted messages (#33873)
+f8372d1baf	take	fix(web): long screen-reader announcements keep emoji whole at the cutoff (#35681)
