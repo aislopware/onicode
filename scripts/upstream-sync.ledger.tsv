@@ -1154,3 +1154,4 @@ b2078c2d0a	take	fix(server): service launcher keeps a T3 home that ends in a spa
 0f5ecef914	take	fix(server): refuse a Linux service for a T3 home systemd cannot load (#35968)
 b7a224c7dd	take	perf(server): sending, editing and steering queued messages no longer read a long thread's whole history (#29521)
 8fe745d7af	take	fix(server): Codex protocol records go to the log of the thread they belong to (#35975)
+c54e5b31ce	take	fix(cli): service.env updates keep quoted multiline values intact (#35976)
