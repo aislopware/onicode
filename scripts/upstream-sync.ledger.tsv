@@ -876,3 +876,4 @@ d0f9d4dcc0	take	fix(web): sidebar draft previews show cited assistant text, not 
 841f98d4d8	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(mobile): a steer splits a settled turn'\''s "Worked for" fold (#35408)' -m 'Ported from pingdotgg/t3code@841f98d4d8.'
 ddd02848e6	take	fix(shared): html_render pages show for Grok threads (#35434)
 5ff3d3c0ec	take	fix(server): Claude 1-hour cache writes are priced at the 1-hour rate (#35423)
+662a1ce6e2	take	fix(opencode): OpenCode Go threads no longer fail on a reasoning level the model lacks (#35432)
