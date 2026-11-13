@@ -1152,3 +1152,4 @@ ff1eead6f4	take	fix(web): zoom shortcuts work while a desktop browser page has f
 b2078c2d0a	take	fix(server): service launcher keeps a T3 home that ends in a space (#35958)
 99224f098d	take	fix(server): launcher repoints the unit the systemd manager loads (#35966)
 0f5ecef914	take	fix(server): refuse a Linux service for a T3 home systemd cannot load (#35968)
+b7a224c7dd	take	perf(server): sending, editing and steering queued messages no longer read a long thread's whole history (#29521)
