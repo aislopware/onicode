@@ -1121,3 +1121,4 @@ c967d98cea	take	fix(acp): linked terminal output no longer reopens a completed t
 15cf8b122c	take	fix(acp): root tool content replacements replace streamed output (#35862)
 5e18314b88	take	fix(forgejo): fast-forward-only repositories can merge pull requests (#32738)
 b1bc5ce20f	take	fix(server): linking says why each address failed discovery (#30884)
+8a227eba4e	take	fix(terminal): show recovery guidance when a project folder is missing (#35849)
