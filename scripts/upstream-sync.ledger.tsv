@@ -863,3 +863,4 @@ c5f5efdbd2	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>
 e96c96eafe	take	fix(server): storage cleanup stops holding usage-limited threads too overdue to auto-resume (#35397)
 167d41c094	take	fix(web): a numeric author or labels in the URL no longer crashes Pull Requests (#35376); test case added to Onicode's pullRequestsRouteSearch.browser.test.ts
 4d641633b2	take	fix(web): bare URLs end at Chinese and Japanese punctuation (#35267)
+88bf393b30	take	fix(server): @ file search finds filenames containing literal braces (#35239)
