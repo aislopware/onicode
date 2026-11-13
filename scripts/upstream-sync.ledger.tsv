@@ -1323,3 +1323,4 @@ dd2678d6e8	skip	Guards T3's macOS PR-preview publish workflow; Onicode has no PR
 70b052904b	skip	Blacksmith macos-27 runner labels and T3's EAS store-build Xcode gate; Onicode's CI uses GitHub-hosted macos-26 and releases iOS through better-update, and the other three workflows are not in Onicode
 5f95653f25	take	fix(server): Claude context meter no longer shows an auto-compact point when auto-compaction is off (#36417)
 c8db8be305	take	fix(web): a run waiting on foreground subagents says so instead of Thinking
+aaa3dbabb1	take	fix(server): a follow-up to a delegated child waits for its awaited background work
