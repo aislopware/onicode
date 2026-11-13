@@ -1320,3 +1320,4 @@ dd2678d6e8	skip	Guards T3's macOS PR-preview publish workflow; Onicode has no PR
 134ab31276	take	fix(mobile): a new thread's first message no longer returns to the composer after a lost launch reply (#32330)
 48cdefed5a	take	fix(web): size markdown media whose width and height carry a px unit (#32108)
 36f011dfb7	take	fix(web): file links the agent cited from a checkout it cd'd into open that file (#36364)
+70b052904b	skip	Blacksmith macos-27 runner labels and T3's EAS store-build Xcode gate; Onicode's CI uses GitHub-hosted macos-26 and releases iOS through better-update, and the other three workflows are not in Onicode
