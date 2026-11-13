@@ -1300,3 +1300,4 @@ cfc71e1a99	take	fix(web): preview annotations in question answers reach the agen
 af9b4e41de	take	fix(server): a worktree handoff on Claude or Pi completes its run and starts the continuation (#36360); guest-message attribution in the message.dispatch case dropped (Onicode removed guests)
 0a6b3ebe22	take	fix(forgejo): Gitea branch PR lookups no longer read the whole pull request list (#36387)
 9402dc39bf	take	fix(checkpoint): fetched upstream commits no longer show as agent changes (#36332)
+d772115e0d	take	fix(server): terminal history keeps text after a CSI cut off by non-ASCII output (#36355)
