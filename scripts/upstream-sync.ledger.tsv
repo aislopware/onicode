@@ -1222,3 +1222,4 @@ f313d0a6cb	take	taken as is
 00f617db4e	take	fix(client-runtime): recover subscriptions that stop on a healthy connection (#24400)
 e41941779a	take	fix(server): stopping the service during the pre-update backup ends the copy (#34854)
 928dd049e1	take	fix(server): preview browser downloads Chrome 157.0.8103.78 with its security fixes (#34962)
+d0957bc4b0	take	fix(opencode): restarted server stops an orphaned OpenCode server started through a wrapper (#34959)
