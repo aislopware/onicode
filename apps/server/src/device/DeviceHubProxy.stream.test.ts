@@ -20,7 +20,7 @@ import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
 import * as DeviceService from "./DeviceService.ts";
 import * as DeviceHubProxy from "./DeviceHubProxy.ts";
 
-it.effect("preserves binary input and admission frames through the real socket proxy", () =>
+it.effect("preserves binary frames and the hub's close code through the real socket proxy", () =>
   Effect.gen(function* () {
     const hub = yield* Effect.acquireRelease(
       Effect.sync(() => new NodeWS.WebSocketServer({ port: 0 })),
@@ -39,7 +39,11 @@ it.effect("preserves binary input and admission frames through the real socket p
     if (typeof address !== "object" || !address) throw new Error("Missing hub port");
     hub.on("connection", (socket) => {
       socket.send(Uint8Array.of(0x83));
-      socket.on("message", (data, binary) => socket.send(data, { binary }));
+      socket.on("message", (data, binary) => {
+        socket.send(data, { binary });
+        // Simlock ends a device lease this way; the client stops retrying on 4001.
+        if (Array.from(data as Buffer).join() === "3,2") socket.close(4001, "lease expired");
+      });
     });
     const services = yield* Layer.build(
       HttpRouter.serve(DeviceHubProxy.layer, { disableListenLog: true }).pipe(
@@ -79,16 +83,20 @@ it.effect("preserves binary input and admission frames through the real socket p
     );
     client.binaryType = "arraybuffer";
     const frames: number[][] = [];
-    const received = Promise.withResolvers<void>();
-    client.addEventListener("error", () => received.reject(new Error("Proxy failed")));
+    const closed = Promise.withResolvers<{ code: number; reason: string }>();
+    client.addEventListener("error", () => closed.reject(new Error("Proxy failed")));
+    client.addEventListener("close", ({ code, reason }) => closed.resolve({ code, reason }));
     client.addEventListener("message", ({ data }) => {
       frames.push(Array.from(new Uint8Array(data as ArrayBuffer)));
       if (frames.length === 1) {
         client.send(Uint8Array.of(0x03, 1));
         client.send(Uint8Array.of(0x03, 2));
-      } else if (frames.length === 3) received.resolve();
+      }
     });
-    yield* Effect.promise(() => received.promise);
+    expect(yield* Effect.promise(() => closed.promise)).toEqual({
+      code: 4001,
+      reason: "lease expired",
+    });
     expect(frames).toEqual([[0x83], [0x03, 1], [0x03, 2]]);
   }),
 );
