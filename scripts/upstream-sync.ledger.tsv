@@ -981,3 +981,4 @@ dfded9d759	take	fix(web): keep the child thread open when its remote parent was 
 731291ee1f	take	fix(desktop): poll for updates every 4 hours, not 4 minutes (#28481)
 9a614e34a6	take	fix(usage): bill Codex requests whose cumulative counters rewind to an earlier snapshot (#29366)
 65716ba1d7	take	fix(server): persist terminal output without rewriting all history (#24019)
+8bfb723dc1	take	perf(server): stop serializing terminal chunks just to measure them (#24179)
