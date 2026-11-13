@@ -1492,6 +1492,8 @@ interface ActiveAcpTurn {
   readonly promptDispatched: Deferred.Deferred<void, never>;
   /** Frees the runtime for the next prompt while the agent still holds this one's response. */
   readonly foregroundIdle: Deferred.Deferred<void>;
+  /** Records this prompt's notes as delivered; runs on release so a late response cannot. */
+  recordPromptDelivery: Effect.Effect<void>;
   /** Clock millis just before `session/prompt` was handed to the runtime. */
   promptSentAt: number | null;
   /** Completed when an update after dispatch matches `cancelAfterPromptStarts.isStart`. */
@@ -6993,6 +6995,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     if (notice.state === "running") {
                       context.workAccepted = true;
                     } else if (context.workAccepted) {
+                      yield* context.recordPromptDelivery;
                       yield* Deferred.succeed(context.foregroundIdle, undefined);
                       yield* finalizeTurn(context, "completed");
                     }
@@ -8450,6 +8453,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               promptWireSettled,
               promptDispatched,
               foregroundIdle: yield* Deferred.make<void>(),
+              recordPromptDelivery: Effect.void,
               promptSentAt: null,
               promptStarted,
               promptUsage: undefined,
@@ -8596,6 +8600,32 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 ? undefined
                 : yield* flavor.watchPromptOutcome(requestedSessionId);
             const promptGeneration = yield* Ref.get(runtimeCallbackGeneration);
+            const recordPromptDelivery = Effect.gen(function* () {
+              yield* Ref.update(promptInstructionStates, (current) => {
+                if (promptParts?.instructionState === undefined) return current;
+                const updated = new Map(current);
+                updated.set(requestedSessionId, promptParts.instructionState);
+                return updated;
+              });
+              yield* Ref.update(promptRuntimeInstructions, (current) => {
+                if (promptParts?.runtimeInstructions === undefined) return current;
+                const updated = new Map(current);
+                updated.set(requestedSessionId, promptParts.runtimeInstructions);
+                return updated;
+              });
+              yield* Ref.update(compactionMarkers, (current) => {
+                if (promptParts?.instructionState === undefined) return current;
+                const observedMarker = promptParts.compactionMarker;
+                if (
+                  observedMarker === undefined ||
+                  current.get(requestedSessionId) !== observedMarker
+                )
+                  return current;
+                const updated = new Map(current);
+                updated.delete(requestedSessionId);
+                return updated;
+              });
+            });
             const promptOptions = {
               dispatched: context.promptDispatched,
               released: context.foregroundIdle,
@@ -8611,6 +8641,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
             const compactSession = isCompactionMessage(turnInput.message)
               ? flavor.compactSession
               : undefined;
+            if (compactSession === undefined) context.recordPromptDelivery = recordPromptDelivery;
             yield* (
               compactSession === undefined
                 ? sendPromptWhenIdle(context, () =>
@@ -8648,32 +8679,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                     } else if (
                       result.stopReason !== "cancelled" &&
                       result.stopReason !== "refusal" &&
-                      result.stopReason !== "error"
+                      result.stopReason !== "error" &&
+                      !(yield* Deferred.isDone(context.foregroundIdle))
                     ) {
-                      yield* Ref.update(promptInstructionStates, (current) => {
-                        if (promptParts?.instructionState === undefined) return current;
-                        const updated = new Map(current);
-                        updated.set(requestedSessionId, promptParts.instructionState);
-                        return updated;
-                      });
-                      yield* Ref.update(promptRuntimeInstructions, (current) => {
-                        if (promptParts?.runtimeInstructions === undefined) return current;
-                        const updated = new Map(current);
-                        updated.set(requestedSessionId, promptParts.runtimeInstructions);
-                        return updated;
-                      });
-                      yield* Ref.update(compactionMarkers, (current) => {
-                        if (promptParts?.instructionState === undefined) return current;
-                        const observedMarker = promptParts.compactionMarker;
-                        if (
-                          observedMarker === undefined ||
-                          current.get(requestedSessionId) !== observedMarker
-                        )
-                          return current;
-                        const updated = new Map(current);
-                        updated.delete(requestedSessionId);
-                        return updated;
-                      });
+                      yield* recordPromptDelivery;
                     }
                     if (context.finalized || followsAgentWorkState) return;
                     // ACP v2 reports a failed prompt as an idle `error`, not an RPC error.
