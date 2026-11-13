@@ -848,3 +848,4 @@ e9e934bb3d	take	fix(acp): new Copilot threads run the model the composer shows (
 2482b03a01	take	perf(client): threads load while the socket connects, with fewer round trips (#35071); DPoP/relay token paths dropped; bearer-only service keeps keepsItsHost and the 3s nearby timeout (not for SSH forwards via viaSsh)
 4fd40e1a16	take	perf(server): Load earlier turns takes about half the time on a running long thread (#35224)
 fd8e386f7f	take	fix(mobile): the thread list shows server changes after a tab round trip (#35325)
+2b4a9c744e	take	test(web): inline confirm tests no longer race the 3s disarm timer (#35361)
