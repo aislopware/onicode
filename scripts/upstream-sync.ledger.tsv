@@ -985,3 +985,4 @@ dfded9d759	take	fix(web): keep the child thread open when its remote parent was 
 4cd7a3eb1c	take	fix(web): stop opening a menu when a terminal selection ends (#24112)
 30a26dbb64	take	fix(server): agents keep named browser profiles after a server restart (#23484)
 9b242e4d07	take	fix(web): reveal full composer command descriptions (#27414)
+44ee2b9c34	take	fix(server): restart the service after Onicode home ownership clears (#25237); service/ import paths
