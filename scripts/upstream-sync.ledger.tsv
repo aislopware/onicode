@@ -1097,3 +1097,4 @@ b8c74f5a13	take	fix(server): gh default remote lookup ignores an inherited GIT_D
 d86ee1e261	take	test(web): typecheck the project file refresh test (#34061)
 6f21b0f02a	take	docs(codex): explain native image generation setup (#31426)
 bb9658d3a7	take	perf(shared): command output failure scan rejects clean output in one pass (#26935)
+5ccc65be0a	take	test(web): sidebar drag test opens its folder past the shift guard (#35803)
