@@ -1288,3 +1288,4 @@ f8dc37d0b7	take	fix(web): floating preview resize holds its shape and ends when 
 6bb9b7b323	take	fix(web): auto-settle days save when the edit is finished, not on every keystroke (#36303)
 e07585e5fb	skip	AppImage rename to a version-free name is a release-pipeline change (Onicode ships Onicode-${version}-${arch} through better-update; AUR removed); the desktop symlink repair only runs after that rename. Follow-up: check better-update's Linux feed before renaming
 51e1346d42	skip	T3 relay only (infra/relay); Onicode's push server and gateway are built differently and do not alert from the aggregate's first activity
+96a4d2f012	take	fix(web): pasted URLs and paths keep their underscores (#36363)
