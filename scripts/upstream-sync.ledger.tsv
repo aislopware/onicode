@@ -1212,3 +1212,4 @@ fa9d85fad5	take	fix(web): a server updated with the app reconnects as soon as it
 7903b487ba	take	fix(acp): Copilot runs end when its reply is done, not when its async shells exit
 08be7829df	take	fix(server): a link forgotten mid-resolve says it is not linked
 4aec277f79	take	fix(server): oni_queue no longer reads a thread's whole history (MCP tool analytics part dropped: removed in Onicode)
+2d8a843e6b	take	perf(server): shell reads of a worktree or family no longer parse every thread payload (#36146); migration renumbered 089 -> 096
