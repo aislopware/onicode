@@ -1327,3 +1327,4 @@ aaa3dbabb1	take	fix(server): a follow-up to a delegated child waits for its awai
 08b8689a85	take	fix(provider-grok): Grok follow-ups queue instead of cancelling the running tool
 b537916099	take	fix(server): thread list builds metadata only for the page it returns
 3c1be119b9	take	fix(web): middle-clicking empty chat space on Linux no longer pastes into the composer
+ab9e6a2792	take	fix(web): closing Settings no longer leaves it as a back/forward stop
