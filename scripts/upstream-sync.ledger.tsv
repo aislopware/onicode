@@ -1141,3 +1141,4 @@ afff0d3efe	take	fix(clients): answer history no longer shows provider context fr
 ed5afae179	take	fix(acp): v2 tool updates clear nulled fields and replace raw input (#35869)
 004f7a768f	take	fix(server): interrupted SSH device bootstrap no longer leaks its forward (#35928)
 bedc8658c3	take	fix(mobile): Files search no longer carries into another workspace (#35902)
+b62e80e0a3	take	fix(web): copying an alert callout keeps its alert Markdown (#35932)
