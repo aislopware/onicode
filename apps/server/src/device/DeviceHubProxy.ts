@@ -125,10 +125,19 @@ const pumpFrames =
   /* Frame pumping runs continuously; a span per frame stream adds no diagnostic value. */
   Effect.fnUntraced(function* (source: Socket.Socket, sink: Socket.Writer) {
     const { pull } = yield* source.reader;
-    while (true) {
-      yield* sink.writeAll(yield* pull);
-    }
+    return yield* Effect.forever(Effect.flatMap(pull, sink.writeAll)).pipe(
+      Effect.tapError(({ reason }) =>
+        reason._tag === "SocketCloseError"
+          ? sink.write(new Socket.CloseEvent(sendableCloseCode(reason.code), reason.closeReason))
+          : Effect.void,
+      ),
+    );
   });
+
+// 1005, 1006 and 1015 only report a received close and cannot be sent. A received reason
+// already fits the 123-byte limit.
+const sendableCloseCode = (code: number) =>
+  code === 1005 ? 1000 : code === 1006 || code === 1015 ? 1011 : code;
 
 const proxyHttp = Effect.fn("DeviceHubProxy.proxyHttp")(function* (
   request: HttpServerRequest.HttpServerRequest,
