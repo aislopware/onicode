@@ -1040,3 +1040,4 @@ e179cefe7a	take	fix(web): collapsed reasoning previews no longer split an emoji 
 4cfcfaf2fd	take	fix(web): a question answer restored with undo is no longer sent twice (#35574)
 f59aa4eba0	take	fix(server): reject PR watches when hosting dependencies are unavailable (#33389)
 9fb4492329	take	fix(chat): requeued steers no longer look delivered (#23420)
+f6787e8537	take	fix(web): reuse timeline rows while thinking and plans stream (#24121)
