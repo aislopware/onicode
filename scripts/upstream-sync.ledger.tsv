@@ -957,3 +957,4 @@ a03f7185f2	take	perf(web): PDF Find jumps to the first match in long PDFs 3.1x f
 96aa40ebcd	take	git commit -a --author='Mike Olson <mwolson@member.fsf.org>' -m 'fix(mobile): Keep a tall question'\''s Submit button above Android'\''s navigation bar (#33929)' -m 'Ported from pingdotgg/t3code@96aa40ebcd.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 4f555c746c	take	fix(web): choosing a project icon again re-reads it from disk (#28584)
 d9a97e7c49	take	fix(web): sidebar keeps the open thread active while Settings or Usage is open (#28703); Sidebar hooks swapped in place (Onicode hook order kept); no redirect import
+9c7618ba1c	take	fix(web): gitignore fences in the rich-text composer highlight as ini, as chat does (#35603)
