@@ -91,6 +91,7 @@ vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid" }));
 vi.mock("./queued-run-edit", () => ({
   useQueuedRunEdit: () => null,
   getQueuedRunEdit: () => null,
+  composerDraftKeyForThread: (threadKey: string) => threadKey,
 }));
 vi.mock("./preferences", async () => {
   const { Atom, AsyncResult } = await import("effect/reactivity");
