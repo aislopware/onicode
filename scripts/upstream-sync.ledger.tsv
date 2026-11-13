@@ -1107,3 +1107,4 @@ bb9658d3a7	take	perf(shared): command output failure scan rejects clean output i
 edd6fc3489	take	fix(server): ACP streamed chunks compare message ids exactly (#35836)
 0fa18ad712	take	fix(install): name the archive when its download fails (#35854)
 7fb6098cfd	take	test(server): drop the flaky Kiro provider_thread_resume replay (#35867)
+ed2a319814	take	fix(web): arrow and page keys scroll the conversation again after a click or F6 (#27209)
