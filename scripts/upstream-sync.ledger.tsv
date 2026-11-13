@@ -1316,3 +1316,4 @@ bc7fe11002	take	fix(web): a new worktree thread opened during a clone bases on t
 94aa3d7736	skip	Adds frame headers to the server's static web app route; Onicode serves no UI to browsers and has no static route
 5df5b44309	take	fix(server): a server browser tab survives a renderer crash, and a service worker badge call no longer causes one (#36389)
 1219f62845	skip	T3 Connect and Clerk sign-in retry; Onicode removed both
+dd2678d6e8	skip	Guards T3's macOS PR-preview publish workflow; Onicode has no PR-preview pipeline, so the untrusted-bundle flag would never be set
