@@ -990,3 +990,4 @@ a34427662b	take	fix(web): Enter on an empty prompt resumes an interrupted thread
 9ac4535b06	take	fix(shared): token counts just below a unit boundary use the next unit (#35634)
 068563516a	take	fix(desktop): long annotation strokes stay cheap to draw (#24573)
 058d953646	take	fix(ssh): load remote profiles with the account login shell (#23934)
+da345d203c	take	fix(server): terminals recreate a worktree removed by storage cleanup (#24156)
