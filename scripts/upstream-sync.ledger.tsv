@@ -1229,3 +1229,4 @@ c398b46af0	take	fix(server): Codex text generation runs when launch args define 
 148612e181	take	fix(opencode): usage scans reuse unchanged rows and run off the event loop (#34897)
 d3ef7e8e52	take	fix(cursor): send the catalog's default model parameters on every Cursor run (#28722)
 0568a63aac	take	fix(server): agents point to Settings → Labs when the link tools are hidden (#30371)
+139ec8080f	take	fix(server): Claude no longer dispatches skill mentions from handoff history (#34497)
