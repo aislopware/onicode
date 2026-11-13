@@ -1147,3 +1147,4 @@ b62e80e0a3	take	fix(web): copying an alert callout keeps its alert Markdown (#35
 0c4b1d8f27	take	fix(server): new turns wait for overlapping checkpoint file restores (#23671)
 67d91a0390	take	fix(server): preview_navigate returns the committed page when load is slow (#26127)
 ec918277f0	take	fix(server): unchanged-worktree cleanup waits for the thread to settle or archive (#35941)
+ff1eead6f4	take	fix(web): zoom shortcuts work while a desktop browser page has focus (#35947)
