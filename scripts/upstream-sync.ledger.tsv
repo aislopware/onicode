@@ -1319,3 +1319,4 @@ bc7fe11002	take	fix(web): a new worktree thread opened during a clone bases on t
 dd2678d6e8	skip	Guards T3's macOS PR-preview publish workflow; Onicode has no PR-preview pipeline, so the untrusted-bundle flag would never be set
 134ab31276	take	fix(mobile): a new thread's first message no longer returns to the composer after a lost launch reply (#32330)
 48cdefed5a	take	fix(web): size markdown media whose width and height carry a px unit (#32108)
+36f011dfb7	take	fix(web): file links the agent cited from a checkout it cd'd into open that file (#36364)
