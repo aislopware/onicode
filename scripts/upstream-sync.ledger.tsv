@@ -1066,3 +1066,4 @@ ac1cb9232d	take	fix(server): archive refuses a thread with running delegated tas
 c99201cc15	take	fix(web): minimap Next turn no longer sticks on adjacent user messages (#33036)
 d4b77d2448	take	fix(server): Claude background commands show how long they have run (#26668)
 c2931a6e9c	take	fix(server): honor worktree prefixes when automatic naming fails (#35718)
+7bf2a43c09	take	fix(git): refuse remote switches that would silently detach HEAD (#35687)
