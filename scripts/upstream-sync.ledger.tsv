@@ -1296,3 +1296,4 @@ cfc71e1a99	take	fix(web): preview annotations in question answers reach the agen
 1721f187c6	take	fix(web): clearing a running terminal keeps its screen and input modes (#36380)
 1da05a8a98	take	fix(server): a default branch the remote deleted no longer starts worktree threads (#36268)
 38072bdc81	take	fix(desktop): new tabs the agent opens from links no longer steal composer focus (#36300)
+9a455f02e2	take	fix(ssh): a renamed SSH connection keeps managing its remote server (#36351)
