@@ -1126,3 +1126,4 @@ b1bc5ce20f	take	fix(server): linking says why each address failed discovery (#30
 b23f94e4a1	take	fix(server): preview resize and status report the real size of desktop tabs (#32854)
 496856d8d7	take	fix(server): migration 64 skips thread payloads that are not valid JSON (#35884)
 8a38c63706	take	fix(web): thread navigation shortcuts work from the terminal and macOS composer (#26433)
+025942d76a	take	fix(desktop): an unreadable settings file is no longer overwritten by a bounds save (#35890)
