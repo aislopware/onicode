@@ -204,6 +204,28 @@ function literalDirectory(operand: string): string | null {
   return path.includes("\\") && !isWindowsAbsolutePath(path) ? null : path;
 }
 
+// A relative operand the shell resolves without expanding anything or leaving the folder.
+const DESCENDANT_OPERAND =
+  /^(?!\.\.?(?:\/|$))(?!.*\/\.\.?(?:\/|$))[^-~/\\$`*?[\]{}"'][^\\$`*?[\]{}"']*$/;
+
+/** The folders `cd` operands changed into, in order; a relative one joins the folder before it. */
+function literalDirectories(operands: ReadonlyArray<string>): Array<string> {
+  const directories: Array<string> = [];
+  let current: string | null = null;
+  for (const operand of operands) {
+    const absolute = literalDirectory(operand);
+    if (absolute !== null) current = absolute;
+    else if (current !== null && DESCENDANT_OPERAND.test(operand)) {
+      const parent: string = current;
+      const separator = isWindowsAbsolutePath(parent) && parent.includes("\\") ? "\\" : "/";
+      const child = operand.replace(/\/+$/, "").replaceAll("/", separator);
+      current = `${parent.replace(/[\\/]+$/, "")}${separator}${child}`;
+    } else current = null;
+    if (current !== null) directories.push(current);
+  }
+  return directories;
+}
+
 interface TimelineItemSource {
   readonly sourceThreadId: string;
   readonly sourceItemId: string;
@@ -227,9 +249,8 @@ export function agentWorkingDirectories(
   for (let index = replyIndex - 1; index >= 0; index--) {
     const item = items[index]?.item;
     if (item?.type !== "command_execution" || typeof item.input !== "string") continue;
-    for (const operand of cdOperands(item.input).reverse()) {
-      const directory = literalDirectory(operand);
-      if (directory !== null) directories.add(directory);
+    for (const directory of literalDirectories(cdOperands(item.input)).reverse()) {
+      directories.add(directory);
       if (directories.size === FILESYSTEM_METADATA_BATCH_LIMIT) return [...directories];
     }
   }

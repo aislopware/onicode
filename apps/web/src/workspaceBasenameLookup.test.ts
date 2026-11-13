@@ -135,8 +135,16 @@ describe("agentWorkingDirectories", () => {
         `/bin/zsh -lc "cd '/work/my repo'; ls"`,
         "cd -P /work/repo-a # not this; cd /work/commented",
         "cd /work/repo-c\npwd",
+        "cd /work/repo-d && cd packages/api/ && cd ../x",
       ),
-    ).toEqual(["/work/repo-c", "/work/repo-a", "/work/my repo", "/work/repo-b"]);
+    ).toEqual([
+      "/work/repo-d/packages/api",
+      "/work/repo-d",
+      "/work/repo-c",
+      "/work/repo-a",
+      "/work/my repo",
+      "/work/repo-b",
+    ]);
   });
 
   it("skips operands only the shell can resolve and words that are not the command", () => {
