@@ -961,3 +961,4 @@ d9a97e7c49	take	fix(web): sidebar keeps the open thread active while Settings or
 451e3756a5	take	fix(web): keep later navigation when thread deletion completes (#33953)
 0bc993ac09	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(server): Git status finds the default branch when the only remote isn'\''t origin (#28815)' -m 'Ported from pingdotgg/t3code@0bc993ac09.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 f255158370	take	fix(pi): settle prompts consumed by input handlers (#28798)
+39ab6a2d2f	take	fix(cursor): honor HTTP/1.1 transport for proxy networks (#25338)
