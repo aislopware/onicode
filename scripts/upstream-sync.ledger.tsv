@@ -940,3 +940,4 @@ a1e0e507e1	take	git commit -a --author='Andrei <108398860+Yuruzuu@users.noreply.
 91712ee56c	take	git commit -a --author='Ford Lascari <44952366+fjooord@users.noreply.github.com>' -m 'fix(server): agents can see a thread'\''s pending background work (#33858)' -m 'Ported from pingdotgg/t3code@91712ee56c.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 d90ac5c764	take	fix(ssh): timed-out SSH commands keep the output they already printed (#35589)
 18188ba0b8	take	fix(server): worktree dev servers no longer clean up real worktrees (#33902)
+47a9988299	take	fix(server): server updates retry when a release download fails briefly (#33896); applied to service/pinnedRuntime.ts (Onicode's home for cloud/); selfUpdate.test hunk not needed
