@@ -1113,3 +1113,4 @@ d20d535e32	take	fix(server): show self-resumed Claude subagents as running (#238
 f999dc1018	take	fix(web): preserve single tildes in sent user messages (#35859)
 e079ad9a85	take	fix(desktop): clicking inside the in-app browser closes open host menus (#23141)
 d6fc871b58	take	fix(desktop): update browser tab titles without navigation (#29452)
+d7a0b5371f	take	fix(web,mobile): triage follows the draft when you switch machines (#33782)
