@@ -1227,3 +1227,4 @@ c398b46af0	take	fix(server): Codex text generation runs when launch args define 
 759e649ea8	take	fix(server): agent recordings keep up with the page instead of the encoder (#36215)
 9b6dde9a23	take	fix(server): session import finds compressed Codex rollouts (#34947)
 148612e181	take	fix(opencode): usage scans reuse unchanged rows and run off the event loop (#34897)
+d3ef7e8e52	take	fix(cursor): send the catalog's default model parameters on every Cursor run (#28722)
