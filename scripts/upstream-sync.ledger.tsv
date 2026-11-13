@@ -947,3 +947,4 @@ c0df40aa54	take	fix(web): queued message preview keeps inline image labels in pl
 fa8949a28c	take	fix(web): project settings can reach each checkout on one environment (#29441)
 c9f0caca1b	take	perf(server,client): attaching to a terminal with a large history over a slow link drops from 5,555 ms to 751 ms median (7.4x) (#33942)
 91f55d90e9	take	fix(server): PR sync reads share GitHub requests again on busy servers (#28422)
+05eff7f6f9	take	ci: pin GitHub Actions to full commit SHAs (#33696); pins taken for ci.yml, windows-tests.yml, mobile-fingerprint-check.yml and setup-ci-deps; release.yml (already pinned, Onicode's own) and removed workflows left out
