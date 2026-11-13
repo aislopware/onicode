@@ -41,6 +41,7 @@ import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import { piHome, resolvePiSessionsDir } from "@onicode/provider-pi/server/usage";
 import * as ServerSettings from "../serverSettings.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import { managedWorktreesDirectories, resolveRealLocation } from "../worktreesDirectory.ts";
 import {
   createTranscriptJsonReader,
   createTranscriptJsonSelector,
@@ -725,18 +726,6 @@ function normalizeForWorktreeMatch(value: string, caseFold: boolean): string {
   return caseFold ? normalized.toLowerCase() : normalized;
 }
 
-function isOniManagedWorktree(
-  candidatePath: string,
-  worktreesDir: string,
-  caseFold: boolean,
-): boolean {
-  const normalized = normalizeForWorktreeMatch(candidatePath, caseFold);
-  return (
-    normalized.startsWith(normalizeForWorktreeMatch(worktreesDir, caseFold)) ||
-    normalized.includes("/.onicode/worktrees/")
-  );
-}
-
 // false stops metadata scanning for an excluded rollout, even if later records contain a cwd.
 function extractCwd(line: string, source: AgentSessionSource): string | null | false {
   let parsed: unknown;
@@ -825,35 +814,51 @@ export const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const runtimes = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
-  const baseDir = path.resolve(serverConfig.baseDir);
-  const worktreesDir = path.resolve(serverConfig.worktreesDir);
   const platform = yield* HostProcess.Platform;
   const isWindows = platform === "win32";
   const foldWorktreeCase = isWindows;
   const hostEnvironment = yield* HostProcess.Environment;
   const homeDir = yield* HostProcess.HomeDirectory;
-  // `/private/tmp` is what macOS reports for sessions started in `/tmp`.
-  const excludedProjectRoots = new Set(
-    [homeDir, NodeOS.tmpdir(), "/tmp", "/private/tmp"].map((directory) =>
-      normalizeProjectPathForComparison(path.resolve(directory)),
-    ),
-  );
-  const excludedProjectAncestors = [
-    path.join(homeDir, "Downloads"),
-    path.join(homeDir, "Documents", "Codex"),
-  ];
+  // Candidates are checked as recorded and as real paths, so each folder needs both forms:
+  // macOS reports `/tmp` and `/var` sessions under `/private`, and homes can be relocated links.
+  const withRealLocations = (directories: ReadonlyArray<string>) =>
+    Effect.forEach(directories, (directory) => {
+      const resolved = path.resolve(directory);
+      return Effect.map(resolveRealLocation(fileSystem, path, resolved), (real) => [
+        resolved,
+        real,
+      ]);
+    }).pipe(Effect.map((forms) => [...new Set(forms.flat())]));
 
-  const isExcludedProjectPath = (candidatePath: string) =>
-    excludedProjectRoots.has(normalizeProjectPathForComparison(candidatePath)) ||
-    excludedProjectAncestors.some((ancestor) =>
-      normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
-        normalizeForWorktreeMatch(ancestor, foldWorktreeCase),
-      ),
-    ) ||
-    normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
-      normalizeForWorktreeMatch(baseDir, foldWorktreeCase),
-    ) ||
-    isOniManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase);
+  /** Resolved per scan: the worktrees folder setting and symlink targets can change while running. */
+  const loadExcludedProjectPath = Effect.fn("AgentSessionScanner.loadExcludedProjectPath")(
+    function* () {
+      const settings = yield* serverSettings.getSettings.pipe(
+        Effect.orElseSucceed(() => ({ worktreesDirectory: "", previousWorktreesDirectories: [] })),
+      );
+      const roots = new Set(
+        (yield* withRealLocations([homeDir, NodeOS.tmpdir(), "/tmp"])).map(
+          normalizeProjectPathForComparison,
+        ),
+      );
+      const ancestors = (yield* withRealLocations([
+        path.join(homeDir, "Downloads"),
+        path.join(homeDir, "Documents", "Codex"),
+        serverConfig.baseDir,
+        ...managedWorktreesDirectories(settings, serverConfig.worktreesDir, path, homeDir),
+      ])).map((ancestor) => normalizeForWorktreeMatch(ancestor, foldWorktreeCase));
+
+      return (candidatePath: string) => {
+        const normalized = normalizeForWorktreeMatch(candidatePath, foldWorktreeCase);
+        return (
+          roots.has(normalizeProjectPathForComparison(candidatePath)) ||
+          ancestors.some((ancestor) => normalized.startsWith(ancestor)) ||
+          normalized.includes("/.onicode/worktrees/")
+        );
+      };
+    },
+  );
+  type IsExcludedProjectPath = Effect.Success<ReturnType<typeof loadExcludedProjectPath>>;
 
   const listDirectory = (directory: string) =>
     fileSystem.readDirectory(directory).pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));
@@ -878,6 +883,7 @@ export const make = Effect.gen(function* () {
 
   /** Stats a directory that may be offered as a project, or none when it is missing or excluded. */
   const projectDirectoryStats = Effect.fn("AgentSessionScanner.projectDirectoryStats")(function* (
+    isExcludedProjectPath: IsExcludedProjectPath,
     directory: string,
   ) {
     if (isExcludedProjectPath(directory)) return Option.none<FileSystem.File.Info>();
@@ -1356,7 +1362,11 @@ export const make = Effect.gen(function* () {
   });
 
   // Only chats left in an excluded folder, such as Codex's scratch folder, take their project's root.
-  const projectCwd = (cwd: string, projectRoots: ReadonlyArray<string> | undefined) =>
+  const projectCwd = (
+    isExcludedProjectPath: IsExcludedProjectPath,
+    cwd: string,
+    projectRoots: ReadonlyArray<string> | undefined,
+  ) =>
     projectRoots !== undefined &&
     isExcludedProjectPath(path.resolve(expandHomePath(cwd.trim(), homeDir)))
       ? projectRoots[0]!
@@ -1497,6 +1507,7 @@ export const make = Effect.gen(function* () {
       string,
       ReadonlyArray<{ readonly cwd: string; readonly source: AgentSessionImportSource }>
     >,
+    isExcludedProjectPath: IsExcludedProjectPath,
   ) {
     const byOwnerAndCwd = new Map<
       string,
@@ -1523,7 +1534,7 @@ export const make = Effect.gen(function* () {
             sameTranscriptIdentity(imported.source, transcript.identity),
         )?.cwd ?? (yield* readCwd(source, transcript, budget));
       if (rolloutCwd === null || rolloutCwd === false) continue;
-      const cwd = projectCwd(rolloutCwd, transcript.projectRoots);
+      const cwd = projectCwd(isExcludedProjectPath, rolloutCwd, transcript.projectRoots);
       const key = `${transcript.providerInstanceId}\0${cwd}`;
       const existing = byOwnerAndCwd.get(key);
       if (existing) {
@@ -1551,7 +1562,9 @@ export const make = Effect.gen(function* () {
     }));
   });
 
-  const collectCandidates = Effect.fn("AgentSessionScanner.collectCandidates")(function* () {
+  const collectCandidates = Effect.fn("AgentSessionScanner.collectCandidates")(function* (
+    isExcludedProjectPath: IsExcludedProjectPath,
+  ) {
     const settings = yield* serverSettings.getSettings.pipe(
       Effect.mapError((cause) => new AgentSessionScanError({ operation: "read-settings", cause })),
     );
@@ -1695,6 +1708,7 @@ export const make = Effect.gen(function* () {
           selectedTranscripts,
           metadataBudget,
           importedByFile,
+          isExcludedProjectPath,
         )),
       );
       metadataTruncated ||= metadataBudget.truncated;
@@ -1706,7 +1720,8 @@ export const make = Effect.gen(function* () {
   let cachedCandidates: Effect.Success<ReturnType<typeof collectCandidates>> | null = null;
 
   const scan: AgentSessionScanner["Service"]["scan"] = Effect.gen(function* () {
-    cachedCandidates = yield* collectCandidates();
+    const isExcludedProjectPath = yield* loadExcludedProjectPath();
+    cachedCandidates = yield* collectCandidates(isExcludedProjectPath);
     const { candidates: raw, truncated } = cachedCandidates;
 
     const merged = new Map<
@@ -1726,7 +1741,7 @@ export const make = Effect.gen(function* () {
       if (!path.isAbsolute(expanded)) continue;
       const resolved = path.resolve(expanded);
       if (directories.has(resolved)) continue;
-      directories.set(resolved, yield* projectDirectoryStats(resolved));
+      directories.set(resolved, yield* projectDirectoryStats(isExcludedProjectPath, resolved));
     }
     const directoryGitIdentities = yield* readGitIdentities(
       Array.from(directories).flatMap(([directory, stats]) =>
@@ -1758,7 +1773,9 @@ export const make = Effect.gen(function* () {
           // A linked worktree's sessions count toward its main checkout's project.
           const { mainCheckout } = gitIdentity;
           const mainStats =
-            mainCheckout === null ? Option.none() : yield* projectDirectoryStats(mainCheckout);
+            mainCheckout === null
+              ? Option.none()
+              : yield* projectDirectoryStats(isExcludedProjectPath, mainCheckout);
           project =
             mainCheckout !== null && Option.isSome(mainStats)
               ? {
@@ -1855,6 +1872,7 @@ export const make = Effect.gen(function* () {
   ) {
     const root = path.resolve(expandHomePath(workspaceRoot, homeDir));
     const realRoot = yield* fileSystem.realPath(root).pipe(Effect.orElseSucceed(() => root));
+    const isExcludedProjectPath = yield* loadExcludedProjectPath();
     if (isExcludedProjectPath(root) || isExcludedProjectPath(realRoot)) return Stream.empty;
     const rootIdentity = yield* directoryIdentity(root);
     const nowMs = DateTime.toEpochMillis(yield* DateTime.now);
@@ -1862,7 +1880,7 @@ export const make = Effect.gen(function* () {
 
     // Imports recorded since a budget-truncated collection can free budget for transcripts it cut off.
     if (cachedCandidates === null || cachedCandidates.metadataTruncated) {
-      cachedCandidates = yield* collectCandidates();
+      cachedCandidates = yield* collectCandidates(isExcludedProjectPath);
     }
     const { candidates } = cachedCandidates;
 
@@ -2002,7 +2020,7 @@ export const make = Effect.gen(function* () {
             return Option.some<AgentSessionRecentThread>({ _tag: "Skipped" });
           }
           const expandedCwd = expandHomePath(
-            projectCwd(snapshot.cwd.value, transcript.projectRoots).trim(),
+            projectCwd(isExcludedProjectPath, snapshot.cwd.value, transcript.projectRoots).trim(),
             homeDir,
           );
           if (
