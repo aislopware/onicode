@@ -1269,3 +1269,4 @@ be5f805964	take	fix(web): new desktop browser tabs open at the default zoom and 
 8cd8a3ca5a	take	fix(server): file search no longer freezes the server while fff's watcher reads a large file (#36273); pnpm-lock patch hash regenerated for Onicode's patch text
 8171cd09d5	take	fix(desktop): mouse back and forward stay inside the browser tab (#33276)
 fcd06873e8	take	fix(web): removing a checkout moves its open draft to a remaining checkout (#36276)
+9efd960925	take	fix(mobile): a Settings link sent to the running app opens the Settings tab (#36262); test conflict: dropped upstream's sign-in link case (SettingsAuth removed in Onicode)
