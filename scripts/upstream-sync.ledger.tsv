@@ -1236,3 +1236,4 @@ d3ef7e8e52	take	fix(cursor): send the catalog's default model parameters on ever
 f62fa296f0	take	fix(web): Add to another machine can find ignored files past the first 200 (#36228)
 b5c0ee56fa	take	fix(mobile): Android Back from Pulls or Usage returns to Threads (#36224)
 d19467a59e	take	fix(server): a thread visit stores only its read state (#36233)
+5cbdf00481	take	fix(web): mostly vertical trackpad scrolls no longer navigate back or forward (#30173)
