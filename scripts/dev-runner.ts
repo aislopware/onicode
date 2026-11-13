@@ -139,11 +139,6 @@ const optionalBooleanConfig = (name: string): Config.Config<boolean | undefined>
     Config.option,
     Config.map((value) => Option.getOrUndefined(value)),
   );
-const optionalPortConfig = (name: string): Config.Config<number | undefined> =>
-  Config.Port(name).pipe(
-    Config.option,
-    Config.map((value) => Option.getOrUndefined(value)),
-  );
 const optionalIntegerConfig = (name: string): Config.Config<number | undefined> =>
   Config.Int(name).pipe(
     Config.option,
@@ -276,10 +271,14 @@ export const createDevRunnerEnv = Effect.fn("dev-runner.createDevRunnerEnv")(fun
     output.ONICODE_MODE = "standalone";
     output.ONICODE_DEV = "1";
     delete output.VITE_DEV_SERVER_URL;
+    // Agent shells inherit the parent Onicode server's bind settings; only --host widens the dev server.
     if (host !== undefined) {
       output.ONICODE_HOST = host;
+    } else {
+      delete output.ONICODE_HOST;
     }
   }
+  delete output.ONICODE_LAN;
 
   if (autoBootstrapProjectFromCwd !== undefined) {
     output.ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD = autoBootstrapProjectFromCwd ? "1" : "0";
@@ -714,14 +713,18 @@ const devRunnerCli = Command.make("dev-runner", {
   ),
   host: Flag.String("host").pipe(
     Flag.withDescription(
-      "Server host/interface override for `dev:server` (forwards to ONICODE_HOST). The desktop app always binds its server to loopback.",
+      "Server host/interface override for `dev:server` (forwards to ONICODE_HOST). The desktop app always binds its server to loopback. Ambient ONICODE_HOST is ignored: agent shells inherit it from the Onicode server that spawned them.",
     ),
-    Flag.withFallbackConfig(optionalStringConfig("ONICODE_HOST")),
+    Flag.optional,
+    Flag.map(Option.getOrUndefined),
   ),
   port: Flag.Int("port").pipe(
     Flag.withSchema(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 }))),
-    Flag.withDescription("Server port override (forwards to ONICODE_PORT)."),
-    Flag.withFallbackConfig(optionalPortConfig("ONICODE_PORT")),
+    Flag.withDescription(
+      "Server port override (forwards to ONICODE_PORT). Ambient ONICODE_PORT is ignored: agent shells inherit it from the Onicode server that spawned them.",
+    ),
+    Flag.optional,
+    Flag.map(Option.getOrUndefined),
   ),
   devUrl: Flag.String("dev-url").pipe(
     Flag.withSchema(Schema.URLFromString),
