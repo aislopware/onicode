@@ -41,6 +41,7 @@ import { expandHomePath } from "@onicode/provider-core/server/pathExpansion";
 import { piHome, resolvePiSessionsDir } from "@onicode/provider-pi/server/usage";
 import * as ServerSettings from "../serverSettings.ts";
 import { sourceControlDefinitions } from "../sourceControl/sourceControlDefinitions.ts";
+import { resolveRealLocation } from "../worktreesDirectory.ts";
 import {
   createTranscriptJsonReader,
   createTranscriptJsonSelector,
@@ -725,18 +726,6 @@ function normalizeForWorktreeMatch(value: string, caseFold: boolean): string {
   return caseFold ? normalized.toLowerCase() : normalized;
 }
 
-function isOniManagedWorktree(
-  candidatePath: string,
-  worktreesDir: string,
-  caseFold: boolean,
-): boolean {
-  const normalized = normalizeForWorktreeMatch(candidatePath, caseFold);
-  return (
-    normalized.startsWith(normalizeForWorktreeMatch(worktreesDir, caseFold)) ||
-    normalized.includes("/.onicode/worktrees/")
-  );
-}
-
 // false stops metadata scanning for an excluded rollout, even if later records contain a cwd.
 function extractCwd(line: string, source: AgentSessionSource): string | null | false {
   let parsed: unknown;
@@ -825,35 +814,41 @@ export const make = Effect.gen(function* () {
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const projectStore = yield* ProjectStore.ProjectStoreV2;
   const runtimes = yield* ProviderSessionRuntime.ProviderSessionRuntimeRepository;
-  const baseDir = path.resolve(serverConfig.baseDir);
-  const worktreesDir = path.resolve(serverConfig.worktreesDir);
   const platform = yield* HostProcess.Platform;
   const isWindows = platform === "win32";
   const foldWorktreeCase = isWindows;
   const hostEnvironment = yield* HostProcess.Environment;
   const homeDir = yield* HostProcess.HomeDirectory;
-  // `/private/tmp` is what macOS reports for sessions started in `/tmp`.
+  // Candidates are checked as recorded and as real paths, so each folder needs both forms:
+  // macOS reports `/tmp` and `/var` sessions under `/private`, and homes can be relocated links.
+  const withRealLocations = (directories: ReadonlyArray<string>) =>
+    Effect.forEach(directories, (directory) => {
+      const resolved = path.resolve(directory);
+      return Effect.map(resolveRealLocation(fileSystem, path, resolved), (real) => [
+        resolved,
+        real,
+      ]);
+    }).pipe(Effect.map((forms) => [...new Set(forms.flat())]));
   const excludedProjectRoots = new Set(
-    [homeDir, NodeOS.tmpdir(), "/tmp", "/private/tmp"].map((directory) =>
-      normalizeProjectPathForComparison(path.resolve(directory)),
+    (yield* withRealLocations([homeDir, NodeOS.tmpdir(), "/tmp"])).map(
+      normalizeProjectPathForComparison,
     ),
   );
-  const excludedProjectAncestors = [
+  const excludedProjectAncestors = (yield* withRealLocations([
     path.join(homeDir, "Downloads"),
     path.join(homeDir, "Documents", "Codex"),
-  ];
+    serverConfig.baseDir,
+    serverConfig.worktreesDir,
+  ])).map((ancestor) => normalizeForWorktreeMatch(ancestor, foldWorktreeCase));
 
-  const isExcludedProjectPath = (candidatePath: string) =>
-    excludedProjectRoots.has(normalizeProjectPathForComparison(candidatePath)) ||
-    excludedProjectAncestors.some((ancestor) =>
-      normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
-        normalizeForWorktreeMatch(ancestor, foldWorktreeCase),
-      ),
-    ) ||
-    normalizeForWorktreeMatch(candidatePath, foldWorktreeCase).startsWith(
-      normalizeForWorktreeMatch(baseDir, foldWorktreeCase),
-    ) ||
-    isOniManagedWorktree(candidatePath, worktreesDir, foldWorktreeCase);
+  const isExcludedProjectPath = (candidatePath: string) => {
+    const normalized = normalizeForWorktreeMatch(candidatePath, foldWorktreeCase);
+    return (
+      excludedProjectRoots.has(normalizeProjectPathForComparison(candidatePath)) ||
+      excludedProjectAncestors.some((ancestor) => normalized.startsWith(ancestor)) ||
+      normalized.includes("/.onicode/worktrees/")
+    );
+  };
 
   const listDirectory = (directory: string) =>
     fileSystem.readDirectory(directory).pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []));

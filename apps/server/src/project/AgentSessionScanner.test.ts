@@ -922,9 +922,7 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
 
         // Not offered: the config is unreadable, so the repository could be bare; and
         // the main checkout is reached through a symlink into Onicode's own state.
-        const configBaseDir = yield* fileSystem.realPath(
-          yield* makeTempDir("onicode-scanner-base-"),
-        );
+        const configBaseDir = yield* makeTempDir("onicode-scanner-base-");
         const links = yield* makeTempDir("onicode-workspace-links-");
         const unknown = yield* makeTempDir("onicode-workspace-unknown-");
         yield* fileSystem.makeDirectory(path.join(configBaseDir, "state-repo"));
@@ -1096,23 +1094,26 @@ it.layer(NodeServices.layer)("AgentSessionScanner", (it) => {
         const path = yield* Path.Path;
         const claudeHomePath = yield* makeTempDir("onicode-claude-home-");
         const codexHomePath = yield* makeTempDir("onicode-codex-home-");
-        const configBaseDir = yield* makeTempDir("onicode-scanner-base-");
+        const realBaseDir = yield* makeTempDir("onicode-scanner-base-");
         const linkParent = yield* makeTempDir("onicode-scanner-links-");
         const fileSystem = yield* FileSystem.FileSystem;
 
-        const worktreeCwd = path.join(configBaseDir, "worktrees", "onicode", "wt-3");
+        const worktreeCwd = path.join(realBaseDir, "worktrees", "onicode", "wt-3");
         yield* fileSystem.makeDirectory(worktreeCwd, { recursive: true });
         const symlinkCwd = path.join(linkParent, "innocent-project");
         yield* fileSystem.symlink(worktreeCwd, symlinkCwd);
+        const linkedBaseDir = path.join(linkParent, "linked-base");
+        yield* fileSystem.symlink(realBaseDir, linkedBaseDir);
         yield* writeTranscript({
           filePath: path.join(claudeHomePath, "projects", "-slug", "a.jsonl"),
           contents: claudeSessionLine(symlinkCwd),
           mtimeMs: Date.parse("2026-01-01T00:00:00.000Z"),
         });
 
-        const result = yield* runScan({ claudeHomePath, codexHomePath, configBaseDir });
-
-        expect(result.candidates).toEqual([]);
+        for (const configBaseDir of [realBaseDir, linkedBaseDir]) {
+          const result = yield* runScan({ claudeHomePath, codexHomePath, configBaseDir });
+          expect(result.candidates).toEqual([]);
+        }
       }),
     );
 
