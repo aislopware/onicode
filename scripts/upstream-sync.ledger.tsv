@@ -1016,3 +1016,4 @@ e1d59d1884	take	fix(web): the collapsed mobile composer shows Stop while a turn 
 bce2bc048e	take	test(web): split the cloud voice cancel flow from the failed-then-saved setup (#35665)
 4cc6bebbac	skip	Nightly GitHub release feed and its electron-updater 6.8.9 patch; Onicode ships through better-update on one channel and has no githubUpdateFeed.
 ff045198dc	take	fix(web): PDF preview prerenders pages two viewports below the visible area (#35666)
+e253b88371	take	perf(server): uploading a large document with seven notebooks finishes 1.8x faster (median 823 ms -> 461 ms) (#33946)
