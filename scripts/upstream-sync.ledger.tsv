@@ -983,3 +983,4 @@ dfded9d759	take	fix(web): keep the child thread open when its remote parent was 
 65716ba1d7	take	fix(server): persist terminal output without rewriting all history (#24019)
 8bfb723dc1	take	perf(server): stop serializing terminal chunks just to measure them (#24179)
 4cd7a3eb1c	take	fix(web): stop opening a menu when a terminal selection ends (#24112)
+30a26dbb64	take	fix(server): agents keep named browser profiles after a server restart (#23484)
