@@ -289,6 +289,20 @@ describe("buildProjectGroups", () => {
     expect(groups[1]?.label).toBe("julius/onicode-fork");
   });
 
+  // regression: #15049 a rename to the repository name snapped back to the display path
+  it("labels a renamed group by its title even when it matches the repository name", () => {
+    const folderTitles = [
+      makeProject("onicode", "/work/onicode", { title: "onicode" }),
+      makeProject("onicode-2", "/work/onicode-2", { title: "onicode" }),
+    ];
+    const renamed = folderTitles.map((project) => ({ ...project, hasCustomTitle: true }));
+
+    const label = (projects: ReadonlyArray<EnvironmentProject>) =>
+      buildProjectGroups({ projects, settings: settings("repository") })[0]?.label;
+    expect(label(folderTitles)).toBe("Onicode");
+    expect(label(renamed)).toBe("onicode");
+  });
+
   it("applies a physical-project override without dropping its siblings", () => {
     const first = makeProject("onicode", "/work/onicode");
     const second = makeProject("onicode-2", "/work/onicode-2");
