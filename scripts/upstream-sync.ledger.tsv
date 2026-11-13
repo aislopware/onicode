@@ -1125,3 +1125,4 @@ b1bc5ce20f	take	fix(server): linking says why each address failed discovery (#30
 1e96606cb2	take	fix(client-runtime): reopened files show host edits instead of the first read (#29409)
 b23f94e4a1	take	fix(server): preview resize and status report the real size of desktop tabs (#32854)
 496856d8d7	take	fix(server): migration 64 skips thread payloads that are not valid JSON (#35884)
+8a38c63706	take	fix(web): thread navigation shortcuts work from the terminal and macOS composer (#26433)
