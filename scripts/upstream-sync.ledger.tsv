@@ -1221,3 +1221,4 @@ f313d0a6cb	take	taken as is
 3ac8b1f587	take	fix(acp): bound unread notification retention by size (#23217)
 00f617db4e	take	fix(client-runtime): recover subscriptions that stop on a healthy connection (#24400)
 e41941779a	take	fix(server): stopping the service during the pre-update backup ends the copy (#34854)
+928dd049e1	take	fix(server): preview browser downloads Chrome 157.0.8103.78 with its security fixes (#34962)
