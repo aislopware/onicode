@@ -1029,3 +1029,4 @@ aa37097093	take	fix(web): streamed device toolbar starts at the panel size (#356
 3de49baa70	take	fix(server): workspace search leaves out files Git ignores outside .gitignore (#35673)
 12a62edd67	take	fix(server): worktree setup no longer hangs when the shell is Nushell (#29461)
 6641231797	take	fix(secrets): notify when a delegated agent asks for a secret (#33585)
+a98bc69676	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(web): Cursor threads keep a stored model the catalog doesn'\''t list (#24872)' -m 'Ported from pingdotgg/t3code@a98bc69676.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
