@@ -1258,3 +1258,4 @@ d70bfe6e97	take	fix(server): a send to a thread whose worktree can't be recreate
 76d0fff5fd	take	fix(server): include symlinks in workspace search (#24578)
 7ab4650030	take	fix(mobile): Work on PR keeps its worktree when switching machines (#27658)
 a09e54a363	take	fix(server): proxied usage limits take their reset time from the CLIProxyAPI hub (#36238); server.ts conflict: kept only layerResetFallback (webhook origin/telemetry layers are removed in Onicode)
+2d5e0ae2bd	take	fix(server): session import brings in the linked-worktree sessions the Welcome page counts (#36242); adapted: resolveDirectoryProjects keeps Onicode's isExcludedProjectPath (#107)
