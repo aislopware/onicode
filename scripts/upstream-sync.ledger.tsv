@@ -1117,3 +1117,4 @@ d7a0b5371f	take	fix(web,mobile): triage follows the draft when you switch machin
 a000973ccb	take	fix(server): storage cleanup treats symlinked spellings of a worktree as one checkout (#25735)
 1c44b29395	take	fix(server): migrate-dev-db refuses unimported legacy threads (#23191)
 87a772a3c6	take	fix(web): opening a thread on a touch tablet no longer focuses the composer (#29496)
+c967d98cea	take	fix(acp): linked terminal output no longer reopens a completed tool call (#35844)
