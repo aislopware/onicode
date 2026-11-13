@@ -132,7 +132,7 @@ export function V2LifecycleRow(props: {
     return (
       <WorkLogRow
         data-v2-item-type={item.type}
-        icon={<OniWordmark className="size-4 text-icon-muted" aria-hidden />}
+        icon={<OniWordmark className="size-4" aria-hidden />}
         label={<>Created thread{item.title ? ` · ${item.title}` : ""}</>}
         trailing={
           <InlineButton

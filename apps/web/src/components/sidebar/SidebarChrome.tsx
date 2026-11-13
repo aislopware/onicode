@@ -157,13 +157,7 @@ function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
     <span className="inline-flex min-w-0 items-center gap-1.5 text-sm font-medium tracking-tight">
-      <OniWordmark
-        aria-label="Onicode"
-        className="h-4 w-auto shrink-0"
-        stroke="currentColor"
-        strokeWidth={20}
-        strokeLinejoin="round"
-      />
+      <OniWordmark aria-label="Onicode" className="h-4 w-auto shrink-0" onBackdrop={onBackdrop} />
       <span
         className={cn(
           "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",

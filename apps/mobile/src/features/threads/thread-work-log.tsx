@@ -131,14 +131,7 @@ function WorkLogIcon(props: {
   readonly highlighted?: boolean;
 }) {
   const colorClassName = props.highlighted ? "accent-foreground" : props.colorClassName;
-  if (props.icon === "onicode") {
-    return (
-      <OniWordmark
-        height={10}
-        {...(colorClassName ? { colorClassName } : { color: props.color })}
-      />
-    );
-  }
+  if (props.icon === "onicode") return <OniWordmark height={10} />;
   if (props.icon === "computer") {
     return (
       <BrowserAppIcon

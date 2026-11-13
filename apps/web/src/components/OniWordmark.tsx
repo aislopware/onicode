@@ -1,16 +1,33 @@
 import {
-  ONI_MARK_BODY as BODY,
-  ONI_MARK_EARS as EARS,
-  ONI_MARK_EYE_STROKE_WIDTH,
-  ONI_MARK_EYES as EYES,
+  ONI_MARK_ANGLED as ANGLED,
+  ONI_MARK_EAR_POINTS as EAR_POINTS,
+  ONI_MARK_FACE_STOPS,
+  ONI_MARK_FRONT as FRONT,
+  ONI_MARK_INK as INK,
   ONI_MARK_SIDES as SIDES,
   ONI_MARK_VIEW_BOX,
+  ONI_MARK_WEIGHTS,
+  oniMarkEyePath,
+  oniMarkOutlinePath,
 } from "@onicode/shared/oniMark";
 import { useId, type SVGProps } from "react";
 
-/** The mochi oni, front-on, in one ink (`currentColor`); its eyes are holes, so the background shows through. */
-export function OniWordmark(props: SVGProps<SVGSVGElement>) {
-  const maskId = `oni-eyes-${useId().replace(/[^\w-]/g, "")}`;
+const ANGLED_OUTLINE = oniMarkOutlinePath(ANGLED.outline);
+const BODY_STYLE = { transformBox: "fill-box", transformOrigin: "50% 100%" } as const;
+const EYE_STYLE = { transformBox: "fill-box", transformOrigin: "50% 60%" } as const;
+
+/**
+ * The mochi oni from the app icon: a blush face with dark eyes. On light it sits inside a rim in
+ * the text colour; on dark, and over media (`onBackdrop`), the rim would only bloat a face that
+ * already stands out, so it is dropped. `tiny` thickens rim and eyes for marks under 14px.
+ */
+export function OniWordmark({
+  tiny = false,
+  onBackdrop = false,
+  ...props
+}: SVGProps<SVGSVGElement> & { tiny?: boolean; onBackdrop?: boolean }) {
+  const faceId = `oni-face-${useId().replace(/[^\w-]/g, "")}`;
+  const weight = tiny ? ONI_MARK_WEIGHTS.tiny : ONI_MARK_WEIGHTS.regular;
   return (
     <svg
       {...props}
@@ -18,50 +35,45 @@ export function OniWordmark(props: SVGProps<SVGSVGElement>) {
       overflow="visible"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width="800" height="800">
-        {/* oxlint-disable-next-line shadcn/no-raw-colors -- mask luminance */}
-        <rect width="800" height="800" fill="#fff" />
-        {/* Glances move the pair; blinks transform each eye, so the two never fight. */}
-        <g data-oni-eyes="">
+      <defs>
+        <linearGradient id={faceId} gradientUnits="userSpaceOnUse" x1="0" y1="619" x2="0" y2="142">
+          {ONI_MARK_FACE_STOPS.map((color, i) => (
+            <stop key={color} offset={i} stopColor={color} />
+          ))}
+        </linearGradient>
+      </defs>
+      <g data-oni-body="" style={BODY_STYLE}>
+        {onBackdrop ? null : (
+          <path
+            data-oni-outline=""
+            className="text-foreground dark:hidden"
+            d={ANGLED_OUTLINE}
+            fill="currentColor"
+            stroke="currentColor"
+            strokeWidth={weight.rim}
+            strokeLinejoin="round"
+          />
+        )}
+        <path data-oni-outline="" d={ANGLED_OUTLINE} fill={`url(#${faceId})`} stroke="none" />
+        <g fill="none" stroke={INK} strokeWidth={weight.eye} strokeLinecap="round">
           {SIDES.map((side) => (
             <path
               key={side}
               data-oni-eye={side}
-              d={EYES[side]}
-              fill="none"
-              // oxlint-disable-next-line shadcn/no-raw-colors -- mask luminance
-              stroke="#000"
-              strokeWidth={ONI_MARK_EYE_STROKE_WIDTH}
-              strokeLinecap="round"
-              style={{ transformBox: "fill-box", transformOrigin: "50% 60%" }}
+              d={oniMarkEyePath(ANGLED.eyes[side])}
+              style={EYE_STYLE}
             />
           ))}
         </g>
-      </mask>
-      <g
-        data-oni-body=""
-        fill="currentColor"
-        style={{ transformBox: "fill-box", transformOrigin: "50% 100%" }}
-      >
-        {SIDES.map((side) => (
-          <path
-            key={side}
-            data-oni-ear={side}
-            d={EARS[side]}
-            style={{ transformBox: "fill-box", transformOrigin: "50% 70%" }}
-          />
-        ))}
-        <path d={BODY} mask={`url(#${maskId})`} />
       </g>
     </svg>
   );
 }
 
 const BLINK: Keyframe[] = [
-  { transform: "scale(1, 1)" },
-  { transform: "scale(1.12, 0.3)", offset: 0.4 },
-  { transform: "scale(1.12, 0.3)", offset: 0.55 },
-  { transform: "scale(0.96, 1.2)", offset: 0.8 },
+  { transform: "scale(1, 1)", easing: "ease-in" },
+  { transform: "scale(1.1, 0.25)", offset: 0.4, easing: "ease-out" },
+  { transform: "scale(0.97, 1.12)", offset: 0.8, easing: "ease-in-out" },
   { transform: "scale(1, 1)" },
 ];
 
@@ -73,68 +85,105 @@ const HOP: Keyframe[] = [
   { transform: "translateY(0) scale(1, 1)" },
 ];
 
-// Skew, not rotate: a rotated ear lifts its inner base off the head and opens a gap.
-const earFlap = (outward: 1 | -1): Keyframe[] =>
-  [0, 18, -8, 12, -4, 0].map((deg) => ({ transform: `skewX(${-deg * outward}deg)` }));
-const EAR_FLAP = { left: earFlap(-1), right: earFlap(1) };
+type Side = (typeof SIDES)[number];
+type Lean = Partial<Record<Side, number>>;
 
-// The app icon's pose: facing left, the head cocks clockwise and the eyes slide left.
-const holdThenReturn = (rest: string, turned: string): Keyframe[] => [
-  { transform: rest, easing: "cubic-bezier(0.3, 1.4, 0.5, 1)" },
-  { transform: turned, offset: 0.2, easing: "ease-in-out" },
-  { transform: turned, offset: 0.75 },
-  { transform: rest },
-];
-const look = (toward: 1 | -1) => ({
-  head: holdThenReturn("rotate(0deg)", `rotate(${-toward * 10}deg)`).map((frame) => ({
-    ...frame,
-    transformOrigin: "50% 55%",
-  })),
-  eyes: holdThenReturn("translateX(0px)", `translateX(${toward * 50}px)`),
-});
-const LOOK = { left: look(-1), right: look(1) };
+/** The front outline with ears leaning outward by `lean` degrees. Their bases stay put. */
+function frontOutline(lean: Lean = {}) {
+  const points: number[] = [...FRONT.outline];
+  const count = points.length / 2;
+  for (const side of SIDES) {
+    const degrees = lean[side];
+    if (!degrees) continue;
+    const { from, count: earCount } = EAR_POINTS[side];
+    const indices = Array.from({ length: earCount }, (_, i) => (from + i) % count);
+    const baseY = Math.min(points[indices[0]! * 2 + 1]!, points[indices.at(-1)! * 2 + 1]!);
+    const slope = Math.tan((degrees * Math.PI) / 180) * (side === "left" ? -1 : 1);
+    for (const i of indices)
+      points[i * 2] = points[i * 2]! + Math.max(0, baseY - points[i * 2 + 1]!) * slope;
+  }
+  return oniMarkOutlinePath(points);
+}
+
+const cssPath = (path: string) => `path("${path}")`;
+const SWING = "cubic-bezier(0.37, 0, 0.63, 1)";
+const TURN_MS = 3_000;
+const TURN = 0.14;
+const FLAP_SWINGS = [28, -12, 18, -6, 0];
+const FLAP_SPAN = 0.22;
+
+interface Flap {
+  readonly at: number;
+  readonly sides: ReadonlyArray<Side>;
+}
+
+/** One pass of a turn: morph to the front pose, flap, hold, and morph back. */
+function turnKeyframes(flaps: ReadonlyArray<Flap>) {
+  const rest = cssPath(ANGLED_OUTLINE);
+  const front = cssPath(frontOutline());
+  const outline: Keyframe[] = [
+    { d: rest, easing: "cubic-bezier(0.5, 0, 0.2, 1)" },
+    { d: front, offset: TURN, easing: SWING },
+  ];
+  for (const flap of flaps) {
+    outline.push({ d: front, offset: flap.at, easing: SWING });
+    FLAP_SWINGS.forEach((degrees, i) => {
+      const lean: Lean = {};
+      for (const side of flap.sides) lean[side] = degrees;
+      outline.push({
+        d: cssPath(frontOutline(lean)),
+        offset: flap.at + (FLAP_SPAN * (i + 1)) / FLAP_SWINGS.length,
+        easing: SWING,
+      });
+    });
+  }
+  outline.push({ d: front, offset: 1 - TURN, easing: "cubic-bezier(0.5, 0, 0.2, 1)" }, { d: rest });
+  const eye = (side: Side): Keyframe[] => {
+    const turned = cssPath(oniMarkEyePath(FRONT.eyes[side]));
+    return [
+      { d: cssPath(oniMarkEyePath(ANGLED.eyes[side])), easing: "cubic-bezier(0.5, 0, 0.2, 1)" },
+      { d: turned, offset: TURN },
+      { d: turned, offset: 1 - TURN, easing: "cubic-bezier(0.5, 0, 0.2, 1)" },
+      { d: cssPath(oniMarkEyePath(ANGLED.eyes[side])) },
+    ];
+  };
+  return { outline, eyes: SIDES.map(eye) };
+}
 
 /**
- * Ref callback for an element containing an `OniWordmark`: now and then it blinks, winks,
- * flaps its ears, hops or looks to one side. Idle time is a plain timer so nothing animates
- * between moves.
+ * Ref callback for an element containing an `OniWordmark`: now and then it blinks, winks, hops, or
+ * turns to face front and flaps its ears. Idle time is a plain timer so nothing animates between
+ * moves.
  */
 export function animateOniIdle(root: Element | null) {
   // React calls a ref with null on detach when it returned no cleanup.
   if (!root) return;
   const body = root.querySelector("[data-oni-body]");
-  const eyePair = root.querySelector("[data-oni-eyes]");
+  const outlines = [...root.querySelectorAll("[data-oni-outline]")];
   const eyes = SIDES.map((side) => root.querySelector(`[data-oni-eye="${side}"]`));
-  const ears = SIDES.map((side) => root.querySelector(`[data-oni-ear="${side}"]`));
-  if (!body || !eyePair || eyes.includes(null) || ears.includes(null)) return;
+  if (!body || outlines.length === 0 || eyes.includes(null)) return;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
   let timer: ReturnType<typeof setTimeout>;
 
   const blink = (delay = 0, only?: number) =>
     eyes.forEach((eye, i) => {
-      if (only === undefined || only === i) eye?.animate(BLINK, { duration: 220, delay });
-    });
-  const flap = (delay = 0, only?: number) =>
-    ears.forEach((ear, i) => {
-      if (only === undefined || only === i)
-        ear?.animate(EAR_FLAP[SIDES[i]!], { duration: 520, delay, easing: "ease-in-out" });
+      if (only === undefined || only === i) eye?.animate(BLINK, { duration: 240, delay });
     });
   const side = () => (Math.random() < 0.5 ? 0 : 1);
-  const lookAside = () => {
-    const pose = LOOK[SIDES[side()]!];
-    body.animate(pose.head, { duration: 1_800 });
-    eyePair.animate(pose.eyes, { duration: 1_800 });
-    if (Math.random() < 0.5) blink(800);
+  const faceFront = () => {
+    const second: Flap = { at: 0.5, sides: Math.random() < 0.5 ? SIDES : [SIDES[side()]!] };
+    const turn = turnKeyframes([{ at: 0.2, sides: SIDES }, second]);
+    for (const outline of outlines) outline.animate(turn.outline, { duration: TURN_MS });
+    eyes.forEach((eye, i) => eye?.animate(turn.eyes[i]!, { duration: TURN_MS }));
+    if (Math.random() < 0.5) blink(TURN_MS * 0.76);
   };
 
   const moves = [
     { weight: 30, run: () => blink() },
-    { weight: 15, run: () => (blink(), blink(300)) },
+    { weight: 15, run: () => (blink(), blink(320)) },
     { weight: 10, run: () => blink(0, side()) },
-    { weight: 15, run: () => flap() },
-    { weight: 10, run: () => flap(0, side()) },
-    { weight: 20, run: () => (body.animate(HOP, { duration: 560 }), flap(200), blink(420)) },
-    { weight: 20, run: lookAside },
+    { weight: 15, run: () => (body.animate(HOP, { duration: 560 }), blink(420)) },
+    { weight: 20, run: faceFront },
   ];
   const totalWeight = moves.reduce((sum, move) => sum + move.weight, 0);
 
