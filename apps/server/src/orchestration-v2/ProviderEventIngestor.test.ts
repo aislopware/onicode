@@ -48,8 +48,10 @@ import * as ProjectionStore from "./ProjectionStore.ts";
 import * as ProviderEventIngestor from "./ProviderEventIngestor.ts";
 import * as ThreadCommandExecutor from "./ThreadCommandExecutor.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import { UsageLimitResetFallback } from "../usage/UsageLimitSources.ts";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import type { ProviderInstance } from "@onicode/provider-core/server/driver";
+import type { ServerProvider } from "@onicode/contracts";
 import { makeProviderFailure } from "@onicode/provider-core/server/failure";
 import {
   makeProviderEventRoutingState,
@@ -229,7 +231,7 @@ function threadCreatedEvent(
 
 const layer = it.layer(layerTest);
 
-it.effect("refreshes the failing instance snapshot after a committed usage_limit terminal", () =>
+it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the snapshot", () =>
   Effect.gen(function* () {
     const refreshed = yield* Deferred.make<void>();
     const adapter = yield* ProviderAdapter.ProviderAdapterV2.pipe(
@@ -260,7 +262,9 @@ it.effect("refreshes the failing instance snapshot after a committed usage_limit
       },
       snapshot: {
         refreshUsage: Deferred.succeed(refreshed, undefined).pipe(Effect.asVoid),
-        getSnapshot: Effect.die("unused"),
+        getSnapshot: Effect.succeed({
+          auth: { status: "authenticated", endpoint: "http://hub.test:8317" },
+        } as ServerProvider),
         refresh: Effect.die("unused"),
         resolveMaintenance: () => Effect.die("unused"),
         applyUsageLimits: () => Effect.die("unused"),
@@ -268,6 +272,7 @@ it.effect("refreshes the failing instance snapshot after a committed usage_limit
       },
     };
     const lookups: ProviderInstanceId[] = [];
+    const hubLookups: Array<[string, string, string | null]> = [];
     const instances = Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
       getInstance: (id) =>
         Effect.sync(() => {
@@ -316,10 +321,29 @@ it.effect("refreshes the failing instance snapshot after a committed usage_limit
         });
         assert.equal(stored.length, 1);
         if (failureClass === "validation_error") assert.deepEqual(lookups, []);
+        else {
+          const event = stored[0]?.event;
+          assert.equal(
+            event?.type === "turn-item.updated" && event.payload.type === "error"
+              ? event.payload.failure.resetAt
+              : undefined,
+            "2026-11-13T18:00:00.000Z",
+          );
+        }
       }
-      assert.deepEqual(lookups, [instance.instanceId]);
+      assert.deepEqual(lookups, [instance.instanceId, instance.instanceId]);
+      assert.deepEqual(hubLookups, [["cursor", "http://hub.test:8317", "gpt-5.4"]]);
       yield* Deferred.await(refreshed);
-    }).pipe(Effect.provide(makeLayerTest(layerTestEventSink, instances)));
+    }).pipe(
+      Effect.provide(makeLayerTest(layerTestEventSink, instances)),
+      Effect.provideService(UsageLimitResetFallback, {
+        resetAt: (driver, endpoint, model) =>
+          Effect.sync(() => {
+            hubLookups.push([driver, endpoint, model]);
+            return "2026-11-13T18:00:00.000Z";
+          }),
+      }),
+    );
   }),
 );
 
