@@ -1000,3 +1000,4 @@ c6995622d5	take	fix(web): branch labels keep the space before a middle-truncated
 a0844eaec6	take	perf(server): merged-PR threads no longer re-read git state every minute (#24099)
 d9bed934d0	take	fix(server): pending request reads keep question option previews (#35644)
 a135972c7e	take	fix(opencode): preserve owned turns during server recovery (#25596)
+072254ddd3	take	fix(server): baseline existing pull request checks when watching (#23522)
