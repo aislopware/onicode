@@ -1376,8 +1376,8 @@ export interface LauncherOptions {
 }
 
 export async function main(options: LauncherOptions = {}): Promise<void> {
-  const baseDir = (options.baseDir ?? process.env.ONICODE_HOME)?.trim();
-  if (baseDir === undefined || baseDir === "") {
+  const baseDir = options.baseDir ?? process.env.ONICODE_HOME;
+  if (baseDir === undefined || baseDir.trim() === "") {
     throw new Error("ONICODE_HOME is required by the Onicode service launcher.");
   }
   const output =

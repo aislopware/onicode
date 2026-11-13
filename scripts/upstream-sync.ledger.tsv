@@ -1149,3 +1149,4 @@ b62e80e0a3	take	fix(web): copying an alert callout keeps its alert Markdown (#35
 ec918277f0	take	fix(server): unchanged-worktree cleanup waits for the thread to settle or archive (#35941)
 ff1eead6f4	take	fix(web): zoom shortcuts work while a desktop browser page has focus (#35947)
 0b127678b1	take	fix(server): ACP threads accept a model change after their session detaches (#35951)
+b2078c2d0a	take	fix(server): service launcher keeps a T3 home that ends in a space (#35958)
