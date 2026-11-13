@@ -888,3 +888,4 @@ c58450f2cf	take	fix(ssh): SSH environments connect over links with about a secon
 76e4cb5c8a	take	fix(server): removing a worktree on Windows no longer spins the server until it hangs (#34774); new test expects isRepo in branch status (folded from b42841808d / c1ea9782d2)
 63d5c6dfe4	take	feat(opencode): read usage limits from the connected server (#34146)
 fc2b5de20c	take	fix(web): a project filter that hides every active thread says so and offers Show all projects (#35426)
+b42841808d	take	fix(usage): count Codex request ledgers and replace archived cache entries (#35497)
