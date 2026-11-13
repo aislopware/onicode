@@ -1171,3 +1171,4 @@ c29c26afeb	take	fix(server): BEL inside a DCS no longer ends it in terminal hist
 431e53f322	take	fix(server): terminal history drops the ESC Z identity query
 2432ee10c6	take	test(server): blocked pointer-file scan test waits for the unblocked read
 1acee5b8be	take	fix(web): terminal OSC 8 file URIs open the file they name
+73e49aa6cd	take	fix(server): terminal history strips queries with embedded controls
