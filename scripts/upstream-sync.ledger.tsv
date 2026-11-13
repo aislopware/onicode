@@ -891,3 +891,4 @@ fc2b5de20c	take	fix(web): a project filter that hides every active thread says s
 b42841808d	take	fix(usage): count Codex request ledgers and replace archived cache entries (#35497)
 8fc1dade71	take	fix(web): keep settled pagination focused while loading (#35522); kept Onicode's mockSidebarThreads row-render setup
 91a76cf5a6	take	fix(web): voice dictionary keeps the draft when Enter confirms an IME candidate (#35467)
+4c255bc9c3	take	fix(preview): Browser pane navigates when the desktop backend has no browser channel (#35424)
