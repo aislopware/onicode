@@ -1007,3 +1007,4 @@ beaa647dc1	take	fix(ssh): distinguish incompatible Node from a missing executabl
 18aeb0fb91	take	fix(server): new worktrees show submodule downloads instead of a stuck checkout (#33687)
 05089062d4	take	fix(web): restore composer focus when returning to a thread (#29179)
 bd731da087	take	fix(server): linked calls fail fast when a peer stalls the MCP handshake (#28876)
+c6b18c4741	take	fix(web,mobile): keep line breaks in pending question text (#33353)
