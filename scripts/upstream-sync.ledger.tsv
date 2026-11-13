@@ -1280,3 +1280,4 @@ c165587702	take	fix(provider-cursor): Cursor threads report token usage and cont
 fa6326bf1b	take	fix(web): closing a composer menu on a touch tablet no longer opens the keyboard (#36325)
 ca6e09c3e1	take	fix(mobile): Duo feed scroll indicator stays left of the vertical bar while streaming (#36063)
 7bd9134824	take	fix(server): turn diffs follow branch switches (#36343)
+b009582cc9	take	fix(web): picking the previous branch after an outside checkout switches to it (#36347)
