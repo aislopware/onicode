@@ -1011,3 +1011,4 @@ c6b18c4741	take	fix(web,mobile): keep line breaks in pending question text (#333
 ad2d22c809	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(mobile): opening a search result clears Home'\''s search on iPhone (#28324)' -m 'Ported from pingdotgg/t3code@ad2d22c809.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 a6b8f71443	take	fix(desktop): Escape during IME composition no longer cancels a preview annotation (#35645)
 b1c1e07ded	take	fix(web): a click no longer lands on the sidebar row that just slid under it (#23517)
+613d1ac4f9	take	fix(mcp): background wait fails when none of its task IDs exist (#29773)
