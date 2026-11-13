@@ -858,3 +858,4 @@ f99b2835ef	take	fix(provider-core): a timed-out status probe stops a CLI that ig
 49b858b807	take	fix(git): selected-file commits work through symlinked subdirectories (#35278)
 833a15b6c1	take	fix(opencode): a project opened mid-scan lists its OpenCode skills (#35384)
 a5bd0ba526	take	fix(ssh): SSH setup on a host without gzip says gzip is missing (#35389)
+f03db4fbef	take	fix(pi): blank extension dialog titles no longer fail the turn (#35271)
