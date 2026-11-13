@@ -4709,9 +4709,14 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
           runGit(
             "GitVcsDriver.createWorktree.updateSubmodules",
             worktreePath,
-            submoduleMode.value === "recursive"
-              ? ["submodule", "update", "--init", "--recursive"]
-              : ["submodule", "update", "--init"],
+            [
+              "submodule",
+              "update",
+              "--init",
+              ...(submoduleMode.value === "recursive" ? ["--recursive"] : []),
+              // Git reports transfer progress to a pipe only when forced.
+              ...(onSubmoduleLine ? ["--progress"] : []),
+            ],
             {
               // Cloning scales with remote size; let it finish or be cancelled, like worktree add.
               timeoutMs: null,
@@ -4719,6 +4724,9 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
                 ? {
                     env: { LANGUAGE: "C" },
                     progress: { onStdoutLine: onSubmoduleLine, onStderrLine: onSubmoduleLine },
+                    // Progress for many submodules can pass the output cap; truncate instead of failing.
+                    appendTruncationMarker: true,
+                    keepLineCallbacksAfterTruncation: true,
                   }
                 : {}),
             },

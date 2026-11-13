@@ -1004,3 +1004,4 @@ a135972c7e	take	fix(opencode): preserve owned turns during server recovery (#255
 2ff2770f42	take	fix(server): saved preview snapshot failures name the screenshot destination (#35649)
 beaa647dc1	take	fix(ssh): distinguish incompatible Node from a missing executable (#35607)
 817b92f13a	take	fix(pi): stop offering extension-only models for text generation (#24110)
+18aeb0fb91	take	fix(server): new worktrees show submodule downloads instead of a stuck checkout (#33687)
