@@ -1128,3 +1128,4 @@ b23f94e4a1	take	fix(server): preview resize and status report the real size of d
 8a38c63706	take	fix(web): thread navigation shortcuts work from the terminal and macOS composer (#26433)
 025942d76a	take	fix(desktop): an unreadable settings file is no longer overwritten by a bounds save (#35890)
 6f108e8556	take	fix(codex): accept hook event names newer than the pinned protocol (#35885)
+e726a0898a	take	fix(opencode): /goal clear with no goal set finishes as a no-op (#35893)
