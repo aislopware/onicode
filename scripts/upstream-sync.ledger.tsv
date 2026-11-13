@@ -1134,3 +1134,4 @@ be03b93bac	take	fix(desktop): one preview viewer or recording stopping no longer
 f39d38bcc1	take	fix(server): Codex question answers keep their native question id (#35886)
 f5390209c2	take	test(server): windowed history pages are checked against the full index at the window edges (#35877)
 afff0d3efe	take	fix(clients): answer history no longer shows provider context from review comments (#35897)
+274474dd19	take	fix(server): refresh sync status after agent merges (#35919)
