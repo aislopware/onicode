@@ -1231,3 +1231,4 @@ d3ef7e8e52	take	fix(cursor): send the catalog's default model parameters on ever
 0568a63aac	take	fix(server): agents point to Settings → Labs when the link tools are hidden (#30371)
 139ec8080f	take	fix(server): Claude no longer dispatches skill mentions from handoff history (#34497)
 4b316fd544	take	fix(web): clear deleted checkout labels from the sidebar (#25063)
+4582a3bc68	take	fix(server): MacPorts-owned agent CLIs are no longer updated through npm or their own updater (#36229)
