@@ -35,3 +35,7 @@ export const DesktopBackendBootstrap = Schema.Struct({
 });
 
 export type DesktopBackendBootstrap = typeof DesktopBackendBootstrap.Type;
+
+/** In `<oniHome>/runtime` while an update restarts the backend; SSH launchers wait on it. */
+export const DESKTOP_UPDATE_IN_PROGRESS_MARKER_FILE = "desktop-update-in-progress";
+export const DESKTOP_UPDATE_IN_PROGRESS_TTL_MS = 60_000;

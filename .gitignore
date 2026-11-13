@@ -57,3 +57,4 @@ node_modules/
 # ccache directory the release workflow keeps between runs.
 /.ccache/
 /.claude/worktrees/
+/packages/ssh/.ssh-launcher-test-*/
