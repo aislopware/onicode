@@ -909,3 +909,4 @@ a05a3cd584	take	fix(shared): voice cleanup falls back after removing an instance
 7c57291c4b	take	fix(server): a bind address Tailscale Serve refuses says to bind 127.0.0.1 or 0.0.0.0 (#35545); dev-share.ts hunk dropped
 db63178ff7	take	fix(desktop): Tailscale HTTPS counts as on only when Serve reaches this backend (#35544)
 4ca5b9cdb8	take	fix(server): long startup migrations log progress and resume after a restart (#35486); test migration ids renumbered to Onicode's (upstream 81/84 -> 86/90)
+8b05078459	take	fix(scripts): mobile:e2e asks Tailscale for the address pool devices reach (#35553)
