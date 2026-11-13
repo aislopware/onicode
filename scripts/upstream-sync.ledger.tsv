@@ -1275,3 +1275,4 @@ e94db17ead	take	fix(mobile): adding a folder that is already a project opens it 
 41e69ffa06	take	fix(contracts): agents keep working after starting an async delegate (#34924)
 1a4a29998b	take	fix(server): reverting to a checkpoint restores skip-worktree files (#36308)
 66ec37079a	take	fix(shared): thread links inside other links or after an escape stay as written (#36298); hosted-URL parts dropped
+c165587702	take	fix(provider-cursor): Cursor threads report token usage and context fill (#36323)
