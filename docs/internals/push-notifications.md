@@ -57,6 +57,11 @@ decides what each registered device should see.
   ended card, and a late one: it keeps accepting updates for a card that is gone, then answers
   `410 Unregistered` after a delay Apple does not specify. So an accepted update does not mean
   the card is on screen, and a card's age, not APNs, says when to replace it.
+- **Only a changed count is sent to a Live Activity at high priority.** APNs holds a low-priority
+  update back until the phone finds it convenient, which left a card a count behind for minutes.
+  iOS throttles an app that sends too many high-priority ones in an hour, so a rename, a row
+  that connected, and the keepalive stay low. The environment marks the update, since the
+  gateway keeps nothing to compare against.
 
 Registration is plain HTTP, not a WebSocket method, because the app registers a Live Activity's
 update token from the background, where it has no socket.

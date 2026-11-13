@@ -155,6 +155,13 @@ export function pushActivityIdentity(state: PushActivityState | null): string {
   });
 }
 
+/** The counts a card shows. A row that only connected or was renamed changes none of them. */
+export function pushActivityCounts(state: PushActivityState | null): string {
+  if (state === null) return "null";
+  const phases = state.activities.map((row) => (row.phase === "starting" ? "running" : row.phase));
+  return [state.activeCount, ...phases].join(" ");
+}
+
 /**
  * Whether a thread's move from one phase to another is worth interrupting someone for.
  * `previous` is null for a thread that had nothing to show.

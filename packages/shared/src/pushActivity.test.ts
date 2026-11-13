@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import type { AgentAwarenessPhase, AgentAwarenessState } from "./agentAwareness.ts";
 import {
   PUSH_TERMINAL_DISPLAY_MS,
+  pushActivityCounts,
   pushActivityIdentity,
   pushActivityState,
   pushAlertKind,
@@ -124,6 +125,23 @@ describe("pushActivityState", () => {
     expect(pushActivityIdentity(after!.state)).toBe(pushActivityIdentity(before!.state));
     expect(pushActivityIdentity(changed!.state)).not.toBe(pushActivityIdentity(before!.state));
     expect(pushActivityIdentity(null)).not.toBe(pushActivityIdentity(before!.state));
+  });
+
+  it("has the same counts until an agent starts, stops or needs someone", () => {
+    const counts = (states: ReadonlyArray<AgentAwarenessState>) =>
+      pushActivityCounts(activity(states)?.state ?? null);
+    const before = counts([agent("a", "running"), agent("b", "starting")]);
+
+    expect(counts([agent("a", "running", at(0), "Renamed"), agent("b", "running")])).toBe(before);
+    expect(counts([agent("a", "running"), agent("b", "running"), agent("c", "starting")])).not.toBe(
+      before,
+    );
+    expect(counts([agent("a", "running"), agent("b", "waiting_for_input")])).not.toBe(before);
+    expect(counts([agent("a", "running"), agent("b", "completed")])).not.toBe(before);
+    // More agents than rows: the count is all that tells the sixth from the seventh.
+    const many = (length: number) =>
+      counts(Array.from({ length }, (_, index) => agent(`t${index}`, "running")));
+    expect(many(7)).not.toBe(many(6));
   });
 });
 

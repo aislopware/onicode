@@ -387,7 +387,7 @@ describe("PushNotifications", () => {
     "starts one Live Activity per stretch of work and updates it through its own grant",
     () =>
       Effect.gen(function* () {
-        const { push, change, register, restart, taken } = yield* setup();
+        const { push, change, register, restart, taken, messages } = yield* setup();
         yield* register(
           registration({ platform: "ios", label: "iPhone", liveActivityStart: grant("start") }),
         );
@@ -412,12 +412,18 @@ describe("PushNotifications", () => {
         yield* TestClock.adjust("1 minute");
         yield* push.drain;
         assert.deepStrictEqual(taken(), [{ grant: "grant_update", alert: undefined, active: 1 }]);
+        // iOS may hold back an update that is not urgent, which suits one that changes no number.
+        assert.notProperty(messages.at(-1)?.activity, "urgent");
+        yield* change({ title: "Renamed again" });
+        assert.deepStrictEqual(taken(), [{ grant: "grant_update", alert: undefined, active: 1 }]);
+        assert.notProperty(messages.at(-1)?.activity, "urgent");
 
         yield* change({ pendingRuntimeRequest: approval });
         assert.deepStrictEqual(taken(), [
           { grant: "grant_notification", alert: "Approval needed · onicode", active: undefined },
           { grant: "grant_update", alert: undefined, active: 1 },
         ]);
+        assert.strictEqual(messages.at(-1)?.activity?.urgent, true);
 
         yield* change({ status: "failed", latestRunCompletedAt: DateTime.makeUnsafe(8 * 60_000) });
         assert.deepStrictEqual(taken(), [

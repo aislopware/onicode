@@ -86,6 +86,20 @@ describe("push payloads at the contract's limits", () => {
     },
   );
 
+  it("sends a Live Activity update at once only when it is urgent", () => {
+    const priority = (urgent: boolean) =>
+      apnsLiveActivityRequest({
+        event: "update",
+        environmentId: "env-1",
+        state,
+        alert: null,
+        urgent,
+        nowSeconds: 0,
+      }).priority;
+    expect(priority(false)).toBe("5");
+    expect(priority(true)).toBe("10");
+  });
+
   it("shortens text to fit FCM without touching ids or links", () => {
     const { data } = fcmRequest({
       deviceId: id(128),

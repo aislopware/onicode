@@ -104,6 +104,8 @@ export function apnsLiveActivityRequest(input: {
     readonly body: string;
     readonly quiet?: boolean;
   } | null;
+  /** An update iOS must not hold back. Each one spends the hourly budget iOS allows an app. */
+  readonly urgent?: boolean;
   readonly nowSeconds: number;
 }): ApnsRequest {
   const build = (maxLength: number, rowCount: number) => {
@@ -194,7 +196,8 @@ export function apnsLiveActivityRequest(input: {
   }
   return {
     pushType: "liveactivity",
-    priority: input.event === "update" && input.alert === null ? "5" : "10",
+    priority:
+      input.event === "update" && input.alert === null && input.urgent !== true ? "5" : "10",
     expiration: input.nowSeconds + ACTIVITY_TTL_SECONDS,
     payload,
   };

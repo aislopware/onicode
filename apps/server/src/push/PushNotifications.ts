@@ -25,6 +25,7 @@ import {
   PUSH_ACTIVITY_KEEPALIVE_RETRY_MS,
   PUSH_ANDROID_ACTIVITY_KEEPALIVE_MS,
   pushActivityIdentity,
+  pushActivityCounts,
   pushActivityState,
   pushAlertAllowed,
   type PushAlertKind,
@@ -200,6 +201,7 @@ interface Activity {
   readonly state: PushActivityState | null;
   readonly expiresAt: number | undefined;
   readonly identity: string;
+  readonly counts: string;
 }
 
 const make = Effect.gen(function* () {
@@ -226,7 +228,7 @@ const make = Effect.gen(function* () {
   const states = new Map<ThreadId, AgentAwarenessState>();
   const confirmDeadlines = new Map<ThreadId, number>();
   /** The activity each device last received, to skip what would look the same. */
-  const delivered = new Map<PushDeviceId, string>();
+  const delivered = new Map<PushDeviceId, Activity>();
   /**
    * When each device with work under way next needs a publish though nothing changed: to refresh
    * its card, or to send a start that had to wait.
@@ -344,7 +346,7 @@ const make = Effect.gen(function* () {
     const activity =
       input.activity !== undefined &&
       device.preferences.activity &&
-      (delivered.get(deviceId) !== input.activity.identity ||
+      (delivered.get(deviceId)?.identity !== input.activity.identity ||
         (refreshDue !== undefined && now >= refreshDue))
         ? input.activity
         : undefined;
@@ -368,7 +370,7 @@ const make = Effect.gen(function* () {
       });
       const working = (activity?.state?.activeCount ?? 0) > 0;
       if (activity !== undefined && result.outcome === "delivered") {
-        delivered.set(deviceId, activity.identity);
+        delivered.set(deviceId, activity);
         if (working) refreshDueAt.set(deviceId, now + PUSH_ANDROID_ACTIVITY_KEEPALIVE_MS);
         else refreshDueAt.delete(deviceId);
       } else if (working && result.outcome === "failed") {
@@ -382,7 +384,7 @@ const make = Effect.gen(function* () {
       yield* send(device, "notification", notificationGrant, { notification });
     }
     if (activity === undefined) return;
-    const { state, identity } = activity;
+    const { state } = activity;
     const working = state !== null && state.activeCount > 0;
     const startedAt = device.liveActivityStartedAt;
     // Nothing a start put on screen outlives it, so past that age the start holds nothing back.
@@ -398,11 +400,13 @@ const make = Effect.gen(function* () {
       ? null
       : usable(device.liveActivityUpdateGrant, device.liveActivityUpdateGrantExpiresAt, now);
     if (updateGrant !== null) {
+      // APNs holds a low-priority update back, sometimes for minutes, so a count must not ride one.
+      const urgent = delivered.get(deviceId)?.counts !== activity.counts;
       const result = yield* send(device, "liveActivityUpdate", updateGrant, {
-        activity: { state },
+        activity: { state, ...(urgent ? { urgent } : {}) },
       });
       if (result.outcome === "delivered") {
-        delivered.set(deviceId, identity);
+        delivered.set(deviceId, activity);
         if (working) {
           refreshDueAt.set(deviceId, now + PUSH_ACTIVITY_KEEPALIVE_MS);
         } else {
@@ -421,7 +425,7 @@ const make = Effect.gen(function* () {
     refreshDueAt.delete(deviceId);
     delivered.delete(deviceId);
     if (!working) {
-      delivered.set(deviceId, identity);
+      delivered.set(deviceId, activity);
       return;
     }
     const startGrant = usable(
@@ -496,6 +500,7 @@ const make = Effect.gen(function* () {
       state,
       expiresAt: shown?.expiresAt,
       identity: pushActivityIdentity(state),
+      counts: pushActivityCounts(state),
     } satisfies Activity;
   });
 

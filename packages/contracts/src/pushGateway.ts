@@ -119,6 +119,8 @@ export const PushMessage = Schema.Struct({
       state: Schema.NullOr(PushActivityState),
       /** When the state stops being worth showing if no later update arrives. */
       expiresAt: Schema.optionalKey(EpochMillis),
+      /** A count on the card changed. iOS delivers any other update when it finds convenient. */
+      urgent: Schema.optionalKey(Schema.Boolean),
     }),
   ),
 });
