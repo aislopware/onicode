@@ -921,3 +921,4 @@ abca54783c	take	test(server): bind-address Serve refusal test answers serve stat
 773b3c9b30	take	fix(mobile): block HTML in a Markdown table cell no longer splits the row (#35535)
 bd8ea12990	take	fix(server): terminal history drops the tertiary Device Attributes query (#35537)
 f376f5cc1d	take	fix(web): J and K step the PR guide without clicking into it first (#32302)
+cf82fb8584	take	fix(shared): preserve repository paths when switching clone protocols (#35322)
