@@ -889,3 +889,4 @@ c58450f2cf	take	fix(ssh): SSH environments connect over links with about a secon
 63d5c6dfe4	take	feat(opencode): read usage limits from the connected server (#34146)
 fc2b5de20c	take	fix(web): a project filter that hides every active thread says so and offers Show all projects (#35426)
 b42841808d	take	fix(usage): count Codex request ledgers and replace archived cache entries (#35497)
+8fc1dade71	take	fix(web): keep settled pagination focused while loading (#35522); kept Onicode's mockSidebarThreads row-render setup
