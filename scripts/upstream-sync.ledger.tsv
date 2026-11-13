@@ -1143,3 +1143,4 @@ ed5afae179	take	fix(acp): v2 tool updates clear nulled fields and replace raw in
 bedc8658c3	take	fix(mobile): Files search no longer carries into another workspace (#35902)
 b62e80e0a3	take	fix(web): copying an alert callout keeps its alert Markdown (#35932)
 0a333a69e7	take	fix(server): Codex shadow home shares the instance environment CODEX_HOME (#35912)
+97cfc07759	take	fix(preview): remote viewers recover from stalled first captures (#25381)
