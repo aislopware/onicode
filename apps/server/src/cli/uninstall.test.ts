@@ -152,7 +152,7 @@ it.layer(NodeServices.layer)("onicode uninstall launcher", (it) => {
         ),
         [cmd],
       );
-    }).pipe(Effect.scoped, Effect.provideService(HostProcess.Platform, "linux")),
+    }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 });
 
