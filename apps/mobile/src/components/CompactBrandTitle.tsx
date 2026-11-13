@@ -50,7 +50,7 @@ export function CompactBrandTitle(
         props.fit && { flexShrink: 0 },
       ]}
     >
-      <OniWordmark height={Math.round(20 * scale)} />
+      <OniWordmark height={Math.round(20 * scale)} idle />
       {/* A logo beside a fixed-size wordmark: it may grow with Dynamic Type, not crowd the bar. */}
       <Text
         allowFontScaling={props.allowFontScaling}
