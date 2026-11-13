@@ -1278,3 +1278,4 @@ e94db17ead	take	fix(mobile): adding a folder that is already a project opens it 
 c165587702	take	fix(provider-cursor): Cursor threads report token usage and context fill (#36323)
 3521634e4e	take	fix(server): review diffs no longer read oversized untracked files (#36302)
 fa6326bf1b	take	fix(web): closing a composer menu on a touch tablet no longer opens the keyboard (#36325)
+ca6e09c3e1	take	fix(mobile): Duo feed scroll indicator stays left of the vertical bar while streaming (#36063)
