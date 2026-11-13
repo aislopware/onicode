@@ -1028,3 +1028,4 @@ aa37097093	take	fix(web): streamed device toolbar starts at the panel size (#356
 1e6a251871	take	fix(acp): preserve OMP single-choice questions and custom answers (#24012)
 3de49baa70	take	fix(server): workspace search leaves out files Git ignores outside .gitignore (#35673)
 12a62edd67	take	fix(server): worktree setup no longer hangs when the shell is Nushell (#29461)
+6641231797	take	fix(secrets): notify when a delegated agent asks for a secret (#33585)
