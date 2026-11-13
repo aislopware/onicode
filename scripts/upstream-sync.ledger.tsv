@@ -1006,3 +1006,4 @@ beaa647dc1	take	fix(ssh): distinguish incompatible Node from a missing executabl
 817b92f13a	take	fix(pi): stop offering extension-only models for text generation (#24110)
 18aeb0fb91	take	fix(server): new worktrees show submodule downloads instead of a stuck checkout (#33687)
 05089062d4	take	fix(web): restore composer focus when returning to a thread (#29179)
+bd731da087	take	fix(server): linked calls fail fast when a peer stalls the MCP handshake (#28876)
