@@ -856,3 +856,4 @@ fd8e386f7f	take	fix(mobile): the thread list shows server changes after a tab ro
 371963ce0b	take	fix(desktop): startup log prune keeps files that rotation never names (#35378)
 f99b2835ef	take	fix(provider-core): a timed-out status probe stops a CLI that ignores SIGTERM (#35379)
 49b858b807	take	fix(git): selected-file commits work through symlinked subdirectories (#35278)
+833a15b6c1	take	fix(opencode): a project opened mid-scan lists its OpenCode skills (#35384)
