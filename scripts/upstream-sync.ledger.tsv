@@ -1219,3 +1219,4 @@ c7a3f02e38	take	fix(desktop): Local environment off survives an unreadable value
 9a35ab0afe	take	taken as is
 f313d0a6cb	take	taken as is
 3ac8b1f587	take	fix(acp): bound unread notification retention by size (#23217)
+00f617db4e	take	fix(client-runtime): recover subscriptions that stop on a healthy connection (#24400)
