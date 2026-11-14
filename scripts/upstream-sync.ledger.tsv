@@ -1380,3 +1380,4 @@ fcf50ffe38	skip	T3 Connect managed tunnel origin watcher; Connect, relay and app
 eea9d15ee2	take	fix(desktop): Windows folders dropped on a WSL backend insert their WSL path (no isDesktopRenderer: desktop-only renderer; relay telemetry test dropped)
 be78ee4940	take	fix(server): stopping an agent's server no longer wakes Codex as if it crashed (PortScanner live test passes the command name as $2 so it passes on macOS)
 d9619adc09	skip	T3 Connect/relay discovery list was removed from Onicode
+a4723422e7	take	fix(web): screen readers no longer say "Message" twice entering the composer
