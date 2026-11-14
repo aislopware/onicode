@@ -1740,3 +1740,4 @@ ed101ef641	take	fix(preview): unload desktop pages before removing their tabs
 ff17cd307f	take	fix(desktop): agent snapshots keep full detail in narrow and mini previews
 7f81aa8386	take	test(web): pin the minute clock in the sidebar render isolation tests
 632802cd32	take	fix(acp-registry): models show the reasoning levels the agent advertises for them
+cbdf35f2f0	take	fix(web): enable Send when the composer holds only a thread context
