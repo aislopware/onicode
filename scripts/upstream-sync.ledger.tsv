@@ -1404,3 +1404,4 @@ d899bddfa2	take	fix(gitlab): long merge request descriptions no longer break the
 4c47315538	take	fix(server): overlapping VCS status refreshes share one follow-up refresh (#24478)
 25c5032b3b	take	fix(devices): require a complete Android SDK on SSH hosts (#24566)
 6d94997008	take	fix(opencode): support explicit background waits (#35272)
+aecad62a50	take	fix(opencode): a failed steer no longer leaves the turn running forever (#24701)
