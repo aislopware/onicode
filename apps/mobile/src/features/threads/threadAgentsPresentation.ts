@@ -1,6 +1,7 @@
 import {
   formatSubagentDisplayTitle,
   resolveSubagentMetadata,
+  subagentCardDetail,
   subagentDetailPreview,
 } from "@onicode/client-runtime/state/subagent-display";
 import {
@@ -16,8 +17,6 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import { resolveSelectableModel } from "@onicode/shared/model";
-
-import { subagentCardDetail } from "./subagent-card-presentation";
 
 const PROMPT_TITLE_LIMIT = 80;
 
