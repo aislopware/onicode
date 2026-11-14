@@ -1,3 +1,4 @@
+import { MISSING_FILE_ACCESS_MESSAGE } from "@onicode/client-runtime/state/assets";
 import { EnvironmentId, ThreadId } from "@onicode/contracts";
 import { AsyncResult } from "effect/reactivity";
 import { type ReactElement } from "react";
@@ -71,6 +72,17 @@ vi.mock(import("../state/session"), async (original) => {
     ...(await original()),
     useEnvironmentScope: hasScope as never,
     readEnvironmentScope: hasScope as never,
+  };
+});
+const deniedEnvironmentId = vi.hoisted(() => "denied-environment");
+vi.mock(import("../state/filesystem"), async (original) => {
+  const actual = await original();
+  return {
+    ...actual,
+    useFilesystemReadAccess: ((environmentId: EnvironmentId | null) =>
+      environmentId === deniedEnvironmentId
+        ? { canReadFiles: false, isPending: false, error: null }
+        : actual.useFilesystemReadAccess(environmentId)) as never,
   };
 });
 vi.mock(import("../remoteOpen"), async (original) => ({
@@ -709,5 +721,21 @@ describe("ChatMarkdown Windows file links", () => {
       expect(container.innerHTML).not.toContain("d:alert");
       expect(fileHrefs(container)).toEqual([]);
     }
+  });
+});
+
+describe("ChatMarkdown host media", () => {
+  it("explains a host video the connection cannot read instead of offering a retry", async () => {
+    setup();
+    await using screen = await renderText("![Demo](/tmp/demo.mp4)", {
+      threadRef: {
+        environmentId: EnvironmentId.make(deniedEnvironmentId),
+        threadId: ThreadId.make("thread"),
+      },
+    });
+    await vi.waitFor(() =>
+      expect(screen.container.textContent).toContain(MISSING_FILE_ACCESS_MESSAGE),
+    );
+    expect(screen.container.textContent).not.toContain("Retry video");
   });
 });
