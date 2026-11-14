@@ -5532,9 +5532,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
     Effect.provideService(Path.Path, path),
   );
   const claudeContextWindow = (modelSelection: ModelSelection): number | null => {
-    const apiModelId = compileClaudeModelSelection(modelSelection, modelCatalog).apiModelId;
+    const { apiModelId, contextLimitsKey } = compileClaudeModelSelection(
+      modelSelection,
+      modelCatalog,
+    );
     return (
-      effectiveContextLimits.get(apiModelId)?.maxTokens ??
+      effectiveContextLimits.get(contextLimitsKey)?.maxTokens ??
       resolveClaudeCatalogContextWindowTokens(modelCatalog, modelSelection) ??
       reportedContextWindows.get(apiModelId) ??
       null
@@ -5545,7 +5548,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
     autoCompactWindow: string,
   ): ClaudeContextLimits => {
     const effective = effectiveContextLimits.get(
-      compileClaudeModelSelection(modelSelection, modelCatalog).apiModelId,
+      compileClaudeModelSelection(modelSelection, modelCatalog).contextLimitsKey,
     );
     if (effective !== undefined) return effective;
     const maxTokens = claudeContextWindow(modelSelection);
@@ -8416,17 +8419,17 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const measureContextLimits = Effect.fnUntraced(function* (
           liveQuery: ClaudeLiveQueryContext,
         ) {
-          const apiModelId = liveQuery.selection.apiModelId;
+          const limitsKey = liveQuery.selection.contextLimitsKey;
           const measured = measuredContextLimits.get(liveQuery.query) ?? new Set<string>();
-          if (measured.has(apiModelId)) return false;
-          measured.add(apiModelId);
+          if (measured.has(limitsKey)) return false;
+          measured.add(limitsKey);
           measuredContextLimits.set(liveQuery.query, measured);
           const usage = yield* liveQuery.query.getContextUsage.pipe(
             Effect.timeout("2 seconds"),
             Effect.asSome,
             Effect.catchCause(() => Effect.succeedNone),
           );
-          return Option.isSome(usage) && recordContextLimits(apiModelId, usage.value);
+          return Option.isSome(usage) && recordContextLimits(limitsKey, usage.value);
         });
         const sessionRequestFailed = (detail: string) => (cause: ClaudeAgentSdkQueryRunnerError) =>
           new ProviderAdapter.ProviderAdapterProtocolError({
@@ -13916,7 +13919,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               Effect.mapError(sessionRequestFailed("Claude could not report its context usage.")),
             );
             // The next turn's meter uses it; a settled turn's usage is not reopened.
-            recordContextLimits(liveQuery.selection.apiModelId, usage);
+            recordContextLimits(liveQuery.selection.contextLimitsKey, usage);
             return claudeContextUsage(usage);
           }),
           mcpServers: {

@@ -648,9 +648,13 @@ function resolveClaudeCatalogContextWindow(
 export function resolveClaudeCatalogApiModelId(
   catalog: ClaudeModelCatalog,
   modelSelection: ModelSelection,
+  options?: { readonly routed?: boolean },
 ): string {
   const entry = resolveClaudeCatalogModel(catalog, modelSelection.model);
-  const slug = entry?.apiModel ?? entry?.model.slug ?? modelSelection.model;
+  const slug =
+    (options?.routed === false ? undefined : entry?.apiModel) ??
+    entry?.model.slug ??
+    modelSelection.model;
   const descriptors = getProviderOptionDescriptors({
     caps: entry?.model.capabilities ?? EMPTY_CAPABILITIES,
     selections: modelSelection.options,
