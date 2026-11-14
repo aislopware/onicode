@@ -1744,3 +1744,4 @@ cbdf35f2f0	take	fix(web): enable Send when the composer holds only a thread cont
 d080e4eb58	take	fix(web): thread details card no longer jumps mid panel animation
 2dd810d0f6	take	fix(web,mobile): /btw and /side drafts show the send arrow while a turn runs
 ab2bf940f6	take	fix(server): migrated databases can return freed space to disk
+88c42f471b	take	fix(devices): rename EAS Simulator to Expo Simulators
