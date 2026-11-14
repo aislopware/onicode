@@ -1396,3 +1396,4 @@ ea957b5cab	take	fix(server): give MCP clients an absolute attachment upload URL 
 8656cdb3a9	take	fix(web): reply labels no longer cut an emoji in half (#35701)
 388424db26	take	fix(shared): capture shell values after profiles replace PATH (#35617)
 e1f5b68281	take	fix(server): MCP tools say why the orchestrator refused (#36083)
+5ef603df34	take	fix(web): remove routine success notifications (#36527); kept Onicode's mobile notifications screen
