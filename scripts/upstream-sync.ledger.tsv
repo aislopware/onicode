@@ -1677,3 +1677,4 @@ a767d23297	take	fix(server): a setting change no longer detaches a busy session 
 0cb9328ea0	take	fix(server): storage cleanup removes idle worktrees whose branch was renamed or switched (#34984)
 f5c2ceb4d1	take	fix(claude): rename the native session when the thread title changes (#34775)
 47a8f2ba92	take	fix(desktop): an emptied browser cookie jar imports as empty instead of failing (#34698)
+5d1352d48a	take	fix(server): each websocket RPC starts its own trace so Tempo keeps its spans (#36863)
