@@ -1340,3 +1340,4 @@ a6d9140972	take	taken as is
 6bce2226de	skip	guest messages only (apps/server/src/guest); Onicode removed guest links
 88d4d06ea3	take	taken as is; serverReady rides the local desktop control fd, not the client wire
 cf382b0c44	take	taken as is
+44fefbcbc4	skip	Only touches the scenarios tooling (e2e.config, scenarios doc), which Onicode removed.
