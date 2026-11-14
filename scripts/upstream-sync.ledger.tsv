@@ -1723,3 +1723,4 @@ c76ba848ab	take	conflict resolved: hoisted settleRunBeforeStart without the remo
 74f02db077	take	dropped upstream's scripts/scenarios e2e (no scenario harness in Onicode)
 37c266d25a	take	taken as is
 7f7a1a447a	take	cloud/ hunks applied to Onicode's service/pinnedRuntime.ts and service/serviceLauncherClient(.test).ts; nightly test fixture dropped
+b60abf32e0	take	relay client hunk dropped; probe off-thread spawn forwards stderr to Onicode's onStderr; worker error narrowed for newer @types/node; test cwd realpath for macOS; lockfile regenerated

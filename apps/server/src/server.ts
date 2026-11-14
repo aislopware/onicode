@@ -38,6 +38,7 @@ import { fixPath } from "./os-jank.ts";
 import * as Ws from "./ws.ts";
 import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
+import * as SpawnWorker from "./process/SpawnWorker.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
 import * as PullRequestHttp from "./pullRequest/http.ts";
 import * as PushDevices from "./push/PushDevices.ts";
@@ -292,6 +293,9 @@ const layerResourceDiagnostics = Layer.mergeAll(
   ProcessGroupMetrics.layer.pipe(Layer.provide(layerResourceTelemetry)),
 );
 
+// NodeServices and NodeHttpServer each output Node's own spawner, so each is followed by this one.
+const layerSpawner = SpawnWorker.layerServer.pipe(Layer.provide(NodeServices.layer));
+
 const layerHttpServer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* ServerConfig.ServerConfig;
@@ -334,7 +338,7 @@ const layerHttpServer = Layer.unwrap(
         // `threshold` when context takeover is disabled).
         websocket: { perMessageDeflate: true },
       },
-    );
+    ).pipe(Layer.merge(layerSpawner));
   }),
 ).pipe(
   Layer.provide(ManagedPolicy.layer),
@@ -344,7 +348,7 @@ const layerHttpServer = Layer.unwrap(
 
 const layerPlatformServices = DocumentText.layer.pipe(
   Layer.provideMerge(NonBlockingSpawner.layer),
-  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+  Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer, layerSpawner)),
 );
 
 const layerPersistence = Layer.empty.pipe(Layer.provideMerge(SqlitePersistence.layerConfig));
@@ -1053,6 +1057,6 @@ const layerMakeServer = Layer.unwrap(
 ).pipe(Layer.provide(ProcessRunner.layer));
 
 export const runServer = Layer.launch(
-  // For the layers above whose spawner requirement is met by the caller's runtime.
-  layerMakeServer.pipe(Layer.provide(NonBlockingSpawner.layer)),
+  // For the layers above whose spawner requirement is not met by one of them.
+  layerMakeServer.pipe(Layer.provide(NonBlockingSpawner.layer.pipe(Layer.provide(layerSpawner)))),
 );
