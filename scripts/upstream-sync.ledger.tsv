@@ -1383,3 +1383,4 @@ d9619adc09	skip	T3 Connect/relay discovery list was removed from Onicode
 a4723422e7	take	fix(web): screen readers no longer say "Message" twice entering the composer
 a35fd81174	take	fix(server): settlement sweep reads quiet open pull requests every 5 minutes
 31d9b3bcd6	take	fix(web): edited HTML previews outside the workspace no longer turn white (#34569)
+ddc36529ad	take	fix(forgejo): the fj sign-in hint points subpath servers to tea (#36290)
