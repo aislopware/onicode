@@ -1598,7 +1598,7 @@ cc578d5f9a	take	fix(server): settling a usage-limited thread disarms recovery an
 b05c505b9c	take	fix(mobile): review comment cards keep a trailing blank line in their diff
 f751c8488f	take	fix(web): the new-thread project picker follows the manual project order
 0f50b5f66d	take	fix(mobile): deleting a thread clears its unsent draft
-997b304dd6	take	fix(server): editing a queued message deletes the attachments you removed (guest-share test dropped)
+997b304dd6	take	fix(server): editing a queued message deletes the attachments you removed (conflict was only guest-share test context, absent in Onicode)
 c342f3dec2	take	fix(web): settled threads no longer offer a PR watch the server refuses
 04572419e4	take	fix(clients): a one-hour snooze no longer reads "2h left"
 732198d3a9	take	fix(web): a disabled Push names the real reason when there are local changes
