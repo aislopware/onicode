@@ -1564,6 +1564,8 @@ describe("OpenCodeAdapterV2", () => {
     { state: "settled", end: "foreground-buffered-error" },
     { state: "settled", end: "foreground-stop" },
     { state: "settled", end: "foreground-eof" },
+    { state: "settled", end: "foreground-close" },
+    { state: "settled", end: "foreground-second-during-wait" },
     { state: "settled", end: "invalid-continuation" },
     { state: "settled", end: "policy-failure" },
     { state: "settled", end: "closed" },
@@ -2450,7 +2452,11 @@ describe("OpenCodeAdapterV2", () => {
           return;
         }
         const foreground =
-          end === "foreground" || end === "foreground-stop" || end === "foreground-eof"
+          end === "foreground" ||
+          end === "foreground-stop" ||
+          end === "foreground-eof" ||
+          end === "foreground-close" ||
+          end === "foreground-second-during-wait"
             ? yield* harness
                 .startTurn("follow up", undefined, undefined, false, "next")
                 .pipe(Effect.forkScoped)
@@ -2476,6 +2482,43 @@ describe("OpenCodeAdapterV2", () => {
           },
         });
         yield* push(assistant(true));
+        if (end === "foreground-second-during-wait") {
+          // Another background result runs in the same native loop before the wake goes idle.
+          yield* push(user("msg_second_background_result"));
+          yield* push({
+            type: "message.updated",
+            properties: {
+              sessionID: root,
+              info: {
+                id: "msg_second_assistant",
+                sessionID: root,
+                role: "assistant",
+                parentID: "msg_second_background_result",
+                time: { created: 3, completed: 4 },
+              },
+            },
+          });
+          yield* push(status("idle"));
+          yield* push({ type: "session.idle", properties: { sessionID: root } });
+          yield* Fiber.join(foreground!);
+          assert.equal(promptIds.length, 2, "the foreground prompt is submitted after the wake");
+          const snapshot = yield* harness.runtime.readThreadSnapshot({
+            providerThread: harness.providerThread,
+          });
+          assert.equal(
+            snapshot.providerTurns.at(-1)?.status,
+            "running",
+            "another background reply cannot complete the foreground before its own response",
+          );
+          return;
+        }
+        if (end === "foreground-close") {
+          yield* Scope.close(sessionScope, Exit.void);
+          const exit = yield* Fiber.await(foreground!);
+          assert.isTrue(Exit.isFailure(exit), "a closed session fails the waiting foreground");
+          assert.equal(promptIds.length, 1, "a closed session never submits the foreground");
+          return;
+        }
         if (end === "foreground-stop" || end === "foreground-eof") {
           if (end === "foreground-eof") nativeEvents.close();
           else {
