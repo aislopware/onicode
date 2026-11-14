@@ -1503,3 +1503,4 @@ bc1dc2a81e	take	fix(mobile): keep the thread column out of the iPhone Duo fold
 3d3275b067	take	fix(server): PR checkout respects restricted fetch mappings
 121f0cf014	take	fix(server): oni_thread_list clamps an oversized limit instead of failing (agentContextBudget re-measured for Onicode's tool list: 47751)
 0c306f4520	take	fix(ssh): wait for a boot service's server instead of starting a second one; cloud/ parts applied to service/
+ae49f4d2a7	take	fix(server): honor custom Claude thinking choices
