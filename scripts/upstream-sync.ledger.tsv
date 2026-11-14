@@ -1440,3 +1440,4 @@ b2259d3c6c	take	fix(web): show working state while provider sessions start
 7bf7527a0a	take	fix(devices): agents can test the mobile app on remote device hosts (test adapted: no Blacksmith build-run test in Onicode)
 410177c7d6	take	fix(gitlab): create fork merge requests in the source project
 8b30961465	take	fix(server): allow slow worktree base fetches to finish
+f315da3339	take	fix(shared): PASS and FAIL badges stay readable in dark command output
