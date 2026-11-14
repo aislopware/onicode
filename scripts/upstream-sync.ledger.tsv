@@ -1530,3 +1530,4 @@ dafd053a19	take	fix(mobile): closed PR numbers match their red icon in the threa
 0fdc99c870	take	fix(web): notebook previews strip ANSI colors from saved tracebacks (#36703)
 414d938513	take	fix(server): publish Create PR branches to split push URLs (#36695)
 0200dcf242	take	perf(shared): queued SQLite reads stop waiting on one reader while another is free (#27979)
+b28dc0eb1d	take	perf(mobile): Changes tab no longer redraws every file when one changes (#25872)
