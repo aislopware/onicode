@@ -1529,3 +1529,4 @@ dafd053a19	take	fix(mobile): closed PR numbers match their red icon in the threa
 13a6782a6c	take	fix(web): ODS time cells without display text show their value; dropped scripts/scenarios e2e (removed in Onicode)
 0fdc99c870	take	fix(web): notebook previews strip ANSI colors from saved tracebacks (#36703)
 414d938513	take	fix(server): publish Create PR branches to split push URLs (#36695)
+0200dcf242	take	perf(shared): queued SQLite reads stop waiting on one reader while another is free (#27979)
