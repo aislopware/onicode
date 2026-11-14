@@ -300,7 +300,7 @@ export function isClaudeFastModeBlocked(reason: FastModeDisabledReason | undefin
   return reason !== undefined && CLAUDE_FAST_MODE_BLOCKING_REASONS.has(reason);
 }
 
-function resolveClaudeCatalogModel(
+export function resolveClaudeCatalogModel(
   catalog: ClaudeModelCatalog,
   slugOrAlias: string | null | undefined,
 ): ClaudeCatalogModel | undefined {
