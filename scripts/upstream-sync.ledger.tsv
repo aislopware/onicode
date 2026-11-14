@@ -1552,3 +1552,4 @@ f84ad6f30b	take	fix(web): discarded drafts stay discarded after image compressio
 96ca66f218	take	fix(server): a nested repository with no commits no longer breaks the review diff
 e26e21c06b	take	fix(web,mobile): bound scheduled tasks no longer offer a model their runs ignore
 07885556d9	take	fix(shared): honor Windows PATHEXT regardless of key casing
+acd192fc64	take	fix(web): removing an environment dismisses its notification toasts (upstream e2e scenario dropped: no scripts/scenarios harness)

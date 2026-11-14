@@ -5,7 +5,7 @@ import {
 } from "@onicode/client-runtime/state/models";
 import { isShownUnderParent } from "@onicode/client-runtime/state/threads";
 import type { AnyRouter } from "@tanstack/react-router";
-import { threadKey } from "@onicode/client-runtime/state/entities";
+import { parseThreadKey, threadKey } from "@onicode/client-runtime/state/entities";
 import type { EnvironmentId, OrchestrationV2ThreadShell, ThreadId } from "@onicode/contracts";
 import { monitorHoldsWakeCompletion } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import type { ClientSettings } from "@onicode/contracts/settings";
@@ -79,7 +79,7 @@ export function startThreadNotifications(
     pending.set(notification.tag, { environmentId, threadId, notification });
     setNotificationBadge(pending.size);
   };
-  // Toast ids by thread key, so hiding or opening a thread can close its open toasts.
+  // Toast ids by thread key, so hiding or opening a thread, or removing its environment, closes them.
   const openToasts = new Map<string, Array<ToastId>>();
   const forgetToast = (key: string, toastId: ToastId) => {
     const remaining = (openToasts.get(key) ?? []).filter((id) => id !== toastId);
@@ -367,6 +367,7 @@ export function startThreadNotifications(
 
   const pruneRemovedEnvironments = () => {
     const activeIds = new Set(registry.get(environmentSummaries.environmentIdsAtom));
+    closeToasts((key) => !activeIds.has(parseThreadKey(key).environmentId));
     const count = pending.size;
     for (const [tag, entry] of pending) {
       if (activeIds.has(entry.environmentId)) continue;
