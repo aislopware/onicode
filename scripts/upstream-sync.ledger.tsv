@@ -1515,3 +1515,4 @@ bb9fde6fcd	take	fix(scripts): test:cached no longer crashes when vp writes no ca
 6effe74c59	take	fix(web): show repeated table rows and cells in ODT previews; dropped scripts/scenarios e2e and its scripts jszip dep (removed in Onicode)
 f161a4d2b5	take	fix(shared): preserve literal ampersands in citation Markdown paths
 fd6d0ea022	take	fix(web): stashing waits for pasted images to finish compressing
+ead133ce70	take	fix(web): SSH port field no longer turns 22.5 into port 22 (pending tagged it removed-area, but Onicode keeps ConnectionsSettings)
