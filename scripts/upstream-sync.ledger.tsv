@@ -1714,3 +1714,4 @@ a20c4dba9e	take	taken as is
 3a5d7f39a8	skip	only serves T3's native Swift TestFlight apps; Onicode's React Native mobile and desktop never called server.getSettings, and re-adding it widens the read-scope RPC surface
 3f92b488db	take	taken as is
 34db335ed5	take	taken as is
+9888694f80	take	dropped upstream's scripts/scenarios e2e (no scenario harness in Onicode)
