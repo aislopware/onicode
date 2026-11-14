@@ -1437,3 +1437,4 @@ a8777e4c7a	take	fix(server): held agent messages no longer block settling
 9e180e5569	take	fix(server): file editor saves keep a UTF-8 BOM
 86d49daf82	take	fix(server): open stable Zed when a prerelease Zed is first on PATH
 b2259d3c6c	take	fix(web): show working state while provider sessions start
+7bf7527a0a	take	fix(devices): agents can test the mobile app on remote device hosts (test adapted: no Blacksmith build-run test in Onicode)
