@@ -1434,3 +1434,4 @@ efae4e9da1	take	fix(client): retry unread thread visits after reconnect (web kee
 248f5b64cc	take	fix(preview): browser tabs follow the default appearance
 d530d96155	take	fix(desktop): inherit login-shell Android SDK selection
 a8777e4c7a	take	fix(server): held agent messages no longer block settling
+9e180e5569	take	fix(server): file editor saves keep a UTF-8 BOM
