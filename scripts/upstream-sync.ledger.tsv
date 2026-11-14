@@ -1517,3 +1517,4 @@ f161a4d2b5	take	fix(shared): preserve literal ampersands in citation Markdown pa
 fd6d0ea022	take	fix(web): stashing waits for pasted images to finish compressing
 ead133ce70	take	fix(web): SSH port field no longer turns 22.5 into port 22 (pending tagged it removed-area, but Onicode keeps ConnectionsSettings)
 ae837398a2	skip	Only touches apps/server/src/telemetry (ProviderDimensions analytics), which Onicode removed.
+e096deebf6	take	fix(web): the publish-repository path no longer submits on an IME composition Enter (#28277)
