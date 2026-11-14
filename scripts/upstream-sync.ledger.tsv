@@ -1705,3 +1705,4 @@ baf2558017	take	taken as is
 2bee33eb19	take	kept Onicode's ffi-rs 1.3.7 beside the new get-east-asian-width dep
 74178f4712	take	taken as is
 e5c636219c	take	renumbered: guard added to Onicode 092_QueuedTurnInputIndex (upstream 086), re-guard migration is Onicode 097 (upstream 092)
+0035cb55bb	skip	webhook tasks removed from Onicode (list already summarizes without webhook URLs or run lookups); the extra scheduledTaskId list filter only grows every agent's MCP tool schema
