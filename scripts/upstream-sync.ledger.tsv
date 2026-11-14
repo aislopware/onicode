@@ -1763,3 +1763,4 @@ fed0f743b9	take	fix(opencode): usage totals include what OpenCode 2 spends on co
 304dc13648	take	fix(web): opening a project or deleting the open thread skips delegated tasks
 ee2cddf357	take	chore(web): upgrade @pierre/diffs to 1.7.0-beta.4 and drop patched find (kept Onicode's @noble/hashes 2.4.0)
 c62c7649f7	take	Taken as is.
+3808e2d77e	take	Taken as is.
