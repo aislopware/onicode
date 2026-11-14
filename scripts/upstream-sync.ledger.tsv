@@ -1457,3 +1457,4 @@ d0a494fc0b	take	fix(server): honor the configured push remote on tracked branche
 c0b140b5bc	take	fix(server): file changes with an empty list keep their file name
 b4c1bd106d	take	fix(web): re-picking the current model in Settings keeps its traits (without upstream's nightly-channel import)
 2b6145b4c8	take	fix(web): browser tests no longer pick a port Windows has reserved
+e4688f7cb9	take	fix(server): find files in newline-named nested worktrees
