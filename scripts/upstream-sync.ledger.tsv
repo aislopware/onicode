@@ -1758,3 +1758,4 @@ c041761d89	take	fix(web,server): picking the previous branch after an agent's ch
 c6aea18476	take	fix(server): subagent threads no longer show the remote parent their parent was delegated from
 dfd2187ccb	take	fix(server): oni_thread_launch worktrees honor the new-worktree setting
 5c85e93f0f	take	perf(server): text-only browser snapshots skip the PNG encode
+19c9df2161	take	fix(web): diff Copy path uses Windows separators in a Windows workspace
