@@ -174,7 +174,7 @@ const withInstructions = (
         "rpc.call",
       ].includes(String(entry.frame.type)),
   );
-  const after = entries.findIndex(
+  const after = entries.findLastIndex(
     (entry, index) =>
       index < first &&
       entry.type === "emit_inbound" &&
@@ -4985,6 +4985,85 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
     }),
   );
 
+  it.effect(
+    "registers the computer MCP server per thread and replaces it when its launch changes",
+    () =>
+      Effect.gen(function* () {
+        const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+        const session = {
+          environmentId: EnvironmentId.make("environment:opencode2-adapter"),
+          threadId,
+          providerSessionId: "mcp:opencode2-adapter",
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:3773/mcp",
+          authorizationHeader: "Bearer thread-credential",
+          browserToolsAvailable: false,
+        };
+        const computerMcpServer = (socket: string) => ({
+          command: "cua-driver",
+          args: ["mcp", "--socket", socket],
+          env: { CUA: "1" },
+        });
+        yield* mcpSessions.set({ ...session, computerMcpServer: computerMcpServer("first") });
+        yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
+        const server = "onicode-thread_opencode2-adapter";
+        const computer = `${server}_computer`;
+        const addOni = out("mcp.add", {
+          server,
+          "location[directory]": WORK,
+          config: {
+            type: "remote",
+            url: "http://127.0.0.1:3773/mcp",
+            headers: { Authorization: "Bearer thread-credential" },
+            oauth: false,
+          },
+        });
+        const addComputer = (socket: string) =>
+          out("mcp.add", {
+            server: computer,
+            "location[directory]": WORK,
+            config: {
+              type: "local",
+              command: ["cua-driver", "mcp", "--socket", socket],
+              environment: { CUA: "1" },
+            },
+          });
+        const turn = [
+          out("session.prompt", { sessionID: SESSION, text: "<any>" }),
+          promptAccepted,
+          event("session.execution.succeeded", { sessionID: SESSION }),
+        ];
+        const { runtime, thread } = yield* resumed(
+          [
+            addOni,
+            reply("mcp.add", null),
+            addComputer("first"),
+            reply("mcp.add", null),
+            ...turn,
+            out("mcp.remove", { server: computer, "location[directory]": WORK }),
+            reply("mcp.remove", null),
+            addOni,
+            reply("mcp.add", null),
+            addComputer("second"),
+            reply("mcp.add", null),
+            ...turn,
+            // Shutdown removes both servers concurrently.
+            out("mcp.remove", { server, "location[directory]": WORK }),
+            out("mcp.remove", { server: computer, "location[directory]": WORK }),
+            reply("mcp.remove", null),
+            reply("mcp.remove", null),
+          ],
+          { version: "2.2.6" },
+        );
+        for (const socket of ["first", "second"]) {
+          yield* mcpSessions.set({ ...session, computerMcpServer: computerMcpServer(socket) });
+          const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
+          yield* runtime.startTurn(turnInput(thread));
+          assert.equal((yield* Fiber.join(terminal))?.status, "completed");
+        }
+      }),
+  );
+
   it.effect("registers a long thread id's MCP server under a name OpenCode accepts", () =>
     Effect.gen(function* () {
       const child = ThreadId.make(
@@ -5061,7 +5140,8 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
         "thread:delegated-task:command%3Amcp%3A48bef2bf-6d0e-4f7a-9c3b-2e5d8a1f7c40%3Adelegate-task%3Around2",
       ];
       const names = yield* Effect.forEach(ids, oniMcpServerName);
-      for (const name of names) assert.match(name, /^onicode-[A-Za-z0-9_-]{1,56}$/);
+      // Leaves room for the "_computer" suffix of the thread's computer server.
+      for (const name of names) assert.match(name, /^onicode-[A-Za-z0-9_-]{1,47}$/);
       assert.equal(new Set(names).size, ids.length);
       assert.deepEqual(yield* Effect.forEach(ids, oniMcpServerName), names);
       assert.equal(names[0], "onicode-63abb5df2b188bdd");

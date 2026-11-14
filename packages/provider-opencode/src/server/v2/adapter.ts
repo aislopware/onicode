@@ -67,6 +67,7 @@ import * as OpenCode2Server from "./OpenCode2Server.ts";
 import * as OpenCodeRuntime from "../OpenCodeRuntime.ts";
 import { readableProviderErrorMessage } from "../providerErrorMessage.ts";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import * as McpProviderSession from "@onicode/provider-core/server/mcpSession";
 import { buildRuntimeInstructions } from "@onicode/provider-core/server/runtimeInstructions";
 import { oniOrchestrationSystemPrompt } from "@onicode/provider-core/server/orchestrationInstructions";
 import { SKILL_MENTION_PATTERN } from "@onicode/shared/composerInlineTokens";
@@ -373,6 +374,9 @@ interface ThreadState {
   mcp:
     | { readonly name: string; readonly directory: string; readonly credential: string }
     | undefined;
+  computer:
+    | { readonly name: string; readonly directory: string; readonly config: string }
+    | undefined;
   instructions: string | undefined;
 }
 
@@ -408,10 +412,15 @@ interface PendingRequest {
 
 const rule = (action: string, effect: Rule["effect"]): Rule => ({ action, resource: "*", effect });
 
-/** OpenCode hides tools for names over 64 chars and rejects names over 100; hash long thread IDs. */
+const COMPUTER_SERVER_SUFFIX = `_${McpProviderSession.COMPUTER_MCP_SERVER_NAME}`;
+
+/**
+ * OpenCode hides tools for names over 64 chars and rejects names over 100; hash long thread IDs.
+ * The thread's computer server appends its suffix to this name and has to fit too.
+ */
 export const oniMcpServerName = Effect.fn("oniMcpServerName")(function* (threadId: string) {
   const name = `onicode-${threadId.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}`;
-  if (name.length <= 64) return name;
+  if (name.length + COMPUTER_SERVER_SUFFIX.length <= 64) return name;
   const crypto = yield* Digest.Digest;
   const digest = yield* crypto
     .digest(Digest.sha256, new TextEncoder().encode(threadId))
@@ -912,6 +921,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       strandedSteers: new Set(),
       externalPrompts: new Map(),
       mcp: undefined,
+      computer: undefined,
       instructions: undefined,
     });
 
@@ -3688,6 +3698,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       // The gap may have started a pending prompt unseen, so none may set a later wake's boundary.
       for (const state of threads.values()) {
         state.mcp = undefined;
+        state.computer = undefined;
         state.goalFresh = false;
         state.goalRefreshing = false;
         state.goalRevision += 1;
@@ -4173,9 +4184,20 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         client.mcp.remove({ server: mcp.name, location: { directory: mcp.directory } }),
       ).pipe(Effect.timeout("5 seconds"), Effect.ignore({ log: true }));
 
+    const addMcp = (server: string, directory: string, config: Mcp.ServerConfig, label: string) =>
+      Effect.suspend(() => client.mcp.add({ server, location: { directory }, config })).pipe(
+        Effect.timeout(INVENTORY_TIMEOUT),
+        Effect.as(true),
+        Effect.catchCause((cause) =>
+          Effect.logWarning(`Could not add ${label} to OpenCode.`, cause).pipe(Effect.as(false)),
+        ),
+      );
+
     yield* Effect.addFinalizer(() =>
       Effect.forEach(
-        [...threads.values()].flatMap((state) => (state.mcp === undefined ? [] : [state.mcp])),
+        [...threads.values()].flatMap((state) =>
+          [state.mcp, state.computer].filter((mcp) => mcp !== undefined),
+        ),
         removeMcp,
         { concurrency: 8, discard: true },
       ),
@@ -4203,36 +4225,68 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         yield* removeMcp(state.mcp);
         state.mcp = undefined;
       }
+      const computer = wanted === undefined ? undefined : mcpSession?.computerMcpServer;
+      // Named under this thread's server so mcpRules scope its tools to this thread too.
+      const wantedComputer =
+        computer === undefined
+          ? undefined
+          : {
+              name: `${name}${COMPUTER_SERVER_SUFFIX}`,
+              directory,
+              // NUL cannot occur in argv or env, so the joined key is unambiguous.
+              config: [
+                computer.command,
+                ...computer.args,
+                ...Object.entries(computer.env).flat(),
+              ].join("\0"),
+            };
+      if (
+        state.computer !== undefined &&
+        (wantedComputer === undefined ||
+          state.computer.directory !== wantedComputer.directory ||
+          state.computer.config !== wantedComputer.config)
+      ) {
+        yield* removeMcp(state.computer);
+        state.computer = undefined;
+      }
       // Idle Location eviction drops runtime MCP servers without clearing Onicode's cache.
       // Re-adding an unchanged config keeps its existing connection.
       let mcpAvailable = false;
+      let addedFresh = false;
       if (wanted !== undefined) {
         const fresh = state.mcp === undefined;
-        mcpAvailable = yield* client.mcp
-          .add({
-            server: name,
-            location: { directory },
-            config: new Mcp.RemoteConfig({
-              type: "remote",
-              url: mcpSession!.endpoint,
-              headers: { Authorization: wanted.credential },
-              oauth: false,
-            }),
-          })
-          .pipe(
-            Effect.timeout(INVENTORY_TIMEOUT),
-            Effect.as(true),
-            Effect.catchCause((cause) =>
-              Effect.logWarning("Could not add Onicode's MCP server to OpenCode.", cause).pipe(
-                Effect.as(false),
-              ),
-            ),
-          );
+        mcpAvailable = yield* addMcp(
+          name,
+          directory,
+          new Mcp.RemoteConfig({
+            type: "remote",
+            url: mcpSession!.endpoint,
+            headers: { Authorization: wanted.credential },
+            oauth: false,
+          }),
+          "Onicode's MCP server",
+        );
         if (mcpAvailable) state.mcp = wanted;
-        // Before 2.2.6, OpenCode loads a new server's tools 100 ms after it connects, and a prompt sent sooner lacks them.
-        if (mcpAvailable && fresh && compareSemverVersions(connection.version, "2.2.6") < 0) {
-          yield* Effect.sleep(MCP_TOOL_RELOAD_SETTLE);
-        }
+        addedFresh = mcpAvailable && fresh;
+      }
+      if (computer !== undefined && wantedComputer !== undefined) {
+        const fresh = state.computer === undefined;
+        const added = yield* addMcp(
+          wantedComputer.name,
+          directory,
+          new Mcp.LocalConfig({
+            type: "local",
+            command: [computer.command, ...computer.args],
+            environment: { ...computer.env },
+          }),
+          "the computer MCP server",
+        );
+        if (added) state.computer = wantedComputer;
+        addedFresh ||= added && fresh;
+      }
+      // Before 2.2.6, OpenCode loads a new server's tools 100 ms after it connects, and a prompt sent sooner lacks them.
+      if (addedFresh && compareSemverVersions(connection.version, "2.2.6") < 0) {
+        yield* Effect.sleep(MCP_TOOL_RELOAD_SETTLE);
       }
       const instructions = [
         buildRuntimeInstructions({ harness: "OpenCode", model: turnInput.modelSelection.model }),
@@ -5088,6 +5142,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           threads.delete(child);
         }
         if (state.mcp !== undefined) yield* removeMcp(state.mcp);
+        if (state.computer !== undefined) yield* removeMcp(state.computer);
       }),
       respondToRuntimeRequest: Effect.fn("OpenCode2Adapter.respondToRuntimeRequest")(
         function* (requestInput) {

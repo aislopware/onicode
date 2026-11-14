@@ -57,6 +57,7 @@ import * as Stream from "effect/Stream";
 import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
 import { mcpToolPresentation } from "@onicode/provider-core/server/mcpToolPresentation";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import * as McpProviderSession from "@onicode/provider-core/server/mcpSession";
 import * as ProviderEventLoggers from "@onicode/provider-core/server/ProviderEventLoggers";
 import {
   structuralProtocolMethod,
@@ -1040,6 +1041,23 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               },
             }),
           );
+          const computer = mcpSession.computerMcpServer;
+          if (computer !== undefined) {
+            yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
+              client.mcp.add({
+                name: McpProviderSession.COMPUTER_MCP_SERVER_NAME,
+                config: {
+                  type: "local",
+                  command: [computer.command, ...computer.args],
+                  environment: { ...computer.env },
+                },
+              }),
+            ).pipe(
+              Effect.catch((cause) =>
+                Effect.logWarning("Could not add the computer MCP server to OpenCode.", cause),
+              ),
+            );
+          }
         }
 
         const now = yield* DateTime.now;

@@ -18,6 +18,7 @@
 - [Import browser sessions](./user/browser-import.md)
 - [Use Onicode as your default browser](./user/default-browser.md)
 - [Devices](./user/devices.md)
+- [Computer use](./user/computer-use.md)
 - [Usage and limits](./user/usage.md)
 - [Secrets](./user/secrets.md)
 - [Remote access](./user/remote-access.md)
@@ -56,6 +57,7 @@ source alone does not explain. Most code changes do not need an internal documen
 - [Mobile development lifecycle](./internals/mobile-development.md)
 - [Terminal runtime](./internals/terminal-runtime.md)
 - [Devices](./internals/devices.md)
+- [Computer use](./internals/computer-use.md)
 - [Voice input](./internals/voice-input.md)
 
 ### Runbooks

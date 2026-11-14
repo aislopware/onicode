@@ -60,6 +60,7 @@ export * from "./mcpApps.ts";
 export * from "./browserImport.ts";
 export * from "./browserProfile.ts";
 export * from "./device.ts";
+export * from "./computer.ts";
 export * from "./remoteDesktop.ts";
 export * from "./preview.ts";
 export * from "./previewAutomation.ts";

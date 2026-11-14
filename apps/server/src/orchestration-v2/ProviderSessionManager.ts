@@ -49,6 +49,7 @@ import {
 } from "../observability/Metrics.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
+import * as ComputerService from "../computer/ComputerService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
 import * as ServerSettings from "../serverSettings.ts";
@@ -431,6 +432,7 @@ export const layerWithOptions = (
       /** Unreadable settings must preserve explicit browser-access opt-outs. */
       const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
+      const computerService = yield* Effect.serviceOption(ComputerService.ComputerService);
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
       const promptSuggestionStore = yield* SubscriptionRef.make<
@@ -450,8 +452,10 @@ export const layerWithOptions = (
             Effect.orElseSucceed(() => false),
           );
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
-        function* (threadId: ThreadId) {
-          if (Option.isNone(serverSettings)) return { browser: true, device: false };
+        function* (threadId: ThreadId, providerInstanceId: ProviderInstanceId) {
+          if (Option.isNone(serverSettings)) {
+            return { browser: true, device: false, computer: false };
+          }
           return yield* Effect.gen(function* () {
             const settings = yield* serverSettings.value.getSettings;
             const thread = yield* projectionStore.getThread(threadId);
@@ -462,7 +466,12 @@ export const layerWithOptions = (
             const deviceOverridden = entries.some(
               (entry) => entry.enableAgentDeviceAccess !== undefined,
             );
-            if (browserOverridden || deviceOverridden) {
+            const computerOverridden = entries.some(
+              (entry) => entry.enableAgentComputerAccess !== undefined,
+            );
+            const providerAllowsComputer =
+              settings.agentComputerAccessProviders[providerInstanceId] !== false;
+            if (browserOverridden || deviceOverridden || computerOverridden) {
               const project = Option.isSome(projectService)
                 ? yield* projectService.value.getById(thread.projectId)
                 : Option.none();
@@ -470,19 +479,24 @@ export const layerWithOptions = (
                 return {
                   browser: browserOverridden ? false : settings.enableAgentBrowserAccess,
                   device: deviceOverridden ? false : settings.enableAgentDeviceAccess,
+                  computer:
+                    !computerOverridden &&
+                    settings.enableAgentComputerAccess &&
+                    providerAllowsComputer,
                 };
             }
             const effective = resolveProjectSettings(settings, thread.projectId).settings;
             return {
               browser: effective.enableAgentBrowserAccess,
               device: effective.enableAgentDeviceAccess,
+              computer: effective.enableAgentComputerAccess && providerAllowsComputer,
             };
           }).pipe(
             Effect.catch((cause) =>
               Effect.logWarning(
-                "Could not resolve agent access; withholding browser and device tools.",
+                "Could not resolve agent access; withholding browser, device and computer tools.",
                 { threadId, cause },
-              ).pipe(Effect.as({ browser: false, device: false })),
+              ).pipe(Effect.as({ browser: false, device: false, computer: false })),
             ),
           );
         },
@@ -560,8 +574,15 @@ export const layerWithOptions = (
               threadId,
               Effect.gen(function* () {
                 // Live providers build MCP clients once; reuse credentials across workspace handoffs.
-                const { browser: browserToolsAvailable, device: deviceToolsAvailable } =
-                  yield* agentAccessSettings(threadId);
+                const {
+                  browser: browserToolsAvailable,
+                  device: deviceToolsAvailable,
+                  computer: computerAllowed,
+                } = yield* agentAccessSettings(threadId, providerInstanceId);
+                const computerMcpServer =
+                  computerAllowed && Option.isSome(computerService)
+                    ? Option.getOrUndefined(yield* computerService.value.mcpServer)
+                    : undefined;
                 const capabilities = new Set<
                   import("../mcp/McpInvocationContext.ts").McpCapability
                 >(["orchestration", "worktree", "pull-requests"]);
@@ -595,6 +616,18 @@ export const layerWithOptions = (
                     // A credential issued while the lineage read failed is replaced once it works.
                     (resolved.thread.subagent === true) === subagent
                   ) {
+                    // The driver is no part of the credential, so a restarted one swaps in place.
+                    const previous = existing.computerMcpServer;
+                    if (
+                      previous?.command !== computerMcpServer?.command ||
+                      previous?.args.join("\0") !== computerMcpServer?.args.join("\0")
+                    ) {
+                      const { computerMcpServer: _replaced, ...kept } = existing;
+                      yield* mcpSessions.set({
+                        ...kept,
+                        ...(computerMcpServer ? { computerMcpServer } : {}),
+                      });
+                    }
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
                   }
                   dropMcpCredentialReservation(threadId, existing.providerSessionId);
@@ -609,6 +642,7 @@ export const layerWithOptions = (
                 });
                 yield* mcpSessions.set({
                   ...credential.config,
+                  ...(computerMcpServer ? { computerMcpServer } : {}),
                   hasPendingWake: projectionStore
                     .getThreadRecords(threadId, ["runs", "subagents"])
                     .pipe(

@@ -1170,6 +1170,10 @@ export const WorktreeCleanup = Schema.NullOr(
 );
 export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 
+/** `unrestricted` turns off the driver's own approval checks, including its prompt-injection guards. */
+export const AgentComputerPermissionMode = Schema.Literals(["standard", "unrestricted"]);
+export type AgentComputerPermissionMode = typeof AgentComputerPermissionMode.Type;
+
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "worktreeCleanup",
   "defaultModelSelection",
@@ -1181,6 +1185,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "defaultProjectScripts",
   "enableAgentBrowserAccess",
   "enableAgentDeviceAccess",
+  "enableAgentComputerAccess",
   "textGenerationModelSelection",
   "threadTitleInstructions",
   "sourceControlWriterModelSelection",
@@ -1219,6 +1224,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentComputerAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
   threadTitleInstructions: Schema.optionalKey(TrimmedString),
   sourceControlWriterModelSelection: Schema.optionalKey(Schema.NullOr(ModelSelection)),
@@ -1434,6 +1440,16 @@ export const ServerSettings = Schema.Struct({
   projectSettingsFolded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 
   enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Agents drive this machine's desktop apps through cua-driver. */
+  enableAgentComputerAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Fixed when the driver starts, so a change restarts it. */
+  agentComputerPermissionMode: AgentComputerPermissionMode.pipe(
+    Schema.withDecodingDefault(Effect.succeed("standard" as const)),
+  ),
+  /** Providers set to false get no computer tools; absent ones follow enableAgentComputerAccess. */
+  agentComputerAccessProviders: Schema.Record(ProviderInstanceId, Schema.Boolean).pipe(
+    Schema.withDecodingDefault(Effect.succeed({})),
+  ),
   /** Sign in tailnet devices of this machine's owner, and devices granted TAILNET_APP_CAPABILITY. */
   tailnetSignIn: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Enabling the Device panel must not grant providers device control. */
@@ -1885,6 +1901,11 @@ export const ServerSettingsPatch = Schema.Struct({
     ),
   ),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentComputerAccess: Schema.optionalKey(Schema.Boolean),
+  agentComputerPermissionMode: Schema.optionalKey(AgentComputerPermissionMode),
+  agentComputerAccessProviders: Schema.optionalKey(
+    Schema.Record(ProviderInstanceId, Schema.Boolean),
+  ),
   tailnetSignIn: Schema.optionalKey(Schema.Boolean),
   enableDeviceSupport: Schema.optionalKey(Schema.Boolean),
   deviceOnboardingCompleted: Schema.optionalKey(Schema.Boolean),

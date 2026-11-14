@@ -6,6 +6,7 @@ import type { McpProviderSessionConfig } from "@onicode/provider-core/server/mcp
 import {
   PI_ONI_MCP_EXTENSION_FILENAME,
   PI_ONI_MCP_EXTENSION_SOURCE,
+  ONICODE_COMPUTER_MCP_ENV,
   ONICODE_MCP_BEARER_ENV,
   ONICODE_MCP_URL_ENV,
   ONICODE_PI_RUNTIME_MODE_ENV,
@@ -297,6 +298,7 @@ export function buildPiRpcLaunch(input: {
   delete environment[ONICODE_MCP_URL_ENV];
   delete environment[ONICODE_MCP_BEARER_ENV];
   delete environment[ONICODE_PI_MCP_EXTENSION_PATH_ENV];
+  delete environment[ONICODE_COMPUTER_MCP_ENV];
 
   return {
     args,
@@ -317,6 +319,9 @@ export function buildPiRpcLaunch(input: {
             [ONICODE_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(
               input.mcpSession.authorizationHeader,
             ),
+            ...(input.mcpSession.computerMcpServer
+              ? { [ONICODE_COMPUTER_MCP_ENV]: JSON.stringify(input.mcpSession.computerMcpServer) }
+              : {}),
           }
         : {}),
     },

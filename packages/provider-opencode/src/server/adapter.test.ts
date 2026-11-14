@@ -9,6 +9,7 @@ import type { OpencodeClient, ToolPart } from "@opencode-ai/sdk/v2";
 import { toolOutputImages } from "@onicode/shared/toolOutput";
 import {
   CheckpointId,
+  EnvironmentId,
   NodeId,
   ProjectId,
   ProviderInstanceId,
@@ -349,6 +350,88 @@ describe("OpenCodeAdapterV2", () => {
       }
       if (kind === "unset") assert.equal(inventoryCalls, 0);
     }).pipe(Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer))),
+  );
+
+  it.effect.each([false, true])(
+    "adds the computer MCP server beside Onicode's own unless the server is external (%s)",
+    (external) =>
+      Effect.gen(function* () {
+        const instanceId = ProviderInstanceId.make("opencode-computer-mcp");
+        const threadId = ThreadId.make("thread-opencode-computer-mcp");
+        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+          environmentId: EnvironmentId.make("environment-opencode-computer-mcp"),
+          threadId,
+          providerSessionId: "mcp-session-opencode-computer-mcp",
+          providerInstanceId: instanceId,
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer opencode-token",
+          browserToolsAvailable: true,
+          computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+        });
+        const added: Array<unknown> = [];
+        const events = asyncEventStream();
+        const adapter = yield* makeOpenCodeAdapterV2({
+          instanceId,
+          settings: OPEN_CODE_TEST_SETTINGS,
+          environment: {},
+        }).pipe(
+          Effect.provideService(OpenCodeRuntime.OpenCodeRuntime, {
+            connectToOpenCodeServer: () =>
+              Effect.succeed({ url: "http://test.invalid", external, exitCode: null }),
+            createOpenCodeSdkClient: () => ({
+              event: {
+                subscribe: async (_input: unknown, options: { signal?: AbortSignal }) => {
+                  options.signal?.addEventListener("abort", () => events.close(), { once: true });
+                  return { stream: events.stream };
+                },
+              },
+              mcp: {
+                add: async (input: unknown) => {
+                  added.push(input);
+                  return { data: true };
+                },
+              },
+            }),
+          } as unknown as OpenCodeRuntime.OpenCodeRuntime["Service"]),
+          Effect.provideService(ProviderHost.ProviderHost, {
+            paths: { cwd: "/workspace" },
+            resolveAttachmentPath: () => null,
+          } as unknown as ProviderHost.ProviderHost["Service"]),
+        );
+        yield* adapter.openSession({
+          threadId,
+          providerSessionId: ProviderSessionId.make("session-opencode-computer-mcp"),
+          modelSelection: { instanceId, model: "anthropic/claude-sonnet", options: [] },
+          runtimePolicy: runtimePolicy("full-access", { cwd: "/workspace" }),
+        });
+        assert.deepEqual(
+          added,
+          external
+            ? []
+            : [
+                {
+                  name: "onicode",
+                  config: {
+                    type: "remote",
+                    url: "http://127.0.0.1:43123/mcp",
+                    headers: { Authorization: "Bearer opencode-token" },
+                    oauth: false,
+                  },
+                },
+                {
+                  name: "computer",
+                  config: {
+                    type: "local",
+                    command: ["cua-driver", "mcp"],
+                    environment: { CUA: "1" },
+                  },
+                },
+              ],
+        );
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(Layer.merge(IdAllocator.layer, McpProviderSessions.layer)),
+      ),
   );
 
   it.effect("reuses successful model variants for the session and retries failed inventories", () =>

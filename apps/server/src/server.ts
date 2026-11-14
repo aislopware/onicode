@@ -88,6 +88,8 @@ import * as TailnetAccess from "./tailnet/TailnetAccess.ts";
 import * as PeerMcpClient from "./peer/PeerMcpClient.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import * as ComputerDriver from "./computer/ComputerDriver.ts";
+import * as ComputerService from "./computer/ComputerService.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as RemoteDesktop from "./remoteDesktop/RemoteDesktop.ts";
 import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";
@@ -465,6 +467,11 @@ const layerPreview = Layer.empty.pipe(
   Layer.provideMerge(layerPortScanner),
 );
 
+const layerComputer = ComputerService.layer.pipe(
+  Layer.provide(ComputerDriver.layer),
+  Layer.provide(layerServerSettings),
+);
+
 const layerDevice = DeviceService.layer.pipe(
   Layer.provide(layerServerSettings),
   Layer.provide(ProcessRunner.layer),
@@ -638,7 +645,9 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerSourceControlProviderRegistry),
   Layer.provideMerge(layerGit),
   Layer.provideMerge(layerVcs),
-  Layer.provideMerge(Layer.mergeAll(layerTerminal, layerPreview, layerDevice, RemoteDesktop.layer)),
+  Layer.provideMerge(
+    Layer.mergeAll(layerTerminal, layerPreview, layerDevice, layerComputer, RemoteDesktop.layer),
+  ),
   Layer.provideMerge(layerPersistence),
   Layer.provideMerge(Layer.mergeAll(Keybindings.layer, UsageLimitSources.layer)),
   Layer.provideMerge(ProviderRegistry.layer),
