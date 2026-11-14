@@ -13,7 +13,7 @@ import * as Stream from "effect/Stream";
 import { Command, Flag } from "effect/cli";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { BRAND_ASSET_PATHS, DEVELOPMENT_PUBLIC_ICON_OVERRIDES } from "./lib/brand-assets.ts";
+import { BRAND_ASSET_PATHS } from "./lib/brand-assets.ts";
 import { encodePngIco, readPngDimensions, WINDOWS_ICON_SIZES } from "./lib/icon-export.ts";
 
 const DESIGN_GENERATION = 26;
@@ -47,7 +47,6 @@ interface VariantOutputs {
   readonly ios: string;
   readonly macos: string;
   readonly universal: string;
-  readonly splashLogo: string;
   readonly windowsIco: string;
 }
 
@@ -207,7 +206,6 @@ const ICON_VARIANTS = [
       ios: BRAND_ASSET_PATHS.developmentIosIconPng,
       macos: BRAND_ASSET_PATHS.developmentDesktopIconPng,
       universal: BRAND_ASSET_PATHS.developmentUniversalIconPng,
-      splashLogo: BRAND_ASSET_PATHS.developmentSplashLogoPng,
       windowsIco: BRAND_ASSET_PATHS.developmentWindowsIconIco,
     },
   },
@@ -218,7 +216,6 @@ const ICON_VARIANTS = [
       ios: BRAND_ASSET_PATHS.productionIosIconPng,
       macos: BRAND_ASSET_PATHS.productionMacIconPng,
       universal: BRAND_ASSET_PATHS.productionLinuxIconPng,
-      splashLogo: BRAND_ASSET_PATHS.productionSplashLogoPng,
       windowsIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
     },
   },
@@ -568,7 +565,6 @@ const renderVariant = Effect.fn("iconExport.renderVariant")(function* (
   return new Map<string, Buffer>([
     [variant.outputs.ios, ios],
     [variant.outputs.universal, ios],
-    [variant.outputs.splashLogo, yield* render("iOS", 180)],
     [variant.outputs.windowsIco, ico],
   ]);
 });
@@ -697,16 +693,6 @@ export const exportBrandIcons = Effect.fn("exportBrandIcons")(function* (checkOn
     for (const [relativePath, contents] of variantAssets) {
       generated.set(relativePath, contents);
     }
-  }
-
-  for (const override of DEVELOPMENT_PUBLIC_ICON_OVERRIDES) {
-    const sourceContents = generated.get(override.sourceRelativePath);
-    if (sourceContents === undefined) {
-      return yield* Effect.die(
-        new Error(`Generated development splash logo is missing: ${override.sourceRelativePath}`),
-      );
-    }
-    generated.set(override.targetRelativePath, sourceContents);
   }
 
   if (checkOnly) {

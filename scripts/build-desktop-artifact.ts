@@ -126,6 +126,7 @@ export const readWorkspaceConfig = Effect.fn("readWorkspaceConfig")(function* ()
 });
 
 interface DesktopBuildIconAssets {
+  readonly macIconComposerProject: string;
   readonly macIconPng: string;
   readonly linuxIconPng: string;
   readonly windowsIconIco: string;
@@ -377,7 +378,7 @@ const MAC_DESKTOP_BUILD_PREREQUISITES = [
   { id: "clang", description: "Xcode Command Line Tools (clang)" },
   { id: "make", description: "Xcode Command Line Tools (make)" },
   { id: "sips", description: "macOS image tool (sips)" },
-  { id: "iconutil", description: "macOS icon tool (iconutil)" },
+  { id: "actool", description: "Xcode 26 or newer (actool, for the Icon Composer app icon)" },
   { id: "lipo", description: "Xcode universal-binary tool (lipo)" },
 ] as const;
 
@@ -1753,10 +1754,7 @@ export const preflightMacDesktopBuild = Effect.fn("preflightMacDesktopBuild")(fu
       clang: desktopBuildProbeSucceeds(ChildProcess.make("clang", ["--version"]), "clang"),
       make: desktopBuildProbeSucceeds(ChildProcess.make("make", ["--version"]), "make"),
       sips: desktopBuildProbeSucceeds(ChildProcess.make("sips", ["--help"]), "sips"),
-      iconutil: desktopBuildProbeSucceeds(
-        ChildProcess.make("xcrun", ["--find", "iconutil"]),
-        "iconutil",
-      ),
+      actool: desktopBuildProbeSucceeds(ChildProcess.make("actool", ["--version"]), "actool"),
       lipo:
         arch === "universal"
           ? desktopBuildProbeSucceeds(ChildProcess.make("lipo", ["-version"]), "lipo")
@@ -2233,68 +2231,32 @@ export const stageBrowserSecret = Effect.fn("stageBrowserSecret")(function* (inp
   );
 });
 
-const generateMacIconSet = Effect.fn("build-desktop-artifact.generateMacIconSet")(function* (
-  sourcePng: string,
-  targetIcns: string,
-  tmpRoot: string,
-  path: Path.Path,
-  verbose: boolean,
-) {
-  const fs = yield* FileSystem.FileSystem;
-  const iconsetDir = path.join(tmpRoot, "icon.iconset");
-  yield* fs.makeDirectory(iconsetDir, { recursive: true });
-
-  const iconSizes = [16, 32, 128, 256, 512] as const;
-  for (const size of iconSizes) {
-    yield* runCommand(
-      ChildProcess.make(
-        {},
-      )`sips -z ${size} ${size} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}.png`)}`,
-      { label: `sips icon ${size}x${size}`, verbose },
-    );
-
-    const retinaSize = size * 2;
-    yield* runCommand(
-      ChildProcess.make(
-        {},
-      )`sips -z ${retinaSize} ${retinaSize} ${sourcePng} --out ${path.join(iconsetDir, `icon_${size}x${size}@2x.png`)}`,
-      { label: `sips icon ${size}x${size}@2x`, verbose },
-    );
-  }
-
-  yield* runCommand(ChildProcess.make({})`iconutil -c icns ${iconsetDir} -o ${targetIcns}`, {
-    label: "iconutil icns",
-    verbose,
-  });
-});
+const MAC_ICON_COMPOSER_PROJECT = "icon.icon";
 
 const stageMacIcons = Effect.fn("build-desktop-artifact.stageMacIcons")(function* (
   stageResourcesDir: string,
+  iconComposerProject: string,
   sourcePng: string,
   verbose: boolean,
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  if (!(yield* fs.exists(sourcePng))) {
-    return yield* new DesktopIconSourceMissingError({
-      platform: "mac",
-      sourcePath: sourcePng,
-    });
+  for (const sourcePath of [iconComposerProject, sourcePng]) {
+    if (!(yield* fs.exists(sourcePath))) {
+      return yield* new DesktopIconSourceMissingError({ platform: "mac", sourcePath });
+    }
   }
 
-  const tmpRoot = yield* fs.makeTempDirectoryScoped({
-    prefix: "onicode-icon-build-",
-  });
+  // electron-builder compiles the project with actool into Assets.car, which macOS 26 renders
+  // itself (Liquid Glass), and into the icns earlier releases show.
+  yield* fs.copy(iconComposerProject, path.join(stageResourcesDir, MAC_ICON_COMPOSER_PROJECT));
 
+  // The permission helper draws this PNG; it cannot read an asset catalog.
   const iconPngPath = path.join(stageResourcesDir, "icon.png");
-  const iconIcnsPath = path.join(stageResourcesDir, "icon.icns");
-
   yield* runCommand(ChildProcess.make({})`sips -z 512 512 ${sourcePng} --out ${iconPngPath}`, {
     label: "sips mac icon",
     verbose,
   });
-
-  yield* generateMacIconSet(sourcePng, iconIcnsPath, tmpRoot, path, verbose);
 });
 
 export const stageDesktopDmgBackground = Effect.fn("stageDesktopDmgBackground")(function* (
@@ -2474,6 +2436,7 @@ export function resolveDesktopPublishConfig(input: {
 }
 
 const DESKTOP_BUILD_ICON_ASSETS: DesktopBuildIconAssets = {
+  macIconComposerProject: BRAND_ASSET_PATHS.productionIconComposerProject,
   macIconPng: BRAND_ASSET_PATHS.productionMacIconPng,
   linuxIconPng: BRAND_ASSET_PATHS.productionLinuxIconPng,
   windowsIconIco: BRAND_ASSET_PATHS.productionWindowsIconIco,
@@ -2553,7 +2516,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       // electron-builder writes app-update.yml only for zip or dmg targets, and the release
       // build ships the unpacked .app that better-update notarizes and zips itself.
       target: target === "dmg" || target === "dir" ? [target, "zip"] : [target],
-      icon: "icon.icns",
+      icon: MAC_ICON_COMPOSER_PROJECT,
       category: "public.app-category.developer-tools",
       extendInfo: {
         // electron-builder renames the Electron binary to CFBundleExecutable; the app keeps its name.
@@ -2715,7 +2678,12 @@ const assertPlatformBuildResources = Effect.fn("assertPlatformBuildResources")(f
   verbose: boolean,
 ) {
   if (platform === "mac") {
-    yield* stageMacIcons(stageResourcesDir, iconAssets.macIconPng, verbose);
+    yield* stageMacIcons(
+      stageResourcesDir,
+      iconAssets.macIconComposerProject,
+      iconAssets.macIconPng,
+      verbose,
+    );
     return;
   }
 
@@ -3550,6 +3518,7 @@ const buildDesktopArtifactUnlocked = Effect.fn("buildDesktopArtifactUnlocked")(f
     options.platform,
     stageResourcesDir,
     {
+      macIconComposerProject: path.join(repoRoot, iconAssets.macIconComposerProject),
       macIconPng: path.join(repoRoot, iconAssets.macIconPng),
       linuxIconPng: path.join(repoRoot, iconAssets.linuxIconPng),
       windowsIconIco: path.join(repoRoot, iconAssets.windowsIconIco),

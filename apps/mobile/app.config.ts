@@ -30,6 +30,7 @@ const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 const androidAdaptiveForeground = "./assets/android-icon-foreground.png";
+const BRAND_RED = "#FF2D55";
 
 if (
   isIosPersonalTeamBuild &&
@@ -44,11 +45,9 @@ if (
 const DEVELOPMENT_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.developmentIosIconPng),
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#FF2D55",
+  androidAdaptiveBackgroundColor: BRAND_RED,
   androidAdaptiveBackgroundImage: "./assets/android-icon-background-dev.png",
-  androidSplashIcon: "./assets/android-splash-icon-dev.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#00639B",
@@ -57,11 +56,9 @@ const DEVELOPMENT_ASSETS = {
 const RELEASE_ASSETS = {
   appIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   iosIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIconComposerProject),
-  splashIcon: fromRepoRoot(BRAND_ASSET_PATHS.productionIosIconPng),
   androidAdaptiveForeground,
-  androidAdaptiveBackgroundColor: "#FF2D55",
+  androidAdaptiveBackgroundColor: BRAND_RED,
   androidAdaptiveBackgroundImage: undefined,
-  androidSplashIcon: "./assets/android-splash-icon-prod.png",
   androidMonochromeIcon: "./assets/android-icon-mark.png",
   androidNotificationIcon: "./assets/android-notification-icon.png",
   androidNotificationColor: "#FFFFFF",
@@ -382,20 +379,12 @@ const config: ExpoConfig = {
     [
       "expo-splash-screen",
       {
-        image: variant.assets.splashIcon,
+        // The bare mochi on brand red in both appearances. 288 matches Android 12+'s splash icon
+        // canvas, whose central two thirds the mochi stays inside.
+        image: "./assets/splash-icon.png",
         resizeMode: "contain",
-        backgroundColor: "#ffffff",
-        imageWidth: 220,
-        dark: {
-          image: variant.assets.splashIcon,
-          backgroundColor: "#0a0a0a",
-        },
-        android: {
-          // Android 12+ masks the central two thirds of the 288dp canvas; adaptive layers avoid clipped corners.
-          image: variant.assets.androidSplashIcon,
-          imageWidth: 288,
-          dark: { image: variant.assets.androidSplashIcon },
-        },
+        backgroundColor: BRAND_RED,
+        imageWidth: 288,
       },
     ],
     [

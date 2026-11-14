@@ -15,7 +15,7 @@
     "icons:export": "node scripts/export-brand-icons.ts",
     "icons:check": "node scripts/export-brand-icons.ts --check",
     "licenses:sync": "node scripts/sync-third-party-license-notices.ts",
-    "icons:export:android": "node scripts/export-android-icons.ts",
+    "icons:export:mochi": "node scripts/export-mochi-assets.ts",
     "build": "vp run --filter './apps/*' build",
     "build:desktop": "vp run --filter @onicode/desktop --filter onicode build",
     "build:desktop:bundle": "vp run --filter @onicode/desktop build:bundle",
