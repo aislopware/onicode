@@ -85,6 +85,7 @@ import {
 } from "@onicode/shared/mcpApp";
 import { AgentScope } from "@onicode/shared/AgentScope";
 import * as ProviderProcesses from "../../process/providerProcesses.ts";
+import * as SpawnWorker from "../../process/SpawnWorker.ts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { applyClaudePromptEffortPrefix } from "@onicode/shared/model";
 import { compareSemverVersions } from "@onicode/shared/semver";
@@ -1663,12 +1664,11 @@ export const layerQueryRunner: Layer.Layer<
                 }
                 return child;
               }
-              const child = NodeChildProcess.spawn(spawnOptions.command, spawnOptions.args, {
+              const child = SpawnWorker.spawnPiped(spawnOptions.command, spawnOptions.args, {
                 cwd: spawnOptions.cwd,
                 env: spawnOptions.env,
                 signal: spawnOptions.signal,
                 windowsHide: true,
-                stdio: ["pipe", "pipe", "pipe"],
               });
               child.stderr
                 .setEncoding("utf8")

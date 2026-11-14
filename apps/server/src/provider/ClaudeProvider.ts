@@ -22,6 +22,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import { createModelCapabilities } from "@onicode/shared/model";
 import { envTrampoline, supportsEnvChdir } from "@onicode/shared/envTrampoline";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import * as SpawnWorker from "../process/SpawnWorker.ts";
 import { resolveSpawnCommand } from "@onicode/shared/shell";
 import {
   query as claudeQuery,
@@ -266,6 +267,17 @@ export function spawnClaudeProbeThroughEnv(
   return child;
 }
 
+/** Windows runs CreateProcess on the calling thread, so the probe launches from a launcher thread. */
+function spawnClaudeProbeOffThread(
+  { command, args, cwd, env, signal }: ClaudeSpawnOptions,
+  onStderr: (chunk: string) => void,
+) {
+  const child = SpawnWorker.spawnPiped(command, args, { cwd, env, signal, windowsHide: true });
+  // The SDK reads stderr only from processes it spawns itself, so a custom spawn forwards it.
+  child.stderr.setEncoding("utf8").on("data", onStderr);
+  return child;
+}
+
 export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly executablePath: string;
   readonly abortController: AbortController;
@@ -273,13 +285,19 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
   readonly cwd: string | undefined;
   readonly managedMcpConfig: boolean;
   readonly onStderr: (chunk: string) => void;
-  readonly spawnThroughEnv: boolean;
+  readonly spawnVia: "env" | "launcher-thread" | undefined;
 }): ClaudeQueryOptions {
   return {
-    ...(input.spawnThroughEnv
+    ...(input.spawnVia === "env"
       ? {
           spawnClaudeCodeProcess: (options: ClaudeSpawnOptions) =>
             spawnClaudeProbeThroughEnv(options, input.onStderr),
+        }
+      : {}),
+    ...(input.spawnVia === "launcher-thread"
+      ? {
+          spawnClaudeCodeProcess: (options: ClaudeSpawnOptions) =>
+            spawnClaudeProbeOffThread(options, input.onStderr),
         }
       : {}),
     persistSession: false,
@@ -521,8 +539,13 @@ const probeClaudeCapabilities = (
           ...(yield* readClaudeSettingsEnv(claudeSettings, cwd, claudeEnvironment)),
         })
       : 0;
-    const spawnThroughEnv =
-      (yield* HostProcess.Platform) === "linux" && (yield* Effect.promise(supportsEnvChdir));
+    const platform = yield* HostProcess.Platform;
+    const spawnVia =
+      platform === "win32"
+        ? "launcher-thread"
+        : platform === "linux" && (yield* Effect.promise(supportsEnvChdir))
+          ? "env"
+          : undefined;
     return yield* Effect.tryPromise({
       try: async () => {
         const q = claudeQuery({
@@ -537,7 +560,7 @@ const probeClaudeCapabilities = (
             cwd,
             managedMcpConfig,
             onStderr,
-            spawnThroughEnv,
+            spawnVia,
           }),
         });
         const init = await q.initializationResult();
