@@ -99,8 +99,15 @@ it.layer(NodeServices.layer)("onicode install", (it) => {
       yield* provide(installCli());
       assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
 
-      // A script an earlier install wrote is ours too.
+      // A script an earlier install wrote is ours too, even through a symlinked Onicode home.
       yield* fs.writeFileString(link, posixLauncherScript(older));
+      yield* provide(installCli());
+      assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
+      yield* fs.symlink(path.join(root, ".onicode"), path.join(root, "home-alias"));
+      yield* fs.writeFileString(
+        link,
+        posixLauncherScript(path.join(root, "home-alias/runtime/versions", VERSION, "onicode")),
+      );
       yield* provide(installCli());
       assert.equal(yield* fs.readFileString(link), posixLauncherScript(executable));
 
