@@ -532,9 +532,9 @@ function summarizeGitActionResult(
   return { title: "Done" };
 }
 
-// A backstop for models that ignore the preset's lowercase instruction; acronyms and names like GitHub are left alone.
-const CONVENTIONAL_CAPITALIZED_DESCRIPTION =
-  /^([a-z]+(?:\([^)\n]*\))?!?: )([A-Z][a-z]*)(?![A-Za-z0-9])/;
+// A backstop for models that ignore the preset's lowercase instruction. Only a plain word ending at a
+// space or the end: acronyms, names like GitHub, and identifiers like C++ or App.tsx are left alone.
+const CONVENTIONAL_CAPITALIZED_DESCRIPTION = /^([a-z]+(?:\([^)\n]*\))?!?: )([A-Z][a-z]*)(?=\s|$)/;
 
 function sanitizeCommitMessage(
   generated: {
