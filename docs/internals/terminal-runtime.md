@@ -29,13 +29,24 @@ bound during startup.
 
 ## Renderer ownership
 
-Android and web use the same `libghostty-vt` C ABI for terminal behavior. Platform
-adapters own drawing and input integration, and React stays out of terminal frames.
+iOS, Android, and web use the same `libghostty-vt` C ABI for terminal behavior. The two
+mobile platforms share one native core,
+[`oni_terminal_core.cpp`](../../apps/mobile/modules/oni-terminal/cpp/oni_terminal_core.cpp),
+which CMake (Android) and the pod (iOS) both compile. Platform adapters own drawing and input
+integration, and React stays out of terminal frames.
 The web adapter shares one WebAssembly instance per browser tab while each terminal
 owns and frees its own handles. The canonical upstream pin is
-[`native/libghostty-vt/VERSION`](../../native/libghostty-vt/VERSION); both native and
-web artifacts must be rebuilt when it changes. Web embeds the revision in its build
+[`native/libghostty-vt/VERSION`](../../native/libghostty-vt/VERSION); the iOS, Android,
+and web artifacts must all be rebuilt when it changes. Web embeds the revision in its build
 info so the ABI check can detect drift without a second pin.
+
+Shell configs and TUIs often hardcode truecolor for one background, so every client
+enforces a WCAG 4.5 minimum text contrast against the cell background. Web
+([`contrast.ts`](../../apps/web/src/terminal/ghostty/contrast.ts)) and the mobile core
+carry the same rule and exemptions and must change together. Theme changes go through
+the terminal's default colors rather than repainting, because OSC 10/11/4 replies,
+`CSI ? 996 n`, and the mode 2031 report that Neovim, Helix, and lazygit follow are all
+derived from them.
 
 Restoring scrollback must not send terminal replies to the current shell. Historical
 device queries can otherwise provoke fresh replies that appear as junk at the

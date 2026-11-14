@@ -256,6 +256,34 @@ describe("GhosttyTerminalCore snapshots", () => {
     expect(cells[1]!.foreground).toEqual({ r: 255, g: 0, b: 0 });
   });
 
+  it("applies the theme's minimum contrast to cell text and drops it when the theme does", async () => {
+    const core = await createCore();
+    const light = {
+      foreground: { r: 28, g: 33, b: 41 },
+      background: { r: 255, g: 255, b: 255 },
+      cursor: { r: 28, g: 33, b: 41 },
+    };
+    core.setTheme({ ...light, minimumContrast: 4.5 });
+    core.write("\x1b[38;2;255;255;128mY\x1b[2mF\x1b[0mD");
+    const colors = () =>
+      core
+        .snapshot()
+        .rowData[0]!.cells.slice(0, 4)
+        .map(({ foreground }) => foreground);
+    expect(colors()).toEqual([
+      { r: 121, g: 121, b: 61 },
+      { r: 255, g: 255, b: 128 },
+      { r: 175, g: 175, b: 122 },
+      light.foreground,
+    ]);
+
+    core.setTheme(light);
+    expect(colors().slice(0, 2)).toEqual([
+      { r: 255, g: 255, b: 128 },
+      { r: 255, g: 255, b: 128 },
+    ]);
+  });
+
   it("preserves Unicode and split ANSI parser state across batched renderer reads", async () => {
     const [core, reference] = await Promise.all([createCore(), createCore()]);
     let state = createSession("");
@@ -294,6 +322,32 @@ describe("GhosttyTerminalCore snapshots", () => {
     expect(received).toBe(inputs.join(""));
     expect(reset).not.toHaveBeenCalled();
     expect(core.snapshot()).toEqual(reference.snapshot());
+  });
+
+  it("reports themed colors and the color scheme, and announces scheme changes under mode 2031", async () => {
+    const replies: string[] = [];
+    const core = await createCore((data) => replies.push(data));
+    const light = {
+      foreground: { r: 0x1c, g: 0x21, b: 0x29 },
+      background: { r: 0xff, g: 0xff, b: 0xff },
+      cursor: { r: 0x1c, g: 0x21, b: 0x29 },
+    };
+    core.setTheme(light);
+    core.write("\x1b]11;?\x1b\\\x1b]10;?\x07\x1b[?996n");
+    expect(replies.join("")).toBe(
+      "\x1b]11;rgb:ffff/ffff/ffff\x1b\\\x1b]10;rgb:1c1c/2121/2929\x07\x1b[?997;2n",
+    );
+
+    replies.length = 0;
+    const dark = { ...light, background: { r: 14, g: 18, b: 24 } };
+    core.setTheme(dark);
+    expect(replies).toEqual([]);
+    core.write("\x1b[?2031h");
+    core.setTheme(light);
+    core.setTheme(light);
+    expect(replies).toEqual(["\x1b[?997;2n"]);
+    core.setTheme(dark);
+    expect(replies).toEqual(["\x1b[?997;2n", "\x1b[?997;1n"]);
   });
 
   it("answers a live VT query when batched reads cross a chunk compaction", async () => {

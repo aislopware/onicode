@@ -1,11 +1,12 @@
 diff --git a/src/build/GhosttyLibVt.zig b/src/build/GhosttyLibVt.zig
+index 7e0662ec2..e0f6a672b 100644
 --- a/src/build/GhosttyLibVt.zig
 +++ b/src/build/GhosttyLibVt.zig
-@@ -236,6 +236,7 @@ fn initLib(
+@@ -308,6 +308,7 @@ fn initLib(
+ 
      if (lib.rootModuleTarget().abi.isAndroid()) {
          // Support 16kb page sizes, required for Android 15+.
 +        lib.link_z_common_page_size = 16384; // 16kb
          lib.link_z_max_page_size = 16384; // 16kb
  
          try @import("android_ndk").addPaths(b, lib);
-     }

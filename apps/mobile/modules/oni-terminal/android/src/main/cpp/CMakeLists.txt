@@ -9,11 +9,14 @@ set_target_properties(
              "${CMAKE_CURRENT_SOURCE_DIR}/../jniLibs/${ANDROID_ABI}/libghostty-vt.so"
 )
 
-add_library(oniterminal SHARED oni_terminal_jni.cpp)
+set(ONI_TERMINAL_CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../cpp")
+
+add_library(oniterminal SHARED oni_terminal_jni.cpp "${ONI_TERMINAL_CORE_DIR}/oni_terminal_core.cpp")
 
 target_include_directories(
   oniterminal
-  PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../../native/libghostty-vt/include"
+  PRIVATE "${ONI_TERMINAL_CORE_DIR}"
+          "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../../native/libghostty-vt/include"
 )
 
 target_link_options(

@@ -1,26 +1,6 @@
 import ExpoModulesCore
 import Foundation
-import GhosttyKit
-import QuartzCore
 import UIKit
-
-private enum GhosttyRuntime {
-  private static let lock = NSLock()
-  private static var initialized = false
-
-  static func ensureInitialized() -> Bool {
-    lock.lock()
-    defer { lock.unlock() }
-
-    if initialized {
-      return true
-    }
-
-    let result = ghostty_init(0, nil)
-    initialized = result == GHOSTTY_SUCCESS
-    return initialized
-  }
-}
 
 /// While a text field is first responder, iPadOS may consume presses before pressesBegan.
 /// Priority UIKeyCommands capture terminal shortcuts before the text-input system handles them.
@@ -110,11 +90,6 @@ private enum TerminalHardwareKeyEncoder {
   }
 }
 
-/// Ghostty callbacks can fire during deinit and hop to main after it, so they must not retain the view.
-private final class TerminalViewRef {
-  weak var view: OniTerminalView?
-}
-
 private enum TerminalInputSequence {
   /// Terminal Enter is carriage return. Sending line feed instead is Ctrl+J,
   /// which raw-mode TUIs may interpret as the literal J key.
@@ -173,62 +148,58 @@ private final class TerminalInputField: UITextField {
   }
 }
 
-private enum TerminalAppearanceScheme: String {
-  case light
-  case dark
 
-  init(value: String) {
-    self = TerminalAppearanceScheme(rawValue: value) ?? .dark
-  }
-
-  var ghosttyColorScheme: ghostty_color_scheme_e {
-    switch self {
-    case .light:
-      return GHOSTTY_COLOR_SCHEME_LIGHT
-    case .dark:
-      return GHOSTTY_COLOR_SCHEME_DARK
-    }
+private extension UInt32 {
+  /// Parses `#RRGGBB` or `#AARRGGBB` into the core's opaque ARGB.
+  init?(terminalHex value: String) {
+    var hex = Substring(value.trimmingCharacters(in: .whitespaces))
+    if hex.hasPrefix("#") { hex = hex.dropFirst() }
+    guard hex.count == 6 || hex.count == 8, let parsed = UInt32(hex, radix: 16) else { return nil }
+    self = 0xFF00_0000 | (parsed & 0xFF_FFFF)
   }
 }
 
 private extension UIColor {
-  convenience init(hexString: String) {
-    let sanitized = hexString.replacingOccurrences(of: "#", with: "")
-    let value = Int(sanitized, radix: 16) ?? 0
+  convenience init(argb: UInt32) {
     self.init(
-      red: CGFloat((value >> 16) & 0xFF) / 255,
-      green: CGFloat((value >> 8) & 0xFF) / 255,
-      blue: CGFloat(value & 0xFF) / 255,
-      alpha: 1
-    )
+      red: CGFloat((argb >> 16) & 0xFF) / 255,
+      green: CGFloat((argb >> 8) & 0xFF) / 255,
+      blue: CGFloat(argb & 0xFF) / 255,
+      alpha: 1)
   }
 }
 
-public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInteractionDelegate {
-  private static let minimumVerticalScrollStepPoints: CGFloat = 18
-  private static let verticalScrollStepMultiplier: CGFloat = 1.15
+private extension String {
+  init(terminalBytes bytes: OniTerminalBytes) {
+    guard let data = bytes.data else {
+      self = ""
+      return
+    }
+    self = String(decoding: UnsafeBufferPointer(start: data, count: bytes.len), as: UTF8.self)
+  }
+}
 
-  private let terminalViewport = UIView()
+/// The libghostty-vt terminal surface (via cpp/oni_terminal_core.h); mirrors Android's OniTerminalView.kt.
+public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInteractionDelegate {
+  private let canvas = TerminalCanvasView(fontSize: 10)
   private let inputField = TerminalInputField()
   private let focusTapGesture = UITapGestureRecognizer()
-  private let scrollPanGesture = UIPanGestureRecognizer()
   private let editMenuGesture = UILongPressGestureRecognizer()
   private lazy var editMenuInteraction = UIEditMenuInteraction(delegate: self)
-  private var lastViewportSize: CGSize = .zero
-  private var lastContentScale: CGFloat = 0
-  private var lastReportedGrid: (cols: Int, rows: Int)?
-  private var lastAppliedBuffer = ""
+  private var terminal: OpaquePointer?
+  private var fedBuffer = ""
   private var streamedOutput: TerminalOutputBuffer?
-  private var pendingVerticalScrollPoints: CGFloat = 0
+  private var grid = (cols: 0, rows: 0)
+  private var cellPixels = (width: 0, height: 0)
+  private var measuredGrid = (cols: 0, rows: 0)
+  private var renderScheduled = false
   private var menuText: String?
   private var sentInput = ""
-  private var app: ghostty_app_t?
-  private let callbackRef = TerminalViewRef()
-  private var surface: ghostty_surface_t?
-  private var isCreatingSurface = false
-  private var surfaceCreationFailed = false
-  private var appearance = TerminalAppearanceScheme.dark
-  private var backgroundColorValue = UIColor(hexString: "#24292e")
+  private var foregroundColorValue: UInt32 = 0xFFD1_D5DA
+  private var backgroundColorValue: UInt32 = 0xFF24_292E
+  private var cursorColorValue: UInt32 = 0xFF00_9FFF
+  private var cursorTextColorValue: UInt32?
+  private var paletteColors: [UInt32] = []
 
   let onInput = EventDispatcher()
   let onResize = EventDispatcher()
@@ -237,18 +208,7 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
   var captureRequest: Double = 0 {
     didSet {
       guard captureRequest > 0, captureRequest != oldValue else { return }
-      let text = readViewportText() ?? ""
-      // Android joins snapshot rows with "\n" and trims each row's trailing whitespace, so do
-      // the same here: identical terminal content must capture identically on both platforms.
-      let normalized = text.split(separator: "\n", omittingEmptySubsequences: false)
-        .map { row -> String in
-          var line = String(row)
-          // Kotlin's trimEnd only strips ASCII whitespace; match it exactly.
-          while let last = line.last, last.isASCII && last.isWhitespace { line.removeLast() }
-          return line
-        }
-        .joined(separator: "\n")
-      onCapture(["text": normalized])
+      onCapture(["text": captureText()])
     }
   }
 
@@ -256,7 +216,7 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     didSet {
       accessibilityIdentifier = "oni-terminal-\(terminalKey)"
       if oldValue != terminalKey {
-        resetSurface()
+        recreateTerminal()
       }
     }
   }
@@ -266,18 +226,20 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
   // previous grid.
   var initialBuffer: String = "" {
     didSet {
+      guard oldValue != initialBuffer else { return }
       hasPendingBuffer = true
     }
   }
   private var hasPendingBuffer = false
 
   // The PTY grid shared by every attached client, or empty before the server reports one.
-  // The surface draws this grid so its wrapping and cursor match the PTY; the view's own
-  // fit still goes out through onResize.
+  // The terminal draws this grid, clamped to the view's own fit (the server's grid lags a
+  // local resize, and read-only observers never constrain it), so its wrapping and cursor
+  // match the PTY; the view's own fit still goes out through onResize.
   var sharedGrid: [Int] = [] {
     didSet {
       guard oldValue != sharedGrid else { return }
-      resizeSurface()
+      applyGrid()
     }
   }
 
@@ -285,7 +247,8 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     didSet {
       guard oldValue != fontSize else { return }
       inputField.font = UIFont.monospacedSystemFont(ofSize: max(fontSize, 13), weight: .regular)
-      applyConfigInPlace()
+      canvas.fontSize = fontSize
+      emitResize()
     }
   }
 
@@ -317,44 +280,40 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     }
   }
 
-  var appearanceScheme: String = TerminalAppearanceScheme.dark.rawValue {
-    didSet {
-      guard oldValue != appearanceScheme else { return }
-      appearance = TerminalAppearanceScheme(value: appearanceScheme)
-      applyConfigInPlace()
-    }
-  }
+  // The core derives the reported color scheme from the background, as on Android.
+  var appearanceScheme: String = "dark"
 
   var themeConfig: String = "" {
     didSet {
       guard oldValue != themeConfig else { return }
-      applyConfigInPlace()
+      parseThemeConfig(themeConfig)
+      applyTheme()
     }
   }
 
   var backgroundColorHex: String = "#24292e" {
     didSet {
-      backgroundColorValue = UIColor(hexString: backgroundColorHex)
+      backgroundColorValue = UInt32(terminalHex: backgroundColorHex) ?? backgroundColorValue
       applyTheme()
     }
   }
 
-  var foregroundColorHex: String = "#d1d5da"
+  var foregroundColorHex: String = "#d1d5da" {
+    didSet {
+      foregroundColorValue = UInt32(terminalHex: foregroundColorHex) ?? foregroundColorValue
+      applyTheme()
+    }
+  }
+
   var mutedForegroundColorHex: String = "#959da5"
 
   public required init(appContext: AppContext? = nil) {
     super.init(appContext: appContext)
-    callbackRef.view = self
-
-    applyTheme()
     clipsToBounds = true
-    // The real scale arrives with the window; layoutSubviews corrects it.
-    contentScaleFactor = traitCollection.displayScale
 
-    terminalViewport.clipsToBounds = true
-    terminalViewport.contentScaleFactor = contentScaleFactor
-    terminalViewport.translatesAutoresizingMaskIntoConstraints = false
-    terminalViewport.isUserInteractionEnabled = true
+    canvas.onScrollRows = { [weak self] rows, col, row in
+      self?.scrollRows(rows, col: col, row: row)
+    }
 
     inputField.delegate = self
     inputField.backgroundColor = UIColor.clear
@@ -389,52 +348,37 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     }
 
     focusTapGesture.addTarget(self, action: #selector(handleViewportTap))
-    terminalViewport.addGestureRecognizer(focusTapGesture)
-    scrollPanGesture.addTarget(self, action: #selector(handleViewportPan(_:)))
-    scrollPanGesture.maximumNumberOfTouches = 1
-    scrollPanGesture.cancelsTouchesInView = false
-    terminalViewport.addGestureRecognizer(scrollPanGesture)
+    canvas.addGestureRecognizer(focusTapGesture)
     editMenuGesture.addTarget(self, action: #selector(handleViewportLongPress(_:)))
-    terminalViewport.addGestureRecognizer(editMenuGesture)
-    terminalViewport.addInteraction(editMenuInteraction)
+    canvas.addGestureRecognizer(editMenuGesture)
+    canvas.addInteraction(editMenuInteraction)
     focusTapGesture.require(toFail: editMenuGesture)
 
-    addSubview(terminalViewport)
+    addSubview(canvas)
     addSubview(inputField)
 
     NSLayoutConstraint.activate([
-      terminalViewport.leadingAnchor.constraint(equalTo: leadingAnchor),
-      terminalViewport.trailingAnchor.constraint(equalTo: trailingAnchor),
-      terminalViewport.topAnchor.constraint(equalTo: topAnchor),
-      terminalViewport.bottomAnchor.constraint(equalTo: bottomAnchor),
-
       inputField.trailingAnchor.constraint(equalTo: trailingAnchor),
       inputField.topAnchor.constraint(equalTo: bottomAnchor, constant: 8),
       inputField.widthAnchor.constraint(equalToConstant: 1),
       inputField.heightAnchor.constraint(equalToConstant: 1),
     ])
+    applyTheme()
   }
 
   deinit {
-    destroySurface()
+    if let terminal {
+      oni_terminal_destroy(terminal)
+    }
   }
 
   public override func layoutSubviews() {
     super.layoutSubviews()
-    updateContentScale()
-
-    let viewportSize = terminalViewport.bounds.size
-    if surface == nil {
-      createSurfaceIfPossible()
-    }
-
-    guard viewportSize != lastViewportSize || contentScaleFactor != lastContentScale else {
-      return
-    }
-
-    lastViewportSize = viewportSize
-    lastContentScale = contentScaleFactor
-    resizeSurface()
+    canvas.frame = bounds
+    // The trait collection follows the scene the view is in, which matters once
+    // iPhone apps run resizable and on external displays; UIScreen.main does not.
+    canvas.updateScale(traitCollection.displayScale)
+    emitResize()
   }
 
   public override func didMoveToWindow() {
@@ -454,102 +398,237 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     return false
   }
 
+  // MARK: Terminal lifecycle
+
+  private func emitResize() {
+    guard bounds.width > 0, bounds.height > 0 else { return }
+    let usable = canvas.usableSize
+    let cols = min(max(Int(usable.width / canvas.fonts.cellWidth), 2), 400)
+    let rows = min(max(Int(usable.height / canvas.fonts.cellHeight), 2), 200)
+    if cols != measuredGrid.cols || rows != measuredGrid.rows {
+      measuredGrid = (cols, rows)
+      onResize(["cols": cols, "rows": rows])
+    }
+    applyGrid()
+  }
+
+  private func applyGrid() {
+    guard measuredGrid.cols > 0, measuredGrid.rows > 0 else { return }
+    let shared = sharedGrid.count == 2 && sharedGrid[0] > 0 && sharedGrid[1] > 0 ? sharedGrid : nil
+    let nextGrid = (
+      cols: min(shared?[0] ?? measuredGrid.cols, measuredGrid.cols),
+      rows: min(shared?[1] ?? measuredGrid.rows, measuredGrid.rows)
+    )
+    let scale = canvas.contentScaleFactor
+    let nextCell = (
+      width: Int((canvas.fonts.cellWidth * scale).rounded()),
+      height: Int((canvas.fonts.cellHeight * scale).rounded())
+    )
+    if nextGrid == grid, nextCell == cellPixels, terminal != nil { return }
+    grid = nextGrid
+    cellPixels = nextCell
+    if let terminal {
+      emitResponse(
+        oni_terminal_resize(
+          terminal, Int32(grid.cols), Int32(grid.rows), Int32(cellPixels.width), Int32(cellPixels.height)))
+    } else {
+      createTerminal()
+    }
+    if !hasPendingBuffer { feedPendingBuffer() }
+    scheduleRender()
+  }
+
+  private func createTerminal() {
+    guard terminal == nil, grid.cols > 0, grid.rows > 0 else { return }
+    terminal = withTheme { theme in
+      oni_terminal_create(
+        Int32(grid.cols), Int32(grid.rows), Int32(cellPixels.width), Int32(cellPixels.height), theme)
+    }
+    fedBuffer = ""
+    if let streamedOutput {
+      feed(streamedOutput.data)
+    }
+  }
+
+  private func recreateTerminal() {
+    guard terminal != nil else { return }
+    destroyTerminal()
+    createTerminal()
+    if !hasPendingBuffer { feedPendingBuffer() }
+    scheduleRender()
+  }
+
+  private func destroyTerminal() {
+    guard let terminal else { return }
+    oni_terminal_destroy(terminal)
+    self.terminal = nil
+    fedBuffer = ""
+  }
+
+  func applyPendingBuffer() {
+    guard hasPendingBuffer else { return }
+    hasPendingBuffer = false
+    feedPendingBuffer()
+  }
+
+  private func feedPendingBuffer() {
+    guard streamedOutput == nil, terminal != nil, initialBuffer != fedBuffer else { return }
+    if !initialBuffer.utf8.starts(with: fedBuffer.utf8) {
+      recreateTerminal()
+      guard terminal != nil else { return }
+    }
+    let suffix = initialBuffer.utf8.dropFirst(fedBuffer.utf8.count)
+    if !suffix.isEmpty {
+      feed(Data(suffix))
+    }
+    fedBuffer = initialBuffer
+    scheduleRender()
+  }
+
+  func writeOutput(_ data: String, reset: Bool) {
+    let output = streamedOutput ?? TerminalOutputBuffer()
+    let bytes = Data(data.utf8)
+    output.write(bytes, reset: reset)
+    streamedOutput = output
+    if reset {
+      recreateTerminal()
+    } else if terminal != nil {
+      feed(bytes)
+      scheduleRender()
+    }
+  }
+
+  private func feed(_ data: Data) {
+    guard let terminal, !data.isEmpty else { return }
+    let response = data.withUnsafeBytes { buffer in
+      oni_terminal_feed(terminal, buffer.bindMemory(to: UInt8.self).baseAddress, buffer.count)
+    }
+    emitResponse(response)
+  }
+
+  private func scrollRows(_ rows: Int, col: Int, row: Int) {
+    guard let terminal else { return }
+    emitResponse(oni_terminal_scroll_wheel(terminal, Int32(rows), Int32(col), Int32(row)))
+    scheduleRender()
+  }
+
+  /// Output arrives in bursts; one snapshot per main-queue turn is enough.
+  private func scheduleRender() {
+    guard !renderScheduled else { return }
+    renderScheduled = true
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      self.renderScheduled = false
+      if let frame = self.snapshot() {
+        self.canvas.setFrame(frame)
+      }
+    }
+  }
+
+  private func snapshot() -> TerminalFrame? {
+    guard let terminal else { return nil }
+    let bytes = oni_terminal_snapshot(terminal)
+    defer { oni_terminal_bytes_free(bytes) }
+    guard let data = bytes.data else { return nil }
+    return TerminalFrame.decode(UnsafeRawBufferPointer(start: data, count: bytes.len))
+  }
+
+  private func emitResponse(_ bytes: OniTerminalBytes) {
+    defer { oni_terminal_bytes_free(bytes) }
+    guard bytes.len > 0 else { return }
+    emitInput(String(terminalBytes: bytes))
+  }
+
+  private func captureText() -> String {
+    guard let frame = snapshot() else { return "" }
+    // Android joins snapshot rows with "\n" and trims each row's trailing whitespace; identical
+    // terminal content must capture identically on both platforms.
+    return (0..<frame.rows).map { row -> String in
+      var line = frame.cellText[(row * frame.cols)..<((row + 1) * frame.cols)].joined()
+      // Kotlin's trimEnd only strips ASCII whitespace; match it exactly.
+      while let last = line.last, last.isASCII && last.isWhitespace { line.removeLast() }
+      return line
+    }.joined(separator: "\n")
+  }
+
+  private func viewportText() -> String? {
+    guard let terminal else { return nil }
+    var bytes = OniTerminalBytes(data: nil, len: 0)
+    guard oni_terminal_viewport_text(terminal, &bytes) else { return nil }
+    defer { oni_terminal_bytes_free(bytes) }
+    return String(terminalBytes: bytes)
+  }
+
+  // MARK: Theme
+
+  private func withTheme<Result>(_ body: (UnsafePointer<OniTerminalTheme>) -> Result) -> Result {
+    paletteColors.withUnsafeBufferPointer { palette in
+      var theme = OniTerminalTheme(
+        foreground: foregroundColorValue,
+        background: backgroundColorValue,
+        cursor: cursorColorValue,
+        palette: palette.baseAddress,
+        palette_len: palette.count)
+      return withUnsafePointer(to: &theme, body)
+    }
+  }
+
+  private func applyTheme() {
+    let background = UIColor(argb: backgroundColorValue)
+    backgroundColor = background
+    canvas.backgroundColor = background
+    canvas.cursorTextColor = cursorTextColorValue
+    guard let terminal else { return }
+    emitResponse(withTheme { oni_terminal_set_theme(terminal, $0) })
+    scheduleRender()
+  }
+
+  private func parseThemeConfig(_ config: String) {
+    var palette: [Int: UInt32] = [:]
+    for line in config.split(whereSeparator: \.isNewline) {
+      let parts = line.split(separator: "=", maxSplits: 1)
+      guard parts.count == 2 else { continue }
+      let value = parts[1].trimmingCharacters(in: .whitespaces)
+      switch parts[0].trimmingCharacters(in: .whitespaces) {
+      case "background":
+        backgroundColorValue = UInt32(terminalHex: value) ?? backgroundColorValue
+      case "foreground":
+        foregroundColorValue = UInt32(terminalHex: value) ?? foregroundColorValue
+      case "cursor-color":
+        cursorColorValue = UInt32(terminalHex: value) ?? cursorColorValue
+      case "cursor-text":
+        cursorTextColorValue = UInt32(terminalHex: value) ?? cursorTextColorValue
+      case "palette":
+        let entry = value.split(separator: "=", maxSplits: 1)
+        guard entry.count == 2, let index = Int(entry[0].trimmingCharacters(in: .whitespaces)),
+          (0...255).contains(index)
+        else { continue }
+        palette[index] = UInt32(terminalHex: String(entry[1])) ?? foregroundColorValue
+      default:
+        break
+      }
+    }
+    if let lastIndex = palette.keys.max() {
+      paletteColors = (0...lastIndex).map { palette[$0] ?? foregroundColorValue }
+    }
+  }
+
+  // MARK: Gestures and edit menu
+
   @objc
   private func handleViewportTap() {
+    canvas.stopFling()
     requestKeyboardFocus()
-  }
-
-  private func readViewportText() -> String? {
-    guard let surface else { return nil }
-    let selection = ghostty_selection_s(
-      top_left: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_TOP_LEFT, x: 0, y: 0),
-      bottom_right: ghostty_point_s(tag: GHOSTTY_POINT_VIEWPORT, coord: GHOSTTY_POINT_COORD_BOTTOM_RIGHT, x: 0, y: 0),
-      rectangle: false)
-    var captured = ghostty_text_s()
-    guard ghostty_surface_read_text(surface, selection, &captured) else { return nil }
-    defer { ghostty_surface_free_text(surface, &captured) }
-    guard let text = captured.text else { return nil }
-    return String(
-      bytes: UnsafeBufferPointer(
-        start: UnsafeRawPointer(text).assumingMemoryBound(to: UInt8.self),
-        count: Int(captured.text_len)),
-      encoding: .utf8)
-  }
-
-  @objc
-  private func handleViewportPan(_ gesture: UIPanGestureRecognizer) {
-    guard let surface else { return }
-
-    let location = gesture.location(in: terminalViewport)
-    ghostty_surface_mouse_pos(
-      surface,
-      Double(location.x * contentScaleFactor),
-      Double(location.y * contentScaleFactor),
-      GHOSTTY_MODS_NONE
-    )
-
-    switch gesture.state {
-    case .began:
-      pendingVerticalScrollPoints = 0
-      gesture.setTranslation(.zero, in: terminalViewport)
-    case .changed:
-      let translation = gesture.translation(in: terminalViewport)
-      let stepSize = max(
-        fontSize * Self.verticalScrollStepMultiplier,
-        Self.minimumVerticalScrollStepPoints
-      )
-      let totalVerticalPoints = pendingVerticalScrollPoints + translation.y
-      let verticalSteps = Int(totalVerticalPoints / stepSize)
-      pendingVerticalScrollPoints = totalVerticalPoints - (CGFloat(verticalSteps) * stepSize)
-
-      guard verticalSteps != 0 else {
-        gesture.setTranslation(.zero, in: terminalViewport)
-        return
-      }
-
-      ghostty_surface_mouse_scroll(surface, 0, Double(verticalSteps), 0)
-      redrawSurface()
-      gesture.setTranslation(.zero, in: terminalViewport)
-    default:
-      pendingVerticalScrollPoints = 0
-      gesture.setTranslation(.zero, in: terminalViewport)
-    }
-  }
-
-  // Korean keyboards build a syllable by replacing the committed character before the cursor,
-  // so the field keeps what was sent and each change goes out as DELs plus the new suffix.
-  // Scalars, not Characters: a Thai or Indic mark joins the previous grapheme, and resending
-  // that grapheme after one DEL would leave its base twice in a code-point line editor.
-  @objc
-  private func handleInputEditingChanged() {
-    guard inputField.markedTextRange == nil else { return }
-    let text = inputField.text ?? ""
-    let fieldScalars = text.unicodeScalars
-    let sentScalars = sentInput.unicodeScalars
-    let commonCount = zip(fieldScalars, sentScalars).prefix { $0.0 == $0.1 }.count
-    let unsent = String(String.UnicodeScalarView(sentScalars.dropFirst(commonCount)))
-    let added = String(String.UnicodeScalarView(fieldScalars.dropFirst(commonCount)))
-    // Some software keyboards deliver Return as an inserted newline instead of textFieldShouldReturn.
-    emitInput(String(repeating: "\u{7F}", count: unsent.count) + TerminalInputSequence.normalizingReturn(added))
-    sentInput = text
-    // A Hangul syllable never spans whitespace; past the cap, keep the last character to compose onto.
-    if text.last?.isWhitespace == true {
-      resetInputField()
-    } else if text.count > 64 {
-      let last = String(text.suffix(1))
-      inputField.text = last
-      sentInput = last
-    }
   }
 
   @objc
   private func handleViewportLongPress(_ gesture: UILongPressGestureRecognizer) {
     guard gesture.state == .began else { return }
     // Freeze the text the user pressed on; output keeps streaming while the menu is open.
-    menuText = readViewportText().flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+    menuText = viewportText().flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
     guard menuText != nil || canPaste else { return }
     editMenuInteraction.presentEditMenu(
-      with: UIEditMenuConfiguration(identifier: nil, sourcePoint: gesture.location(in: terminalViewport))
+      with: UIEditMenuConfiguration(identifier: nil, sourcePoint: gesture.location(in: canvas))
     )
   }
 
@@ -619,11 +698,38 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     !readOnly && UIPasteboard.general.hasStrings
   }
 
+  // MARK: Input
+
+  // Korean keyboards build a syllable by replacing the committed character before the cursor,
+  // so the field keeps what was sent and each change goes out as DELs plus the new suffix.
+  // Scalars, not Characters: a Thai or Indic mark joins the previous grapheme, and resending
+  // that grapheme after one DEL would leave its base twice in a code-point line editor.
+  @objc
+  private func handleInputEditingChanged() {
+    guard inputField.markedTextRange == nil else { return }
+    let text = inputField.text ?? ""
+    let fieldScalars = text.unicodeScalars
+    let sentScalars = sentInput.unicodeScalars
+    let commonCount = zip(fieldScalars, sentScalars).prefix { $0.0 == $0.1 }.count
+    let unsent = String(String.UnicodeScalarView(sentScalars.dropFirst(commonCount)))
+    let added = String(String.UnicodeScalarView(fieldScalars.dropFirst(commonCount)))
+    // Some software keyboards deliver Return as an inserted newline instead of textFieldShouldReturn.
+    emitInput(String(repeating: "\u{7F}", count: unsent.count) + TerminalInputSequence.normalizingReturn(added))
+    sentInput = text
+    // A Hangul syllable never spans whitespace; past the cap, keep the last character to compose onto.
+    if text.last?.isWhitespace == true {
+      resetInputField()
+    } else if text.count > 64 {
+      let last = String(text.suffix(1))
+      inputField.text = last
+      sentInput = last
+    }
+  }
+
   @objc
   private func handleInputEditingDidBegin() {
     // A composition abandoned by losing focus must not reach the PTY with the next keystroke.
     resetInputField()
-    textInputModeDidChange()
   }
 
   func resetInputField() {
@@ -631,290 +737,9 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     sentInput = ""
   }
 
-  private func createSurfaceIfPossible() {
-    guard surface == nil, app == nil, !isCreatingSurface, !surfaceCreationFailed else { return }
-    guard terminalViewport.bounds.width > 0, terminalViewport.bounds.height > 0 else { return }
-    guard GhosttyRuntime.ensureInitialized() else {
-      surfaceCreationFailed = true
-      return
-    }
-
-    isCreatingSurface = true
-    defer { isCreatingSurface = false }
-
-    var runtimeConfig = ghostty_runtime_config_s(
-      userdata: Unmanaged.passUnretained(callbackRef).toOpaque(),
-      supports_selection_clipboard: false,
-      // The io thread queues app messages (titles, bells) in a bounded mailbox. Unless the main
-      // thread drains it, the io thread blocks and the next feed or surface free hangs the app.
-      wakeup_cb: { userdata in
-        guard let userdata else { return }
-        let ref = Unmanaged<TerminalViewRef>.fromOpaque(userdata).takeUnretainedValue()
-        DispatchQueue.main.async { ref.view?.tickApp() }
-      },
-      action_cb: { _, _, _ in false },
-      read_clipboard_cb: { _, _, _, _, _, _ in GHOSTTY_CLIPBOARD_READ_UNSUPPORTED },
-      confirm_read_clipboard_cb: { _, _, _, _ in },
-      write_clipboard_cb: { _, _, _, _, _ in },
-      close_surface_cb: { _, _ in }
-    )
-
-    guard let config = ghostty_config_new() else {
-      surfaceCreationFailed = true
-      return
-    }
-    // Creation proceeds without the file, as before; font_size is also set on the surface config.
-    _ = loadThemeConfig(into: config)
-    ghostty_config_finalize(config)
-    defer { ghostty_config_free(config) }
-
-    guard let createdApp = ghostty_app_new(&runtimeConfig, config) else {
-      surfaceCreationFailed = true
-      return
-    }
-
-    var surfaceConfig = ghostty_surface_config_new()
-    surfaceConfig.platform_tag = GHOSTTY_PLATFORM_IOS
-    surfaceConfig.platform.ios.uiview = Unmanaged.passUnretained(terminalViewport).toOpaque()
-    surfaceConfig.userdata = Unmanaged.passUnretained(self).toOpaque()
-    surfaceConfig.scale_factor = Double(contentScaleFactor)
-    surfaceConfig.font_size = Float(fontSize)
-    surfaceConfig.context = GHOSTTY_SURFACE_CONTEXT_WINDOW
-    surfaceConfig.use_custom_io = true
-
-    guard let createdSurface = ghostty_surface_new(createdApp, &surfaceConfig) else {
-      ghostty_app_free(createdApp)
-      surfaceCreationFailed = true
-      return
-    }
-
-    app = createdApp
-    surface = createdSurface
-    ghostty_app_set_color_scheme(createdApp, appearance.ghosttyColorScheme)
-    ghostty_surface_set_color_scheme(createdSurface, appearance.ghosttyColorScheme)
-    setupWriteCallback()
-    resizeSurface()
-    if let streamedOutput {
-      feedData(streamedOutput.data)
-    } else if !hasPendingBuffer {
-      feedBuffer(initialBuffer)
-    }
-  }
-
-  private func resetSurface() {
-    destroySurface()
-    lastAppliedBuffer = ""
-    lastViewportSize = .zero
-    lastContentScale = 0
-    lastReportedGrid = nil
-    surfaceCreationFailed = false
-    setNeedsLayout()
-  }
-
-  // Font and theme change in place: a new surface would replay output and re-answer its queries.
-  private func applyConfigInPlace() {
-    guard let app, let surface else {
-      resetSurface()
-      return
-    }
-    guard let config = ghostty_config_new() else { return }
-    defer { ghostty_config_free(config) }
-    let loaded = loadThemeConfig(into: config)
-    ghostty_config_finalize(config)
-    ghostty_app_set_color_scheme(app, appearance.ghosttyColorScheme)
-    ghostty_surface_set_color_scheme(surface, appearance.ghosttyColorScheme)
-    tickApp()
-    // Without the file, the config lacks font-size and would reset the surface to defaults.
-    if loaded {
-      ghostty_surface_update_config(surface, config)
-    }
-    resizeSurface()
-    setNeedsLayout()
-  }
-
-  private func destroySurface() {
-    // Unblock the io thread before ghostty_surface_free joins it.
-    tickApp()
-    if let surface {
-      ghostty_surface_set_write_callback(surface, nil, nil)
-      ghostty_surface_free(surface)
-    }
-    if let app {
-      ghostty_app_free(app)
-    }
-    surface = nil
-    app = nil
-    // Ghostty adds its IOSurface layer to the viewport on iOS but never removes it on
-    // free, leaving the last frame on screen under the next surface's layer. The
-    // viewport has no subviews, so every sublayer belongs to a freed surface.
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    terminalViewport.layer.sublayers?.forEach { $0.removeFromSuperlayer() }
-    CATransaction.commit()
-  }
-
-  func applyPendingBuffer() {
-    guard hasPendingBuffer else { return }
-    hasPendingBuffer = false
-    applyRemoteBuffer(initialBuffer)
-  }
-
-  private func tickApp() {
-    guard let app else { return }
-    ghostty_app_tick(app)
-  }
-
-  private func applyRemoteBuffer(_ buffer: String) {
-    guard streamedOutput == nil else { return }
-    guard surface != nil else {
-      createSurfaceIfPossible()
-      return
-    }
-
-    if buffer.isEmpty {
-      feedData(Data("\u{1B}[3J\u{1B}[H\u{1B}[2J".utf8))
-      lastAppliedBuffer = ""
-      return
-    }
-
-    if buffer.hasPrefix(lastAppliedBuffer) {
-      let suffix = String(buffer.dropFirst(lastAppliedBuffer.count))
-      feedData(Data(suffix.utf8))
-      lastAppliedBuffer = buffer
-      return
-    }
-
-    resetSurface()
-    createSurfaceIfPossible()
-  }
-
-  func writeOutput(_ data: String, reset: Bool) {
-    let output = streamedOutput ?? TerminalOutputBuffer()
-    let bytes = Data(data.utf8)
-    output.write(bytes, reset: reset)
-    streamedOutput = output
-    if reset {
-      resetSurface()
-    } else if surface == nil {
-      createSurfaceIfPossible()
-    } else {
-      feedData(bytes)
-    }
-  }
-
-  private func feedBuffer(_ buffer: String) {
-    guard !buffer.isEmpty else { return }
-    feedData(Data(buffer.utf8))
-    lastAppliedBuffer = buffer
-  }
-
-  private func feedData(_ data: Data) {
-    guard let surface, !data.isEmpty else { return }
-
-    tickApp()
-    data.withUnsafeBytes { buffer in
-      guard let pointer = buffer.baseAddress?.assumingMemoryBound(to: UInt8.self) else {
-        return
-      }
-      ghostty_surface_feed_data(surface, pointer, buffer.count)
-    }
-
-    redrawSurface()
-  }
-
-  private func setupWriteCallback() {
-    guard let surface else { return }
-
-    let userdata = Unmanaged.passUnretained(callbackRef).toOpaque()
-    ghostty_surface_set_write_callback(surface, { userdata, data, len in
-      guard let userdata, let data, len > 0 else { return }
-      let ref = Unmanaged<TerminalViewRef>.fromOpaque(userdata).takeUnretainedValue()
-      let bytes = Data(bytes: data, count: len)
-      guard let input = String(data: bytes, encoding: .utf8), !input.isEmpty else { return }
-
-      DispatchQueue.main.async {
-        ref.view?.emitInput(input)
-      }
-    }, userdata)
-  }
-
-  private func resizeSurface() {
-    guard let surface else {
-      emitEstimatedResize()
-      return
-    }
-
-    let scale = contentScaleFactor
-    let width = UInt32(max(floor(terminalViewport.bounds.width * scale), 1))
-    let height = UInt32(max(floor(terminalViewport.bounds.height * scale), 1))
-
-    terminalViewport.contentScaleFactor = scale
-    ghostty_surface_set_content_scale(surface, Double(scale), Double(scale))
-    ghostty_surface_set_size(surface, width, height)
-    let fitted = ghostty_surface_size(surface)
-    let fittedCols = max(1, Int(fitted.columns))
-    let fittedRows = max(1, Int(fitted.rows))
-    // Trimming whole cells keeps ghostty's padding, and the surface can only shrink
-    // within the view, so a stale larger grid falls back to the fitted one.
-    var surfaceWidth = width
-    var surfaceHeight = height
-    if sharedGrid.count == 2, sharedGrid[0] > 0, sharedGrid[1] > 0 {
-      surfaceWidth -= UInt32(max(fittedCols - sharedGrid[0], 0)) * fitted.cell_width_px
-      surfaceHeight -= UInt32(max(fittedRows - sharedGrid[1], 0)) * fitted.cell_height_px
-      if surfaceWidth != width || surfaceHeight != height {
-        ghostty_surface_set_size(surface, surfaceWidth, surfaceHeight)
-      }
-    }
-    ghostty_surface_set_occlusion(surface, window != nil)
-    configureIOSurfaceLayers(
-      size: CGSize(width: CGFloat(surfaceWidth) / scale, height: CGFloat(surfaceHeight) / scale))
-    redrawSurface()
-    emitResize(cols: fittedCols, rows: fittedRows)
-  }
-
-  private func redrawSurface() {
-    guard let surface else { return }
-    ghostty_surface_refresh(surface)
-    ghostty_surface_draw(surface)
-    markIOSurfaceLayersForDisplay()
-  }
-
-  private func emitEstimatedResize() {
-    guard bounds.width > 0, bounds.height > 0 else { return }
-
-    let cellWidth = max(fontSize * 0.62, 1)
-    let cellHeight = max(fontSize * 1.35, 1)
-    let cols = max(20, min(400, Int(bounds.width / cellWidth)))
-    let terminalHeight = max(bounds.height, 0)
-    let rows = max(5, min(200, Int(terminalHeight / cellHeight)))
-    emitResize(cols: cols, rows: rows)
-  }
-
-  private func emitResize(cols: Int, rows: Int) {
-    guard lastReportedGrid?.cols != cols || lastReportedGrid?.rows != rows else {
-      return
-    }
-
-    lastReportedGrid = (cols, rows)
-    onResize([
-      "cols": cols,
-      "rows": rows,
-    ])
-  }
-
-  private func updateContentScale() {
-    // The trait collection follows the scene the view is in, which matters once
-    // iPhone apps run resizable and on external displays; UIScreen.main does not.
-    let scale = traitCollection.displayScale
-    if contentScaleFactor != scale {
-      contentScaleFactor = scale
-    }
-  }
-
   private func requestKeyboardFocus() {
     guard window != nil, !readOnly else { return }
     inputField.becomeFirstResponder()
-    textInputModeDidChange()
   }
 
   private func emitInput(_ data: String) {
@@ -925,58 +750,5 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
   private func emitPaste() {
     guard let text = UIPasteboard.general.string, !text.isEmpty else { return }
     onPaste(["text": text])
-  }
-
-  private func textInputModeDidChange() {
-    guard let app else { return }
-    ghostty_app_keyboard_changed(app)
-  }
-
-  private func configureIOSurfaceLayers(size: CGSize) {
-    let targetBounds = CGRect(origin: .zero, size: size)
-    CATransaction.begin()
-    CATransaction.setDisableActions(true)
-    terminalViewport.layer.sublayers?.forEach { sublayer in
-      sublayer.frame = targetBounds
-      sublayer.contentsScale = contentScaleFactor
-    }
-    CATransaction.commit()
-  }
-
-  private func markIOSurfaceLayersForDisplay() {
-    terminalViewport.layer.setNeedsDisplay()
-    terminalViewport.layer.sublayers?.forEach { layer in
-      layer.setNeedsDisplay()
-    }
-  }
-
-  private func applyTheme() {
-    backgroundColor = backgroundColorValue
-    terminalViewport.backgroundColor = backgroundColorValue
-  }
-
-  private func loadThemeConfig(into config: ghostty_config_t) -> Bool {
-    guard let path = writeThemeConfigFile() else { return false }
-    path.withCString { cString in
-      ghostty_config_load_file(config, cString)
-    }
-    return true
-  }
-
-  private func writeThemeConfigFile() -> String? {
-    let configContents = "\(themeConfig)\nfont-size = \(String(format: "%g", Double(fontSize)))\n"
-    let url = URL(fileURLWithPath: NSTemporaryDirectory())
-      .appendingPathComponent("oni-terminal-theme-\(appearance.rawValue).ghostty")
-
-    do {
-      if let existing = try? String(contentsOf: url, encoding: .utf8), existing == configContents {
-        return url.path
-      }
-
-      try configContents.write(to: url, atomically: true, encoding: .utf8)
-      return url.path
-    } catch {
-      return nil
-    }
   }
 }

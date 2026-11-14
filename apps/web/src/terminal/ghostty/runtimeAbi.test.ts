@@ -24,13 +24,13 @@ describe("vendored libghostty-vt WebAssembly", () => {
     const memory = instance.exports.memory as WebAssembly.Memory;
     const call = (name: string, ...args: number[]) =>
       (instance.exports[name] as WasmFunction)(...args);
-    const out = call("ghostty_wasm_alloc_u8_array", 8);
+    const out = call("ghostty_wasm_alloc", 8);
     expect(call("ghostty_build_info", 10, out)).toBe(0);
     const view = new DataView(memory.buffer, out, 8);
     const embeddedRevision = new TextDecoder().decode(
       new Uint8Array(memory.buffer, view.getUint32(0, true), view.getUint32(4, true)),
     );
-    call("ghostty_wasm_free_u8_array", out, 8);
+    call("ghostty_wasm_free", out, 8);
     expect(embeddedRevision).toBe(pinnedVersion.trim());
   });
 
@@ -54,6 +54,7 @@ describe("vendored libghostty-vt WebAssembly", () => {
           ) => {
             reply += new TextDecoder().decode(new Uint8Array(memory.buffer, pointer, length));
           },
+          oni_color_scheme: () => 0,
         },
       },
     );
@@ -65,33 +66,29 @@ describe("vendored libghostty-vt WebAssembly", () => {
     const callbackIndex = table.length;
     table.grow(1, trampoline.exports.ghostty_write_pty as CallableFunction);
     const call = (name: string, ...args: number[]) => (main.exports[name] as WasmFunction)(...args);
-    const options = call("ghostty_wasm_alloc_u8_array", 8);
-    const optionsView = new DataView(memory.buffer, options, 8);
-    optionsView.setUint16(0, 80, true);
-    optionsView.setUint16(2, 24, true);
     const terminalSlot = call("ghostty_wasm_alloc_opaque");
-    expect(call("ghostty_terminal_new", 0, terminalSlot, options)).toBe(0);
+    expect(call("ghostty_terminal_new", 0, terminalSlot, 80, 24)).toBe(0);
     const terminal = new DataView(memory.buffer).getUint32(terminalSlot, true);
-    call("ghostty_terminal_set", terminal, 0, 1);
-    call("ghostty_terminal_set", terminal, 1, callbackIndex);
+    // GHOSTTY_TERMINAL_OPT_USERDATA = 1, GHOSTTY_TERMINAL_OPT_WRITE_PTY = 2.
+    call("ghostty_terminal_set", terminal, 1, 1);
+    call("ghostty_terminal_set", terminal, 2, callbackIndex);
     const query = new TextEncoder().encode("\u001b[5n");
-    const queryPointer = call("ghostty_wasm_alloc_u8_array", query.length);
+    const queryPointer = call("ghostty_wasm_alloc", query.length);
     new Uint8Array(memory.buffer, queryPointer, query.length).set(query);
     call("ghostty_terminal_vt_write", terminal, queryPointer, query.length);
 
     expect(reply).toBe("\u001b[0n");
     reply = "";
+    call("ghostty_terminal_set", terminal, 2, 0);
     call("ghostty_terminal_set", terminal, 1, 0);
-    call("ghostty_terminal_set", terminal, 0, 0);
     call("ghostty_terminal_vt_write", terminal, queryPointer, query.length);
     expect(reply).toBe("");
-    call("ghostty_terminal_set", terminal, 0, 1);
-    call("ghostty_terminal_set", terminal, 1, callbackIndex);
+    call("ghostty_terminal_set", terminal, 1, 1);
+    call("ghostty_terminal_set", terminal, 2, callbackIndex);
     call("ghostty_terminal_vt_write", terminal, queryPointer, query.length);
     expect(reply).toBe("\u001b[0n");
-    call("ghostty_wasm_free_u8_array", queryPointer, query.length);
+    call("ghostty_wasm_free", queryPointer, query.length);
     call("ghostty_terminal_free", terminal);
     call("ghostty_wasm_free_opaque", terminalSlot);
-    call("ghostty_wasm_free_u8_array", options, 8);
   });
 });

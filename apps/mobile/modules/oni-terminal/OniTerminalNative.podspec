@@ -12,14 +12,22 @@ Pod::Spec.new do |s|
   s.author = { 'Onicode Tools' => 'hello@onicode.com' }
   s.platforms = { :ios => '16.1' }
   s.source = { :path => '.' }
-  s.source_files = 'ios/**/*.{h,m,mm,swift}'
-  s.vendored_frameworks = 'Vendor/libghostty/GhosttyKit.xcframework'
-  # libghostty has no x86_64 simulator slice, so a simulator build for every
-  # architecture (EAS's generic destination) fails to resolve GhosttyKit.
-  s.pod_target_xcconfig = { 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64' }
+  s.source_files = 'ios/**/*.{h,m,mm,swift}', 'cpp/**/*.{h,cpp}'
+  s.public_header_files = 'cpp/oni_terminal_core.h'
+  s.vendored_frameworks = 'Vendor/libghostty-vt.xcframework'
+  s.resource_bundles = { 'OniTerminalFonts' => ['android/src/main/assets/fonts/*.ttf'] }
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
+    'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
+    # Same pinned headers as the Android build (android/src/main/cpp/CMakeLists.txt).
+    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/../../../../native/libghostty-vt/include"',
+    # libghostty-vt has no x86_64 simulator slice, so EAS's all-architecture
+    # simulator build would fail to link it.
+    'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64',
+  }
   s.user_target_xcconfig = { 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'x86_64' }
-  s.frameworks = 'IOSurface', 'Metal', 'MetalKit', 'QuartzCore', 'UIKit'
-  s.libraries = 'c++', 'z'
+  s.frameworks = 'CoreText', 'QuartzCore', 'UIKit'
+  s.libraries = 'c++'
   s.swift_version = '5.9'
   s.dependency 'ExpoModulesCore'
 end

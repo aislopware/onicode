@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <ghostty/vt/types.h>
+
 /* DA1 conformance levels (Pp parameter). */
 #define GHOSTTY_DA_CONFORMANCE_VT100  1
 #define GHOSTTY_DA_CONFORMANCE_VT101  1
@@ -69,7 +71,7 @@ extern "C" {
 /**
  * Color scheme reported in response to a CSI ? 996 n query.
  *
- * @ingroup terminal
+ * @ingroup effects
  */
 typedef enum GHOSTTY_ENUM_TYPED {
     GHOSTTY_COLOR_SCHEME_LIGHT = 0,
@@ -84,7 +86,7 @@ typedef enum GHOSTTY_ENUM_TYPED {
  * The conformance_level is the Pp parameter and features contains the Ps
  * feature codes.
  *
- * @ingroup terminal
+ * @ingroup effects
  */
 typedef struct {
     /** Conformance level (Pp parameter). E.g. 62 for VT220. */
@@ -103,7 +105,7 @@ typedef struct {
  * Returned as part of GhosttyDeviceAttributes in response to a CSI > c query.
  * Response format: CSI > Pp ; Pv ; Pc c
  *
- * @ingroup terminal
+ * @ingroup effects
  */
 typedef struct {
     /** Terminal type identifier (Pp). E.g. 1 for VT220. */
@@ -122,7 +124,7 @@ typedef struct {
  * Returned as part of GhosttyDeviceAttributes in response to a CSI = c query.
  * Response format: DCS ! | D...D ST (DECRPTUI).
  *
- * @ingroup terminal
+ * @ingroup effects
  */
 typedef struct {
     /** Unit ID encoded as 8 uppercase hex digits in the response. */
@@ -136,7 +138,7 @@ typedef struct {
  * CSI > c, or CSI = c queries. The terminal uses whichever sub-struct
  * matches the request type.
  *
- * @ingroup terminal
+ * @ingroup effects
  */
 typedef struct {
     GhosttyDeviceAttributesPrimary primary;

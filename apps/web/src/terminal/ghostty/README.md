@@ -4,7 +4,8 @@ This directory is the browser adapter for the same official `libghostty-vt` C AB
 It is intentionally not an xterm compatibility layer.
 
 - `runtime.ts` owns the singleton WebAssembly instance and runtime ABI layouts.
-- `vendor/ghostty-write-pty.wasm` is a 112-byte callback trampoline for terminal-generated PTY replies.
+- `vendor/ghostty-write-pty.wasm` holds the callback trampolines for terminal-generated PTY replies
+  and color-scheme queries (`CSI ? 996 n`).
 - `core.ts` owns per-terminal Ghostty handles and translates the C ABI into render snapshots.
 - `renderer.ts` batches backgrounds and style runs into a Canvas 2D frame.
 - `surface.ts` owns browser input, IME, selection, scrolling, sizing, links, and cursor blinking.
