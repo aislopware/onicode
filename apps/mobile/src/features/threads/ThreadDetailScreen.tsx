@@ -182,8 +182,6 @@ import { PendingApprovalCard } from "./PendingApprovalCard";
 import { ComposerErrorNotice } from "./ComposerErrorNotice";
 import { ManagedRuntimeModeNotice } from "./ManagedRuntimeModeNotice";
 import { FreshSessionNotice } from "./FreshSessionNotice";
-import { Notice } from "../../components/ui/Notice";
-import { formatTokens } from "@onicode/shared/usageFormat";
 import { ComposerFeedback } from "./ComposerFeedback";
 import { ComposerUsageLimits } from "./ComposerUsageLimits";
 import { PendingUserInputCard } from "./PendingUserInputCard";
@@ -203,6 +201,7 @@ import {
   COMPOSER_COLLAPSED_CHROME,
   THREAD_COMPOSER_BOTTOM_GUTTER,
   ThreadComposer,
+  type ThreadComposerProps,
 } from "./ThreadComposer";
 import { ComposerPopoverHost } from "./ComposerPopoverHost";
 import { ThreadFeed, type ThreadFeedHistoryControls } from "./ThreadFeed";
@@ -252,11 +251,7 @@ export interface ThreadDetailScreenProps {
   readonly extensionStatuses?: NonNullable<OrchestrationV2ProviderSession["extensionStatuses"]>;
   readonly isCompacting: boolean;
   /** Set while the next send compacts the thread first. */
-  readonly compactBeforeSend?: {
-    readonly tokens: number;
-    readonly keepFullHistory: boolean;
-    readonly toggleKeepFullHistory: () => void;
-  } | null;
+  readonly compactBeforeSend?: ThreadComposerProps["compactBeforeSend"];
   readonly creationState:
     | {
         readonly kind: "preparing";
@@ -1708,25 +1703,6 @@ function ThreadDetailBody(
                     {freshSessionAvailable ? (
                       <FreshSessionNotice threadKey={selectedThreadKey} />
                     ) : null}
-                    {props.compactBeforeSend ? (
-                      <View className="px-4 pb-3">
-                        <Notice
-                          message={
-                            props.compactBeforeSend.keepFullHistory
-                              ? `Your next message keeps all ${formatTokens(props.compactBeforeSend.tokens)} tokens of history.`
-                              : `Your next message compacts ${formatTokens(props.compactBeforeSend.tokens)} tokens of history first.`
-                          }
-                          icon="arrow.down.right.and.arrow.up.left"
-                          floating
-                          onDismiss={props.compactBeforeSend.toggleKeepFullHistory}
-                          dismissLabel={
-                            props.compactBeforeSend.keepFullHistory
-                              ? "Compact first"
-                              : "Keep the full history"
-                          }
-                        />
-                      </View>
-                    ) : null}
                     {props.canOperateThread ? (
                       <ManagedRuntimeModeNotice
                         threadKey={selectedThreadKey}
@@ -1896,6 +1872,7 @@ function ThreadDetailBody(
                         draftControls={props.draftMode?.controls(draftViewportHeight)}
                         connectionState={props.connectionStateLabel}
                         selectedThread={props.selectedThread}
+                        compactBeforeSend={props.compactBeforeSend ?? null}
                         hasCompactableConversation={
                           hasCompactableConversation && !props.isCompacting
                         }
