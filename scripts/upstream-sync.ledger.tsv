@@ -1349,3 +1349,4 @@ cbf0f0a83f	take	taken as is
 42057b82d0	take	reworded web+desktop to desktop-only (Onicode has no web app; only the desktop's local environment applies themes); measured MCP tool-list budget
 e4f066da21	skip	Swaps upstream's t3-built enriched-markdown tarball (iOS blockquote long-press fix); Onicode ships its own oni.18 build, so the fix must be ported into aislopware/enriched-markdown and the oni tarball rebuilt (follow-up).
 9a4ec171fc	take	taken as is
+a2edd281df	take	Android dialog fix only (replaced alerts report dismissal); the T3 Connect device-approval feature, its migrations and contracts are skipped
