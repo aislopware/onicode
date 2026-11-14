@@ -1586,3 +1586,4 @@ e330593141	take	fix(web): bare URLs no longer swallow Arabic commas and question
 e5d4322c10	take	fix(server): expand unchanged lines beside Git ident keywords (upstream e2e scenario dropped)
 c2b06f9df8	take	perf(server): Cursor turns no longer write every streamed token to provider logs
 47474723cb	take	fix(web): clear failed badges when threads are opened (conflicts kept Onicode's no-guest status set)
+43a71d9b1a	take	fix(web): a terminal reopened while its open is pending no longer closes itself
