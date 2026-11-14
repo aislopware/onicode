@@ -401,6 +401,7 @@ function BackgroundWorktreeSetupChip({ snapshot }: { snapshot: WorktreeSetupSnap
       </PopoverTrigger>
       <PopoverPopup side="bottom" align="end" width="lg" padding="compact">
         <WorktreeSetupCard
+          environmentId={ctx.activeThreadEnvironmentId}
           snapshot={snapshot}
           embedded
           onCancel={null}

@@ -1841,6 +1841,7 @@ function ThreadDetailBody(
                       }}
                     >
                       <ProviderSubagentBar
+                        environmentId={props.environmentId}
                         provider={providerSubagentProvider ?? null}
                         modelLabel={
                           providerSubagentCatalogModel?.name ??

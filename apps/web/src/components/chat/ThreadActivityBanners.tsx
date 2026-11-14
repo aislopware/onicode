@@ -26,6 +26,7 @@ import {
   TriangleAlertIcon,
 } from "lucide-react";
 import { Fragment } from "react";
+import { toServerClock } from "@onicode/client-runtime/clock";
 import { tickTextContent } from "~/lib/tickTextContent";
 import { BackgroundWorkDetails } from "./BackgroundWorkDetails";
 import { Button, InlineButton } from "../ui/button";
@@ -129,6 +130,7 @@ export function goalNowItem(input: {
 
 /** A Stop the provider has not finished; Force stop once it stops answering. */
 export function runStopNowItem(input: {
+  readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly stop: RunStopPresentation;
   readonly canForceStop: boolean;
@@ -152,7 +154,10 @@ export function runStopNowItem(input: {
       <>
         <span
           ref={tickTextContent(
-            (nowMs) => formatDuration(Math.max(1_000, nowMs - requestedAtMs)),
+            (nowMs) =>
+              formatDuration(
+                Math.max(1_000, toServerClock(input.environmentId, nowMs) - requestedAtMs),
+              ),
             true,
           )}
           className="tabular-nums"
@@ -244,7 +249,10 @@ export function backgroundWorkNowItem(input: {
         {startedAtMs === null ? null : (
           <span
             ref={tickTextContent(
-              (nowMs) => formatDuration(Math.max(1_000, nowMs - startedAtMs)),
+              (nowMs) =>
+                formatDuration(
+                  Math.max(1_000, toServerClock(input.environmentId, nowMs) - startedAtMs),
+                ),
               true,
             )}
             className="tabular-nums"

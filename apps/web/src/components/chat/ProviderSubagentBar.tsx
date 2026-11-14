@@ -2,7 +2,8 @@ import {
   formatProviderSubagentStatus,
   type ProviderSubagentStatus,
 } from "@onicode/client-runtime/state/thread-execution";
-import { isOrchestrationV2WorkActive } from "@onicode/contracts";
+import { toServerClock } from "@onicode/client-runtime/clock";
+import { isOrchestrationV2WorkActive, type EnvironmentId } from "@onicode/contracts";
 import { ArrowUpLeftIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
@@ -12,6 +13,7 @@ import { Button } from "../ui/button";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 
 export function ProviderSubagentBar(props: {
+  readonly environmentId: EnvironmentId;
   readonly provider: ProviderInstanceEntry | null;
   readonly showInstanceBadge: boolean;
   readonly modelLabel: string;
@@ -20,7 +22,7 @@ export function ProviderSubagentBar(props: {
   readonly onOpenParent: (() => void) | null;
   readonly actions?: ReactNode;
 }) {
-  const { status } = props;
+  const { environmentId, status } = props;
   const live = status !== null && isOrchestrationV2WorkActive(status.status);
   const modelDescription =
     props.effortLabel === null ? props.modelLabel : `${props.modelLabel}, ${props.effortLabel}`;
@@ -55,7 +57,10 @@ export function ProviderSubagentBar(props: {
           )}
         </span>
         <span
-          ref={tickTextContent((nowMs) => formatProviderSubagentStatus(status, nowMs), live)}
+          ref={tickTextContent(
+            (nowMs) => formatProviderSubagentStatus(status, toServerClock(environmentId, nowMs)),
+            live,
+          )}
           aria-hidden
           className="min-w-0 max-w-full truncate text-muted-foreground tabular-nums @max-[560px]/composer-surface:text-xs"
         />

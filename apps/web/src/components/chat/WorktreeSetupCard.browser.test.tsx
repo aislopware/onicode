@@ -1,4 +1,5 @@
-import { ThreadId, type WorktreeSetupSnapshot } from "@onicode/contracts";
+import { recordServerClock } from "@onicode/client-runtime/clock";
+import { EnvironmentId, ThreadId, type WorktreeSetupSnapshot } from "@onicode/contracts";
 import { expect, it, vi } from "vite-plus/test";
 
 import { act, fakeTimers, render } from "../../../test/render";
@@ -42,8 +43,14 @@ function snapshot(overrides: Partial<WorktreeSetupSnapshot>): WorktreeSetupSnaps
   };
 }
 
-const card = (value: WorktreeSetupSnapshot) => (
-  <WorktreeSetupCard snapshot={value} onCancel={null} onWorkLocally={null} onOpenTerminal={null} />
+const card = (value: WorktreeSetupSnapshot, environmentId = "environment-1") => (
+  <WorktreeSetupCard
+    environmentId={EnvironmentId.make(environmentId)}
+    snapshot={value}
+    onCancel={null}
+    onWorkLocally={null}
+    onOpenTerminal={null}
+  />
 );
 
 it("ticks the running stage while finished stages keep their duration", async () => {
@@ -61,6 +68,42 @@ it("ticks the running stage while finished stages keep their duration", async ()
   });
   expect(section.element().textContent).toContain("Fetch base branch3s");
   expect(section.element().textContent).toContain("Check out files12s");
+});
+
+it("counts a running stage on the host's clock", async () => {
+  using _timers = fakeTimers();
+  vi.setSystemTime(NOW);
+  const now = NOW.getTime();
+  // The host runs a minute ahead of this client.
+  recordServerClock(EnvironmentId.make("environment-ahead"), {
+    serverTimeMs: now + 60_000,
+    requestedAtMs: now,
+    receivedAtMs: now,
+  });
+  const started = "2026-10-26T12:01:03.000Z";
+  await using screen = await render(
+    card(
+      snapshot({
+        startedAt: started,
+        stages: [
+          {
+            id: "checkout",
+            status: "running",
+            startedAt: started,
+            endedAt: null,
+            percent: null,
+            detail: null,
+            tail: [],
+          },
+        ],
+      }),
+      "environment-ahead",
+    ),
+  );
+
+  expect(screen.getByRole("region", { name: "Worktree setup" }).element().textContent).toContain(
+    "Check out files7s",
+  );
 });
 
 it("stops a stage interrupted by the setup ending at the setup's end", async () => {

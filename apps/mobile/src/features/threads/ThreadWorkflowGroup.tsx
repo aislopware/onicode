@@ -1,3 +1,4 @@
+import { toServerClock } from "@onicode/client-runtime/clock";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import {
   isActiveSubagentStatus,
@@ -72,6 +73,7 @@ export function ThreadWorkflowGroup(props: {
             className="min-w-0 flex-1 active:opacity-70"
           >
             <WorkflowHeaderLayout
+              environmentId={props.environmentId}
               label={label}
               statusLabel={statusLabel}
               timing={group.workflow}
@@ -207,7 +209,7 @@ function WorkflowMemberRow(props: {
               {presentation.statusLabel}
             </Text>
           </View>
-          <WorkflowElapsed timing={member} />
+          <WorkflowElapsed environmentId={props.environmentId} timing={member} />
           {canOpen ? (
             <SymbolView name="chevron.right" size={12} tintColorClassName="accent-icon-subtle" />
           ) : null}
@@ -256,12 +258,13 @@ function WorkflowMemberRow(props: {
 }
 
 function WorkflowHeaderLayout(props: {
+  readonly environmentId: EnvironmentId;
   readonly label: string;
   readonly statusLabel: string;
   readonly timing: ElapsedTiming;
   readonly accessory: ReactNode;
 }) {
-  const elapsed = useElapsedLabel(props.timing);
+  const elapsed = useElapsedLabel(props.environmentId, props.timing);
   return (
     <ListRowLayout
       icon="point.3.connected.trianglepath.dotted"
@@ -273,8 +276,11 @@ function WorkflowHeaderLayout(props: {
   );
 }
 
-function WorkflowElapsed(props: { readonly timing: ElapsedTiming }) {
-  const elapsed = useElapsedLabel(props.timing);
+function WorkflowElapsed(props: {
+  readonly environmentId: EnvironmentId;
+  readonly timing: ElapsedTiming;
+}) {
+  const elapsed = useElapsedLabel(props.environmentId, props.timing);
   return elapsed === null ? null : (
     <Text textRole="label" className="shrink-0 tabular-nums text-foreground-muted">
       {elapsed}
@@ -284,8 +290,8 @@ function WorkflowElapsed(props: { readonly timing: ElapsedTiming }) {
 
 type ElapsedTiming = Parameters<typeof deriveSubagentElapsedMs>[0];
 
-function useElapsedLabel(timing: ElapsedTiming): string | null {
+function useElapsedLabel(environmentId: EnvironmentId, timing: ElapsedTiming): string | null {
   const nowMs = useVisibleSecondClock(isActiveSubagentStatus(timing.status));
-  const elapsedMs = deriveSubagentElapsedMs(timing, nowMs);
+  const elapsedMs = deriveSubagentElapsedMs(timing, toServerClock(environmentId, nowMs));
   return elapsedMs === null || elapsedMs === 0 ? null : formatDuration(elapsedMs);
 }

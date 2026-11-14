@@ -1,9 +1,11 @@
 import { Button } from "../../components/ui/Button";
 import {
   worktreeSetupStageLabel,
+  type EnvironmentId,
   type WorktreeSetupSnapshot,
   type WorktreeSetupStage,
 } from "@onicode/contracts";
+import { toServerClock } from "@onicode/client-runtime/clock";
 import { worktreeSetupAgentStarted } from "@onicode/client-runtime/worktree-setup";
 import { formatDuration } from "@onicode/shared/orchestrationTiming";
 import { useState } from "react";
@@ -39,14 +41,16 @@ const icons: Record<WorktreeSetupStage["status"], AppSymbolName> = {
   warning: "exclamationmark.triangle",
 };
 
-export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
+export function WorktreeSetupCard(
+  props: WorktreeSetupCardProps & { readonly environmentId: EnvironmentId },
+) {
   const { snapshot, turnStarted, turnStartedAt, working } = props;
   const handedOff = turnStarted && worktreeSetupAgentStarted(snapshot);
   const running = snapshot.phase === "running";
   const backgroundSetup = handedOff && running;
   const scriptName = snapshot.setupScript?.name ?? "Setup script";
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const now = useVisibleSecondClock(running || working);
+  const now = toServerClock(props.environmentId, useVisibleSecondClock(running || working));
   const failed =
     snapshot.phase === "failed" || snapshot.stages.some((stage) => stage.status === "failed");
   const label =
@@ -147,8 +151,14 @@ export function WorktreeSetupCard(props: WorktreeSetupCardProps) {
   );
 }
 
-export function WorktreeWorkingHeader({ startedAt }: { startedAt: string }) {
-  const now = useVisibleSecondClock(true);
+export function WorktreeWorkingHeader({
+  environmentId,
+  startedAt,
+}: {
+  environmentId: EnvironmentId;
+  startedAt: string;
+}) {
+  const now = toServerClock(environmentId, useVisibleSecondClock(true));
   return (
     <View className="py-1">
       <View className="min-h-11 flex-row items-center border-b border-border px-1">

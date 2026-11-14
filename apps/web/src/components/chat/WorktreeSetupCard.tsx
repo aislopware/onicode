@@ -1,5 +1,7 @@
+import { toServerClock } from "@onicode/client-runtime/clock";
 import {
   worktreeSetupStageLabel,
+  type EnvironmentId,
   type WorktreeSetupSnapshot,
   type WorktreeSetupStage,
 } from "@onicode/contracts";
@@ -26,6 +28,7 @@ import { useNowSecond } from "~/hooks/useNowSecond";
 import { WorkLogRow } from "./WorkLog";
 
 interface WorktreeSetupCardProps {
+  environmentId: EnvironmentId;
   snapshot: WorktreeSetupSnapshot;
   onCancel: (() => void) | null;
   onWorkLocally: (() => void) | null;
@@ -40,17 +43,25 @@ function elapsedMs(startedAt: string | null, endMs: number): number | null {
 }
 
 /** Mounted only while setup runs, so finished setups never subscribe to the tick. */
-function LiveElapsed({ startedAt }: { startedAt: string }) {
-  const elapsed = elapsedMs(startedAt, useNowSecond());
+function LiveElapsed({
+  environmentId,
+  startedAt,
+}: {
+  environmentId: EnvironmentId;
+  startedAt: string;
+}) {
+  const elapsed = elapsedMs(startedAt, toServerClock(environmentId, useNowSecond()));
   return elapsed === null ? null : <>{formatDuration(elapsed)}</>;
 }
 
 /** A finished duration, or a ticking one while setup is still running. */
 function Elapsed({
+  environmentId,
   startedAt,
   endedAt,
   live,
 }: {
+  environmentId: EnvironmentId;
   startedAt: string | null;
   endedAt: string | null;
   live: boolean;
@@ -60,7 +71,7 @@ function Elapsed({
     const elapsed = elapsedMs(startedAt, Date.parse(endedAt));
     return elapsed === null ? null : <>{formatDuration(elapsed)}</>;
   }
-  return live ? <LiveElapsed startedAt={startedAt} /> : null;
+  return live ? <LiveElapsed environmentId={environmentId} startedAt={startedAt} /> : null;
 }
 
 function StageIcon({ status }: { status: WorktreeSetupStage["status"] }) {
@@ -124,7 +135,13 @@ function headerLabel(snapshot: WorktreeSetupSnapshot): string {
   }
 }
 
-function SetupHeaderRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
+function SetupHeaderRow({
+  environmentId,
+  snapshot,
+}: {
+  environmentId: EnvironmentId;
+  snapshot: WorktreeSetupSnapshot;
+}) {
   const running = snapshot.phase === "running";
   const failed = snapshot.phase === "failed";
   const finishedWithFailedStage =
@@ -151,7 +168,12 @@ function SetupHeaderRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
           {running ? <ShimmerOverlay>{text}</ShimmerOverlay> : null}
         </span>
         <span className="ml-auto shrink-0 text-xs text-muted-foreground empty:hidden">
-          <Elapsed startedAt={snapshot.startedAt} endedAt={snapshot.endedAt} live={running} />
+          <Elapsed
+            environmentId={environmentId}
+            startedAt={snapshot.startedAt}
+            endedAt={snapshot.endedAt}
+            live={running}
+          />
         </span>
       </div>
     </div>
@@ -159,11 +181,13 @@ function SetupHeaderRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
 }
 
 function StageRow({
+  environmentId,
   stage,
   setupRunning,
   setupEndedAt,
   scriptName,
 }: {
+  environmentId: EnvironmentId;
   stage: WorktreeSetupStage;
   setupRunning: boolean;
   setupEndedAt: string | null;
@@ -208,6 +232,7 @@ function StageRow({
           {stage.status !== "skipped" && stage.status !== "pending" ? (
             <span className="shrink-0 text-xs text-muted-foreground tabular-nums empty:hidden">
               <Elapsed
+                environmentId={environmentId}
                 startedAt={stage.startedAt}
                 // A stage interrupted by the setup ending stops with it.
                 endedAt={stage.endedAt ?? setupEndedAt}
@@ -284,7 +309,13 @@ function SetupDetails({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
   );
 }
 
-function CollapsedSummaryRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) {
+function CollapsedSummaryRow({
+  environmentId,
+  snapshot,
+}: {
+  environmentId: EnvironmentId;
+  snapshot: WorktreeSetupSnapshot;
+}) {
   const status: WorktreeSetupStage["status"] =
     snapshot.phase === "failed" || snapshot.phase === "cancelled"
       ? "failed"
@@ -304,7 +335,12 @@ function CollapsedSummaryRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) 
       label={<span className={stageRowClassName(status)}>{label}</span>}
       trailing={
         <span className="shrink-0 text-xs text-muted-foreground tabular-nums empty:hidden">
-          <Elapsed startedAt={snapshot.startedAt} endedAt={snapshot.endedAt} live={false} />
+          <Elapsed
+            environmentId={environmentId}
+            startedAt={snapshot.startedAt}
+            endedAt={snapshot.endedAt}
+            live={false}
+          />
         </span>
       }
     />
@@ -312,6 +348,7 @@ function CollapsedSummaryRow({ snapshot }: { snapshot: WorktreeSetupSnapshot }) 
 }
 
 export function WorktreeSetupCard({
+  environmentId,
   snapshot,
   onCancel,
   onWorkLocally,
@@ -333,14 +370,15 @@ export function WorktreeSetupCard({
 
   return (
     <section aria-label="Worktree setup" data-worktree-setup-phase={snapshot.phase}>
-      {showHeader ? <SetupHeaderRow snapshot={snapshot} /> : null}
+      {showHeader ? <SetupHeaderRow environmentId={environmentId} snapshot={snapshot} /> : null}
       {collapsed ? (
-        <CollapsedSummaryRow snapshot={snapshot} />
+        <CollapsedSummaryRow environmentId={environmentId} snapshot={snapshot} />
       ) : (
         <div className={showHeader ? "pt-1.5" : undefined}>
           {snapshot.stages.map((stage) => (
             <div key={stage.id}>
               <StageRow
+                environmentId={environmentId}
                 stage={stage}
                 setupRunning={running}
                 setupEndedAt={snapshot.endedAt}

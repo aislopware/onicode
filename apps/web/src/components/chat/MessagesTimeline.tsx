@@ -1693,6 +1693,7 @@ function WorktreeSetupTimelineRow({
   const onOpenTerminal = openTerminal && terminalId ? () => openTerminal(terminalId) : null;
   return (
     <WorktreeSetupCard
+      environmentId={ctx.activeThreadEnvironmentId}
       snapshot={row.snapshot}
       embedded={row.embedded}
       onCancel={row.embedded ? null : ctx.onCancelWorktreeSetup}

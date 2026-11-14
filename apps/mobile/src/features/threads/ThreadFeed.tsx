@@ -3758,9 +3758,16 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             workflowOpening,
           })}
           {props.worktreeSetup && info.index === setupAnchorIndex ? (
-            <WorktreeSetupCard key={props.threadId} {...props.worktreeSetup} />
+            <WorktreeSetupCard
+              key={props.threadId}
+              environmentId={props.environmentId}
+              {...props.worktreeSetup}
+            />
           ) : props.setupWorkingStartedAt && info.index === setupAnchorIndex ? (
-            <WorktreeWorkingHeader startedAt={props.setupWorkingStartedAt} />
+            <WorktreeWorkingHeader
+              environmentId={props.environmentId}
+              startedAt={props.setupWorkingStartedAt}
+            />
           ) : null}
         </ThreadMediaVisibility>
       </MessageImageGalleryScope>
@@ -3854,7 +3861,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               <>
                 {usesNativeAutomaticInsets ? null : <View style={{ height: topContentInset }} />}
                 {setupAnchorIndex < 0 && props.worktreeSetup ? (
-                  <WorktreeSetupCard key={props.threadId} {...props.worktreeSetup} />
+                  <WorktreeSetupCard
+                    key={props.threadId}
+                    environmentId={props.environmentId}
+                    {...props.worktreeSetup}
+                  />
                 ) : null}
                 {props.historyControls ? (
                   <ThreadFeedLoadEarlierControl {...props.historyControls} />

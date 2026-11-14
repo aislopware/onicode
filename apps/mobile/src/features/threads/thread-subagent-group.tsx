@@ -1,5 +1,6 @@
 import { useAtomValue } from "@effect/atom-react";
 import { StackActions, useNavigation } from "@react-navigation/native";
+import { toServerClock } from "@onicode/client-runtime/clock";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import {
   resolveProviderInstanceDisplayName,
@@ -35,10 +36,16 @@ import { useOpenThreadInspector } from "./thread-inspector-navigation";
 type SubagentItem = Extract<OrchestrationV2TurnItem, { type: "subagent" }>;
 type AgentTiming = Pick<OrchestrationV2Subagent, "status" | "startedAt" | "completedAt">;
 
-function SubagentElapsed({ agents }: { readonly agents: ReadonlyArray<AgentTiming> }) {
+function SubagentElapsed({
+  environmentId,
+  agents,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly agents: ReadonlyArray<AgentTiming>;
+}) {
   const live = agents.some((agent) => isActiveSubagentStatus(agent.status));
   const nowMs = useVisibleSecondClock(live);
-  const elapsed = subagentCardElapsed(agents, nowMs);
+  const elapsed = subagentCardElapsed(agents, toServerClock(environmentId, nowMs));
   return elapsed ? (
     <Text className="shrink-0 text-xs tabular-nums text-foreground-muted">{elapsed}</Text>
   ) : null;
@@ -178,7 +185,7 @@ export function ThreadSubagentGroup(props: {
               {summary}
             </Text>
           </View>
-          <SubagentElapsed agents={agents} />
+          <SubagentElapsed environmentId={props.environmentId} agents={agents} />
           <SymbolView
             name={expanded ? "chevron.up" : "chevron.down"}
             size={11}
@@ -232,7 +239,7 @@ export function ThreadSubagentGroup(props: {
                   environmentId={props.environmentId}
                   subagent={agent}
                   canOpenRemote={target !== null}
-                  elapsed={<SubagentElapsed agents={[agent]} />}
+                  elapsed={<SubagentElapsed environmentId={props.environmentId} agents={[agent]} />}
                 />
               </Pressable>
             );
