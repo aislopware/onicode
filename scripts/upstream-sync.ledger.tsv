@@ -1448,3 +1448,4 @@ fd0ffd0b0a	take	fix(web): a stale tab no longer erases finalized stashed images
 d2bdd58eef	take	fix(server): npm provider updates only offer versions npm will install (test merged with Onicode's updater-off rows)
 5e06246d24	take	fix(web): recovered queued edits keep their mentions and context (upstream e2e scenario dropped: no scripts/scenarios harness)
 35d01dc291	take	perf(acp): long ACP threads reopen without per-chunk history copies
+4d5d5f89d4	take	fix(source-control): preserve .git in Azure DevOps repository names
