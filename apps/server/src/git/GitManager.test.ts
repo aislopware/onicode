@@ -3066,7 +3066,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
     Effect.gen(function* () {
       const repoDir = yield* makeTempDir("onicode-git-manager-");
       yield* initRepo(repoDir);
-      const subjects = ["ci: Run E2E on pull requests", "feat(web)!: A new layout"];
+      const subjects = [
+        "ci: Run E2E on pull requests",
+        "feat(web)!: A new layout",
+        "fix: C++ compilation",
+        "fix: App.tsx exports",
+        "fix: X-Frame-Options header",
+      ];
       const queued = [...subjects];
 
       const { manager } = yield* makeManager({
@@ -3083,7 +3089,13 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
         committed.push((yield* runGit(repoDir, ["log", "-1", "--pretty=%s"])).stdout.trim());
       }
 
-      expect(committed).toEqual(["ci: run E2E on pull requests", "feat(web)!: a new layout"]);
+      expect(committed).toEqual([
+        "ci: run E2E on pull requests",
+        "feat(web)!: a new layout",
+        "fix: C++ compilation",
+        "fix: App.tsx exports",
+        "fix: X-Frame-Options header",
+      ]);
     }),
   );
 
