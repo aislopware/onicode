@@ -146,7 +146,12 @@ it.effect("upgrades an existing database on a read-write worker connection", () 
         SqlitePersistence.layerFromPath(dbPath).pipe(Layer.provide(NodeServices.layer)),
       ),
     );
-    assert.deepInclude(workerData.slice(startedBefore), {
+    // The reply port and its counter ride along in workerData; only the open options matter here.
+    const opened = workerData.slice(startedBefore).map((data) => {
+      const { replies: _replies, replied: _replied, ...options } = data as Record<string, unknown>;
+      return options;
+    });
+    assert.deepInclude(opened, {
       filename: dbPath,
       readOnly: false,
       requireWal: false,

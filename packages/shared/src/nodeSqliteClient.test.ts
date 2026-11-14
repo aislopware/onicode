@@ -10,6 +10,7 @@ import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
+import * as Scheduler from "effect/Scheduler";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlError from "effect/sql/SqlError";
 import * as Statement from "effect/sql/Statement";
@@ -24,6 +25,7 @@ const startedWorkers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
 const silentWorkers = vi.hoisted(() => ({ on: false, readyOnTerminate: false }));
 const failingWorkers = vi.hoisted(() => ({ message: undefined as string | undefined }));
 const checkpointWorkers = vi.hoisted((): Array<NodeWorkerThreads.Worker> => []);
+const replyBatches = vi.hoisted((): Array<ReadonlyArray<unknown>> => []);
 
 vi.mock("node:worker_threads", async (importOriginal) => {
   const actual = await importOriginal<typeof NodeWorkerThreads>();
@@ -45,7 +47,27 @@ vi.mock("node:worker_threads", async (importOriginal) => {
       return super.terminate();
     }
   }
-  return { ...actual, Worker: RecordedWorker };
+  const record = (reply: { readonly rows?: unknown }) => {
+    if (Array.isArray(reply.rows) && reply.rows.length > 0) replyBatches.push(reply.rows);
+  };
+  // Replies reach the client through its port's listener or a synchronous read; record both.
+  class RecordedChannel extends actual.MessageChannel {
+    constructor() {
+      super();
+      this.port1.on("message", record);
+    }
+  }
+  const receiveMessageOnPort: typeof actual.receiveMessageOnPort = (port) => {
+    const next = actual.receiveMessageOnPort(port);
+    if (next !== undefined) record(next.message);
+    return next;
+  };
+  return {
+    ...actual,
+    Worker: RecordedWorker,
+    MessageChannel: RecordedChannel,
+    receiveMessageOnPort,
+  };
 });
 
 const withReaderClient = <A, E>(
@@ -182,14 +204,8 @@ it.effect.each([false, true])("batches worker results without losing rows (reade
       const route = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
         reader ? effect.pipe(SqliteClient.readOnly) : effect;
       yield* route(sql`SELECT 1`);
-      const worker = startedWorkers
-        .filter((candidate) => !checkpointWorkers.includes(candidate))
-        .at(-1)!;
-      const batches: Array<ReadonlyArray<unknown>> = [];
-      const record = (reply: { rows?: ReadonlyArray<unknown> }) => {
-        if (Array.isArray(reply.rows) && reply.rows.length > 0) batches.push(reply.rows);
-      };
-      worker.prependListener("message", record);
+      const batches = replyBatches;
+      batches.length = 0;
       yield* Effect.gen(function* () {
         const text = "x".repeat(16 * 1024);
         const query = sql<{ n: number; text: string }>`
@@ -217,7 +233,7 @@ it.effect.each([false, true])("batches worker results without losing rows (reade
         assert.equal(narrowRows.length, 10_000);
         assert.deepEqual(narrowRows.at(-1), reader ? [10_000] : { n: 10_000 });
         assert.equal(batches.length, 1);
-      }).pipe(Effect.ensuring(Effect.sync(() => worker.off("message", record))));
+      });
     }).pipe(
       Effect.provide(SqliteClient.layer({ filename, writerWorker: true, readerWorker: true })),
     );
@@ -331,6 +347,36 @@ it.effect("lets the event loop run while a write waits for another connection's 
       assert.deepEqual(yield* sql`SELECT value FROM counters WHERE id = 1`.values, [[11]]);
     }).pipe(Effect.provide(SqliteClient.layer({ filename, writerWorker: true })));
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect.each([
+  { replyWait: "10 seconds", turned: false },
+  { replyWait: 0, turned: true },
+] as const)(
+  "runs a worker transaction through without event-loop turns (replyWait=$replyWait)",
+  ({ replyWait, turned }) =>
+    Effect.gen(function* () {
+      const { filename } = yield* makeTempDatabase;
+      yield* Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        let loopTurned = false;
+        const immediate = setImmediate(() => {
+          loopTurned = true;
+        });
+        yield* sql
+          .withTransaction(
+            Effect.forEach(
+              [1, 2, 3],
+              () => sql`UPDATE counters SET value = value + 1 WHERE id = 1`,
+              { discard: true },
+            ),
+          )
+          .pipe(Effect.provideService(Scheduler.PreventSchedulerYield, true));
+        assert.equal(loopTurned, turned);
+        clearImmediate(immediate);
+        assert.deepEqual(yield* sql`SELECT value FROM counters WHERE id = 1`.values, [[3]]);
+      }).pipe(Effect.provide(SqliteClient.layer({ filename, writerWorker: true, replyWait })));
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect("finishes a write already sent to the writer before its caller is interrupted", () =>
