@@ -1499,3 +1499,4 @@ c5f842d4c7	take	fix(server): regenerate titles on fresh run forks (upstream e2e 
 bc1dc2a81e	take	fix(mobile): keep the thread column out of the iPhone Duo fold
 77ad2ebec5	take	fix(server): end obsolete link cards after a matching retry succeeds
 071ae4e951	take	fix(server): deleted projects keep their worktree cleanup policy
+179c032b3f	take	fix(server): include managed Claude skills in the skill menu (conflict resolved without upstream's synced-plugins lookup, which Onicode lacks)
