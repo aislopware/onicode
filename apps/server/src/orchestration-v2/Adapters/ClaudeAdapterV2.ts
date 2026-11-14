@@ -4836,7 +4836,13 @@ function providerFailureFromResult(
   const resetAt =
     apiErrorStatus === 429 && message.result.startsWith("API Error:")
       ? gatewayCooldownResetAt(
-          /\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/.exec(message.result),
+          // CLIProxyAPI nests upstream errors in its message; only its own cooldown counts.
+          (message.result.startsWith(
+            "API Error: Request rejected (429) · All credentials for model ",
+          )
+            ? /^API Error: Request rejected \(429\) · All credentials for model [^\s()]+ are cooling down \(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/
+            : /\(reset after (?:(\d+)h ?)?(?:(\d+)m ?)?(?:(\d+)s)?\)/
+          ).exec(message.result),
           receivedAt,
         )
       : undefined;
@@ -11861,18 +11867,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               usageLimited && message.subtype === "success" && message.local_command === "compact"
                 ? context.compactionFailure
                 : null;
-            const resetTimes = Array.from(context.rateLimitResetTimes.values());
-            const assistantLimit = context.latestAssistantRateLimit;
-            if (
-              assistantLimit?.type != null &&
-              !context.rateLimitResetTimes.has(assistantLimit.type)
-            ) {
-              resetTimes.push(assistantLimit.resetAt);
-            }
-            const resetAt =
-              resetTimes.length > 0 && resetTimes.every((time) => time !== null)
-                ? resetTimes.reduce((latest, time) => (time! > latest ? time! : latest), "")
-                : null;
             const resultFailure = interrupted
               ? null
               : limitedCompaction !== null
@@ -11887,9 +11881,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     failureHint,
                     usageLimited,
                   );
+            const resetTimes = Array.from(context.rateLimitResetTimes.values());
+            const assistantLimit = context.latestAssistantRateLimit;
+            if (
+              assistantLimit?.type != null &&
+              !context.rateLimitResetTimes.has(assistantLimit.type)
+            ) {
+              resetTimes.push(assistantLimit.resetAt);
+            }
+            if (resultFailure?.class === "usage_limit" && resultFailure.resetAt != null) {
+              resetTimes.push(resultFailure.resetAt);
+            }
+            const resetAt =
+              resetTimes.length > 0 && resetTimes.every((time) => time !== null)
+                ? resetTimes.reduce((latest, time) => (time! > latest ? time! : latest), "")
+                : null;
             const terminalFailure =
               resultFailure?.class === "usage_limit"
-                ? { ...resultFailure, resetAt: resetAt ?? resultFailure.resetAt ?? null }
+                ? { ...resultFailure, resetAt }
                 : resultFailure;
             yield* finalizeActiveTurn({
               context,
