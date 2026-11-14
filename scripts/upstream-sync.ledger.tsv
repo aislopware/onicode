@@ -1389,3 +1389,4 @@ bd9ff7eb2a	take	fix(client-runtime): recover thread list updates after stream de
 2dd6cddbc3	take	fix(shared): @ mentions complete display names in any script (#36504)
 56fd98be52	take	perf(web): batch first-send composer updates (#36166)
 9803d1adb5	take	fix(web): paint the selected environment theme from the first frame on launch (#36042)
+2c61677d59	take	fix(web): overlays close on a click over the desktop header (#36250)
