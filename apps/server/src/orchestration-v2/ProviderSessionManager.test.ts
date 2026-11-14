@@ -577,6 +577,7 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
               resumeCount: current.resumeCount + 1,
             })).pipe(Effect.as(threadInput.providerThread)),
           startTurn: () => options.startTurn ?? Effect.void,
+          resumeTurn: () => options.startTurn ?? Effect.void,
           steerTurn: () => Effect.void,
           interruptTurn: () =>
             Ref.update(state, (current) => ({
@@ -1693,9 +1694,9 @@ it.effect("ProviderSessionManagerV2 still idles out a session releaseUnlessBusy 
   }),
 );
 
-it.effect(
-  "ProviderSessionManagerV2 keeps a shared session a sibling is busy on when releasing",
-  () =>
+it.effect.each(["startTurn", "resumeTurn"] as const)(
+  "ProviderSessionManagerV2 keeps a shared session a sibling is busy on when releasing (%s)",
+  (start) =>
     Effect.gen(function* () {
       const state = yield* Ref.make(emptyState);
       yield* Effect.gen(function* () {
@@ -1736,7 +1737,7 @@ it.effect(
             nativeThreadId: `native-${threadId}`,
           });
         const runId = idAllocator.derive.run({ threadId: sibling, ordinal: 1 });
-        yield* runtime.startTurn({
+        const siblingTurn = {
           appThread: (yield* projectionStore.getThreadProjection(sibling)).thread,
           threadId: sibling,
           runId,
@@ -1745,16 +1746,22 @@ it.effect(
           attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
           rootNodeId: idAllocator.derive.rootNode({ runId }),
           providerThread: providerThreadOf(sibling),
-          message: {
-            createdBy: "user",
-            creationSource: "web",
-            messageId: yield* idAllocator.allocate.message({ threadId: sibling, ordinal: 1 }),
-            text: "turn",
-            attachments: [],
-          },
           modelSelection,
           runtimePolicy,
-        });
+        };
+        const messageId = yield* idAllocator.allocate.message({ threadId: sibling, ordinal: 1 });
+        yield* start === "startTurn"
+          ? runtime.startTurn({
+              ...siblingTurn,
+              message: {
+                createdBy: "user",
+                creationSource: "web",
+                messageId,
+                text: "turn",
+                attachments: [],
+              },
+            })
+          : runtime.resumeTurn!({ ...siblingTurn, messageId });
         const release = (own: ThreadId) =>
           manager.releaseUnlessBusy({
             providerSessionId,
