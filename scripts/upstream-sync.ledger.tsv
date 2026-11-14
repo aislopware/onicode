@@ -1596,3 +1596,4 @@ cc578d5f9a	take	fix(server): settling a usage-limited thread disarms recovery an
 66a40c7ca8	take	fix(server): turns stuck in provider retries for 10 minutes fail instead of running forever
 382312aba8	take	fix(web): the sidebar shortcut honors terminal and preview focus conditions
 b05c505b9c	take	fix(mobile): review comment cards keep a trailing blank line in their diff
+f751c8488f	take	fix(web): the new-thread project picker follows the manual project order
