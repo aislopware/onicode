@@ -1613,3 +1613,4 @@ d3d7ad9a61	take	fix(mobile): merging a PR uses the project's default merge metho
 ee4ef06469	take	fix(web): use optimistic updates for settings across environments
 170c1f7e2d	take	fix(web): Push on the default branch no longer offers a feature branch the server rejects
 154c5014a7	take	fix(web): long preview annotation comments are no longer dropped from the message
+554c89320f	take	fix(mobile): long pull request searches on iOS no longer fail the list
