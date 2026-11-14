@@ -1479,3 +1479,4 @@ b37c959669	take	fix(server): open colon-number project folders correctly in VS C
 89f1acb0f0	take	fix(pi): text generation uses the thinking level picked in Settings
 0fee26d5bf	take	fix(mobile): launch terminal commands after the measured resize
 13f89ae0a7	take	fix(server): repeated imports reach older worktree history
+8a072ca51d	skip	Pins unenv for alchemy's caret range in upstream's lockfile-free release smoke; Onicode has no alchemy (relay/task-cache) or release-smoke script, and unenv only reaches infra/push-gateway through the lockfile
