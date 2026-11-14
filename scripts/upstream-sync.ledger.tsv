@@ -1425,3 +1425,4 @@ ca7a9448b8	take	fix(client-runtime): Reconnect works while the network reports o
 294e061a20	take	fix(shared): IPv6 SCP remotes match SSH repository identities (#36547)
 5abf38367b	take	fix(server): prevent lossy edits of non-UTF-8 workspace files (#36545)
 a760a3a965	take	fix(desktop): keyboard-opened message link menus select their first item
+e80468ba25	take	fix(server): report invalid provider events without a second schema failure (test adapted: Onicode has no billing analytics test)
