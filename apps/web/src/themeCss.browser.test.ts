@@ -22,6 +22,8 @@ it("applies theme CSS and drops every rule that would load a remote file", () =>
       list-style-image: var(--leak);
       border-image-source: var(--registered);
       mask-image: v\\61r(--none, u\\72l(https://example.com/e));
+      border-image: var(--none,) url(https://example.com/h) 30;
+      list-style: var(--none,) url(https://example.com/i);
       @media (min-width: 0px) { cursor: url(https://example.com/c), auto; }
     }
   `);

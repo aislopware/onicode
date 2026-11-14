@@ -22,6 +22,13 @@ function stripDeclarations(rule: CSSRule): boolean {
       rule.style.removeProperty(property);
     }
   }
+  if (!themeCssValueFetches(rule.style.cssText)) return true;
+  // A shorthand with var() reports each longhand as "" until use; only the rule text shows its url().
+  for (let item = rule.style.length - 1; item >= 0; item--) {
+    const property = rule.style.item(item);
+    if (rule.style.getPropertyValue(property) === "") rule.style.removeProperty(property);
+  }
+  if (themeCssValueFetches(rule.style.cssText)) rule.style.cssText = "";
   return true;
 }
 
