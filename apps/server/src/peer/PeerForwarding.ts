@@ -41,8 +41,7 @@ export class PeerForwarding extends Context.Service<
   PeerForwarding,
   {
     /**
-     * Runs `tool` in the linked environment `environmentId` with `params`. A
-     * `oni_thread_wait` goes in pieces short enough to survive any route.
+     * Runs `tool` in the linked environment `environmentId` with `params`.
      */
     readonly call: <T extends Tool.Any>(
       scope: Scope,
