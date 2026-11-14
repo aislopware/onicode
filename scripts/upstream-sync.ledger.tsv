@@ -1459,3 +1459,4 @@ b4c1bd106d	take	fix(web): re-picking the current model in Settings keeps its tra
 2b6145b4c8	take	fix(web): browser tests no longer pick a port Windows has reserved
 e4688f7cb9	take	fix(server): find files in newline-named nested worktrees
 28f1786829	take	fix(web): recreated folders no longer show deleted files
+3b18dc2935	take	fix(web): manual compaction counts history beyond the loaded page
