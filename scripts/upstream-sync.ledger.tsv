@@ -1674,3 +1674,4 @@ f12527ecf0	take	dropped the dev:web guard (Onicode's dev modes, dev and dev:serv
 b81202748b	take	fix(mobile): typing before a chip no longer leaves the iOS caret behind (#33774)
 6e2747921c	take	perf(server): git status refresh reads local status once unless refs moved (#29155)
 a767d23297	take	fix(server): a setting change no longer detaches a busy session kept from an earlier hand-off (#35258)
+0cb9328ea0	take	fix(server): storage cleanup removes idle worktrees whose branch was renamed or switched (#34984)
