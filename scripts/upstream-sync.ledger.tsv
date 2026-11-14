@@ -1698,3 +1698,4 @@ c924d7898f	take	taken as is
 0cf9423d8b	take	without scripts/scenarios e2e (Onicode e2e lives in tester-army)
 b5e4342a90	take	taken as is
 7b1332674b	take	taken as is
+7d4f242375	take	conflict beside Onicode's MANUAL_RESUME_PROMPT; kept both
