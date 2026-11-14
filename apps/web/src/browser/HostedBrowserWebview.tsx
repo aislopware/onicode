@@ -144,6 +144,9 @@ export function HostedBrowserWebview(props: {
   const active = presentation.visible && presentation.rect !== null;
   const shown = active || pictureInPicture;
   const reportedShown = useEffectEvent(() => serverDriven && shown);
+  // Captures copy the guest's raster, which a scaled guest only keeps at full detail on request.
+  const fullDetail = backgroundActivity || pictureInPicture || recordingActive;
+  const reportedFullDetail = useEffectEvent(() => serverDriven && fullDetail);
   const remountCrashedWebview = useEffectEvent(() => {
     setRecoverySrc(initialUrl ?? initialSrc);
     setWebviewGeneration((generation) => generation + 1);
@@ -172,6 +175,10 @@ export function HostedBrowserWebview(props: {
           if (Number.isInteger(webContentsId) && webContentsId > 0) {
             await bridge.registerWebview(runtimeTabId, webContentsId);
             withDesktopTab(runtimeTabId, () => bridge.setShown(runtimeTabId, reportedShown()));
+            // The host forgets a destroyed guest was drawn, and a remount keeps fullDetail as it was.
+            if (reportedFullDetail()) {
+              withDesktopTab(runtimeTabId, () => bridge.setCaptureDrawn(runtimeTabId, true));
+            }
           }
         } catch {}
       })();
@@ -315,8 +322,6 @@ export function HostedBrowserWebview(props: {
     return () => withDesktopTab(runtimeTabId, () => bridge.setShown(runtimeTabId, false));
   }, [clientSettingsHydrated, runtimeTabId, serverDriven, shown]);
 
-  // Captures copy the guest's raster, which a scaled guest only keeps at full detail on request.
-  const fullDetail = backgroundActivity || pictureInPicture || recordingActive;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- tells the desktop host once the guest is drawn at full detail, so its screenshot waits for that frame
   useEffect(() => {
     const bridge = window.desktopBridge?.preview;
