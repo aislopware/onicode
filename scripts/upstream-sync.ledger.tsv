@@ -1548,3 +1548,4 @@ a575d45286	take	fix(web,server): the branch label no longer flips back after a s
 77d3358a1f	take	fix(server): ACP teardown survives processes exiting during the /proc scan (#36719)
 e72dd5055e	take	fix(client): closed terminal views release the shared grid
 cc0a7bb9d8	take	fix(shared): file links with parentheses in the path keep their parent folder labels
+f84ad6f30b	take	fix(web): discarded drafts stay discarded after image compression (upstream e2e scenario dropped: no scripts/scenarios harness)
