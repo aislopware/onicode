@@ -1387,3 +1387,4 @@ ddc36529ad	take	fix(forgejo): the fj sign-in hint points subpath servers to tea 
 62ba72fa15	take	fix(web): onboarding rechecks an agent when its install command finishes (#36477); dropped removed relay scope imports, added useEffectEvent import
 bd9ff7eb2a	take	fix(client-runtime): recover thread list updates after stream defects (#33244)
 2dd6cddbc3	take	fix(shared): @ mentions complete display names in any script (#36504)
+56fd98be52	take	perf(web): batch first-send composer updates (#36166)

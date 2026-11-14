@@ -49,7 +49,6 @@ import {
 } from "@onicode/client-runtime/environment";
 import { createModelSelection } from "@onicode/shared/model";
 import { type SetStateAction, useLayoutEffect, useRef } from "react";
-import { flushSync } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
 import {
   isAtomCommandInterrupted,
@@ -923,25 +922,18 @@ export function useComposerSend(input: ComposerSendInput) {
       shouldDockDraftHeroForSubmission({ isDraftHeroState, activeThreadKey, submissionIntent }) &&
       activeThreadKey
     ) {
-      let resolveDockStarted: (() => void) | undefined;
-      const dockStarted = new Promise<void>((resolve) => {
-        resolveDockStarted = resolve;
-      });
-      const dockTransition = runMobileComposerTransition(
+      const docking = runMobileComposerTransition(
         () => {
-          flushSync(() => {
-            captureDraftHeroComposerRect();
-            setDockedDraftHeroThreadKey(activeThreadKey);
-          });
-          resolveDockStarted?.();
+          captureDraftHeroComposerRect();
+          setDockedDraftHeroThreadKey(activeThreadKey);
         },
         {
           active: panelAnimationsActive,
           durationMs: panelAnimationDurationMs,
         },
       );
-      void dockTransition.catch(() => resolveDockStarted?.());
-      await dockStarted;
+      // Awaiting only a real transition keeps an inline dock in the same render as the send.
+      if (docking) await docking;
     }
 
     const attachmentCapabilitiesBeforeDispatch = readLiveAttachmentCapabilities();
