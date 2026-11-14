@@ -1,4 +1,5 @@
 import { presentThreadShell } from "@onicode/client-runtime/state/models";
+import { threadKey } from "@onicode/client-runtime/state/entities";
 import { isThreadWorking as isSidebarThreadWorking } from "@onicode/client-runtime/state/thread-inbox";
 import * as DateTime from "effect/DateTime";
 import { deriveActiveWorkStartedAt } from "../session-logic.ts";
@@ -664,6 +665,7 @@ describe("getFallbackThreadIdAfterDelete", () => {
       deletedThreadIds: new Set([ThreadId.make("thread-active"), ThreadId.make("thread-newest")]),
       sortOrder: "created_at",
       now: "2026-03-09T10:10:00.000Z",
+      delegatedUnderParent: new Set(),
     });
 
     expect(fallbackThreadId).toBe(ThreadId.make("thread-next"));
@@ -674,6 +676,7 @@ describe("getFallbackThreadIdAfterDelete", () => {
       "snoozed",
       { snoozedUntil: "2099-01-01T00:00:00.000Z", snoozedAt: "2026-03-09T10:06:00.000Z" },
     ],
+    ["delegated", { id: ThreadId.make("thread-delegated") }],
     ["settled", { settledOverride: "settled", settledAt: "2026-03-09T10:06:00.000Z" }],
     [
       "side chat",
@@ -719,6 +722,12 @@ describe("getFallbackThreadIdAfterDelete", () => {
       deletedThreadId: ThreadId.make("thread-active"),
       sortOrder: "created_at",
       now: "2026-03-09T10:10:00.000Z",
+      delegatedUnderParent: new Set([
+        threadKey({
+          environmentId: localEnvironmentId,
+          threadId: ThreadId.make("thread-delegated"),
+        }),
+      ]),
     });
 
     expect(fallbackThreadId).toBe(ThreadId.make("thread-visible"));
