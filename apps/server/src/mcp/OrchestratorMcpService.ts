@@ -2589,7 +2589,7 @@ const make = Effect.gen(function* () {
               ? threadManagementFailure(error)
               : failure(
                   "orchestration_error",
-                  `Unable to create delegated task: ${errorMessage(error)}`,
+                  `Unable to create delegated task: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
                 ),
           ),
         );
@@ -2697,7 +2697,7 @@ const make = Effect.gen(function* () {
                 Effect.mapError((error) =>
                   failure(
                     "orchestration_error",
-                    `Unable to dispose delegated task ${input.taskId} completion delivery: ${errorMessage(error)}`,
+                    `Unable to dispose delegated task ${input.taskId} completion delivery: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
                   ),
                 ),
               );
@@ -2728,7 +2728,7 @@ const make = Effect.gen(function* () {
             Effect.mapError((error) =>
               failure(
                 "task_not_cancellable",
-                `Unable to stop delegated task ${input.taskId}: ${errorMessage(error)}`,
+                `Unable to stop delegated task ${input.taskId}: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
               ),
             ),
           );
@@ -2932,7 +2932,7 @@ const make = Effect.gen(function* () {
                   Effect.mapError((error) =>
                     failure(
                       "orchestration_error",
-                      `Unable to create thread ${index + 1}: ${errorMessage(error)}`,
+                      `Unable to create thread ${index + 1}: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
                     ),
                   ),
                 );
@@ -2970,7 +2970,7 @@ const make = Effect.gen(function* () {
                         ? threadManagementFailure(error)
                         : failure(
                             "orchestration_error",
-                            `Unable to start thread ${index + 1}: ${errorMessage(error)}`,
+                            `Unable to start thread ${index + 1}: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
                           ),
                     ),
                   );
@@ -2996,7 +2996,7 @@ const make = Effect.gen(function* () {
                   Effect.mapError((error) =>
                     failure(
                       "orchestration_error",
-                      `Unable to record thread ${index + 1} in the parent timeline: ${errorMessage(error)}`,
+                      `Unable to record thread ${index + 1} in the parent timeline: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
                     ),
                   ),
                 );
@@ -3397,7 +3397,7 @@ const make = Effect.gen(function* () {
               ? threadManagementFailure(error)
               : failure(
                   "orchestration_error",
-                  `Unable to interrupt thread ${input.threadId}: ${errorMessage(error)}`,
+                  `Unable to interrupt thread ${input.threadId}: ${userFacingDispatchErrorMessage(error) ?? errorMessage(error)}`,
                 ),
           ),
         );
