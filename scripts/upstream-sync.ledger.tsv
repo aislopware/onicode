@@ -1406,3 +1406,4 @@ d899bddfa2	take	fix(gitlab): long merge request descriptions no longer break the
 6d94997008	take	fix(opencode): support explicit background waits (#35272)
 aecad62a50	take	fix(opencode): a failed steer no longer leaves the turn running forever (#24701)
 033bb5a82e	take	fix(ssh): failed launches report only their own output (#35717)
+83d238218d	take	fix(opencode): OpenCode 1.x background subagents no longer show as done at launch (#36523)
