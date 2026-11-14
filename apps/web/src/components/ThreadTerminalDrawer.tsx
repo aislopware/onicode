@@ -380,6 +380,8 @@ export function terminalThemeFromApp(mountElement?: HTMLElement | null): Ghostty
     ),
     palette: TERMINAL_PALETTES[isDark ? "dark" : "light"],
     selectionBackground: terminalSelection,
+    // WCAG AA and VS Code's default; shell configs often hardcode colors for one background.
+    minimumContrast: 4.5,
   };
 }
 

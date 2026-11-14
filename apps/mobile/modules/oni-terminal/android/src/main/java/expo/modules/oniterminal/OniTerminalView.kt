@@ -497,12 +497,14 @@ class OniTerminalView(context: Context, appContext: AppContext) : ExpoView(conte
     container.setBackgroundColor(backgroundColorValue)
     terminalCanvas.setBackgroundColor(backgroundColorValue)
     if (terminalHandle != 0L) {
-      GhosttyBridge.nativeSetTheme(
-        terminalHandle,
-        foregroundColorValue,
-        backgroundColorValue,
-        cursorColorValue,
-        paletteColors,
+      emitResponse(
+        GhosttyBridge.nativeSetTheme(
+          terminalHandle,
+          foregroundColorValue,
+          backgroundColorValue,
+          cursorColorValue,
+          paletteColors,
+        )
       )
       renderSnapshot()
     }

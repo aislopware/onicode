@@ -7,9 +7,9 @@ MODULE_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 VENDOR_DIR="${MODULE_DIR}/../../../../native/libghostty-vt"
 PATCH_DIR="${SCRIPT_DIR}/libghostty-android-patches"
 
-GHOSTTY_REVISION="${GHOSTTY_REVISION:-9f62873bf195e4d8a762d768a1405a5f2f7b1697}"
+GHOSTTY_REVISION="${GHOSTTY_REVISION:-6d9577708a211b0e6c5e6c6886f3cfb7efc47555}"
 GHOSTTY_SOURCE_DIR="${GHOSTTY_SOURCE_DIR:-${HOME}/.cache/onicode/ghostty-${GHOSTTY_REVISION:0:8}}"
-GHOSTTY_ZIG_VERSION="${GHOSTTY_ZIG_VERSION:-0.15.2}"
+GHOSTTY_ZIG_VERSION="${GHOSTTY_ZIG_VERSION:-0.17.1}"
 GHOSTTY_ZIG="${GHOSTTY_ZIG:-}"
 ANDROID_NDK_HOME="${ANDROID_NDK_HOME:-}"
 
@@ -139,7 +139,7 @@ for entry in "${targets[@]}"; do
   )
 
   mkdir -p "${MODULE_DIR}/android/src/main/jniLibs/${abi}"
-  cp "${prefix}/lib/libghostty-vt.so.0.1.0" \
+  cp -L "${prefix}/lib/libghostty-vt.so" \
     "${MODULE_DIR}/android/src/main/jniLibs/${abi}/libghostty-vt.so"
   "${strip_tool}" --strip-unneeded \
     "${MODULE_DIR}/android/src/main/jniLibs/${abi}/libghostty-vt.so"

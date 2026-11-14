@@ -1,6 +1,6 @@
 import Foundation
 
-// Keep only replay history for intentional surface recreation (font/theme changes).
+// Keep only replay history for intentional terminal recreation.
 final class TerminalOutputBuffer {
   private var storage = Data()
   private var retainedStart = 0

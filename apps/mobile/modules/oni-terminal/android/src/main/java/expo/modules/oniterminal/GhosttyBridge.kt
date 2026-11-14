@@ -41,7 +41,7 @@ internal object GhosttyBridge {
     background: Int,
     cursor: Int,
     palette: IntArray
-  )
+  ): ByteArray
 
   @JvmStatic external fun nativeSnapshot(handle: Long): ByteArray
 

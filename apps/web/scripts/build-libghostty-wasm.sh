@@ -10,8 +10,11 @@ VENDOR_DIR="${WEB_DIR}/src/terminal/ghostty/vendor"
 
 GHOSTTY_REVISION="$(tr -d '[:space:]' < "${CANONICAL_VENDOR_DIR}/VERSION")"
 GHOSTTY_SOURCE_DIR="${GHOSTTY_SOURCE_DIR:-${HOME}/.cache/onicode/ghostty-${GHOSTTY_REVISION:0:8}}"
-GHOSTTY_ZIG_VERSION="${GHOSTTY_ZIG_VERSION:-0.15.2}"
+GHOSTTY_ZIG_VERSION="${GHOSTTY_ZIG_VERSION:-0.17.1}"
 GHOSTTY_ZIG="${GHOSTTY_ZIG:-}"
+# The desktop renderer draws no images and uses none of these C APIs; leaving them out keeps the
+# WASM near its old size.
+GHOSTTY_VT_FEATURES="${GHOSTTY_VT_FEATURES:--snapshot,-search,-color,-glyph-protocol,-kitty-graphics}"
 
 log() {
   printf '[libghostty-vt-wasm] %s\n' "$*"
@@ -106,6 +109,7 @@ log "building ${GHOSTTY_REVISION} for wasm32-freestanding"
     -Dtarget=wasm32-freestanding \
     -Doptimize=ReleaseSmall \
     -Dstrip=true \
+    -Dvt-features="${GHOSTTY_VT_FEATURES}" \
     -Dlib-version-string="0.1.0-dev+${GHOSTTY_REVISION}" \
     -p "${build_root}"
 )
