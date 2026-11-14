@@ -1647,3 +1647,4 @@ bf74669509	take	upstream e2e scenario dropped: no scripts/scenarios harness
 ccf7ead6a4	take	taken as is
 73cbc6b1ed	take	taken as is
 a4bf7922f5	take	taken as is; restoreUnsettledAt is optional on the wire
+1f45f14ae8	take	ChatView conflict: dropped upstream's pending guest message scroll (guest share removed), kept the image expand handler move
