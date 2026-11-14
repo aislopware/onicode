@@ -1546,3 +1546,4 @@ d9973dc3f8	take	fix(mobile): a shared file no longer fails to send with "Too muc
 5e27bae22e	take	fix(web): a stashed prompt keeps its machine mentions (#28780)
 a575d45286	take	fix(web,server): the branch label no longer flips back after a switch (#28575)
 77d3358a1f	take	fix(server): ACP teardown survives processes exiting during the /proc scan (#36719)
+e72dd5055e	take	fix(client): closed terminal views release the shared grid
