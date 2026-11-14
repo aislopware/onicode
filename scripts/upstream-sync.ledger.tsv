@@ -1478,3 +1478,4 @@ b37c959669	take	fix(server): open colon-number project folders correctly in VS C
 02e29ce8fa	take	perf(usage): show saved totals before scanning history
 89f1acb0f0	take	fix(pi): text generation uses the thinking level picked in Settings
 0fee26d5bf	take	fix(mobile): launch terminal commands after the measured resize
+13f89ae0a7	take	fix(server): repeated imports reach older worktree history
