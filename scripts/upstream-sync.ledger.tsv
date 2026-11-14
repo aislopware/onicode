@@ -1589,3 +1589,4 @@ c2b06f9df8	take	perf(server): Cursor turns no longer write every streamed token 
 43a71d9b1a	take	fix(web): a terminal reopened while its open is pending no longer closes itself
 1c18c16e93	take	perf(server): ACP subagent replies no longer rewrite the database on every chunk
 4954322f02	take	fix(web): don't send completion notifications for snoozed threads (desktop notifications only; upstream's relay push part has no Onicode file, Onicode's own push is a follow-up)
+cc578d5f9a	take	fix(server): settling a usage-limited thread disarms recovery and names the refusal
