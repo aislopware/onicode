@@ -2068,7 +2068,7 @@ export const MERGE_REQUEST_WATCH_FINGERPRINT_GRAPHQL_QUERY = `query($fullPath: I
       headPipeline {
         id status
         succeeded: jobs(retried: false, statuses: [SUCCESS]) { count }
-        failed: jobs(retried: false, statuses: [FAILED]) { count }
+        failed: jobs(retried: false, statuses: [FAILED], first: 100) { count nodes { id } }
         stopped: jobs(retried: false, statuses: [CANCELED, SKIPPED]) { count }
         jobs(jobKind: BRIDGE, retried: false, first: 100) {
           pageInfo { hasNextPage }
@@ -2104,7 +2104,12 @@ const decodeMergeRequestWatchFingerprint = decodeJsonResult(
                 Schema.Struct({
                   ...PipelineIdentitySchema.fields,
                   succeeded: JobCountSchema,
-                  failed: JobCountSchema,
+                  failed: Schema.NullOr(
+                    Schema.Struct({
+                      count: Schema.Int,
+                      nodes: Schema.Array(Schema.NullOr(Schema.Struct({ id: Schema.String }))),
+                    }),
+                  ),
                   stopped: JobCountSchema,
                   jobs: Schema.NullOr(
                     Schema.Struct({
@@ -2162,9 +2167,14 @@ export function decodeMergeRequestWatchFingerprintJson(
   const jobCounts = [pipeline?.succeeded, pipeline?.failed, pipeline?.stopped].map(
     (jobs) => jobs?.count ?? null,
   );
-  // Past a capped count or the first bridge page, a job can settle without moving the status.
+  // Counts alone miss a retried failure running again while another job fails.
+  const failedJobs = (pipeline?.failed?.nodes ?? []).flatMap((job) =>
+    job === null ? [] : [job.id],
+  );
+  // Past a capped count or the first bridge or failed page, a job can settle without moving the status.
   const seesEveryJob =
     pipeline?.jobs?.pageInfo.hasNextPage !== true &&
+    failedJobs.length === (pipeline?.failed?.count ?? 0) &&
     jobCounts.every((count) => count === null || count <= JOB_COUNT_LIMIT);
   const bridges = (pipeline?.jobs?.nodes ?? [])
     .flatMap((job) =>
@@ -2187,6 +2197,7 @@ export function decodeMergeRequestWatchFingerprintJson(
       pipeline?.id ?? "",
       pipeline?.status ?? "",
       jobCounts.map((count) => count ?? "").join("/"),
+      failedJobs.toSorted().join(","),
       bridges,
     ].join(" "),
     remarks: [mr.userNotesCount ?? "", newestEdit].join(" "),

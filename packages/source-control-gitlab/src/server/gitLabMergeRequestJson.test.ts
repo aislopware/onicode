@@ -1235,11 +1235,16 @@ describe("decodeMergeMessagesJson", () => {
 });
 
 describe("decodeMergeRequestWatchFingerprintJson", () => {
-  const pipeline = (status: string, downstream: string, failed = 0, moreBridges = false) => ({
+  const pipeline = (
+    status: string,
+    downstream: string,
+    failed: ReadonlyArray<string> = [],
+    moreBridges = false,
+  ) => ({
     id: "gid://gitlab/Ci::Pipeline/9",
     status,
     succeeded: { count: 3 },
-    failed: { count: failed },
+    failed: { count: failed.length, nodes: failed.map((id) => ({ id })) },
     stopped: { count: 0 },
     jobs: {
       pageInfo: { hasNextPage: moreBridges },
@@ -1291,7 +1296,9 @@ describe("decodeMergeRequestWatchFingerprintJson", () => {
     const base = read({});
     const passed = read({ headPipeline: pipeline("SUCCESS", "RUNNING") });
     const downstreamPassed = read({ headPipeline: pipeline("SUCCESS", "SUCCESS") });
-    const jobFailed = read({ headPipeline: pipeline("RUNNING", "RUNNING", 1) });
+    const jobFailed = read({ headPipeline: pipeline("RUNNING", "RUNNING", ["job/1"]) });
+    // A retried failure running again while another job fails leaves every count unchanged.
+    const otherJobFailed = read({ headPipeline: pipeline("RUNNING", "RUNNING", ["job/2"]) });
     const edited = read({ notes: { nodes: [edit("2026-07-03T00:00:00Z")] } });
     // Resolving a thread restamps its notes without an edit, so it must not reread comments.
     const resolved = read({
@@ -1302,6 +1309,7 @@ describe("decodeMergeRequestWatchFingerprintJson", () => {
     expect(passed?.status).not.toBe(base?.status);
     expect(downstreamPassed?.status).not.toBe(passed?.status);
     expect(jobFailed?.status).not.toBe(base?.status);
+    expect(otherJobFailed?.status).not.toBe(jobFailed?.status);
     expect(passed?.remarks).toBe(base?.remarks);
     expect(edited?.status).toBe(base?.status);
     expect(edited?.remarks).not.toBe(base?.remarks);
@@ -1313,8 +1321,21 @@ describe("decodeMergeRequestWatchFingerprintJson", () => {
   it("covers the detail read once merge status has settled or no read could settle it", () => {
     expect(read({})?.coversDetail).toBe(true);
     // A capped job count or a second bridge page can hide a job settling.
-    expect(read({ headPipeline: pipeline("RUNNING", "RUNNING", 1001) })?.coversDetail).toBe(false);
-    expect(read({ headPipeline: pipeline("RUNNING", "RUNNING", 0, true) })?.coversDetail).toBe(
+    expect(
+      read({
+        headPipeline: { ...pipeline("RUNNING", "RUNNING"), failed: { count: 1001, nodes: [] } },
+      })?.coversDetail,
+    ).toBe(false);
+    // Failed jobs past the first page can change without moving the status.
+    expect(
+      read({
+        headPipeline: {
+          ...pipeline("RUNNING", "RUNNING"),
+          failed: { count: 101, nodes: Array.from({ length: 100 }, (_, i) => ({ id: `${i}` })) },
+        },
+      })?.coversDetail,
+    ).toBe(false);
+    expect(read({ headPipeline: pipeline("RUNNING", "RUNNING", [], true) })?.coversDetail).toBe(
       false,
     );
     expect(read({ mergeStatusEnum: "UNCHECKED" })?.coversDetail).toBe(false);
