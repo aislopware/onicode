@@ -1770,3 +1770,4 @@ fb915ca6c0	take	Taken as is.
 26bf047d5e	take	Taken as is.
 635ea82cec	take	Taken as is.
 1c01db02b3	take	Taken as is.
+9ca66225ca	take	Taken with adaptation: dropped t3ConnectState.ts (removed); kept Onicode's optional webAppUrl in promptLinkAppPath; test uses Onicode links.

@@ -135,4 +135,18 @@ describe("link round trips", () => {
     expect(promptLinkAppPath("https://evil.test/new?prompt=hi", web)).toBeNull();
     expect(promptLinkAppPath("onicode://app/index.html")).toBeNull();
   });
+
+  it("maps links in browsers without URL.canParse, such as Safari before 17", () => {
+    const canParse = URL.canParse;
+    Reflect.deleteProperty(URL, "canParse");
+    try {
+      const web = "https://box.tailnet.ts.net";
+      expect(promptLinkAppPath(`${web}/new?prompt=hi`, web)).toBe("/new?prompt=hi");
+      expect(promptLinkAppPath("onicode://new?prompt=hi")).toBe("/new?prompt=hi");
+      expect(promptLinkAppPath(`${web}/`, web)).toBeNull();
+      expect(promptLinkAppPath("not a url")).toBeNull();
+    } finally {
+      URL.canParse = canParse;
+    }
+  });
 });
