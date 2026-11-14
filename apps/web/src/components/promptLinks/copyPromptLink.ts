@@ -70,8 +70,7 @@ export function composerPromptLink(input: {
 
 export async function copyPromptLink(link: string): Promise<void> {
   try {
-    if (!(await writeTextToClipboard(link))) return;
-    toastManager.add({ type: "success", title: "Prompt link copied" });
+    await writeTextToClipboard(link);
   } catch (error) {
     toastManager.add(
       stackedThreadToast({
