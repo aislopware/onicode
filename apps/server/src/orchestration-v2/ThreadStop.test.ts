@@ -1105,6 +1105,29 @@ it.effect("thread.stop keeps a restart continuation of the stopped run from star
   }).pipe(Effect.provide(layerTest)),
 );
 
+it.effect("thread.delete cancels the thread's unsettled turn starts so cleanup can run", () =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const sql = yield* SqlClient.SqlClient;
+    const threadId = ThreadId.make("thread:delete-pending-start");
+    yield* createWatchingThread(threadId, 9);
+    yield* send(threadId, "work", "start_immediately");
+    const statuses = () =>
+      sql<{ readonly status: string }>`
+        SELECT status FROM orchestration_v2_effect_outbox
+        WHERE thread_id = ${threadId} AND effect_type = 'provider-turn.start'
+      `.pipe(Effect.map((rows) => rows.map((row) => row.status)));
+    assert.deepEqual(yield* statuses(), ["pending"]);
+
+    yield* orchestrator.dispatch({
+      type: "thread.delete",
+      commandId: CommandId.make("delete-pending-start"),
+      threadId,
+    });
+    assert.deepEqual(yield* statuses(), ["cancelled"]);
+  }).pipe(Effect.provide(layerTest)),
+);
+
 it.effect.each(["thread.stop", "run.interrupt"] as const)(
   "a successful %s blocks a newer restart continuation when completion timestamps tie",
   (stopType) =>
