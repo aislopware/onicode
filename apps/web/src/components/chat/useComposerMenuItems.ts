@@ -437,9 +437,7 @@ export function useComposerMenuItems({
     return [];
   })();
   const isLoading =
-    (composerTriggerKind === "path" &&
-      pathTriggerQuery.length > 0 &&
-      (workspaceEntries.isPending || folderEntries.isPending)) ||
+    (composerTriggerKind === "path" && (workspaceEntries.isPending || folderEntries.isPending)) ||
     ((composerTriggerKind === "skill" || composerTriggerKind === "slash-command") &&
       workspaceSkillsScanning) ||
     (composerTriggerKind === "pull-request" &&

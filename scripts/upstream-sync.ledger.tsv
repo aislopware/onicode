@@ -1329,3 +1329,4 @@ b537916099	take	fix(server): thread list builds metadata only for the page it re
 3c1be119b9	take	fix(web): middle-clicking empty chat space on Linux no longer pastes into the composer
 ab9e6a2792	take	fix(web): closing Settings no longer leaves it as a back/forward stop
 eb14ddb799	take	taken as is
+2d689687f5	take	kept Onicode's folder-search pending in the loading check
