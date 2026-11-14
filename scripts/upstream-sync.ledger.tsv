@@ -1754,3 +1754,4 @@ c041761d89	take	fix(web,server): picking the previous branch after an agent's ch
 92595ab149	take	fix(server): isolate Linux process launches from the RPC event loop
 1483e970bd	take	perf(server): Pull no longer waits behind other repositories' fetches
 4d6ebbdba8	take	fix(wsl): label WSL environments with their Windows host on every client
+2dfc4a9c98	take	fix(azure-devops): derive CLI scope from checkout remotes
