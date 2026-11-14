@@ -1537,3 +1537,4 @@ cb6670b01d	take	fix(server): a timed-out Git check no longer turns off threads w
 666631e94e	take	fix(web): copied inline code keeps meaningful edge spaces (#36712)
 b90ffeaf28	take	fix(mobile): drop duplicate attachments, as on web (#29143)
 e2f164d6bb	take	fix(web): let subagent lists pass scrolling to the details panel (#28968)
+a678948483	take	fix(web): pending-question digit shortcuts ignore dialogs, menus and selects (#28388)
