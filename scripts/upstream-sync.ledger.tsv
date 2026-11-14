@@ -1559,3 +1559,4 @@ e53417b2d4	take	fix(server): selected-file commits work again with Git older tha
 64d70f8828	take	fix(mobile): sort pull request lists and timelines by time
 db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the session
 3d9aeaf757	take	fix(shared): preview semicolon-separated CSV files as tables
+34a7c0d85d	take	fix(cursor): preserve catalog aliases in model discovery
