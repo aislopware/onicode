@@ -1493,3 +1493,4 @@ f2764f71b2	take	fix(desktop): desktop tests no longer race to install Electron
 6be1bd6472	take	perf(cursor): long command output streams without copying its tail per chunk
 c5f842d4c7	take	fix(server): regenerate titles on fresh run forks (upstream e2e scenario dropped: no scripts/scenarios harness)
 6aa14d3cd5	take	fix(server): short search prefixes find accented messages (upstream e2e scenario dropped: no scripts/scenarios harness)
+060ac23d6f	take	fix(devices): explain missing npm during tool updates
