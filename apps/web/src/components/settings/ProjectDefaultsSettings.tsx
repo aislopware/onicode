@@ -4,7 +4,7 @@ import {
   type WorktreeSubmodules,
   managedRuntimeModeDenial,
 } from "@onicode/contracts";
-import { createModelSelection } from "@onicode/shared/model";
+import { createModelSelection, pickModelSelection } from "@onicode/shared/model";
 import { resolveProjectSettings } from "@onicode/shared/projectSettings";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -172,7 +172,7 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                   });
               }}
               onInstanceModelChange={(instanceId, model) =>
-                setModel(createModelSelection(instanceId, model))
+                setModel(pickModelSelection(mixedModel ? null : selection, instanceId, model))
               }
             />
             {!mixedModel && !presentation.providerNote && !effortDisabledReason && activeEntry ? (
@@ -288,7 +288,13 @@ export function ProjectDefaultsSettings({ category }: { category: ProjectSetting
                   });
                   return;
                 }
-                updateSettings({ fallbackModelSelection: createModelSelection(instanceId, model) });
+                updateSettings({
+                  fallbackModelSelection: pickModelSelection(
+                    mixedFallback ? null : settings.fallbackModelSelection,
+                    instanceId,
+                    model,
+                  ),
+                });
               }}
             />
             {settings.fallbackModelSelection !== null && fallbackEntry && !mixedFallback ? (

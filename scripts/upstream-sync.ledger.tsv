@@ -1455,3 +1455,4 @@ bebaf3ec04	take	fix(pi): resumed threads run in the worktree after a handoff
 d0a494fc0b	take	fix(server): honor the configured push remote on tracked branches
 000d82dc67	take	fix(web): Esc closes the theme editor, not Settings
 c0b140b5bc	take	fix(server): file changes with an empty list keep their file name
+b4c1bd106d	take	fix(web): re-picking the current model in Settings keeps its traits (without upstream's nightly-channel import)
