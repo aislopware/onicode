@@ -1736,3 +1736,4 @@ b9a68e0f57	take	fix(source-control): repository paths match however their names 
 5393882fb8	take	fix(mcp): return delegated task handles before client timeouts
 7873016460	take	fix(web): allow tooltip text to wrap naturally
 ed101ef641	take	fix(preview): unload desktop pages before removing their tabs
+0f79b4027a	take	fix(web): remove redundant status info icon
