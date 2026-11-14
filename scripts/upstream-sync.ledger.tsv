@@ -1409,3 +1409,4 @@ aecad62a50	take	fix(opencode): a failed steer no longer leaves the turn running 
 83d238218d	take	fix(opencode): OpenCode 1.x background subagents no longer show as done at launch (#36523)
 99071c4953	take	fix(codex): delegate_task children start as Codex subagents (#36525)
 82479522cb	skip	Only touches apps/marketing, which Onicode removed
+cee16bdd99	take	fix(desktop): start WSL backends in Linux home (#35719)
