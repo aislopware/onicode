@@ -1711,3 +1711,4 @@ e5c636219c	take	renumbered: guard added to Onicode 092_QueuedTurnInputIndex (ups
 ea05ea5e2a	take	taken as is
 d38055656e	take	taken as is
 a20c4dba9e	take	taken as is
+3a5d7f39a8	skip	only serves T3's native Swift TestFlight apps; Onicode's React Native mobile and desktop never called server.getSettings, and re-adding it widens the read-scope RPC surface
