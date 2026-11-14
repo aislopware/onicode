@@ -1523,3 +1523,4 @@ c3517ec0bf	take	fix(shared): theme CSS checks allow url() inside a quoted data: 
 0e5e0bb652	take	fix(mobile): removing an environment no longer fails when a queued message can't be read (#28322); relay imports from the conflict dropped
 19f643856e	take	fix(server): interrupted checkpoint restores no longer leave files staged (#36687)
 71c2410a67	take	fix(web): thread details slides in on close (#28929)
+f4e65cd843	take	fix(contracts): a null model selection options value is treated as omitted (#29149)
