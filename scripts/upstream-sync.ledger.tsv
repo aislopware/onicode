@@ -1643,3 +1643,4 @@ dd5061364b	take	conflict resolved: upstream's effect-based remember replaces Oni
 f968db10d7	take	comment conflict resolved keeping Onicode's wording; hook order unchanged, row-render test green
 ed0178487d	take	taken as is
 bf74669509	take	upstream e2e scenario dropped: no scripts/scenarios harness
+314f1e2976	take	upstream e2e scenario dropped: no scripts/scenarios harness
