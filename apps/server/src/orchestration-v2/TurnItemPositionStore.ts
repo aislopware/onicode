@@ -149,7 +149,8 @@ export const layer: Layer.Layer<TurnItemPositionStoreV2, never, SqlClient.SqlCli
           turnItemId: item.id,
           runId: item.runId,
           // Queued steers keep their submission order until their run starts (see Orchestrator).
-          keepExisting: item.status === "pending",
+          // Only a user message can change runs, so other items keep their position without a lookup.
+          keepExisting: item.status === "pending" || item.type !== "user_message",
           ...(runOrdinal === undefined ? {} : { runOrdinal }),
         }).pipe(Effect.map((ordinal) => (item.ordinal === ordinal ? item : { ...item, ordinal })));
       }),
