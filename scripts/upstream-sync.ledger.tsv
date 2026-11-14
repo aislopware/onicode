@@ -1533,3 +1533,4 @@ dafd053a19	take	fix(mobile): closed PR numbers match their red icon in the threa
 b28dc0eb1d	take	perf(mobile): Changes tab no longer redraws every file when one changes (#25872)
 243d66a295	take	fix(server): first commit dialog shows net file changes; dropped scripts/scenarios e2e (removed in Onicode)
 740a7cc21f	skip	marketing download page only; apps/marketing removed in Onicode
+cb6670b01d	take	fix(server): a timed-out Git check no longer turns off threads without a project until restart (#36704)
