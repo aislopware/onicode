@@ -749,6 +749,7 @@ public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDr
 
   func setPlaceholder(_ placeholder: String) {
     placeholderLabel.text = placeholder
+    textView.accessibilityLabel = placeholder
     setNeedsLayout()
   }
 
