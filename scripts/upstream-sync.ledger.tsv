@@ -1561,3 +1561,4 @@ db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the sess
 3d9aeaf757	take	fix(shared): preview semicolon-separated CSV files as tables
 34a7c0d85d	take	fix(cursor): preserve catalog aliases in model discovery
 68bc28196d	take	fix(desktop): Settings opens while the separate preview window has focus
+629242b8d3	take	fix(server): long scheduled-task titles no longer end in a broken character
