@@ -1512,3 +1512,4 @@ bb9fde6fcd	take	fix(scripts): test:cached no longer crashes when vp writes no ca
 8a45c51d8b	take	fix(desktop): Browser Screenshot saves fresh pixels while Onicode is hidden
 92c91aac8f	take	fix(client-runtime): keep inherited qualifier values as PR search text
 0acca1de27	take	fix(server): Resume keeps unaccepted replacement images
+6effe74c59	take	fix(web): show repeated table rows and cells in ODT previews; dropped scripts/scenarios e2e and its scripts jszip dep (removed in Onicode)
