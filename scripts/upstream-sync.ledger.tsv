@@ -1575,3 +1575,4 @@ db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the sess
 0351dbb092	take	fix(acp): refused and limit-stopped turns no longer show as completed
 6cb47acfb8	take	fix(web): Escape that cancels a thread rename no longer also closes the find bar
 3908c4eab3	skip	Onicode already answers OSC 10/11/4 queries (#167) on libghostty-vt 6d9577708, 2356 commits ahead of upstream's 3ff6d08; taking it would downgrade the desktop wasm and Android libraries
+f52e5c1919	take	fix(server): expand Windows home-relative file paths consistently
