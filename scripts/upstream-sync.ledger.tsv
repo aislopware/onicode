@@ -1431,3 +1431,4 @@ a3477a5dd9	take	fix(server): branch refresh no longer waits for detailed Git sta
 00ec286fef	take	fix(mobile): adaptive SVG project icons follow the app's color scheme
 efae4e9da1	take	fix(client): retry unread thread visits after reconnect (web keeps Onicode's presence-gated shell)
 46b508d119	take	fix(web): keep long ACP registry searches within the query limit
+248f5b64cc	take	fix(preview): browser tabs follow the default appearance
