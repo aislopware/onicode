@@ -1607,3 +1607,4 @@ b5df3c1bef	take	fix(web): a scheduled task with a cleared run time no longer sav
 8b633d9a9e	take	fix(web): PDF find matches curly quotes when you type straight ones
 d3d7ad9a61	take	fix(mobile): merging a PR uses the project's default merge method
 0487654fc8	take	fix(web): diagnostics CPU time no longer reads "60s" or "60m"
+8871c265a2	take	fix(cursor): shell commands that exit non-zero are recorded as failed
