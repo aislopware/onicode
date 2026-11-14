@@ -1347,3 +1347,4 @@ f5ae8088c3	take	taken as is
 99e10f05c8	skip	T3 Connect client naming in CloudLink; Onicode removed T3 Connect
 cbf0f0a83f	take	taken as is
 42057b82d0	take	reworded web+desktop to desktop-only (Onicode has no web app; only the desktop's local environment applies themes); measured MCP tool-list budget
+e4f066da21	skip	Swaps upstream's t3-built enriched-markdown tarball (iOS blockquote long-press fix); Onicode ships its own oni.18 build, so the fix must be ported into aislopware/enriched-markdown and the oni tarball rebuilt (follow-up).
