@@ -1520,3 +1520,4 @@ ae837398a2	skip	Only touches apps/server/src/telemetry (ProviderDimensions analy
 e096deebf6	take	fix(web): the publish-repository path no longer submits on an IME composition Enter (#28277)
 96735d7311	take	fix(web): picking a sidebar search result scrolls the list to that thread (#27109)
 c3517ec0bf	take	fix(shared): theme CSS checks allow url() inside a quoted data: address (#36696)
+0e5e0bb652	take	fix(mobile): removing an environment no longer fails when a queued message can't be read (#28322); relay imports from the conflict dropped
