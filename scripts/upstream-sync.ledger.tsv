@@ -1671,11 +1671,11 @@ ec01233fb6	take	taken as is
 7c52ef7401	take	taken as is
 f12527ecf0	take	dropped the dev:web guard (Onicode's dev modes, dev and dev:server, both run a backend)
 01c84c7c02	take	taken as is
-b81202748b	take	fix(mobile): typing before a chip no longer leaves the iOS caret behind (#33774)
-6e2747921c	take	perf(server): git status refresh reads local status once unless refs moved (#29155)
-a767d23297	take	fix(server): a setting change no longer detaches a busy session kept from an earlier hand-off (#35258)
-0cb9328ea0	take	fix(server): storage cleanup removes idle worktrees whose branch was renamed or switched (#34984)
-f5c2ceb4d1	take	fix(claude): rename the native session when the thread title changes (#34775)
-47a8f2ba92	take	fix(desktop): an emptied browser cookie jar imports as empty instead of failing (#34698)
-5d1352d48a	take	fix(server): each websocket RPC starts its own trace so Tempo keeps its spans (#36863)
-35cc7724c5	take	fix(mobile): compaction notice becomes a chip in the composer (#36872)
+b81202748b	take	taken as is
+6e2747921c	take	taken as is
+a767d23297	take	taken as is
+0cb9328ea0	take	taken as is
+f5c2ceb4d1	take	added rename_session to Onicode's wider sendClaudeControlRequest subtype union (conflict)
+47a8f2ba92	take	taken as is
+5d1352d48a	take	taken as is
+35cc7724c5	take	taken as is
