@@ -1571,3 +1571,4 @@ db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the sess
 77a39e9a37	take	fix(server): cancelling worktree setup removes its unclaimed worktree and branch (upstream e2e scenario dropped: no scripts/scenarios harness)
 5fe2f7e456	take	fix(web): diagnostics no longer shows near-second spans as "1000 ms"
 313f601fb2	take	fix(server): Browser tab titles follow page title changes (upstream e2e scenario dropped: no scripts/scenarios harness)
+10a44f5553	take	fix(web): RTF previews keep named spaces, hyphens and joiners (upstream e2e scenario dropped: no scripts/scenarios harness)
