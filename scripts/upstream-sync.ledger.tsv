@@ -1619,3 +1619,4 @@ ee4ef06469	take	fix(web): use optimistic updates for settings across environment
 776698a3e7	take	fix(web): OpenDocument slide previews no longer print speaker notes
 0d585f7710	take	fix(mobile): cancelled PR checks count as failing in the checks summary
 2eb8829308	take	fix(mobile): .markdown, .mdown and .mkd files open with a Markdown preview
+49eb9c8adc	take	fix(web,mobile): pull request project filter lists pinned projects first
