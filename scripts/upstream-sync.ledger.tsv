@@ -1369,3 +1369,4 @@ e371543001	take	taken as is
 e5835c993a	take	fix(desktop): WSL backend starts in distros without automounted drives
 db2cc20264	take	fix(server): onicode browser setup reloads an AppArmor profile that is on disk but not loaded
 44a8e9541b	take	fix(web): model settings no longer re-render every row on each star, toggle or move
+3ea253f80f	take	fix(server): suppress redundant keybindings change emission on unchanged revalidation
