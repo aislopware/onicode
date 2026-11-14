@@ -2474,6 +2474,7 @@ export const CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__onicode__oni_preview_list",
   "mcp__onicode__oni_environment_read",
   "mcp__onicode__oni_environment_links",
+  "mcp__onicode__oni_theme_read",
   "mcp__onicode__html_preview",
   "mcp__onicode__html_render",
   "mcp__onicode__send_to_user",

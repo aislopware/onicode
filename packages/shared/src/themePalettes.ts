@@ -98,6 +98,8 @@ export type ThemeDefinition = Readonly<{
   collection?: Readonly<{ id: string; label: string }>;
   sidebarArtwork?: boolean;
   managed?: boolean;
+  /** Custom styles for the desktop app. */
+  css?: string;
 }>;
 
 export const ONICODE_CODE_LIGHT_THEME_COLORS: ThemeColors = {
