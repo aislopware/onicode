@@ -1466,3 +1466,4 @@ a61291e3e2	take	fix(shared): one-letter link schemes no longer become file links
 4192234c34	take	fix(usage): distinct email-less hub accounts no longer collapse
 75c544a978	take	fix(pi): async pi-subagents workflow, chain and parallel members show as subagents
 651accb100	take	fix(web): new browser tabs open at your default zoom and appearance
+9e19b7f7e1	take	feat(server): resume stopped provider threads natively; adapted: providers without native resume get the old continue prompt, clients keep sending it for older servers

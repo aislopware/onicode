@@ -69,6 +69,7 @@ export async function resumeThread<E>(input: {
         message: {
           messageId: input.messageId,
           role: "user",
+          // Servers that predate native resume send this text; newer ones drop it.
           text: "Continue where you left off.",
           attachments: [],
         },
