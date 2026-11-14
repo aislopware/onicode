@@ -10,7 +10,12 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 
 import packageJson from "../../package.json" with { type: "json" };
-import { pinnedRuntimePaths, pinnedRuntimeVersionsDir } from "./pinnedRuntime.ts";
+import {
+  pinnedRuntimePaths,
+  pinnedRuntimeVersionsDir,
+  readPosixLauncherTarget,
+  writePosixLauncher,
+} from "./pinnedRuntime.ts";
 import {
   decodeServiceLauncherContext,
   decodeServiceLauncherParentMessage,
@@ -110,7 +115,7 @@ export class ServiceLauncherClient extends Context.Service<
       readonly targetVersion: string;
       readonly dbPath: string;
     }) => Effect.Effect<string, ServiceLauncherClientError | ServiceLauncherRejectedError>;
-    /** Owned `onicode` symlinks move to the new runtime only when this start commits the trial. */
+    /** Owned `onicode` launchers move to the new runtime only when this start commits the trial. */
     readonly prepareTrial: (input: {
       readonly baseDir: string;
     }) => Effect.Effect<ServerSelfUpdateOutcome | undefined, ServiceLauncherClientError>;
@@ -205,11 +210,12 @@ export const repointLaunchers = Effect.fn("service.service_launcher_client.repoi
               () => Effect.succeedNone,
             ),
           );
-          if (Option.isNone(linkTarget)) return;
-          const relative = path.relative(
-            versionsDir,
-            path.resolve(path.dirname(launchedAs), linkTarget.value),
-          );
+          // A legacy symlink, or the script install.sh and `onicode update` write.
+          const current = Option.isSome(linkTarget)
+            ? path.resolve(path.dirname(launchedAs), linkTarget.value)
+            : yield* readPosixLauncherTarget(launchedAs);
+          if (current === undefined) return;
+          const relative = path.relative(versionsDir, current);
           if (
             relative.length === 0 ||
             relative === ".." ||
@@ -217,13 +223,11 @@ export const repointLaunchers = Effect.fn("service.service_launcher_client.repoi
             path.isAbsolute(relative)
           )
             return;
-          const temporary = yield* fs.makeTempDirectoryScoped({
-            directory: path.dirname(launchedAs),
-            prefix: ".oni-launcher-",
+          yield* writePosixLauncher({
+            launcher: launchedAs,
+            executable: target.entryPath,
+            exclusive: false,
           });
-          const link = path.join(temporary, "onicode");
-          yield* fs.symlink(target.entryPath, link);
-          yield* fs.rename(link, launchedAs);
         }),
       ).pipe(
         Effect.catchCause((cause) =>
