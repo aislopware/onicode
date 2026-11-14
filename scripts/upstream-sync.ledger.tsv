@@ -1428,3 +1428,4 @@ a760a3a965	take	fix(desktop): keyboard-opened message link menus select their fi
 e80468ba25	take	fix(server): report invalid provider events without a second schema failure (test adapted: Onicode has no billing analytics test)
 a3477a5dd9	take	fix(server): branch refresh no longer waits for detailed Git status
 1f55acf13b	take	fix(client-runtime): refresh settled counts when threads move project
+00ec286fef	take	fix(mobile): adaptive SVG project icons follow the app's color scheme
