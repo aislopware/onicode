@@ -1377,3 +1377,4 @@ fcf50ffe38	skip	T3 Connect managed tunnel origin watcher; Connect, relay and app
 6bc105f04e	take	fix(editors): find JetBrains IDEs whose Toolbox script is named idea1
 580b526758	take	fix(server): respect the default Windows file manager
 34cf030e5e	take	fix(web): pull requests error names the environment that failed
+eea9d15ee2	take	fix(desktop): Windows folders dropped on a WSL backend insert their WSL path (no isDesktopRenderer: desktop-only renderer; relay telemetry test dropped)

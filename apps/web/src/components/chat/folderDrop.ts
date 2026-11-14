@@ -1,28 +1,32 @@
 import type { PreparedConnection } from "@onicode/client-runtime/connection";
-import type { EnvironmentId } from "@onicode/contracts";
+import { PRIMARY_LOCAL_ENVIRONMENT_ID, type EnvironmentId } from "@onicode/contracts";
 
-import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
+import { desktopLocalBackendId, isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isLoopbackHostname } from "~/environments/primary/target";
+
+export type FolderDropTarget = "local" | "remote" | { readonly wslBackendId: string };
 
 export function folderDropTarget(input: {
   localEnvironmentDisabled: boolean;
   environmentId: EnvironmentId;
   primaryEnvironmentId: EnvironmentId | null;
   connection: Pick<PreparedConnection, "target" | "httpBaseUrl"> | null;
-}): "local" | "remote" {
+  primaryRunsInWsl: boolean;
+}): FolderDropTarget {
   if (
     !input.localEnvironmentDisabled &&
     input.primaryEnvironmentId !== null &&
     input.environmentId === input.primaryEnvironmentId
   ) {
-    return "local";
+    return input.primaryRunsInWsl ? { wslBackendId: PRIMARY_LOCAL_ENVIRONMENT_ID } : "local";
   }
-  return input.connection !== null && isSavedLoopbackConnection(input.connection)
-    ? "local"
-    : "remote";
+  if (input.connection === null) return "remote";
+  const backendId = desktopLocalBackendId(input.connection.target);
+  if (backendId?.startsWith("wsl:")) return { wslBackendId: backendId };
+  return isSavedLoopbackConnection(input.connection) ? "local" : "remote";
 }
 
-// A direct saved connection to loopback shares the desktop's filesystem; WSL backends and SSH forwards do not.
+// A direct saved connection to loopback shares the desktop's filesystem; SSH forwards do not.
 function isSavedLoopbackConnection({
   target,
   httpBaseUrl,
