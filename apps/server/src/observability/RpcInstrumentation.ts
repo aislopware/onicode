@@ -223,6 +223,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.deviceEasAccount]: "device",
   [WS_METHODS.deviceSimlockIdentity]: "device",
   [WS_METHODS.deviceList]: "device",
+  [WS_METHODS.computerStatus]: "computer",
   [WS_METHODS.deviceOpen]: "device",
   [WS_METHODS.deviceClose]: "device",
   [WS_METHODS.deviceShutdown]: "device",

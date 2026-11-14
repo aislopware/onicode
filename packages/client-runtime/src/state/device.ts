@@ -5,6 +5,7 @@ import type { EnvironmentRegistry } from "../connection/registry.ts";
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
+  createEnvironmentRpcQueryAtomFamily,
   createEnvironmentRpcSubscriptionAtomFamily,
 } from "./runtime.ts";
 
@@ -39,6 +40,18 @@ export function createDeviceEnvironmentAtoms<R, E>(
     state: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:device:state",
       tag: WS_METHODS.subscribeDeviceState,
+    }),
+    computerStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:computer:status",
+      tag: WS_METHODS.computerStatus,
+      idleTtlMs: 0,
+      // Asked for only while access is on: follows the download and the driver's start, which can
+      // trail the saved setting; a settled status waits for the next mount or refresh.
+      refreshIntervalMs: 1_000,
+      isFinal: ({ install, daemon }) =>
+        install.state === "unsupported" ||
+        install.state === "failed" ||
+        (install.state === "installed" && daemon.state !== "stopped"),
     }),
     configure: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:device:configure",

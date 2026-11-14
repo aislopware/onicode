@@ -998,6 +998,22 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["allow simulator emulator ios android drive tools sessions"],
   },
   {
+    id: "agent-computer-access",
+    title: "Agents can use this computer",
+    to: "/settings/devices",
+    scope: "project-defaults",
+    searchTerms: [
+      "computer use desktop apps cua-driver control click type screenshot accessibility screen recording providers",
+    ],
+  },
+  {
+    id: "agent-computer-permission-mode",
+    title: "Driver approvals",
+    to: "/settings/devices",
+    targetId: "computer-access",
+    searchTerms: ["computer use cua-driver permission mode standard unrestricted bypass approvals"],
+  },
+  {
     id: "device-hub",
     title: "Use devices",
     to: "/settings/devices",

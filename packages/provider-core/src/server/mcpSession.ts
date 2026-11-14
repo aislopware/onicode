@@ -7,6 +7,15 @@ import type * as Effect from "effect/Effect";
  */
 export const MCP_TOOL_EXPOSURE_HEADER = "oni-tool-exposure";
 
+/** A stdio MCP server the provider launches itself, beside Onicode's HTTP one. */
+export interface McpStdioServer {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly env: Readonly<Record<string, string>>;
+}
+
+export const COMPUTER_MCP_SERVER_NAME = "computer";
+
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
@@ -18,6 +27,8 @@ export interface McpProviderSessionConfig {
   readonly browserToolsAvailable: boolean;
   readonly capabilities?: ReadonlySet<string>;
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
+  /** cua-driver's MCP server, present when this session may drive the machine's desktop apps. */
+  readonly computerMcpServer?: McpStdioServer;
   /** True while a delegated task this thread started will wake it with its result. */
   readonly hasPendingWake?: Effect.Effect<boolean>;
 }

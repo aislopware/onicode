@@ -20,4 +20,11 @@ describe("mcpToolPresentation", () => {
       toolSource: { key: "mcp:weather", name: "weather", kind: "integration" },
     });
   });
+
+  it("shows the driver's tools as computer use", () => {
+    expect(mcpToolPresentation({ toolName: "mcp__computer__get_window_state" })).toEqual({
+      title: "get window state",
+      toolSource: { key: "computer-use", name: "Computer Use", kind: "computer" },
+    });
+  });
 });

@@ -49,6 +49,7 @@ export async function loadMcpBridge(
     readonly allowsTool?: (name: string) => boolean;
     readonly runtimeMode?: string;
     readonly inputSchema?: Record<string, unknown>;
+    readonly computerServer?: Record<string, unknown>;
   } = {},
 ) {
   const handlers = new Map<string, AgentStartHook>();
@@ -93,6 +94,8 @@ export async function loadMcpBridge(
         ONICODE_MCP_BEARER_TOKEN: "fixture-token",
         ONICODE_PI_MCP_EXTENSION_PATH: "/fixture/pi-oni-extension.ts",
         ONICODE_PI_RUNTIME_MODE: options.runtimeMode,
+        ONICODE_COMPUTER_MCP:
+          options.computerServer === undefined ? undefined : JSON.stringify(options.computerServer),
       },
     },
     AbortSignal,

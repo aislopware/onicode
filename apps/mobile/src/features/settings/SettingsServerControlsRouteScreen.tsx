@@ -5,6 +5,7 @@ import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/sess
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
 import {
+  type AgentComputerPermissionMode,
   type ResponseStreamingMode,
   type ServerSettings,
   type ServerSettingsPatch,
@@ -61,6 +62,7 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "defaultRuntimeMode",
     "responseStreamingMode",
     "enableAgentBrowserAccess",
+    "enableAgentComputerAccess",
     "sidebarAutoSettleOnMerge",
     "sidebarAutoSettleAfterDays",
   ],
@@ -113,6 +115,25 @@ const WORKSPACE_CHOICES: ReadonlyArray<{
     mode: "worktree",
     label: "New worktree",
     description: "Give each new thread a separate checkout.",
+  },
+];
+
+const COMPUTER_PERMISSION_CHOICES: ReadonlyArray<{
+  readonly mode: AgentComputerPermissionMode;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  {
+    mode: "standard",
+    label: "Standard driver approvals",
+    description:
+      "The driver refuses to act on system security prompts and asks before it attaches to a signed-in browser profile.",
+  },
+  {
+    mode: "unrestricted",
+    label: "Unrestricted",
+    description:
+      "The driver runs every action without its own checks, including its guard against instructions hidden in what an app shows.",
   },
 ];
 
@@ -395,6 +416,32 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     disabled={disabledFor("enableAgentBrowserAccess")}
                     onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
                   />
+                </SettingsSection>
+                <SettingsSection title="Computer">
+                  <SettingsSwitchRow
+                    icon="desktopcomputer"
+                    label="Agent computer access"
+                    subtitle={managedSubtitle(
+                      "enableAgentComputerAccess",
+                      "Allow agents to see and control desktop apps on the machine that runs them.",
+                    )}
+                    value={uniform("enableAgentComputerAccess")}
+                    disabled={disabledFor("enableAgentComputerAccess")}
+                    onValueChange={(value) => write({ enableAgentComputerAccess: value })}
+                  />
+                  {projectSelected || uniform("enableAgentComputerAccess") !== true
+                    ? null
+                    : COMPUTER_PERMISSION_CHOICES.map((choice) => (
+                        <SettingsChoiceRow
+                          key={choice.mode}
+                          label={choice.label}
+                          description={choice.description}
+                          selected={uniform("agentComputerPermissionMode") === choice.mode}
+                          separated
+                          disabled={disabledFor("agentComputerPermissionMode")}
+                          onPress={() => write({ agentComputerPermissionMode: choice.mode })}
+                        />
+                      ))}
                 </SettingsSection>
                 <AutoSettleSettingsRows write={write} pending={pendingWrites > 0} />
               </>

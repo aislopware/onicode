@@ -39,6 +39,7 @@ import { HttpServer } from "effect/http";
 
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as ComputerService from "../computer/ComputerService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@onicode/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
@@ -651,6 +652,7 @@ function layerTest(input: {
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
+  readonly computerServiceLayer?: Layer.Layer<ComputerService.ComputerService>;
   readonly installationGateLayer?: Layer.Layer<ProviderInstallationGate.ProviderInstallationGate>;
 }) {
   const layerConfiguredEventSink =
@@ -745,6 +747,7 @@ function layerTest(input: {
           input.installationGateLayer ?? ProviderInstallationGate.layer,
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
+          ...(input.computerServiceLayer === undefined ? [] : [input.computerServiceLayer]),
         ),
       ),
     ),
@@ -810,10 +813,21 @@ function makeBrowserAccessProject(projectId: ProjectId): Project {
   };
 }
 
+const TEST_COMPUTER_MCP_SERVER = {
+  command: "/tools/cua-driver",
+  args: ["mcp", "--embedded", "--socket", "/tmp/d1.sock"],
+  env: {},
+};
+
 function runBrowserAccessScenario(input: {
   readonly enableAgentBrowserAccess: boolean;
   readonly projectOverride: boolean;
   readonly deviceOverride?: boolean;
+  readonly computer?: {
+    readonly enabled: boolean;
+    readonly projectOverride?: boolean;
+    readonly providers?: Readonly<Record<string, boolean>>;
+  };
   readonly createThread?: boolean;
   readonly projectExists?: boolean;
   readonly delegatedBy?: ThreadId;
@@ -866,14 +880,22 @@ function runBrowserAccessScenario(input: {
           idleTimeoutMs: 1_000,
           mcpConfigs,
           projectServiceLayer: layerProjectService,
+          computerServiceLayer: Layer.mock(ComputerService.ComputerService)({
+            mcpServer: Effect.succeedSome(TEST_COMPUTER_MCP_SERVER),
+          }),
           serverSettingsLayer: ServerSettings.layerTest({
             enableAgentBrowserAccess: input.enableAgentBrowserAccess,
+            enableAgentComputerAccess: input.computer?.enabled ?? false,
+            agentComputerAccessProviders: input.computer?.providers ?? {},
             projectSettingsOverrides: {
               [projectId]: {
                 enableAgentBrowserAccess: input.projectOverride,
                 ...(input.deviceOverride === undefined
                   ? {}
                   : { enableAgentDeviceAccess: input.deviceOverride }),
+                ...(input.computer?.projectOverride === undefined
+                  ? {}
+                  : { enableAgentComputerAccess: input.computer.projectOverride }),
               },
             },
           }),
@@ -5587,6 +5609,31 @@ it.effect(
       });
       assert.isFalse(denied?.capabilities?.has("device"));
     }),
+);
+
+it.effect("ProviderSessionManagerV2 gives computer tools per project and per provider", () =>
+  Effect.gen(function* () {
+    const scenario = (
+      computer: NonNullable<Parameters<typeof runBrowserAccessScenario>[0]["computer"]>,
+    ) =>
+      runBrowserAccessScenario({
+        enableAgentBrowserAccess: true,
+        projectOverride: true,
+        computer,
+      }).pipe(Effect.map((config) => config?.computerMcpServer));
+    assert.deepEqual(yield* scenario({ enabled: true }), TEST_COMPUTER_MCP_SERVER);
+    assert.deepEqual(
+      yield* scenario({ enabled: false, projectOverride: true }),
+      TEST_COMPUTER_MCP_SERVER,
+    );
+    assert.isUndefined(yield* scenario({ enabled: false }));
+    assert.isUndefined(yield* scenario({ enabled: true, projectOverride: false }));
+    assert.isUndefined(yield* scenario({ enabled: true, providers: { codex: false } }));
+    assert.deepEqual(
+      yield* scenario({ enabled: true, providers: { claudeAgent: false } }),
+      TEST_COMPUTER_MCP_SERVER,
+    );
+  }),
 );
 
 // Device instructions reach delegated children only because their own sessions hold `device`.

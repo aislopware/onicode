@@ -68,6 +68,7 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as NativeChildWorkQuery from "./orchestration-v2/NativeChildWorkQuery.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
 import * as CodexInstallation from "./provider/CodexInstallation.ts";
+import * as ComputerService from "./computer/ComputerService.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as RemoteDesktop from "./remoteDesktop/RemoteDesktop.ts";
 import * as DocumentText from "./provider/DocumentText.ts";
@@ -816,6 +817,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(CommandOutputHub.CommandOutputHub)({}),
   Layer.mock(CodexInstallation.CodexInstallation)({ managedDirectory: "/unused" }),
   Layer.mock(DeviceService.DeviceService)({}),
+  Layer.mock(ComputerService.ComputerService)({}),
   RemoteDesktop.layer,
   Layer.mock(EnvironmentTheme.EnvironmentThemeService)({}),
   Layer.mock(GitWorkflowService.GitWorkflowService)({}),

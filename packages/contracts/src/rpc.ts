@@ -319,6 +319,7 @@ import {
   DeviceSession,
   DeviceShutdownInput,
 } from "./device.ts";
+import { ComputerAccessStatus } from "./computer.ts";
 import {
   RemoteDesktopAnswerInput,
   RemoteDesktopConnectInput,
@@ -518,6 +519,8 @@ export const WS_METHODS = {
   deviceShutdown: "device.shutdown",
   deviceDetail: "device.detail",
   deviceAction: "device.action",
+
+  computerStatus: "computer.status",
 
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
@@ -1798,6 +1801,12 @@ const WsDeviceListRpc = Rpc.make(WS_METHODS.deviceList, {
   error: Schema.Union([DeviceError, EnvironmentAuthorizationError]),
 });
 
+const WsComputerStatusRpc = Rpc.make(WS_METHODS.computerStatus, {
+  payload: Schema.Struct({}),
+  success: ComputerAccessStatus,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsDeviceConfigureRpc = Rpc.make(WS_METHODS.deviceConfigure, {
   payload: DeviceConfigureInput,
   success: DeviceServiceState,
@@ -2318,6 +2327,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsSubscribePreviewEventsRpc,
   WsPreviewStopLocalServerRpc,
   WsSubscribeDiscoveredLocalServersRpc,
+  WsComputerStatusRpc,
   WsDeviceConfigureRpc,
   WsDeviceListRpc,
   WsDeviceTestHostRpc,

@@ -688,21 +688,34 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
 
   it("pre-approves only read-only onicode tools in a read-only sandbox", () => {
     const threadId = ThreadId.make("thread-claude-mcp-read-only");
-    const mcpSession = mcpSessionFor(threadId);
+    const mcpSession = {
+      ...mcpSessionFor(threadId),
+      computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+    };
     const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
       mcpSession,
       readOnlySandbox: true,
       allowedTools: [...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS],
     });
 
+    const mcpServers = {
+      computer: { type: "stdio" as const, command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+      ...ONICODE_MCP_SERVERS,
+    };
     assert.deepEqual(overrides, {
       allowedTools: [
         ...ClaudeAdapterV2.CLAUDE_READ_ONLY_ALLOWED_TOOLS,
         ...ClaudeAdapterV2.CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS,
       ],
-      mcpServers: ONICODE_MCP_SERVERS,
+      mcpServers,
     });
-    assert.isFalse(overrides.allowedTools?.includes(ClaudeAdapterV2.CLAUDE_ONI_MCP_TOOL_WILDCARD));
+    assert.deepEqual(
+      ClaudeAdapterV2.claudeMcpQueryOverrides({ mcpSession, readOnlySandbox: false }),
+      {
+        allowedTools: [ClaudeAdapterV2.CLAUDE_ONI_MCP_TOOL_WILDCARD, "mcp__computer__*"],
+        mcpServers,
+      },
+    );
   });
 
   it("invalidates live-query reuse when MCP credentials rotate", () => {
