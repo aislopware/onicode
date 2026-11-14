@@ -1446,3 +1446,4 @@ f315da3339	take	fix(shared): PASS and FAIL badges stay readable in dark command 
 fd0ffd0b0a	take	fix(web): a stale tab no longer erases finalized stashed images
 2f2730c113	take	fix(server): task_status says starting until the child's provider starts
 d2bdd58eef	take	fix(server): npm provider updates only offer versions npm will install (test merged with Onicode's updater-off rows)
+5e06246d24	take	fix(web): recovered queued edits keep their mentions and context (upstream e2e scenario dropped: no scripts/scenarios harness)
