@@ -1681,3 +1681,4 @@ f5c2ceb4d1	take	added rename_session to Onicode's wider sendClaudeControlRequest
 35cc7724c5	take	taken as is
 b96a511067	take	taken as is
 3c77d3d64b	take	dropped upstream's e2e scenario (no scripts/scenarios harness in Onicode)
+fc480ea66a	take	engines conflict resolved to 26.13.1 (Onicode was on 26.13.0)
