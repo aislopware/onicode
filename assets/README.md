@@ -61,3 +61,6 @@ Do not edit the generated PNG or ICO files directly.
 
 Rerun it after changing `mochi.svg` or the fill. `android-icon-mark.png` remains a flat silhouette
 for Android's monochrome themed icon.
+
+`readme/logo.svg` is a hand-made copy of `prod/logo.svg` for the root README, with a rim highlight
+on the tile and cropped so it sits close to the title. No script updates it.

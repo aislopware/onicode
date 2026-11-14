@@ -1,8 +1,8 @@
-<p align="center">
-  <img src="./assets/prod/app-icon.icon/Assets/mochi.svg" alt="The Onicode mochi oni" width="160" />
-</p>
-
-<h1 align="center">Onicode</h1>
+<h1 align="center">
+  <img src="./assets/readme/logo.svg" alt="" width="180" />
+  <br />
+  Onicode
+</h1>
 
 <p align="center">A desktop and mobile app for the coding agents you already pay for.</p>
 
