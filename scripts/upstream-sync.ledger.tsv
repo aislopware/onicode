@@ -1628,3 +1628,4 @@ f05cd350d2	take	fix(web): opening a very large folder no longer freezes the File
 abac6837e9	take	fix(gitlab): a fork's same-named branch no longer hides the branch's own merge request
 b779d40077	take	fix(editors): Open in Zed no longer finds the ZFS event daemon
 77b38f9b09	take	fix(server): preview hover and drag fail within their timeout, not up to 3x later
+5a15495de4	take	fix(server): skills from CLAUDE_CODE_PLUGIN_DIRS plugins show in the composer (conflict resolved without upstream's claude.ai synced-plugins lookup, which Onicode lacks)
