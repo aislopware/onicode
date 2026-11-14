@@ -1739,3 +1739,4 @@ ed101ef641	take	fix(preview): unload desktop pages before removing their tabs
 0f79b4027a	take	fix(web): remove redundant status info icon
 ff17cd307f	take	fix(desktop): agent snapshots keep full detail in narrow and mini previews
 7f81aa8386	take	test(web): pin the minute clock in the sidebar render isolation tests
+632802cd32	take	fix(acp-registry): models show the reasoning levels the agent advertises for them
