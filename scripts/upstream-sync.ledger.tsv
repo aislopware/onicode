@@ -1544,3 +1544,4 @@ d9973dc3f8	take	fix(mobile): a shared file no longer fails to send with "Too muc
 5fa95d99af	take	fix(opencode): wait for the whole listening line before reading the server address (#28348)
 35483c198a	take	fix(opencode): show usage-limit warnings while OpenCode 2 retries (#28375)
 5e27bae22e	take	fix(web): a stashed prompt keeps its machine mentions (#28780)
+a575d45286	take	fix(web,server): the branch label no longer flips back after a switch (#28575)
