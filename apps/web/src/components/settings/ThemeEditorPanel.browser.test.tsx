@@ -220,8 +220,10 @@ describe("ThemeEditorPanel", () => {
 
   it("closes on Escape without closing Settings", async () => {
     await using view = await renderBesideSettings();
-    (await editorElement("input")).focus();
-    await userEvent.keyboard("{Escape}");
+    // The modal's focus trap pulls focus out of the inert editor, so press Esc on the input itself.
+    (await editorElement("input")).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+    );
 
     expect(view.onEditorOpenChange).toHaveBeenCalledWith(false);
     expect(view.onSettingsOpenChange).not.toHaveBeenCalled();
