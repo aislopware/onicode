@@ -1568,3 +1568,4 @@ db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the sess
 719042d942	take	fix(server): MCP-launched threads no longer flash in Inbox before Working (dropped withoutGuestAttribution: guest links removed in Onicode)
 566370f2ee	take	fix(server): storage cleanup no longer reports idle threads on a branchless checkout as busy
 9441a7285c	take	fix(mobile): Reconnect and Retry now on a switched-off environment switch it back on (also applied to Onicode's remote desktop screen)
+77a39e9a37	take	fix(server): cancelling worktree setup removes its unclaimed worktree and branch (upstream e2e scenario dropped: no scripts/scenarios harness)
