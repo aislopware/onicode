@@ -511,12 +511,7 @@ const discoverPluginSkillRoots = Effect.fn("discoverPluginSkillRoots")(function*
     if (!install) continue;
     const scope = install.scope === "user" || install.scope === "managed" ? "user" : "project";
     const installPath = path.resolve(cwd ?? ".", install.installPath);
-    const manifest = yield* fileSystem
-      .readFileString(path.join(installPath, ".claude-plugin", "plugin.json"))
-      .pipe(
-        Effect.flatMap(Schema.decodeUnknownEffect(PluginManifest)),
-        Effect.orElseSucceed(() => undefined),
-      );
+    const manifest = yield* readPluginManifest(installPath);
     const prefix = manifest?.name ?? key.split("@")[0];
     if (!prefix || inlinePluginNames.has(pluginNameKey(prefix))) continue;
     roots.push(...(yield* pluginSkillRoots(installPath, scope, prefix, manifest)));
