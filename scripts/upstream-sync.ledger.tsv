@@ -1536,3 +1536,4 @@ b28dc0eb1d	take	perf(mobile): Changes tab no longer redraws every file when one 
 cb6670b01d	take	fix(server): a timed-out Git check no longer turns off threads without a project until restart (#36704)
 666631e94e	take	fix(web): copied inline code keeps meaningful edge spaces (#36712)
 b90ffeaf28	take	fix(mobile): drop duplicate attachments, as on web (#29143)
+e2f164d6bb	take	fix(web): let subagent lists pass scrolling to the details panel (#28968)
