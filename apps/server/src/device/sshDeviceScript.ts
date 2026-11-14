@@ -7,7 +7,12 @@ export const remoteDeviceEnvironment = `export PATH="$HOME/.local/bin:/opt/homeb
 if [ -z "$ANDROID_HOME" ]; then
   if [ -n "$ANDROID_SDK_ROOT" ]; then export ANDROID_HOME="$ANDROID_SDK_ROOT";
   elif [ -d "$HOME/Library/Android/sdk" ]; then export ANDROID_HOME="$HOME/Library/Android/sdk";
-  elif [ -d "$HOME/Android/Sdk" ]; then export ANDROID_HOME="$HOME/Android/Sdk"; fi
+  elif [ -d "$HOME/Android/Sdk" ]; then export ANDROID_HOME="$HOME/Android/Sdk";
+  elif device_adb="$(command -v adb 2>/dev/null)"; then
+    # Like a local host: the SDK that adb on the PATH belongs to.
+    device_adb="$(realpath "$device_adb" 2>/dev/null || printf '%s' "$device_adb")"
+    export ANDROID_HOME="$(dirname "$(dirname "$device_adb")")"
+  fi
 fi
 if [ -n "$ANDROID_HOME" ]; then export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"; fi
 if [ -z "$JAVA_HOME" ] && ! command -v java >/dev/null 2>&1; then
