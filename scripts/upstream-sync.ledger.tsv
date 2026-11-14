@@ -1656,3 +1656,4 @@ bef412cff6	take	taken as is; changeType is optional on the wire
 a6765d41d5	take	taken as is
 2e33134186	take	taken as is
 675fb1d9a7	take	dropped upstream's e2e scenario; test fixture uses Onicode's loopback auth policy and no relayManaged
+9be477fcad	skip	T3 Connect and webhook hold only; apps/server/src/cloud was removed from Onicode
