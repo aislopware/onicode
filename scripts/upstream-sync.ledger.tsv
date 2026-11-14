@@ -1481,3 +1481,4 @@ b37c959669	take	fix(server): open colon-number project folders correctly in VS C
 13f89ae0a7	take	fix(server): repeated imports reach older worktree history
 8a072ca51d	skip	Pins unenv for alchemy's caret range in upstream's lockfile-free release smoke; Onicode has no alchemy (relay/task-cache) or release-smoke script, and unenv only reaches infra/push-gateway through the lockfile
 38b3feeb75	take	fix(server): cached refs include a newly checked-out external branch
+820f620e3d	take	fix(web): model picks no longer inherit another model's traits
