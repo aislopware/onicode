@@ -1842,8 +1842,11 @@ it.effect.each(["exit", "missing"] as const)(
       const error = yield* service.updateTool("hub").pipe(Effect.flip);
       expect(error).toMatchObject({
         _tag: "DeviceOperationError",
-        reason: failure === "exit" ? "command_failed" : "package_manager_missing",
+        reason: "command_failed",
       });
+      expect(error._tag === "DeviceOperationError" && error.packageManagerMissing).toBe(
+        failure === "exit" ? undefined : true,
+      );
       expect(error.message).toBe(
         failure === "exit"
           ? "Device update device tool failed: The device command failed (exit code 243)."
