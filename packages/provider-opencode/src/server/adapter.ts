@@ -2785,7 +2785,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const turn = state?.activeTurn;
           if (state === undefined || turn === null || turn === undefined) return;
           // Versions may ignore supplied message IDs; completed assistant output admits settlement on idle.
-          if (admitsPrompt && !turn.priorWakePromptIds.has(message.parentID ?? "")) {
+          // While the turn waits on a wake its own prompt is unsent, so no reply can be its own.
+          if (
+            admitsPrompt &&
+            turn.priorWakeSettled === null &&
+            !turn.priorWakePromptIds.has(message.parentID ?? "")
+          ) {
             advanceOpenCodePromptAdmission(turn, "assistant-completed");
           }
           for (const partId of turn.partIdsByMessage.get(message.id) ?? []) {
@@ -3315,9 +3320,14 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
 
         yield* Scope.addFinalizer(
           scope,
-          Effect.sync(() => {
+          Effect.gen(function* () {
             closing = true;
-            for (const state of threads.values()) state.wake = null;
+            for (const state of threads.values()) {
+              state.wake = null;
+              // A foreground waiting on a wake would otherwise never see its idle.
+              const waiting = state.activeTurn?.priorWakeSettled;
+              if (waiting) yield* Deferred.succeed(waiting, undefined);
+            }
           }),
         );
 
@@ -3892,6 +3902,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               if (turn.priorWakeSettled !== null) {
                 yield* Deferred.await(turn.priorWakeSettled);
                 turn.priorWakeSettled = null;
+                if (closing) {
+                  yield* Deferred.succeed(admissionSettled, undefined);
+                  return yield* protocolError(
+                    "OpenCode event stream has ended; reconnect the provider session before starting another turn.",
+                  );
+                }
                 if (!turnIsLive(state, turn)) {
                   yield* Deferred.succeed(admissionSettled, undefined);
                   return;
