@@ -1495,3 +1495,4 @@ c5f842d4c7	take	fix(server): regenerate titles on fresh run forks (upstream e2e 
 6aa14d3cd5	take	fix(server): short search prefixes find accented messages (upstream e2e scenario dropped: no scripts/scenarios harness)
 060ac23d6f	take	fix(devices): explain missing npm during tool updates
 5ba3a84db4	take	fix(server): a locked database no longer leaves a thread stuck in "starting"
+0a8aaa3ccb	take	fix(server): retained forks keep inherited shell item counts after source deletion
