@@ -997,6 +997,8 @@ const make = Effect.gen(function* () {
       );
       return read.recentRuns.find((run) => run.runId === remote.runId)?.status ?? null;
     },
+    // A forwarded read has no deadline of its own; a silent peer must not stall task_status.
+    Effect.timeout(Duration.seconds(3)),
     Effect.orElseSucceed(() => null),
   );
 

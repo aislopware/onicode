@@ -960,6 +960,16 @@ it.effect("a task delegated to the box wakes the laptop's parent when it ends th
         workState: "working",
       });
       yield* Ref.set(thread.status, "running");
+      // A box that stops answering reads leaves the status read here as no news.
+      yield* Ref.set(thread.holdRead, true);
+      const silent = yield* a
+        .call("task_status", { taskId: delegated.taskId })
+        .pipe(Effect.forkChild({ startImmediately: true }));
+      yield* Deferred.await(thread.readStarted);
+      yield* TestClock.adjust("3 seconds");
+      expect((yield* Fiber.join(silent)).structuredContent).toMatchObject({ status: "running" });
+      yield* Ref.set(thread.holdRead, false);
+      yield* Deferred.succeed(thread.releaseRead, undefined);
 
       const historyReads: Array<string> = [];
       const historyTracer = Tracer.make({
