@@ -2602,7 +2602,7 @@ export const CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [
   "mcp__onicode__send_to_user",
 ];
 
-// Onicode waits can block for an hour; exceed Claude's default 60 s timeout.
+// request_secret can wait an hour; exceed Claude's default 60 s timeout.
 export const CLAUDE_ONI_MCP_TOOL_TIMEOUT_MS = 65 * 60 * 1_000;
 
 // allowedTools pre-approves calls; tools controls availability. Pre-approve Onicode tools for headless modes,

@@ -1733,3 +1733,4 @@ fa647599e0	take	taken as is (web + mobile)
 6fae3c9303	take	perf(gitlab): MR watches check a one-query fingerprint before full reads
 20ee041354	take	fix(web): font picker scrolls to every font in short windows
 b9a68e0f57	take	fix(source-control): repository paths match however their names are percent-encoded
+5393882fb8	take	fix(mcp): return delegated task handles before client timeouts
