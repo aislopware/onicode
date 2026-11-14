@@ -1442,3 +1442,4 @@ b2259d3c6c	take	fix(web): show working state while provider sessions start
 8b30961465	take	fix(server): allow slow worktree base fetches to finish
 f315da3339	take	fix(shared): PASS and FAIL badges stay readable in dark command output
 947c056894	take	fix(web): a context submenu near the right edge no longer covers its parent menu
+3fe0fbb69f	take	fix(web): keep file uploads when returning a draft to its environment
