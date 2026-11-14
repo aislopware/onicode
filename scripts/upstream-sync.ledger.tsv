@@ -1606,3 +1606,4 @@ b5df3c1bef	take	fix(web): a scheduled task with a cleared run time no longer sav
 60e4be49cf	take	fix(shared): open relative Codex citations with filename punctuation (upstream e2e scenario dropped: no scripts/scenarios harness)
 8b633d9a9e	take	fix(web): PDF find matches curly quotes when you type straight ones
 d3d7ad9a61	take	fix(mobile): merging a PR uses the project's default merge method
+0487654fc8	take	fix(web): diagnostics CPU time no longer reads "60s" or "60m"
