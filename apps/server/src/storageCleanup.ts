@@ -1018,6 +1018,11 @@ const make = Effect.gen(function* () {
       });
   });
 
+  // A git worktree's dev home is seeded from real data, so its threads and any
+  // copied settings can point at the developer's real worktrees and repositories.
+  const isWorktreeDevHome = Effect.fn("StorageCleanup.isWorktreeDevHome")(function* () {
+    return (yield* resolveWorktreeOniHome(config.baseDir)) === path.resolve(config.baseDir);
+  });
   const cleanWorktrees = Effect.fn("StorageCleanup.cleanWorktrees")(function* (
     serverSettings: ServerSettings,
     now: number,
@@ -1028,11 +1033,7 @@ const make = Effect.gen(function* () {
     let waiting = false;
     const kept: string[] = [];
     const roots: Array<string> = [];
-    // A git worktree's dev home is seeded from real data, so its threads and any
-    // copied settings can point at the developer's real worktrees.
-    const isWorktreeDevHome =
-      (yield* resolveWorktreeOniHome(config.baseDir)) === path.resolve(config.baseDir);
-    for (const directory of isWorktreeDevHome
+    for (const directory of (yield* isWorktreeDevHome())
       ? [config.worktreesDir]
       : managedWorktreesDirectories(
           serverSettings,
@@ -1648,6 +1649,8 @@ const make = Effect.gen(function* () {
 
   const reportRef = yield* SubscriptionRef.make<StorageCleanupReport | null>(null);
   const cleanCheckpointRefs = Effect.fn("StorageCleanup.cleanCheckpointRefs")(function* () {
+    // A thread deleted in a seeded copy is still alive in the real home that owns its refs.
+    if (yield* isWorktreeDevHome()) return;
     // Forks display their source history even after its thread is deleted. Keep
     // that ancestry, including deleted intermediate forks and archived children.
     const rows = yield* sql<{
