@@ -1565,3 +1565,4 @@ db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the sess
 616067de84	take	fix(web): pressing Enter in the Add CLIProxyAPI hub dialog adds the hub
 3b816cf6c7	skip	Already in Onicode: the redirect-URL hint was dropped when the web surface was removed (4823698c3c).
 12102c74a3	take	fix(web,mobile): Linked environments shows links made outside the app
+719042d942	take	fix(server): MCP-launched threads no longer flash in Inbox before Working (dropped withoutGuestAttribution: guest links removed in Onicode)
