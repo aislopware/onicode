@@ -1671,3 +1671,4 @@ ec01233fb6	take	taken as is
 7c52ef7401	take	taken as is
 f12527ecf0	take	dropped the dev:web guard (Onicode's dev modes, dev and dev:server, both run a backend)
 01c84c7c02	take	taken as is
+b81202748b	take	fix(mobile): typing before a chip no longer leaves the iOS caret behind (#33774)
