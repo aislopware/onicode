@@ -1639,3 +1639,4 @@ d2a9414359	take	upstream e2e scenario dropped: no scripts/scenarios harness
 73fb6cd009	take	taken as is
 3ceed620cf	take	conflict resolved: kept Onicode's webhook-free schedule normalization (webhooks removed); took isNonGitProject
 76ae36ef8c	take	taken as is
+dd5061364b	take	conflict resolved: upstream's effect-based remember replaces Onicode's memo comparator (6f90d07c20), which also skipped caching finished streamed blocks; render counts unchanged
