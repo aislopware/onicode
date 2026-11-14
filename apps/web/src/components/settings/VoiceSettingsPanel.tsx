@@ -28,7 +28,7 @@ import {
   type SpeechModelUnloadTimeout,
   type VoiceShortcutMode,
 } from "@onicode/contracts";
-import { createModelSelection } from "@onicode/shared/model";
+import { createModelSelection, pickModelSelection } from "@onicode/shared/model";
 import { resolveSpeechPostProcessingModelSelection } from "@onicode/shared/serverSettings";
 import { cloudSpeechLanguages } from "@onicode/shared/speech";
 import {
@@ -576,7 +576,7 @@ function CleanupModelRow() {
                   triggerClassName={SETTINGS_PICKER_TRIGGER_CLASSNAME}
                   getModelDisabledReason={modelDisabledReason}
                   onInstanceModelChange={(instanceId, model) =>
-                    setModel(createModelSelection(instanceId, model))
+                    setModel(pickModelSelection(selection, instanceId, model))
                   }
                 />
                 <TraitsPicker
