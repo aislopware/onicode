@@ -1580,3 +1580,4 @@ f52e5c1919	take	fix(server): expand Windows home-relative file paths consistentl
 cebdf39984	take	fix(web): cancelled queued-message edits release their staged uploads
 0c6f421f3c	take	perf(desktop): stop rebroadcasting preview ownership on every key
 c666345bb9	take	fix(web): subagent previews drop image marks and full link URLs (test keeps Onicode's Mercury_(planet) fixture)
+c0ee5a1f5f	take	fix(server): pushing a branch whose remote branch was deleted publishes it again
