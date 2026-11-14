@@ -2,6 +2,7 @@ import { assert, describe, it } from "@effect/vitest";
 import {
   AuthSessionId,
   EnvironmentId,
+  isListedThreadLineage,
   type OrchestrationV2DomainEvent,
   type OrchestrationV2ThreadShell,
   ProjectId,
@@ -221,12 +222,30 @@ const setup = Effect.fn(function* (options?: {
           Effect.sync(() => ({
             snapshotSequence: 1,
             threads: [...threads.values()]
-              .filter((thread) => threadId === undefined || thread.id === threadId)
+              .filter((thread) =>
+                threadId === undefined
+                  ? isListedThreadLineage(thread.lineage)
+                  : thread.id === threadId,
+              )
               .map((thread) => ({ ...thread, lastVisitedAt: thread.lastVisitedAt ?? null })),
           })).pipe(
             Effect.tap(() =>
               threadId === undefined ? (options?.onSnapshot ?? Effect.void) : Effect.void,
             ),
+          ),
+        listActiveShellIndex: () =>
+          Effect.sync(() =>
+            [...threads.values()].map((thread) => ({
+              id: thread.id,
+              projectId: thread.projectId,
+              lineage: thread.lineage,
+              settledOverride: thread.settledOverride,
+              settledAt: thread.settledAt,
+              pinnedAt: thread.pinnedAt,
+              snoozedUntil: thread.snoozedUntil,
+              mayBeLive: true,
+              hasRemoteTasks: false,
+            })),
           ),
         streamDomainEvents: Stream.fromEffectRepeat(
           Queue.offer(pulls, undefined).pipe(Effect.andThen(Queue.take(events))),
@@ -269,12 +288,14 @@ const setup = Effect.fn(function* (options?: {
   const emit = Effect.fn(function* (
     overrides: Partial<OrchestrationV2ThreadShell>,
     type: OrchestrationV2DomainEvent["type"] = "run.updated",
+    payload?: { readonly type: string; readonly status: string },
   ) {
     threads.set(overrides.id ?? THREAD, shell(overrides));
-    // The service reads only an event's type and thread id.
+    // The service reads only an event's type and thread id, and a turn item's type and status.
     yield* Queue.offer(events, {
       type,
       threadId: overrides.id ?? THREAD,
+      payload,
     } as unknown as OrchestrationV2DomainEvent);
     yield* Queue.take(pulls);
   });
@@ -282,8 +303,9 @@ const setup = Effect.fn(function* (options?: {
   const change = Effect.fn(function* (
     overrides: Partial<OrchestrationV2ThreadShell>,
     type?: OrchestrationV2DomainEvent["type"],
+    payload?: { readonly type: string; readonly status: string },
   ) {
-    yield* emit(overrides, type);
+    yield* emit(overrides, type, payload);
     yield* push.drain;
   });
   const register = Effect.fn(function* (
@@ -387,7 +409,7 @@ describe("PushNotifications", () => {
     "starts one Live Activity per stretch of work and updates it through its own grant",
     () =>
       Effect.gen(function* () {
-        const { push, change, register, restart, taken } = yield* setup();
+        const { push, change, register, restart, taken, messages } = yield* setup();
         yield* register(
           registration({ platform: "ios", label: "iPhone", liveActivityStart: grant("start") }),
         );
@@ -409,15 +431,22 @@ describe("PushNotifications", () => {
         yield* TestClock.adjust("7 minutes");
         yield* push.drain;
         assert.deepStrictEqual(taken(), []);
+        // iOS may hold back an update that is not urgent, which suits one that changes no number.
+        yield* change({ title: "Renamed again" });
+        assert.deepStrictEqual(taken(), [{ grant: "grant_update", alert: undefined, active: 1 }]);
+        assert.notProperty(messages.at(-1)?.activity, "urgent");
+        // So it must not put off the keepalive, which held back would reach a card out of date.
         yield* TestClock.adjust("1 minute");
         yield* push.drain;
         assert.deepStrictEqual(taken(), [{ grant: "grant_update", alert: undefined, active: 1 }]);
+        assert.strictEqual(messages.at(-1)?.activity?.urgent, true);
 
         yield* change({ pendingRuntimeRequest: approval });
         assert.deepStrictEqual(taken(), [
           { grant: "grant_notification", alert: "Approval needed · onicode", active: undefined },
           { grant: "grant_update", alert: undefined, active: 1 },
         ]);
+        assert.strictEqual(messages.at(-1)?.activity?.urgent, true);
 
         yield* change({ status: "failed", latestRunCompletedAt: DateTime.makeUnsafe(8 * 60_000) });
         assert.deepStrictEqual(taken(), [
@@ -610,6 +639,42 @@ describe("PushNotifications", () => {
         { grant: "grant_notification", alert: undefined, active: 1 },
         { grant: "grant_notification", alert: "Approval needed · onicode", active: 1 },
       ]);
+    }),
+  );
+
+  it.effect("shows a card only a person can answer, a subagent's on the thread above it", () =>
+    Effect.gen(function* () {
+      const { change, register, restart, taken } = yield* setup();
+      yield* register();
+      taken();
+      const card = { ...approval, kind: "user_input", userOnly: true } as const;
+      const waiting = { type: "secret_request", status: "waiting" };
+      const input = [
+        { grant: "grant_notification", alert: "Waiting for input · onicode", active: 1 },
+      ];
+      const working = [{ grant: "grant_notification", alert: undefined, active: 1 }];
+
+      // A card is a turn item: no runtime request says that it opened or closed.
+      yield* change({ pendingRuntimeRequest: card }, "turn-item.updated", waiting);
+      assert.deepStrictEqual(taken(), input);
+      yield* change({}, "turn-item.updated", { type: "secret_request", status: "completed" });
+      assert.deepStrictEqual(taken(), working);
+
+      const subagent = {
+        id: ThreadId.make("thread-child"),
+        title: "Child",
+        lineage: { rootThreadId: THREAD, parentThreadId: THREAD, relationshipToParent: "subagent" },
+        creationSource: "server",
+        activityRunStatus: "running",
+      } satisfies Partial<OrchestrationV2ThreadShell>;
+      yield* change({ ...subagent, pendingRuntimeRequest: card }, "turn-item.updated", waiting);
+      assert.deepStrictEqual(taken(), input);
+
+      // A restart reads what a subagent already asks, so its answer still clears the row.
+      yield* restart;
+      assert.deepStrictEqual(taken(), working);
+      yield* change(subagent);
+      assert.deepStrictEqual(taken(), working);
     }),
   );
 

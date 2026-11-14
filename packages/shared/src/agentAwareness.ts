@@ -1,5 +1,6 @@
 import {
   isListedThreadLineage,
+  isProviderNativeSubagentThread,
   type EnvironmentId,
   type OrchestrationV2ThreadShell,
   type Project,
@@ -51,9 +52,40 @@ function buildAgentAwarenessDeepLink(input: {
   return `/threads/${encodeURIComponent(input.environmentId)}/${encodeURIComponent(input.threadId)}`;
 }
 
+/** What a thread shown under another asks of the person. */
+export type ChildThreadRequest = "approval" | "user_input";
+
+/**
+ * What a subagent or side chat asks that the listed thread above it shows, by the rule the thread
+ * lists roll requests up with. The agent above answers a subagent's question itself, a provider's
+ * own subagent asks on its parent, and once a subagent's run ends nothing waits on the answer.
+ */
+export function childThreadRequest(
+  thread: Pick<
+    OrchestrationV2ThreadShell,
+    "activityRunStatus" | "creationSource" | "lineage" | "pendingRuntimeRequest" | "status"
+  >,
+): ChildThreadRequest | null {
+  const request = thread.pendingRuntimeRequest;
+  if (request === null || request.kind === "auth_refresh") return null;
+  const asks = request.kind === "user_input" ? "user_input" : "approval";
+  if (thread.lineage.sideChat === true) return asks;
+  if (
+    thread.lineage.relationshipToParent !== "subagent" ||
+    isProviderNativeSubagentThread(thread) ||
+    (thread.activityRunStatus ?? null) === null ||
+    (asks === "user_input" && request.userOnly !== true)
+  ) {
+    return null;
+  }
+  return asks;
+}
+
 export interface ProjectThreadAwarenessV2Input {
   readonly environmentId: EnvironmentId;
   readonly project: Pick<Project, "title">;
+  /** The most pressing thing a thread shown under this one asks. */
+  readonly childRequest?: ChildThreadRequest | null;
   readonly thread: Pick<
     OrchestrationV2ThreadShell,
     | "activityRunStatus"
@@ -78,7 +110,7 @@ export function projectThreadAwarenessV2(
 ): AgentAwarenessState | null {
   const { environmentId, project, thread } = input;
   if (!isListedThreadLineage(thread.lineage)) return null;
-  const phase = resolveThreadAwarenessPhaseV2(thread);
+  const phase = resolveThreadAwarenessPhaseV2(thread, input.childRequest ?? null);
   if (phase === null) {
     return null;
   }
@@ -124,14 +156,14 @@ export function projectThreadAwarenessV2(
 
 function resolveThreadAwarenessPhaseV2(
   thread: ProjectThreadAwarenessV2Input["thread"],
+  childRequest: ChildThreadRequest | null,
 ): AgentAwarenessPhase | null {
-  if (thread.pendingRuntimeRequest?.kind === "user_input") return "waiting_for_input";
-  if (
-    thread.pendingRuntimeRequest !== null &&
-    thread.pendingRuntimeRequest.kind !== "auth_refresh"
-  ) {
+  const own = thread.pendingRuntimeRequest;
+  const asked = own !== null && own.kind !== "auth_refresh";
+  if ((asked && own.kind !== "user_input") || childRequest === "approval") {
     return "waiting_for_approval";
   }
+  if (asked || childRequest === "user_input") return "waiting_for_input";
   switch (thread.activityRunStatus ?? thread.status) {
     case "preparing":
     case "starting":

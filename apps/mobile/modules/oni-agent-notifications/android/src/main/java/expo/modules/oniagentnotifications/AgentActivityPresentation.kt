@@ -94,10 +94,11 @@ internal class ActivityPresentation(data: Map<String, String>, private val activ
     ?: rows.count { ActivityPhase.forStatus(it.status)?.finished != true }
   private val attentionCount = data["activity_attention_count"]?.toIntOrNull()?.coerceAtLeast(0)
     ?: rows.count { ActivityPhase.forStatus(it.status)?.needsUser == true }
-  private val failedCount = rows.count { it.status == ActivityPhase.FAILED.status }
-  private val completedCount = rows.count { it.status == ActivityPhase.COMPLETED.status }
-  val threadCount =
-    activeCount + rows.count { ActivityPhase.forStatus(it.status)?.finished == true }
+  private val failedCount = data["activity_failed_count"]?.toIntOrNull()?.coerceAtLeast(0)
+    ?: rows.count { it.status == ActivityPhase.FAILED.status }
+  private val completedCount = data["activity_done_count"]?.toIntOrNull()?.coerceAtLeast(0)
+    ?: rows.count { it.status == ActivityPhase.COMPLETED.status }
+  val threadCount = activeCount + failedCount + completedCount
   private val singleProject = rows.map { it.project }.distinct().size == 1
   private val legacyBody = (0..4).mapNotNull { data["activity_line_$it"]?.take(300) }
     .takeIf { it.isNotEmpty() }?.joinToString("\n")

@@ -492,6 +492,7 @@ export const layer = Layer.effect(
               environmentId: message.environmentId,
               state,
               alert,
+              urgent: message.activity?.urgent === true,
               nowSeconds,
             });
           }

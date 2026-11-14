@@ -125,6 +125,7 @@ export function pushActivityState(input: {
   if (newest === undefined) return null;
 
   const count = active.length;
+  const failed = finished.filter((state) => state.phase === "failed").length;
   return {
     state: {
       title: fit(input.title, "Onicode"),
@@ -135,6 +136,9 @@ export function pushActivityState(input: {
             ? "Agent work failed"
             : "Agent work completed",
       activeCount: Math.min(count, 9999),
+      attentionCount: Math.min(active.filter((state) => isAttention(state.phase)).length, 9999),
+      failedCount: Math.min(failed, 9999),
+      doneCount: Math.min(finished.length - failed, 9999),
       updatedAt: newest.updatedAt,
       activities: shown.map(row).filter(isRow).slice(0, PUSH_ACTIVITY_MAX_ROWS),
     },
@@ -153,6 +157,21 @@ export function pushActivityIdentity(state: PushActivityState | null): string {
     updatedAt: undefined,
     activities: state.activities.map((activity) => ({ ...activity, updatedAt: undefined })),
   });
+}
+
+/**
+ * The counts a card shows and the threads waiting for someone. A row that only connected or was
+ * renamed changes none of it.
+ */
+export function pushActivityCounts(state: PushActivityState | null): string {
+  if (state === null) return "null";
+  return [
+    state.activeCount,
+    state.attentionCount,
+    state.failedCount,
+    state.doneCount,
+    ...state.activities.flatMap((row) => (isAttention(row.phase) ? [row.threadId, row.phase] : [])),
+  ].join(" ");
 }
 
 /**

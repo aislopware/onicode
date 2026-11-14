@@ -97,10 +97,13 @@ function AgentActivity(
   const row3 = ordered[3];
   const accent = phaseTint(hero?.phase);
 
-  const attentionCount = activities.filter((row) => needsUser(row.phase)).length;
-  const failedCount = activities.filter((row) => row.phase === "failed").length;
-  const doneCount = activities.filter((row) => row.phase === "completed").length;
-  // Rows are capped, so the environment's count is the only one that covers every agent.
+  // Rows are capped, so the environment's counts are the only ones that cover every agent. An
+  // older environment sends just the active one, and the rows have to do for the rest.
+  const countRows = (counted: (phase: AgentActivityPhase) => boolean) =>
+    activities.filter((row) => counted(row.phase)).length;
+  const attentionCount = environment.isStale ? 0 : (props.attentionCount ?? countRows(needsUser));
+  const failedCount = props.failedCount ?? countRows((phase) => phase === "failed");
+  const doneCount = props.doneCount ?? countRows((phase) => phase === "completed");
   const workingCount = Math.max(0, props.activeCount - attentionCount);
   const threadCount = props.activeCount + failedCount + doneCount;
 

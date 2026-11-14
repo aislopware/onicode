@@ -57,6 +57,16 @@ decides what each registered device should see.
   ended card, and a late one: it keeps accepting updates for a card that is gone, then answers
   `410 Unregistered` after a delay Apple does not specify. So an accepted update does not mean
   the card is on screen, and a card's age, not APNs, says when to replace it.
+- **Only a changed count and the keepalive are sent to a Live Activity at high priority.** APNs
+  holds a low-priority update back until the phone finds it convenient, which left a card a
+  count behind for minutes, and would let a keepalive arrive after the card had called itself
+  out of date. iOS throttles an app that sends too many high-priority ones in an hour, so a
+  rename and a row that connected stay low. The environment marks the update, since the gateway
+  keeps nothing to compare against.
+- **A thread shown under another has no row.** What a subagent or side chat asks of the person
+  shows on the listed thread above it, and alerts for it, by the rule the thread lists roll
+  requests up with ([`childThreadRequest`](../../packages/shared/src/agentAwareness.ts)). A
+  secret or link card is a turn item, so no runtime request says that it opened or closed.
 
 Registration is plain HTTP, not a WebSocket method, because the app registers a Live Activity's
 update token from the background, where it has no socket.

@@ -8,6 +8,7 @@ import * as Schema from "effect/Schema";
 import type { AgentAwarenessPhase, AgentAwarenessState } from "./agentAwareness.ts";
 import {
   PUSH_TERMINAL_DISPLAY_MS,
+  pushActivityCounts,
   pushActivityIdentity,
   pushActivityState,
   pushAlertKind,
@@ -124,6 +125,41 @@ describe("pushActivityState", () => {
     expect(pushActivityIdentity(after!.state)).toBe(pushActivityIdentity(before!.state));
     expect(pushActivityIdentity(changed!.state)).not.toBe(pushActivityIdentity(before!.state));
     expect(pushActivityIdentity(null)).not.toBe(pushActivityIdentity(before!.state));
+  });
+
+  it("has the same counts until an agent starts, stops or needs someone", () => {
+    const counts = (states: ReadonlyArray<AgentAwarenessState>) =>
+      pushActivityCounts(activity(states)?.state ?? null);
+    const before = counts([agent("a", "running"), agent("b", "starting")]);
+
+    expect(counts([agent("a", "running", at(0), "Renamed"), agent("b", "running")])).toBe(before);
+    expect(counts([agent("a", "running"), agent("b", "running"), agent("c", "starting")])).not.toBe(
+      before,
+    );
+    const asking = counts([agent("a", "running"), agent("b", "waiting_for_input")]);
+    expect(asking).not.toBe(before);
+    // One thread stops waiting as another starts: the numbers hold, and the card must still move.
+    expect(counts([agent("a", "waiting_for_input"), agent("b", "running")])).not.toBe(asking);
+    expect(counts([agent("a", "running"), agent("b", "waiting_for_approval")])).not.toBe(asking);
+    expect(counts([agent("a", "running"), agent("b", "completed")])).not.toBe(before);
+    // More agents than rows: the count is all that tells the sixth from the seventh.
+    const many = (length: number, phase: AgentAwarenessPhase) =>
+      Array.from({ length }, (_, index) => agent(`${phase}${index}`, phase));
+    expect(counts(many(7, "running"))).not.toBe(counts(many(6, "running")));
+    const crowded = [
+      ...many(4, "running"),
+      ...many(3, "completed"),
+      agent("failed", "failed"),
+      agent("input", "waiting_for_input"),
+    ];
+    expect(activity(crowded)?.state).toMatchObject({
+      activeCount: 5,
+      attentionCount: 1,
+      failedCount: 1,
+      doneCount: 3,
+    });
+    expect(activity(crowded)?.state.activities).toHaveLength(5);
+    expect(counts([...crowded, agent("late", "completed")])).not.toBe(counts(crowded));
   });
 });
 

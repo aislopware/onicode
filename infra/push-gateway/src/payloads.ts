@@ -104,6 +104,8 @@ export function apnsLiveActivityRequest(input: {
     readonly body: string;
     readonly quiet?: boolean;
   } | null;
+  /** An update iOS must not hold back. Each one spends the hourly budget iOS allows an app. */
+  readonly urgent?: boolean;
   readonly nowSeconds: number;
 }): ApnsRequest {
   const build = (maxLength: number, rowCount: number) => {
@@ -194,7 +196,8 @@ export function apnsLiveActivityRequest(input: {
   }
   return {
     pushType: "liveactivity",
-    priority: input.event === "update" && input.alert === null ? "5" : "10",
+    priority:
+      input.event === "update" && input.alert === null && input.urgent !== true ? "5" : "10",
     expiration: input.nowSeconds + ACTIVITY_TTL_SECONDS,
     payload,
   };
@@ -209,7 +212,10 @@ function androidActivityData(input: {
 }): Record<string, string> {
   const rows = input.state?.activities ?? [];
   const activeCount = input.state?.activeCount ?? 0;
-  const attentionCount = rows.filter(isAttention).length;
+  // An older environment sends no counts, and its rows are all there is to count.
+  const attentionCount = input.state?.attentionCount ?? rows.filter(isAttention).length;
+  const count = (phase: PushActivityRow["phase"]) =>
+    rows.filter((row) => row.phase === phase).length;
   const clean = (value: string) => value.replace(/\s+/g, " ").trim();
   const hero = rows[0];
   const title =
@@ -229,6 +235,8 @@ function androidActivityData(input: {
     activity_phase: hero?.phase ?? "",
     activity_active_count: String(activeCount),
     activity_attention_count: String(attentionCount),
+    activity_failed_count: String(input.state?.failedCount ?? count("failed")),
+    activity_done_count: String(input.state?.doneCount ?? count("completed")),
     activity_body: hero
       ? `${hero.status}: ${clean(hero.threadTitle)} · ${clean(hero.projectTitle)}`
       : "",

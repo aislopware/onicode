@@ -21,7 +21,8 @@ does not need to reach it at that moment.
 on older Android show an environment's agents in the order they matter to you: the ones waiting
 for you, then ones that failed, then ones still working, then ones that finished. Each
 environment gets its own. A finished result stays for up to 15 minutes, or until you open its
-thread on any device.
+thread on any device. What a subagent asks of you, such as an approval or a secret, shows on the
+thread that started it.
 
 If you swipe one away, it stays away until that environment has finished everything and starts
 new work. iOS keeps a Live Activity for at most eight hours, so work that runs longer gets a new

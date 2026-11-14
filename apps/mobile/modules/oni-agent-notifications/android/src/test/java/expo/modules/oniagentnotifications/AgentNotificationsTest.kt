@@ -457,6 +457,22 @@ class AgentNotificationsTest : AgentNotificationsFixture() {
     val leading = manager.activeNotifications.single().notification
     assertEquals("Done", leading.extras.getString(NotificationCompat.EXTRA_SHORT_CRITICAL_TEXT))
     assertEquals("1 done", leading.extras.getCharSequence(Notification.EXTRA_TITLE).toString())
+    // Rows stop at five, so the environment's count is the one that covers every result.
+    AgentNotifications.receive(
+      context,
+      data + mapOf(
+        "activity_line_0" to "Done	Write tests	Project",
+        "activity_line_1" to "Working	Build feature	Project",
+        "activity_phase" to "completed",
+        "activity_active_count" to "1",
+        "activity_done_count" to "7",
+      )
+    )
+    assertEquals(
+      "7 done",
+      manager.activeNotifications.single().notification.extras
+        .getCharSequence(Notification.EXTRA_TITLE).toString()
+    )
     AgentNotifications.receive(context, data + ("activity_active_count" to "15"))
     assertEquals(
       "9+ live",
