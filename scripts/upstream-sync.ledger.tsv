@@ -1609,3 +1609,4 @@ d3d7ad9a61	take	fix(mobile): merging a PR uses the project's default merge metho
 0487654fc8	take	fix(web): diagnostics CPU time no longer reads "60s" or "60m"
 8871c265a2	take	fix(cursor): shell commands that exit non-zero are recorded as failed
 5583b26460	take	fix(server,client): preserve literal JSON command output (upstream e2e scenario dropped: no scripts/scenarios harness)
+1e9f93a48e	take	fix(mobile): stop showing "cannot control this task" while permissions load or after a network blip (relay-only branch and test dropped)
