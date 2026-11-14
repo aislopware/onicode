@@ -250,7 +250,7 @@ overrides:
   expo-widgets: 58.0.27
   '@ff-labs/fff-node': 0.11.0
   '@legendapp/list': 3.7.2
-  '@pierre/diffs': 1.7.0-beta.3
+  '@pierre/diffs': 1.7.0-beta.4
   '@react-native-ai/apple': 0.12.0
   '@react-native-menu/menu': 2.0.0
   '@react-navigation/native-stack': 7.21.0
@@ -324,7 +324,7 @@ patchedDependencies:
   '@ff-labs/fff-node@0.11.0': e19b9df35569cf3b280fec2f469ae0de43cc44e7022dbb2b9166bd8090fa8afd
   '@legendapp/list@3.7.2': 246448703dd58e35ae296ad5de952565fe65445a888b97398d842d7412a42bf0
   '@muse-code/sdk@1.4.14': 6613a36786b1278616ca2c142ad93cd8b30be4311c3ecc192c3cbc9fe3a41f4a
-  '@pierre/diffs@1.7.0-beta.3': 100b7d5770d49b0353d230fc505c25d32e2234eb4d8adedd7f63a5405e92aedf
+  '@pierre/diffs@1.7.0-beta.4': dd078a7448ce6727aaaa8b8b6702fe0ff02e85f18efa7c441a768530cabbe0cc
   '@react-native-ai/apple@0.12.0': 2d09870c2848d185cb05b53ed823a46e12dba519324d8dd8e584e28731990f9d
   '@react-native-menu/menu@2.0.0': 6872ba71b9847c5a0210b1b896923dadc3860faedfe28d9f062bcedfe786ef1d
   '@react-navigation/native-stack@7.21.0': 990d575444c4af2ce8218b3b7a8280fe244c03abbdb32b822a2e862f791dbf42
@@ -504,8 +504,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@pierre/diffs':
-        specifier: 1.7.0-beta.3
-        version: 1.7.0-beta.3(patch_hash=100b7d5770d49b0353d230fc505c25d32e2234eb4d8adedd7f63a5405e92aedf)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: 1.7.0-beta.4
+        version: 1.7.0-beta.4(patch_hash=dd078a7448ce6727aaaa8b8b6702fe0ff02e85f18efa7c441a768530cabbe0cc)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/highlights':
         specifier: 'catalog:'
         version: 0.5.0
@@ -1004,8 +1004,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/shared
       '@pierre/diffs':
-        specifier: 1.7.0-beta.3
-        version: 1.7.0-beta.3(patch_hash=100b7d5770d49b0353d230fc505c25d32e2234eb4d8adedd7f63a5405e92aedf)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: 1.7.0-beta.4
+        version: 1.7.0-beta.4(patch_hash=dd078a7448ce6727aaaa8b8b6702fe0ff02e85f18efa7c441a768530cabbe0cc)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@pierre/trees':
         specifier: 1.0.0-beta.6
         version: 1.0.0-beta.6(@pierre/theme@2.0.0)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.2.0)
@@ -1371,8 +1371,8 @@ importers:
         specifier: workspace:*
         version: link:../source-control-definitions
       '@pierre/diffs':
-        specifier: 1.7.0-beta.3
-        version: 1.7.0-beta.3(patch_hash=100b7d5770d49b0353d230fc505c25d32e2234eb4d8adedd7f63a5405e92aedf)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: 1.7.0-beta.4
+        version: 1.7.0-beta.4(patch_hash=dd078a7448ce6727aaaa8b8b6702fe0ff02e85f18efa7c441a768530cabbe0cc)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       effect:
         specifier: 4.1.3
         version: 4.1.3
@@ -5673,8 +5673,8 @@ packages:
     peerDependencies:
       '@peculiar/asn1-schema': ^3.0.0
 
-  '@pierre/diffs@1.7.0-beta.3':
-    resolution: {integrity: sha512-eAoAoL9aoO7vR9VV5NCLIuIAEr4yu5LsBnhTbyoy8wDFjT0y7bDrlhX8doO7FUb/MCd0Ldcd15Ga/yTOq2mjBA==}
+  '@pierre/diffs@1.7.0-beta.4':
+    resolution: {integrity: sha512-QtsUN1eO1hfAie0SUBRZ8xfjzybetaOzq3xFPw7UYl/XLkx9KxQ1uRDXHat4B44S2SW8HBt63yWKCSzQ6OQmEQ==}
     peerDependencies:
       react: ^18.3.1 || ^19.0.0
       react-dom: ^18.3.1 || ^19.0.0
@@ -5686,6 +5686,9 @@ packages:
 
   '@pierre/highlights@0.5.0':
     resolution: {integrity: sha512-G8gscrHrik3YjKd+tPTcmivJ/W0zRrtg4adVxnfX7+415+0Qplo6qUWuEX5R0UkA1fMhmE2sOSuLBMNGDtLhIw==}
+
+  '@pierre/highlights@0.5.1':
+    resolution: {integrity: sha512-c2WF6sgwgKdxXU6FpWDLWUYHRca/cJy+3QJkWAqYqEAFxqlPf8eSH0ehHcFFjKBmT+9KBl9H7q6z7HMRU7+m6g==}
 
   '@pierre/patches@0.0.1':
     resolution: {integrity: sha512-NycJQVQNuqmBdr7u1LsUcmkiIz1fRm9xhWZyRbm21oJYd0MVVCa45t9Lsuj5IKrTMBonxOuh4LMv+R3BpL4bmQ==}
@@ -14310,9 +14313,9 @@ snapshots:
     transitivePeerDependencies:
       - asn1js
 
-  '@pierre/diffs@1.7.0-beta.3(patch_hash=100b7d5770d49b0353d230fc505c25d32e2234eb4d8adedd7f63a5405e92aedf)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@pierre/diffs@1.7.0-beta.4(patch_hash=dd078a7448ce6727aaaa8b8b6702fe0ff02e85f18efa7c441a768530cabbe0cc)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
-      '@pierre/highlights': 0.5.0
+      '@pierre/highlights': 0.5.1
       '@pierre/patches': 0.0.1
       '@pierre/theme': 2.0.0
       '@pierre/theming': 1.0.2(@pierre/theme@2.0.0)(@shikijs/themes@4.2.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(shiki@4.2.0)
@@ -14327,6 +14330,8 @@ snapshots:
       - '@shikijs/themes'
 
   '@pierre/highlights@0.5.0': {}
+
+  '@pierre/highlights@0.5.1': {}
 
   '@pierre/patches@0.0.1': {}
 
