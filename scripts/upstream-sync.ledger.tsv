@@ -1486,3 +1486,4 @@ b37c959669	take	fix(server): open colon-number project folders correctly in VS C
 f3b43efd9a	take	fix(server): a hung Codex app-server no longer blocks every later Codex run
 df8c1a1fd4	take	fix(web): Narrator highlights the sidebar thread title where it is drawn
 f2764f71b2	take	fix(desktop): desktop tests no longer race to install Electron
+9ff435b060	take	fix(server): pause service restart when disk is full
