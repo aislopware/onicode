@@ -1747,3 +1747,4 @@ ab2bf940f6	take	fix(server): migrated databases can return freed space to disk
 88c42f471b	take	fix(devices): rename EAS Simulator to Expo Simulators
 3530805312	take	fix(server): find the EAS project of variant app configs
 852f53b801	take	fix(server): include untracked files when Git config hides them
+c041761d89	take	fix(web,server): picking the previous branch after an agent's checkout switches back
