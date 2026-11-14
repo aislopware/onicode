@@ -1678,3 +1678,4 @@ a767d23297	take	fix(server): a setting change no longer detaches a busy session 
 f5c2ceb4d1	take	fix(claude): rename the native session when the thread title changes (#34775)
 47a8f2ba92	take	fix(desktop): an emptied browser cookie jar imports as empty instead of failing (#34698)
 5d1352d48a	take	fix(server): each websocket RPC starts its own trace so Tempo keeps its spans (#36863)
+35cc7724c5	take	fix(mobile): compaction notice becomes a chip in the composer (#36872)
