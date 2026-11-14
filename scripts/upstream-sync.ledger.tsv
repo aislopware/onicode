@@ -1525,3 +1525,4 @@ c3517ec0bf	take	fix(shared): theme CSS checks allow url() inside a quoted data: 
 71c2410a67	take	fix(web): thread details slides in on close (#28929)
 f4e65cd843	take	fix(contracts): a null model selection options value is treated as omitted (#29149)
 250e502bfa	take	fix(mobile): scheduled-task edits made in quick succession are no longer lost (#27220); webhook form parts and their test case dropped
+dafd053a19	take	fix(mobile): closed PR numbers match their red icon in the thread list (#29327)
