@@ -9560,6 +9560,70 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     ),
   );
 
+  it.effect("keeps the window Claude reports for a model routed to a backend id", () =>
+    Effect.gen(function* () {
+      const harness = yield* makeWakeHarnessWithOptions({
+        routeModelCatalog: (catalog) =>
+          Effect.succeed(
+            withClaudeCodeModelRoutes(catalog, [
+              { value: "haiku", resolvedModel: "us.anthropic.claude-haiku-4-5-v1" },
+            ]),
+          ),
+        mcp: {
+          mcpServerStatus: Effect.succeed([]),
+          readMcpResource: () => Effect.die("unexpected MCP resource read"),
+          callMcpTool: () => Effect.die("unexpected MCP tool call"),
+          getContextUsage: Effect.succeed({
+            categories: [],
+            totalTokens: 1_000,
+            maxTokens: 150_000,
+            rawMaxTokens: 200_000,
+            percentage: 1,
+            gridRows: [],
+            model: "haiku",
+            memoryFiles: [],
+            mcpTools: [],
+            agents: [],
+            isAutoCompactEnabled: true,
+            autoCompactThreshold: 140_000,
+            apiUsage: null,
+          }),
+        },
+      });
+      const modelSelection = {
+        instanceId: ProviderInstanceId.make(ClaudeAdapterV2.CLAUDE_PROVIDER),
+        model: "claude-haiku-4-5",
+      } satisfies ModelSelection;
+      yield* harness.runtime.startTurn(
+        makeClaudeTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-routed-window"),
+          text: "Continue.",
+          attachments: [],
+          modelSelection,
+        }),
+      );
+      assert.equal(harness.getOpenedOptions()?.model, "haiku");
+      yield* Queue.offer(
+        harness.sdkMessages,
+        makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000692", result: "OK" }),
+      );
+      assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+      assert.strictEqual(harness.runtime.getModelContextWindow?.(modelSelection), 150_000);
+    }).pipe(
+      Effect.provide(
+        Layer.mergeAll(
+          IdAllocator.layer,
+          McpProviderSessions.layer,
+          NodeServices.layer,
+          NodeCrypto.layer,
+        ),
+      ),
+    ),
+  );
+
   it.effect.each(["root", "mcp", "subagent", "remote"] as const)(
     "asks Claude for suggestions only on threads a person drives (%s)",
     (lineage) =>

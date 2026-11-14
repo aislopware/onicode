@@ -25,6 +25,8 @@ export interface CompiledClaudeModelSelection {
   readonly settings: Readonly<Record<string, boolean>>;
   /** The alias of a custom model named like one, which Claude Code would otherwise expand. */
   readonly pinnedAlias: string | undefined;
+  /** The API id before backend routing, which keys the context limits Claude reports. */
+  readonly contextLimitsKey: string;
   readonly queryIdentity: string;
 }
 
@@ -68,6 +70,7 @@ export function compileClaudeModelSelection(
     promptEffort,
     settings,
     pinnedAlias,
+    contextLimitsKey: resolveClaudeCatalogApiModelId(catalog, selection, { routed: false }),
     queryIdentity: JSON.stringify({
       apiModelId,
       effort: effort ?? null,
