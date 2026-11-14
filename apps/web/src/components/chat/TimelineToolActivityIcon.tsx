@@ -245,7 +245,7 @@ function WorkEntryIcon({ name, className }: { name: WorkEntryIconName; className
     case "device":
       return <SmartphoneIcon className={className} aria-hidden />;
     case "onicode":
-      return <OniWordmark className={className} aria-hidden />;
+      return <OniWordmark className={cn(className, "size-5")} aria-hidden />;
     case "check":
       return <CheckIcon className={className} aria-hidden />;
     case "list-todo":
