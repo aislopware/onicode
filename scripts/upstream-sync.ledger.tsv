@@ -1516,3 +1516,4 @@ bb9fde6fcd	take	fix(scripts): test:cached no longer crashes when vp writes no ca
 f161a4d2b5	take	fix(shared): preserve literal ampersands in citation Markdown paths
 fd6d0ea022	take	fix(web): stashing waits for pasted images to finish compressing
 ead133ce70	take	fix(web): SSH port field no longer turns 22.5 into port 22 (pending tagged it removed-area, but Onicode keeps ConnectionsSettings)
+ae837398a2	skip	Only touches apps/server/src/telemetry (ProviderDimensions analytics), which Onicode removed.
