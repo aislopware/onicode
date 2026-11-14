@@ -1666,3 +1666,4 @@ c03498e689	take	single channel: retry joins a prepared update by downloaded vers
 ec01233fb6	take	taken as is
 3238db7a86	take	taken as is
 6fc2fb192c	take	taken as is
+8cbaf75055	take	skips the new run lookup when a pending item keeps its existing position (per-event path)
