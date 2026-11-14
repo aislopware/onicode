@@ -1527,3 +1527,4 @@ f4e65cd843	take	fix(contracts): a null model selection options value is treated 
 250e502bfa	take	fix(mobile): scheduled-task edits made in quick succession are no longer lost (#27220); webhook form parts and their test case dropped
 dafd053a19	take	fix(mobile): closed PR numbers match their red icon in the thread list (#29327)
 13a6782a6c	take	fix(web): ODS time cells without display text show their value; dropped scripts/scenarios e2e (removed in Onicode)
+0fdc99c870	take	fix(web): notebook previews strip ANSI colors from saved tracebacks (#36703)
