@@ -11553,6 +11553,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                 type: "app_thread.created",
                 driver: CLAUDE_PROVIDER,
                 appThread: { ...context.input.appThread, title },
+                titleOnly: true,
               });
             }
           }
