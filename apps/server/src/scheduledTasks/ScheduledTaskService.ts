@@ -1071,9 +1071,11 @@ export const layer = Layer.effect(
         input.schedule.type === "once"
           ? { type: "once", runAt: iso(DateTime.makeUnsafe(input.schedule.runAt)) }
           : input.schedule;
+      // A folder that is not a Git repository, Scratch included, cannot hold a worktree.
       const workspaceStrategy: ScheduledTask["workspaceStrategy"] =
         input.workspaceStrategy.type === "worktree" &&
-        (yield* managedFolders.isScratchProject(input.projectId))
+        ((yield* managedFolders.isScratchProject(input.projectId)) ||
+          (yield* threadLaunch.isNonGitProject(input.projectId)))
           ? { type: "root" }
           : input.workspaceStrategy;
       const scheduleUnchanged =
