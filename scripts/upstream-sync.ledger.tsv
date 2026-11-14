@@ -1468,3 +1468,4 @@ a61291e3e2	take	fix(shared): one-letter link schemes no longer become file links
 651accb100	take	fix(web): new browser tabs open at your default zoom and appearance
 9e19b7f7e1	take	feat(server): resume stopped provider threads natively; adapted: providers without native resume get the old continue prompt, clients keep sending it for older servers
 4574c6013d	take	fix(web): preserve saved notebook traceback frame boundaries
+d6244ac5a3	take	fix(web): preserve literal entities in EPUB CDATA
