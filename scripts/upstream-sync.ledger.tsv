@@ -1551,3 +1551,4 @@ cc0a7bb9d8	take	fix(shared): file links with parentheses in the path keep their 
 f84ad6f30b	take	fix(web): discarded drafts stay discarded after image compression (upstream e2e scenario dropped: no scripts/scenarios harness)
 96ca66f218	take	fix(server): a nested repository with no commits no longer breaks the review diff
 e26e21c06b	take	fix(web,mobile): bound scheduled tasks no longer offer a model their runs ignore
+07885556d9	take	fix(shared): honor Windows PATHEXT regardless of key casing
