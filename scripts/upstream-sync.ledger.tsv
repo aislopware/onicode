@@ -1615,3 +1615,4 @@ ee4ef06469	take	fix(web): use optimistic updates for settings across environment
 154c5014a7	take	fix(web): long preview annotation comments are no longer dropped from the message
 554c89320f	take	fix(mobile): long pull request searches on iOS no longer fail the list
 043d712294	take	fix(shared): atomic saves handle long filenames
+48afc47e77	take	fix(server): message search no longer finds rolled-back turns or cancelled queued messages
