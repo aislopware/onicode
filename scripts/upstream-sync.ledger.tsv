@@ -1592,3 +1592,4 @@ c2b06f9df8	take	perf(server): Cursor turns no longer write every streamed token 
 cc578d5f9a	take	fix(server): settling a usage-limited thread disarms recovery and names the refusal
 45ff3f5967	take	fix(desktop): bound screencast delivery to slow consumers
 1fcb24518a	take	fix(server): Claude API-key logins show as Claude API Key in provider status
+86ec940ad3	take	fix(mobile): a failed archive or delete keeps the earlier Undo
