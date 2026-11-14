@@ -37,6 +37,8 @@ export interface SqliteClientConfig {
   readonly readerWorker?: boolean | undefined;
   /** Runs the writer and WAL checkpoints off the event loop. Ignored for in-memory databases. */
   readonly writerWorker?: boolean | undefined;
+  /** How long the caller's thread waits for each worker reply before going back to the event loop. */
+  readonly replyWait?: Duration.Input | undefined;
 }
 
 // SqlClient masks transaction acquisition, so readOnly carries the caller's interruption policy.
@@ -197,6 +199,13 @@ const hasLargeBinding = (params: ReadonlyArray<unknown>): boolean => {
 const workerSource = `
 const { parentPort, workerData } = require("node:worker_threads");
 const { DatabaseSync } = require("node:sqlite");
+const { replies, replied } = workerData;
+// The parent may be asleep on this counter instead of in its event loop.
+const reply = (message) => {
+  replies.postMessage(message);
+  Atomics.add(replied, 0, 1);
+  Atomics.notify(replied, 0);
+};
 const describe = (error) => ({
   message: String(error && error.message ? error.message : error),
   code: error && error.code,
@@ -266,7 +275,7 @@ parentPort.on("message", (request) => {
           // Build the next batch during receipt, but allow only one unacknowledged message.
           if (pendingBatch) Atomics.wait(received, 0, 0);
           Atomics.store(received, 0, 0);
-          parentPort.postMessage({ id, rows, more: true });
+          reply({ id, rows, more: true });
           rows = [];
           bytes = 0;
           pendingBatch = true;
@@ -275,15 +284,15 @@ parentPort.on("message", (request) => {
         bytes += rowBytes;
       }
       if (pendingBatch) Atomics.wait(received, 0, 0);
-      parentPort.postMessage({ id, rows });
+      reply({ id, rows });
     } else {
       const result = statement.run(...params);
-      parentPort.postMessage({ id, rows: raw ? result : [] });
+      reply({ id, rows: raw ? result : [] });
     }
   } catch (error) {
     // A failed iterator can report its previous SQLite error when the statement is reused.
     statements.delete(sql);
-    parentPort.postMessage({ id, error: { operation, ...describe(error) } });
+    reply({ id, error: { operation, ...describe(error) } });
   }
 });
 `;
@@ -338,6 +347,12 @@ const endsReadTransaction = (sql: string) => /^\s*ROLLBACK\b|^\s*COMMIT\b/i.test
 
 // WAL readers run concurrently; one worker serialized every read behind the slowest transaction.
 const READER_POOL_SIZE = 4;
+// Most statements finish in microseconds, but a reply that needs an event-loop turn makes a busy
+// loop hold a transaction and its lock for seconds. The caller's thread waits this long for each
+// reply instead; a slower statement still leaves the loop free. Readers wait less, because the
+// loop could be handing statements to the other readers meanwhile.
+const WRITER_REPLY_WAIT = Duration.millis(1);
+const READER_REPLY_WAIT = Duration.micros(250n);
 const READER_STARTUP_TIMEOUT = Duration.seconds(10);
 
 // Bind transactions to one worker; fail after its exit instead of resuming outside the transaction on a replacement.
@@ -345,10 +360,18 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
   readonly filename: string;
   readonly role: "reader" | "writer";
   readonly readOnly: boolean;
+  readonly replyWait: Duration.Input | undefined;
   readonly onReply?: () => void;
 }) {
   const label = options.role === "reader" ? "Database reader" : "Database writer";
   const readOnly = options.readOnly;
+  const replyWaitMs = Duration.toMillis(
+    options.replyWait === undefined
+      ? options.role === "reader"
+        ? READER_REPLY_WAIT
+        : WRITER_REPLY_WAIT
+      : Duration.fromInputUnsafe(options.replyWait),
+  );
   let current:
     | {
         readonly worker: NodeWorkerThreads.Worker;
@@ -361,6 +384,9 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
   let writerStopped: string | undefined;
 
   const start = () => {
+    // Replies need a port of their own: a Worker cannot be read synchronously.
+    const { port1: replies, port2 } = new NodeWorkerThreads.MessageChannel();
+    const replied = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
     const worker = new NodeWorkerThreads.Worker(workerSource, {
       eval: true,
       workerData: {
@@ -369,7 +395,10 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
         requireWal: options.role === "reader",
         allowExtension: false,
         prepareCacheSize: 200,
+        replies: port2,
+        replied,
       },
+      transferList: [port2],
     });
     let announce: (startup: WorkerStartup) => void = () => {};
     const started = new Promise<WorkerStartup>((resolve) => {
@@ -387,6 +416,7 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
     >();
     const stop = (message: string) => {
       stoppedMessage = message;
+      replies.close();
       if (options.role === "writer") writerStopped = message;
       announce({ type: "unavailable", message });
       if (current?.worker === worker) current = undefined;
@@ -399,12 +429,11 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
       }
       pending.clear();
     };
-    worker.on("message", (reply: WorkerReply | WorkerStartup) => {
-      if ("type" in reply) {
-        announce(reply);
-        if (pending.size === 0) worker.unref();
-        return;
-      }
+    worker.on("message", (startup: WorkerStartup) => {
+      announce(startup);
+      if (pending.size === 0) worker.unref();
+    });
+    const receive = (reply: WorkerReply) => {
       const request = pending.get(reply.id);
       if (request === undefined) return;
       if ("rows" in reply && reply.more) {
@@ -422,7 +451,10 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
       } else {
         request.resume(reply);
       }
-    });
+    };
+    replies.on("message", receive);
+    // The worker's own ref keeps the loop alive while a request is pending.
+    replies.unref();
     worker.on("error", (cause) =>
       stop(`${label} failed: ${cause instanceof Error ? cause.message : String(cause)}`),
     );
@@ -456,8 +488,17 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
           });
           if (pending.size === 1) worker.ref();
           const cached = input.cached && !hasLargeBinding(input.params);
+          const seen = Atomics.load(replied, 0);
           // oxlint-disable-next-line unicorn/require-post-message-target-origin -- Node workers do not accept a target origin.
           worker.postMessage({ id, safeIntegers, ...input, cached, received });
+          if (Atomics.wait(replied, 0, seen, replyWaitMs) === "timed-out") return;
+          for (
+            let next = NodeWorkerThreads.receiveMessageOnPort(replies);
+            next !== undefined;
+            next = NodeWorkerThreads.receiveMessageOnPort(replies)
+          ) {
+            receive(next.message);
+          }
         });
         // A posted write runs to the end, as it did on the event loop; the caller and its lock
         // must not move on while the worker is still applying it. Reads stay cancellable.
@@ -563,8 +604,17 @@ const makeWorkerConnection = Effect.fnUntraced(function* (options: {
 });
 
 // A reader that cannot start turns off the whole pool, so routing never picks a dead slot.
-const makeReader = Effect.fnUntraced(function* (filename: string, pool: { unavailable: boolean }) {
-  const acquire = yield* makeWorkerConnection({ filename, role: "reader", readOnly: true });
+const makeReader = Effect.fnUntraced(function* (
+  filename: string,
+  replyWait: Duration.Input | undefined,
+  pool: { unavailable: boolean },
+) {
+  const acquire = yield* makeWorkerConnection({
+    filename,
+    role: "reader",
+    readOnly: true,
+    replyWait,
+  });
   return Effect.suspend((): Effect.Effect<Connection | undefined> =>
     pool.unavailable
       ? Effect.undefined
@@ -846,6 +896,7 @@ const make = Effect.fn("makeWithDatabase")(function* (
         filename: options.filename,
         role: "writer",
         readOnly: options.readonly ?? false,
+        replyWait: options.replyWait,
         onReply: () => checkpointAfterWrite?.(),
       })
     : Effect.succeed(yield* makeConnection);
@@ -867,7 +918,10 @@ const make = Effect.fn("makeWithDatabase")(function* (
     options.readerWorker && isFileDatabase
       ? yield* Effect.forEach(Array.from({ length: READER_POOL_SIZE }), () =>
           Effect.map(
-            Effect.all([makeReader(options.filename, readerPool), Semaphore.make(1)]),
+            Effect.all([
+              makeReader(options.filename, options.replyWait, readerPool),
+              Semaphore.make(1),
+            ]),
             ([acquire, lock]) => ({
               acquire,
               lock,
