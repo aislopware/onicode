@@ -1483,3 +1483,4 @@ b37c959669	take	fix(server): open colon-number project folders correctly in VS C
 38b3feeb75	take	fix(server): cached refs include a newly checked-out external branch
 820f620e3d	take	fix(web): model picks no longer inherit another model's traits
 298c38d7f2	take	fix(server): subagent hover cards show reasoning effort again
+f3b43efd9a	take	fix(server): a hung Codex app-server no longer blocks every later Codex run
