@@ -1591,3 +1591,4 @@ c2b06f9df8	take	perf(server): Cursor turns no longer write every streamed token 
 4954322f02	take	fix(web): don't send completion notifications for snoozed threads (desktop notifications only; upstream's relay push part has no Onicode file, Onicode's own push is a follow-up)
 cc578d5f9a	take	fix(server): settling a usage-limited thread disarms recovery and names the refusal
 45ff3f5967	take	fix(desktop): bound screencast delivery to slow consumers
+1fcb24518a	take	fix(server): Claude API-key logins show as Claude API Key in provider status
