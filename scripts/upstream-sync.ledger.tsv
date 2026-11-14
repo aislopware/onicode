@@ -1394,3 +1394,4 @@ ea957b5cab	take	fix(server): give MCP clients an absolute attachment upload URL 
 4a53d80239	take	fix(server): database folders on btrfs are No_COW so SQLite stops fragmenting (#36518)
 7847ec9386	take	fix(web): preserve queued project settings changes (#35741)
 8656cdb3a9	take	fix(web): reply labels no longer cut an emoji in half (#35701)
+388424db26	take	fix(shared): capture shell values after profiles replace PATH (#35617)
