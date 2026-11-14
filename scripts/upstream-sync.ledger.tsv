@@ -1750,3 +1750,4 @@ ab2bf940f6	take	fix(server): migrated databases can return freed space to disk
 c041761d89	take	fix(web,server): picking the previous branch after an agent's checkout switches back
 35e65e6446	take	fix(server): oni_thread_list leaves out tasks delegated from a linked environment
 733a20008c	take	fix(server): prune checkpoint refs owned by deleted threads
+854b61bc27	take	fix(mobile): screen readers hear a thread row's status and time
