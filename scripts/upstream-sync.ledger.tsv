@@ -1451,3 +1451,4 @@ d2bdd58eef	take	fix(server): npm provider updates only offer versions npm will i
 4d5d5f89d4	take	fix(source-control): preserve .git in Azure DevOps repository names
 4652544f33	take	fix(server): interrupted checkpoints no longer leak temporary packs
 306914f016	take	fix(client-runtime): grouped projects no longer take one folder's name as their label
+bebaf3ec04	take	fix(pi): resumed threads run in the worktree after a handoff
