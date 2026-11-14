@@ -1612,3 +1612,4 @@ d3d7ad9a61	take	fix(mobile): merging a PR uses the project's default merge metho
 1e9f93a48e	take	fix(mobile): stop showing "cannot control this task" while permissions load or after a network blip (relay-only branch and test dropped)
 ee4ef06469	take	fix(web): use optimistic updates for settings across environments
 170c1f7e2d	take	fix(web): Push on the default branch no longer offers a feature branch the server rejects
+154c5014a7	take	fix(web): long preview annotation comments are no longer dropped from the message
