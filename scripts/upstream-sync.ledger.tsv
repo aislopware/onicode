@@ -1731,3 +1731,4 @@ e68d4f053b	take	dropped upstream's scripts/scenarios e2e (no scenario harness in
 fa647599e0	take	taken as is (web + mobile)
 52074e9258	take	fix(server): stop leaving Codex plan items running after their run
 6fae3c9303	take	perf(gitlab): MR watches check a one-query fingerprint before full reads
+20ee041354	take	fix(web): font picker scrolls to every font in short windows
