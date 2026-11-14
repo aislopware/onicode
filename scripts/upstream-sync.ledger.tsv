@@ -1417,3 +1417,4 @@ a81ec88f58	take	fix(clients): allow portable provider handoffs after detach (#24
 bf9b8b7845	take	fix(server): Claude on Bedrock runs the model picked in the composer (#24695); merged with Onicode's fast-mode catalog, outdated-build replacement and model-substitution notice
 70be20493b	take	fix: re-ticking a file after a push no longer shows it Viewed (#24151)
 1ed6e32559	take	fix(ssh): ignore alias commands and TTY requests for Onicode connections (#24570)
+fe873f82c1	take	fix(web): confirm before deleting scheduled tasks (#23578); added the missing confirmDialog import
