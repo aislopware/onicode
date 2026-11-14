@@ -1444,3 +1444,4 @@ f315da3339	take	fix(shared): PASS and FAIL badges stay readable in dark command 
 947c056894	take	fix(web): a context submenu near the right edge no longer covers its parent menu
 3fe0fbb69f	take	fix(web): keep file uploads when returning a draft to its environment
 fd0ffd0b0a	take	fix(web): a stale tab no longer erases finalized stashed images
+2f2730c113	take	fix(server): task_status says starting until the child's provider starts
