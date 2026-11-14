@@ -1470,3 +1470,4 @@ a61291e3e2	take	fix(shared): one-letter link schemes no longer become file links
 4574c6013d	take	fix(web): preserve saved notebook traceback frame boundaries
 d6244ac5a3	take	fix(web): preserve literal entities in EPUB CDATA
 953ce60d12	take	fix(web): changed root files with a leading space open in the diff panel
+43ba62b9fc	take	fix(server): thread reads wait for pending background work
