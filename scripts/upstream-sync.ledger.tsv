@@ -1424,3 +1424,4 @@ ac180919a6	take	fix(web): seeded models yield to started thread selections (#246
 ca7a9448b8	take	fix(client-runtime): Reconnect works while the network reports offline (#24932); dropped relay tracing context, tests use the SSH route
 294e061a20	take	fix(shared): IPv6 SCP remotes match SSH repository identities (#36547)
 5abf38367b	take	fix(server): prevent lossy edits of non-UTF-8 workspace files (#36545)
+a760a3a965	take	fix(desktop): keyboard-opened message link menus select their first item
