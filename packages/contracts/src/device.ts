@@ -588,21 +588,22 @@ export class DeviceOperationError extends Schema.TaggedError<DeviceOperationErro
       "invalid_payload",
       "settings_failed",
       "hub_rejected",
-      "package_manager_missing",
     ]),
     exitCode: Schema.optional(Schema.Number),
+    // A flag, not a reason: older clients reject reasons they do not know and still read command_failed.
+    packageManagerMissing: Schema.optional(Schema.Boolean),
     cause: Schema.Defect(),
   },
 ) {
   override get message(): string {
     const explanation = {
-      command_failed: `The device command failed${this.exitCode === undefined ? "" : ` (exit code ${this.exitCode})`}.`,
+      command_failed: this.packageManagerMissing
+        ? "Device support needs npm, which is not on the Onicode server's PATH. Install npm (it comes with Node.js from nodejs.org), restart Onicode, then retry."
+        : `The device command failed${this.exitCode === undefined ? "" : ` (exit code ${this.exitCode})`}.`,
       request_failed: "Could not communicate with device support. Try refreshing devices.",
       invalid_payload: "The device request could not be encoded.",
       settings_failed: "Could not read or save device settings.",
       hub_rejected: "The device hub could not complete the request.",
-      package_manager_missing:
-        "Device support needs npm, which is not on the Onicode server's PATH. Install npm (it comes with Node.js from nodejs.org), restart Onicode, then retry.",
     }[this.reason];
     return `Device ${this.operation} failed: ${explanation}`;
   }
