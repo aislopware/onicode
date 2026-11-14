@@ -1650,3 +1650,4 @@ a4bf7922f5	take	taken as is; restoreUnsettledAt is optional on the wire
 1f45f14ae8	take	ChatView conflict: dropped upstream's pending guest message scroll (guest share removed), kept the image expand handler move
 fa4f6441a6	take	taken as is
 eec0a37227	take	taken as is
+d26375ed8a	take	taken as is
