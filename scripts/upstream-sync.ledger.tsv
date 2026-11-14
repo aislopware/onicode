@@ -1410,3 +1410,4 @@ aecad62a50	take	fix(opencode): a failed steer no longer leaves the turn running 
 99071c4953	take	fix(codex): delegate_task children start as Codex subagents (#36525)
 82479522cb	skip	Only touches apps/marketing, which Onicode removed
 cee16bdd99	take	fix(desktop): start WSL backends in Linux home (#35719)
+96051c630d	take	fix(server): prevent legacy terminal history collisions across threads (#24574)
