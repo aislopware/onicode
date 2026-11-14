@@ -352,7 +352,7 @@ export function useProjectPathSearch(
 }
 
 export function useComposerPathSearch(target: ComposerPathSearchTarget) {
-  return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT);
+  return useProjectPathSearch(target, COMPOSER_PATH_SEARCH_LIMIT, { allowEmptyQuery: true });
 }
 
 /** zoxide folders ranked by fzf on the host, for `@` mentions outside the workspace. */
