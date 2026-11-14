@@ -1746,3 +1746,4 @@ d080e4eb58	take	fix(web): thread details card no longer jumps mid panel animatio
 ab2bf940f6	take	fix(server): migrated databases can return freed space to disk
 88c42f471b	take	fix(devices): rename EAS Simulator to Expo Simulators
 3530805312	take	fix(server): find the EAS project of variant app configs
+852f53b801	take	fix(server): include untracked files when Git config hides them
