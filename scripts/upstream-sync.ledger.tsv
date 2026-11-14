@@ -1501,3 +1501,4 @@ bc1dc2a81e	take	fix(mobile): keep the thread column out of the iPhone Duo fold
 071ae4e951	take	fix(server): deleted projects keep their worktree cleanup policy
 179c032b3f	take	fix(server): include managed Claude skills in the skill menu (conflict resolved without upstream's synced-plugins lookup, which Onicode lacks)
 3d3275b067	take	fix(server): PR checkout respects restricted fetch mappings
+121f0cf014	take	fix(server): oni_thread_list clamps an oversized limit instead of failing (agentContextBudget re-measured for Onicode's tool list: 47751)
