@@ -1465,3 +1465,4 @@ e4688f7cb9	take	fix(server): find files in newline-named nested worktrees
 a61291e3e2	take	fix(shared): one-letter link schemes no longer become file links on Windows
 4192234c34	take	fix(usage): distinct email-less hub accounts no longer collapse
 75c544a978	take	fix(pi): async pi-subagents workflow, chain and parallel members show as subagents
+651accb100	take	fix(web): new browser tabs open at your default zoom and appearance
