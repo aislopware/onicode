@@ -1453,3 +1453,4 @@ d2bdd58eef	take	fix(server): npm provider updates only offer versions npm will i
 306914f016	take	fix(client-runtime): grouped projects no longer take one folder's name as their label
 bebaf3ec04	take	fix(pi): resumed threads run in the worktree after a handoff
 d0a494fc0b	take	fix(server): honor the configured push remote on tracked branches
+000d82dc67	take	fix(web): Esc closes the theme editor, not Settings
