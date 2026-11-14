@@ -1419,3 +1419,4 @@ bf9b8b7845	take	fix(server): Claude on Bedrock runs the model picked in the comp
 1ed6e32559	take	fix(ssh): ignore alias commands and TTY requests for Onicode connections (#24570)
 fe873f82c1	take	fix(web): confirm before deleting scheduled tasks (#23578); added the missing confirmDialog import
 a8e60d4602	skip	T3's electron-updater release pipeline (release.yml, merge-release-update-manifests, release-smoke); Onicode releases through better-update
+ac180919a6	take	fix(web): seeded models yield to started thread selections (#24619); dropped the hosted-pairing import
