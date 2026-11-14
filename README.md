@@ -3,17 +3,13 @@
 <p align="center"><b>Every coding agent, beautifully orchestrated, wherever you are.</b></p>
 
 <p align="center">
-  <img src="./assets/readme/desktop.webp" alt="Onicode on desktop. The sidebar lists threads from three projects and several providers, some working and some waiting for approval or an answer. The open Claude thread waits on a Codex subagent and a Claude subagent while an iPhone simulator floats over the chat. Thread details show the branch, changes, a local server, the running subagents, usage limits and the context window." />
+  <img src="./assets/readme/hero.webp" alt="Onicode on desktop and iPhone. The desktop sidebar lists threads from three projects and several providers, some working and some waiting for approval or an answer. The open Claude thread waits on a Codex subagent and a Claude subagent while an iPhone simulator floats over the chat. Thread details show the branch, changes, a local server, the running subagents, usage limits and the context window. Beside the window, a Live Activity on an iPhone Lock Screen lists the same threads." />
 </p>
 
 Onicode runs Claude Code, Codex, Cursor and [the rest](./docs/user/install.md#providers) on your own machine, and lets them work as one. A single thread can send a review to Codex and the tests to a lighter model, then carry on when both return. You steer from your desk or from your phone, in an app where a dropped frame counts as a bug.
 
 <p align="center">
-  <img src="./assets/readme/ios.webp" alt="Onicode on iPhone. A Live Activity on the Lock Screen lists the threads on one machine, two of them waiting for you and two working. The same list expands from the Dynamic Island over Safari. A thread shows a review from a Codex subagent." />
-</p>
-
-<p align="center">
-  <img src="./assets/readme/android.webp" width="66%" alt="Onicode on Android. A Live Update in the status bar opens a card with two requests waiting and buttons to approve or dismiss. A thread reports a Codex re-review and a Claude Haiku test update." />
+  <img src="./assets/readme/mobile.webp" alt="Onicode on iPhone and Android. On iPhone, the Dynamic Island expands over Safari to list the threads that need you, and a thread shows a review from a Codex subagent. On Android, a Live Update in the status bar opens a card with two requests waiting and buttons to approve or dismiss, and a thread reports a Codex re-review and a Claude Haiku test update." />
 </p>
 
 Onicode is a fork of [T3 Code](https://github.com/pingdotgg/t3code). We still take in its fixes and features, one reviewed commit at a time, and part ways with it in a few places.
