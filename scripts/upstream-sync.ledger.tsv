@@ -1579,3 +1579,4 @@ f52e5c1919	take	fix(server): expand Windows home-relative file paths consistentl
 081a5d92bf	take	fix(clients): the folder picker finds folders with accented names on macOS
 cebdf39984	take	fix(web): cancelled queued-message edits release their staged uploads
 0c6f421f3c	take	perf(desktop): stop rebroadcasting preview ownership on every key
+c666345bb9	take	fix(web): subagent previews drop image marks and full link URLs (test keeps Onicode's Mercury_(planet) fixture)
