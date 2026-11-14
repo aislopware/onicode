@@ -1510,3 +1510,4 @@ ae49f4d2a7	take	fix(server): honor custom Claude thinking choices
 1535f3f32e	take	fix(desktop): theme changes no longer stop at windows without a title bar overlay
 bb9fde6fcd	take	fix(scripts): test:cached no longer crashes when vp writes no cache summary
 8a45c51d8b	take	fix(desktop): Browser Screenshot saves fresh pixels while Onicode is hidden
+92c91aac8f	take	fix(client-runtime): keep inherited qualifier values as PR search text
