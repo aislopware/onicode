@@ -1557,3 +1557,4 @@ acd192fc64	take	fix(web): removing an environment dismisses its notification toa
 76748e942b	take	test(web): wait for Settings focus before testing the theme editor's Escape
 e53417b2d4	take	fix(server): selected-file commits work again with Git older than 2.25
 64d70f8828	take	fix(mobile): sort pull request lists and timelines by time
+db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the session
