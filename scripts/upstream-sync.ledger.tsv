@@ -1371,3 +1371,4 @@ db2cc20264	take	fix(server): onicode browser setup reloads an AppArmor profile t
 44a8e9541b	take	fix(web): model settings no longer re-render every row on each star, toggle or move
 3ea253f80f	take	fix(server): suppress redundant keybindings change emission on unchanged revalidation
 4c7685729f	take	fix(web): clicking a label in an inline HTML render no longer jumps the chat
+37714a8de5	take	perf(desktop): revealing a file on Windows no longer waits on PowerShell
