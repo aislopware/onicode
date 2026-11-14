@@ -2137,6 +2137,27 @@ layer("ProviderEventIngestorV2", (it) => {
         }),
         [],
       );
+      // A native rename carries a turn-start snapshot; its stale model must not win.
+      const rename = (title: string) =>
+        ingestor.ingestNormalized({
+          providerSessionId,
+          providerInstanceId: modelSelection.instanceId,
+          threadId: rootEvent.threadId,
+          event: {
+            type: "app_thread.created",
+            driver: CODEX_DRIVER,
+            appThread: { ...offered, title },
+            titleOnly: true,
+          },
+        });
+      assert.deepEqual(
+        (yield* rename("Renamed natively")).map((stored) => stored.event.type),
+        ["thread.metadata-updated"],
+      );
+      const renamed = yield* projectionStore.getThread(childThreadId);
+      assert.equal(renamed.title, "Renamed natively");
+      assert.equal(renamed.modelSelection.model, "gpt-6.1-sol");
+      assert.deepEqual(yield* rename("Renamed natively"), []);
     }),
   );
 

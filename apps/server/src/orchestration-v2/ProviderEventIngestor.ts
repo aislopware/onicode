@@ -457,12 +457,15 @@ export const layer: Layer.Layer<
         function* (input) {
           switch (input.event.type) {
             case "app_thread.created": {
-              const offered = input.event.appThread;
-              const existing = yield* projections.getThread(offered.id).pipe(
+              const existing = yield* projections.getThread(input.event.appThread.id).pipe(
                 Effect.catchTags({
                   ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
                 }),
               );
+              const offered =
+                input.event.titleOnly === true && existing !== null
+                  ? { ...input.event.appThread, modelSelection: existing.modelSelection }
+                  : input.event.appThread;
               if (
                 existing !== null &&
                 (input.event.createOnly === true ||

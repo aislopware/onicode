@@ -95,6 +95,8 @@ export const ProviderAdapterV2Event = Schema.Union([
     driver: ProviderDriverKind,
     appThread: OrchestrationV2AppThread,
     createOnly: Schema.optional(Schema.Boolean),
+    // Updates only the title; the offered thread may carry a stale model selection.
+    titleOnly: Schema.optional(Schema.Boolean),
   }),
   Schema.Struct({
     type: Schema.Literal("provider_session.updated"),
