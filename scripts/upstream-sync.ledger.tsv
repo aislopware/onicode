@@ -1635,3 +1635,4 @@ b779d40077	take	fix(editors): Open in Zed no longer finds the ZFS event daemon
 69525bf895	take	taken as is
 ff75365c7d	take	taken as is
 d2a9414359	take	upstream e2e scenario dropped: no scripts/scenarios harness
+29d517dbac	take	taken as is
