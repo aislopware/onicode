@@ -1489,3 +1489,4 @@ f2764f71b2	take	fix(desktop): desktop tests no longer race to install Electron
 9ff435b060	take	fix(server): pause service restart when disk is full
 4c2f04d35d	take	fix(web): queued runs, relationships and changed files no longer re-render on every streamed token
 487733ba0a	take	fix(server): recover Claude cooldown reset times from proxy errors
+5958d00ede	take	perf(web): Update everything downloads a server's update while providers install; selfUpdate change applied to Onicode's service/selfUpdate.ts, channel/Nightly fields left out of the contract
