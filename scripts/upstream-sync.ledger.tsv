@@ -1506,3 +1506,4 @@ bc1dc2a81e	take	fix(mobile): keep the thread column out of the iPhone Duo fold
 ae49f4d2a7	take	fix(server): honor custom Claude thinking choices
 8cb551a3ce	take	fix(web): saved files show external edits after a failed reload; dropped scripts/scenarios e2e (removed in Onicode)
 1159aa2991	take	fix(client-runtime): preserve PR reference links across embedded media; kept Onicode's newer jszip/three/unbash pins
+913d7fc45e	take	fix(web): PageUp and PageDown shortcut labels
