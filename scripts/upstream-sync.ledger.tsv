@@ -1543,3 +1543,4 @@ d9973dc3f8	take	fix(mobile): a shared file no longer fails to send with "Too muc
 20d21cf1ca	take	fix(mobile): disabled send arrow no longer darkens where its strokes overlap (#29028)
 5fa95d99af	take	fix(opencode): wait for the whole listening line before reading the server address (#28348)
 35483c198a	take	fix(opencode): show usage-limit warnings while OpenCode 2 retries (#28375)
+5e27bae22e	take	fix(web): a stashed prompt keeps its machine mentions (#28780)
