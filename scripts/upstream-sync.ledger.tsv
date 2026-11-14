@@ -1620,3 +1620,4 @@ ee4ef06469	take	fix(web): use optimistic updates for settings across environment
 0d585f7710	take	fix(mobile): cancelled PR checks count as failing in the checks summary
 2eb8829308	take	fix(mobile): .markdown, .mdown and .mkd files open with a Markdown preview
 49eb9c8adc	take	fix(web,mobile): pull request project filter lists pinned projects first
+be2a287952	take	fix(server): Claude Fable 5.2 is offered only from Claude Code 2.1.321
