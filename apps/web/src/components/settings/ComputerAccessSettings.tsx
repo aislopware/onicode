@@ -5,10 +5,16 @@ import {
 } from "@onicode/contracts";
 import { useEffect, useState } from "react";
 
+import {
+  brandProviderInstanceEntries,
+  deriveProviderInstanceEntries,
+  shouldShowInstanceBadge,
+} from "~/providerInstances";
 import { deviceEnvironment } from "~/state/device";
 import { useEnvironmentProviders, usePrimaryEnvironmentId } from "~/state/environments";
 import { useEnvironmentQuery } from "~/state/query";
 
+import { ProviderInstanceIcon } from "../chat/ProviderInstanceIcon";
 import { Button } from "../ui/button";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Switch } from "../ui/switch";
@@ -100,9 +106,13 @@ export function ComputerAccessSettings() {
     setRequesting(false);
     refresh();
   };
-  const providers = (environmentId ? (providersByEnvironment.get(environmentId) ?? []) : []).filter(
-    (provider) => provider.enabled,
-  );
+  // One row per provider instance: two accounts of one provider are switched separately.
+  const instances = brandProviderInstanceEntries(
+    deriveProviderInstanceEntries(
+      environmentId ? (providersByEnvironment.get(environmentId) ?? []) : [],
+    ),
+    settings,
+  ).filter((instance) => instance.enabled);
 
   return (
     <SettingsSection id="computer-access" title="Computer">
@@ -219,18 +229,30 @@ export function ComputerAccessSettings() {
         />
       ) : null}
       {enabled && !projectScope
-        ? providers.map((provider) => (
+        ? instances.map((instance) => (
             <SettingsRow
-              key={provider.instanceId}
-              title={provider.displayName ?? provider.instanceId}
+              key={instance.instanceId}
+              title={
+                <span className="inline-flex items-center gap-2.5">
+                  <ProviderInstanceIcon
+                    driverKind={instance.driverKind}
+                    displayName={instance.displayName}
+                    accentColor={instance.accentColor}
+                    acpRegistryAgentId={instance.acpRegistryAgentId}
+                    acpRegistryIconUrl={instance.acpRegistryIconUrl}
+                    showBadge={shouldShowInstanceBadge(instance, instances)}
+                  />
+                  {instance.displayName}
+                </span>
+              }
               serverScoped
               control={
                 <Switch
-                  aria-label={`Computer access for ${provider.displayName ?? provider.instanceId}`}
-                  checked={settings.agentComputerAccessProviders[provider.instanceId] !== false}
+                  aria-label={`Computer access for ${instance.displayName}`}
+                  checked={settings.agentComputerAccessProviders[instance.instanceId] !== false}
                   onCheckedChange={(checked) =>
                     updateSettings({
-                      agentComputerAccessProviders: { [provider.instanceId]: checked },
+                      agentComputerAccessProviders: { [instance.instanceId]: checked },
                     })
                   }
                 />

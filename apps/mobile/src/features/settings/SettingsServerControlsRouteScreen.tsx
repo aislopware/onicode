@@ -28,6 +28,7 @@ import { BranchNamingSettings } from "./components/BranchNamingSettings";
 import { DatabaseStorageNotice } from "./components/DatabaseStorageNotice";
 import { ListChoiceRow as SettingsChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsSection } from "./components/SettingsSection";
+import { ComputerProviderRows } from "./components/ComputerProviderRows";
 import { SettingsSwitchRow } from "./components/SettingsSwitchRow";
 import { SourceControlSignInSection } from "./components/SourceControlSignInSection";
 import { SettingsProjectOverridesSection } from "./components/SettingsProjectOverridesSection";
@@ -442,6 +443,20 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                           onPress={() => write({ agentComputerPermissionMode: choice.mode })}
                         />
                       ))}
+                  {/* Instance ids repeat across environments, so the rows need a single one. */}
+                  {projectSelected ||
+                  uniform("enableAgentComputerAccess") !== true ||
+                  displayTargets.length !== 1 ||
+                  reference === null ? null : (
+                    <ComputerProviderRows
+                      environmentId={reference.environment.environmentId}
+                      access={reference.settings.agentComputerAccessProviders}
+                      disabled={disabledFor("agentComputerAccessProviders")}
+                      onChange={(instanceId, value) =>
+                        write({ agentComputerAccessProviders: { [instanceId]: value } })
+                      }
+                    />
+                  )}
                 </SettingsSection>
                 <AutoSettleSettingsRows write={write} pending={pendingWrites > 0} />
               </>

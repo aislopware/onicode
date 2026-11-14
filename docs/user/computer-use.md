@@ -35,10 +35,11 @@ new mode once its agent session restarts.
 
 ## Choose the providers
 
-With computer use on, every provider gets the tools. Turn a provider off under
-**Computer** to keep the tools away from its sessions. Onicode adds the tools
-as an MCP server named `computer`, so a provider has to accept MCP servers to
-use them. Pi needs version 0.99 or later.
+With computer use on, every provider gets the tools. Each provider instance
+has its own switch under **Computer**, so two accounts of the same provider
+can differ: turn one off to keep the tools away from its sessions. Onicode adds
+the tools as an MCP server named `computer`, so a provider has to accept MCP
+servers to use them. Pi needs version 0.99 or later.
 
 ## What agents can reach
 
