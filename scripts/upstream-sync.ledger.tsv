@@ -1658,3 +1658,4 @@ a6765d41d5	take	taken as is
 675fb1d9a7	take	dropped upstream's e2e scenario; test fixture uses Onicode's loopback auth policy and no relayManaged
 9be477fcad	skip	T3 Connect and webhook hold only; apps/server/src/cloud was removed from Onicode
 16c66605e6	take	taken as is
+c03498e689	take	single channel: retry joins a prepared update by downloaded version only (Onicode requests carry no channel/targetVersion); dropped upstream's track-switch tests from the conflicts
