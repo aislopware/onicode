@@ -1623,3 +1623,4 @@ ee4ef06469	take	fix(web): use optimistic updates for settings across environment
 be2a287952	take	fix(server): Claude Fable 5.2 is offered only from Claude Code 2.1.321
 7b26203b8b	take	fix(mobile): scheduled tasks due within the hour no longer read "Next run in 60 minutes"
 cfd825caf2	take	test(server): title change test ignores a probe pending at browser close
+d109866c63	skip	guest links are removed in Onicode; only touches apps/server/src/guest
