@@ -5,6 +5,7 @@ import { parseThreadKey, threadKey } from "@onicode/client-runtime/state/entitie
 import { type ScopedThreadRef } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
 
+import { environmentCatalog } from "../../connection/catalog";
 import { userPresentAtom } from "../../lib/userPresence";
 import { useUiStateStore } from "../../uiStateStore";
 import { environmentThreadShells, threadEnvironment } from "../../state/threads";
@@ -20,6 +21,7 @@ const attendedThreadShell = Atom.family((key: string) => {
 
 const threadVisitTracker = createThreadVisitTracker({
   threadShellAtom: (ref) => attendedThreadShell(threadKey(ref)),
+  sessionGenerationAtom: environmentCatalog.sessionGenerationAtom,
   visit: threadEnvironment.visit,
   markLocalVisit: (ref, visitedAt) =>
     useUiStateStore.getState().markThreadVisited(scopedThreadKey(ref), visitedAt),

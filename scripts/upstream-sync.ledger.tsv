@@ -1429,3 +1429,4 @@ e80468ba25	take	fix(server): report invalid provider events without a second sch
 a3477a5dd9	take	fix(server): branch refresh no longer waits for detailed Git status
 1f55acf13b	take	fix(client-runtime): refresh settled counts when threads move project
 00ec286fef	take	fix(mobile): adaptive SVG project icons follow the app's color scheme
+efae4e9da1	take	fix(client): retry unread thread visits after reconnect (web keeps Onicode's presence-gated shell)
