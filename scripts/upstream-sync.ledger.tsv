@@ -1463,3 +1463,4 @@ e4688f7cb9	take	fix(server): find files in newline-named nested worktrees
 2fa77fbf55	take	fix(web): horizontal table scrolling preserves timeline follow
 83a276dfdd	take	fix(server): setup scripts complete with shell line editors (test accepts macOS bash 3.2's syntax-error code)
 a61291e3e2	take	fix(shared): one-letter link schemes no longer become file links on Windows
+4192234c34	take	fix(usage): distinct email-less hub accounts no longer collapse
