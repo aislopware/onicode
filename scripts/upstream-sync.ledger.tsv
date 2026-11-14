@@ -1633,3 +1633,4 @@ b779d40077	take	fix(editors): Open in Zed no longer finds the ZFS event daemon
 949dc23074	take	Android rotated icon wrapper, taken as is
 7bc474667d	take	Stop-cancelled Claude tools show as interrupted, taken as is
 69525bf895	take	taken as is
+ff75365c7d	take	taken as is
