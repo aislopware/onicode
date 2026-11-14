@@ -756,6 +756,30 @@ describe("checkpoint ref cleanup", () => {
     ),
   );
 
+  it.live("keeps refs of threads deleted in a git worktree's seeded dev home", () =>
+    runCleanupTest(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const config = yield* ServerConfig.ServerConfig;
+        const checkout = yield* fs.makeTempDirectoryScoped({ prefix: "cleanup-dev-checkout-" });
+        yield* fs.writeFileString(`${checkout}/.git`, "gitdir: /repo/.git/worktrees/dev\n");
+        const baseDir = `${checkout}/.onicode`;
+        yield* Effect.gen(function* () {
+          const { service, addThread, listRefs } = yield* checkpointCleanupFixture();
+          const refs = yield* addThread("deleted-in-copy", { deleted: true });
+          yield* service.runNow;
+          expect(yield* listRefs()).toEqual(refs.toSorted());
+        }).pipe(
+          Effect.provideService(ServerConfig.ServerConfig, {
+            ...config,
+            baseDir,
+            worktreesDir: `${baseDir}/worktrees`,
+          }),
+        );
+      }).pipe(Effect.provide(Sqlite.layerMemory)),
+    ),
+  );
+
   it.live("keeps deleted fork ancestry while a live or archived descendant needs it", () =>
     runCleanupTest(
       Effect.gen(function* () {
