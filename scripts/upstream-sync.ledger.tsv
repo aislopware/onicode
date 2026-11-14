@@ -1631,3 +1631,4 @@ b779d40077	take	fix(editors): Open in Zed no longer finds the ZFS event daemon
 5a15495de4	take	fix(server): skills from CLAUDE_CODE_PLUGIN_DIRS plugins show in the composer (conflict resolved without upstream's claude.ai synced-plugins lookup, which Onicode lacks)
 284fb237a5	take	glab mr new alias, taken as is
 949dc23074	take	Android rotated icon wrapper, taken as is
+7bc474667d	take	Stop-cancelled Claude tools show as interrupted, taken as is
