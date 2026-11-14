@@ -1492,3 +1492,4 @@ f2764f71b2	take	fix(desktop): desktop tests no longer race to install Electron
 5958d00ede	take	perf(web): Update everything downloads a server's update while providers install; selfUpdate change applied to Onicode's service/selfUpdate.ts, channel/Nightly fields left out of the contract
 6be1bd6472	take	perf(cursor): long command output streams without copying its tail per chunk
 c5f842d4c7	take	fix(server): regenerate titles on fresh run forks (upstream e2e scenario dropped: no scripts/scenarios harness)
+6aa14d3cd5	take	fix(server): short search prefixes find accented messages (upstream e2e scenario dropped: no scripts/scenarios harness)
