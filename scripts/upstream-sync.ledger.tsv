@@ -1594,3 +1594,4 @@ cc578d5f9a	take	fix(server): settling a usage-limited thread disarms recovery an
 1fcb24518a	take	fix(server): Claude API-key logins show as Claude API Key in provider status
 86ec940ad3	take	fix(mobile): a failed archive or delete keeps the earlier Undo
 66a40c7ca8	take	fix(server): turns stuck in provider retries for 10 minutes fail instead of running forever
+382312aba8	take	fix(web): the sidebar shortcut honors terminal and preview focus conditions
