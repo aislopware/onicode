@@ -392,6 +392,7 @@ interface ServerTab {
   /** The reported title a watch in the main document's isolated world waits to change from. */
   titleWatch: { readonly contextId: number; readonly title: string } | null;
   lastReport: PreviewReportStatusInput | null;
+  lastTitleReportAt: number;
 
   abortedNavigation: {
     readonly url: string;
@@ -483,6 +484,8 @@ const editingCommand = (key: string, modifiers: number) => {
 };
 
 const TITLE_LIMIT = 512;
+// Every title report is a snapshot sent to each client, so a ticking title must not stream them.
+const TITLE_REPORT_INTERVAL_MS = 1_000;
 const TITLE_WORLD = "oni-preview-title";
 // Observe root replacement without subscribing to body subtree mutations.
 const titleChange = (reported: string) => `new Promise((resolve) => {
@@ -803,8 +806,12 @@ const make = Effect.gen(function* () {
       );
     if (tab.titleWatch !== watch) return;
     tab.titleWatch = null;
+    if (!changed) return;
+    await sleepUntil(tab.lastTitleReportAt + TITLE_REPORT_INTERVAL_MS);
     // A dropped tab's page can still change its title while it unloads.
-    if (changed && !tab.closing && !tab.loadError) await reportLoaded(tab);
+    if (tab.closing || tab.loadError) return;
+    tab.lastTitleReportAt = Date.now();
+    await reportLoaded(tab);
   };
 
   const reportLiveTabs = () => {
@@ -1171,6 +1178,7 @@ const make = Effect.gen(function* () {
       stoppedGeneration: null,
       titleWatch: null,
       lastReport: null,
+      lastTitleReportAt: 0,
       abortedNavigation: null,
       captureLock: Promise.resolve(),
       capturing: 0,
@@ -3352,7 +3360,11 @@ const make = Effect.gen(function* () {
     } satisfies ServerBrowserViewer;
   });
 
-  yield* manager.events.pipe(Stream.runForEach(mirrorManagerEvent), Effect.forkScoped);
+  // Subscribe before the fork starts, so a tab opened right after the layer builds is not missed.
+  yield* Stream.fromSubscription(yield* manager.subscribeEvents).pipe(
+    Stream.runForEach(mirrorManagerEvent),
+    Effect.forkScoped,
+  );
   if (
     !PreviewBrowserHost.sandboxDisabled(yield* HostProcess.Environment) &&
     (yield* PreviewBrowserHost.sandboxBlocked)
