@@ -3,6 +3,7 @@ import {
   deriveWorkflowGroups,
   projectedSubagentsToRuntime,
 } from "@onicode/client-runtime/state/subagentRuntime";
+import { toServerClock } from "@onicode/client-runtime/clock";
 import type { ThreadTurnSubagents } from "@onicode/client-runtime/state/thread-subagents";
 import {
   isOrchestrationV2WorkActive,
@@ -151,7 +152,13 @@ function AgentRow(props: {
         environmentId={props.environmentId}
         subagent={subagent}
         canOpenRemote={target !== null}
-        elapsed={<AgentElapsed subagent={subagent} tickSeconds={props.tickSeconds} />}
+        elapsed={
+          <AgentElapsed
+            environmentId={props.environmentId}
+            subagent={subagent}
+            tickSeconds={props.tickSeconds}
+          />
+        }
       />
     </View>
   );
@@ -189,16 +196,18 @@ function AgentRow(props: {
 }
 
 function AgentElapsed(props: {
+  readonly environmentId: EnvironmentId;
   readonly subagent: OrchestrationV2Subagent;
   readonly tickSeconds: boolean;
 }) {
-  const elapsed = useSubagentElapsed(props.subagent, props.tickSeconds);
+  const elapsed = useSubagentElapsed(props.environmentId, props.subagent, props.tickSeconds);
   return elapsed === null ? null : (
     <Text className="shrink-0 text-xs tabular-nums text-foreground-muted">{elapsed}</Text>
   );
 }
 
 function useSubagentElapsed(
+  environmentId: EnvironmentId,
   subagent: Pick<OrchestrationV2Subagent, "status" | "startedAt" | "completedAt">,
   tickSeconds: boolean,
 ): string | null {
@@ -210,7 +219,7 @@ function useSubagentElapsed(
       startedAt: subagent.startedAt === null ? null : DateTime.formatIso(subagent.startedAt),
       completedAt: subagent.completedAt === null ? null : DateTime.formatIso(subagent.completedAt),
     },
-    nowMs,
+    toServerClock(environmentId, nowMs),
   );
   return elapsedMs === null || elapsedMs === 0 ? null : formatDuration(elapsedMs);
 }

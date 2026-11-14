@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-import { act, render } from "../../../test/render";
+import { act, fakeTimers, render } from "../../../test/render";
 import { ThemeEditorPanel } from "./ThemeEditorPanel";
 
 function dragHeader(panel: HTMLElement, toX: number, toY: number) {
@@ -147,5 +147,38 @@ describe("ThemeEditorPanel", () => {
       pointerAt(hueSlider, "pointerup", 0.75);
     });
     expect((hex.element() as HTMLInputElement).value).toBe(original);
+  });
+
+  it("previews typed CSS after a pause instead of on each keystroke", async () => {
+    await using _view = await renderPanel();
+    await userEvent.click(page.getByRole("button", { name: "Custom CSS" }));
+    const editor = page
+      .getByRole("textbox", { name: "Custom CSS" })
+      .element() as HTMLTextAreaElement;
+    using replaceSync = vi.spyOn(CSSStyleSheet.prototype, "replaceSync");
+    using _timers = fakeTimers();
+    const type = (value: string) =>
+      act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(
+          editor,
+          value,
+        );
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+
+    await type("body { color: red");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    await type("body { color: red; }");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(200);
+    });
+    expect(replaceSync).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(50);
+    });
+    expect(replaceSync.mock.calls).toEqual([["body { color: red; }"]]);
   });
 });

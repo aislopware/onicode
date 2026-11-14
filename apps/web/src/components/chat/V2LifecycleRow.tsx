@@ -208,8 +208,8 @@ function isoOrNull(value: DateTime.Utc | null | undefined): string | null {
   return value ? DateTime.formatIso(value) : null;
 }
 
-export function SubagentElapsed({ agent }: { agent: Parameters<typeof AgentElapsed>[0]["agent"] }) {
-  return <AgentElapsed agent={agent} />;
+export function SubagentElapsed(props: Omit<Parameters<typeof AgentElapsed>[0], "compact">) {
+  return <AgentElapsed {...props} />;
 }
 
 function SubagentAvatar({
@@ -491,7 +491,11 @@ function SubagentTimelineLink(props: {
         </span>
       ) : null}
       <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-        {props.event ? props.event.timestamp : <SubagentElapsed agent={timing} />}
+        {props.event ? (
+          props.event.timestamp
+        ) : (
+          <SubagentElapsed environmentId={props.parentRef.environmentId} agent={timing} />
+        )}
       </span>
       {open !== null ? (
         <ChevronRightIcon
@@ -532,7 +536,14 @@ function SubagentTimelineLink(props: {
       <ThreadHoverCardPopup>
         <SubagentTimelineTooltip
           {...props}
-          elapsed={agent ? <AgentElapsed agent={projectedSubagentsToRuntime([agent])[0]!} /> : null}
+          elapsed={
+            agent ? (
+              <AgentElapsed
+                environmentId={props.parentRef.environmentId}
+                agent={projectedSubagentsToRuntime([agent])[0]!}
+              />
+            ) : null
+          }
           model={agent?.model ?? null}
           modelSelection={agent?.modelSelection}
           status={liveStatus}

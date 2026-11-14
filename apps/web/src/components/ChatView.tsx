@@ -3551,6 +3551,7 @@ export default function ChatView(props: ChatViewProps) {
                           <div className="relative z-10">
                             {showProviderSubagentBar ? (
                               <ProviderSubagentBar
+                                environmentId={environmentId}
                                 provider={selectedProviderEntry ?? null}
                                 showInstanceBadge={
                                   selectedProviderEntry !== undefined &&

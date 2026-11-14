@@ -592,6 +592,7 @@ export function useThreadLifecycle(input: ThreadLifecycleInput) {
   const runStopNow =
     activeThread && runStop !== null
       ? runStopNowItem({
+          environmentId,
           threadId: activeThread.id,
           stop: runStop,
           canForceStop: forceStop.canForceStop,

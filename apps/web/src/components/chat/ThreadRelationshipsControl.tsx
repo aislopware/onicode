@@ -793,7 +793,7 @@ export function ThreadRelationshipsPanel(props: {
         provider={provider}
         providers={providers}
         driver={providerDriver}
-        elapsed={<AgentElapsed agent={agent} />}
+        elapsed={<AgentElapsed environmentId={props.environmentId} agent={agent} />}
         status={agent.status}
         result={agent.result}
         progress={agent.progress}
@@ -826,7 +826,7 @@ export function ThreadRelationshipsPanel(props: {
           <span
             className={`shrink-0 text-2xs font-normal tabular-nums text-muted-foreground ${canStopWorkflow ? "min-w-6 text-end" : ""} ${trailingVisibilityClass}`}
           >
-            <AgentElapsed agent={agent} compact />
+            <AgentElapsed environmentId={props.environmentId} agent={agent} compact />
           </span>
         ) : !isMergeTarget ? (
           <span
@@ -862,6 +862,7 @@ export function ThreadRelationshipsPanel(props: {
     if (workflowGroup && agent) {
       return (
         <ThreadLineageWorkflowRow
+          environmentId={props.environmentId}
           key={threadId}
           group={workflowGroup}
           providerInstanceId={agent.providerInstanceId}

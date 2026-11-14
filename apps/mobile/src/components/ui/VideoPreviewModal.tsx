@@ -1,5 +1,6 @@
 import * as Dialog from "./Dialog";
 import { requireNativeModule } from "expo";
+import { MISSING_FILE_ACCESS_MESSAGE } from "@onicode/client-runtime/state/assets";
 import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
 import { useEffect, useEffectEvent, useId } from "react";
@@ -8,7 +9,7 @@ import { loadLocalAttachmentPreview } from "../../lib/localAttachmentPreview";
 import { usePreviewPresentation, videoPreviewKey } from "../../lib/previewPresentation";
 import { fullscreenVideoClosed, fullscreenVideoOpened } from "../../lib/videoAudioSession";
 import { mediaVideoPreviewUri, type VideoPreviewSource } from "../../lib/videoPreviewSource";
-import { refreshAssetUrl } from "../../state/assets";
+import { refreshAssetUrl, useAssetUrlState } from "../../state/assets";
 import { usePreparedConnection } from "../../state/session";
 import {
   acquireAudioSession,
@@ -44,12 +45,19 @@ function NativeVideoPreview(props: {
   const environmentId =
     source.type === "media" && "environmentId" in source ? source.environmentId : null;
   const preparedConnection = usePreparedConnection(environmentId);
+  const asset = useAssetUrlState(
+    environmentId,
+    source.type === "media" && "resource" in source ? source.resource : null,
+  );
   const name = source.type === "media" ? source.name : source.attachment.name;
   // Mints a fresh URL for each presentation: AVKit retains the URL and offers no retry,
   // so a cached link that expired while the app was suspended would fail to play.
   const resolvePlaybackUrl = useEffectEvent(async (): Promise<string> => {
     if (source.type !== "media") throw new Error("Could not load this video.");
     if (!("resource" in source)) return source.uri;
+    if (asset._tag === "Failure" && asset.reason === "missing-file-access") {
+      throw new Error(MISSING_FILE_ACCESS_MESSAGE);
+    }
     const url = await refreshAssetUrl(source.environmentId, source.resource).catch(() => null);
     const playbackUrl = mediaVideoPreviewUri(source, url);
     if (playbackUrl !== null) return playbackUrl;

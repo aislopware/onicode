@@ -1,3 +1,4 @@
+import { toServerClock } from "@onicode/client-runtime/clock";
 import {
   formatProviderSubagentStatus,
   type ProviderSubagentStatus,
@@ -13,6 +14,7 @@ import { NativeChildWorkSheet } from "./NativeChildWorkSheet";
 import { useVisibleSecondClock } from "./use-visible-second-clock";
 
 export function ProviderSubagentBar(props: {
+  readonly environmentId: EnvironmentId;
   readonly provider: { readonly driver: string; readonly iconUrl?: string | undefined } | null;
   readonly modelLabel: string;
   readonly effortLabel: string | null;
@@ -24,7 +26,10 @@ export function ProviderSubagentBar(props: {
   const [inspecting, setInspecting] = useState(false);
   const live = props.status !== null && isOrchestrationV2WorkActive(props.status.status);
   const nowMs = useVisibleSecondClock(live);
-  const statusLabel = formatProviderSubagentStatus(props.status, nowMs);
+  const statusLabel = formatProviderSubagentStatus(
+    props.status,
+    toServerClock(props.environmentId, nowMs),
+  );
   const modelDescription =
     props.effortLabel === null ? props.modelLabel : `${props.modelLabel}, ${props.effortLabel}`;
 

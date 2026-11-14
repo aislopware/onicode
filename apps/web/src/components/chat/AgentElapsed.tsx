@@ -1,5 +1,6 @@
 import type { RuntimeSubagent } from "@onicode/client-runtime/state/subagentRuntime";
-import { isOrchestrationV2WorkActive } from "@onicode/contracts";
+import { toServerClock } from "@onicode/client-runtime/clock";
+import { isOrchestrationV2WorkActive, type EnvironmentId } from "@onicode/contracts";
 import { deriveSubagentElapsedMs } from "@onicode/shared/orchestrationTiming";
 import { tickTextContent } from "~/lib/tickTextContent";
 
@@ -26,9 +27,11 @@ function formatCompactElapsedSeconds(totalSeconds: number): string {
 }
 
 export function AgentElapsed({
+  environmentId,
   agent,
   compact = false,
 }: {
+  environmentId: EnvironmentId;
   agent: Pick<RuntimeSubagent, "status" | "startedAt" | "completedAt">;
   compact?: boolean;
 }) {
@@ -41,7 +44,10 @@ export function AgentElapsed({
   return (
     <span
       ref={tickTextContent((nowMs) => {
-        const elapsedMs = deriveSubagentElapsedMs({ status, startedAt, completedAt }, nowMs);
+        const elapsedMs = deriveSubagentElapsedMs(
+          { status, startedAt, completedAt },
+          toServerClock(environmentId, nowMs),
+        );
         return elapsedMs === null ? "" : format(elapsedMs / 1000);
       }, live)}
       className="tabular-nums"

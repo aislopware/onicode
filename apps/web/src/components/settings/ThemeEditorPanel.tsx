@@ -279,6 +279,7 @@ function getManagedEditorColors(
   );
 }
 
+const THEME_CSS_PREVIEW_DELAY_MS = 250;
 const PANEL_MARGIN = 8;
 const PANEL_MIN_WIDTH = 280;
 const PANEL_MIN_HEIGHT = 220;
@@ -351,6 +352,7 @@ export function ThemeEditorPanel({
   >({ light: false, dark: false });
   const [shouldRegenerateGuidedColors, setShouldRegenerateGuidedColors] = useState(false);
   const [css, setCss] = useState("");
+  const [previewCss, setPreviewCss] = useState("");
   const [cssOpen, setCssOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMinimized, setIsMinimized] = useState(false);
@@ -405,6 +407,7 @@ export function ThemeEditorPanel({
       setShouldRegenerateGuidedColors(sourceTheme !== null && sourceTheme.managed !== true);
       setColorsByAppearance(nextColors);
       setCss(sourceTheme?.css ?? "");
+      setPreviewCss(sourceTheme?.css ?? "");
       setCssOpen(Boolean(sourceTheme?.css));
       setSelectedRole(null);
       setUsageCount(null);
@@ -455,8 +458,15 @@ export function ThemeEditorPanel({
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- applies the edited colors to the document as a live theme preview while the editor is open
   useEffect(() => {
     if (!open) return;
-    applyThemeColorPreview(colorsByAppearance[activeAppearance], activeAppearance, cssForSave);
-  }, [activeAppearance, colorsByAppearance, cssForSave, open]);
+    applyThemeColorPreview(colorsByAppearance[activeAppearance], activeAppearance, previewCss);
+  }, [activeAppearance, colorsByAppearance, previewCss, open]);
+
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- debounce timer: replacing the sheet restyles the whole app, so the CSS preview waits for a typing pause
+  useEffect(() => {
+    if (cssForSave === previewCss) return;
+    const timer = window.setTimeout(() => setPreviewCss(cssForSave), THEME_CSS_PREVIEW_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [cssForSave, previewCss]);
 
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- restores the document theme when the editor closes or unmounts
   useEffect(() => {
