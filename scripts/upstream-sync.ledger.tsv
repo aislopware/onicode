@@ -1398,3 +1398,4 @@ ea957b5cab	take	fix(server): give MCP clients an absolute attachment upload URL 
 e1f5b68281	take	fix(server): MCP tools say why the orchestrator refused (#36083)
 5ef603df34	take	fix(web): remove routine success notifications (#36527); kept Onicode's mobile notifications screen
 9d6da455e2	take	fix(server): idle delegated tasks when recovery holds follow-ups (#36529)
+058eea9246	take	fix(pr): hide unsupported GitCafe review reactions (#36171)
