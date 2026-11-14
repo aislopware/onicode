@@ -1391,3 +1391,4 @@ bd9ff7eb2a	take	fix(client-runtime): recover thread list updates after stream de
 9803d1adb5	take	fix(web): paint the selected environment theme from the first frame on launch (#36042)
 2c61677d59	take	fix(web): overlays close on a click over the desktop header (#36250)
 ea957b5cab	take	fix(server): give MCP clients an absolute attachment upload URL (#35907)
+4a53d80239	take	fix(server): database folders on btrfs are No_COW so SQLite stops fragmenting (#36518)
