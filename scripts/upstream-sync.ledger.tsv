@@ -1759,3 +1759,4 @@ c6aea18476	take	fix(server): subagent threads no longer show the remote parent t
 dfd2187ccb	take	fix(server): oni_thread_launch worktrees honor the new-worktree setting
 5c85e93f0f	take	perf(server): text-only browser snapshots skip the PNG encode
 19c9df2161	take	fix(web): diff Copy path uses Windows separators in a Windows workspace
+fed0f743b9	take	fix(opencode): usage totals include what OpenCode 2 spends on compaction
