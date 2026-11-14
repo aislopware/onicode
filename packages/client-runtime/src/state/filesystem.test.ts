@@ -174,7 +174,7 @@ describe("browse entry filtering", () => {
   it("matches substrings and subsequences, best match first", () => {
     expect(names("code")).toEqual(["onicode", "Onicode-old", "my-onicode"]);
     expect(names("onic")).toEqual(["onicode", "Onicode-old", "my-onicode"]);
-    expect(names("tcd")).toEqual(["onicode", "Onicode-old", "my-onicode"]);
+    expect(names("ncd")).toEqual(["onicode", "Onicode-old", "my-onicode"]);
     expect(names("xyz")).toEqual([]);
   });
 
