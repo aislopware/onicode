@@ -103,6 +103,25 @@ it.effect("uses the SDK the probe accepted for later SSH commands", () =>
   }),
 );
 
+it.effect("finds the SDK that adb on the SSH PATH belongs to", () =>
+  Effect.gen(function* () {
+    if ((yield* HostProcess.Platform) === "win32") return;
+    let sdk = "";
+    const result = yield* probeAndroid(async (home) => {
+      await completeSdk(NodePath.join(home, "tool-sdk"));
+      sdk = await NodeFSP.realpath(NodePath.join(home, "tool-sdk"));
+      await NodeFSP.mkdir(NodePath.join(home, "bin"), { recursive: true });
+      await NodeFSP.symlink(
+        NodePath.join(sdk, "platform-tools/adb"),
+        NodePath.join(home, "bin/adb"),
+      );
+      return {};
+    }, "command -v emulator");
+    expect(result.android).toEqual({ platform: "android", available: true });
+    expect(result.after).toBe(NodePath.join(sdk, "emulator/emulator"));
+  }),
+);
+
 it.effect("finds Android Studio Java for a non-interactive SSH session", () =>
   Effect.gen(function* () {
     if ((yield* HostProcess.Platform) === "win32") return;
