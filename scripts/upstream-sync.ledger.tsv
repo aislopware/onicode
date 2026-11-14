@@ -1578,3 +1578,4 @@ db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the sess
 f52e5c1919	take	fix(server): expand Windows home-relative file paths consistently
 081a5d92bf	take	fix(clients): the folder picker finds folders with accented names on macOS
 cebdf39984	take	fix(web): cancelled queued-message edits release their staged uploads
+0c6f421f3c	take	perf(desktop): stop rebroadcasting preview ownership on every key
