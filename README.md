@@ -1,8 +1,4 @@
-<h1 align="center">
-  <img src="./assets/readme/logo.svg" alt="" width="180" />
-  <br />
-  Onicode
-</h1>
+<h1 align="center"><img src="./assets/readme/logo.svg" alt="" width="180" /><br />Onicode</h1>
 
 <p align="center"><b>Every coding agent, beautifully orchestrated, wherever you are.</b></p>
 
