@@ -1,4 +1,5 @@
 import { SourceControlProviderKind } from "@onicode/contracts";
+import { canonicalRepositoryPath } from "@onicode/shared/git";
 import {
   buildCommitUrl,
   changeRequestUrlBelow,
@@ -130,7 +131,8 @@ export const definition = defineSourceControl({
       return isChangeRequestInProjectRepository(changeRequestHost(identity), identity, link);
     return (
       web.host.toLowerCase() === (link.authority ?? link.host).toLowerCase() &&
-      web.pathname.replace(/^\/+|\/+$/g, "").toLowerCase() === link.repository.toLowerCase()
+      canonicalRepositoryPath(web.pathname.replace(/^\/+|\/+$/g, "")) ===
+        canonicalRepositoryPath(link.repository)
     );
   },
   // A server mounted below a path serves only repositories under that mount.
