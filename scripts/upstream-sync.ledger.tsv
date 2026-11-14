@@ -1414,3 +1414,4 @@ cee16bdd99	take	fix(desktop): start WSL backends in Linux home (#35719)
 cf60628ef9	take	fix(client-runtime): cache running threads when their view closes (#25213)
 089318005d	take	fix(server): report the actual preview snapshot timeout (#24130); kept Onicode's getByRef
 a81ec88f58	take	fix(clients): allow portable provider handoffs after detach (#24641)
+bf9b8b7845	take	fix(server): Claude on Bedrock runs the model picked in the composer (#24695); merged with Onicode's fast-mode catalog, outdated-build replacement and model-substitution notice
