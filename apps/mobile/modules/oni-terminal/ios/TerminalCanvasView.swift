@@ -291,7 +291,6 @@ final class TerminalCanvasView: UIView {
       return
     }
     let padding = Self.contentPadding
-    let cellWidth = fonts.cellWidth
     let cellHeight = fonts.cellHeight
     context.setFill(argb: frame.background)
     context.fill(bounds)
@@ -307,8 +306,23 @@ final class TerminalCanvasView: UIView {
       return
     }
 
+    let rows = firstRow..<lastRow
+    drawBackgrounds(frame, in: context, rows: rows)
+    let decorations = drawText(frame, in: context, rows: rows)
+
+    for (rect, color) in decorations {
+      context.setFill(argb: color)
+      context.fill(rect)
+    }
+    context.restoreGState()
+  }
+
+  private func drawBackgrounds(_ frame: TerminalFrame, in context: CGContext, rows: Range<Int>) {
+    let padding = Self.contentPadding
+    let cellWidth = fonts.cellWidth
+    let cellHeight = fonts.cellHeight
     // Backgrounds, one fill per run of equal colour.
-    for row in firstRow..<lastRow {
+    for row in rows {
       let top = padding + CGFloat(row) * cellHeight
       var runStart = 0
       var runColor: UInt32 = 0
@@ -333,7 +347,12 @@ final class TerminalCanvasView: UIView {
         runColor = color
       }
     }
+  }
 
+  private func drawText(_ frame: TerminalFrame, in context: CGContext, rows: Range<Int>) -> [(CGRect, UInt32)] {
+    let padding = Self.contentPadding
+    let cellWidth = fonts.cellWidth
+    let cellHeight = fonts.cellHeight
     // Text, batching single glyphs that share a font and colour.
     var decorations: [(CGRect, UInt32)] = []
     let height = bounds.height
@@ -350,7 +369,7 @@ final class TerminalCanvasView: UIView {
       batchGlyphs.removeAll(keepingCapacity: true)
       batchPositions.removeAll(keepingCapacity: true)
     }
-    for row in firstRow..<lastRow {
+    for row in rows {
       let top = padding + CGFloat(row) * cellHeight
       let baselineY = height - (top + fonts.baseline)
       for column in 0..<frame.cols {
@@ -381,12 +400,7 @@ final class TerminalCanvasView: UIView {
     }
     flush()
     context.restoreGState()
-
-    for (rect, color) in decorations {
-      context.setFill(argb: color)
-      context.fill(rect)
-    }
-    context.restoreGState()
+    return decorations
   }
 
   private func appendDecorations(
@@ -421,11 +435,12 @@ final class TerminalCanvasView: UIView {
     }
     let index = frame.cursorY * frame.cols + frame.cursorX
     cursorView.configure(
-      style: frame.cursorStyle,
-      color: frame.cursorColor,
-      text: frame.cellText[index],
-      flags: frame.cellFlags[index],
-      textColor: cursorTextColor ?? frame.background,
+      TerminalCursorView.Appearance(
+        style: frame.cursorStyle,
+        color: frame.cursorColor,
+        text: frame.cellText[index],
+        flags: frame.cellFlags[index],
+        textColor: cursorTextColor ?? frame.background),
       fonts: fonts)
     cursorView.frame = CGRect(
       x: Self.contentPadding + CGFloat(frame.cursorX) * fonts.cellWidth,
@@ -517,11 +532,15 @@ private final class TerminalWeakTarget: NSObject {
 }
 
 private final class TerminalCursorView: UIView {
-  private var style = 1
-  private var color: UInt32 = 0
-  private var text = ""
-  private var flags: UInt16 = 0
-  private var textColor: UInt32 = 0
+  struct Appearance: Equatable {
+    var style = 1
+    var color: UInt32 = 0
+    var text = ""
+    var flags: UInt16 = 0
+    var textColor: UInt32 = 0
+  }
+
+  private var appearance = Appearance()
   private var fonts: TerminalFontSet?
 
   override init(frame: CGRect) {
@@ -535,17 +554,9 @@ private final class TerminalCursorView: UIView {
     return nil
   }
 
-  func configure(
-    style: Int, color: UInt32, text: String, flags: UInt16, textColor: UInt32, fonts: TerminalFontSet
-  ) {
-    guard style != self.style || color != self.color || text != self.text || flags != self.flags
-      || textColor != self.textColor || fonts !== self.fonts
-    else { return }
-    self.style = style
-    self.color = color
-    self.text = text
-    self.flags = flags
-    self.textColor = textColor
+  func configure(_ appearance: Appearance, fonts: TerminalFontSet) {
+    guard appearance != self.appearance || fonts !== self.fonts else { return }
+    self.appearance = appearance
     self.fonts = fonts
     setNeedsDisplay()
   }
@@ -553,6 +564,9 @@ private final class TerminalCursorView: UIView {
   // Styles follow GhosttyCursorStyle: 0 bar, 1 block, 2 underline, 3 hollow block.
   override func draw(_ rect: CGRect) {
     guard let context = UIGraphicsGetCurrentContext(), let fonts else { return }
+    let style = appearance.style
+    let color = appearance.color
+    let text = appearance.text
     context.setFill(argb: color)
     switch style {
     case 0:
@@ -565,9 +579,9 @@ private final class TerminalCursorView: UIView {
       context.stroke(bounds.insetBy(dx: 0.5, dy: 0.5))
     default:
       context.fill(bounds)
-      guard !text.isEmpty, let glyph = fonts.glyph(for: text, flags: flags) else { return }
+      guard !text.isEmpty, let glyph = fonts.glyph(for: text, flags: appearance.flags) else { return }
       context.beginText(height: bounds.height)
-      context.setFill(argb: textColor)
+      context.setFill(argb: appearance.textColor)
       context.draw(glyph, at: CGPoint(x: 0, y: bounds.height - fonts.baseline))
       context.restoreGState()
     }

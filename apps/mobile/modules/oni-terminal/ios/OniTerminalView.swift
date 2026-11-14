@@ -148,7 +148,6 @@ private final class TerminalInputField: UITextField {
   }
 }
 
-
 private extension UInt32 {
   /// Parses `#RRGGBB` or `#AARRGGBB` into the core's opaque ARGB.
   init?(terminalHex value: String) {
@@ -175,7 +174,7 @@ private extension String {
       self = ""
       return
     }
-    self = String(decoding: UnsafeBufferPointer(start: data, count: bytes.len), as: UTF8.self)
+    self = String(bytes: UnsafeBufferPointer(start: data, count: bytes.len), encoding: .utf8) ?? ""
   }
 }
 

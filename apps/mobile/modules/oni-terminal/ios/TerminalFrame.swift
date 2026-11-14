@@ -75,9 +75,7 @@ struct TerminalFrame {
       if length == 1, bytes[offset] < 0x80 {
         text[index] = asciiText[Int(bytes[offset])]
       } else if length > 0 {
-        text[index] = String(
-          decoding: UnsafeRawBufferPointer(rebasing: bytes[offset..<(offset + length)]),
-          as: UTF8.self)
+        text[index] = String(bytes: bytes[offset..<(offset + length)], encoding: .utf8) ?? ""
       }
       offset += length
     }
