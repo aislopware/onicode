@@ -1462,3 +1462,4 @@ e4688f7cb9	take	fix(server): find files in newline-named nested worktrees
 3b18dc2935	take	fix(web): manual compaction counts history beyond the loaded page
 2fa77fbf55	take	fix(web): horizontal table scrolling preserves timeline follow
 83a276dfdd	take	fix(server): setup scripts complete with shell line editors (test accepts macOS bash 3.2's syntax-error code)
+a61291e3e2	take	fix(shared): one-letter link schemes no longer become file links on Windows
