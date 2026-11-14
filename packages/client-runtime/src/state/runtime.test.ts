@@ -1402,7 +1402,7 @@ describe("environment query lifecycle", () => {
     }),
   );
 
-  it.effect("re-reads an open archive when a thread leaves the shell", () =>
+  it.effect("re-reads an open archive when another thread leaves the shell", () =>
     Effect.gen(function* () {
       const requests =
         yield* Queue.unbounded<Deferred.Deferred<OrchestrationV2ArchivedShellSnapshot>>();
@@ -1440,17 +1440,31 @@ describe("environment query lifecycle", () => {
       yield* Deferred.succeed(yield* Queue.take(requests), page([]));
       expect(yield* archivedIds).toEqual([]);
 
-      // Another client archives the thread, then deletes it from the archive.
+      // Another client archives the thread.
       registry.set(shellState, { removedAt: new Map([[v2ThreadId, 2]]) });
+      expect(registry.get(atom).waiting).toBe(true);
+      const archived = { ...v2ThreadShell, archivedAt: v2Now };
+      yield* Deferred.succeed(yield* Queue.take(requests), page([archived]));
+      expect(yield* archivedIds).toEqual([v2ThreadId]);
+
+      // Each shell event on an archived thread re-sends its removal; that alone does not refetch.
+      registry.set(shellState, { removedAt: new Map([[v2ThreadId, 3]]) });
+      expect(registry.get(atom).waiting).toBe(false);
+      expect(yield* Queue.size(requests)).toBe(0);
+
+      const otherId = ThreadId.make("thread-v2-other");
+      registry.set(shellState, {
+        removedAt: new Map([
+          [v2ThreadId, 3],
+          [otherId, 4],
+        ]),
+      });
       expect(registry.get(atom).waiting).toBe(true);
       yield* Deferred.succeed(
         yield* Queue.take(requests),
-        page([{ ...v2ThreadShell, archivedAt: v2Now }]),
+        page([archived, { ...v2ThreadShell, id: otherId, archivedAt: v2Now }]),
       );
-      expect(yield* archivedIds).toEqual([v2ThreadId]);
-      registry.set(shellState, { removedAt: new Map([[v2ThreadId, 3]]) });
-      yield* Deferred.succeed(yield* Queue.take(requests), page([]));
-      expect(yield* archivedIds).toEqual([]);
+      expect(yield* archivedIds).toEqual([v2ThreadId, otherId]);
     }),
   );
 });
