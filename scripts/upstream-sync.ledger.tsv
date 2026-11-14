@@ -1584,3 +1584,4 @@ c0ee5a1f5f	take	fix(server): pushing a branch whose remote branch was deleted pu
 4ce60c162b	take	fix(mobile): @path search no longer offers the previous worktree's files
 e330593141	take	fix(web): bare URLs no longer swallow Arabic commas and question marks
 e5d4322c10	take	fix(server): expand unchanged lines beside Git ident keywords (upstream e2e scenario dropped)
+c2b06f9df8	take	perf(server): Cursor turns no longer write every streamed token to provider logs
