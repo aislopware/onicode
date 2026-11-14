@@ -1560,3 +1560,4 @@ e53417b2d4	take	fix(server): selected-file commits work again with Git older tha
 db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the session
 3d9aeaf757	take	fix(shared): preview semicolon-separated CSV files as tables
 34a7c0d85d	take	fix(cursor): preserve catalog aliases in model discovery
+68bc28196d	take	fix(desktop): Settings opens while the separate preview window has focus
