@@ -3,6 +3,7 @@ import {
   pullRequestAnchorMatchesUrl,
   pullRequestDiffPathMatches,
   pullRequestLinkCommit,
+  resolvePullRequestAnchorRange,
   resolvePullRequestReviewAnchor,
 } from "@onicode/shared/pullRequestAnchor";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
@@ -1071,7 +1072,15 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
       : !jumpPath || requestedFile
         ? data.files[0]
         : undefined);
-  const range = pickedPath === null && linkAnchor?.kind === "diff" ? linkAnchor.range : null;
+  const linkRange = pickedPath === null && linkAnchor?.kind === "diff" ? linkAnchor.range : null;
+  const range =
+    linkRange &&
+    resolvePullRequestAnchorRange(linkRange, (line) =>
+      data.rows.some(
+        (row) =>
+          row.fileId === targetFile?.id && row.change === "delete" && row.oldLineNumber === line,
+      ),
+    );
   const focus =
     route.params.focus ??
     (range
