@@ -1378,3 +1378,4 @@ fcf50ffe38	skip	T3 Connect managed tunnel origin watcher; Connect, relay and app
 580b526758	take	fix(server): respect the default Windows file manager
 34cf030e5e	take	fix(web): pull requests error names the environment that failed
 eea9d15ee2	take	fix(desktop): Windows folders dropped on a WSL backend insert their WSL path (no isDesktopRenderer: desktop-only renderer; relay telemetry test dropped)
+be78ee4940	take	fix(server): stopping an agent's server no longer wakes Codex as if it crashed (PortScanner live test passes the command name as $2 so it passes on macOS)
