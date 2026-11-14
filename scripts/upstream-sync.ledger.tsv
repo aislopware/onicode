@@ -1374,3 +1374,4 @@ db2cc20264	take	fix(server): onicode browser setup reloads an AppArmor profile t
 37714a8de5	take	perf(desktop): revealing a file on Windows no longer waits on PowerShell
 0aeb945706	take	fix(acp): preserve Windows shim stdio pipes
 fcf50ffe38	skip	T3 Connect managed tunnel origin watcher; Connect, relay and apps/server/src/cloud are removed in Onicode
+6bc105f04e	take	fix(editors): find JetBrains IDEs whose Toolbox script is named idea1
