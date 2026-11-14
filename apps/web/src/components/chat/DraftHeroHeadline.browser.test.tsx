@@ -34,6 +34,19 @@ vi.mock(
   },
 );
 
+vi.mock(import("~/environments/primary/target"), async (original) => {
+  const [actual, { fakePrimaryEnvironmentTarget }] = await Promise.all([
+    original(),
+    import("../../../test/fakeEnvironment"),
+  ]);
+  return {
+    ...actual,
+    readPrimaryEnvironmentTarget: fakePrimaryEnvironmentTarget,
+    resolvePrimaryEnvironmentHttpUrl: (pathname: string) =>
+      new URL(pathname, fakePrimaryEnvironmentTarget().httpBaseUrl).toString(),
+  };
+});
+
 vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   ...(await original()),
   trackRpcRequestSent: () => {},
