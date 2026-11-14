@@ -1625,3 +1625,4 @@ be2a287952	take	fix(server): Claude Fable 5.2 is offered only from Claude Code 2
 cfd825caf2	take	test(server): title change test ignores a probe pending at browser close
 d109866c63	skip	guest links are removed in Onicode; only touches apps/server/src/guest
 f05cd350d2	take	fix(web): opening a very large folder no longer freezes the Files panel
+abac6837e9	take	fix(gitlab): a fork's same-named branch no longer hides the branch's own merge request
