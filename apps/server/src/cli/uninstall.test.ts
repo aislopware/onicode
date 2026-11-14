@@ -142,6 +142,11 @@ it.layer(NodeServices.layer)("onicode uninstall launcher", (it) => {
       yield* fs.symlink(root, path.join(root, "alias"));
       yield* fs.symlink(path.join(root, "alias/runtime/versions/1.0.0/onicode"), throughAlias);
       yield* fs.symlink(path.join(versionsDir, "0.9.0/onicode"), pruned);
+      const scriptThroughAlias = path.join(root, "bin/oni-script-alias");
+      yield* fs.writeFileString(
+        scriptThroughAlias,
+        posixLauncherScript(path.join(root, "alias/runtime/versions/1.0.0/onicode")),
+      );
       // Another program inside a version is not a launcher.
       const sibling = path.join(root, "bin/oni-sibling");
       yield* fs.symlink(path.join(versionsDir, "1.0.0/node"), sibling);
@@ -155,6 +160,7 @@ it.layer(NodeServices.layer)("onicode uninstall launcher", (it) => {
           pruned,
           sibling,
           script,
+          scriptThroughAlias,
           editedScript,
           path.join(root, "missing"),
         ].join("\n") + "\n",
@@ -165,6 +171,7 @@ it.layer(NodeServices.layer)("onicode uninstall launcher", (it) => {
           throughAlias,
           pruned,
           script,
+          scriptThroughAlias,
         ]);
       }
 

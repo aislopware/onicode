@@ -84,8 +84,16 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
         Effect.flatMap((target) =>
           fs.realPath(link).pipe(Effect.orElseSucceed(() => path.resolve(binDir, target))),
         ),
-        // Not a link: the script this command and the install scripts write.
-        Effect.catch(() => readPosixLauncherTarget(link)),
+        // Not a link: the script this command and the install scripts write, resolved the same way.
+        Effect.catch(() =>
+          readPosixLauncherTarget(link).pipe(
+            Effect.flatMap((target) =>
+              target === undefined
+                ? Effect.undefined
+                : fs.realPath(target).pipe(Effect.orElseSucceed(() => target)),
+            ),
+          ),
+        ),
         Effect.option,
         Effect.map(Option.filter((target) => target !== undefined)),
       );
