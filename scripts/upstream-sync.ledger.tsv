@@ -1541,3 +1541,4 @@ a678948483	take	fix(web): pending-question digit shortcuts ignore dialogs, menus
 d9973dc3f8	take	fix(mobile): a shared file no longer fails to send with "Too much context" (#28535)
 0e250fa6f6	take	fix(server): selected-file commits keep a conflicted multi-commit cherry-pick and reftable cherry-picks (#28912)
 20d21cf1ca	take	fix(mobile): disabled send arrow no longer darkens where its strokes overlap (#29028)
+5fa95d99af	take	fix(opencode): wait for the whole listening line before reading the server address (#28348)
