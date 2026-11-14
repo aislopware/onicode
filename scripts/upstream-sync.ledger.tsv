@@ -1476,3 +1476,4 @@ d6244ac5a3	take	fix(web): preserve literal entities in EPUB CDATA
 b37c959669	take	fix(server): open colon-number project folders correctly in VS Code
 4121b30f78	take	fix(mobile): the open button no longer covers inline page headings
 02e29ce8fa	take	perf(usage): show saved totals before scanning history
+89f1acb0f0	take	fix(pi): text generation uses the thinking level picked in Settings
