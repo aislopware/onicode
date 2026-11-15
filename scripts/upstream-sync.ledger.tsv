@@ -1947,3 +1947,4 @@ bf8fd416a2	take	fix(server): Claude append launch text may start with two hyphen
 ea4e7c1a60	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(acp): permission answers send the agent'\''s option id unchanged (#35837)' -m 'Ported from pingdotgg/t3code@ea4e7c1a60.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
 3466f9e99c	take	fix(server): forwarded calls to a linked environment no longer wait out a silent first address (#35546)
 2c2a286ad0	take	fix(server): Claude sessions no longer log a canUseTool shadowing warning (#31548)
+85a81b7a8b	take	fix(server): Claude text generation honors --settings launch args (#34874)
