@@ -80,7 +80,14 @@ const WorkspaceSelections = Schema.Struct({
 });
 export type WorkspaceSelections = typeof WorkspaceSelections.Type;
 
+const PullRequestActivityVisibility = Schema.Struct({
+  bots: Schema.Boolean,
+  resolved: Schema.Boolean,
+});
+export type PullRequestActivityVisibility = typeof PullRequestActivityVisibility.Type;
+
 const isThreadListFilters = Schema.is(ThreadListFilters);
+const isPullRequestActivityVisibility = Schema.is(PullRequestActivityVisibility);
 const isWorkspaceSelections = Schema.is(WorkspaceSelections);
 
 /** Push alerts and agent activity for this device, sent to every environment it registers with. */
@@ -101,6 +108,8 @@ export interface Preferences {
   readonly navigationTabOrder?: readonly string[];
   readonly hiddenNavigationTabs?: readonly string[];
   readonly pullRequestHideTestFiles?: boolean;
+  /** Which hidden-by-default PR activity is shown: bot comments and resolved or dismissed ones. */
+  readonly pullRequestActivityVisibility?: PullRequestActivityVisibility;
   readonly pullRequestMergeMethod?: PullRequestMergeMethod;
   readonly themeId?: MobileThemeId;
   readonly lightThemeId?: MobileThemeId;
@@ -187,6 +196,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     navigationTabOrder?: readonly string[];
     hiddenNavigationTabs?: readonly string[];
     pullRequestHideTestFiles?: boolean;
+    pullRequestActivityVisibility?: PullRequestActivityVisibility;
     pullRequestMergeMethod?: PullRequestMergeMethod;
     themeId?: MobileThemeId;
     lightThemeId?: MobileThemeId;
@@ -235,6 +245,10 @@ function sanitizePreferences(parsed: Preferences): Preferences {
 
   if (typeof parsed.pullRequestHideTestFiles === "boolean") {
     preferences.pullRequestHideTestFiles = parsed.pullRequestHideTestFiles;
+  }
+
+  if (isPullRequestActivityVisibility(parsed.pullRequestActivityVisibility)) {
+    preferences.pullRequestActivityVisibility = parsed.pullRequestActivityVisibility;
   }
 
   if (isPullRequestMergeMethod(parsed.pullRequestMergeMethod)) {
