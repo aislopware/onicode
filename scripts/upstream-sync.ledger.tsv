@@ -1836,3 +1836,4 @@ fbdfe2e980	take	answered question no longer shows raw item JSON (mobile)
 a62bc8156d	take	message ordinals read through an index (migration renumbered 94->99)
 47f2e91210	take	batch middle truncate fits
 dd3d4a4e4a	take	no stray highlights selecting shell commands
+c1a7ce362b	take	Check for Updates says when an update is available (single channel)
