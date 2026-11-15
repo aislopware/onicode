@@ -86,7 +86,7 @@ it.live("keeps migration warnings out of JSON thread output", () =>
     yield* persistServerRuntimeState({
       path: `${stateDir}/server-runtime.json`,
       state: yield* makePersistedServerRuntimeState({
-        config: { host: "127.0.0.1", devUrl: undefined },
+        config: { host: "127.0.0.1", dev: false },
         port: address.port,
       }),
     });
