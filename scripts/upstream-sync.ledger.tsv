@@ -1881,3 +1881,4 @@ b39fc24ff2	take	Pi agents get ONICODE_THREAD_ID like Claude, Codex and ACP sessi
 c910b1bbe9	take	onicode service hints keep --base-dir; T3 Connect parts (connect.ts) dropped, bootService change applied at Onicode's service/bootService.ts
 2e0353daae	take	compare prerelease versions without locale or precision loss
 b9bbfda087	take	NixOS/nspawn veths no longer advertised as LAN routes (conflict: kept Onicode's tailnetOnly alongside the new platform option; no devUrl in Onicode)
+0fa8e5afe7	skip	relay APNs batch delivery; relay removed, push-gateway has no per-device queue
