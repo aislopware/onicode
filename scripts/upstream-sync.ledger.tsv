@@ -2014,3 +2014,4 @@ ab45ce7167	take	fix(github): pull request activity says when its comments were c
 033ae7cba0	take	fix(server): an effect this build can't read no longer blocks its thread's later work (#32746)
 781ab0553c	take	fix(acp-registry): a failed agent install no longer floods provider status with its whole log (#32800)
 3fe1dd922d	take	adapted: core.ts conflict resolved onto Onicode's getMode(MODE.*)/allocUsize helpers (added MODE.focusEvent, dropped upstream's modeEnabled); scenario deferred to the desktop scenarios harness: scripts/scenarios/terminal-reports-focus-while-enabled.e2e.ts
+37b71a4ffe	take	fix(web): remove redundant subagent action from background row (#37079)
