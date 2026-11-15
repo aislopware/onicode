@@ -125,6 +125,7 @@ import { dispatchingQueuedMessageIdAtom, useThreadQueuedMessages } from "./use-t
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
 import { useStableCallback } from "../lib/useStableCallback";
+import { forgetSentImages } from "../lib/sentImageHandoff";
 
 const EMPTY_QUEUE_WORKFLOW_ATOM = Atom.make<null>(null).pipe(
   Atom.withLabel("mobile-thread-queue-workflow:empty"),
@@ -556,6 +557,7 @@ export function useThreadComposerState(input: {
       );
       return;
     }
+    forgetSentImages(edit.messageId);
     // False when the edit was cancelled or begun again meanwhile; its draft is the newer edit's.
     if (finishSave(true)) {
       clearComposerDraft(queuedEditDraftKey(threadKey, edit.runId), {

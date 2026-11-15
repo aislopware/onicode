@@ -899,8 +899,12 @@ function UserMessageMedia(props: {
               name={attachment.name}
               mimeType={attachment.mimeType}
               {...imageProps(index)}
-              {...handoffProps(sentImageHandoff(props.messageId, index, attachment.id))}
-              onImageLoad={(loaded) => rememberSentImage(props.messageId, index, loaded)}
+              {...handoffProps(
+                sentImageHandoff(props.messageId, index, attachment.name, attachment.id),
+              )}
+              onImageLoad={(loaded) =>
+                rememberSentImage(props.messageId, index, attachment.name, loaded)
+              }
               onPressPreview={props.onPressPreview}
             />
           ) : !image && attachment.uploadedAttachmentId ? (
@@ -917,8 +921,12 @@ function UserMessageMedia(props: {
             <PendingMessageMedia
               attachment={attachment}
               {...imageProps(index)}
-              {...handoffProps(sentImageHandoff(props.messageId, index, attachment.id))}
-              onImageLoad={(image) => rememberSentImage(props.messageId, index, image)}
+              {...handoffProps(
+                sentImageHandoff(props.messageId, index, attachment.name, attachment.id),
+              )}
+              onImageLoad={(image) =>
+                rememberSentImage(props.messageId, index, attachment.name, image)
+              }
               onPressPreview={props.onPressPreview}
               onPlaybackStart={props.onPlaybackStart}
             />
@@ -935,7 +943,7 @@ function UserMessageMedia(props: {
           name={attachment.name}
           mimeType={attachment.mimeType}
           {...imageProps(props.pendingAttachments.length + index)}
-          {...handoffProps(sentImageHandoff(props.messageId, index))}
+          {...handoffProps(sentImageHandoff(props.messageId, index, attachment.name))}
           onPressPreview={props.onPressPreview}
         />
       ) : isFileAttachment(attachment) ? (

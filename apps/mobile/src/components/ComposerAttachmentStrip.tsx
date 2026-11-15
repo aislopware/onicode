@@ -164,7 +164,7 @@ function ComposerImageAttachment(
           resizeMode="cover"
           onLoad={({ nativeEvent: { source } }) => {
             if (previewUri !== null)
-              rememberDraftImage(attachment.id, {
+              rememberDraftImage(attachment.id, attachment.name, {
                 uri: previewUri,
                 aspectRatio: source.width / source.height,
               });
