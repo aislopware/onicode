@@ -685,6 +685,11 @@ export const make = Effect.fn("WorkspaceSearchIndex.make")(function* (
           "core.quotePath=false",
           "-c",
           "core.fsmonitor=false",
+          // The parser expects project-relative paths and no column unless `--column` asks.
+          "-c",
+          "grep.column=false",
+          "-c",
+          "grep.fullName=false",
           "grep",
           "--untracked",
           "--no-color",
