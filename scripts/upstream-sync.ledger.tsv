@@ -2102,3 +2102,4 @@ aee231133a	take	adapted: the new local-version driver test writes two models, si
 ed7f069326	take	test(desktop): two-account callback test uses two distinct ports
 073989f022	take	fix(mobile): Duo scroll indicator sits past the vertical bar, at the screen edge
 12c495af49	take	fix(mobile): sending a message no longer shifts the feed before it settles
+598296e850	take	fix(web): copied code blocks drop the fence's trailing newline
