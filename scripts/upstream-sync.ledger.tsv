@@ -1948,3 +1948,4 @@ ea4e7c1a60	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>
 3466f9e99c	take	fix(server): forwarded calls to a linked environment no longer wait out a silent first address (#35546)
 2c2a286ad0	take	fix(server): Claude sessions no longer log a canUseTool shadowing warning (#31548)
 85a81b7a8b	take	fix(server): Claude text generation honors --settings launch args (#34874)
+12042ffb29	take	docs: align delegation guide with current MCP contract (#31045)
