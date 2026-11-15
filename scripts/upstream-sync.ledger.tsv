@@ -2011,3 +2011,4 @@ ca31ab64a4	take	fix(web): an image-only send that fails behind a new draft now s
 ab45ce7167	take	fix(github): pull request activity says when its comments were cut (#32707)
 742a91209e	skip	already in the fork as 695115f4e9 (same truncated:false stub fix, made during batch 2)
 9f815c94af	take	fix(server): a branch's own pull request shows past a hundred same-named fork pull requests (#32796)
+033ae7cba0	take	fix(server): an effect this build can't read no longer blocks its thread's later work (#32746)
