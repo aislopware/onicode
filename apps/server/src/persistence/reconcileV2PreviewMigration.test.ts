@@ -77,6 +77,7 @@ describe("V2 preview upgrade", () => {
         [95, "PushLiveActivityStartedAt"],
         [96, "ShellThreadReadIndexes"],
         [97, "QueuedTurnInputIndexJsonValid"],
+        [98, "ProviderTurnAttemptIndex"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -197,6 +198,7 @@ describe("V2 preview upgrade", () => {
         [95, "PushLiveActivityStartedAt"],
         [96, "ShellThreadReadIndexes"],
         [97, "QueuedTurnInputIndexJsonValid"],
+        [98, "ProviderTurnAttemptIndex"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
