@@ -1819,3 +1819,4 @@ bb33fc3a3f	take	test(server): stop Git auto-maintenance racing the template copy
 0983ab3e73	take	fix(web): model picker provider choice no longer raises the touch keyboard
 0b308312d5	take	fix(cursor): resume stopped turns with native resume (SDK patch merged, Onicode names kept)
 9cd5733f58	take	fix(web): unreachable environment no longer hides shared-repo PRs
+4dec8cf641	take	fix(web): honor right panel state in custom shortcuts (doc keeps Onicode's context keys)
