@@ -1976,3 +1976,4 @@ b8bffc8b35	take	fix(web): resource monitor no longer claims to sample every 0 ms
 d5a50a1d0d	take	perf(pr): actions, title edits and labels show the moment you click, on every host (#32774)
 f0495f7417	take	fix(provider-core): background work notices no longer say every task failed when one did (#32407)
 34204a39e8	take	fix(server): restarts no longer drop prompts the provider never accepted (#32413)
+e2afd2546e	take	git commit -a --author='Omar Espinosa <77650361+OmarAlex24@users.noreply.github.com>' -m 'perf(web): typing no longer re-renders the composer'\''s footer controls (#32323)' -m 'Ported from pingdotgg/t3code@e2afd2546e.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
