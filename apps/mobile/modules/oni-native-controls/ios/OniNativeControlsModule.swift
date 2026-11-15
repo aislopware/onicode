@@ -87,6 +87,8 @@ public final class OniNativeControlsModule: Module {
       file.present(urls: urls, titles: titles, selectedIndex: selectedIndex, from: presenter)
     }.runOnQueue(.main)
 
+    Function("timerClockFrames") { OniTimerClockSleep.frames }
+
     // A tap can reach JS before the old viewer's close does; this tells it whether that viewer is gone.
     // A presentation main has not started yet reads as still open.
     Function("isFilePreviewFinished") { (identifier: String) -> Bool in

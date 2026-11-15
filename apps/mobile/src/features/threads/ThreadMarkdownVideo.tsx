@@ -1,5 +1,5 @@
 import { MISSING_FILE_ACCESS_MESSAGE } from "@onicode/client-runtime/state/assets";
-import { createContext, useContext } from "react";
+import { createContext, use, useSyncExternalStore } from "react";
 import { MediaVideoPlayer } from "../../components/MediaVideoPlayer";
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
 import {
@@ -8,7 +8,41 @@ import {
   type MediaVideoPreviewSource,
 } from "../../lib/videoPreviewSource";
 
-export const ThreadMediaVisibleContext = createContext(false);
+/**
+ * Whether a feed row is on screen. A store instead of a context value, so a row
+ * with no media does not render when it scrolls in or out.
+ */
+export function createThreadMediaVisibility() {
+  let visible = false;
+  const listeners = new Set<() => void>();
+  return {
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    isVisible: () => visible,
+    set(next: boolean) {
+      if (next === visible) return;
+      visible = next;
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+type ThreadMediaVisibility = Pick<
+  ReturnType<typeof createThreadMediaVisibility>,
+  "subscribe" | "isVisible"
+>;
+
+export const ThreadMediaVisibleContext = createContext<ThreadMediaVisibility | null>(null);
+
+const subscribeNever = () => () => {};
+
+export function useThreadMediaVisible(): boolean {
+  const visibility = use(ThreadMediaVisibleContext);
+  const isVisible = () => visibility?.isVisible() ?? false;
+  return useSyncExternalStore(visibility?.subscribe ?? subscribeNever, isVisible, isVisible);
+}
 
 export function ThreadMarkdownVideo(props: {
   readonly source: MediaVideoPreviewSource;
@@ -17,7 +51,7 @@ export function ThreadMarkdownVideo(props: {
   readonly borderRadius?: number;
 }) {
   const { source } = props;
-  const feedVisible = useContext(ThreadMediaVisibleContext);
+  const feedVisible = useThreadMediaVisible();
   const visible = props.thumbnailVisible ?? feedVisible;
   const thumbnailKey = mediaVideoThumbnailKey(source);
   const asset = useAssetUrlState(

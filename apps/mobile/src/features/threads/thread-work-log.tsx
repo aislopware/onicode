@@ -262,44 +262,42 @@ export function ShimmeringWorkContent(props: {
   readonly themeAppearance?: "light" | "dark";
   readonly toolIcon?: ToolActivityIcon;
 }) {
-  const [availableWidth, setAvailableWidth] = useState(0);
-  const [textWidth, setTextWidth] = useState(0);
+  // Refs, so measuring a new row or a changed label neither renders it again nor restarts the sweep.
+  const rowWidth = useRef(0);
+  const textWidth = useRef(0);
   const appIsActive = useAppActive();
   const reducedMotion = useReduceMotionEnabled();
   const screenIsFocused = useIsFocused();
   // Native from creation, so each setValue updates the view without a React render.
-  const progress = useAnimatedValue(0, { useNativeDriver: true });
+  const sweepTranslateX = useAnimatedValue(-SHIMMER_WIDTH, { useNativeDriver: true });
   const gradientId = `work-shimmer-${useId().replaceAll(":", "")}`;
-  const contentWidth = Math.min(
-    availableWidth,
-    (props.showIcon ? SHIMMER_ICON_AND_GAP_WIDTH : 0) + Math.ceil(textWidth),
-  );
+  const iconWidth = props.showIcon ? SHIMMER_ICON_AND_GAP_WIDTH : 0;
+  const shimmering = !reducedMotion && appIsActive && screenIsFocused;
 
   // Uses a native Animated value instead of Reanimated, whose per-frame commits
   // starve React's while commit pausing is disabled (package.json). See
   // docs/internals/performance-regressions.md.
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- steps the native shimmer value on timers while visible and active, and stops them on cleanup
   useEffect(() => {
-    progress.setValue(0);
-    if (contentWidth <= 0 || reducedMotion || !appIsActive || !screenIsFocused) return;
-    return startShimmerSteps(progress);
-  }, [appIsActive, contentWidth, progress, reducedMotion, screenIsFocused]);
+    sweepTranslateX.setValue(-SHIMMER_WIDTH);
+    if (!shimmering) return;
+    return startShimmerSteps({
+      setValue(progress) {
+        const contentWidth = Math.min(rowWidth.current, iconWidth + Math.ceil(textWidth.current));
+        sweepTranslateX.setValue(progress * (contentWidth + SHIMMER_WIDTH) - SHIMMER_WIDTH);
+      },
+    });
+  }, [iconWidth, shimmering, sweepTranslateX]);
 
-  // The React Compiler memoizes these, so re-renders don't rebuild the native
-  // animation nodes.
-  const sweepTranslateX = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-SHIMMER_WIDTH, contentWidth],
-  });
-  const counterSweepTranslateX = progress.interpolate({
-    inputRange: [0, 1],
-    outputRange: [SHIMMER_WIDTH, -contentWidth],
-  });
+  // The React Compiler memoizes this, so re-renders don't rebuild the native animation node.
+  const counterSweepTranslateX = NativeAnimated.multiply(sweepTranslateX, -1);
 
   return (
     <View
       className={cn("min-w-0 flex-1 overflow-hidden", props.className)}
-      onLayout={(event) => setAvailableWidth(event.nativeEvent.layout.width)}
+      onLayout={(event) => {
+        rowWidth.current = event.nativeEvent.layout.width;
+      }}
     >
       <ShimmerWorkContent
         textClassName={props.textClassName}
@@ -312,28 +310,24 @@ export function ShimmeringWorkContent(props: {
         showIcon={props.showIcon}
         themeAppearance={props.themeAppearance}
         toolIcon={props.toolIcon}
-        onTextLayout={(event) => setTextWidth(event.nativeEvent.lines[0]?.width ?? 0)}
+        onTextLayout={(event) => {
+          textWidth.current = event.nativeEvent.lines[0]?.width ?? 0;
+        }}
       />
-      {!reducedMotion && appIsActive && screenIsFocused && contentWidth > 0 ? (
+      {shimmering ? (
+        // As wide as the row, so the highlighted copy lays out like the row without a measured
+        // width. The mask is the SHIMMER_WIDTH window at its left edge.
         <NativeAnimated.View
           pointerEvents="none"
           accessible={false}
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
-          style={{
-            position: "absolute",
-            top: 0,
-            bottom: 0,
-            left: 0,
-            overflow: "hidden",
-            width: SHIMMER_WIDTH,
-            transform: [{ translateX: sweepTranslateX }],
-          }}
+          style={[StyleSheet.absoluteFill, { transform: [{ translateX: sweepTranslateX }] }]}
         >
           <MaskedView
             style={StyleSheet.absoluteFill}
             maskElement={
-              <Svg width="100%" height="100%">
+              <Svg width={SHIMMER_WIDTH} height="100%">
                 <Defs>
                   <LinearGradient id={gradientId} x1="0%" x2="100%" y1="0%" y2="0%">
                     <Stop offset="0" stopColor="white" stopOpacity={0} />
@@ -350,7 +344,7 @@ export function ShimmeringWorkContent(props: {
             }
           >
             <NativeAnimated.View
-              style={{ width: availableWidth, transform: [{ translateX: counterSweepTranslateX }] }}
+              style={{ width: "100%", transform: [{ translateX: counterSweepTranslateX }] }}
             >
               <ShimmerWorkContent
                 textClassName={props.textClassName}

@@ -1,11 +1,14 @@
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentTheme as EnvironmentThemeSchema,
   EnvironmentThemeFile,
   ServerSettingsError,
+  THEME_CSS_MAX_LENGTH,
 } from "@onicode/contracts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -20,6 +23,12 @@ import { ServerSettingsService } from "./serverSettings.ts";
 import { symlinksSupported } from "@onicode/shared/testing/symlinks";
 
 const encodeThemeFile = Schema.encodeSync(Schema.fromJsonString(EnvironmentThemeFile));
+/** Writes non-ASCII characters as `\uXXXX` escapes, as encoders such as Python's json.dumps do. */
+const encodeThemeFileEscaped = (theme: EnvironmentThemeFile) =>
+  encodeThemeFile(theme).replace(
+    /[\u0080-\uffff]/g,
+    (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`,
+  );
 
 const NIGHTFALL_THEME: EnvironmentThemeFile = {
   name: "Nightfall",
@@ -190,7 +199,10 @@ it.layer(NodeServices.layer)("environment theme", (it) => {
   );
 
   it.effect("does not replace a theme file it could not put back", () => {
-    const oversized = JSON.stringify({ ...NIGHTFALL_THEME, padding: "x".repeat(40_000) });
+    const oversized = JSON.stringify({
+      ...NIGHTFALL_THEME,
+      padding: "x".repeat(EnvironmentTheme.MAX_THEME_FILE_BYTES),
+    });
     return withEnvironmentThemes(
       { [`${REFUSED_THEME_ID}.json`]: oversized },
       Effect.gen(function* () {
@@ -298,14 +310,14 @@ it.layer(NodeServices.layer)("environment theme", (it) => {
     const large = (name: string): EnvironmentThemeFile => ({
       ...NIGHTFALL_THEME,
       name,
-      css: `/* ${"x".repeat(19_900)} */`,
+      css: `/* ${"界".repeat(THEME_CSS_MAX_LENGTH - 6)} */`,
     });
     return withEnvironmentThemes(
       {
         ...Object.fromEntries(
-          Array.from({ length: 9 }, (_, index) => [
+          Array.from({ length: 6 }, (_, index) => [
             `aa-${index}.json`,
-            encodeThemeFile(large(`Large ${index}`)),
+            encodeThemeFileEscaped(large(`Large ${index}`)),
           ]),
         ),
         "zz-look.json": encodeThemeFile(NIGHTFALL_THEME),
@@ -341,7 +353,10 @@ it.layer(NodeServices.layer)("environment theme", (it) => {
     withEnvironmentThemes(
       {
         ...Object.fromEntries(
-          Array.from({ length: 7 }, (_, index) => [`junk-${index}.json`, "{".repeat(30_000)]),
+          Array.from({ length: 7 }, (_, index) => [
+            `junk-${index}.json`,
+            "{".repeat(EnvironmentTheme.MAX_THEME_FILE_BYTES),
+          ]),
         ),
         "zz-valid.json": encodeThemeFile(NIGHTFALL_THEME),
       },
@@ -353,4 +368,29 @@ it.layer(NodeServices.layer)("environment theme", (it) => {
       }),
     ),
   );
+});
+
+it("sends long theme CSS only to clients that decode it", () => {
+  // The theme schema desktop 0.15.0 and older decode on the config stream.
+  const decodeOnLegacyClient = Schema.decodeUnknownExit(
+    Schema.Array(
+      Schema.Struct({
+        ...EnvironmentThemeSchema.fields,
+        css: Schema.optional(Schema.String.check(Schema.isMaxLength(20_000))),
+      }),
+    ),
+  );
+  const decodeOnClient = Schema.decodeUnknownExit(Schema.Array(EnvironmentThemeSchema));
+  const longCss = `/* ${"x".repeat(THEME_CSS_MAX_LENGTH - 6)} */`;
+  const short = { id: "short", ...SHARED_THEME, css: ".dark { color: red; }" };
+  const themes = [{ id: "long", ...NIGHTFALL_THEME, css: longCss }, short];
+  assert.isTrue(Exit.isFailure(decodeOnLegacyClient(themes)));
+
+  const legacy = EnvironmentTheme.themesForClient(themes, false);
+  assert.isTrue(Exit.isSuccess(decodeOnLegacyClient(legacy)));
+  assert.deepEqual(legacy, [{ id: "long", ...NIGHTFALL_THEME }, short]);
+
+  const current = EnvironmentTheme.themesForClient(themes, true);
+  assert.isTrue(Exit.isSuccess(decodeOnClient(current)));
+  assert.equal(current[0]?.css, longCss);
 });

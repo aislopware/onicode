@@ -1,0 +1,101 @@
+import { expect } from "e2e";
+import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+
+import { ONICODE_HOME } from "../e2e.config.ts";
+import { startSecondEnvironment } from "./second-environment.ts";
+import { run } from "./shell.ts";
+import { makeState, runPromise, test, WEB } from "./onicode.ts";
+import { ENVIRONMENT_LABEL } from "./start-app.ts";
+
+test(
+  "A new draft keeps its selected models when it moves to another machine",
+  WEB,
+  async ({ onicode, app, screen, browser }) => {
+    const primary = makeState(ONICODE_HOME);
+    // Machines share a project through its repository, which needs a remote to be named by.
+    const workspace = await runPromise(
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        yield* fs.makeDirectory(path.join(ONICODE_HOME, "workspaces"), { recursive: true });
+        const directory = yield* fs.makeTempDirectory({
+          directory: path.join(ONICODE_HOME, "workspaces"),
+          prefix: "demo-",
+        });
+        yield* fs.writeFileString(path.join(directory, "README.md"), "");
+        return directory;
+      }),
+    );
+    const git = (args: ReadonlyArray<string>) => runPromise(run("git", args, { cwd: workspace }));
+    await git(["init", "--quiet", "--initial-branch=main"]);
+    await git(["remote", "add", "origin", "https://github.com/scenario/demo.git"]);
+    await git(["add", "--all"]);
+    await git([
+      "-c",
+      "user.name=Scenario",
+      "-c",
+      "user.email=scenario@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "--quiet",
+      "--message",
+      "Initial commit",
+    ]);
+    await runPromise(primary.cli(["project", "add", workspace, "--title", "demo"]));
+    const second = await startSecondEnvironment(`${ONICODE_HOME}-second-environment`);
+    const moreActions = screen.getByRole("button", `More actions for ${ENVIRONMENT_LABEL}`);
+    let paired = false;
+    try {
+      const { host, token } = second;
+      await runPromise(second.cli(["project", "add", workspace, "--title", "demo"]));
+
+      await onicode.open("/settings/connections");
+      await screen.getByRole("button", "Add environment").tap();
+      const dialog = screen.getByRole("dialog");
+      await dialog.getByPlaceholder("backend.example.com").fill(host);
+      await dialog.getByPlaceholder("PAIRCODE").fill(token);
+      await dialog.getByRole("button", "Add environment").tap();
+      await expect(moreActions).toBeVisible({ timeout: 60_000 });
+      paired = true;
+      await app.open("/");
+      // Shift adds a model to the draft instead of replacing it.
+      await screen.getByRole("button", "Showcase", { exact: false }).first().tap();
+      await browser.keyboard.type("Plan and reads");
+      await browser.keyboard.press("Shift+Enter");
+      await browser.keyboard.press("Escape");
+      const models = screen.getByRole("button", "Showcase, Plan and reads", { exact: false });
+      await expect(models.first()).toBeVisible();
+
+      // Both machines are named Scenario; the draft runs on the checked one.
+      const runOn = () => screen.getByText("Scenario").last().tap();
+      const machine = (index: number) => browser.locator('[role="menuitemradio"]').nth(index);
+      await runOn();
+      const target = (await machine(0).getAttribute("aria-checked")) === "true" ? 1 : 0;
+      await machine(target).click();
+      await runOn();
+      await expect(machine(target)).toHaveAttribute("aria-checked", "true");
+      await browser.keyboard.press("Escape");
+
+      await app.screenshot("after-machine-switch");
+      await expect(models.first()).toBeVisible();
+    } finally {
+      // The desktop app keeps paired environments between scenarios, so a later one pairing
+      // the same label would find two.
+      try {
+        if (paired) {
+          await app.open("/settings/connections");
+          await moreActions.tap();
+          await screen.getByRole("menuitem", "Remove from this device…").tap();
+          await screen.getByRole("button", "Confirm").tap();
+          await expect(moreActions).toBeHidden({ timeout: 30_000 });
+        }
+      } finally {
+        await second.stop();
+        await runPromise(primary.cli(["project", "remove", workspace, "--force"]));
+      }
+    }
+  },
+);

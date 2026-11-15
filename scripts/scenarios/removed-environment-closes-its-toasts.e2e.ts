@@ -1,57 +1,9 @@
-import * as NodeServices from "@effect/platform-node/NodeServices";
-import * as HostProcess from "@onicode/shared/HostProcess";
-import * as NetService from "@onicode/shared/Net";
 import { expect } from "e2e";
-import * as Deferred from "effect/Deferred";
-import * as Effect from "effect/Effect";
-import * as Fiber from "effect/Fiber";
-import * as Path from "effect/Path";
 
-import { APP_DIR, ONICODE_HOME } from "../e2e.config.ts";
-import { ENVIRONMENT_LABEL, prepareHome, start } from "./start-app.ts";
+import { ONICODE_HOME } from "../e2e.config.ts";
 import { makeState, runPromise, test, WEB } from "./onicode.ts";
-
-const SECOND_HOME = `${ONICODE_HOME}-second-environment`;
-
-/** A second server on its own Onicode home, running until interrupted. `--dev` registers the
- * replay agent; `paired` gets the Add environment input. */
-const runSecondServer = Effect.fn("scenario.secondServer")(function* (
-  paired: (target: { readonly host: string; readonly token: string }) => void,
-) {
-  const path = yield* Path.Path;
-  const node = yield* HostProcess.ExecutablePath;
-  const hostEnvironment = yield* HostProcess.Environment;
-  const port = yield* (yield* NetService.NetService).reserveLoopbackPort();
-  yield* prepareHome(SECOND_HOME);
-  const token = yield* Deferred.make<string>();
-  yield* start({
-    cwd: APP_DIR,
-    command: node,
-    args: [
-      "apps/server/src/bin.ts",
-      "serve",
-      "--host",
-      "127.0.0.1",
-      "--port",
-      String(port),
-      "--base-dir",
-      SECOND_HOME,
-      "--dev",
-    ],
-    env: {
-      PATH: `${path.join(SECOND_HOME, "bin")}:${hostEnvironment.PATH ?? ""}`,
-      HOME: hostEnvironment.HOME,
-      ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
-      ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
-    },
-    onLine: (line) => {
-      const value = /^Token:\s*(\S+)/.exec(line)?.[1];
-      return value === undefined ? Effect.void : Deferred.succeed(token, value).pipe(Effect.asVoid);
-    },
-  });
-  paired({ host: `http://127.0.0.1:${port}`, token: yield* Deferred.await(token) });
-  return yield* Effect.never;
-});
+import { startSecondEnvironment } from "./second-environment.ts";
+import { ENVIRONMENT_LABEL } from "./start-app.ts";
 
 test(
   "Removing an environment closes the in-app notifications it raised",
@@ -64,17 +16,9 @@ test(
       messages: ["first"],
     });
     const primary = makeState(ONICODE_HOME);
-    const second = makeState(SECOND_HOME);
-    const pairing = Promise.withResolvers<{ host: string; token: string }>();
-    const server = Effect.runFork(
-      runSecondServer(pairing.resolve).pipe(
-        Effect.scoped,
-        Effect.provide([NodeServices.layer, NetService.layer]),
-      ),
-    );
-    server.addObserver(() => pairing.reject(new Error("The second server stopped.")));
+    const second = await startSecondEnvironment(`${ONICODE_HOME}-second-environment`);
     try {
-      const { host, token } = await pairing.promise;
+      const { host, token } = second;
       const project = await second.state.project("remote-demo");
       const thread = await second.state.thread({
         project,
@@ -126,7 +70,7 @@ test(
       }
       await expect(moreActions).toBeHidden({ timeout: 30_000 });
     } finally {
-      await Effect.runPromise(Fiber.interrupt(server));
+      await second.stop();
     }
   },
 );

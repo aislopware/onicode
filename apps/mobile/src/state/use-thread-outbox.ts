@@ -73,3 +73,12 @@ export const queuedThreadKeysAtom = Atom.make((get): ReadonlySet<string> => {
 export function useQueuedThreadKeys(): ReadonlySet<string> {
   return useAtomValue(queuedThreadKeysAtom);
 }
+
+const NO_QUEUED_MESSAGES: ReadonlyArray<never> = [];
+
+/** A thread's queued messages without the one that creates it: the same array until they change. */
+export function useThreadQueuedMessages(threadKey: string | null) {
+  const queued = useThreadOutboxMessages();
+  const messages = threadKey === null ? undefined : queued[threadKey];
+  return messages?.filter((message) => message.creation === undefined) ?? NO_QUEUED_MESSAGES;
+}

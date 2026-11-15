@@ -177,6 +177,7 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
   // Config state merges the snapshots it fetches back in, so no subscriber needs them broadcast.
   const onDemandSnapshots = (input: ServerConfigSubscriptionInput) => ({
     ...input,
+    ...(input?.environmentThemes === true ? { longThemeCss: true } : {}),
     workspaceSnapshotsOnDemand: true,
   });
 

@@ -204,6 +204,63 @@ describe("DesktopLinuxUrlHandler", () => {
     assert.include(entry, "Icon=/home/al ice/icons/Onicode\\\\x.png");
   });
 
+  it.each([
+    {
+      from: "Onicode-0.15.0.AppImage",
+      to: "Onicode-0.16.0.AppImage",
+      stable: "Onicode.AppImage",
+      replaced: true,
+    },
+    {
+      from: "Onicode-0.5.0-x86_64.AppImage",
+      to: "Onicode-0.16.0.AppImage",
+      stable: "Onicode.AppImage",
+      replaced: true,
+    },
+    {
+      from: "Onicode-0.15.0-arm64.AppImage",
+      to: "Onicode-0.16.0-arm64.AppImage",
+      stable: "Onicode-arm64.AppImage",
+      replaced: true,
+    },
+    {
+      from: "onicode.AppImage",
+      to: "Onicode-0.16.0.AppImage",
+      stable: "Onicode.AppImage",
+      replaced: false,
+    },
+    {
+      from: "../Onicode-0.15.0.AppImage",
+      to: "Onicode-0.16.0.AppImage",
+      stable: "Onicode.AppImage",
+      replaced: false,
+    },
+    {
+      from: "Onicode-0.16.0.AppImage",
+      to: "Onicode-0.16.0.AppImage",
+      stable: "Onicode.AppImage",
+      replaced: false,
+    },
+    { from: "Onicode-0.15.0.AppImage", to: "Onicode.AppImage", stable: null, replaced: false },
+  ])("moves $to to $stable after an update from $from", ({ from, to, stable, replaced }) => {
+    for (const dir of ["/home/alice/Applications", '/home/al ice/My "100%" $Apps\\x']) {
+      const previous = dir + "/" + from;
+      assert.deepEqual(
+        DesktopLinuxUrlHandler.versionFreeAppImageMigration({
+          previousEntry: DesktopLinuxUrlHandler.renderUrlHandlerDesktopEntry({
+            displayName: "Onicode",
+            execTarget: previous,
+            scheme: "onicode",
+          }),
+          appImagePath: dir + "/" + to,
+        }),
+        stable === null
+          ? null
+          : { stablePath: dir + "/" + stable, replacedPath: replaced ? previous : null },
+      );
+    }
+  });
+
   it.effect(
     "writes the handler entry, refreshes the MIME cache, and claims the scheme default",
     () => {

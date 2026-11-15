@@ -5,7 +5,8 @@
     "appDelegateSubscribers": [
       "OniWorkspaceOrientationSubscriber",
       "OniMenuDismissTouchGateSubscriber",
-      "OniBackgroundGraceSubscriber"
+      "OniBackgroundGraceSubscriber",
+      "OniTimerClockSleepSubscriber"
     ]
   },
   "android": {

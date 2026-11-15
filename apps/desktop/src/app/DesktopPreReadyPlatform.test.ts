@@ -16,6 +16,9 @@ const {
   copyFileSyncMock,
   execFileSyncMock,
   readFileSyncMock,
+  linkSyncMock,
+  unlinkSyncMock,
+  symlinkSyncMock,
 } = vi.hoisted(() => ({
   appendSwitchMock: vi.fn(),
   getSwitchValueMock: vi.fn(),
@@ -27,6 +30,9 @@ const {
   copyFileSyncMock: vi.fn(),
   execFileSyncMock: vi.fn(),
   readFileSyncMock: vi.fn(),
+  linkSyncMock: vi.fn(),
+  unlinkSyncMock: vi.fn(),
+  symlinkSyncMock: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -51,6 +57,9 @@ vi.mock("node:fs", () => ({
   mkdirSync: mkdirSyncMock,
   writeFileSync: writeFileSyncMock,
   copyFileSync: copyFileSyncMock,
+  linkSync: linkSyncMock,
+  unlinkSync: unlinkSyncMock,
+  symlinkSync: symlinkSyncMock,
 }));
 
 vi.mock("node:child_process", () => ({
@@ -72,6 +81,9 @@ describe("DesktopPreReadyPlatform", () => {
     copyFileSyncMock.mockReset();
     execFileSyncMock.mockReset();
     readFileSyncMock.mockReset().mockReturnValue("{}");
+    linkSyncMock.mockReset();
+    unlinkSyncMock.mockReset();
+    symlinkSyncMock.mockReset();
   });
 
   it.effect("persists Linux scaling synchronously across relaunches and settings rewrites", () => {
@@ -180,6 +192,57 @@ describe("DesktopPreReadyPlatform", () => {
       }),
     ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
   });
+
+  it.effect.each([
+    { relaunchedByUpdater: "true", migrated: true },
+    { relaunchedByUpdater: "", migrated: false },
+  ])(
+    "moves an updated AppImage to its version-free name (updater relaunch: $relaunchedByUpdater)",
+    ({ relaunchedByUpdater, migrated }) => {
+      vi.stubEnv("VITE_DEV_SERVER_URL", "");
+      vi.stubEnv("APPIMAGE", "/Apps/Onicode-0.16.0.AppImage");
+      getSwitchValueMock.mockReturnValue("");
+      const entryPath = "/xdg/applications/dev.onicode.Onicode.desktop";
+      const files = new Map([[entryPath, "Exec=/Apps/Onicode-0.15.0-x86_64.AppImage %U\n"]]);
+      readFileSyncMock.mockImplementation((path: string) => files.get(path) ?? "{}");
+      writeFileSyncMock.mockImplementation((path: string, contents: string | Buffer) => {
+        files.set(path, String(contents));
+      });
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          yield* Layer.build(
+            DesktopPreReadyPlatform.layer.pipe(
+              Layer.provide(Layer.succeed(HostProcess.Platform, "linux")),
+              Layer.provide(
+                DesktopConfig.layerTest({
+                  XDG_DATA_HOME: "/xdg",
+                  APPIMAGE: "/Apps/Onicode-0.16.0.AppImage",
+                  APPIMAGE_SILENT_INSTALL: relaunchedByUpdater,
+                }),
+              ),
+            ),
+          );
+          const appImage = migrated ? "/Apps/Onicode.AppImage" : "/Apps/Onicode-0.16.0.AppImage";
+          assert.deepEqual(
+            linkSyncMock.mock.calls,
+            migrated ? [["/Apps/Onicode-0.16.0.AppImage", "/Apps/Onicode.AppImage"]] : [],
+          );
+          assert.deepEqual(
+            unlinkSyncMock.mock.calls,
+            migrated ? [["/Apps/Onicode-0.16.0.AppImage"]] : [],
+          );
+          assert.deepEqual(
+            symlinkSyncMock.mock.calls,
+            migrated ? [["Onicode.AppImage", "/Apps/Onicode-0.15.0-x86_64.AppImage"]] : [],
+          );
+          // @effect-diagnostics-next-line processEnvInEffect:off
+          assert.equal(process.env.APPIMAGE, appImage);
+          assert.include(files.get(entryPath), `Exec=${appImage} %U`);
+        }),
+      ).pipe(Effect.ensuring(Effect.sync(() => vi.unstubAllEnvs())));
+    },
+  );
 
   it.effect("points the early portal entry at a configured distribution launcher", () => {
     vi.stubEnv("VITE_DEV_SERVER_URL", "");

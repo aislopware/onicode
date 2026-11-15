@@ -76,7 +76,7 @@ export function fillerText(words: number, seed = 0): string {
 }
 
 interface Script {
-  readonly kind: "reply" | "stream" | "hold" | "question" | "subagents" | "fail";
+  readonly kind: "reply" | "stream" | "hold" | "question" | "subagents" | "fail" | "work";
   readonly words: number;
   readonly chunkMs: number;
   readonly key: string;
@@ -96,6 +96,14 @@ export function scriptOf(prompt: string): Script {
   if (kind === "hold" || kind === "subagents" || kind === "question")
     return { kind, words: 40, chunkMs: 0, key: marker?.[2] ?? kind };
   if (kind === "fail") return { kind, words: 0, chunkMs: 0, key: "" };
+  // `[[eval:work:600:700]]` works for at least 600 s: a tool call every 700 ms, some text between.
+  if (kind === "work")
+    return {
+      kind,
+      words: Number(marker?.[2] ?? 600),
+      chunkMs: Number(marker?.[3] ?? 700),
+      key: "",
+    };
   return { kind: "reply", words: 40, chunkMs: 0, key: "" };
 }
 
@@ -122,6 +130,31 @@ async function runPrompt(sessionId: string, prompt: string, turn: number): Promi
   const messageId = `${sessionId}-m${turn}`;
   if (script.kind === "fail") throw new Error("Scripted provider failure.");
   if (script.kind === "hold") await waitForRelease(sessionId, script.key);
+  if (script.kind === "work") {
+    const steps = Math.ceil((script.words * 1000) / Math.max(1, script.chunkMs));
+    for (let step = 0; step < steps && !cancelled.has(sessionId); step++) {
+      const toolCallId = `${sessionId}-work-${turn}-${step}`;
+      const read = step % 3 === 0;
+      update(sessionId, {
+        sessionUpdate: "tool_call",
+        toolCallId,
+        title: read ? `Read src/module-${step}.ts` : `pnpm test step-${step}`,
+        kind: read ? "read" : "execute",
+        status: "in_progress",
+        rawInput: read ? { path: `src/module-${step}.ts` } : { command: `pnpm test step-${step}` },
+      });
+      await sleep(script.chunkMs);
+      update(sessionId, {
+        sessionUpdate: "tool_call_update",
+        toolCallId,
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: fillerText(80, step) } }],
+      });
+      if (step % 4 === 3)
+        await streamText(sessionId, `${fillerText(60, step)}\n\n`, 40, `${messageId}-${step}`);
+    }
+    return { stopReason: cancelled.has(sessionId) ? "cancelled" : "end_turn" };
+  }
   if (script.kind === "question") {
     const reply = await request("elicitation/create", {
       sessionId,

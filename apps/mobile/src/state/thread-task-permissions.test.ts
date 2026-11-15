@@ -69,6 +69,7 @@ const state = vi.hoisted(() => ({
 vi.mock("react", () => ({
   useCallback: <A>(callback: A) => callback,
   useEffect: () => {},
+  useInsertionEffect: () => {},
   useLayoutEffect: () => {},
   useRef: <A>(current: A) => ({ current }),
   useMemo: <A>(factory: () => A) => factory(),
@@ -142,7 +143,7 @@ vi.mock("./threads", async () => {
 });
 vi.mock("./use-thread-outbox", async () => {
   const { Atom } = await import("effect/reactivity");
-  return { dispatchingQueuedMessageIdAtom: Atom.make(null), useThreadOutboxMessages: () => ({}) };
+  return { dispatchingQueuedMessageIdAtom: Atom.make(null), useThreadQueuedMessages: () => [] };
 });
 vi.mock("./thread-outbox", () => ({ enqueueThreadOutboxMessage: state.enqueue }));
 vi.mock("./composer-attachment-uploads", async () => {

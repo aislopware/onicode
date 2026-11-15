@@ -96,6 +96,47 @@ export function renderUrlHandlerDesktopEntry(input: {
   ].join("\n");
 }
 
+function parseUrlHandlerExecTarget(entry: string): string | null {
+  const exec = /^Exec=(.*) %U$/mu.exec(entry)?.[1];
+  if (exec === undefined) return null;
+  const unescaped = exec.replace(/\\([\\nrt])/gu, (_, char: string) =>
+    char === "n" ? "\n" : char === "r" ? "\r" : char === "t" ? "\t" : char,
+  );
+  const quoted = /^"(.*)"$/su.exec(unescaped)?.[1];
+  return (
+    quoted === undefined ? unescaped : quoted.replace(/\\([\\`$"])/gu, (_, char: string) => char)
+  ).replaceAll("%%", "%");
+}
+
+const APPIMAGE_NAME_VERSION = /-?\d+\.\d+\.\d+/u;
+
+const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+
+// electron-updater replaces an AppImage in place only when its name has no x.y.z version, and
+// better-update names every AppImage it serves with one, so each update renames the file. After an
+// update, move the AppImage to its version-free name and point the path it replaced there.
+export function versionFreeAppImageMigration(input: {
+  readonly previousEntry: string;
+  readonly appImagePath: string;
+}): { readonly stablePath: string; readonly replacedPath: string | null } | null {
+  const currentName = baseName(input.appImagePath);
+  const stableName = currentName.replace(APPIMAGE_NAME_VERSION, "");
+  if (stableName === currentName || APPIMAGE_NAME_VERSION.test(stableName)) return null;
+  const directory = input.appImagePath.slice(0, -currentName.length);
+  const previous = parseUrlHandlerExecTarget(input.previousEntry);
+  return {
+    stablePath: directory + stableName,
+    replacedPath:
+      previous !== null &&
+      previous !== input.appImagePath &&
+      previous.startsWith("/") &&
+      previous.slice(0, -baseName(previous).length) === directory &&
+      APPIMAGE_NAME_VERSION.test(baseName(previous))
+        ? previous
+        : null,
+  };
+}
+
 // Docks may look up the Wayland app id without a desktop entry; icon theme lookups are case-sensitive.
 const LINUX_THEME_ICON_SIZE = "256x256";
 

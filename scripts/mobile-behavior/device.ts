@@ -75,6 +75,24 @@ export interface FeedSample {
   readonly rows?: Record<string, number>;
 }
 
+export interface RenderCounts {
+  readonly commits: number;
+  readonly components: ReadonlyArray<{ readonly key: string; readonly count: number }>;
+  /** Renders by `<component> <cause>`, where the cause of a state update is `state#<hook>`. */
+  readonly causes: ReadonlyArray<{ readonly key: string; readonly count: number }>;
+}
+
+export interface Wakeups {
+  /** Display frames the UI runtime asked for. */
+  readonly uiFrameRequests: number;
+  /** Timers and animation frames the JS runtime set that were due within a second. */
+  readonly shortTimers: number;
+  /** Repeating JS timers of a second or less that are still set. */
+  readonly shortIntervals: number;
+  /** Display frames React Native's timer clock ran on the JS thread. Only iOS counts them. */
+  readonly timerClockFrames: number;
+}
+
 export interface Recording {
   readonly js: ReadonlyArray<number>;
   readonly ui: ReadonlyArray<number>;
@@ -266,6 +284,16 @@ export function makeDevice(options: DeviceOptions) {
     recordStart: (withFeed: boolean) => evaluate(`__oniBehavior.recordStart(${withFeed})`),
     recordStop: evaluate("__oniBehavior.recordStop()").pipe(
       Effect.map((value) => JSON.parse(String(value)) as Recording),
+    ),
+    /** Counts component renders until `renderCountStop`, through the app's render counter. */
+    renderCountStart: evaluate("__oniRenderCounterStart()"),
+    renderCountStop: evaluate(
+      "(({ commits, components, causes }) => JSON.stringify({ commits, components, causes }))(__oniRenderCounterStop())",
+    ).pipe(Effect.map((value) => JSON.parse(String(value)) as RenderCounts)),
+    /** Counts what wakes the app on every display frame until `wakeupsStop`. */
+    wakeupsStart: evaluate("__oniBehavior.wakeupsStart()"),
+    wakeupsStop: evaluate("__oniBehavior.wakeupsStop()").pipe(
+      Effect.map((value) => JSON.parse(String(value)) as Wakeups),
     ),
     press: (selector: string) => run(["press", selector]),
     pressAt: (x: number, y: number) => run(["press", String(x), String(y)]),
