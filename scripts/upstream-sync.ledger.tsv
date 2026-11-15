@@ -2030,3 +2030,4 @@ f36c8351d8	take	fix(server): an MCP pin lands at the top of the Pinned section (
 9de4a2fb5d	take	fix(mobile): keep Diagnostics and Client Storage content above floating tabs (#32821)
 5e0127ca83	take	fix(acp-registry): observe delayed model discovery and avoid stale cache lock (#33170)
 986975e9eb	skip	only deflakes the Clerk-modal Esc test, which Onicode dropped with Clerk
+52451a7909	take	fix(claude): keep monitor threads waiting between updates (#37085)
