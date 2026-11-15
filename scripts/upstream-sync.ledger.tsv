@@ -2126,3 +2126,4 @@ f5d86e31e8	take	fix(server): clear title markers stuck on old subagent and fork 
 72ddc3ee32	take	fix(server): nested Claude subagent summaries no longer show Claude Code's hand-back frame (#37355)
 109e9dbdfd	take	fix(web): file tabs keep their scroll position when you switch back (#37361)
 69f8f59b51	take	fix(server): Windows PowerShell terminal reads native UTF-8 output correctly (#37376)
+06150a08ec	take	fix(web): No project threads in New worktree mode send without a base branch (#37392)
