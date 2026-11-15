@@ -2117,3 +2117,4 @@ c5e6b24ff5	take	fix(mobile): iOS multi-item text paste folds into an attachment 
 af8faa9cfa	take	taken as is
 26b63a44f9	take	dropped isRelayManaged from the test fixture (relay removed, not in Onicode's EnvironmentConnectionSummary)
 51cdf23265	take	taken; raisedByT3 renamed raisedByOni
+19b33eca4c	take	fix(server): remote tasks report their actual model
