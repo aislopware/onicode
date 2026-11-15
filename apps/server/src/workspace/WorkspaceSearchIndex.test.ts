@@ -302,6 +302,13 @@ it.live("answers content searches with git grep while a slow content index build
     const vcsProcess = yield* VcsProcess.VcsProcess;
     const cwd = yield* fileSystem.makeTempDirectoryScoped({ prefix: "oni-content-warmup-" });
     yield* vcsProcess.run({ operation: "test.gitInit", command: "git", args: ["init"], cwd });
+    // A user's grep.column would add a field to every record of the full-line run.
+    yield* vcsProcess.run({
+      operation: "test.gitConfig",
+      command: "git",
+      args: ["config", "grep.column", "true"],
+      cwd,
+    });
     yield* fileSystem.writeFileString(path.join(cwd, ".gitignore"), "ignored.txt\n");
     yield* fileSystem.makeDirectory(path.join(cwd, "src"));
     yield* fileSystem.writeFileString(
