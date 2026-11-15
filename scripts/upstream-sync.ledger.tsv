@@ -1896,3 +1896,4 @@ c8c210203c	skip	relay managed endpoint runtime (cloud/ManagedEndpointRuntime) re
 3f1b132e97	take	git commit -a --author='ajinkyajacob <82514259+ajinkyajacob@users.noreply.github.com>' -m 'fix(acp): give Command Code Onicode'\''s MCP endpoint over HTTP (#34004)' -m 'Ported from pingdotgg/t3code@3f1b132e97.' --trailer 'Co-authored-by: CommandCodeBot <noreply@commandcode.ai>'
 1e60d60519	take	Fix #29433: Restore Codex MCP apps after thread unload (#29498)
 0bd581b078	take	fix(server): regenerate an empty persisted secret instead of failing startup (#32053)
+f2839735ef	skip	outside cloud-assistant MCP OAuth (Gemini Spark); declined surface, /oauth/mcp/register only serves peer links
