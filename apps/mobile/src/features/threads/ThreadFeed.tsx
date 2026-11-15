@@ -101,7 +101,7 @@ import { imageMimeType } from "@onicode/shared/image";
 import { videoMimeType } from "@onicode/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { textDirection } from "@onicode/shared/textDirection";
-import { useFocusEffect, useIsFocused, useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { isDuoDevice } from "../../lib/device-type";
@@ -2810,8 +2810,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const openLinkedThread = useOpenLinkedThread();
   // Recycling a row disposes its native audio player, so a started clip's row stays rendered.
   const [retainedMediaRowId, setRetainedMediaRowId] = useState<string | null>(null);
-  const focused = useIsFocused();
-  if (!focused && retainedMediaRowId !== null) setRetainedMediaRowId(null);
   const onOpenTurnDiff = useCallback(
     (checkpoint: ThreadCheckpointSummary) => {
       setReviewSelectedSectionId(
@@ -2865,7 +2863,17 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const onInlinePlaybackStart = () => {
     markdownLinkRequest.current?.abort();
   };
-  useFocusEffect(useCallback(() => () => markdownLinkRequest.current?.abort(), []));
+  // Blur disposes the pinned row's player, so the pin goes with it. Clearing here instead of
+  // reading focus in render keeps the whole feed from re-rendering on every focus change.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        markdownLinkRequest.current?.abort();
+        setRetainedMediaRowId(null);
+      },
+      [],
+    ),
+  );
   // A preview belongs to the thread and presentation it was opened from: a change closes it and
   // aborts a pending lookup.
   const markdownLinkScope = JSON.stringify([
