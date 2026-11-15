@@ -159,6 +159,8 @@ export default {
   workers: 1,
   timeout: 300_000,
   assertionTimeout: 15_000,
+  // A hosted macOS runner takes longer than the default 30 s to finish a simulator recording.
+  cleanupTimeout: 120_000,
   // e2e retries once under CI unless told otherwise, and a retried pass would hide a race.
   retries: 0,
   video: "on",
