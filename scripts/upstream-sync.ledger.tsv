@@ -1940,3 +1940,4 @@ d5726cb88c	take	fix(server): agents get no device tools or instructions while th
 fa5fde4bea	take	fix(server): clients paired over Tailscale Serve keep their own address (#35559); kept Onicode's readRequestSocketPeer, dropped browser-token test (inferBrowser removed)
 3947e22351	take	fix(server): HTML previews load relative video and audio files (#36199)
 dc7ea2c1b0	take	fix(server): a linked launch above the link's access names the link, not the parent mode (#27334); runtimeModeRank exported again
+bf8fd416a2	take	fix(server): Claude append launch text may start with two hyphens (#35598)
