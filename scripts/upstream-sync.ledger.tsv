@@ -1856,3 +1856,4 @@ e49d058439	take	thread_not_found points agents at linked environments
 7a72fe301c	take	a send to an idle thread with a queue now waits behind it
 bee9eb5939	take	recognize SSH remotes with a single path component
 d93b225049	take	grouped projects show their own monogram in the picker and draft rows (mobile)
+1cec1043eb	take	file mentions of __init__.py keep their name as the label
