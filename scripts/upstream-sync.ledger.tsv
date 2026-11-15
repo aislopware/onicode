@@ -1917,3 +1917,4 @@ d430dff14f	take	fix(usage): keep default-home history after the default account 
 1dfc746c8f	take	fix(provider-acp): approving a Devin plan never picks its bypass-permissions option (#34474)
 1b9121ba59	skip	guest links removed; only touches apps/server/src/guest/GuestShareService.ts, which Onicode deleted
 355adf265c	take	docs(user): Tailscale HTTPS lists what the tailnet needs (#23759)
+e6344bebd8	take	fix(client-runtime): MCP app results with images reach the app instead of waiting forever (#31338)
