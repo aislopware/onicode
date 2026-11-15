@@ -2068,3 +2068,4 @@ def4cd4884	take	fix(server): run_scheduled_task_now returns why a started run fa
 789d10fb54	take	fix(web): Sharing & access can select a desktop-local WSL backend (#37151); applied to AccessSettings in ConnectionsSettings.tsx (useAccessEnvironment came with the skipped MCP wizard)
 0afd8c0295	take	fix(mobile): pasted GIFs on iOS keep their animation (#37143)
 4b9cf579ba	take	fix(acp): Copilot's reply after a background agent wakes it opens a continuation run (#37159)
+a16796b956	take	fix(shared): ß no longer splits words in generated folder and branch names (#37152)
