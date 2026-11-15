@@ -68,6 +68,7 @@ export async function receiveCodexAuthCallback(
   );
   timer.unref();
   try {
+    if (signal?.aborted) throw new Error("Sign-in cancelled on this computer.");
     await new Promise<void>((resolve, reject) => {
       server.once("error", () =>
         reject(
