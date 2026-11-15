@@ -1828,3 +1828,4 @@ a96bb81049	take	perf(right panel): normalize pr tab target once
 f5dd9c1ce7	take	fix(mobile): diagonal thread-row swipes open on Android
 a31fab93a2	take	focus side-chat composer when selecting its tab
 4adb946ae7	take	show monitor commands in background work details
+617c6c74f6	take	thread chips cannot be dragged out as links
