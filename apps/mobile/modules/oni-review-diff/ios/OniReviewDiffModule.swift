@@ -88,6 +88,7 @@ public class OniReviewDiffModule: Module {
         "onToggleViewedFile",
         "onPressLine",
         "onToggleComment",
+        "onPressNotice",
         "onPullToRefresh"
       )
 

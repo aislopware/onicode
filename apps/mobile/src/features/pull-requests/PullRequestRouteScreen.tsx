@@ -1010,6 +1010,7 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
     !staleDiff &&
     !detail.isPending &&
     !result.isPending &&
+    !result.withheldRefetching &&
     !result.error;
   const activity = useEnvironmentQuery(composerPullRequests.activity(requestTarget(route.params)));
   const baseData = useMemo(() => getCachedNativeReviewDiffData({ parsedDiff: parsed }), [parsed]);
@@ -1336,6 +1337,10 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
                       return next;
                     });
                   else void viewed.toggle(file.path);
+                }}
+                onPressNotice={(event) => {
+                  const file = data.files.find((file) => file.id === event.nativeEvent.fileId);
+                  if (file) result.loadWithheldFile(file.path);
                 }}
                 onToggleComment={(event) => {
                   const id = event.nativeEvent.commentId;

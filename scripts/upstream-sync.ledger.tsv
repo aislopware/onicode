@@ -1954,3 +1954,4 @@ ea4e7c1a60	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>
 0f0c1ca196	take	git commit -a --author='MarcoDotIO <Marcus.Arnett10@gmail.com>' -m 'fix(server): usage mapped onto a Pi, Cursor or Antigravity model prices at that model'\''s rate (#32219)' -m 'Ported from pingdotgg/t3code@0f0c1ca196.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 3209fa9534	take	fix(server): resuming a queue no longer bypasses failed worktree setup (#36616)
 ffd11ffc95	take	fix(server): agents can no longer delete the built-in No project through MCP (#33773)
+f12e8206f5	take	git commit -a --author='Yash Singh <saiansh2525@gmail.com>' -m 'fix(web): load a too-large PR file'\''s diff on demand (#37007)' -m 'Ported from pingdotgg/t3code@f12e8206f5.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'

@@ -4,6 +4,16 @@ import expo.modules.kotlin.Promise
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 
+private val REVIEW_DIFF_EVENTS = arrayOf(
+  "onDebug",
+  "onVisibleFileChange",
+  "onToggleFile",
+  "onToggleViewedFile",
+  "onPressLine",
+  "onToggleComment",
+  "onPressNotice",
+)
+
 class OniReviewDiffModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("OniReviewDiffSurface")
@@ -54,14 +64,7 @@ class OniReviewDiffModule : Module() {
         view.setInitialFileId(fileId)
       }
 
-      Events(
-        "onDebug",
-        "onVisibleFileChange",
-        "onToggleFile",
-        "onToggleViewedFile",
-        "onPressLine",
-        "onToggleComment",
-      )
+      Events(REVIEW_DIFF_EVENTS)
 
       AsyncFunction("scrollToFile") { view: OniReviewDiffView, fileId: String, animated: Boolean ->
         view.scrollToFile(fileId, animated)
