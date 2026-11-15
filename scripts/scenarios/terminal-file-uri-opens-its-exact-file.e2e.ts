@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // The DOM lib types the function this scenario runs in the page.
 import { expect } from "e2e";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
@@ -43,6 +44,8 @@ test(
   "Ctrl+click on a terminal file URI opens the exact file it names, even one ending like a position",
   WEB,
   async ({ onicode, app, browser, screen }) => {
+    // BSD ls on macOS has no --hyperlink, which three of the links rely on.
+    test.skip(HostProcess.Platform.defaultValue() !== "linux", "needs GNU ls --hyperlink");
     await removeEditorArgs();
     const files: Record<string, string> = {
       "build:2026/keep.txt": "keep\n",
