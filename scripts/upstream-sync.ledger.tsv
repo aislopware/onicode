@@ -1936,3 +1936,4 @@ d6795eac3c	take	fix(grok): background text generation no longer inherits Grok al
 da95a04763	take	fix(web): right-panel shortcuts work on a new, unsent thread (#35189)
 e3c7c082cf	take	fix(desktop): a backend busy right after startup no longer ends in a fatal HTTP 500 screen (#34918)
 3cd8b05371	take	fix(onepassword): a failed batch read no longer outlasts the 45-second bound (#35937)
+d5726cb88c	take	fix(server): agents get no device tools or instructions while the Device hub is off (#32542); merged beside Onicode's computer-use capability
