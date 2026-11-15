@@ -1860,3 +1860,4 @@ d93b225049	take	grouped projects show their own monogram in the picker and draft
 35b88636d4	take	delegate_task model refusals name slugs to retry with
 828200fc04	take	clearing a terminal that keeps printing no longer hangs
 6615615b12	take	preserve Git remote headers after comments
+031ee2dd2b	take	dictionary spellings apply next to Chinese and Japanese text
