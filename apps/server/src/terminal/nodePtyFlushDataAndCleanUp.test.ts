@@ -68,7 +68,7 @@ const loopIteration = (ms: number, poll?: () => void) => {
 };
 
 // ConPTY never closes the output pipe after the shell exits, so node-pty ends the session on a timer.
-// Onicode shortens it (patches/node-pty@1.2.0-beta.15.patch) so the terminal reports "exited" about 0.9 s sooner.
+// Onicode shortens it (patches/node-pty@1.2.0-beta.18.patch) so the terminal reports "exited" about 0.9 s sooner.
 describe("node-pty Windows exit flush", () => {
   beforeEach(() => {
     now = 0;
