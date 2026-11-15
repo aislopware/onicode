@@ -1888,29 +1888,29 @@ b9bbfda087	take	NixOS/nspawn veths no longer advertised as LAN routes (conflict:
 bbd8bc074a	take	perf(server): reuse Find documents across query changes (#29310)
 6152fe3ae8	take	fix(server): branch PRs stay matched when a remote has a second push URL (#29625)
 85168744f7	take	fix(server): Stop on a stalled run closes its approval and question cards (#30695)
-1e38ebb71b	take	git commit -a --author='Haoyu(Jerry) Wu <wuhaoyujerry@users.noreply.github.com>' -m 'fix(pi): recognize OmO'\''s builtin tool search (#32321)' -m 'Ported from pingdotgg/t3code@1e38ebb71b.' --trailer 'Co-authored-by: Jerry Wu <haoyuwu@andrew.cmu.edu>' --trailer 'Co-authored-by: sisyphus-dev-ai <sisyphus-dev-ai@users.noreply.github.com>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
-bf3549b7ad	take	fix(server): boot-started linux servers offer and open the file manager (#33107)
+1e38ebb71b	take	fix(pi): recognize OmO's builtin tool search (#32321)
+bf3549b7ad	take	fix(server): boot-started linux servers offer and open the file manager (#33107) (conflict: readEditorEnv placed without the removed browser-launch helpers)
 f00afc6cda	take	fix(server): typing after a click by coordinates no longer hangs a preview tab (#32845)
 4aead9e6d9	take	fix(server): Claude MCP elicitations Onicode cannot show are cancelled, not declined (#33575)
 c8c210203c	skip	relay managed endpoint runtime (cloud/ManagedEndpointRuntime) removed with T3 Connect
-3f1b132e97	take	git commit -a --author='ajinkyajacob <82514259+ajinkyajacob@users.noreply.github.com>' -m 'fix(acp): give Command Code Onicode'\''s MCP endpoint over HTTP (#34004)' -m 'Ported from pingdotgg/t3code@3f1b132e97.' --trailer 'Co-authored-by: CommandCodeBot <noreply@commandcode.ai>'
+3f1b132e97	take	fix(acp): give Command Code Onicode's MCP endpoint over HTTP (#34004) (conflict: Onicode's test keeps the computer server in expected lists; comment no longer names a T3 executable)
 1e60d60519	take	Fix #29433: Restore Codex MCP apps after thread unload (#29498)
 0bd581b078	take	fix(server): regenerate an empty persisted secret instead of failing startup (#32053)
 f2839735ef	skip	outside cloud-assistant MCP OAuth (Gemini Spark); declined surface, /oauth/mcp/register only serves peer links
-5f6b5a8e60	take	fix(cli): the already-running error names the onicode pair command that connects (#31543)
-2a66bf26e8	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): read_pull_request_guide reads no-checkout hosts through the caller'\''s project (#35913)' -m 'Ported from pingdotgg/t3code@2a66bf26e8.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
+5f6b5a8e60	take	fix(cli): the already-running error names the onicode pair command that connects (#31543) (message and install.md say to paste the pairing URL into Add environment; upstream's dev-auth-token test context not taken)
+2a66bf26e8	take	fix(server): read_pull_request_guide reads no-checkout hosts through the caller's project (#35913)
 467ec62e08	take	fix(server): Codex calls delegate_task directly instead of from Code Mode (#30019)
 c6a120a958	take	fix(forgejo): review guides work for checkouts whose SSH remote is not the web host (#29784)
 9791bce798	take	fix(effect-acp): reject elicitation modes the client did not advertise (#35839)
-6c0032d655	take	fix(server): MCP refuses disallowed browser origins with 403 before auth and CORS (#35810)
-2e9418af79	take	fix(mcp): explain cross-thread permission rejections (#36934)
-1672b51630	take	git commit -a --author='Jiri Kvapil <53862157+kvapca@users.noreply.github.com>' -m 'fix(web): Add Environment drops the old tab'\''s error when switching mode (#32157)' -m 'Ported from pingdotgg/t3code@1672b51630.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+6c0032d655	take	fix(server): MCP refuses disallowed browser origins with 403 before auth and CORS (#35810) (applied to Onicode's wildcard layerApiCors; no browser CORS layer or DESKTOP_RENDERER_ORIGINS here)
+2e9418af79	take	fix(mcp): explain cross-thread permission rejections (#36934) (conflict: kept Onicode's imports, no unused rank helpers)
+1672b51630	take	fix(web): Add Environment drops the old tab's error when switching mode (#32157) (kept Onicode's setRemoteHint reset; test uses fill like the rest of the file)
 3e29748f96	skip	RFC 7591 error body serves outside MCP clients (declined surface); Onicode's /oauth/mcp/register accepts peer links only
-e57041a1df	take	fix(server): pairing codes typed in hyphen- or space-separated groups are accepted (#35069)
+e57041a1df	take	fix(server): pairing codes typed in hyphen- or space-separated groups are accepted (#35069) (compaction only; Onicode has no MCP approval codes)
 137a869138	take	fix(shared): use HTTP for schemeless loopback previews (#29710)
 166cb00897	take	fix(opencode): Full access subagents start without approval prompts (#35401)
-9dbb802845	take	fix(desktop): saving keeps a connection catalog this build cannot read (#34944)
-dcd39b4b6e	take	git commit -a --author='Prem Chaitanya Prathi <chaitanyaprem@gmail.com>' -m 'fix(pi): model list loads when the server'\''s folder has a project MCP config (#28557)' -m 'Ported from pingdotgg/t3code@dcd39b4b6e.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
+9dbb802845	take	fix(desktop): saving keeps a connection catalog this build cannot read (#34944) (test fixtures drop the removed remoteDpopTokens key)
+dcd39b4b6e	take	fix(pi): model list loads when the server's folder has a project MCP config (#28557)
 5a31f1749d	take	fix(server): Git LFS images in pull request descriptions load the object, not its pointer (#35466)
 98f885ac1a	take	fix(server): desktop preview uploads accept files over 50 MB (#30299)
 d430dff14f	take	fix(usage): keep default-home history after the default account moves (#36727)
