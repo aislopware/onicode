@@ -2044,3 +2044,4 @@ b35c9702f9	take	fix(acp): optional text questions can be left blank (#36997)
 3ee4aa62ec	take	fix(server): accept ASCII whitespace in base64 image payloads (#31798)
 8c80003d68	take	perf(server): Codex skills probe reuses one app-server per launch identity
 f2c944947d	take	fix(web): composer re-verifies ready uploads before sending
+32c069eed1	take	fix(server): content search recovers after a slow first index
