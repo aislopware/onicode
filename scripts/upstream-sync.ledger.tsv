@@ -1979,3 +1979,4 @@ f0495f7417	take	fix(provider-core): background work notices no longer say every 
 e2afd2546e	take	git commit -a --author='Omar Espinosa <77650361+OmarAlex24@users.noreply.github.com>' -m 'perf(web): typing no longer re-renders the composer'\''s footer controls (#32323)' -m 'Ported from pingdotgg/t3code@e2afd2546e.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 11c425b4b6	take	fix(server): task_status no longer reports a restart-continued task as cancelled (#32414)
 86cdf80dbd	take	fix(web): sidebar edge uses the same resize cursor as side panels (#33083)
+ab319a52dd	take	fix(web): attach command palette threads outside the sidebar (#37054)
