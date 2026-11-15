@@ -1928,3 +1928,4 @@ e9d8ac5673	take	fix(server): skip user hooks in Codex text generation (#35203)
 25a1afe7d5	take	fix(client-runtime): opening an old search result keeps messages in order (#29711)
 6a510c4894	take	fix(server): MCP OAuth rejects a resource with an empty fragment (#35808); test adapted to Onicode's peer-link decision route (no /authorize handoff)
 5de10b91d9	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(provider-core): branch-name generation no longer starts the user'\''s task (#36222)' -m 'Ported from pingdotgg/t3code@5de10b91d9.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
+32a6a7f70b	take	fix(web): desktop window recovers when its backend restarts during a renderer reload (#26612); kept Onicode's desktop-only bootstrapServerAuth, test rewritten without browser pairing
