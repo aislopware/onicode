@@ -1958,3 +1958,4 @@ f12e8206f5	take	git commit -a --author='Yash Singh <saiansh2525@gmail.com>' -m '
 eefba1a8af	take	fix(cli): onicode up and onicode status hints keep --base-dir (#31878); hand-ported onto resolveHostCliHint from #31906, no T3 Connect hint
 d2a894a247	take	fix(server): forks of forks keep their deleted source's files (#32255); no guest-share pending files (guest links removed)
 cc4160c813	take	fix(web): stashed prompt previews no longer end in a broken character (#32404)
+e0ca4fcecb	take	fix(web, mobile): a failed terminal resize is sent again (#32047)
