@@ -1042,7 +1042,7 @@ f59aa4eba0	take	fix(server): reject PR watches when hosting dependencies are una
 9fb4492329	take	fix(chat): requeued steers no longer look delivered (#23420)
 f6787e8537	take	fix(web): reuse timeline rows while thinking and plans stream (#24121)
 532bf2ee19	take	fix(mobile): Back from a PR opened in a chat returns to the chat on Android (#27653)
-0ca50a6f1e	skip	Swaps upstream's t3-built enriched-markdown tarball; Onicode ships its own oni.18 build, so the fix must be ported into aislopware/enriched-markdown and the oni tarball rebuilt (follow-up).
+0ca50a6f1e	take	Ported into aislopware/enriched-markdown (pingdotgg/enriched-markdown#15 cherry-picked) and shipped as Onicode's own 1.2.0-oni.20 tarball instead of upstream's t3 build.
 56b6c2a8bf	take	fix(mobile): refreshing a review diff keeps unfolded files open (#35682)
 d76e06679b	take	fix(server): snooze no longer waits two minutes after a steered queued message (#35661)
 f70e349eca	take	test(server): count leaked PR cache caller data without WeakRefs (#35694)
@@ -1347,7 +1347,7 @@ f5ae8088c3	take	taken as is
 99e10f05c8	skip	T3 Connect client naming in CloudLink; Onicode removed T3 Connect
 cbf0f0a83f	take	taken as is
 42057b82d0	take	reworded web+desktop to desktop-only (Onicode has no web app; only the desktop's local environment applies themes); measured MCP tool-list budget
-e4f066da21	skip	Swaps upstream's t3-built enriched-markdown tarball (iOS blockquote long-press fix); Onicode ships its own oni.18 build, so the fix must be ported into aislopware/enriched-markdown and the oni tarball rebuilt (follow-up).
+e4f066da21	take	Ported into aislopware/enriched-markdown (identical blockquote preview fix, shipped since 1.2.0-oni.19); Onicode keeps its own oni tarball instead of upstream's t3 build.
 9a4ec171fc	take	taken as is
 a2edd281df	take	Android dialog fix only (replaced alerts report dismissal); the T3 Connect device-approval feature, its migrations and contracts are skipped
 ca1a0280da	take	taken as is
