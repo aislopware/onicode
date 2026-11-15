@@ -1927,7 +1927,7 @@ e9d8ac5673	take	fix(server): skip user hooks in Codex text generation (#35203)
 2123168a55	take	fix(opencode): Go-key-only instances keep OpenCode Go usage on OpenCode 2 (#36519)
 25a1afe7d5	take	fix(client-runtime): opening an old search result keeps messages in order (#29711)
 6a510c4894	take	fix(server): MCP OAuth rejects a resource with an empty fragment (#35808); test adapted to Onicode's peer-link decision route (no /authorize handoff)
-5de10b91d9	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(provider-core): branch-name generation no longer starts the user'\''s task (#36222)' -m 'Ported from pingdotgg/t3code@5de10b91d9.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
+5de10b91d9	take	fix(provider-core): branch-name generation no longer starts the user's task (#36222)
 32a6a7f70b	take	fix(web): desktop window recovers when its backend restarts during a renderer reload (#26612); kept Onicode's desktop-only bootstrapServerAuth, test rewritten without browser pairing
 8bc7a08227	take	fix(server): an explicit Tailscale IPv6 bind is advertised as a tailnet route (#34742)
 9bea6f7eb0	take	fix(server): agent slice memory limits follow live memory changes (#30581)
@@ -1943,18 +1943,18 @@ dc7ea2c1b0	take	fix(server): a linked launch above the link's access names the l
 bf8fd416a2	take	fix(server): Claude append launch text may start with two hyphens (#35598)
 64a481c2af	take	fix(cursor): text generation retries without the sandbox when send rejects it (#34844)
 5ee4fd4f25	take	fix(server): resolve Claude WinGet launchers on Windows (#32138)
-365a62aa84	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): Claude knows decline feedback is the user'\''s message (#27871)' -m 'Ported from pingdotgg/t3code@365a62aa84.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
-ea4e7c1a60	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(acp): permission answers send the agent'\''s option id unchanged (#35837)' -m 'Ported from pingdotgg/t3code@ea4e7c1a60.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
+365a62aa84	take	fix(server): Claude knows decline feedback is the user's message (#27871)
+ea4e7c1a60	take	fix(acp): permission answers send the agent's option id unchanged (#35837)
 3466f9e99c	take	fix(server): forwarded calls to a linked environment no longer wait out a silent first address (#35546)
 2c2a286ad0	take	fix(server): Claude sessions no longer log a canUseTool shadowing warning (#31548)
 85a81b7a8b	take	fix(server): Claude text generation honors --settings launch args (#34874)
 12042ffb29	take	docs: align delegation guide with current MCP contract (#31045)
-23ba9b3551	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): fx threads load the user'\''s profile MCP servers (#29538)' -m 'Ported from pingdotgg/t3code@23ba9b3551.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
+23ba9b3551	take	fix(server): fx threads load the user's profile MCP servers (#29538)
 93cd25a99b	take	fix(acp-registry): executables named like ..agent count as inside their install folder (#35840)
-0f0c1ca196	take	git commit -a --author='MarcoDotIO <Marcus.Arnett10@gmail.com>' -m 'fix(server): usage mapped onto a Pi, Cursor or Antigravity model prices at that model'\''s rate (#32219)' -m 'Ported from pingdotgg/t3code@0f0c1ca196.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+0f0c1ca196	take	fix(server): usage mapped onto a Pi, Cursor or Antigravity model prices at that model's rate (#32219)
 3209fa9534	take	fix(server): resuming a queue no longer bypasses failed worktree setup (#36616)
 ffd11ffc95	take	fix(server): agents can no longer delete the built-in No project through MCP (#33773)
-f12e8206f5	take	git commit -a --author='Yash Singh <saiansh2525@gmail.com>' -m 'fix(web): load a too-large PR file'\''s diff on demand (#37007)' -m 'Ported from pingdotgg/t3code@f12e8206f5.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+f12e8206f5	take	fix(web): load a too-large PR file's diff on demand (#37007)
 eefba1a8af	take	fix(cli): onicode up and onicode status hints keep --base-dir (#31878); hand-ported onto resolveHostCliHint from #31906, no T3 Connect hint
 d2a894a247	take	fix(server): forks of forks keep their deleted source's files (#32255); no guest-share pending files (guest links removed)
 cc4160c813	take	fix(web): stashed prompt previews no longer end in a broken character (#32404)
@@ -1976,7 +1976,7 @@ b8bffc8b35	take	fix(web): resource monitor no longer claims to sample every 0 ms
 d5a50a1d0d	take	perf(pr): actions, title edits and labels show the moment you click, on every host (#32774)
 f0495f7417	take	fix(provider-core): background work notices no longer say every task failed when one did (#32407)
 34204a39e8	take	fix(server): restarts no longer drop prompts the provider never accepted (#32413)
-e2afd2546e	take	git commit -a --author='Omar Espinosa <77650361+OmarAlex24@users.noreply.github.com>' -m 'perf(web): typing no longer re-renders the composer'\''s footer controls (#32323)' -m 'Ported from pingdotgg/t3code@e2afd2546e.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+e2afd2546e	take	perf(web): typing no longer re-renders the composer's footer controls (#32323)
 11c425b4b6	take	fix(server): task_status no longer reports a restart-continued task as cancelled (#32414)
 86cdf80dbd	take	fix(web): sidebar edge uses the same resize cursor as side panels (#33083)
 ab319a52dd	take	fix(web): attach command palette threads outside the sidebar (#37054)
@@ -1997,7 +1997,7 @@ b1050d3449	take	test: remove duplicate client call-site coverage (#36776)
 f52fba48d9	take	fix(web): stacked composer banners no longer show dark seam bands (#32683)
 8e06750a08	take	fix(web): draft images keep their order after a reload (#32709)
 71adeef080	take	fix(web): open PDF links in the file viewer (#37064)
-ab2420ffc0	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(server): a selected-file commit keeps other files'\'' merge conflicts (#33115)' -m 'Ported from pingdotgg/t3code@ab2420ffc0.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+ab2420ffc0	take	fix(server): a selected-file commit keeps other files' merge conflicts (#33115)
 9a79883979	take	fix(web): a file opened from a diff in a project folder inside a repository opens that file (#32684)
 294a8418ce	skip	Onicode already deflaked this ACP project picker test its own way (pointer-hover highlight); upstream's keyboard variant would replace it
 147de34a93	take	fix(web): stop held dictation when shortcut modifiers are released (#32648)
