@@ -2002,3 +2002,4 @@ ab2420ffc0	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(
 294a8418ce	skip	Onicode already deflaked this ACP project picker test its own way (pointer-hover highlight); upstream's keyboard variant would replace it
 147de34a93	take	fix(web): stop held dictation when shortcut modifiers are released (#32648)
 238678951a	take	perf(web): resting on a PR row also reads its activity, so the timeline shows on click (#32842)
+62d33c126a	take	fix(server): agents can see whether a thread is pinned (#32727)

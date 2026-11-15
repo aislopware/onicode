@@ -395,7 +395,7 @@ links name no environment: clients resolve them in the message's environment,
 then by a unique match in another enabled environment. Every caller, including
 a linked environment, gets the same `oni-thread://` link.
 
-List and read results report `snoozed` and `snoozedUntil`, and
+List and read results report `snoozed`, `snoozedUntil`, and `pinned`, and
 `oni_thread_list` filters on `snoozed`. The server's `isSnoozed` follows the
 client's `effectiveSnoozed`, so agents and the sidebar agree: a snoozed thread
 wakes early only when it has a pending request or fails after snoozing. Completed
