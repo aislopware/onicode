@@ -1845,3 +1845,4 @@ fece8934b5	take	oni project add unarchives an archived project
 e1458f25e2	skip	Fixes the nightly/stable update-track switch dialog; Onicode ships one release channel with no track switch (localSwitchBlockReason absent)
 ed6cb97f07	take	reopened composer drafts keep quote spacing and show the caret
 dd86dd6d91	take	SSH device host probe failures say what ssh refused
+7f6e403a88	take	Grok runs complete when a background dev server keeps running
