@@ -277,7 +277,7 @@ its own native code.
 
 [`scenarios.yml`](../../.github/workflows/scenarios.yml) runs both suites when a pull request
 changes a scenario, the harness, or what the harness starts the app through, on every such push to
-`main`, and by hand from the Actions tab: the desktop suite on Linux under xvfb, and the iOS
+`main`, and by hand from the Actions tab: the desktop suite on Linux under xvfb, split across four runners, and the iOS
 scenarios on a hosted macOS runner. Neither is part of the `Check` gate: an app change that breaks
 a scenario does not fail its own pull request. Run the suite locally before a change to a surface
 the scenarios cover.
