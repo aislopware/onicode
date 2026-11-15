@@ -1920,3 +1920,4 @@ d430dff14f	take	fix(usage): keep default-home history after the default account 
 e6344bebd8	take	fix(client-runtime): MCP app results with images reach the app instead of waiting forever (#31338)
 a9386ac8a6	take	fix(gitlab): a pasted repository URL is looked up by its project path on its host (#35209)
 e9d8ac5673	take	fix(server): skip user hooks in Codex text generation (#35203)
+808dae1584	take	fix(server): worktrees of git-annex repositories can be removed (#34065)
