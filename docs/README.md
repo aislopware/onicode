@@ -63,6 +63,7 @@ source alone does not explain. Most code changes do not need an internal documen
 ### Runbooks
 
 - [Development and local builds](./operations/development.md)
+- [Scenarios: the desktop end-to-end suite and real-app proof for a fix](./operations/scenarios.md)
 - [Release](./operations/release.md)
 - [Observability](./operations/observability.md)
 - [Push gateway](./operations/push-gateway.md)

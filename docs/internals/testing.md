@@ -10,7 +10,7 @@ Rules for writing tests, and for asking for them in review. AGENTS.md carries th
 - Write a browser test only for behavior that needs a real browser: layout and scrolling, focus and pointer input, real workers, or a component wired to its hooks. Logic a component calls gets a unit test beside it (`*.logic.test.ts`). A browser test file spends seconds in CI loading its module graph before its first test runs; a unit test takes milliseconds.
 - In review, ask for a missing test only when it would catch a real regression. Do not ask for one assertion per constant, label, or `switch` case. Flag a new test that breaks the rules above, and name the fix: fold it into the existing case or table, delete it, keep one layer, or move a browser test whose assertions would pass without rendering into a unit test.
 - Backend behavior changes ship with focused tests for that behavior.
-- Proof for a bug fix depends on the bug. Logic, data, state, and protocol bugs get a failing test first (the fewest that fail on `main` for that reason, in an existing case of the module's test file where one fits), then the fix. Purely visual bugs (spacing, colour, alignment, a layout shift) get before/after captures as their proof and no test: do not add UI tests for nitpicks, and do not ask for one in review when a capture already shows it. A server-only fix with no visible surface ships the test plus a short runtime transcript.
+- Proof for a bug fix depends on the bug. Logic, data, state, and protocol bugs get a failing test first (the fewest that fail on `main` for that reason, in an existing case of the module's test file where one fits), then the fix. Purely visual bugs (spacing, colour, alignment, a layout shift) get before/after captures as their proof and no test: do not add UI tests for nitpicks, and do not ask for one in review when a capture already shows it. A server-only fix with no visible surface ships the test plus a short runtime transcript. For a bug a user can reproduce in the desktop app, `vp run scenarios:prove` shows it failing on base and passing on the fix in the real app; see [Scenarios](../operations/scenarios.md).
 
 ## Waiting for work
 
@@ -43,8 +43,11 @@ Rules for writing tests, and for asking for them in review. AGENTS.md carries th
   });
   ```
 
-## Device end-to-end tests
+## End-to-end tests
 
+- `scripts/scenarios/` is the desktop app's end-to-end suite, written with [tester-army/e2e](https://github.com/tester-army/e2e): each scenario drives the dev Electron window on a throwaway home, with the replay agent standing in for the model. `vp run scenarios --target desktop` runs it; [Scenarios](../operations/scenarios.md) says how to write, run, and prove one.
+- The harness is upstream's, so a scenario that arrives with an upstream fix is ported with the fix, never dropped. Adapt it only where Onicode's app differs. A scenario for a surface Onicode removed is the one exception, and the sync ledger says so.
+- A scenario waits on what the app shows, through locators and `expect`. No sleeps, no `retries`, and a longer `timeout` only on a step that is slow for a stated reason, such as checking out a worktree.
 - `apps/mobile/e2e/` runs whole flows on a simulator or emulator with [tester-army/e2e](https://github.com/tester-army/e2e): a real server on a throwaway home, Metro, the installed dev client, and the cheapest model of the provider under test. `vp run mobile:install <ios|android>`, then `vp run test:e2e:ios` or `test:e2e:android` from `apps/mobile`. Set `E2E_IOS_DEVICE` or `E2E_ANDROID_DEVICE` when more than one device is booted.
 - Keep this suite to golden paths a user takes across the server, provider, and app. Decoding, error, and edge cases belong in the unit tests of the layer that owns them.
 - Tests use locators and `expect`, not agent steps, so a run needs no model and reads the same every time. `retries` stays 0.

@@ -129,14 +129,17 @@ const make = Effect.fn("desktop.environment.make")(function* (
   const homeDirectory = input.homeDirectory;
   const devServerUrl = config.devServerUrl;
   const isDevelopment = Option.isSome(devServerUrl);
-  const appDataDirectory =
+  // Every dev app shares one Chromium profile and its single-instance lock; the override gives
+  // a run its own, which macOS has no environment variable for.
+  const appDataDirectory = Option.getOrElse(config.appDataDirectoryOverride, () =>
     input.platform === "win32"
       ? Option.getOrElse(config.appDataDirectory, () =>
           path.join(homeDirectory, "AppData", "Roaming"),
         )
       : input.platform === "darwin"
         ? path.join(homeDirectory, "Library", "Application Support")
-        : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config"));
+        : Option.getOrElse(config.xdgConfigHome, () => path.join(homeDirectory, ".config")),
+  );
   const baseDir = resolveDesktopBaseDir({
     homeDirectory,
     joinPath: path.join,
