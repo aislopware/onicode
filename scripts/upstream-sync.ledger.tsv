@@ -1951,3 +1951,4 @@ ea4e7c1a60	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>
 12042ffb29	take	docs: align delegation guide with current MCP contract (#31045)
 23ba9b3551	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): fx threads load the user'\''s profile MCP servers (#29538)' -m 'Ported from pingdotgg/t3code@23ba9b3551.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
 93cd25a99b	take	fix(acp-registry): executables named like ..agent count as inside their install folder (#35840)
+0f0c1ca196	take	git commit -a --author='MarcoDotIO <Marcus.Arnett10@gmail.com>' -m 'fix(server): usage mapped onto a Pi, Cursor or Antigravity model prices at that model'\''s rate (#32219)' -m 'Ported from pingdotgg/t3code@0f0c1ca196.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
