@@ -1853,3 +1853,4 @@ bc91203bc3	take	count only newly imported agent threads
 fd985e0985	take	Claude hub account with an unmeasured window keeps its other limits
 e49d058439	take	thread_not_found points agents at linked environments
 1c86881dd5	take	Expand all folders in the diff file tree no longer rescans every folder per expansion
+7a72fe301c	take	a send to an idle thread with a queue now waits behind it
