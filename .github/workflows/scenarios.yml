@@ -166,8 +166,12 @@ jobs:
       # services a scenario never touches.
       - name: Create a slim simulator
         run: |
-          runtime="$(xcrun simctl list runtimes available -j | jq -er '[.runtimes[] | select(.platform == "iOS")] | max_by(.version | split(".") | map(tonumber)) | .identifier')"
-          type="$(xcrun simctl list devicetypes -j | jq -er '[.devicetypes[] | select(.productFamily == "iPhone")] | last | .identifier')"
+          # The newest iOS runtime and the first iPhone it supports: not every device type boots on
+          # every runtime.
+          read -r runtime type < <(xcrun simctl list runtimes available -j | jq -er '
+            [.runtimes[] | select(.platform == "iOS")]
+            | max_by(.version | split(".") | map(tonumber))
+            | "\(.identifier) \(first(.supportedDeviceTypes[] | select(.productFamily == "iPhone")).identifier)"')
           udid="$(xcrun simctl create "Scenario iPhone" "$type" "$runtime")"
           brew install mobai-app/tap/simslim
           simslim on "$udid" --except store,web --preserve-boot-state
