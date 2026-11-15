@@ -1891,3 +1891,4 @@ bbd8bc074a	take	perf(server): reuse Find documents across query changes (#29310)
 1e38ebb71b	take	git commit -a --author='Haoyu(Jerry) Wu <wuhaoyujerry@users.noreply.github.com>' -m 'fix(pi): recognize OmO'\''s builtin tool search (#32321)' -m 'Ported from pingdotgg/t3code@1e38ebb71b.' --trailer 'Co-authored-by: Jerry Wu <haoyuwu@andrew.cmu.edu>' --trailer 'Co-authored-by: sisyphus-dev-ai <sisyphus-dev-ai@users.noreply.github.com>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
 bf3549b7ad	take	fix(server): boot-started linux servers offer and open the file manager (#33107)
 f00afc6cda	take	fix(server): typing after a click by coordinates no longer hangs a preview tab (#32845)
+4aead9e6d9	take	fix(server): Claude MCP elicitations Onicode cannot show are cancelled, not declined (#33575)
