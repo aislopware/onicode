@@ -1774,3 +1774,4 @@ fb915ca6c0	take	fix(opencode): pages a Code Mode script publishes now show inlin
 a68c367e4f	take	fix(server): preserve the crash recovery budget across restarts
 fa864bfca7	take	fix(server): Claude goals no longer re-prompt while a delegated task will wake the thread
 6b9d90f121	take	fix(codex): preserve terminal connection failure categories
+5bd2d0cb82	take	fix(client-runtime): derive MCP download names before URI suffixes
