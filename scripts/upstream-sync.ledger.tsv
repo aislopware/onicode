@@ -2082,3 +2082,4 @@ cb251b9abc	take	fix(web): composer suggestions stay reachable in short windows (
 6d3f6423a3	take	fix(web): Enter sends when a panel-conditioned shortcut is inactive (conflict: Onicode's composer intent has no isSoftwareKeyboardOpen, took only the shortcut context; scenario ported to the desktop target)
 7e69e880b6	take	fix(server): project search starts working once a slow content index finishes building
 304cf149c8	take	fix(web): terminal file links preserve numeric filename suffixes (scenario ported to the desktop harness)
+5070931521	take	fix(mobile): cutting text in the iOS composer can be undone (test conflict: kept Onicode's prompt-recall test beside the new cut/undo test)
