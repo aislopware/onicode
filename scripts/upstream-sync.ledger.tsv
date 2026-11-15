@@ -2057,3 +2057,4 @@ c8a1b5ff0b	take	fix(ssh): preserve literal home paths in Include expansion (#332
 2b83dd0969	take	fix(server): finish closed terminal kills before shutdown (#37113)
 7d9c365e17	take	fix(web): keep distinct images with matching attachment metadata (#37116); scenario ported and passing on desktop
 8dba23e420	take	fix(web): large terminal pastes reach the program intact (#37103); scenario ported and passing on desktop
+f0a3321354	take	fix(server): settling a thread keeps exec and foreground Bash terminals open (#37125)
