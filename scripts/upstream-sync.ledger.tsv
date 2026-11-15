@@ -1874,3 +1874,4 @@ bdf6c6ec89	take	open WSL-mounted Windows drives directly in File Explorer (confl
 62ee103996	take	setup script output no longer shows stray bytes of escape sequences
 2370e338f7	take	SQLite, archive and notebook previews pluralize 1 row/entry/cell
 dde53b11f3	take	notebook error previews no longer show terminal color codes
+e8d5c12890	take	skip non-image results in project icon searches
