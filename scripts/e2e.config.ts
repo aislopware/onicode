@@ -1,20 +1,15 @@
 // Scenarios: e2e tests that run against the real dev stack. See docs/operations/scenarios.md.
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
-import { mobile, type DeviceProvider } from "@e2e-dev/mobile";
+import { mobile } from "@e2e-dev/mobile";
 import { web, type BrowserProvider } from "@e2e-dev/web";
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { createAgentDeviceClient } from "agent-device";
 import type { E2EConfig } from "e2e";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import * as SecureRandom from "effect/crypto/SecureRandom";
-import * as Schedule from "effect/Schedule";
 
 import { DesktopStack, evaluateInMain, RESET_WINDOW } from "./scenarios/desktop-main.ts";
-import { run, ScenarioError } from "./scenarios/shell.ts";
 
 // e2e loads this module for its values, so the paths and the host are resolved once, here.
 const resolved = await Effect.gen(function* () {
@@ -22,11 +17,6 @@ const resolved = await Effect.gen(function* () {
   const env = yield* HostProcess.Environment;
   const scripts = yield* path.fromFileUrl(new URL(".", import.meta.url));
   const home = path.resolve(scripts, "../.onicode/scenarios");
-  // A pooled device reaches this machine over the tailnet, not localhost.
-  const host = yield* run("tailscale", ["ip", "-4"]).pipe(
-    Effect.map((result) => result.stdout.trim().split("\n")[0] ?? ""),
-    Effect.orElseSucceed(() => ""),
-  );
   return {
     node: yield* HostProcess.ExecutablePath,
     scripts,
@@ -43,7 +33,10 @@ const resolved = await Effect.gen(function* () {
       .map((name) => name.trim())
       .filter((name) => name !== ""),
     mobile: {
-      host: host || "127.0.0.1",
+      // The simulator shares this machine's network.
+      host: "127.0.0.1",
+      // Names the simulator when several are booted: E2E_IOS_DEVICE="iPhone 18 Pro".
+      device: env.E2E_IOS_DEVICE,
       // A mobile target has no `app.url`, so e2e cannot pick these ports.
       serverPort: Number(env.ONICODE_SCENARIO_SERVER_PORT ?? 13_990),
       metroPort: Number(env.ONICODE_SCENARIO_METRO_PORT ?? 8_190),
@@ -110,95 +103,6 @@ const devWindow: BrowserProvider = {
   release: () => Promise.resolve(),
 };
 
-/**
- * Leases a device from the Simlock pool, whose gateway speaks agent-device's lease protocol.
- * `retainOnClose` keeps the device when the engine closes its session between attempts.
- */
-const simlock = (device: string): DeviceProvider => {
-  const connect = Effect.fn("simlock.connect")(function* (
-    env: Readonly<Record<string, string | undefined>>,
-  ) {
-    const daemonBaseUrl = env.SIMLOCK_AGENT_DEVICE_URL;
-    const daemonAuthToken = env.AGENT_DEVICE_DAEMON_AUTH_TOKEN;
-    if (daemonBaseUrl === undefined || daemonAuthToken === undefined) {
-      return yield* new ScenarioError({
-        message: "SIMLOCK_AGENT_DEVICE_URL and AGENT_DEVICE_DAEMON_AUTH_TOKEN are not set.",
-      });
-    }
-    return { daemonBaseUrl, daemonAuthToken };
-  });
-  const call = <A>(description: string, request: () => Promise<A>) =>
-    Effect.tryPromise({
-      try: request,
-      catch: (cause) => new ScenarioError({ message: `${description}: ${String(cause)}` }),
-    });
-  const acquire = Effect.fn("simlock.acquire")(function* (
-    request: Parameters<DeviceProvider["acquire"]>[0],
-  ) {
-    const daemon = yield* connect(request.env);
-    const client = createAgentDeviceClient(daemon);
-    const platform = request.platform === "android" ? "android" : "ios";
-    // A cache miss builds the dev client, which outlasts a test and can outlast a lease.
-    request.log(`preparing the ${platform} dev client`);
-    yield* run(
-      resolved.node,
-      ["scripts/mobile-native-client.ts", "ensure", platform, "--prepare"],
-      {
-        cwd: APP_DIR,
-      },
-    );
-    const scope = { tenant: "oni-scenarios", runId: `${request.runId}-${request.slot}` };
-    // Simlock takes the lease id from the caller: 32 hex characters.
-    const leaseId = (yield* (yield* SecureRandom.SecureRandom).uuidV4()).replaceAll("-", "");
-    const lease = yield* call(`The pool leased no ${device}`, () =>
-      client.leases.allocate({ ...scope, platform, device, retainOnClose: true, leaseId }),
-    ).pipe(
-      // A busy gateway answers its health probe late, which the client reports as unavailable.
-      Effect.tapError(() => Effect.sync(() => request.log("the pool is busy; asking again"))),
-      Effect.retry({ schedule: Schedule.spaced("10 seconds"), times: 12 }),
-    );
-    const leaseScope = { ...scope, leaseId: lease.leaseId, leaseBackend: lease.backend };
-    // The pool answers `boot` with the leased device; a worker hosts several, so name ours.
-    const leased = yield* call("The pool did not name the leased device", () =>
-      createAgentDeviceClient({ ...daemon, ...leaseScope }).devices.boot({ platform }),
-    ).pipe(
-      // e2e releases only the leases `acquire` returned.
-      Effect.tapError(() =>
-        call("release", () => client.leases.release({ leaseId: lease.leaseId })).pipe(
-          Effect.ignore,
-        ),
-      ),
-    );
-    return {
-      id: lease.leaseId,
-      daemon: { baseUrl: daemon.daemonBaseUrl, authToken: daemon.daemonAuthToken },
-      deviceId: leased.id,
-      client: {
-        ...leaseScope,
-        ...(lease.leaseProvider === undefined ? {} : { leaseProvider: lease.leaseProvider }),
-      },
-    };
-  });
-  return {
-    name: "simlock",
-    acquire: (request) =>
-      acquire(request).pipe(
-        Effect.provide([NodeCrypto.layer, NodeServices.layer]),
-        Effect.runPromise,
-      ),
-    release: (lease, context) =>
-      connect(context.env).pipe(
-        Effect.flatMap((daemon) =>
-          call("release", () =>
-            createAgentDeviceClient(daemon).leases.release({ leaseId: lease.id }),
-          ),
-        ),
-        Effect.asVoid,
-        Effect.runPromise,
-      ),
-  };
-};
-
 export default {
   tests: "scenarios/**/*.e2e.ts",
   targets: [
@@ -226,11 +130,8 @@ export default {
     },
     {
       name: "ios",
-      engine: mobile({
-        platform: "ios",
-        device: simlock("iPhone 18 Pro"),
-        session: "oni-scenarios",
-      }),
+      // A booted simulator on this machine, as `apps/mobile/e2e` uses.
+      engine: mobile({ platform: "ios", device: MOBILE.device }),
       app: {
         bundleId: "dev.aislopware.onicode.dev",
         // Metro starts after the server listens, so it answering means both are up.

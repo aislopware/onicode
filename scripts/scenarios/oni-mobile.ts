@@ -40,7 +40,8 @@ const devClientPath = Effect.gen(function* () {
   );
 });
 
-// A leased device is wiped when it returns to the pool, so one install and pairing last the run.
+// The simulator keeps an app's data between runs, and an earlier run's server is gone. The first
+// install of a run removes the app first, so one install and pairing last the run.
 let installed = false;
 let paired = false;
 
@@ -60,7 +61,7 @@ export const test = base.extend<{ onicode: MobileOni }>({
       ...state,
       open: async () => {
         if (!installed) {
-          await device.installApp(await runPromise(devClientPath));
+          await device.installApp(await runPromise(devClientPath), { reinstall: true });
           installed = true;
         }
         // iOS asks before a link opens another app.
@@ -74,7 +75,9 @@ export const test = base.extend<{ onicode: MobileOni }>({
         );
         // The first load bundles the app; the pairing link only works once it is on screen.
         if (paired) return;
-        await expect(screen.getByRole("button", "Add environment")).toBeVisible({
+        // Not the empty state's "Add environment": the simulator's keychain outlives the app, so
+        // environments an earlier run saved can still be listed.
+        await expect(screen.getByTestId("adaptive-workspace-layout")).toBeVisible({
           timeout: 240_000,
         });
         const query = new URLSearchParams({
@@ -89,5 +92,5 @@ export const test = base.extend<{ onicode: MobileOni }>({
   },
 });
 
-/** Test option for an iOS scenario: the web target skips it, and no device is leased for it. */
+/** Test option for an iOS scenario: the desktop target skips it. */
 export const IOS = { platforms: ["ios"] } as const;

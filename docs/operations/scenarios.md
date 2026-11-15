@@ -1,7 +1,7 @@
 # Scenarios
 
 A scenario is an [e2e](https://e2e.com/docs) test that shows one behavior in the real app: the dev
-desktop app on its own Onicode home, with its real server, HTTP and WebSocket, or a pooled iPhone
+desktop app on its own Onicode home, with its real server, HTTP and WebSocket, or an iPhone
 simulator running the mobile app. The dev replay agent stands in for the model, so a run is free
 and repeatable. Together the desktop scenarios are the desktop app's end-to-end suite. One of them
 is also the proof for a bug fix: it fails on the base commit and passes on the fix.
@@ -248,16 +248,16 @@ test(
 ```
 
 `onicode.project` and `onicode.thread` are the same. The run fetches or builds the dev client for the
-checkout's native fingerprint before it leases a device; `onicode.open()` installs it, loads it from
+checkout's native fingerprint before the first test; `onicode.open()` installs it, loads it from
 Metro, and pairs it with the scenario's server. `device` is
 e2e's [device fixture](https://e2e.com/docs/mobile#the-device-fixture) for system actions.
 
-The run leases an iPhone 18 Pro from the Simlock pool, so it needs `SIMLOCK_AGENT_DEVICE_URL`
-and `AGENT_DEVICE_DAEMON_AUTH_TOKEN`, as `mobile:e2e` does, and a gateway on Simlock 0.7.0 or
-later. A desktop-only run leases nothing. The device reaches this machine over the tailnet on ports
-13990 (server) and 8190 (Metro); set `ONICODE_SCENARIO_SERVER_PORT` and `ONICODE_SCENARIO_METRO_PORT` when
-another run on the machine holds them. An iOS run takes two to three minutes, most of it the
-device and the first bundle. `e2e run --target desktop` or `--target ios` runs one side.
+The run drives a booted simulator on this machine; boot one first, and name it with
+`E2E_IOS_DEVICE="iPhone 18 Pro"` when several are booted. The first `onicode.open()` of a run
+removes the dev client from that simulator before installing it, so whatever the app held there
+is gone. A desktop-only run touches no device. The server and Metro listen on ports 13990 and
+8190; set `ONICODE_SCENARIO_SERVER_PORT` and `ONICODE_SCENARIO_METRO_PORT` when another run on the
+machine holds them. `e2e run --target desktop` or `--target ios` runs one side.
 
 [`apps/mobile/e2e`](../../apps/mobile/e2e) is a separate suite: whole mobile flows on a local
 simulator or emulator, with its own stack. Scenarios keep the iOS target so that upstream's mobile
@@ -268,7 +268,7 @@ its own native code.
 
 ## Other tiers
 
-- **Android.** Add a target with `mobile({ platform: "android", device: simlock("Pixel 9") })`
+- **Android.** Add a target with `mobile({ platform: "android" })`
   and open the dev client with the Android form of the Expo link. Not built.
 - **Live provider.** Point the default model in `start-app.ts` at a real provider's cheapest
   model. Assertions on exact reply text would not hold.
@@ -279,7 +279,7 @@ its own native code.
 xvfb when a pull request changes a scenario, the harness, or what the harness starts the app
 through, and by hand from the Actions tab. It is not part of the `Check` gate: an app change that
 breaks a scenario does not fail its own pull request. Run the suite locally before a change to a
-surface the scenarios cover. The iOS target never runs in CI; it needs the Simlock pool.
+surface the scenarios cover. The iOS target does not run in CI.
 
 ## What a scenario cannot cover
 
