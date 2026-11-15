@@ -2051,3 +2051,4 @@ e101cae1b9	take	fix(terminal): show shell startup failures across attachments; i
 45649628dc	take	fix(mobile): inline markdown images page through their message's images
 bcdd6a59f4	take	adapted: conflict resolved so Onicode's provider session view commands also use clearTriggerThen; test mocks Onicode's configValueAtom and folder search
 178570dcd3	take	adapted: DesktopClerk.ts (removed Clerk) and the hosted-web delivery test dropped; receiveCodexAuthCallback gains signal as its third parameter (Onicode has no destination parameter), wired from the IPC method's tryPromise signal
+94edd64e74	take	adapted: dropped upstream's analytics lines from the ws.ts conflict, and the cloud-connect row, analytics mock and cookie fields from the test
