@@ -2016,3 +2016,4 @@ ab45ce7167	take	fix(github): pull request activity says when its comments were c
 3fe1dd922d	take	adapted: core.ts conflict resolved onto Onicode's getMode(MODE.*)/allocUsize helpers (added MODE.focusEvent, dropped upstream's modeEnabled); scenario deferred to the desktop scenarios harness: scripts/scenarios/terminal-reports-focus-while-enabled.e2e.ts
 37b71a4ffe	take	fix(web): remove redundant subagent action from background row (#37079)
 4fa5f0e0e6	take	fix(web): a side chat's subagent opens its parent as a side chat tab, not a bare page (#32907)
+79e47e9096	take	fix(shared): inline code paths like `docker/Dockerfile` become file chips (#32402)
