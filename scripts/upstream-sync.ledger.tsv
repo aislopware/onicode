@@ -2078,3 +2078,4 @@ dcaedc9800	take	fix(server): skills linked by a SessionStart hook appear in the 
 2becf31b64	take	fix(server): Windows spawn workers no longer leak a short child's output pipe to a sibling
 be8c4c6d9f	take	fix(web): repaint terminal when programs change default colors (conflict: kept Onicode's contrast cache field beside rowColors; scenario ported to the desktop target)
 cb251b9abc	take	fix(web): composer suggestions stay reachable in short windows (scenarios ported to the desktop target)
+6071022cb7	take	fix(server): Claude session name follows thread renames without waiting for the next turn (adapted: test's fake query session gains Onicode's extra session members)
