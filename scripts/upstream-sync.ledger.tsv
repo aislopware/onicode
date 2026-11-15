@@ -2104,3 +2104,4 @@ ed7f069326	take	test(desktop): two-account callback test uses two distinct ports
 12c495af49	take	fix(mobile): sending a message no longer shifts the feed before it settles
 598296e850	take	fix(web): copied code blocks drop the fence's trailing newline
 2579c3c4dd	take	adapted: took the Usage/Settings close fix in mainAppLocation; dropped the pairing-URL history-state part (auth.ts, authBootstrap.test.ts), since Onicode removed browser pairing tokens with the web app
+f1919eb1e2	take	fix(server): Codex prompt suggestions no longer imitate delegated task notices (#37292)
