@@ -2,7 +2,6 @@ import * as Dialog from "../../components/ui/Dialog";
 import {
   AuthTerminalReadScope,
   AuthTerminalOperateScope,
-  chunkTerminalWrite,
   DEFAULT_TERMINAL_ID,
   EnvironmentId,
   ThreadId,
@@ -600,35 +599,31 @@ function ThreadTerminal(props: {
     },
   });
 
-  const writeInput = async (data: string): Promise<boolean> => {
+  const writeChunk = async (data: string): Promise<boolean> => {
     if (
       !isRunning ||
       !readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)
     ) {
       return false;
     }
-
-    // Android's IME delivers a system paste as one input, which can exceed one write.
-    const isSameShell = pasteSession.liveness();
-    for (const chunk of chunkTerminalWrite(data)) {
-      if (!isSameShell()) return false;
-      const result = await writeTerminal({
-        environmentId: selectedThread.environmentId,
-        input: {
-          threadId: selectedThread.id,
-          terminalId,
-          data: chunk,
-        },
-      });
-      if (result._tag !== "Success") return false;
-    }
-    return true;
+    const result = await writeTerminal({
+      environmentId: selectedThread.environmentId,
+      input: {
+        threadId: selectedThread.id,
+        terminalId,
+        data,
+      },
+    });
+    return result._tag === "Success";
   };
+
+  // Android's IME delivers a system paste as one input, which can exceed one write.
+  const writeInput = (data: string) => pasteSession.input(data, writeChunk);
 
   const pasteText = async (readText: () => Promise<string>) => {
     await pasteSession.paste({
       readText,
-      write: writeInput,
+      write: writeChunk,
       onReadError: (cause) => {
         console.error(new TerminalClipboardReadError({ terminalId, cause }));
       },

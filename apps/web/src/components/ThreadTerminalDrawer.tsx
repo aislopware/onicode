@@ -88,7 +88,7 @@ import { readEnvironmentScope } from "../state/session";
 import { terminalEnvironment } from "../state/terminal";
 import { useEnvironmentScope } from "../state/session";
 import { openTerminalLinkInPreview } from "./preview/openTerminalLinkInPreview";
-import { terminalInputWriter } from "./terminal/terminalInputWriter";
+import { interruptedPasteRecovery, terminalInputWriter } from "./terminal/terminalInputWriter";
 import { useAtomCommand } from "../state/use-atom-command";
 import { preventTerminalCloseShortcut } from "../lib/terminalCloseShortcut";
 import { observeResize } from "../lib/observeResize";
@@ -974,11 +974,12 @@ function TerminalSessionViewport({
           },
           // Close the bracket only for the process that saw it open; wait while its pid is unknown.
           async () => {
-            const pid = session.summary?.pid ?? null;
             const current = readInputSession();
-            const currentPid = current.summary?.pid ?? null;
-            if (currentPid === null) return false;
-            if (pid !== null && currentPid !== pid) return true;
+            const recovery = interruptedPasteRecovery(session.summary?.pid ?? null, {
+              status: current.status,
+              pid: current.summary?.pid ?? null,
+            });
+            if (recovery !== "close") return recovery === "done";
             if (writableSessionGeneration(current, canWriteInput()) === null) return false;
             const result = await writeInputChunk("\x1b[201~");
             if (result._tag === "Success") return true;
