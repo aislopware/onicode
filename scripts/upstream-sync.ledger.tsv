@@ -1867,3 +1867,4 @@ fb74969314	take	re-base worktree launches whose recorded base ref does not resol
 def3722faa	take	Shift+F6 moves from a side chat back to the main chat
 5c9e5c1e98	take	check out cloned submodules when one submodule clone fails in a new worktree
 fa6ecb125b	take	MCP send errors say how to continue a finished thread
+bdf6c6ec89	take	open WSL-mounted Windows drives directly in File Explorer (conflict: kept wslpath resolver, dropped upstream buildBrowserLaunch context Onicode removed)
