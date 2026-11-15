@@ -1918,3 +1918,4 @@ d430dff14f	take	fix(usage): keep default-home history after the default account 
 1b9121ba59	skip	guest links removed; only touches apps/server/src/guest/GuestShareService.ts, which Onicode deleted
 355adf265c	take	docs(user): Tailscale HTTPS lists what the tailnet needs (#23759)
 e6344bebd8	take	fix(client-runtime): MCP app results with images reach the app instead of waiting forever (#31338)
+a9386ac8a6	take	fix(gitlab): a pasted repository URL is looked up by its project path on its host (#35209)
