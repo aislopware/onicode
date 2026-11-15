@@ -202,8 +202,8 @@ function AccessSettings() {
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<EnvironmentId | null>(null);
   const candidates = environments.filter(
     (environment) =>
-      environment.environmentId === primaryEnvironmentId ||
-      (environment.entry.enabled && !isDesktopLocalConnectionTarget(environment.entry.target)),
+      // A desktop-local WSL backend runs its own server with its own access.
+      environment.environmentId === primaryEnvironmentId || environment.entry.enabled,
   );
   const accessEnvironmentId = resolveAccessEnvironmentId({
     primaryEnvironmentId,
