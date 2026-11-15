@@ -54,6 +54,20 @@ An agent that needs a token or password shows a secret request card in the threa
 you to paste it into the chat. Type or paste the value and select **Save securely**, or select
 **Decline**. You can answer from desktop or mobile.
 
+On your phone, a password manager can fill the card, so nothing is copied or pasted. On iOS, tap
+**Passwords** above the keyboard to fill a saved password. On iOS 18 and later you can also touch
+and hold the field and choose **AutoFill → Passwords**: a password manager that supports it, such
+as Bitwarden, then lets you pick any field of any item, such as a custom field, a note, or an SSH
+key. On Android, pick the suggestion your password manager shows for the field. It fills the
+password of a login, so keep a token you want to fill this way as a login's password. The password
+manager unlocks with Face ID or your fingerprint as it always does.
+
+A desktop field cannot be filled that way. When your phone gets Onicode notifications, the desktop
+card says the request is on your phone too: answer it there and the desktop card closes.
+
+The card names the project and the machine the value goes to. That line comes from Onicode, while
+the title and the reason are the agent's words, so check where the value goes before you answer.
+
 If the environment has a secret provider, the card also lets you pick it and enter a reference
 instead of the value. Onicode reads the secret once, when you answer. If 1Password is locked, the
 card says so and the request stays open: unlock it and try again, or enter the value.

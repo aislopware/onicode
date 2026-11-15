@@ -32,9 +32,8 @@ function nativeColor(value: string) {
 }
 
 /**
- * Android's React Native TextInput cannot opt out of credential autofill, so password managers
- * offer logins above the keyboard. This field is a native EditText that reports no autofill type.
- * The frame matches AppTextInput's.
+ * A native EditText a password manager can fill. React Native's TextInput reports what is typed to
+ * Android's autofill session, so a manager could offer to save it. The frame matches AppTextInput's.
  */
 export function SecretTextInput(props: SecretTextInputProps) {
   const theme = useUniwindTheme();
