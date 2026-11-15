@@ -43,6 +43,7 @@ const MODE = {
   cursorKeys: 1,
   mouseAnyEvent: 1003,
   focusEvent: 1004,
+  sgrPixels: 1016,
   bracketedPaste: 2004,
   synchronizedOutput: 2026,
   reportColorScheme: 2031,
@@ -207,6 +208,31 @@ export interface GhosttyMouseInput {
 
 const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
 const encoder = new TextEncoder();
+
+// The encoder only takes whole-pixel cells, so cell reports rescale the pointer onto that grid.
+function encoderAxis(
+  position: number,
+  screen: number,
+  cell: number,
+  paddingStart: number,
+  paddingEnd: number,
+  pixelReports: boolean,
+) {
+  const wholeCell = Math.max(1, Math.round(cell));
+  if (pixelReports) {
+    return { position, screen, cell: wholeCell, paddingStart, paddingEnd };
+  }
+  const scale = wholeCell / cell;
+  const start = Math.round(paddingStart);
+  const end = Math.round(paddingEnd);
+  return {
+    position: Math.max(0, start + (position - paddingStart) * scale),
+    screen: start + end + Math.floor((screen - paddingStart - paddingEnd) / cell) * wholeCell,
+    cell: wholeCell,
+    paddingStart: start,
+    paddingEnd: end,
+  };
+}
 
 function blend(foreground: GhosttyColor, background: GhosttyColor): GhosttyColor {
   const channel = (front: number, back: number) => Math.floor((front * 155 + back * 100) / 255);
@@ -731,18 +757,37 @@ export class GhosttyTerminalCore {
     this.ensureActive();
     this.runtime.call("ghostty_mouse_encoder_set_from_terminal", this.mouseEncoder, this.terminal);
 
+    // SGR pixel reports (DEC 1016) must name surface pixels, so they skip the rescale.
+    const pixelReports = this.getMode(MODE.sgrPixels);
+    const x = encoderAxis(
+      input.x,
+      input.screenWidth,
+      input.cellWidth,
+      input.paddingLeft,
+      input.paddingRight,
+      pixelReports,
+    );
+    const y = encoderAxis(
+      input.y,
+      input.screenHeight,
+      input.cellHeight,
+      input.paddingTop,
+      input.paddingBottom,
+      pixelReports,
+    );
+
     const sizeLayout = this.runtime.layout("GhosttyMouseEncoderSize");
     const size = this.runtime.alloc(sizeLayout.size);
     for (const [field, value] of [
       ["size", sizeLayout.size],
-      ["screen_width", input.screenWidth],
-      ["screen_height", input.screenHeight],
-      ["cell_width", input.cellWidth],
-      ["cell_height", input.cellHeight],
-      ["padding_top", input.paddingTop],
-      ["padding_bottom", input.paddingBottom],
-      ["padding_right", input.paddingRight],
-      ["padding_left", input.paddingLeft],
+      ["screen_width", x.screen],
+      ["screen_height", y.screen],
+      ["cell_width", x.cell],
+      ["cell_height", y.cell],
+      ["padding_top", y.paddingStart],
+      ["padding_bottom", y.paddingEnd],
+      ["padding_right", x.paddingEnd],
+      ["padding_left", x.paddingStart],
     ] as const) {
       this.runtime.setField(size, "GhosttyMouseEncoderSize", field, Math.max(0, Math.round(value)));
     }
@@ -778,8 +823,8 @@ export class GhosttyTerminalCore {
     const positionLayout = this.runtime.layout("GhosttyMousePosition");
     const position = this.runtime.alloc(positionLayout.size);
     const positionView = this.runtime.view(position, positionLayout.size);
-    positionView.setFloat32(positionLayout.fields.x!.offset, input.x, true);
-    positionView.setFloat32(positionLayout.fields.y!.offset, input.y, true);
+    positionView.setFloat32(positionLayout.fields.x!.offset, x.position, true);
+    positionView.setFloat32(positionLayout.fields.y!.offset, y.position, true);
     this.runtime.call("ghostty_mouse_event_set_position", this.mouseEvent, position);
     this.runtime.free(position, positionLayout.size);
 
