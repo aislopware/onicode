@@ -1905,3 +1905,4 @@ c6a120a958	take	fix(forgejo): review guides work for checkouts whose SSH remote 
 6c0032d655	take	fix(server): MCP refuses disallowed browser origins with 403 before auth and CORS (#35810)
 2e9418af79	take	fix(mcp): explain cross-thread permission rejections (#36934)
 1672b51630	take	git commit -a --author='Jiri Kvapil <53862157+kvapca@users.noreply.github.com>' -m 'fix(web): Add Environment drops the old tab'\''s error when switching mode (#32157)' -m 'Ported from pingdotgg/t3code@1672b51630.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+3e29748f96	skip	RFC 7591 error body serves outside MCP clients (declined surface); Onicode's /oauth/mcp/register accepts peer links only
