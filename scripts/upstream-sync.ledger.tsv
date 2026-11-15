@@ -2013,7 +2013,7 @@ ab45ce7167	take	fix(github): pull request activity says when its comments were c
 9f815c94af	take	fix(server): a branch's own pull request shows past a hundred same-named fork pull requests (#32796)
 033ae7cba0	take	fix(server): an effect this build can't read no longer blocks its thread's later work (#32746)
 781ab0553c	take	fix(acp-registry): a failed agent install no longer floods provider status with its whole log (#32800)
-3fe1dd922d	take	adapted: core.ts conflict resolved onto Onicode's getMode(MODE.*)/allocUsize helpers (added MODE.focusEvent, dropped upstream's modeEnabled); scenario deferred to the desktop scenarios harness: scripts/scenarios/terminal-reports-focus-while-enabled.e2e.ts
+3fe1dd922d	take	adapted: core.ts conflict resolved onto Onicode's getMode(MODE.*)/allocUsize helpers (added MODE.focusEvent, dropped upstream's modeEnabled); its e2e scenario ported later with the desktop scenario harness
 37b71a4ffe	take	fix(web): remove redundant subagent action from background row (#37079)
 4fa5f0e0e6	take	fix(web): a side chat's subagent opens its parent as a side chat tab, not a bare page (#32907)
 79e47e9096	take	fix(shared): inline code paths like `docker/Dockerfile` become file chips (#32402)
@@ -2034,7 +2034,7 @@ f36c8351d8	take	fix(server): an MCP pin lands at the top of the Pinned section (
 278e47dee2	take	fix(mobile): the iPhone Duo's sidebar list ends above its tab bar in portrait (#37091)
 2dc5ebd52f	take	fix(web): switching providers no longer drops the thread's stored effort (#33090)
 aaf5b9c68e	take	fix(mobile): PR activity filter remembers bot and resolved visibility (#37096)
-2cb2fa1385	take	fix(web): terminal links open bare compiler filenames (#37071); scenario deferred to the desktop scenarios harness: scripts/scenarios/terminal-bare-filename-opens-its-location.e2e.ts, scripts/scenarios/start-app.ts (editor recording shim)
+2cb2fa1385	take	fix(web): terminal links open bare compiler filenames (#37071); its e2e scenario ported later with the desktop scenario harness
 b35c9702f9	take	fix(acp): optional text questions can be left blank (#36997)
 4ab3b98411	take	fix(shared): MCP apps that fall back to a blob: frame no longer render blank (#32129)
 2045004096	take	fix(shared): keep coalescing workers alive when processors throw (#32178)
@@ -2045,7 +2045,7 @@ b35c9702f9	take	fix(acp): optional text questions can be left blank (#36997)
 8c80003d68	take	perf(server): Codex skills probe reuses one app-server per launch identity
 f2c944947d	take	fix(web): composer re-verifies ready uploads before sending
 32c069eed1	take	fix(server): content search recovers after a slow first index
-e101cae1b9	take	scenario deferred to the desktop scenarios harness: scripts/scenarios/terminal-shows-startup-failure.e2e.ts
+e101cae1b9	take	fix(terminal): show shell startup failures across attachments; its e2e scenario ported later with the desktop scenario harness
 4f829644f6	take	migration renumbered 095 -> 100; MCP app key oniMcpApp; 094 test change applied to 099
 50a2f5b9f4	skip	empty commit: duplicate of 4f829644f6 with no changes
 45649628dc	take	fix(mobile): inline markdown images page through their message's images
