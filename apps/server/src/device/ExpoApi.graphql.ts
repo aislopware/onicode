@@ -24,18 +24,18 @@ export interface AccountAppsConnection extends Schema.Struct.Type<typeof Account
  * An account is a container owning projects, credentials, billing and other organization
  * data and settings. Actors may own and be members of accounts.
  */
-export const AccountsAccount = Schema.Struct({
+export const Account = Schema.Struct({
   name: Schema.String,
   /** Paginated list of apps associated with this account. By default sorted by name. Use filter to adjust the sorting order. */
   appsPaginated: AccountAppsConnection
 })
-export interface AccountsAccount extends Schema.Struct.Type<typeof AccountsAccount.fields> {}
+export interface Account extends Schema.Struct.Type<typeof Account.fields> {}
 
 /** Represents a human SSO (not robot) actor. */
 export const SSOUser = Schema.Struct({
   __typename: Schema.Literal("SSOUser"),
   username: Schema.String,
-  accounts: Schema.Array(AccountsAccount)
+  accounts: Schema.Array(Account)
 })
 export interface SSOUser extends Schema.Struct.Type<typeof SSOUser.fields> {}
 
@@ -43,7 +43,7 @@ export interface SSOUser extends Schema.Struct.Type<typeof SSOUser.fields> {}
 export const User = Schema.Struct({
   __typename: Schema.Literal("User"),
   username: Schema.String,
-  accounts: Schema.Array(AccountsAccount)
+  accounts: Schema.Array(Account)
 })
 export interface User extends Schema.Struct.Type<typeof User.fields> {}
 
@@ -52,7 +52,7 @@ export const Robot = Schema.Struct({
   __typename: Schema.Literal("Robot"),
   firstName: Schema.NullOr(Schema.String),
   /** Associated accounts */
-  accounts: Schema.Array(AccountsAccount)
+  accounts: Schema.Array(Account)
 })
 export interface Robot extends Schema.Struct.Type<typeof Robot.fields> {}
 
@@ -60,7 +60,7 @@ export interface Robot extends Schema.Struct.Type<typeof Robot.fields> {}
 export const ActorOther = Schema.Struct({
   __typename: GraphQL.otherTypename<Shared.Typename.Actor>()(["SSOUser", "User", "Robot"]),
   /** Associated accounts */
-  accounts: Schema.Array(AccountsAccount)
+  accounts: Schema.Array(Account)
 })
 export interface ActorOther extends Schema.Struct.Type<typeof ActorOther.fields> {}
 
@@ -89,54 +89,6 @@ export const OniExpoViewer = GraphQL.query("OniExpoViewer", {
 export declare namespace OniExpoViewer {
   export type Variables = typeof OniExpoViewer.variables.Type
   export type Result = typeof OniExpoViewer.result.Type
-}
-
-/**
- * An account is a container owning projects, credentials, billing and other organization
- * data and settings. Actors may own and be members of accounts.
- */
-export const OwnerAccountAccount = Schema.Struct({
-  name: Schema.String,
-  /** Server account feature gate values for this account, optionally filtering by desired gates. */
-  accountFeatureGates: Shared.JSONObject
-})
-export interface OwnerAccountAccount extends Schema.Struct.Type<typeof OwnerAccountAccount.fields> {}
-
-/** Represents an Exponent App (or Experience in legacy terms) */
-export const OniEasSimulatorAvailabilityAppByIdApp = Schema.Struct({
-  ownerAccount: OwnerAccountAccount
-})
-export interface OniEasSimulatorAvailabilityAppByIdApp extends Schema.Struct.Type<typeof OniEasSimulatorAvailabilityAppByIdApp.fields> {}
-
-export const OniEasSimulatorAvailabilityAppAppQuery = Schema.Struct({
-  /** Look up app by app id */
-  byId: OniEasSimulatorAvailabilityAppByIdApp
-})
-export interface OniEasSimulatorAvailabilityAppAppQuery extends Schema.Struct.Type<typeof OniEasSimulatorAvailabilityAppAppQuery.fields> {}
-
-/** `query OniEasSimulatorAvailability` */
-export const OniEasSimulatorAvailability = GraphQL.query("OniEasSimulatorAvailability", {
-  document: {
-    variables: [
-      { name: "appId", body: "String!" },
-      { name: "filter", body: "[String!]" }
-    ],
-    selections: [
-      { name: "app", body: ["{byId(appId:$", "appId", "){ownerAccount{name accountFeatureGates(filter:$", "filter", ")}}}"] }
-    ],
-    fragments: []
-  },
-  variables: {
-    appId: Schema.String,
-    filter: Schema.optional(Schema.NullOr(Schema.Array(Schema.String)))
-  },
-  result: Schema.Struct({
-    app: OniEasSimulatorAvailabilityAppAppQuery
-  })
-})
-export declare namespace OniEasSimulatorAvailability {
-  export type Variables = typeof OniEasSimulatorAvailability.variables.Type
-  export type Result = typeof OniEasSimulatorAvailability.result.Type
 }
 
 export const CreateDeviceRunSessionDeviceRunSession = Schema.Struct({
@@ -250,16 +202,16 @@ export const AppDeviceRunSessionsConnection = Schema.Struct({
 export interface AppDeviceRunSessionsConnection extends Schema.Struct.Type<typeof AppDeviceRunSessionsConnection.fields> {}
 
 /** Represents an Exponent App (or Experience in legacy terms) */
-export const OniActiveEasSimulatorSessionsAppByIdApp = Schema.Struct({
+export const ByIdApp = Schema.Struct({
   deviceRunSessionsPaginated: AppDeviceRunSessionsConnection
 })
-export interface OniActiveEasSimulatorSessionsAppByIdApp extends Schema.Struct.Type<typeof OniActiveEasSimulatorSessionsAppByIdApp.fields> {}
+export interface ByIdApp extends Schema.Struct.Type<typeof ByIdApp.fields> {}
 
-export const OniActiveEasSimulatorSessionsAppAppQuery = Schema.Struct({
+export const AppQuery = Schema.Struct({
   /** Look up app by app id */
-  byId: OniActiveEasSimulatorSessionsAppByIdApp
+  byId: ByIdApp
 })
-export interface OniActiveEasSimulatorSessionsAppAppQuery extends Schema.Struct.Type<typeof OniActiveEasSimulatorSessionsAppAppQuery.fields> {}
+export interface AppQuery extends Schema.Struct.Type<typeof AppQuery.fields> {}
 
 /** `query OniActiveEasSimulatorSessions` */
 export const OniActiveEasSimulatorSessions = GraphQL.query("OniActiveEasSimulatorSessions", {
@@ -278,7 +230,7 @@ export const OniActiveEasSimulatorSessions = GraphQL.query("OniActiveEasSimulato
     filter: Schema.optional(Schema.NullOr(Shared.DeviceRunSessionFilterInput))
   },
   result: Schema.Struct({
-    app: OniActiveEasSimulatorSessionsAppAppQuery
+    app: AppQuery
   })
 })
 export declare namespace OniActiveEasSimulatorSessions {
@@ -327,4 +279,4 @@ export declare namespace OniStopEasSimulatorSession {
 }
 
 /** Every operation in ExpoApi.graphql. */
-export const ExpoApiGraphQLGroup = GraphQLGroup.make(OniExpoViewer, OniEasSimulatorAvailability, OniCreateEasSimulatorSession, OniEasSimulatorSession, OniActiveEasSimulatorSessions, OniStopEasSimulatorSession)
+export const ExpoApiGraphQLGroup = GraphQLGroup.make(OniExpoViewer, OniCreateEasSimulatorSession, OniEasSimulatorSession, OniActiveEasSimulatorSessions, OniStopEasSimulatorSession)
