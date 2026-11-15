@@ -1980,3 +1980,4 @@ e2afd2546e	take	git commit -a --author='Omar Espinosa <77650361+OmarAlex24@users
 11c425b4b6	take	fix(server): task_status no longer reports a restart-continued task as cancelled (#32414)
 86cdf80dbd	take	fix(web): sidebar edge uses the same resize cursor as side panels (#33083)
 ab319a52dd	take	fix(web): attach command palette threads outside the sidebar (#37054)
+d8b80a1097	take	fix(server): status reports no branch while a clone has not checked out HEAD (#37041)
