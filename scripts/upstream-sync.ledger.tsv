@@ -2074,3 +2074,4 @@ ff9dca8931	take	fix(server): an oversized provider request reads as too large, n
 649d9fc1ab	take	fix(provider-acp): Grok early task completion no longer replaces the child's answer
 7379f1969b	take	fix(web): keypad navigation works with NumLock off (scenario ported to the desktop target)
 8897a6ebe1	take	fix(web): keep thread mentions when editing sent messages (adapted: recallComposerMessage lives in client-runtime's composer-prompt-history; scenario ported to the desktop target)
+dcaedc9800	take	fix(server): skills linked by a SessionStart hook appear in the $ picker in the same session (adapted: first init reads the installed build, then reports the session cwd)
