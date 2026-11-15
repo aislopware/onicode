@@ -1838,3 +1838,4 @@ a62bc8156d	take	message ordinals read through an index (migration renumbered 94-
 dd3d4a4e4a	take	no stray highlights selecting shell commands
 c1a7ce362b	take	Check for Updates says when an update is available (single channel)
 d23f479a87	take	right panel shortcuts work while a side chat has focus
+88621ac593	skip	Upstream contributor governance (pr-limits.cjs, issue-vouch.yml, VOUCHED.td denounce list); Onicode has none of these files or that policy.
