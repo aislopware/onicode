@@ -26,6 +26,7 @@ import { resolveServiceLauncherMode } from "../service/serviceLauncherClient.ts"
 import * as ServerConfig from "../config.ts";
 import { expandHomePath, resolveBaseDir } from "../os-jank.ts";
 import { isProcessAlive, readPersistedServerRuntimeState } from "../serverRuntimeState.ts";
+import { resolveHostCliCommand } from "./invocation.ts";
 
 const modeFlag = Flag.Literals("mode", ServerConfig.RuntimeMode.literals).pipe(
   Flag.withDescription("Runtime mode. `desktop` keeps loopback defaults unless overridden."),
@@ -326,8 +327,13 @@ export const resolveServerConfig = Effect.fn("config.resolveServerConfig")(funct
       runtime.value.pid !== process.pid &&
       isProcessAlive(runtime.value.pid)
     ) {
+      // Bare `onicode pair` prefers a linked worktree's `.onicode`, so always name this home.
+      const { command: pairCommand } = yield* resolveHostCliCommand("pair", [
+        "--base-dir",
+        baseDir,
+      ]);
       return yield* new CliError.UserError({
-        cause: `A Onicode server is already running for ${baseDir} (pid ${runtime.value.pid}, ${runtime.value.origin}). Connect to that server, stop it before starting another, or use a different --base-dir.`,
+        cause: `A Onicode server is already running for ${baseDir} (pid ${runtime.value.pid}, ${runtime.value.origin}). To connect, run \`${pairCommand}\` and paste the pairing URL it prints into Add environment in the desktop or mobile app. To start another server, stop this one first or use a different --base-dir.`,
       });
     }
   }

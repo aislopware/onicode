@@ -41,9 +41,10 @@ Run `onicode help` or `onicode --help` for the full reference. To start in a new
 directory, use an explicit path such as `onicode ./my-project`. A bare directory name
 is accepted only if it already exists.
 
-If `onicode` or `onicode start` reports an already running server, connect to that server
-instead. Stop it before starting a replacement, or use a different `--base-dir`
-for an independent server.
+If `onicode` or `onicode start` reports an already running server, run the `onicode pair`
+command it names and paste the pairing URL it prints into **Add environment** in
+the desktop or mobile app. Stop it before starting a replacement, or use a
+different `--base-dir` for an independent server.
 
 To try Onicode once without installing it, run `npx onicode@latest` instead (needs
 Node.js for `npx`). It offers to install the `onicode` command first. If you say no,
