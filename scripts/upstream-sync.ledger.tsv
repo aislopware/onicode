@@ -1851,3 +1851,4 @@ eb8b1f5246	take	avoid worktree setup flash after editing first message (web + mo
 240fc6975b	take	codex app-server that exits before initialize reports its exit, not EPIPE
 bc91203bc3	take	count only newly imported agent threads
 fd985e0985	take	Claude hub account with an unmeasured window keeps its other limits
+e49d058439	take	thread_not_found points agents at linked environments
