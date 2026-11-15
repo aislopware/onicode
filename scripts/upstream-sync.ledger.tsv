@@ -2107,3 +2107,4 @@ ed7f069326	take	test(desktop): two-account callback test uses two distinct ports
 f1919eb1e2	take	fix(server): Codex prompt suggestions no longer imitate delegated task notices (#37292)
 249b92c080	take	fix(mobile): tasks in unconnected linked environments no longer show the OpenAI logo (#37289)
 16ff4b45ee	take	fix(mobile): fully typed /model keeps its suggestion (#37280)
+21fe33c8d7	take	fix(server): schedule_task uses the project's effective default model (#37299)
