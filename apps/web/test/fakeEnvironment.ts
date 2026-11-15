@@ -17,6 +17,7 @@ import {
   RunId,
   RuntimeRequestId,
   ServerConfig,
+  ServerConfigStreamEvent,
   ThreadId,
   TurnItemId,
   WS_METHODS,
@@ -417,6 +418,21 @@ let pendingDispatches: Array<{
 let pendingAssetUrls: Array<Deferred.Deferred<AssetCreateUrlResult>> = [];
 let sequence = 1;
 let vcsStatusSubscriber: Queue.Queue<VcsStatusStreamEvent> | null = null;
+// The client keeps one connection across a file's tests, so a test's config must reach it live.
+const serverConfigSubscribers = new Set<Queue.Queue<ServerConfigStreamEvent>>();
+const serverConfigSnapshot = (): ServerConfigStreamEvent => ({
+  version: 1,
+  type: "snapshot",
+  config: serverConfig(),
+});
+const subscribeServerConfig = () =>
+  subscribe([serverConfigSnapshot()], (queue) => {
+    serverConfigSubscribers.add(queue);
+    return () => serverConfigSubscribers.delete(queue);
+  });
+const publishServerConfig = () => {
+  for (const queue of serverConfigSubscribers) Queue.offerUnsafe(queue, serverConfigSnapshot());
+};
 
 const subscribe = <A>(first: ReadonlyArray<A>, register?: (queue: Queue.Queue<A>) => () => void) =>
   Stream.unwrap(
@@ -506,8 +522,7 @@ const handlers: Record<string, (input: never) => unknown> = {
         if (vcsStatusSubscriber === queue) vcsStatusSubscriber = null;
       };
     }),
-  [WS_METHODS.subscribeServerConfig]: () =>
-    subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig() }]),
+  [WS_METHODS.subscribeServerConfig]: () => subscribeServerConfig(),
 };
 
 // Unanswered calls stay pending, like a server that has not replied yet.
@@ -523,8 +538,7 @@ const client = new Proxy(handlers, {
 const session: EnvironmentConnectionLease["session"] = {
   client: client as unknown as WsRpcProtocolClient,
   initialConfig: Effect.sync(serverConfig),
-  subscribeServerConfig: () =>
-    subscribe([{ version: 1 as const, type: "snapshot" as const, config: serverConfig() }]),
+  subscribeServerConfig: () => subscribeServerConfig(),
   ready: Effect.void,
   probe: Effect.void,
   inboundFrames: Effect.succeed(0),
@@ -582,6 +596,7 @@ export function installFakeEnvironment(
     ...makeServerConfig(options?.providers ?? [CODEX_PROVIDER]),
     keybindings: options?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
   };
+  publishServerConfig();
   dispatched = [];
   acceptCommands = options?.acceptCommands === true;
   projects = [
@@ -614,6 +629,7 @@ export function installFakeEnvironment(
       globalThis.fetch = realFetch;
       threads = [];
       baseServerConfig = makeServerConfig([CODEX_PROVIDER]);
+      publishServerConfig();
       dispatched = [];
       acceptCommands = false;
       projects = [project];
