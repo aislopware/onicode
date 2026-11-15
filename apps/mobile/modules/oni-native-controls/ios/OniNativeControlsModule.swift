@@ -10,6 +10,9 @@ public final class OniNativeControlsModule: Module {
   private let presentationSources = OniPresentationSources()
   private var videoPresentation: OniNativeVideoPresentation?
   private var filePresentation: OniNativeFilePresentation?
+  /// The last file preview that closed. Written on main, read synchronously from JS.
+  private let filePreviewActivity = NSLock()
+  private var finishedFilePreview: String?
 
   public func definition() -> ModuleDefinition {
     Events("videoPlaybackChange")
@@ -83,6 +86,12 @@ public final class OniNativeControlsModule: Module {
       }
       file.present(urls: urls, titles: titles, selectedIndex: selectedIndex, from: presenter)
     }.runOnQueue(.main)
+
+    // A tap can reach JS before the old viewer's close does; this tells it whether that viewer is gone.
+    // A presentation main has not started yet reads as still open.
+    Function("isFilePreviewFinished") { (identifier: String) -> Bool in
+      self.filePreviewActivity.withLock { self.finishedFilePreview == identifier }
+    }
 
     // A nil URL marks the item as one that could not be resolved.
     AsyncFunction("updateFile") { (identifier: String, index: Int, url: URL?) in
@@ -284,13 +293,20 @@ public final class OniNativeControlsModule: Module {
     guard filePresentation == nil, videoPresentation == nil,
       appContext?.utilities?.currentViewController() != nil
     else { throw URLError(.cannotLoadFromNetwork) }
-    let file = OniNativeFilePresentation(identifier: identifier, sources: presentationSources,
-                                         sourceIdentifiers: sourceIdentifiers) { [weak self] error in
-      self?.filePresentation = nil
-      if let error { promise.reject(error) } else { promise.resolve(nil) }
-    }
+    let file = OniNativeFilePresentation(
+      identifier: identifier, sources: presentationSources, sourceIdentifiers: sourceIdentifiers,
+      onFinish: { [weak self] in self?.setFinishedFilePreview(identifier) },
+      completion: { [weak self] error in
+        self?.filePresentation = nil
+        if let error { promise.reject(error) } else { promise.resolve(nil) }
+      }
+    )
     filePresentation = file
     return file
+  }
+
+  private func setFinishedFilePreview(_ identifier: String) {
+    filePreviewActivity.withLock { finishedFilePreview = identifier }
   }
 
   private func presentFile(url: URL, title: String, sourceIdentifier: String,
