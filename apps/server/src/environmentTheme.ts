@@ -126,8 +126,8 @@ export class EnvironmentThemeService extends Context.Service<
     >;
 
     /**
-     * Makes `themeId` the environment theme and `appearance` its mode, so connected clients
-     * switch to them. With `theme`, first publishes that file under the id, replacing one already
+     * Makes `themeId` the environment theme and `appearance` its mode, so the desktop app on this
+     * machine switches to them. With `theme`, first publishes that file under the id, replacing one already
      * there.
      */
     readonly apply: (
