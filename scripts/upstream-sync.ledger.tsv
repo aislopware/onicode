@@ -2118,3 +2118,4 @@ af8faa9cfa	take	taken as is
 26b63a44f9	take	dropped isRelayManaged from the test fixture (relay removed, not in Onicode's EnvironmentConnectionSummary)
 51cdf23265	take	taken; raisedByT3 renamed raisedByOni
 19b33eca4c	take	fix(server): remote tasks report their actual model
+f82162f033	take	fix(provider-grok): steer queued messages into a running Grok turn
