@@ -2100,3 +2100,4 @@ aee231133a	take	adapted: the new local-version driver test writes two models, si
 09fc222fed	take	fix(server): imported Claude sessions are titled after the prompt inside a wake envelope
 2182097b1d	take	adapted: no web app; CLI names the local desktop app (not remote desktops or mobile, which keeps its own themes); MCP description keeps Onicode's desktop-only wording and takes upstream's trims; budget remeasured
 ed7f069326	take	test(desktop): two-account callback test uses two distinct ports
+073989f022	take	fix(mobile): Duo scroll indicator sits past the vertical bar, at the screen edge
