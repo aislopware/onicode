@@ -1907,3 +1907,4 @@ c6a120a958	take	fix(forgejo): review guides work for checkouts whose SSH remote 
 1672b51630	take	git commit -a --author='Jiri Kvapil <53862157+kvapca@users.noreply.github.com>' -m 'fix(web): Add Environment drops the old tab'\''s error when switching mode (#32157)' -m 'Ported from pingdotgg/t3code@1672b51630.' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 3e29748f96	skip	RFC 7591 error body serves outside MCP clients (declined surface); Onicode's /oauth/mcp/register accepts peer links only
 e57041a1df	take	fix(server): pairing codes typed in hyphen- or space-separated groups are accepted (#35069)
+137a869138	take	fix(shared): use HTTP for schemeless loopback previews (#29710)
