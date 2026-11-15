@@ -407,7 +407,9 @@ const themeSetCommand = Command.make("set", {
     ),
   ),
 }).pipe(
-  Command.withDescription("Set the environment's theme; connected clients switch to it."),
+  Command.withDescription(
+    "Set the environment's theme. The desktop app on this machine switches to it; desktop apps on other machines and the mobile app do not.",
+  ),
   Command.withHandler((flags) =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
