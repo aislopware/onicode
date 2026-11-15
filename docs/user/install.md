@@ -89,6 +89,10 @@ chmod +x ./Onicode.AppImage
 ./Onicode.AppImage
 ```
 
+After its first update, the AppImage is named `Onicode.AppImage` (`Onicode-arm64.AppImage`
+on ARM) in the same folder and keeps that name through later updates. Point
+launchers and shortcuts there; the downloaded filename keeps working as a link to it.
+
 Install the `.deb` with `sudo apt install ./Onicode-*.deb`. It updates itself like
 the AppImage and asks for your password to install each update. If your desktop
 has no password prompt, the update fails; download the new `.deb` and install it

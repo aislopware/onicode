@@ -117,7 +117,10 @@ Chromium initializes its portal connection. Setting the identity later in `Deskt
 is too late: Chromium caches the first registration, including failures. The identity must match
 the installed entry managed by `DesktopLinuxUrlHandler`. Pre-ready setup also refreshes that entry's
 `Exec` path before portal registration: AppImage updates can remove the previous executable, which
-makes the old entry invalid even though its filename is correct. The later URL handler avoids
+makes the old entry invalid even though its filename is correct. electron-updater renames an
+AppImage whose name has a version, and better-update serves every AppImage under a versioned name,
+so after an update this setup moves the AppImage to its version-free name and links the removed
+path to it; later updates then replace that file in place. The later URL handler avoids
 rewriting an identical entry while the portal may be reading it. On Wayland, Electron's synchronous
 shortcut-registration result only confirms submission; it does not confirm desktop consent or
 an active binding.
