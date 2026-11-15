@@ -1995,3 +1995,4 @@ fbfebc8537	take	fix(mobile): video previews survive re-signed URLs and a late-at
 b1050d3449	take	test: remove duplicate client call-site coverage (#36776)
 2d80ca0852	take	fix(github): pull request activity reports a rate-limited review-thread read instead of hiding its threads (#32620)
 f52fba48d9	take	fix(web): stacked composer banners no longer show dark seam bands (#32683)
+8e06750a08	take	fix(web): draft images keep their order after a reload (#32709)
