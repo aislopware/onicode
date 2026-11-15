@@ -2089,3 +2089,4 @@ d21d8d8b5d	take	fix(mobile): iOS video previews keep their contain fit
 0b489dada1	take	adapted: scenarios use Onicode's existing second-environment.ts instead of upstream's duplicate second-server.ts; machine-switch scenario unpairs at the end since the desktop app keeps paired environments between scenarios
 a3708b5180	take	fix(web): concealed terminal text stays hidden under the cursor (web + Android)
 45dbb4436c	take	fix(web): legacy mouse reports reach the PTY byte for byte (#37223)
+0de6ddb823	take	fix(web): editing a queued message into /btw no longer saves it to the main thread (web + mobile)
