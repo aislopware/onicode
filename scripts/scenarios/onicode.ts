@@ -156,11 +156,14 @@ export const test = base.extend<{ onicode: Onicode }>({
           const environment = await runPromise(environmentId(app.baseUrl ?? ""));
           await app.open(`/${environment}/${target.threadId}`);
         }
-        // Every open reloads the window. A shortcut or a native menu item reaches the app only
-        // once it has mounted, and neither waits for it the way a locator does. The reload goes
-        // through the Vite dev server, which a busy machine can hold up for longer than a default
-        // wait. Not an `expect`: a proof counts a failed assertion as the bug reproduced.
-        await screen.getByRole("navigation", "Threads").waitFor({ timeout: 60_000 });
+        // Shortcuts and native menus reach the app only once it mounts, and the reload through
+        // Vite can outlast a default wait. Not an `expect`: a proof counts a failed assertion as
+        // the bug. A narrow window collapses the sidebar to its toggle.
+        await screen
+          .getByRole("navigation", "Threads")
+          .or(screen.getByRole("button", "Toggle main sidebar"))
+          .first()
+          .waitFor({ timeout: 60_000 });
       },
     });
     await runPromise(cleanup);
