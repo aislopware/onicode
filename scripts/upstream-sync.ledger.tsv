@@ -1849,3 +1849,4 @@ dd86dd6d91	take	SSH device host probe failures say what ssh refused
 df15bd4f7b	take	parallel worktree launches no longer leave branches on their temporary oni/ name
 eb8b1f5246	take	avoid worktree setup flash after editing first message (web + mobile)
 240fc6975b	take	codex app-server that exits before initialize reports its exit, not EPIPE
+bc91203bc3	take	count only newly imported agent threads
