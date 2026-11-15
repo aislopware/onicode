@@ -44,6 +44,8 @@ test(
     ]);
     await runPromise(primary.cli(["project", "add", workspace, "--title", "demo"]));
     const second = await startSecondEnvironment(`${ONICODE_HOME}-second-environment`);
+    const moreActions = screen.getByRole("button", `More actions for ${ENVIRONMENT_LABEL}`);
+    let paired = false;
     try {
       const { host, token } = second;
       await runPromise(second.cli(["project", "add", workspace, "--title", "demo"]));
@@ -54,8 +56,8 @@ test(
       await dialog.getByPlaceholder("backend.example.com").fill(host);
       await dialog.getByPlaceholder("PAIRCODE").fill(token);
       await dialog.getByRole("button", "Add environment").tap();
-      const moreActions = screen.getByRole("button", `More actions for ${ENVIRONMENT_LABEL}`);
       await expect(moreActions).toBeVisible({ timeout: 60_000 });
+      paired = true;
       await app.open("/");
       // Shift adds a model to the draft instead of replacing it.
       await screen.getByRole("button", "Showcase", { exact: false }).first().tap();
@@ -77,16 +79,21 @@ test(
 
       await app.screenshot("after-machine-switch");
       await expect(models.first()).toBeVisible();
-
-      // The desktop app keeps its paired environments between scenarios.
-      await app.open("/settings/connections");
-      await moreActions.tap();
-      await screen.getByRole("menuitem", "Remove from this device…").tap();
-      await screen.getByRole("button", "Confirm").tap();
-      await expect(moreActions).toBeHidden({ timeout: 30_000 });
     } finally {
-      await second.stop();
-      await runPromise(primary.cli(["project", "remove", workspace, "--force"]));
+      // The desktop app keeps paired environments between scenarios, so a later one pairing
+      // the same label would find two.
+      try {
+        if (paired) {
+          await app.open("/settings/connections");
+          await moreActions.tap();
+          await screen.getByRole("menuitem", "Remove from this device…").tap();
+          await screen.getByRole("button", "Confirm").tap();
+          await expect(moreActions).toBeHidden({ timeout: 30_000 });
+        }
+      } finally {
+        await second.stop();
+        await runPromise(primary.cli(["project", "remove", workspace, "--force"]));
+      }
     }
   },
 );
