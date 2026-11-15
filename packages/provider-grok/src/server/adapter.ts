@@ -155,6 +155,8 @@ const grokSteering: NonNullable<AcpAdapterV2Flavor["steering"]> = {
               ),
         ),
       ),
+  // `_x.ai/interject` passes `$name` through as text; only a prompt runs the skill.
+  declines: (text) => leadingGrokSkillMention(text) !== undefined,
 };
 
 export interface GrokAdapterV2Options {

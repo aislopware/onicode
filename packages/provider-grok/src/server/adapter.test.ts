@@ -292,6 +292,9 @@ it.effect("a steer reaches Grok as an interjection that carries its images", () 
       { method: "_x.ai/interject", params: { sessionId: "session-1", text: "Text only" } },
     ]);
 
+    assert.isTrue(steering.declines?.("$deploy ship it"));
+    assert.isFalse(steering.declines?.("Look at this"));
+
     reply = { result: { status: "rejected" } };
     const refused = yield* steering.send(runtime, "session-1", "Late", []).pipe(Effect.flip);
     assert.strictEqual(refused._tag, "AcpRequestError");
