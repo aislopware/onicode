@@ -23,11 +23,14 @@ export function cancelCodexAuthCallback(authorizationUrl: string) {
 export async function receiveCodexAuthCallback(
   authorizationUrl: string,
   openBrowser: (url: string) => Promise<boolean>,
+  signal?: AbortSignal,
 ) {
   const request = codexAuthorizationRequest(authorizationUrl);
   if (listeners.has(request.state))
     throw new Error("This sign-in is already open on this computer.");
   const abort = new AbortController();
+  const interrupted = () => abort.abort();
+  signal?.addEventListener("abort", interrupted, { once: true });
   listeners.set(request.state, abort);
   const callback = Promise.withResolvers<string>();
   // Keep early open/bind failures from leaving an unobserved rejection behind.
@@ -76,12 +79,13 @@ export async function receiveCodexAuthCallback(
       server.listen(Number(new URL(request.redirectUri).port), "127.0.0.1", resolve);
     });
     if (abort.signal.aborted) throw new Error("Sign-in cancelled on this computer.");
-    if (!(await openBrowser(request.authorizationUrl)))
-      throw new Error("Could not open your sign-in browser.");
+    const opened = await Promise.race([openBrowser(request.authorizationUrl), callback.promise]);
+    if (!opened) throw new Error("Could not open your sign-in browser.");
     return await callback.promise;
   } finally {
     clearTimeout(timer);
     abort.signal.removeEventListener("abort", cancelled);
+    signal?.removeEventListener("abort", interrupted);
     listeners.delete(request.state);
     server.closeAllConnections();
     await new Promise<void>((resolve) => server.close(() => resolve()));

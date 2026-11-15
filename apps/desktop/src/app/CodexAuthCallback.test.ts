@@ -35,34 +35,57 @@ function callback(authorizationUrl: string) {
 }
 
 describe("desktop Codex callback helper", () => {
-  it("binds before opening sign-in, ignores a foreign response, and returns only the code callback", async () => {
+  it("binds before opening sign-in, ignores a foreign response, and returns only the code callback", async ({
+    onTestFinished,
+  }) => {
     const authorizationUrl = request(await freePort());
     const expected = callback(authorizationUrl);
-    const received = await receiveCodexAuthCallback(authorizationUrl, async () => {
+    const opening = Promise.withResolvers<boolean>();
+    onTestFinished(() => opening.resolve(true));
+    const checkResponse = async () => {
       const invalid = new URL(expected);
       invalid.searchParams.set("state", "foreign");
       expect((await fetch(invalid)).status).toBe(400);
       const response = await fetch(expected);
       expect(response.headers.get("cache-control")).toBe("no-store");
       expect(await response.text()).not.toContain("test-code");
-      return true;
+    };
+    let responseChecked!: Promise<void>;
+    const received = await receiveCodexAuthCallback(authorizationUrl, () => {
+      responseChecked = checkResponse();
+      return responseChecked.then(() => opening.promise);
     });
+    await responseChecked;
     expect(received).toBe(expected);
   });
-  it("cancels and releases its listener so exact-port reauthorization can run again", async () => {
-    const authorizationUrl = request(await freePort());
-    await expect(
-      receiveCodexAuthCallback(authorizationUrl, async () => {
-        cancelCodexAuthCallback(authorizationUrl);
-        return true;
-      }),
-    ).rejects.toThrow("cancelled");
-    expect(
-      await receiveCodexAuthCallback(authorizationUrl, async () => {
-        await fetch(callback(authorizationUrl));
-        return true;
-      }),
-    ).toBe(callback(authorizationUrl));
+  it("cancels and releases its listener so exact-port reauthorization can run again", async ({
+    onTestFinished,
+    signal,
+  }) => {
+    for (const external of [false, true]) {
+      const authorizationUrl = request(await freePort());
+      const abort = new AbortController();
+      const opening = Promise.withResolvers<boolean>();
+      onTestFinished(() => opening.resolve(true));
+      await expect(
+        receiveCodexAuthCallback(
+          authorizationUrl,
+          async () => {
+            if (external) abort.abort();
+            else cancelCodexAuthCallback(authorizationUrl);
+            return opening.promise;
+          },
+          abort.signal,
+        ),
+      ).rejects.toThrow("cancelled");
+      if (signal.aborted) return;
+      expect(
+        await receiveCodexAuthCallback(authorizationUrl, async () => {
+          await fetch(callback(authorizationUrl));
+          return true;
+        }),
+      ).toBe(callback(authorizationUrl));
+    }
   });
   it("allows two accounts to complete independently", async () => {
     const a = request(await freePort(), "a".repeat(43));
