@@ -15,7 +15,11 @@ import {
   type ComposerPromptSegment,
 } from "./composer-editor-mentions";
 
-import { resolveShortcutCommand, type ShortcutEventLike } from "./keybindings";
+import {
+  resolveShortcutCommand,
+  type ShortcutEventLike,
+  type ShortcutMatchContext,
+} from "./keybindings";
 import type { ProviderSessionView } from "@onicode/client-runtime/provider-session-views";
 
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
@@ -60,6 +64,8 @@ export function composerRequiresModifier(
 export function composerSubmissionIntentForKey(input: {
   event: ShortcutEventLike & { isComposing?: boolean; keyCode?: number; repeat?: boolean };
   keybindings: ResolvedKeybindingsConfig;
+  /** The when-clause context ChatView's shortcut listeners see, so both resolve Enter alike. */
+  context: Partial<ShortcutMatchContext>;
   platform?: string;
   isDraftThread: boolean;
   isRunning?: boolean;
@@ -71,6 +77,7 @@ export function composerSubmissionIntentForKey(input: {
   const command = resolveShortcutCommand(event, input.keybindings, {
     ...(input.platform === undefined ? {} : { platform: input.platform }),
     context: {
+      ...input.context,
       composerFocus: true,
       draftThreadRoute: input.isDraftThread,
       turnRunning: input.isRunning === true,

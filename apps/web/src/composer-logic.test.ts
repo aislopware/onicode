@@ -98,6 +98,7 @@ describe("formatAssistantCitationForComposer", () => {
 describe("composerSubmissionIntentForKey", () => {
   const input = {
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+    context: {},
     platform: "Linux",
     isDraftThread: false,
   };
@@ -221,6 +222,19 @@ describe("composerSubmissionIntentForKey", () => {
       ).toBeNull();
     },
   );
+
+  it("sends on Enter when a binding conditioned on !rightPanelOpen is inactive", () => {
+    const keybindings = mergeWithDefaultKeybindings(
+      compileResolvedKeybindingsConfig([
+        { key: "enter", command: "commandPalette.toggle", when: "!rightPanelOpen" },
+      ]),
+    );
+    const conditioned = { ...input, keybindings, sendShortcut: "enter" as const, event: enter };
+    expect(composerSubmissionIntentForKey(conditioned)).toBeNull();
+    expect(
+      composerSubmissionIntentForKey({ ...conditioned, context: { rightPanelOpen: true } }),
+    ).toBe("foreground");
+  });
 
   it.each([
     { ...enter, isComposing: true },
