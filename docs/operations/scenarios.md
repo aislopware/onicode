@@ -275,11 +275,16 @@ its own native code.
 
 ## In CI
 
-[`scenarios.yml`](../../.github/workflows/scenarios.yml) runs the desktop suite on Linux under
-xvfb when a pull request changes a scenario, the harness, or what the harness starts the app
-through, and by hand from the Actions tab. It is not part of the `Check` gate: an app change that
-breaks a scenario does not fail its own pull request. Run the suite locally before a change to a
-surface the scenarios cover. The iOS target does not run in CI.
+[`scenarios.yml`](../../.github/workflows/scenarios.yml) runs both suites when a pull request
+changes a scenario, the harness, or what the harness starts the app through, on every such push to
+`main`, and by hand from the Actions tab: the desktop suite on Linux under xvfb, and the iOS
+scenarios on a hosted macOS runner. Neither is part of the `Check` gate: an app change that breaks
+a scenario does not fail its own pull request. Run the suite locally before a change to a surface
+the scenarios cover.
+
+The iOS job keeps the dev client in the Actions cache under its native fingerprint. A pull request
+restores what `main` saved, so the first run after a native change builds the client, which takes
+far longer than the scenarios do.
 
 ## What a scenario cannot cover
 
