@@ -47,6 +47,10 @@ jobs:
     name: Desktop scenarios ${{ matrix.shard }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # The dev runner stops itself above half of RAM to protect a developer's machine from a
+      # leak. Here that is 7.8 GiB, which a healthy run crosses; the job timeout bounds this one.
+      ONICODE_DEV_MEMORY_LIMIT_GB: "0"
     strategy:
       fail-fast: false
       matrix:
