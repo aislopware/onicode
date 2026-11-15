@@ -44,7 +44,7 @@ import {
 } from "./auth/http.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as TailnetAccess from "./tailnet/TailnetAccess.ts";
-import { apiCorsAllowedHeaders, apiCorsAllowedMethods } from "./httpCors.ts";
+import { apiCorsAllowedHeaders, apiCorsAllowedMethods, MCP_HTTP_PATH } from "./httpCors.ts";
 import { requestUrl } from "./requestUrl.ts";
 
 const OTLP_TRACES_PROXY_PATH = "/api/observability/v1/traces";
@@ -244,12 +244,22 @@ export const layerHttpCompression = HttpRouter.middleware(HttpMiddleware.compres
   global: true,
 });
 
-// Clients send bearer tokens, never cookies, so any origin may call.
-export const layerApiCors = HttpRouter.cors({
+const apiCors = HttpMiddleware.cors({
   allowedMethods: apiCorsAllowedMethods,
   allowedHeaders: apiCorsAllowedHeaders,
   maxAge: 600,
 });
+// Clients send bearer tokens, never cookies, so any origin may call. MCP is left out: it
+// refuses every browser Origin with 403, and a CORS answer would only invite the request.
+export const layerApiCors = HttpRouter.middleware(
+  (httpEffect) => {
+    const withCors = apiCors(httpEffect);
+    return Effect.flatMap(HttpServerRequest.HttpServerRequest, (request) =>
+      request.url.split("?", 1)[0] === MCP_HTTP_PATH ? httpEffect : withCors,
+    );
+  },
+  { global: true },
+);
 
 const authenticateRawRouteWithScope =
   /* Request instrumentation already owns the span; keep this helper in that context. */

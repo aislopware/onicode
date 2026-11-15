@@ -8,3 +8,6 @@ export const apiCorsAllowedHeaders = [
   "content-type",
   ORCHESTRATION_PROTOCOL_HEADER,
 ] as const;
+
+/** MCP refuses every browser Origin with 403, so the CORS layer must not answer for it. */
+export const MCP_HTTP_PATH = "/mcp";
