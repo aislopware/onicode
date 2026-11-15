@@ -2095,3 +2095,4 @@ b5d9c71e1c	take	adapted: kept Onicode's test rules over upstream's new UsageMode
 3e7f5ecc55	take	fix(desktop): a renderer that keeps crashing is reloaded with a backoff instead of left blank
 256dce7f1f	take	adapted: scenario uses Onicode's second-environment.ts instead of upstream's second-server.ts, unpairs the desktop environment and removes the peer link at the end since the desktop app and primary server outlive the scenario; mobile conflict kept Onicode's findsFolders block
 14f295e011	take	fix(terminal): one web viewer answers shared PTY queries (desktop; mobile's native terminal still sends replies as input, follow-up)
+c2e54e3ac9	take	fix(acp): recognize sessions already owned by a thread
