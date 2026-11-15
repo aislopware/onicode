@@ -14,7 +14,10 @@ import * as HostProcess from "@onicode/shared/HostProcess";
 import * as DesktopEarlyElectronStartup from "./DesktopEarlyElectronStartup.ts";
 import { trimmedString } from "./DesktopConfig.ts";
 import { resolveDesktopAppBranding } from "./DesktopEnvironment.ts";
-import { renderUrlHandlerDesktopEntry } from "./DesktopLinuxUrlHandler.ts";
+import {
+  renderUrlHandlerDesktopEntry,
+  versionFreeAppImageMigration,
+} from "./DesktopLinuxUrlHandler.ts";
 import * as ElectronProtocol from "../electron/ElectronProtocol.ts";
 
 export interface DesktopPreReadyCommandLineReader {
@@ -56,6 +59,8 @@ const LinuxDesktopEntryConfig = Config.all({
   xdgDataHome: trimmedString("XDG_DATA_HOME"),
   launcherPath: trimmedString("ONICODE_DESKTOP_LAUNCHER_PATH"),
   appImagePath: trimmedString("APPIMAGE"),
+  // electron-updater sets this on the AppImage it relaunches after installing an update.
+  relaunchedByUpdater: trimmedString("APPIMAGE_SILENT_INSTALL"),
 });
 
 /** @public */
@@ -116,18 +121,45 @@ export const make = Effect.gen(function* () {
             );
           } catch {}
         }
+        const desktopEntryPath = NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName);
+        let appImagePath = Option.getOrUndefined(linuxDesktopEntryConfig.appImagePath);
+        if (
+          appImagePath !== undefined &&
+          Option.isNone(linuxDesktopEntryConfig.launcherPath) &&
+          Option.contains(linuxDesktopEntryConfig.relaunchedByUpdater, "true")
+        ) {
+          let previousEntry = "";
+          try {
+            previousEntry = NodeFS.readFileSync(desktopEntryPath, "utf8");
+          } catch {}
+          const migration = versionFreeAppImageMigration({ previousEntry, appImagePath });
+          if (migration !== null) {
+            try {
+              // A hard link never replaces an existing file, unlike rename.
+              NodeFS.linkSync(appImagePath, migration.stablePath);
+              NodeFS.unlinkSync(appImagePath);
+              appImagePath = migration.stablePath;
+              // Later services and the next update's installer read the AppImage path from here.
+              // @effect-diagnostics-next-line processEnvInEffect:off
+              process.env.APPIMAGE = appImagePath;
+            } catch {}
+            if (migration.replacedPath !== null) {
+              try {
+                // Relative, so the pair survives a moved folder; symlink never overwrites a file.
+                NodeFS.symlinkSync(NodePath.posix.basename(appImagePath), migration.replacedPath);
+              } catch {}
+            }
+          }
+        }
         NodeFS.writeFileSync(
-          NodePath.posix.join(applicationsDir, linux.linuxDesktopEntryName),
+          desktopEntryPath,
           renderUrlHandlerDesktopEntry({
             displayName: resolveDesktopAppBranding({ isDevelopment: linux.isDevelopment })
               .displayName,
             execTarget:
-              Option.getOrUndefined(
-                Option.orElse(
-                  linuxDesktopEntryConfig.launcherPath,
-                  () => linuxDesktopEntryConfig.appImagePath,
-                ),
-              ) ?? process.execPath,
+              Option.getOrUndefined(linuxDesktopEntryConfig.launcherPath) ??
+              appImagePath ??
+              process.execPath,
             scheme: ElectronProtocol.getDesktopScheme(linux.isDevelopment),
             ...(iconPath === undefined ? {} : { iconPath }),
           }),
