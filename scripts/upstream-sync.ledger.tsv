@@ -1961,3 +1961,4 @@ cc4160c813	take	fix(web): stashed prompt previews no longer end in a broken char
 e0ca4fcecb	take	fix(web, mobile): a failed terminal resize is sent again (#32047)
 3b5bfcec4f	take	fix(gitcafe): recognize ssh:// remotes that name no user (#32363)
 7b9af5f222	take	fix(server): EPUB text extraction skips the chapter head (#32370)
+a9e900f9c0	take	fix(mobile): queued messages show mentions and files by name, not as raw links (#32224)
