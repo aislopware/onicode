@@ -1998,3 +1998,4 @@ f52fba48d9	take	fix(web): stacked composer banners no longer show dark seam band
 8e06750a08	take	fix(web): draft images keep their order after a reload (#32709)
 71adeef080	take	fix(web): open PDF links in the file viewer (#37064)
 ab2420ffc0	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(server): a selected-file commit keeps other files'\'' merge conflicts (#33115)' -m 'Ported from pingdotgg/t3code@ab2420ffc0.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
+9a79883979	take	fix(web): a file opened from a diff in a project folder inside a repository opens that file (#32684)
