@@ -856,6 +856,7 @@ export const make = Effect.gen(function* () {
     let developmentLoadRetryIndex = 0;
     let developmentLoadRetryFiber: Fiber.Fiber<void, never> | undefined;
     let rendererRecoveryTimestamps: number[] = [];
+    let rendererRecoveryFiber: Fiber.Fiber<void, never> | undefined;
     const clearDevelopmentLoadRetry = () => {
       if (developmentLoadRetryFiber === undefined) {
         return;
@@ -908,6 +909,11 @@ export const make = Effect.gen(function* () {
       }
       clearDevelopmentLoadRetry();
       developmentLoadRetryIndex = 0;
+      // A renderer a reload already brought back must not be reloaded by a pending recovery.
+      if (rendererRecoveryFiber !== undefined) {
+        runFork(Fiber.interrupt(rendererRecoveryFiber));
+        rendererRecoveryFiber = undefined;
+      }
       if (environment.platform === "darwin") syncMacosWindowButtons(window);
     });
     window.webContents.on(
@@ -943,7 +949,7 @@ export const make = Effect.gen(function* () {
         details.reason === "killed" ||
         details.reason === "abnormal-exit";
 
-      runFork(
+      rendererRecoveryFiber = runFork(
         Effect.gen(function* () {
           const now = yield* Clock.currentTimeMillis;
           rendererRecoveryTimestamps = rendererRecoveryTimestamps.filter(

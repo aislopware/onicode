@@ -1258,6 +1258,39 @@ describe("DesktopWindow", () => {
       }),
   );
 
+  it.effect("drops a pending crash reload once the renderer loads again by other means", () =>
+    Effect.gen(function* () {
+      const fakeWindow = makeFakeBrowserWindow();
+      const createCount = yield* Ref.make(0);
+      const mainWindow = yield* Ref.make<Option.Option<Electron.BrowserWindow>>(Option.none());
+      const layer = layerTest({ window: fakeWindow.window, createCount, mainWindow });
+
+      yield* Effect.gen(function* () {
+        const desktopWindow = yield* DesktopWindow.DesktopWindow;
+        yield* desktopWindow.handleBackendReady(new URL("http://127.0.0.1:3773"));
+
+        const renderProcessGone = fakeWindow.webContentsListeners.get("render-process-gone");
+        const didFinishLoad = fakeWindow.webContentsListeners.get("did-finish-load");
+        if (!renderProcessGone || !didFinishLoad) {
+          return yield* Effect.die("renderer listeners were not registered");
+        }
+        for (let crash = 1; crash <= 3; crash++) {
+          renderProcessGone({}, { reason: "oom", exitCode: -536870904 });
+          yield* TestClock.adjust(1_000);
+          yield* Effect.promise(() => Promise.resolve());
+        }
+        renderProcessGone({}, { reason: "oom", exitCode: -536870904 });
+        yield* Effect.promise(() => Promise.resolve());
+        // The user reloads the window while the fourth crash waits out the budget.
+        didFinishLoad({});
+        const loadsAfterReload = fakeWindow.loadURL.mock.calls.length;
+        yield* TestClock.adjust(60_000);
+        yield* Effect.promise(() => Promise.resolve());
+        assert.strictEqual(fakeWindow.loadURL.mock.calls.length, loadsAfterReload);
+      }).pipe(Effect.provide(layer));
+    }),
+  );
+
   it.effect("updates title bar overlays only on windows created with one", () =>
     Effect.gen(function* () {
       const framed = makeFakeBrowserWindow();
