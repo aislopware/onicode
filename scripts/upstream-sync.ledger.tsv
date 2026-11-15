@@ -1960,3 +1960,4 @@ d2a894a247	take	fix(server): forks of forks keep their deleted source's files (#
 cc4160c813	take	fix(web): stashed prompt previews no longer end in a broken character (#32404)
 e0ca4fcecb	take	fix(web, mobile): a failed terminal resize is sent again (#32047)
 3b5bfcec4f	take	fix(gitcafe): recognize ssh:// remotes that name no user (#32363)
+7b9af5f222	take	fix(server): EPUB text extraction skips the chapter head (#32370)
