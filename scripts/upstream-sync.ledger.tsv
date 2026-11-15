@@ -2048,3 +2048,4 @@ f2c944947d	take	fix(web): composer re-verifies ready uploads before sending
 e101cae1b9	take	scenario deferred to the desktop scenarios harness: scripts/scenarios/terminal-shows-startup-failure.e2e.ts
 4f829644f6	take	migration renumbered 095 -> 100; MCP app key oniMcpApp; 094 test change applied to 099
 50a2f5b9f4	skip	empty commit: duplicate of 4f829644f6 with no changes
+45649628dc	take	fix(mobile): inline markdown images page through their message's images
