@@ -713,7 +713,13 @@ describe("DesktopShellEnvironment", () => {
             assert.equal(env.PATH, "/usr/bin");
 
             fishReady = true;
+            const published = yield* service.updates.pipe(
+              Stream.drop(1),
+              Stream.runHead,
+              Effect.forkChild({ startImmediately: true }),
+            );
             yield* TestClock.adjust("30 seconds");
+            yield* Fiber.join(published);
             assert.equal(env.PATH, "/fish/bin:/usr/bin");
             return true;
           }),
