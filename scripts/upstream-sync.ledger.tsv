@@ -850,7 +850,7 @@ e9e934bb3d	take	fix(acp): new Copilot threads run the model the composer shows (
 fd8e386f7f	take	fix(mobile): the thread list shows server changes after a tab round trip (#35325)
 2b4a9c744e	take	test(web): inline confirm tests no longer race the 3s disarm timer (#35361)
 69dd4d08ea	take	test(web): Add Environment dialog test fills fields instead of typing each key (#35360)
-4e48d9e6a5	skip	fixes the HTML preview accordion MessagesTimeline test, which Onicode left out when porting a88a0adfa1 (no renderHtmlRender prop)
+4e48d9e6a5	take	adopted upstream's HTML preview accordion MessagesTimeline test (with a88a0adfa1's) over Onicode's viewport-only coverage: it is the only test of the row-anchoring glue; it injects the preview by mocking HtmlRenderFrame, since upstream's renderHtmlRender prop only serves its GuestPage, which Onicode removed
 7c22095fcc	take	fix(client-runtime): a stalled sign-in token or dead route no longer holds a reconnect for 40 seconds (#34623); relay managedRelayState dropped; supervisor test rewritten on the LAN-then-SSH entry
 34c5faa3c3	take	fix(desktop): release-note entities named like Object.prototype keys stay literal (#35366)
 371963ce0b	take	fix(desktop): startup log prune keeps files that rotation never names (#35378)
