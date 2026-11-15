@@ -1850,3 +1850,4 @@ df15bd4f7b	take	parallel worktree launches no longer leave branches on their tem
 eb8b1f5246	take	avoid worktree setup flash after editing first message (web + mobile)
 240fc6975b	take	codex app-server that exits before initialize reports its exit, not EPIPE
 bc91203bc3	take	count only newly imported agent threads
+fd985e0985	take	Claude hub account with an unmeasured window keeps its other limits
