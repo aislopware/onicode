@@ -1781,3 +1781,4 @@ e82050b8b9	skip	Raises the theme CSS wire limit to 50,000, which desktop 0.15.0 
 b64eebb991	take	fix(release): enforce packaged Linux glibc requirements (ceiling 2.41 for Onicode's Debian 13 build container)
 3a87ca8c6a	take	fix(client-runtime): tool output no longer rounds integers beyond 2^53
 1d4765ba2a	take	fix(gitlab): remove reactions beyond the first award page
+0bdf566607	take	fix(server): let Expo decide EAS Simulator access

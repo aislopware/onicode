@@ -21,17 +21,6 @@ query OniExpoViewer {
   }
 }
 
-query OniEasSimulatorAvailability($appId: String!, $filter: [String!]) {
-  app {
-    byId(appId: $appId) {
-      ownerAccount {
-        name
-        accountFeatureGates(filter: $filter)
-      }
-    }
-  }
-}
-
 mutation OniCreateEasSimulatorSession($input: CreateDeviceRunSessionInput!) {
   deviceRunSession {
     createDeviceRunSession(deviceRunSessionInput: $input) {
