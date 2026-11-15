@@ -47,6 +47,12 @@ above its ceiling. Inside MCP the credential sets the limits and tool
 parameters only pick targets; see
 [threadAccess](../../apps/server/src/mcp/threadAccess.ts).
 
+These callers have no calling thread, so `/mcp` does not offer them tools that
+act as one, such as `request_secret` or `delegate_task`. Hiding is only
+discovery: the handlers still refuse such a call with
+`thread_credential_required`. A secret card belongs to a thread's run, so an
+outside agent that needs a secret starts a thread and lets that agent ask.
+
 The issuer URL comes from the request's Host and `X-Forwarded-Proto`, so one
 server answers links over loopback, the LAN and Tailscale Serve. A proxy that
 rewrites Host or drops the protocol header breaks linking.
