@@ -2071,3 +2071,4 @@ def4cd4884	take	fix(server): run_scheduled_task_now returns why a started run fa
 a16796b956	take	fix(shared): ß no longer splits words in generated folder and branch names (#37152)
 86a9d9fb71	take	fix(server): name the missing project when a change request's repository has none (adapted: keeps provider-unsupported on the wire with an optional repository, for older mobile builds)
 ff9dca8931	take	fix(server): an oversized provider request reads as too large, not raw 413 HTML
+649d9fc1ab	take	fix(provider-acp): Grok early task completion no longer replaces the child's answer
