@@ -2482,7 +2482,8 @@ it.effect.each([
     for (const error of [readError, writeError]) {
       expect(error).toMatchObject({
         _tag: "PullRequestUnavailableError",
-        reason: "repository-without-project",
+        reason: "provider-unsupported",
+        repository,
         message: `${repository} is not a project in Onicode. Add it as a project to read its change requests.`,
       });
     }
