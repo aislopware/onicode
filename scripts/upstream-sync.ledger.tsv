@@ -1826,3 +1826,4 @@ cef95b6db9	take	fix(shared): decode URI paths in ghq clone folders
 a96bb81049	take	perf(right panel): normalize pr tab target once
 989c1b55b0	skip	Only touches apps/marketing, which Onicode removed
 f5dd9c1ce7	take	fix(mobile): diagonal thread-row swipes open on Android
+a31fab93a2	take	focus side-chat composer when selecting its tab
