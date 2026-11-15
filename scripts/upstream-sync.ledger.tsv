@@ -1985,3 +1985,4 @@ d8b80a1097	take	fix(server): status reports no branch while a clone has not chec
 4117bd42ec	take	perf(web): answering a question no longer re-renders the whole chat view (#32324); kept Onicode's composer-prompt-history import
 a5d21a3ce4	take	perf(server): command palette status rows skip the Changes totals they never show (#32351)
 aace48bfe4	take	fix(web): PR file order follows alias imports of dotted modules (#32364)
+015eba4083	take	fix(acp): a failed MCP-over-ACP disconnect can be retried (#33069)
