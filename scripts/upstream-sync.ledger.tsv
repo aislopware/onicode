@@ -185,7 +185,7 @@ e509db3a2f	take	fix(web): Tab reaches the add-project and new-project submit but
 30c11a3c74	take	fix(web): the thread menu works for an older settled thread the sidebar hasn't loaded (#32507)
 151d5f817c	take	fix(opencode): show questions asked while OpenCode wakes a session on its own (#32434)
 e5b0718a8a	take	fix(server): blank .gitignore lines no longer make checkpoints drop new files (#32374)
-8ee7183e6c	skip	test(web): minimap next-turn test no longer flakes after a resize (#33964) — already fixed by a09864a7cf, which releases the opening end anchor the same way
+8ee7183e6c	skip	kept Onicode's a09864a7cf: the same fix, scrolling to the top so the list lets go of its opening end before the shrink step; Onicode waits on the Previous turn button's disabled state, upstream on a minimap strip's data-in-view attribute
 0e2841d5a7	take	feat(opencode): mirror native goals across clients (#33758)
 cfb7cae2b9	take	feat(web): bindable shortcut to regenerate a thread's title (#33987)
 3cdc504cc9	take	fix(server): linked projects keep their repository identity while it refreshes (#32359)
@@ -429,7 +429,7 @@ b264e118cf	take	fix(server): onicode doctor warns how long reclaiming takes and 
 1a8ecc64b7	take	feat(web): a quote in a sent message shows as an inset card (#34181)
 b015ffd7c2	take	perf(server): very long threads open about 10x faster (#34490); migration renumbered 082 -> 087
 c8e8b58ee6	take	fix(web): improve Excel spreadsheet previews (#34429); kept Onicode's newer @betteroffice deps, dropped Clerk deps
-f31ce3eeb5	skip	Onicode's service/bootService.ts already passes the process runner to readSystemdUnitDirectory
+f31ce3eeb5	skip	Onicode's service/bootService.ts already passes the process runner to readSystemdUnitDirectory, the same code upstream has now
 9ef259e517	take	fix(mobile): sidebar empty states and repeated usage notices (#33188)
 34b50df534	take	ci: stop uploading per-shard test cache reports (#34525)
 11f61a5327	take	refactor(mobile): lists use LegendList, FlatList is a restricted import (#34513)
@@ -1499,7 +1499,7 @@ c5f842d4c7	take	fix(server): regenerate titles on fresh run forks; its e2e scena
 bc1dc2a81e	take	fix(mobile): keep the thread column out of the iPhone Duo fold
 77ad2ebec5	take	fix(server): end obsolete link cards after a matching retry succeeds
 071ae4e951	take	fix(server): deleted projects keep their worktree cleanup policy
-179c032b3f	take	fix(server): include managed Claude skills in the skill menu (conflict resolved without upstream's synced-plugins lookup, which Onicode lacks)
+179c032b3f	take	fix(server): include managed Claude skills in the skill menu (kept Onicode's lookup without upstream's claude.ai synced plugins: it reads the account from ~/.claude.json, and Onicode reads Claude only through the Agent SDK; see 2cd799642b)
 3d3275b067	take	fix(server): PR checkout respects restricted fetch mappings
 121f0cf014	take	fix(server): oni_thread_list clamps an oversized limit instead of failing (agentContextBudget re-measured for Onicode's tool list: 47751)
 0c306f4520	take	fix(ssh): wait for a boot service's server instead of starting a second one; cloud/ parts applied to service/
@@ -1628,7 +1628,7 @@ f05cd350d2	take	fix(web): opening a very large folder no longer freezes the File
 abac6837e9	take	fix(gitlab): a fork's same-named branch no longer hides the branch's own merge request
 b779d40077	take	fix(editors): Open in Zed no longer finds the ZFS event daemon
 77b38f9b09	take	fix(server): preview hover and drag fail within their timeout, not up to 3x later
-5a15495de4	take	fix(server): skills from CLAUDE_CODE_PLUGIN_DIRS plugins show in the composer (conflict resolved without upstream's claude.ai synced-plugins lookup, which Onicode lacks)
+5a15495de4	take	fix(server): skills from CLAUDE_CODE_PLUGIN_DIRS plugins show in the composer (kept Onicode's lookup without upstream's claude.ai synced plugins: it reads the account from ~/.claude.json, and Onicode reads Claude only through the Agent SDK; see 2cd799642b)
 284fb237a5	take	glab mr new alias, taken as is
 949dc23074	take	Android rotated icon wrapper, taken as is
 7bc474667d	take	Stop-cancelled Claude tools show as interrupted, taken as is
@@ -1999,7 +1999,7 @@ f52fba48d9	take	fix(web): stacked composer banners no longer show dark seam band
 71adeef080	take	fix(web): open PDF links in the file viewer (#37064)
 ab2420ffc0	take	fix(server): a selected-file commit keeps other files' merge conflicts (#33115)
 9a79883979	take	fix(web): a file opened from a diff in a project folder inside a repository opens that file (#32684)
-294a8418ce	skip	Onicode already deflaked this ACP project picker test its own way (pointer-hover highlight); upstream's keyboard variant would replace it
+294a8418ce	skip	kept Onicode's 881fc6f019: both versions passed 27 of 27 runs, idle and under full CPU load, but upstream opens the picker by pointer, and alignItemWithTrigger leaves the selected item under the still cursor, whose hover can take the highlight back; Onicode opens it from the keyboard and waits for each highlight
 147de34a93	take	fix(web): stop held dictation when shortcut modifiers are released (#32648)
 238678951a	take	perf(web): resting on a PR row also reads its activity, so the timeline shows on click (#32842)
 62d33c126a	take	fix(server): agents can see whether a thread is pinned (#32727)
