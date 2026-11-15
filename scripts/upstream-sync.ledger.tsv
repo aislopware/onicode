@@ -1912,3 +1912,4 @@ e57041a1df	take	fix(server): pairing codes typed in hyphen- or space-separated g
 9dbb802845	take	fix(desktop): saving keeps a connection catalog this build cannot read (#34944)
 dcd39b4b6e	take	git commit -a --author='Prem Chaitanya Prathi <chaitanyaprem@gmail.com>' -m 'fix(pi): model list loads when the server'\''s folder has a project MCP config (#28557)' -m 'Ported from pingdotgg/t3code@dcd39b4b6e.' --trailer 'Co-authored-by: maria-rcks <maria@kuuro.net>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
 5a31f1749d	take	fix(server): Git LFS images in pull request descriptions load the object, not its pointer (#35466)
+98f885ac1a	take	fix(server): desktop preview uploads accept files over 50 MB (#30299)
