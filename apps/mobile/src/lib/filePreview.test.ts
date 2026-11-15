@@ -149,11 +149,10 @@ vi.mock("../state/assets", () => ({
   assetEnvironment: {},
 }));
 vi.mock("../features/threads/ThreadMarkdownVideo", async (importOriginal) => {
-  const { createContext } = await import("react");
   const actual = await importOriginal<typeof import("../features/threads/ThreadMarkdownVideo")>();
   return {
     ...actual,
-    ThreadMediaVisibleContext: createContext(true),
+    useThreadMediaVisible: () => true,
     ThreadMarkdownVideo: (props: Parameters<typeof actual.ThreadMarkdownVideo>[0]) =>
       createElement(actual.ThreadMarkdownVideo, { ...props, thumbnailVisible: true }),
   };

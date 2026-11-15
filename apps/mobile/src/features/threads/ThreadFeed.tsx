@@ -2,7 +2,11 @@ import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
-import { ThreadMarkdownVideo, ThreadMediaVisibleContext } from "./ThreadMarkdownVideo";
+import {
+  createThreadMediaVisibility,
+  ThreadMarkdownVideo,
+  ThreadMediaVisibleContext,
+} from "./ThreadMarkdownVideo";
 import { useMarkdownImageSource } from "../../native/useMarkdownImageSource";
 import {
   enrichedContextLinkCustomization,
@@ -1071,11 +1075,11 @@ function ThreadFeedScrollView(props: ComponentPropsWithRef<typeof Animated.Scrol
 }
 
 function ThreadMediaVisibility(props: { readonly children: ReactNode }) {
-  const [visible, setVisible] = useState(false);
+  const [visibility] = useState(createThreadMediaVisibility);
   useViewabilityAmount<ThreadFeedEntry>(
-    useCallback((token) => setVisible(token.sizeVisible > 0), []),
+    useCallback((token) => visibility.set(token.sizeVisible > 0), [visibility]),
   );
-  return <ThreadMediaVisibleContext value={visible}>{props.children}</ThreadMediaVisibleContext>;
+  return <ThreadMediaVisibleContext value={visibility}>{props.children}</ThreadMediaVisibleContext>;
 }
 
 /** The reply a link sits in; a file it cites may be where the agent worked before writing it. */
@@ -3192,6 +3196,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       }
     },
   };
+  const markdownStyles = useMarkdownStyles();
+  // Declared before the renderers that read them: the compiler leaves a function uncached when it
+  // reads a `const` declared below it, and these reach every row through `renderItem`.
+  const onPressPreview = (source: FilePreviewSource) => {
+    markdownLinkRequest.current?.abort();
+    openPreview(markdownLinkScope, { file: source });
+  };
   const renderMarkdownImage: MarkdownImageRenderer = (image) => {
     const media = resolveMarkdownMediaPreview(image.href, {
       environmentId: props.environmentId,
@@ -3305,7 +3316,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       />
     ) : null;
   };
-  const markdownStyles = useMarkdownStyles();
   const renderReasoning = (text: string) => (
     <AssistantMarkdownContent
       markdown={text}
@@ -3645,11 +3655,6 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
       }
       return { ...current, expandedTurnIds: next };
     });
-  };
-
-  const onPressPreview = (source: FilePreviewSource) => {
-    markdownLinkRequest.current?.abort();
-    openPreview(markdownLinkScope, { file: source });
   };
 
   // Without this, every row above the viewport is assumed to be

@@ -96,6 +96,7 @@ function compilerBailouts(file: string): string[] {
 
 interface AstNode {
   readonly type: string;
+  readonly loc?: CompilerLoc;
   readonly [key: string]: unknown;
 }
 
@@ -133,6 +134,111 @@ function compilerCachedCalls(file: string, callee: string): boolean[] {
     );
   });
   return cached;
+}
+
+// What each of these builds on every render, outside the compiler's cache. They render on each
+// update of a working thread or once per list row, so a new handler or element here re-renders
+// what it is passed to. Lower a number when it drops; raising one needs a reason in review.
+const RENDER_ALLOCATION_BUDGETS: Record<string, number> = {
+  "src/features/threads/ThreadRouteScreen.tsx#ThreadRouteContent": 0,
+  "src/features/threads/ThreadDetailScreen.tsx#ThreadDetailBody": 0,
+  "src/features/threads/ThreadHeader.tsx#ThreadHeader": 0,
+  "src/features/threads/ThreadFeed.tsx#ThreadFeed": 3,
+  "src/features/threads/ThreadComposer.tsx#ThreadComposer": 0,
+  "src/features/threads/floating-working-control.tsx#FloatingWorkingControl": 0,
+  "src/components/ComposerEditor.tsx#ComposerEditor": 3,
+  "src/state/use-thread-composer-state.ts#useThreadComposerState": 0,
+  "src/features/threads/thread-list-v2-items.tsx#ThreadListV2Row": 68,
+  "src/features/threads/thread-list-v2-items.tsx#ThreadListV2PendingRow": 31,
+};
+
+const isFunctionNode = (node: AstNode) =>
+  node.type === "ArrowFunctionExpression" ||
+  node.type === "FunctionExpression" ||
+  node.type === "FunctionDeclaration";
+
+const identifierName = (value: unknown) =>
+  isAstNode(value) && value.type === "Identifier" && typeof value.name === "string"
+    ? value.name
+    : null;
+
+const readsCompilerCache = (value: unknown) => JSON.stringify(value).includes('"name":"$"');
+
+function allocationKind(node: AstNode) {
+  if (isFunctionNode(node)) return "function";
+  if (node.type === "ObjectExpression") return "object";
+  if (node.type === "ArrayExpression") return "array";
+  if (node.type === "NewExpression") return "new";
+  const callee = node.type === "CallExpression" ? identifierName(node.callee) : null;
+  return callee === "_jsx" || callee === "_jsxs" ? "element" : null;
+}
+
+function isHookCall(node: AstNode) {
+  if (node.type !== "CallExpression" || !isAstNode(node.callee)) return false;
+  const callee = node.callee.type === "MemberExpression" ? node.callee.property : node.callee;
+  return /^use[A-Z]/.test(identifierName(callee) ?? "");
+}
+
+// `$[n] !== props` in a guard: the block is rebuilt whenever the parent renders.
+function wholePropsGuards(test: unknown, props: string): number {
+  if (!isAstNode(test)) return 0;
+  if (test.type === "LogicalExpression") {
+    return wholePropsGuards(test.left, props) + wholePropsGuards(test.right, props);
+  }
+  return test.type === "BinaryExpression" && identifierName(test.right) === props ? 1 : 0;
+}
+
+// The values a compiled function builds on every render, as `line:kind`. Hook arguments and
+// branches the compiler did not write are left out: effects and conditional work are not memo loss.
+function renderAllocations(fn: AstNode, name: string): string[] {
+  const found: string[] = [];
+  const params = Array.isArray(fn.params) ? fn.params : [];
+  const props = /^[A-Z]/.test(name) ? identifierName(params[0]) : null;
+  const visit = (value: unknown) => {
+    if (typeof value !== "object" || value === null) return;
+    if (!isAstNode(value)) {
+      for (const child of Object.values(value)) visit(child);
+      return;
+    }
+    if (value.type === "IfStatement") {
+      if (!readsCompilerCache(value.test)) return visit(value.test);
+      const guards = props === null ? 0 : wholePropsGuards(value.test, props);
+      for (let guard = 0; guard < guards; guard++) found.push("whole-props");
+      return visit(value.alternate);
+    }
+    const kind = allocationKind(value);
+    if (kind) found.push(`${value.loc?.start?.line ?? "?"}:${kind}`);
+    if (isFunctionNode(value)) return;
+    if (isHookCall(value)) return visit(value.callee);
+    for (const [key, child] of Object.entries(value)) if (key !== "loc") visit(child);
+  };
+  visit(fn.body);
+  return found;
+}
+
+function compiledFunctionAllocations(file: string): Map<string, string[]> {
+  const result = compileLikeMetro(file, [], { ast: true });
+  const allocations = new Map<string, string[]>();
+  if (typeof result !== "object" || result === null || !("ast" in result)) return allocations;
+  walkAst(result.ast, (node, ancestors) => {
+    if (!isFunctionNode(node) || !isAstNode(node.body) || !Array.isArray(node.body.body)) return;
+    if (!/"name":"_c"/.test(JSON.stringify(node.body.body[0]?.declarations?.[0]?.init?.callee))) {
+      return;
+    }
+    const declarator = ancestors.findLast((ancestor) => ancestor.type === "VariableDeclarator");
+    const name = identifierName(node.id) ?? identifierName(declarator?.id);
+    if (name !== null) allocations.set(name, renderAllocations(node, name));
+  });
+  return allocations;
+}
+
+const allocationsByFile = new Map<string, Map<string, string[]>>();
+
+function functionAllocations(target: string) {
+  const [file = "", name = ""] = target.split("#");
+  const allocations = allocationsByFile.get(file) ?? compiledFunctionAllocations(file);
+  allocationsByFile.set(file, allocations);
+  return allocations.get(name);
 }
 
 describe("React Compiler coverage", () => {
@@ -199,6 +305,15 @@ describe("React Compiler coverage", () => {
       ),
     ).toEqual([true]);
   });
+
+  it.each(Object.entries(RENDER_ALLOCATION_BUDGETS))(
+    "%s builds %i values on every render",
+    (target, budget) => {
+      const allocations = functionAllocations(target);
+      expect(allocations, `${target} is not a compiled function`).toBeDefined();
+      expect(allocations, `built on every render: ${allocations?.join(" ")}`).toHaveLength(budget);
+    },
+  );
 
   it("lists only files that exist", () => {
     expect(Object.keys(KNOWN_BAILOUTS).filter((file) => !sourceFiles.includes(file))).toEqual([]);

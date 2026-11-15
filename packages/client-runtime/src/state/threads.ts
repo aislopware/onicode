@@ -11,6 +11,7 @@ import {
 import { boundedSnapshotProjection } from "@onicode/shared/orchestrationV2BoundedSnapshot";
 import { pendingBackgroundTurnItems } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import * as Cause from "effect/Cause";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Scope from "effect/Scope";
@@ -1161,6 +1162,32 @@ function threadStateChanges(
   );
 }
 
+/**
+ * A value `paced` accepts waits `interval` and passes as the newest value by then, so a burst
+ * reaches its readers once. Every other value passes at once.
+ */
+function latestEvery<A, E, R>(
+  source: Stream.Stream<A, E, R>,
+  interval: Duration.Input,
+  paced: (value: A) => boolean,
+) {
+  return Stream.unwrap(
+    Effect.gen(function* () {
+      const latest = yield* Stream.toQueue(source, { capacity: 1, strategy: "sliding" });
+      return Stream.fromQueue(latest).pipe(
+        Stream.mapEffect((value) =>
+          paced(value)
+            ? Effect.sleep(interval).pipe(
+                Effect.andThen(Queue.poll(latest)),
+                Effect.map(Option.getOrElse(() => value)),
+              )
+            : Effect.succeed(value),
+        ),
+      );
+    }),
+  );
+}
+
 export function createEnvironmentThreadStateAtoms<R, E>(
   runtime: Atom.AtomRuntime<
     | EnvironmentRegistry.EnvironmentRegistry
@@ -1169,6 +1196,14 @@ export function createEnvironmentThreadStateAtoms<R, E>(
     | R,
     E
   >,
+  options?: {
+    /**
+     * How long a change of a live thread waits for the ones behind it before readers see it.
+     * A working thread changes many times a second and every change re-renders its screen.
+     * Opening, synchronizing and errors are never held.
+     */
+    readonly notifyInterval?: Duration.Input;
+  },
 ) {
   // Cache definitions must outlive collectible live-atom definitions. The
   // registry retains these nodes without retaining environment or RPC scopes.
@@ -1189,7 +1224,11 @@ export function createEnvironmentThreadStateAtoms<R, E>(
         (get) => {
           get.mount(resumeAtom);
           const resume = get.once(resumeAtom);
-          const live = threadStateChanges(environmentId, threadId, resume);
+          const changes = threadStateChanges(environmentId, threadId, resume);
+          const live =
+            options?.notifyInterval === undefined
+              ? changes
+              : latestEvery(changes, options.notifyInterval, (state) => state.status === "live");
           return resume.snapshot === undefined
             ? live
             : Stream.concat(Stream.succeed(cachedThreadState(resume.snapshot.state)), live);

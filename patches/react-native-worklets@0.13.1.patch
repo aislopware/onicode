@@ -1,0 +1,77 @@
+diff --git a/src/runLoop/uiRuntime/requestAnimationFrame.ts b/src/runLoop/uiRuntime/requestAnimationFrame.ts
+index f9a439a..99f6706 100644
+--- a/src/runLoop/uiRuntime/requestAnimationFrame.ts
++++ b/src/runLoop/uiRuntime/requestAnimationFrame.ts
+@@ -13,6 +13,19 @@ export function setupRequestAnimationFrame() {
+ 
+   let queuedFinalizers: (() => void)[] = [];
+ 
++  let flushing = false;
++  let nativeFrameRequested = false;
++
++  // The native frame clock runs only while a callback or a finalizer waits.
++  // A loop that always asks for the next frame wakes the UI thread on every
++  // display frame for as long as the app is open.
++  function requestNativeFrame() {
++    if (!nativeFrameRequested) {
++      nativeFrameRequested = true;
++      globalThis.__nativeRequestAnimationFrame(nativeFlushQueue);
++    }
++  }
++
+   function executeQueue(timestamp: number) {
+     flushedCallbacks = queuedCallbacks;
+     queuedCallbacks = [];
+@@ -44,6 +57,9 @@ export function setupRequestAnimationFrame() {
+   ): number {
+     const handle = queuedCallbacksEnd++;
+     queuedCallbacks.push(callback);
++    if (!flushing) {
++      requestNativeFrame();
++    }
+     return handle;
+   }
+ 
+@@ -60,16 +76,22 @@ export function setupRequestAnimationFrame() {
+   }
+ 
+   function nativeFlushQueue(timestamp: number) {
++    nativeFrameRequested = false;
+     flushQueue(timestamp);
+-
+-    /* Schedule next frame */
+-    globalThis.__nativeRequestAnimationFrame(nativeFlushQueue);
+   }
+ 
+   function flushQueue(timestamp: number) {
++    flushing = true;
+     globalThis.__frameTimestamp = timestamp;
+-    executeQueue(timestamp);
+-    globalThis.__frameTimestamp = undefined;
++    try {
++      executeQueue(timestamp);
++    } finally {
++      globalThis.__frameTimestamp = undefined;
++      flushing = false;
++      if (queuedCallbacks.length > 0 || queuedFinalizers.length > 0) {
++        requestNativeFrame();
++      }
++    }
+   }
+ 
+   globalThis.requestAnimationFrame = requestAnimationFrame;
+@@ -77,11 +99,11 @@ export function setupRequestAnimationFrame() {
+     cancelAnimationFrame as typeof globalThis.cancelAnimationFrame;
+   globalThis.requestAnimationFrameFinalizer = (callback: () => void) => {
+     queuedFinalizers.push(callback);
++    if (!flushing) {
++      requestNativeFrame();
++    }
+   };
+ 
+-  /* Start the loop */
+-  globalThis.__nativeRequestAnimationFrame(nativeFlushQueue);
+-
+   // TODO: Remove it after support for Reanimated 4.3 is dropped.
+   globalThis.__flushAnimationFrame = (eventTimestamp: number) => {
+     flushQueue(eventTimestamp);

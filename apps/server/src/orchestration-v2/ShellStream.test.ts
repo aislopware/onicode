@@ -5,7 +5,7 @@ import type {
   OrchestrationV2ShellStreamItem,
   OrchestrationV2ThreadShell,
 } from "@onicode/contracts";
-import { ProjectId, ProviderInstanceId, ThreadId } from "@onicode/contracts";
+import { ProjectId, ProviderInstanceId, RunId, ThreadId } from "@onicode/contracts";
 import type * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -683,6 +683,33 @@ describe("skipUnchangedThreadShells", () => {
       Stream.runCollect,
       Effect.map((items) => Array.from(items, (item) => ("sequence" in item ? item.sequence : -1))),
     );
+
+  it.effect("holds a working thread's item counts and sends everything else", () =>
+    Effect.gen(function* () {
+      const working = (itemCount: number, overrides: Partial<OrchestrationV2ThreadShell> = {}) =>
+        shell("a", {
+          activeRunId: RunId.make("run-a"),
+          itemCount,
+          visibleItemCount: itemCount,
+          updatedAt: at(itemCount),
+          ...overrides,
+        });
+      const sent = yield* run([
+        updated(1, working(0)),
+        updated(2, working(1)),
+        updated(3, working(2)),
+        { advanceMs: 6_000 },
+        updated(4, working(3)),
+        updated(5, working(4, { title: "Renamed" })),
+        { advanceMs: 30_000 },
+        updated(6, working(5, { title: "Renamed" })),
+        updated(7, working(6, { title: "Renamed", activeRunId: null, status: "completed" })),
+        updated(8, working(7, { title: "Renamed", activeRunId: null, status: "completed" })),
+      ]);
+      // 2 starts the thread, 5 renames it, 6 is the resend, 7 ends the run, 8 is no longer working.
+      expect(sent).toEqual([1, 2, 5, 6, 7, 8]);
+    }),
+  );
 
   it.effect("sends the next update after a removal", () =>
     Effect.gen(function* () {

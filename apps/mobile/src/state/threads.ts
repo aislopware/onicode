@@ -38,7 +38,10 @@ export const threadEnvironment = createThreadEnvironmentAtoms(
   connectionAtomRuntime,
   threadFamilies.snapshotAtom,
 );
-export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime);
+// Each change re-renders the thread screen, and a phone pays for that in battery and heat.
+export const environmentThreads = createEnvironmentThreadStateAtoms(connectionAtomRuntime, {
+  notifyInterval: "100 millis",
+});
 export const environmentThreadDetails = createEnvironmentThreadDetailAtoms(
   environmentThreads.stateAtom,
 );

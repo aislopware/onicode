@@ -121,9 +121,10 @@ import {
 } from "./use-thread-detail";
 import { useThreadSelection } from "./use-thread-selection";
 import { enqueueThreadOutboxMessage } from "./thread-outbox";
-import { dispatchingQueuedMessageIdAtom, useThreadOutboxMessages } from "./use-thread-outbox";
+import { dispatchingQueuedMessageIdAtom, useThreadQueuedMessages } from "./use-thread-outbox";
 import { threadEnvironment } from "./threads";
 import { useAtomCommand } from "./use-atom-command";
+import { useStableCallback } from "../lib/useStableCallback";
 
 const EMPTY_QUEUE_WORKFLOW_ATOM = Atom.make<null>(null).pipe(
   Atom.withLabel("mobile-thread-queue-workflow:empty"),
@@ -212,7 +213,6 @@ export function useThreadComposerState(input: {
   const selectedThreadProjection = useSelectedThreadProjection();
   const selectedThreadVisibleTurnItems = useSelectedThreadVisibleTurnItems();
   const acknowledgedMessages = useAtomValue(acknowledgedThreadMessagesAtom);
-  const queuedMessagesByThreadKey = useThreadOutboxMessages();
   const dispatchingQueuedMessageId = useAtomValue(dispatchingQueuedMessageIdAtom);
   const [feedbackSubmissionsByThreadKey, setFeedbackSubmissionsByThreadKey] = useState<
     Record<string, ReadonlyArray<CodexFeedbackSubmission>>
@@ -231,11 +231,7 @@ export function useThreadComposerState(input: {
   const selectedThreadKey = selectedThreadShell
     ? scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id)
     : null;
-  const selectedThreadQueuedMessages = selectedThreadKey
-    ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []).filter(
-        (message) => message.creation === undefined,
-      )
-    : [];
+  const selectedThreadQueuedMessages = useThreadQueuedMessages(selectedThreadKey);
   const feedbackSubmissions = selectedThreadKey
     ? (feedbackSubmissionsByThreadKey[selectedThreadKey] ?? [])
     : [];
@@ -891,6 +887,9 @@ export function useThreadComposerState(input: {
     removeComposerDraftAttachment(threadKey, imageId);
   };
 
+  // It reads the thread's latest state, which changes with every update; a new handler each
+  // time would re-render the composer under it.
+  const sendMessage = useStableCallback(onSendMessage);
   return {
     feedbackSubmissions,
     dismissFeedback,
@@ -939,7 +938,7 @@ export function useThreadComposerState(input: {
     onNativePasteImages,
     onNativePasteText,
     onRemoveDraftImage,
-    onSendMessage,
+    onSendMessage: sendMessage,
     sideChatUnavailableReason,
   };
 }

@@ -751,8 +751,38 @@ export function shellStreamItemsFromResumeSnapshot(input: {
 const sameThreadShell = Schema.toEquivalence(ThreadShellSchema);
 
 const UNCHANGED_THREAD_SHELL_RESEND_MS = 5_000;
+// A working thread's item counts move with every tool call, and until the run ends clients
+// read only whether a count is zero. Sending each one wakes every client's radio and rebuilds
+// its thread lists several times a second for nothing they show.
+const STREAMING_THREAD_SHELL_RESEND_MS = 30_000;
 
-/** Resend unchanged shells after UNCHANGED_THREAD_SHELL_RESEND_MS so skipped deltas cannot leave resume cursors behind. */
+/** The row to compare with `previous`, and how long a row that equals it may stay unsent. */
+function unsentThreadShell(
+  previous: OrchestrationV2ThreadShell,
+  next: OrchestrationV2ThreadShell,
+): { readonly thread: OrchestrationV2ThreadShell; readonly resendAfterMs: number } {
+  const countsOnlyGrew =
+    next.activeRunId !== null &&
+    previous.itemCount > 0 === next.itemCount > 0 &&
+    previous.visibleItemCount > 0 === next.visibleItemCount > 0 &&
+    (previous.itemCount !== next.itemCount || previous.visibleItemCount !== next.visibleItemCount);
+  return countsOnlyGrew
+    ? {
+        thread: {
+          ...next,
+          updatedAt: previous.updatedAt,
+          itemCount: previous.itemCount,
+          visibleItemCount: previous.visibleItemCount,
+        },
+        resendAfterMs: STREAMING_THREAD_SHELL_RESEND_MS,
+      }
+    : {
+        thread: { ...next, updatedAt: previous.updatedAt },
+        resendAfterMs: UNCHANGED_THREAD_SHELL_RESEND_MS,
+      };
+}
+
+/** Resend unchanged shells after their resend interval so skipped deltas cannot leave resume cursors behind. */
 export function skipUnchangedThreadShells<A extends OrchestrationV2ShellStreamItem, E, R>(
   stream: Stream.Stream<A, E, R>,
 ): Stream.Stream<A, E, R> {
@@ -770,15 +800,14 @@ export function skipUnchangedThreadShells<A extends OrchestrationV2ShellStreamIt
           }
           if (item.kind !== "thread.updated") return true;
           const previous = lastSent.get(item.thread.id);
-          if (
-            previous !== undefined &&
-            now - previous.sentAt < UNCHANGED_THREAD_SHELL_RESEND_MS &&
-            sameThreadShell(
-              { ...item.thread, updatedAt: previous.thread.updatedAt },
-              previous.thread,
-            )
-          ) {
-            return false;
+          if (previous !== undefined) {
+            const unsent = unsentThreadShell(previous.thread, item.thread);
+            if (
+              now - previous.sentAt < unsent.resendAfterMs &&
+              sameThreadShell(unsent.thread, previous.thread)
+            ) {
+              return false;
+            }
           }
           lastSent.set(item.thread.id, { thread: item.thread, sentAt: now });
           return true;

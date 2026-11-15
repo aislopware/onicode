@@ -379,7 +379,11 @@ function ThreadRouteContent(
     AuthTerminalOperateScope,
   );
   const selectedThreadDetailState = props.selectedThreadDetailState;
-  const selectedThreadDetail = Option.getOrNull(selectedThreadDetailState.data);
+  // Read the field, do not call a function for it: the compiler takes a call's result as mutable
+  // until its last use, and drops the memo of every handler and element here that reads it.
+  const selectedThreadDetail = Option.isSome(selectedThreadDetailState.data)
+    ? selectedThreadDetailState.data.value
+    : null;
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const startSideChat = useStartSideChat();
   const composer = useThreadComposerState({ startSideChat });
@@ -952,11 +956,13 @@ function ThreadRouteContent(
     };
   })();
   // Queued creation displays its prompt before server creation; temporary not-found is expected.
+  // A boolean of its own, so a new detail object does not rebuild the presentation.
+  const hasDetail = selectedThreadDetail !== null;
   const contentPresentation =
     creationState !== null
       ? { kind: "ready" as const }
       : projectThreadContentPresentation({
-          hasDetail: selectedThreadDetail !== null,
+          hasDetail,
           detailError: Option.getOrNull(selectedThreadDetailState.error),
           detailDeleted: selectedThreadDetailState.status === "deleted",
           connectionState: routeConnectionState,
@@ -983,7 +989,7 @@ function ThreadRouteContent(
   }
 
   const serverConfig = routeEnvironmentRuntime?.serverConfig ?? null;
-  const renderThreadRouteBody = () => (
+  const threadRouteBody = (
     <>
       <GitActionProgressOverlay
         progress={gitActionProgress}
@@ -1120,7 +1126,7 @@ function ThreadRouteContent(
         />
       ) : null}
 
-      {renderThreadRouteBody()}
+      {threadRouteBody}
     </>
   );
 }

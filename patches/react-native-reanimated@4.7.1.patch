@@ -13,3 +13,79 @@ index 675b1b7..dea79ba 100644
  }
  
  static inline bool isRNSScreen(const std::shared_ptr<LightNode> &node) {
+diff --git a/src/PropsRegistryGarbageCollector.ts b/src/PropsRegistryGarbageCollector.ts
+index 19582a9..8bd8d46 100644
+--- a/src/PropsRegistryGarbageCollector.ts
++++ b/src/PropsRegistryGarbageCollector.ts
+@@ -13,7 +13,9 @@ import type { StyleProps } from './commonTypes';
+ import type { IAnimatedComponentInternal } from './createAnimatedComponent/commonTypes';
+ import { ReanimatedModule } from './ReanimatedModule';
+ 
+-const FLUSH_INTERVAL_MS = 500;
++// React Native keeps its per-frame timer clock running while a timer is due
++// within one second, so a shorter interval wakes the JS thread on every frame.
++const FLUSH_INTERVAL_MS = 2000;
+ 
+ export const PropsRegistryGarbageCollector = {
+   viewsMap: new Map<number, IAnimatedComponentInternal>(),
+diff --git a/src/mappers.native.ts b/src/mappers.native.ts
+index 740b5c3..8437537 100644
+--- a/src/mappers.native.ts
++++ b/src/mappers.native.ts
+@@ -78,6 +78,7 @@ function createMapperRegistry() {
+   let mapperRunFinalizers: (() => void)[] = [];
+   global.__requestMapperRunFinalizer = (finalizer: () => void) => {
+     mapperRunFinalizers.push(finalizer);
++    requestMapperRun();
+   };
+ 
+   let isAnyMapperDirty = false;
+@@ -112,13 +113,24 @@ function createMapperRegistry() {
+ 
+   const schedulingFunction = globalThis.requestAnimationFrameFinalizer;
+ 
++  let mapperRunScheduled = false;
++
+   function scheduledMapperRun() {
++    // The run stays a frame ahead while there is work and stops after a frame
++    // without any, so idle mappers do not keep the frame clock running.
++    mapperRunScheduled = false;
++    if (isAnyMapperDirty || mapperRunFinalizers.length > 0) {
++      requestMapperRun();
++    }
+     mapperRun();
+-    // We always run mappers on native.
+-    schedulingFunction(scheduledMapperRun);
+   }
+ 
+-  schedulingFunction(scheduledMapperRun);
++  function requestMapperRun() {
++    if (!mapperRunScheduled) {
++      mapperRunScheduled = true;
++      schedulingFunction(scheduledMapperRun);
++    }
++  }
+ 
+   global.__mapperRun = mapperRun;
+ 
+@@ -164,10 +176,12 @@ function createMapperRegistry() {
+       mappers.set(mapper.id, mapper);
+       sortedMappers = [];
+       isAnyMapperDirty = true;
++      requestMapperRun();
+       for (const sv of mapper.inputs) {
+         sv.addListener(mapper.id, () => {
+           mapper.dirty = true;
+           isAnyMapperDirty = true;
++          requestMapperRun();
+         });
+       }
+     },
+@@ -177,6 +191,7 @@ function createMapperRegistry() {
+         mappers.delete(mapper.id);
+         sortedMappers = [];
+         isAnyMapperDirty = true;
++        requestMapperRun();
+         for (const sv of mapper.inputs) {
+           sv.removeListener(mapper.id);
+         }
