@@ -1788,3 +1788,4 @@ c0561c5c3d	take	fix(shared): the SQLite reader pool comes back after a failed st
 1ba934798f	take	fix(shared): keep Windows path separators beside ampersands (kept Onicode's micromark-util-types 2.0.3)
 ca29ff1d72	take	fix(cli): keep log warnings out of JSON output
 6c7a87cbcb	take	fix(web,mobile): a late MCP app teardown no longer closes the app that replaced it
+47e24f6cc2	take	fix(server): Grok usage counts turns from resumed sessions
