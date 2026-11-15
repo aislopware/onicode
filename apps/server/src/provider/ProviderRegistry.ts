@@ -1066,6 +1066,14 @@ export const layer = Layer.effect(
     }) {
       const workspaceSnapshotOf = (candidate: ServerProvider | undefined) =>
         candidate?.workspaceSnapshots?.find((s) => s.cwd === input.cwd);
+      const changedSince = (
+        held: Pick<ServerProvider, "skills" | "slashCommands"> | undefined,
+        next: Pick<ServerProvider, "skills" | "slashCommands"> | undefined,
+      ) =>
+        !(
+          Equal.equals(next?.skills, held?.skills) &&
+          Equal.equals(next?.slashCommands, held?.slashCommands)
+        );
       // What clients saw before the awaited scan, which may already have published the change.
       const heldBeforeWait = input.rescan
         ? workspaceSnapshotOf(
@@ -1158,13 +1166,8 @@ export const layer = Layer.effect(
                       scopedSnapshot.slashCommandsPending ?? scopedSnapshot.status === "error",
                   });
                   // Clients keep fetched snapshots, so a changed rescan must tell them to fetch again.
-                  const rescanned = workspaceSnapshotOf(scanned);
-                  const held = heldBeforeWait ?? scanBase;
                   return input.rescan &&
-                    !(
-                      Equal.equals(rescanned?.skills, held?.skills) &&
-                      Equal.equals(rescanned?.slashCommands, held?.slashCommands)
-                    )
+                    changedSince(heldBeforeWait ?? scanBase, workspaceSnapshotOf(scanned))
                     ? { ...scanned, workspaceRescannedAt: scannedAt }
                     : scanned;
                 });
@@ -1206,7 +1209,18 @@ export const layer = Layer.effect(
       );
       // Wait for the running scan: on-demand clients get its result only in this reply.
       if ("inFlight" in claim) {
-        return yield* Deferred.await(claim.inFlight).pipe(Effect.andThen(Ref.get(providersRef)));
+        yield* Deferred.await(claim.inFlight);
+        if (!input.rescan) return yield* Ref.get(providersRef);
+        // A rescan that joined another scan (such as a fresh one) still owes clients the stamp.
+        const rescannedAt = DateTime.formatIso(yield* DateTime.now);
+        return yield* updateProviders((current) =>
+          current.map((candidate) =>
+            candidate.instanceId === input.instanceId &&
+            changedSince(heldBeforeWait, workspaceSnapshotOf(candidate))
+              ? { ...candidate, workspaceRescannedAt: rescannedAt }
+              : candidate,
+          ),
+        );
       }
       return yield* Fiber.join(claim.scan);
     });

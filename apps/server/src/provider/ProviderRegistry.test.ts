@@ -2548,6 +2548,8 @@ it.layer(
         // The rescan joins the fresh scan, so the next scan started is the barrier's.
         yield* h.drainRescans;
         assert.deepEqual(yield* h.skillsOf("/workspace"), ["fresh"]);
+        // Clients holding the initial scan's skills are still told to fetch again.
+        assert.isString(yield* h.rescannedAtOf);
       }),
     );
 
