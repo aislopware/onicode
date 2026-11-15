@@ -49,11 +49,12 @@ export class AcpRegistrySessions extends Context.Service<
       },
       AcpRegistryOperationError
     >;
-    readonly findOwner: (input: {
+    /** The thread that already runs each native session, for the sessions that have one. */
+    readonly findOwners: (input: {
       readonly driver: ProviderDriverKind;
       readonly instanceId: ProviderInstanceId;
-      readonly sessionId: string;
-    }) => Effect.Effect<ThreadId | null, AcpRegistryOperationError>;
+      readonly sessionIds: ReadonlyArray<string>;
+    }) => Effect.Effect<ReadonlyMap<string, ThreadId>, AcpRegistryOperationError>;
     /**
      * Binds a native ACP session to a Onicode thread and copies its history in. Importing a
      * session whose thread still lacks its history repairs that thread instead.
@@ -76,21 +77,25 @@ const make = Effect.gen(function* () {
   const random = yield* SecureRandom.SecureRandom;
   const sql = yield* SqlClient.SqlClient;
 
-  const findOwner = Effect.fn("AcpRegistrySessions.findOwner")(function* (input: {
+  // One query per listed page: the native ID lives in JSON, so each lookup scans the instance's rows.
+  const findOwners = Effect.fn("AcpRegistrySessions.findOwners")(function* (input: {
     readonly driver: ProviderDriverKind;
     readonly instanceId: ProviderInstanceId;
-    readonly sessionId: string;
+    readonly sessionIds: ReadonlyArray<string>;
   }) {
-    const rows = yield* sql<{ readonly thread_id: string }>`
-      SELECT provider.thread_id
+    const owners = new Map<string, ThreadId>();
+    if (input.sessionIds.length === 0) return owners;
+    const rows = yield* sql<{ readonly native_id: string; readonly thread_id: string }>`
+      SELECT
+        json_extract(provider.payload_json, '$.nativeThreadRef.nativeId') AS native_id,
+        provider.thread_id
       FROM orchestration_v2_projection_provider_threads AS provider
       JOIN orchestration_v2_projection_threads AS thread ON thread.thread_id = provider.thread_id
       WHERE provider.driver = ${input.driver}
         AND provider.provider_instance_id = ${input.instanceId}
-        AND json_extract(provider.payload_json, '$.nativeThreadRef.nativeId') = ${input.sessionId}
+        AND json_extract(provider.payload_json, '$.nativeThreadRef.nativeId') IN ${sql.in(input.sessionIds)}
         AND thread.deleted_at IS NULL
       ORDER BY thread.updated_at DESC
-      LIMIT 1
     `.pipe(
       Effect.mapError(
         (cause) =>
@@ -101,8 +106,19 @@ const make = Effect.gen(function* () {
           }),
       ),
     );
-    return rows[0] ? ThreadId.make(rows[0].thread_id) : null;
+    for (const row of rows) {
+      if (!owners.has(row.native_id)) owners.set(row.native_id, ThreadId.make(row.thread_id));
+    }
+    return owners;
   });
+  const findOwner = (input: {
+    readonly driver: ProviderDriverKind;
+    readonly instanceId: ProviderInstanceId;
+    readonly sessionId: string;
+  }) =>
+    findOwners({ ...input, sessionIds: [input.sessionId] }).pipe(
+      Effect.map((owners) => owners.get(input.sessionId) ?? null),
+    );
 
   const project = Effect.fn("AcpRegistrySessions.project")(function* (projectId: ProjectId) {
     const found = yield* projectService.getById(projectId).pipe(
@@ -265,7 +281,7 @@ const make = Effect.gen(function* () {
     return { threadId, imported: true } as const;
   }, coordinator.withSessionMutation);
 
-  return AcpRegistrySessions.of({ project, sessionManager, findOwner, importSession });
+  return AcpRegistrySessions.of({ project, sessionManager, findOwners, importSession });
 });
 
 export const layer = Layer.effect(AcpRegistrySessions, make);
