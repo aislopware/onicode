@@ -349,11 +349,13 @@ describe("PushNotifications", () => {
     Effect.gen(function* () {
       let outcome: "failed" | "delivered" = "delivered";
       const { push, change, register, taken, messages } = yield* setup({ outcome: () => outcome });
+      assert.isFalse(yield* push.alertsOnInput);
       yield* register(
         registration({
           preferences: { ...registration().preferences, notifyOnCompletion: false },
         }),
       );
+      assert.isTrue(yield* push.alertsOnInput);
       taken();
 
       yield* change({ pendingRuntimeRequest: approval });
@@ -402,6 +404,14 @@ describe("PushNotifications", () => {
       yield* TestClock.adjust("1 minute");
       yield* push.drain;
       assert.deepStrictEqual(taken(), working);
+
+      // A phone that asked not to hear about input, or cannot be alerted at all, does not count.
+      yield* register(
+        registration({ preferences: { ...registration().preferences, notifyOnInput: false } }),
+      );
+      assert.isFalse(yield* push.alertsOnInput);
+      yield* register(registration({ notification: null }));
+      assert.isFalse(yield* push.alertsOnInput);
     }),
   );
 

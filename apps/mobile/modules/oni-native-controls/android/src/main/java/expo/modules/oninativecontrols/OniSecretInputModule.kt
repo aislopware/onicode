@@ -13,6 +13,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.autofill.AutofillValue
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import expo.modules.kotlin.AppContext
@@ -50,19 +51,19 @@ class OniSecretInputModule : Module() {
 }
 
 /**
- * Masked single-line input for secret requests. React Native's own TextInput cannot opt out of
- * credential autofill, so password managers offer logins above the keyboard; this view owns the
- * EditText so it can.
+ * Masked single-line input for secret requests. A password manager can fill it; this view owns the
+ * EditText so the manager is never offered the value to save.
  */
 class OniSecretInputView(context: Context, appContext: AppContext) : ExpoView(context, appContext) {
   // Yoga sizes this view; the EditText inside is laid out by Android.
   override val shouldUseAndroidLayout = true
 
-  // Newer Android can request autofill even with importantForAutofill=no.
-  // Reporting no autofill type keeps this input out of credential autofill.
-  val input = object : EditText(context) {
-    override fun getAutofillType(): Int = View.AUTOFILL_TYPE_NONE
-  }
+  // Reporting no value keeps what is typed here out of the autofill session, so no manager is ever
+  // offered it to save, and the platform never tints the field as autofilled.
+  val input: EditText =
+    object : EditText(context) {
+      override fun getAutofillValue(): AutofillValue? = null
+    }
   private val onChangeText by EventDispatcher()
   private val onSubmit by EventDispatcher()
   private var applyingValue = false
@@ -77,7 +78,8 @@ class OniSecretInputView(context: Context, appContext: AppContext) : ExpoView(co
     input.gravity = Gravity.CENTER_VERTICAL or Gravity.START
     // The autofill APIs arrive with API 26; minSdk is 24.
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      input.importantForAutofill = IMPORTANT_FOR_AUTOFILL_NO
+      input.importantForAutofill = IMPORTANT_FOR_AUTOFILL_YES
+      input.setAutofillHints(View.AUTOFILL_HINT_PASSWORD)
     }
     input.imeOptions = EditorInfo.IME_ACTION_DONE
     // Not setSingleLine(): that swaps out the password transformation. The password variation is

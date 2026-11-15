@@ -108,6 +108,8 @@ export class PushNotifications extends Context.Service<
   PushNotifications,
   {
     readonly registrationInfo: PushRegistrationInfo;
+    /** Whether a registered phone is alerted when a thread waits on the person. */
+    readonly alertsOnInput: Effect.Effect<boolean, PushDevices.PushDevicesError>;
     readonly listDevices: (
       caller: PushDeviceCaller,
     ) => Effect.Effect<ReadonlyArray<PushDevice>, PushDevices.PushDevicesError>;
@@ -749,6 +751,16 @@ const make = Effect.gen(function* () {
 
   return PushNotifications.of({
     registrationInfo: { environmentKey: signingKey.publicKey, gatewayUrls },
+
+    alertsOnInput: Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis;
+      const registered = yield* devices.list(yield* nowIso);
+      return registered.some(
+        (device) =>
+          usable(device.notificationGrant, device.notificationGrantExpiresAt, now) !== null &&
+          pushAlertAllowed(device.preferences, "input"),
+      );
+    }).pipe(Effect.withSpan("PushNotifications.alertsOnInput")),
 
     listDevices: Effect.fn("PushNotifications.listDevices")(function* (caller) {
       const registered = yield* devices.list(yield* nowIso);

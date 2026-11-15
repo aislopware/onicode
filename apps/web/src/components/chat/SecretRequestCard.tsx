@@ -2,9 +2,11 @@ import { pipe } from "effect/Function";
 import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
   secretRequestAnswerInput,
+  secretRequestDestination,
   secretRequestDisplay,
   secretRequestFailureMessage,
   secretRequestLink,
+  SECRET_REQUEST_PHONE_NOTE,
   SECRET_REQUEST_PRIVACY_NOTE,
   secretRequestReference,
   secretRequestSources,
@@ -12,22 +14,33 @@ import {
   type SecretRequestReply,
   type SecretRequestSource,
 } from "@onicode/client-runtime/secret-request";
+import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
-import type {
-  EnvironmentId,
-  OrchestrationV2ProjectedTurnItem,
-  SecretProviderId,
+import {
+  resolveEnvironmentMachineKind,
+  type EnvironmentId,
+  type OrchestrationV2ProjectedTurnItem,
+  type SecretProviderId,
 } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { CheckIcon, ExternalLinkIcon, LockIcon, MinusIcon, ShieldCheckIcon } from "lucide-react";
-import { useId, useRef, useState, type FormEvent } from "react";
+import {
+  CheckIcon,
+  ExternalLinkIcon,
+  LockIcon,
+  MinusIcon,
+  ShieldCheckIcon,
+  SmartphoneIcon,
+} from "lucide-react";
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { isSecretsFeatureEnabled } from "../../env";
+import { useProject, useQuietThreadShell } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
+import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { SecretSourceSelect } from "../settings/SecretSourceInput";
@@ -63,12 +76,20 @@ export function SecretRequestCard(props: {
 }
 
 const NO_SOURCES: ReadonlyArray<SecretRequestSource> = [];
+// Nudged down to sit on the first line of a note that wraps.
+const NOTE_ICON_CLASS = "mt-px size-3.5 shrink-0";
 
-function useSecretRequestSources(environmentId: EnvironmentId) {
-  const config = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  return isSecretsFeatureEnabled
-    ? secretRequestSources(config, config?.settings.secretProviders ?? {})
-    : NO_SOURCES;
+function CardNote(props: { readonly icon: ReactNode; readonly children: ReactNode }) {
+  return (
+    <p className="flex min-w-0 items-start gap-1.5 text-xs text-muted-foreground">
+      {props.icon}
+      <span className="min-w-0 wrap-anywhere">{props.children}</span>
+    </p>
+  );
+}
+
+function DestinationName(props: { readonly name: string }) {
+  return <span className="font-medium text-foreground">{props.name}</span>;
 }
 
 function PendingSecretRequestForm(props: {
@@ -85,7 +106,18 @@ function PendingSecretRequestForm(props: {
     reportFailure: false,
     reportDefect: false,
   });
-  const sources = useSecretRequestSources(props.environmentId);
+  const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
+  const sources = isSecretsFeatureEnabled
+    ? secretRequestSources(config, config?.settings.secretProviders ?? {})
+    : NO_SOURCES;
+  const thread = useQuietThreadShell(scopeThreadRef(props.environmentId, item.threadId));
+  const project = useProject(
+    thread === null ? null : scopeProjectRef(props.environmentId, thread.projectId),
+  );
+  const destination = secretRequestDestination({
+    environmentLabel: config?.environment.label,
+    project,
+  });
   const [sourceId, setSourceId] = useState<SecretProviderId | null>(null);
   const source = sources.find((candidate) => candidate.id === sourceId) ?? null;
   const [secret, setSecret] = useState("");
@@ -231,14 +263,35 @@ function PendingSecretRequestForm(props: {
           {error}
         </p>
       ) : null}
-      <div className="flex min-w-0 items-center justify-between gap-2">
-        <p
-          id={privacyId}
-          className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
-        >
-          <ShieldCheckIcon className="size-3.5 shrink-0" aria-hidden />
-          {SECRET_REQUEST_PRIVACY_NOTE}
-        </p>
+      <div className="flex min-w-0 items-end justify-between gap-2">
+        <div id={privacyId} className="flex min-w-0 flex-col gap-1.5">
+          {destination !== null ? (
+            <CardNote
+              icon={
+                <EnvironmentMachineIcon
+                  kind={resolveEnvironmentMachineKind(config)}
+                  className={NOTE_ICON_CLASS}
+                  aria-hidden
+                />
+              }
+            >
+              Goes to{" "}
+              {destination.project !== null ? <DestinationName name={destination.project} /> : null}
+              {destination.project !== null && destination.environment !== null ? " on " : null}
+              {destination.environment !== null ? (
+                <DestinationName name={destination.environment} />
+              ) : null}
+            </CardNote>
+          ) : null}
+          <CardNote icon={<ShieldCheckIcon className={NOTE_ICON_CLASS} aria-hidden />}>
+            {SECRET_REQUEST_PRIVACY_NOTE}
+          </CardNote>
+          {config?.phoneAlertedOnInput === true ? (
+            <CardNote icon={<SmartphoneIcon className={NOTE_ICON_CLASS} aria-hidden />}>
+              {SECRET_REQUEST_PHONE_NOTE}
+            </CardNote>
+          ) : null}
+        </div>
         <Button
           type="button"
           size="xs"

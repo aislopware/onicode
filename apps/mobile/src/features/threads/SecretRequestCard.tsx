@@ -2,6 +2,7 @@ import { pipe } from "effect/Function";
 import {
   SECRET_REQUEST_DEFAULT_PLACEHOLDER,
   secretRequestAnswerInput,
+  secretRequestDestination,
   secretRequestDisplay,
   secretRequestFailureMessage,
   secretRequestLink,
@@ -11,22 +12,26 @@ import {
   type SecretRequestItem,
   type SecretRequestReply,
 } from "@onicode/client-runtime/secret-request";
+import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
-import type {
-  EnvironmentId,
-  OrchestrationV2ProjectedTurnItem,
-  SecretProviderId,
+import {
+  resolveEnvironmentMachineKind,
+  type EnvironmentId,
+  type OrchestrationV2ProjectedTurnItem,
+  type SecretProviderId,
 } from "@onicode/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useRef, useState } from "react";
-import { View, type ColorValue } from "react-native";
+import { Pressable, View, type ColorValue } from "react-native";
 
+import { EnvironmentMachineSymbol } from "../../components/EnvironmentMachineSymbol";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text, AppTextInput as TextInput } from "../../components/ui/AppText";
 import { SecretTextInput } from "../../components/ui/SecretTextInput";
+import { useProject, useQuietThreadShell } from "../../state/entities";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { tryOpenExternalUrl } from "../../lib/openExternalUrl";
@@ -83,11 +88,20 @@ function PendingSecretRequestForm(props: {
   });
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
   const sources = secretRequestSources(config, config?.settings.secretProviders ?? {});
+  const thread = useQuietThreadShell(scopeThreadRef(props.environmentId, item.threadId));
+  const project = useProject(
+    thread === null ? null : scopeProjectRef(props.environmentId, thread.projectId),
+  );
+  const destination = secretRequestDestination({
+    environmentLabel: config?.environment.label,
+    project,
+  });
   const [sourceId, setSourceId] = useState<SecretProviderId | null>(null);
   const source = sources.find((candidate) => candidate.id === sourceId) ?? null;
   const [secret, setSecret] = useState("");
   const [reference, setReference] = useState("");
-  const [submitting, setSubmitting] = useState(false);
+  const [sending, setSending] = useState<SecretRequestReply["type"] | null>(null);
+  const submitting = sending !== null;
   const [error, setError] = useState<string | null>(null);
   // Submit then a tap can both run before a re-render; this guard is synchronous.
   const inFlight = useRef(false);
@@ -96,17 +110,21 @@ function PendingSecretRequestForm(props: {
     const input = secretRequestAnswerInput(item, reply);
     if (input === null || inFlight.current) return;
     inFlight.current = true;
-    setSubmitting(true);
+    setSending(reply.type);
     setError(null);
+    // iOS reads a password field as it leaves the screen and can pass the value on to be saved.
+    // The answer removes this card, so the field is emptied before the answer is sent.
+    const typed = reply.type === "save" ? reply.secret : secret;
+    setSecret("");
     const result = await answer({ environmentId: props.environmentId, input }).finally(() => {
       inFlight.current = false;
-      setSubmitting(false);
+      setSending(null);
     });
     if (result._tag === "Success") {
-      setSecret("");
       setReference("");
       return;
     }
+    setSecret(typed);
     if (!isAtomCommandInterrupted(result)) {
       pipe(squashAtomCommandFailure(result), secretRequestFailureMessage, setError);
     }
@@ -179,7 +197,11 @@ function PendingSecretRequestForm(props: {
       {source === null ? (
         <SecretTextInput
           accessibilityLabel={item.label}
-          placeholder={item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER}
+          placeholder={
+            sending === "save"
+              ? "Saving…"
+              : (item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER)
+          }
           value={secret}
           onChangeText={setSecret}
           editable={!submitting}
@@ -220,26 +242,60 @@ function PendingSecretRequestForm(props: {
         tone="primary"
         fullWidth
         disabled={submitting || draft.trim().length === 0}
+        loading={sending === "save" || sending === "reference"}
         onPress={save}
       />
-      <View className="flex-row items-center justify-between gap-2">
-        <View className="flex-1 flex-row items-center gap-1.5">
-          <SymbolView
-            name={PRIVATE_SYMBOL}
-            size={13}
-            tintColor={props.iconColor}
-            type="monochrome"
-          />
+      {destination !== null ? (
+        <View className="flex-row gap-1.5">
+          <View
+            className="h-4 justify-center"
+            accessibilityElementsHidden
+            importantForAccessibility="no-hide-descendants"
+          >
+            <EnvironmentMachineSymbol
+              kind={resolveEnvironmentMachineKind(config)}
+              size={13}
+              tintColorClassName="accent-icon-subtle"
+            />
+          </View>
+          <Text className="flex-1 font-sans text-xs text-foreground-muted">
+            Goes to{" "}
+            {destination.project !== null ? (
+              <Text className="font-oni-medium text-xs text-foreground">{destination.project}</Text>
+            ) : null}
+            {destination.project !== null && destination.environment !== null ? " on " : null}
+            {destination.environment !== null ? (
+              <Text className="font-oni-medium text-xs text-foreground">
+                {destination.environment}
+              </Text>
+            ) : null}
+          </Text>
+        </View>
+      ) : null}
+      <View className="flex-row items-end justify-between gap-3">
+        <View className="flex-1 flex-row gap-1.5">
+          <View className="h-4 justify-center">
+            <SymbolView
+              name={PRIVATE_SYMBOL}
+              size={13}
+              tintColor={props.iconColor}
+              type="monochrome"
+            />
+          </View>
           <Text className="flex-1 font-sans text-xs text-foreground-muted">
             {SECRET_REQUEST_PRIVACY_NOTE}
           </Text>
         </View>
-        <Button
-          label="Decline"
-          tone="text"
+        <Pressable
+          accessibilityRole="button"
+          accessibilityState={{ disabled: submitting }}
           disabled={submitting}
+          hitSlop={8}
+          className="px-1 py-1 active:opacity-60 disabled:opacity-50"
           onPress={() => void send({ type: "decline" })}
-        />
+        >
+          <Text className="font-sans text-xs text-foreground-muted">Decline</Text>
+        </Pressable>
       </View>
     </View>
   );

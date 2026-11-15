@@ -5,7 +5,7 @@ import { AppTextInput } from "./AppText";
 import { SecretRevealButton } from "./SecretRevealButton";
 import type { SecretTextInputProps } from "./SecretTextInput.types";
 
-/** Masked field for a value that must stay out of password managers and suggestions. */
+/** Masked field a password manager can fill; keyboard suggestions stay off. */
 export function SecretTextInput(props: SecretTextInputProps) {
   const [revealed, setRevealed] = useState(false);
   return (
@@ -20,9 +20,9 @@ export function SecretTextInput(props: SecretTextInputProps) {
         secureTextEntry={!revealed}
         autoCorrect={false}
         autoCapitalize="none"
-        autoComplete="off"
-        textContentType="none"
-        importantForAutofill="no"
+        // Puts the Passwords key above the keyboard, which opens the person's password manager.
+        autoComplete="current-password"
+        textContentType="password"
         spellCheck={false}
         returnKeyType="done"
         onSubmitEditing={(event) => props.onSubmitEditing(event.nativeEvent.text)}

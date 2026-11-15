@@ -20,6 +20,22 @@ export type SecretRequestItem = Extract<
 export const SECRET_REQUEST_PRIVACY_NOTE =
   "Kept out of chat, in a private file this agent's commands can read for 24 hours";
 export const SECRET_REQUEST_DEFAULT_PLACEHOLDER = "Paste the secret";
+/** For a desktop card: the phone's keyboard reaches a password manager, a desktop field does not. */
+export const SECRET_REQUEST_PHONE_NOTE =
+  "Also on your phone, where your password manager can fill it";
+
+/**
+ * Where an answer goes, named from Onicode's own state. The card's label and reason are the
+ * agent's words, so they cannot be trusted to say it. A scratch project has no name worth showing.
+ */
+export function secretRequestDestination(input: {
+  readonly environmentLabel: string | null | undefined;
+  readonly project: { readonly title: string; readonly isScratch?: boolean } | null | undefined;
+}): { readonly project: string | null; readonly environment: string | null } | null {
+  const environment = input.environmentLabel?.trim() || null;
+  const project = (input.project?.isScratch === true ? null : input.project?.title.trim()) || null;
+  return project === null && environment === null ? null : { project, environment };
+}
 
 // Backticks, <angle brackets> and markdown link targets (balanced parentheses allowed) keep their
 // exact text; a bare link drops trailing sentence punctuation.
