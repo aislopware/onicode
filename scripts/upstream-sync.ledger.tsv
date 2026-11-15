@@ -2027,3 +2027,4 @@ efddcfeb20	take	perf(server): batch terminal output that arrives within 2 ms (#3
 5d589547f0	take	perf(desktop): WSL preflight starts the staged runtime once instead of twice (#37052)
 93f8563a95	take	adapted: ThreadFeed/worktree-setup-card conflicts resolved keeping Onicode's environmentId + toServerClock on WorktreeSetupCard/WorktreeWorkingHeader beside upstream's new WorktreePreparingHeader
 f36c8351d8	take	fix(server): an MCP pin lands at the top of the Pinned section (#33978); dropped upstream's analytics test (telemetry removed)
+9de4a2fb5d	take	fix(mobile): keep Diagnostics and Client Storage content above floating tabs (#32821)
