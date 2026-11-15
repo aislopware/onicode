@@ -1969,3 +1969,4 @@ a9e900f9c0	take	fix(mobile): queued messages show mentions and files by name, no
 58f609f7cc	take	fix(web): theme import no longer says a file just under 1 MB is "1024 KB" (#30330)
 25c44fcc33	take	fix(web): use available space for project breadcrumbs (#30503)
 e6666dc540	take	docs: include required Bitbucket workspace read scope (#30593)
+f7a1bacd27	take	fix(web): subagent status dots no longer jump between corners (#30753)
