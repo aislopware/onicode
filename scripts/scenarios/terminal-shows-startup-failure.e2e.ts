@@ -1,6 +1,7 @@
 /// <reference lib="dom" />
 // The DOM lib types the function this scenario runs in the page.
 import { expect } from "e2e";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -54,6 +55,7 @@ test(
   "A terminal whose shell cannot start says why, also after its drawer reopens",
   WEB,
   async ({ onicode, app, browser, screen }) => {
+    test.skip(HostProcess.Platform.defaultValue() !== "linux", "prlimit and /proc are Linux only");
     const project = await onicode.project("demo");
     const thread = await onicode.thread({ project, title: "Shell", messages: ["hello"] });
     await onicode.open(thread);
