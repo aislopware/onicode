@@ -1832,3 +1832,4 @@ a31fab93a2	take	focus side-chat composer when selecting its tab
 d6c1d17793	take	drag preview inside sidebar search results
 1c8143cd09	take	remote editor list probes in parallel with shared PATH listings
 252b2c77b3	take	codex crashed handlers and transport workers no longer hang
+fbdfe2e980	take	answered question no longer shows raw item JSON (mobile)
