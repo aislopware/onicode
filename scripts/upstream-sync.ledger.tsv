@@ -1842,3 +1842,4 @@ d23f479a87	take	right panel shortcuts work while a side chat has focus
 2c5013d153	take	threads show new branch PR after branch switch
 8be0e6c8eb	take	preserve run start time when steering restarts a turn
 fece8934b5	take	oni project add unarchives an archived project
+e1458f25e2	skip	Fixes the nightly/stable update-track switch dialog; Onicode ships one release channel with no track switch (localSwitchBlockReason absent)
