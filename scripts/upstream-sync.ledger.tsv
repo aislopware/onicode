@@ -1840,3 +1840,4 @@ c1a7ce362b	take	Check for Updates says when an update is available (single chann
 d23f479a87	take	right panel shortcuts work while a side chat has focus
 88621ac593	skip	Upstream contributor governance (pr-limits.cjs, issue-vouch.yml, VOUCHED.td denounce list); Onicode has none of these files or that policy.
 2c5013d153	take	threads show new branch PR after branch switch
+8be0e6c8eb	take	preserve run start time when steering restarts a turn
