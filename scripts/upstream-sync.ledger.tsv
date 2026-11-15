@@ -1813,3 +1813,4 @@ d3217c75f2	take	fix(provider-cursor): advertise manual compaction
 01c8e59f14	skip	Onicode removed the legacy theme-id alias table, so there is no alias lookup to fix
 d022d3bd8b	take	fix(mobile): iOS image viewer pages and dismisses after slow opens
 bb33fc3a3f	take	test(server): stop Git auto-maintenance racing the template copy
+703810f308	take	fix(server): Open in and Reveal open ~/ file links from projects outside home
