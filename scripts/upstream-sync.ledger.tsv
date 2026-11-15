@@ -1861,3 +1861,4 @@ d93b225049	take	grouped projects show their own monogram in the picker and draft
 828200fc04	take	clearing a terminal that keeps printing no longer hangs
 6615615b12	take	preserve Git remote headers after comments
 031ee2dd2b	take	dictionary spellings apply next to Chinese and Japanese text
+9504f65989	take	MCP tools no longer advertise non-string enums; agentContextBudget re-measured for Onicode's tool list (47698)
