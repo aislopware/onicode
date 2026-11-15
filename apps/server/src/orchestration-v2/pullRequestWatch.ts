@@ -207,7 +207,8 @@ export function evaluatePullRequestWatch(
   if (watch.awaitingBaseline !== "all" && detail.rebaseRequired === true && !toldRebase) {
     changes.push({ kind: "needs-rebase" });
   }
-  const rebaseRequired = detail.rebaseRequired ?? watch.rebaseRequired;
+  // A new head starts unwarned, so an inconclusive first read must not carry the old warning.
+  const rebaseRequired = detail.rebaseRequired ?? (headMoved ? undefined : watch.rebaseRequired);
   // "unknown" is a host still computing after a push; only a clean answer clears a conflict.
   const conflicting =
     detail.mergeability === "unknown" ? toldConflict : detail.mergeability === "conflicting";
