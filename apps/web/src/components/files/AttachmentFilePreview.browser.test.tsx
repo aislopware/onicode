@@ -364,10 +364,10 @@ describe("bounded binary previews", () => {
         const trigger = screen.container.querySelector<HTMLButtonElement>('[aria-label="Table"]')!;
         await act(() => trigger.focus());
         await userEvent.keyboard("{Enter}");
-        const inventory = page.getByRole("option", { name: "zzInventory (1 rows)" });
+        const inventory = page.getByRole("option", { name: "zzInventory (1 row)" });
         // Arrow keys pressed before the popup highlights the selected table are dropped.
         await expect
-          .element(page.getByRole("option", { name: "sqliteData (1 rows)" }))
+          .element(page.getByRole("option", { name: "sqliteData (1 row)" }))
           .toHaveAttribute("data-highlighted");
         await userEvent.keyboard("{ArrowDown}");
         await expect.element(inventory).toHaveAttribute("data-highlighted");
@@ -380,7 +380,7 @@ describe("bounded binary previews", () => {
         await vi.waitFor(() => expect(document.activeElement).toBe(trigger));
         await userEvent.keyboard("{Enter}");
         await expect
-          .element(page.getByRole("option", { name: "zzInventory (1 rows)" }))
+          .element(page.getByRole("option", { name: "zzInventory (1 row)" }))
           .toBeVisible();
         await userEvent.keyboard("{Escape}");
       } finally {
