@@ -1939,3 +1939,4 @@ e3c7c082cf	take	fix(desktop): a backend busy right after startup no longer ends 
 d5726cb88c	take	fix(server): agents get no device tools or instructions while the Device hub is off (#32542); merged beside Onicode's computer-use capability
 fa5fde4bea	take	fix(server): clients paired over Tailscale Serve keep their own address (#35559); kept Onicode's readRequestSocketPeer, dropped browser-token test (inferBrowser removed)
 3947e22351	take	fix(server): HTML previews load relative video and audio files (#36199)
+dc7ea2c1b0	take	fix(server): a linked launch above the link's access names the link, not the parent mode (#27334); runtimeModeRank exported again
