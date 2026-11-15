@@ -37,6 +37,9 @@ const resolved = await Effect.gen(function* () {
       host: "127.0.0.1",
       // Names the simulator when several are booted: E2E_IOS_DEVICE="iPhone 18 Pro".
       device: env.E2E_IOS_DEVICE,
+      // A hosted macOS runner encodes in software: the recording starves the app and takes
+      // longer to stop than agent-device allows. Screenshots and the trace remain.
+      video: env.CI ? ("off" as const) : ("on" as const),
       // A mobile target has no `app.url`, so e2e cannot pick these ports.
       serverPort: Number(env.ONICODE_SCENARIO_SERVER_PORT ?? 13_990),
       metroPort: Number(env.ONICODE_SCENARIO_METRO_PORT ?? 8_190),
@@ -132,6 +135,7 @@ export default {
       name: "ios",
       // A booted simulator on this machine, as `apps/mobile/e2e` uses.
       engine: mobile({ platform: "ios", device: MOBILE.device }),
+      video: MOBILE.video,
       app: {
         bundleId: "dev.aislopware.onicode.dev",
         // The server starts after Metro has built the first bundle, so it answering means both.
@@ -159,8 +163,6 @@ export default {
   workers: 1,
   timeout: 300_000,
   assertionTimeout: 15_000,
-  // A hosted macOS runner takes longer than the default 30 s to finish a simulator recording.
-  cleanupTimeout: 120_000,
   // e2e retries once under CI unless told otherwise, and a retried pass would hide a race.
   retries: 0,
   video: "on",
