@@ -2121,3 +2121,4 @@ af8faa9cfa	take	taken as is
 f82162f033	take	fix(provider-grok): steer queued messages into a running Grok turn
 b9bc03869e	take	fix(web): terminal decorations stay visible under the block cursor
 b732621b51	take	fix(clients): command palette skips tasks shown under their parent
+ac5dd1ff47	take	fix(mobile): inline audio keeps playing when its row scrolls out of view; kept Onicode's per-row visibility store, added upstream's retain context beside it

@@ -43,6 +43,8 @@ export function useThreadMediaVisible(): boolean {
   const isVisible = () => visibility?.isVisible() ?? false;
   return useSyncExternalStore(visibility?.subscribe ?? subscribeNever, isVisible, isVisible);
 }
+/** Asks the feed to keep this row out of list recycling while its media holds playback state. */
+export const ThreadMediaRetainContext = createContext<(retained: boolean) => void>(() => {});
 
 export function ThreadMarkdownVideo(props: {
   readonly source: MediaVideoPreviewSource;
