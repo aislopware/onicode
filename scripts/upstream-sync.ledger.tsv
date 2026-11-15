@@ -2009,3 +2009,4 @@ da9c848e62	take	test(web): the streaming render scenario gives the timeline stab
 ca31ab64a4	take	fix(web): an image-only send that fails behind a new draft now says so (#32732)
 40f63b468f	take	fix(assets): align app icons and retain a folder placeholder while loading (#37067)
 ab45ce7167	take	fix(github): pull request activity says when its comments were cut (#32707)
+742a91209e	skip	already in the fork as 695115f4e9 (same truncated:false stub fix, made during batch 2)
