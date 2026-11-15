@@ -1956,3 +1956,4 @@ ea4e7c1a60	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>
 ffd11ffc95	take	fix(server): agents can no longer delete the built-in No project through MCP (#33773)
 f12e8206f5	take	git commit -a --author='Yash Singh <saiansh2525@gmail.com>' -m 'fix(web): load a too-large PR file'\''s diff on demand (#37007)' -m 'Ported from pingdotgg/t3code@f12e8206f5.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>'
 eefba1a8af	take	fix(cli): onicode up and onicode status hints keep --base-dir (#31878); hand-ported onto resolveHostCliHint from #31906, no T3 Connect hint
+d2a894a247	take	fix(server): forks of forks keep their deleted source's files (#32255); no guest-share pending files (guest links removed)
