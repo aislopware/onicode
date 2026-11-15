@@ -1898,3 +1898,4 @@ c8c210203c	skip	relay managed endpoint runtime (cloud/ManagedEndpointRuntime) re
 0bd581b078	take	fix(server): regenerate an empty persisted secret instead of failing startup (#32053)
 f2839735ef	skip	outside cloud-assistant MCP OAuth (Gemini Spark); declined surface, /oauth/mcp/register only serves peer links
 5f6b5a8e60	take	fix(cli): the already-running error names the onicode pair command that connects (#31543)
+2a66bf26e8	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): read_pull_request_guide reads no-checkout hosts through the caller'\''s project (#35913)' -m 'Ported from pingdotgg/t3code@2a66bf26e8.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
