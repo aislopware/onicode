@@ -90,13 +90,13 @@ it. **Duplicate** makes an independent copy you can edit. A saved custom theme w
 takes precedence. If the server stops publishing the selected theme, Onicode falls back to its
 standard theme.
 
-Run this on the server to set a default and switch connected clients to it:
+Run this on the server to set a default and switch the desktop app on that machine to it:
 
 ```bash
 onicode theme set nightfall
 ```
 
-Clients that are offline apply it when they reconnect. Each client applies the setting once;
+A desktop app that is closed applies it when it reconnects. It applies the setting once;
 choosing another theme afterward sticks until the next `onicode theme set`. Run the command again to
 reapply it, even if the name is unchanged.
 
