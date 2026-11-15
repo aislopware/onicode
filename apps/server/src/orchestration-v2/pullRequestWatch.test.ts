@@ -117,6 +117,18 @@ describe("evaluatePullRequestWatch", () => {
         ).changes.map((change) => change.kind),
         "needs-rebase",
       );
+      const pushed = { ...blocked, headSha: "bbbbbbbbbb" };
+      const checking = evaluatePullRequestWatch(
+        first.next,
+        { ...pushed, rebaseRequired: undefined },
+        noRemarks,
+      );
+      assert.include(
+        evaluatePullRequestWatch(checking.next, pushed, noRemarks).changes.map(
+          (change) => change.kind,
+        ),
+        "needs-rebase",
+      );
     },
   );
 
