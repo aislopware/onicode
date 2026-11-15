@@ -1892,3 +1892,4 @@ bbd8bc074a	take	perf(server): reuse Find documents across query changes (#29310)
 bf3549b7ad	take	fix(server): boot-started linux servers offer and open the file manager (#33107)
 f00afc6cda	take	fix(server): typing after a click by coordinates no longer hangs a preview tab (#32845)
 4aead9e6d9	take	fix(server): Claude MCP elicitations Onicode cannot show are cancelled, not declined (#33575)
+c8c210203c	skip	relay managed endpoint runtime (cloud/ManagedEndpointRuntime) removed with T3 Connect
