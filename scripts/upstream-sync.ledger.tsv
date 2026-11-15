@@ -1779,3 +1779,4 @@ abc0fde5e0	take	fix(desktop): providers are found after a failed shell probe wit
 e82050b8b9	skip	Raises the theme CSS wire limit to 50,000, which desktop 0.15.0 clients reject on the opt-in theme stream, dropping their config subscription; needs a negotiated opt-in first
 2b6c14bbf1	take	fix(web): diff file Open and Reveal reach a file whose name has a backslash
 b64eebb991	take	fix(release): enforce packaged Linux glibc requirements (ceiling 2.41 for Onicode's Debian 13 build container)
+3a87ca8c6a	take	fix(client-runtime): tool output no longer rounds integers beyond 2^53
