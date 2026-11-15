@@ -1821,3 +1821,4 @@ bb33fc3a3f	take	test(server): stop Git auto-maintenance racing the template copy
 9cd5733f58	take	fix(web): unreachable environment no longer hides shared-repo PRs
 4dec8cf641	take	fix(web): honor right panel state in custom shortcuts (doc keeps Onicode's context keys)
 cef95b6db9	take	fix(shared): decode URI paths in ghq clone folders
+6f8144b5c4	take	fix(web): overlapping image pastes keep prompt order (upstream e2e scenario dropped)
