@@ -1824,3 +1824,4 @@ cef95b6db9	take	fix(shared): decode URI paths in ghq clone folders
 6f8144b5c4	take	fix(web): overlapping image pastes keep prompt order (upstream e2e scenario dropped)
 48a383ca6f	take	fix(web): show failed desktop downloads in retry tooltips
 a96bb81049	take	perf(right panel): normalize pr tab target once
+989c1b55b0	skip	Only touches apps/marketing, which Onicode removed
