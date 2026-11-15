@@ -173,6 +173,13 @@ code. Signed-in devices appear under **Authorized clients**, where you can revok
 Join both devices to the same tailnet. In the desktop app, enable **Tailscale
 HTTPS** in **Settings → Sharing & access**. Turn it off there to remove that route.
 
+Your tailnet needs MagicDNS and HTTPS certificates enabled; see
+[Tailscale's HTTPS setup](https://tailscale.com/docs/how-to/set-up-https-certificates).
+On Linux, Onicode also needs permission to manage Tailscale; see
+[operator permission](https://tailscale.com/docs/reference/troubleshooting/linux/linux-operator-permission)
+for non-root users. If any of these is missing, Onicode still starts but can't
+add the HTTPS route.
+
 To start a command-line server with Tailscale HTTPS:
 
 ```bash

@@ -1916,3 +1916,4 @@ dcd39b4b6e	take	git commit -a --author='Prem Chaitanya Prathi <chaitanyaprem@gma
 d430dff14f	take	fix(usage): keep default-home history after the default account moves (#36727)
 1dfc746c8f	take	fix(provider-acp): approving a Devin plan never picks its bypass-permissions option (#34474)
 1b9121ba59	skip	guest links removed; only touches apps/server/src/guest/GuestShareService.ts, which Onicode deleted
+355adf265c	take	docs(user): Tailscale HTTPS lists what the tailnet needs (#23759)
