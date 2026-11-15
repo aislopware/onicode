@@ -1974,3 +1974,4 @@ b8bffc8b35	take	fix(web): resource monitor no longer claims to sample every 0 ms
 843893e58c	take	fix(web): the minimap keeps the current turn lit while reading a long reply (#30084)
 16a70050f4	take	fix(desktop): voice input recovers after Linux audio restarts (#32376); channel appended after Onicode's remote-desktop channels
 d5a50a1d0d	take	perf(pr): actions, title edits and labels show the moment you click, on every host (#32774)
+f0495f7417	take	fix(provider-core): background work notices no longer say every task failed when one did (#32407)
