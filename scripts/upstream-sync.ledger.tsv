@@ -1870,3 +1870,4 @@ fa6ecb125b	take	MCP send errors say how to continue a finished thread
 bdf6c6ec89	take	open WSL-mounted Windows drives directly in File Explorer (conflict: kept wslpath resolver, dropped upstream buildBrowserLaunch context Onicode removed)
 5b5f1bc18a	take	PR watch wakes quote a bot comment's text, not its HTML
 81df733306	take	opening a project from the command palette skips settled and snoozed threads
+8ab40cc88e	take	PDF preview says 1 / 1 page for a one-page PDF
