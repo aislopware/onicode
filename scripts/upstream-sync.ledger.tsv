@@ -2086,3 +2086,4 @@ cb251b9abc	take	fix(web): composer suggestions stay reachable in short windows (
 449deb635e	take	adapted: getMode(MODE.keypadKeys) and TERMINAL_DATA.kittyKeyboardFlags for upstream's modeEnabled(66)/raw 8
 d21d8d8b5d	take	fix(mobile): iOS video previews keep their contain fit
 9c1dfbb5aa	take	fix(server): delegate_task names the CLI version that hides a model
+0b489dada1	take	adapted: scenarios use Onicode's existing second-environment.ts instead of upstream's duplicate second-server.ts; machine-switch scenario unpairs at the end since the desktop app keeps paired environments between scenarios
