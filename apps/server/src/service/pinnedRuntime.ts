@@ -708,7 +708,7 @@ const runningExecutables = Effect.fn("service.pinned_runtime.running_executables
               "-NoProfile",
               "-NonInteractive",
               "-Command",
-              "Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine",
+              "[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process | Select-Object -ExpandProperty CommandLine",
             ],
           }
         : { command: "lsof", args: ["-nP", "-w", "-d", "txt", "-F", "n"] }),
