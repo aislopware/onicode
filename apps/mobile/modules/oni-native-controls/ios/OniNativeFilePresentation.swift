@@ -87,7 +87,9 @@ final class OniNativeFilePresentation: NSObject, QLPreviewControllerDataSource,
       guard !Task.isCancelled else { return }
       showSpinner()
     }
-    for index in urls.indices { download(index) }
+    // URLSession allows a few connections per host, so the tapped file starts before its siblings.
+    download(selectedIndex)
+    for index in urls.indices where index != selectedIndex { download(index) }
   }
 
   /// Delivers a URL that was still resolving when the gallery opened, or nil when it never will.
