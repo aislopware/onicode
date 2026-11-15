@@ -1494,39 +1494,41 @@ export const layerWsRpc = (
           cwd: project.workspaceRoot,
           ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
         });
+        const owners = yield* acpRegistrySessions.findOwners({
+          driver: instance.driverKind,
+          instanceId: input.instanceId,
+          sessionIds: listed.sessions.map((session) => session.sessionId),
+        });
         const sessions = yield* Effect.forEach(
           listed.sessions,
           (session) => {
-            const idInput = {
-              driver: instance.driverKind,
-              instanceId: input.instanceId,
-              sessionId: session.sessionId,
-            };
-            return acpRegistrySessions.findOwner(idInput).pipe(
-              Effect.flatMap((owner) => {
-                const threadId = owner ?? AcpRegistrySessions.importedThreadId(idInput);
-                return threadManagement.getThreadShell(threadId).pipe(
-                  Effect.map((thread) => ({
-                    ...session,
-                    importedThreadId: thread === null ? null : threadId,
-                    ...(thread !== null &&
-                    AgentSessionImporter.isNativeHistoryPending({
-                      historyOrigin: thread.historyOrigin,
-                      hasRun: thread.latestRunId !== null,
-                    })
-                      ? { nativeHistoryPending: true }
-                      : {}),
-                  })),
-                  Effect.mapError(
-                    (cause) =>
-                      new AcpRegistryOperationError({
-                        reason: "session_import_failed",
-                        message: "Could not inspect existing imported ACP sessions.",
-                        cause,
-                      }),
-                  ),
-                );
-              }),
+            const threadId =
+              owners.get(session.sessionId) ??
+              AcpRegistrySessions.importedThreadId({
+                driver: instance.driverKind,
+                instanceId: input.instanceId,
+                sessionId: session.sessionId,
+              });
+            return threadManagement.getThreadShell(threadId).pipe(
+              Effect.map((thread) => ({
+                ...session,
+                importedThreadId: thread === null ? null : threadId,
+                ...(thread !== null &&
+                AgentSessionImporter.isNativeHistoryPending({
+                  historyOrigin: thread.historyOrigin,
+                  hasRun: thread.latestRunId !== null,
+                })
+                  ? { nativeHistoryPending: true }
+                  : {}),
+              })),
+              Effect.mapError(
+                (cause) =>
+                  new AcpRegistryOperationError({
+                    reason: "session_import_failed",
+                    message: "Could not inspect existing imported ACP sessions.",
+                    cause,
+                  }),
+              ),
             );
           },
           { concurrency: 16 },
@@ -1556,8 +1558,10 @@ export const layerWsRpc = (
               sessionId: input.sessionId,
             };
             const threadId =
-              (yield* acpRegistrySessions.findOwner(idInput)) ??
-              AcpRegistrySessions.importedThreadId(idInput);
+              (yield* acpRegistrySessions.findOwners({
+                ...idInput,
+                sessionIds: [input.sessionId],
+              })).get(input.sessionId) ?? AcpRegistrySessions.importedThreadId(idInput);
             const importedThread = yield* threadManagement.getThreadShell(threadId).pipe(
               Effect.mapError(
                 (cause) =>
