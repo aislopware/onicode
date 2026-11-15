@@ -50,6 +50,8 @@ const forcedShutdownTimeoutMs = 1_500;
 const restartDebounceMs = 120;
 const childTreeGracePeriodMs = 1_200;
 const remoteDebuggingPort = process.env.ONICODE_DESKTOP_REMOTE_DEBUGGING_PORT?.trim();
+// The main process's Node inspector: the e2e suite reaches native menus and windows through it.
+const inspectPort = process.env.ONICODE_DESKTOP_INSPECT_PORT?.trim();
 // oxlint-disable-next-line onicode/no-global-process-runtime -- Standalone dev script has no Effect runtime.
 const hostPlatform = NodeOS.platform();
 const parentPid = process.ppid;
@@ -111,9 +113,10 @@ function startApp() {
     return;
   }
 
-  const electronArgs = remoteDebuggingPort
-    ? [`--remote-debugging-port=${remoteDebuggingPort}`]
-    : [];
+  const electronArgs = [
+    ...(remoteDebuggingPort ? [`--remote-debugging-port=${remoteDebuggingPort}`] : []),
+    ...(inspectPort ? [`--inspect=127.0.0.1:${inspectPort}`] : []),
+  ];
   const launchArgs = devProtocolClient
     ? electronArgs
     : [...electronArgs, `--onicode-dev-root=${desktopDir}`, "dist-electron/main.cjs"];

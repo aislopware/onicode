@@ -1,0 +1,91 @@
+name: Scenarios
+
+# The desktop end-to-end suite: the dev Electron app under xvfb, driven by scripts/scenarios.
+# It runs when a scenario, the harness, or what the harness starts the app through changes, and
+# by hand. It stays out of the `Check` gate: a run takes about twelve minutes on one worker, and
+# it has too short a record on Linux to block every pull request on it.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - scripts/scenarios/**
+      - scripts/e2e.config.ts
+      - scripts/prove-scenario.ts
+      - scripts/package.json
+      - scripts/dev-runner.ts
+      - apps/desktop/scripts/dev-electron.mjs
+      - apps/desktop/src/app/DesktopEnvironment.ts
+      - apps/server/src/environment/ServerEnvironmentLabel.ts
+      - .github/workflows/scenarios.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scenarios-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: Desktop scenarios
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+            !/apps/mobile/modules/oni-terminal/Vendor/**/*.a
+          sparse-checkout-cone-mode: false
+
+      - name: Start installing the desktop build libraries and xvfb
+        uses: ./.github/actions/apt-install-start
+        with:
+          packages: libsecret-1-dev pkg-config xvfb
+
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-ci-deps
+
+      - name: Cache Electron download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/electron
+          key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('node_modules/.pnpm/electron@*/node_modules/electron/package.json') }}
+
+      - name: Ensure Electron runtime is installed
+        run: vp run --filter @onicode/desktop ensure:electron
+
+      - name: Finish installing the desktop build libraries and xvfb
+        timeout-minutes: 10
+        uses: ./.github/actions/apt-install-finish
+
+      # e2e records each scenario's video with Playwright's ffmpeg. It attaches to the app's own
+      # window, so it needs no browser.
+      - name: Install the video encoder
+        working-directory: scripts
+        run: node "$(realpath node_modules/@e2e-dev/web)/../../playwright-core/cli.js" install ffmpeg
+
+      # Ubuntu 24.04 denies unprivileged user namespaces, which Chromium's sandbox needs.
+      - name: Allow Electron's sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Run the desktop scenarios
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1440x900x24" vp run scenarios --target desktop
+
+      - name: Print the summary
+        if: ${{ !cancelled() }}
+        run: cat scripts/.e2e/summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload traces and captures
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scenarios
+          # `.e2e` is a hidden directory, which the action leaves out unless told.
+          include-hidden-files: true
+          path: |
+            scripts/.e2e
+            !scripts/.e2e/**/*.zip
+          retention-days: 7

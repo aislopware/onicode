@@ -72,4 +72,21 @@ describe("DesktopEnvironment", () => {
       assert.equal(production.stateDir, "/Users/alice/.onicode/userdata");
     }),
   );
+
+  it.effect.each(["darwin", "linux", "win32"] as const)(
+    "keeps the Chromium profile under ONICODE_DESKTOP_APP_DATA_DIR on %s",
+    (platform) =>
+      Effect.gen(function* () {
+        const environment = yield* makeEnvironment(
+          { platform },
+          {
+            ONICODE_DESKTOP_APP_DATA_DIR: "/tmp/run/profile",
+            APPDATA: "/ambient/appdata",
+            XDG_CONFIG_HOME: "/ambient/config",
+          },
+        );
+
+        assert.equal(environment.appDataDirectory, "/tmp/run/profile");
+      }),
+  );
 });

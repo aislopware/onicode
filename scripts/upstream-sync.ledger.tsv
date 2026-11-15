@@ -222,13 +222,13 @@ d6d1763d41	take	fix(web): sent messages keep the numbers written on list items (
 17a6a01d84	take	feat(mobile): pick a voice environment once, then its method (#34073)
 d91915db9e	take	fix(server): a t3 thread send to a finished delegated child notifies its parent (#33446)
 43915a4064	take	fix(web): question panel header text sits centered in its row (#34095)
-ae142932d0	skip	Scenario tooling: web scenarios drive the removed browser web client; iOS scenarios duplicate apps/mobile/e2e (tester-army). Its agent-device 0.21.36 / expo-device-hub 0.22.1 bump is left for a separate change.
+ae142932d0	take	Scenario tooling ported with a desktop target (the dev Electron window over CDP) in place of the web target; iOS target kept. Its agent-device 0.21.36 / expo-device-hub 0.22.1 bump is left for a separate change.
 9e1f81c788	skip	Extends Claude banked resets, which Onicode removed (4c47939f9d: Claude is read only through the Agent SDK); the creditId/options plumbing only serves that.
 04f6cfca87	take	fix(desktop): desktop IPC only answers the main app window (#34094)
 79bca436b2	take	feat(server): voice models reuse copies already on disk (#34096)
 1d80047048	take	fix(web): scroll project picker to top on first result (#34113)
 3a8c250cb0	take	feat(opencode): track native image job outcomes and previews (#34089)
-b883156e26	skip	Only touches the scenarios tooling (scripts/scenarios, e2e.config, scenarios doc), which Onicode removed.
+b883156e26	take	Scenario tooling change, ported with the desktop scenario harness.
 768f17c518	take	ci: browser secret helper apt step fetches fewer indexes (#33966)
 d152d2c824	take	fix(client-runtime): a search query pasted from github.com lists pull requests again (#30150)
 4ca10398b1	take	fix(web): tighter outdated-conversation cards in the PR code panel (#34140)
@@ -1181,7 +1181,7 @@ d63c0ec8eb	skip	Onicode has no agent-context-budget workflow
 a2be070f30	take	taken as is
 5f85768394	take	taken as is
 4596872940	take	taken as is; capability optional, older clients/servers keep polling
-60f70d98cd	skip	Only touches the scenarios tooling (scripts/scenarios, prove-scenario, e2e.config, scenarios doc), which Onicode removed.
+60f70d98cd	take	Scenario tooling change, ported with the desktop scenario harness.
 38c3b56c68	take	provider lists only; kept Onicode's desktop+mobile wording in AGENTS.md
 b80531d6fb	take	taken as is; mobile PR Files has no image preview yet (follow-up)
 31b5549f98	take	taken as is
@@ -1340,7 +1340,7 @@ a6d9140972	take	taken as is
 6bce2226de	skip	guest messages only (apps/server/src/guest); Onicode removed guest links
 88d4d06ea3	take	taken as is; serverReady rides the local desktop control fd, not the client wire
 cf382b0c44	take	taken as is
-44fefbcbc4	skip	Only touches the scenarios tooling (e2e.config, scenarios doc), which Onicode removed.
+44fefbcbc4	take	Scenario tooling change, ported with the desktop scenario harness.
 4bab2f3ae7	take	dropped the ProviderTurnAnalytics test mock Onicode removed
 f5ae8088c3	take	taken as is
 2a1caac438	take	taken as is
@@ -1446,7 +1446,7 @@ f315da3339	take	fix(shared): PASS and FAIL badges stay readable in dark command 
 fd0ffd0b0a	take	fix(web): a stale tab no longer erases finalized stashed images
 2f2730c113	take	fix(server): task_status says starting until the child's provider starts
 d2bdd58eef	take	fix(server): npm provider updates only offer versions npm will install (test merged with Onicode's updater-off rows)
-5e06246d24	take	fix(web): recovered queued edits keep their mentions and context (upstream e2e scenario dropped: no scripts/scenarios harness)
+5e06246d24	take	fix(web): recovered queued edits keep their mentions and context; its e2e scenario ported later with the desktop scenario harness
 35d01dc291	take	perf(acp): long ACP threads reopen without per-chunk history copies
 4d5d5f89d4	take	fix(source-control): preserve .git in Azure DevOps repository names
 4652544f33	take	fix(server): interrupted checkpoints no longer leak temporary packs
@@ -1491,8 +1491,8 @@ f2764f71b2	take	fix(desktop): desktop tests no longer race to install Electron
 487733ba0a	take	fix(server): recover Claude cooldown reset times from proxy errors
 5958d00ede	take	perf(web): Update everything downloads a server's update while providers install; selfUpdate change applied to Onicode's service/selfUpdate.ts, channel/Nightly fields left out of the contract
 6be1bd6472	take	perf(cursor): long command output streams without copying its tail per chunk
-c5f842d4c7	take	fix(server): regenerate titles on fresh run forks (upstream e2e scenario dropped: no scripts/scenarios harness)
-6aa14d3cd5	take	fix(server): short search prefixes find accented messages (upstream e2e scenario dropped: no scripts/scenarios harness)
+c5f842d4c7	take	fix(server): regenerate titles on fresh run forks; its e2e scenario ported later with the desktop scenario harness
+6aa14d3cd5	take	fix(server): short search prefixes find accented messages; its e2e scenario ported later with the desktop scenario harness
 060ac23d6f	take	fix(devices): explain missing npm during tool updates
 5ba3a84db4	take	fix(server): a locked database no longer leaves a thread stuck in "starting"
 0a8aaa3ccb	take	fix(server): retained forks keep inherited shell item counts after source deletion
@@ -1504,7 +1504,7 @@ bc1dc2a81e	take	fix(mobile): keep the thread column out of the iPhone Duo fold
 121f0cf014	take	fix(server): oni_thread_list clamps an oversized limit instead of failing (agentContextBudget re-measured for Onicode's tool list: 47751)
 0c306f4520	take	fix(ssh): wait for a boot service's server instead of starting a second one; cloud/ parts applied to service/
 ae49f4d2a7	take	fix(server): honor custom Claude thinking choices
-8cb551a3ce	take	fix(web): saved files show external edits after a failed reload; dropped scripts/scenarios e2e (removed in Onicode)
+8cb551a3ce	take	fix(web): saved files show external edits after a failed reload; its e2e scenario ported later with the desktop scenario harness
 1159aa2991	take	fix(client-runtime): preserve PR reference links across embedded media; kept Onicode's newer jszip/three/unbash pins
 913d7fc45e	take	fix(web): PageUp and PageDown shortcut labels
 1535f3f32e	take	fix(desktop): theme changes no longer stop at windows without a title bar overlay
@@ -1512,7 +1512,7 @@ bb9fde6fcd	take	fix(scripts): test:cached no longer crashes when vp writes no ca
 8a45c51d8b	take	fix(desktop): Browser Screenshot saves fresh pixels while Onicode is hidden
 92c91aac8f	take	fix(client-runtime): keep inherited qualifier values as PR search text
 0acca1de27	take	fix(server): Resume keeps unaccepted replacement images
-6effe74c59	take	fix(web): show repeated table rows and cells in ODT previews; dropped scripts/scenarios e2e and its scripts jszip dep (removed in Onicode)
+6effe74c59	take	fix(web): show repeated table rows and cells in ODT previews; its e2e scenario ported later with the desktop scenario harness
 f161a4d2b5	take	fix(shared): preserve literal ampersands in citation Markdown paths
 fd6d0ea022	take	fix(web): stashing waits for pasted images to finish compressing
 ead133ce70	take	fix(web): SSH port field no longer turns 22.5 into port 22 (pending tagged it removed-area, but Onicode keeps ConnectionsSettings)
@@ -1526,12 +1526,12 @@ c3517ec0bf	take	fix(shared): theme CSS checks allow url() inside a quoted data: 
 f4e65cd843	take	fix(contracts): a null model selection options value is treated as omitted (#29149)
 250e502bfa	take	fix(mobile): scheduled-task edits made in quick succession are no longer lost (#27220); webhook form parts and their test case dropped
 dafd053a19	take	fix(mobile): closed PR numbers match their red icon in the thread list (#29327)
-13a6782a6c	take	fix(web): ODS time cells without display text show their value; dropped scripts/scenarios e2e (removed in Onicode)
+13a6782a6c	take	fix(web): ODS time cells without display text show their value; its e2e scenario ported later with the desktop scenario harness
 0fdc99c870	take	fix(web): notebook previews strip ANSI colors from saved tracebacks (#36703)
 414d938513	take	fix(server): publish Create PR branches to split push URLs (#36695)
 0200dcf242	take	perf(shared): queued SQLite reads stop waiting on one reader while another is free (#27979)
 b28dc0eb1d	take	perf(mobile): Changes tab no longer redraws every file when one changes (#25872)
-243d66a295	take	fix(server): first commit dialog shows net file changes; dropped scripts/scenarios e2e (removed in Onicode)
+243d66a295	take	fix(server): first commit dialog shows net file changes; its e2e scenario ported later with the desktop scenario harness
 740a7cc21f	skip	marketing download page only; apps/marketing removed in Onicode
 cb6670b01d	take	fix(server): a timed-out Git check no longer turns off threads without a project until restart (#36704)
 666631e94e	take	fix(web): copied inline code keeps meaningful edge spaces (#36712)
@@ -1548,11 +1548,11 @@ a575d45286	take	fix(web,server): the branch label no longer flips back after a s
 77d3358a1f	take	fix(server): ACP teardown survives processes exiting during the /proc scan (#36719)
 e72dd5055e	take	fix(client): closed terminal views release the shared grid
 cc0a7bb9d8	take	fix(shared): file links with parentheses in the path keep their parent folder labels
-f84ad6f30b	take	fix(web): discarded drafts stay discarded after image compression (upstream e2e scenario dropped: no scripts/scenarios harness)
+f84ad6f30b	take	fix(web): discarded drafts stay discarded after image compression; its e2e scenario ported later with the desktop scenario harness
 96ca66f218	take	fix(server): a nested repository with no commits no longer breaks the review diff
 e26e21c06b	take	fix(web,mobile): bound scheduled tasks no longer offer a model their runs ignore
 07885556d9	take	fix(shared): honor Windows PATHEXT regardless of key casing
-acd192fc64	take	fix(web): removing an environment dismisses its notification toasts (upstream e2e scenario dropped: no scripts/scenarios harness)
+acd192fc64	take	fix(web): removing an environment dismisses its notification toasts; its e2e scenario ported later with the desktop scenario harness
 2b596b8690	take	fix(web): context meter no longer keeps the retired provider's usage
 76748e942b	take	test(web): wait for Settings focus before testing the theme editor's Escape
 e53417b2d4	take	fix(server): selected-file commits work again with Git older than 2.25
@@ -1568,10 +1568,10 @@ db0ae7b6e1	take	fix(acp): a blank line from an ACP agent no longer ends the sess
 719042d942	take	fix(server): MCP-launched threads no longer flash in Inbox before Working (dropped withoutGuestAttribution: guest links removed in Onicode)
 566370f2ee	take	fix(server): storage cleanup no longer reports idle threads on a branchless checkout as busy
 9441a7285c	take	fix(mobile): Reconnect and Retry now on a switched-off environment switch it back on (also applied to Onicode's remote desktop screen)
-77a39e9a37	take	fix(server): cancelling worktree setup removes its unclaimed worktree and branch (upstream e2e scenario dropped: no scripts/scenarios harness)
+77a39e9a37	take	fix(server): cancelling worktree setup removes its unclaimed worktree and branch; its e2e scenario ported later with the desktop scenario harness
 5fe2f7e456	take	fix(web): diagnostics no longer shows near-second spans as "1000 ms"
-313f601fb2	take	fix(server): Browser tab titles follow page title changes (upstream e2e scenario dropped: no scripts/scenarios harness)
-10a44f5553	take	fix(web): RTF previews keep named spaces, hyphens and joiners (upstream e2e scenario dropped: no scripts/scenarios harness)
+313f601fb2	take	fix(server): Browser tab titles follow page title changes; its e2e scenario ported later with the desktop scenario harness
+10a44f5553	take	fix(web): RTF previews keep named spaces, hyphens and joiners; its e2e scenario ported later with the desktop scenario harness
 0351dbb092	take	fix(acp): refused and limit-stopped turns no longer show as completed
 6cb47acfb8	take	fix(web): Escape that cancels a thread rename no longer also closes the find bar
 3908c4eab3	skip	Onicode already answers OSC 10/11/4 queries (#167) on libghostty-vt 6d9577708, 2356 commits ahead of upstream's 3ff6d08; taking it would downgrade the desktop wasm and Android libraries
@@ -1583,7 +1583,7 @@ c666345bb9	take	fix(web): subagent previews drop image marks and full link URLs 
 c0ee5a1f5f	take	fix(server): pushing a branch whose remote branch was deleted publishes it again
 4ce60c162b	take	fix(mobile): @path search no longer offers the previous worktree's files
 e330593141	take	fix(web): bare URLs no longer swallow Arabic commas and question marks
-e5d4322c10	take	fix(server): expand unchanged lines beside Git ident keywords (upstream e2e scenario dropped)
+e5d4322c10	take	fix(server): expand unchanged lines beside Git ident keywords; its e2e scenario ported later with the desktop scenario harness
 c2b06f9df8	take	perf(server): Cursor turns no longer write every streamed token to provider logs
 47474723cb	take	fix(web): clear failed badges when threads are opened (conflicts kept Onicode's no-guest status set)
 43a71d9b1a	take	fix(web): a terminal reopened while its open is pending no longer closes itself
@@ -1603,12 +1603,12 @@ c342f3dec2	take	fix(web): settled threads no longer offer a PR watch the server 
 04572419e4	take	fix(clients): a one-hour snooze no longer reads "2h left"
 732198d3a9	take	fix(web): a disabled Push names the real reason when there are local changes
 b5df3c1bef	take	fix(web): a scheduled task with a cleared run time no longer saves as 09:00 (webhook branch dropped)
-60e4be49cf	take	fix(shared): open relative Codex citations with filename punctuation (upstream e2e scenario dropped: no scripts/scenarios harness)
+60e4be49cf	take	fix(shared): open relative Codex citations with filename punctuation; its e2e scenario ported later with the desktop scenario harness
 8b633d9a9e	take	fix(web): PDF find matches curly quotes when you type straight ones
 d3d7ad9a61	take	fix(mobile): merging a PR uses the project's default merge method
 0487654fc8	take	fix(web): diagnostics CPU time no longer reads "60s" or "60m"
 8871c265a2	take	fix(cursor): shell commands that exit non-zero are recorded as failed
-5583b26460	take	fix(server,client): preserve literal JSON command output (upstream e2e scenario dropped: no scripts/scenarios harness)
+5583b26460	take	fix(server,client): preserve literal JSON command output; its e2e scenario ported later with the desktop scenario harness
 1e9f93a48e	take	fix(mobile): stop showing "cannot control this task" while permissions load or after a network blip (relay-only branch and test dropped)
 ee4ef06469	take	fix(web): use optimistic updates for settings across environments
 170c1f7e2d	take	fix(web): Push on the default branch no longer offers a feature branch the server rejects
@@ -1634,7 +1634,7 @@ b779d40077	take	fix(editors): Open in Zed no longer finds the ZFS event daemon
 7bc474667d	take	Stop-cancelled Claude tools show as interrupted, taken as is
 69525bf895	take	taken as is
 ff75365c7d	take	taken as is
-d2a9414359	take	upstream e2e scenario dropped: no scripts/scenarios harness
+d2a9414359	take	its e2e scenario ported later with the desktop scenario harness
 29d517dbac	take	taken as is
 73fb6cd009	take	taken as is
 3ceed620cf	take	conflict resolved: kept Onicode's webhook-free schedule normalization (webhooks removed); took isNonGitProject
@@ -1642,8 +1642,8 @@ d2a9414359	take	upstream e2e scenario dropped: no scripts/scenarios harness
 dd5061364b	take	conflict resolved: upstream's effect-based remember replaces Onicode's memo comparator (6f90d07c20), which also skipped caching finished streamed blocks; render counts unchanged
 f968db10d7	take	comment conflict resolved keeping Onicode's wording; hook order unchanged, row-render test green
 ed0178487d	take	taken as is
-bf74669509	take	upstream e2e scenario dropped: no scripts/scenarios harness
-314f1e2976	take	upstream e2e scenario dropped: no scripts/scenarios harness
+bf74669509	take	its e2e scenario ported later with the desktop scenario harness
+314f1e2976	take	its e2e scenario ported later with the desktop scenario harness
 ccf7ead6a4	take	taken as is
 73cbc6b1ed	take	taken as is
 a4bf7922f5	take	taken as is; restoreUnsettledAt is optional on the wire
@@ -1655,7 +1655,7 @@ d26375ed8a	take	taken as is
 bef412cff6	take	taken as is; changeType is optional on the wire
 a6765d41d5	take	taken as is
 2e33134186	take	taken as is
-675fb1d9a7	take	dropped upstream's e2e scenario; test fixture uses Onicode's loopback auth policy and no relayManaged
+675fb1d9a7	take	test fixture uses Onicode's loopback auth policy and no relayManaged; its e2e scenario ported later with the desktop scenario harness
 9be477fcad	skip	T3 Connect and webhook hold only; apps/server/src/cloud was removed from Onicode
 16c66605e6	take	taken as is
 c03498e689	take	single channel: retry joins a prepared update by downloaded version only (Onicode requests carry no channel/targetVersion); dropped upstream's track-switch tests from the conflicts
@@ -1680,7 +1680,7 @@ f5c2ceb4d1	take	added rename_session to Onicode's wider sendClaudeControlRequest
 5d1352d48a	take	taken as is
 35cc7724c5	take	taken as is
 b96a511067	take	taken as is
-3c77d3d64b	take	dropped upstream's e2e scenario (no scripts/scenarios harness in Onicode)
+3c77d3d64b	take	its e2e scenario ported later with the desktop scenario harness
 fc480ea66a	take	engines conflict resolved to 26.13.1 (Onicode was on 26.13.0)
 3cbc0a4f61	take	taken as is
 dbbbe8b0d6	take	taken as is
@@ -1695,7 +1695,7 @@ c924d7898f	take	taken as is
 2137f360e6	take	taken as is
 752bdaeb70	take	taken as is
 1ea5e4b42d	take	taken as is
-0cf9423d8b	take	without scripts/scenarios e2e (Onicode e2e lives in tester-army)
+0cf9423d8b	take	its e2e scenario ported later with the desktop scenario harness
 b5e4342a90	take	taken as is
 7b1332674b	take	taken as is
 7d4f242375	take	conflict beside Onicode's MANUAL_RESUME_PROMPT; kept both
@@ -1714,18 +1714,18 @@ a20c4dba9e	take	taken as is
 3a5d7f39a8	skip	only serves T3's native Swift TestFlight apps; Onicode's React Native mobile and desktop never called server.getSettings, and re-adding it widens the read-scope RPC surface
 3f92b488db	take	taken as is
 34db335ed5	take	taken as is
-9888694f80	take	dropped upstream's scripts/scenarios e2e (no scenario harness in Onicode)
+9888694f80	take	its e2e scenario ported later with the desktop scenario harness
 f56f27e6c9	take	taken as is
-093c317858	take	dropped upstream's scripts/scenarios e2e (no scenario harness in Onicode)
+093c317858	take	its e2e scenario ported later with the desktop scenario harness
 c76ba848ab	take	conflict resolved: hoisted settleRunBeforeStart without the removed turn-analytics runSettled call; test harness keeps layer/interruptRun, drops settledRuns
-756545a917	take	dropped upstream's scripts/scenarios e2e (no scenario harness in Onicode)
+756545a917	take	its e2e scenario ported later with the desktop scenario harness
 5f80af6805	take	taken as is
-74f02db077	take	dropped upstream's scripts/scenarios e2e (no scenario harness in Onicode)
+74f02db077	take	its e2e scenario ported later with the desktop scenario harness
 37c266d25a	take	taken as is
 7f7a1a447a	take	cloud/ hunks applied to Onicode's service/pinnedRuntime.ts and service/serviceLauncherClient(.test).ts; nightly test fixture dropped
 b60abf32e0	take	relay client hunk dropped; probe off-thread spawn forwards stderr to Onicode's onStderr; worker error narrowed for newer @types/node; test cwd realpath for macOS; lockfile regenerated
 62a51e26a4	take	taken as is (web + mobile)
-e68d4f053b	take	dropped upstream's scripts/scenarios e2e (no scenario harness in Onicode)
+e68d4f053b	take	its e2e scenario ported later with the desktop scenario harness
 9ab1d22d8f	take	taken as is (no eval covers the conventional preset)
 42bfd1f377	take	lockfile regenerated
 fa647599e0	take	taken as is (web + mobile)
@@ -1821,7 +1821,7 @@ bb33fc3a3f	take	test(server): stop Git auto-maintenance racing the template copy
 9cd5733f58	take	fix(web): unreachable environment no longer hides shared-repo PRs
 4dec8cf641	take	fix(web): honor right panel state in custom shortcuts (doc keeps Onicode's context keys)
 cef95b6db9	take	fix(shared): decode URI paths in ghq clone folders
-6f8144b5c4	take	fix(web): overlapping image pastes keep prompt order (upstream e2e scenario dropped)
+6f8144b5c4	take	fix(web): overlapping image pastes keep prompt order; its e2e scenario ported later with the desktop scenario harness
 48a383ca6f	take	fix(web): show failed desktop downloads in retry tooltips
 a96bb81049	take	perf(right panel): normalize pr tab target once
 989c1b55b0	skip	Only touches apps/marketing, which Onicode removed
