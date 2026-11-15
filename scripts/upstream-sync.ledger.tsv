@@ -1776,7 +1776,7 @@ fa864bfca7	take	fix(server): Claude goals no longer re-prompt while a delegated 
 6b9d90f121	take	fix(codex): preserve terminal connection failure categories
 5bd2d0cb82	take	fix(client-runtime): derive MCP download names before URI suffixes
 abc0fde5e0	take	fix(desktop): providers are found after a failed shell probe without relaunching
-e82050b8b9	skip	Raises the theme CSS wire limit to 50,000, which desktop 0.15.0 clients reject on the opt-in theme stream, dropping their config subscription; needs a negotiated opt-in first
+e82050b8b9	take	behind a longThemeCss subscribe flag: clients that do not send it (desktop 0.15.0 and older) get themes with CSS over 20,000 characters without their css, palette kept, so their config stream still decodes
 2b6c14bbf1	take	fix(web): diff file Open and Reveal reach a file whose name has a backslash
 b64eebb991	take	fix(release): enforce packaged Linux glibc requirements (ceiling 2.41 for Onicode's Debian 13 build container)
 3a87ca8c6a	take	fix(client-runtime): tool output no longer rounds integers beyond 2^53
