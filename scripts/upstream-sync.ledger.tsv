@@ -1795,3 +1795,4 @@ ca29ff1d72	take	fix(cli): keep log warnings out of JSON output
 b732f647f2	take	fix(pi): resume attached sessions without reloading extensions (#21512)
 5f29d87c9b	take	fix(provider-acp): a cancel no longer overtakes the prompt it cancels (#30846)
 f5ca0f9427	take	fix(server): wake GitLab MR watches when a rebase is required (#30312)
+910d4590d0	take	fix(server): drain queued native child continuations (#21461)
