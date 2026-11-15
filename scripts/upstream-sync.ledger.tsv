@@ -1944,3 +1944,4 @@ bf8fd416a2	take	fix(server): Claude append launch text may start with two hyphen
 64a481c2af	take	fix(cursor): text generation retries without the sandbox when send rejects it (#34844)
 5ee4fd4f25	take	fix(server): resolve Claude WinGet launchers on Windows (#32138)
 365a62aa84	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): Claude knows decline feedback is the user'\''s message (#27871)' -m 'Ported from pingdotgg/t3code@365a62aa84.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
+ea4e7c1a60	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(acp): permission answers send the agent'\''s option id unchanged (#35837)' -m 'Ported from pingdotgg/t3code@ea4e7c1a60.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
