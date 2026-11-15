@@ -1942,3 +1942,4 @@ fa5fde4bea	take	fix(server): clients paired over Tailscale Serve keep their own 
 dc7ea2c1b0	take	fix(server): a linked launch above the link's access names the link, not the parent mode (#27334); runtimeModeRank exported again
 bf8fd416a2	take	fix(server): Claude append launch text may start with two hyphens (#35598)
 64a481c2af	take	fix(cursor): text generation retries without the sandbox when send rejects it (#34844)
+5ee4fd4f25	take	fix(server): resolve Claude WinGet launchers on Windows (#32138)
