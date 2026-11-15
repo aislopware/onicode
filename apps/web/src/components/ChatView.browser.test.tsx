@@ -81,17 +81,20 @@ function acceptAttachmentUploads(): Disposable {
 }
 
 /** Holds every call to `method` until `release`, then ends it with `end`, until disposed. */
-function holdRpc<Input>(method: string, end: Effect.Effect<never, Error>) {
+function holdRpc(method: string, end: Effect.Effect<never, Error>) {
   let release = () => {};
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const calls: Input[] = [];
-  const answer = answerRpc(method, (input: Input) => {
-    calls.push(input);
+  let markCalled = () => {};
+  const called = new Promise<void>((resolve) => {
+    markCalled = resolve;
+  });
+  const answer = answerRpc(method, () => {
+    markCalled();
     return Effect.promise(() => held).pipe(Effect.andThen(end));
   });
-  return { calls, release, [Symbol.dispose]: () => answer[Symbol.dispose]() };
+  return { called, release, [Symbol.dispose]: () => answer[Symbol.dispose]() };
 }
 
 // The socket is the only fake layer; see test/appScenarios.renders.tsx.
@@ -298,7 +301,8 @@ it("an interrupted image-only first send of a new thread says it may not have be
     .dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
   await expect.element(page.getByRole("img", { name: "shot.png" })).toBeVisible();
   await userEvent.keyboard("{Enter}");
-  await vi.waitFor(() => expect(launch.calls).toHaveLength(1));
+  // The send first waits for the upload, which can outlast a polling wait on a busy runner.
+  await launch.called;
   await userEvent.keyboard("next draft");
   await expect.element(editor).toHaveTextContent("next draft");
   launch.release();
