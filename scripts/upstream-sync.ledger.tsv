@@ -2035,3 +2035,4 @@ f36c8351d8	take	fix(server): an MCP pin lands at the top of the Pinned section (
 2dc5ebd52f	take	fix(web): switching providers no longer drops the thread's stored effort (#33090)
 aaf5b9c68e	take	fix(mobile): PR activity filter remembers bot and resolved visibility (#37096)
 2cb2fa1385	take	fix(web): terminal links open bare compiler filenames (#37071); scenario deferred to the desktop scenarios harness: scripts/scenarios/terminal-bare-filename-opens-its-location.e2e.ts, scripts/scenarios/start-app.ts (editor recording shim)
+b35c9702f9	take	fix(acp): optional text questions can be left blank (#36997)
