@@ -1972,3 +1972,4 @@ e6666dc540	take	docs: include required Bitbucket workspace read scope (#30593)
 f7a1bacd27	take	fix(web): subagent status dots no longer jump between corners (#30753)
 b8bffc8b35	take	fix(web): resource monitor no longer claims to sample every 0 ms (#29749)
 843893e58c	take	fix(web): the minimap keeps the current turn lit while reading a long reply (#30084)
+16a70050f4	take	fix(desktop): voice input recovers after Linux audio restarts (#32376); channel appended after Onicode's remote-desktop channels
