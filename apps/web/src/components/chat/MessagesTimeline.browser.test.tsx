@@ -1,3 +1,5 @@
+import { injectHtmlRenderBootstrap } from "@onicode/shared/htmlRender";
+import { HtmlRenderDocument } from "../files/BrowserDocumentFrame";
 import { flushSync } from "react-dom";
 import { AudioPreview } from "../files/AudioPreview";
 import { cdp, page, userEvent } from "vite-plus/test/browser";
@@ -25,6 +27,7 @@ import {
   useSyncExternalStore,
   type ComponentProps,
   type ReactElement,
+  type ReactNode,
 } from "react";
 import * as DateTime from "effect/DateTime";
 import { Atom } from "effect/reactivity";
@@ -95,6 +98,12 @@ const commandOutputStreaming = vi.hoisted(() => ({ enabled: false }));
 vi.mock(import("./CommandOutputPanel"), async (original) => ({
   ...(await original()),
   useCommandOutputStreaming: () => commandOutputStreaming.enabled,
+}));
+
+// The real frame loads its document from the server; a test hands the row its own.
+const htmlRenderPreview = vi.hoisted(() => ({ render: (): ReactNode => null }));
+vi.mock(import("./HtmlRenderFrame"), () => ({
+  HtmlRenderFrame: (() => htmlRenderPreview.render()) as never,
 }));
 
 const stubbedAsset = vi.hoisted(() => ({ url: "" }));
@@ -244,12 +253,84 @@ function setup({ scheduledTasks = [] as ReadonlyArray<{ id: string; title: strin
   environmentQuery.error = "Pull request not found";
   environmentQuery.data = { tasks: scheduledTasks };
   commandOutputStreaming.enabled = false;
+  htmlRenderPreview.render = () => null;
 }
 
 const TASK_ID = ScheduledTaskId.make("task-1");
 const AUTOMATION_PROMPT = "Triage the inbox\n\nLabel every new issue and close duplicates.";
 
 describe("MessagesTimeline work rows", () => {
+  it("keeps a tall HTML preview in place when its last accordion opens at the bottom", async () => {
+    setup();
+    const props = baseProps();
+    const html = injectHtmlRenderBootstrap(`<div style="height:1400px">Earlier preview content</div>
+      <details><summary>More rows</summary><div style="height:900px">More rows</div></details>
+      <script>addEventListener('message', e => { if(e.data === 'toggle') document.querySelector('details').open = !document.querySelector('details').open; }); parent.postMessage('listening', '*');</script>`);
+    const src = URL.createObjectURL(new Blob([html], { type: "text/html" }));
+    using _url = { [Symbol.dispose]: () => URL.revokeObjectURL(src) };
+    // The frame loads on its own clock, and a toggle posted before its script runs is lost.
+    const listening = new Promise<void>((resolve) => {
+      const onMessage = (event: MessageEvent) => {
+        if (event.data !== "listening") return;
+        window.removeEventListener("message", onMessage);
+        resolve();
+      };
+      window.addEventListener("message", onMessage);
+    });
+    function Preview() {
+      const [height, setHeight] = useState(1437);
+      return (
+        <div style={{ height }}>
+          <HtmlRenderDocument
+            src={src}
+            title="Tall preview"
+            className="size-full"
+            onContentHeight={setHeight}
+          />
+        </div>
+      );
+    }
+    htmlRenderPreview.render = () => <Preview />;
+    const container = document.createElement("div");
+    container.style.cssText = "height:600px;width:900px;display:flex;flex-direction:column";
+    await using screen = await render(
+      <MessagesTimeline
+        {...props}
+        timelineEntries={[
+          {
+            id: "preview",
+            kind: "html-render",
+            createdAt: CREATED_AT,
+            runId: RunId.make("preview-run"),
+            htmlRender: { attachmentId: "preview", title: "Tall preview", height: 1450 },
+          },
+          message("Done", { role: "assistant" }, "preview-done"),
+        ]}
+      />,
+      { container },
+    );
+    const viewport = props.listRef.current!.getScrollableNode()!;
+    const frame = screen.getByTitle("Tall preview").element() as HTMLIFrameElement;
+    await vi.waitFor(() => {
+      expect(frame.clientHeight).toBe(1437);
+      expect(viewport.scrollTop).toBeGreaterThan(0);
+      expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBeLessThan(2);
+    });
+    await listening;
+    const top = frame.getBoundingClientRect().top;
+    frame.focus();
+    frame.contentWindow!.postMessage("toggle", "*");
+    await vi.waitFor(() => {
+      expect(frame.clientHeight).toBe(2337);
+      expect(frame.getBoundingClientRect().top).toBeCloseTo(top, 0);
+    });
+    frame.contentWindow!.postMessage("toggle", "*");
+    await vi.waitFor(() => {
+      expect(frame.clientHeight).toBe(1437);
+      expect(frame.getBoundingClientRect().top).toBeCloseTo(top, 0);
+    });
+  });
+
   it("keeps the worked-for heading in place when expanded at the bottom", async () => {
     const props = baseProps();
     const runId = RunId.make("completed-run");
