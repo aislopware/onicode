@@ -2111,3 +2111,4 @@ f1919eb1e2	take	fix(server): Codex prompt suggestions no longer imitate delegate
 64e7e236e2	take	fix(mobile): swipe actions no longer clip in short thread rows (#37285)
 03e05f6235	take	fix(server): a background OpenCode subagent's question survives its parent's turn end (#37300)
 dd7255d338	take	fix(server): PowerShell process scans keep non-ASCII names on Windows (#37264); cloud/pinnedRuntime.ts hunk applied to Onicode's service/pinnedRuntime.ts
+c5e6b24ff5	take	fix(mobile): iOS multi-item text paste folds into an attachment (#37301)
