@@ -1777,3 +1777,4 @@ fa864bfca7	take	fix(server): Claude goals no longer re-prompt while a delegated 
 5bd2d0cb82	take	fix(client-runtime): derive MCP download names before URI suffixes
 abc0fde5e0	take	fix(desktop): providers are found after a failed shell probe without relaunching
 e82050b8b9	skip	Raises the theme CSS wire limit to 50,000, which desktop 0.15.0 clients reject on the opt-in theme stream, dropping their config subscription; needs a negotiated opt-in first
+2b6c14bbf1	take	fix(web): diff file Open and Reveal reach a file whose name has a backslash
