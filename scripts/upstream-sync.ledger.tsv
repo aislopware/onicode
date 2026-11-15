@@ -1806,3 +1806,4 @@ fe59fa44d0	take	fix(web): renaming a sidebar thread no longer shifts the row or 
 5b818b3e69	take	perf(server): resolve model aliases in one memoized traversal (#31197)
 4cb8da6f2f	skip	relay infra only; Onicode removed infra/relay
 f6fd89b6f4	take	fix(server): terminals start a $SHELL whose path contains a space (#30969)
+2cc4b4888e	take	fix(desktop): a waiting update is no longer re-announced on every poll (#31154)
