@@ -1811,3 +1811,4 @@ bbda0c1071	take	fix(acp): replace and remove identified plans across turns
 96ffe454cd	take	fix(server): streamed replies keep updating after inline triple-backtick line
 d3217c75f2	take	fix(provider-cursor): advertise manual compaction
 01c8e59f14	skip	Onicode removed the legacy theme-id alias table, so there is no alias lookup to fix
+d022d3bd8b	take	fix(mobile): iOS image viewer pages and dismisses after slow opens
