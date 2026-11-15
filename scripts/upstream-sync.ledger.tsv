@@ -1815,3 +1815,4 @@ d022d3bd8b	take	fix(mobile): iOS image viewer pages and dismisses after slow ope
 bb33fc3a3f	take	test(server): stop Git auto-maintenance racing the template copy
 703810f308	take	fix(server): Open in and Reveal open ~/ file links from projects outside home
 6a8f022b45	take	perf(server): Windows terminals report exit sooner (patch moved to node-pty beta.18)
+3c8f3f2c3d	take	fix(web): up-arrow recall keeps thread and machine mentions
