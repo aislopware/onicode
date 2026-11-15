@@ -1871,3 +1871,4 @@ bdf6c6ec89	take	open WSL-mounted Windows drives directly in File Explorer (confl
 5b5f1bc18a	take	PR watch wakes quote a bot comment's text, not its HTML
 81df733306	take	opening a project from the command palette skips settled and snoozed threads
 8ab40cc88e	take	PDF preview says 1 / 1 page for a one-page PDF
+62ee103996	take	setup script output no longer shows stray bytes of escape sequences
