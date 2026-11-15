@@ -1789,3 +1789,4 @@ c0561c5c3d	take	fix(shared): the SQLite reader pool comes back after a failed st
 ca29ff1d72	take	fix(cli): keep log warnings out of JSON output
 6c7a87cbcb	take	fix(web,mobile): a late MCP app teardown no longer closes the app that replaced it
 47e24f6cc2	take	fix(server): Grok usage counts turns from resumed sessions
+2b7ea1bc2d	skip	Onicode already awaits the retried PATH update in 35845f7175
