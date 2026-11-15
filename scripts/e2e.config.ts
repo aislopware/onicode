@@ -134,8 +134,8 @@ export default {
       engine: mobile({ platform: "ios", device: MOBILE.device }),
       app: {
         bundleId: "dev.aislopware.onicode.dev",
-        // Metro starts after the server listens, so it answering means both are up.
-        readyUrl: `http://127.0.0.1:${MOBILE.metroPort}/status`,
+        // The server starts after Metro has built the first bundle, so it answering means both.
+        readyUrl: `http://127.0.0.1:${MOBILE.serverPort}/.well-known/onicode/environment`,
         command: {
           executable: resolved.node,
           args: [
@@ -148,7 +148,8 @@ export default {
           ],
           cwd: APP_DIR,
           inheritEnv: resolved.inheritEnv,
-          startupTimeout: 300_000,
+          // A cold Metro cache makes the first bundle take four minutes on a hosted runner.
+          startupTimeout: 600_000,
           log: ".e2e/mobile-app.log",
         },
       },

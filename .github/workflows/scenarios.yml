@@ -177,8 +177,28 @@ jobs:
           simslim on "$udid" --except store,web --preserve-boot-state
           echo "E2E_IOS_DEVICE=Scenario iPhone" >> "$GITHUB_ENV"
 
+      # Without it Metro transforms every module again, which takes four minutes here.
+      - name: Locate Metro's cache
+        id: metro
+        run: echo "dir=$(node -p 'require("node:os").tmpdir()')/metro-cache" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Metro's cache
+        id: metro_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.metro.outputs.dir }}
+          key: metro-ios-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: metro-ios-
+
       - name: Run the iOS scenarios
         run: vp run scenarios --target ios
+
+      - name: Save Metro's cache
+        if: ${{ !cancelled() && steps.metro_cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.metro.outputs.dir }}
+          key: metro-ios-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Print the summary
         if: ${{ !cancelled() }}

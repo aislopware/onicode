@@ -287,23 +287,10 @@ const startApp = Effect.fn("startApp")(function* (input: {
     return yield* Effect.raceFirst(app.exitCode, prepareWindow);
   }
 
-  // The device is another machine: the server listens on every interface, and Metro serves the
-  // dev client its JavaScript. Tests mint their own pairing links, so the startup one is dropped.
+  // Metro serves the dev client its JavaScript, and the server listens on every interface for a
+  // device that is not this machine. Tests mint their own pairing links, so the startup one is
+  // dropped.
   const [serverPort = "", metroPort = "", host = ""] = input.ports;
-  const server = yield* start({
-    cwd: checkout,
-    command: node,
-    args: devRunner("dev:server", ["--host", "0.0.0.0", "--port", serverPort]),
-    env,
-    onLine: (line) => (line.includes("pairingUrl:") ? Effect.void : Console.log(line)),
-  });
-  yield* net.hasListenerOnHost(Number(serverPort), "127.0.0.1").pipe(
-    Effect.filterOrFail(
-      (listening) => listening,
-      () => new ScenarioError({ message: "The server is not listening yet." }),
-    ),
-    Effect.retry({ schedule: Schedule.spaced("500 millis"), times: 600 }),
-  );
   const metro = yield* start({
     cwd: path.join(checkout, "apps/mobile"),
     command: "npx",
@@ -326,6 +313,33 @@ const startApp = Effect.fn("startApp")(function* (input: {
       REACT_NATIVE_PACKAGER_HOSTNAME: host,
     },
     onLine: Console.log,
+  });
+  // The first bundle takes minutes on a slow machine. Building it here, from the manifest the
+  // dev client itself reads, keeps that out of the first test's time. The server starts only
+  // afterwards, so it answering means the bundle is ready too.
+  yield* Effect.tryPromise({
+    try: async () => {
+      const origin = `http://127.0.0.1:${metroPort}`;
+      // @effect-diagnostics-next-line globalFetchInEffect:off - Metro's own HTTP endpoints, polled while it starts
+      const manifest = await fetch(origin, {
+        headers: { "expo-platform": "ios", accept: "application/expo+json,application/json" },
+      });
+      const { launchAsset } = (await manifest.json()) as {
+        readonly launchAsset: { readonly url: string };
+      };
+      // @effect-diagnostics-next-line globalFetchInEffect:off - Metro's own HTTP endpoints
+      const bundle = await fetch(launchAsset.url.replace(/^https?:\/\/[^/]+/, origin));
+      if (!bundle.ok) throw new Error(`Metro answered ${bundle.status} for the bundle.`);
+      await bundle.arrayBuffer();
+    },
+    catch: (cause) => new ScenarioError({ message: `Metro is not ready: ${String(cause)}` }),
+  }).pipe(Effect.retry({ schedule: Schedule.spaced("500 millis"), times: 600 }));
+  const server = yield* start({
+    cwd: checkout,
+    command: node,
+    args: devRunner("dev:server", ["--host", "0.0.0.0", "--port", serverPort]),
+    env,
+    onLine: (line) => (line.includes("pairingUrl:") ? Effect.void : Console.log(line)),
   });
   return yield* Effect.raceFirst(server.exitCode, metro.exitCode);
 });
