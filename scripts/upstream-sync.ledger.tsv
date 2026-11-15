@@ -1887,3 +1887,4 @@ b9bbfda087	take	NixOS/nspawn veths no longer advertised as LAN routes (conflict:
 14a60e85e5	take	fix(server): session import no longer counts unused sessions as failures (#32122)
 bbd8bc074a	take	perf(server): reuse Find documents across query changes (#29310)
 6152fe3ae8	take	fix(server): branch PRs stay matched when a remote has a second push URL (#29625)
+85168744f7	take	fix(server): Stop on a stalled run closes its approval and question cards (#30695)
