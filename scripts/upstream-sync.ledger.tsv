@@ -2091,3 +2091,4 @@ a3708b5180	take	fix(web): concealed terminal text stays hidden under the cursor 
 45dbb4436c	take	fix(web): legacy mouse reports reach the PTY byte for byte (#37223)
 0de6ddb823	take	fix(web): editing a queued message into /btw no longer saves it to the main thread (web + mobile)
 16854a766c	take	fix(web): usage chart and share-bar figures reach screen readers
+b5d9c71e1c	take	fix(web): screen readers announce each Usage figure with its label
