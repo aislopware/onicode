@@ -1873,3 +1873,4 @@ bdf6c6ec89	take	open WSL-mounted Windows drives directly in File Explorer (confl
 8ab40cc88e	take	PDF preview says 1 / 1 page for a one-page PDF
 62ee103996	take	setup script output no longer shows stray bytes of escape sequences
 2370e338f7	take	SQLite, archive and notebook previews pluralize 1 row/entry/cell
+dde53b11f3	take	notebook error previews no longer show terminal color codes
