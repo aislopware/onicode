@@ -1093,7 +1093,7 @@ export const make = Effect.gen(function* () {
                   readable.servesHost?.(host) !== false
                 ) {
                   return yield* new PullRequestUnavailableError({
-                    reason: "repository-without-project",
+                    reason: "provider-unsupported",
                     repository,
                   });
                 }
