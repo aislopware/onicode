@@ -1894,3 +1894,4 @@ f00afc6cda	take	fix(server): typing after a click by coordinates no longer hangs
 4aead9e6d9	take	fix(server): Claude MCP elicitations Onicode cannot show are cancelled, not declined (#33575)
 c8c210203c	skip	relay managed endpoint runtime (cloud/ManagedEndpointRuntime) removed with T3 Connect
 3f1b132e97	take	git commit -a --author='ajinkyajacob <82514259+ajinkyajacob@users.noreply.github.com>' -m 'fix(acp): give Command Code Onicode'\''s MCP endpoint over HTTP (#34004)' -m 'Ported from pingdotgg/t3code@3f1b132e97.' --trailer 'Co-authored-by: CommandCodeBot <noreply@commandcode.ai>'
+1e60d60519	take	Fix #29433: Restore Codex MCP apps after thread unload (#29498)
