@@ -34,7 +34,8 @@ A thread has at most one alert on the phone: when it has more news, the new aler
 one's place. Alerts from the same environment stack together.
 
 Opening a thread in the app clears its alert, however you got there. An alert for the thread you
-are looking at in the app is not shown.
+are looking at in the app is not shown. A thread that finishes while snoozed sends no alert, and
+its result stays off the Lock Screen, as on desktop.
 
 ## What leaves your machine
 
