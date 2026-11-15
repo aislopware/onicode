@@ -126,7 +126,7 @@ import {
 } from "./McpInvocationContext.ts";
 import * as Metrics from "../observability/Metrics.ts";
 import { resolveInteractionMode, resolveRuntimeMode, taskPrompt } from "./delegatedTaskModes.ts";
-import { isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
+import { assertTargetWithinLimits, isLiveCallerShell, threadNotFound } from "./threadAccess.ts";
 import * as SecretRequests from "../secrets/SecretRequests.ts";
 import * as PeerForwarding from "../peer/PeerForwarding.ts";
 import * as RemoteDelegation from "../peer/RemoteDelegation.ts";
@@ -3288,8 +3288,7 @@ const make = Effect.gen(function* () {
     sendToThread: Effect.fn("OrchestratorMcpService.sendToThread")(function* (scope, input) {
       const { parent, limits, target } = yield* loadScopedThread(scope, input.threadId, ["runs"]);
       yield* assertLiveCallerForOtherThread(scope, parent, target);
-      yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);
-      yield* resolveInteractionMode(limits.interactionMode, target.thread.interactionMode);
+      yield* assertTargetWithinLimits(limits, target.thread);
 
       const mode = input.mode ?? "auto";
       const key = yield* requestKey(input.clientRequestId);
@@ -3393,8 +3392,7 @@ const make = Effect.gen(function* () {
     interruptThread: Effect.fn("OrchestratorMcpService.interruptThread")(function* (scope, input) {
       const { parent, limits, target } = yield* loadScopedThread(scope, input.threadId, ["runs"]);
       yield* assertLiveCallerForOtherThread(scope, parent, target);
-      yield* resolveRuntimeMode(limits.runtimeMode, target.thread.runtimeMode);
-      yield* resolveInteractionMode(limits.interactionMode, target.thread.interactionMode);
+      yield* assertTargetWithinLimits(limits, target.thread);
       const key = yield* requestKey(input.clientRequestId);
       // A peer from before `stop` drops it when decoding, so it interrupts
       // the run instead, as this call did then.

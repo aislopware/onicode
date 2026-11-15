@@ -1903,3 +1903,4 @@ f2839735ef	skip	outside cloud-assistant MCP OAuth (Gemini Spark); declined surfa
 c6a120a958	take	fix(forgejo): review guides work for checkouts whose SSH remote is not the web host (#29784)
 9791bce798	take	fix(effect-acp): reject elicitation modes the client did not advertise (#35839)
 6c0032d655	take	fix(server): MCP refuses disallowed browser origins with 403 before auth and CORS (#35810)
+2e9418af79	take	fix(mcp): explain cross-thread permission rejections (#36934)
