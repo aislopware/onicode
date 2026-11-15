@@ -42,6 +42,7 @@ const TERMINAL_DATA = {
 const MODE = {
   cursorKeys: 1,
   mouseAnyEvent: 1003,
+  focusEvent: 1004,
   bracketedPaste: 2004,
   synchronizedOutput: 2026,
   reportColorScheme: 2031,
@@ -711,6 +712,18 @@ export class GhosttyTerminalCore {
     }
     this.runtime.freeUsize(written);
     this.runtime.free(inputPointer, input.length);
+    return encoded;
+  }
+
+  /** Empty unless the program enabled DEC 1004 focus reporting. */
+  encodeFocus(focused: boolean): string {
+    this.ensureActive();
+    if (!this.getMode(MODE.focusEvent)) return "";
+    const written = this.runtime.allocUsize();
+    const encoded = this.encodeOutput(written, (output, outputSize) =>
+      this.runtime.call("ghostty_focus_encode", focused ? 0 : 1, output, outputSize, written),
+    );
+    this.runtime.freeUsize(written);
     return encoded;
   }
 

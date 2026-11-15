@@ -17,7 +17,7 @@ import * as ServerConfig from "../config.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
 import { projectLocationFlags, resolveCliAuthConfig } from "./config.ts";
-import { resolveHostCliCommand } from "./invocation.ts";
+import { resolveHostCliCommand, resolveHostCliHint } from "./invocation.ts";
 import * as CliService from "./service.ts";
 
 /** How other devices reach this machine now. */
@@ -77,7 +77,18 @@ const planAccess = (
   return { access: accessOf(setup), ask: true };
 };
 
-const formatSetup = (setup: Setup) => {
+/** The commands hints name, run with the caller's --base-dir and launcher. */
+const resolveHints = Effect.fn("cli.up.resolve_hints")(function* (baseDir: Option.Option<string>) {
+  return {
+    run: yield* resolveHostCliHint("", baseDir),
+    pair: yield* resolveHostCliHint("pair", baseDir),
+    up: yield* resolveHostCliHint("up", baseDir),
+    upNoLan: yield* resolveHostCliHint("up", baseDir, ["--no-lan"]),
+  };
+});
+type Hints = Effect.Success<ReturnType<typeof resolveHints>>;
+
+const formatSetup = (setup: Setup, hints: Hints) => {
   const { service } = setup;
   // This home's access settings reach no service, so only the service is shown.
   if (service.otherBaseDir !== undefined) {
@@ -119,7 +130,7 @@ const formatSetup = (setup: Setup) => {
         ]
       : []),
     ...(setup.lanFromOldDefault
-      ? ["Older installs keep LAN access on. Turn it off: `onicode up --no-lan`."]
+      ? [`Older installs keep LAN access on. Turn it off: \`${hints.upNoLan}\`.`]
       : []),
   ];
   return [
@@ -128,12 +139,12 @@ const formatSetup = (setup: Setup) => {
   ].join("\n");
 };
 
-const formatNextSteps = (access: Access, serviceInstalled: boolean, pairCommand: string) =>
+const formatNextSteps = (access: Access, serviceInstalled: boolean, hints: Hints) =>
   access !== "off"
-    ? `Run \`${pairCommand}\`. Use the code on your other device.`
+    ? `Run \`${hints.pair}\`. Use the code on your other device.`
     : serviceInstalled
       ? "Remote access is off. Onicode still runs here in the background."
-      : "Remote access is off. Run `onicode` to use Onicode here.";
+      : `Remote access is off. Run \`${hints.run}\` to use Onicode here.`;
 
 const interactiveTerminal = () => Boolean(process.stdin.isTTY && process.stdout.isTTY);
 
@@ -149,7 +160,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     onNone: () => [],
     onSome: (dir) => ["--base-dir", dir],
   });
-  const { command: pairCommand } = yield* resolveHostCliCommand("pair", baseDirArgs);
+  const hints = yield* resolveHints(flags.baseDir);
   const before = yield* readSetup();
   // Before any question or write: install would refuse only after both.
   if (before.service.otherBaseDir !== undefined) {
@@ -163,7 +174,8 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
   const interactive = !flags.yes && interactiveTerminal();
   let access = plan.access;
   if (plan.ask && interactive) {
-    if (before.service.installed) yield* Console.log(`Current setup\n${formatSetup(before)}\n`);
+    if (before.service.installed)
+      yield* Console.log(`Current setup\n${formatSetup(before, hints)}\n`);
     const choices: ReadonlyArray<{ value: Access; title: string; description: string }> = [
       { value: "off", title: "Off", description: "Only this machine" },
       {
@@ -201,7 +213,7 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
   // Nothing to run in the background, but a route left on still gets turned off.
   if (!before.service.installed && access === "off") {
     if (current !== "off") yield* CliService.writeServiceEnv(baseDir, accessEnv("off"));
-    return yield* Console.log(formatNextSteps(access, false, pairCommand));
+    return yield* Console.log(formatNextSteps(access, false, hints));
   }
   const { installedVersion } = before.service;
   const newer =
@@ -289,9 +301,8 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
     if ("failed" in result && before.service.installed) {
       // The old service still runs, so a foreground server would clash with it.
       yield* restoreServiceEnv;
-      const { command } = yield* resolveHostCliCommand("up", baseDirArgs);
       yield* Console.log(
-        `Service setup failed: ${result.failed} Fix that, then run \`${command}\` again.`,
+        `Service setup failed: ${result.failed} Fix that, then run \`${hints.up}\` again.`,
       );
     } else if ("failed" in result) {
       yield* printServeCommand(`Service setup failed: ${result.failed}`);
@@ -316,10 +327,10 @@ const setUp = Effect.fn("cli.up")(function* (flags: {
   const after = yield* readSetup();
   yield* Console.log(
     // From what took effect: a failed service step can undo a choice.
-    `\nThis machine\n${formatSetup(after)}\n\n${formatNextSteps(
+    `\nThis machine\n${formatSetup(after, hints)}\n\n${formatNextSteps(
       accessOf(after),
       after.service.installed,
-      pairCommand,
+      hints,
     )}`,
   );
 });
@@ -417,12 +428,12 @@ export const statusCommand = Command.make("status", {
           CliService.layer(config).pipe(Layer.provideMerge(ServerConfig.layer(config))),
         ),
       );
+      if (flags.json) return yield* Console.log(setupJson(setup));
+      const hints = yield* resolveHints(flags.baseDir);
       yield* Console.log(
-        flags.json
-          ? setupJson(setup)
-          : setup.service.otherBaseDir !== undefined
-            ? `This machine\n${formatSetup(setup)}`
-            : `This machine\n${formatSetup(setup)}\n\nChange access: \`onicode up\`.`,
+        setup.service.otherBaseDir !== undefined
+          ? `This machine\n${formatSetup(setup, hints)}`
+          : `This machine\n${formatSetup(setup, hints)}\n\nChange access: \`${hints.up}\`.`,
       );
     }),
   ),

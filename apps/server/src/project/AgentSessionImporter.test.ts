@@ -16,7 +16,6 @@ import {
   type OrchestrationV2ProviderThread,
 } from "@onicode/contracts";
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
-import * as KeyedLock from "@onicode/shared/KeyedLock";
 import * as AcpRegistryRuntimeCoordinator from "@onicode/provider-acp-registry/server/AcpRegistryRuntimeCoordinator";
 import * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as Context from "effect/Context";
@@ -188,7 +187,7 @@ const makeImporter = Effect.fn(function* (
   candidates: ReadonlyArray<AgentSessionScanner.AgentSessionRecentThread>,
   beforeTransaction: Effect.Effect<void> = Effect.void,
   getAdapter?: ProviderAdapterRegistry.ProviderAdapterRegistryV2Shape["get"],
-  threadCommands?: KeyedLock.KeyedLock<ThreadId>,
+  threadCommands?: ThreadCommandExecutor.ThreadCommandExecutor["Service"],
   settings: Layer.Layer<
     ServerSettings.ServerSettingsService,
     ServerSettingsError
@@ -271,7 +270,7 @@ const makeImporter = Effect.fn(function* (
           ),
           Layer.succeed(
             ThreadCommandExecutor.ThreadCommandExecutor,
-            threadCommands ?? (yield* KeyedLock.make<ThreadId>()),
+            threadCommands ?? (yield* ThreadCommandExecutor.make),
           ),
         ),
       ),
@@ -816,7 +815,7 @@ const importDuringCommand = Effect.fn(function* (
   const projections = yield* ProjectionStore.ProjectionStoreV2;
   const sink = yield* EventSink.EventSinkV2;
   const threadId = yield* seedOwner(candidate(CODEX_MODEL_SELECTION, name));
-  const lock = yield* KeyedLock.make<ThreadId>();
+  const lock = yield* ThreadCommandExecutor.make;
   const loaded = yield* Deferred.make<void>();
   const importerCommitting = yield* Deferred.make<void>();
   const commandWritten = yield* Deferred.make<void>();

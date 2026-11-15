@@ -528,8 +528,10 @@ const make = Effect.gen(function* () {
       }
 
       // Only credentials in the issued pairing-code format are case-insensitive.
-      const pairingCredential = PAIRING_TOKEN_PATTERN.test(credential)
-        ? credential.toUpperCase()
+      // People type codes in groups such as XXXX-XXXX-XXXX.
+      const compactCredential = credential.replace(/[\s-]/g, "");
+      const pairingCredential = PAIRING_TOKEN_PATTERN.test(compactCredential)
+        ? compactCredential.toUpperCase()
         : credential;
 
       // Check scopes in the UPDATE so rejected requests cannot spend one-time links.

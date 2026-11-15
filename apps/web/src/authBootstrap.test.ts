@@ -1,6 +1,7 @@
 import type { AuthSessionState } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import { HttpClientError, HttpClientRequest } from "effect/http";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { installEnvironmentHttpTest } from "../test/environmentHttpTest";
@@ -46,6 +47,7 @@ describe("resolveInitialServerAuthGateState", () => {
     __resetServerAuthBootstrapForTests();
     __setPrimaryHttpRunnerForTests();
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("shares one session check between concurrent callers and caches success", async () => {
@@ -75,5 +77,32 @@ describe("resolveInitialServerAuthGateState", () => {
     });
 
     expect(testApi.calls.session).toBe(2);
+  });
+
+  it("retries the session check while the backend is still unreachable", async () => {
+    const testApi = await installSessionApi(() => authenticatedSession);
+    // What FetchHttpClient yields when nothing listens on the backend port.
+    const connectionRefused = new HttpClientError.HttpClientError({
+      reason: new HttpClientError.TransportError({
+        request: HttpClientRequest.get("http://localhost:3773/api/auth/session"),
+        cause: new TypeError("Failed to fetch"),
+      }),
+    });
+    let unreachableAttempts = 1;
+    __setPrimaryHttpRunnerForTests((effect) => {
+      if (unreachableAttempts > 0) {
+        unreachableAttempts -= 1;
+        return Promise.reject(connectionRefused);
+      }
+      return testApi.run(effect);
+    });
+    const { resolveInitialServerAuthGateState } = await import("./environments/primary");
+
+    vi.useFakeTimers({ toFake: ["setTimeout", "Date"] });
+    await Promise.all([
+      expect(resolveInitialServerAuthGateState()).resolves.toEqual({ status: "authenticated" }),
+      vi.advanceTimersByTimeAsync(1_000),
+    ]);
+    expect(testApi.calls.session).toBe(1);
   });
 });

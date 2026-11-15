@@ -211,6 +211,18 @@ it.effect("registers only peer links and never redirects for an unverified clien
       );
       expect(unregistered.status).toBe(400);
       expect(unregistered.redirectTo).toBeUndefined();
+
+      for (const resource of [`${ORIGIN}/mcp#section`, `${ORIGIN}/mcp#`]) {
+        const wrongTarget = yield* decide(
+          handler,
+          { ...authorizeParams(clientId), resource },
+          decision,
+        );
+        expect(wrongTarget.status).toBe(200);
+        expect(new URL(wrongTarget.redirectTo!).searchParams.get("error"), resource).toBe(
+          "invalid_target",
+        );
+      }
     }),
   ),
 );
