@@ -2018,3 +2018,4 @@ ab45ce7167	take	fix(github): pull request activity says when its comments were c
 4fa5f0e0e6	take	fix(web): a side chat's subagent opens its parent as a side chat tab, not a bare page (#32907)
 79e47e9096	take	fix(shared): inline code paths like `docker/Dockerfile` become file chips (#32402)
 63b5645678	skip	Clerk is removed from Onicode; the guard only lets Clerk's own account modal handle Esc, and no other non-Base-UI modal opens over Settings
+d738edf401	take	adapted: conflicts resolved by dropping the threadSyncStatus prop without adding upstream's connectionAwaitingApproval (not in Onicode)
