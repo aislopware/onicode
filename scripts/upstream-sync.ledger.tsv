@@ -1865,3 +1865,4 @@ d93b225049	take	grouped projects show their own monogram in the picker and draft
 fb74969314	take	re-base worktree launches whose recorded base ref does not resolve
 3ee426272b	take	expand viewed checkbox click area
 def3722faa	take	Shift+F6 moves from a side chat back to the main chat
+5c9e5c1e98	take	check out cloned submodules when one submodule clone fails in a new worktree
