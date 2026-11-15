@@ -1,4 +1,10 @@
-import { EnvironmentId, ScheduledTaskId, ThreadId } from "@onicode/contracts";
+import {
+  ComposerContextId,
+  type EnvironmentContextRecord,
+  EnvironmentId,
+  ScheduledTaskId,
+  ThreadId,
+} from "@onicode/contracts";
 import {
   formatComposerContextReference,
   threadContextRecord,
@@ -10,8 +16,7 @@ import {
   recallableComposerPrompt,
   stepComposerPromptHistory,
   type ComposerPromptHistoryPosition,
-} from "./composerPromptHistory";
-import { environmentContextRecord } from "../../lib/composerContextRecords";
+} from "./composerPromptHistory.ts";
 
 const entries = buildComposerPromptHistoryEntries([
   { id: "m1", role: "user", text: "first" },
@@ -116,7 +121,13 @@ describe("buildComposerPromptHistoryEntries", () => {
       { environmentId, threadId: ThreadId.make("thread-2") },
       "Removed before send",
     );
-    const machine = environmentContextRecord(environmentId, "Build box");
+    const machine: EnvironmentContextRecord = {
+      version: 1,
+      kind: "environment",
+      contextId: ComposerContextId.make(`environment_${environmentId}`),
+      label: "Build box",
+      environmentId,
+    };
     const threadChip = formatComposerContextReference(thread);
     const machineChip = formatComposerContextReference(machine);
     const [entry] = buildComposerPromptHistoryEntries([

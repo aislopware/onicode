@@ -1,4 +1,5 @@
-import { resolveUserMessagePresentation } from "@onicode/client-runtime/user-message";
+// Shared by web and mobile. Upstream t3code keeps this file in apps/web/src/components/chat,
+// so its changes to composerPromptHistory.ts port here.
 import {
   EnvironmentContextRecord,
   type OrchestrationMessageContext,
@@ -9,8 +10,10 @@ import {
   collectComposerContextReferences,
 } from "@onicode/shared/composerContextReferences";
 import { Schema } from "effect";
-import { PLAN_IMPLEMENTATION_PROMPT_PREFIX } from "../../proposedPlan";
 
+import { resolveUserMessagePresentation } from "./userMessage.ts";
+
+const PLAN_IMPLEMENTATION_PROMPT_PREFIX = "PLEASE IMPLEMENT THIS PLAN:\n";
 const CLAUDE_ULTRATHINK_PREFIX = "Ultrathink:\n";
 const REVIEW_COMMENT_BLOCK_PATTERN = /<review_comment\b[^>]*>[\s\S]*?<\/review_comment>/g;
 const TRAILING_LEGACY_CONTEXT =
@@ -60,7 +63,7 @@ interface ComposerPromptHistoryStep {
 
 function stripTrailingReviewComments(prompt: string): string {
   let cut = prompt.length;
-  for (const match of [...prompt.matchAll(REVIEW_COMMENT_BLOCK_PATTERN)].toReversed()) {
+  for (const match of [...prompt.matchAll(REVIEW_COMMENT_BLOCK_PATTERN)].reverse()) {
     const blockEnd = match.index + match[0].length;
     if (prompt.slice(blockEnd, cut).trim().length > 0) break;
     cut = match.index;
@@ -123,7 +126,7 @@ export function recallableComposerPrompt(
   }
 
   // Chips without a record the draft can hold would render as unavailable.
-  for (const reference of collectComposerContextReferences(prompt).toReversed()) {
+  for (const reference of [...collectComposerContextReferences(prompt)].reverse()) {
     if (keptContextIds.has(reference.contextId)) continue;
     let { start, end } = reference;
     if (prompt[end] === " ") end += 1;

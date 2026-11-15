@@ -69,11 +69,17 @@ import {
   useComposerDraft,
 } from "../../state/use-composer-drafts";
 import type { ComposerDocumentAttachment } from "../../lib/composerContext";
+import { appAtomRegistry } from "../../state/atom-registry";
+import {
+  recallComposerPrompt,
+  useComposerPromptRecallActive,
+} from "../../state/composer-prompt-recall";
 import { useProject, useVisibleThreadShells } from "../../state/entities";
 import { useMentionableEnvironments } from "../../state/environments";
 import { useLinkedEnvironments } from "../../state/peerLinks";
 import { useEnvironmentScopeDenied } from "../../state/session";
-import { scopeProjectRef } from "@onicode/client-runtime/environment";
+import { environmentThreadDetails } from "../../state/threads";
+import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { ComposerAttachmentButton } from "./ComposerAttachmentButton";
@@ -474,6 +480,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const composerOwnerKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
   const composerDraftKey = props.draftKey ?? composerOwnerKey;
   const { text: draftMessage, attachments: draftAttachments } = useComposerDraft(composerDraftKey);
+  const recallingPrompt = useComposerPromptRecallActive(composerDraftKey, draftMessage);
   const queuedEdit = props.queuedEdit ?? null;
   const hasContent =
     draftMessage.trim().length > 0 ||
@@ -582,6 +589,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const composerMenu = useComposerCommandMenu({
     draftMessage: draftMessage,
     ownerKey: composerDraftKey,
+    // A recalled prompt can end in a mention or slash trigger; stepping past it should not search.
+    enabled: !recallingPrompt,
     environmentId: props.environmentId,
     threadShells: useVisibleThreadShells(),
     environments: offersLinkedEnvironments(props.serverConfig)
@@ -619,6 +628,32 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   });
   const isSubmissionLocked =
     props.interactionLocked === true || queuedEdit?.saving === true || voiceInput.blocksSubmission;
+  const recallPrompt =
+    !props.isDraft &&
+    queuedEdit === null &&
+    !isSubmissionLocked &&
+    draftAttachments.length === 0 &&
+    (draftMessage.length === 0 || recallingPrompt)
+      ? (direction: "backward" | "forward") =>
+          recallComposerPrompt({
+            draftKey: composerDraftKey,
+            direction,
+            // Read on the key press: these rows change with every streamed delta.
+            messages: appAtomRegistry
+              .get(
+                environmentThreadDetails.visibleTurnItemsAtom(
+                  scopeThreadRef(props.environmentId, props.selectedThread.id),
+                ),
+              )
+              .flatMap(({ item }) =>
+                // A queued prompt has not been sent; it is edited in the queue.
+                item.type !== "user_message" ||
+                (item.inputIntent === "queued_turn" && item.status === "pending")
+                  ? []
+                  : [{ ...item, role: "user", id: item.messageId }],
+              ),
+          })
+      : undefined;
   const voicePresentation = resolveVoiceComposerPresentation(
     voiceInput.state,
     voiceInput.elapsedSeconds,
@@ -1112,6 +1147,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                         : undefined,
                     )
                   }
+                  onRecallPrompt={recallPrompt}
                   submitTitle={sendPresentation.label}
                   alternateSubmitTitle={
                     sendPresentation.alternate === null

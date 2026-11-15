@@ -117,6 +117,10 @@ interface NativeComposerEditorProps extends ViewProps {
   readonly onComposerFocus?: () => void;
   readonly onComposerBlur?: () => void;
   readonly onComposerSubmit?: (event: NativeSyntheticEvent<{ alternate: boolean }>) => void;
+  readonly promptRecallEnabled: boolean;
+  readonly onComposerRecallPrompt?: (
+    event: NativeSyntheticEvent<{ direction: "backward" | "forward" }>,
+  ) => void;
   readonly onComposerContentSizeChange?: (
     event: NativeSyntheticEvent<{ readonly width: number; readonly height: number }>,
   ) => void;
@@ -150,6 +154,7 @@ export function ComposerEditor({
   onFocus,
   onBlur,
   onSubmit,
+  onRecallPrompt,
   onContentSizeChange,
   contentInsetVertical = 0,
   readResetGeneration = NO_RESET,
@@ -421,6 +426,12 @@ export function ComposerEditor({
         onSubmit === undefined
           ? undefined
           : (event) => onSubmit(event.nativeEvent.alternate === true)
+      }
+      promptRecallEnabled={onRecallPrompt !== undefined}
+      onComposerRecallPrompt={
+        onRecallPrompt === undefined
+          ? undefined
+          : (event) => onRecallPrompt(event.nativeEvent.direction)
       }
     />
   );

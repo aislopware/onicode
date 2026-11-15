@@ -83,6 +83,10 @@
       "types": "./src/userMessage.ts",
       "default": "./src/userMessage.ts"
     },
+    "./composer-prompt-history": {
+      "types": "./src/composerPromptHistory.ts",
+      "default": "./src/composerPromptHistory.ts"
+    },
     "./prompt-links": {
       "types": "./src/promptLinks.ts",
       "default": "./src/promptLinks.ts"

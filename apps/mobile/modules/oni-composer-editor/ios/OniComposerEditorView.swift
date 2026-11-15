@@ -90,6 +90,9 @@ private final class ComposerTextView: UITextView {
   var clipboardFragment = ""
   var onAttributedMutation: (() -> Void)?
   var onSubmit: ((Bool) -> Void)?
+  var onRecallPrompt: ((Bool) -> Void)?
+  /// JS turns this on while the draft is empty or still shows a recalled prompt unedited.
+  var promptRecallEnabled = false
   var isReadOnly = false
   var textPasteThresholdBytes = 0
   var maxInputChars = Int.max
@@ -148,6 +151,26 @@ private final class ComposerTextView: UITextView {
       submitAlternate.wantsPriorityOverSystemBehavior = true
       commands.append(submitAlternate)
     }
+    if canRecallPrompt(older: true) {
+      let older = UIKeyCommand(
+        input: UIKeyCommand.inputUpArrow,
+        modifierFlags: [],
+        action: #selector(recallOlderPrompt(_:))
+      )
+      older.discoverabilityTitle = "Previous Prompt"
+      older.wantsPriorityOverSystemBehavior = true
+      commands.append(older)
+    }
+    if canRecallPrompt(older: false) {
+      let newer = UIKeyCommand(
+        input: UIKeyCommand.inputDownArrow,
+        modifierFlags: [],
+        action: #selector(recallNewerPrompt(_:))
+      )
+      newer.discoverabilityTitle = "Next Prompt"
+      newer.wantsPriorityOverSystemBehavior = true
+      commands.append(newer)
+    }
     if textPasteThresholdBytes > 0 {
       let pasteAsText = UIKeyCommand(
         input: "v",
@@ -176,6 +199,25 @@ private final class ComposerTextView: UITextView {
     insertText("\n")
   }
 
+  /// Up recalls from the first line and Down from the last; on any other line the arrow moves the caret.
+  private func canRecallPrompt(older: Bool) -> Bool {
+    guard promptRecallEnabled, isEditable, !isReadOnly, markedTextRange == nil,
+          let selection = selectedTextRange, selection.isEmpty else { return false }
+    let caret = caretRect(for: selection.start)
+    let edge = caretRect(for: older ? beginningOfDocument : endOfDocument)
+    return caret.midY >= edge.minY && caret.midY <= edge.maxY
+  }
+
+  @objc private func recallOlderPrompt(_ sender: UIKeyCommand) {
+    guard canRecallPrompt(older: true) else { return }
+    onRecallPrompt?(true)
+  }
+
+  @objc private func recallNewerPrompt(_ sender: UIKeyCommand) {
+    guard canRecallPrompt(older: false) else { return }
+    onRecallPrompt?(false)
+  }
+
   @objc private func pasteInline(_ sender: UIKeyCommand) {
     guard !isReadOnly else {
       return
@@ -188,6 +230,12 @@ private final class ComposerTextView: UITextView {
   override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
     if action == #selector(submitMessage(_:)) || action == #selector(insertNewline(_:)) {
       return isEditable && !isReadOnly && markedTextRange == nil
+    }
+    if action == #selector(recallOlderPrompt(_:)) {
+      return canRecallPrompt(older: true)
+    }
+    if action == #selector(recallNewerPrompt(_:)) {
+      return canRecallPrompt(older: false)
     }
     if isReadOnly && Self.readOnlyActions.contains(NSStringFromSelector(action)) {
       return false
@@ -494,6 +542,7 @@ public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDr
   let onComposerFocus = EventDispatcher()
   let onComposerBlur = EventDispatcher()
   let onComposerSubmit = EventDispatcher()
+  let onComposerRecallPrompt = EventDispatcher()
   let onComposerPasteImages = EventDispatcher()
   let onComposerContextPress = EventDispatcher()
   let onComposerPasteContext = EventDispatcher()
@@ -555,6 +604,9 @@ public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDr
     }
     textView.onSubmit = { [weak self] alternate in
       self?.onComposerSubmit(["alternate": alternate])
+    }
+    textView.onRecallPrompt = { [weak self] older in
+      self?.onComposerRecallPrompt(["direction": older ? "backward" : "forward"])
     }
     let contextTap = UITapGestureRecognizer(target: self, action: #selector(openContext(_:)))
     contextTap.cancelsTouchesInView = false
@@ -818,6 +870,10 @@ public final class OniComposerEditorView: ExpoView, UITextViewDelegate, UITextDr
 
   func setEnterBehavior(_ behavior: String) {
     textView.enterBehavior = ComposerEnterBehavior(rawValue: behavior) ?? .send
+  }
+
+  func setPromptRecallEnabled(_ enabled: Bool) {
+    textView.promptRecallEnabled = enabled
   }
 
   func setSubmitTitle(_ title: String) {

@@ -91,4 +91,9 @@ export interface ComposerEditorProps {
   readonly alternateSubmitTitle?: string;
   /** Command chords (Ctrl on Android) reverse the configured follow-up behavior. */
   readonly onSubmit?: (alternate: boolean) => void;
+  /**
+   * Hardware keyboards: Up on the first line asks for an earlier prompt and Down on the last
+   * for a later one. Pass it only while the draft may be replaced; otherwise arrows move the caret.
+   */
+  readonly onRecallPrompt?: (direction: "backward" | "forward") => void;
 }

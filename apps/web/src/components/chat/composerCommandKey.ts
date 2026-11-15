@@ -10,7 +10,7 @@ import {
   type ComposerPromptHistoryPosition,
   buildComposerPromptHistoryEntries,
   stepComposerPromptHistory,
-} from "./composerPromptHistory";
+} from "@onicode/client-runtime/composer-prompt-history";
 import {
   type ComposerSubmissionIntent,
   type ComposerTrigger,

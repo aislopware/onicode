@@ -157,6 +157,8 @@ the text is an unedited recalled prompt, with the caret on the first visual line
 the last visual line for `ArrowDown`, counting wrapped lines. Editing a recalled prompt turns it
 into a normal draft.
 
+On iPhone, iPad, and Android, recall works the same way from a hardware keyboard.
+
 ## Suggested next prompt
 
 Turn on **Suggest next prompt** in Settings > Labs. After a Claude or Codex turn completes, the
