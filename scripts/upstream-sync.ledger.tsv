@@ -2020,3 +2020,4 @@ ab45ce7167	take	fix(github): pull request activity says when its comments were c
 63b5645678	skip	Clerk is removed from Onicode; the guard only lets Clerk's own account modal handle Esc, and no other non-Base-UI modal opens over Settings
 d738edf401	take	adapted: conflicts resolved by dropping the threadSyncStatus prop without adding upstream's connectionAwaitingApproval (not in Onicode)
 154c0fd311	take	fix(mobile): undo toast lines up with the folded Duo's tab bar (#37081)
+ca0ca71045	skip	nightly channel and its managed-policy channel block are not in Onicode (single better-update channel); DesktopUpdateState has no channelBlockedByPolicy to encode
