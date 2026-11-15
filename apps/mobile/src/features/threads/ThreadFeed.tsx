@@ -5,6 +5,7 @@ import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-wid
 import {
   createThreadMediaVisibility,
   ThreadMarkdownVideo,
+  ThreadMediaRetainContext,
   ThreadMediaVisibleContext,
 } from "./ThreadMarkdownVideo";
 import { useMarkdownImageSource } from "../../native/useMarkdownImageSource";
@@ -100,7 +101,7 @@ import { imageMimeType } from "@onicode/shared/image";
 import { videoMimeType } from "@onicode/shared/video";
 import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { textDirection } from "@onicode/shared/textDirection";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useIsFocused, useNavigation } from "@react-navigation/native";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
 import { useDeviceType } from "../../native/native-layout-metrics";
 import { isDuoDevice } from "../../lib/device-type";
@@ -116,8 +117,10 @@ import {
   useSyncExternalStore,
   useId,
   type ComponentPropsWithRef,
+  type Dispatch,
   type ReactNode,
   type RefObject,
+  type SetStateAction,
 } from "react";
 import {
   Image,
@@ -1128,12 +1131,26 @@ function ThreadFeedScrollView(props: ComponentPropsWithRef<typeof Animated.Scrol
   );
 }
 
-function ThreadMediaVisibility(props: { readonly children: ReactNode }) {
+function ThreadMediaVisibility(props: {
+  readonly rowId: string;
+  readonly setRetainedRowId: Dispatch<SetStateAction<string | null>>;
+  readonly children: ReactNode;
+}) {
+  const { rowId, setRetainedRowId } = props;
   const [visibility] = useState(createThreadMediaVisibility);
   useViewabilityAmount<ThreadFeedEntry>(
     useCallback((token) => visibility.set(token.sizeVisible > 0), [visibility]),
   );
-  return <ThreadMediaVisibleContext value={visibility}>{props.children}</ThreadMediaVisibleContext>;
+  const retain = useCallback(
+    (retained: boolean) =>
+      setRetainedRowId((current) => (retained ? rowId : current === rowId ? null : current)),
+    [rowId, setRetainedRowId],
+  );
+  return (
+    <ThreadMediaRetainContext value={retain}>
+      <ThreadMediaVisibleContext value={visibility}>{props.children}</ThreadMediaVisibleContext>
+    </ThreadMediaRetainContext>
+  );
 }
 
 /** The reply a link sits in; a file it cites may be where the agent worked before writing it. */
@@ -2791,6 +2808,10 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const openPullRequest = useOpenPullRequest();
   const navigation = useNavigation();
   const openLinkedThread = useOpenLinkedThread();
+  // Recycling a row disposes its native audio player, so a started clip's row stays rendered.
+  const [retainedMediaRowId, setRetainedMediaRowId] = useState<string | null>(null);
+  const focused = useIsFocused();
+  if (!focused && retainedMediaRowId !== null) setRetainedMediaRowId(null);
   const onOpenTurnDiff = useCallback(
     (checkpoint: ThreadCheckpointSummary) => {
       setReviewSelectedSectionId(
@@ -3781,7 +3802,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
         threadId={props.threadId}
         workspaceRoot={props.workspaceRoot}
       >
-        <ThreadMediaVisibility>
+        <ThreadMediaVisibility rowId={info.item.id} setRetainedRowId={setRetainedMediaRowId}>
           {info.item.type === "message" &&
           info.item.message.projectedItem?.item.type === "user_message" &&
           info.item.message.projectedItem.item.freshContext ? (
@@ -3927,6 +3948,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             }}
             getFixedItemSize={getFixedItemSize}
             drawDistance={500}
+            {...(retainedMediaRowId ? { alwaysRender: { keys: [retainedMediaRowId] } } : {})}
             keyboardShouldPersistTaps="always"
             keyboardDismissMode="none"
             // Android scrolls a tapped selectable message into view when it takes focus, which reads
