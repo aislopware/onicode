@@ -237,7 +237,8 @@ patchedDependencies:
   "@legendapp/list@3.7.2": patches/@legendapp__list@3.7.2.patch
   # Android: double-tap zoom no longer cancels itself, and taps near a link open it.
   react-native-pdf-jsi@6.1.1: patches/react-native-pdf-jsi@6.1.1.patch
-  # Local agents honor the attribution settings in the user's Cursor CLI cli-config.json.
+  # Local agents honor the attribution settings in the user's Cursor CLI cli-config.json, stream
+  # shell output while it runs, and expose agent.resume() (the protocol's ResumeAction).
   "@cursor/sdk@1.3.1": patches/@cursor__sdk@1.3.1.patch
 
 # Unmet peers fail resolution, so a pin outside a dependency's peer range is
