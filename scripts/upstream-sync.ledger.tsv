@@ -1786,3 +1786,4 @@ b64eebb991	take	fix(release): enforce packaged Linux glibc requirements (ceiling
 c0561c5c3d	take	fix(shared): the SQLite reader pool comes back after a failed start
 33f8c5da29	skip	Guest stream: guest links and the guest view were removed from Onicode
 1ba934798f	take	fix(shared): keep Windows path separators beside ampersands (kept Onicode's micromark-util-types 2.0.3)
+ca29ff1d72	take	fix(cli): keep log warnings out of JSON output
