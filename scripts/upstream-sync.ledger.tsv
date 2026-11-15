@@ -2053,3 +2053,4 @@ bcdd6a59f4	take	adapted: conflict resolved so Onicode's provider session view co
 178570dcd3	take	adapted: DesktopClerk.ts (removed Clerk) and the hosted-web delivery test dropped; receiveCodexAuthCallback gains signal as its third parameter (Onicode has no destination parameter), wired from the IPC method's tryPromise signal
 94edd64e74	take	adapted: dropped upstream's analytics lines from the ws.ts conflict, and the cloud-connect row, analytics mock and cookie fields from the test
 f28c74a7d0	take	adapted: environment-auth doc paragraph placed in Onicode's MCP clients section (links and onicode thread), upstream's T3 Connect issuer text left out; every Onicode thread-bound tool already covered by upstream's annotations
+c8a1b5ff0b	take	fix(ssh): preserve literal home paths in Include expansion (#33288)
