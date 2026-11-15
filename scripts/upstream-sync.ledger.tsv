@@ -2080,3 +2080,4 @@ be8c4c6d9f	take	fix(web): repaint terminal when programs change default colors (
 cb251b9abc	take	fix(web): composer suggestions stay reachable in short windows (scenarios ported to the desktop target)
 6071022cb7	take	fix(server): Claude session name follows thread renames without waiting for the next turn (adapted: test's fake query session gains Onicode's extra session members)
 6d3f6423a3	take	fix(web): Enter sends when a panel-conditioned shortcut is inactive (conflict: Onicode's composer intent has no isSoftwareKeyboardOpen, took only the shortcut context; scenario ported to the desktop target)
+7e69e880b6	take	fix(server): project search starts working once a slow content index finishes building
