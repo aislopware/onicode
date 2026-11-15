@@ -17,6 +17,7 @@ import {
 } from "@onicode/contracts";
 import { PROJECT_FAVICON_EXTENSIONS } from "@onicode/shared/projectFavicon";
 import { resolveEditorCommand } from "@onicode/shared/editor";
+import { withPathDirectoryListings } from "@onicode/shared/shell";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -402,20 +403,26 @@ export const openSystemSettings = DesktopIpc.makeIpcMethod({
   }),
 });
 
+const REMOTE_EDITOR_PROBE_CONCURRENCY = 8;
+
 export const probeRemoteEditors = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.PROBE_REMOTE_EDITORS_CHANNEL,
   payload: Schema.Undefined,
   result: Schema.Array(EditorId),
   handler: Effect.fn("desktop.ipc.window.probeRemoteEditors")(function* () {
-    const available: Array<EditorId> = [];
     const env = yield* HostProcess.Environment;
-    for (const editorId of REMOTE_CAPABLE_EDITOR_IDS) {
-      const editor = EDITORS.find((editor) => editor.id === editorId);
-      if (editor && Option.isSome(yield* resolveEditorCommand(editor, env))) {
-        available.push(editorId);
-      }
-    }
-    return available;
+    // Shared listings stop each editor re-stating every PATH entry x PATHEXT candidate on Windows.
+    const resolved = yield* Effect.forEach(
+      REMOTE_CAPABLE_EDITOR_IDS,
+      (editorId) => {
+        const editor = EDITORS.find((editor) => editor.id === editorId);
+        return editor
+          ? resolveEditorCommand(editor, env).pipe(Effect.map(Option.isSome))
+          : Effect.succeed(false);
+      },
+      { concurrency: REMOTE_EDITOR_PROBE_CONCURRENCY },
+    ).pipe(withPathDirectoryListings);
+    return REMOTE_CAPABLE_EDITOR_IDS.filter((_, index) => resolved[index]);
   }),
 });
 
