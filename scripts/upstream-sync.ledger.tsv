@@ -1988,3 +1988,4 @@ aace48bfe4	take	fix(web): PR file order follows alias imports of dotted modules 
 015eba4083	take	fix(acp): a failed MCP-over-ACP disconnect can be retried (#33069)
 1b04bab05d	take	fix(web): settle check lines up with row timestamps (#33053)
 9ec71438cd	take	fix(provider-core): handoff work reserve fits small context windows (#32598)
+fbfebc8537	take	fix(mobile): video previews survive re-signed URLs and a late-attached player item (#32196)
