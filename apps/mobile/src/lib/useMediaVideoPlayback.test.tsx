@@ -181,7 +181,9 @@ function setup(kind: "thread" | "PR" | "files", compact = false) {
                 resolvePlaybackUri={mocks.refresh}
               />
             ) : kind === "thread" ? (
-              <ThreadMediaVisibleContext value={visible}>
+              <ThreadMediaVisibleContext
+                value={{ subscribe: () => () => {}, isVisible: () => visible }}
+              >
                 <ThreadMarkdownVideo
                   source={{
                     type: "media",

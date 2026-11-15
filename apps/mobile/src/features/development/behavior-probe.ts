@@ -255,6 +255,70 @@ function uiFramesStop() {
   return ui.__oniUiFrames ?? [];
 }
 
+// React Native runs its timer clock on every display frame while a timer is due within a second.
+const FRAME_CLOCK_TIMER_MS = 1000;
+const wakeups = { on: false, timers: 0, clockFrames: 0, intervals: new Set<unknown>() };
+
+/** Display frames React Native's timer clock has run on the JS thread. Only iOS counts them. */
+function timerClockFrames(): number {
+  const { requireOptionalNativeModule } = require("expo") as typeof import("expo");
+  const controls = requireOptionalNativeModule<{ timerClockFrames?: () => number }>(
+    "OniNativeControls",
+  );
+  return controls?.timerClockFrames?.() ?? 0;
+}
+
+function installTimerCount() {
+  const scope = globalThis as unknown as Record<string, (...args: unknown[]) => unknown>;
+  const { setTimeout: timeout, setInterval: interval, clearInterval: clear } = scope;
+  const frame = scope.requestAnimationFrame;
+  scope.setTimeout = (callback, delay, ...rest) => {
+    if (wakeups.on && Number(delay ?? 0) <= FRAME_CLOCK_TIMER_MS) wakeups.timers += 1;
+    return timeout!(callback, delay, ...rest);
+  };
+  scope.requestAnimationFrame = (callback) => {
+    if (wakeups.on) wakeups.timers += 1;
+    return frame!(callback);
+  };
+  scope.setInterval = (callback, delay, ...rest) => {
+    const id = interval!(callback, delay, ...rest);
+    if (Number(delay ?? 0) <= FRAME_CLOCK_TIMER_MS) wakeups.intervals.add(id);
+    return id;
+  };
+  scope.clearInterval = (id) => {
+    wakeups.intervals.delete(id);
+    return clear!(id);
+  };
+}
+
+type FrameRequest = (callback: (time: number) => void) => void;
+interface UiFrameRequests {
+  __nativeRequestAnimationFrame: FrameRequest;
+  __oniFrameRequests?: { readonly native: FrameRequest; count: number };
+}
+
+/** Counts the display frames the UI runtime asks for, without asking for one itself. */
+function uiFrameRequestsStart() {
+  "worklet";
+  const ui = globalThis as unknown as UiFrameRequests;
+  const counter = { native: ui.__nativeRequestAnimationFrame, count: 0 };
+  ui.__oniFrameRequests = counter;
+  ui.__nativeRequestAnimationFrame = (callback) => {
+    counter.count += 1;
+    counter.native(callback);
+  };
+}
+
+function uiFrameRequestsStop() {
+  "worklet";
+  const ui = globalThis as unknown as UiFrameRequests;
+  const counter = ui.__oniFrameRequests;
+  if (!counter) return 0;
+  ui.__nativeRequestAnimationFrame = counter.native;
+  ui.__oniFrameRequests = undefined;
+  return counter.count;
+}
+
 let samples: Array<Record<string, unknown>> = [];
 let sampled: Feed | null = null;
 
@@ -272,6 +336,7 @@ function visibleFeed(feeds: ReadonlyArray<Feed>) {
 }
 
 installCommitHook();
+installTimerCount();
 
 Object.assign(globalThis, {
   __oniBehavior: {
@@ -328,6 +393,27 @@ Object.assign(globalThis, {
       frames.on = false;
       sampled = null;
       return JSON.stringify({ js: frames.js, ui: runOnUISync(uiFramesStop), feed: samples });
+    },
+    /** Counts what keeps the UI and JS threads waking on every display frame. */
+    wakeupsStart() {
+      const { scheduleOnUI } =
+        require("react-native-worklets") as typeof import("react-native-worklets");
+      wakeups.timers = 0;
+      wakeups.on = true;
+      wakeups.clockFrames = timerClockFrames();
+      scheduleOnUI(uiFrameRequestsStart);
+      return true;
+    },
+    wakeupsStop() {
+      const { runOnUISync } =
+        require("react-native-worklets") as typeof import("react-native-worklets");
+      wakeups.on = false;
+      return JSON.stringify({
+        uiFrameRequests: runOnUISync(uiFrameRequestsStop),
+        shortTimers: wakeups.timers,
+        shortIntervals: wakeups.intervals.size,
+        timerClockFrames: timerClockFrames() - wakeups.clockFrames,
+      });
     },
   },
 });

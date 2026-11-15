@@ -195,6 +195,48 @@ export const SCENARIOS = {
     } satisfies Metrics;
   }, failure),
 
+  /** A thread works in view for ten seconds: a tool call every 700 ms and some text. */
+  workInView: Effect.fn("scenario.workInView")(function* (ctx: ScenarioContext) {
+    const threadId = yield* ctx.env.launch(
+      `Work ${(yield* uuid).slice(0, 6)}`,
+      "Do the job. [[eval:work:60:700]]",
+    );
+    yield* openThread(ctx, threadId);
+    // The open itself renders everything; the count starts once the screen has settled.
+    yield* Effect.sleep("3 seconds");
+    yield* ctx.device.renderCountStart;
+    yield* ctx.device.wakeupsStart;
+    yield* Effect.sleep("10 seconds");
+    const { timerClockFrames } = yield* ctx.device.wakeupsStop;
+    const counts = yield* ctx.device.renderCountStop;
+    yield* ctx.env.interruptAll();
+    const renders = (component: string) =>
+      counts.components.find((entry) => entry.key === component)?.count ?? 0;
+    // A feed row that sets state after it mounts or scrolls costs a commit of its own.
+    const rowStateRenders = counts.causes
+      .filter((entry) => /^(ShimmeringWorkContent|ThreadMediaVisibility) state#/.test(entry.key))
+      .reduce((total, entry) => total + entry.count, 0);
+    return {
+      commits: counts.commits,
+      rowStateRenders,
+      feedRenders: renders("ThreadFeed"),
+      headerRenders: renders("ThreadHeader"),
+      composerRenders: renders("ThreadComposer"),
+      editorRenders: renders("ComposerEditor"),
+      timerClockFrames,
+    } satisfies Metrics;
+  }, failure),
+
+  /** Opens a settled thread and counts what still wakes the app while nothing on screen changes. */
+  idleInView: Effect.fn("scenario.idleInView")(function* (ctx: ScenarioContext) {
+    yield* openThread(ctx, ctx.fixtures.longThread);
+    // Opening scrolls and animates; the count starts once the screen is still.
+    yield* Effect.sleep("4 seconds");
+    yield* ctx.device.wakeupsStart;
+    yield* Effect.sleep("5 seconds");
+    return { ...(yield* ctx.device.wakeupsStop) } satisfies Metrics;
+  }, failure),
+
   /** Types and sends a message from the composer at the end of the long thread. */
   sendInLongThread: Effect.fn("scenario.sendInLongThread")(function* (ctx: ScenarioContext) {
     yield* openThread(ctx, ctx.fixtures.longThread);
@@ -383,6 +425,21 @@ export const SCENARIOS = {
         .length,
       statusAfter: after.threads[threadId] ?? "missing",
     } satisfies Metrics;
+  }, failure),
+
+  /** A thread works while Home shows its row, whose duration label ticks each second. */
+  workOnHome: Effect.fn("scenario.workOnHome")(function* (ctx: ScenarioContext) {
+    const key = `home-${(yield* uuid).slice(0, 8)}`;
+    const title = `Home work ${key.slice(-4)}`;
+    yield* ctx.env.launch(title, `Run the job. [[eval:hold:${key}]]`);
+    yield* waitForRow(ctx, title);
+    // The row's arrival animates; the count starts once only the label changes.
+    yield* Effect.sleep("3 seconds");
+    yield* ctx.device.wakeupsStart;
+    yield* Effect.sleep("5 seconds");
+    const wakeups = yield* ctx.device.wakeupsStop;
+    yield* ctx.env.release(key);
+    return { ...wakeups } satisfies Metrics;
   }, failure),
 
   /** A thread asks a question while Home is open. */

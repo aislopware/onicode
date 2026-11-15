@@ -14,7 +14,7 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { threadArrangementOpenAtom } from "../../state/thread-order";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { useVisibleSecondClock } from "./use-visible-second-clock";
+import { useVisibleSecondClockValue } from "./use-visible-second-clock";
 import type { ThreadMoveDestination } from "./threadOrder";
 import type {
   EnvironmentProject,
@@ -159,14 +159,14 @@ function ThreadListV2Duration(props: {
   readonly leadingSpace: boolean;
 }) {
   const startedAtMs = Date.parse(props.startedAt ?? "");
-  const nowMs = useVisibleSecondClock(Number.isFinite(startedAtMs));
+  const label = useVisibleSecondClockValue(Number.isFinite(startedAtMs), (nowMs) =>
+    formatWorkingDurationLabel(toServerClock(props.environmentId, nowMs) - startedAtMs),
+  );
   if (!Number.isFinite(startedAtMs)) return null;
   return (
     <>
       {props.leadingSpace ? " " : null}
-      <RNText style={TABULAR_DURATION_STYLE}>
-        {formatWorkingDurationLabel(toServerClock(props.environmentId, nowMs) - startedAtMs)}
-      </RNText>
+      <RNText style={TABULAR_DURATION_STYLE}>{label}</RNText>
     </>
   );
 }

@@ -60,6 +60,30 @@ new thread the app never shows, which measures what streaming elsewhere costs th
 Compare before and after on the same base, on the same device, with the median of three runs.
 Provider output varies run to run, so a single run or a comparison across bases is noise.
 
+## Idle wakeups
+
+An app that shows nothing new must not run code on every display frame: on a 120 Hz phone that
+is 120 wakeups a second for as long as it is open. Three things did, and none shows in a render
+count:
+
+- React Native's timer module runs a display link on the JS thread while any JS timer is due
+  within one second (`kMinimumSleepInterval` in `RCTTiming.mm`), and sleeps on a plain timer
+  otherwise. A label that changes each second therefore cost a wakeup per frame, not per tick.
+  iOS links React Native prebuilt, so the constant cannot be patched:
+  [`OniTimerClockSleep`](../../apps/mobile/modules/oni-native-controls/ios/OniTimerClockSleep.swift)
+  wraps the module's frame callback and sends it to its own sleep timer when the next timer is
+  more than 50 ms away. It reads private names and leaves the stock clock alone if one is gone,
+  so check it when React Native moves. Android posts a frame callback on the UI thread for as
+  long as the app is in front, whatever the timers; nothing here changes that.
+- `react-native-worklets` asked for the next UI frame forever, and Reanimated queued a mapper run
+  in every one. Our patches request a frame only while a callback, a finalizer or a dirty mapper
+  waits. When either package moves, port the patch or confirm upstream stopped.
+- Reanimated synced settled props back to React on a 500 ms interval. The patch makes it 2 s.
+
+`vp run mobile:behavior --case idle-thread-wakes-nothing,ticking-label-lets-timer-clock-sleep`
+counts UI frame requests, short JS timers and the timer clock's frames, on an open thread where
+nothing happens and on Home beside a working thread.
+
 ## React Compiler
 
 Metro runs the compiler only because `experiments.reactCompiler` is set in `app.config.ts`. Expo
@@ -76,3 +100,38 @@ directives are errors but the hooks stay legal until `KNOWN_BAILOUTS` is empty.
 `onicode/no-hookless-use-function` rejects a `use*` function that calls no hook, since the compiler
 leaves it uncached. A platform stub of a real hook, such as an `.android.ts` file, keeps the hook
 name and suppresses the rule with a reason.
+
+A function that compiles can still lose single caches, with no event to catch: a handler, an
+object or a block of elements is then built on every render, and whatever receives it re-renders.
+The same test counts those values in the compiled output of the functions in
+`RENDER_ALLOCATION_BUDGETS`, the ones that render on each update of a working thread or once per
+list row, and fails with the source lines when a count moves. Add a function there when it joins
+that path. The causes met so far:
+
+- A call's result (`Option.getOrNull(x)`, `list.find(…)`, any helper) is used again after a later
+  hook call. The compiler takes the result as mutable until its last use and cannot cache across
+  the hook, so everything that reads it goes uncached too. Read a property instead, finish with
+  the value before the next hook, move the call below the last hook, or return it from a small
+  custom hook, whose result is frozen.
+- `props.onSend()` called as a method keys the block around it on the whole `props` object, which
+  is new on every parent render. Destructure the callback first.
+- A function reads a `const` declared below it. Declare the `const` above.
+- A render helper called in place (`renderBody()`) is one closure, and nothing inside it is cached
+  on its own. Write the elements where they go.
+- A context whose value changes on every update re-renders every reader and makes React scan the
+  subtree for readers. Put an atom in the context and let the one reader subscribe.
+
+A handler that reads fast-changing state changes with it however well it is cached; wrap it in
+[`useStableCallback`](../../apps/mobile/src/lib/useStableCallback.ts) before it leaves a large
+component.
+
+A commit costs by tree depth as well as by what renders. The thread screen sits more than 200
+fibers below the root, and every fiber React skips walks up to the root to look for changed
+contexts, so a commit that renders one row still pays for each of the list's pooled rows. A feed
+row must therefore not set state after it mounts or scrolls: a measured width goes in a ref, and
+on-screen state in a store that only its reader subscribes to, as the working-row shimmer and the
+media visibility of a row do.
+
+`vp run mobile:behavior --case working-thread-renders-only-what-changed` checks the outcome in a
+running app: it counts the header's and the composer's renders, and the feed rows that render
+again from their own state, while a thread works in view.

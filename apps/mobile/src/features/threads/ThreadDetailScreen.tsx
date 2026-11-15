@@ -61,6 +61,7 @@ import {
   type ThreadUserInputQuestion,
 } from "@onicode/client-runtime/state/thread-requests";
 import { isAppActive, subscribeAppState } from "../../lib/appState";
+import { useStableCallback } from "../../lib/useStableCallback";
 import { useDeadlinePassed } from "../../lib/clock";
 import {
   BACKGROUND_WORK_STOP_RETRY_AFTER_MS,
@@ -414,6 +415,15 @@ function ThreadDetailBody(
     >;
   },
 ) {
+  // Called as locals: a `props.onX()` call makes the compiler key the element around it on the
+  // whole `props` object, which is new on every render.
+  const {
+    setStatusRequests,
+    onSendMessage,
+    onChangeDraftMessage,
+    onCancelQueuedRunEdit,
+    onDismissFeedback,
+  } = props;
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const { layout } = useAdaptiveWorkspaceLayout();
   const deviceType = useDeviceType();
@@ -605,33 +615,6 @@ function ThreadDetailBody(
     useAtomValue(orchestrationEnvironment.forceStopThread.permissionAtom(props.environmentId)) &&
     props.serverConfig?.environment.capabilities.threadForceStop === true;
   const [forceStoppingKey, setForceStoppingKey] = useState<string | null>(null);
-  // The run that ignored Stop, so a confirmation left open cannot hit a newer run.
-  const forceStop = async (runId: RunId | undefined) => {
-    const threadKey = selectedThreadKey;
-    setForceStoppingKey(threadKey);
-    const result = await forceStopThread({
-      environmentId: props.environmentId,
-      input:
-        runId === undefined
-          ? { threadId: props.selectedThread.id }
-          : { threadId: props.selectedThread.id, runId },
-    });
-    setForceStoppingKey((current) => (current === threadKey ? null : current));
-    if (result._tag === "Failure") {
-      if (!isAtomCommandInterrupted(result)) Dialog.alert("Could not force stop the agent");
-      return;
-    }
-    const others = result.value.sharedWithThreadIds.length;
-    if (result.value.outcome === "releasing") {
-      Dialog.alert("Turn stopped; the agent is still shutting down");
-    }
-    if (result.value.outcome === "shared") {
-      Dialog.alert(
-        "Turn stopped; the agent process kept running",
-        `It is shared with ${others === 0 ? "other" : others} working ${others === 1 ? "thread" : "threads"}. Stop those to free it.`,
-      );
-    }
-  };
   const statusRequest = props.statusRequests[selectedThreadKey] ?? null;
   const statusPending = isBackgroundWorkStopPending(
     statusRequest,
@@ -691,7 +674,7 @@ function ThreadDetailBody(
           : [],
       retryAt: null,
     };
-    props.setStatusRequests((current) => ({ ...current, [request.threadKey]: request }));
+    setStatusRequests((current) => ({ ...current, [request.threadKey]: request }));
     const target = {
       environmentId: props.environmentId,
       input: { threadId: props.selectedThread.id },
@@ -725,7 +708,7 @@ function ThreadDetailBody(
                 ...target,
                 input: { ...target.input, visitedAt: wokeAt ?? lifecycleNow },
               });
-    props.setStatusRequests((current) =>
+    setStatusRequests((current) =>
       current[request.threadKey] !== request
         ? current
         : {
@@ -754,6 +737,34 @@ function ThreadDetailBody(
           Dialog.alert("Pi", props.extensionStatuses?.map((status) => status.text).join("\n\n")),
       }
     : null;
+  // The run that ignored Stop, so a confirmation left open cannot hit a newer run. Declared next
+  // to its use: above the hooks before it, the React Compiler rebuilt it on every render.
+  const forceStop = async (runId: RunId | undefined) => {
+    const threadKey = selectedThreadKey;
+    setForceStoppingKey(threadKey);
+    const result = await forceStopThread({
+      environmentId: props.environmentId,
+      input:
+        runId === undefined
+          ? { threadId: props.selectedThread.id }
+          : { threadId: props.selectedThread.id, runId },
+    });
+    setForceStoppingKey((current) => (current === threadKey ? null : current));
+    if (result._tag === "Failure") {
+      if (!isAtomCommandInterrupted(result)) Dialog.alert("Could not force stop the agent");
+      return;
+    }
+    const others = result.value.sharedWithThreadIds.length;
+    if (result.value.outcome === "releasing") {
+      Dialog.alert("Turn stopped; the agent is still shutting down");
+    }
+    if (result.value.outcome === "shared") {
+      Dialog.alert(
+        "Turn stopped; the agent process kept running",
+        `It is shared with ${others === 0 ? "other" : others} working ${others === 1 ? "thread" : "threads"}. Stop those to free it.`,
+      );
+    }
+  };
   const floatingStatus = ((): FloatingWorkingStatus | null => {
     const connectionStatus = connectionFloatingStatus({
       connectionError: connectionRetrying ? retryConnectionError : props.connectionError,
@@ -1222,6 +1233,13 @@ function ThreadDetailBody(
   const providerSubagentCatalogModel = providerSubagentProvider?.models.find(
     (model) => model.slug === providerSubagentModelSlug,
   );
+  // Built before the next hook: a `find` result passed to a function after a hook costs the
+  // memo of every element that reads it, which is the whole composer region.
+  const providerSubagentEffortLabel = formatModelSelectionEffort(
+    props.selectedThread.modelSelection,
+    providerSubagentProvider?.models,
+    reportedModelSelection,
+  );
   const workspaceContentWidth = useWorkspaceContentWidth();
   // Clearing animated width can retain the unfolded width after Android resumes folded.
   const composerWidthStyle = useAnimatedStyle(() =>
@@ -1305,7 +1323,7 @@ function ThreadDetailBody(
           }
         : undefined;
     let dismissingKeyboard = false;
-    const messageId = await props.onSendMessage(followUp, declineBeforeDispatch, () => {
+    const messageId = await onSendMessage(followUp, declineBeforeDispatch, () => {
       if (
         scope.aborted ||
         Platform.OS !== "ios" ||
@@ -1352,6 +1370,9 @@ function ThreadDetailBody(
     }
     return messageId;
   };
+  // It reads the feed and the pending approvals, which change while a run streams; a new handler
+  // each time would re-render the composer under it.
+  const sendMessage = useStableCallback(handleSendMessage);
 
   const handleEditPendingMessage = async (message: QueuedThreadMessage) => {
     if (pendingMessageEditBlocked) return;
@@ -1382,7 +1403,7 @@ function ThreadDetailBody(
     const draftMessage =
       props.composerDraftKey === null ? "" : getComposerDraftSnapshot(props.composerDraftKey).text;
     const nextDraft = appendCodexArtifactTemplateUsePrompt(draftMessage, template);
-    if (nextDraft !== draftMessage) props.onChangeDraftMessage(nextDraft);
+    if (nextDraft !== draftMessage) onChangeDraftMessage(nextDraft);
     requestAnimationFrame(() => {
       composerEditorRef.current?.focus();
       composerEditorRef.current?.setSelection({ start: nextDraft.length, end: nextDraft.length });
@@ -1657,7 +1678,7 @@ function ThreadDetailBody(
                           saving={props.isSavingQueuedEdit}
                           onCancel={() => {
                             voiceInputSession.cancel(props.composerDraftKey);
-                            props.onCancelQueuedRunEdit();
+                            onCancelQueuedRunEdit();
                           }}
                         />
                       </Animated.View>
@@ -1681,7 +1702,7 @@ function ThreadDetailBody(
                       <ComposerFeedback
                         key={submission.id}
                         submission={submission}
-                        onDismiss={() => props.onDismissFeedback(submission.id)}
+                        onDismiss={() => onDismissFeedback(submission.id)}
                       />
                     ))}
                     {freshSessionAvailable ? (
@@ -1813,11 +1834,7 @@ function ThreadDetailBody(
                           providerSubagentCatalogModel?.name ??
                           formatModelSlugName(props.selectedThread.modelSelection.model)
                         }
-                        effortLabel={formatModelSelectionEffort(
-                          props.selectedThread.modelSelection,
-                          providerSubagentProvider?.models,
-                          reportedModelSelection,
-                        )}
+                        effortLabel={providerSubagentEffortLabel}
                         status={props.providerSubagentStatus ?? null}
                         inspect={
                           providerSubagentProvider?.driver === "antigravity"
@@ -1920,7 +1937,7 @@ function ThreadDetailBody(
                         onRemoveDraftImage={props.onRemoveDraftImage}
                         onStopThread={props.onStopThread}
                         onResumeQueue={props.onResumeQueue}
-                        onSendMessage={handleSendMessage}
+                        onSendMessage={sendMessage}
                         onShowUsageLimits={showUsageLimits}
                         onProviderSessionView={(view) => {
                           Keyboard.dismiss();

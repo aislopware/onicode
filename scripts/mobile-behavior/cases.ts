@@ -8,7 +8,7 @@ import type { Pose, ScenarioName } from "./scenarios.ts";
 
 export interface MobileBehaviorCase {
   readonly id: string;
-  readonly area: "scroll" | "jank" | "composer" | "status" | "wrong-thread";
+  readonly area: "scroll" | "jank" | "renders" | "idle" | "composer" | "status" | "wrong-thread";
   readonly kind: "bad" | "guard" | "control";
   /** The issue or PR it came from. */
   readonly source: string;
@@ -130,6 +130,51 @@ export const CASES: ReadonlyArray<MobileBehaviorCase> = [
     checks: [
       { metric: "movedPx", min: 300 },
       { metric: "jsDroppedPct", max: 10 },
+    ],
+  },
+  {
+    id: "working-thread-renders-only-what-changed",
+    area: "renders",
+    kind: "guard",
+    source: "phone runs hot on a working thread",
+    experience:
+      "A thread working in view re-renders its header and composer on every update, though neither shows anything new, and each new tool row renders twice.",
+    scenario: "workInView",
+    key: "composerRenders",
+    checks: [
+      { metric: "feedRenders", min: 5 },
+      { metric: "headerRenders", max: 4 },
+      { metric: "composerRenders", max: 6 },
+      { metric: "rowStateRenders", max: 0 },
+    ],
+  },
+  {
+    id: "idle-thread-wakes-nothing",
+    area: "idle",
+    kind: "guard",
+    source: "phone runs hot with the app open and idle",
+    experience:
+      "A thread where nothing happens still wakes the phone on every display frame, 120 times a second.",
+    scenario: "idleInView",
+    key: "uiFrameRequests",
+    checks: [
+      { metric: "uiFrameRequests", max: 20 },
+      { metric: "shortIntervals", max: 0 },
+      { metric: "shortTimers", max: 5 },
+    ],
+  },
+  {
+    id: "ticking-label-lets-timer-clock-sleep",
+    area: "idle",
+    kind: "guard",
+    source: "phone runs hot with a working thread on Home",
+    experience:
+      "A duration label that changes once a second keeps the JS thread waking on every display frame.",
+    scenario: "workOnHome",
+    key: "timerClockFrames",
+    checks: [
+      { metric: "timerClockFrames", min: 1, max: 60 },
+      { metric: "uiFrameRequests", max: 20 },
     ],
   },
   {

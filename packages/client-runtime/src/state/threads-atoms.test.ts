@@ -9,7 +9,9 @@ import {
   type OrchestrationV2ThreadStreamItem,
 } from "@onicode/contracts";
 import { afterEach, describe, expect, it, vi } from "@effect/vitest";
+import * as Clock from "effect/Clock";
 import * as Deferred from "effect/Deferred";
+import type * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import { HttpClient, HttpClientResponse } from "effect/http";
@@ -19,6 +21,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as SubscriptionRef from "effect/SubscriptionRef";
 import { Atom, AtomRegistry } from "effect/reactivity";
+import * as TestClock from "effect/testing/TestClock";
 
 import type { ConnectionCatalogEntry } from "../connection/catalog.ts";
 import * as EnvironmentRegistry from "../connection/registry.ts";
@@ -54,6 +57,7 @@ const SNAPSHOT: OrchestrationV2ThreadDetailSnapshot = { snapshotSequence: 7, pro
 const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?: {
   readonly snapshot?: OrchestrationV2ThreadDetailSnapshot;
   readonly socketSnapshot?: false;
+  readonly notifyInterval?: Duration.Input;
 }) {
   const subscriptions = yield* Queue.unbounded<{
     readonly afterSequence: number | undefined;
@@ -164,6 +168,8 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
   );
   const runtime = Atom.runtime(
     Layer.mergeAll(
+      // The test's clock, so the notify interval moves with `TestClock.adjust`.
+      Layer.succeed(Clock.Clock, yield* Clock.Clock),
       Layer.succeed(ThreadHistoryController.ThreadHistoryController, historyController),
       Layer.succeed(HttpClient.HttpClient, historyHttpClient),
       Layer.succeed(EnvironmentRegistry.EnvironmentRegistry, environmentRegistry),
@@ -212,7 +218,10 @@ const makeHarness = Effect.fn("TestThreadAtoms.makeHarness")(function* (options?
       ),
     ),
   );
-  const raw = createEnvironmentThreadStateAtoms(runtime);
+  const raw = createEnvironmentThreadStateAtoms(
+    runtime,
+    options?.notifyInterval === undefined ? undefined : { notifyInterval: options.notifyInterval },
+  );
   const details = createEnvironmentThreadDetailAtoms(raw.stateAtom);
   const ref = { environmentId: TARGET.environmentId, threadId: THREAD_ID };
   const stateAtom = details.stateAtom(ref);
@@ -289,6 +298,45 @@ describe("createEnvironmentThreadStateAtoms", () => {
       expect(h.counts()).toEqual({ httpLoads: 0, diskLoads: 1, opened: 2, active: 1 });
       remount();
       yield* Deferred.await(next.closed);
+    }),
+  );
+
+  it.effect("shows a burst of live changes once, as the newest state", () =>
+    Effect.gen(function* () {
+      const h = yield* makeHarness({ notifyInterval: "100 millis" });
+      const titles: string[] = [];
+      const unmount = h.registry.mount(h.stateAtom);
+      const unsubscribe = h.registry.subscribe(h.stateAtom, (state) => {
+        const title = Option.getOrUndefined(state.data)?.thread.title;
+        if (title !== undefined && title !== titles.at(-1)) titles.push(title);
+      });
+      const first = yield* Queue.take(h.subscriptions);
+      // Opening and synchronizing do not wait.
+      yield* observeState(h.registry, h.stateAtom, (state) => Option.isSome(state.data));
+      yield* Queue.offer(first.events, { kind: "synchronized" });
+      const rename = (sequence: number, title: string) =>
+        Queue.offer(first.events, {
+          kind: "event",
+          sequence,
+          event: {
+            id: EventId.make(`metadata-${sequence}`),
+            type: "thread.metadata-updated",
+            threadId: THREAD_ID,
+            occurredAt: THREAD.thread.updatedAt,
+            payload: { ...THREAD.thread, title },
+          },
+        });
+      yield* rename(8, "One");
+      yield* TestClock.adjust("50 millis");
+      yield* rename(9, "Two");
+      yield* TestClock.adjust("50 millis");
+      yield* observeState(h.registry, h.stateAtom, (state) =>
+        Option.exists(state.data, (projection) => projection.thread.title === "Two"),
+      );
+      expect(titles).toEqual(["Cached thread", "Two"]);
+      unsubscribe();
+      unmount();
+      yield* Deferred.await(first.closed);
     }),
   );
 

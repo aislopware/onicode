@@ -19,7 +19,10 @@ import { PresentationSource } from "../../components/ui/NativePresentation";
 import { useMediaActions } from "../../state/mediaActions";
 import type { MediaActionsSource } from "../../lib/mediaActionsSource";
 import { useAssetUrlState } from "../../state/assets";
-import { WorkspaceMutationIdContext } from "./workspaceMutationIdContext";
+import {
+  NO_WORKSPACE_MUTATION_ID_ATOM,
+  WorkspaceMutationIdContext,
+} from "./workspaceMutationIdContext";
 import { ZoomableImagePressable } from "./ZoomableImagePressable";
 import { assetImageCacheKey } from "../../lib/assetImageSource";
 import {
@@ -279,12 +282,12 @@ export function ThreadMarkdownImage(props: {
   readonly onPressPreview: (source: FilePreviewSource) => void;
 }) {
   const withGallery = useFilePreviewGallery();
-  const workspaceMutationId = useContext(WorkspaceMutationIdContext);
-  const assetUrl = useAssetUrlState(
-    props.environmentId,
-    props.resource,
-    props.resource._tag === "media-file" ? workspaceMutationId : undefined,
+  const workspaceMutationIdAtom = useContext(WorkspaceMutationIdContext);
+  // Only a workspace file changes with the workspace; other images never re-render for it.
+  const workspaceMutationId = useAtomValue(
+    props.resource._tag === "media-file" ? workspaceMutationIdAtom : NO_WORKSPACE_MUTATION_ID_ATOM,
   );
+  const assetUrl = useAssetUrlState(props.environmentId, props.resource, workspaceMutationId);
   const resourceKey =
     props.resource._tag === "attachment"
       ? `attachment:${props.resource.attachmentId}`

@@ -65,7 +65,9 @@ export function ComposerEditor({
   const preferredEnterBehavior = AsyncResult.isSuccess(preferencesResult)
     ? preferencesResult.value.composerEnterBehavior
     : undefined;
-  const contextHistory = createComposerDraftContextHistory();
+  // Held in state: the compiler takes a value built in render as mutable, and leaves every
+  // handler that calls it uncached.
+  const [contextHistory] = useState(createComposerDraftContextHistory);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- releases the attachment file leases held for native text undo when the history is replaced or unmounts
   useEffect(() => () => contextHistory.dispose(), [contextHistory]);
   const changeText = (text: string) => {

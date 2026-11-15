@@ -441,6 +441,17 @@ function ComposerSurface(props: {
 export const THREAD_COMPOSER_BOTTOM_GUTTER = 6;
 
 export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps) {
+  // Called as locals: a `props.onX()` call makes the compiler key the element around it on the
+  // whole `props` object, which is new on every render.
+  const {
+    onSendMessage,
+    onChangeDraftMessage,
+    onShowUsageLimits,
+    onProviderSessionView,
+    onHeightChange,
+    onNativePasteImages,
+    onNativePasteText,
+  } = props;
   const project = useProject(scopeProjectRef(props.environmentId, props.selectedThread.projectId));
   const { themeVariables: materialTheme } = useAppearancePreferences();
   const composerPanel = materialTheme["--color-composer-panel"];
@@ -486,7 +497,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     draftMessage.trim().length > 0 ||
     draftAttachments.length > 0 ||
     (queuedEdit?.existingAttachments.length ?? 0) > 0;
-  const stripAttachments = composerStripAttachments(draftAttachments);
   const showStopAction = !hasContent && props.canStopThread && queuedEdit === null;
   const onResumeQueue = props.onResumeQueue;
   const [resumingQueue, setResumingQueue] = useState(false);
@@ -532,14 +542,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       currentModelSelection,
       props.selectedThread.projectId,
     );
-  const selectedProviderStatus = (() => {
-    if (!props.serverConfig) return null;
-    return (
-      props.serverConfig.providers.find(
-        (p) => p.instanceId === props.selectedThread.modelSelection.instanceId,
-      ) ?? null
-    );
-  })();
+  const selectedInstanceId = props.selectedThread.modelSelection.instanceId;
+  const selectedProviderStatus =
+    props.serverConfig?.providers.find((p) => p.instanceId === selectedInstanceId) ?? null;
   const openDraftDocument = (attachment: ComposerDocumentAttachment) => {
     Keyboard.dismiss();
     navigation.navigate("ThreadAttachment", {
@@ -552,7 +557,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       draftKey: composerDraftKey,
     });
   };
-  const { onSendMessage, onChangeDraftMessage, onShowUsageLimits } = props;
   const usageLimitsOffered =
     selectedProviderStatus !== null &&
     hasProviderUsageLimits(
@@ -561,7 +565,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       props.serverConfig?.usageLimitSources ?? [],
     );
   const sessionViews =
-    props.isDraft || props.onProviderSessionView === undefined
+    props.isDraft || onProviderSessionView === undefined
       ? providerSessionViews(null)
       : providerSessionViews(selectedProviderStatus);
   const openUsageLimits = () => {
@@ -605,7 +609,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     selectedProviderStatus,
     hasThread: !props.isDraft,
     hasCompactableConversation: props.hasCompactableConversation,
-    onChangeDraftMessage: props.onChangeDraftMessage,
+    onChangeDraftMessage,
     offersUsageLimits: usageLimitsOffered,
     onUsageLimits:
       usageLimitsOffered && draftAttachments.length === 0 ? openUsageLimits : undefined,
@@ -615,9 +619,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     ...(props.onFreshSession === undefined ? {} : { onFreshSession: props.onFreshSession }),
     offersSideChat: props.offersSideChat === true,
     providerSessionViews: sessionViews,
-    ...(props.onProviderSessionView === undefined
-      ? {}
-      : { onProviderSessionView: props.onProviderSessionView }),
+    ...(onProviderSessionView === undefined ? {} : { onProviderSessionView }),
   });
   const voiceInput = useVoiceInputController({
     ownerKey: composerDraftKey,
@@ -672,9 +674,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const compactEditor = useCompactComposerEditor(bodyText, draftMessage);
   const showsCompactDictation = isVoiceInputPresented;
   const isToolbarVisible = isVoiceInputPresented;
-  const hasEditingAttachments =
-    (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) ||
-    stripAttachments.length > 0;
   const attachmentBlockReason = composerAttachmentUploadBlockReason({
     environmentId: props.environmentId,
     attachments: draftAttachments,
@@ -753,9 +752,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       return;
     }
     const sessionView = providerSessionViewForPrompt(draftMessage, sessionViews);
-    if (sessionView !== null && draftAttachments.length === 0 && props.onProviderSessionView) {
+    if (sessionView !== null && draftAttachments.length === 0 && onProviderSessionView) {
       onChangeDraftMessage("");
-      props.onProviderSessionView(sessionView);
+      onProviderSessionView(sessionView);
       return;
     }
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
@@ -822,6 +821,12 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     [navigation, settingsSheetPresentation.onStackTransitionsFinished],
   );
 
+  // Built after the last hook: a call's result used again after a hook costs the memo of every
+  // element that reads it.
+  const stripAttachments = composerStripAttachments(draftAttachments);
+  const hasEditingAttachments =
+    (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) ||
+    stripAttachments.length > 0;
   // Removable attachments: inside the card, or above the focused one-row composer.
   const editingAttachments = hasEditingAttachments ? (
     <>
@@ -912,7 +917,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
 
   return (
     <Animated.View
-      onLayout={(event) => props.onHeightChange?.(event.nativeEvent.layout.height)}
+      onLayout={(event) => onHeightChange?.(event.nativeEvent.layout.height)}
       className="px-[12px]"
       style={{
         paddingTop: 6,
@@ -1062,13 +1067,13 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   skills={composerMenu.skills}
                   selection={composerMenu.selection}
                   onChangeText={(text) => {
-                    if (!isSubmissionLocked) props.onChangeDraftMessage(text);
+                    if (!isSubmissionLocked) onChangeDraftMessage(text);
                   }}
                   onSelectionChange={composerMenu.onSelectionChange}
                   onPasteImages={(uris) => {
                     if (isSubmissionLocked) return;
                     pendingNativeImagePasteCountRef.current += 1;
-                    void props.onNativePasteImages(uris).finally(() => {
+                    void onNativePasteImages(uris).finally(() => {
                       pendingNativeImagePasteCountRef.current -= 1;
                     });
                   }}
@@ -1081,7 +1086,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                         text: paste.text,
                       });
                       const selection = { start: insertion.cursor, end: insertion.cursor };
-                      props.onChangeDraftMessage(insertion.value);
+                      onChangeDraftMessage(insertion.value);
                       composerMenu.onSelectionChange(selection);
                     };
                     const capabilities = props.serverConfig?.environment.capabilities;
@@ -1123,9 +1128,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                             pendingPastedTextAttachmentCountRef.current,
                           );
                         };
-                        void props
-                          .onNativePasteText(paste)
-                          .then(finishAttachment, finishAttachment);
+                        void onNativePasteText(paste).then(finishAttachment, finishAttachment);
                       } else if (!wouldExceedInputLimit) {
                         insertPaste();
                       } else {
