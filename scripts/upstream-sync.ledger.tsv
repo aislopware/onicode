@@ -2120,3 +2120,4 @@ af8faa9cfa	take	taken as is
 19b33eca4c	take	fix(server): remote tasks report their actual model
 f82162f033	take	fix(provider-grok): steer queued messages into a running Grok turn
 b9bc03869e	take	fix(web): terminal decorations stay visible under the block cursor
+b732621b51	take	fix(clients): command palette skips tasks shown under their parent
