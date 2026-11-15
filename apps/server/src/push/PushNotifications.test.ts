@@ -688,7 +688,7 @@ describe("PushNotifications", () => {
     }),
   );
 
-  it.effect("alerts about a thread that settles as it finishes", () =>
+  it.effect("alerts about a thread that settles as it finishes, not one snoozed as it does", () =>
     Effect.gen(function* () {
       const { push, change, register, taken } = yield* setup();
       yield* register();
@@ -700,6 +700,23 @@ describe("PushNotifications", () => {
       assert.deepStrictEqual(taken(), [
         { grant: "grant_notification", alert: "Agent finished · onicode", active: null },
       ]);
+
+      // A completion that lands while snoozed stays silent and off the card after the wake too.
+      const snoozed = {
+        snoozedAt: DateTime.makeUnsafe(6_000),
+        snoozedUntil: DateTime.makeUnsafe(60_000),
+      };
+      yield* change(snoozed);
+      taken();
+      yield* change({ ...snoozed, ...finishedAt(10_000) });
+      yield* TestClock.adjust("5 seconds");
+      yield* push.drain;
+      assert.deepStrictEqual(taken(), [
+        { grant: "grant_notification", alert: undefined, active: null },
+      ]);
+      yield* TestClock.adjust("1 minute");
+      yield* change({ ...snoozed, ...finishedAt(10_000) }, "thread.metadata-updated");
+      assert.deepStrictEqual(taken(), []);
     }),
   );
 

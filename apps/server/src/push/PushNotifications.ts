@@ -57,6 +57,7 @@ import { builtInPushGatewayUrls } from "../config.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
 import type { AgentAwarenessThread } from "../orchestration-v2/ProjectionStore.ts";
 import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
+import { isSnoozed } from "../orchestration-v2/ThreadSettlementService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import { forkParked } from "../serverActivation.ts";
 import * as PushDevices from "./PushDevices.ts";
@@ -188,6 +189,16 @@ export function pushGatewayOrigin(value: string): string | null {
 const isLive = (state: AgentAwarenessState | undefined) =>
   state !== undefined && state.phase !== "completed" && state.phase !== "failed";
 
+// Checked at completion time, so a completion processed after the wake stays silent too.
+function snoozedCompletion(thread: AgentAwarenessThread, state: AgentAwarenessState): boolean {
+  if (state.phase !== "completed" || thread.latestRunCompletedAt == null) return false;
+  const completedAt = DateTime.toEpochMillis(thread.latestRunCompletedAt);
+  if (thread.snoozedAt != null && completedAt < DateTime.toEpochMillis(thread.snoozedAt)) {
+    return false;
+  }
+  return isSnoozed(thread, completedAt);
+}
+
 /** What a phone shows for one thread. */
 const shownAs = (state: AgentAwarenessState | undefined | null) =>
   state == null || state.seen
@@ -266,12 +277,13 @@ const make = Effect.gen(function* () {
     const asked = [...childRequests.values()]
       .filter((child) => child.listed === thread.id)
       .map((child) => child.request);
-    return projectThreadAwarenessV2({
+    const state = projectThreadAwarenessV2({
       environmentId,
       project: owner.value,
       thread,
       childRequest: asked.includes("approval") ? "approval" : (asked[0] ?? null),
     });
+    return state === null || snoozedCompletion(thread, state) ? null : state;
   });
 
   const readThread = Effect.fn("PushNotifications.readThread")(function* (threadId: ThreadId) {
