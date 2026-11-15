@@ -152,7 +152,6 @@ export function WorktreeSetupCard(
   );
 }
 
-/** Holds the card's place until the server publishes the first setup snapshot. */
 // Same rows the first snapshot brings, so the card keeps its height when that snapshot lands.
 const PREPARING_STAGES: ReadonlyArray<WorktreeSetupStage> = WORKTREE_SETUP_STAGE_ORDER.filter(
   (id) => id !== "agent",
@@ -166,6 +165,7 @@ const PREPARING_STAGES: ReadonlyArray<WorktreeSetupStage> = WORKTREE_SETUP_STAGE
   tail: [],
 }));
 
+/** Holds the card's place until the server publishes the first setup snapshot. */
 export function WorktreePreparingHeader() {
   return (
     <View className="py-1">
