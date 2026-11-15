@@ -1888,3 +1888,4 @@ b9bbfda087	take	NixOS/nspawn veths no longer advertised as LAN routes (conflict:
 bbd8bc074a	take	perf(server): reuse Find documents across query changes (#29310)
 6152fe3ae8	take	fix(server): branch PRs stay matched when a remote has a second push URL (#29625)
 85168744f7	take	fix(server): Stop on a stalled run closes its approval and question cards (#30695)
+1e38ebb71b	take	git commit -a --author='Haoyu(Jerry) Wu <wuhaoyujerry@users.noreply.github.com>' -m 'fix(pi): recognize OmO'\''s builtin tool search (#32321)' -m 'Ported from pingdotgg/t3code@1e38ebb71b.' --trailer 'Co-authored-by: Jerry Wu <haoyuwu@andrew.cmu.edu>' --trailer 'Co-authored-by: sisyphus-dev-ai <sisyphus-dev-ai@users.noreply.github.com>' --trailer 'Co-authored-by: Julius Marminge <julius0216@outlook.com>' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
