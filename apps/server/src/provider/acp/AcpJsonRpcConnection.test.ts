@@ -1286,6 +1286,72 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
+  // regression: #37106 prompt sent before session/load replied
+  it.live("does not prompt before session/load replies after replay goes idle", () =>
+    Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      yield* runtime.start();
+
+      const result = yield* runtime.prompt({
+        prompt: [{ type: "text", text: "hi" }],
+      });
+      expect(result.stopReason).toBe("end_turn");
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          authMethodId: "test",
+          spawn: {
+            command: mockAgentCommand,
+            args: mockAgentArgs,
+            env: {
+              ONICODE_ACP_EMIT_LOAD_REPLAY: "1",
+              ONICODE_ACP_LOAD_REPLY_DELAY_MS: "500",
+              ONICODE_ACP_REJECT_PROMPT_UNTIL_LOADED: "1",
+            },
+          },
+          cwd: process.cwd(),
+          resumeSessionId: "mock-session-1",
+          sessionLoadReplayIdleGap: "50 millis",
+          clientInfo: { name: "oni-test", version: "0.0.0" },
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
+  );
+
+  it.live("treats replay idle as loaded when the agent opts in", () =>
+    Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      const started = yield* runtime.start();
+
+      expect(started.sessionSetupResult._meta).toMatchObject({
+        oniSessionLoadReady: "replay_idle",
+      });
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          authMethodId: "test",
+          spawn: {
+            command: mockAgentCommand,
+            args: mockAgentArgs,
+            env: {
+              ONICODE_ACP_EMIT_LOAD_REPLAY: "1",
+              ONICODE_ACP_LOAD_NEVER_REPLIES: "1",
+            },
+          },
+          cwd: process.cwd(),
+          resumeSessionId: "mock-session-1",
+          sessionLoadReplayIdleGap: "50 millis",
+          sessionLoadReplayIdleReadiness: true,
+          clientInfo: { name: "oni-test", version: "0.0.0" },
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+    ),
+  );
+
   it.effect("rejects invalid config option values before sending session/set_config_option", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "acp-runtime-"));
     const requestLogPath = NodePath.join(tempDir, "requests.ndjson");

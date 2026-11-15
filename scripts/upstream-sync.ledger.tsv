@@ -2061,3 +2061,4 @@ f0a3321354	take	fix(server): settling a thread keeps exec and foreground Bash te
 96290af4e0	take	fix(codex): keep browser access prompts available in full access (#37104)
 46f3ab39f2	take	adapted: scenario skips off Linux (needs GNU ls --hyperlink)
 1b14aade4d	take	fix(mobile): recheck the current branch before selecting it (#37121)
+834eb51301	take	fix(acp): wait for session/load to reply before prompting (#37139)
