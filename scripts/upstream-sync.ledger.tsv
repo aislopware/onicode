@@ -2114,3 +2114,4 @@ dd7255d338	take	fix(server): PowerShell process scans keep non-ASCII names on Wi
 c5e6b24ff5	take	fix(mobile): iOS multi-item text paste folds into an attachment (#37301)
 295a0a7332	take	Quick Look gallery conflict resolved to upstream's single-file Quick Look; kept Onicode's tapped-first download order (37093932c5), moved into OniNativeImageViewer: URLSession caps connections per host, so over LAN/Tailscale the tapped image would queue behind its siblings
 1d74a172d5	take	taken as is
+af8faa9cfa	take	taken as is
