@@ -2109,3 +2109,4 @@ f1919eb1e2	take	fix(server): Codex prompt suggestions no longer imitate delegate
 16ff4b45ee	take	fix(mobile): fully typed /model keeps its suggestion (#37280)
 21fe33c8d7	take	fix(server): schedule_task uses the project's effective default model (#37299)
 64e7e236e2	take	fix(mobile): swipe actions no longer clip in short thread rows (#37285)
+03e05f6235	take	fix(server): a background OpenCode subagent's question survives its parent's turn end (#37300)
