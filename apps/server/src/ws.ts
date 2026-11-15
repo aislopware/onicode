@@ -1,6 +1,7 @@
 import { OrchestrationDispatchCommandError } from "@onicode/contracts";
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- A synchronous digest inside the pure provider mapping.
 import * as NodeCrypto from "node:crypto";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Context from "effect/Context";
 import * as NodeHttpServerRequest from "@effect/platform-node/NodeHttpServerRequest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -1722,6 +1723,7 @@ export const layerWsRpc = (
           environment,
           auth,
           cwd: config.cwd,
+          hostname: yield* HostProcess.Hostname,
           keybindingsConfigPath: config.keybindingsConfigPath,
           keybindings: keybindingsConfig.keybindings,
           issues: keybindingsConfig.issues,
