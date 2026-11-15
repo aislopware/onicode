@@ -1789,7 +1789,7 @@ c0561c5c3d	take	fix(shared): the SQLite reader pool comes back after a failed st
 ca29ff1d72	take	fix(cli): keep log warnings out of JSON output
 6c7a87cbcb	take	fix(web,mobile): a late MCP app teardown no longer closes the app that replaced it
 47e24f6cc2	take	fix(server): Grok usage counts turns from resumed sessions
-2b7ea1bc2d	skip	Onicode already awaits the retried PATH update in 35845f7175
+2b7ea1bc2d	take	adopted upstream over Onicode's 35845f7175 Stream.drop(1) wait: waiting for the snapshot with the retried PATH, and asserting it arrived, does not depend on how many updates come first
 6e0cbb3ea9	take	fix(server): checkpoint restore reverts edits inside submodules (#30829)
 3e17618212	take	perf(server): delegated tasks start and finish without reading the whole parent thread (#34551)
 b732f647f2	take	fix(pi): resume attached sessions without reloading extensions (#21512)
