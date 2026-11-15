@@ -37,6 +37,8 @@ test(
       "user.name=Scenario",
       "-c",
       "user.email=scenario@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
       "commit",
       "--quiet",
       "--message",
