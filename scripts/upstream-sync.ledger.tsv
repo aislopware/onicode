@@ -2064,3 +2064,4 @@ f0a3321354	take	fix(server): settling a thread keeps exec and foreground Bash te
 834eb51301	take	fix(acp): wait for session/load to reply before prompting (#37139)
 d8c7855a88	take	fix(web): terminal mouse reports hit the drawn cell (#37148); getMode(MODE.sgrPixels) for upstream modeEnabled; tmux added to the scenarios job
 def4cd4884	take	fix(server): run_scheduled_task_now returns why a started run failed (#37149)
+70abb6c002	take	fix(azure-devops): pull request titles like `@notes.txt` are saved as typed (#37110)
