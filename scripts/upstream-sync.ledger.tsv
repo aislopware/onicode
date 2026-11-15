@@ -2001,3 +2001,4 @@ ab2420ffc0	take	git commit -a --author='Victor <satsdev@only21mil.xyz>' -m 'fix(
 9a79883979	take	fix(web): a file opened from a diff in a project folder inside a repository opens that file (#32684)
 294a8418ce	skip	Onicode already deflaked this ACP project picker test its own way (pointer-hover highlight); upstream's keyboard variant would replace it
 147de34a93	take	fix(web): stop held dictation when shortcut modifiers are released (#32648)
+238678951a	take	perf(web): resting on a PR row also reads its activity, so the timeline shows on click (#32842)
