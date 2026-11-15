@@ -1959,3 +1959,4 @@ eefba1a8af	take	fix(cli): onicode up and onicode status hints keep --base-dir (#
 d2a894a247	take	fix(server): forks of forks keep their deleted source's files (#32255); no guest-share pending files (guest links removed)
 cc4160c813	take	fix(web): stashed prompt previews no longer end in a broken character (#32404)
 e0ca4fcecb	take	fix(web, mobile): a failed terminal resize is sent again (#32047)
+3b5bfcec4f	take	fix(gitcafe): recognize ssh:// remotes that name no user (#32363)
