@@ -252,7 +252,7 @@ import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@onicode/contracts/settings";
 import { isVideoAttachment, type SessionPhase, type Thread } from "../../types";
-import { type ComposerPromptHistoryPosition } from "./composerPromptHistory";
+import { type ComposerPromptHistoryPosition } from "@onicode/client-runtime/composer-prompt-history";
 import type { PendingUserInputDraftAnswer } from "@onicode/client-runtime/state/pending-user-input";
 import type { PendingApproval, PendingUserInput, TimelineEntry } from "../../session-logic";
 import {

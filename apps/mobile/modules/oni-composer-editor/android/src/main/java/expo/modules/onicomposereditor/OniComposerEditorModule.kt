@@ -115,6 +115,9 @@ class OniComposerEditorModule : Module() {
       Prop("submitEnabled") { view: OniComposerEditorView, enabled: Boolean ->
         view.setSubmitEnabled(enabled)
       }
+      Prop("promptRecallEnabled") { view: OniComposerEditorView, enabled: Boolean ->
+        view.setPromptRecallEnabled(enabled)
+      }
       Prop("scrollEnabled") { view: OniComposerEditorView, scrollEnabled: Boolean ->
         view.setScrollEnabled(scrollEnabled)
       }
@@ -140,6 +143,7 @@ class OniComposerEditorModule : Module() {
         "onComposerFocus",
         "onComposerBlur",
         "onComposerSubmit",
+        "onComposerRecallPrompt",
         "onComposerPasteImages",
         "onComposerContextPress",
         "onComposerPasteContext",

@@ -103,6 +103,9 @@ public class OniComposerEditorModule: Module {
       Prop("enterBehavior") { (view: OniComposerEditorView, behavior: String) in
         view.setEnterBehavior(behavior)
       }
+      Prop("promptRecallEnabled") { (view: OniComposerEditorView, enabled: Bool) in
+        view.setPromptRecallEnabled(enabled)
+      }
       Prop("textPasteThresholdBytes") { (view: OniComposerEditorView, threshold: Int) in
         view.setTextPasteThresholdBytes(threshold)
       }
@@ -116,6 +119,7 @@ public class OniComposerEditorModule: Module {
         "onComposerFocus",
         "onComposerBlur",
         "onComposerSubmit",
+        "onComposerRecallPrompt",
         "onComposerPasteImages",
         "onComposerContextPress",
         "onComposerPasteContext",

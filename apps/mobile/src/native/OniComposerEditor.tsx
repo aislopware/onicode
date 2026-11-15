@@ -19,6 +19,7 @@ export function ComposerEditor({
   singleLineCentered: _singleLineCentered,
   enterBehavior: _enterBehavior,
   readResetGeneration: _readResetGeneration,
+  onRecallPrompt: _onRecallPrompt,
   readOnly = false,
   onContentSizeChange,
   ...props

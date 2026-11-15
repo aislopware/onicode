@@ -61,6 +61,7 @@ class OniComposerEditorView(context: Context, appContext: AppContext) : ExpoView
   private val onComposerFocus by EventDispatcher()
   private val onComposerBlur by EventDispatcher()
   private val onComposerSubmit by EventDispatcher()
+  private val onComposerRecallPrompt by EventDispatcher()
   private val onComposerPasteImages by EventDispatcher()
   private val onComposerContextPress by EventDispatcher()
   private val onComposerPasteContext by EventDispatcher()
@@ -174,6 +175,9 @@ class OniComposerEditorView(context: Context, appContext: AppContext) : ExpoView
     }
     editor.submitListener = { alternate ->
       onComposerSubmit(mapOf("alternate" to alternate))
+    }
+    editor.promptRecallListener = { older ->
+      onComposerRecallPrompt(mapOf("direction" to if (older) "backward" else "forward"))
     }
     editor.setOnFocusChangeListener { _, hasFocus ->
       if (hasFocus) {
@@ -338,6 +342,10 @@ class OniComposerEditorView(context: Context, appContext: AppContext) : ExpoView
 
   fun setSubmitEnabled(enabled: Boolean) {
     editor.submitEnabled = enabled
+  }
+
+  fun setPromptRecallEnabled(enabled: Boolean) {
+    editor.promptRecallEnabled = enabled
   }
 
   fun setScrollEnabled(scrollEnabled: Boolean) {
@@ -634,6 +642,10 @@ internal class SelectionAwareEditText(
   var submitListener: ((Boolean) -> Unit)? = null
   var submitEnabled = false
   var returnSends = true
+  var promptRecallListener: ((Boolean) -> Unit)? = null
+
+  /** JS turns this on while the draft is empty or still shows a recalled prompt unedited. */
+  var promptRecallEnabled = false
   var textPasteThresholdBytes = 0
   var maxInputChars = Int.MAX_VALUE
   var clipboardFragment = ""
@@ -726,6 +738,29 @@ internal class SelectionAwareEditText(
       device.keyboardType == InputDevice.KEYBOARD_TYPE_ALPHABETIC
   }
 
+  // Up recalls from the first line and Down from the last; on any other line the arrow moves the
+  // caret. Returns false to leave the key to the editor.
+  private fun recallPrompt(older: Boolean, event: KeyEvent): Boolean {
+    val recalls = canRecallPrompt() &&
+      event.hasNoModifiers() &&
+      isFromPhysicalKeyboard(event) &&
+      caretIsOnEdgeLine(first = older)
+    if (recalls) promptRecallListener?.invoke(older)
+    return recalls
+  }
+
+  private fun canRecallPrompt(): Boolean =
+    promptRecallEnabled && promptRecallListener != null && !readOnly && isEnabled
+
+  private fun caretIsOnEdgeLine(first: Boolean): Boolean {
+    val lines = layout
+    val caret = selectionStart
+    return lines != null &&
+      caret >= 0 &&
+      caret == selectionEnd &&
+      lines.getLineForOffset(caret) == if (first) 0 else lines.lineCount - 1
+  }
+
   override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
     val alternate = returnSubmission(keyCode, event)
     if (alternate != null) {
@@ -736,6 +771,8 @@ internal class SelectionAwareEditText(
     val handled = when (keyCode) {
       KeyEvent.KEYCODE_DEL -> deleteChip(true)
       KeyEvent.KEYCODE_FORWARD_DEL -> deleteChip(false)
+      KeyEvent.KEYCODE_DPAD_UP -> recallPrompt(older = true, event)
+      KeyEvent.KEYCODE_DPAD_DOWN -> recallPrompt(older = false, event)
       else -> false
     }
     return handled || super.onKeyDown(keyCode, event)

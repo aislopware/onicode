@@ -146,6 +146,45 @@ do {
   check(view.editor.accessibilityLabel == "Ask anything", "VoiceOver label: \(String(describing: view.editor.accessibilityLabel))")
 }
 
+// Up and Down recall a prompt only from the first and last line, once JS enables recall.
+do {
+  let view = makeEditor("first line\nsecond line")
+  view.layoutIfNeeded()
+  let editor = view.editor
+  func arrow(_ input: String) -> UIKeyCommand? {
+    editor.keyCommands?.first { $0.input == input && $0.modifierFlags.isEmpty }
+  }
+  func recalled() -> [String] {
+    view.onComposerRecallPrompt.payloads.compactMap { $0["direction"] as? String }
+  }
+  editor.selectedRange = NSRange(location: 3, length: 0)
+  check(arrow(UIKeyCommand.inputUpArrow) == nil, "Up recalled a prompt before JS enabled recall")
+  view.setPromptRecallEnabled(true)
+  check(arrow(UIKeyCommand.inputDownArrow) == nil, "Down on the first of two lines must move the caret")
+  guard let older = arrow(UIKeyCommand.inputUpArrow), let olderAction = older.action else {
+    check(false, "Up on the first line did not offer recall")
+    exit(1)
+  }
+  editor.perform(olderAction, with: older)
+  check(recalled() == ["backward"], "Up on the first line recalled \(recalled())")
+  editor.selectedRange = NSRange(location: 14, length: 0)
+  check(arrow(UIKeyCommand.inputUpArrow) == nil, "Up on the last of two lines must move the caret")
+  check(!editor.canPerformAction(olderAction, withSender: older), "A stale Up command still recalled from the last line")
+  guard let newer = arrow(UIKeyCommand.inputDownArrow), let newerAction = newer.action else {
+    check(false, "Down on the last line did not offer recall")
+    exit(1)
+  }
+  editor.perform(newerAction, with: newer)
+  check(recalled() == ["backward", "forward"], "Down on the last line recalled \(recalled())")
+  editor.selectedRange = NSRange(location: 11, length: 6)
+  check(arrow(UIKeyCommand.inputDownArrow) == nil, "Down with a selection must keep UIKit's behavior")
+  view.setControlledDocumentJson(document("", revision: 0, resetGeneration: 1))
+  check(
+    arrow(UIKeyCommand.inputUpArrow) != nil && arrow(UIKeyCommand.inputDownArrow) != nil,
+    "An empty draft must offer recall in both directions"
+  )
+}
+
 print("composer editor tests passed")
 
 private let dropEditor = ComposerTextView()
