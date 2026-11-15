@@ -2055,3 +2055,24 @@ bcdd6a59f4	take	adapted: conflict resolved so Onicode's provider session view co
 f28c74a7d0	take	adapted: environment-auth doc paragraph placed in Onicode's MCP clients section (links and onicode thread), upstream's T3 Connect issuer text left out; every Onicode thread-bound tool already covered by upstream's annotations
 c8a1b5ff0b	take	fix(ssh): preserve literal home paths in Include expansion (#33288)
 2b83dd0969	take	fix(server): finish closed terminal kills before shutdown (#37113)
+7d9c365e17	take	fix(web): keep distinct images with matching attachment metadata (#37116); scenario ported and passing on desktop
+8dba23e420	take	fix(web): large terminal pastes reach the program intact (#37103); scenario ported and passing on desktop
+f0a3321354	take	fix(server): settling a thread keeps exec and foreground Bash terminals open (#37125)
+96290af4e0	take	fix(codex): keep browser access prompts available in full access (#37104)
+46f3ab39f2	take	adapted: scenario skips off Linux (needs GNU ls --hyperlink)
+1b14aade4d	take	fix(mobile): recheck the current branch before selecting it (#37121)
+834eb51301	take	fix(acp): wait for session/load to reply before prompting (#37139)
+d8c7855a88	take	fix(web): terminal mouse reports hit the drawn cell (#37148); getMode(MODE.sgrPixels) for upstream modeEnabled; tmux added to the scenarios job
+def4cd4884	take	fix(server): run_scheduled_task_now returns why a started run failed (#37149)
+70abb6c002	take	fix(azure-devops): pull request titles like `@notes.txt` are saved as typed (#37110)
+789d10fb54	take	fix(web): Sharing & access can select a desktop-local WSL backend (#37151); applied to AccessSettings in ConnectionsSettings.tsx (useAccessEnvironment came with the skipped MCP wizard)
+0afd8c0295	take	fix(mobile): pasted GIFs on iOS keep their animation (#37143)
+4b9cf579ba	take	fix(acp): Copilot's reply after a background agent wakes it opens a continuation run (#37159)
+a16796b956	take	fix(shared): ß no longer splits words in generated folder and branch names (#37152)
+86a9d9fb71	take	fix(server): name the missing project when a change request's repository has none (adapted: keeps provider-unsupported on the wire with an optional repository, for older mobile builds)
+ff9dca8931	take	fix(server): an oversized provider request reads as too large, not raw 413 HTML
+649d9fc1ab	take	fix(provider-acp): Grok early task completion no longer replaces the child's answer
+7379f1969b	take	fix(web): keypad navigation works with NumLock off (scenario ported to the desktop target)
+8897a6ebe1	take	fix(web): keep thread mentions when editing sent messages (adapted: recallComposerMessage lives in client-runtime's composer-prompt-history; scenario ported to the desktop target)
+dcaedc9800	take	fix(server): skills linked by a SessionStart hook appear in the $ picker in the same session (adapted: first init reads the installed build, then reports the session cwd)
+2becf31b64	take	fix(server): Windows spawn workers no longer leak a short child's output pipe to a sibling

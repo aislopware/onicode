@@ -5686,6 +5686,11 @@ export interface ClaudeAdapterV2Options {
   readonly scopedLimitNames?: Ref.Ref<ClaudeScopedLimitNames>;
   readonly onUsageLimits?: ManagedServerProvider["applyUsageLimits"];
   /**
+   * Called with the requested cwd on a process's first init message, after its synchronous
+   * SessionStart hooks have run, so cwd-keyed workspace scans can be refreshed.
+   */
+  readonly onSessionInit?: (cwd: string) => Effect.Effect<void>;
+  /**
    * Applies Claude Code's reported model ids for a turn's cwd, so turns send ids its backend
    * accepts. Defaults to the catalog unchanged.
    */
@@ -13302,14 +13307,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     }
                   }
                   const handled = handleSdkMessage({ query: querySession, message });
-                  return firstInit
-                    ? readInstalledBuild.pipe(
-                        Effect.flatMap((installed) => {
-                          context.installedAtInit = installed;
-                          return handled;
-                        }),
-                      )
-                    : handled;
+                  if (!firstInit) return handled;
+                  const reportedCwd = turnInput.runtimePolicy.cwd;
+                  const onSessionInit = adapterOptions.onSessionInit;
+                  return readInstalledBuild.pipe(
+                    Effect.flatMap((installed) => {
+                      context.installedAtInit = installed;
+                      return reportedCwd === null || !onSessionInit
+                        ? Effect.void
+                        : onSessionInit(reportedCwd);
+                    }),
+                    Effect.andThen(handled),
+                  );
                 }),
               ),
             ),
@@ -15030,7 +15039,7 @@ export const createClaudeAdapterV2 = Effect.fn("ClaudeAdapterV2Driver.create")(
     input: ProviderAdapterDriverCreateInput<ClaudeSettings>,
     hooks: Pick<
       ClaudeAdapterV2Options,
-      "scopedLimitNames" | "onUsageLimits" | "modelCatalog" | "routeModelCatalog"
+      "scopedLimitNames" | "onUsageLimits" | "onSessionInit" | "modelCatalog" | "routeModelCatalog"
     > = {},
   ) {
     const { instanceId, environment, enabled, config } = input;

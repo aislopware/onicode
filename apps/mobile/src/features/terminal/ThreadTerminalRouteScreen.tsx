@@ -599,14 +599,13 @@ function ThreadTerminal(props: {
     },
   });
 
-  const writeInput = async (data: string): Promise<boolean> => {
+  const writeChunk = async (data: string): Promise<boolean> => {
     if (
       !isRunning ||
       !readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)
     ) {
       return false;
     }
-
     const result = await writeTerminal({
       environmentId: selectedThread.environmentId,
       input: {
@@ -618,10 +617,13 @@ function ThreadTerminal(props: {
     return result._tag === "Success";
   };
 
+  // Android's IME delivers a system paste as one input, which can exceed one write.
+  const writeInput = (data: string) => pasteSession.input(data, writeChunk);
+
   const pasteText = async (readText: () => Promise<string>) => {
     await pasteSession.paste({
       readText,
-      write: writeInput,
+      write: writeChunk,
       onReadError: (cause) => {
         console.error(new TerminalClipboardReadError({ terminalId, cause }));
       },

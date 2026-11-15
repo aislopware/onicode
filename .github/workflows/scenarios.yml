@@ -68,7 +68,7 @@ jobs:
       - name: Start installing the desktop build libraries and xvfb
         uses: ./.github/actions/apt-install-start
         with:
-          packages: libsecret-1-dev pkg-config xvfb
+          packages: libsecret-1-dev pkg-config tmux xvfb
 
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
