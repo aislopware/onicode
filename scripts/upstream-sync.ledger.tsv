@@ -1966,3 +1966,4 @@ a9e900f9c0	take	fix(mobile): queued messages show mentions and files by name, no
 559cd7d3b9	take	fix(web): quieter Ready and Merge buttons on PR rows (#25346)
 348009de22	take	fix(prs): include Storybook files in the test filter and counts (#29083)
 0fbe8a2e44	take	fix(web): settings section headers no longer overlap their actions on narrow screens (#29503)
+58f609f7cc	take	fix(web): theme import no longer says a file just under 1 MB is "1024 KB" (#30330)
