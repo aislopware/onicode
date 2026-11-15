@@ -127,7 +127,8 @@ For an integration that generates a palette, this shorter format also works:
 
 Set `appearance` to `light` or `dark` and supply hex colors for `canvas` and `accent`. Onicode
 generates the rest. The optional `colors` overrides use the names in the theme editor's advanced
-view. An optional `css` string adds [custom CSS](#custom-css).
+view. An optional `css` string adds [custom CSS](#custom-css), up to 50,000 characters. Desktop
+0.15.0 and older apply a theme whose CSS is longer than 20,000 characters with its colors only.
 
 Write updates to a temporary file and rename it into place so clients never read a partial theme.
 Invalid files are not published.

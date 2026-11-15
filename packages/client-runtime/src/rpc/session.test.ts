@@ -584,6 +584,7 @@ describe("RpcSessionFactory", () => {
       socket.open();
       yield* completeInitialConfig(socket, ENCODED_THEME_SERVER_CONFIG, {
         environmentThemes: true,
+        longThemeCss: true,
       });
       yield* Fiber.join(readyFiber);
 
