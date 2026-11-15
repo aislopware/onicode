@@ -96,11 +96,18 @@ const linkEnvironments = Effect.fn("scenario.linkEnvironments")(function* (
 /** The primary server outlives the test, so the link and the beta go back to how they were. */
 const unlinkEnvironment = Effect.fn("scenario.unlinkEnvironment")(function* (
   primaryOrigin: string,
-  environmentId: EnvironmentId,
+  environmentId: EnvironmentId | undefined,
 ) {
   const primary = yield* rpcClient(ONICODE_HOME, primaryOrigin);
-  yield* primary["peerLinks.unlink"]({ environmentId });
-  yield* primary["server.updateSettings"]({ patch: { linkedEnvironmentsEnabled: false } });
+  yield* (
+    environmentId === undefined ? Effect.void : primary["peerLinks.unlink"]({ environmentId })
+  ).pipe(
+    Effect.ensuring(
+      primary["server.updateSettings"]({ patch: { linkedEnvironmentsEnabled: false } }).pipe(
+        Effect.ignore,
+      ),
+    ),
+  );
 }, Effect.scoped);
 
 test(
@@ -164,9 +171,7 @@ test(
         }
       } finally {
         try {
-          if (linked !== undefined) {
-            await runPromise(unlinkEnvironment(app.baseUrl ?? "", linked));
-          }
+          await runPromise(unlinkEnvironment(app.baseUrl ?? "", linked));
         } finally {
           await second.stop();
         }

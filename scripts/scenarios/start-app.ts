@@ -193,6 +193,36 @@ const serveLauncher = Effect.fn("startApp.serveLauncher")(function* (input: {
           response.end(page);
         }
       });
+      // A scenario's own RPC client opens the server's WebSocket through `app.baseUrl` too.
+      server.on("upgrade", (request, socket, head) => {
+        if (serverPort === undefined || !/^\/ws(?:\?|$)/.test(request.url ?? "")) {
+          socket.destroy();
+          return;
+        }
+        const upstream = NodeHttp.request({
+          host: "127.0.0.1",
+          port: serverPort,
+          path: request.url,
+          method: request.method,
+          headers: { ...request.headers, host: `127.0.0.1:${serverPort}` },
+        });
+        upstream.on("upgrade", (reply, upstreamSocket, upstreamHead) => {
+          const headers = [];
+          for (let index = 0; index < reply.rawHeaders.length; index += 2) {
+            headers.push(`${reply.rawHeaders[index]}: ${reply.rawHeaders[index + 1]}\r\n`);
+          }
+          socket.write(`HTTP/1.1 101 Switching Protocols\r\n${headers.join("")}\r\n`);
+          socket.write(upstreamHead);
+          upstreamSocket.write(head);
+          upstreamSocket.on("error", () => socket.destroy());
+          socket.on("error", () => upstreamSocket.destroy());
+          upstreamSocket.pipe(socket);
+          socket.pipe(upstreamSocket);
+        });
+        upstream.on("response", () => socket.destroy());
+        upstream.on("error", () => socket.destroy());
+        upstream.end();
+      });
       server.listen(input.port, input.host, () => resume(Effect.succeed(server)));
     }),
     (server) =>
