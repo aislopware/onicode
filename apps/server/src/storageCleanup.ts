@@ -935,7 +935,9 @@ const make = Effect.gen(function* () {
             "--max-count=1",
             "HEAD",
             // Checkpoint refs hold workspace snapshots, not commits a user could lose.
-            "--exclude=refs/onicode/*",
+            // Upstream's refs/t3/* left pre-refresh out; refs/onicode/pre-refresh must stay counted.
+            "--exclude=refs/onicode/checkpoints/*",
+            "--exclude=refs/onicode/orchestration-v2/*",
             "--all",
             "--reflog",
             "--not",
