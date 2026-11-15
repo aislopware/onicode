@@ -25,9 +25,10 @@ export const test = base.extend<{ desktop: Desktop }>({
       readDesktopStack.pipe(Effect.provide(NodeServices.layer)),
     );
     const main = mainProcess(inspectPort);
-    // A menu or message box an earlier scenario left waiting would answer this one's first step.
+    // What an earlier scenario left waiting would answer this one's first step.
     await main.dismissContextMenus();
     await main.takeMessageBoxes();
+    await main.forgetFolderPickerAnswers();
     await use({
       ...main,
       chooseFromContextMenu: async (target, ...path) => {

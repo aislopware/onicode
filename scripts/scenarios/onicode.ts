@@ -3,7 +3,6 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { test as base } from "@e2e-dev/web";
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { expect } from "e2e";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -93,6 +92,8 @@ export function makeState(home: string, env: NodeJS.ProcessEnv = {}) {
     const git = (args: ReadonlyArray<string>) => run("git", args, { cwd: workspace });
     const author = ["-c", "user.name=Scenario", "-c", "user.email=scenario@example.invalid"];
     yield* git(["init", "--quiet", "--initial-branch=main"]);
+    // The developer's global config may sign commits with a key that prompts.
+    yield* git(["config", "commit.gpgsign", "false"]);
     yield* git(["add", "--all"]);
     yield* git([...author, "commit", "--quiet", "--message", "Initial commit"]);
     yield* cli(["project", "add", workspace, "--title", title]);
@@ -157,8 +158,9 @@ export const test = base.extend<{ onicode: Onicode }>({
         }
         // Every open reloads the window. A shortcut or a native menu item reaches the app only
         // once it has mounted, and neither waits for it the way a locator does. The reload goes
-        // through the Vite dev server, which a busy machine can hold up for longer than a default wait.
-        await expect(screen.getByRole("navigation", "Threads")).toBeVisible({ timeout: 60_000 });
+        // through the Vite dev server, which a busy machine can hold up for longer than a default
+        // wait. Not an `expect`: a proof counts a failed assertion as the bug reproduced.
+        await screen.getByRole("navigation", "Threads").waitFor({ timeout: 60_000 });
       },
     });
     await runPromise(cleanup);

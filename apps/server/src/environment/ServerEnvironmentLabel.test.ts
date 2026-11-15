@@ -101,3 +101,21 @@ it.effect("qualifies the inherited Windows hostname only inside WSL", () =>
     }
   }),
 );
+
+it.effect("takes the label ONICODE_ENVIRONMENT_LABEL names over the host's own", () =>
+  Effect.gen(function* () {
+    const label = yield* resolveServerEnvironmentLabel({ cwdBaseName: "project" }).pipe(
+      Effect.provideService(HostProcess.Platform, "linux"),
+      Effect.provideService(HostProcess.Hostname, "devbox"),
+      Effect.provideService(HostProcess.Environment, { ONICODE_ENVIRONMENT_LABEL: " Scenario " }),
+      Effect.provideService(ProcessRunner.ProcessRunner, exitsWithFailure),
+      Effect.provide(
+        FileSystem.layerNoop({
+          exists: () => Effect.succeed(true),
+          readFileString: () => Effect.succeed('PRETTY_HOSTNAME="Work laptop"'),
+        }),
+      ),
+    );
+    assert.equal(label, "Scenario");
+  }),
+);

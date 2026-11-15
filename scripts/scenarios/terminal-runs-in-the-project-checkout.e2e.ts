@@ -8,7 +8,7 @@ import { runPromise } from "./onicode.ts";
 test(
   "The terminal drawer runs commands in the project checkout",
   WEB,
-  async ({ onicode, app, browser, screen }) => {
+  async ({ onicode, browser, screen }) => {
     const project = await onicode.project("demo");
     const thread = await onicode.thread({ project, title: "Terminal home", messages: ["first"] });
     await onicode.open(thread);
@@ -26,7 +26,7 @@ test(
     await input.pressSequentially("pwd > proof.txt");
     await input.press("Enter");
     await expect.poll(async () => (await proof())?.trim()).toBe(project);
-    await app.screenshot("terminal");
+    // No screenshot: the terminal runs the developer's own shell, and its prompt is theirs.
 
     await terminal.getByRole("button", /^Close Terminal/).tap();
     await expect(terminal).toBeHidden();

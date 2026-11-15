@@ -13,7 +13,7 @@ import * as Schema from "effect/Schema";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Schedule from "effect/Schedule";
 
-import { DesktopStack } from "./scenarios/desktop-main.ts";
+import { DesktopStack, evaluateInMain, RESET_WINDOW } from "./scenarios/desktop-main.ts";
 import { run, ScenarioError } from "./scenarios/shell.ts";
 
 // e2e loads this module for its values, so the paths and the host are resolved once, here.
@@ -97,6 +97,9 @@ const devWindow: BrowserProvider = {
   scope: "attempt",
   acquire: () =>
     readDesktopStack.pipe(
+      Effect.tap(({ inspectPort }) =>
+        Effect.promise(() => evaluateInMain(inspectPort, RESET_WINDOW)),
+      ),
       Effect.map(({ cdpPort }) => ({
         id: "dev-window",
         cdpEndpoint: `http://${LOOPBACK}:${cdpPort}`,
@@ -254,6 +257,8 @@ export default {
   workers: 1,
   timeout: 300_000,
   assertionTimeout: 15_000,
+  // e2e retries once under CI unless told otherwise, and a retried pass would hide a race.
+  retries: 0,
   video: "on",
   trace: "on",
   reporters: ["list", "markdown"],

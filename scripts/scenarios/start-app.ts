@@ -44,17 +44,11 @@ const REAL_PROVIDERS = [
   "antigravity",
 ];
 
-// The server labels its environment with the host's name, probed through these commands.
-// Captures must not depend on, or show, the machine that made them.
-const HOST_LABEL_SHIM = `#!/bin/sh
-case "$*" in
-  "--pretty" | "--get ComputerName") echo "Scenario" ;;
-  *) for real in /usr/bin /usr/sbin /bin; do
-       [ -x "$real/$(basename "$0")" ] && exec "$real/$(basename "$0")" "$@"
-     done
-     exit 127 ;;
-esac
-`;
+/**
+ * The name every scenario server takes. Left to itself a server reports the host's name, which
+ * would put the machine that ran a scenario into its captures.
+ */
+export const ENVIRONMENT_LABEL = "Scenario";
 
 const encodeSettings = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
 const encodeDesktopStack = Schema.encodeEffect(Schema.fromJsonString(DesktopStack));
@@ -62,14 +56,15 @@ const encodeDesktopStack = Schema.encodeEffect(Schema.fromJsonString(DesktopStac
 export const prepareHome = Effect.fn("startApp.prepareHome")(function* (home: string) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  // This deletes `home`, and the developer's real one is a typo away from a scenario home.
+  if (!path.basename(home).startsWith("scenarios")) {
+    return yield* new ScenarioError({
+      message: `${home} is not a scenario home: its last segment must start with "scenarios".`,
+    });
+  }
   yield* fs.remove(home, { recursive: true, force: true });
   yield* fs.makeDirectory(path.join(home, "userdata"), { recursive: true });
   yield* fs.makeDirectory(path.join(home, "bin"));
-  for (const command of ["hostnamectl", "scutil"]) {
-    const shim = path.join(home, "bin", command);
-    yield* fs.writeFileString(shim, HOST_LABEL_SHIM);
-    yield* fs.chmod(shim, 0o755);
-  }
   const noModel = path.join(home, "bin/no-model");
   yield* fs.writeFileString(noModel, "#!/bin/sh\necho 'scenarios run no model' >&2\nexit 1\n");
   yield* fs.chmod(noModel, 0o755);
@@ -181,7 +176,10 @@ const serveLauncher = Effect.fn("startApp.serveLauncher")(function* (input: {
               reply.pipe(response);
             },
           );
-          upstream.on("error", () => response.writeHead(502).end());
+          upstream.on("error", () => {
+            if (response.headersSent) response.destroy();
+            else response.writeHead(502).end();
+          });
           request.pipe(upstream);
         } else {
           response.writeHead(200, { "content-type": "text/html", "cache-control": "no-store" });
@@ -214,6 +212,7 @@ const startApp = Effect.fn("startApp")(function* (input: {
     ...hostEnvironment,
     PATH: `${path.join(input.home, "bin")}:${hostEnvironment.PATH ?? ""}`,
     ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
+    ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
   };
   const devRunner = (mode: string, args: ReadonlyArray<string>) => [
     "scripts/dev-runner.ts",

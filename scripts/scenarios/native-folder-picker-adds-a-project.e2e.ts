@@ -5,7 +5,7 @@ import * as Path from "effect/Path";
 
 import { ONICODE_HOME } from "../e2e.config.ts";
 import { test, WEB } from "./desktop.ts";
-import { runPromise } from "./onicode.ts";
+import { makeState, runPromise } from "./onicode.ts";
 import { run } from "./shell.ts";
 
 /** A repository the app has not seen, for the picker to return. */
@@ -29,23 +29,29 @@ test(
   async ({ onicode, desktop, app, browser, screen }) => {
     await onicode.project("demo");
     const repository = await runPromise(makeRepository);
-    await onicode.open();
+    try {
+      await onicode.open();
 
-    await desktop.answerFolderPicker(repository);
-    await browser.keyboard.press("ControlOrMeta+k");
-    const palette = screen.getByTestId("command-palette");
-    await palette.getByRole("option", "Add project").tap();
-    await palette.getByRole("option", /^Local folder/).tap();
-    await palette.getByRole("button", /^Open in /).tap();
-    await expect(screen.getByRole("button", "New thread in harbor")).toBeVisible();
-    await app.screenshot("added");
+      await desktop.answerFolderPicker(repository);
+      await browser.keyboard.press("ControlOrMeta+k");
+      const palette = screen.getByTestId("command-palette");
+      await palette.getByRole("option", "Add project").tap();
+      await palette.getByRole("option", /^Local folder/).tap();
+      await palette.getByRole("button", /^Open in /).tap();
+      await expect(screen.getByRole("button", "New thread in harbor")).toBeVisible();
+      await app.screenshot("added");
 
-    await onicode.open("/settings/projects");
-    const settings = screen.getByRole("dialog", "Settings");
-    await settings.getByRole("button", /^harbor /).tap();
-    await settings.getByRole("button", "Remove project").tap();
-    await screen.getByRole("alertdialog").getByRole("button", "Confirm").tap();
-    await expect(settings.getByRole("button", /^harbor /)).toBeHidden();
-    await expect(settings.getByRole("button", /^demo /)).toBeVisible();
+      await onicode.open("/settings/projects");
+      const settings = screen.getByRole("dialog", "Settings");
+      await settings.getByRole("button", /^harbor /).tap();
+      await settings.getByRole("button", "Remove project").tap();
+      await screen.getByRole("alertdialog").getByRole("button", "Confirm").tap();
+      await expect(settings.getByRole("button", /^harbor /)).toBeHidden();
+      await expect(settings.getByRole("button", /^demo /)).toBeVisible();
+    } finally {
+      // The fixture removes only the projects it made; one added in the app is this scenario's.
+      const { cli } = makeState(ONICODE_HOME);
+      await runPromise(Effect.ignore(cli(["project", "remove", repository, "--force"])));
+    }
   },
 );

@@ -24,7 +24,9 @@ export const evaluateInMain = async <A>(inspectPort: number, expression: string)
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   try {
     return await new Promise<A>((resolve, reject) => {
-      socket.addEventListener("error", () => reject(new Error("The main inspector closed.")));
+      socket.addEventListener("error", () => reject(new Error("The main inspector failed.")));
+      // Settling twice is harmless, and an app that quits mid-call would otherwise never answer.
+      socket.addEventListener("close", () => reject(new Error("The main inspector closed.")));
       socket.addEventListener("open", () => {
         socket.send(
           JSON.stringify({
@@ -81,6 +83,20 @@ export const CAPTURE_NATIVE_UI = `(() => {
     const folder = globalThis.__e2eFolders.shift();
     return folder === undefined ? { canceled: true, filePaths: [] } : { canceled: false, filePaths: [folder] };
   };
+  return true;
+})()`;
+
+// e2e's own browsers give every attempt a fresh context. The dev window is one profile for the
+// whole run, so each attempt starts by emptying what the last one stored and undoing its zoom.
+// The page is unloaded first: a page still open would write its state back.
+export const RESET_WINDOW = `(async () => {
+  const { BrowserWindow } = process.mainModule.require("electron");
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed()) continue;
+    window.webContents.setZoomFactor(1);
+    await window.loadURL("about:blank");
+    await window.webContents.session.clearStorageData({ storages: ["localstorage", "indexdb"] });
+  }
   return true;
 })()`;
 
@@ -159,6 +175,8 @@ export const mainProcess = (inspectPort: number) => {
     /** Answers the next native folder picker with a path; an unanswered one is cancelled. */
     answerFolderPicker: (path: string) =>
       evaluate<true>(`globalThis.__e2eFolders.push(${JSON.stringify(path)}); return true;`),
+    forgetFolderPickerAnswers: () =>
+      evaluate<true>(`globalThis.__e2eFolders.length = 0; return true;`),
     applicationMenu: () =>
       evaluate<ReadonlyArray<NativeMenuItem>>(`return describe(Menu.getApplicationMenu());`),
     /** Clicks an application menu item, by its label path: ("File", "New Thread"). */

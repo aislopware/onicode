@@ -97,6 +97,10 @@ test(
     const settings = await runPromise(approvalRequiredThreads);
     try {
       await runPromise(settings.apply);
+      // The server takes the edit from a file watcher, some time after the write. Settings shows
+      // what the server holds, so the thread below starts only once it is supervised.
+      await onicode.open("/settings/threads");
+      await expect(screen.getByRole("combobox", "Default permissions")).toHaveText(/Supervised/);
       const project = await onicode.project("demo");
       const thread = await onicode.thread({
         project,

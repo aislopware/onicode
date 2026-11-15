@@ -10,7 +10,7 @@ const appearance = () => ({
 });
 
 test(
-  "The color scheme and theme apply at once, reach the native shell, and survive a relaunch",
+  "The color scheme and theme apply at once, reach the native shell, and survive a reload",
   WEB,
   async ({ onicode, desktop, app, browser, screen }) => {
     await onicode.project("demo");

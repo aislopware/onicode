@@ -3,6 +3,7 @@ import { expect } from "e2e";
 import { ONICODE_HOME } from "../e2e.config.ts";
 import { test, WEB } from "./onicode.ts";
 import { startSecondEnvironment } from "./second-environment.ts";
+import { ENVIRONMENT_LABEL } from "./start-app.ts";
 
 test(
   "A paired environment lists its threads beside the local ones and runs a turn sent from here",
@@ -21,7 +22,9 @@ test(
       await dialog.getByRole("textbox", "Host").fill(remote.host);
       await dialog.getByRole("textbox", "Pairing code").fill(remote.token);
       await dialog.getByRole("button", "Add environment").tap();
-      const moreActions = screen.getByRole("button", `More actions for ${remote.label}`);
+      // Pairing, the first sync and a turn on the second server each outlast a default wait
+      // on a busy machine.
+      const moreActions = screen.getByRole("button", `More actions for ${ENVIRONMENT_LABEL}`);
       await expect(moreActions).toBeVisible({ timeout: 60_000 });
       await screen.getByRole("region", "Settings content").getByRole("button", "Close").tap();
       // Closing returns to the page Settings opened over; a jump made before that lands is undone.

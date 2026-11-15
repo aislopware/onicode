@@ -237,6 +237,25 @@ const runSide = Effect.fn("prove.runSide")(function* (
   const path = yield* Path.Path;
   const { scripts } = yield* roots;
   const sha = yield* git(["rev-parse", "--verify", `${rev}^{commit}`]);
+  if (target === "desktop") {
+    // Without the profile override the commit's app would open the Chromium profile every dev
+    // app shares, then fail to start anyway for want of the inspector.
+    yield* git([
+      "grep",
+      "--quiet",
+      "ONICODE_DESKTOP_APP_DATA_DIR",
+      sha,
+      "--",
+      "apps/desktop/src/app/DesktopConfig.ts",
+    ]).pipe(
+      Effect.mapError(
+        () =>
+          new ScenarioError({
+            message: `${short(sha)} predates the desktop target: its dev app has no ONICODE_DESKTOP_APP_DATA_DIR.`,
+          }),
+      ),
+    );
+  }
   const outDir = path.join(scripts, ".e2e/prove", side);
   yield* fs.remove(outDir, { recursive: true, force: true });
   const environment = yield* HostProcess.Environment;

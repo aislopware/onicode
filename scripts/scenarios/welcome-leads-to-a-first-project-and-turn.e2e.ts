@@ -4,7 +4,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 
 import { ONICODE_HOME } from "../e2e.config.ts";
-import { runPromise, test, WEB } from "./onicode.ts";
+import { makeState, runPromise, test, WEB } from "./onicode.ts";
 import { run } from "./shell.ts";
 
 /** A repository the app has not seen, for the user to add by its path. */
@@ -27,39 +27,46 @@ test(
   WEB,
   async ({ app, screen }) => {
     const repository = await runPromise(makeRepository);
-    // Whether a first launch still shows the page depends on what ran before; its route always does.
-    await app.open("/welcome");
-    const welcome = screen.getByRole("main", "Welcome");
-    await expect(welcome.getByRole("heading", "Welcome to Onicode")).toBeVisible();
-    await expect(welcome.getByText("Replay (dev)")).toBeVisible();
-    await expect(welcome.getByRole("link", "Pair a phone")).toBeVisible();
-    await app.screenshot("welcome");
-    await welcome.getByRole("button", "Start").tap();
+    try {
+      // Whether a first launch still shows the page depends on what ran before; its route always does.
+      await app.open("/welcome");
+      const welcome = screen.getByRole("main", "Welcome");
+      await expect(welcome.getByRole("heading", "Welcome to Onicode")).toBeVisible();
+      await expect(welcome.getByText("Replay (dev)")).toBeVisible();
+      await expect(welcome.getByRole("link", "Pair a phone")).toBeVisible();
+      await app.screenshot("welcome");
+      await welcome.getByRole("button", "Start").tap();
 
-    const sidebar = screen.getByRole("navigation", "Threads");
-    await expect(sidebar.getByText("No projects yet")).toBeVisible();
-    await expect(sidebar.getByRole("button", "New thread")).toBeDisabled();
+      const sidebar = screen.getByRole("navigation", "Threads");
+      await expect(sidebar.getByText("No projects yet")).toBeVisible();
+      await expect(sidebar.getByRole("button", "New thread")).toBeDisabled();
 
-    await screen.getByRole("main", "Home").getByRole("button", "Add project").tap();
-    const palette = screen.getByTestId("command-palette");
-    await palette.getByRole("option", /^Local folder/).tap();
-    await palette.getByRole("combobox", /^Enter path/).fill(repository);
-    await palette.getByRole("button", /^Add/).tap();
-    await expect(screen.getByRole("button", "New thread in orchard")).toBeVisible();
-    await expect(sidebar.getByRole("button", "New thread")).toBeEnabled();
+      await screen.getByRole("main", "Home").getByRole("button", "Add project").tap();
+      const palette = screen.getByTestId("command-palette");
+      await palette.getByRole("option", /^Local folder/).tap();
+      await palette.getByRole("combobox", /^Enter path/).fill(repository);
+      await palette.getByRole("button", /^Add/).tap();
+      await expect(screen.getByRole("button", "New thread in orchard")).toBeVisible();
+      await expect(sidebar.getByRole("button", "New thread")).toBeEnabled();
 
-    const composer = screen.getByTestId("composer-editor");
-    await composer.fill("Say hello");
-    await composer.press("Enter");
-    await expect(screen.getByRole("button", "Stop generation")).toBeHidden({ timeout: 60_000 });
-    await expect(sidebar.getByTestId("sidebar-row-card")).toHaveCount(1);
-    await app.screenshot("first-turn");
+      const composer = screen.getByTestId("composer-editor");
+      await composer.fill("Say hello");
+      await composer.press("Enter");
+      await expect(screen.getByText("This turn is a replay.", { exact: false })).toBeVisible();
+      await expect(screen.getByRole("button", "Stop generation")).toBeHidden();
+      await expect(sidebar.getByTestId("sidebar-row-card")).toHaveCount(1);
+      await app.screenshot("first-turn");
 
-    await app.open("/settings/projects");
-    const settings = screen.getByRole("dialog", "Settings");
-    await settings.getByRole("button", /^orchard /).tap();
-    await settings.getByRole("button", "Remove project").tap();
-    await screen.getByRole("alertdialog").getByRole("button", "Confirm").tap();
-    await expect(settings.getByRole("button", /^orchard /)).toBeHidden();
+      await app.open("/settings/projects");
+      const settings = screen.getByRole("dialog", "Settings");
+      await settings.getByRole("button", /^orchard /).tap();
+      await settings.getByRole("button", "Remove project").tap();
+      await screen.getByRole("alertdialog").getByRole("button", "Confirm").tap();
+      await expect(settings.getByRole("button", /^orchard /)).toBeHidden();
+    } finally {
+      // The fixture removes only the projects it made; one added in the app is this scenario's.
+      const { cli } = makeState(ONICODE_HOME);
+      await runPromise(Effect.ignore(cli(["project", "remove", repository, "--force"])));
+    }
   },
 );

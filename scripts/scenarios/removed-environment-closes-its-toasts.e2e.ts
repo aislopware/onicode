@@ -8,7 +8,7 @@ import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
 
 import { APP_DIR, ONICODE_HOME } from "../e2e.config.ts";
-import { prepareHome, start } from "./start-app.ts";
+import { ENVIRONMENT_LABEL, prepareHome, start } from "./start-app.ts";
 import { makeState, runPromise, test, WEB } from "./onicode.ts";
 
 const SECOND_HOME = `${ONICODE_HOME}-second-environment`;
@@ -42,6 +42,7 @@ const runSecondServer = Effect.fn("scenario.secondServer")(function* (
       PATH: `${path.join(SECOND_HOME, "bin")}:${hostEnvironment.PATH ?? ""}`,
       HOME: hostEnvironment.HOME,
       ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
+      ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
     },
     onLine: (line) => {
       const value = /^Token:\s*(\S+)/.exec(line)?.[1];
@@ -89,13 +90,7 @@ test(
       await dialog.getByPlaceholder("backend.example.com").fill(host);
       await dialog.getByPlaceholder("PAIRCODE").fill(token);
       await dialog.getByRole("button", "Add environment").tap();
-      // A standalone server takes PATH from the login shell, which on macOS puts the real `scutil`
-      // ahead of the scenario home's shim, so the label is whatever this server reports.
-      // @effect-diagnostics-next-line globalFetch:off - one read of the second server's own description
-      const { label } = (await (await fetch(`${host}/.well-known/onicode/environment`)).json()) as {
-        readonly label: string;
-      };
-      const moreActions = screen.getByRole("button", `More actions for ${label}`);
+      const moreActions = screen.getByRole("button", `More actions for ${ENVIRONMENT_LABEL}`);
       await expect(moreActions).toBeVisible({ timeout: 60_000 });
 
       // The client announces only a change it saw happen, so it must hold the thread first.

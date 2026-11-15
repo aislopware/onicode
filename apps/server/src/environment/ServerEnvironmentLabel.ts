@@ -195,6 +195,12 @@ const isWsl = Effect.fn("isWsl")(function* () {
 export const resolveServerEnvironmentLabel = Effect.fn("resolveServerEnvironmentLabel")(function* (
   input: ResolveServerEnvironmentLabelInput,
 ) {
+  // The end-to-end suite names its servers so captures never show the machine that made them.
+  const named = normalizeLabel((yield* HostProcess.Environment).ONICODE_ENVIRONMENT_LABEL);
+  if (named) {
+    return named;
+  }
+
   const friendlyHostLabel = yield* resolveFriendlyHostLabel();
   if (friendlyHostLabel) {
     return friendlyHostLabel;

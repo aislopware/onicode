@@ -52,9 +52,11 @@ adds one fixture for what e2e cannot know about Onicode:
 `WEB` marks a scenario for the desktop window. The name is upstream's: the window is a web page to
 e2e, which attaches to it over the Chrome DevTools Protocol.
 
-Each scenario's projects are removed when it ends, so the next one starts from an empty sidebar.
-What a scenario changes outside its projects (a setting, a keybinding, a saved environment) it
-puts back itself, in a `finally` when a later scenario would notice.
+Each scenario's projects are removed when it ends, and the window's stored state (local storage,
+IndexedDB, zoom) is emptied before the next one starts, so it begins from an empty sidebar and a
+fresh client. What a scenario changes on the server or in the desktop shell (a setting, a
+keybinding, a saved environment) it puts back itself. One that fails before it does can fail the
+scenarios after it, so read a red run from its first failure.
 
 State is created through the app's own CLI, so it is real events and works on a base commit
 whose schema differs. New threads default to the replay agent's `showcase` recording: type a
@@ -143,7 +145,7 @@ ONICODE_SCENARIO_INHERIT_ENV='SHELL,MY_FIXTURE_*' vp run scenarios:prove scripts
 ```sh
 vp run scenarios                                                  # all of them
 vp run scenarios --target desktop                                 # the desktop suite
-cd scripts && pnpm exec e2e run --target desktop scenarios/replay-turn-streams.e2e.ts
+vp run scenarios --target desktop scenarios/replay-turn-streams.e2e.ts   # one file, from scripts/
 ```
 
 e2e starts the stack through [`start-app.ts`](../../scripts/scenarios/start-app.ts), runs the
@@ -167,7 +169,7 @@ point runs at it:
 
 ```sh
 node scripts/scenarios/start-app.ts desktop "$PWD/.onicode/scenarios" 127.0.0.1 47811   # terminal 1
-cd scripts && ONICODE_SCENARIO_APP_URL=http://127.0.0.1:47811 pnpm exec e2e run --target desktop scenarios/name.e2e.ts
+ONICODE_SCENARIO_APP_URL=http://127.0.0.1:47811 vp run scenarios --target desktop scenarios/name.e2e.ts
 ```
 
 State then carries over between runs: a scenario that failed halfway can leave a setting or a
@@ -216,8 +218,8 @@ test: a temporary worktree beside your checkout, installed with `vp i` and remov
 left by a run that was killed is replaced). A
 commit that is your clean `HEAD` runs in place. So a new scenario can prove a fix against a base
 that predates it, as long as the base has the desktop target's two hooks in the dev app
-(`ONICODE_DESKTOP_INSPECT_PORT` and `ONICODE_DESKTOP_APP_DATA_DIR`). An older base cannot start
-and reports `app`.
+(`ONICODE_DESKTOP_INSPECT_PORT` and `ONICODE_DESKTOP_APP_DATA_DIR`). A proof refuses an older
+base before starting it.
 
 ## iOS
 
@@ -274,10 +276,10 @@ its own native code.
 ## In CI
 
 [`scenarios.yml`](../../.github/workflows/scenarios.yml) runs the desktop suite on Linux under
-xvfb when a pull request changes the harness or a scenario, and by hand from the Actions tab. It
-is not part of the `Check` gate: an app change that breaks a scenario does not fail its own pull
-request. Run the suite locally before a change to a surface the scenarios cover. The iOS target
-never runs in CI; it needs the Simlock pool.
+xvfb when a pull request changes a scenario, the harness, or what the harness starts the app
+through, and by hand from the Actions tab. It is not part of the `Check` gate: an app change that
+breaks a scenario does not fail its own pull request. Run the suite locally before a change to a
+surface the scenarios cover. The iOS target never runs in CI; it needs the Simlock pool.
 
 ## What a scenario cannot cover
 

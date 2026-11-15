@@ -10,13 +10,11 @@ import * as Path from "effect/Path";
 
 import { APP_DIR } from "../e2e.config.ts";
 import { makeState } from "./onicode.ts";
-import { prepareHome, start } from "./start-app.ts";
+import { ENVIRONMENT_LABEL, prepareHome, start } from "./start-app.ts";
 
 interface Pairing {
   readonly host: string;
   readonly token: string;
-  /** The name the server reports for itself, which the app lists it under. */
-  readonly label: string;
 }
 
 const serve = Effect.fn("scenario.secondEnvironment")(function* (
@@ -47,20 +45,14 @@ const serve = Effect.fn("scenario.secondEnvironment")(function* (
       PATH: `${path.join(home, "bin")}:${hostEnvironment.PATH ?? ""}`,
       HOME: hostEnvironment.HOME,
       ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
+      ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
     },
     onLine: (line) => {
       const value = /^Token:\s*(\S+)/.exec(line)?.[1];
       return value === undefined ? Effect.void : Deferred.succeed(token, value).pipe(Effect.asVoid);
     },
   });
-  const host = `http://127.0.0.1:${port}`;
-  const code = yield* Deferred.await(token);
-  const { label } = yield* Effect.promise(async () => {
-    // @effect-diagnostics-next-line globalFetchInEffect:off - one read of the server's own description
-    const response = await fetch(`${host}/.well-known/onicode/environment`);
-    return (await response.json()) as { readonly label: string };
-  });
-  paired({ host, token: code, label });
+  paired({ host: `http://127.0.0.1:${port}`, token: yield* Deferred.await(token) });
   return yield* Effect.never;
 });
 
