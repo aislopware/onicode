@@ -1963,3 +1963,4 @@ e0ca4fcecb	take	fix(web, mobile): a failed terminal resize is sent again (#32047
 7b9af5f222	take	fix(server): EPUB text extraction skips the chapter head (#32370)
 a9e900f9c0	take	fix(mobile): queued messages show mentions and files by name, not as raw links (#32224)
 189290cbf0	take	fix(web): [NIT] SF Pro label no longer renders in a serif in the font picker (#24082)
+559cd7d3b9	take	fix(web): quieter Ready and Merge buttons on PR rows (#25346)
