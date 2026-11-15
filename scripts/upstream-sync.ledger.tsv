@@ -1901,3 +1901,4 @@ f2839735ef	skip	outside cloud-assistant MCP OAuth (Gemini Spark); declined surfa
 2a66bf26e8	take	git commit -a --author='Julius Marminge <julius0216@outlook.com>' -m 'fix(server): read_pull_request_guide reads no-checkout hosts through the caller'\''s project (#35913)' -m 'Ported from pingdotgg/t3code@2a66bf26e8.' --trailer 'Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>'
 467ec62e08	take	fix(server): Codex calls delegate_task directly instead of from Code Mode (#30019)
 c6a120a958	take	fix(forgejo): review guides work for checkouts whose SSH remote is not the web host (#29784)
+9791bce798	take	fix(effect-acp): reject elicitation modes the client did not advertise (#35839)
