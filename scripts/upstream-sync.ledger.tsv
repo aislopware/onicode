@@ -1833,3 +1833,4 @@ d6c1d17793	take	drag preview inside sidebar search results
 1c8143cd09	take	remote editor list probes in parallel with shared PATH listings
 252b2c77b3	take	codex crashed handlers and transport workers no longer hang
 fbdfe2e980	take	answered question no longer shows raw item JSON (mobile)
+a62bc8156d	take	message ordinals read through an index (migration renumbered 94->99)
