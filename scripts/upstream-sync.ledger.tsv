@@ -1915,3 +1915,4 @@ dcd39b4b6e	take	git commit -a --author='Prem Chaitanya Prathi <chaitanyaprem@gma
 98f885ac1a	take	fix(server): desktop preview uploads accept files over 50 MB (#30299)
 d430dff14f	take	fix(usage): keep default-home history after the default account moves (#36727)
 1dfc746c8f	take	fix(provider-acp): approving a Devin plan never picks its bypass-permissions option (#34474)
+1b9121ba59	skip	guest links removed; only touches apps/server/src/guest/GuestShareService.ts, which Onicode deleted
