@@ -2084,3 +2084,4 @@ cb251b9abc	take	fix(web): composer suggestions stay reachable in short windows (
 304cf149c8	take	fix(web): terminal file links preserve numeric filename suffixes (scenario ported to the desktop harness)
 5070931521	take	fix(mobile): cutting text in the iOS composer can be undone (test conflict: kept Onicode's prompt-recall test beside the new cut/undo test)
 449deb635e	take	adapted: getMode(MODE.keypadKeys) and TERMINAL_DATA.kittyKeyboardFlags for upstream's modeEnabled(66)/raw 8
+62647f4d24	take	Ported with react-native-screens 5.0.0-oni.50 (aislopware/react-native-screens@2504164958, tag oni-v5.0.0-oni.50), which cherry-picks pingdotgg c5dcdc8fb, the only native change t3.50 carries beyond oni.48; T3 Connect screens are absent here and SettingsEnvironmentsRouteScreen has no refresh control.
