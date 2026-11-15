@@ -2,7 +2,7 @@ import { TerminalWriteInput } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { createTerminalInputWriter } from "./terminalInputWriter";
+import { createTerminalInputWriter, interruptedPasteRecovery } from "./terminalInputWriter";
 
 const isWriteInput = Schema.is(TerminalWriteInput);
 const fitsWrite = (data: string) => isWriteInput({ threadId: "t", terminalId: "default", data });
@@ -167,4 +167,21 @@ describe("createTerminalInputWriter", () => {
 
     expect(chunks()).toEqual(["q".repeat(65_536), "next"]);
   });
+});
+
+describe("interruptedPasteRecovery", () => {
+  it.each([
+    { status: "running", openedPid: 7, pid: 7, expected: "close" },
+    { status: "starting", openedPid: 7, pid: null, expected: "wait" },
+    { status: "running", openedPid: 7, pid: 8, expected: "done" },
+    { status: "running", openedPid: null, pid: 8, expected: "close" },
+    // The closed terminal keeps its last summary, pid included.
+    { status: "closed", openedPid: 7, pid: 7, expected: "done" },
+    { status: "exited", openedPid: 7, pid: 7, expected: "done" },
+  ] as const)(
+    "$status, opened by $openedPid, now $pid: $expected",
+    ({ status, openedPid, pid, expected }) => {
+      expect(interruptedPasteRecovery(openedPid, { status, pid })).toBe(expected);
+    },
+  );
 });

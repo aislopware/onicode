@@ -90,6 +90,19 @@ export function createTerminalInputWriter(onIdle = () => {}) {
   };
 }
 
+/**
+ * What an interrupted bracketed paste still needs: `close` writes the closing marker, `wait` holds
+ * while the pid is unknown, `done` discharges it because the process that saw it open has ended.
+ */
+export function interruptedPasteRecovery(
+  openedPid: number | null,
+  current: { readonly status: string; readonly pid: number | null },
+): "close" | "wait" | "done" {
+  if (current.status === "exited" || current.status === "closed") return "done";
+  if (current.pid === null) return "wait";
+  return openedPid !== null && current.pid !== openedPid ? "done" : "close";
+}
+
 const writers = new Map<string, ReturnType<typeof createTerminalInputWriter>>();
 
 /** Retain ordering and framing obligations until acknowledged, across terminal view remounts. */

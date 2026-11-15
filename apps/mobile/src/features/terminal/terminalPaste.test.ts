@@ -34,13 +34,35 @@ describe("terminal paste session", () => {
     expect(writes).toEqual([]);
   });
 
-  it("reports a liveness change after capture, including a restart in place", () => {
+  it("keeps typed input behind a split write and drops its rest after a restart", async () => {
     const session = createTerminalPasteSession();
     session.reset(true);
-    const isSameShell = session.liveness();
-    expect(isSameShell()).toBe(true);
+    const firstChunk = deferred<boolean>();
+    const writes: string[] = [];
+    const write = (data: string) => {
+      writes.push(data);
+      return writes.length === 1 ? firstChunk.promise : Promise.resolve(true);
+    };
+
+    const large = session.input("x".repeat(TERMINAL_WRITE_MAX_LENGTH + 4), write);
+    const enter = session.input("\r", write);
+    firstChunk.resolve(true);
+    await Promise.all([large, enter]);
+    expect(writes.map((data) => data.length)).toEqual([TERMINAL_WRITE_MAX_LENGTH, 4, 1]);
+
+    writes.length = 0;
+    const restarted = deferred<boolean>();
+    const firstSent = deferred<void>();
+    const interrupted = session.input("y".repeat(TERMINAL_WRITE_MAX_LENGTH + 4), (data) => {
+      writes.push(data);
+      firstSent.resolve();
+      return restarted.promise;
+    });
+    await firstSent.promise;
     session.reset(true);
-    expect(isSameShell()).toBe(false);
+    restarted.resolve(true);
+    expect(await interrupted).toBe(false);
+    expect(writes).toHaveLength(1);
   });
 
   it("never overlaps writes from rapid paste requests", async () => {
