@@ -2099,3 +2099,4 @@ c2e54e3ac9	take	fix(acp): recognize sessions already owned by a thread
 aee231133a	take	adapted: the new local-version driver test writes two models, since with one the probe waits out its 5 s model grace and the test overruns its timeout (upstream's test has the same bug)
 09fc222fed	take	fix(server): imported Claude sessions are titled after the prompt inside a wake envelope
 2182097b1d	take	adapted: no web app; CLI names the local desktop app (not remote desktops or mobile, which keeps its own themes); MCP description keeps Onicode's desktop-only wording and takes upstream's trims; budget remeasured
+ed7f069326	take	test(desktop): two-account callback test uses two distinct ports
