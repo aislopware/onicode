@@ -1878,3 +1878,4 @@ e8d5c12890	take	skip non-image results in project icon searches
 4a3be943c9	take	retain scheduled dispatch refusal reasons (conflict: webhook context dropped, Onicode has no webhooks)
 6f06f2675d	take	settle unfinished Codex web searches when turns end
 b39fc24ff2	take	Pi agents get ONICODE_THREAD_ID like Claude, Codex and ACP sessions
+c910b1bbe9	take	onicode service hints keep --base-dir; T3 Connect parts (connect.ts) dropped, bootService change applied at Onicode's service/bootService.ts
