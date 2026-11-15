@@ -2023,3 +2023,4 @@ d738edf401	take	adapted: conflicts resolved by dropping the threadSyncStatus pro
 ca0ca71045	skip	nightly channel and its managed-policy channel block are not in Onicode (single better-update channel); DesktopUpdateState has no channelBlockedByPolicy to encode
 2f30d98fab	take	fix(web): live dictation transcript keeps the newest words in view (#32960)
 0720280c45	take	fix(server): preserve shell paths containing spaces and dashes (#37069)
+efddcfeb20	take	perf(server): batch terminal output that arrives within 2 ms (#37060)
