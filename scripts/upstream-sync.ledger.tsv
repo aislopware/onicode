@@ -2055,3 +2055,4 @@ bcdd6a59f4	take	adapted: conflict resolved so Onicode's provider session view co
 f28c74a7d0	take	adapted: environment-auth doc paragraph placed in Onicode's MCP clients section (links and onicode thread), upstream's T3 Connect issuer text left out; every Onicode thread-bound tool already covered by upstream's annotations
 c8a1b5ff0b	take	fix(ssh): preserve literal home paths in Include expansion (#33288)
 2b83dd0969	take	fix(server): finish closed terminal kills before shutdown (#37113)
+7d9c365e17	take	fix(web): keep distinct images with matching attachment metadata (#37116); scenario ported and passing on desktop
