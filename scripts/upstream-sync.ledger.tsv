@@ -1800,3 +1800,4 @@ f5ca0f9427	take	fix(server): wake GitLab MR watches when a rebase is required (#
 dae8d6f7e5	take	fix(mobile): Android menus opened over the keyboard close when it hides (#30853)
 ec844a3995	skip	relay tracing only; Onicode removed relay and relayTracing
 f7b0b3c4d7	take	fix(server): MCP list tools clamp an oversized limit instead of failing (#30976)
+a6d7695064	take	perf(web): collapse all no longer remounts the diff viewer (#36995)
