@@ -9,7 +9,7 @@ import {
   environmentThemeFileHasColors,
 } from "@onicode/contracts";
 import { fromJsonStringPretty, fromLenientJson } from "@onicode/shared/schemaJson";
-import { BUILT_IN_THEME_IDS, UNPUBLISHABLE_THEME_IDS } from "@onicode/shared/themePalettes";
+import { BUILT_IN_THEME_ID, UNPUBLISHABLE_THEME_IDS } from "@onicode/shared/themePalettes";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
 import * as DateTime from "effect/DateTime";
@@ -389,10 +389,9 @@ const publishThemeFile = Effect.fn(function* (input: {
   return { themeId, revert, cleanup };
 });
 
-/** Web and desktop cannot resolve the mobile default, and mobile does not follow this setting. */
 const resolvableThemeIds = Effect.fn(function* (themesDir: string) {
   const published = yield* readPublishedThemes(themesDir);
-  return [...BUILT_IN_THEME_IDS, ...published.map((theme) => theme.id)].toSorted();
+  return [BUILT_IN_THEME_ID, ...published.map((theme) => theme.id)].toSorted();
 });
 
 const themeSetCommand = Command.make("set", {
@@ -403,7 +402,7 @@ const themeSetCommand = Command.make("set", {
   ),
   theme: Argument.String("theme").pipe(
     Argument.withDescription(
-      'A theme id (a built-in, or one this machine publishes, where themes/nightfall.json is "nightfall"), or a path to a theme JSON file to publish and set in one step.',
+      `A theme id ("${BUILT_IN_THEME_ID}" for the built-in look, or one this machine publishes, where themes/nightfall.json is "nightfall"), or a path to a theme JSON file to publish and set in one step.`,
     ),
   ),
 }).pipe(

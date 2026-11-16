@@ -213,7 +213,7 @@ function NativeSourceFileSurface(
   const columnMetrics = useNativeColumnLayoutMetrics();
   const safeArea = columnMetrics?.safeArea ?? insets;
   const { codeSurface, codeWordBreak, nativeSourceStyle } = useAppearanceCodeSurface();
-  const { themeAppearance, themeId } = useAppearancePreferences();
+  const { themeAppearance } = useAppearancePreferences();
   const appTheme = useUniwindTheme();
   const { width: viewportWidth } = useWindowDimensions();
   const { rowsJson, status, targetIndex, tokens } = useSourceFileModel(props);
@@ -222,7 +222,7 @@ function NativeSourceFileSurface(
   const selectedRowIdsJson = JSON.stringify(
     targetIndex === null ? [] : [nativeSourceRowId(targetIndex)],
   );
-  const themeJson = JSON.stringify(createNativeReviewDiffTheme(themeAppearance, themeId, appTheme));
+  const themeJson = JSON.stringify(createNativeReviewDiffTheme(themeAppearance, appTheme));
   const styleJson = JSON.stringify(nativeSourceStyle);
   const contentWidth = codeWordBreak
     ? Math.max(240, viewportWidth - codeSurface.gutterWidth - 24)

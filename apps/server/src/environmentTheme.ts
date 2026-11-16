@@ -13,7 +13,7 @@ import {
 } from "@onicode/contracts";
 import { fromJsonStringPretty } from "@onicode/shared/schemaJson";
 import { themeCssLoadsRemoteFiles } from "@onicode/shared/themeCss";
-import { BUILT_IN_THEME_IDS, UNPUBLISHABLE_THEME_IDS } from "@onicode/shared/themePalettes";
+import { BUILT_IN_THEME_ID, UNPUBLISHABLE_THEME_IDS } from "@onicode/shared/themePalettes";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -403,7 +403,7 @@ const make = Effect.gen(function* () {
       Effect.gen(function* () {
         if (themeId === undefined) return yield* select;
         if (theme === undefined) {
-          const known = [...BUILT_IN_THEME_IDS, ...(yield* refresh).themes.map(({ id }) => id)];
+          const known = [BUILT_IN_THEME_ID, ...(yield* refresh).themes.map(({ id }) => id)];
           if (!known.includes(themeId)) {
             return yield* new EnvironmentThemeRefusedError({
               themeId,

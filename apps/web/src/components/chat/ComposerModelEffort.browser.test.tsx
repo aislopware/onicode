@@ -93,14 +93,20 @@ it("draws an agent's reasoning as bars and keeps its mode out of the levels", as
   expect(status.element().querySelector("[data-composer-effort-glyph]")).not.toBeNull();
   await expect.element(status).toHaveTextContent("");
 
-  const levels = screen.getByRole("radiogroup", { name: "Thinking" });
-  await expect.element(levels.getByRole("radio")).toHaveLength(3);
-  await expect.element(screen.getByRole("radio", { name: "Plan" })).not.toBeInTheDocument();
+  // Three levels on the slider, so the session mode's three choices are not among them.
+  const levels = screen.getByRole("slider", { name: "Thinking" });
+  await expect.element(levels).toHaveAttribute("max", "2");
+  await expect.element(levels).toHaveAttribute("aria-valuetext", "Medium");
 
-  // Up and Down walk from the levels through the option rows without opening their menus.
+  // Left and Right move the level. Up is the popup's way back to the list, so it changes nothing.
   await userEvent.tab();
-  await expect.element(screen.getByRole("radio", { name: "Medium" })).toHaveFocus();
-  await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+  await expect.element(levels).toHaveFocus();
+  await userEvent.keyboard("{ArrowRight}");
+  await expect.element(levels).toHaveAttribute("aria-valuetext", "High");
+  await userEvent.keyboard("{ArrowLeft}{ArrowUp}");
+  await expect.element(levels).toHaveAttribute("aria-valuetext", "Medium");
+  // Down leaves the slider for the option rows without opening a menu.
+  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
   const speed = screen.getByRole("button", { name: "Speed: Standard" });
   await expect.element(speed).toHaveFocus();
   await expect.element(page.getByRole("menuitemradio")).not.toBeInTheDocument();

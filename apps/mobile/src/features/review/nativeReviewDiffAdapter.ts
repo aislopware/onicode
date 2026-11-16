@@ -5,7 +5,7 @@ import * as Arr from "effect/Array";
 import { pipe } from "effect/Function";
 import type { ResolvedMobileCodeSurface } from "../../lib/appearancePreferences";
 import { resolveHighlightLanguage } from "../../lib/highlightLanguage";
-import { type MobileThemeId, type MobileThemeVariables } from "../../lib/mobileTheme";
+import { type MobileThemeVariables } from "../../lib/mobileTheme";
 import { getMobileTerminalTheme, type TerminalAppearanceScheme } from "../terminal/terminalTheme";
 import { computeWordAltDiffRanges } from "./reviewWordDiffs";
 import {
@@ -199,10 +199,9 @@ function buildReviewCommentsCacheKey(comments: ReadonlyArray<ReviewInlineComment
 
 export function createNativeReviewDiffTheme(
   scheme: TerminalAppearanceScheme,
-  themeId: MobileThemeId,
   appTheme: MobileThemeVariables,
 ): NativeReviewDiffTheme {
-  const terminalTheme = getMobileTerminalTheme(themeId, scheme);
+  const terminalTheme = getMobileTerminalTheme(scheme);
   const [, terminalRed] = terminalTheme.palette;
   // Swift and Android disagree on alpha-byte order; flatten to shared opaque #RRGGBB.
   const screen = opaqueNativeHexColor(

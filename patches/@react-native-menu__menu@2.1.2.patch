@@ -175,16 +175,63 @@ diff --git a/ios/OldArch/LegacyMenuViewImplementation.swift b/ios/OldArch/Legacy
 diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplementation.swift
 --- a/ios/Shared/MenuViewImplementation.swift
 +++ b/ios/Shared/MenuViewImplementation.swift
-@@ -17,7 +17,7 @@
+@@ -17,7 +17,11 @@
              }
              _actions.removeAll()
              actions.forEach { menuAction in
 -                _actions.append(RCTMenuAction(details: menuAction).createUIMenuElement({action in self.sendButtonAction(action)}))
-+                _actions.append(RCTMenuAction(details: menuAction).createUIMenuElement({action in self.didSelectAction = true; self.sendButtonAction(action)}))
++                _actions.append(RCTMenuAction(details: menuAction).createUIMenuElement({action in self.handleAction(action)}))
++            }
++            heldSelections.removeAll()
++            if #available(iOS 16.0, *) {
++                holdSelections(_actions, actions)
              }
              self.setup()
          }
-@@ -60,17 +60,98 @@
+@@ -25,6 +29,42 @@
+ 
+     private var _actions: [UIMenuElement] = [];
+ 
++    // UIKit morphs a closing menu into the trigger as it looks when dismissal starts, and React only
++    // re-renders the trigger after the action returns. A native pop-up button has its new value by
++    // then, so an action that carries a state keeps the menu up until that render lands, or briefly
++    // when none comes.
++    private var heldSelections: Set<UIAction.Identifier> = []
++    private var awaitsSelectionRender = false
++
++    @available(iOS 16.0, *)
++    private func holdSelections(_ elements: [UIMenuElement], _ details: [NSDictionary]) {
++        for (element, detail) in zip(elements, details) {
++            if let menu = element as? UIMenu {
++                holdSelections(menu.children, detail["subactions"] as? [NSDictionary] ?? [])
++            } else if let action = element as? UIAction, (detail["state"] as? String)?.isEmpty == false, !action.attributes.contains(.keepsMenuPresented) {
++                action.attributes.insert(.keepsMenuPresented)
++                heldSelections.insert(action.identifier)
++            }
++        }
++    }
++
++    private func handleAction(_ action: UIAction) {
++        sendButtonAction(action)
++        guard heldSelections.contains(action.identifier) else {
++            return
++        }
++        awaitsSelectionRender = true
++        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.dismissHeldMenu() }
++    }
++
++    private func dismissHeldMenu() {
++        guard awaitsSelectionRender else {
++            return
++        }
++        awaitsSelectionRender = false
++        menuInteractions().forEach { $0.dismissMenu() }
++    }
++
+     private var _title: String = "";
+     @objc public var title: NSString? {
+         didSet {
+@@ -60,17 +100,119 @@
      }
     
      public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
@@ -192,13 +239,13 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +        // Flush updates deferred by the presented-guard before the action
 +        // provider snapshots self.menu (covers a stuck flag from an
 +        // interaction that never ended cleanly).
++        isMenuDismissing = false
 +        if pendingMenu != nil {
 +            pendingMenu = nil
 +            isMenuPresented = false
 +            self.setup()
 +        }
 +        isMenuPresented = true
-+        didSelectAction = false
 +        sendMenuInteractionStart()
          return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
              guard let self = self else { return nil }
@@ -219,54 +266,75 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +        super.contextMenuInteraction(interaction, willEndFor: configuration, animator: animator)
          sendMenuClose()
 +        isMenuPresented = false
-+        if pendingMenu != nil {
++        awaitsSelectionRender = false
++        // Reassigning self.menu while the menu morphs back cancels the morph, and a selection
++        // re-renders the trigger right then: hold deferred props until the animation is over.
++        isMenuDismissing = true
++        if let animator = animator {
++            animator.addCompletion { [weak self] in self?.finishDismissal() }
++        } else {
++            finishDismissal()
++        }
++    }
++
++    private func finishDismissal() {
++        isMenuDismissing = false
++        if pendingMenu != nil, !isMenuPresented {
 +            // Re-run the full assignment now that presentation is over, so
 +            // any props deferred by the presented-guard (menu contents, press
 +            // mode) land on the button.
 +            pendingMenu = nil
 +            self.setup()
 +        }
-     }
- 
-+    public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
++    }
++
++    public override func didMoveToWindow() {
++        super.didMoveToWindow()
++        if self.window == nil, isMenuDismissing {
++            finishDismissal()
++        }
++    }
++
++    // The per-item variant: with only the older one UIKit shows the trigger again as soon as the
++    // menu starts to close, instead of morphing the menu back into it.
++    @available(iOS 16.0, *)
++    public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration, highlightPreviewForItemWithIdentifier identifier: NSCopying) -> UITargetedPreview? {
 +        return contentPreview() ?? super.contextMenuInteraction(interaction, previewForHighlightingMenuWithConfiguration: configuration)
 +    }
 +
-+    public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForDismissingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
-+        guard let preview = contentPreview() else {
-+            return super.contextMenuInteraction(interaction, previewForDismissingMenuWithConfiguration: configuration)
-+        }
-+        // A selection usually re-renders the trigger, so fade instead of landing on its old look.
-+        return didSelectAction ? nil : preview
++    // A held selection has already moved or resized the trigger, so the preview from presentation is stale.
++    @available(iOS 16.0, *)
++    public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configuration: UIContextMenuConfiguration, dismissalPreviewForItemWithIdentifier identifier: NSCopying) -> UITargetedPreview? {
++        return contentPreview() ?? super.contextMenuInteraction(interaction, previewForDismissingMenuWithConfiguration: configuration)
 +    }
 +
 +    // The button is a transparent overlay: morph from the React content so UIKit hides and restores it.
 +    // iOS 26 only, and only for content with its own corner radius; otherwise keep UIButton's default.
++    // UIKit dismisses into this same preview, after a selection has resized the trigger: a visiblePath
++    // would clip it to its old size until the animation ends, so leave the shape to the live view.
 +    private func contentPreview() -> UITargetedPreview? {
 +        guard #available(iOS 26.0, *) else {
 +            return nil
 +        }
-+        guard !shouldOpenOnLongPress, let siblings = self.superview?.subviews.filter({ $0 !== self }), siblings.count == 1, let content = siblings.first, content.window != nil, let (target, radius) = previewTarget(content) else {
++        guard !shouldOpenOnLongPress, let siblings = self.superview?.subviews.filter({ $0 !== self }), siblings.count == 1, let content = siblings.first, content.window != nil, let target = previewTarget(content) else {
 +            return nil
 +        }
-+        let bounds = target.bounds
 +        let parameters = UIPreviewParameters()
 +        parameters.backgroundColor = .clear
-+        parameters.visiblePath = UIBezierPath(roundedRect: bounds, cornerRadius: min(radius, bounds.height / 2, bounds.width / 2))
 +        return UITargetedPreview(view: target, parameters: parameters)
 +    }
 +
-+    // Walks the content's full-size single-child chain for its corner radius. A preview of a view
++    // Walks the content's full-size single-child chain for the view that rounds it. A preview of a view
 +    // above a glass effect view drops the glass until UIKit restores the source, so target the glass view.
-+    private func previewTarget(_ content: UIView) -> (UIView, CGFloat)? {
-+        var radius: CGFloat?
++    private func previewTarget(_ content: UIView) -> UIView? {
++        var rounded: UIView?
 +        var view = content
 +        for depth in 0...4 {
-+            if radius == nil, view.layer.cornerRadius > 0 {
-+                radius = view.layer.cornerRadius
++            if rounded == nil, view.layer.cornerRadius > 0 {
++                rounded = view
 +            }
-+            if let radius, view is UIVisualEffectView {
-+                return (view, radius)
++            if rounded != nil, view is UIVisualEffectView {
++                return view
 +            }
 +            guard depth < 4, view.subviews.count == 1, let child = view.subviews.first,
 +                  abs(child.frame.size.width - view.bounds.size.width) <= 0.5,
@@ -275,17 +343,17 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +            }
 +            view = child
 +        }
-+        return radius.map { (content, $0) }
-+    }
-+
-+    private var didSelectAction = false
++        return rounded
+     }
+ 
 +    private var isMenuPresented = false
++    private var isMenuDismissing = false
 +    private var pendingMenu: UIMenu?
 +
      func setup () {
          let menu = UIMenu(title: _title,
              identifier: nil,
-@@ -86,10 +167,104 @@
+@@ -86,8 +228,113 @@
              }
          }
  
@@ -297,6 +365,13 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +            // place instead and defer the button assignment to dismissal.
 +            pendingMenu = menu
 +            self.refreshPresentedMenu(menu)
++            if awaitsSelectionRender {
++                DispatchQueue.main.async { [weak self] in self?.dismissHeldMenu() }
++            }
++            return
++        }
++        if isMenuDismissing {
++            pendingMenu = menu
 +            return
 +        }
 +
@@ -311,9 +386,9 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +        // the wrapped content as the zoom preview.
 +        self.isUserInteractionEnabled = !shouldOpenOnLongPress
 +        self.updateLongPressInteraction()
-     }
- 
-+    private func refreshPresentedMenu(_ menu: UIMenu) {
++    }
++
++    private func menuInteractions() -> [UIContextMenuInteraction] {
 +        // Tap mode presents through the button's built-in interaction,
 +        // long-press mode through the superview-hosted one; cover both (plus
 +        // the interaction added in init) and dedupe by identity.
@@ -325,7 +400,11 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +            candidates.append(host)
 +        }
 +        var visited: Set<ObjectIdentifier> = []
-+        for interaction in candidates where visited.insert(ObjectIdentifier(interaction)).inserted {
++        return candidates.filter { visited.insert(ObjectIdentifier($0)).inserted }
++    }
++
++    private func refreshPresentedMenu(_ menu: UIMenu) {
++        for interaction in menuInteractions() {
 +            // The block receives whichever menu level is currently on screen —
 +            // the navigated submenu when the user picked inside one, not the
 +            // root. Swap in the matching node from the rebuilt tree (stable
@@ -385,12 +464,10 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 +            self.addInteraction(existing)
 +            longPressInteraction = nil
 +        }
-+    }
-+
-     public override func reactSetFrame(_ frame: CGRect) {
-         super.reactSetFrame(frame);
      }
-@@ -124,4 +299,8 @@
+ 
+     public override func reactSetFrame(_ frame: CGRect) {
+@@ -124,4 +371,8 @@
      @objc func sendMenuOpen() {
          // NO-OP (should be overriden by parent)
      }
@@ -402,7 +479,7 @@ diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplem
 diff --git a/ios/Shared/RCTMenuItem.swift b/ios/Shared/RCTMenuItem.swift
 --- a/ios/Shared/RCTMenuItem.swift
 +++ b/ios/Shared/RCTMenuItem.swift
-@@ -105,11 +105,19 @@
+@@ -105,10 +105,18 @@
                  subMenuActions.append(subaction.createUIMenuElement(handler))
              }
              var menu: UIMenu;
@@ -416,13 +493,12 @@ diff --git a/ios/Shared/RCTMenuItem.swift b/ios/Shared/RCTMenuItem.swift
              } else {
 -                menu = UIMenu(title: title, image: image, children: subMenuActions)
 +                menu = UIMenu(title: title, image: image, identifier: menuIdentifier, children: subMenuActions)
-             }
++            }
 +            if #available(iOS 15.0, *) {
 +                menu.subtitle = subtitle
-+            }
+             }
  
              if #available(iOS 16.0, *) {
-                 if(preferredElementSizeString == "small") {
 diff --git a/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts b/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts
 --- a/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts
 +++ b/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts

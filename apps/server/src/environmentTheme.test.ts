@@ -171,7 +171,7 @@ it.layer(NodeServices.layer)("environment theme", (it) => {
         "malformed.json": "{ not json",
         "no-colors.json": '{ "name": "Empty", "appearance": "dark" }',
         "Bad Name.json": encodeThemeFile(SHARED_THEME),
-        "ocean.json": encodeThemeFile(SHARED_THEME),
+        "onicode.json": encodeThemeFile(SHARED_THEME),
         "dark.json": encodeThemeFile(SHARED_THEME),
         "notes.txt": "not a theme",
       },
@@ -286,8 +286,8 @@ it.layer(NodeServices.layer)("environment theme", (it) => {
         assert.match(reserved.message, /not a valid theme id/);
         const unknown = yield* themes.apply({ themeId: "missing" }).pipe(Effect.flip);
         assert.match(unknown.message, /not a built-in or published theme/);
-        yield* themes.apply({ themeId: "grove" });
-        yield* themes.apply({ themeId: "grove", appearance: "dark" });
+        yield* themes.apply({ themeId: "onicode" });
+        yield* themes.apply({ themeId: "onicode", appearance: "dark" });
         yield* themes.apply({ appearance: "light" });
 
         assert.deepEqual(
@@ -297,8 +297,8 @@ it.layer(NodeServices.layer)("environment theme", (it) => {
         // Only a theme that was published or already exists becomes the environment theme.
         assert.deepEqual(selected, [
           { theme: "agent-look" },
-          { theme: "grove" },
-          { theme: "grove", appearance: "dark" },
+          { theme: "onicode" },
+          { theme: "onicode", appearance: "dark" },
           { appearance: "light" },
         ]);
       }),

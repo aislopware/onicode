@@ -5,6 +5,8 @@ import { isMacPlatform, isWindowsPlatform } from "./utils";
 const WCO_CLASS_NAME = "wco";
 const ELECTRON_CLASS_NAME = "electron";
 const ELECTRON_WINDOWS_CLASS_NAME = "electron-windows";
+// The desktop app asks macOS for overlay scrollbars, so the page must not draw its own lane.
+const ELECTRON_MAC_CLASS_NAME = "electron-mac";
 // macOS has no overlay API; traffic lights stay inside this topbar at every zoom level.
 const MACOS_TITLEBAR_HEIGHT = 52;
 
@@ -75,14 +77,10 @@ export function useNativeTitlebarHeight(): number {
   return useSyncExternalStore(subscribeTitlebarArea, getNativeTitlebarHeight, () => 0);
 }
 
-function getElectronPlatformClassNames(
-  platform: string,
-):
-  | readonly [typeof ELECTRON_CLASS_NAME]
-  | readonly [typeof ELECTRON_CLASS_NAME, typeof ELECTRON_WINDOWS_CLASS_NAME] {
-  return isWindowsPlatform(platform)
-    ? [ELECTRON_CLASS_NAME, ELECTRON_WINDOWS_CLASS_NAME]
-    : [ELECTRON_CLASS_NAME];
+function getElectronPlatformClassNames(platform: string): ReadonlyArray<string> {
+  if (isWindowsPlatform(platform)) return [ELECTRON_CLASS_NAME, ELECTRON_WINDOWS_CLASS_NAME];
+  if (isMacPlatform(platform)) return [ELECTRON_CLASS_NAME, ELECTRON_MAC_CLASS_NAME];
+  return [ELECTRON_CLASS_NAME];
 }
 
 export function syncDocumentElectronPlatformClasses(platform: string): () => void {

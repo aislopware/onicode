@@ -1,8 +1,15 @@
+import { BUILT_IN_THEME_ID } from "@onicode/shared/themePalettes";
+
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { themeEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { themeServerSettingsAtom } from "../state/server";
-import { getThemeDefinition, singleAppearanceOf, subscribeToCustomThemes } from "../themePalette";
-import { setAppearanceMode, setTheme } from "./useTheme";
+import {
+  getThemeDefinition,
+  singleAppearanceOf,
+  subscribeToCustomThemes,
+  type ThemePreferenceMode,
+} from "../themePalette";
+import { getThemeSnapshot, setAppearanceMode, setTheme } from "./useTheme";
 
 const APPLIED_DEFAULT_THEME_STORAGE_PREFIX = "onicode:default-theme-applied:v2:";
 const APPLIED_DEFAULT_APPEARANCE_STORAGE_PREFIX = "onicode:default-appearance-applied:v1:";
@@ -27,6 +34,18 @@ export function defaultThemeToApply(input: {
   // published set changes.
   if (!input.resolves) return null;
   return generation;
+}
+
+/**
+ * The preference to store for the environment's theme, or null while its palette has not
+ * arrived. The built-in id has no palette: the standard look is stored as its mode.
+ */
+export function defaultThemeSelection(
+  defaultTheme: string,
+  appearanceMode: ThemePreferenceMode,
+): string | null {
+  if (defaultTheme === BUILT_IN_THEME_ID) return appearanceMode;
+  return getThemeDefinition(defaultTheme) === null ? null : defaultTheme;
 }
 
 /** A single-appearance theme sets its own mode unless a mode was set with it or after it. */
@@ -60,20 +79,21 @@ function adoptDefaultTheme(): void {
   if (environmentId === null) return;
   const settings = appAtomRegistry.get(themeServerSettingsAtom);
   const { defaultTheme, defaultThemeSetAt } = settings;
-  const definition = getThemeDefinition(defaultTheme);
+  const selection = defaultThemeSelection(defaultTheme, getThemeSnapshot().appearanceMode);
   const storageKey = `${APPLIED_DEFAULT_THEME_STORAGE_PREFIX}${environmentId}`;
   const generation = defaultThemeToApply({
     environmentId,
     defaultTheme,
     defaultThemeSetAt,
     appliedGeneration: readAppliedGeneration(storageKey),
-    resolves: definition !== null,
+    resolves: selection !== null,
   });
-  if (generation === null || definition === null) return;
+  if (generation === null || selection === null) return;
 
   // A single-appearance theme needs both preference and appearance writes to take effect.
-  if (!setTheme(defaultTheme)) return;
-  const half = singleAppearanceOf(definition);
+  if (!setTheme(selection)) return;
+  const definition = getThemeDefinition(selection);
+  const half = definition === null ? null : singleAppearanceOf(definition);
   // Only record adoption after both writes succeed, so an appearance failure remains retryable.
   if (half !== null && themeSetsOwnMode(settings) && !setAppearanceMode(half)) return;
   writeAppliedGeneration(storageKey, generation);

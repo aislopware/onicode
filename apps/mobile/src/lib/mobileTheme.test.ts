@@ -1,17 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
-  BUILT_IN_THEME_IDS,
-  BUILT_IN_THEMES,
-  SAKURA_THEME,
   ONICODE_CODE_LIGHT_THEME_COLORS,
   ONICODE_CODE_DARK_THEME_COLORS,
-  MOBILE_THEME_IDS,
-  getThemeColorsForAppearance,
 } from "@onicode/shared/themePalettes";
-import {
-  readDefaultMobileThemeVariables,
-  readGeneratedMobileThemeVariables,
-} from "./mobileTheme.test-support";
+import { readDefaultMobileThemeVariables } from "./mobileTheme.test-support";
 import { getMobileThemeRuntimeVariables } from "./mobileThemeVariables";
 
 import {
@@ -58,7 +50,7 @@ function compositeOver(overlay: string, background: string): string {
 
 describe("mobile themes", () => {
   it("declares every runtime theme variable in the static stylesheet", () => {
-    const generatedVariables = createMobileThemeVariables(SAKURA_THEME.colors, "light");
+    const generatedVariables = createMobileThemeVariables(ONICODE_CODE_LIGHT_THEME_COLORS, "light");
     expect(Object.keys(readDefaultMobileThemeVariables("light")).sort()).toEqual(
       Object.keys(generatedVariables).sort(),
     );
@@ -67,18 +59,11 @@ describe("mobile themes", () => {
     );
   });
 
-  it.each(MOBILE_THEME_IDS)("uses the web color roles for %s in both appearances", (themeId) => {
+  it("uses the web color roles in both appearances", () => {
     for (const appearance of ["light", "dark"] as const) {
-      const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId);
-      const colors = theme
-        ? getThemeColorsForAppearance(theme, appearance)!
-        : appearance === "dark"
-          ? ONICODE_CODE_DARK_THEME_COLORS
-          : ONICODE_CODE_LIGHT_THEME_COLORS;
-      const variables =
-        themeId === DEFAULT_MOBILE_THEME_ID
-          ? readDefaultMobileThemeVariables(appearance)
-          : getMobileThemeVariables(themeId, appearance);
+      const colors =
+        appearance === "dark" ? ONICODE_CODE_DARK_THEME_COLORS : ONICODE_CODE_LIGHT_THEME_COLORS;
+      const variables = readDefaultMobileThemeVariables(appearance);
       expect(variables["--color-screen"]).toBe(themeColorToNativeColor(colors.canvas));
       expect(variables["--color-thread-canvas"]).toBe(variables["--color-screen"]);
       expect(variables["--color-drawer"]).toBe(themeColorToNativeColor(colors.sidebar));
@@ -96,11 +81,6 @@ describe("mobile themes", () => {
         themeColorToNativeColor(colors.sidebarForeground),
       );
       expect(variables["--color-primary"]).toBe(themeColorToNativeColor(colors.messageAction));
-      if (themeId !== DEFAULT_MOBILE_THEME_ID) {
-        expect(variables["--color-user-bubble"]).toBe(
-          themeColorToNativeColor(colors.messageSurface),
-        );
-      }
       expect(
         contrastRatio(variables["--color-foreground"], variables["--color-screen"]),
       ).toBeGreaterThanOrEqual(4.5);
@@ -144,9 +124,9 @@ describe("mobile themes", () => {
     }
   });
 
-  it.each(MOBILE_THEME_IDS)("keeps %s sidebar text readable on Android", (themeId) => {
+  it("keeps sidebar text readable on Android", () => {
     for (const appearance of ["light", "dark"] as const) {
-      const variables = getMobileThemeRuntimeVariables(themeId, appearance, "android");
+      const variables = getMobileThemeRuntimeVariables(appearance, "android");
       for (const foreground of [
         "--color-drawer-foreground",
         "--color-drawer-foreground-muted",
@@ -159,14 +139,13 @@ describe("mobile themes", () => {
     }
   });
 
-  it.each(MOBILE_THEME_IDS)("separates %s filled groups from their sheets", (themeId) => {
+  it("separates filled groups from their sheets", () => {
     for (const appearance of ["light", "dark"] as const) {
-      const generated = readGeneratedMobileThemeVariables(
-        themeId === DEFAULT_MOBILE_THEME_ID ? appearance : `${themeId}-${appearance}`,
+      expect(readDefaultMobileThemeVariables(appearance)).toEqual(
+        getMobileThemeVariables(appearance),
       );
-      expect(generated).toEqual(getMobileThemeVariables(themeId, appearance));
       for (const platform of ["ios", "android"]) {
-        const variables = getMobileThemeRuntimeVariables(themeId, appearance, platform);
+        const variables = getMobileThemeRuntimeVariables(appearance, platform);
         const sheet = variables["--color-sheet-solid"];
         const group = variables["--color-grouped-card"];
         expect(
@@ -225,30 +204,42 @@ describe("mobile themes", () => {
   });
 
   it("migrates one theme choice to both appearances and preserves independent choices", () => {
-    expect(resolveMobileThemeIds({ themeId: "grove" })).toEqual({
-      light: "grove",
-      dark: "grove",
+    expect(resolveMobileThemeIds({ themeId: "material-you" })).toEqual({
+      light: "material-you",
+      dark: "material-you",
     });
     expect(
-      resolveMobileThemeIds({ themeId: "grove", lightThemeId: "iris", darkThemeId: "ocean" }),
-    ).toEqual({ light: "iris", dark: "ocean" });
-    expect(resolveMobileThemeIds({ themeId: "grove", lightThemeId: "missing" })).toEqual({
+      resolveMobileThemeIds({
+        themeId: "material-you",
+        lightThemeId: DEFAULT_MOBILE_THEME_ID,
+        darkThemeId: "material-you",
+      }),
+    ).toEqual({ light: DEFAULT_MOBILE_THEME_ID, dark: "material-you" });
+    // Saved ids of removed presets fall back to the default theme.
+    expect(resolveMobileThemeIds({ themeId: "grove" })).toEqual({
       light: DEFAULT_MOBILE_THEME_ID,
-      dark: "grove",
+      dark: DEFAULT_MOBILE_THEME_ID,
     });
+    expect(
+      resolveMobileThemeIds({
+        themeId: "grove",
+        lightThemeId: "sakura",
+        darkThemeId: "material-you",
+      }),
+    ).toEqual({ light: DEFAULT_MOBILE_THEME_ID, dark: "material-you" });
   });
 
   it("changes either theme without switching the active appearance", () => {
-    const themeIds = { light: "sakura", dark: "grove" } as const;
-    expect(createMobileThemeSelectionPatch(themeIds, "light", "dark", "ocean")).toEqual({
-      lightThemeId: "sakura",
-      darkThemeId: "ocean",
-      themeId: "sakura",
+    const themeIds = { light: DEFAULT_MOBILE_THEME_ID, dark: DEFAULT_MOBILE_THEME_ID } as const;
+    expect(createMobileThemeSelectionPatch(themeIds, "light", "dark", "material-you")).toEqual({
+      lightThemeId: DEFAULT_MOBILE_THEME_ID,
+      darkThemeId: "material-you",
+      themeId: DEFAULT_MOBILE_THEME_ID,
     });
-    expect(createMobileThemeSelectionPatch(themeIds, "light", "light", "iris")).toEqual({
-      lightThemeId: "iris",
-      darkThemeId: "grove",
-      themeId: "iris",
+    expect(createMobileThemeSelectionPatch(themeIds, "light", "light", "material-you")).toEqual({
+      lightThemeId: "material-you",
+      darkThemeId: DEFAULT_MOBILE_THEME_ID,
+      themeId: "material-you",
     });
   });
 
@@ -258,43 +249,12 @@ describe("mobile themes", () => {
     expect(themeColorToNativeColor("#123456")).toBe("#123456");
   });
 
-  it("keeps placeholders and selected-row labels readable on their mobile surfaces", () => {
-    for (const themeId of BUILT_IN_THEME_IDS) {
-      for (const appearance of ["light", "dark"] as const) {
-        const variables = getMobileThemeVariables(themeId, appearance);
-        expect(
-          contrastRatio(variables["--color-placeholder"], variables["--color-input"]),
-        ).toBeGreaterThanOrEqual(4.5);
-      }
-    }
-
-    for (const themeId of BUILT_IN_THEME_IDS) {
-      for (const appearance of ["light", "dark"] as const) {
-        const variables = getMobileThemeVariables(themeId, appearance);
-        expect(
-          contrastRatio(
-            variables["--color-user-bubble-foreground"],
-            variables["--color-user-bubble"],
-          ),
-        ).toBeGreaterThanOrEqual(4.5);
-        expect(
-          contrastRatio(
-            variables["--color-user-bubble-skill-foreground"],
-            variables["--color-user-bubble"],
-          ),
-        ).toBeGreaterThanOrEqual(4.5);
-        expect(variables["--color-user-bubble-skill-foreground"]).not.toBe(
-          variables["--color-user-bubble-foreground"],
-        );
-        const fenceSurface = compositeOver(
-          variables["--color-md-user-fence-bg"],
-          variables["--color-user-bubble"],
-        );
-        expect(fenceSurface).not.toBe(variables["--color-user-bubble"]);
-        expect(
-          contrastRatio(variables["--color-md-user-fence-text"], fenceSurface),
-        ).toBeGreaterThanOrEqual(4.5);
-      }
+  it("keeps placeholders readable on inputs", () => {
+    for (const appearance of ["light", "dark"] as const) {
+      const variables = getMobileThemeVariables(appearance);
+      expect(
+        contrastRatio(variables["--color-placeholder"], variables["--color-input"]),
+      ).toBeGreaterThanOrEqual(4.5);
     }
   });
 

@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { converter } from "culori/fn";
-import { BUILT_IN_THEMES } from "@onicode/shared/themePalettes";
 
 import { CONTEXT_CHIP_ACCENTS, contextChipColorVariable } from "./lib/contextChipAccents";
 
@@ -17,16 +16,14 @@ import {
   parseThemeFile,
   removeCustomTheme,
   replaceCustomThemeCollection,
+  parseThemeHalves,
   resolveDesktopTheme,
   resolveThemeAppearance,
   serializeThemeFile,
-  SAKURA_THEME,
-  GROVE_THEME,
   updateCustomTheme,
   updateThemeColorFamily,
   CUSTOM_THEMES_STORAGE_KEY,
   createVividThemeColors,
-  getDefaultThemeColors,
   themeColorToHex,
   toCanonicalThemeColor,
   THEME_FILE_VERSION,
@@ -72,18 +69,14 @@ describe("theme files", () => {
     expect(parseThemeFile({ ...file, name: " 夜 " }).id).toBe(night.id);
   });
 
-  it("keeps built-in and standard search pairs readable and distinct from inline code", () => {
+  it("keeps the standard search pairs readable and distinct from inline code", () => {
     const toOklab = converter("oklab");
     const distance = (first: string, second: string) => {
       const a = toOklab(first)!;
       const b = toOklab(second)!;
       return Math.hypot(a.l - b.l, a.a - b.a, a.b - b.b);
     };
-    const palettes = [
-      getStandardThemeColors("light"),
-      getStandardThemeColors("dark"),
-      ...BUILT_IN_THEMES.flatMap((theme) => [theme.colors, ...Object.values(theme.variants ?? {})]),
-    ];
+    const palettes = [getStandardThemeColors("light"), getStandardThemeColors("dark")];
     for (const colors of palettes) {
       expect(
         contrastRatio(colors.searchMatchForeground, colors.searchMatchBackground),
@@ -109,7 +102,7 @@ describe("theme files", () => {
       colors: { canvas: "#101010" },
     });
     expect(legacy.colors.searchMatchBackground).toBe(
-      getDefaultThemeColors("dark").searchMatchBackground,
+      getStandardThemeColors("dark").searchMatchBackground,
     );
     const theme = parseThemeFile({
       version: THEME_FILE_VERSION,
@@ -131,7 +124,7 @@ describe("theme files", () => {
   it.each(["searchMatchBackground", "searchMatchActiveBackground"] as const)(
     "editing %s derives readable text without changing the other match or warning colours",
     (role) => {
-      const original = getDefaultThemeColors("dark");
+      const original = getStandardThemeColors("dark");
       const foreground =
         role === "searchMatchBackground" ? "searchMatchForeground" : "searchMatchActiveForeground";
       for (const value of ["#ffffff", "#000000", "#33669980"]) {
@@ -280,11 +273,6 @@ describe("theme files", () => {
       canvas: canonical("#101827"),
       text: canonical("#eef5ff"),
     });
-    expect(getThemeModes(SAKURA_THEME)).toEqual(["light", "dark"]);
-    expect(resolveThemeAppearance(SAKURA_THEME.id, true, true)).toBe("dark");
-    expect(resolveDesktopTheme(SAKURA_THEME.id, true)).toBe("system");
-    expect(resolveThemeAppearance(SAKURA_THEME.id, false, false, "dark")).toBe("dark");
-    expect(resolveDesktopTheme(SAKURA_THEME.id, false, "dark")).toBe("dark");
     expect(JSON.parse(serializeThemeFile(theme)).variants.dark).toMatchObject({
       canvas: canonical("#101827"),
       text: canonical("#eef5ff"),
@@ -601,15 +589,9 @@ describe("context chip colors", () => {
     const second = luminance(painted);
     return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
   };
-  const palettes = [
-    getStandardThemeColors("light"),
-    getStandardThemeColors("dark"),
-    ...BUILT_IN_THEMES.flatMap((theme) =>
-      getThemeModes(theme).map((mode) => getThemeColorsForMode(theme, mode)!),
-    ),
-  ];
+  const palettes = [getStandardThemeColors("light"), getStandardThemeColors("dark")];
 
-  it("reads at 5:1 on every chip surface of every built-in theme and keeps each hue", () => {
+  it("reads at 5:1 on every chip surface of the built-in theme and keeps each hue", () => {
     for (const colors of palettes) {
       const variables = contextChipVariables(colors);
       expect(variables["--context-chip-message"]).toBeUndefined();
@@ -712,16 +694,25 @@ describe("stored theme preferences", () => {
       appearance: "light",
       colors: { canvas: "#f8fbff" },
     });
+    const darkOnly = parseThemeFile({
+      version: THEME_FILE_VERSION,
+      id: "charcoal",
+      name: "Charcoal",
+      appearance: "dark",
+      colors: { canvas: "#1c1210" },
+    });
     vi.stubGlobal("window", {
       localStorage: {
         getItem: (key: string) =>
-          key === CUSTOM_THEMES_STORAGE_KEY ? JSON.stringify([lightOnly]) : null,
+          key === CUSTOM_THEMES_STORAGE_KEY ? JSON.stringify([lightOnly, darkOnly]) : null,
       },
     });
     invalidateCustomThemes();
     try {
       expect(resolveThemeAppearance("paper", true, true)).toBe("light");
-      const halves = { dark: GROVE_THEME.id };
+      // A half that names a removed preset is dropped, not kept as a dangling id.
+      const halves = parseThemeHalves(JSON.stringify({ light: "sakura", dark: "charcoal" }));
+      expect(halves).toEqual({ dark: "charcoal" });
       expect(resolveThemeAppearance("paper", true, true, undefined, halves)).toBe("dark");
       expect(resolveThemeAppearance("paper", false, false, "dark", halves)).toBe("dark");
       expect(resolveDesktopTheme("paper", true, undefined, halves)).toBe("system");
@@ -756,7 +747,7 @@ describe("stored theme preferences", () => {
     expect(themes).toHaveLength(1);
     expect(themes[0]).toMatchObject({
       id: "aurora",
-      colors: { canvas: canonical("#f8fbff"), accent: getDefaultThemeColors("light").accent },
+      colors: { canvas: canonical("#f8fbff"), accent: getStandardThemeColors("light").accent },
     });
     expect(getThemeModes(themes[0]!)).toEqual(["light", "dark"]);
     expect(getThemeColorsForMode(themes[0]!, "dark")?.canvas).toBe(canonical("rgb(16 24 39)"));

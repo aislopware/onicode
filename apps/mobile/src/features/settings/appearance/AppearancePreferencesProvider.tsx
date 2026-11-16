@@ -40,7 +40,6 @@ import {
 } from "../../../lib/mobileTheme";
 import {
   createMobileThemeRuntimeOperations,
-  getMobileUniwindThemeName,
   type MobileThemeRuntimeState,
 } from "../../../lib/mobileThemeRuntime";
 
@@ -110,7 +109,7 @@ function resolveThemeVariablesByAppearance(
   palettes: MaterialYouPalettes | null,
 ): Readonly<Record<MobileThemeAppearance, MobileThemeVariables>> {
   const resolve = (appearance: MobileThemeAppearance) => {
-    const base = getMobileThemeRuntimeVariables(themeIds[appearance], appearance, Platform.OS);
+    const base = getMobileThemeRuntimeVariables(appearance, Platform.OS);
     return themeIds[appearance] === "material-you" && palettes
       ? materialYouPaletteToMobileThemeVariables(palettes[appearance], appearance, base)
       : base;
@@ -216,7 +215,6 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
     systemColorPalettes,
   );
   const themeVariables = themeVariablesByAppearance[themeAppearance];
-  const activeThemeName = getMobileUniwindThemeName(themeId, themeAppearance);
   const { baseFontSize, codeFontSize, codeWordBreak, terminalFontSize } = preferences;
   const appearance = useMemo(
     () => resolveAppearance({ baseFontSize, codeFontSize, codeWordBreak, terminalFontSize }),
@@ -345,7 +343,7 @@ export function AppearancePreferencesProvider(props: { readonly children: ReactN
 
   return (
     <AppearancePreferencesContext.Provider value={value}>
-      <ScopedTheme theme={activeThemeName}>
+      <ScopedTheme theme={themeAppearance}>
         <ScopedVariables variables={themeVariables}>{props.children}</ScopedVariables>
       </ScopedTheme>
     </AppearancePreferencesContext.Provider>

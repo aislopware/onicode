@@ -1,27 +1,21 @@
 import { HTML_RENDER_DEFAULT_FONTS, htmlRenderTheme } from "@onicode/shared/htmlRender";
 
 import {
-  DEFAULT_MOBILE_THEME_ID,
   getMobileThemeColors,
   nativeColors,
   type MobileThemeAppearance,
-  type MobileThemeId,
   type MobileThemeVariables,
 } from "./mobileTheme";
 
 /** WebViews cannot load bundled app fonts; use system stacks. */
 export function mobileHtmlRenderTheme(input: {
-  readonly themeId: MobileThemeId;
   readonly appearance: MobileThemeAppearance;
   readonly variables: MobileThemeVariables;
   readonly systemColors: boolean;
   readonly platform: string;
 }) {
   const { variables: v } = input;
-  const palette = getMobileThemeColors(
-    input.themeId === "material-you" ? DEFAULT_MOBILE_THEME_ID : input.themeId,
-    input.appearance,
-  );
+  const palette = getMobileThemeColors(input.appearance);
   const colors = nativeColors(
     input.systemColors
       ? {

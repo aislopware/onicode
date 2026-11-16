@@ -1,8 +1,4 @@
-import {
-  MOBILE_DEFAULT_THEME_ID,
-  MOBILE_THEME_IDS,
-  type MobileThemeId,
-} from "@onicode/shared/themePalettes";
+import { BUILT_IN_THEME_ID } from "@onicode/shared/themePalettes";
 
 import { SHOWCASE_SCENES, type ShowcaseScene } from "./mobile-showcase-environment.ts";
 
@@ -11,9 +7,9 @@ export type { ShowcaseScene };
 
 export type ShowcaseAppearance = "light" | "dark";
 
-export const SHOWCASE_THEMES = MOBILE_THEME_IDS;
-const DEFAULT_SHOWCASE_THEME = MOBILE_DEFAULT_THEME_ID;
-export type ShowcaseTheme = MobileThemeId;
+export const SHOWCASE_THEMES = [BUILT_IN_THEME_ID] as const;
+const DEFAULT_SHOWCASE_THEME = BUILT_IN_THEME_ID;
+export type ShowcaseTheme = (typeof SHOWCASE_THEMES)[number];
 
 export interface ShowcaseStoreAssetSpec {
   readonly store: "apple" | "google-play";

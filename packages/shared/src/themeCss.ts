@@ -1,4 +1,4 @@
-import { THEME_COLOR_ROLES } from "./themePalettes.ts";
+import { BUILT_IN_THEME_ID, THEME_COLOR_ROLES } from "./themePalettes.ts";
 
 const FETCHES_BY_STRING = /image-set\(|\bsrc\(/i;
 // Only CSS whitespace may come first. \s also matches U+00A0, which makes the address relative.
@@ -89,5 +89,5 @@ export const THEME_GUIDE = [
   ...THEME_CSS_HOOKS.map((hook) => `- ${hook.selector}: ${hook.styles}`),
   "",
   "You cannot see the result. Make small changes, then ask the user how it looks.",
-  "To undo, set a built-in theme: sakura, grove, ocean, ember, or iris.",
+  `To undo, set the built-in theme: \`${BUILT_IN_THEME_ID}\`.`,
 ].join("\n");

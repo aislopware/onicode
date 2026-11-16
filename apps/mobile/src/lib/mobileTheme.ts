@@ -1,23 +1,15 @@
 import {
-  BUILT_IN_THEMES,
-  SAKURA_THEME,
+  BUILT_IN_THEME_ID,
   ONICODE_CODE_LIGHT_THEME_COLORS,
   ONICODE_CODE_DARK_THEME_COLORS,
-  getThemeColorsForAppearance,
-  MOBILE_DEFAULT_THEME_ID,
-  MOBILE_THEME_IDS as SHARED_MOBILE_THEME_IDS,
-  type MobileThemeId as SharedMobileThemeId,
   type ThemeAppearance,
   type ThemeColors,
 } from "@onicode/shared/themePalettes";
-import {
-  STANDARD_THEME_PREVIEW_COLORS,
-  type ThemePreviewColors,
-} from "@onicode/shared/themePreview";
 
-export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;
-export const MOBILE_THEME_IDS = [...SHARED_MOBILE_THEME_IDS, "material-you"] as const;
-export type MobileThemeId = SharedMobileThemeId | "material-you";
+export const DEFAULT_MOBILE_THEME_ID = BUILT_IN_THEME_ID;
+/** Material You is the same palette with Android's wallpaper colors over it. */
+export const MOBILE_THEME_IDS = [DEFAULT_MOBILE_THEME_ID, "material-you"] as const;
+export type MobileThemeId = (typeof MOBILE_THEME_IDS)[number];
 export type MobileThemeAppearance = ThemeAppearance;
 export type MobileThemeMode = MobileThemeAppearance | "system";
 export type MobileThemeIds = Readonly<Record<MobileThemeAppearance, MobileThemeId>>;
@@ -28,7 +20,6 @@ export const MOBILE_THEME_OPTIONS: ReadonlyArray<{
 }> = [
   { id: DEFAULT_MOBILE_THEME_ID, label: "Onicode" },
   { id: "material-you", label: "Material You" },
-  ...BUILT_IN_THEMES.map((theme) => ({ id: theme.id as MobileThemeId, label: theme.label })),
 ];
 
 export type MobileThemeVariable = keyof ReturnType<typeof createMobileThemeVariables>;
@@ -327,7 +318,6 @@ export function createMobileThemeVariables(
   colors: ThemeColors,
   appearance: MobileThemeAppearance,
   groupedCardColor = colors.surface,
-  prominentAction: readonly [string, string] = [colors.text, colors.canvas],
 ) {
   const c = nativeColors(colors);
   const groupedCard = themeColorToNativeColor(groupedCardColor);
@@ -380,8 +370,8 @@ export function createMobileThemeVariables(
     "--color-inline-skill-border": withAlpha(c.accent, 0.42),
     "--color-inline-skill-foreground": c.accentSurfaceForeground,
     "--color-primary": c.messageAction,
-    "--color-prominent-action": themeColorToNativeColor(prominentAction[0]),
-    "--color-prominent-action-foreground": themeColorToNativeColor(prominentAction[1]),
+    "--color-prominent-action": c.text,
+    "--color-prominent-action-foreground": c.canvas,
     "--color-primary-foreground": c.messageActionForeground,
     "--color-primary-text": themeColorWithContrast(c.messageAction, textSurfaces),
     "--color-primary-shadow": "#000000",
@@ -448,71 +438,26 @@ export function createMobileThemeVariables(
   };
 }
 
-export function getMobileThemeColors(
-  themeId: SharedMobileThemeId,
-  appearance: MobileThemeAppearance,
-): ThemeColors {
-  if (themeId === DEFAULT_MOBILE_THEME_ID) {
-    return appearance === "dark" ? ONICODE_CODE_DARK_THEME_COLORS : ONICODE_CODE_LIGHT_THEME_COLORS;
-  }
-  const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? SAKURA_THEME;
-  return getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
+export function getMobileThemeColors(appearance: MobileThemeAppearance): ThemeColors {
+  return appearance === "dark" ? ONICODE_CODE_DARK_THEME_COLORS : ONICODE_CODE_LIGHT_THEME_COLORS;
 }
 
 export function getMobileThemeVariables(
-  themeId: SharedMobileThemeId,
   appearance: MobileThemeAppearance,
   overrides: Partial<MobileThemeVariables> | null = null,
 ): MobileThemeVariables {
-  const colors = getMobileThemeColors(themeId, appearance);
-  const groupedCard =
-    themeId === DEFAULT_MOBILE_THEME_ID
-      ? appearance === "light"
-        ? colors.toolbarControlHover
-        : colors.sidebarRowActive
-      : themeId === "sakura"
-        ? appearance === "light"
-          ? colors.toolbarControl
-          : colors.surface
-        : colors.muted;
-  const mobileColors =
-    themeId === DEFAULT_MOBILE_THEME_ID
-      ? {
-          ...colors,
-          messageSurface: flattenThemeColor(
-            themeColorWithAlpha(
-              appearance === "dark" ? colors.sidebarRowActive : colors.border,
-              0.3,
-            ),
-            colors.messageSurface,
-          ),
-        }
-      : colors;
+  const colors = getMobileThemeColors(appearance);
   const baseVariables = createMobileThemeVariables(
-    mobileColors,
+    {
+      ...colors,
+      messageSurface: flattenThemeColor(
+        themeColorWithAlpha(appearance === "dark" ? colors.sidebarRowActive : colors.border, 0.3),
+        colors.messageSurface,
+      ),
+    },
     appearance,
-    groupedCard,
-    themeId === "sakura" && appearance === "dark"
-      ? [colors.messageActionForeground, colors.messageAction]
-      : themeId !== DEFAULT_MOBILE_THEME_ID && themeId !== "sakura"
-        ? [colors.messageAction, colors.messageActionForeground]
-        : undefined,
+    appearance === "light" ? colors.toolbarControlHover : colors.sidebarRowActive,
   );
 
   return overrides ? ({ ...baseVariables, ...overrides } as MobileThemeVariables) : baseVariables;
-}
-
-export function getMobileThemePreviewColors(
-  themeId: MobileThemeId,
-  appearance: MobileThemeAppearance,
-): ThemePreviewColors {
-  if (themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you")
-    return STANDARD_THEME_PREVIEW_COLORS[appearance];
-  const theme = BUILT_IN_THEMES.find((candidate) => candidate.id === themeId) ?? SAKURA_THEME;
-  const colors = getThemeColorsForAppearance(theme, appearance) ?? theme.colors;
-  return {
-    canvas: themeColorToNativeColor(colors.canvas),
-    accent: themeColorToNativeColor(colors.accent),
-    messageAction: themeColorToNativeColor(colors.messageAction),
-  };
 }

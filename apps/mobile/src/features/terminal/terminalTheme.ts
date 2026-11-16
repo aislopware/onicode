@@ -2,7 +2,6 @@ import {
   getMobileThemeColors,
   getMobileThemeVariables,
   themeColorToNativeColor,
-  type MobileThemeId,
 } from "../../lib/mobileTheme";
 
 export type TerminalAppearanceScheme = "light" | "dark";
@@ -94,14 +93,10 @@ function getPierreTerminalTheme(scheme: TerminalAppearanceScheme): TerminalTheme
   return scheme === "light" ? PIERRE_LIGHT_THEME : PIERRE_DARK_THEME;
 }
 
-export function getMobileTerminalTheme(
-  themeId: MobileThemeId,
-  scheme: TerminalAppearanceScheme,
-): TerminalTheme {
+export function getMobileTerminalTheme(scheme: TerminalAppearanceScheme): TerminalTheme {
   const base = getPierreTerminalTheme(scheme);
-  const paletteId = themeId === "material-you" ? "onicode" : themeId;
-  const palette = getMobileThemeColors(paletteId, scheme);
-  const colors = getMobileThemeVariables(paletteId, scheme);
+  const palette = getMobileThemeColors(scheme);
+  const colors = getMobileThemeVariables(scheme);
   const background = themeColorToNativeColor(palette.terminalBackground);
   return {
     ...base,

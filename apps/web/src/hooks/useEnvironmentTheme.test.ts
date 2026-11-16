@@ -37,8 +37,7 @@ describe("environment themes", () => {
   it("drops published themes with reserved ids", () => {
     const definitions = publishedThemeDefinitions([
       NIGHTFALL_THEME,
-      { ...NIGHTFALL_THEME, id: "sakura", name: "Impostor Sakura" },
-      { ...NIGHTFALL_THEME, id: "ocean", name: "Impostor Ocean" },
+      { ...NIGHTFALL_THEME, id: "system", name: "Impostor System" },
       { ...NIGHTFALL_THEME, id: "dark", name: "Impostor Dark" },
     ]);
 

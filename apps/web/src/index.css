@@ -89,6 +89,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
 
 :root {
   --app-scrollbar-width: 6px;
+  /* The strip a scroll fade leaves unmasked so the scrollbar stays solid. */
+  --app-scrollbar-lane: var(--app-scrollbar-width);
   --appearance-contrast-base: 100%;
   --appearance-contrast-boost: 0%;
   --appearance-contrast-border-boost: 0%;
@@ -229,6 +231,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --animate-stash-pulse-row: stash-pulse-row 1400ms;
   --animate-stash-pulse-row-alt: stash-pulse-row-alt 1400ms;
   --animate-stash-pulse-count: stash-pulse-count 1400ms step-start;
+  --animate-effort-level-roll: effort-level-roll 180ms cubic-bezier(0.22, 1, 0.36, 1);
   --color-warning-foreground: var(--warning-foreground);
   --color-warning: var(--warning);
   --color-warning-surface: var(--warning-surface);
@@ -357,6 +360,37 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   }
 }
 
+/* The effort slider's track and handle. The lit field between them is drawn on a canvas. */
+@utility effort-slider-track {
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+
+  @variant dark {
+    background: color-mix(in srgb, var(--foreground) 9%, transparent);
+  }
+}
+
+/* A white handle in both appearances, like the knob on a system switch. */
+@utility effort-slider-thumb {
+  background: white;
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 10%),
+    0 1px 2px rgb(0 0 0 / 18%),
+    0 3px 8px rgb(0 0 0 / 14%);
+}
+
+/* The level's name takes the hue the field has at that level: the accent's own at the default
+   level, and --effort-level-hue degrees away from it at the others. */
+@utility effort-level-ink {
+  color: var(--foreground);
+  color: oklch(
+    from var(--primary) clamp(0.42, l, 0.56) max(c, 0.14) calc(h + var(--effort-level-hue, 0))
+  );
+
+  @variant dark {
+    color: oklch(from var(--primary) 0.8 max(c, 0.12) calc(h + var(--effort-level-hue, 0)));
+  }
+}
+
 @utility surface-glass {
   background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
@@ -480,7 +514,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   -webkit-mask-size:
     100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
     100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
-    var(--app-scrollbar-width) 100%;
+    var(--app-scrollbar-lane) 100%;
   mask-image:
     linear-gradient(
       to bottom,
@@ -498,7 +532,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   mask-size:
     100% calc(var(--workspace-titlebar-scroll-fade-height) + 1px),
     100% calc(100% - var(--workspace-titlebar-scroll-fade-height)),
-    var(--app-scrollbar-width) 100%;
+    var(--app-scrollbar-lane) 100%;
 }
 
 /* Virtualizers own their native scroll element, so they cannot use ScrollArea's
@@ -512,11 +546,11 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
   -webkit-mask-size:
-    calc(100% - var(--app-scrollbar-width)) 100%,
-    var(--app-scrollbar-width) 100%;
+    calc(100% - var(--app-scrollbar-lane)) 100%,
+    var(--app-scrollbar-lane) 100%;
   mask-size:
-    calc(100% - var(--app-scrollbar-width)) 100%,
-    var(--app-scrollbar-width) 100%;
+    calc(100% - var(--app-scrollbar-lane)) 100%,
+    var(--app-scrollbar-lane) 100%;
 }
 
 /* Stage-channel art needs a mask and pseudo-element gradient, so keep the
@@ -731,123 +765,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
 
   [data-slot="animated-height"] [data-slot="collapsible-panel"][data-closed] {
     display: none;
-  }
-
-  /* Each maintainer palette gives the same line art its own material: rose
-     vellum, forest drafting paper, marine cyanotype, copper, and violet ink.
-     These colors stay deliberately deep at the top edge so the white stage
-     wordmark and controls retain contrast in both appearance modes. */
-  html[data-theme-id="sakura"] {
-    --stage-art-top: oklch(0.760675 0.141361 348.019);
-    --stage-art-mid: oklch(0.588093 0.188832 353.138);
-    --stage-art-bottom: oklch(0.383959 0.135096 348.656);
-    --stage-art-highlight: oklch(0.949689 0.034241 339.171);
-    --stage-art-secondary: oklch(0.763402 0.163836 352.525);
-    --stage-art-tertiary: oklch(0.70819 0.180285 311.949);
-    --stage-art-line: oklch(0.952158 0.034194 336.179);
-
-    @variant dark {
-      --stage-art-top: oklch(0.540689 0.143665 347.587);
-      --stage-art-mid: oklch(0.396586 0.126592 347.6);
-      --stage-art-bottom: oklch(0.249959 0.079694 340.523);
-      --stage-art-highlight: oklch(0.921297 0.051708 343.229);
-      --stage-art-secondary: oklch(0.667398 0.165674 352.549);
-      --stage-art-tertiary: oklch(0.609315 0.163722 306.315);
-      --stage-art-line: oklch(0.945349 0.036045 341.433);
-    }
-  }
-
-  html[data-theme-id="grove"] {
-    --stage-art-top: oklch(0.751465 0.112731 157.313);
-    --stage-art-mid: oklch(0.567105 0.11099 158.859);
-    --stage-art-bottom: oklch(0.367918 0.067635 160.558);
-    --stage-art-highlight: oklch(0.976387 0.034353 161.456);
-    --stage-art-secondary: oklch(0.80968 0.117071 158.817);
-    --stage-art-tertiary: oklch(0.784102 0.108047 88.516);
-    --stage-art-line: oklch(0.981098 0.027812 158.718);
-
-    @variant dark {
-      --stage-art-top: oklch(0.58719 0.09869 157.426);
-      --stage-art-mid: oklch(0.454979 0.079031 159.756);
-      --stage-art-bottom: oklch(0.297856 0.050355 161.167);
-      --stage-art-highlight: oklch(0.952407 0.053872 158.44);
-      --stage-art-secondary: oklch(0.732591 0.120606 155.853);
-      --stage-art-tertiary: oklch(0.716282 0.116547 80.563);
-      --stage-art-line: oklch(0.961577 0.035285 157.03);
-    }
-  }
-
-  html[data-theme-id="ocean"] {
-    --stage-art-top: oklch(0.792993 0.088072 220.421);
-    --stage-art-mid: oklch(0.590296 0.116841 243.184);
-    --stage-art-bottom: oklch(0.409123 0.093718 247.98);
-    --stage-art-highlight: oklch(0.971217 0.023008 213.615);
-    --stage-art-secondary: oklch(0.788391 0.090856 215.684);
-    --stage-art-tertiary: oklch(0.76441 0.099607 187.893);
-    --stage-art-line: oklch(0.976025 0.019647 212.543);
-
-    @variant dark {
-      --stage-art-top: oklch(0.59663 0.089167 233.427);
-      --stage-art-mid: oklch(0.461094 0.084904 243.478);
-      --stage-art-bottom: oklch(0.294818 0.05947 250.526);
-      --stage-art-highlight: oklch(0.952907 0.032224 221.27);
-      --stage-art-secondary: oklch(0.732079 0.09296 224.414);
-      --stage-art-tertiary: oklch(0.720885 0.095495 190.903);
-      --stage-art-line: oklch(0.961039 0.027355 219.756);
-    }
-  }
-
-  html[data-theme-id="ember"] {
-    --stage-art-top: oklch(0.782439 0.118806 52.569);
-    --stage-art-mid: oklch(0.62863 0.15922 39.401);
-    --stage-art-bottom: oklch(0.404251 0.117664 30.424);
-    --stage-art-highlight: oklch(0.962469 0.02774 70.95);
-    --stage-art-secondary: oklch(0.815735 0.11904 53.659);
-    --stage-art-tertiary: oklch(0.69361 0.159346 24.787);
-    --stage-art-line: oklch(0.970313 0.02052 67.583);
-
-    @variant dark {
-      --stage-art-top: oklch(0.597533 0.120694 43.455);
-      --stage-art-mid: oklch(0.437763 0.101287 34.86);
-      --stage-art-bottom: oklch(0.264269 0.055858 26.548);
-      --stage-art-highlight: oklch(0.929214 0.042638 55.801);
-      --stage-art-secondary: oklch(0.705592 0.137369 43.176);
-      --stage-art-tertiary: oklch(0.629583 0.158322 24.088);
-      --stage-art-line: oklch(0.945058 0.033906 58.824);
-    }
-  }
-
-  html[data-theme-id="iris"] {
-    --stage-art-top: oklch(0.738305 0.113454 298.926);
-    --stage-art-mid: oklch(0.551826 0.159189 294.531);
-    --stage-art-bottom: oklch(0.37147 0.133317 289.999);
-    --stage-art-highlight: oklch(0.949472 0.029204 303.081);
-    --stage-art-secondary: oklch(0.745085 0.125892 298.647);
-    --stage-art-tertiary: oklch(0.73066 0.167815 340.964);
-    --stage-art-line: oklch(0.960278 0.024064 306.969);
-
-    @variant dark {
-      --stage-art-top: oklch(0.57297 0.145973 295.185);
-      --stage-art-mid: oklch(0.419499 0.13752 292.131);
-      --stage-art-bottom: oklch(0.274235 0.095798 286.608);
-      --stage-art-highlight: oklch(0.916698 0.047206 300.224);
-      --stage-art-secondary: oklch(0.670994 0.13095 296.689);
-      --stage-art-tertiary: oklch(0.679357 0.165376 340.439);
-      --stage-art-line: oklch(0.940582 0.032921 299.076);
-    }
-  }
-
-  :is(
-    html[data-theme-id="sakura"],
-    html[data-theme-id="grove"],
-    html[data-theme-id="ocean"],
-    html[data-theme-id="ember"],
-    html[data-theme-id="iris"]
-  ) {
-    --stage-art-celeste-highlight: var(--stage-art-highlight);
-    --stage-art-celeste-secondary: var(--stage-art-secondary);
-    --stage-art-violet-highlight: var(--stage-art-highlight);
-    --stage-art-grid-line: var(--stage-art-line);
   }
 
   @keyframes settings-search-target-pulse {
@@ -1463,28 +1380,6 @@ html[data-theme-id] :is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblo
   color: color-mix(in srgb, var(--code-foreground) 72%, transparent);
 }
 
-/* Sakura renders inline code and compact chat artifacts with its translucent
-   secondary surface flattened over the light chat canvas. The raw muted and
-   secondary tokens are substantially darker than those visible pixels. */
-html[data-theme-id="sakura"] {
-  @variant light {
-    & .chat-markdown :not(pre) > code,
-    & [data-changed-files-state],
-    & [data-changed-files-header] {
-      background-color: var(--message-surface);
-    }
-
-    & .chat-markdown :not(pre) > code,
-    & [data-changed-files-state] {
-      border-color: transparent;
-    }
-
-    & .chat-markdown :not(pre) > code {
-      color: var(--contrast-message-foreground);
-    }
-  }
-}
-
 html[data-theme-id] [data-app-sidebar] {
   --background: var(--app-theme-canvas);
   --foreground: var(--app-theme-text);
@@ -1510,14 +1405,6 @@ html[data-theme-id] [data-app-sidebar] {
 
   @variant dark {
     border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 8%, transparent);
-  }
-}
-
-/* Sakura's panel divider is deliberately pink, and its resize affordance
-   keeps that color while hovered. Do not neutralize this edge. */
-html[data-theme-id="sakura"] [data-app-sidebar] {
-  @variant dark {
-    border-color: var(--contrast-sidebar-border);
   }
 }
 
@@ -1662,6 +1549,37 @@ body {
   overscroll-behavior: none;
 }
 
+/* Chromium bounces no nested scroller while the root forbids overscroll. The mac app's window
+   never scrolls itself, so lifting this there lets its scroll views bounce like native ones. */
+html.electron-mac,
+html.electron-mac body {
+  overscroll-behavior: auto;
+}
+
+@layer base {
+  /* A nested scroller bounces only when it contains its overscroll, and then it stops handing the
+     scroll to its parent. So vertically only the outermost scrollers contain it: one inside
+     another keeps scrolling its parent once it reaches its end. */
+  .electron-mac
+    :where(.overflow-auto, .overflow-y-auto):not(
+      :where(
+          .overflow-auto,
+          .overflow-y-auto,
+          .messages-timeline-scroll,
+          [data-slot="scroll-area-viewport"]
+        )
+        *
+    ) {
+    overscroll-behavior-y: contain;
+  }
+
+  /* Sideways there is rarely a parent to hand to, so every scroller bounces. Each axis is set on
+     its own: containing both on a sideways scroller swallows vertical scrolling over it. */
+  .electron-mac :where(.overflow-auto, .overflow-x-auto) {
+    overscroll-behavior-x: contain;
+  }
+}
+
 body {
   height: 100%;
   overflow: hidden;
@@ -1683,6 +1601,21 @@ body {
   --desktop-window-right-resize-inset: 6px;
 }
 
+/* An overlay scrollbar shows only while scrolling, so its thumb can be as strong as the system
+   one; ScrollArea's own thumb follows it. The system thumb sits inset and is wider than ours. */
+.electron-mac {
+  --app-scrollbar-lane: 12px;
+  --app-scrollbar-thumb: rgb(0 0 0 / 28%);
+  --app-scrollbar-thumb-hover: rgb(0 0 0 / 44%);
+  /* Inherited, so the system scrollbars take the same thumb and stay overlaid. */
+  scrollbar-color: var(--app-scrollbar-thumb) transparent;
+}
+
+.electron-mac.dark {
+  --app-scrollbar-thumb: rgb(255 255 255 / 28%);
+  --app-scrollbar-thumb-hover: rgb(255 255 255 / 44%);
+}
+
 /* App-chrome grain. Baked into each surface's own background (behind
    content) rather than a fixed overlay on top: a full-viewport overlay
    forces the compositor to re-blend every frame any animation produces,
@@ -1693,13 +1626,6 @@ body {
 :root {
   --surface-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
   --surface-grain-size: 256px 256px;
-}
-
-/* The Sakura texture is a 128px grayscale tile with a constant 7/255 alpha,
-   drawn procedurally to stay cheap. */
-html[data-theme-id="sakura"] {
-  --surface-grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 128 128' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.02745'/%3E%3C/svg%3E");
-  --surface-grain-size: 128px 128px;
 }
 
 body {
@@ -1771,21 +1697,26 @@ code {
   -webkit-app-region: no-drag;
 }
 
+/* macOS draws overlay scrollbars that appear while scrolling and take no room (the desktop app
+   asks for them unless the system setting is "Always"). Any ::-webkit-scrollbar rule would turn
+   them back into an always-visible lane, so only Windows and Linux get the drawn one. */
 /* Keep parent scrollbar styles off iframe owners to avoid WebKit resize loops: https://webkit.org/b/324485 */
-:where(:not(iframe))::-webkit-scrollbar {
+:where(:root:not(.electron-mac)) :where(:not(iframe))::-webkit-scrollbar {
   width: var(--app-scrollbar-width);
+  /* Without a height a horizontal scrollbar falls back to the 15px system one. */
+  height: var(--app-scrollbar-width);
 }
 
-:where(:not(iframe))::-webkit-scrollbar-track {
+:where(:root:not(.electron-mac)) :where(:not(iframe))::-webkit-scrollbar-track {
   background: transparent;
 }
 
-:where(:not(iframe))::-webkit-scrollbar-thumb {
+:where(:root:not(.electron-mac)) :where(:not(iframe))::-webkit-scrollbar-thumb {
   background: var(--app-scrollbar-thumb);
   border-radius: 3px;
 }
 
-:where(:not(iframe))::-webkit-scrollbar-thumb:hover {
+:where(:root:not(.electron-mac)) :where(:not(iframe))::-webkit-scrollbar-thumb:hover {
   background: var(--app-scrollbar-thumb-hover);
 }
 
@@ -2384,6 +2315,15 @@ code {
    This runs once per pickup; rows retain dnd-kit's normal 200ms transitions. */
 .sidebar-drag-boundary-label {
   animation: sidebar-drag-label-reveal 200ms step-end;
+}
+
+/* The effort level's name rolls in from the side its level moved from. */
+@keyframes effort-level-roll {
+  from {
+    opacity: 0;
+    translate: 0 var(--effort-level-from, 0.5em);
+    filter: blur(2px);
+  }
 }
 
 @keyframes sidebar-drag-label-reveal {

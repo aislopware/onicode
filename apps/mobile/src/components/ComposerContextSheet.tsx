@@ -98,8 +98,8 @@ export function ComposerContextSheet(props: {
   });
   const reviewColors = useReviewCommentColors();
   const insets = useSafeAreaInsets();
-  const { themeId, themeAppearance } = useAppearancePreferences();
-  const terminalTheme = getMobileTerminalTheme(themeId, themeAppearance);
+  const { themeAppearance } = useAppearancePreferences();
+  const terminalTheme = getMobileTerminalTheme(themeAppearance);
   const record = props.record;
   const localAttachment =
     record && "attachmentId" in record

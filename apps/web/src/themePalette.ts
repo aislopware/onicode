@@ -7,12 +7,6 @@ import { Atom } from "effect/reactivity";
 import "culori/css";
 import { converter, parse } from "culori/fn";
 import {
-  BUILT_IN_THEMES,
-  EMBER_THEME,
-  GROVE_THEME,
-  IRIS_THEME,
-  OCEAN_THEME,
-  SAKURA_THEME,
   ONICODE_CODE_LIGHT_THEME_COLORS,
   ONICODE_CODE_DARK_THEME_COLORS,
   RESERVED_THEME_IDS,
@@ -33,7 +27,7 @@ import { appAtomRegistry, subscribeAtomChanges } from "./rpc/atomRegistry";
 import { applyThemeCss } from "./themeCss";
 import { themeServerEnvironmentThemesAtom } from "./state/server";
 
-export { EMBER_THEME, GROVE_THEME, IRIS_THEME, OCEAN_THEME, SAKURA_THEME, THEME_COLOR_ROLES };
+export { THEME_COLOR_ROLES };
 export type { ThemeAppearance, ThemeColorRole, ThemeColors, ThemeDefinition, ThemeVariants };
 
 export const THEME_FILE_VERSION = 1 as const;
@@ -79,10 +73,6 @@ let themePreviewAppearance: ThemeAppearance | null = null;
 
 export function getThemePreviewAppearance(): ThemeAppearance | null {
   return themePreviewAppearance;
-}
-
-export function getThemePreviewSidebarArtwork(): boolean | null {
-  return themePreviewAppearance === null ? null : false;
 }
 
 export function subscribeToThemePreview(listener: () => void): () => void {
@@ -144,7 +134,7 @@ function lenientThemeColorOverrides(
 
 function parseStoredThemeColors(value: unknown, appearance: ThemeAppearance): ThemeColors | null {
   if (!isRecord(value)) return null;
-  return { ...getDefaultThemeColors(appearance), ...lenientThemeColorOverrides(value) };
+  return { ...getStandardThemeColors(appearance), ...lenientThemeColorOverrides(value) };
 }
 
 function parseStoredThemeVariants(
@@ -257,7 +247,7 @@ function publishedThemeColors(
   const base =
     appearance === theme.appearance && theme.canvas !== undefined && theme.accent !== undefined
       ? createVividThemeColors(appearance, theme.canvas, theme.accent)
-      : getDefaultThemeColors(appearance);
+      : getStandardThemeColors(appearance);
   return { ...base, ...lenientThemeColorOverrides(colors ?? {}) };
 }
 
@@ -294,9 +284,8 @@ function environmentThemeDefinition(theme: EnvironmentTheme): ThemeDefinition {
 
 /**
  * Published palettes this client can render. Reserved ids are dropped here rather
- * than rendered: a published `iris.json` would show this palette on its
- * card while "Use" resolved the built-in, and a published `dark.json` would
- * capture everyone whose stored preference is the stock `"dark"`.
+ * than rendered: a published `dark.json` would capture everyone whose stored
+ * preference is the stock `"dark"`.
  */
 export function publishedThemeDefinitions(
   themes: ReadonlyArray<EnvironmentTheme>,
@@ -793,7 +782,7 @@ export function createVividThemeColors(
   backgroundValue: string,
   accentValue: string,
 ): ThemeColors {
-  const defaults = getDefaultThemeColors(appearance);
+  const defaults = getStandardThemeColors(appearance);
   const canvasRgb = parseThemeRgbColor(
     backgroundValue,
     appearance === "dark" ? { r: 24, g: 15, b: 27 } : { r: 250, g: 245, b: 250 },
@@ -982,10 +971,6 @@ function standardMutedThemeText(
       ? STANDARD_DARK_MUTED_CONTRAST
       : STANDARD_LIGHT_MUTED_CONTRAST;
   return readableThemeText(background, foreground, 1, target);
-}
-
-export function getDefaultThemeColors(appearance: ThemeAppearance): ThemeColors {
-  return appearance === "dark" ? SAKURA_THEME.variants!.dark! : SAKURA_THEME.colors;
 }
 
 export function updateThemeColorFamily(
@@ -1186,21 +1171,11 @@ export function updateThemeColorFamily(
   }
 }
 
-const BUILT_IN_THEME_DEFINITIONS: ReadonlyArray<ThemeDefinition> = BUILT_IN_THEMES;
-
 export function getThemeDefinition(theme: ThemePreference): ThemeDefinition | null {
   return (
-    BUILT_IN_THEME_DEFINITIONS.find((definition) => definition.id === theme) ??
     getCustomThemes().find((definition) => definition.id === theme) ??
     getEnvironmentThemes().find((definition) => definition.id === theme) ??
     null
-  );
-}
-
-export function themeAllowsSidebarArtwork(theme: ThemePreference): boolean {
-  return (
-    BUILT_IN_THEME_DEFINITIONS.find((definition) => definition.id === theme)?.sidebarArtwork ===
-    true
   );
 }
 
@@ -1321,10 +1296,7 @@ export function installCustomTheme(theme: ThemeDefinition): ThemeDefinition {
     throw new Error(`The theme id "${theme.id}" is reserved.`);
   }
   const library = getWritableCustomThemeLibrary();
-  if (
-    BUILT_IN_THEME_DEFINITIONS.some((existing) => existing.id === theme.id) ||
-    library.storedThemes.some((storedTheme) => storedThemeHasId(storedTheme, theme.id))
-  ) {
+  if (library.storedThemes.some((storedTheme) => storedThemeHasId(storedTheme, theme.id))) {
     throw new Error(`A theme named "${theme.label}" is already installed.`);
   }
   const canonicalTheme = canonicalizeThemeDefinition(theme);
@@ -1387,7 +1359,7 @@ export function replaceCustomThemeCollection(
   ) {
     throw new Error("Your installed themes changed while this package was downloading. Try again.");
   }
-  const occupiedIds = new Set(BUILT_IN_THEME_DEFINITIONS.map((theme) => theme.id));
+  const occupiedIds = new Set<string>();
   for (const storedTheme of library.storedThemes) {
     if (
       !storedThemeHasCollectionId(storedTheme, collectionId) &&
@@ -1498,7 +1470,7 @@ export function parseThemeFile(value: unknown): ThemeDefinition {
     throw new Error(`Theme CSS must be text of ${THEME_CSS_MAX_LENGTH} characters or fewer.`);
   }
 
-  const fallback = getDefaultThemeColors(appearance);
+  const fallback = getStandardThemeColors(appearance);
   const variants: Partial<Record<ThemeAppearance, ThemeColors>> = {};
   if (value.variants !== undefined) {
     if (!isRecord(value.variants)) throw new Error("Theme variants must be an object.");
@@ -1509,7 +1481,7 @@ export function parseThemeFile(value: unknown): ThemeDefinition {
       if (variantAppearance === appearance) {
         throw new Error(`Theme variants must not repeat the base appearance "${appearance}".`);
       }
-      const variantFallback = getDefaultThemeColors(variantAppearance);
+      const variantFallback = getStandardThemeColors(variantAppearance);
       variants[variantAppearance] = {
         ...variantFallback,
         ...parseThemeColorOverrides(variantColors),

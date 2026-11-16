@@ -1,15 +1,5 @@
 import { resolveTextScaleVariables } from "./appearancePreferences";
-import { BUILT_IN_THEME_IDS, type BuiltInThemeId } from "@onicode/shared/themePalettes";
-import {
-  DEFAULT_MOBILE_THEME_ID,
-  type MobileThemeAppearance,
-  type MobileThemeId,
-  type MobileThemeMode,
-} from "./mobileTheme";
-
-export type MobileUniwindThemeName =
-  | MobileThemeAppearance
-  | `${BuiltInThemeId}-${MobileThemeAppearance}`;
+import { type MobileThemeAppearance, type MobileThemeMode } from "./mobileTheme";
 
 export interface MobileThemeRuntimeState {
   readonly baseFontSize: number;
@@ -20,7 +10,7 @@ export interface MobileThemeRuntimeState {
 export type MobileThemeRuntimeOperation =
   | {
       readonly kind: "update-text-variables";
-      readonly themeName: "light" | "dark" | MobileUniwindThemeName;
+      readonly themeName: MobileThemeAppearance;
       readonly variables: Readonly<Record<string, number>>;
     }
   | {
@@ -29,23 +19,7 @@ export type MobileThemeRuntimeOperation =
       readonly themeMode: MobileThemeMode;
     };
 
-const UNIWIND_THEME_NAMES: ReadonlyArray<"light" | "dark" | MobileUniwindThemeName> = [
-  "light",
-  "dark",
-  ...BUILT_IN_THEME_IDS.flatMap((themeId) => [
-    `${themeId}-light` as const,
-    `${themeId}-dark` as const,
-  ]),
-];
-
-export function getMobileUniwindThemeName(
-  themeId: MobileThemeId,
-  appearance: MobileThemeAppearance,
-): MobileUniwindThemeName {
-  return themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you"
-    ? appearance
-    : `${themeId}-${appearance}`;
-}
+const UNIWIND_THEME_NAMES: ReadonlyArray<MobileThemeAppearance> = ["light", "dark"];
 
 export function createMobileThemeRuntimeOperations(
   previous: MobileThemeRuntimeState | null,

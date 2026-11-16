@@ -1,3 +1,4 @@
+import { Slider } from "@base-ui/react/slider";
 import {
   buildTraitsTriggerDisplay,
   getDescriptorStringValue,
@@ -7,8 +8,15 @@ import {
 import type { ProviderOptionDescriptor, RuntimeMode } from "@onicode/contracts";
 import type { EffortDisplay } from "@onicode/contracts/settings";
 import { getProviderOptionCurrentLabel } from "@onicode/shared/model";
-import { CheckIcon, ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
-import { type KeyboardEvent, type ReactNode, use, useRef, useState } from "react";
+import { ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
+import {
+  type CSSProperties,
+  type KeyboardEvent,
+  type ReactNode,
+  use,
+  useRef,
+  useState,
+} from "react";
 
 import { cn } from "~/lib/utils";
 import {
@@ -25,6 +33,7 @@ import type { ComposerControlSize } from "./ComposerControl";
 import { ComposerPermissionsSection, type RuntimeModeOption } from "./ComposerFooterControls";
 import { composerFloatingLayerProps, focusCheckedPermission } from "./composerEventScope";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "./EffortGlyph";
+import { EffortSliderField, effortHue, effortTone } from "./EffortSliderField";
 import { DockedPickerContext } from "./ProviderModelPicker";
 import {
   getTraitsSectionVisibility,
@@ -36,7 +45,7 @@ import {
 type SelectDescriptor = Extract<ProviderOptionDescriptor, { type: "select" }>;
 type BooleanDescriptor = Extract<ProviderOptionDescriptor, { type: "boolean" }>;
 
-/** Service tiers, Claude's Fast mode, and Ultracode sit in the footer, not the column. */
+/** Service tiers, Claude's Fast mode, and Ultracode sit in the footer, not the section. */
 function splitSpeed(
   selects: ReadonlyArray<SelectDescriptor>,
   toggles: ReadonlyArray<BooleanDescriptor>,
@@ -60,7 +69,7 @@ type ColumnControl =
   | { kind: "boolean"; descriptor: BooleanDescriptor };
 
 /**
- * The column lists the model's reasoning levels under the header that names it. Other options,
+ * The section lists the model's reasoning levels under the header that names it. Other options,
  * such as an agent's session mode, sit below as one row each.
  */
 function columnControls(
@@ -101,7 +110,7 @@ export function describeComposerEffort(
     modelSelection,
     reportedModelSelection: traits.reportedModelSelection,
   });
-  // The same reasoning control the column lists, wherever the agent put it among its options.
+  // The same reasoning control the section lists, wherever the agent put it among its options.
   const reasoning =
     columnControls(visibility.selectDescriptors, visibility.booleanDescriptors).effort
       ?.descriptor ?? null;
@@ -180,77 +189,272 @@ const COLUMN_ROW =
   "flex h-8 w-full shrink-0 cursor-pointer items-center gap-2 rounded-sm px-2 text-left text-sm text-foreground outline-none hover:bg-foreground/[0.09] focus-visible:bg-foreground/[0.09] disabled:cursor-not-allowed disabled:opacity-64";
 const COLUMN_LABEL = "px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs";
 
-function ColumnRow(props: {
+/** The track a group of segments sits in; the picker's footer uses the same one. */
+const SEGMENT_TRACK = "flex rounded-lg bg-input/40 p-0.5";
+const SEGMENT =
+  "flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md px-2 text-muted-foreground text-xs outline-none hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-64";
+
+function LevelSegment(props: {
   label: string;
-  /** Shown on hover; the column is too narrow to print it under the label. */
   description?: string | undefined;
   selected: boolean;
-  /** The column's one tab stop: the selected level, else the first when none shows as selected. */
+  /** The levels' one tab stop: the selected level, else the first when none shows as selected. */
   tabStop: boolean;
   isDefault?: boolean | undefined;
   disabled?: boolean;
   onPick: () => void;
 }) {
-  const rowProps = {
+  const segmentProps = {
     type: "button",
     role: "radio",
     "aria-checked": props.selected,
+    "data-checked": props.selected || undefined,
     disabled: props.disabled,
     "data-effort-row": true,
     // Focus lands on a level after a model pick.
     "data-effort-level": true,
-    // Up and Down move between rows.
+    // Left and Right move between levels.
     tabIndex: props.tabStop ? 0 : -1,
-    className: COLUMN_ROW,
+    // Levels share the row evenly until their names need more, then wrap.
+    className: cn(SEGMENT, "min-w-max flex-1"),
     onClick: props.onPick,
   } as const;
+  // A segment has no room for a "Default" tag beside its name, so the hint carries it.
+  const namesDefault = props.isDefault === true && props.label !== "Default";
+  const hint = [namesDefault ? "Default" : null, props.description].filter(Boolean).join(" · ");
   const content = (
     <>
-      <span className="min-w-0 flex-1 truncate">{props.label}</span>
-      {props.selected ? (
-        <>
-          {props.isDefault ? <span className="sr-only">Default</span> : null}
-          <CheckIcon aria-hidden="true" className="size-3.5" />
-        </>
-      ) : props.isDefault ? (
-        <span className="text-muted-foreground/70 text-xs">Default</span>
-      ) : null}
+      {props.label}
+      {namesDefault ? <span className="sr-only">, default</span> : null}
     </>
   );
-  if (!props.description) return <button {...rowProps}>{content}</button>;
+  if (!hint) return <button {...segmentProps}>{content}</button>;
   return (
     <Tooltip>
-      <TooltipTrigger render={<button {...rowProps} />}>{content}</TooltipTrigger>
-      <TooltipPopup side="right" className="max-w-56">
-        {props.description}
+      <TooltipTrigger render={<button {...segmentProps} />}>{content}</TooltipTrigger>
+      <TooltipPopup side="top" className="max-w-56">
+        {hint}
       </TooltipPopup>
     </Tooltip>
   );
 }
 
+/**
+ * Left and Right walk the levels, which sit in one row. Down goes on to the option rows under
+ * them and Up comes back; Up from the levels is left for the popup, which returns to the list.
+ * A slider moves its own thumb on Left and Right, so only Down is taken from it.
+ */
 function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
-  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+  const { key } = event;
+  if (key !== "ArrowDown" && key !== "ArrowUp" && key !== "ArrowLeft" && key !== "ArrowRight")
+    return;
   // An option's side menu is a React child here, but it moves through its own items.
   if (!event.currentTarget.contains(event.target as Node)) return;
   const rows = Array.from(
-    event.currentTarget.querySelectorAll<HTMLButtonElement>("[data-effort-row]:not(:disabled)"),
+    event.currentTarget.querySelectorAll<HTMLElement>("[data-effort-row]:not(:disabled)"),
   );
-  const index = rows.findIndex((row) => row === document.activeElement);
-  const next =
-    rows[Math.min(rows.length - 1, Math.max(0, index + (event.key === "ArrowDown" ? 1 : -1)))];
-  if (!next) return;
+  const levels = rows.filter((row) => row.matches("[data-effort-level]"));
+  const options = rows.filter((row) => !row.matches("[data-effort-level]"));
+  const active = document.activeElement;
+  const levelIndex = levels.findIndex((row) => row === active);
+  const optionIndex = options.findIndex((row) => row === active);
+  let next: HTMLElement | undefined;
+  if (levelIndex >= 0) {
+    if (key === "ArrowUp") return;
+    if (key !== "ArrowDown" && active instanceof HTMLInputElement) return;
+    next =
+      key === "ArrowDown"
+        ? options[0]
+        : levels[
+            Math.min(levels.length - 1, Math.max(0, levelIndex + (key === "ArrowRight" ? 1 : -1)))
+          ];
+  } else if (optionIndex >= 0) {
+    // Left and Right belong to the row: they open and close its menu.
+    if (key === "ArrowLeft" || key === "ArrowRight") return;
+    if (key === "ArrowDown") next = options[optionIndex + 1] ?? options[optionIndex];
+    else if (optionIndex > 0) next = options[optionIndex - 1];
+    else if (levels.length > 0)
+      next = levels.find((row) => row.getAttribute("aria-checked") === "true") ?? levels[0];
+    else return;
+  } else {
+    return;
+  }
   event.preventDefault();
   event.stopPropagation();
+  if (!next) return;
   next.focus();
   next.scrollIntoView({ block: "nearest" });
 }
 
-function EffortLevels(props: { traits: TraitsSelectionInput }) {
+type LevelChoice = ReturnType<typeof selectableProviderOptionChoices>[number];
+
+/** Fewer levels than this read better as segments: a two-stop slider is a switch. */
+const SLIDER_MIN_LEVELS = 3;
+
+/** The section's key handling and the picker's focus find the levels by these marks. */
+function markEffortLevel(input: HTMLInputElement | null) {
+  if (!input) return;
+  input.dataset.effortRow = "";
+  input.dataset.effortLevel = "";
+}
+
+function levelHint(choice: LevelChoice): string {
+  const name =
+    choice.isDefault && choice.label !== "Default" ? `${choice.label} · Default` : choice.label;
+  return choice.description ? `${name}. ${choice.description}` : name;
+}
+
+/**
+ * The reasoning levels as one slider: a stop per level, and a lit field from the fast end up to
+ * the thumb.
+ */
+function EffortSlider(props: {
+  label: string;
+  choices: ReadonlyArray<LevelChoice>;
+  /** The picked level, or -1 when the prompt asks for one the slider does not offer. */
+  index: number;
+  /** The level under the thumb, which runs ahead of the pick while it is dragged. */
+  shownIndex: number;
+  /** The shown level's place on the hue range. */
+  tone: number;
+  disabled: boolean;
+  onDrag: (index: number | null) => void;
+  onPick: (index: number) => void;
+}) {
+  const last = props.choices.length - 1;
+  const shown = Math.max(0, props.shownIndex);
+  return (
+    <Slider.Root
+      value={shown}
+      min={0}
+      max={last}
+      step={1}
+      disabled={props.disabled}
+      onValueChange={props.onDrag}
+      onValueCommitted={(index) => {
+        props.onDrag(null);
+        if (index !== props.index) props.onPick(index);
+      }}
+      className="group/effort flex items-center gap-2.5 text-2xs text-muted-foreground/80"
+    >
+      <span aria-hidden="true">Faster</span>
+      <Slider.Control className="effort-slider-track relative flex h-7 min-w-0 flex-1 cursor-pointer touch-none items-center rounded-lg select-none data-disabled:cursor-not-allowed data-disabled:opacity-64">
+        <EffortSliderField level={shown} top={last} tone={props.tone} />
+        {/* Inset by half the thumb and the track's edge, so the thumb stays inside at both ends. */}
+        <Slider.Track className="relative mx-3 h-6 flex-1">
+          <span aria-hidden="true" className="pointer-events-none absolute inset-0">
+            {props.choices.map((choice, index) => (
+              <Tooltip key={choice.id}>
+                <TooltipTrigger
+                  render={
+                    <span
+                      className="pointer-events-auto absolute top-1/2 flex size-4 -translate-1/2 items-center justify-center group-data-dragging/effort:pointer-events-none"
+                      style={{ left: `${(index / last) * 100}%` }}
+                    />
+                  }
+                >
+                  {/* The lit field covers the stops it has passed. */}
+                  <span
+                    className={cn(
+                      "size-0.75 rounded-full bg-foreground/30 transition-opacity duration-150",
+                      index <= shown && "opacity-0",
+                    )}
+                  />
+                </TooltipTrigger>
+                <TooltipPopup side="top" className="max-w-56">
+                  {levelHint(choice)}
+                </TooltipPopup>
+              </Tooltip>
+            ))}
+          </span>
+          <Slider.Thumb
+            getAriaLabel={() => props.label}
+            getAriaValueText={(_formatted, index) => props.choices[index]?.label ?? ""}
+            inputRef={markEffortLevel}
+            // Up and Down belong to the section: they leave the slider for the list and the rows.
+            onKeyDown={(event) => {
+              if (event.key === "ArrowUp" || event.key === "ArrowDown") event.preventDefault();
+            }}
+            className={cn(
+              "effort-slider-thumb z-10 h-6 w-5 rounded-md transition-[left,scale] duration-150 ease-out group-data-dragging/effort:scale-108 has-focus-visible:outline-2 has-focus-visible:-outline-offset-2 has-focus-visible:outline-ring motion-reduce:transition-none",
+              props.shownIndex < 0 && "invisible",
+            )}
+          />
+        </Slider.Track>
+      </Slider.Control>
+      <span aria-hidden="true">Smarter</span>
+    </Slider.Root>
+  );
+}
+
+/** The level's name beside the section's label. It rolls in from the side the level moved from. */
+function EffortLevelName(props: {
+  name: string;
+  index: number;
+  /** The level's place on the hue range, which picks its color. */
+  tone: number;
+  isDefault: boolean;
+}) {
+  const [seen, setSeen] = useState({ index: props.index, from: 0 });
+  if (seen.index !== props.index) {
+    setSeen({ index: props.index, from: props.index > seen.index ? 1 : -1 });
+  }
+  return (
+    <>
+      <span
+        key={props.name}
+        className={cn(
+          "effort-level-ink font-medium",
+          seen.from !== 0 && "motion-safe:animate-effort-level-roll",
+        )}
+        style={
+          {
+            "--effort-level-from": `${seen.from * 0.5}em`,
+            "--effort-level-hue": effortHue(props.tone),
+          } as CSSProperties
+        }
+      >
+        {props.name}
+      </span>
+      {props.isDefault && props.name !== "Default" ? (
+        <span className="text-muted-foreground/70">Default</span>
+      ) : null}
+    </>
+  );
+}
+
+/** The section's frame: its label with the picked level beside it, the model, then the rows. */
+function EffortFrame(props: { label: string; level?: ReactNode; children: ReactNode }) {
+  const picker = use(DockedPickerContext);
+  return (
+    <>
+      <div className="flex shrink-0 items-baseline gap-1.5 px-3 pt-2.5 pb-1.5 text-xs">
+        <span className="font-medium text-muted-foreground">{props.label}</span>
+        {props.level}
+        <span className="ms-auto min-w-0 truncate ps-2 text-muted-foreground/70">
+          {picker.modelLabel}
+        </span>
+      </div>
+      <div
+        className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-2"
+        // Capture, so Up and Down on an option row move rows instead of opening its menu.
+        onKeyDownCapture={moveBetweenRows}
+      >
+        {props.children}
+      </div>
+    </>
+  );
+}
+
+function EffortSection(props: { traits: TraitsSelectionInput }) {
   const traits = useTraitsSelection(props.traits);
   const { effort, others } = columnControls(traits.selectDescriptors, traits.booleanDescriptors);
+  // The level under the thumb while it is dragged. The pick lands when it is let go.
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const label = effort?.descriptor.label ?? (others.length > 0 ? "Options" : "Effort");
   if (traits.modelIsUnavailable) {
     return (
-      <>
+      <EffortFrame label={label}>
         {traits.descriptors.map((descriptor) => {
           const value = traits.currentLabel(descriptor);
           return value ? (
@@ -260,20 +464,80 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
             </div>
           ) : null;
         })}
-      </>
+      </EffortFrame>
     );
   }
-  if (!effort && others.length === 0) return <NoEffortRow />;
+  if (!effort && others.length === 0) {
+    return (
+      <EffortFrame label={label}>
+        <NoEffortRow />
+      </EffortFrame>
+    );
+  }
   // Ultrathink in the prompt locks the levels; the first option then holds the tab stop.
   const locked =
     effort?.descriptor.id === traits.primarySelectDescriptor?.id && traits.ultrathinkInBodyText;
+  const slider =
+    effort?.kind === "select"
+      ? {
+          descriptor: effort.descriptor,
+          levels: selectableProviderOptionChoices(effort.descriptor),
+        }
+      : null;
+  const slides = slider !== null && slider.levels.length >= SLIDER_MIN_LEVELS;
+  // An "Ultrathink:" prefix selects a level the section does not offer, which leaves -1 here.
+  const index = slides
+    ? slider.levels.findIndex((level) => level.id === traits.selectValue(slider.descriptor))
+    : -1;
+  const shownIndex = dragIndex ?? index;
+  const shownLevel = slides ? slider.levels[shownIndex] : undefined;
+  const tone = slides
+    ? effortTone(
+        shownIndex,
+        slider.levels.length - 1,
+        slider.levels.findIndex((level) => level.isDefault === true),
+      )
+    : 0.5;
   return (
-    <>
-      {effort ? <EffortRows control={effort} traits={traits} locked={locked} /> : null}
+    <EffortFrame
+      label={label}
+      level={
+        shownLevel ? (
+          <EffortLevelName
+            name={shownLevel.label}
+            index={shownIndex}
+            tone={tone}
+            isDefault={shownLevel.isDefault === true}
+          />
+        ) : null
+      }
+    >
+      {slides ? (
+        <>
+          {locked ? (
+            <div className="px-1 pb-1.5 text-muted-foreground/80 text-xs">
+              {ULTRATHINK_IN_BODY_NOTE}
+            </div>
+          ) : null}
+          <EffortSlider
+            label={slider.descriptor.label}
+            choices={slider.levels}
+            index={index}
+            shownIndex={shownIndex}
+            tone={tone}
+            disabled={locked}
+            onDrag={setDragIndex}
+            onPick={(next) => {
+              const level = slider.levels[next];
+              if (level) traits.changeSelect(slider.descriptor, level.id);
+            }}
+          />
+        </>
+      ) : effort ? (
+        <EffortRows control={effort} traits={traits} locked={locked} />
+      ) : null}
       {others.length > 0 ? (
-        <div
-          className={cn("flex flex-col gap-0.5", effort && "mt-1 border-t border-border/70 pt-1")}
-        >
+        <div className={cn("flex flex-col gap-0.5", effort && "mt-2")}>
           {others.map((control, index) =>
             control.kind === "boolean" ? (
               <OptionSwitchRow
@@ -293,7 +557,7 @@ function EffortLevels(props: { traits: TraitsSelectionInput }) {
           )}
         </div>
       ) : null}
-    </>
+    </EffortFrame>
   );
 }
 
@@ -304,9 +568,9 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
   const { descriptor } = control;
   if (control.kind === "boolean") {
     return (
-      <div role="radiogroup" aria-label={descriptor.label} className="flex flex-col gap-0.5">
+      <div role="radiogroup" aria-label={descriptor.label} className={SEGMENT_TRACK}>
         {([true, false] as const).map((value) => (
-          <ColumnRow
+          <LevelSegment
             key={String(value)}
             label={value ? "On" : "Off"}
             selected={(control.descriptor.currentValue === true) === value}
@@ -320,28 +584,34 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
   const { locked } = props;
   const value = traits.selectValue(control.descriptor);
   const choices = selectableProviderOptionChoices(control.descriptor);
-  // An "Ultrathink:" prefix selects a level the column does not offer.
+  // An "Ultrathink:" prefix selects a level the section does not offer.
   const shown = choices.some((option) => option.id === value);
   return (
-    <div role="radiogroup" aria-label={descriptor.label} className="flex flex-col gap-0.5">
+    <>
       {locked ? (
-        <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">
+        <div className="px-1 pb-1.5 text-muted-foreground/80 text-xs">
           {ULTRATHINK_IN_BODY_NOTE}
         </div>
       ) : null}
-      {choices.map((option, index) => (
-        <ColumnRow
-          key={option.id}
-          label={option.label}
-          selected={option.id === value}
-          tabStop={shown ? option.id === value : index === 0}
-          description={option.description}
-          isDefault={option.isDefault}
-          disabled={locked}
-          onPick={() => traits.changeSelect(control.descriptor, option.id)}
-        />
-      ))}
-    </div>
+      <div
+        role="radiogroup"
+        aria-label={descriptor.label}
+        className={cn(SEGMENT_TRACK, "flex-wrap")}
+      >
+        {choices.map((option, index) => (
+          <LevelSegment
+            key={option.id}
+            label={option.label}
+            selected={option.id === value}
+            tabStop={shown ? option.id === value : index === 0}
+            description={option.description}
+            isDefault={option.isDefault}
+            disabled={locked}
+            onPick={() => traits.changeSelect(control.descriptor, option.id)}
+          />
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -359,12 +629,12 @@ function OptionRowText(props: { label: string; value: string }) {
 
 /**
  * One select besides reasoning, such as an agent's session mode. It names the current choice and
- * opens the rest beside the column, so any number of options leaves the levels in place.
+ * opens the rest in a side menu, so any number of options leaves the levels in place.
  */
 function OptionMenuRow(props: {
   descriptor: SelectDescriptor;
   traits: TraitsSelection;
-  /** Holds the column's tab stop when the model has no levels. */
+  /** Holds the section's tab stop when the model has no levels. */
   tabStop: boolean;
 }) {
   const { descriptor, traits } = props;
@@ -417,7 +687,7 @@ function OptionMenuRow(props: {
         side="right"
         align="start"
         sideOffset={6}
-        // A full-width column on phones leaves no room beside it, so fall below or above.
+        // A narrow window leaves no room beside the popup, so fall below or above.
         collisionAvoidance={{ fallbackAxisSide: "end" }}
         className="max-w-72"
         data-model-picker-option-menu
@@ -485,45 +755,19 @@ function OptionSwitchRow(props: {
 
 function NoEffortRow() {
   return (
-    <div className="flex h-8 items-center px-2 text-muted-foreground text-sm">No effort levels</div>
+    <div className="flex h-7 items-center px-1 text-muted-foreground text-sm">No effort levels</div>
   );
 }
 
-/** The model picker's effort column: the selected model's levels and its other options. */
+/** The model picker's effort section: the selected model's levels and its other options. */
 export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | null }) {
-  const picker = use(DockedPickerContext);
-  const visibility = props.traits ? getTraitsSectionVisibility(props.traits) : null;
-  const controls =
-    props.traits && visibility
-      ? columnControls(visibility.selectDescriptors, visibility.booleanDescriptors)
-      : null;
+  if (props.traits) return <EffortSection traits={props.traits} />;
   return (
-    <>
-      {/* Matches the search row's box, so one rule runs across the top of the popup. */}
-      <div className="shrink-0 px-3 pt-2.5">
-        <div className="flex h-8.25 -translate-y-px items-center gap-2 border-b border-border/70 pb-1.5 text-sm">
-          <span className="text-muted-foreground">
-            {controls?.effort?.descriptor.label ?? (controls?.others.length ? "Options" : "Effort")}
-          </span>
-          <span className="ms-auto min-w-0 truncate text-muted-foreground text-xs">
-            {picker.modelLabel}
-          </span>
-        </div>
-      </div>
-      {/* pt-2.5 puts the first level on the same line as the first model. */}
-      <div
-        className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto overscroll-contain px-2 pt-2.5 pb-1.5"
-        // Capture, so Up and Down on an option row move rows instead of opening its menu.
-        onKeyDownCapture={moveBetweenRows}
-      >
-        {props.traits ? <EffortLevels traits={props.traits} /> : <NoEffortRow />}
-      </div>
-    </>
+    <EffortFrame label="Effort">
+      <NoEffortRow />
+    </EffortFrame>
   );
 }
-
-const FOOTER_SEGMENT =
-  "flex h-6 cursor-pointer items-center justify-center gap-1 px-2 text-muted-foreground text-xs outline-none first:rounded-l-md last:rounded-r-md hover:text-foreground data-checked:bg-input/72 data-checked:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset";
 
 function SpeedSegment(props: {
   checked: boolean;
@@ -536,7 +780,7 @@ function SpeedSegment(props: {
     role: "radio",
     "aria-checked": props.checked,
     "data-checked": props.checked || undefined,
-    className: FOOTER_SEGMENT,
+    className: SEGMENT,
     onClick: props.onPick,
   } as const;
   const content = (
@@ -567,7 +811,7 @@ function SpeedControl(props: { traits: TraitsSelectionInput }) {
     <div
       role="radiogroup"
       aria-label={speedSelect?.label ?? fastToggle?.label}
-      className="flex rounded-lg bg-input/40 p-0.5"
+      className={SEGMENT_TRACK}
     >
       {speedSelect
         ? selectableProviderOptionChoices(speedSelect).map((option) => (
@@ -599,12 +843,12 @@ function UltracodeControl(props: { traits: TraitsSelectionInput }) {
   if (traits.modelIsUnavailable || !ultracodeToggle) return null;
   const on = ultracodeToggle.currentValue === true;
   return (
-    <div className="flex rounded-lg bg-input/40 p-0.5">
+    <div className={SEGMENT_TRACK}>
       <button
         type="button"
         aria-pressed={on}
         data-checked={on || undefined}
-        className={FOOTER_SEGMENT}
+        className={SEGMENT}
         onClick={() => traits.changeBoolean(ultracodeToggle.id, !on)}
       >
         <WorkflowIcon aria-hidden="true" className="size-3" />
@@ -664,7 +908,7 @@ export function ComposerPickerFooter(props: {
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/40 px-3 py-2">
+    <div className="flex shrink-0 flex-wrap items-center gap-1.5 px-3 pb-3">
       {props.traits ? <SpeedControl traits={props.traits} /> : null}
       {props.traits ? <UltracodeControl traits={props.traits} /> : null}
       <PermissionsMenu

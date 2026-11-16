@@ -190,6 +190,17 @@ export const make = Effect.gen(function* () {
       }
     }
     if (platform === "darwin") {
+      // A per-app value outranks the system one, so drop ours to read what the user chose.
+      Electron.systemPreferences.removeUserDefault("AppleShowScrollBars");
+      const systemScrollBars = Electron.systemPreferences.getUserDefault(
+        "AppleShowScrollBars",
+        "string",
+      );
+      // "Automatic" with a mouse plugged in shows scrollbars all the time, as lanes beside the
+      // content. Unless the user asked for "Always", overlay them as a trackpad would.
+      if (systemScrollBars !== "Always") {
+        Electron.systemPreferences.setUserDefault("AppleShowScrollBars", "string", "WhenScrolling");
+      }
       const disableFeatures = DesktopEarlyElectronStartup.resolveMacDisableFeaturesSwitch({
         enableFeatures: readCommandLineSwitchValue(Electron.app.commandLine, "enable-features"),
         disableFeatures: readCommandLineSwitchValue(Electron.app.commandLine, "disable-features"),

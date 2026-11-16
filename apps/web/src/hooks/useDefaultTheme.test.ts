@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { defaultThemeGeneration, defaultThemeToApply, themeSetsOwnMode } from "./useDefaultTheme";
+import {
+  defaultThemeGeneration,
+  defaultThemeSelection,
+  defaultThemeToApply,
+  themeSetsOwnMode,
+} from "./useDefaultTheme";
 
 const BASE = {
   environmentId: "env-1",
@@ -25,6 +30,12 @@ describe("default theme adoption", () => {
     });
     expect(next).not.toBe(null);
     expect(next).not.toBe(applied);
+  });
+
+  it("returns to the standard look for the built-in id and ignores a removed preset", () => {
+    expect(defaultThemeSelection("onicode", "dark")).toBe("dark");
+    expect(defaultThemeSelection("onicode", "system")).toBe("system");
+    expect(defaultThemeSelection("sakura", "dark")).toBe(null);
   });
 });
 

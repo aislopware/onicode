@@ -11,6 +11,9 @@ const {
   hasSwitchMock,
   registerSchemesMock,
   setDesktopNameMock,
+  getUserDefaultMock,
+  removeUserDefaultMock,
+  setUserDefaultMock,
   mkdirSyncMock,
   writeFileSyncMock,
   copyFileSyncMock,
@@ -25,6 +28,9 @@ const {
   hasSwitchMock: vi.fn(),
   registerSchemesMock: vi.fn(),
   setDesktopNameMock: vi.fn(),
+  getUserDefaultMock: vi.fn(),
+  removeUserDefaultMock: vi.fn(),
+  setUserDefaultMock: vi.fn(),
   mkdirSyncMock: vi.fn(),
   writeFileSyncMock: vi.fn(),
   copyFileSyncMock: vi.fn(),
@@ -49,6 +55,11 @@ vi.mock("electron", () => ({
   },
   protocol: {
     registerSchemesAsPrivileged: registerSchemesMock,
+  },
+  systemPreferences: {
+    getUserDefault: getUserDefaultMock,
+    removeUserDefault: removeUserDefaultMock,
+    setUserDefault: setUserDefaultMock,
   },
 }));
 
@@ -76,6 +87,9 @@ describe("DesktopPreReadyPlatform", () => {
     hasSwitchMock.mockReset();
     registerSchemesMock.mockReset();
     setDesktopNameMock.mockReset();
+    getUserDefaultMock.mockReset();
+    removeUserDefaultMock.mockReset();
+    setUserDefaultMock.mockReset();
     mkdirSyncMock.mockReset();
     writeFileSyncMock.mockReset();
     copyFileSyncMock.mockReset();
@@ -319,6 +333,38 @@ describe("DesktopPreReadyPlatform", () => {
         ["force-fieldtrials", "WebRTC-ForceSendPlayoutDelay/min_ms:0,max_ms:0/"],
       ]);
       assert.equal(setDesktopNameMock.mock.calls.length, 0);
+    }),
+  );
+
+  it.effect.each([
+    { system: "", overlay: true },
+    { system: "Automatic", overlay: true },
+    { system: "WhenScrolling", overlay: true },
+    { system: "Always", overlay: false },
+  ])("overlays macOS scrollbars unless the system setting is Always: $system", (row) =>
+    Effect.gen(function* () {
+      const events: Array<string> = [];
+      removeUserDefaultMock.mockImplementation(() => {
+        events.push("remove");
+      });
+      getUserDefaultMock.mockImplementation(() => {
+        events.push("read");
+        return row.system;
+      });
+
+      yield* DesktopPreReadyPlatform.DesktopPreReadyElectronOptions.pipe(
+        Effect.provide(
+          DesktopPreReadyPlatform.layer.pipe(
+            Layer.provide(Layer.succeed(HostProcess.Platform, "darwin")),
+          ),
+        ),
+      );
+
+      assert.deepEqual(events, ["remove", "read"]);
+      assert.deepEqual(
+        setUserDefaultMock.mock.calls,
+        row.overlay ? [["AppleShowScrollBars", "string", "WhenScrolling"]] : [],
+      );
     }),
   );
 });
