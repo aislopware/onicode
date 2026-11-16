@@ -81,6 +81,7 @@ const image = {
     accessibleText: "Downloads",
   },
 };
+const { source: _snapshot, ...boundImage } = image;
 const terminal = {
   version: 1 as const,
   kind: "terminal" as const,
@@ -238,7 +239,7 @@ describe("mobile context clipboard imports", () => {
     expect(result!.context.records).toEqual([
       { ...localThread, contextId: expect.any(String) },
       { ...terminal, contextId: expect.any(String) },
-      { ...image, contextId: expect.any(String), attachmentId: result!.attachments[0]!.id },
+      { ...boundImage, contextId: expect.any(String), attachmentId: result!.attachments[0]!.id },
     ]);
     expect(result!.attachments).toEqual([
       expect.objectContaining({ name: image.name, fileUri: "file:///owned.png" }),
@@ -342,7 +343,7 @@ describe("mobile context clipboard imports", () => {
       { ...foreignThread, contextId: expect.any(String) },
       { ...localThread, contextId: expect.any(String) },
       { ...terminal, contextId: expect.any(String) },
-      { ...image, contextId: expect.any(String), attachmentId: result!.attachments[0]!.id },
+      { ...boundImage, contextId: expect.any(String), attachmentId: result!.attachments[0]!.id },
     ]);
     expect(result!.attachments).toHaveLength(1);
     expect(result!.failures).toEqual([]);

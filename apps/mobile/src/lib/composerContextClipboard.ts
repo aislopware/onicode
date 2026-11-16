@@ -135,7 +135,10 @@ export async function importComposerContextClipboard(
           throw new Error("Attachment limit reached");
         const file = await importAttachment(record, fragment.source.environmentId, signal);
         attachments.push(file);
-        records.push({ ...record, attachmentId: file.id });
+        const bound = { ...record, attachmentId: file.id };
+        // The snapshot belongs on the attachment; in message context it would ship to every client.
+        if (bound.kind === "image") delete bound.source;
+        records.push(bound);
       } catch (error) {
         if (signal.aborted) throw error;
         failures.push(record.name);
