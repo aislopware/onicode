@@ -1856,6 +1856,29 @@ describe("subagent continued by a later turn", () => {
     expect(foldIndex).toBeGreaterThan(1);
     expect(ids(true).indexOf(`run-fold:${run2}`)).toBe(foldIndex);
   });
+
+  it("keeps one live fold when a later prompt arrives while the run works (cached)", () => {
+    const cache = createThreadFeedCache();
+    const rows = [
+      ...items,
+      user("prompt-3", RunId.make("run-3"), 3_000_001, 50),
+      user("prompt-4", RunId.make("run-4"), 3_000_002, 51),
+    ].map((entry, index) => projected(entry, index));
+    const present = (count: number) =>
+      deriveThreadFeedPresentation(
+        buildThreadFeed(rows.slice(0, count), { cache }),
+        { runId: run2, status: "running", startedAt: at(30), completedAt: null },
+        new Set(),
+        new Set(),
+        at(30),
+        false,
+        cache,
+      );
+    present(rows.length - 1);
+    // The rebuild restarts at prompt-3, after the reused rows that already hold the live fold.
+    const next = present(rows.length);
+    expect(next.filter((entry) => entry.id === `run-fold:${run2}`)).toHaveLength(1);
+  });
 });
 
 it("stops stranded thinking after a steer and follows the next thought or tool", () => {
