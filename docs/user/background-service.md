@@ -113,7 +113,10 @@ onicode service protect
 It shows the system settings it will change, asks before applying them, and
 then asks for your sudo password. If the machine runs Tailscale or SSH, it
 also offers to protect them, so you can still reach the machine. Memory
-protection takes effect at once. The server's protection from the kernel's
+protection takes effect at once. On a kernel with the memory cgroup controller
+disabled, such as Raspberry Pi OS by default, only the out-of-memory protection
+applies until you add `cgroup_enable=memory` to the kernel command line and
+reboot; `onicode service status` says so. The server's protection from the kernel's
 out-of-memory killer takes effect after `onicode service restart`. `onicode service status` reports whether
 the protection is in place, and `onicode service protect --undo` removes it.
 
