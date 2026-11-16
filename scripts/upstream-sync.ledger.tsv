@@ -2152,3 +2152,4 @@ a7d17cd2f5	take	taken as is
 45dedf2955	take	taken as is; adopted upstream's resolveListedAncestorThreadRef in client-runtime over Onicode's web-only resolveSidebarRowThreadId (also covers delegated tasks and mobile); Sidebar.tsx hook order untouched
 558790aae5	take	taken as is (mobile has no prompt stash)
 c1b23e903c	take	taken as is
+57ec00ddd6	take	taken as is; mobile SourceControlSignInSection has no equivalent refresh (follow-up)
