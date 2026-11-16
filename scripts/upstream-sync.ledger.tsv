@@ -2239,3 +2239,4 @@ acddfae513	take	fix(desktop): opening the app refreshes the onicode launcher wit
 a6f7981abb	take	fix(pi): ask_user_question single-select questions render as a structured card
 a10f9e41d3	take	fix(server): pull request links whose reads keep failing back off
 c24255826b	take	feat(web): dictation keeps recording into its thread when you switch away
+58e5ba58ec	take	fix(mobile): color links in user messages (#36966)
