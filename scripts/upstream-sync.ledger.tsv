@@ -2202,3 +2202,4 @@ fecd7138e9	take	fix(mobile): long threads no longer jump to the bottom after the
 c8c51af4e3	take	fix(server): recover gateway cooldown after last error
 4860a73069	take	fix(mobile): sent videos no longer flash black and queued attachments keep uploading
 caef8c3847	take	fix(composer): show local command actions while running; adapted: Onicode's provider session view commands (/context, /status...) also count as local on web and mobile
+b0f0c44d22	take	fix(shared): open Forgejo and Gitea /pulls/ tab and commit links
