@@ -89,6 +89,12 @@ when recording started, and the editor is read-only while dictation runs.
 Changes that reach the draft meanwhile, such as a cited message, are kept;
 the text then goes after your selection instead of replacing it.
 
+On desktop, a recording in a thread's composer keeps going when you switch to
+another thread or open Settings. A pill at the top of the window shows it while
+its thread is off screen: finish or cancel it there, or click the thread's name
+to go back. The words land in that thread's draft. Other editors stop their
+recording when you leave them.
+
 Pressing Send while dictating finishes the recording and sends the draft once
 the transcript has been inserted. Cancelling also cancels that queued send. In
 the other editors, Save, Comment, Reply, Submit review, or Attach works the

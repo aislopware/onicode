@@ -24,8 +24,9 @@ rechecks it after native decoding and before upload.
 The [web grant](../../apps/web/src/speech/voiceConsent.ts) lives outside the preferences snapshot so another
 window saving unrelated settings cannot resurrect a revoked grant. Each new choice
 gets a distinct grant, even if the destination was previously selected. The
-[web hook](../../apps/web/src/speech/useEnvironmentSpeechInput.ts) binds the
-controller to that grant and the selected environment's connection. It requires
+[web session](../../apps/web/src/speech/voiceInputSession.ts) binds the
+controller to that grant and the selected environment's connection, and every
+web editor using that destination shares it, since there is one microphone. It requires
 `voiceTranscription` to use the environment's model or `cloudVoiceTranscription`
 to forward audio to the selected provider. Changing the grant or losing the
 connection, permission, or required capability discards both the active recording
