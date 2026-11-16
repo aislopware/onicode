@@ -170,7 +170,6 @@ import { appAtomRegistry } from "../../state/atom-registry";
 import { threadStreamHaptics } from "./threadStreamHaptics";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { orchestrationEnvironment } from "../../state/orchestration";
-import { useDelayedStatus } from "../../lib/useDelayedStatus";
 import type { PendingUserInputDraftAnswer } from "@onicode/client-runtime/state/pending-user-input";
 import type { RunStopPresentation } from "@onicode/client-runtime/state/thread-execution";
 import type {
@@ -193,6 +192,7 @@ import {
   FloatingWorkingControl,
 } from "./floating-working-control";
 import { connectionFloatingStatus, type FloatingWorkingStatus } from "./floating-working-status";
+import type { ThreadLifecycleEvent } from "./thread-context-divider";
 import {
   derivePendingUserInputMaxHeight,
   ESTIMATED_KEYBOARD_HEIGHT,
@@ -391,9 +391,6 @@ const NO_RUN_STOP_ATOM = Atom.make<RunStopPresentation | null>(null).pipe(
   Atom.withLabel("mobile-thread-run-stop:empty"),
 );
 
-// Connection failures survive retries and app suspension.
-const RECONNECT_ERROR_DELAY_MS = 5_000;
-
 // Anchors, the submitted message, follow state and pending scrolls belong to
 // one thread, so the body remounts when the thread changes.
 export function ThreadDetailScreen(props: ThreadDetailScreenProps) {
@@ -586,14 +583,6 @@ function ThreadDetailBody(
   );
   const composerKeyboardOffset = composerBottomInset;
   const contentPresentationKind = props.contentPresentation.kind;
-  const connectionRetrying =
-    props.connectionStateLabel === "connecting" || props.connectionStateLabel === "reconnecting";
-  const retryError = connectionRetrying ? props.connectionError : null;
-  const retryConnectionError = useDelayedStatus(
-    `${props.environmentId}:${retryError !== null}`,
-    retryError,
-    RECONNECT_ERROR_DELAY_MS,
-  );
   const interruptThreadTurn = useAtomCommand(threadEnvironment.interruptTurn, {
     reportFailure: false,
   });
@@ -768,9 +757,40 @@ function ThreadDetailBody(
       );
     }
   };
+  const lifecycleEvent = ((): ThreadLifecycleEvent | null => {
+    if (contentPresentationKind !== "ready" || !(lifecycleSnoozed || settled || woke)) return null;
+    const actionLabel = lifecycleSnoozed ? "Wake now" : settled ? "Un-settle" : "Dismiss";
+    const wake =
+      lifecycleSnoozed && snoozedUntil !== null
+        ? snoozeWakeLabel(snoozedUntil, { now: lifecycleNow })
+        : "now";
+    return {
+      state: lifecycleSnoozed ? "snoozed" : settled ? "settled" : "woke",
+      label: lifecycleSnoozed
+        ? wake === "now"
+          ? "Snoozed"
+          : `Snoozed, ${wake} left`
+        : settled
+          ? "Settled"
+          : "Woke from snooze",
+      action: {
+        label: statusPending
+          ? lifecycleSnoozed
+            ? "Waking..."
+            : settled
+              ? "Un-settling..."
+              : "Dismissing..."
+          : actionLabel,
+        accessibilityLabel: actionLabel,
+        disabled: !props.canOperateThread || statusPending,
+        onPress: () =>
+          void runStatusAction(lifecycleSnoozed ? "wake" : settled ? "unsettle" : "dismiss"),
+      },
+    };
+  })();
   const floatingStatus = ((): FloatingWorkingStatus | null => {
     const connectionStatus = connectionFloatingStatus({
-      connectionError: connectionRetrying ? retryConnectionError : props.connectionError,
+      connectionError: props.connectionError,
       connectionState: props.connectionStateLabel,
       environmentLabel: props.environmentLabel,
       onReconnect: props.onReconnectEnvironment,
@@ -827,16 +847,6 @@ function ThreadDetailBody(
         },
       };
     }
-    if (props.isCompacting && contentPresentationKind === "ready") {
-      return { kind: "compacting" };
-    }
-    if (props.activeWorkStartedAt !== null && contentPresentationKind === "ready") {
-      return {
-        kind: "working",
-        environmentId: props.environmentId,
-        startedAt: props.activeWorkStartedAt,
-      };
-    }
     if (pendingBackgroundWork !== null && contentPresentationKind === "ready") {
       return {
         kind: "background",
@@ -860,34 +870,6 @@ function ThreadDetailBody(
         },
       };
     }
-    if (contentPresentationKind === "ready" && (lifecycleSnoozed || settled || woke)) {
-      const state = lifecycleSnoozed ? "snoozed" : settled ? "settled" : "woke";
-      const label =
-        lifecycleSnoozed && snoozedUntil !== null
-          ? `Snoozed, wakes in ${snoozeWakeLabel(snoozedUntil, { now: lifecycleNow })}`
-          : settled
-            ? "Settled"
-            : "Woke from snooze";
-      const actionLabel = lifecycleSnoozed ? "Wake now" : settled ? "Un-settle" : "Dismiss";
-      return {
-        kind: "lifecycle",
-        state,
-        label,
-        action: {
-          label: statusPending
-            ? lifecycleSnoozed
-              ? "Waking..."
-              : settled
-                ? "Un-settling..."
-                : "Dismissing..."
-            : actionLabel,
-          accessibilityLabel: actionLabel,
-          disabled: !props.canOperateThread || statusPending,
-          onPress: () =>
-            void runStatusAction(lifecycleSnoozed ? "wake" : settled ? "unsettle" : "dismiss"),
-        },
-      };
-    }
     if (props.selectedThread.goal !== null && contentPresentationKind === "ready") {
       const goal = presentProviderGoal(props.selectedThread.goal, false);
       return {
@@ -902,23 +884,12 @@ function ThreadDetailBody(
     return null;
   })();
   const showWorkingControl = floatingStatus !== null;
-  // A pending message holds the pill's row for its Starting/Working pill. Worktree setup reports
-  // progress in the feed instead, so holding the row there only leaves a gap that later closes.
-  const worktreeSetupInFeed =
-    props.worktreeSetup?.snapshot.phase === "running" ||
-    (props.creationState?.kind === "preparing" && props.creationState.preparingWorktree);
   const showFloatingStatus =
     showWorkingControl ||
     queuedCount > 0 ||
     agentsSegment !== null ||
     devicePreviews.length > 0 ||
-    browserTabs.tabs.length > 0 ||
-    props.connectionStateLabel !== "connected" ||
-    (!worktreeSetupInFeed &&
-      (props.queuedMessages.length > 0 ||
-        props.selectedThreadFeed.some(
-          (entry) => "acknowledged" in entry && entry.acknowledged === true,
-        )));
+    browserTabs.tabs.length > 0;
   const selectedThreadFeed = props.selectedThreadFeed;
   // A palette message result opens the thread at that message: earlier
   // history loads until the message is in the feed, which then scrolls to it.
@@ -1506,6 +1477,7 @@ function ThreadDetailBody(
                   workspaceRoot={props.threadCwd}
                   feed={props.selectedThreadFeed}
                   pendingHandoff={props.pendingHandoff}
+                  lifecycleEvent={lifecycleEvent}
                   worktreeSetup={props.worktreeSetup}
                   setupWorkingStartedAt={props.setupWorkingStartedAt}
                   preparingWorktree={
@@ -1633,11 +1605,7 @@ function ThreadDetailBody(
                     status={floatingStatus}
                     extensionStatus={
                       floatingStatus !== null &&
-                      (floatingStatus.kind === "working" ||
-                        floatingStatus.kind === "compacting" ||
-                        floatingStatus.kind === "background" ||
-                        floatingStatus.kind === "goal" ||
-                        floatingStatus.kind === "lifecycle")
+                      (floatingStatus.kind === "background" || floatingStatus.kind === "goal")
                         ? extensionStatus
                         : null
                     }
