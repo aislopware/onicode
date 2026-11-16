@@ -299,8 +299,11 @@ export function useEnvironmentSpeechInput(input: HookInput) {
     if (session.state.phase === "recording") void session.stop();
   });
 
+  // A hold-to-record shortcut released after a thread switch must still end the recording it began.
+  const recordedOwnerRef = useRef<string | null>(null);
   const createTarget = useStableCallback((): VoiceInputTarget => {
     const owner = latestRef.current.input.ownerKey;
+    recordedOwnerRef.current = owner;
     const readContext = () => {
       const current = latestRef.current;
       return {
@@ -528,7 +531,11 @@ export function useEnvironmentSpeechInput(input: HookInput) {
     freezesEditor: voiceInputBlocksSubmission(state),
     start,
     submitAfterDictation,
-    stop: useStableCallback(() => (owns && session ? session.stop() : Promise.resolve())),
+    stop: useStableCallback(() =>
+      session && (owns || session.ownerKey === recordedOwnerRef.current)
+        ? session.stop()
+        : Promise.resolve(),
+    ),
     cancel: useStableCallback(() => {
       pendingSubmissionRef.current = null;
       startRequestRef.current += 1;
