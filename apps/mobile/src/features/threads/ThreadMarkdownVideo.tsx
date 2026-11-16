@@ -48,6 +48,8 @@ export const ThreadMediaRetainContext = createContext<(retained: boolean) => voi
 
 export function ThreadMarkdownVideo(props: {
   readonly source: MediaVideoPreviewSource;
+  /** Keeps the player and its poster across source changes that show the same video. */
+  readonly thumbnailKey?: string;
   readonly thumbnailVisible?: boolean;
   readonly onPlaybackStart?: () => void;
   readonly borderRadius?: number;
@@ -55,7 +57,7 @@ export function ThreadMarkdownVideo(props: {
   const { source } = props;
   const feedVisible = useThreadMediaVisible();
   const visible = props.thumbnailVisible ?? feedVisible;
-  const thumbnailKey = mediaVideoThumbnailKey(source);
+  const thumbnailKey = props.thumbnailKey ?? mediaVideoThumbnailKey(source);
   const asset = useAssetUrlState(
     "environmentId" in source ? source.environmentId : null,
     "resource" in source ? source.resource : null,
