@@ -2140,3 +2140,4 @@ eeae88de5c	take	relocated cloud/serviceProtection* to Onicode's service/serviceP
 6234afba12	take	fix(mobile): thread context menu offers Mark unread (#37426)
 94c0784d7c	take	fix(server): a timed-out branch totals diff is not rerun until HEAD or its base moves (#37455)
 ddb7fb3f50	take	fix(cli): onicode pair --tailscale names the operator fix when Tailscale denies Serve (#37466); test runtime state uses Onicode's dev: false (no devUrl)
+82ce7456de	take	fix(server): fx and Muse refreshes drop models they no longer list (#37457)
