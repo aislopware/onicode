@@ -1,3 +1,4 @@
+import { resolvePathLinkTarget } from "@onicode/shared/fileLinks";
 import { clientHostEnvironmentAtom } from "../state/clientHostEnvironment";
 import { buildFileLinkParentSuffixByPath, fileLinkLabel } from "@onicode/shared/fileLinks";
 import {
@@ -937,6 +938,9 @@ function useChatMarkdownState({
                     markdownFileEditorTarget(fileLinkMeta, await resolveHostPath()),
                   )
               : undefined
+        }
+        resolveDragPath={async () =>
+          resolvePathLinkTarget((await resolveHostPath()).absolutePath, cwd ?? "")
         }
         resolveCopyPaths={async () =>
           markdownFileCopyPaths(fileLinkMeta, await resolveHostPath(), cwd)
