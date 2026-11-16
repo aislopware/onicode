@@ -81,6 +81,7 @@ import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { modelSelectionsEqual } from "@onicode/shared/model";
 import { modelSwitchSince } from "./modelSwitch.ts";
 import { isPlaceholderThreadTitle } from "./placeholderThreadTitle.ts";
+import { canRefreshGeneratedTitle } from "./threadTitleRefresh.ts";
 import { combinePullRequestWatchWakes, type PullRequestWatchWake } from "./pullRequestWatch.ts";
 import { recordThreadOpen } from "@onicode/shared/paletteSearch";
 import {
@@ -630,6 +631,7 @@ function commandThreadId(command: OrchestrationV2ServerCommand): ThreadId {
     case "thread.pull-request-watch.checks-reopen":
     case "thread.pull-request.sync":
     case "thread.title.regeneration.complete":
+    case "thread.title.refresh":
     case "thread.project.adopt-folder":
     case "thread.runtime-mode.set":
     case "thread.interaction-mode.set":
@@ -694,7 +696,7 @@ function pendingThreadTitleGenerationEffect(
   threadId: ThreadId,
   kind:
     | { readonly type: "initial"; readonly messageId: MessageId }
-    | { readonly type: "regenerate" },
+    | { readonly type: "regenerate" | "refresh" },
 ): PendingOrchestrationEffectV2 {
   return {
     id: `effect:${commandId}:thread-title.generate`,
@@ -4020,6 +4022,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           | "thread.pull-request-watch.checks-reopen"
           | "thread.pull-request.sync"
           | "thread.title.regeneration.complete"
+          | "thread.title.refresh"
           | "thread.runtime-mode.set"
           | "thread.interaction-mode.set"
           | "thread.model-selection.set"
@@ -4787,6 +4790,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
               : command.regenerateTitle === false || command.title !== undefined
                 ? { titleRegeneration: null }
                 : {}),
+            ...(command.title === undefined ? {} : { generatedTitle: null }),
             updatedAt: now,
           };
         }
@@ -5030,11 +5034,38 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 }),
             updatedAt: thread.updatedAt,
           };
+        case "thread.title.refresh":
+          return canRefreshGeneratedTitle(thread)
+            ? {
+                ...thread,
+                titleRegeneration: { requestId: command.commandId, startedAt: now },
+                // Covered from the start, so a generation that fails waits for the thread to grow.
+                generatedTitle: {
+                  needsRefinement: thread.generatedTitle.needsRefinement,
+                  refinements:
+                    thread.generatedTitle.refinements +
+                    (thread.generatedTitle.needsRefinement ? 1 : 0),
+                  coveredAt: now,
+                },
+                updatedAt: now,
+              }
+            : thread;
         case "thread.title.regeneration.complete":
           return thread.titleRegeneration?.requestId === command.requestId
             ? {
                 ...thread,
                 ...(command.title === undefined ? {} : { title: command.title }),
+                ...(command.generated === undefined
+                  ? {}
+                  : {
+                      generatedTitle: {
+                        needsRefinement: command.generated.needsRefinement,
+                        refinements: thread.generatedTitle?.refinements ?? 0,
+                        coveredAt: command.generated.readWholeThread
+                          ? thread.titleRegeneration.startedAt
+                          : null,
+                      },
+                    }),
                 ...(command.outcome === undefined
                   ? {}
                   : {
@@ -5062,6 +5093,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           };
       }
     })();
+    if (command.type === "thread.title.refresh" && updatedThread === thread) return;
     if (command.type === "thread.pull-request-watch.checks-reopen") {
       if (updatedThread === thread) return;
       yield* emit(
@@ -5127,6 +5159,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return "thread.marked-unread" as const;
         case "thread.metadata.update":
         case "thread.title.regeneration.complete":
+        case "thread.title.refresh":
           return "thread.metadata-updated" as const;
         case "thread.pull-request.link":
         case "thread.pull-request.unlink":
@@ -5218,6 +5251,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...existing,
         pendingThreadTitleGenerationEffect(command.commandId, command.threadId, {
           type: "regenerate",
+        }),
+      ]);
+    }
+    if (command.type === "thread.title.refresh") {
+      yield* Ref.update(effects, (existing) => [
+        ...existing,
+        pendingThreadTitleGenerationEffect(command.commandId, command.threadId, {
+          type: "refresh",
         }),
       ]);
     }
@@ -6944,6 +6985,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ...projection.thread,
         title: command.titleSeed ?? projection.thread.title,
         titleRegeneration: { requestId: command.commandId, startedAt: now },
+        // Unknown until the generator answers, so a generation that fails is tried again.
+        generatedTitle: { needsRefinement: true, refinements: 0, coveredAt: null },
         updatedAt: now,
       };
       const event = yield* emit(
@@ -14931,6 +14974,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       case "thread.pull-request.watch":
       case "thread.pull-request.sync":
       case "thread.title.regeneration.complete":
+      case "thread.title.refresh":
       case "thread.runtime-mode.set":
       case "thread.interaction-mode.set":
       case "thread.model-selection.set":
@@ -15300,6 +15344,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           command.type === "thread.visit" ||
           // A read can answer a watch again before a push's reopen lands; nothing is left to clear.
           command.type === "thread.pull-request-watch.checks-reopen" ||
+          // The title was renamed by hand, or another generation is already running.
+          command.type === "thread.title.refresh" ||
           command.type === "thread.interrupt.unresponsive" ||
           command.type === "thread.stop" ||
           command.type === "subagent.stop" ||

@@ -104,6 +104,7 @@ await Effect.runPromise(
           message,
           ...("projectTitle" in fixture ? { projectTitle: fixture.projectTitle } : {}),
           previousTitle: values.initial ? undefined : fixture.previousTitle,
+          ...("automatic" in fixture && !values.initial ? { automatic: fixture.automatic } : {}),
           attachments,
           linkedContext,
           modelSelection: { instanceId: ProviderInstanceId.make("codex"), model },

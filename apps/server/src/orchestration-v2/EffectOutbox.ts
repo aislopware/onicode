@@ -130,6 +130,7 @@ export const OrchestrationEffectRequestV2 = Schema.Union([
     kind: Schema.Union([
       Schema.Struct({ type: Schema.Literal("initial"), messageId: MessageId }),
       Schema.Struct({ type: Schema.Literal("regenerate") }),
+      Schema.Struct({ type: Schema.Literal("refresh") }),
     ]),
   }),
   Schema.Struct({

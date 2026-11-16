@@ -118,7 +118,12 @@ If dragging is unavailable for one environment, update the Onicode server runnin
 environment. Pinned and active reordering require server support. Threads from older servers keep
 their default order until the server is updated.
 
-To generate a fresh title from the conversation, open a thread's menu and choose
+Onicode titles a new thread from your first message. When that message does not say what the
+thread is about, such as a pasted link, the title is rewritten once the agent has read it. The
+title is checked again after the thread has been quiet for 15 minutes and when the thread settles,
+and it changes only if it no longer describes the thread. A thread you rename keeps your name.
+
+To generate a fresh title from the conversation yourself, open a thread's menu and choose
 **Regenerate title**. The action is unavailable while title generation is in progress
 or when the connected environment needs a server update.
 

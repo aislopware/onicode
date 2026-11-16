@@ -39,7 +39,8 @@ export class ThreadTitleRegenerationService extends Context.Service<
       readonly requestId: CommandId;
       readonly kind:
         | { readonly type: "initial"; readonly messageId: MessageId }
-        | { readonly type: "regenerate" };
+        // `refresh` is a regeneration the server started, so it reports no outcome to a client.
+        | { readonly type: "regenerate" | "refresh" };
     }) => Effect.Effect<
       void,
       | OrchestratorV2Error
@@ -51,8 +52,8 @@ export class ThreadTitleRegenerationService extends Context.Service<
 >()("onicode/orchestration-v2/ThreadTitleRegenerationService") {}
 
 type Outcome =
-  | { readonly status: "renamed"; readonly title: string }
-  | { readonly status: "unchanged" }
+  | { readonly status: "renamed"; readonly title: string; readonly needsRefinement: boolean }
+  | { readonly status: "unchanged"; readonly needsRefinement: boolean }
   | { readonly status: "failed"; readonly message: string };
 
 const MAX_FAILURE_MESSAGE_LENGTH = 300;
@@ -84,7 +85,7 @@ const make = Effect.gen(function* () {
   const complete = (input: {
     readonly threadId: ThreadId;
     readonly requestId: CommandId;
-    readonly kind: { readonly type: "initial" | "regenerate" };
+    readonly kind: { readonly type: "initial" | "regenerate" | "refresh" };
     readonly outcome: Outcome;
   }) =>
     threads
@@ -94,6 +95,14 @@ const make = Effect.gen(function* () {
         threadId: input.threadId,
         requestId: input.requestId,
         ...(input.outcome.status === "renamed" ? { title: input.outcome.title } : {}),
+        ...(input.outcome.status === "failed"
+          ? {}
+          : {
+              generated: {
+                needsRefinement: input.outcome.needsRefinement,
+                readWholeThread: input.kind.type !== "initial",
+              },
+            }),
         ...(input.kind.type === "regenerate"
           ? {
               outcome: {
@@ -223,17 +232,20 @@ const make = Effect.gen(function* () {
         message: context.message,
         projectTitle: project.value.title,
         attachments: context.attachments,
-        ...(input.kind.type === "regenerate" ? { previousTitle: projection.thread.title } : {}),
+        ...(input.kind.type === "initial" ? {} : { previousTitle: projection.thread.title }),
+        ...(input.kind.type === "refresh" ? { automatic: true } : {}),
         ...(inherited === undefined ? {} : { forkSource: inherited }),
         instructions: settings.threadTitleInstructions,
         modelSelection: settings.textGenerationModelSelection,
         projectId: projection.thread.projectId,
       });
       const generatedTitle = result.title.trim();
+      // The placeholder is the generator saying it has nothing to name the thread by.
+      const needsRefinement = result.needsRefinement === true || generatedTitle === "New thread";
       return generatedTitle === "New thread" ||
-        (input.kind.type === "regenerate" && generatedTitle === projection.thread.title.trim())
-        ? { status: "unchanged" as const }
-        : { status: "renamed" as const, title: result.title };
+        (input.kind.type !== "initial" && generatedTitle === projection.thread.title.trim())
+        ? { status: "unchanged" as const, needsRefinement }
+        : { status: "renamed" as const, title: result.title, needsRefinement };
     }).pipe(
       Effect.retry({
         times: input.kind.type === "initial" ? 2 : 0,

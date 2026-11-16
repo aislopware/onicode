@@ -152,12 +152,110 @@ export const threadTitleEvaluationCases = [
     ],
     rubric: "Name the default config on init. Leave out Hyperdrive, the project name.",
   },
+  {
+    id: "refresh-link-opening",
+    source: "Maintainer report: a thread opened with only a Slack link kept a title about the link",
+    request: "Plan the work a linked Slack thread asks for.",
+    automatic: true,
+    previousTitle: "Slack Thread Check for Planning",
+    messages: [
+      {
+        role: "user",
+        text: "https://acme.slack.com/archives/C0123456789/p1700000000000100 check this so we can plan it",
+      },
+      {
+        role: "assistant",
+        text: "The thread asks for three changes to the mobile apps: encrypt the local key-value store, add a forced-update gate on launch, and add a maintenance mode the backend can switch on. I drafted a plan with the storage encryption first, since the other two read from that store.",
+      },
+    ],
+    rubric:
+      "Name the planned work: storage encryption, forced update, maintenance mode, or an umbrella for them. A title that still speaks of a Slack thread or link fails.",
+  },
+  {
+    id: "refresh-keeps-accurate",
+    source: "Control for automatic refresh: most refreshes reworded a title that was already right",
+    request: "Fix a window flicker, then review, merge, and release the fix.",
+    automatic: true,
+    previousTitle: "Fix Intermittent Window Flicker",
+    messages: [
+      {
+        role: "user",
+        text: "The whole window flickers once in a while, for example while scrolling. I cannot reproduce it on demand. Find the cause and fix it.",
+      },
+      {
+        role: "assistant",
+        text: "The flicker comes from the compositor dropping the backing layer when a sidebar row animates opacity during a scroll. I moved that animation to a transform and the layer now stays alive.",
+      },
+      { role: "user", text: "Open a PR and fix whatever the review bot finds." },
+      {
+        role: "assistant",
+        text: "The PR is open. The bot found one unused import, which I removed. All checks pass.",
+      },
+      { role: "user", text: "Merge it and cut a release." },
+    ],
+    rubric:
+      "Return the previous title unchanged, character for character. The thread is still about the window flicker; a reworded or sharpened title fails.",
+  },
+  {
+    id: "refresh-subject-moved",
+    source: "Maintainer report: a thread kept its first title after the user changed the topic",
+    request: "A release-readiness question turns into a Live Activity redesign.",
+    automatic: true,
+    previousTitle: "Notification Status in Current Release",
+    messages: [
+      { role: "user", text: "If we release the current build, do notifications work yet?" },
+      {
+        role: "assistant",
+        text: "Yes. Push delivery and tap-through both work in the current build.",
+      },
+      {
+        role: "user",
+        text: "Good. Different thing now: the Live Activity looks cramped. Redesign it with our own status colours and uniform rows.",
+      },
+      {
+        role: "assistant",
+        text: "The Live Activity now uses a black card, one row per working thread, and status colours that match the app.",
+      },
+      { role: "user", text: "Make the rows the same height and show me captures of each state." },
+    ],
+    rubric:
+      "Name the Live Activity redesign. The release-readiness question was answered and left behind, so keeping the previous title fails.",
+  },
+  {
+    id: "refresh-missed-subject",
+    source: "Maintainer report: a ticket-check title outlived the crash fix the thread became",
+    request: "A check of a ticket's remaining work becomes a crash fix.",
+    automatic: true,
+    previousTitle: "ACME-164 Remaining Work Check",
+    messages: [
+      {
+        role: "user",
+        text: "https://tracker.acme.example/projects/ACME/work_packages/ACME-164 what is still open in this ticket?",
+      },
+      {
+        role: "assistant",
+        text: "Two crashes from the 5.1.8 crash report are still open in ACME-164: a null place id in address autocomplete, and a double navigation pop in checkout.",
+      },
+      {
+        role: "user",
+        text: "Start a branch for the address autocomplete crash. Reproduce it first, then fix it and add a test.",
+      },
+      {
+        role: "assistant",
+        text: "Reproduced: selecting a suggestion while the session token refreshes passes a null place id. The fix guards the selection and a new test covers the refresh race.",
+      },
+    ],
+    rubric:
+      "Name the address autocomplete crash fix. It may keep ACME-164. A title that only says a ticket is being checked fails.",
+  },
 ] satisfies ReadonlyArray<{
   id: string;
   source: string;
   request: string;
   projectTitle?: string;
   previousTitle: string;
+  /** Titles the thread as the server's own refresh does, which keeps a title that is still right. */
+  automatic?: boolean;
   messages: ReadonlyArray<ThreadTitleMessage>;
   rubric: string;
 }>;
