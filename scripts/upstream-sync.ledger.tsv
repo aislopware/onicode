@@ -2173,3 +2173,4 @@ d6e574f7db	take	fix(mobile): a settled thread's gap closes right away on every t
 f6ef6c1f28	take	fix(mobile): a tab's first visit appears whole; screens fork oni.53 carries t3.58's contentReady/animatesPush; build-number label skipped
 183029dee8	skip	T3 mobile EAS iOS preview pipeline on Blacksmith (preview workflows, preview comment scripts); Onicode has no EAS preview workflows, and the ci.yml hunk only toggles that pipeline
 d6672df273	take	test(acp-registry): Kimi outcome test waits for each poll before advancing the clock (kept Onicode's environment argument)
+56f41466f5	take	fix(web): sending a new thread's first message no longer scrolls the sidebar (scenario adapted to desktop harness)
