@@ -332,7 +332,11 @@ export function useEnvironmentSpeechInput(input: HookInput) {
           persistent?.commitStoredText(text);
           return;
         }
-        if (latestRef.current.input.disabled) return;
+        // Back on a draft that was disabled while it recorded off screen, keep the words.
+        if (latestRef.current.input.disabled) {
+          persistent?.commitStoredText(text);
+          return;
+        }
         latestRef.current.input.commitDraft(text, selection);
         if (pendingSubmissionRef.current?.ownerKey === owner)
           pendingSubmissionRef.current.text = text;
