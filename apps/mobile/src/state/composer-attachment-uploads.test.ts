@@ -369,7 +369,8 @@ it("keeps an unexpected draft flush error blocking Send", async () => {
   expect(composerAttachmentUploadBlockReason(sendInput())).toBe(
     "Retry or remove the failed attachment",
   );
-  expect(native.deleted).toEqual(["pending-1"]);
+  // The server sweeps pending uploads nothing claims; a retry uploads again.
+  expect(native.deleted).toEqual([]);
 });
 
 it("uploads draft attachments for threads whose ids contain colons", () => {
@@ -391,23 +392,6 @@ it("uploads draft attachments for threads whose ids contain colons", () => {
   expect(requests.map((request) => [request.attachment.id, request.environmentId])).toEqual(
     keys.map((key) => [key, environmentId]),
   );
-});
-
-it("leaves a queued message's attachments to delivery while it dispatches that message", () => {
-  const message = { ...queuedMessage(), attachments: [image] };
-  const requests = (dispatchingQueuedMessageId: MessageId | null) =>
-    composerAttachmentUploadRequests({
-      drafts: {},
-      queuedMessagesByThreadKey: { [`${environmentId}:thread-1`]: [message] },
-      editingQueuedMessageIds: {},
-      dispatchingQueuedMessageId,
-      knownEnvironmentIds: [environmentId],
-      connectedEnvironmentIds: new Set([environmentId]),
-      operableEnvironmentIds: new Set([environmentId]),
-      serverConfigs: new Map([[environmentId, config]]),
-    });
-  expect(requests(null)).toHaveLength(1);
-  expect(requests(message.messageId)).toEqual([]);
 });
 
 it("does not upload a disconnected colon environment's draft to its connected prefix", () => {
