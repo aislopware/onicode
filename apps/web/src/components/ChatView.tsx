@@ -396,7 +396,8 @@ import {
 } from "./chat/useSystemComposerBanners";
 import { useDraftHeroLayoutTransition } from "./chat/useDraftHeroLayoutTransition";
 import { useLocalDispatchState } from "./chat/useLocalDispatchState";
-import { draftFanoutSelectionsAtom, draftSendState } from "./chat/chatViewSend";
+import { draftSendState } from "./chat/chatViewSend";
+import { draftFanoutSelectionsAtom } from "./chat/draftFanoutSelections";
 import {
   isCompactCommandMessage,
   type LocalThreadErrorEntry,

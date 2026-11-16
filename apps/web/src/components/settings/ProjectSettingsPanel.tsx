@@ -18,6 +18,7 @@ import { lazy, Suspense, useRef, useState, type ReactNode } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { releaseProjectDraftUploads } from "../../lib/composerDraftUploads";
+import { carryFanoutSelections } from "../chat/draftFanoutSelections";
 import { persistClientSettingsUpdate, useClientSettings } from "../../hooks/useSettings";
 import { readLocalApi } from "../../localApi";
 import { derivePhysicalProjectKey } from "@onicode/client-runtime/state/project-grouping";
@@ -396,6 +397,7 @@ function ProjectDetail({
       );
       const projectDraftThread = draftStore.getDraftThreadByProjectRef(projectRef);
       if (projectDraftThread && remainingMember) {
+        carryFanoutSelections(projectDraftThread, remainingMember.environmentId);
         draftStore.setDraftThreadContext(projectDraftThread.draftId, {
           projectRef: scopeProjectRef(remainingMember.environmentId, remainingMember.id),
           environmentSelection: "manual",

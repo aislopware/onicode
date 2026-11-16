@@ -453,6 +453,21 @@ export class TailscaleServeHttpsDisabledError extends Schema.TaggedError<Tailsca
   }
 }
 
+/** Only Linux tailscaled has an operator; elsewhere a denied Serve config needs another fix. */
+export const isTailscaleOperatorDenial = (
+  cause: {
+    readonly _tag: string;
+    readonly stderrDiagnostic?: TailscaleStderrDiagnostic | undefined;
+  },
+  platform: NodeJS.Platform,
+): boolean =>
+  platform === "linux" &&
+  cause._tag === "TailscaleCommandExitError" &&
+  cause.stderrDiagnostic === "permission-denied";
+
+export const tailscaleOperatorHint = (nextStep: string): string =>
+  `Tailscale refused the Serve config because this user is not its operator. Run \`sudo tailscale set --operator=$USER\` once, then ${nextStep}.`;
+
 export const ensureTailscaleServe = Effect.fn("tailscale.ensureTailscaleServe")(function* (input: {
   readonly localPort: number;
   readonly servePort?: number;

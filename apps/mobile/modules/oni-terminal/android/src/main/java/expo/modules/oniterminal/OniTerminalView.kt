@@ -472,7 +472,7 @@ class OniTerminalView(context: Context, appContext: AppContext) : ExpoView(conte
 
   private fun emitResponse(response: ByteArray) {
     if (!readOnly && response.isNotEmpty()) {
-      onInput(mapOf("data" to String(response, Charsets.UTF_8)))
+      onInput(terminalInputEvent(response))
     }
   }
 

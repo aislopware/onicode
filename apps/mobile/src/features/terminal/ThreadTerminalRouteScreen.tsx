@@ -599,7 +599,7 @@ function ThreadTerminal(props: {
     },
   });
 
-  const writeChunk = async (data: string): Promise<boolean> => {
+  const writeChunk = async (data: string, binary?: true): Promise<boolean> => {
     if (
       !isRunning ||
       !readEnvironmentScope(selectedThread.environmentId, AuthTerminalOperateScope)
@@ -612,6 +612,7 @@ function ThreadTerminal(props: {
         threadId: selectedThread.id,
         terminalId,
         data,
+        ...(binary ? { binary } : {}),
       },
     });
     return result._tag === "Success";
@@ -649,8 +650,13 @@ function ThreadTerminal(props: {
     void writeInput(resolved.data);
   };
 
-  const handleInput = (data: string) => {
+  const handleInput = (data: string, binary?: true) => {
     if (data.length === 0) {
+      return;
+    }
+    // Mouse reports from the terminal itself, never typed, so a pending modifier waits.
+    if (binary) {
+      void pasteSession.input(data, (chunk) => writeChunk(chunk, true));
       return;
     }
 

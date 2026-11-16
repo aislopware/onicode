@@ -10,7 +10,6 @@ import {
   wasBootstrapThreadDeleted,
   wasBootstrapThreadNotCreated,
 } from "@onicode/client-runtime/errors";
-import { Atom } from "effect/reactivity";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
@@ -48,11 +47,7 @@ import {
 import { readPreparedConnection } from "../../state/session";
 import { recallComposerMessage } from "@onicode/client-runtime/composer-prompt-history";
 
-// Kept per route so a send in flight, and the multiple-model selections, survive
-// ChatView remounting while the user navigates.
-export const draftFanoutSelectionsAtom = Atom.family((_routeKey: string) =>
-  Atom.make<ReadonlyArray<ModelSelection> | null>(null).pipe(Atom.keepAlive),
-);
+// Kept per route so a send in flight survives ChatView remounting while the user navigates.
 const draftSendStateByRouteKey = new Map<
   string,
   {

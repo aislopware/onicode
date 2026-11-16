@@ -38,6 +38,7 @@ import { useEnvironments } from "../state/environments";
 import { projectEnvironment } from "../state/projects";
 import { useDebouncedValue } from "../state/queries";
 import { useEnvironmentQuery } from "../state/query";
+import { carryFanoutSelections } from "./chat/draftFanoutSelections";
 import { EnvironmentMachineIcon } from "./EnvironmentMachineIcon";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
@@ -196,6 +197,7 @@ function AddProjectToMachineDialog({ request }: { request: AddProjectToMachineRe
       draft.environmentId === request.projectRef.environmentId &&
       draft.projectId === request.projectRef.projectId
     ) {
+      carryFanoutSelections(draft, targetRef.environmentId);
       drafts.setDraftThreadContext(draftId, {
         projectRef: targetRef,
         environmentSelection: "manual",

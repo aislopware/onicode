@@ -198,9 +198,11 @@ import * as NetService from "@onicode/shared/Net";
 import {
   disableTailscaleServe,
   ensureTailscaleServe,
+  isTailscaleOperatorDenial,
   readTailscaleServeRootHolder,
   readTailscaleServeRoutesTo,
   readTailscaleStatus,
+  tailscaleOperatorHint,
 } from "@onicode/tailscale";
 import * as ServerActivation from "./serverActivation.ts";
 
@@ -869,6 +871,13 @@ const layerMakeServer = Layer.unwrap(
     );
     const tailscaleServeRootHolder = (target: { readonly host: string; readonly port: number }) =>
       readTailscaleServeRootHolder(config.tailscaleServePort, target);
+    // The log reaches CLI users; a desktop app shows the same message in its Settings.
+    const leaveTailscaleServeOff = (message: string, annotations: Record<string, unknown>) =>
+      Effect.logWarning(message, annotations).pipe(
+        Effect.andThen(DesktopTelemetryReceiver.DesktopTelemetryReceiver),
+        Effect.flatMap((receiver) => receiver.reportTailscaleServeProblem(message)),
+        Effect.ignore,
+      );
     const layerTailscaleServe = config.tailscaleServeEnabled
       ? Layer.effectDiscard(
           Effect.acquireRelease(
@@ -894,7 +903,7 @@ const layerMakeServer = Layer.unwrap(
                 port: localPort,
               }).pipe(Effect.orElseSucceed(() => "unreadable" as const));
               if (holder === "other" || holder === "unreadable") {
-                yield* Effect.logWarning(
+                yield* leaveTailscaleServeOff(
                   holder === "other"
                     ? "Tailscale Serve left off; its port already serves another server or app"
                     : "Tailscale Serve left off; its current routes could not be read",
@@ -902,6 +911,7 @@ const layerMakeServer = Layer.unwrap(
                 );
                 return route;
               }
+              const platform = yield* HostProcess.Platform;
               return yield* ensureTailscaleServe({
                 localPort,
                 servePort: config.tailscaleServePort,
@@ -915,11 +925,13 @@ const layerMakeServer = Layer.unwrap(
                   }),
                 ),
                 Effect.catch((cause) =>
-                  Effect.logWarning(
+                  leaveTailscaleServeOff(
                     cause._tag === "TailscaleCommandExitError" &&
                       cause.stderrDiagnostic === "unsupported-target"
                       ? `Tailscale Serve left off; this Tailscale install can only proxy to localhost, not ${localHost}. Bind --host 127.0.0.1 or 0.0.0.0 instead`
-                      : "Failed to configure Tailscale Serve",
+                      : isTailscaleOperatorDenial(cause, platform)
+                        ? tailscaleOperatorHint("restart Onicode")
+                        : "Failed to configure Tailscale Serve",
                     { cause, localPort, servePort: config.tailscaleServePort },
                   ).pipe(Effect.as(null)),
                 ),

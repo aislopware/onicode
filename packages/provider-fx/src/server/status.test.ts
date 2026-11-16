@@ -158,18 +158,31 @@ describe("checkFxProviderStatus", () => {
   );
 
   // A ready snapshot drops models it does not list, so only a real listing may report ready.
-  it.effect("treats `fx models` output without ids as a failed listing", () =>
-    Effect.gen(function* () {
-      const signedIn = JSON.stringify({ kind: "status", auth: "fx login" });
-      const reshaped = yield* check(signedIn, 0, JSON.stringify({ kind: "models", models: [] }));
-      assert.equal(reshaped.draft.status, "warning");
-      assert.deepEqual(
-        reshaped.draft.models.map((model) => model.slug),
-        ["default"],
-      );
+  it.effect(
+    "treats `fx models` output without ids, or with ids cut short, as an incomplete listing",
+    () =>
+      Effect.gen(function* () {
+        const signedIn = JSON.stringify({ kind: "status", auth: "fx login" });
+        const reshaped = yield* check(signedIn, 0, JSON.stringify({ kind: "models", models: [] }));
+        assert.equal(reshaped.draft.status, "warning");
+        assert.deepEqual(
+          reshaped.draft.models.map((model) => model.slug),
+          ["default"],
+        );
 
-      const empty = yield* check(signedIn, 0, JSON.stringify({ kind: "models", ids: [] }));
-      assert.equal(empty.draft.status, "ready");
-    }),
+        const empty = yield* check(signedIn, 0, JSON.stringify({ kind: "models", ids: [] }));
+        assert.equal(empty.draft.status, "ready");
+
+        const cut = yield* check(
+          signedIn,
+          0,
+          JSON.stringify({ kind: "models", more_count: 3, ids: ["anthropic/claude-opus-5.5"] }),
+        );
+        assert.equal(cut.draft.status, "warning");
+        assert.deepEqual(
+          cut.draft.models.map((model) => model.slug),
+          ["default", "anthropic/claude-opus-5.5"],
+        );
+      }),
   );
 });
