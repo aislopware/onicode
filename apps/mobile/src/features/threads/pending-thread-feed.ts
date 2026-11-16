@@ -151,9 +151,9 @@ export function appendAcceptedThreadMessages(
 }
 
 /**
- * Ends the feed with the rows a starting run will fill, while its last row is a sent message no
- * run has picked up: the fold slot and the live activity row, under the activity row's own key.
- * The run's rows then replace them in place instead of being inserted.
+ * Follows the sent message no run has picked up with the rows its run will fill: the fold slot
+ * and the live activity row, under the activity row's own key. Messages queued behind it stay
+ * after. The run's rows then replace them in place instead of being inserted.
  */
 export function createPendingTurnAppender() {
   let fold: PendingFoldFeedEntry | null = null;
@@ -162,15 +162,23 @@ export function createPendingTurnAppender() {
     feed: ReadonlyArray<PendingThreadFeedEntry>,
     options: { readonly zen: boolean; readonly dispatchingMessageId: string | null },
   ): ReadonlyArray<PendingThreadFeedEntry | PendingFoldFeedEntry> => {
-    const last = feed.at(-1);
+    // Queued behind a lost connection or missing access, a message is waiting, not sending.
+    let anchorIndex = -1;
+    for (let index = feed.length - 1; index >= 0; index -= 1) {
+      const entry = feed[index];
+      if (entry?.type !== "message" || entry.pendingMessage === undefined) break;
+      if (entry.acknowledged || entry.pendingMessage.messageId === options.dispatchingMessageId) {
+        anchorIndex = index;
+        break;
+      }
+    }
+    const anchor = feed[anchorIndex];
     if (
-      last?.type !== "message" ||
-      last.message.role !== "user" ||
-      last.pendingMessage === undefined ||
-      last.pendingMessage.creation !== undefined ||
-      // Queued behind a lost connection or missing access, it is waiting, not sending.
-      (!last.acknowledged && last.pendingMessage.messageId !== options.dispatchingMessageId) ||
-      isCompactionCommandMessage(last.message) ||
+      anchor?.type !== "message" ||
+      anchor.message.role !== "user" ||
+      anchor.pendingMessage === undefined ||
+      anchor.pendingMessage.creation !== undefined ||
+      isCompactionCommandMessage(anchor.message) ||
       feed.some(
         (entry) =>
           (entry.type === "run-fold" && entry.workingSince !== undefined) ||
@@ -179,26 +187,29 @@ export function createPendingTurnAppender() {
     ) {
       return feed;
     }
-    const label = last.acknowledged ? "Starting…" : "Sending…";
-    if (activity?.createdAt !== last.createdAt || activity.label !== label) {
+    const label = anchor.acknowledged ? "Starting…" : "Sending…";
+    if (activity?.createdAt !== anchor.createdAt || activity.label !== label) {
       activity = {
         type: "thinking",
         id: LIVE_ACTIVITY_ROW_ID,
-        createdAt: last.createdAt,
+        createdAt: anchor.createdAt,
         runId: null,
         label,
       };
     }
-    if (options.zen) return [...feed, activity];
-    if (fold?.messageId !== last.id) {
-      fold = {
-        type: "pending-fold",
-        id: `pending-fold:${last.id}`,
-        createdAt: last.createdAt,
-        messageId: last.id,
-      };
+    let rows: ReadonlyArray<PendingFoldFeedEntry | typeof activity> = [activity];
+    if (!options.zen) {
+      if (fold?.messageId !== anchor.id) {
+        fold = {
+          type: "pending-fold",
+          id: `pending-fold:${anchor.id}`,
+          createdAt: anchor.createdAt,
+          messageId: anchor.id,
+        };
+      }
+      rows = [fold, activity];
     }
-    return [...feed, fold, activity];
+    return [...feed.slice(0, anchorIndex + 1), ...rows, ...feed.slice(anchorIndex + 1)];
   };
 }
 
