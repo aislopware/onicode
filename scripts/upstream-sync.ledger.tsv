@@ -2163,3 +2163,4 @@ e5b6c96a46	take	fix(pi): restore selected model after native extension switches
 506a0438a3	take	fix(web): keep Pi and ACP model selections during catalog gaps; scenario ported to the desktop target
 16695c812f	take	feat(mobile): move Language into General settings
 35a172883c	take	fix(pi): report failed manual compaction as a failed turn
+47f90ee2e9	take	fix(server): end pending ACP tools when their prompt fails (test conflict was formatting only)
