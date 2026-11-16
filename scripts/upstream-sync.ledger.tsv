@@ -2193,3 +2193,4 @@ ab8ff33a16	take	fix(mobile): Duo scroll views recheck their bleed after a fold
 023620d3a5	take	fix(server): Codex health checks no longer kill ssh mid SSH-agent request
 5a20d59db3	take	fix(shell): Windows PATH probe reads User and Machine registry
 83e3c4f60d	take	fix(web): published themes keep their CSS when a saved theme shares the id; scenario ported to the desktop target
+1ae5590a32	take	fix(web): find in thread no longer announces streamed count refreshes
