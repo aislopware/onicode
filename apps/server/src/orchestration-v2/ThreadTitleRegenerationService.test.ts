@@ -870,4 +870,112 @@ describe("ThreadTitleRegenerationService", () => {
       }).pipe(Effect.provide(harness.layer));
     }),
   );
+
+  it.effect("refreshes a generated title from the thread until it is renamed by hand", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      harness.generateThreadTitle
+        .mockReturnValueOnce(Effect.succeed({ title: "Slack Thread Check", needsRefinement: true }))
+        .mockReturnValueOnce(Effect.succeed({ title: "Keycloak Upgrade Plan" }));
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const outbox = yield* EffectOutbox.EffectOutboxV2;
+        const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+        const threadId = yield* createThread({
+          command: "command:title:refresh:create",
+          thread: "thread:title:refresh",
+        });
+        const refresh = (command: string) =>
+          threads
+            .dispatch({
+              type: "thread.title.refresh",
+              commandId: CommandId.make(command),
+              threadId,
+            })
+            .pipe(Effect.as(CommandId.make(command)));
+        const generatedTitle = threads
+          .getThreadProjection(threadId)
+          .pipe(Effect.map((projection) => projection.thread.generatedTitle));
+
+        yield* refresh("command:title:refresh:untitled");
+        assert.isNotOk((yield* threads.getThreadProjection(threadId)).thread.titleRegeneration);
+
+        const initialRequest = CommandId.make("command:title:refresh:message");
+        yield* threads.dispatch({
+          type: "message.dispatch",
+          commandId: initialRequest,
+          threadId,
+          messageId: MessageId.make("message:title:refresh"),
+          text: "check https://example.slack.com/archives/C1/p2",
+          titleSeed: "Seed title",
+          attachments: [],
+          modelSelection,
+          dispatchMode: { type: "defer_start" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        // A generation that never answers leaves the subject unknown, so a refresh retries it.
+        assert.deepEqual(yield* generatedTitle, {
+          needsRefinement: true,
+          refinements: 0,
+          coveredAt: null,
+        });
+        yield* titleRegeneration.execute({
+          threadId,
+          requestId: initialRequest,
+          kind: { type: "initial", messageId: MessageId.make("message:title:refresh") },
+        });
+        assert.deepEqual(yield* generatedTitle, {
+          needsRefinement: true,
+          refinements: 0,
+          coveredAt: null,
+        });
+
+        const refreshRequest = yield* refresh("command:title:refresh:1");
+        assert.deepEqual(
+          (yield* outbox.listByCommandId(refreshRequest)).map((effect) => effect.request),
+          [{ type: "thread-title.generate", kind: { type: "refresh" } }],
+        );
+        const started = (yield* threads.getThreadProjection(threadId)).thread;
+        assert.equal(started.titleRegeneration?.requestId, refreshRequest);
+        assert.deepEqual(started.generatedTitle, {
+          needsRefinement: true,
+          refinements: 1,
+          coveredAt: started.titleRegeneration?.startedAt ?? null,
+        });
+        yield* titleRegeneration.execute({
+          threadId,
+          requestId: refreshRequest,
+          kind: { type: "refresh" },
+        });
+        assert.deepInclude(harness.generateThreadTitle.mock.calls[1]?.[0], {
+          previousTitle: "Slack Thread Check",
+          automatic: true,
+        });
+        const refreshed = (yield* threads.getThreadProjection(threadId)).thread;
+        assert.equal(refreshed.title, "Keycloak Upgrade Plan");
+        assert.isNotOk(refreshed.titleRegeneration);
+        // Only a regeneration someone asked for reports its outcome to a client.
+        assert.isNotOk(refreshed.lastTitleRegeneration);
+        assert.deepEqual(refreshed.generatedTitle, {
+          needsRefinement: false,
+          refinements: 1,
+          coveredAt: started.titleRegeneration?.startedAt ?? null,
+        });
+
+        yield* threads.dispatch({
+          type: "thread.metadata.update",
+          commandId: CommandId.make("command:title:refresh:rename"),
+          threadId,
+          title: "My own name",
+        });
+        yield* refresh("command:title:refresh:2");
+        const renamed = (yield* threads.getThreadProjection(threadId)).thread;
+        assert.equal(renamed.title, "My own name");
+        assert.isNull(renamed.generatedTitle);
+        assert.isNotOk(renamed.titleRegeneration);
+        assert.equal(harness.generateThreadTitle.mock.calls.length, 2);
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
 });

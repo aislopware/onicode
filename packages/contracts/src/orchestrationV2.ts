@@ -460,6 +460,20 @@ const OrchestrationV2LastTitleRegeneration = Schema.Struct({
   completedAt: Schema.DateTimeUtc,
 });
 
+/**
+ * Present while the title generator owns the title, so the server may refresh it as the thread
+ * grows. A rename by hand clears it. Absent on threads titled before refreshes existed.
+ */
+export const OrchestrationV2GeneratedTitle = Schema.Struct({
+  /** The generator could not tell the subject yet, as with a link nobody has read. */
+  needsRefinement: Schema.Boolean,
+  /** Refreshes spent on an unknown subject, to bound them. */
+  refinements: NonNegativeInt,
+  /** When the generator last read the whole thread. Null while it has seen only the first message. */
+  coveredAt: Schema.NullOr(Schema.DateTimeUtc),
+});
+export type OrchestrationV2GeneratedTitle = typeof OrchestrationV2GeneratedTitle.Type;
+
 export const OrchestrationV2AppThread = Schema.Struct({
   ...OrchestrationV2CreationFields,
   id: ThreadId,
@@ -523,6 +537,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
     ),
   ),
   lastTitleRegeneration: Schema.optional(Schema.NullOr(OrchestrationV2LastTitleRegeneration)),
+  generatedTitle: Schema.optional(Schema.NullOr(OrchestrationV2GeneratedTitle)),
   rollbackRequestId: Schema.optional(CommandId),
   rollbackFailure: Schema.optional(
     Schema.NullOr(
@@ -2438,6 +2453,14 @@ export const OrchestrationV2AppThreadJson = OrchestrationV2AppThread.mapFields((
       })),
     ),
   ),
+  generatedTitle: Schema.optional(
+    Schema.NullOr(
+      OrchestrationV2GeneratedTitle.mapFields((fields) => ({
+        ...fields,
+        coveredAt: Schema.NullOr(Schema.DateTimeUtcFromString),
+      })),
+    ),
+  ),
   deletedAt: Schema.NullOr(Schema.DateTimeUtcFromString),
 }));
 export type OrchestrationV2AppThreadJson = typeof OrchestrationV2AppThreadJson.Type;
@@ -3296,6 +3319,10 @@ export const OrchestrationV2Command = Schema.Union([
     requestId: CommandId,
     title: Schema.optional(TrimmedNonEmptyString),
     outcome: Schema.optional(ThreadTitleRegenerationOutcome),
+    /** Set when the generator answered, whether or not it changed the title. */
+    generated: Schema.optional(
+      Schema.Struct({ needsRefinement: Schema.Boolean, readWholeThread: Schema.Boolean }),
+    ),
   }),
   Schema.Struct({
     type: Schema.Literal("thread.runtime-mode.set"),
@@ -3556,6 +3583,12 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** Regenerates a title the generator owns from the thread as it now stands. */
+  Schema.Struct({
+    type: Schema.Literal("thread.title.refresh"),
+    commandId: CommandId,
+    threadId: ThreadId,
+  }),
   /** Moves a thread to a project rooted at the folder it already works in, so its cwd never changes. */
   Schema.Struct({
     type: Schema.Literal("thread.project.adopt-folder"),

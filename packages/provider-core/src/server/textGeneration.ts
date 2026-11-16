@@ -66,6 +66,8 @@ export interface ThreadTitleGenerationInput {
   message: string;
   projectTitle?: string | undefined;
   previousTitle?: string | undefined;
+  /** A refresh the server started on its own, which keeps a title that already names the subject. */
+  automatic?: boolean | undefined;
   forkSource?: ThreadTitleForkSource | undefined;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
   instructions?: string | undefined;

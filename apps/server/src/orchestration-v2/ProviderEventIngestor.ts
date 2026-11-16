@@ -491,6 +491,10 @@ export const layer: Layer.Layer<
                           ...existing,
                           title: offered.title,
                           modelSelection: offered.modelSelection,
+                          // A title the provider set, such as a `/rename`, is no longer generated.
+                          ...(existing.title !== offered.title && existing.generatedTitle != null
+                            ? { generatedTitle: null, titleRegeneration: null }
+                            : {}),
                           updatedAt: now,
                         },
                   occurredAt: now,

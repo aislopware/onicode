@@ -356,6 +356,8 @@ export interface ThreadTitlePromptInput {
   message: string;
   projectTitle?: string | undefined;
   previousTitle?: string | undefined;
+  /** A refresh the server started on its own, which keeps a title that already names the subject. */
+  automatic?: boolean | undefined;
   forkSource?: ThreadTitleForkSource | undefined;
   attachments?: ReadonlyArray<ChatAttachment> | undefined;
   instructions?: string | undefined;
@@ -409,10 +411,15 @@ ${avoidRule(projectTitle, "quotes, labels, filler, and trailing punctuation")}
 function regenerateThreadTitlePrompt(
   previousTitle: string,
   projectTitle: string | undefined,
+  automatic: boolean,
 ): string {
   return `Regenerate the title for an existing Onicode thread so the user can recognize it weeks later.
 The previous title was ${JSON.stringify(previousTitle)}.
-Return JSON with keys title and needsRefinement. Set needsRefinement to false.
+Return JSON with keys title and needsRefinement. ${
+    automatic
+      ? "Set needsRefinement to true only if the thread still does not reveal its subject, such as a link nobody has read yet. Otherwise set it to false."
+      : "Set needsRefinement to false."
+  }
 
 Determine the title in this order:
 1. Read the USER messages first. Identify the latest explicit durable goal. The original subject remains the subject until the user clearly changes what the thread is about.
@@ -438,7 +445,11 @@ ${avoidRule(projectTitle, "PR numbers, quotes, labels, filler, and trailing punc
 - When a URL or attachment is the only source of the subject, use available tools to inspect it directly.
 - Local git history is not evidence of what a linked PR or issue is about. Never title the thread after branch names, commit messages, or merged commits found in the checkout.
 - If a linked PR or issue cannot be read, fall back to the user's stated action plus its number, such as "Take Over PR 8588". This is the one case where a PR or issue number belongs in the title.
-- Keep the previous title unchanged if it is already accurate. Otherwise return a meaningfully improved title, not a cosmetic paraphrase.
+${
+  automatic
+    ? `- The user did not ask for this refresh and already knows the thread by the previous title, so a change has a cost. Return the previous title character for character while the user would still recognize the thread by it. Change it only when they would not: it is generic or names only the mechanics of the request (a bare link, a ticket number, "Slack thread"), it names a subject the thread has since left, or it misses the main subject the thread turned out to be about. When you change it, keep the previous title's distinctive words that still apply. Never reword, reorder, or sharpen a title that already names the subject.`
+    : "- Keep the previous title unchanged if it is already accurate. Otherwise return a meaningfully improved title, not a cosmetic paraphrase."
+}
 
 Examples of the distinction:
 - A subagent-monitoring review that finds a Codex roster bug remains "Review Subagent Monitoring Risks," not "Codex Roster Bug Review."
@@ -494,7 +505,7 @@ export function buildThreadTitlePrompt(input: ThreadTitlePromptInput) {
     const message = preserveMessageEnd(input.message);
     const label =
       input.forkSource === undefined ? "Thread contents" : "Thread contents after the fork";
-    prompt = `${regenerateThreadTitlePrompt(input.previousTitle, input.projectTitle)}${forkSourceSection(input.forkSource)}\n\n${label}:\n${message}${threadTitlePromptSuffix(input)}`;
+    prompt = `${regenerateThreadTitlePrompt(input.previousTitle, input.projectTitle, input.automatic === true)}${forkSourceSection(input.forkSource)}\n\n${label}:\n${message}${threadTitlePromptSuffix(input)}`;
   }
   const outputSchema = Schema.Struct({
     title: Schema.String,
