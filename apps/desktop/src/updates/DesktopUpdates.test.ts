@@ -455,6 +455,41 @@ describe("DesktopUpdates", () => {
     ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
   });
 
+  it.effect(
+    "a pinned install keeps the retained download when a newer release is published",
+    () => {
+      let published = "1.2.4";
+      let installedVersion: string | null | undefined;
+      const harness = makeHarness({
+        checkForUpdates: Effect.sync(() =>
+          harness.emit("update-available", { version: published }),
+        ),
+        downloadUpdate: Effect.sync(() => harness.emit("update-downloaded", { version: "1.2.4" })),
+        quitAndInstall: Effect.sync(() => {
+          installedVersion = harness.sentStates.at(-1)?.downloadedVersion;
+        }),
+      });
+
+      return Effect.scoped(
+        Effect.gen(function* () {
+          const updates = yield* DesktopUpdates.DesktopUpdates;
+          yield* updates.configure;
+          yield* updates.check("poll");
+          yield* flushCallbacks;
+          yield* updates.download;
+          yield* flushCallbacks;
+
+          published = "1.2.5";
+          const checksBefore = harness.checkCount();
+          const result = yield* updates.installPrepared("1.2.4", { pinned: true });
+          assert.isTrue(result.accepted);
+          assert.equal(harness.checkCount(), checksBefore);
+          assert.equal(installedVersion, "1.2.4");
+        }),
+      ).pipe(Effect.provide(Layer.merge(TestClock.layer(), harness.layer)));
+    },
+  );
+
   it.effect("downloads the known offer when the check before downloading fails", () => {
     let checks = 0;
     const harness = makeHarness({

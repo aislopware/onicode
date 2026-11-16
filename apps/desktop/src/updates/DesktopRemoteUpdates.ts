@@ -426,7 +426,10 @@ export const listen: Effect.Effect<
         }
         return;
       }
-      const result = yield* updates.installPrepared(claim.prepared.downloadedVersion);
+      // Clients wait for exactly the prepared version, so a newer release must not replace it here.
+      const result = yield* updates.installPrepared(claim.prepared.downloadedVersion, {
+        pinned: true,
+      });
       if (
         !result.accepted &&
         result.state.downloadedVersion === claim.prepared.downloadedVersion &&

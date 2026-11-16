@@ -154,8 +154,10 @@ export class DesktopUpdates extends Context.Service<
     readonly check: (reason: string) => Effect.Effect<DesktopUpdateCheckResult>;
     readonly download: Effect.Effect<DesktopUpdateActionResult>;
     readonly install: Effect.Effect<DesktopUpdateActionResult>;
+    /** `pinned` installs exactly `expectedVersion`, without first looking for a newer release. */
     readonly installPrepared: (
       expectedVersion: string,
+      options?: { readonly pinned?: boolean },
     ) => Effect.Effect<DesktopPreparedUpdateInstallResult>;
   }
 >()("@onicode/desktop/updates/DesktopUpdates") {}
@@ -803,6 +805,7 @@ export const make = Effect.gen(function* () {
 
   const installWithExpectedVersion = Effect.fn("desktop.updates.install")(function* (
     expectedVersion?: string,
+    pinned = false,
   ) {
     if (yield* Ref.get(desktopState.quitting)) {
       return {
@@ -816,6 +819,7 @@ export const make = Effect.gen(function* () {
     // A download can be hours old: a release published since replaces it before restarting.
     const retained = yield* Ref.get(updateStateRef);
     if (
+      !pinned &&
       retained.downloadedVersion !== null &&
       (expectedVersion === undefined || retained.downloadedVersion === expectedVersion) &&
       (yield* checkForUpdates("install")) &&
@@ -1159,9 +1163,11 @@ export const make = Effect.gen(function* () {
     install: installWithExpectedVersion().pipe(
       Effect.map(({ accepted, completed, state }) => ({ accepted, completed, state })),
     ),
-    installPrepared: Effect.fn("DesktopUpdates.installPrepared")(function (expectedVersion) {
-      return installWithExpectedVersion(expectedVersion);
-    }),
+    installPrepared: Effect.fn("DesktopUpdates.installPrepared")(
+      function (expectedVersion, options) {
+        return installWithExpectedVersion(expectedVersion, options?.pinned ?? false);
+      },
+    ),
   });
 });
 
