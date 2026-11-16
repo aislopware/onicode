@@ -939,6 +939,14 @@ function ThreadRouteContent(
       }),
     );
   };
+  const connectionRetrying =
+    routeConnectionState === "connecting" || routeConnectionState === "reconnecting";
+  // Connection failures survive retries and app suspension.
+  const retryConnectionError = useDelayedStatus(
+    `${environmentId}:${connectionRetrying && routeConnectionError !== null}`,
+    connectionRetrying ? routeConnectionError : null,
+    RECONNECT_ERROR_DELAY_MS,
+  );
   const creationState = ((): ThreadDetailScreenProps["creationState"] => {
     if (selectedThreadCreation === null) {
       return awaitingBootstrapTurn
@@ -970,14 +978,6 @@ function ThreadRouteContent(
           detailDeleted: selectedThreadDetailState.status === "deleted",
           connectionState: routeConnectionState,
         });
-  const connectionRetrying =
-    routeConnectionState === "connecting" || routeConnectionState === "reconnecting";
-  // Connection failures survive retries and app suspension.
-  const retryConnectionError = useDelayedStatus(
-    `${environmentId}:${connectionRetrying && routeConnectionError !== null}`,
-    connectionRetrying ? routeConnectionError : null,
-    RECONNECT_ERROR_DELAY_MS,
-  );
   const connectionStatusLabel = connectionRetryLabel({
     connectionError: retryConnectionError,
     connectionState: routeConnectionState,
