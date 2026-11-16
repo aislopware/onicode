@@ -1,7 +1,10 @@
+import { toServerClock } from "@onicode/client-runtime/clock";
+import { formatDuration } from "@onicode/shared/orchestrationTiming";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
 import { useOpenPullRequest } from "../../native/useOpenPullRequest";
 import { useWorkspaceSettledContentWidth } from "../layout/workspace-content-width";
+import { useVisibleSecondClock } from "./use-visible-second-clock";
 import {
   createThreadMediaVisibility,
   ThreadMarkdownVideo,
@@ -19,7 +22,11 @@ import {
   enrichedSkillReference,
 } from "../../lib/enrichedLinkPresentation";
 import { formatProviderSkillDisplayName } from "@onicode/shared/inlineSkills";
-import { ThreadContextDivider } from "./thread-context-divider";
+import {
+  ThreadContextDivider,
+  ThreadLifecycleLine,
+  type ThreadLifecycleEvent,
+} from "./thread-context-divider";
 import {
   ThreadHandoffDivider,
   ThreadHandoffRow,
@@ -241,6 +248,7 @@ import {
 } from "./thread-work-log";
 import {
   appendPendingThreadMessages,
+  createPendingTurnAppender,
   createThreadFeedGrouping,
   isCompactionCommandFeedEntry,
   type GroupedThreadFeedRow,
@@ -352,6 +360,7 @@ export interface ThreadFeedProps {
   readonly workspaceRoot?: string | null;
   readonly feed: ReadonlyArray<ThreadFeedEntry>;
   readonly pendingHandoff?: HandoffEndpoints | null;
+  readonly lifecycleEvent?: ThreadLifecycleEvent | null;
   readonly contentPresentation: ThreadContentPresentation;
   readonly latestRun: ThreadFeedLatestRun | null;
   readonly activeWorkStartedAt: string | null;
@@ -1699,9 +1708,35 @@ function ThreadAutomationMessageRow(props: {
 
 /** Leads with why Onicode compacted, when it did so without being asked. */
 function compactionLabel(label: string, title: string | undefined) {
-  return title !== undefined && label.startsWith("Context compacted")
-    ? title + label.slice("Context compacted".length)
-    : label;
+  const text =
+    title !== undefined && label.startsWith("Context compacted")
+      ? title + label.slice("Context compacted".length)
+      : label;
+  // Non-breaking spaces keep "549K → 16.8K tokens" on one line when the label wraps.
+  return text.replace(/ (→|tokens)/g, "\u00A0$1").replace(/→ /g, "→\u00A0");
+}
+
+function RunFoldWorking(props: {
+  environmentId: EnvironmentId;
+  startedAt: string;
+  rowSizing: ReturnType<typeof deriveThreadWorkLogSizing>;
+}) {
+  const nowMs = toServerClock(props.environmentId, useVisibleSecondClock(true));
+  const seconds = Math.floor((nowMs - Date.parse(props.startedAt)) / 1_000);
+  return (
+    <View
+      className="min-h-11 min-w-0 flex-1 flex-row items-center"
+      style={{ minHeight: Math.max(TURN_FOLD_HEIGHT - 3.5, props.rowSizing.estimatedRowHeight) }}
+    >
+      <Text
+        key={props.rowSizing.textSizeKey}
+        numberOfLines={1}
+        className="shrink font-oni-medium text-sm tabular-nums text-foreground-muted"
+      >
+        Working for {seconds > 0 ? formatDuration(seconds * 1_000) : "0s"}
+      </Text>
+    </View>
+  );
 }
 
 function RunFoldButton({
@@ -1802,6 +1837,7 @@ function renderFeedEntry(
     | "threadId"
     | "workspaceRoot"
   > & {
+    readonly pendingFoldMessageId: string | null;
     readonly formatMessageTime: (input: string) => string;
     readonly copiedRowId: string | null;
     readonly expandedWorkRows: Record<string, boolean>;
@@ -1842,18 +1878,47 @@ function renderFeedEntry(
   const entry = info.item;
   const { markdownStyles, iconSubtleColor, userBubbleColor } = props;
 
+  if (entry.type === "pending-fold") {
+    return (
+      <View className="mb-1 flex-row items-center border-b border-border-subtle px-2">
+        <View
+          className="min-h-11 min-w-0 flex-1 flex-row items-center"
+          style={{
+            minHeight: Math.max(TURN_FOLD_HEIGHT - 3.5, props.workRowSizing.estimatedRowHeight),
+          }}
+        >
+          <Text
+            key={props.workRowSizing.textSizeKey}
+            numberOfLines={1}
+            className="shrink font-oni-medium text-sm text-foreground-muted"
+          >
+            Pending
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
   if (entry.type === "run-fold") {
     return (
       <View className="mb-1 flex-row items-center border-b border-border-subtle px-2">
-        <RunFoldButton
-          key={entry.id}
-          entry={entry}
-          environmentId={props.environmentId}
-          threadId={props.threadId}
-          onToggle={props.onToggleTurnFold}
-          rowSizing={props.workRowSizing}
-          iconColor={iconSubtleColor}
-        />
+        {entry.workingSince ? (
+          <RunFoldWorking
+            environmentId={props.environmentId}
+            startedAt={entry.workingSince}
+            rowSizing={props.workRowSizing}
+          />
+        ) : (
+          <RunFoldButton
+            key={entry.id}
+            entry={entry}
+            environmentId={props.environmentId}
+            threadId={props.threadId}
+            onToggle={props.onToggleTurnFold}
+            rowSizing={props.workRowSizing}
+            iconColor={iconSubtleColor}
+          />
+        )}
         {entry.checkpointSummary ? (
           <TurnDiffStat
             checkpoint={entry.checkpointSummary}
@@ -2360,7 +2425,11 @@ function renderFeedEntry(
                 </Text>
               ) : null}
               <Text className="font-oni-medium text-xs tabular-nums text-foreground-secondary">
-                {entry.pendingMessage && !entry.acknowledged ? "Pending" : timestampLabel}
+                {entry.pendingMessage &&
+                !entry.acknowledged &&
+                entry.id !== props.pendingFoldMessageId
+                  ? "Pending"
+                  : timestampLabel}
               </Text>
               {props.onEditPendingMessage !== null &&
               entry.pendingMessage &&
@@ -3575,12 +3644,13 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   if (jumpReady && revealedMessageId !== jumpToMessageId) {
     setInteractionState((current) => ({ ...current, revealedMessageId: jumpToMessageId }));
   }
-  const presentedFeed = useThreadFeedPresentation(
-    props,
-    expandedTurnIds,
-    expandedWorkGroups,
-    revealedMessageId,
+  const [appendPendingTurn] = useState(createPendingTurnAppender);
+  const presentedFeed = appendPendingTurn(
+    useThreadFeedPresentation(props, expandedTurnIds, expandedWorkGroups, revealedMessageId),
+    { zen: props.toolCallVisibility === "zen" },
   );
+  const pendingFoldMessageId =
+    presentedFeed.findLast((entry) => entry.type === "pending-fold")?.messageId ?? null;
   const jumpRunId =
     jumpReady &&
     !presentedFeed.some((entry) => entry.type === "message" && entry.id === jumpToMessageId)
@@ -3833,6 +3903,11 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   // estimatedItemSize tall, and scrolling up through unmeasured content
   // corrects each row's height as it mounts — the feed visibly jumps.
   const getFixedItemSize = (entry: ThreadFeedRow) => {
+    if (entry.type === "pending-fold") {
+      return workRowSizing.fixedRowHeight === undefined
+        ? undefined
+        : resolveThreadFeedFixedItemSize("run-fold");
+    }
     if (entry.type === "html-render") {
       return htmlRenderRowHeight(htmlRenderFrameHeight(entry.render, contentWidth));
     }
@@ -3923,6 +3998,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             formatMessageTime,
             environmentId: props.environmentId,
             dispatchingMessageId: props.dispatchingMessageId,
+            pendingFoldMessageId,
             onEditPendingMessage: props.onEditPendingMessage,
             onUseArtifactTemplate: props.onUseArtifactTemplate,
             threadId: props.threadId,
@@ -4029,6 +4105,8 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             viewabilityConfig={THREAD_MEDIA_VIEWABILITY_CONFIG}
             keyExtractor={(entry) => entry.id}
             getItemType={(entry) => {
+              // Same container as the live fold that replaces it.
+              if (entry.type === "pending-fold") return "run-fold";
               if (entry.type !== "message") return entry.type;
               if (isCompactionCommandFeedEntry(entry)) return "message:compaction";
               if (
@@ -4088,14 +4166,21 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               </>
             }
             ListFooterComponent={
-              props.pendingHandoff ? (
-                <ThreadHandoffDivider
-                  environmentId={props.environmentId}
-                  endpoints={props.pendingHandoff}
-                  iconColor={iconSubtleColor}
-                  surfaceColor={screenColor}
-                  label="Context handoff pending"
-                />
+              props.pendingHandoff || props.lifecycleEvent ? (
+                <>
+                  {props.pendingHandoff ? (
+                    <ThreadHandoffDivider
+                      environmentId={props.environmentId}
+                      endpoints={props.pendingHandoff}
+                      iconColor={iconSubtleColor}
+                      surfaceColor={screenColor}
+                      label="Context handoff pending"
+                    />
+                  ) : null}
+                  {props.lifecycleEvent ? (
+                    <ThreadLifecycleLine event={props.lifecycleEvent} iconColor={iconSubtleColor} />
+                  ) : null}
+                </>
               ) : null
             }
             contentContainerStyle={{
