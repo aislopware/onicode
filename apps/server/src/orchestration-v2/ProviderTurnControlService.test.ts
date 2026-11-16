@@ -225,6 +225,7 @@ it.effect(
           getThreadTitles: () => Effect.die("unused getThreadTitles"),
           getThreadLinkMetadata: () => Effect.die("unused getThreadLinkMetadata"),
           getThread: () => Ref.get(projection).pipe(Effect.map((state) => state.thread)),
+          findThread: () => Effect.die("unused findThread"),
           getSettlementCandidates: () => Effect.die("unused getSettlementCandidates"),
           getThreadsWithPullRequests: () => Effect.die("unused getThreadsWithPullRequests"),
           getThreadWorktreePaths: () => Effect.die("unused getThreadWorktreePaths"),
