@@ -2232,3 +2232,4 @@ ca432d7ed6	take	adapted: Onicode's tailnet-only gate also goes through closeNonP
 991c62d0d7	take	lockfile regenerated with vp i
 fb89ce1680	take	taken as is; desktop-only (macOS native drag), the contracts change is the DesktopBridge interface, not the wire
 e05b087a34	take	taken as is
+80b9620454	take	lockfile regenerated with vp i; server-side, GitLabCli reads the body file itself and pipes it to glab
