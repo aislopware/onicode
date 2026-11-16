@@ -579,7 +579,9 @@ private final class TerminalCursorView: UIView {
       context.stroke(bounds.insetBy(dx: 0.5, dy: 0.5))
     default:
       context.fill(bounds)
-      guard !text.isEmpty, let glyph = fonts.glyph(for: text, flags: appearance.flags) else { return }
+      guard !text.isEmpty, appearance.flags & TerminalFrame.flagInvisible == 0,
+        let glyph = fonts.glyph(for: text, flags: appearance.flags)
+      else { return }
       context.beginText(height: bounds.height)
       context.setFill(argb: appearance.textColor)
       context.draw(glyph, at: CGPoint(x: 0, y: bounds.height - fonts.baseline))

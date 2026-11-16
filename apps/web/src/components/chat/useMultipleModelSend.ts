@@ -33,13 +33,13 @@ import {
   withMessageContext,
 } from "../ChatView.logic";
 import {
-  draftFanoutSelectionsAtom,
   draftSendState,
   type MultipleModelTarget,
   type prepareTurnAttachments,
   restoreComposerDraft,
   startFanoutThread,
 } from "./chatViewSend";
+import { draftFanoutSelectionsAtom } from "./draftFanoutSelections";
 import type { useLocalDispatchState } from "./useLocalDispatchState";
 
 interface MultipleModelSendInput {

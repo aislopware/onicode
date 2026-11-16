@@ -95,6 +95,7 @@ const resolveTailscaleMagicDnsAdvertisedEndpoint = Effect.fn(
   readonly localHttpUrl: string;
   readonly serveEnabled: boolean;
   readonly servePort?: number;
+  readonly serveProblem?: string;
   readonly probe?: (baseUrl: string) => Effect.Effect<boolean, never, HttpClient.HttpClient>;
 }): Effect.fn.Return<Option.Option<AdvertisedEndpoint>, never, HttpClient.HttpClient> {
   if (!input.dnsName) {
@@ -119,7 +120,8 @@ const resolveTailscaleMagicDnsAdvertisedEndpoint = Effect.fn(
       status: isReachable ? "available" : "unavailable",
       description: isReachable
         ? "HTTPS endpoint served by Tailscale Serve."
-        : "MagicDNS hostname. Configure Tailscale Serve for HTTPS access.",
+        : ((input.serveEnabled ? input.serveProblem : undefined) ??
+          "MagicDNS hostname. Configure Tailscale Serve for HTTPS access."),
     }),
   );
 });
@@ -129,6 +131,8 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
     readonly port: number;
     readonly serveEnabled?: boolean;
     readonly servePort?: number;
+    /** Why the backend left Serve off, as it reported. */
+    readonly serveProblem?: string;
     readonly networkInterfaces: NetworkInterfaces;
     readonly statusJson?: string | null;
     readonly readStatus?: Effect.Effect<
@@ -156,6 +160,7 @@ export const resolveTailscaleAdvertisedEndpoints = Effect.fn("resolveTailscaleAd
       localHttpUrl: `http://127.0.0.1:${input.port}`,
       serveEnabled: input.serveEnabled === true,
       ...(input.servePort === undefined ? {} : { servePort: input.servePort }),
+      ...(input.serveProblem === undefined ? {} : { serveProblem: input.serveProblem }),
       ...(input.probe === undefined ? {} : { probe: input.probe }),
     });
 

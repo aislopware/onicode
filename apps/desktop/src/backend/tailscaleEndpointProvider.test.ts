@@ -116,4 +116,25 @@ describe("tailscale endpoint provider", () => {
       assert.deepEqual(yield* magicDnsStatus("another-server"), ["unavailable"]);
     }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
   );
+
+  it.effect("explains why the backend left Serve off", () =>
+    Effect.gen(function* () {
+      const problem = "Tailscale refused the Serve config because this user is not its operator.";
+      const descriptions = (serveEnabled: boolean) =>
+        resolveTailscaleAdvertisedEndpoints({
+          port: 3773,
+          serveEnabled,
+          serveProblem: problem,
+          networkInterfaces: {},
+          statusJson: `{"Self":{"DNSName":"desktop.example.ts.net.","TailscaleIPs":[]}}`,
+          probe: () => Effect.succeed(false),
+        }).pipe(Effect.map((endpoints) => endpoints.map((endpoint) => endpoint.description)));
+
+      assert.deepEqual(yield* descriptions(true), [problem]);
+      // A problem from before Serve was turned off no longer applies.
+      assert.deepEqual(yield* descriptions(false), [
+        "MagicDNS hostname. Configure Tailscale Serve for HTTPS access.",
+      ]);
+    }).pipe(Effect.provide(layerUnusedTailscaleExternalServices)),
+  );
 });

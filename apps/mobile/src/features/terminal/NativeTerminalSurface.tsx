@@ -33,6 +33,7 @@ import { createTerminalOutputWriter } from "./terminalOutputWriter";
 
 interface TerminalInputEvent {
   readonly data: string;
+  readonly binary?: boolean;
 }
 
 interface TerminalResizeEvent {
@@ -61,7 +62,7 @@ interface TerminalSurfaceProps extends ViewProps {
   readonly captureRequest?: number;
   readonly onCapture?: (text: string) => void;
   readonly theme?: TerminalTheme;
-  readonly onInput: (data: string) => void;
+  readonly onInput: (data: string, binary?: true) => void;
   readonly onPaste?: (text: string) => void;
   readonly onResize: (size: { readonly cols: number; readonly rows: number }) => void;
 }
@@ -267,7 +268,7 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface({
     if (!props.isRunning || props.readOnly) {
       return;
     }
-    onInput(event.nativeEvent.data);
+    onInput(event.nativeEvent.data, event.nativeEvent.binary === true || undefined);
   };
   const handleNativeResize = (event: NativeSyntheticEvent<TerminalResizeEvent>) => {
     // The first grid event comes from the mounted native surface, after registration.

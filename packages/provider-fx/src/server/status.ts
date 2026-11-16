@@ -131,7 +131,10 @@ const FxStatus = Schema.fromJsonString(
   }),
 );
 const decodeFxStatus = Schema.decodeUnknownOption(FxStatus);
-const FxModels = Schema.fromJsonString(Schema.Struct({ ids: Schema.Array(Schema.String) }));
+// fx 0.0.17 lists every model with no flag to ask for more, but `more_count` says when `ids` was cut.
+const FxModels = Schema.fromJsonString(
+  Schema.Struct({ ids: Schema.Array(Schema.String), more_count: Schema.optional(Schema.Number) }),
+);
 const decodeFxModels = Schema.decodeUnknownOption(FxModels);
 
 const VERSION_PROBE_TIMEOUT_MS = 10_000;
@@ -200,9 +203,8 @@ export const checkFxProviderStatus = Effect.fn("checkFxProviderStatus")(function
       Effect.orElseSucceed(() => Option.none<string>()),
     );
   const status = Option.flatMap(yield* read(["status", "--json"]), decodeFxStatus);
-  const listed = Option.flatMap(yield* read(["models", "--json"]), decodeFxModels).pipe(
-    Option.map((models) => models.ids.flatMap((id) => nonEmptyTrimmed(id) ?? [])),
-  );
+  const models = Option.flatMap(yield* read(["models", "--json"]), decodeFxModels);
+  const listed = Option.map(models, ({ ids }) => ids.flatMap((id) => nonEmptyTrimmed(id) ?? []));
   const auth = fxAuth(Option.getOrUndefined(status)?.auth);
   const defaultModel = nonEmptyTrimmed(Option.getOrUndefined(status)?.model);
   const probe =
@@ -218,7 +220,13 @@ export const checkFxProviderStatus = Effect.fn("checkFxProviderStatus")(function
               status: "warning" as const,
               message: "fx is installed but model listing failed. Model options may be incomplete.",
             }
-          : { status: "ready" as const };
+          : Option.exists(models, ({ more_count }) => (more_count ?? 0) > 0)
+            ? {
+                // A warning keeps models from earlier refreshes that fell past the cut.
+                status: "warning" as const,
+                message: "fx listed only some of its models. Model options may be incomplete.",
+              }
+            : { status: "ready" as const };
   return snapshot(
     settings,
     checkedAt,

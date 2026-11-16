@@ -15,8 +15,10 @@ import {
   buildTailscaleHttpsBaseUrl,
   DEFAULT_TAILSCALE_SERVE_PORT,
   ensureTailscaleServe,
+  isTailscaleOperatorDenial,
   readTailscaleServeRootHolder,
   readTailscaleStatus,
+  tailscaleOperatorHint,
 } from "@onicode/tailscale";
 import * as Config from "effect/Config";
 import * as Console from "effect/Console";
@@ -144,7 +146,7 @@ export class TailscaleOperatorRequiredError extends Schema.TaggedError<Tailscale
   { cause: Schema.Defect() },
 ) {
   override get message(): string {
-    return "Tailscale refused the Serve config because this user is not its operator. Run `sudo tailscale set --operator=$USER` once, then run this command again.";
+    return tailscaleOperatorHint("run this command again");
   }
 }
 
@@ -407,8 +409,7 @@ const resolveTailscalePairingBase = Effect.fn("pair.resolveTailscalePairingBase"
         if (diagnostic === "unsupported-target" && localTarget.localHost !== undefined) {
           return new TailscaleServeTargetRefusedError({ localHost: localTarget.localHost });
         }
-        // Only Linux tailscaled has an operator; elsewhere a denial needs another fix.
-        if (diagnostic === "permission-denied" && platform === "linux") {
+        if (isTailscaleOperatorDenial(cause, platform)) {
           return new TailscaleOperatorRequiredError({ cause });
         }
         return new TailscaleServeFailedError({ servePort: input.servePort, cause });

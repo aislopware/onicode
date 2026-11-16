@@ -534,8 +534,14 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
 
   private func emitResponse(_ bytes: OniTerminalBytes) {
     defer { oni_terminal_bytes_free(bytes) }
-    guard bytes.len > 0 else { return }
-    emitInput(String(terminalBytes: bytes))
+    guard bytes.len > 0, let data = bytes.data else { return }
+    let buffer = UnsafeBufferPointer(start: data, count: bytes.len)
+    if let text = String(bytes: buffer, encoding: .utf8) {
+      emitInput(text)
+    } else if let latin1 = String(bytes: buffer, encoding: .isoLatin1) {
+      // Legacy X10 mouse reports past column 95 are not UTF-8; one character per byte.
+      emitInput(latin1, binary: true)
+    }
   }
 
   private func captureText() -> String {
@@ -741,9 +747,9 @@ public final class OniTerminalView: ExpoView, UITextFieldDelegate, UIEditMenuInt
     inputField.becomeFirstResponder()
   }
 
-  private func emitInput(_ data: String) {
+  private func emitInput(_ data: String, binary: Bool = false) {
     guard !readOnly, !data.isEmpty else { return }
-    onInput(["data": data])
+    onInput(binary ? ["data": data, "binary": true] : ["data": data])
   }
 
   private func emitPaste() {

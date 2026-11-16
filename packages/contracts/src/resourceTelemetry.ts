@@ -389,8 +389,18 @@ export const DesktopTelemetryServerReady = Schema.Struct({
 });
 export type DesktopTelemetryServerReady = typeof DesktopTelemetryServerReady.Type;
 
+/** Why Tailscale Serve, which the desktop turned on, stayed off; shown in its Settings. */
+export const DesktopTelemetryTailscaleServeProblem = Schema.Struct({
+  version: Schema.Literal(1),
+  type: Schema.Literal("tailscaleServeProblem"),
+  message: TrimmedNonEmptyString,
+});
+export type DesktopTelemetryTailscaleServeProblem =
+  typeof DesktopTelemetryTailscaleServeProblem.Type;
+
 export const DesktopTelemetryControlMessage = Schema.Union([
   DesktopTelemetryServerReady,
+  DesktopTelemetryTailscaleServeProblem,
   DesktopTelemetrySetDiagnosticsDemand,
   DesktopTelemetrySetHostPowerIntervals,
   DesktopTelemetryRequestDesktopUpdate,

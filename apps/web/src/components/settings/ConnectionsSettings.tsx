@@ -1053,7 +1053,11 @@ function ConnectionsSettingsContent({
         tailscaleHttpsEndpoint
           ? tailscaleHttpsEndpoint.status === "available"
             ? tailscaleHttpsEndpoint.httpBaseUrl
-            : "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL."
+            : // Serve was turned on but does not answer; the desktop says why when it knows.
+              ((desktopServerExposureState?.tailscaleServeEnabled
+                ? tailscaleHttpsEndpoint.description
+                : undefined) ??
+              "Use Tailscale Serve to expose this backend through a MagicDNS HTTPS URL.")
           : missingTailscaleEndpointDescription(desktopServerExposureState)
       }
       control={

@@ -9,11 +9,7 @@ import {
   resolveProjectProviderInstanceEnabled,
   type ThreadContextRecord,
 } from "@onicode/contracts";
-import {
-  scopedThreadKey,
-  scopeProjectRef,
-  scopeThreadRef,
-} from "@onicode/client-runtime/environment";
+import { scopeProjectRef } from "@onicode/client-runtime/environment";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -34,8 +30,7 @@ import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import type { DraftSessionState } from "../../composerDraftStore";
 import { loadBalancingSendWarning } from "./composerSend.logic";
-import { appAtomRegistry } from "../../rpc/atomRegistry";
-import { draftFanoutSelectionsAtom } from "./chatViewSend";
+import { carryFanoutSelections } from "./draftFanoutSelections";
 
 interface DraftEnvironmentRoutingInput {
   readonly draftId: DraftId | null;
@@ -56,20 +51,6 @@ interface DraftEnvironmentRoutingInput {
   readonly activeProjectIsScratch: boolean;
   readonly projectGroupingSettings: ReturnType<typeof selectProjectGroupingSettings>;
   readonly sendInFlightRef: { readonly current: boolean };
-}
-
-// Multiple-model selections are kept per route, so a draft moving machine takes them along.
-function carryFanoutSelections(
-  draft: Pick<DraftSessionState, "environmentId" | "threadId">,
-  environmentId: EnvironmentId,
-) {
-  if (draft.environmentId === environmentId) return;
-  const selectionsOn = (id: EnvironmentId) =>
-    draftFanoutSelectionsAtom(scopedThreadKey(scopeThreadRef(id, draft.threadId)));
-  appAtomRegistry.set(
-    selectionsOn(environmentId),
-    appAtomRegistry.get(selectionsOn(draft.environmentId)),
-  );
 }
 
 /**

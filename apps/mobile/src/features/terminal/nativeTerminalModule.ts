@@ -14,6 +14,8 @@ interface ExpoGlobalWithViewConfig {
 
 interface TerminalInputEvent {
   readonly data: string;
+  /** `data` holds one byte per UTF-16 code unit, as `TerminalWriteInput.binary`. */
+  readonly binary?: boolean;
 }
 
 interface TerminalPasteEvent {

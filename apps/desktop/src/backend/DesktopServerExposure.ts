@@ -313,6 +313,8 @@ export class DesktopServerExposure extends Context.Service<
       readonly port?: number;
     }) => Effect.Effect<DesktopServerExposureChange, DesktopTailscaleServePersistenceError>;
     readonly getAdvertisedEndpoints: Effect.Effect<readonly AdvertisedEndpoint[]>;
+    /** The backend left Tailscale Serve off; Settings shows why until the app relaunches. */
+    readonly reportTailscaleServeProblem: (message: string) => Effect.Effect<void>;
   }
 >()("@onicode/desktop/backend/DesktopServerExposure") {}
 
@@ -497,6 +499,8 @@ export const make = Effect.gen(function* () {
   const stateRef = yield* Ref.make(initialRuntimeState());
   // Serialize read-persist-write changes so stale runtime state cannot overwrite another update.
   const changePermit = yield* Semaphore.make(1);
+  // Turning Serve on or off relaunches the app, so the next run starts without a problem.
+  const tailscaleServeProblem = yield* Ref.make<string | undefined>(undefined);
 
   // Key status by interface addresses so network changes bypass stale DNS and
   // identity. Cache unchanged addresses to avoid repeated macOS TCC prompts.
@@ -644,10 +648,12 @@ export const make = Effect.gen(function* () {
       return coreEndpoints;
     }
 
+    const serveProblem = yield* Ref.get(tailscaleServeProblem);
     const tailscaleEndpoints = yield* resolveTailscaleAdvertisedEndpoints({
       port: state.port,
       serveEnabled: state.tailscaleServeEnabled,
       servePort: state.tailscaleServePort,
+      ...(serveProblem === undefined ? {} : { serveProblem }),
       networkInterfaces: currentNetworkInterfaces,
       readStatus: Cache.get(
         tailscaleStatusCache,
@@ -667,6 +673,11 @@ export const make = Effect.gen(function* () {
     setMode,
     setTailscaleServeEnabled,
     getAdvertisedEndpoints,
+    reportTailscaleServeProblem: Effect.fn("DesktopServerExposure.reportTailscaleServeProblem")(
+      function (message) {
+        return Ref.set(tailscaleServeProblem, message);
+      },
+    ),
   });
 });
 

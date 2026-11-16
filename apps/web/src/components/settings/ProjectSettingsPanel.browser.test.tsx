@@ -132,8 +132,14 @@ vi.mock(import("../files/projectFilesQueryState"), async (original) => ({
   getProjectFileQueryAtom: () => missingProjectFile,
 }));
 
-import { scopeProjectRef } from "@onicode/client-runtime/environment";
+import {
+  scopedThreadKey,
+  scopeProjectRef,
+  scopeThreadRef,
+} from "@onicode/client-runtime/environment";
+import { createModelSelection } from "@onicode/shared/model";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
+import { draftFanoutSelectionsAtom } from "../chat/draftFanoutSelections";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
 import { assetEnvironment } from "../../state/assets";
 import { buildSidebarProjectSnapshots } from "../../sidebarProjectGrouping";
@@ -417,7 +423,7 @@ describe("project settings permissions", () => {
     expect(screen.router.state.location.href).toBe(initialHref);
   });
 
-  it("moves a draft on the removed checkout to a remaining checkout of the group", async () => {
+  it("moves a draft on the removed checkout, with its selected models, to a remaining checkout", async () => {
     setup();
     const draftId = DraftId.make("draft-handed-off");
     const [primaryProject, remoteProject] = state.projects;
@@ -434,6 +440,14 @@ describe("project settings permissions", () => {
       loadBalancedEnvironmentId: null,
     });
     drafts.setPrompt(draftId, "keep this prompt");
+    const threadId = drafts.getDraftSession(draftId)!.threadId;
+    const selectionsOn = (environmentId: EnvironmentId) =>
+      draftFanoutSelectionsAtom(scopedThreadKey(scopeThreadRef(environmentId, threadId)));
+    const selected = ["gpt-6.1-sol", "gpt-6.1-luna"].map((model) =>
+      createModelSelection(ProviderInstanceId.make("codex"), model),
+    );
+    appAtomRegistry.set(selectionsOn(remoteId), selected);
+    appAtomRegistry.set(selectionsOn(primaryId), null);
     await using screen = await mountPanel();
 
     await userEvent.click(removeCheckout(screen, "/work/remote"));
@@ -446,6 +460,7 @@ describe("project settings permissions", () => {
     expect(useComposerDraftStore.getState().getComposerDraft(draftId)?.prompt).toBe(
       "keep this prompt",
     );
+    expect(appAtomRegistry.get(selectionsOn(primaryId))).toEqual(selected);
   });
 
   it("rechecks every removal target after confirmation before deleting or clearing drafts", async () => {

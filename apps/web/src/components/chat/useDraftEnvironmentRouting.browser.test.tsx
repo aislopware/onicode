@@ -23,7 +23,7 @@ import { act, render } from "../../../test/render";
 import { DraftId, useComposerDraftStore } from "../../composerDraftStore";
 import { useDraftEnvironmentRouting } from "./useDraftEnvironmentRouting";
 import { appAtomRegistry, AppAtomRegistryProvider } from "../../rpc/atomRegistry";
-import { draftFanoutSelectionsAtom } from "./chatViewSend";
+import { draftFanoutSelectionsAtom } from "./draftFanoutSelections";
 
 const resources = vi.hoisted(() => ({
   projects: [] as EnvironmentProject[],

@@ -32,6 +32,7 @@ import { waitForHttpReady as waitForHttpReadyShared } from "@onicode/shared/http
 import * as DesktopObservability from "../app/DesktopObservability.ts";
 import * as DesktopTelemetryPublisher from "../telemetry/DesktopTelemetryPublisher.ts";
 import * as DesktopBrowserHost from "../preview/DesktopBrowserHost.ts";
+import * as DesktopServerExposure from "./DesktopServerExposure.ts";
 import * as DesktopWslEnvironment from "../wsl/DesktopWslEnvironment.ts";
 
 const INITIAL_RESTART_DELAY = Duration.millis(500);
@@ -679,6 +680,7 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
   const backendOutputLog = yield* backendOutputLogFactory.forInstance(spec.id);
   const desktopTelemetryPublisher = yield* DesktopTelemetryPublisher.DesktopTelemetryPublisher;
   const desktopBrowserHost = yield* DesktopBrowserHost.DesktopBrowserHost;
+  const serverExposure = yield* Effect.serviceOption(DesktopServerExposure.DesktopServerExposure);
   const wslEnvironment = yield* DesktopWslEnvironment.DesktopWslEnvironment;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const httpClient = yield* HttpClient.HttpClient;
@@ -947,7 +949,12 @@ export const makeBackendInstance = Effect.fn("makeBackendInstance")(function* (
           desktopBrowserStream: desktopBrowserHost.events,
           onDesktopBrowserCommand: desktopBrowserHost.handleCommandLine,
           onDesktopTelemetryControl: (message) =>
-            desktopTelemetryPublisher.handleControlForSource(spec.id, message),
+            message.type === "tailscaleServeProblem"
+              ? Option.match(serverExposure, {
+                  onNone: () => Effect.void,
+                  onSome: (exposure) => exposure.reportTailscaleServeProblem(message.message),
+                })
+              : desktopTelemetryPublisher.handleControlForSource(spec.id, message),
           onStarted: Effect.fn("desktop.backendInstance.onStarted")(function* (pid) {
             yield* updateActiveRun(runId, (run) => ({
               ...run,
