@@ -1,3 +1,4 @@
+import { copySnapshot as copySnapshotToClipboard } from "./copySnapshot";
 import { InlineAudioPreview } from "../files/InlineAudioPreview";
 import { filePreviewKind } from "@onicode/shared/filePreview";
 import {
@@ -589,6 +590,25 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
         });
   const copyText =
     resolvedContext.text || mediaCopyRecords.map(formatComposerContextReference).join("\n");
+  const copySnapshot = async (id: string) => {
+    const image = userImages.find((candidate) => candidate.id === id);
+    const record = resolvedContext.records
+      .map(asKnownContextRecord)
+      .find((candidate) => candidate?.kind === "image" && candidate.attachmentId === id);
+    if (!image?.previewUrl || record?.kind !== "image")
+      throw new Error("Snapshot is no longer available.");
+    const fragment = encodeComposerContextFragment({
+      version: 1,
+      source: { environmentId: ctx.activeThreadEnvironmentId, messageId: row.message.id },
+      records: [{ ...record, ...(image.source ? { source: image.source } : {}) }],
+    });
+    if (!fragment) throw new Error("The snapshot is too large to copy.");
+    await copySnapshotToClipboard(
+      image.previewUrl,
+      formatComposerContextReference(record),
+      fragment,
+    );
+  };
   const onBodyCopyCapture = (event: React.ClipboardEvent<HTMLDivElement>) => {
     if (resolvedContext.records.length === 0 || !event.clipboardData) return;
     const selection = window.getSelection();
@@ -653,7 +673,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
           annotationImage={annotationImage}
           attachment={attachment}
           onExpandImage={(image) => {
-            const preview = buildExpandedImagePreview(userImages, image.id);
+            const preview = buildExpandedImagePreview(userImages, image.id, copySnapshot);
             if (preview) onImageExpand(preview);
           }}
           onOpenFile={onFileOpen}
@@ -729,7 +749,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                 className="block h-full w-full cursor-zoom-in"
                 aria-label={`Preview ${image.name}`}
                 onClick={() => {
-                  const preview = buildExpandedImagePreview(regularImages, image.id);
+                  const preview = buildExpandedImagePreview(regularImages, image.id, copySnapshot);
                   if (!preview) return;
                   ctx.onImageExpand(preview);
                 }}
@@ -764,7 +784,10 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
               </div>
             )}
             {image.previewUrl && image.source?.kind === "snap-shot" ? (
-              <SnapShotAttachmentDetails source={image.source} />
+              <SnapShotAttachmentDetails
+                source={image.source}
+                onCopySnapshot={() => copySnapshot(image.id)}
+              />
             ) : null}
           </div>
         ))}
