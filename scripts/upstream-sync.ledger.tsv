@@ -2230,3 +2230,4 @@ db4221b74b	take	taken as is
 c69f4b780b	take	taken as is
 ca432d7ed6	take	adapted: Onicode's tailnet-only gate also goes through closeNonPrivateNetworkConnections (network param), so its closed connections are logged too
 991c62d0d7	take	lockfile regenerated with vp i
+fb89ce1680	take	taken as is; desktop-only (macOS native drag), the contracts change is the DesktopBridge interface, not the wire

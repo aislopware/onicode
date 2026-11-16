@@ -151,3 +151,5 @@ export const REMOTE_DESKTOP_READ_CLIPBOARD_CHANNEL = "desktop:remote-desktop-rea
 export const REMOTE_DESKTOP_WRITE_CLIPBOARD_CHANNEL = "desktop:remote-desktop-write-clipboard";
 
 export const RESTART_AUDIO_SERVICE_CHANNEL = "desktop:restart-audio-service";
+
+export const START_FILE_DRAG_CHANNEL = "desktop:start-file-drag";
