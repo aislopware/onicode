@@ -2175,3 +2175,4 @@ f6ef6c1f28	take	fix(mobile): a tab's first visit appears whole; screens fork oni
 d6672df273	take	test(acp-registry): Kimi outcome test waits for each poll before advancing the clock (kept Onicode's environment argument)
 56f41466f5	take	fix(web): sending a new thread's first message no longer scrolls the sidebar (scenario adapted to desktop harness)
 cef0f5d473	skip	T3 mobile EAS PR preview comment script; Onicode has no EAS preview workflows (see b78c04d3e1, 183029dee8)
+4da2bc520c	take	perf(server): CLI startup no longer takes the write lock when the schema is current
