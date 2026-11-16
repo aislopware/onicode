@@ -2198,3 +2198,4 @@ ab8ff33a16	take	fix(mobile): Duo scroll views recheck their bleed after a fold
 bcb0604581	take	fix(web): model picker options no longer jump a pixel on hover
 fecd7138e9	take	fix(mobile): long threads no longer jump to the bottom after they appear; adapted: clear the previous landing fallback timer before arming a new one, since ThreadFeed stays mounted across threads and a stale timer could hide the next thread again
 6f5838f9bc	take	fix(client-runtime): a relative Add project starts in opens the picker under home; adapted: kept the ensureBrowseDirectoryPath import, which Onicode's jumpToFolder still uses
+83c520c21f	take	fix(web): clicks beside an open file's find bar reach the code again; lockfile patch hash regenerated with vp i
