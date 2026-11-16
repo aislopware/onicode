@@ -2210,3 +2210,4 @@ b0f0c44d22	take	fix(shared): open Forgejo and Gitea /pulls/ tab and commit links
 bc0988d4d3	skip	mobile-eas-preview.yml is T3's EAS preview pipeline; Onicode releases through better-update and has no such workflow
 c02b98bb3f	take	taken as is; only Codex sets a stop reason on completed turns, so no other adapter gains the notice
 15271c8d00	take	taken as is; web and mobile both covered upstream; batch limit constant keeps the contract's 25 cap unchanged on the wire
+02f8a3280b	take	taken as is
