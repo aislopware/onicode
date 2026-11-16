@@ -103,7 +103,9 @@ function scanTree() {
     if ("status" in props && "showScrollToEnd" in props) {
       const status = props.status as { kind?: string } | null;
       floatingStatus = status?.kind ?? null;
-      floatingAgents = "agents" in props && props.agents !== null && props.agents !== undefined;
+      // Live agents read "2/3"; finished ones read "2 done" and must not count as working.
+      const agents = "agents" in props ? (props.agents as { label?: string } | null) : null;
+      floatingAgents = /^\d+\/\d+$/.test(agents?.label ?? "");
     }
     if (homeList === null && Array.isArray(props.data) && "renderItem" in props) {
       const data = props.data as ReadonlyArray<{
