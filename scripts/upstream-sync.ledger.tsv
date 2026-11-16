@@ -2144,3 +2144,4 @@ ddb7fb3f50	take	fix(cli): onicode pair --tailscale names the operator fix when T
 e47a96e88d	take	fix(pi): image reads show a preview in the work log (#37471)
 05ccd6bfb5	take	fix(pi): resume the session file an extension switched the thread to (#37472)
 40dcbc5f6a	take	fix(web): a stopped run no longer shows the green Done badge in the sidebar (#37475)
+ad1b136599	take	taken as is; KeyedLock.makeRunner replaces the Orchestrator's hand-rolled reactInThreadOrder, which Onicode had in the same shape
