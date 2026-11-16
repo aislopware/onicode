@@ -2187,3 +2187,19 @@ d427894aa1	take	adapted: host rides on provider-unsupported (kept Onicode's wire
 b5554ac811	skip	T3 Connect (cloud/ConnectReachability, t3-connect docs) is removed in Onicode
 cd42e1a497	take	taken as is
 222288b00f	take	taken as is
+ab8ff33a16	take	fix(mobile): Duo scroll views recheck their bleed after a fold
+59df51f6e1	take	perf(mobile): switching back to a thread lays its feed out once
+1c7d945439	take	fix(web): typing in a file after a find match stays in the file; lockfile patch hash regenerated with vp i
+023620d3a5	take	fix(server): Codex health checks no longer kill ssh mid SSH-agent request
+5a20d59db3	take	fix(shell): Windows PATH probe reads User and Machine registry
+83e3c4f60d	take	fix(web): published themes keep their CSS when a saved theme shares the id; scenario ported to the desktop target
+1ae5590a32	take	fix(web): find in thread no longer announces streamed count refreshes
+12b9845d1c	take	fix(ssh): verify runtime archives in homes containing newlines; kept Onicode's fake tar in the test: symlinking the host tar and then writing the fake would overwrite the real binary, and bsdtar on macOS gunzips by itself
+bcb0604581	take	fix(web): model picker options no longer jump a pixel on hover
+fecd7138e9	take	fix(mobile): long threads no longer jump to the bottom after they appear; adapted: clear the previous landing fallback timer before arming a new one, since ThreadFeed stays mounted across threads and a stale timer could hide the next thread again
+6f5838f9bc	take	fix(client-runtime): a relative Add project starts in opens the picker under home; adapted: kept the ensureBrowseDirectoryPath import, which Onicode's jumpToFolder still uses
+83c520c21f	take	fix(web): clicks beside an open file's find bar reach the code again; lockfile patch hash regenerated with vp i
+c8c51af4e3	take	fix(server): recover gateway cooldown after last error
+4860a73069	take	fix(mobile): sent videos no longer flash black and queued attachments keep uploading
+caef8c3847	take	fix(composer): show local command actions while running; adapted: Onicode's provider session view commands (/context, /status...) also count as local on web and mobile
+b0f0c44d22	take	fix(shared): open Forgejo and Gitea /pulls/ tab and commit links

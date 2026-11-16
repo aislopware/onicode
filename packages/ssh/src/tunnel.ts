@@ -542,9 +542,9 @@ if ! oni_runtime_ready; then
   oni_fetch "$ONICODE_RELEASE_BASE_URL/v$ONICODE_ARCHIVE_VERSION/$ONICODE_ARCHIVE" "$ONICODE_STAGING/$ONICODE_ARCHIVE" @@ONICODE_ARCHIVE_DOWNLOAD_SECONDS@@
   ONICODE_EXPECTED="$(grep " \\*\\{0,1\\}$ONICODE_ARCHIVE$" "$ONICODE_STAGING/SHA256SUMS" | cut -d' ' -f1)"
   if command -v sha256sum >/dev/null 2>&1; then
-    ONICODE_ACTUAL="$(sha256sum "$ONICODE_STAGING/$ONICODE_ARCHIVE" | cut -d' ' -f1)"
+    ONICODE_ACTUAL="$(sha256sum < "$ONICODE_STAGING/$ONICODE_ARCHIVE" | cut -d' ' -f1)"
   else
-    ONICODE_ACTUAL="$(shasum -a 256 "$ONICODE_STAGING/$ONICODE_ARCHIVE" | cut -d' ' -f1)"
+    ONICODE_ACTUAL="$(shasum -a 256 < "$ONICODE_STAGING/$ONICODE_ARCHIVE" | cut -d' ' -f1)"
   fi
   if [ -z "$ONICODE_EXPECTED" ] || [ "$ONICODE_ACTUAL" != "$ONICODE_EXPECTED" ]; then
     printf 'Checksum mismatch for %s.\\n' "$ONICODE_ARCHIVE" >&2; exit 1

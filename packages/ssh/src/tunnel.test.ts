@@ -340,14 +340,20 @@ describe("ssh tunnel scripts", () => {
     },
   );
 
-  it("names gzip when a host with tar but no gzip cannot unpack the release archive", () => {
+  // sha256sum and shasum escape a newline in a file name they print, so the home path has one.
+  const checksumTools =
+    NodeChildProcess.spawnSync("sh", ["-c", 'command -v "$1"', "sh", "shasum"]).status === 0
+      ? ["sha256sum", "shasum"]
+      : ["sha256sum"];
+  it.each(checksumTools)("names missing gzip after verifying with %s", (checksum) => {
     const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "oni-ssh-runner-"));
     try {
       const bin = NodePath.join(root, "bin");
       const release = NodePath.join(root, "release");
+      const home = NodePath.join(root, "home\ncache");
       const archive = `oni-${ARCHIVE.archiveVersion}-linux-x64.tar.gz`;
       NodeFS.mkdirSync(bin);
-      NodeFS.mkdirSync(NodePath.join(root, "home"));
+      NodeFS.mkdirSync(home);
       NodeFS.mkdirSync(NodePath.join(release, "onicode"), { recursive: true });
       NodeFS.writeFileSync(NodePath.join(release, "onicode", "onicode"), "#!/bin/sh\necho ok\n", {
         mode: 0o755,
@@ -356,7 +362,7 @@ describe("ssh tunnel scripts", () => {
       NodeChildProcess.execFileSync("sh", ["-c", `sha256sum ${archive} > SHA256SUMS`], {
         cwd: release,
       });
-      for (const tool of ["sh", "mkdir", "mktemp", "cat", "rm", "grep", "cut", "sha256sum", "mv"]) {
+      for (const tool of ["sh", "mkdir", "mktemp", "cat", "rm", "grep", "cut", checksum, "mv"]) {
         NodeFS.symlinkSync(
           NodeChildProcess.execFileSync("sh", ["-c", `command -v ${tool}`], {
             encoding: "utf8",
@@ -384,7 +390,7 @@ describe("ssh tunnel scripts", () => {
       NodeFS.writeFileSync(runner, SshTunnel.buildRemoteOniRunnerScript(ARCHIVE));
       const result = NodeChildProcess.spawnSync(NodePath.join(bin, "sh"), [runner, "--version"], {
         encoding: "utf8",
-        env: { HOME: NodePath.join(root, "home"), PATH: bin },
+        env: { HOME: home, PATH: bin },
       });
       assert.notEqual(result.status, 0);
       assert.match(result.stderr, /(missing|needs) gzip/);
