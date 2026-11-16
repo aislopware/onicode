@@ -248,6 +248,33 @@ describe("pending timeline messages", () => {
     expect(
       appendTurn(delivered, { zen: true, dispatchingMessageId: null }).map((entry) => entry.id),
     ).toEqual(["sent", "live-activity-row"]);
+    // Messages queued behind the one being sent stay after its rows.
+    const queue = appendPendingThreadMessages([], [], [pending("first"), pending("second")]);
+    const label = (entry: (typeof held)[number]) => ("label" in entry ? entry.label : null);
+    expect(
+      appendTurn(queue, { zen: false, dispatchingMessageId: "first" }).map((entry) => [
+        entry.id,
+        label(entry),
+      ]),
+    ).toEqual([
+      ["first", null],
+      ["pending-fold:first", null],
+      ["live-activity-row", "Sending…"],
+      ["second", null],
+    ]);
+    const firstAccepted = queue.map((entry) =>
+      entry.id === "first" ? { ...entry, acknowledged: true } : entry,
+    );
+    expect(
+      appendTurn(firstAccepted, { zen: true, dispatchingMessageId: null }).map((entry) => [
+        entry.id,
+        label(entry),
+      ]),
+    ).toEqual([
+      ["first", null],
+      ["live-activity-row", "Starting…"],
+      ["second", null],
+    ]);
     // A working run already shows its own rows.
     const thinking = {
       type: "thinking",
