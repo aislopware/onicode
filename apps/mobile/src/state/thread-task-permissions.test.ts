@@ -143,7 +143,7 @@ vi.mock("./threads", async () => {
 });
 vi.mock("./use-thread-outbox", async () => {
   const { Atom } = await import("effect/reactivity");
-  return { dispatchingQueuedMessageIdAtom: Atom.make(null), useThreadQueuedMessages: () => [] };
+  return { dispatchingQueuedMessageIdsAtom: Atom.make({}), useThreadQueuedMessages: () => [] };
 });
 vi.mock("./thread-outbox", () => ({ enqueueThreadOutboxMessage: state.enqueue }));
 vi.mock("./composer-attachment-uploads", async () => {
