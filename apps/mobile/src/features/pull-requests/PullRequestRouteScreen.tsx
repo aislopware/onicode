@@ -1102,10 +1102,10 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
   const requestedFileId =
     (jumpPath ? data.files.find((file) => file.path === jumpPath)?.id : null) ?? null;
   // A linked file must stay open if its Viewed response arrives after the first native draw.
-  if (requestedFileId !== revealedFileId) {
+  // A target hidden by the test-file filter keeps its reveal, so showing it again keeps its fold.
+  if (requestedFileId && requestedFileId !== revealedFileId) {
     setRevealedFileId(requestedFileId);
-    if (requestedFileId)
-      setFoldChoices((current) => withFileDiffFold(current, requestedFileId, false));
+    setFoldChoices((current) => withFileDiffFold(current, requestedFileId, false));
   }
   const viewedIdSet = new Set(viewedIds);
   const collapsedIds = data.files
@@ -1188,7 +1188,11 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
   };
   const visibleFile = data.files.find((file) => file.id === visibleFileId) ?? targetFile;
   const toggleTestFiles = () => {
-    setJumpPath(visibleFile?.path ?? route.params.path);
+    const keptPath = visibleFile?.path ?? route.params.path;
+    setJumpPath(keptPath);
+    // Keeping the view in place is not a jump, so it leaves the kept file's fold alone.
+    if (result.parsed.kind === "files")
+      setRevealedFileId(result.parsed.files.find((file) => file.path === keptPath)?.id ?? null);
     setSelectedRowId(null);
     filter.toggle();
   };
@@ -1298,6 +1302,7 @@ function PullRequestFileRouteContent({ route }: PullRequestFileRouteProps) {
               jumpedUnder.current = null;
               setSelectedRowId(null);
               setFoldChoices(new Map());
+              setRevealedFileId(null);
             }}
           />
         </View>
