@@ -75,6 +75,10 @@
       "types": "./src/worktreeSetup.ts",
       "default": "./src/worktreeSetup.ts"
     },
+    "./hostHardware": {
+      "types": "./src/hostHardware.ts",
+      "default": "./src/hostHardware.ts"
+    },
     "./load-balancing": {
       "types": "./src/load-balancing.ts",
       "default": "./src/load-balancing.ts"

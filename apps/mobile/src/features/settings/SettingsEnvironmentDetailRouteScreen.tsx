@@ -8,6 +8,7 @@ import {
   AuthSettingsWriteScope,
   TAILNET_APP_CAPABILITY,
   managedUpdatesDenial,
+  resolveEnvironmentMachineKind,
   type EnvironmentId,
   type ServerProvider,
 } from "@onicode/contracts";
@@ -30,6 +31,7 @@ import { environmentSession, useEnvironmentScope, readEnvironmentScope } from ".
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useRemoteConnections } from "../../state/use-remote-environment-registry";
 import { ConnectionEnvironmentRow } from "../connection/ConnectionEnvironmentRow";
+import { EnvironmentHardwareSection } from "./EnvironmentHardwareSection";
 import { EnvironmentRoutesSection } from "./EnvironmentRoutesSection";
 import { OutdatedServerUpdateSection } from "./OutdatedServerUpdateSection";
 import { ListActionRow as SettingsActionRow } from "../../components/ui/ListActionRow";
@@ -314,6 +316,12 @@ function EnvironmentDetail({ environmentId }: { readonly environmentId: Environm
                     />
                   ) : null}
                 </SettingsSection>
+                {connected && canRead && capabilities?.hostHardware === true ? (
+                  <EnvironmentHardwareSection
+                    environmentId={environmentId}
+                    machine={resolveEnvironmentMachineKind(config)}
+                  />
+                ) : null}
                 {capabilities?.tailnetDevices === true ? (
                   <SettingsSection title="Sharing">
                     <SettingsSwitchRow

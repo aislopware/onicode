@@ -7,7 +7,7 @@ import { useHardwareKeyboardCommand } from "../../keyboard/hardwareKeyboardComma
 import { WorkspaceBrandTitle } from "./WorkspaceBrandTitle";
 import { useWorkspaceTabs } from "./WorkspaceTabsContext";
 import type { PullRequestFilterMenu } from "../../pull-requests/PullRequestListFilters";
-import { openSettings } from "../../settings/settings-navigation";
+import { openEnvironmentSettings } from "../../settings/settings-navigation";
 
 /** PR search shares the thread list's Android header. */
 export function PullRequestToolbar(props: {
@@ -58,7 +58,7 @@ export function PullRequestToolbar(props: {
       titleContent={
         <WorkspaceBrandTitle
           accessibilityLabel="Onicode, Pull requests"
-          onOpenEnvironments={() => openSettings(navigation, "SettingsEnvironments")}
+          onOpenEnvironments={(environmentId) => openEnvironmentSettings(navigation, environmentId)}
         />
       }
       search={{

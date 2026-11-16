@@ -109,6 +109,22 @@ environment. For a remote environment, this is in its route details. Permissions
 shown there apply only to the route marked **In use**; other routes are not
 checked.
 
+### See a machine's hardware
+
+**Settings → Environments → Hardware** on desktop lists every connected machine with
+its model, operating system, processor, memory, and storage, and how much of each is in
+use. On mobile, open the machine under **Settings → Environments**.
+
+Storage lists only the volumes Onicode keeps work on: your home folder, Onicode's data,
+worktrees, and project folders. A machine on an older Onicode version shows its
+hardware after it updates.
+
+When a connected machine is running out of memory or storage, a warning icon appears
+among the icons at the bottom of the desktop sidebar and beside the Onicode name on
+mobile, and leads to the machine's hardware. It appears when less than 10% is left, or
+on a large machine less than 4 GB of memory or 25 GB of storage, and turns red below
+5%, 2 GB, or 10 GB. A busy processor does not raise a warning.
+
 ### Balance new threads across machines
 
 Auto balance is off by default. On desktop, enable it in

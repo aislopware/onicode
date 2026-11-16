@@ -15,6 +15,39 @@ export const HostResourcesSnapshot = Schema.Struct({
 });
 export type HostResourcesSnapshot = typeof HostResourcesSnapshot.Type;
 
+export const HostHardwareVolumeUse = Schema.Literals(["home", "data", "worktrees", "projects"]);
+export type HostHardwareVolumeUse = typeof HostHardwareVolumeUse.Type;
+
+export const HostHardwareVolume = Schema.Struct({
+  mountPoint: Schema.String,
+  totalBytes: NonNegativeInt,
+  availableBytes: NonNegativeInt,
+  /** What Onicode keeps on this volume; other volumes are not listed. */
+  uses: Schema.Array(HostHardwareVolumeUse),
+});
+export type HostHardwareVolume = typeof HostHardwareVolume.Type;
+
+export const HostHardwareSnapshot = Schema.Struct({
+  hostname: Schema.NullOr(Schema.String),
+  /** Marketing or vendor name, such as "Mac mini (2024)" or "LENOVO ThinkPad X1 Carbon Gen 9". */
+  model: Schema.NullOr(Schema.String),
+  /** Name and version, such as "macOS 15.2" or "Ubuntu 24.04.1 LTS". */
+  os: Schema.String,
+  cpu: Schema.Struct({
+    model: Schema.NullOr(Schema.String),
+    logicalCores: NonNegativeInt,
+    physicalCores: Schema.NullOr(NonNegativeInt),
+    /** Core classes of a hybrid CPU, fastest first; empty when all cores are alike or unknown. */
+    coreGroups: Schema.Array(Schema.Struct({ name: Schema.String, cores: NonNegativeInt })),
+  }),
+  /** Installed memory; `usage` holds what the server may use, which a container can cap. */
+  memoryBytes: NonNegativeInt,
+  uptimeSeconds: NonNegativeInt,
+  volumes: Schema.Array(HostHardwareVolume),
+  usage: HostResourcesSnapshot,
+});
+export type HostHardwareSnapshot = typeof HostHardwareSnapshot.Type;
+
 export const ResourceTelemetryIoSemantics = Schema.Literals([
   "storage",
   "logical",

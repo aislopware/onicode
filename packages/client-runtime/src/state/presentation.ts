@@ -2,6 +2,7 @@ import {
   resolveEnvironmentMachineKind,
   type EnvironmentMachineKind,
   type EnvironmentId,
+  type HostHardwareSnapshot,
   type ServerConfig,
   type ServerProvider,
 } from "@onicode/contracts";
@@ -17,6 +18,7 @@ import {
   type EnvironmentPresentation,
   type EnvironmentServerConfig,
 } from "../connection/presentation.ts";
+import { describeHostHardwareAlert, type HostHardwareAlert } from "../hostHardware.ts";
 import { type EnvironmentCatalogState, enabledEnvironmentIds } from "./connections.ts";
 
 function mapsEqual<K, V>(left: ReadonlyMap<K, V>, right: ReadonlyMap<K, V>): boolean {
@@ -322,4 +324,39 @@ export function createEnvironmentSummaryAtoms(input: {
     machineByIdAtom,
     pullRequestsSupportedAtom,
   };
+}
+
+/** The low memory or storage warning across connected machines; reading it polls each of them. */
+export function createHostHardwareAlertAtom(input: {
+  readonly connectedEnvironmentIdsAtom: Atom.Atom<ReadonlyArray<EnvironmentId>>;
+  readonly presentationAtom: (
+    environmentId: EnvironmentId,
+  ) => Atom.Atom<EnvironmentPresentation | null>;
+  readonly hostHardwareAtom: (target: {
+    readonly environmentId: EnvironmentId;
+    readonly input: {};
+  }) => Atom.Atom<AsyncResult.AsyncResult<HostHardwareSnapshot, unknown>>;
+}) {
+  return Atom.make((get) => {
+    const machines = get(input.connectedEnvironmentIdsAtom).flatMap((environmentId) => {
+      const presentation = get(input.presentationAtom(environmentId));
+      if (presentation?.serverConfig?.environment.capabilities.hostHardware !== true) return [];
+      const hardware = AsyncResult.getOrElse(
+        get(input.hostHardwareAtom({ environmentId, input: {} })),
+        () => null,
+      );
+      return hardware === null
+        ? []
+        : [{ environmentId, label: presentation.entry.target.label, hardware }];
+    });
+    const next = describeHostHardwareAlert(machines);
+    const previous = Option.getOrNull(get.self<HostHardwareAlert | null>());
+    return previous !== null &&
+      next !== null &&
+      previous.key === next.key &&
+      previous.title === next.title &&
+      previous.description === next.description
+      ? previous
+      : next;
+  }).pipe(Atom.withLabel("host-hardware-alert"));
 }

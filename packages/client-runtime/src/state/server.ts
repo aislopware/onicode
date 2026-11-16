@@ -1478,6 +1478,21 @@ export function createServerEnvironmentAtoms<R, E>(
       execute: (input: EnvironmentRpcInput<typeof WS_METHODS.serverGetHostResources>) =>
         request(WS_METHODS.serverGetHostResources, input).pipe(Effect.timeout("5 seconds")),
     }),
+    hostHardware: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:host-hardware",
+      tag: WS_METHODS.serverGetHostHardware,
+      staleTimeMs: 5_000,
+      refreshIntervalMs: 5_000,
+      idleTtlMs: 0,
+    }),
+    // The always-mounted warning reads this one, so it polls far slower than the Hardware page.
+    hostHardwareWatch: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:host-hardware-watch",
+      tag: WS_METHODS.serverGetHostHardware,
+      staleTimeMs: 60_000,
+      refreshIntervalMs: 60_000,
+      idleTtlMs: 0,
+    }),
     processResourceHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:process-resource-history",
       tag: WS_METHODS.serverGetProcessResourceHistory,

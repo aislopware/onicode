@@ -3,6 +3,7 @@ import type { EnvironmentPresentation } from "@onicode/client-runtime/connection
 import {
   createEnvironmentPresentationAtoms,
   createEnvironmentSummaryAtoms,
+  createHostHardwareAlertAtom,
 } from "@onicode/client-runtime/state/presentation";
 import type { EnvironmentId } from "@onicode/contracts";
 import { Atom } from "effect/reactivity";
@@ -19,6 +20,12 @@ export const environmentPresentations = createEnvironmentPresentationAtoms({
 export const environmentSummaries = createEnvironmentSummaryAtoms({
   catalogValueAtom: environmentCatalog.catalogValueAtom,
   presentationAtom: environmentPresentations.presentationAtom,
+});
+
+export const hostHardwareAlertAtom = createHostHardwareAlertAtom({
+  connectedEnvironmentIdsAtom: environmentSummaries.connectedEnvironmentIdsAtom,
+  presentationAtom: environmentPresentations.presentationAtom,
+  hostHardwareAtom: serverEnvironment.hostHardwareWatch,
 });
 
 const EMPTY_ENVIRONMENT_PRESENTATION_ATOM = Atom.make<EnvironmentPresentation | null>(null).pipe(
