@@ -2184,3 +2184,4 @@ dfeaf7b137	take	fix(web): Tab from a citation comment reaches Save, not Cancel
 629d5083b7	take	fix(server): a Claude session gone on resume starts fresh; forgetProviderThreadLoaded moved into Onicode's shared trackTurn (covers startTurn and resumeTurn)
 1f698f01d9	take	fix: PR diffs fold Viewed files the way GitHub does, on web and mobile; taken as is (fold rules move to client-runtime, mobile memoized by React Compiler)
 d427894aa1	take	adapted: host rides on provider-unsupported (kept Onicode's wire-compat reason); Onicode wording
+b5554ac811	skip	T3 Connect (cloud/ConnectReachability, t3-connect docs) is removed in Onicode
