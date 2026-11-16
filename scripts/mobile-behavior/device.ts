@@ -48,6 +48,8 @@ export interface ProbeState {
     readonly keyboard: boolean;
   };
   readonly floatingStatus: string | null;
+  /** Whether the pill above the composer shows the running-agents segment. */
+  readonly floatingAgents: boolean;
   readonly environments: ReadonlyArray<string>;
   /** The app's status for every thread it knows, by thread id. */
   readonly threads: Record<string, string>;

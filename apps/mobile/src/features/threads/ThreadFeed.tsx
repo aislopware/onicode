@@ -2804,15 +2804,14 @@ function ThreadFeedPlaceholder(props: {
   );
 }
 
-// A hook's return value is frozen to the compiler, so ThreadFeed's later
-// hooks can't drag this derivation into an uncached scope.
-// A hook's result is frozen to the React Compiler; a plain call's result would stay mutable
-// until its last use and drop the memo of everything below that reads the feed.
+// A hook for the same reason as useThreadFeedPresentation below.
 function usePendingTurnRows(feed: ReadonlyArray<PendingThreadFeedEntry>, zen: boolean) {
   const [appendPendingTurn] = useState(createPendingTurnAppender);
   return appendPendingTurn(feed, { zen });
 }
 
+// A hook's return value is frozen to the compiler, so ThreadFeed's later
+// hooks can't drag this derivation into an uncached scope.
 function useThreadFeedPresentation(
   props: ThreadFeedProps,
   expandedTurnIds: ReadonlySet<RunId>,

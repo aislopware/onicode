@@ -72,6 +72,7 @@ function scanTree() {
   const feeds = new Map<string, Feed>();
   const editors: Array<{ value: string; expanded: boolean }> = [];
   let floatingStatus: string | null = null;
+  let floatingAgents = false;
   let homeList: Array<{
     type: string;
     threadId?: string;
@@ -102,6 +103,7 @@ function scanTree() {
     if ("status" in props && "showScrollToEnd" in props) {
       const status = props.status as { kind?: string } | null;
       floatingStatus = status?.kind ?? null;
+      floatingAgents = "agents" in props && props.agents !== null && props.agents !== undefined;
     }
     if (homeList === null && Array.isArray(props.data) && "renderItem" in props) {
       const data = props.data as ReadonlyArray<{
@@ -131,7 +133,7 @@ function scanTree() {
     return feed;
   };
   for (const root of roots) walk(root.current, null, enter);
-  return { feeds: [...feeds.values()], editors, floatingStatus, homeList };
+  return { feeds: [...feeds.values()], editors, floatingStatus, floatingAgents, homeList };
 }
 
 function feedState(feed: Feed) {
@@ -223,6 +225,7 @@ function snapshot() {
       keyboard: KeyboardController.isVisible(),
     },
     floatingStatus: scan.floatingStatus,
+    floatingAgents: scan.floatingAgents,
     homeList: scan.homeList,
   };
 }

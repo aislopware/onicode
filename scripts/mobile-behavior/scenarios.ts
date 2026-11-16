@@ -469,7 +469,8 @@ export const SCENARIOS = {
     yield* ctx.env.settled(threadId);
     return {
       status: home.threads[threadId] ?? "missing",
-      threadShowsStatus: thread.floatingStatus !== null,
+      // Turn and connection status left the pill; running subagents show as its agents segment.
+      threadShowsStatus: thread.floatingStatus !== null || thread.floatingAgents,
     } satisfies Metrics;
   }, failure),
 
