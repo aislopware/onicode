@@ -2,6 +2,8 @@
 // The SDK owns process shutdown; native deadlines cover initialize before an Effect resource exists.
 // @effect-diagnostics-next-line nodeBuiltinImport:off -- FileSystem.realPath is Node's JS realpath; museCanonicalPath needs the native one.
 import * as NodeFSP from "node:fs/promises";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- the SDK's spawnFn seam replaces child_process.spawn itself.
+import * as NodeChildProcess from "node:child_process";
 
 import {
   spawnMspConnection,
@@ -163,6 +165,21 @@ export function museInitializeParams(readOnly = false) {
   };
 }
 
+// The SDK settles `exited` on the child's "close", which waits for descendants holding its stdio.
+const spawnObservingExit = (onProcessExit: (exit: ProcessExit) => void) => {
+  const spawnChild = (
+    command: string,
+    args: ReadonlyArray<string>,
+    spawnOptions: NodeChildProcess.SpawnOptionsWithoutStdio,
+  ) => {
+    const child = NodeChildProcess.spawn(command, args, spawnOptions);
+    child.once("exit", (code, signal) => onProcessExit({ code, signal }));
+    return child;
+  };
+  // The SDK calls its spawnFn with exactly this overload.
+  return spawnChild as typeof NodeChildProcess.spawn;
+};
+
 /** Owns cleanup before the handshake, even if initialize never replies. */
 export async function createMuseSdkHost(
   options: MuseSdkHostOptions,
@@ -176,7 +193,7 @@ export async function createMuseSdkHost(
     ...(options.cwd ? { cwd: options.cwd } : {}),
     env: options.environment ?? makeMuseEnvironment(),
     shutdownTimeoutMs: 10_000,
-    ...(options.onProcessExit ? { onProcessExit: options.onProcessExit } : {}),
+    ...(options.onProcessExit ? { spawnFn: spawnObservingExit(options.onProcessExit) } : {}),
   });
   let closePromise: Promise<void> | undefined;
   const close = () => {

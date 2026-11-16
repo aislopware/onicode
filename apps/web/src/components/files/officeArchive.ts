@@ -1,5 +1,6 @@
-import JSZip from "jszip";
-import { checkZipDirectory } from "@onicode/client-runtime/zip/directory";
+import * as Schema from "effect/Schema";
+import { strToU8, zipSync } from "fflate";
+import { readZipDirectory, UnreadableZipEntryError } from "@onicode/client-runtime/zip/directory";
 import { SaxesParser } from "saxes";
 import { externalUrl } from "./office/links";
 
@@ -57,6 +58,15 @@ function officeXml(bytes: Uint8Array) {
   return officeXmlDecoder(bytes)
     .decode(bytes)
     .replace(/^(<\?xml\s[^?]*\bencoding\s*=\s*)["'][^"']+["']/i, '$1"UTF-8"');
+}
+
+export type OfficeArchive = Map<string, string | Uint8Array>;
+
+const isUnreadableZipEntry = Schema.is(UnreadableZipEntryError);
+
+export function archiveText(archive: OfficeArchive, path: string) {
+  const content = archive.get(path);
+  return typeof content === "object" ? new TextDecoder().decode(content) : content;
 }
 
 // Section properties terminate the section they describe, so the kept prefix
@@ -593,7 +603,7 @@ function engineStyles(xml: string) {
     );
 }
 
-async function boundWorkbook(archive: JSZip) {
+function boundWorkbook(archive: OfficeArchive) {
   const paths = new Map<string, string>();
   // Chart sheets and other non-grid sheets hold no cells to bound.
   const otherSheets = new Set<string>();
@@ -615,9 +625,7 @@ async function boundWorkbook(archive: JSZip) {
     if (type?.endsWith("/styles")) stylesPath = path;
     if (type?.endsWith("/theme")) themePath = path;
   });
-  relationships
-    .write((await archive.file("xl/_rels/workbook.xml.rels")?.async("string")) ?? "")
-    .close();
+  relationships.write(archiveText(archive, "xl/_rels/workbook.xml.rels") ?? "").close();
   const sheetPaths: string[] = [];
   // Every sheet in workbook order, as the engine indexes them; chart sheets have no worksheet path.
   const sheetOrder: (string | undefined)[] = [];
@@ -635,8 +643,8 @@ async function boundWorkbook(archive: JSZip) {
     sheetPaths.push(path);
     sheetOrder.push(path);
   });
-  workbook.write((await archive.file("xl/workbook.xml")?.async("string")) ?? "").close();
-  const theme = (await archive.file(themePath)?.async("string")) ?? "";
+  workbook.write(archiveText(archive, "xl/workbook.xml") ?? "").close();
+  const theme = archiveText(archive, themePath) ?? "";
   const typeface = (font: string, fallback: string) =>
     new RegExp(
       `<(?:[\\w.-]+:)?${font}\\b[^>]*>\\s*<(?:[\\w.-]+:)?latin\\b[^>]*\\btypeface\\s*=\\s*["']([^"']+)["']`,
@@ -645,10 +653,10 @@ async function boundWorkbook(archive: JSZip) {
     major: typeface("majorFont", "Calibri Light"),
     minor: typeface("minorFont", "Calibri"),
   };
-  const styles = await archive.file(stylesPath)?.async("string");
-  if (styles) archive.file(stylesPath, engineStyles(styles));
+  const styles = archiveText(archive, stylesPath);
+  if (styles) archive.set(stylesPath, engineStyles(styles));
   const strings: string[] = [];
-  const shared = await archive.file(sharedPath)?.async("string");
+  const shared = archiveText(archive, sharedPath);
   if (shared) {
     const parser = xmlParser();
     let text = "";
@@ -671,10 +679,10 @@ async function boundWorkbook(archive: JSZip) {
   const budget = { remaining: 1024 * 1024, cells: 0 };
   const bounded = new Map<string, { truncated: boolean; gridlines: boolean }>();
   for (const path of new Set(sheetPaths)) {
-    const file = archive.file(path);
-    if (!file) throw new Error("This workbook has a missing worksheet.");
-    const sheet = boundedWorksheet(await file.async("string"), strings, budget);
-    archive.file(path, sheet.xml);
+    const file = archiveText(archive, path);
+    if (file === undefined) throw new Error("This workbook has a missing worksheet.");
+    const sheet = boundedWorksheet(file, strings, budget);
+    archive.set(path, sheet.xml);
     bounded.set(path, sheet);
   }
   return {
@@ -968,8 +976,8 @@ function wordXmlCost(xml: string, roles: Set<string> | undefined) {
 
 // Layout can repeat notes at references and headers/footers across pages.
 // Charge those copies, not just the XML that defines them.
-async function wordExpansion(
-  archive: JSZip,
+function wordExpansion(
+  archive: OfficeArchive,
   parts: ReturnType<typeof wordPartTypes>,
   mediaSizes: Map<string, number>,
   auxiliaryCosts: Map<string, { bytes: number; markup: number }>,
@@ -982,7 +990,7 @@ async function wordExpansion(
   const noteParts = new Map<string, string>();
   for (const [path, roles] of parts.roles) {
     if (![...roles].some((role) => WORD_EXPANDED_PARTS.has(role))) continue;
-    const xml = await archive.file(path)?.async("string");
+    const xml = archiveText(archive, path);
     if (!xml) continue;
     optional.add(path);
     if (roles.has("header") || roles.has("footer")) nodes.set(path, { xml, path });
@@ -1080,10 +1088,7 @@ async function wordExpansion(
   // bound also includes explicit breaks and section transitions in each batch.
   let stylePageBreaks = false;
   for (const [path, roles] of parts.roles)
-    if (
-      roles.has("styles") &&
-      /<(?:\w+:)?pageBreakBefore\b/.test((await archive.file(path)?.async("string")) ?? "")
-    )
+    if (roles.has("styles") && /<(?:\w+:)?pageBreakBefore\b/.test(archiveText(archive, path) ?? ""))
       stylePageBreaks = true;
   for (const document of documents) {
     const pages = Math.max(
@@ -1110,7 +1115,7 @@ async function wordExpansion(
     media > OFFICE_PREVIEW_MAX_BYTES;
   const truncated = (used.size > 0 && overBudget) || bytes === Infinity;
   const omitted = new Set([...optional].filter((path) => truncated || !used.has(path)));
-  for (const path of omitted) archive.remove(path);
+  for (const path of omitted) archive.delete(path);
   if (truncated)
     for (const document of documents)
       costs.set(document, scan(document, "word/document.xml", new Set(), 1, false));
@@ -1119,7 +1124,7 @@ async function wordExpansion(
     const ids = new Set([...refs].filter(([, path]) => omitted.has(path)).map(([id]) => id));
     if (ids.size === 0) continue;
     const relPath = owner ? owner.replace(/([^/]+)$/, "_rels/$1.rels") : "_rels/.rels";
-    let xml = await archive.file(relPath)?.async("string");
+    let xml = archiveText(archive, relPath);
     if (!xml) continue;
     const removed: { start: number; end: number }[] = [];
     const parser = xmlParser();
@@ -1137,7 +1142,7 @@ async function wordExpansion(
     parser.write(xml).close();
     for (const range of removed.toReversed())
       xml = xml.slice(0, range.start) + xml.slice(range.end);
-    archive.file(relPath, xml);
+    archive.set(relPath, xml);
   }
   return { costs, truncated, omitted };
 }
@@ -1149,20 +1154,20 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
   const spreadsheet = input.kind === "xlsx";
   if (bytes.byteLength > OFFICE_PREVIEW_MAX_BYTES)
     throw new Error("Preview limited to files under 50 MB.");
-  checkZipDirectory(bytes);
-  const source = await JSZip.loadAsync(bytes).catch(() => {
-    throw new Error("This file is damaged, encrypted, or not a valid Office document.");
-  });
-  const allEntries = Object.values(source.files);
-  if (allEntries.length > 2048)
-    throw new Error("This file contains too many archive entries to preview.");
-  const entries = allEntries.filter((entry) => !entry.dir);
+  let directory: ReturnType<typeof readZipDirectory>;
+  try {
+    directory = readZipDirectory(bytes);
+  } catch (cause) {
+    if (!isUnreadableZipEntry(cause)) throw cause;
+    throw new Error("This file is damaged, encrypted, or not a valid Office document.", { cause });
+  }
+  const entries = [...directory.values()].filter((entry) => !entry.directory);
   if (
     input.kind === "docx" &&
     entries.some((entry) => entry.name.includes("\\") || entry.name.startsWith("/"))
   )
     throw new Error("Preview limited: this Word document has unsupported archive paths.");
-  const archive = new JSZip();
+  const archive: OfficeArchive = new Map();
   const partTypes = wordPartTypes();
   // Metadata must be bounded and classified before any payload gets a media exemption.
   if (input.kind === "docx")
@@ -1184,67 +1189,39 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
     const sections = document ? wordSections() : null;
     let decoder: TextDecoder | undefined;
     let length = 0;
-    await new Promise<void>((resolve, reject) => {
-      // JSZip exposes this streaming API at runtime but omits it from its types.
-      const stream = (
-        entry as JSZip.JSZipObject & {
-          internalStream(type: "uint8array"): JSZip.JSZipStreamHelper<Uint8Array>;
-        }
-      ).internalStream("uint8array");
-      stream
-        .on("data", (chunk: Uint8Array) => {
-          total += chunk.length;
-          length += chunk.length;
-          if (total > (spreadsheet ? 128 * 1024 * 1024 : OFFICE_PREVIEW_MAX_BYTES)) {
-            stream.pause();
-            reject(new Error("The expanded document is too large to preview safely."));
-            return;
-          }
-          try {
-            if (sections) {
-              decoder ??= officeXmlDecoder(chunk);
-              sections.write(decoder.decode(chunk, { stream: true }));
-            }
-          } catch (cause) {
-            stream.pause();
-            reject(cause);
-            return;
-          }
-          if (document && length > 4 * 1024 * 1024) {
-            const kept = Math.max(0, chunk.length - (length - 4 * 1024 * 1024));
-            if (kept) chunks.push(chunk.subarray(0, kept));
-            wordInputTruncated = true;
-            return;
-          }
-          // Media is bounded independently. Even renamed auxiliary XML must
-          // stay small before the engine parses it.
-          if (input.kind === "docx" && !document && !media) {
-            for (const byte of chunk) if (byte === 0x3c) wordAuxiliaryMarkup++;
-            if (
-              length > WORD_LIMITS.auxiliaryPartBytes ||
-              wordAuxiliaryMarkup > WORD_LIMITS.auxiliaryMarkup
-            ) {
-              stream.pause();
-              reject(
-                new Error("Preview limited: this Word document has too much auxiliary markup."),
-              );
-              return;
-            }
-          }
-          if (
-            total > (spreadsheet ? 128 * 1024 * 1024 : OFFICE_PREVIEW_MAX_BYTES) ||
-            (spreadsheet && total > Math.max(bytes.byteLength * 200, 8 * 1024 * 1024)) ||
-            (!document &&
-              (spreadsheet || media || entry.name.endsWith(".xml")) &&
-              length > (spreadsheet ? 64 * 1024 * 1024 : 8 * 1024 * 1024))
-          ) {
-            stream.pause();
-            reject(new Error("The expanded document is too large to preview safely."));
-          } else chunks.push(chunk);
-        })
-        .on("error", reject)
-        .on("end", resolve)
-        .resume();
+    await entry.read((chunk) => {
+      total += chunk.length;
+      length += chunk.length;
+      if (total > (spreadsheet ? 128 * 1024 * 1024 : OFFICE_PREVIEW_MAX_BYTES))
+        throw new Error("The expanded document is too large to preview safely.");
+      if (sections) {
+        decoder ??= officeXmlDecoder(chunk);
+        sections.write(decoder.decode(chunk, { stream: true }));
+      }
+      if (document && length > 4 * 1024 * 1024) {
+        const kept = Math.max(0, chunk.length - (length - 4 * 1024 * 1024));
+        if (kept) chunks.push(chunk.subarray(0, kept));
+        wordInputTruncated = true;
+        return;
+      }
+      // Media is bounded independently. Even renamed auxiliary XML must
+      // stay small before the engine parses it.
+      if (input.kind === "docx" && !document && !media) {
+        for (const byte of chunk) if (byte === 0x3c) wordAuxiliaryMarkup++;
+        if (
+          length > WORD_LIMITS.auxiliaryPartBytes ||
+          wordAuxiliaryMarkup > WORD_LIMITS.auxiliaryMarkup
+        )
+          throw new Error("Preview limited: this Word document has too much auxiliary markup.");
+      }
+      if (
+        (spreadsheet && total > Math.max(bytes.byteLength * 200, 8 * 1024 * 1024)) ||
+        (!document &&
+          (spreadsheet || media || entry.name.endsWith(".xml")) &&
+          length > (spreadsheet ? 64 * 1024 * 1024 : 8 * 1024 * 1024))
+      )
+        throw new Error("The expanded document is too large to preview safely.");
+      chunks.push(chunk);
     });
     const content = new Uint8Array(document ? Math.min(length, 4 * 1024 * 1024) : length);
     let offset = 0;
@@ -1255,7 +1232,7 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
     if (document) {
       sections!.write(decoder?.decode() ?? "");
       word = wordDocuments(officeXml(content), wordInputTruncated, sections!.finish());
-      archive.file(entry.name, word.documents[0]!);
+      archive.set(entry.name, word.documents[0]!);
     } else if (input.kind === "docx" && !media) {
       let xml = officeXml(content);
       if (entry.name === "[Content_Types].xml" || entry.name.endsWith(".rels"))
@@ -1281,20 +1258,20 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
         continue;
       }
       costs.set(entry.name, cost);
-      archive.file(entry.name, xml);
+      archive.set(entry.name, xml);
     } else {
       if (input.kind === "docx" && partTypes.roles.get(entry.name)?.has("font")) {
         continue;
       }
       if (media) mediaSizes.set(entry.name, Math.ceil((content.length * 4) / 3));
-      archive.file(entry.name, /\.(?:xml|rels)$/i.test(entry.name) ? officeXml(content) : content);
+      archive.set(entry.name, /\.(?:xml|rels)$/i.test(entry.name) ? officeXml(content) : content);
     }
   }
   if (word) {
-    const expansion = await wordExpansion(archive, partTypes, mediaSizes, costs, word.documents);
+    const expansion = wordExpansion(archive, partTypes, mediaSizes, costs, word.documents);
     wordInputTruncated ||= expansion.truncated;
     for (const path of expansion.omitted) {
-      archive.remove(path);
+      archive.delete(path);
       costs.delete(path);
     }
     let mediaBytes = 0;
@@ -1329,10 +1306,10 @@ export async function boundedArchive(input: Extract<OfficeWorkerRequest, { type:
       throw new Error("Preview limited: this Word document has too much expanded markup.");
     word.truncated ||= wordInputTruncated || documents.length < word.documents.length;
     word.documents = documents;
-    for (const path of mediaSizes.keys()) if (!usedImages.has(path)) archive.remove(path);
-    archive.file("word/document.xml", documents[0]!);
+    for (const path of mediaSizes.keys()) if (!usedImages.has(path)) archive.delete(path);
+    archive.set("word/document.xml", documents[0]!);
   }
-  const workbook = input.kind === "xlsx" ? await boundWorkbook(archive) : undefined;
+  const workbook = input.kind === "xlsx" ? boundWorkbook(archive) : undefined;
   return { archive, word, workbook };
 }
 
@@ -1347,7 +1324,7 @@ export async function prepareOffice(
       : kind === "xlsx"
         ? "xl/workbook.xml"
         : "ppt/presentation.xml";
-  if (!result.archive.file(root))
+  if (!result.archive.has(root))
     throw new Error("This is not a valid Office Open XML file. Encrypted files are not supported.");
   if (result.word) {
     const references = new Map<string, string>();
@@ -1357,12 +1334,10 @@ export async function prepareOffice(
       const type = tag.attributes.Type?.value ?? "";
       const target = tag.attributes.Target?.value ?? "";
       const path = new URL(target, "https://docx.invalid/word/").pathname.slice(1);
-      if (result.archive.file(path))
+      if (result.archive.has(path))
         references.set(tag.attributes.Id?.value ?? "", type.slice(type.lastIndexOf("/") + 1));
     });
-    const relationshipXml = await result.archive
-      .file("word/_rels/document.xml.rels")
-      ?.async("string");
+    const relationshipXml = archiveText(result.archive, "word/_rels/document.xml.rels");
     if (relationshipXml) relationships.write(relationshipXml).close();
     let xml = joinWordBatches(result.word.documents);
     const removed: { start: number; end: number }[] = [];
@@ -1384,10 +1359,18 @@ export async function prepareOffice(
     parser.write(xml).close();
     for (const range of removed.toReversed())
       xml = xml.slice(0, range.start) + xml.slice(range.end);
-    result.archive.file(root, xml);
+    result.archive.set(root, xml);
   }
   return {
-    bytes: await result.archive.generateAsync({ type: "arraybuffer", compression: "STORE" }),
+    bytes: zipSync(
+      Object.fromEntries(
+        [...result.archive].map(([path, content]) => [
+          path,
+          typeof content === "string" ? strToU8(content) : content,
+        ]),
+      ),
+      { level: 0 },
+    ).buffer,
     truncated:
       result.word?.truncated || result.workbook?.sheets.some((sheet) => sheet.truncated) || false,
     view: result.workbook && {

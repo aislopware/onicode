@@ -5,7 +5,7 @@ import type { SnapShotKeyChord } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import { nativeImage } from "electron";
 
-// Keep dbus-next out of desktop detection and PNG reads in the main process.
+// Keep @particle/dbus-next out of desktop detection and PNG reads in the main process.
 
 export const HYPRLAND_CAPTURE_ACTION = "capture-window";
 

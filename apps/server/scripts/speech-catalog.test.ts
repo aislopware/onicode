@@ -41,7 +41,7 @@ it("reproduces the bundled registry byte for byte without upstream requests", as
       results: { [parakeet.id]: { accuracy: { en: { error: 3.99 } }, performance: {} } },
     },
     "0.2.3",
-    "0.4.1",
+    "0.4.2",
   );
   expect(withoutFrenchOrSpeed.models[0]?.benchmark).toEqual({
     accuracy: { en: { grade: "A-", errorPercent: 3.99 } },
@@ -56,7 +56,7 @@ it("reproduces the bundled registry byte for byte without upstream requests", as
         results: { [parakeet.id]: { accuracy: {}, performance } },
       },
       "0.2.3",
-      "0.4.1",
+      "0.4.2",
     );
     expect(result.models[0]?.benchmark.secondsPer30s).toEqual({
       cpu: performance.cpu ? 15 : null,
@@ -77,7 +77,7 @@ it("filters restricted licenses, unsupported roles, engines, architectures and f
     { license: "cc-by-nc" },
     { license: "CC BY-NC 4.0" },
     { license: "custom_NC" },
-    { minEngine: "0.4.2" },
+    { minEngine: "0.4.3" },
     { minEngine: "0.5.0" },
     { family: "future_arch" },
     ...[
@@ -91,7 +91,7 @@ it("filters restricted licenses, unsupported roles, engines, architectures and f
     expect(generate([{ ...model, ...override }]).models).toEqual([]);
   }
   for (const license of ["other", "apache-2.0", "cc-by-4.0", "cc-by-sa-4.0", "unlicense"]) {
-    expect(generate([{ ...model, license, minEngine: "0.4.1" }]).models).toHaveLength(1);
+    expect(generate([{ ...model, license, minEngine: "0.4.2" }]).models).toHaveLength(1);
   }
   const moonshine = catalog.models.find((entry) => entry.id === "moonshine-tiny-ja")!;
   for (const [id, allowed] of [
@@ -124,8 +124,8 @@ it("rejects missing defaults, unpinned or corrupt metadata, collisions, and unre
   expect(() => generate([model, { ...model, repository: "handy-computer/another" }])).toThrow(
     /Duplicate/,
   );
-  expect(() => generateSpeechCatalog(catalog.data, "0.2.3", "0.4.2")).toThrow(/loader support/);
+  expect(() => generateSpeechCatalog(catalog.data, "0.2.3", "0.4.3")).toThrow(/loader support/);
   expect(() =>
-    generateSpeechCatalog({ ...catalog.data, schema: 3 as 2 }, "0.2.3", "0.4.1"),
+    generateSpeechCatalog({ ...catalog.data, schema: 3 as 2 }, "0.2.3", "0.4.2"),
   ).toThrow(/schema/);
 });

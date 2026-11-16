@@ -70,6 +70,8 @@ export default defineConfig({
   test: {
     hookTimeout: 60_000,
     testTimeout: 60_000,
+    // This package imports its own files without extensions, which Node refuses to resolve.
+    server: { deps: { inline: ["@material/material-color-utilities"] } },
     projects: [
       {
         extends: true,

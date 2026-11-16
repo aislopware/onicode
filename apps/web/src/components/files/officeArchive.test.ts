@@ -1,5 +1,6 @@
-import JSZip from "jszip";
 import { describe, expect, it } from "vite-plus/test";
+
+import { zipEntries, zipFixture } from "../../../test/zip";
 
 import { prepareOffice } from "./officeArchive";
 
@@ -11,40 +12,28 @@ const relationship = (type: string, target: string) =>
 const paragraph = (text: string, properties = "") =>
   `<w:p>${properties}<w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
 
-async function wordFile(
+function wordFile(
   body: string,
   parts: Partial<Record<"styles" | "numbering" | "header" | "footer" | "footnotes", string>> = {},
   section = "",
 ) {
-  const zip = new JSZip();
-  zip.file(
-    "[Content_Types].xml",
-    `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
-  );
-  zip.file(
-    "_rels/.rels",
-    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationship("officeDocument", "word/document.xml")}</Relationships>`,
-  );
-  zip.file(
-    "word/_rels/document.xml.rels",
-    `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${Object.keys(
+  return zipFixture({
+    "[Content_Types].xml": `<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`,
+    "_rels/.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationship("officeDocument", "word/document.xml")}</Relationships>`,
+    "word/_rels/document.xml.rels": `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${Object.keys(
       parts,
     )
       .map((part) => relationship(part, `${part}.xml`))
       .join("")}</Relationships>`,
-  );
-  for (const [part, xml] of Object.entries(parts)) zip.file(`word/${part}.xml`, xml);
-  zip.file(
-    "word/document.xml",
-    `<w:document ${W} ${V} ${R}><w:body>${body}<w:sectPr>${section}<w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`,
-  );
-  return zip.generateAsync({ type: "arraybuffer" });
+    ...Object.fromEntries(Object.entries(parts).map(([part, xml]) => [`word/${part}.xml`, xml])),
+    "word/document.xml": `<w:document ${W} ${V} ${R}><w:body>${body}<w:sectPr>${section}<w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`,
+  }).buffer;
 }
 
 async function prepared(bytes: ArrayBuffer) {
   const result = await prepareOffice(bytes, "docx");
-  const zip = await JSZip.loadAsync(result.bytes);
-  return { truncated: result.truncated, part: (path: string) => zip.file(path)?.async("string") };
+  const zip = zipEntries(result.bytes);
+  return { truncated: result.truncated, part: zip.text };
 }
 
 // regression: the budgets sized for a main-thread renderer cut ordinary documents short.
@@ -56,10 +45,10 @@ describe("Word preview limits", () => {
         `<w:tr>${Array.from({ length: 5 }, (_, cell) => `<w:tc>${paragraph(`r${row}c${cell}`)}</w:tc>`).join("")}</w:tr>`,
     ).join("");
     const result = await prepared(
-      await wordFile(`<w:tbl>${rows}</w:tbl>${paragraph("After the table")}`),
+      wordFile(`<w:tbl>${rows}</w:tbl>${paragraph("After the table")}`),
     );
     expect(result.truncated).toBe(false);
-    expect(await result.part("word/document.xml")).toContain("After the table");
+    expect(result.part("word/document.xml")).toContain("After the table");
   });
 
   it("keeps the list and style definitions of a long document", async () => {
@@ -75,7 +64,7 @@ describe("Word preview limits", () => {
         `<w:style w:type="paragraph" w:styleId="S${style}">${style % 10 ? `<w:basedOn w:val="S${style - 1}"/>` : ""}<w:pPr><w:spacing w:after="${style}"/></w:pPr><w:rPr><w:sz w:val="22"/></w:rPr></w:style>`,
     ).join("")}</w:styles>`;
     const result = await prepared(
-      await wordFile(
+      wordFile(
         Array.from({ length: 6_000 }, (_, index) =>
           paragraph(
             `Item ${index}`,
@@ -86,9 +75,9 @@ describe("Word preview limits", () => {
       ),
     );
     expect(result.truncated).toBe(false);
-    expect(await result.part("word/numbering.xml")).toBe(numbering);
-    expect(await result.part("word/styles.xml")).toBe(styles);
-    expect(await result.part("word/document.xml")).toContain("Item 5999");
+    expect(result.part("word/numbering.xml")).toBe(numbering);
+    expect(result.part("word/styles.xml")).toBe(styles);
+    expect(result.part("word/document.xml")).toContain("Item 5999");
   });
 
   it("keeps the lists of a document with picture bullets, with their text bullets", async () => {
@@ -97,11 +86,11 @@ describe("Word preview limits", () => {
     const numbered = `<w:abstractNum w:abstractNumId="1"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/></w:lvl></w:abstractNum>`;
     const lists = `<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num><w:num w:numId="2"><w:abstractNumId w:val="1"/></w:num>`;
     const result = await prepared(
-      await wordFile(paragraph("Item", `<w:pPr><w:numPr><w:numId w:val="2"/></w:numPr></w:pPr>`), {
+      wordFile(paragraph("Item", `<w:pPr><w:numPr><w:numId w:val="2"/></w:numPr></w:pPr>`), {
         numbering: `<w:numbering ${W} ${V} ${R}>${picture}${pictured}${numbered}${lists}</w:numbering>`,
       }),
     );
-    expect(await result.part("word/numbering.xml")).toBe(
+    expect(result.part("word/numbering.xml")).toBe(
       `<w:numbering ${W} ${V} ${R}>${pictured.replace('<w:lvlPicBulletId w:val="0"/>', "")}${numbered}${lists}</w:numbering>`,
     );
   });
@@ -115,20 +104,18 @@ describe("Word preview limits", () => {
     ],
     ["written as CDATA", `<w:p><w:r><w:t><![CDATA[${text}]]></w:t></w:r></w:p>`],
   ])("stops before a paragraph too long to lay out %s", async (_, long) => {
-    const result = await prepared(
-      await wordFile(paragraph("Kept") + long + paragraph("Not reached")),
-    );
+    const result = await prepared(wordFile(paragraph("Kept") + long + paragraph("Not reached")));
     expect(result.truncated).toBe(true);
-    const document = await result.part("word/document.xml");
+    const document = result.part("word/document.xml");
     expect(document).toContain("Kept");
     expect(document).not.toContain("Not reached");
   });
 
   it("counts only the text a paragraph lays out", async () => {
     const formatted = `<w:p>${" ".repeat(140_000)}<w:r><w:instrText>${"x".repeat(140_000)}</w:instrText></w:r><w:r><w:t>${"x".repeat(40_000)}</w:t></w:r></w:p>`;
-    const result = await prepared(await wordFile(formatted + paragraph("After")));
+    const result = await prepared(wordFile(formatted + paragraph("After")));
     expect(result.truncated).toBe(false);
-    expect(await result.part("word/document.xml")).toContain("After");
+    expect(result.part("word/document.xml")).toContain("After");
   });
 
   it("keeps a long header", async () => {
@@ -136,16 +123,16 @@ describe("Word preview limits", () => {
     const footer = `<w:ftr ${W}>${paragraph("Footer")}</w:ftr>`;
     const footnotes = `<w:footnotes ${W}><w:footnote w:id="1">${paragraph("Note")}</w:footnote></w:footnotes>`;
     const result = await prepared(
-      await wordFile(
+      wordFile(
         `<w:p><w:r><w:t>Body</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>`,
         { header, footer, footnotes },
         `<w:headerReference w:type="default" r:id="header"/><w:footerReference w:type="default" r:id="footer"/>`,
       ),
     );
     expect(result.truncated).toBe(false);
-    expect(await result.part("word/header.xml")).toBe(header);
-    expect(await result.part("word/footer.xml")).toBe(footer);
-    expect(await result.part("word/footnotes.xml")).toBe(footnotes);
-    expect(await result.part("word/document.xml")).toContain("Body");
+    expect(result.part("word/header.xml")).toBe(header);
+    expect(result.part("word/footer.xml")).toBe(footer);
+    expect(result.part("word/footnotes.xml")).toBe(footnotes);
+    expect(result.part("word/document.xml")).toContain("Body");
   });
 });

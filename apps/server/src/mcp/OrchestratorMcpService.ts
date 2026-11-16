@@ -2448,7 +2448,7 @@ const make = Effect.gen(function* () {
             ),
           ),
         ),
-        Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : closeCard)),
+        Effect.onError(() => closeCard),
       );
       if (Option.isNone(answered)) yield* closeCard;
       const status = Option.isSome(answered)

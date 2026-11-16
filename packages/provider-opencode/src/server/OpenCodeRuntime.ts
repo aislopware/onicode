@@ -798,9 +798,7 @@ const makeOpenCodeRuntime = Effect.gen(function* () {
         const attemptScope = yield* Scope.fork(ownerScope);
         return yield* startServerAttempt(input).pipe(
           Effect.provideService(Scope.Scope, attemptScope),
-          Effect.onExit((exit) =>
-            Exit.isFailure(exit) ? Scope.close(attemptScope, exit) : Effect.void,
-          ),
+          Effect.onError((cause) => Scope.close(attemptScope, Exit.failCause(cause))),
         );
       });
       // Shared opencode.db locks are transient; retry those, not configuration/executable errors.

@@ -292,7 +292,7 @@ it("explains why an encrypted ZIP cannot be browsed", async () => {
   const directory = view.getUint32(bytes.length - 6, true);
   view.setUint16(directory + 8, view.getUint16(directory + 8, true) | 1, true);
   await screen.render();
-  await screen.settle(() => expect(screen.container.textContent).toContain("Encrypted zip"));
+  await screen.settle(() => expect(screen.container.textContent).toContain("Encrypted ZIP"));
   expect(screen.container.querySelector('[aria-label="first.txt"]')).toBeNull();
 });
 

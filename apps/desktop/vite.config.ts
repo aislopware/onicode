@@ -36,7 +36,7 @@ export default defineConfig({
       },
       dev: {
         command:
-          "node scripts/build-browser-secret.mjs && node scripts/build-preview-annotation-css.mjs && cross-env ONICODE_DESKTOP_DEV=1 vp pack --watch",
+          "node scripts/build-browser-secret.mjs && node scripts/build-preview-annotation-css.mjs && ONICODE_DESKTOP_DEV=1 vp pack --watch",
         dependsOn: ["onicode#build"],
         cache: false,
       },

@@ -55,15 +55,15 @@
     "sync:repos": "node scripts/sync-reference-repos.ts"
   },
   "devDependencies": {
-    "@coderabbitai/config": "1.2.0",
-    "@effect/tsgo": "0.67.5",
+    "@coderabbitai/config": "3.1.0",
+    "@effect/tsgo": "0.69.0",
     "@shadcn/lint": "0.2.5",
     "@types/node": "catalog:",
-    "knip": "6.44.2",
+    "knip": "6.45.1",
     "vite-plus": "catalog:"
   },
   "engines": {
     "node": "26.13.1"
   },
-  "packageManager": "pnpm@12.18.0"
+  "packageManager": "pnpm@12.21.0"
 }

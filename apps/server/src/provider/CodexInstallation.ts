@@ -13,7 +13,6 @@ import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -816,24 +815,21 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         };
         yield* SubscriptionRef.set(state, next);
         const work = (release ? install(release) : reverify()).pipe(
-          Effect.onExit((exit) =>
-            Exit.isFailure(exit)
-              ? SubscriptionRef.update(state, (value) => {
-                  if (value.operationId !== operationId || value.phase === "succeeded")
-                    return value;
-                  const error = Cause.findErrorOption(exit.cause);
-                  const cancelled = Cause.hasInterruptsOnly(exit.cause);
-                  return {
-                    ...value,
-                    phase: cancelled ? "cancelled" : "failed",
-                    message: cancelled
-                      ? "Installation cancelled. The previous runtime is unchanged."
-                      : Option.isSome(error)
-                        ? error.value.detail
-                        : "Could not finish the Codex installation. Check disk space and directory access.",
-                  } satisfies ProviderInstallState;
-                })
-              : Effect.void,
+          Effect.onError((cause) =>
+            SubscriptionRef.update(state, (value) => {
+              if (value.operationId !== operationId || value.phase === "succeeded") return value;
+              const error = Cause.findErrorOption(cause);
+              const cancelled = Cause.hasInterruptsOnly(cause);
+              return {
+                ...value,
+                phase: cancelled ? "cancelled" : "failed",
+                message: cancelled
+                  ? "Installation cancelled. The previous runtime is unchanged."
+                  : Option.isSome(error)
+                    ? error.value.detail
+                    : "Could not finish the Codex installation. Check disk space and directory access.",
+              } satisfies ProviderInstallState;
+            }),
           ),
           Effect.ignoreCause,
           Effect.ensuring(

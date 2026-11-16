@@ -1,5 +1,5 @@
 import * as HostProcess from "@onicode/shared/HostProcess";
-import type { InteractionUpdate, RunResult, SteerAckOutcome } from "@cursor/sdk";
+import type { InteractionUpdate, RunResult } from "@cursor/sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   ProviderReplayEntry,
@@ -213,7 +213,7 @@ function replayRunnerError(
 export function makeCursorAgentSdkReplayRunner(
   transcript: CursorAgentSdkReplayTranscript,
 ): CursorAgentSdk.CursorAgentSdkRunner["Service"] {
-  const steerAcks = new Map<string, Deferred.Deferred<SteerAckOutcome>>();
+  const steerAcks = new Map<string, Deferred.Deferred<CursorAgentSdk.CursorSteerOutcome>>();
   let cursor = 0;
   let failure: CursorAgentSdkReplayError | null = null;
   let cursorAdvanced = makeSignal();
@@ -455,7 +455,7 @@ export function makeCursorAgentSdkReplayRunner(
                       ),
                     ),
                     steer: Effect.fn("CursorReplay.steer")(function* (text) {
-                      const ack = yield* Deferred.make<SteerAckOutcome>();
+                      const ack = yield* Deferred.make<CursorAgentSdk.CursorSteerOutcome>();
                       steerAcks.set(started.runId, ack);
                       yield* Effect.try({
                         try: () =>

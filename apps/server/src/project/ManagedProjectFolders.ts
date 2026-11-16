@@ -281,17 +281,23 @@ const make = Effect.gen(function* () {
     Effect.onInterrupt(() => invalidate),
   );
   // A symlinked scratch folder lets the No project live at either the link or its target.
-  const scratchProjectRoot = (root: string) =>
-    fileSystem.realPath(root).pipe(
-      Effect.flatMap((target) =>
-        target === root
-          ? Effect.succeed(root)
-          : projects
-              .getByWorkspaceRoot(target)
-              .pipe(Effect.map((project) => (Option.isSome(project) ? target : root))),
-      ),
-      Effect.orElseSucceed(() => root),
-    );
+  const scratchProjectRoot = Effect.fn("ManagedProjectFolders.scratchProjectRoot")(
+    function* (root: string) {
+      const canonical = yield* fileSystem.realPath(root);
+      if (canonical === root) return root;
+      // realPath also resolves symlinked ancestors (/var on macOS), so the project may be
+      // registered under the link's own spelling of its target.
+      const linked = yield* fileSystem.readLink(root).pipe(
+        Effect.map((link) => path.resolve(path.dirname(root), link)),
+        Effect.orElseSucceed(() => canonical),
+      );
+      for (const target of new Set([linked, canonical])) {
+        if (Option.isSome(yield* projects.getByWorkspaceRoot(target))) return target;
+      }
+      return root;
+    },
+    (effect, root) => Effect.orElseSucceed(effect, () => root),
+  );
   const scratchRoot = scratchProbe.pipe(
     Effect.flatMap((probed) =>
       Result.isSuccess(probed)
@@ -480,7 +486,7 @@ const make = Effect.gen(function* () {
       random
         .uuidV4()
         .pipe(Effect.mapError((cause) => new NamedProjectCreateError({ workspaceRoot, cause }))),
-    ]).pipe(Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : removeFolder)));
+    ]).pipe(Effect.onError(() => removeFolder));
     const [commitError, id] = prepared;
     const project = yield* projects
       .create({

@@ -1,5 +1,4 @@
 import { sha256 } from "@noble/hashes/sha2.js";
-import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import {
@@ -8,6 +7,7 @@ import {
   type OpenVsxThemeExtension,
 } from "./openVsxThemes";
 import { getThemeColorsForMode, themeColorToHex } from "./themePalette";
+import { zipFixture } from "../test/zip";
 
 const ASSET_ROOT = "https://open-vsx.org/api/demo/theme/1.0.0/file";
 
@@ -200,14 +200,12 @@ describe("Open VSX themes", () => {
   });
 
   it("downloads a verified VSIX, reads JSONC includes, and pairs contributed variants", async () => {
-    const zip = new JSZip();
-    zip.file("extension/.gitkeep", "");
+    const zip: Record<string, string> = {};
+    zip["extension/.gitkeep"] = "";
     for (let index = 0; index < 3_000; index += 1) {
-      zip.file(`extension/node_modules/package-${index}.js`, "");
+      zip[`extension/node_modules/package-${index}.js`] = "";
     }
-    zip.file(
-      "extension/themes/base.jsonc",
-      `{
+    zip["extension/themes/base.jsonc"] = `{
         // inherited workbench colors
         "colors": {
           "editor.foreground": "#eeeeee",
@@ -217,21 +215,15 @@ describe("Open VSX themes", () => {
           "editor.findMatchHighlightBackground": "#445566",
           "editor.findMatchHighlightForeground": "#ffffff",
         },
-      }`,
-    );
-    zip.file(
-      "extension/themes/demo-dark.json",
-      `{
+      }`;
+    zip["extension/themes/demo-dark.json"] = `{
         "include": "./base.jsonc",
         "colors": {
           "editor.background": "#111111",
           "editor.findMatchHighlightBackground": "#ffffff20"
         }
-      }`,
-    );
-    zip.file(
-      "extension/themes/demo-light.json",
-      `{
+      }`;
+    zip["extension/themes/demo-light.json"] = `{
         "colors": {
           "editor.background": "#fafafa",
           "editor.foreground": "#222222",
@@ -241,17 +233,13 @@ describe("Open VSX themes", () => {
           "editor.findMatchHighlightBackground": "#bbddff",
           "editor.findMatchHighlightForeground": "#112233"
         }
-      }`,
-    );
-    zip.file(
-      "extension/themes/demo.json",
-      `{
+      }`;
+    zip["extension/themes/demo.json"] = `{
         "colors": {
           "editor.background": "#181818",
           "editor.foreground": "#eeeeee"
         }
-      }`,
-    );
+      }`;
     const packagedManifest = {
       publisher: "demo",
       name: "theme",
@@ -267,17 +255,14 @@ describe("Open VSX themes", () => {
     };
     let packageBytes = new ArrayBuffer(0);
     let checksum = "";
-    const rebuildPackage = async () => {
-      zip.file("extension/package.json", JSON.stringify(packagedManifest));
-      packageBytes = await zip.generateAsync({
-        type: "arraybuffer",
-        comment: `PK\u0005\u0006${"x".repeat(26)}`,
-      });
+    const rebuildPackage = () => {
+      zip["extension/package.json"] = JSON.stringify(packagedManifest);
+      packageBytes = zipFixture(zip, { comment: `PK\u0005\u0006${"x".repeat(26)}` }).buffer;
       checksum = [...sha256(new Uint8Array(packageBytes))]
         .map((byte) => byte.toString(16).padStart(2, "0"))
         .join("");
     };
-    await rebuildPackage();
+    rebuildPackage();
     const manifest = {
       contributes: { themes: [{ label: "Wrong", path: "./themes/missing.json" }] },
     };
@@ -339,7 +324,7 @@ describe("Open VSX themes", () => {
     packagedManifest.contributes.themes[0]!.label = "Renamed Dark";
     packagedManifest.contributes.themes[1]!.label = "Renamed Light";
     packagedManifest.contributes.themes[2]!.label = "Renamed Solo";
-    await rebuildPackage();
+    rebuildPackage();
     const renamedThemes = await importOpenVsxThemeExtension(extension);
     expect(renamedThemes.map((theme) => theme.id)).toEqual(themes.map((theme) => theme.id));
 
@@ -348,7 +333,7 @@ describe("Open VSX themes", () => {
       uiTheme: "vs-dark",
       path: "./themes/demo.json",
     });
-    await rebuildPackage();
+    rebuildPackage();
     const duplicatePathThemes = await importOpenVsxThemeExtension(extension);
     expect(new Set(duplicatePathThemes.map((theme) => theme.id)).size).toBe(
       duplicatePathThemes.length,
@@ -359,20 +344,20 @@ describe("Open VSX themes", () => {
     packagedManifest.contributes.themes.pop();
 
     packagedManifest.contributes.themes[2]!.path = "./themes/missing.json";
-    await rebuildPackage();
+    rebuildPackage();
     await expect(importOpenVsxThemeExtension(extension)).rejects.toThrow(
       "could not be imported safely",
     );
     packagedManifest.contributes.themes[2]!.path = "./themes/demo.json";
 
     packagedManifest.license = "Proprietary";
-    await rebuildPackage();
+    rebuildPackage();
     await expect(importOpenVsxThemeExtension(extension)).rejects.toThrow(
       "does not match its advertised license",
     );
 
     Reflect.deleteProperty(packagedManifest, "license");
-    await rebuildPackage();
+    rebuildPackage();
     await expect(importOpenVsxThemeExtension(extension)).rejects.toThrow(
       "does not match its advertised license",
     );

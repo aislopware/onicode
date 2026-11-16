@@ -3,7 +3,6 @@ import * as NodeCrypto from "node:crypto";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
-import * as Exit from "effect/Exit";
 import * as FileSystem from "effect/FileSystem";
 import type { HttpClientError } from "effect/http";
 import { HttpClient, HttpClientRequest } from "effect/http";
@@ -329,13 +328,7 @@ const make = Effect.gen(function* () {
           .writeFileString(`${finalPath}.verified`, identity(model, info), { mode: 0o600 })
           .pipe(Effect.ignore);
         return finalPath;
-      }).pipe(
-        Effect.onExit((exit) =>
-          Exit.isSuccess(exit)
-            ? Effect.void
-            : fs.remove(partialPath, { force: true }).pipe(Effect.ignore),
-        ),
-      );
+      }).pipe(Effect.onError(() => fs.remove(partialPath, { force: true }).pipe(Effect.ignore)));
     },
   );
 

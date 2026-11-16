@@ -4,7 +4,7 @@ import * as NodeFSP from "node:fs/promises";
 import * as NodeTimers from "node:timers";
 import * as NodeURL from "node:url";
 import * as NodeVM from "node:vm";
-import { parse } from "acorn";
+import { parseSync } from "vite-plus";
 
 const expectedDesktopBridgeApis = [
   "getClientPlatform",
@@ -52,7 +52,14 @@ const inspectBundle = (source) => {
     }
   };
 
-  visit(parse(source, { ecmaVersion: "latest", sourceType: "script" }));
+  const { program, errors } = parseSync("preload.cjs", source, {
+    sourceType: "script",
+    lang: "js",
+  });
+  if (errors.length > 0) {
+    throw new Error(`Desktop preload bundle failed to parse: ${errors[0].message}`);
+  }
+  visit(program);
   return runtimeImports;
 };
 

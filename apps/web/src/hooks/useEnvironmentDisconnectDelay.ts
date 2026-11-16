@@ -20,7 +20,8 @@ export function useEnvironmentStateHeldFor(environmentId: EnvironmentId | null, 
     deadline: deadlineAfter(delayMs),
   }));
   if (held.environmentId !== environmentId) {
-    setHeld({ environmentId, deadline: deadlineAfter(delayMs) });
+    // The clock is read inside the updater: the compiler may cache a call made in render.
+    setHeld(() => ({ environmentId, deadline: deadlineAfter(delayMs) }));
   }
   const elapsed = useDeadlinePassed(held.environmentId === null ? null : held.deadline);
   return environmentId !== null && held.environmentId === environmentId && elapsed;

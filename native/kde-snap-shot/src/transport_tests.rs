@@ -36,9 +36,9 @@ impl Screenshots {
     fn capture_window(
         &self,
         handle: &str,
-        _options: HashMap<String, OwnedValue>,
+        _options: HashMap<String, OwnedVariant>,
         pipe: Fd<'_>,
-    ) -> std::result::Result<HashMap<String, OwnedValue>, CaptureError> {
+    ) -> std::result::Result<HashMap<String, OwnedVariant>, CaptureError> {
         if self.0.denied.load(Ordering::SeqCst) {
             return Err(CaptureError::NoAuthorized("Denied".into()));
         }
@@ -50,9 +50,9 @@ impl Screenshots {
     }
     fn capture_active_window(
         &self,
-        _options: HashMap<String, OwnedValue>,
+        _options: HashMap<String, OwnedVariant>,
         pipe: Fd<'_>,
-    ) -> std::result::Result<HashMap<String, OwnedValue>, CaptureError> {
+    ) -> std::result::Result<HashMap<String, OwnedVariant>, CaptureError> {
         if self.0.denied.load(Ordering::SeqCst) {
             return Err(CaptureError::NoAuthorized("Denied".into()));
         }
@@ -63,7 +63,7 @@ impl Screenshots {
     fn write(
         &self,
         pipe: Fd<'_>,
-    ) -> std::result::Result<HashMap<String, OwnedValue>, CaptureError> {
+    ) -> std::result::Result<HashMap<String, OwnedVariant>, CaptureError> {
         self.0.captures.fetch_add(1, Ordering::SeqCst);
         let fd = pipe.as_fd().try_clone_to_owned().unwrap();
         std::thread::spawn(move || {
@@ -72,7 +72,7 @@ impl Screenshots {
                 .unwrap();
         });
         Ok(HashMap::from([
-            ("type".into(), Value::from("raw").try_to_owned().unwrap()),
+            ("type".into(), Variant::from("raw").try_to_owned().unwrap()),
             ("width".into(), 2_u32.into()),
             ("height".into(), 1_u32.into()),
             ("stride".into(), 8_u32.into()),
@@ -145,7 +145,7 @@ pub(super) struct Fixture {
     state: Arc<State>,
 }
 impl Fixture {
-    pub(super) fn new() -> Self {
+    pub(super) async fn new() -> Self {
         // mktemp provides a private directory; no predictable paths or desktop bus env changes.
         let output = Command::new("mktemp")
             .args(["-d", "/tmp/oni-kde-bus-XXXXXX"])
@@ -170,20 +170,15 @@ impl Fixture {
             .unwrap();
         let state = Arc::new(State::default());
         let server = Builder::address(address.trim())
-            .unwrap()
             .name(SCREENSHOT)
-            .unwrap()
             .name("org.kde.KWin")
-            .unwrap()
             .serve_at("/org/kde/KWin/ScreenShot2", Screenshots(state.clone()))
-            .unwrap()
             .serve_at("/Scripting", Scripting(state.clone()))
-            .unwrap()
             .serve_at("/Scripting/Script1", LoadedScript(state.clone()))
-            .unwrap()
             .build()
+            .await
             .unwrap();
-        let client = connect(Builder::address(address.trim()).unwrap()).unwrap();
+        let client = connect(Builder::address(address.trim())).await.unwrap();
         Self {
             daemon,
             directory,
@@ -204,66 +199,75 @@ impl Drop for Fixture {
 
 #[test]
 fn permission_probe_never_captures_and_rejects_denial() {
-    let f = Fixture::new();
-    check(&f.client).unwrap();
-    assert_eq!(f.state.captures.load(Ordering::SeqCst), 0);
-    f.state.denied.store(true, Ordering::SeqCst);
-    assert!(
-        check(&f.client)
-            .unwrap_err()
-            .to_string()
-            .contains("NoAuthorized")
-    );
-    assert!(capture(&f.client, &f.directory).is_err());
-    assert_eq!(f.state.captures.load(Ordering::SeqCst), 0);
+    zbus::block_on(async {
+        let f = Fixture::new().await;
+        check(&f.client).await.unwrap();
+        assert_eq!(f.state.captures.load(Ordering::SeqCst), 0);
+        f.state.denied.store(true, Ordering::SeqCst);
+        assert!(
+            check(&f.client)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("NoAuthorized")
+        );
+        assert!(capture(&f.client, &f.directory).await.is_err());
+        assert_eq!(f.state.captures.load(Ordering::SeqCst), 0);
+    });
 }
 
 #[test]
 fn captures_pinned_window_through_real_fd_and_cleans_scripts() {
-    let f = Fixture::new();
-    let identity = capture(&f.client, &f.directory).unwrap().unwrap();
-    assert_eq!(identity.process_id, 123);
-    assert_eq!(
-        identity.client_bounds,
-        Bounds {
-            x: 0,
-            y: 29,
-            width: 800,
-            height: 571
-        }
-    );
-    assert_eq!(*f.state.captured_ids.lock().unwrap(), ["{window-1}"]);
-    assert_eq!(f.state.unloaded.load(Ordering::SeqCst), 2);
-    assert!(!f.directory.join("window.js").exists());
-    let mut decoder = png::Decoder::new(BufReader::new(
-        std::fs::File::open(f.directory.join("capture.png")).unwrap(),
-    ))
-    .read_info()
-    .unwrap();
-    let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
-    decoder.next_frame(&mut pixels).unwrap();
-    assert_eq!(pixels, [0x11, 0x22, 0x33, 255, 0x44, 0x55, 0x66, 255]);
-    let png = std::fs::read(f.directory.join("capture.png")).unwrap();
-    let idat = png.windows(4).position(|tag| tag == b"IDAT").unwrap();
-    // zlib FLEVEL 1 selects levels 2-5; the slow default level 6 reports 2.
-    assert_eq!(png[idat + 5] >> 6, 1);
+    zbus::block_on(async {
+        let f = Fixture::new().await;
+        let identity = capture(&f.client, &f.directory).await.unwrap().unwrap();
+        assert_eq!(identity.process_id, 123);
+        assert_eq!(
+            identity.client_bounds,
+            Bounds {
+                x: 0,
+                y: 29,
+                width: 800,
+                height: 571
+            }
+        );
+        assert_eq!(*f.state.captured_ids.lock().unwrap(), ["{window-1}"]);
+        assert_eq!(f.state.unloaded.load(Ordering::SeqCst), 2);
+        assert!(!f.directory.join("window.js").exists());
+        let mut decoder = png::Decoder::new(BufReader::new(
+            std::fs::File::open(f.directory.join("capture.png")).unwrap(),
+        ))
+        .read_info()
+        .unwrap();
+        let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
+        decoder.next_frame(&mut pixels).unwrap();
+        assert_eq!(pixels, [0x11, 0x22, 0x33, 255, 0x44, 0x55, 0x66, 255]);
+        let png = std::fs::read(f.directory.join("capture.png")).unwrap();
+        let idat = png.windows(4).position(|tag| tag == b"IDAT").unwrap();
+        // zlib FLEVEL 1 selects levels 2-5; the slow default level 6 reports 2.
+        assert_eq!(png[idat + 5] >> 6, 1);
+    });
 }
 
 #[test]
 fn omits_identity_when_window_changes_during_capture() {
-    let f = Fixture::new();
-    f.state.change_identity.store(true, Ordering::SeqCst);
-    assert!(capture(&f.client, &f.directory).unwrap().is_none());
-    assert!(f.directory.join("capture.png").exists());
+    zbus::block_on(async {
+        let f = Fixture::new().await;
+        f.state.change_identity.store(true, Ordering::SeqCst);
+        assert!(capture(&f.client, &f.directory).await.unwrap().is_none());
+        assert!(f.directory.join("capture.png").exists());
+    });
 }
 
 #[test]
 fn keeps_captured_identity_when_only_the_title_spinner_changes() {
-    let f = Fixture::new();
-    f.state.spin_title.store(true, Ordering::SeqCst);
-    let identity = capture(&f.client, &f.directory).unwrap().unwrap();
-    assert_eq!(identity.title, "⠋ Document");
-    assert_eq!(identity.process_id, 123);
-    assert_eq!(*f.state.captured_ids.lock().unwrap(), ["{window-1}"]);
-    assert_eq!(f.state.unloaded.load(Ordering::SeqCst), 2);
+    zbus::block_on(async {
+        let f = Fixture::new().await;
+        f.state.spin_title.store(true, Ordering::SeqCst);
+        let identity = capture(&f.client, &f.directory).await.unwrap().unwrap();
+        assert_eq!(identity.title, "⠋ Document");
+        assert_eq!(identity.process_id, 123);
+        assert_eq!(*f.state.captured_ids.lock().unwrap(), ["{window-1}"]);
+        assert_eq!(f.state.unloaded.load(Ordering::SeqCst), 2);
+    });
 }

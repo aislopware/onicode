@@ -45,7 +45,7 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
-    "@cursor/sdk": "1.3.1",
+    "@cursor/sdk": "1.4.0",
     "@onicode/contracts": "workspace:*",
     "@onicode/provider-core": "workspace:*",
     "@onicode/shared": "workspace:*",

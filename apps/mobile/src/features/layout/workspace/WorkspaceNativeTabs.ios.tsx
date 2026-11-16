@@ -246,7 +246,11 @@ export function WorkspaceNativeTabs(props: {
                   icon: settings
                     ? { type: "sfSymbol", name: "gearshape" }
                     : tab === "pullRequests"
-                      ? { type: "templateSource", templateSource: PULL_REQUEST_ICON }
+                      ? {
+                          type: "imageSource",
+                          imageSource: PULL_REQUEST_ICON,
+                          renderingMode: "template",
+                        }
                       : { type: "sfSymbol", name: NAVIGATION_TAB_ICONS[tab] },
                   selectedIcon:
                     !settings && tab === "threads"

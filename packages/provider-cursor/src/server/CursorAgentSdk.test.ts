@@ -1,4 +1,4 @@
-import type { ListRunsOptions } from "@cursor/sdk";
+import type { ListRunsOptions, SteerAckOutcome } from "@cursor/sdk";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, describe, it } from "@effect/vitest";
 import { ProviderSessionId, ThreadId } from "@onicode/contracts";
@@ -28,7 +28,7 @@ const cursorSdkMock = vi.hoisted(() => {
     durationMs: 1,
   }));
   const runCancel = vi.fn(async () => {});
-  const runSteer = vi.fn(async () => "complete_delivered" as const);
+  const runSteer = vi.fn(async (): Promise<SteerAckOutcome> => "complete_delivered");
   const agentClose = vi.fn(() => {
     closeExecutionOrder.push("sdk:agent.close");
     if (agentCloseFailure !== undefined) {
@@ -355,6 +355,9 @@ describe("CursorAgentSdkRunner", () => {
       const run = yield* session.send({ message: "continue" });
       assert.equal(yield* run.steer!("keep going"), "complete_delivered");
       assert.deepStrictEqual(cursorSdkMock.runSteer.mock.calls, [["keep going"]]);
+
+      cursorSdkMock.runSteer.mockImplementationOnce(async () => ({ outcome: "queued" }));
+      assert.equal(yield* run.steer!("queue it"), "queued");
 
       cursorSdkMock.runSteer.mockImplementationOnce(async () => {
         throw new Error("steer transport failed");

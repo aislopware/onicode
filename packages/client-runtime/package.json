@@ -601,7 +601,7 @@
     "@onicode/source-control-definitions": "workspace:*",
     "@pierre/diffs": "catalog:",
     "effect": "catalog:",
-    "jszip": "3.10.2",
+    "fflate": "0.8.3",
     "remark-gfm": "catalog:",
     "remark-parse": "catalog:",
     "three": "0.187.0",
@@ -611,6 +611,7 @@
   "devDependencies": {
     "@effect/vitest": "catalog:",
     "@types/mdast": "^4.0.4",
+    "@types/node": "catalog:",
     "@types/three": "0.187.0",
     "vite-plus": "catalog:"
   }

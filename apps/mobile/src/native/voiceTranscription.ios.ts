@@ -36,19 +36,14 @@ function wrapError(
   return new VoiceTranscriptionError({ code, message, cause });
 }
 
-function getNativeErrorCode(error: unknown): string | undefined {
-  if (typeof error !== "object" || error === null || !("code" in error)) {
-    return undefined;
-  }
-
-  return typeof error.code === "string" ? error.code : undefined;
-}
-
 export async function getLocalVoiceTranscriber(): Promise<VoiceTranscriber | null> {
   const locales = getPreferredLocales();
-  // Availability is a device and OS check; which languages have a model only `prepare` knows.
-  if (!AppleTranscription.isAvailable(locales[0]!)) return null;
-  return { prepare: (options) => prepareVoiceTranscription(locales, options) };
+  // Availability is a device and OS check, and the native call rejects before iOS 26.
+  const available = await AppleTranscription.getModelInfo(locales[0]!).then(
+    (info) => info.isAvailable,
+    () => false,
+  );
+  return available ? { prepare: (options) => prepareVoiceTranscription(locales, options) } : null;
 }
 
 async function prepareVoiceTranscription(
@@ -56,13 +51,6 @@ async function prepareVoiceTranscription(
   { signal }: VoiceTranscriptionOptions,
 ): Promise<PreparedVoiceTranscription> {
   throwIfVoiceTranscriptionAborted(signal);
-  if (!AppleTranscription.isAvailable(locales[0]!)) {
-    throw new VoiceTranscriptionError({
-      code: "unavailable",
-      message: "Voice transcription requires a supported device with iOS 26 or later.",
-    });
-  }
-
   let locale = locales[0]!;
   const model = prepareLocales(locales, signal).then((supported) => {
     locale = supported;
@@ -112,19 +100,25 @@ async function prepareLocales(locales: readonly string[], signal: AbortSignal): 
 
 async function prepareLocale(locale: string, signal: AbortSignal): Promise<string> {
   try {
-    const supportedLocale = await AppleTranscription.prepare(locale);
+    const info = await AppleTranscription.getModelInfo(locale);
     throwIfVoiceTranscriptionAborted(signal);
-    return supportedLocale;
-  } catch (error) {
-    throwIfVoiceTranscriptionAborted(signal);
-    if (getNativeErrorCode(error) === "AppleTranscriptionUnsupportedLocale") {
+    if (!info.isAvailable) {
+      throw new VoiceTranscriptionError({
+        code: "unavailable",
+        message: "Voice transcription requires a supported device with iOS 26 or later.",
+      });
+    }
+    if (info.locale === undefined || info.assets === "unsupported") {
       throw new VoiceTranscriptionError({
         code: "unsupported-locale",
         message: "Voice transcription does not support any of your languages.",
-        cause: error,
       });
     }
-
+    await AppleTranscription.prepare(info.locale);
+    throwIfVoiceTranscriptionAborted(signal);
+    return info.locale;
+  } catch (error) {
+    throwIfVoiceTranscriptionAborted(signal);
     throw wrapError(
       "preparation-failed",
       "Voice transcription could not prepare this language.",

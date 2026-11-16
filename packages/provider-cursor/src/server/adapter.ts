@@ -3104,7 +3104,8 @@ export const makeCursorAdapterV2 = Effect.fn("makeCursorAdapterV2")(function* (
                 context.run.steer === undefined
                   ? "revert_to_followup"
                   : yield* context.run.steer(text);
-              if (outcome === "complete_delivered") {
+              // A queued steer is already Cursor's follow-up; declining it would send the text twice.
+              if (outcome === "complete_delivered" || outcome === "queued") {
                 return;
               }
               if (context.interrupted) {

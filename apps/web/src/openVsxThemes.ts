@@ -1,6 +1,6 @@
 import { sha256 } from "@noble/hashes/sha2.js";
-import JSZip from "jszip";
 import { parse, type ParseError } from "jsonc-parser";
+import { readZipDirectory, type ZipEntry } from "@onicode/client-runtime/zip/directory";
 
 import type { ThemeDefinition } from "./themePalette";
 import {
@@ -381,15 +381,7 @@ function contributionType(uiTheme: unknown): string | null {
   return null;
 }
 
-type ZipEntrySizes = {
-  uncompressedSize?: unknown;
-};
-
-type InspectableZipObject = JSZip.JSZipObject & {
-  _data?: ZipEntrySizes;
-  unsafeOriginalName?: string;
-  internalStream?: (type: "uint8array") => JSZip.JSZipStreamHelper<Uint8Array>;
-};
+type ZipPackage = Map<string, ZipEntry>;
 
 function inspectZipDirectory(bytes: Uint8Array): Uint8Array {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -448,90 +440,47 @@ function inspectZipDirectory(bytes: Uint8Array): Uint8Array {
   const commentLength = view.getUint16(endOffset + 20, true);
   if (commentLength === 0) return bytes;
 
-  // Strip ZIP comments; JSZip can mistake EOCD-like comment bytes for the real record.
+  // The ZIP reader rejects EOCD-like comment bytes, so drop the comment once the real record is found.
   const withoutComment = bytes.slice(0, endOffset + 22);
   withoutComment[endOffset + 20] = 0;
   withoutComment[endOffset + 21] = 0;
   return withoutComment;
 }
 
-function inspectZip(zip: JSZip): void {
-  const entries = Object.values(zip.files) as InspectableZipObject[];
-  if (entries.length > MAX_ZIP_ENTRIES)
-    throw new Error("That extension package has too many files.");
+function inspectZip(zip: ZipPackage): void {
+  if (zip.size > MAX_ZIP_ENTRIES) throw new Error("That extension package has too many files.");
 
-  for (const entry of entries) {
-    if (entry.unsafeOriginalName) normalizePackagePath(entry.unsafeOriginalName);
+  for (const entry of zip.values()) {
+    if (!entry.directory && entry.originalName) normalizePackagePath(entry.originalName);
   }
 }
 
 async function readZipText(
-  zip: JSZip,
+  zip: ZipPackage,
   path: string,
   description: string,
   signal?: AbortSignal,
 ): Promise<string> {
   signal?.throwIfAborted();
-  const file = zip.file(path) as InspectableZipObject | null;
-  if (!file) throw new Error(`${description} is missing from the extension package.`);
-  if (typeof file._data?.uncompressedSize !== "number" || !file.internalStream) {
-    throw new Error(`${description} has unreadable size metadata.`);
-  }
-  if (file._data.uncompressedSize > MAX_THEME_BYTES) {
-    throw new Error(`${description} is too large.`);
-  }
+  const file = zip.get(path);
+  if (!file || file.directory)
+    throw new Error(`${description} is missing from the extension package.`);
+  if (file.size > MAX_THEME_BYTES) throw new Error(`${description} is too large.`);
 
-  return new Promise((resolve, reject) => {
-    const chunks: Uint8Array[] = [];
-    let byteLength = 0;
-    let settled = false;
-    const stream = file.internalStream!("uint8array");
-    const cleanup = () => signal?.removeEventListener("abort", handleAbort);
-    const handleAbort = () => {
-      if (settled) return;
-      settled = true;
-      stream.pause();
-      cleanup();
-      reject(signal?.reason);
-    };
-    signal?.addEventListener("abort", handleAbort, { once: true });
-    stream
-      .on("data", (chunk) => {
-        if (settled) return;
-        byteLength += chunk.byteLength;
-        if (byteLength > MAX_THEME_BYTES) {
-          settled = true;
-          stream.pause();
-          cleanup();
-          reject(new Error(`${description} is too large.`));
-          return;
-        }
-        chunks.push(chunk);
-      })
-      .on("error", (cause) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(cause);
-      })
-      .on("end", () => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        const bytes = new Uint8Array(byteLength);
-        let offset = 0;
-        for (const chunk of chunks) {
-          bytes.set(chunk, offset);
-          offset += chunk.byteLength;
-        }
-        resolve(new TextDecoder().decode(bytes));
-      })
-      .resume();
+  const decoder = new TextDecoder();
+  let text = "";
+  let byteLength = 0;
+  await file.read((chunk) => {
+    signal?.throwIfAborted();
+    byteLength += chunk.byteLength;
+    if (byteLength > MAX_THEME_BYTES) throw new Error(`${description} is too large.`);
+    text += decoder.decode(chunk, { stream: true });
   });
+  return text + decoder.decode();
 }
 
 async function loadThemeObject(
-  zip: JSZip,
+  zip: ZipPackage,
   path: string,
   cache: Map<string, Record<string, unknown>>,
   budget: { files: number },
@@ -667,11 +616,9 @@ export async function importOpenVsxThemeExtension(
     throw new Error("That Open VSX theme failed its integrity check.");
   }
   signal?.throwIfAborted();
-  let zip: JSZip;
+  let zip: ZipPackage;
   try {
-    const inspectedPackageBytes = inspectZipDirectory(packageBytes);
-    zip = await JSZip.loadAsync(inspectedPackageBytes);
-    signal?.throwIfAborted();
+    zip = readZipDirectory(inspectZipDirectory(packageBytes), MAX_ZIP_ENTRIES);
     inspectZip(zip);
   } catch (cause) {
     if (signal?.aborted) signal.throwIfAborted();

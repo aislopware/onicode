@@ -156,9 +156,7 @@ export const makeCursorAuth = Effect.fn("makeCursorAuth")(function* (options: Cu
         );
         return yield* restore(Fiber.await(fiber)).pipe(
           Effect.flatten,
-          Effect.onExit((result) =>
-            Exit.isFailure(result) ? Scope.close(child, Exit.void) : Effect.void,
-          ),
+          Effect.onError(() => Scope.close(child, Exit.void)),
         );
       }),
     );

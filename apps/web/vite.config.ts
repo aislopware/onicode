@@ -84,7 +84,7 @@ const browserTestProject = {
       "entities",
       "dompurify",
       "heic-to/next",
-      "jszip",
+      "fflate",
       "pdfjs-dist",
       "sql.js",
       "tiff",

@@ -89,7 +89,7 @@ export const connectOverRoutes = Effect.fn("ConnectionDriver.connectOverRoutes")
     const routeScope = yield* Scope.fork(attemptScope);
     const result = yield* connectRoute(route).pipe(
       Scope.provide(routeScope),
-      Effect.onExit((exit) => (Exit.isSuccess(exit) ? Effect.void : Scope.close(routeScope, exit))),
+      Effect.onError((cause) => Scope.close(routeScope, Exit.failCause(cause))),
       Effect.result,
     );
     if (result._tag === "Failure") {

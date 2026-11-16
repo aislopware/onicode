@@ -16,47 +16,18 @@ inputs:
 runs:
   using: composite
   steps:
-    # ~/.vite-plus holds vp, the Node.js runtime, and pnpm. A cache entry never
-    # updates, so the key names all three versions; otherwise a pnpm or Node.js
-    # bump makes every job download them from npm again.
-    - name: Resolve Vite+ version
-      id: vp
-      shell: bash
-      run: |
-        echo "version=$(sed -nE 's/^  vite-plus: ([0-9][^ ]*)$/\1/p' pnpm-workspace.yaml)" >> "$GITHUB_OUTPUT"
-        echo "node=$(jq -r '.engines.node' package.json)" >> "$GITHUB_OUTPUT"
-        echo "pnpm=$(jq -r '.packageManager' package.json)" >> "$GITHUB_OUTPUT"
-
-    - name: Cache Vite+
-      id: vp_cache
-      if: steps.vp.outputs.version != ''
-      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ~/.vite-plus
-        key: vite-plus-home-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.vp.outputs.version }}-node${{ steps.vp.outputs.node }}-${{ steps.vp.outputs.pnpm }}
-
-    # setup-vp always runs the installer, which fetches vp from npm even when
-    # this exact version is installed. A cache hit already has everything, so
-    # skip setup-vp and do its remaining work here. This keeps npm outages from
-    # failing jobs.
-    - name: Use cached Vite+
-      if: steps.vp_cache.outputs.cache-hit == 'true'
-      shell: bash
-      run: |
-        echo "$HOME/.vite-plus/bin" >> "$GITHUB_PATH"
-        "$HOME/.vite-plus/bin/vp" env use "${{ steps.vp.outputs.node }}"
-
-    # vp gives each Node.js download attempt 10 minutes by default, so one
-    # stalled stream holds the job that long. It retries 3 times and resumes
-    # partial bytes, so a shorter limit costs a slow download only a retry.
+    # A toolchain cache hit sets up vp, the Node.js runtime, and pnpm without the
+    # installer, so an npm outage does not fail jobs. On a miss, vp gives each
+    # Node.js download attempt 10 minutes by default; it retries 3 times and
+    # resumes partial bytes, so a shorter limit costs a slow download only a retry.
     - name: Setup Vite+
-      if: steps.vp_cache.outputs.cache-hit != 'true'
-      uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1.15.0
+      uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
       env:
         VP_DOWNLOAD_TIMEOUT: "120"
       with:
         node-version-file: package.json
         cache: false
+        cache-toolchain: true
         run-install: false
 
     # A shared key lets whichever install saves first, often a small filtered
