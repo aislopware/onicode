@@ -6,7 +6,7 @@ const themeJson = (css?: string) =>
   JSON.stringify({
     version: 1,
     name: "Nyx",
-    // The scenario browser is in light mode, and a one-appearance theme only fills that half.
+    // A one-appearance theme only fills the light half, so the scenario uses light mode.
     appearance: "light",
     colors: { canvas: "#f4f1ff", accent: "#6d5ae6" },
     ...(css ? { css } : {}),
@@ -21,6 +21,8 @@ test(
   async ({ onicode, app, screen, browser }) => {
     await onicode.project("demo");
     await onicode.open("/settings/appearance");
+    // The desktop window follows the OS appearance, unlike upstream's light-mode browser.
+    await screen.getByRole("button", "Use light mode").tap();
 
     const importTheme = async (json: string) => {
       await screen.getByRole("button", "Add theme", { exact: true }).tap();
