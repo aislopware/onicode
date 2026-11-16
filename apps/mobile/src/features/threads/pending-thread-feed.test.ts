@@ -275,6 +275,17 @@ describe("pending timeline messages", () => {
       ["live-activity-row", "Starting…"],
       ["second", null],
     ]);
+    // The accepted message runs before the one sent after it.
+    expect(
+      appendTurn(firstAccepted, { zen: true, dispatchingMessageId: "second" }).map((entry) => [
+        entry.id,
+        label(entry),
+      ]),
+    ).toEqual([
+      ["first", null],
+      ["live-activity-row", "Starting…"],
+      ["second", null],
+    ]);
     // A working run already shows its own rows.
     const thinking = {
       type: "thinking",
