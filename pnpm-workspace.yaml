@@ -251,9 +251,6 @@ peerDependencyRules:
     "@react-navigation/native-stack>react-native-screens": "*"
     # ws 7 (React Native dev tooling) only calls isValidUTF8, unchanged in v6.
     "ws@7>utf-8-validate": "6"
-    # plugin-react 6.3 caps the React Compiler transform below 0.157, but uses only transform(), which
-    # 0.158 keeps unchanged; reactCompilerCoverage.test.ts fails if the compiler stops running.
-    "@vitejs/plugin-react>oxc-transform-react": "0.158"
 
 # pnpm 12 links agent skills that dependencies ship into .claude/skills once
 # approved. We curate our own skills, so deny these to keep installs quiet.

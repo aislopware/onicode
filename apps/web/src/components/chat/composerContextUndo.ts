@@ -45,7 +45,8 @@ export function useRetainedContextPayloads(draftTargetKey: string): RetainedCont
     payloads: createRetainedContextPayloads(),
   }));
   if (draft.targetKey !== draftTargetKey) {
-    setDraft({ targetKey: draftTargetKey, payloads: createRetainedContextPayloads() });
+    // Created inside the updater: the compiler may cache a call made in render, sharing one set of maps.
+    setDraft(() => ({ targetKey: draftTargetKey, payloads: createRetainedContextPayloads() }));
   }
   const retained = draft.payloads;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- clears the retained payload maps when the draft target changes or the composer unmounts
