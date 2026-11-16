@@ -1,3 +1,4 @@
+import type { EnvironmentId } from "@onicode/contracts";
 import type { NavigationState, PartialState } from "@react-navigation/native";
 
 import {
@@ -110,6 +111,15 @@ export function openSettings<Name extends SettingsPageName>(
   ...[params]: SettingsPageArgs<Name>
 ) {
   resetRootStack(navigation, (state) => settingsNavigationState(state, page, params));
+}
+
+/** One machine's page when the caller knows which, otherwise the list of them. */
+export function openEnvironmentSettings(
+  navigation: RootStackNavigation,
+  environmentId?: EnvironmentId,
+) {
+  if (environmentId === undefined) openSettings(navigation, "SettingsEnvironments");
+  else openSettings(navigation, "SettingsEnvironmentDetail", { environmentId });
 }
 
 /**

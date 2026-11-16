@@ -292,6 +292,7 @@ export const make = Effect.gen(function* () {
       linkFence: true,
       shellThreadFamilies: true,
       shellOlderSettled: true,
+      hostHardware: true,
     },
   };
 

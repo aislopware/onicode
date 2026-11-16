@@ -48,7 +48,7 @@ import IconClock from "@tabler/icons-react-native/IconClock";
 import IconClipboard from "@tabler/icons-react-native/IconClipboard";
 import IconCode from "@tabler/icons-react-native/IconCode";
 import IconCopy from "@tabler/icons-react-native/IconCopy";
-import IconDatabase from "@tabler/icons-react-native/IconDatabase";
+import IconCpu from "@tabler/icons-react-native/IconCpu";
 import IconDeviceDesktop from "@tabler/icons-react-native/IconDeviceDesktop";
 import IconDeviceLaptop from "@tabler/icons-react-native/IconDeviceLaptop";
 import IconDeviceMobile from "@tabler/icons-react-native/IconDeviceMobile";
@@ -128,6 +128,7 @@ import IconTool from "@tabler/icons-react-native/IconTool";
 import IconTrash from "@tabler/icons-react-native/IconTrash";
 import IconTypography from "@tabler/icons-react-native/IconTypography";
 import IconDownload from "@tabler/icons-react-native/IconDownload";
+import IconMemory from "@tabler/icons-react-native/IconMemory";
 import IconSitemap from "@tabler/icons-react-native/IconSitemap";
 import IconUpload from "@tabler/icons-react-native/IconUpload";
 import IconUserCircle from "@tabler/icons-react-native/IconUserCircle";
@@ -140,6 +141,7 @@ import IconWifi from "@tabler/icons-react-native/IconWifi";
 import IconWifiOff from "@tabler/icons-react-native/IconWifiOff";
 import IconWorld from "@tabler/icons-react-native/IconWorld";
 import IconX from "@tabler/icons-react-native/IconX";
+import { IconHardDrive } from "./IconHardDrive";
 import type { AndroidSymbol, SFSymbol, SymbolViewProps } from "expo-symbols";
 import { StyleSheet, View } from "react-native";
 import { withUniwind } from "uniwind";
@@ -195,6 +197,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   tag: IconTag,
   ticket: IconTicket,
   cloud: IconCloud,
+  cpu: IconCpu,
   cube: IconBox,
   "chevron.down": IconChevronDown,
   "chevron.left": IconChevronLeft,
@@ -224,7 +227,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   headphones: IconHeadphones,
   house: IconHome,
   "info.circle": IconInfoCircle,
-  internaldrive: IconDatabase,
+  internaldrive: IconHardDrive,
   iphone: IconDeviceMobile,
   keyboard: IconKeyboard,
   laptopcomputer: IconDeviceLaptop,
@@ -237,6 +240,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   macmini: IconServer,
   macstudio: IconDeviceDesktop,
   magnifyingglass: IconSearch,
+  memorychip: IconMemory,
   mic: IconMicrophone,
   paintbrush: IconPalette,
   pencil: IconPencil,

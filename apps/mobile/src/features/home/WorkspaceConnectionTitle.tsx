@@ -1,3 +1,6 @@
+import { useAtomValue } from "@effect/atom-react";
+import type { HostHardwareAlert } from "@onicode/client-runtime/hostHardware";
+import type { EnvironmentId } from "@onicode/contracts";
 import { createContext, use, useEffect, useState, type ReactNode } from "react";
 import { Animated, Platform, Pressable, View } from "react-native";
 
@@ -5,7 +8,9 @@ import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
+import { cn } from "../../lib/cn";
 import { useDeadlinePassed } from "../../lib/clock";
+import { hostHardwareAlertAtom } from "../../state/presentation";
 import { useWorkspaceState } from "../../state/workspace";
 import {
   workspaceConnectionStatusPresentation,
@@ -21,6 +26,8 @@ type ConnectionStatus = WorkspaceConnectionStatusPresentation & {
 };
 
 const ConnectionStatusContext = createContext<ConnectionStatus | null>(null);
+/** Set while a connected machine is running out of memory or storage. */
+const HardwareAlertContext = createContext<HostHardwareAlert | null>(null);
 
 /**
  * The delay hides brief reconnects, so it is the workspace's, not each header's: every header
@@ -44,13 +51,18 @@ export function WorkspaceConnectionStatusProvider(props: { readonly children: Re
     since === null ? null : since + STATUS_SHOW_DELAY_MS + FADE_IN_MS,
   );
 
+  const hardwareAlert = useAtomValue(hostHardwareAlertAtom);
   const label = presentation?.label;
   const showsProgress = presentation?.showsProgress ?? false;
   const status =
     label === undefined || since === null || !fadeStarted
       ? null
       : { label, showsProgress, fadeIn: !fadeEnded };
-  return <ConnectionStatusContext value={status}>{props.children}</ConnectionStatusContext>;
+  return (
+    <ConnectionStatusContext value={status}>
+      <HardwareAlertContext value={hardwareAlert}>{props.children}</HardwareAlertContext>
+    </ConnectionStatusContext>
+  );
 }
 
 /** Native-driver animation blanks views re-hosted in RNSScreenStackHeaderSubview; use the JS style path. */
@@ -94,17 +106,55 @@ function StatusFadeIn(props: {
 
 export function WorkspaceConnectionTitle(props: {
   readonly brand: ReactNode;
-  readonly onPress?: () => void;
+  /** Called with the machine a hardware warning is about, and with nothing for a connection status. */
+  readonly onPress?: (environmentId?: EnvironmentId) => void;
   readonly grow?: boolean;
   readonly size?: "navbar" | "pageTitle";
   readonly statusOffset?: number;
   readonly maxWidth?: number;
 }) {
   const status = use(ConnectionStatusContext);
+  const hardwareAlert = use(HardwareAlertContext);
   const size = props.size ?? "navbar";
   const { scale } = useAndroidControlSizing();
 
   if (status === null) {
+    if (hardwareAlert !== null) {
+      const critical = hardwareAlert.level === "critical";
+      return (
+        <View
+          style={[
+            { alignItems: "center", flexDirection: "row", gap: 8 * scale, minWidth: 0 },
+            props.grow ? { flex: 1 } : null,
+          ]}
+        >
+          {/* The brand may fill the row; the warning keeps its place beside it. */}
+          <View style={{ flexShrink: 1, minWidth: 0 }}>{props.brand}</View>
+          <Pressable
+            accessibilityHint="Opens environment settings"
+            accessibilityLabel={hardwareAlert.title}
+            accessibilityRole="button"
+            disabled={props.onPress === undefined}
+            hitSlop={10}
+            onPress={() => props.onPress?.(hardwareAlert.environmentId)}
+            className={cn(
+              "items-center justify-center rounded-full",
+              critical ? "bg-danger" : "bg-warning",
+            )}
+            style={{ height: 26 * scale, width: 26 * scale }}
+          >
+            <SymbolView
+              name={hardwareAlert.kind === "memory" ? "memorychip" : "internaldrive"}
+              size={Math.round(15 * scale)}
+              tintColorClassName={
+                critical ? "accent-danger-foreground" : "accent-warning-foreground"
+              }
+              type="monochrome"
+            />
+          </Pressable>
+        </View>
+      );
+    }
     return props.grow ? (
       <View style={{ alignItems: "center", flex: 1, flexDirection: "row", minWidth: 0 }}>
         {props.brand}
@@ -122,7 +172,7 @@ export function WorkspaceConnectionTitle(props: {
         accessibilityRole="button"
         disabled={props.onPress === undefined}
         hitSlop={8}
-        onPress={props.onPress}
+        onPress={() => props.onPress?.()}
         className="flex-row items-center gap-2"
         style={[
           { flexShrink: 1, marginLeft: props.statusOffset ?? 0 },

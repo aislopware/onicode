@@ -9,7 +9,7 @@ import { scopedThreadKey } from "../../../lib/scopedEntities";
 import { uuidv4 } from "../../../lib/uuid";
 import { usePendingTaskListActions } from "../../home/usePendingTaskListActions";
 import { useAdaptiveWorkspaceLayout, useWorkspacePaneState } from "../adaptive-workspace-context";
-import { openSettings } from "../../settings/settings-navigation";
+import { openEnvironmentSettings } from "../../settings/settings-navigation";
 import { ThreadNavigationSidebar } from "../../threads/ThreadNavigationSidebar";
 import { useOpenThreadPullRequests } from "../../threads/use-open-thread-pull-requests";
 import { useSelectWorkspaceDetail } from "./useSelectWorkspaceDetail";
@@ -58,7 +58,9 @@ export function WorkspaceThreadSidebar() {
       onRequestVisibility={revealPrimarySidebar}
       selectedThreadKey={selectedThread}
       onOpenSettings={() => openWorkspaceTab("settings")}
-      onOpenEnvironmentSettings={() => openSettings(navigation, "SettingsEnvironments")}
+      onOpenEnvironmentSettings={(environmentId) =>
+        openEnvironmentSettings(navigation, environmentId)
+      }
       onNewThreadInProject={(project: EnvironmentProject) =>
         selectThreadRoute({
           draft: {

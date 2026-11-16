@@ -34,7 +34,7 @@ import {
 import { usePendingTaskListActions } from "./usePendingTaskListActions";
 import { useThreadListActions } from "./useThreadListActions";
 import { useWorkspaceTabs } from "../layout/workspace/WorkspaceTabsContext";
-import { openSettings } from "../settings/settings-navigation";
+import { openEnvironmentSettings, openSettings } from "../settings/settings-navigation";
 import { useSelectWorkspaceTab } from "../layout/workspace/useSelectWorkspaceTab";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { WorkspaceListEmptyDetail } from "../layout/workspace/WorkspaceListEmptyDetail";
@@ -159,7 +159,7 @@ export function HomeRouteScreen() {
       <>
         <WorkspaceListHeader
           accessibilityLabel="Onicode, Threads"
-          onOpenEnvironments={() => openSettings(navigation, "SettingsEnvironments")}
+          onOpenEnvironments={(environmentId) => openEnvironmentSettings(navigation, environmentId)}
           search={{
             value: searchQuery,
             onChangeText: setSearchQuery,

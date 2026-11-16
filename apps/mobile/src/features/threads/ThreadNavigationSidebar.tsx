@@ -1,3 +1,4 @@
+import type { EnvironmentId } from "@onicode/contracts";
 import { useActiveNewTask } from "../../state/active-new-task";
 import { ThreadUndoNotice } from "../home/ThreadUndoNotice";
 import { useAndroidControlSizing } from "../../components/ui/useAndroidControlSizing";
@@ -95,7 +96,7 @@ interface ThreadNavigationSidebarProps {
   readonly visible: boolean;
   readonly selectedThreadKey: string | null;
   readonly onOpenSettings: () => void;
-  readonly onOpenEnvironmentSettings: () => void;
+  readonly onOpenEnvironmentSettings: (environmentId?: EnvironmentId) => void;
   readonly onNewThreadOnBranch: (thread: EnvironmentThreadShell) => void;
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
   readonly onOpenPendingTask: (pendingTask: PendingNewTask) => void;

@@ -1,3 +1,4 @@
+import type { EnvironmentId } from "@onicode/contracts";
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import { Platform } from "react-native";
 
@@ -22,7 +23,7 @@ export function getCompactBrandHeaderOptions(
 export function getConnectionAwareBrandHeaderOptions(opts: {
   readonly headerWidth: number;
   readonly trailingItemCount?: number;
-  readonly onOpenEnvironments: () => void;
+  readonly onOpenEnvironments: (environmentId?: EnvironmentId) => void;
   readonly fallbackTitleStyle?: NativeStackNavigationOptions["headerTitleStyle"];
 }): NativeStackNavigationOptions {
   const maxWidth = Math.max(0, opts.headerWidth - 64 - 44 * (opts.trailingItemCount ?? 1));

@@ -1,3 +1,4 @@
+import type { EnvironmentId } from "@onicode/contracts";
 import { WorkspaceNoTabs } from "./WorkspaceNoTabs";
 import { WORKSPACE_TAB_LABELS, useEnabledNavigationTabs } from "./navigation-tabs";
 import { WorkspaceExtraTab } from "./WorkspaceExtraTab";
@@ -40,13 +41,13 @@ import {
   useSidebarWorkspaceTabs,
   useSystemWorkspaceTabBar,
 } from "./useSystemWorkspaceTabBar";
-import { openSettings } from "../../settings/settings-navigation";
+import { openEnvironmentSettings } from "../../settings/settings-navigation";
 
 const TAB_TITLES = WORKSPACE_TAB_LABELS;
 
 function WorkspaceRootTitle(props: {
   readonly columnWidth: number;
-  readonly onOpenEnvironments: () => void;
+  readonly onOpenEnvironments: (environmentId?: EnvironmentId) => void;
 }) {
   const { state, settingsOpen } = useWorkspaceTabs()!;
   const maxWidth = Math.max(0, props.columnWidth - (use(HeaderItemsWidthContext) ?? 160));
@@ -96,7 +97,7 @@ function WorkspaceRootContent() {
   const renderHeaderTitle = () => (
     <WorkspaceRootTitle
       columnWidth={width}
-      onOpenEnvironments={() => openSettings(navigation, "SettingsEnvironments")}
+      onOpenEnvironments={(environmentId) => openEnvironmentSettings(navigation, environmentId)}
     />
   );
   const tab = state.tabs[settingsOpen ? "settings" : state.selectedTab];

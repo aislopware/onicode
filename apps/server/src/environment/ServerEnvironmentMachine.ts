@@ -142,6 +142,74 @@ const detectLinuxMachineKind = Effect.fn("detectLinuxMachineKind")(function* () 
   return machineKindFromDmi({ chassisType, sysVendor, productName });
 });
 
+// Firmware fields a board vendor never filled in.
+const PLACEHOLDER_MODEL =
+  /^(to be filled by o\.e\.m\.|system (product name|manufacturer|version)|default string|not (specified|applicable)|none|unknown|o\.e\.m\.)$/i;
+
+function modelFromVendorAndProduct(
+  vendor: string | null,
+  product: string | null,
+  version: string | null = null,
+): string | null {
+  const real = (value: string | null) =>
+    value === null || PLACEHOLDER_MODEL.test(value) ? null : value;
+  const maker = real(vendor);
+  // Lenovo puts the machine type in the product name and the marketing name in the version.
+  const name = (maker?.toLowerCase() === "lenovo" ? real(version) : null) ?? real(product);
+  if (name === null) return maker;
+  return maker === null || name.toLowerCase().startsWith(maker.toLowerCase())
+    ? name
+    : `${maker} ${name}`;
+}
+
+const detectDarwinMachineModel = Effect.fn("detectDarwinMachineModel")(function* () {
+  const ioreg = yield* runProbe({ command: "ioreg", args: ["-rd1", "-n", "product"] });
+  return (
+    ioreg?.match(/"product-name"\s*=\s*<"([^"]+)">/)?.[1] ??
+    (yield* runProbe({ command: "sysctl", args: ["-n", "hw.model"] }))
+  );
+});
+
+const detectLinuxMachineModel = Effect.fn("detectLinuxMachineModel")(function* () {
+  const [sysVendor, productName, productVersion] = yield* Effect.all([
+    readOptionalFile(`${DMI_ROOT}/sys_vendor`),
+    readOptionalFile(`${DMI_ROOT}/product_name`),
+    readOptionalFile(`${DMI_ROOT}/product_version`),
+  ]);
+  return (
+    modelFromVendorAndProduct(sysVendor, productName, productVersion) ??
+    // Boards without DMI, such as a Raspberry Pi, name themselves in the device tree.
+    normalize((yield* readOptionalFile("/proc/device-tree/model"))?.replaceAll("\0", ""))
+  );
+});
+
+const detectWindowsMachineModel = Effect.fn("detectWindowsMachineModel")(function* () {
+  const bios = yield* runProbe({
+    command: "reg",
+    args: ["query", "HKLM\\HARDWARE\\DESCRIPTION\\System\\BIOS"],
+  });
+  const value = (name: string) =>
+    normalize(new RegExp(`^\\s*${name}\\s+REG_SZ\\s+(.+)$`, "m").exec(bios ?? "")?.[1]);
+  return modelFromVendorAndProduct(value("SystemManufacturer"), value("SystemProductName"));
+});
+
+/** The machine's marketing or vendor name, such as "Mac mini (2024)"; null when it has none. */
+export const detectServerEnvironmentMachineModel = Effect.fn("detectServerEnvironmentMachineModel")(
+  function* () {
+    const platform = yield* HostProcess.Platform;
+    switch (platform) {
+      case "darwin":
+        return yield* detectDarwinMachineModel();
+      case "linux":
+        return yield* detectLinuxMachineModel();
+      case "win32":
+        return yield* detectWindowsMachineModel();
+      default:
+        return null;
+    }
+  },
+);
+
 export const detectServerEnvironmentMachineKind = Effect.fn("detectServerEnvironmentMachineKind")(
   function* () {
     const platform = yield* HostProcess.Platform;

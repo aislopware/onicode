@@ -1296,6 +1296,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     ],
   },
   {
+    id: "environment-hardware",
+    title: "Hardware",
+    to: "/settings/connections",
+    searchTerms: [
+      "machine model specs processor cpu cores memory ram disk storage space volume free available usage operating system uptime",
+    ],
+  },
+  {
     id: "load-balancing",
     title: "Load balancing",
     to: "/settings/connections",
