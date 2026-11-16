@@ -2211,3 +2211,4 @@ bc0988d4d3	skip	mobile-eas-preview.yml is T3's EAS preview pipeline; Onicode rel
 c02b98bb3f	take	taken as is; only Codex sets a stop reason on completed turns, so no other adapter gains the notice
 15271c8d00	take	taken as is; web and mobile both covered upstream; batch limit constant keeps the contract's 25 cap unchanged on the wire
 02f8a3280b	take	taken as is
+7d32075e37	take	adapted: kept Onicode's single built-in theme id and legacy-CSS filter beside the background field; startThemeBackground sits next to Onicode's startDocumentBackgroundSync; eval case uses builtIn [onicode]
