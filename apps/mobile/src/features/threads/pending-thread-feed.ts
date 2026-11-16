@@ -160,7 +160,7 @@ export function createPendingTurnAppender() {
   let activity: Extract<ThreadFeedEntry, { readonly type: "thinking" }> | null = null;
   return (
     feed: ReadonlyArray<PendingThreadFeedEntry>,
-    options: { readonly zen: boolean },
+    options: { readonly zen: boolean; readonly dispatchingMessageId: string | null },
   ): ReadonlyArray<PendingThreadFeedEntry | PendingFoldFeedEntry> => {
     const last = feed.at(-1);
     if (
@@ -168,6 +168,8 @@ export function createPendingTurnAppender() {
       last.message.role !== "user" ||
       last.pendingMessage === undefined ||
       last.pendingMessage.creation !== undefined ||
+      // Queued behind a lost connection or missing access, it is waiting, not sending.
+      (!last.acknowledged && last.pendingMessage.messageId !== options.dispatchingMessageId) ||
       isCompactionCommandMessage(last.message) ||
       feed.some(
         (entry) =>
