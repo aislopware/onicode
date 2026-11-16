@@ -1,3 +1,5 @@
+// @effect-diagnostics nodeBuiltinImport:off - The private-network gate guards the node:http server.
+import type * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 
@@ -10,6 +12,7 @@ import {
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { QrCode } from "@onicode/shared/qrCode";
 import { buildPairingAppLink } from "@onicode/shared/remote";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import { HttpServer } from "effect/http";
 import * as NetAddress from "effect/net/NetAddress";
@@ -101,6 +104,47 @@ export const acceptsTailnetConnection = (socket: {
     )
   );
 };
+
+const CLOSED_CONNECTION_LOG_INTERVAL_NANOS = 60_000_000_000n;
+
+/**
+ * Closing is silent to the client, so closed connections are logged with both
+ * addresses: the first at once, then at most one line a minute with a count, so
+ * a connect flood from outside cannot grow the service log without bound.
+ */
+// Untraced: the captured context would otherwise tie every later warning to a span that ended at startup.
+export const closeNonPrivateNetworkConnections = Effect.fnUntraced(function* (
+  server: NodeHttp.Server,
+  network: "private network" | "tailnet" = "private network",
+) {
+  const accepts =
+    network === "tailnet" ? acceptsTailnetConnection : acceptsPrivateNetworkConnection;
+  const runSync = Effect.runSyncWith(yield* Effect.context<never>());
+  let nextLogAt: bigint | undefined;
+  let closedSinceLastLog = 0;
+  server.on("connection", (socket) => {
+    if (accepts(socket)) return;
+    // Read before destroy: Node forgets localAddress once the handle closes.
+    const addresses = { localAddress: socket.localAddress, remoteAddress: socket.remoteAddress };
+    socket.destroy();
+    runSync(
+      Effect.gen(function* () {
+        // Monotonic: a wall clock set backwards must not silence the warnings.
+        const now = yield* Clock.monotonicTimeNanos;
+        if (nextLogAt !== undefined && now < nextLogAt) {
+          closedSinceLastLog += 1;
+          return;
+        }
+        nextLogAt = now + CLOSED_CONNECTION_LOG_INTERVAL_NANOS;
+        yield* Effect.logWarning(`closed a connection outside the ${network}`, {
+          ...addresses,
+          ...(closedSinceLastLog > 0 ? { closedSinceLastLog } : {}),
+        });
+        closedSinceLastLog = 0;
+      }),
+    );
+  });
+});
 
 export const loopbackUrlHostForAddress = (address: NetAddress.InetAddress): string =>
   NetAddress.isUnspecified(address.address)

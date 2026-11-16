@@ -2228,3 +2228,4 @@ f4d0855a50	take	taken as is
 db4221b74b	take	taken as is
 6e650b3849	take	taken as is
 c69f4b780b	take	taken as is
+ca432d7ed6	take	adapted: Onicode's tailnet-only gate also goes through closeNonPrivateNetworkConnections (network param), so its closed connections are logged too
