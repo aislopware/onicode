@@ -2240,3 +2240,4 @@ a6f7981abb	take	fix(pi): ask_user_question single-select questions render as a s
 a10f9e41d3	take	fix(server): pull request links whose reads keep failing back off
 c24255826b	take	feat(web): dictation keeps recording into its thread when you switch away
 58e5ba58ec	take	fix(mobile): color links in user messages (#36966)
+f9db865403	take	fix(mobile): a pasted pairing link fills both Address and Code (#28635); kept Onicode's QR-scan test beside it
