@@ -2195,3 +2195,4 @@ ab8ff33a16	take	fix(mobile): Duo scroll views recheck their bleed after a fold
 83e3c4f60d	take	fix(web): published themes keep their CSS when a saved theme shares the id; scenario ported to the desktop target
 1ae5590a32	take	fix(web): find in thread no longer announces streamed count refreshes
 12b9845d1c	take	fix(ssh): verify runtime archives in homes containing newlines; kept Onicode's fake tar in the test: symlinking the host tar and then writing the fake would overwrite the real binary, and bsdtar on macOS gunzips by itself
+bcb0604581	take	fix(web): model picker options no longer jump a pixel on hover
