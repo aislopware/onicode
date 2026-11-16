@@ -2181,3 +2181,4 @@ e00614e126	take	fix(server): a hung branch name no longer holds a new thread in 
 dfeaf7b137	take	fix(web): Tab from a citation comment reaches Save, not Cancel
 50b885e036	take	fix(web): switching a draft's machine uses that machine's default model; conflict: kept Onicode's carryFanoutSelections import
 760f9cbe64	take	fix(provider-core): title instructions override the generic limits; merged with Onicode's automatic title refresh (regenerate prompt takes both flags)
+629d5083b7	take	fix(server): a Claude session gone on resume starts fresh; forgetProviderThreadLoaded moved into Onicode's shared trackTurn (covers startTurn and resumeTurn)
