@@ -2166,3 +2166,4 @@ e5b6c96a46	take	fix(pi): restore selected model after native extension switches
 47f90ee2e9	take	fix(server): end pending ACP tools when their prompt fails (test conflict was formatting only)
 b9f24b627f	take	fix(opencode): Zen-only Console workspaces no longer show "No limits reported"
 b0a46d2848	take	fix(acp): preserve literal monitor-event text in imported history
+837a684fd2	take	fix(acp-registry): recover configured agents without a registry cache
