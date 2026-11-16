@@ -228,7 +228,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
       }
     : options;
   const watchKimiPromptOutcome = isKimi
-    ? yield* makeKimiPromptOutcomeWatch(options.environment.KIMI_CODE_HOME)
+    ? yield* makeKimiPromptOutcomeWatch(options.environment)
     : undefined;
   const copilotRouting = isCopilot ? makeCopilotSubagentRouting() : undefined;
   // Copilot CLI 1.0.105 rejects stdio MCP servers from the client, and Command Code cannot

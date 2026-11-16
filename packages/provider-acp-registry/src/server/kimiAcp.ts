@@ -56,12 +56,15 @@ function turnFailure(ended: KimiTurnEnded): OrchestrationV2ProviderFailure | und
  * this prompt appended.
  */
 export const makeKimiPromptOutcomeWatch = Effect.fn("KimiTurnOutcome.make")(function* (
-  configuredHome: string | undefined,
+  environment: NodeJS.ProcessEnv,
 ) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
+  // Kimi falls back to its own process's homedir(), which follows HOME off Windows.
+  const userHome =
+    (!(yield* HostProcess.isWindows) && environment.HOME) || (yield* HostProcess.HomeDirectory);
   const sessionsDirectory = path.join(
-    configuredHome || path.join(yield* HostProcess.HomeDirectory, ".kimi-code"),
+    environment.KIMI_CODE_HOME || path.join(userHome, ".kimi-code"),
     "sessions",
   );
 
