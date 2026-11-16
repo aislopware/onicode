@@ -1765,15 +1765,17 @@ describe("PullRequestSyncReactor", () => {
     }),
   );
 
-  it.effect(
-    "holds missing links through sibling and link updates but honors a reader refresh",
-    () =>
+  it.effect.each([
+    ["missing", missingSummary],
+    ["backed-off failing", Effect.fail(gitLabCliFailure)],
+  ] as const)(
+    "holds %s links through sibling and link updates but honors a reader refresh",
+    ([, failure]) =>
       Effect.gen(function* () {
         yield* TestClock.setTime(Date.parse(NOW));
         const fixture = yield* makeHarness({
           snapshot: makeSnapshot([makeThread("missing", { pullRequests: [makeLink(9)] })]),
-          summary: (input) =>
-            input.number === 9 ? missingSummary : Effect.succeed(makeSummary(input)),
+          summary: (input) => (input.number === 9 ? failure : Effect.succeed(makeSummary(input))),
         });
         const missingReads = Ref.get(fixture.summaryCalls).pipe(
           Effect.map((calls) => calls.filter((call) => call.number === 9).length),
