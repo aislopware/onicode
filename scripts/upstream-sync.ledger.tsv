@@ -2168,3 +2168,4 @@ b9f24b627f	take	fix(opencode): Zen-only Console workspaces no longer show "No li
 b0a46d2848	take	fix(acp): preserve literal monitor-event text in imported history
 837a684fd2	take	fix(acp-registry): recover configured agents without a registry cache
 d68a2fa673	take	fix(server): a Kimi turn that fails after a tool call now shows as failed
+b3eeeaac01	take	fix(mobile): composer animates between compact and multiline
