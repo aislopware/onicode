@@ -1749,7 +1749,12 @@ export function deriveThreadFeedPresentation(
     !compactionCommandRunIds.has(liveRunId)
       ? liveRunFoldRow(liveRunId, activeWorkStartedAt)
       : null;
-  let liveFoldPlaced = false;
+  // A restart can reuse rows that already hold the live fold, when its run began before the restart.
+  let liveFoldPlaced =
+    liveFold !== null &&
+    activeRunId !== null &&
+    (firstEntryByRun.get(activeRunId) ?? start) < start &&
+    result.some((row) => row.id === liveFold.id);
   // Earlier turns can hold the run's own items (a subagent it continued), so wait for its prompt.
   let liveFoldReady =
     liveFold !== null &&
