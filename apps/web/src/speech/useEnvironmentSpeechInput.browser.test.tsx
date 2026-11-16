@@ -258,6 +258,7 @@ function Probe(props: {
   readonly showWizard?: boolean;
   readonly ownerKey?: string;
   readonly persistent?: boolean;
+  readonly disabled?: boolean;
 }) {
   const value = useEnvironmentSpeechInput({
     environmentId: THREAD_ENV as EnvironmentId,
@@ -265,6 +266,7 @@ function Probe(props: {
     projectName: props.projectName,
     cleanup: props.cleanup,
     ownerKey: props.ownerKey ?? "draft",
+    disabled: props.disabled,
     persistentDraft: props.persistent
       ? {
           readStoredText: () => mocks.storedDraft,
@@ -427,6 +429,24 @@ it.each([
 
   await vi.waitFor(() => expect(mocks.storedDraft).toBe("Earlier text dictated"));
   expect(mocks.transcribeCalls).toEqual(["env-a"]);
+  expect(mocks.committed).not.toHaveBeenCalled();
+});
+
+it("keeps an off-screen recording's words when its draft is disabled on return", async () => {
+  setup({ destination: "env-a" });
+  mocks.storedDraft = "Earlier text";
+  // The thread's editor shows its stored draft.
+  mocks.draft = "Earlier text";
+  const view = (ownerKey: string, disabled = false) => (
+    <Probe ownerKey={ownerKey} persistent disabled={disabled} />
+  );
+  await using screen = await render(view("thread-a"));
+  await act(() => mocks.voice.start());
+  await screen.rerender(view("thread-b"));
+  // Thread A started waiting on an approval while thread B was on screen.
+  await screen.rerender(view("thread-a", true));
+  await act(() => mocks.voice.stop());
+  await vi.waitFor(() => expect(mocks.storedDraft).toBe("Earlier text dictated"));
   expect(mocks.committed).not.toHaveBeenCalled();
 });
 
