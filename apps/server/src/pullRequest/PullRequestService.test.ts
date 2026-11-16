@@ -2515,6 +2515,8 @@ it.effect("names the host when no project has a checkout on it for a host-routed
     assert.strictEqual(error._tag, "PullRequestUnavailableError");
     expect(error.message).not.toContain("acme/web is not a project");
     expect(error.message).toContain("gitlab.com");
+    // Older clients ignore `host` and name the repository instead.
+    expect(error).toMatchObject({ reason: "provider-unsupported", repository: "acme/web" });
   }),
 );
 

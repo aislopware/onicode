@@ -1092,12 +1092,13 @@ export const make = Effect.gen(function* () {
                   !readable.readsPublicHostWithoutCheckout &&
                   readable.servesHost?.(host) !== false
                 ) {
-                  // Without repository keys, any checkout on the host routes the read.
-                  return yield* new PullRequestUnavailableError(
-                    readable.repositoryKey === undefined
-                      ? { reason: "provider-unsupported", host }
-                      : { reason: "provider-unsupported", repository },
-                  );
+                  // Without repository keys, any checkout on the host routes the read. The
+                  // repository stays for older clients, which ignore `host`.
+                  return yield* new PullRequestUnavailableError({
+                    reason: "provider-unsupported",
+                    repository,
+                    ...(readable.repositoryKey === undefined ? { host } : {}),
+                  });
                 }
                 return yield* new PullRequestUnavailableError({ reason: "provider-unsupported" });
               });
