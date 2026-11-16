@@ -7,6 +7,7 @@ import {
   type DesktopUpdateState,
 } from "@onicode/contracts";
 import { errorTag } from "@onicode/shared/observability";
+import { compareSemverVersions } from "@onicode/shared/semver";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -484,7 +485,10 @@ export const make = Effect.gen(function* () {
     );
   });
 
-  const downloadAvailableUpdate = Effect.gen(function* () {
+  // Install refreshes before downloading, and a second check could pick a stale, older release.
+  const downloadAvailableUpdate = Effect.fn("desktop.updates.downloadAvailableUpdate")(function* (
+    refresh: boolean,
+  ) {
     const admission = yield* Effect.scoped(
       admitAfterCheck(
         Effect.gen(function* () {
@@ -508,8 +512,27 @@ export const make = Effect.gen(function* () {
       return { accepted: false, completed: false };
     }
 
-    const state = yield* Ref.get(updateStateRef);
+    const offered = yield* Ref.get(updateStateRef);
+    let state = offered;
     return yield* Effect.gen(function* () {
+      if (refresh) {
+        // electron-updater downloads what its last check found, which can be hours old.
+        yield* logUpdaterInfo("checking for updates", { reason: "download" });
+        yield* electronUpdater.checkForUpdates.pipe(
+          // A failed check keeps electron-updater's earlier result, so the known offer still downloads.
+          Effect.catchTags({
+            ElectronUpdaterCheckForUpdatesError: (error) =>
+              logUpdaterWarning(error.message, {
+                errorTag: error._tag,
+                cause: describeUpdateErrorCause(error.cause),
+              }),
+          }),
+        );
+      }
+      state = yield* Ref.get(updateStateRef);
+      if (state.status !== "available") {
+        return { accepted: true, completed: false };
+      }
       yield* setState(reduceDesktopUpdateStateOnDownloadStart(state));
       yield* electronUpdater.setDisableDifferentialDownload(
         isArm64HostRunningIntelBuild(environment.runtimeInfo),
@@ -558,7 +581,7 @@ export const make = Effect.gen(function* () {
       }),
       Effect.ensuring(finishUpdateAction("download")),
     );
-  }).pipe(Effect.withSpan("desktop.updates.downloadAvailableUpdate"));
+  });
 
   const runtimeDir = environment.path.join(environment.baseDir, "runtime");
   const installRecordPath = environment.path.join(runtimeDir, DESKTOP_UPDATE_INSTALL_RECORD_FILE);
@@ -789,7 +812,38 @@ export const make = Effect.gen(function* () {
         state: yield* Ref.get(updateStateRef),
       };
     }
-    const result = yield* installDownloadedUpdate(expectedVersion);
+    let installVersion = expectedVersion;
+    // A download can be hours old: a release published since replaces it before restarting.
+    const retained = yield* Ref.get(updateStateRef);
+    if (
+      retained.downloadedVersion !== null &&
+      (expectedVersion === undefined || retained.downloadedVersion === expectedVersion) &&
+      (yield* checkForUpdates("install")) &&
+      (yield* Ref.get(updateStateRef)).status === "available"
+    ) {
+      const refreshed = yield* Ref.get(updateStateRef);
+      // electron-updater compares a stale feed with the running build, not the retained download.
+      if (
+        refreshed.availableVersion === null ||
+        compareSemverVersions(refreshed.availableVersion, retained.downloadedVersion) <= 0
+      ) {
+        yield* setState(retained);
+      } else {
+        const download = yield* downloadAvailableUpdate(false);
+        if (!download.completed) {
+          return {
+            accepted: download.accepted,
+            completed: false,
+            failed: download.accepted,
+            state: yield* Ref.get(updateStateRef),
+          };
+        }
+        if (expectedVersion !== undefined) {
+          installVersion = (yield* Ref.get(updateStateRef)).downloadedVersion ?? expectedVersion;
+        }
+      }
+    }
+    const result = yield* installDownloadedUpdate(installVersion);
     return {
       accepted: result.accepted,
       completed: result.completed,
@@ -1095,7 +1149,7 @@ export const make = Effect.gen(function* () {
       };
     }),
     download: Effect.gen(function* () {
-      const result = yield* downloadAvailableUpdate;
+      const result = yield* downloadAvailableUpdate(true);
       return {
         accepted: result.accepted,
         completed: result.completed,
