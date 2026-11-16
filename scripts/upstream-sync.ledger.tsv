@@ -2200,3 +2200,4 @@ fecd7138e9	take	fix(mobile): long threads no longer jump to the bottom after the
 6f5838f9bc	take	fix(client-runtime): a relative Add project starts in opens the picker under home; adapted: kept the ensureBrowseDirectoryPath import, which Onicode's jumpToFolder still uses
 83c520c21f	take	fix(web): clicks beside an open file's find bar reach the code again; lockfile patch hash regenerated with vp i
 c8c51af4e3	take	fix(server): recover gateway cooldown after last error
+4860a73069	take	fix(mobile): sent videos no longer flash black and queued attachments keep uploading
