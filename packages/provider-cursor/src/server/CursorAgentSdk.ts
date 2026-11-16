@@ -101,13 +101,18 @@ export interface CursorAgentSdkSendInput<Error> {
   readonly resume?: boolean;
 }
 
+/** `Run.steer`'s outcome, without the queued follow-up's `Run` handle: that holds the SDK client. */
+export type CursorSteerOutcome =
+  | Extract<SteerAckOutcome, string>
+  | Extract<SteerAckOutcome, object>["outcome"];
+
 export interface CursorAgentSdkRun {
   readonly runId: string;
   readonly agentId: string;
   readonly wait: Effect.Effect<RunResult, CursorAgentSdkRunnerError>;
   readonly cancel: Effect.Effect<void, CursorAgentSdkRunnerError>;
   /** Absent on test doubles that never steer. The live runner always sets it. */
-  readonly steer?: (text: string) => Effect.Effect<SteerAckOutcome, CursorAgentSdkRunnerError>;
+  readonly steer?: (text: string) => Effect.Effect<CursorSteerOutcome, CursorAgentSdkRunnerError>;
 }
 
 export interface CursorContextUsage {
@@ -258,7 +263,7 @@ export type CursorAgentSdkProtocolLogEvent =
       readonly payload: {
         readonly type: "run.steered";
         readonly runId: string;
-        readonly outcome: SteerAckOutcome;
+        readonly outcome: CursorSteerOutcome;
       };
     }
   | {
@@ -411,7 +416,7 @@ interface CursorShellStreamOutput {
 }
 
 // The SDK reports shell-output-delta only for user-started shell commands, so
-// patches/@cursor__sdk@1.3.1.patch publishes agent shell output on this hook.
+// patches/@cursor__sdk@1.4.0.patch publishes agent shell output on this hook.
 const SHELL_STREAM_OUTPUT_HOOK = Symbol.for("@cursor/sdk.shellStreamOutput");
 const shellStreamListeners = new Set<(output: CursorShellStreamOutput) => void>();
 
@@ -722,7 +727,10 @@ export const makeCursorAgentSdkRunner = Effect.fn("makeCursorAgentSdkRunner")(fu
               }).pipe(
                 Effect.andThen(
                   Effect.tryPromise({
-                    try: () => run.steer?.(text) ?? Promise.resolve("revert_to_followup" as const),
+                    try: async () => {
+                      const outcome = await (run.steer?.(text) ?? "revert_to_followup");
+                      return typeof outcome === "string" ? outcome : outcome.outcome;
+                    },
                     catch: (cause) => runnerError(cause, "run.steer"),
                   }),
                 ),

@@ -1,8 +1,7 @@
 diff --git a/lib/module/views/NativeStackView.native.js b/lib/module/views/NativeStackView.native.js
-index 6882090..f1e14e1 100644
 --- a/lib/module/views/NativeStackView.native.js
 +++ b/lib/module/views/NativeStackView.native.js
-@@ -17,8 +17,12 @@ const ANDROID_DEFAULT_HEADER_HEIGHT = 56;
+@@ -17,8 +17,12 @@
  function isFabric() {
    return 'nativeFabricUIManager' in global;
  }
@@ -15,7 +14,7 @@ index 6882090..f1e14e1 100644
    index,
    focused,
    shouldFreeze,
-@@ -144,6 +148,7 @@ const SceneView = /*#__PURE__*/React.memo(function SceneView({
+@@ -144,6 +148,7 @@
      sheetAllowedDetents = [1.0],
      sheetLargestUndimmedDetentIndex = -1,
      sheetGrabberVisible = false,
@@ -23,7 +22,7 @@ index 6882090..f1e14e1 100644
      sheetCornerRadius = -1.0,
      sheetElevation = 24,
      sheetExpandsWhenScrolledToEdge = true,
-@@ -305,7 +310,8 @@ const SceneView = /*#__PURE__*/React.memo(function SceneView({
+@@ -305,7 +310,8 @@
        }
      }
    });
@@ -33,7 +32,7 @@ index 6882090..f1e14e1 100644
      route: route,
      navigation: navigation,
      children: /*#__PURE__*/_jsx(ScreenStackItem, {
-@@ -333,6 +339,7 @@ const SceneView = /*#__PURE__*/React.memo(function SceneView({
+@@ -333,6 +339,7 @@
        sheetAllowedDetents: sheetAllowedDetents,
        sheetLargestUndimmedDetentIndex: sheetLargestUndimmedDetentIndex,
        sheetGrabberVisible: sheetGrabberVisible,
@@ -41,7 +40,7 @@ index 6882090..f1e14e1 100644
        sheetInitialDetentIndex: sheetInitialDetentIndex,
        sheetCornerRadius: sheetCornerRadius,
        sheetElevation: sheetElevation,
-@@ -427,6 +434,7 @@ const SceneView = /*#__PURE__*/React.memo(function SceneView({
+@@ -427,6 +434,7 @@
    });
  });
  export function NativeStackView({
@@ -49,10 +48,11 @@ index 6882090..f1e14e1 100644
    state,
    navigation,
    descriptors,
-@@ -444,6 +452,17 @@ export function NativeStackView({
-   return /*#__PURE__*/_jsx(SafeAreaProviderCompat, {
-     children: /*#__PURE__*/_jsx(ScreenStack, {
+@@ -449,6 +457,17 @@
        style: styles.container,
+       nativeContainerStyle: {
+         backgroundColor: colors.background
++      },
 +      onFinishTransitioning: () => {
 +        // Surface UIKit's transition-completion callback to every route of
 +        // this navigator. Unlike transitionEnd, this also fires when a modal
@@ -63,11 +63,10 @@ index 6882090..f1e14e1 100644
 +        navigation.emit({
 +          type: 'finishTransitioning'
 +        });
-+      },
+       },
        children: state.routes.concat(state.preloadedRoutes).map((route, index) => {
          const descriptor = descriptors[route.key] ?? preloadedDescriptors[route.key];
-         const isFocused = state.index === index;
-@@ -460,6 +479,7 @@ export function NativeStackView({
+@@ -466,6 +485,7 @@
          // due to component being unmounted. To avoid this, we don't freeze the previous screen there
          const shouldFreeze = isFabric() ? !isPreloaded && !isFocused && !isBelowFocused && !isModalOnIos : !isPreloaded && !isFocused && !isModalOnIos;
          return /*#__PURE__*/_jsx(SceneView, {
@@ -76,10 +75,9 @@ index 6882090..f1e14e1 100644
            focused: isFocused,
            shouldFreeze: shouldFreeze,
 diff --git a/lib/module/views/useHeaderConfigProps.js b/lib/module/views/useHeaderConfigProps.js
-index 08055b2..ccf1fde 100644
 --- a/lib/module/views/useHeaderConfigProps.js
 +++ b/lib/module/views/useHeaderConfigProps.js
-@@ -18,6 +18,12 @@ const processBarButtonItems = (items, colors, fonts) => {
+@@ -18,6 +18,12 @@
        }
        return item;
      }
@@ -92,7 +90,7 @@ index 08055b2..ccf1fde 100644
      if (item.type === 'button' || item.type === 'menu') {
        if (item.type === 'menu' && item.menu == null) {
          throw new Error(`Menu item must have a 'menu' property defined: ${JSON.stringify(item)}`);
-@@ -81,7 +87,7 @@ const processBarButtonItems = (items, colors, fonts) => {
+@@ -81,7 +87,7 @@
        }
        return processedItem;
      }
@@ -101,7 +99,7 @@ index 08055b2..ccf1fde 100644
    }).filter(item => item != null);
  };
  const transformIcon = icon => {
-@@ -165,8 +171,12 @@ export function useHeaderConfigProps({
+@@ -166,8 +172,12 @@
    route,
    title,
    unstable_headerInsets: headerInsets,
@@ -115,7 +113,7 @@ index 08055b2..ccf1fde 100644
  }) {
    const {
      direction
-@@ -264,6 +274,10 @@ export function useHeaderConfigProps({
+@@ -265,6 +275,10 @@
      tintColor,
      canGoBack
    });
@@ -126,7 +124,7 @@ index 08055b2..ccf1fde 100644
    let rightItems = headerRightItems?.({
      tintColor,
      canGoBack
-@@ -273,6 +287,10 @@ export function useHeaderConfigProps({
+@@ -274,6 +288,10 @@
      // So we need to reverse them here to match the order
      rightItems = [...rightItems].reverse();
    }
@@ -137,7 +135,7 @@ index 08055b2..ccf1fde 100644
    const children = /*#__PURE__*/_jsxs(_Fragment, {
      children: [Platform.OS === 'ios' ? /*#__PURE__*/_jsxs(_Fragment, {
        children: [leftItems ? leftItems.map((item, index) => {
-@@ -281,6 +299,7 @@ export function useHeaderConfigProps({
+@@ -282,6 +300,7 @@
            // eslint-disable-next-line @eslint-react/no-array-index-key
            , {
              hidesSharedBackground: item.hidesSharedBackground,
@@ -145,7 +143,7 @@ index 08055b2..ccf1fde 100644
              children: item.element
            }, index);
          }
-@@ -288,7 +307,16 @@ export function useHeaderConfigProps({
+@@ -289,7 +308,16 @@
        }) : headerLeftElement != null ? /*#__PURE__*/_jsx(ScreenStackHeaderLeftView, {
          hidesSharedBackground: headerLeftBackgroundVisible === false,
          children: headerLeftElement
@@ -163,7 +161,7 @@ index 08055b2..ccf1fde 100644
          children: headerTitleElement
        }) : null]
      }) : /*#__PURE__*/_jsxs(_Fragment, {
-@@ -331,6 +359,7 @@ export function useHeaderConfigProps({
+@@ -332,6 +360,7 @@
          // eslint-disable-next-line @eslint-react/no-array-index-key
          , {
            hidesSharedBackground: item.hidesSharedBackground,
@@ -171,18 +169,18 @@ index 08055b2..ccf1fde 100644
            children: item.element
          }, index);
        }
-@@ -367,6 +396,7 @@ export function useHeaderConfigProps({
-     largeTitleFontWeight,
+@@ -368,6 +397,7 @@
+     largeTitleFontWeight: largeTitleFontWeight != null ? String(largeTitleFontWeight) : undefined,
      largeTitleHideShadow: headerLargeTitleShadowVisible === false,
      title: titleText,
 +    subtitle: headerSubtitle,
      titleColor,
      titleFontFamily,
      titleFontSize,
-@@ -378,6 +408,9 @@ export function useHeaderConfigProps({
+@@ -379,6 +409,9 @@
      disableBottomInsetApplication: headerInsets?.bottom !== undefined ? !headerInsets.bottom : undefined,
      translucent: translucent === true,
-     children,
+     children: header === undefined ? children : null,
 +    navigationItemStyle,
 +    headerToolbarItems: processBarButtonItems(toolbarItems, colors, fonts),
 +    headerCenterBarButtonItems: processBarButtonItems(centerItems, colors, fonts),
@@ -190,10 +188,9 @@ index 08055b2..ccf1fde 100644
      headerRightBarButtonItems: processBarButtonItems(rightItems, colors, fonts),
      experimental_userInterfaceStyle: dark ? 'dark' : 'light'
 diff --git a/lib/typescript/src/types.d.ts b/lib/typescript/src/types.d.ts
-index 27a3d8e..7312e4e 100644
 --- a/lib/typescript/src/types.d.ts
 +++ b/lib/typescript/src/types.d.ts
-@@ -694,6 +694,8 @@ export type NativeStackNavigationOptions = {
+@@ -691,6 +691,8 @@
       * @platform ios
       */
      sheetGrabberVisible?: boolean;
@@ -202,7 +199,7 @@ index 27a3d8e..7312e4e 100644
      /**
       * The largest sheet detent for which a view underneath won't be dimmed.
       * Works only when `presentation` is set to `formSheet`.
-@@ -903,6 +905,8 @@ type SharedHeaderItem = {
+@@ -900,6 +902,8 @@
       * Read more: https://developer.apple.com/documentation/uikit/uibarbuttonitem/sharesbackground
       */
      sharesBackground?: boolean;
@@ -211,25 +208,24 @@ index 27a3d8e..7312e4e 100644
      /**
       * An identifier used to match items across transitions.
       * Only available from iOS 26.0 and later.
-@@ -1148,6 +1152,13 @@ export type NativeStackHeaderItemSpacing = {
-  */
+@@ -1146,6 +1150,13 @@
  export type NativeStackHeaderItemCustom = {
      type: 'custom';
-+    /**
+     /**
 +     * An identifier used to match items across transitions.
 +     * Only available from iOS 26.0 and later.
 +     *
 +     * Read more: https://developer.apple.com/documentation/uikit/uibarbuttonitem/identifier
 +     */
 +    identifier?: string;
-     /**
++    /**
       * A React Element to display as the item.
       */
+     element: React.ReactElement;
 diff --git a/lib/typescript/src/views/NativeStackView.d.ts b/lib/typescript/src/views/NativeStackView.d.ts
-index cc688e2..0ec33c8 100644
 --- a/lib/typescript/src/views/NativeStackView.d.ts
 +++ b/lib/typescript/src/views/NativeStackView.d.ts
-@@ -2,6 +2,7 @@ import { type ParamListBase, type RouteProp, type StackNavigationState } from '@
+@@ -2,6 +2,7 @@
  import * as React from 'react';
  import type { NativeStackDescriptor, NativeStackDescriptorMap, NativeStackNavigationHelpers } from '../types.js';
  type Props = {
@@ -238,10 +234,9 @@ index cc688e2..0ec33c8 100644
      navigation: NativeStackNavigationHelpers;
      descriptors: NativeStackDescriptorMap;
 diff --git a/lib/typescript/src/views/NativeStackView.native.d.ts b/lib/typescript/src/views/NativeStackView.native.d.ts
-index d533cd9..857b7ad 100644
 --- a/lib/typescript/src/views/NativeStackView.native.d.ts
 +++ b/lib/typescript/src/views/NativeStackView.native.d.ts
-@@ -2,11 +2,12 @@ import { type ParamListBase, type RouteProp, type StackNavigationState } from '@
+@@ -2,11 +2,12 @@
  import * as React from 'react';
  import type { NativeStackDescriptor, NativeStackDescriptorMap, NativeStackNavigationHelpers } from '../types.js';
  type Props = {
@@ -257,10 +252,9 @@ index d533cd9..857b7ad 100644
  //# sourceMappingURL=NativeStackView.native.d.ts.map
 \ No newline at end of file
 diff --git a/src/types.tsx b/src/types.tsx
-index 5d63f41..f949a11 100644
 --- a/src/types.tsx
 +++ b/src/types.tsx
-@@ -746,6 +746,8 @@ export type NativeStackNavigationOptions = {
+@@ -745,6 +745,8 @@
     * @platform ios
     */
    sheetGrabberVisible?: boolean;
@@ -269,7 +263,7 @@ index 5d63f41..f949a11 100644
    /**
     * The largest sheet detent for which a view underneath won't be dimmed.
     * Works only when `presentation` is set to `formSheet`.
-@@ -959,6 +961,8 @@ type SharedHeaderItem = {
+@@ -958,6 +960,8 @@
     * Read more: https://developer.apple.com/documentation/uikit/uibarbuttonitem/sharesbackground
     */
    sharesBackground?: boolean;
@@ -278,25 +272,24 @@ index 5d63f41..f949a11 100644
    /**
     * An identifier used to match items across transitions.
     * Only available from iOS 26.0 and later.
-@@ -1213,6 +1217,13 @@ export type NativeStackHeaderItemSpacing = {
-  */
+@@ -1213,6 +1217,13 @@
  export type NativeStackHeaderItemCustom = {
    type: 'custom';
-+  /**
+   /**
 +   * An identifier used to match items across transitions.
 +   * Only available from iOS 26.0 and later.
 +   *
 +   * Read more: https://developer.apple.com/documentation/uikit/uibarbuttonitem/identifier
 +   */
 +  identifier?: string;
-   /**
++  /**
     * A React Element to display as the item.
     */
+   element: React.ReactElement;
 diff --git a/src/views/NativeStackView.native.tsx b/src/views/NativeStackView.native.tsx
-index aa13bc7..225daf9 100644
 --- a/src/views/NativeStackView.native.tsx
 +++ b/src/views/NativeStackView.native.tsx
-@@ -52,7 +52,14 @@ function isFabric() {
+@@ -52,7 +52,14 @@
    return 'nativeFabricUIManager' in global;
  }
  
@@ -311,7 +304,7 @@ index aa13bc7..225daf9 100644
    index: number;
    focused: boolean;
    shouldFreeze: boolean;
-@@ -71,6 +78,7 @@ type SceneViewProps = {
+@@ -71,6 +78,7 @@
  const useNativeDriver = Platform.OS !== 'web';
  
  const SceneView = React.memo(function SceneView({
@@ -319,7 +312,7 @@ index aa13bc7..225daf9 100644
    index,
    focused,
    shouldFreeze,
-@@ -199,6 +207,7 @@ const SceneView = React.memo(function SceneView({
+@@ -199,6 +207,7 @@
      sheetAllowedDetents = [1.0],
      sheetLargestUndimmedDetentIndex = -1,
      sheetGrabberVisible = false,
@@ -327,7 +320,7 @@ index aa13bc7..225daf9 100644
      sheetCornerRadius = -1.0,
      sheetElevation = 24,
      sheetExpandsWhenScrolledToEdge = true,
-@@ -434,7 +443,7 @@ const SceneView = React.memo(function SceneView({
+@@ -430,7 +439,7 @@
        );
  
    return (
@@ -336,7 +329,7 @@ index aa13bc7..225daf9 100644
        <ScreenStackItem
          screenId={route.key}
          activityState={isPreloaded ? 0 : 2}
-@@ -463,6 +472,7 @@ const SceneView = React.memo(function SceneView({
+@@ -459,6 +468,7 @@
          sheetAllowedDetents={sheetAllowedDetents}
          sheetLargestUndimmedDetentIndex={sheetLargestUndimmedDetentIndex}
          sheetGrabberVisible={sheetGrabberVisible}
@@ -344,7 +337,7 @@ index aa13bc7..225daf9 100644
          sheetInitialDetentIndex={sheetInitialDetentIndex}
          sheetCornerRadius={sheetCornerRadius}
          sheetElevation={sheetElevation}
-@@ -571,11 +581,12 @@ const SceneView = React.memo(function SceneView({
+@@ -567,11 +577,12 @@
            </HeaderHeightContext.Provider>
          </AnimatedHeaderHeightContext.Provider>
        </ScreenStackItem>
@@ -358,7 +351,7 @@ index aa13bc7..225daf9 100644
    state: StackNavigationState<ParamListBase>;
    navigation: NativeStackNavigationHelpers;
    descriptors: NativeStackDescriptorMap;
-@@ -586,6 +597,7 @@ type Props = {
+@@ -582,6 +593,7 @@
  };
  
  export function NativeStackView({
@@ -366,7 +359,7 @@ index aa13bc7..225daf9 100644
    state,
    navigation,
    descriptors,
-@@ -633,6 +645,7 @@ export function NativeStackView({
+@@ -633,6 +645,7 @@
  
            return (
              <SceneView
@@ -375,10 +368,9 @@ index aa13bc7..225daf9 100644
                index={index}
                focused={isFocused}
 diff --git a/src/views/NativeStackView.tsx b/src/views/NativeStackView.tsx
-index c50a3fa..6305ed5 100644
 --- a/src/views/NativeStackView.tsx
 +++ b/src/views/NativeStackView.tsx
-@@ -25,6 +25,7 @@ import type {
+@@ -25,6 +25,7 @@
  import { AnimatedHeaderHeightContext } from '../utils/useAnimatedHeaderHeight';
  
  type Props = {
@@ -387,10 +379,9 @@ index c50a3fa..6305ed5 100644
    // This is used for the native implementation of the stack.
    navigation: NativeStackNavigationHelpers;
 diff --git a/src/views/useHeaderConfigProps.tsx b/src/views/useHeaderConfigProps.tsx
-index 739134e..9bb056e 100644
 --- a/src/views/useHeaderConfigProps.tsx
 +++ b/src/views/useHeaderConfigProps.tsx
-@@ -412,6 +412,7 @@ export function useHeaderConfigProps({
+@@ -406,6 +406,7 @@
                      // eslint-disable-next-line @eslint-react/no-array-index-key
                      key={index}
                      hidesSharedBackground={item.hidesSharedBackground}
@@ -398,7 +389,7 @@ index 739134e..9bb056e 100644
                    >
                      {item.element}
                    </ScreenStackHeaderLeftView>
-@@ -488,6 +489,7 @@ export function useHeaderConfigProps({
+@@ -482,6 +483,7 @@
                  // eslint-disable-next-line @eslint-react/no-array-index-key
                  key={index}
                  hidesSharedBackground={item.hidesSharedBackground}

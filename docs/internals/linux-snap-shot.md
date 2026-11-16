@@ -8,14 +8,14 @@ GNOME extension must not select another desktop's backend; session detection com
 
 ## Module boundaries
 
-`dbus-next` must only be reached through dynamic imports. `linuxCaptureSession.ts` holds the pure
+`@particle/dbus-next` must only be reached through dynamic imports. `linuxCaptureSession.ts` holds the pure
 helpers (session detection, Niri binding text, portal key mapping, PNG reading) so the main process
 can answer "which desktop is this" without loading a D-Bus client on macOS or Windows.
 
-`patches/dbus-next@0.10.2.patch` removes `usocket` (its optional native Unix-FD transport) and
-connects to both `unix:path=` and `unix:abstract=` buses through Node's `net`. We never pass Unix
-descriptors, and upstream had no `net` fallback for abstract sockets, which `dbus-launch` produces
-outside systemd. Keep the patch when bumping `dbus-next`.
+The client is `@particle/dbus-next`, a fork of `dbus-next` without `usocket` (the optional native
+Unix-FD transport). It connects to both `unix:path=` and `unix:abstract=` buses through Node's
+`net`. We never pass Unix descriptors, and `dbus-next` had no `net` fallback for abstract sockets,
+which `dbus-launch` produces outside systemd.
 
 ## Accessibility identity
 

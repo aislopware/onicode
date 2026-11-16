@@ -360,7 +360,7 @@ struct Collector {
 impl Collector {
     fn new() -> Self {
         Self {
-            system: System::new(),
+            system: new_system(),
             sequence: 0,
             cpu_baseline_refreshed_at: None,
         }
@@ -406,7 +406,7 @@ impl Collector {
     #[cfg(not(target_os = "linux"))]
     fn process_table(&self) -> Vec<ProcessTableEntry> {
         // A separate System preserves snapshot CPU baselines.
-        let mut process_table_system = System::new();
+        let mut process_table_system = new_system();
         process_table_system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,
@@ -491,7 +491,7 @@ impl Collector {
                 detail_pids.push(monitor_pid);
             }
             // Detail fields need no baseline. Drop command data and OS handles after each sample.
-            let mut details = System::new();
+            let mut details = new_system();
             details.refresh_processes_specifics(
                 ProcessesToUpdate::Some(&detail_pids),
                 true,
@@ -586,6 +586,11 @@ impl Collector {
 }
 
 // Keep CPU baselines separate. Even a metadata refresh resets Linux process times.
+// sysinfo only fails to create a System on platforms it does not support.
+fn new_system() -> System {
+    System::new().expect("sysinfo supports this platform")
+}
+
 fn process_discovery_refresh_kind() -> ProcessRefreshKind {
     if TWO_STAGE_PROCESS_REFRESH {
         ProcessRefreshKind::nothing().with_cpu().without_tasks()
@@ -1437,7 +1442,7 @@ mod tests {
     #[test]
     fn linux_process_table_reports_own_process_like_sysinfo() {
         let collector = Collector::new();
-        let mut system = System::new();
+        let mut system = new_system();
         system.refresh_processes_specifics(
             ProcessesToUpdate::All,
             true,

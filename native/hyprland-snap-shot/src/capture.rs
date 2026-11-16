@@ -16,7 +16,7 @@ use crate::{
     },
 };
 use smithay_client_toolkit::{
-    delegate_registry, delegate_shm,
+    delegate_dispatch2, delegate_registry,
     registry::{ProvidesRegistryState, RegistryState},
     shm::{
         Shm, ShmHandler,
@@ -264,14 +264,13 @@ impl Dispatch<Handle, Toplevel> for Capture {
             address_hi,
             address,
         } = event
+            && (u64::from(address_hi) << 32 | u64::from(address)) == state.target
+            && !state.started
         {
-            if (u64::from(address_hi) << 32 | u64::from(address)) == state.target && !state.started
-            {
-                state.started = true;
-                state
-                    .export
-                    .capture_toplevel_with_wlr_toplevel_handle(0, toplevel, qh, ());
-            }
+            state.started = true;
+            state
+                .export
+                .capture_toplevel_with_wlr_toplevel_handle(0, toplevel, qh, ());
         }
         handle.destroy();
     }
@@ -314,7 +313,7 @@ impl Dispatch<Frame, ()> for Capture {
 delegate_noop!(Capture: ignore Export);
 delegate_noop!(Capture: ignore Mapping);
 delegate_registry!(Capture);
-delegate_shm!(Capture);
+delegate_dispatch2!(Capture);
 impl ProvidesRegistryState for Capture {
     fn registry(&mut self) -> &mut RegistryState {
         &mut self.registry

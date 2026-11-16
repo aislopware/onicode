@@ -7,13 +7,9 @@ use std::{
     io::{Read, Write},
     os::{fd::AsFd, unix::net::UnixStream},
     path::Path,
-    sync::mpsc,
     time::Duration,
 };
-use zbus::{
-    blocking::{Connection, Proxy, connection::Builder},
-    zvariant::{Fd, OwnedValue, Value},
-};
+use zbus::{Connection, Fd, OwnedVariant, Proxy, Variant, connection::Builder};
 
 type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 const SCREENSHOT: &str = "org.kde.KWin.ScreenShot2";
@@ -75,7 +71,7 @@ const REPLY: &str = "/dev/onicode/KdeCapture";
 
 /// KWin's bus name and the channel of the script call in flight. `None` between calls.
 #[derive(Default)]
-struct ScriptReply(Option<(String, mpsc::SyncSender<String>)>);
+struct ScriptReply(Option<(String, async_channel::Sender<String>)>);
 #[zbus::interface(name = "dev.onicode.KdeCapture")]
 impl ScriptReply {
     fn reply(
@@ -103,22 +99,35 @@ impl ScriptReply {
 
 /// Serves the reply object from the start, so zbus waits for its method-call listener.
 /// A listener started after connecting can miss the first call from KWin.
-fn connect(builder: Builder<'_>) -> zbus::Result<Connection> {
+async fn connect(builder: Builder<'_>) -> zbus::Result<Connection> {
     builder
         .method_timeout(DEADLINE)
-        .serve_at(REPLY, ScriptReply::default())?
+        .serve_at(REPLY, ScriptReply::default())
         .build()
+        .await
+}
+
+/// Fails with std's `recv_timeout` text, which the desktop app can show to users.
+async fn within<T>(duration: Duration, future: impl Future<Output = T>) -> Result<T> {
+    zruntime::SharedRuntime::current()?
+        .timeout(duration, future)
+        .await
+        .map_err(|_| "timed out waiting on channel".into())
 }
 
 /// Scripts exist only for this operation. Unload even when evaluation/callback fails.
-fn script(connection: &Connection, directory: &Path, body: &str) -> Result<String> {
-    let dbus = zbus::blocking::fdo::DBusProxy::new(connection)?;
-    let owner = dbus.get_name_owner("org.kde.KWin".try_into()?)?.to_string();
-    let (send, receive) = mpsc::sync_channel(1);
+async fn script(connection: &Connection, directory: &Path, body: &str) -> Result<String> {
+    let dbus = zbus::fdo::DBusProxy::new(connection).await?;
+    let owner = dbus
+        .get_name_owner("org.kde.KWin".try_into()?)
+        .await?
+        .to_string();
+    let (send, receive) = async_channel::bounded(1);
     let reply = connection
         .object_server()
-        .interface::<_, ScriptReply>(REPLY)?;
-    reply.get_mut().0 = Some((owner, send));
+        .interface::<_, ScriptReply>(REPLY)
+        .await?;
+    reply.get_mut().await.0 = Some((owner, send));
     let path = directory.join("window.js");
     let name = format!("oni-capture-{}", std::process::id());
     let destination = serde_json::to_string(
@@ -136,35 +145,45 @@ fn script(connection: &Connection, directory: &Path, body: &str) -> Result<Strin
         "org.kde.KWin",
         "/Scripting",
         "org.kde.kwin.Scripting",
-    )?;
-    let result = (|| {
-        let id: i32 = scripting.call(
-            "loadScript",
-            &(path.to_str().ok_or("Invalid script path")?, &name),
-        )?;
+    )
+    .await?;
+    let result = async {
+        let id: i32 = scripting
+            .call(
+                "loadScript",
+                &(path.to_str().ok_or("Invalid script path")?, &name),
+            )
+            .await?;
         if id < 0 {
             return Err("KWin could not load the capture helper script".into());
         }
-        let result = (|| {
+        let result = async {
             let object = format!("/Scripting/Script{id}");
             let loaded = Proxy::new(
                 connection,
                 "org.kde.KWin",
                 object.as_str(),
                 "org.kde.kwin.Script",
-            )?;
-            let _: () = loaded.call("run", &())?;
-            Ok(receive.recv_timeout(DEADLINE)?)
-        })();
-        let _: std::result::Result<bool, _> = scripting.call("unloadScript", &(&name,));
+            )
+            .await?;
+            let _: () = loaded.call("run", &()).await?;
+            Ok(within(DEADLINE, receive.recv()).await??)
+        }
+        .await;
+        let _: zbus::Result<bool> = scripting.call("unloadScript", &(&name,)).await;
         result
-    })();
-    reply.get_mut().0 = None;
+    }
+    .await;
+    reply.get_mut().await.0 = None;
     let _ = std::fs::remove_file(path);
     result
 }
 
-fn window(connection: &Connection, directory: &Path, id: Option<&str>) -> Result<Option<Window>> {
+async fn window(
+    connection: &Connection,
+    directory: &Path,
+    id: Option<&str>,
+) -> Result<Option<Window>> {
     let selector = match id {
         Some(id) => format!(
             "workspace.windowList().find(w => String(w.internalId) === {})",
@@ -179,34 +198,38 @@ fn window(connection: &Connection, directory: &Path, id: Option<&str>) -> Result
             "function bounds(rect) {{ return {{ x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) }}; }}
              const w = {selector}; reply(!w ? null : {{ id: String(w.internalId), title: w.caption, appName: w.resourceClass || w.desktopFileName || 'Application', appIdentifier: w.desktopFileName || w.resourceClass || '', processId: w.pid, bounds: bounds(w.frameGeometry), clientBounds: bounds(w.clientGeometry) }});"
         ),
-    )?;
+    )
+    .await?;
     Ok(serde_json::from_str(&value)?)
 }
 
-fn screenshot_proxy(connection: &Connection) -> zbus::Result<Proxy<'_>> {
+async fn screenshot_proxy(connection: &Connection) -> zbus::Result<Proxy<'_>> {
     Proxy::new(
         connection,
         SCREENSHOT,
         "/org/kde/KWin/ScreenShot2",
         SCREENSHOT,
     )
+    .await
 }
 
 /// InvalidWindow follows the authorization check and cannot produce a screenshot.
-fn check(connection: &Connection) -> Result<()> {
-    let proxy = screenshot_proxy(connection)?;
-    if proxy.get_property::<u32>("Version")? < 2 {
+async fn check(connection: &Connection) -> Result<()> {
+    let proxy = screenshot_proxy(connection).await?;
+    if proxy.get_property::<u32>("Version").await? < 2 {
         return Err("KDE's screenshot API is too old".into());
     }
     let sink = OpenOptions::new().write(true).open("/dev/null")?;
-    let reply: zbus::Result<HashMap<String, OwnedValue>> = proxy.call(
-        "CaptureWindow",
-        &(
-            "oni-permission-check-not-a-window",
-            HashMap::<&str, Value<'_>>::new(),
-            Fd::from(sink.as_fd()),
-        ),
-    );
+    let reply: zbus::Result<HashMap<String, OwnedVariant>> = proxy
+        .call(
+            "CaptureWindow",
+            &(
+                "oni-permission-check-not-a-window",
+                HashMap::<&str, Variant<'_>>::new(),
+                Fd::from(sink.as_fd()),
+            ),
+        )
+        .await;
     match reply {
         Err(zbus::Error::MethodError(name, _, _))
             if name.as_str() == "org.kde.KWin.ScreenShot2.Error.InvalidWindow" =>
@@ -218,7 +241,7 @@ fn check(connection: &Connection) -> Result<()> {
     }
 }
 
-fn uint(metadata: &HashMap<String, OwnedValue>, key: &str) -> Result<usize> {
+fn uint(metadata: &HashMap<String, OwnedVariant>, key: &str) -> Result<usize> {
     Ok(u32::try_from(
         metadata
             .get(key)
@@ -242,11 +265,11 @@ fn rgba(raw: &[u8], width: usize, height: usize, stride: usize, format: usize) -
     }
     let mut output = Vec::with_capacity(row * height);
     for y in 0..height {
-        for pixel in raw[y * stride..y * stride + row].chunks_exact(4) {
+        for pixel in raw[y * stride..y * stride + row].as_chunks::<4>().0 {
             let (r, g, b, a) = if format >= 17 {
                 (pixel[0], pixel[1], pixel[2], pixel[3])
             } else {
-                let argb = u32::from_ne_bytes(pixel.try_into()?);
+                let argb = u32::from_ne_bytes(*pixel);
                 (
                     (argb >> 16) as u8,
                     (argb >> 8) as u8,
@@ -291,25 +314,29 @@ fn encode_png(rgba: &[u8], width: u32, height: u32, limit: usize) -> Result<Vec<
     Err("Screenshot too large".into())
 }
 
-fn capture(connection: &Connection, directory: &Path) -> Result<Option<Window>> {
+async fn capture(connection: &Connection, directory: &Path) -> Result<Option<Window>> {
     // Lack of scripting only loses identity/text; never guess which app was captured.
-    let before = window(connection, directory, None).ok().flatten();
-    let proxy = screenshot_proxy(connection)?;
+    let before = window(connection, directory, None).await.ok().flatten();
+    let proxy = screenshot_proxy(connection).await?;
     let (mut reader, writer) = UnixStream::pair()?;
     reader.set_read_timeout(Some(DEADLINE))?;
     let options = HashMap::from([
-        ("include-decoration", Value::from(true)),
-        ("include-shadow", Value::from(false)),
-        ("include-cursor", Value::from(false)),
-        ("native-resolution", Value::from(true)),
+        ("include-decoration", Variant::from(true)),
+        ("include-shadow", Variant::from(false)),
+        ("include-cursor", Variant::from(false)),
+        ("native-resolution", Variant::from(true)),
     ]);
-    let metadata: HashMap<String, OwnedValue> = if let Some(window) = &before {
-        proxy.call(
-            "CaptureWindow",
-            &(&window.id, options, Fd::from(writer.as_fd())),
-        )?
+    let metadata: HashMap<String, OwnedVariant> = if let Some(window) = &before {
+        proxy
+            .call(
+                "CaptureWindow",
+                &(&window.id, options, Fd::from(writer.as_fd())),
+            )
+            .await?
     } else {
-        proxy.call("CaptureActiveWindow", &(options, Fd::from(writer.as_fd())))?
+        proxy
+            .call("CaptureActiveWindow", &(options, Fd::from(writer.as_fd())))
+            .await?
     };
     drop(writer);
     if <&str>::try_from(metadata.get("type").ok_or("Missing screenshot type")?)? != "raw" {
@@ -335,32 +362,35 @@ fn capture(connection: &Connection, directory: &Path) -> Result<Option<Window>> 
         .create_new(true)
         .open(directory.join("capture.png"))?
         .write_all(&png)?;
-    let identity = before.filter(|before| {
-        window(connection, directory, Some(&before.id))
-            .ok()
-            .flatten()
-            .is_some_and(|current| before.matches_after_capture(&current))
-    });
-    Ok(identity)
+    let Some(before) = before else {
+        return Ok(None);
+    };
+    let current = window(connection, directory, Some(&before.id))
+        .await
+        .ok()
+        .flatten();
+    Ok(current
+        .is_some_and(|current| before.matches_after_capture(&current))
+        .then_some(before))
 }
 
-fn run() -> Result<()> {
+async fn run() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
-    let connection = connect(Builder::session()?)?;
+    let connection = connect(Builder::session()).await?;
     match args.get(1).map(String::as_str) {
         Some("check") => {
-            check(&connection)?;
+            check(&connection).await?;
             println!(
                 "{}",
-                serde_json::json!({"ready": true, "feedbackAvailable": feedback::supported(&connection)})
+                serde_json::json!({"ready": true, "feedbackAvailable": feedback::supported(&connection).await})
             );
         }
         Some("capture") if args.len() == 3 => {
-            let window = capture(&connection, Path::new(&args[2]))?;
+            let window = capture(&connection, Path::new(&args[2])).await?;
             println!("{}", serde_json::json!({"window": window}));
         }
         Some("feedback") if args.len() == 4 => {
-            feedback::run(&connection, Path::new(&args[2]), &args[3])?;
+            feedback::run(&connection, Path::new(&args[2]), &args[3]).await?;
         }
         Some("activate") if args.len() == 5 => {
             let pid: u32 = args[3].parse()?;
@@ -372,7 +402,8 @@ fn run() -> Result<()> {
                     "const targetPid = {pid}; const targetTitle = {title};\n{}",
                     include_str!("activate.js")
                 ),
-            )?;
+            )
+            .await?;
             if serde_json::from_str::<serde_json::Value>(&value)?["activated"] != true {
                 return Err("KDE could not identify the Onicode window to activate".into());
             }
@@ -392,7 +423,7 @@ fn run() -> Result<()> {
 mod transport_tests;
 
 fn main() {
-    if let Err(error) = run() {
+    if let Err(error) = zbus::block_on(run()) {
         let _ = writeln!(std::io::stderr(), "{error}");
         std::process::exit(1);
     }

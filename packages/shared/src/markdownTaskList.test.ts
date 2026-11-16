@@ -35,34 +35,34 @@ describe("markdownTaskMarkerOffset", () => {
   it("finds the tapped checkbox, skipping look-alikes in code", () => {
     expect(marker(markdownTaskMarkerOffset(markdown, 0, "vp lint passes", true))).toBe("[ ]");
     expect(marker(markdownTaskMarkerOffset(markdown, 1, "Nested step", false))).toBe("[x]");
-    // Native numbering restarts after code blocks and blockquotes.
-    expect(marker(markdownTaskMarkerOffset(markdown, 0, "Quoted link", false))).toBe("[X]");
+    // Native numbering runs through the whole document, across code blocks and blockquotes.
+    expect(marker(markdownTaskMarkerOffset(markdown, 2, "Quoted link", false))).toBe("[X]");
     // Android cuts the text at a line break, a soft one too with hard line breaks; iOS doesn't.
     for (const text of ["Wrapped", "Wrapped onto two lines"]) {
-      expect(markdownTaskMarkerOffset(markdown, 0, text, true)).toBe(markdown.lastIndexOf("[ ]"));
+      expect(markdownTaskMarkerOffset(markdown, 3, text, true)).toBe(markdown.lastIndexOf("[ ]"));
     }
   });
 
-  it("tells identical labels apart by count within one list and by state", () => {
+  it("tells identical labels apart by index and refuses a stale state", () => {
     const same = "- [ ] Same\n- [ ] Same\n\n```\nx\n```\n\n- [x] Same\n";
     expect(markdownTaskMarkerOffset(same, 0, "Same", true)).toBe(2);
     expect(markdownTaskMarkerOffset(same, 1, "Same", true)).toBe(13);
-    expect(markdownTaskMarkerOffset(same, 0, "Same", false)).toBe(same.lastIndexOf("[x]"));
+    expect(markdownTaskMarkerOffset(same, 2, "Same", false)).toBe(same.lastIndexOf("[x]"));
+    expect(markdownTaskMarkerOffset(same, 2, "Same", true)).toBeNull();
   });
 
-  it("refuses a checkbox it can't trace to exactly one task", () => {
+  it("refuses a checkbox whose index names a task with another text or state", () => {
     expect(markdownTaskMarkerOffset(markdown, 1, "vp lint passes", true)).toBeNull();
     expect(markdownTaskMarkerOffset(markdown, 0, "vp lint passes", false)).toBeNull();
-    expect(markdownTaskMarkerOffset(markdown, 0, "Wrapped onto", true)).toBeNull();
+    expect(markdownTaskMarkerOffset(markdown, 3, "Wrapped onto", true)).toBeNull();
     expect(markdownTaskMarkerOffset(markdown, 4, "", true)).toBeNull();
 
     const similar = "- [ ] Similar\n\n```text\nseparator\n```\n\n- [ ] Similar<br>different\n";
-    // iOS keeps hard breaks in the text, so it names the second task.
-    expect(markdownTaskMarkerOffset(similar, 0, "Similar different", true)).toBe(
-      similar.lastIndexOf("[ ]"),
-    );
-    // Android cuts it to "Similar", which both tasks could be.
-    expect(markdownTaskMarkerOffset(similar, 0, "Similar", true)).toBeNull();
+    // iOS keeps hard breaks in the text and Android cuts it at one; the index tells the tasks apart.
+    for (const text of ["Similar different", "Similar"]) {
+      expect(markdownTaskMarkerOffset(similar, 1, text, true)).toBe(similar.lastIndexOf("[ ]"));
+    }
+    expect(markdownTaskMarkerOffset(similar, 0, "Similar different", true)).toBeNull();
 
     for (const label of ["Similar [docs](https://github.com/aislopware/onicode)", "Similar $x$"]) {
       const attachment = similar.replace("Similar<br>different", label);

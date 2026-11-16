@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { describe, expect, it } from "@effect/vitest";
 import * as NodeV8 from "node:v8";
 import * as NodeVM from "node:vm";

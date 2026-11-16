@@ -1,4 +1,4 @@
-import { Message, MessageType, Variant, sessionBus, type MessageBus } from "dbus-next";
+import { Message, MessageType, Variant, sessionBus, type MessageBus } from "@particle/dbus-next";
 
 const PORTAL = "org.freedesktop.portal.Desktop";
 const PATH = "/org/freedesktop/portal/desktop";

@@ -50,12 +50,12 @@ vi.mock(import("./ReadOnlySourcePreview"), () => ({
 // the stand-in shows the prepared body's text instead of laying it out.
 vi.mock(import("./office/WordDocument"), async () => {
   const { use } = await import("react");
-  const { default: Zip } = await import("jszip");
+  const { zipEntries } = await import("../../../test/zip");
   const texts = new WeakMap<ArrayBuffer, Promise<string>>();
-  const read = (bytes: ArrayBuffer) =>
-    Zip.loadAsync(bytes)
-      .then((zip) => zip.file("word/document.xml")!.async("string"))
-      .then((xml) => xml.replace(/<[^>]+>/g, " "));
+  const read = async (bytes: ArrayBuffer) =>
+    zipEntries(bytes)
+      .text("word/document.xml")!
+      .replace(/<[^>]+>/g, " ");
   return {
     default: ({ bytes }: { bytes: ArrayBuffer }) => {
       let text = texts.get(bytes);
@@ -71,7 +71,7 @@ import LargeTextViewer from "./LargeTextViewer";
 import VirtualTablePreview from "./VirtualTablePreview";
 import { OfficeFilePreview } from "./OfficeFilePreview";
 import { MermaidFilePreview } from "./MermaidFilePreview";
-import JSZip from "jszip";
+import { zipEntries, zipFixture } from "../../../test/zip";
 import { boundedZip } from "@onicode/client-runtime/zip/bounded-zip";
 import BinaryViewer from "./BinaryViewer";
 import { decodeImagePreview } from "./decodeImagePreview";
@@ -420,8 +420,7 @@ describe("bounded binary previews", () => {
   });
 
   it("reads a small ZIP64 archive and rejects understated directory counts", async () => {
-    const zip = new JSZip().file("readme.txt", "hello");
-    const bytes = await zip.generateAsync({ type: "uint8array" });
+    const bytes = zipFixture({ "readme.txt": "hello" });
     const end = bytes.length - 22;
     const legacy = new DataView(bytes.buffer);
     const extended = new Uint8Array(bytes.length + 76);
@@ -458,26 +457,21 @@ describe("bounded binary previews", () => {
     comment.setUint32(extended.length, 0x07064b50, true);
     comment.setBigUint64(extended.length + 8, BigInt(end), true);
     comment.setUint32(extended.length + 16, 1, true);
-    const load = vi.spyOn(JSZip, "loadAsync");
-    try {
-      await expect(boundedZip(commented.buffer)).rejects.toThrow("Unsupported ZIP64 directory");
-      expect(load).not.toHaveBeenCalled();
-    } finally {
-      load.mockRestore();
-    }
+    await expect(boundedZip(commented.buffer)).rejects.toThrow("Unsupported ZIP64 directory");
 
-    const many = new JSZip();
-    for (let i = 0; i < 2049; i++) many.file(`file-${i}`, "");
-    const crowded = await many.generateAsync({ type: "arraybuffer" });
+    const many: Record<string, string> = {};
+    for (let i = 0; i < 2049; i++) many[`file-${i}`] = "";
+    const crowded = zipFixture(many).buffer;
     new DataView(crowded).setUint16(crowded.byteLength - 12, 1, true);
     await expect(boundedZip(crowded)).rejects.toThrow("more than 2,048 entries");
   });
 
   it("keeps a file and directory with the same basename accessible", async () => {
-    const bytes = await new JSZip()
-      .file("foo.txt", "root file")
-      .file("foo.txt/bar.txt", "child")
-      .generateAsync({ type: "arraybuffer" });
+    const bytes = zipFixture({
+      "foo.txt": "root file",
+      "foo.txt/": "",
+      "foo.txt/bar.txt": "child",
+    }).buffer;
     const src = URL.createObjectURL(new Blob([bytes]));
     try {
       await using screen = await render(<BinaryViewer src={src} name="names.zip" kind="archive" />);
@@ -1023,16 +1017,14 @@ describe("standalone Mermaid previews", () => {
 });
 
 it("reloads a workspace Word file after a preview remount", async () => {
-  const { default: JSZip } = await import("jszip");
   let heading = "Original outlook";
   using _fetch = stubGlobal(
     "fetch",
     vi.fn(async () => {
-      const archive = new JSZip().file(
-        "word/document.xml",
-        `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${heading}</w:t></w:r></w:p></w:body></w:document>`,
-      );
-      return new Response(await archive.generateAsync({ type: "arraybuffer" }));
+      const archive = {
+        "word/document.xml": `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${heading}</w:t></w:r></w:p></w:body></w:document>`,
+      };
+      return new Response(zipFixture(archive).buffer);
     }),
   );
   refresh.mockReset().mockResolvedValue("https://example.com/workspace.docx");
@@ -1318,21 +1310,14 @@ it.each([
 ] as const)(
   "bounds the worksheet relationship target %s at row %i before the reader allocates its grid",
   async (target, row) => {
-    const { default: JSZip } = await import("jszip");
-    const zip = new JSZip();
-    zip.file(
-      "xl/workbook.xml",
-      '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet" sheetId="1" r:id="rId1"/></sheets></workbook>',
-    );
-    zip.file(
-      "xl/_rels/workbook.xml.rels",
-      `<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${target}"/></Relationships>`,
-    );
-    zip.file(
-      target.startsWith("/") ? target.slice(1) : `xl/${target}`,
-      `<worksheet><sheetData><row r="${row}"><c r="A${row}" t="inlineStr"><is><t>worksheet value</t></is></c></row></sheetData></worksheet>`,
-    );
-    const bytes = await zip.generateAsync({ type: "arraybuffer", compression: "DEFLATE" });
+    const zip: Record<string, string> = {};
+    zip["xl/workbook.xml"] =
+      '<workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Sheet" sheetId="1" r:id="rId1"/></sheets></workbook>';
+    zip["xl/_rels/workbook.xml.rels"] =
+      `<Relationships><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="${target}"/></Relationships>`;
+    zip[target.startsWith("/") ? target.slice(1) : `xl/${target}`] =
+      `<worksheet><sheetData><row r="${row}"><c r="A${row}" t="inlineStr"><is><t>worksheet value</t></is></c></row></sheetData></worksheet>`;
+    const bytes = zipFixture(zip, { deflate: true }).buffer;
     const { prepareOffice } = await import("./officeArchive");
     if (row > 250000) {
       await expect(prepareOffice(bytes, "xlsx")).rejects.toThrow(
@@ -1341,8 +1326,7 @@ it.each([
       return;
     }
     const prepared = await prepareOffice(bytes, "xlsx");
-    const bounded = await JSZip.loadAsync(prepared.bytes);
-    expect(await bounded.file(`xl/${target}`)!.async("string")).toContain("worksheet value");
+    expect(zipEntries(prepared.bytes).text(`xl/${target}`)).toContain("worksheet value");
   },
 );
 
@@ -1386,10 +1370,7 @@ it.each(["archive", "sqlite"] as const)(
   async (kind) => {
     const bad = URL.createObjectURL(new Blob(["invalid"]));
     let bytes: Uint8Array<ArrayBuffer>;
-    if (kind === "archive")
-      bytes = new Uint8Array(
-        await new JSZip().file("recovered.txt", "ok").generateAsync({ type: "uint8array" }),
-      );
+    if (kind === "archive") bytes = new Uint8Array(zipFixture({ "recovered.txt": "ok" }));
     else {
       const [{ default: initSqlJs }, { default: wasmUrl }] = await Promise.all([
         import("sql.js"),
@@ -1819,11 +1800,10 @@ it.each([
 });
 
 it.each(["odt", "odp"] as const)("preserves rendered %s spaces and tabs", async (kind) => {
-  const archive = new JSZip().file(
-    "content.xml",
-    `<office:document>${kind === "odt" ? "<office:text>" : "<draw:page>"}<text:p>A<text:s text:c="3"/>B<text:tab/>C</text:p>${kind === "odt" ? "</office:text>" : "</draw:page>"}</office:document>`,
-  );
-  const bytes = await archive.generateAsync({ type: "arraybuffer" });
+  const archive = {
+    "content.xml": `<office:document>${kind === "odt" ? "<office:text>" : "<draw:page>"}<text:p>A<text:s text:c="3"/>B<text:tab/>C</text:p>${kind === "odt" ? "</office:text>" : "</draw:page>"}</office:document>`,
+  };
+  const bytes = zipFixture(archive).buffer;
   const worker = new Worker(new URL("./officePreview.worker.ts", import.meta.url), {
     type: "module",
   });
@@ -1859,32 +1839,24 @@ it.each(["odt", "odp"] as const)("preserves rendered %s spaces and tabs", async 
 it.each(["rtf", "epub", "ods"] as const)(
   "preserves %s document text through the worker and attachment viewer",
   async (kind) => {
-    const archive = new JSZip();
+    const archive: Record<string, string> = {};
     if (kind === "epub") {
-      archive.file(
-        "META-INF/container.xml",
-        '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>',
-      );
-      archive.file(
-        "book.opf",
-        '<package><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>',
-      );
-      archive.file(
-        "chapter.xhtml",
-        "<html><head><title>Handbook</title></head><body><p>first<br/>second<br/>third</p><hr/></body></html>",
-      );
+      archive["META-INF/container.xml"] =
+        '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>';
+      archive["book.opf"] =
+        '<package><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>';
+      archive["chapter.xhtml"] =
+        "<html><head><title>Handbook</title></head><body><p>first<br/>second<br/>third</p><hr/></body></html>";
     } else if (kind === "ods") {
-      archive.file(
-        "content.xml",
-        '<office:document><table:table table:name="Forecast"><table:table-row><table:table-cell><text:p>North<office:annotation><text:p>nested note</text:p></office:annotation></text:p><office:annotation><text:p>private note</text:p></office:annotation></table:table-cell><table:table-cell office:value="150"><office:annotation><text:p>revised from 120</text:p></office:annotation></table:table-cell><table:table-cell table:number-columns-repeated="1024"/></table:table-row><table:table-row table:number-rows-repeated="1048570"><table:table-cell table:number-columns-repeated="1024"/></table:table-row></table:table></office:document>',
-      );
+      archive["content.xml"] =
+        '<office:document><table:table table:name="Forecast"><table:table-row><table:table-cell><text:p>North<office:annotation><text:p>nested note</text:p></office:annotation></text:p><office:annotation><text:p>private note</text:p></office:annotation></table:table-cell><table:table-cell office:value="150"><office:annotation><text:p>revised from 120</text:p></office:annotation></table:table-cell><table:table-cell table:number-columns-repeated="1024"/></table:table-row><table:table-row table:number-rows-repeated="1048570"><table:table-cell table:number-columns-repeated="1024"/></table:table-row></table:table></office:document>';
     }
     const file =
       kind === "rtf"
         ? new Blob([
             String.raw`{\rtf1\ansi 10\endash 20 \emdash \bullet \lquote a\rquote \ldblquote b\rdblquote\par Name\cell Value\cell\row 12\cell 34\cell\row{\*\private hidden\endash\cell\row}Unicode:\u8211\endash end}`,
           ])
-        : await archive.generateAsync({ type: "blob" });
+        : new Blob([zipFixture(archive)]);
     const bytes = await file.arrayBuffer();
     const worker = new Worker(new URL("./officePreview.worker.ts", import.meta.url), {
       type: "module",
@@ -1960,26 +1932,18 @@ it.each(["epub", "odt", "ipynb", "html", "encoded-html"] as const)(
       const image = await blob.arrayBuffer();
       new DataView(image).setUint32(16, width);
       new DataView(image).setUint32(20, width === 2 ? 3 : 12000);
-      const archive = new JSZip();
-      archive.file("cover.png", image);
+      const archive: Record<string, string | Uint8Array> = {};
+      archive["cover.png"] = new Uint8Array(image);
       if (kind === "epub") {
-        archive.file(
-          "META-INF/container.xml",
-          '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>',
-        );
-        archive.file(
-          "book.opf",
-          '<package><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>',
-        );
-        archive.file(
-          "chapter.xhtml",
-          '<html><body><p>retained caption</p><img src="cover.png"/></body></html>',
-        );
+        archive["META-INF/container.xml"] =
+          '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>';
+        archive["book.opf"] =
+          '<package><manifest><item id="chapter" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="chapter"/></spine></package>';
+        archive["chapter.xhtml"] =
+          '<html><body><p>retained caption</p><img src="cover.png"/></body></html>';
       } else
-        archive.file(
-          "content.xml",
-          '<office:document><office:text><text:p>retained caption</text:p><draw:image xlink:href="cover.png"/></office:text></office:document>',
-        );
+        archive["content.xml"] =
+          '<office:document><office:text><text:p>retained caption</text:p><draw:image xlink:href="cover.png"/></office:text></office:document>';
       const base64 = btoa(String.fromCharCode(...new Uint8Array(image)));
       const bytes =
         kind === "ipynb" || kind === "html" || kind === "encoded-html"
@@ -2006,7 +1970,7 @@ it.each(["epub", "odt", "ipynb", "html", "encoded-html"] as const)(
                 ],
               }),
             ).buffer
-          : await archive.generateAsync({ type: "arraybuffer" });
+          : zipFixture(archive).buffer;
       const worker = new Worker(new URL("./officePreview.worker.ts", import.meta.url), {
         type: "module",
       });

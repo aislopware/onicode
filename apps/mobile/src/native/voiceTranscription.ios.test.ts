@@ -1,12 +1,15 @@
-import type { TranscriptionResult } from "@react-native-ai/apple/src/NativeAppleTranscription";
+import type {
+  AppleTranscriptionModelInfo,
+  TranscriptionResult,
+} from "@react-native-ai/apple/src/NativeAppleTranscription";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { VoiceInputController, VoiceTranscriptionError } from "@onicode/client-runtime/voice-input";
 import { resetVoiceInputGlobalsForTests } from "../../../../packages/client-runtime/src/voice-input/controller";
 
 const mocks = vi.hoisted(() => ({
-  isAvailable: vi.fn<(locale: string) => boolean>(),
-  prepare: vi.fn<(locale: string) => Promise<string>>(),
+  getModelInfo: vi.fn<(locale: string) => Promise<AppleTranscriptionModelInfo>>(),
+  prepare: vi.fn<(locale: string) => Promise<void>>(),
   transcribe: vi.fn<(audio: ArrayBufferLike, locale: string) => Promise<TranscriptionResult>>(),
   readAudio: vi.fn<() => Promise<ArrayBuffer>>(),
   preferredLanguages: [] as unknown,
@@ -19,7 +22,7 @@ vi.mock("react-native", () => ({
 
 vi.mock("@react-native-ai/apple/src/NativeAppleTranscription", () => ({
   default: {
-    isAvailable: mocks.isAvailable,
+    getModelInfo: mocks.getModelInfo,
     prepare: mocks.prepare,
     transcribe: mocks.transcribe,
   },
@@ -40,10 +43,22 @@ const nativeTranscript: TranscriptionResult = {
     { text: " Hej", startSecond: 0, endSecond: 1 },
     { text: "världen. ", startSecond: 1, endSecond: 2 },
   ],
+  words: [],
 };
 
-const unsupportedLocale = () =>
-  Object.assign(new Error("unsupported"), { code: "AppleTranscriptionUnsupportedLocale" });
+/** What the native module reports for a language the transcriber supports, or does not. */
+const modelInfo = (locale: string | undefined): AppleTranscriptionModelInfo => ({
+  isAvailable: true,
+  supportsLocale: locale !== undefined,
+  supportedLocales: [],
+  ...(locale === undefined ? {} : { locale, assets: "supported" as const }),
+});
+
+function supportLocales(supported: ReadonlyArray<string>) {
+  mocks.getModelInfo.mockImplementation(async (candidate) =>
+    modelInfo(supported.includes(candidate) ? candidate : undefined),
+  );
+}
 
 function useLanguages(preferred: ReadonlyArray<string>, appLocale: string) {
   mocks.preferredLanguages = preferred;
@@ -104,8 +119,8 @@ beforeEach(() => {
   vi.resetAllMocks();
   resetVoiceInputGlobalsForTests();
   useLanguages([], "sv-SE");
-  mocks.isAvailable.mockReturnValue(true);
-  mocks.prepare.mockResolvedValue("sv-SE");
+  mocks.getModelInfo.mockImplementation(async (candidate) => modelInfo(candidate));
+  mocks.prepare.mockResolvedValue();
   mocks.readAudio.mockResolvedValue(audio);
   mocks.transcribe.mockResolvedValue(nativeTranscript);
 });
@@ -136,23 +151,30 @@ describe("getLocalVoiceTranscriber", () => {
     },
   ])("prepares $case", async ({ preferred, supported, tried }) => {
     useLanguages(preferred, "en-US");
-    mocks.prepare.mockImplementation(async (candidate) => {
-      if (!supported.includes(candidate)) throw unsupportedLocale();
-      return candidate;
-    });
+    supportLocales(supported);
 
     const locale = tried.at(-1)!;
     expect(await transcribeOnce()).toEqual({ text: "Hej världen.", locale });
-    expect(mocks.prepare.mock.calls.map(([candidate]) => candidate)).toEqual(tried);
+    // The first lookup is the availability check.
+    expect(mocks.getModelInfo.mock.calls.map(([candidate]) => candidate)).toEqual([
+      preferred[0],
+      ...tried,
+    ]);
+    expect(mocks.prepare.mock.calls).toEqual([[locale]]);
     expect(mocks.transcribe).toHaveBeenCalledWith(audio, locale);
   });
 
   it("reports an unsupported language when neither preferred nor app locales are supported", async () => {
     useLanguages(["gsw-CH"], "yi");
-    mocks.prepare.mockRejectedValue(unsupportedLocale());
+    supportLocales([]);
 
     expect(await transcribeOnce()).toMatchObject({ code: "unsupported-locale" });
-    expect(mocks.prepare.mock.calls.map(([candidate]) => candidate)).toEqual(["gsw-CH", "yi"]);
+    expect(mocks.getModelInfo.mock.calls.map(([candidate]) => candidate)).toEqual([
+      "gsw-CH",
+      "gsw-CH",
+      "yi",
+    ]);
+    expect(mocks.prepare).not.toHaveBeenCalled();
   });
 
   it.each(["cancellation", "a model failure"] as const)(
@@ -160,7 +182,7 @@ describe("getLocalVoiceTranscriber", () => {
     async (failure) => {
       useLanguages(["ko-KR", "ja-JP"], "en-US");
       const entered = Promise.withResolvers<void>();
-      const nativePrepare = Promise.withResolvers<string>();
+      const nativePrepare = Promise.withResolvers<void>();
       mocks.prepare.mockImplementation(() => {
         entered.resolve();
         return nativePrepare.promise;
@@ -171,7 +193,7 @@ describe("getLocalVoiceTranscriber", () => {
       await entered.promise;
       if (failure === "cancellation") {
         controller.abort();
-        nativePrepare.reject(unsupportedLocale());
+        nativePrepare.reject(new Error("cancelled download"));
       } else {
         nativePrepare.reject(Object.assign(new Error("download failed"), { code: "Network" }));
       }
@@ -184,7 +206,7 @@ describe("getLocalVoiceTranscriber", () => {
   );
 
   it("records while Apple prepares its speech model and transcribes once it is ready", async () => {
-    const nativePrepare = Promise.withResolvers<string>();
+    const nativePrepare = Promise.withResolvers<void>();
     mocks.prepare.mockReturnValue(nativePrepare.promise);
     const dictation = createDictation();
 
@@ -193,7 +215,7 @@ describe("getLocalVoiceTranscriber", () => {
     expect(dictation.controller.currentState.phase).toBe("recording");
 
     const stopping = dictation.controller.stop();
-    nativePrepare.resolve("sv-SE");
+    nativePrepare.resolve();
     await stopping;
 
     expect(mocks.transcribe).toHaveBeenCalledOnce();
@@ -204,7 +226,7 @@ describe("getLocalVoiceTranscriber", () => {
   it.each(["cancel", "cancel after stop", "model failure", "model failure after stop"] as const)(
     "discards early audio without a late commit after %s",
     async (ending) => {
-      const nativePrepare = Promise.withResolvers<string>();
+      const nativePrepare = Promise.withResolvers<void>();
       mocks.prepare.mockReturnValue(nativePrepare.promise);
       const dictation = createDictation();
       await dictation.controller.start();
@@ -221,14 +243,14 @@ describe("getLocalVoiceTranscriber", () => {
       await dictation.ended;
 
       const next = createDictation();
-      mocks.prepare.mockResolvedValue("sv-SE");
+      mocks.prepare.mockResolvedValue();
       await next.controller.start();
       expect(next.controller.currentState.phase).toBe("recording");
       expect(dictation.deleted).toEqual(["file:///voice.m4a"]);
       expect(mocks.transcribe).not.toHaveBeenCalled();
       await next.controller.stop();
       expect(next.commits).toEqual(["Hej världen."]);
-      nativePrepare.resolve("sv-SE");
+      nativePrepare.resolve();
 
       expect(dictation.commits).toEqual([]);
       expect(dictation.recorder.stop).toHaveBeenCalled();

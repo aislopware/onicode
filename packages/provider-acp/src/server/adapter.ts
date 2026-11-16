@@ -7484,16 +7484,14 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               ),
             )
             .pipe(
-              Effect.onExit((exit) =>
-                Exit.isFailure(exit)
-                  ? Ref.get(candidateLifecycle).pipe(
-                      Effect.flatMap((lifecycle) =>
-                        lifecycle._tag === "Committed"
-                          ? Effect.void
-                          : Scope.close(replacementScope, Exit.void).pipe(Effect.ignore),
-                      ),
-                    )
-                  : Effect.void,
+              Effect.onError(() =>
+                Ref.get(candidateLifecycle).pipe(
+                  Effect.flatMap((lifecycle) =>
+                    lifecycle._tag === "Committed"
+                      ? Effect.void
+                      : Scope.close(replacementScope, Exit.void).pipe(Effect.ignore),
+                  ),
+                ),
               ),
             );
           return replacementExit.value.started;

@@ -1,31 +1,21 @@
 diff --git a/ios/MenuViewManager.mm b/ios/MenuViewManager.mm
-index 3d149b3e7426b8f7c999603ddf1e15e12331c33a..73b9e8bbe30e6647b03cc1890806e8d48a1cbd8c 100644
 --- a/ios/MenuViewManager.mm
 +++ b/ios/MenuViewManager.mm
-@@ -1,6 +1,6 @@
- #import <React/RCTViewManager.h>
- #import <React/RCTUIManager.h>
--#import "RCTBridge.h"
-+#import <React/RCTBridge.h>
- 
- #ifdef RCT_NEW_ARCH_ENABLED
- // NEW ARCH
-@@ -65,6 +65,10 @@ - (UIView *)view
-  * onOpenMenu: callback to be called when the menu is opened
+@@ -66,6 +66,10 @@
   */
  RCT_EXPORT_VIEW_PROPERTY(onOpenMenu, RCTDirectEventBlock);
-+/**
+ /**
 + * onMenuInteractionStart: callback to be called when UIKit starts preparing a menu interaction
 + */
 +RCT_EXPORT_VIEW_PROPERTY(onMenuInteractionStart, RCTDirectEventBlock);
- /**
++/**
   * shouldOpenOnLongPress: determines whether menu should be opened after long press or normal press
   */
+ RCT_EXPORT_VIEW_PROPERTY(shouldOpenOnLongPress, BOOL)
 diff --git a/ios/NewArch/FabricActionSheetView.swift b/ios/NewArch/FabricActionSheetView.swift
-index 484ff8a1d73a6d445273883c5b28b1c8e80901ec..bc92310d00369b853a80f4d2080578f3903191d2 100644
 --- a/ios/NewArch/FabricActionSheetView.swift
 +++ b/ios/NewArch/FabricActionSheetView.swift
-@@ -3,6 +3,7 @@ public class FabricActionSheetView: ActionSheetView, FabricViewImplementationPro
+@@ -3,6 +3,7 @@
      public var onPressAction: ((String) -> Void)?
      public var onCloseMenu: (() -> Void)?
      public var onOpenMenu: (() -> Void)?
@@ -34,10 +24,9 @@ index 484ff8a1d73a6d445273883c5b28b1c8e80901ec..bc92310d00369b853a80f4d2080578f3
      @objc override func sendButtonAction(_ action: String) {
          if let onPress = onPressAction {
 diff --git a/ios/NewArch/FabricMenuViewImplementation.swift b/ios/NewArch/FabricMenuViewImplementation.swift
-index 33d27c5a66593ae1a9b143804413578eb79f1a7d..359cd19fa53d10c0374b2b537517ea8629e79d0c 100644
 --- a/ios/NewArch/FabricMenuViewImplementation.swift
 +++ b/ios/NewArch/FabricMenuViewImplementation.swift
-@@ -12,6 +12,7 @@ public class FabricMenuViewImplementation: MenuViewImplementation, FabricViewImp
+@@ -12,6 +12,7 @@
      public var onPressAction: ((String) -> Void)?
      public var onCloseMenu: (() -> Void)?
      public var onOpenMenu: (() -> Void)?
@@ -45,7 +34,7 @@ index 33d27c5a66593ae1a9b143804413578eb79f1a7d..359cd19fa53d10c0374b2b537517ea86
  
      @objc override func sendButtonAction(_ action: UIAction) {
          if let onPress = onPressAction {
-@@ -31,4 +32,10 @@ public class FabricMenuViewImplementation: MenuViewImplementation, FabricViewImp
+@@ -31,4 +32,10 @@
          }
      }
  
@@ -57,20 +46,18 @@ index 33d27c5a66593ae1a9b143804413578eb79f1a7d..359cd19fa53d10c0374b2b537517ea86
 +
  }
 diff --git a/ios/NewArch/FabricViewImplementationProtocol.swift b/ios/NewArch/FabricViewImplementationProtocol.swift
-index 2cef2fb8c74497da46775a490edc58cf8cbf29cc..54429c756eeecf6e96b55d62cc1e70213096f62a 100644
 --- a/ios/NewArch/FabricViewImplementationProtocol.swift
 +++ b/ios/NewArch/FabricViewImplementationProtocol.swift
-@@ -8,4 +8,5 @@ import Foundation
+@@ -8,4 +8,5 @@
      var onPressAction: ((String) -> Void)? { get set }
      var onCloseMenu: (() -> Void)? { get set }
      var onOpenMenu: (() -> Void)? { get set }
 +    var onMenuInteractionStart: (() -> Void)? { get set }
  }
 diff --git a/ios/NewArch/MenuView.mm b/ios/NewArch/MenuView.mm
-index a54e619eb39e3402fa63f2ee4f734063d4f8fc58..773f6f1f5d4e0663fd3211fe51085a7f3935e445 100644
 --- a/ios/NewArch/MenuView.mm
 +++ b/ios/NewArch/MenuView.mm
-@@ -46,6 +46,10 @@ - (instancetype)initWithFrame:(CGRect)frame
+@@ -50,6 +50,10 @@
              [self onOpenMenu];
          };
  
@@ -81,7 +68,7 @@ index a54e619eb39e3402fa63f2ee4f734063d4f8fc58..773f6f1f5d4e0663fd3211fe51085a7f
          _view.onCloseMenu = ^{
              [self onCloseMenu];
          };
-@@ -92,6 +96,14 @@ - (void)onOpenMenu {
+@@ -96,6 +100,14 @@
      }
  }
  
@@ -96,7 +83,7 @@ index a54e619eb39e3402fa63f2ee4f734063d4f8fc58..773f6f1f5d4e0663fd3211fe51085a7f
  /**
   Responsible for iterating through the C++ vector<struct> and convert each struct element to NSDictionary, then return it all in an NSArray
   */
-@@ -105,6 +117,27 @@ - (void)onOpenMenu {
+@@ -109,6 +121,27 @@
          NSMutableArray<NSDictionary *> *subactionsArray = [NSMutableArray arrayWithCapacity:actions.size()];
          if (action.subactions.size() > 0) {
              for (const MenuViewActionsSubactionsStruct &subaction : action.subactions) {
@@ -124,7 +111,7 @@ index a54e619eb39e3402fa63f2ee4f734063d4f8fc58..773f6f1f5d4e0663fd3211fe51085a7f
                  NSDictionary *subactionDict = @{
                      @"id": [NSString stringWithUTF8String:subaction.id.c_str()],
                      @"title": [NSString stringWithUTF8String:subaction.title.c_str()],
-@@ -118,7 +151,9 @@ - (void)onOpenMenu {
+@@ -122,7 +155,9 @@
                          @"destructive": @(subaction.attributes.destructive),
                          @"disabled": @(subaction.attributes.disabled),
                          @"hidden": @(subaction.attributes.hidden),
@@ -134,7 +121,7 @@ index a54e619eb39e3402fa63f2ee4f734063d4f8fc58..773f6f1f5d4e0663fd3211fe51085a7f
                  };
                  [subactionsArray addObject:subactionDict];
              }
-@@ -138,6 +173,7 @@ - (void)onOpenMenu {
+@@ -143,6 +178,7 @@
                  @"destructive": @(action.attributes.destructive),
                  @"disabled": @(action.attributes.disabled),
                  @"hidden": @(action.attributes.hidden),
@@ -142,11 +129,20 @@ index a54e619eb39e3402fa63f2ee4f734063d4f8fc58..773f6f1f5d4e0663fd3211fe51085a7f
              },
              @"subactions": subactionsArray,
          };
+@@ -174,7 +210,8 @@
+ 
+     if (oldViewProps.shouldOpenOnLongPress != newViewProps.shouldOpenOnLongPress) {
+         _view.shouldOpenOnLongPress = newViewProps.shouldOpenOnLongPress;
+-        [self setOpensOnLongPress:newViewProps.shouldOpenOnLongPress];
++        // MenuViewImplementation moves the button's own interaction onto this view instead: it
++        // presents the compact menu that keeps the keyboard, which a second interaction would not.
+     }
+ 
+     if (oldViewProps.hitSlop.top != newViewProps.hitSlop.top ||
 diff --git a/ios/OldArch/LegacyActionSheetView.swift b/ios/OldArch/LegacyActionSheetView.swift
-index 3cd1a2517624d99b51331c564fba9145d7c8d799..e458504bea6ef167d9b0db0c889f0f76ea965287 100644
 --- a/ios/OldArch/LegacyActionSheetView.swift
 +++ b/ios/OldArch/LegacyActionSheetView.swift
-@@ -3,6 +3,7 @@ public class LegacyActionSheetView: ActionSheetView {
+@@ -3,6 +3,7 @@
      @objc var onPressAction: RCTDirectEventBlock?
      @objc var onCloseMenu: RCTDirectEventBlock?
      @objc var onOpenMenu: RCTDirectEventBlock?
@@ -155,10 +151,9 @@ index 3cd1a2517624d99b51331c564fba9145d7c8d799..e458504bea6ef167d9b0db0c889f0f76
  
  
 diff --git a/ios/OldArch/LegacyMenuViewImplementation.swift b/ios/OldArch/LegacyMenuViewImplementation.swift
-index 6a2a205f95c1001f3fdf6fb835815fa7c4c02c16..4f42b64349966fb1438f72439cec8256a76aab9c 100644
 --- a/ios/OldArch/LegacyMenuViewImplementation.swift
 +++ b/ios/OldArch/LegacyMenuViewImplementation.swift
-@@ -5,6 +5,7 @@ public class LegacyMenuViewImplementation: MenuViewImplementation {
+@@ -5,6 +5,7 @@
      @objc var onPressAction: RCTDirectEventBlock?
      @objc var onCloseMenu: RCTDirectEventBlock?
      @objc var onOpenMenu: RCTDirectEventBlock?
@@ -166,7 +161,7 @@ index 6a2a205f95c1001f3fdf6fb835815fa7c4c02c16..4f42b64349966fb1438f72439cec8256
      
      @objc override func sendButtonAction(_ action: UIAction) {
          if let onPress = onPressAction {
-@@ -24,4 +25,10 @@ public class LegacyMenuViewImplementation: MenuViewImplementation {
+@@ -24,4 +25,10 @@
          }
      }
  
@@ -178,10 +173,9 @@ index 6a2a205f95c1001f3fdf6fb835815fa7c4c02c16..4f42b64349966fb1438f72439cec8256
 +
  }
 diff --git a/ios/Shared/MenuViewImplementation.swift b/ios/Shared/MenuViewImplementation.swift
-index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304a79e95f1 100644
 --- a/ios/Shared/MenuViewImplementation.swift
 +++ b/ios/Shared/MenuViewImplementation.swift
-@@ -17,7 +17,7 @@ public class MenuViewImplementation: UIButton {
+@@ -17,7 +17,7 @@
              }
              _actions.removeAll()
              actions.forEach { menuAction in
@@ -190,7 +184,7 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
              }
              self.setup()
          }
-@@ -60,17 +60,98 @@ public class MenuViewImplementation: UIButton {
+@@ -60,17 +60,98 @@
      }
     
      public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, configurationForMenuAtLocation location: CGPoint) -> UIContextMenuConfiguration? {
@@ -232,8 +226,8 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +            pendingMenu = nil
 +            self.setup()
 +        }
-+    }
-+
+     }
+ 
 +    public override func contextMenuInteraction(_ interaction: UIContextMenuInteraction, previewForHighlightingMenuWithConfiguration configuration: UIContextMenuConfiguration) -> UITargetedPreview? {
 +        return contentPreview() ?? super.contextMenuInteraction(interaction, previewForHighlightingMenuWithConfiguration: configuration)
 +    }
@@ -244,8 +238,8 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +        }
 +        // A selection usually re-renders the trigger, so fade instead of landing on its old look.
 +        return didSelectAction ? nil : preview
-     }
- 
++    }
++
 +    // The button is a transparent overlay: morph from the React content so UIKit hides and restores it.
 +    // iOS 26 only, and only for content with its own corner radius; otherwise keep UIButton's default.
 +    private func contentPreview() -> UITargetedPreview? {
@@ -291,7 +285,7 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
      func setup () {
          let menu = UIMenu(title: _title,
              identifier: nil,
-@@ -86,8 +167,102 @@ public class MenuViewImplementation: UIButton {
+@@ -86,10 +167,104 @@
              }
          }
  
@@ -317,8 +311,8 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +        // the wrapped content as the zoom preview.
 +        self.isUserInteractionEnabled = !shouldOpenOnLongPress
 +        self.updateLongPressInteraction()
-+    }
-+
+     }
+ 
 +    private func refreshPresentedMenu(_ menu: UIMenu) {
 +        // Tap mode presents through the button's built-in interaction,
 +        // long-press mode through the superview-hosted one; cover both (plus
@@ -391,10 +385,12 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +            self.addInteraction(existing)
 +            longPressInteraction = nil
 +        }
-     }
- 
++    }
++
      public override func reactSetFrame(_ frame: CGRect) {
-@@ -124,4 +299,8 @@ public class MenuViewImplementation: UIButton {
+         super.reactSetFrame(frame);
+     }
+@@ -124,4 +299,8 @@
      @objc func sendMenuOpen() {
          // NO-OP (should be overriden by parent)
      }
@@ -404,21 +400,9 @@ index 5c4e0da4292b15d3a27b5ea1555f11452a470815..381aa8e2900aeb0d2453dba514360304
 +    }
  }
 diff --git a/ios/Shared/RCTMenuItem.swift b/ios/Shared/RCTMenuItem.swift
-index bb6bb2b7ad56135089f267587c974b166760539d..5675067ecb2db0239b74c66ff2e095471a721699 100644
 --- a/ios/Shared/RCTMenuItem.swift
 +++ b/ios/Shared/RCTMenuItem.swift
-@@ -27,7 +27,9 @@ class RCTMenuAction {
-             self.identifier = UIAction.Identifier(rawValue: identifier as String);
-         }
- 
--        if let image = details["image"] as? NSString {
-+        // Fabric sends an absent image as "", and every asset lookup for "" logs a
-+        // CoreUI fault with a backtrace.
-+        if let image = details["image"] as? NSString, image.length > 0 {
-             self.image = UIImage(systemName: image as String);
-             if self.image === nil {
-                 self.image = UIImage(named: image as String)
-@@ -103,10 +105,18 @@ class RCTMenuAction {
+@@ -105,11 +105,19 @@
                  subMenuActions.append(subaction.createUIMenuElement(handler))
              }
              var menu: UIMenu;
@@ -432,17 +416,17 @@ index bb6bb2b7ad56135089f267587c974b166760539d..5675067ecb2db0239b74c66ff2e09547
              } else {
 -                menu = UIMenu(title: title, image: image, children: subMenuActions)
 +                menu = UIMenu(title: title, image: image, identifier: menuIdentifier, children: subMenuActions)
-+            }
+             }
 +            if #available(iOS 15.0, *) {
 +                menu.subtitle = subtitle
-             }
++            }
  
              if #available(iOS 16.0, *) {
+                 if(preferredElementSizeString == "small") {
 diff --git a/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts b/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts
-index e6509355275596c451f9d082223cc16bfe504e1a..dd16e1a7403970cc3a404355f95ed99580776353 100644
 --- a/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts
 +++ b/lib/commonjs/NativeModuleSpecs/UIMenuNativeComponent.ts
-@@ -48,6 +48,7 @@ export interface NativeProps extends ViewProps {
+@@ -51,6 +51,7 @@
  	onPressAction?: DirectEventHandler<{ event: string }>;
  	onCloseMenu?: DirectEventHandler<{ event: string }>;
  	onOpenMenu?: DirectEventHandler<{ event: string }>;
@@ -451,10 +435,9 @@ index e6509355275596c451f9d082223cc16bfe504e1a..dd16e1a7403970cc3a404355f95ed995
  	actionsHash: string; // just a workaround to make sure we don't have to manually compare MenuActions manually in C++ (since it's a struct and that's a pain)
  	title?: string;
 diff --git a/lib/module/NativeModuleSpecs/UIMenuNativeComponent.ts b/lib/module/NativeModuleSpecs/UIMenuNativeComponent.ts
-index e6509355275596c451f9d082223cc16bfe504e1a..dd16e1a7403970cc3a404355f95ed99580776353 100644
 --- a/lib/module/NativeModuleSpecs/UIMenuNativeComponent.ts
 +++ b/lib/module/NativeModuleSpecs/UIMenuNativeComponent.ts
-@@ -48,6 +48,7 @@ export interface NativeProps extends ViewProps {
+@@ -51,6 +51,7 @@
  	onPressAction?: DirectEventHandler<{ event: string }>;
  	onCloseMenu?: DirectEventHandler<{ event: string }>;
  	onOpenMenu?: DirectEventHandler<{ event: string }>;
@@ -463,10 +446,9 @@ index e6509355275596c451f9d082223cc16bfe504e1a..dd16e1a7403970cc3a404355f95ed995
  	actionsHash: string; // just a workaround to make sure we don't have to manually compare MenuActions manually in C++ (since it's a struct and that's a pain)
  	title?: string;
 diff --git a/lib/typescript/src/NativeModuleSpecs/UIMenuNativeComponent.d.ts b/lib/typescript/src/NativeModuleSpecs/UIMenuNativeComponent.d.ts
-index 24ee7fdcd9f81cfe2c813cfca9d4e276b846fb7b..c1b4ea53b29193283295d35c18e068f2836c6176 100644
 --- a/lib/typescript/src/NativeModuleSpecs/UIMenuNativeComponent.d.ts
 +++ b/lib/typescript/src/NativeModuleSpecs/UIMenuNativeComponent.d.ts
-@@ -41,6 +41,9 @@ export interface NativeProps extends ViewProps {
+@@ -42,6 +42,9 @@
      onOpenMenu?: DirectEventHandler<{
          event: string;
      }>;
@@ -477,10 +459,9 @@ index 24ee7fdcd9f81cfe2c813cfca9d4e276b846fb7b..c1b4ea53b29193283295d35c18e068f2
      actionsHash: string;
      title?: string;
 diff --git a/lib/typescript/src/index.d.ts b/lib/typescript/src/index.d.ts
-index 61d210aa9364f0354f77bddaecdc0a127b1cdbb4..0672bea3352b9ad0623124e308f740c70a7e6940 100644
 --- a/lib/typescript/src/index.d.ts
 +++ b/lib/typescript/src/index.d.ts
-@@ -4,6 +4,7 @@ declare const MenuView: import("react").ForwardRefExoticComponent<{
+@@ -4,6 +4,7 @@
      onPressAction?: ({ nativeEvent }: NativeActionEvent) => void;
      onCloseMenu?: () => void;
      onOpenMenu?: () => void;
@@ -489,23 +470,22 @@ index 61d210aa9364f0354f77bddaecdc0a127b1cdbb4..0672bea3352b9ad0623124e308f740c7
      title?: string;
      isAnchoredToRight?: boolean;
 diff --git a/lib/typescript/src/types.d.ts b/lib/typescript/src/types.d.ts
-index eac7940ab7eb6a69ac329848c9f3eeffdcbaf43d..19e82df15b042bc0cda27349b2b8a8ee1d3f0b51 100644
 --- a/lib/typescript/src/types.d.ts
 +++ b/lib/typescript/src/types.d.ts
-@@ -113,6 +113,12 @@ type MenuComponentPropsBase = {
-      * Callback function that will be called when the menu opens.
+@@ -114,6 +114,12 @@
       */
      onOpenMenu?: () => void;
-+    /**
+     /**
 +     * Callback function that will be called when UIKit starts preparing a menu interaction.
 +     * Preparation can end without the menu opening.
 +     * @platform iOS
 +     */
 +    onMenuInteractionStart?: () => void;
-     /**
++    /**
       * Actions to be displayed in the menu.
       */
-@@ -170,6 +176,7 @@ export type NativeMenuComponentProps = {
+     actions: MenuAction[];
+@@ -170,6 +176,7 @@
      onPressAction?: ({ nativeEvent }: NativeActionEvent) => void;
      onCloseMenu?: () => void;
      onOpenMenu?: () => void;
@@ -514,10 +494,9 @@ index eac7940ab7eb6a69ac329848c9f3eeffdcbaf43d..19e82df15b042bc0cda27349b2b8a8ee
      actionsHash: string;
      title?: string;
 diff --git a/src/NativeModuleSpecs/UIMenuNativeComponent.ts b/src/NativeModuleSpecs/UIMenuNativeComponent.ts
-index e6509355275596c451f9d082223cc16bfe504e1a..604dba0d90a2545910f8724a80205565de2391d4 100644
 --- a/src/NativeModuleSpecs/UIMenuNativeComponent.ts
 +++ b/src/NativeModuleSpecs/UIMenuNativeComponent.ts
-@@ -13,6 +13,22 @@ import codegenNativeComponent from "react-native/Libraries/Utilities/codegenNati
+@@ -15,6 +15,22 @@
    types here, to avoid issues while `pod install` takes place.
  */
  
@@ -540,7 +519,7 @@ index e6509355275596c451f9d082223cc16bfe504e1a..604dba0d90a2545910f8724a80205565
  type SubAction = {
  	id?: string;
  	title: string;
-@@ -26,7 +42,11 @@ type SubAction = {
+@@ -28,7 +44,11 @@
  		destructive?: boolean;
  		disabled?: boolean;
  		hidden?: boolean;
@@ -552,7 +531,7 @@ index e6509355275596c451f9d082223cc16bfe504e1a..604dba0d90a2545910f8724a80205565
  };
  type MenuAction = {
  	id?: string;
-@@ -41,6 +61,7 @@ type MenuAction = {
+@@ -44,6 +64,7 @@
  		destructive?: boolean;
  		disabled?: boolean;
  		hidden?: boolean;
@@ -560,7 +539,7 @@ index e6509355275596c451f9d082223cc16bfe504e1a..604dba0d90a2545910f8724a80205565
  	};
  	subactions?: Array<SubAction>;
  };
-@@ -48,6 +69,7 @@ export interface NativeProps extends ViewProps {
+@@ -51,6 +72,7 @@
  	onPressAction?: DirectEventHandler<{ event: string }>;
  	onCloseMenu?: DirectEventHandler<{ event: string }>;
  	onOpenMenu?: DirectEventHandler<{ event: string }>;
@@ -569,23 +548,22 @@ index e6509355275596c451f9d082223cc16bfe504e1a..604dba0d90a2545910f8724a80205565
  	actionsHash: string; // just a workaround to make sure we don't have to manually compare MenuActions manually in C++ (since it's a struct and that's a pain)
  	title?: string;
 diff --git a/src/types.ts b/src/types.ts
-index 9c323d9c510e7359c83d4d6633affde673570632..5d5fdfb8b8235fcaa8295b85630443eaf5991a17 100644
 --- a/src/types.ts
 +++ b/src/types.ts
-@@ -123,6 +123,12 @@ type MenuComponentPropsBase = {
- 	 * Callback function that will be called when the menu opens.
+@@ -124,6 +124,12 @@
  	 */
  	onOpenMenu?: () => void;
-+	/**
+ 	/**
 +	 * Callback function that will be called when UIKit starts preparing a menu interaction.
 +	 * Preparation can end without the menu opening.
 +	 * @platform iOS
 +	 */
 +	onMenuInteractionStart?: () => void;
- 	/**
++	/**
  	 * Actions to be displayed in the menu.
  	 */
-@@ -189,6 +195,7 @@ export type NativeMenuComponentProps = {
+ 	actions: MenuAction[];
+@@ -189,6 +195,7 @@
  	onPressAction?: ({ nativeEvent }: NativeActionEvent) => void;
  	onCloseMenu?: () => void;
  	onOpenMenu?: () => void;

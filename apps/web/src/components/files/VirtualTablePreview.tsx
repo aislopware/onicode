@@ -399,10 +399,11 @@ function ScaledRows(props: Omit<Parameters<typeof RowPage>[0], "page">) {
         : Math.min(bounds.bottom, bounds.top + viewport.height) > viewport.bottom
           ? Math.min(bounds.bottom, bounds.top + viewport.height) - viewport.bottom
           : 0;
-    if (Math.abs(delta) < 1 || pending.attempts++ >= 8) {
+    if (Math.abs(delta) < 1 || pending.attempts >= 8) {
       pendingReveal.current = null;
       return;
     }
+    pending.attempts += 1;
     node.scrollTop += delta * (nativeTail ? 1 : (scale * 29) / Math.max(29, bounds.height));
     setTop(node.scrollTop);
   });

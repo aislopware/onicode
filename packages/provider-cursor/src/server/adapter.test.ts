@@ -2770,7 +2770,7 @@ describe("CursorAdapterV2", () => {
         );
         const steered: string[] = [];
         let cancelled = 0;
-        let outcome: "complete_delivered" | "revert_to_followup" = "complete_delivered";
+        let outcome: CursorAgentSdk.CursorSteerOutcome = "complete_delivered";
         const finished = yield* Deferred.make<{
           readonly id: string;
           readonly requestId: string;
@@ -2917,6 +2917,23 @@ describe("CursorAdapterV2", () => {
         });
         // Cursor hides `disable-model-invocation` skills from the model, so the SDK prompt must carry them.
         assert.include(steered.at(-1), "Ask one question at a time.");
+
+        // Cursor already holds a queued steer as a follow-up, so declining it would send the text twice.
+        outcome = "queued";
+        yield* runtime.steerTurn({
+          threadId,
+          runId: turn.runId,
+          providerThread,
+          providerTurnId,
+          message: {
+            messageId: MessageId.make("cursor-steer-queued"),
+            createdBy: "user",
+            creationSource: "web",
+            text: "Also cover the error path.",
+            attachments: [],
+          },
+        });
+        assert.equal(steered.at(-1), "Also cover the error path.");
 
         outcome = "revert_to_followup";
         const declined = yield* runtime

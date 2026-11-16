@@ -5,9 +5,9 @@ import {
 } from "@onicode/shared/imageDimensions";
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { decodeHTMLAttribute, decodeHTMLStrict as decodeEntities } from "entities";
-import type JSZip from "jszip";
 import { terminalOutputPlainText } from "@onicode/shared/terminalOutput";
 
+import { archiveText, type OfficeArchive } from "./officeArchive";
 import { type OfficeWorkerResult, type NotebookCell } from "./officePreviewProtocol";
 
 const TABLE_PREVIEW_MAX_ROWS = 500;
@@ -170,17 +170,19 @@ function htmlImagesFit(html: string) {
     if (!base64ImageFits(match[1]!)) return false;
   return true;
 }
-async function imageData(archive: JSZip, path: string | null): Promise<string> {
+async function imageData(archive: OfficeArchive, path: string | null): Promise<string> {
   if (!path) return "";
   const mime = (
     { png: "png", jpg: "jpeg", jpeg: "jpeg", gif: "gif", webp: "webp" } as Record<string, string>
   )[path.split(".").at(-1)?.toLowerCase() ?? ""];
-  const entry = archive.file(path);
-  if (!mime || !entry) return "";
-  const bytes = await entry.async("uint8array");
+  const bytes = archive.get(path);
+  if (!mime || typeof bytes !== "object") return "";
   if (bytes.length > 4 * 1024 * 1024 || !imageFits(bytes)) return "";
   reserveMarkup(4 * Math.ceil(bytes.length / 3) + 100);
-  return `data:image/${mime};base64,${await entry.async("base64")}`;
+  let binary = "";
+  for (let offset = 0; offset < bytes.length; offset += 0x8000)
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  return `data:image/${mime};base64,${btoa(binary)}`;
 }
 let markupBytes = 0;
 function reserveMarkup(size: number) {
@@ -231,7 +233,7 @@ const HTML_TAGS = new Set([
   "dt",
   "dd",
 ]);
-async function epubHtml(node: XmlNode, archive: JSZip, base: string): Promise<string> {
+async function epubHtml(node: XmlNode, archive: OfficeArchive, base: string): Promise<string> {
   if (node.name === "#text") return pipe(text(node), escape, boundedMarkup);
   const tag =
     node.name
@@ -259,7 +261,7 @@ async function epubHtml(node: XmlNode, archive: JSZip, base: string): Promise<st
   reserveMarkup(tag.length * 2 + spans.length + 5);
   return `<${tag}${spans}>${children}</${tag}>`;
 }
-async function odfHtml(node: XmlNode, archive: JSZip): Promise<string> {
+async function odfHtml(node: XmlNode, archive: OfficeArchive): Promise<string> {
   if (node.name === "#text") return pipe(text(node), escape, boundedMarkup);
   if (node.name === "text:s" || node.name === "text:tab")
     return boundedMarkup(
@@ -315,11 +317,11 @@ function repeat(value: string | undefined, max: number) {
   return Math.min(count, max);
 }
 export async function openDocument(
-  archive: JSZip,
+  archive: OfficeArchive,
   kind: "odt" | "ods" | "odp",
 ): Promise<OfficeWorkerResult> {
   markupBytes = 0;
-  const source = await archive.file("content.xml")?.async("string");
+  const source = archiveText(archive, "content.xml");
   if (!source) throw new Error("This OpenDocument file has no readable content.");
   const root = parseXml(source);
   if (kind === "ods") {
@@ -399,12 +401,12 @@ export async function openDocument(
   }
   return { type: "document", navigation: kind === "odp" ? "slide" : "page", pages: rendered };
 }
-export async function openEpub(archive: JSZip): Promise<OfficeWorkerResult> {
+export async function openEpub(archive: OfficeArchive): Promise<OfficeWorkerResult> {
   markupBytes = 0;
-  const container = parseXml((await archive.file("META-INF/container.xml")?.async("string")) ?? "");
+  const container = parseXml(archiveText(archive, "META-INF/container.xml") ?? "");
   const rootfile = find(container, "rootfile")[0]?.attrs["full-path"];
-  if (!rootfile || !archive.file(rootfile)) throw new Error("This EPUB has no readable package.");
-  const packageRoot = parseXml(await archive.file(rootfile)!.async("string"));
+  if (!rootfile || !archive.has(rootfile)) throw new Error("This EPUB has no readable package.");
+  const packageRoot = parseXml(archiveText(archive, rootfile)!);
   const manifest = new Map(find(packageRoot, "item").map((item) => [item.attrs.id, item]));
   const spine = find(packageRoot, "itemref");
   if (!spine.length || spine.length > 500)
@@ -414,9 +416,9 @@ export async function openEpub(archive: JSZip): Promise<OfficeWorkerResult> {
     const item = manifest.get(itemref.attrs.idref);
     if (!item || item.attrs["media-type"] !== "application/xhtml+xml") continue;
     const path = archivePath(rootfile, item.attrs.href ?? "");
-    const entry = path ? archive.file(path) : null;
-    if (!entry || !path) continue;
-    const chapter = parseXml(await entry.async("string"));
+    const entry = path ? archiveText(archive, path) : undefined;
+    if (entry === undefined || !path) continue;
+    const chapter = parseXml(entry);
     pages.push({
       title:
         text(find(chapter, "title")[0] ?? find(chapter, "h1")[0] ?? chapter).slice(0, 120) ||

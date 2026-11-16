@@ -246,11 +246,7 @@ export const makeAcpClientTerminals = Effect.fn("makeAcpClientTerminals")(functi
                   ),
                 ),
               ),
-          ).pipe(
-            Effect.onExit((exit) =>
-              Exit.isFailure(exit) ? Scope.close(terminalScope, Exit.void) : Effect.void,
-            ),
-          );
+          ).pipe(Effect.onError(() => Scope.close(terminalScope, Exit.void)));
 
           const terminalId = `oni-term-${nextTerminalNumber}`;
           nextTerminalNumber += 1;

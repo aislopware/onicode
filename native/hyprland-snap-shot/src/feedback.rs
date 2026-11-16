@@ -4,8 +4,8 @@ use crate::{
 };
 use serde::Deserialize;
 use smithay_client_toolkit::{
-    compositor::{CompositorHandler, CompositorState},
-    delegate_compositor, delegate_layer, delegate_output, delegate_registry, delegate_shm,
+    compositor::{CompositorHandler, CompositorState, FrameCallbackData},
+    delegate_dispatch2, delegate_registry,
     output::{OutputHandler, OutputState},
     registry::{ProvidesRegistryState, RegistryState},
     shell::{
@@ -211,14 +211,19 @@ pub fn run(directory: &Path, mut options: Options) -> Result<()> {
             wl_shm::Format::Argb8888,
         )?;
         // Wayland's ARGB8888 is native-endian and premultiplied; PNG is straight RGBA.
-        for (src, dst) in bytes.chunks_exact(4).zip(canvas.chunks_exact_mut(4)) {
+        for (src, dst) in bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(canvas.as_chunks_mut::<4>().0)
+        {
             let a = u32::from(src[3]);
-            dst.copy_from_slice(&[
+            *dst = [
                 (u32::from(src[2]) * a / 255) as u8,
                 (u32::from(src[1]) * a / 255) as u8,
                 (u32::from(src[0]) * a / 255) as u8,
                 src[3],
-            ]);
+            ];
         }
         let (flash, canvas) = pool.create_buffer(
             info.width as i32,
@@ -226,7 +231,12 @@ pub fn run(directory: &Path, mut options: Options) -> Result<()> {
             info.width as i32 * 4,
             wl_shm::Format::Argb8888,
         )?;
-        for (src, dst) in bytes.chunks_exact(4).zip(canvas.chunks_exact_mut(4)) {
+        for (src, dst) in bytes
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(canvas.as_chunks_mut::<4>().0)
+        {
             let a = u32::from(src[3]);
             for (i, channel) in [2, 1, 0].into_iter().enumerate() {
                 dst[i] = ((u32::from(src[channel]) * 3 + 255) / 4 * a / 255) as u8;
@@ -367,7 +377,6 @@ pub fn run(directory: &Path, mut options: Options) -> Result<()> {
             .revents()
             .intersects(rustix::event::PollFlags::IN | rustix::event::PollFlags::HUP);
         let events_ready = !fds[2].revents().is_empty();
-        drop(fds);
         if events_ready {
             let mut bytes = [0; 8192];
             match events.read(&mut bytes) {
@@ -504,7 +513,7 @@ impl Feedback {
                 && index == driver
                 && (flashing || progress.is_some_and(|p| p < 1.))
             {
-                surface.frame(qh, surface.clone());
+                surface.frame(qh, FrameCallbackData(surface.clone()));
                 overlay.frame_pending = true;
             }
             surface.commit();
@@ -626,10 +635,7 @@ impl ProvidesRegistryState for Feedback {
     smithay_client_toolkit::registry_handlers!(OutputState);
 }
 delegate_registry!(Feedback);
-delegate_output!(Feedback);
-delegate_shm!(Feedback);
-delegate_layer!(Feedback);
-delegate_compositor!(Feedback);
+delegate_dispatch2!(Feedback);
 delegate_noop!(Feedback: ignore WlSubcompositor);
 delegate_noop!(Feedback: ignore WlSubsurface);
 delegate_noop!(Feedback: ignore WpViewporter);

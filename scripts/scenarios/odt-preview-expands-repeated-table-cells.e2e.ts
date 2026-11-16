@@ -1,26 +1,28 @@
 import { expect } from "e2e";
-import JSZip from "jszip";
+import { strToU8, zipSync } from "fflate";
 
 import { test, WEB } from "./onicode.ts";
 
 // A 2 by 2 table stored the compact way ODF allows: one row repeated twice, one cell repeated twice.
-async function repeatedTableOdt() {
+function repeatedTableOdt() {
   const cell =
     '<table:table-cell table:number-columns-repeated="2"><text:p>Approved</text:p></table:table-cell>';
-  return new JSZip()
-    .file("mimetype", "application/vnd.oasis.opendocument.text", { compression: "STORE" })
-    .file(
-      "content.xml",
-      `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.3"><office:body><office:text><table:table table:name="Decisions"><table:table-column table:number-columns-repeated="2"/><table:table-row table:number-rows-repeated="2">${cell}</table:table-row></table:table></office:text></office:body></office:document-content>`,
-    )
-    .generateAsync({ type: "uint8array" });
+  return zipSync(
+    {
+      mimetype: strToU8("application/vnd.oasis.opendocument.text"),
+      "content.xml": strToU8(
+        `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" office:version="1.3"><office:body><office:text><table:table table:name="Decisions"><table:table-column table:number-columns-repeated="2"/><table:table-row table:number-rows-repeated="2">${cell}</table:table-row></table:table></office:text></office:body></office:document-content>`,
+      ),
+    },
+    { level: 0 },
+  );
 }
 
 test(
   "An ODT preview shows every cell of a table stored with repeated rows and cells",
   WEB,
   async ({ onicode, app, screen, browser }) => {
-    const project = await onicode.project("demo", { "decisions.odt": await repeatedTableOdt() });
+    const project = await onicode.project("demo", { "decisions.odt": repeatedTableOdt() });
     const thread = await onicode.thread({
       project,
       title: "Review decisions",

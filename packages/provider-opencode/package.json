@@ -53,9 +53,9 @@
     "@onicode/provider-core": "workspace:*",
     "@onicode/shared": "workspace:*",
     "@opencode-ai/sdk": "^1.19.5",
-    "@opencode/client": "2.2.6",
-    "@opencode/protocol": "2.2.6",
-    "@opencode/schema": "2.2.6",
+    "@opencode/client": "2.3.0",
+    "@opencode/protocol": "2.3.0",
+    "@opencode/schema": "2.3.0",
     "effect": "catalog:"
   },
   "devDependencies": {

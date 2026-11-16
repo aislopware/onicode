@@ -520,13 +520,11 @@ export const make = Effect.fn("SimlockDeviceHost.make")(function* (
       return opened.leaseId;
     }).pipe(
       // A failed or interrupted open may still hold a lease: close the session either way.
-      Effect.onExit((exit) =>
-        exit._tag === "Success"
-          ? Effect.void
-          : agentDevice(pending, ["close"]).pipe(
-              Effect.ignore,
-              Effect.andThen(fs.remove(dir, { recursive: true, force: true }).pipe(Effect.ignore)),
-            ),
+      Effect.onError(() =>
+        agentDevice(pending, ["close"]).pipe(
+          Effect.ignore,
+          Effect.andThen(fs.remove(dir, { recursive: true, force: true }).pipe(Effect.ignore)),
+        ),
       ),
       Effect.mapError((error) =>
         error._tag === "DeviceHostUnavailableError"

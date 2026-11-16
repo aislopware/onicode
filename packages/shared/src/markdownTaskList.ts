@@ -54,13 +54,9 @@ function renderedTexts(item: ListItem): string[] {
   );
 }
 
-// Native renderers give other top-level blocks (code, tables, quotes, media) their own views, and
-// each view numbers its tasks from 0. Lists, headings and rules share the text view around them.
-const sharedViewBlocks = new Set(["list", "heading", "thematicBreak"]);
-
 /**
- * Marker offset of the task a native checkbox tap names. Null unless exactly one task has that
- * text and state and could have that index under some split of the document into native views.
+ * Marker offset of the task a native checkbox tap names. The index counts every task in the
+ * document; null when that task has another text or state, so a stale tap changes nothing.
  */
 export function markdownTaskMarkerOffset(
   markdown: string,
@@ -68,27 +64,21 @@ export function markdownTaskMarkerOffset(
   renderedText: string,
   checked: boolean,
 ): number | null {
-  // Native attachments replace their labels, so the remaining text could name another task.
+  // Native attachments replace their labels, so the remaining text cannot confirm the task.
   if (renderedText.includes("\uFFFC")) return null;
   const tasks: ListItem[] = [];
   const collect = (node: Nodes) => {
     if (node.type === "listItem" && typeof node.checked === "boolean") tasks.push(node);
     if ("children" in node) node.children.forEach(collect);
   };
-  const viewStarts = new Set([0]);
-  for (const block of parser.parse(markdown).children) {
-    const before = tasks.length;
-    collect(block);
-    if (sharedViewBlocks.has(block.type)) continue;
-    for (let count = before; count <= tasks.length; count++) viewStarts.add(count);
-  }
-  const rendered = lettersAndDigits(renderedText);
-  const matches = tasks.filter(
-    (task, position) =>
-      task.checked === !checked &&
-      viewStarts.has(position - index) &&
-      renderedTexts(task).includes(rendered),
-  );
-  const start = matches.length === 1 ? matches[0]?.position?.start.offset : undefined;
+  collect(parser.parse(markdown));
+  const task = tasks[index];
+  if (
+    !task ||
+    task.checked !== !checked ||
+    !renderedTexts(task).includes(lettersAndDigits(renderedText))
+  )
+    return null;
+  const start = task.position?.start.offset;
   return start === undefined ? null : taskListMarkerOffset(markdown, start);
 }

@@ -1,4 +1,3 @@
-import JSZip from "jszip";
 import { openRtf, openNotebook, openDocument, openEpub } from "./extendedDocumentPreview";
 import type { ScopedThreadRef } from "@onicode/contracts";
 import { ProjectReadFileError } from "@onicode/contracts";
@@ -174,18 +173,17 @@ describe("document preview contents", () => {
   );
 
   it("bounds EPUB markup made entirely of empty allowed elements", async () => {
-    const archive = new JSZip()
-      .file(
-        "META-INF/container.xml",
-        '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>',
-      )
-      .file(
-        "book.opf",
-        '<package><manifest><item id="a" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine>' +
+    const archive = new Map(
+      Object.entries({
+        "META-INF/container.xml":
+          '<container><rootfiles><rootfile full-path="book.opf"/></rootfiles></container>',
+        "book.opf":
+          '<package><manifest><item id="a" href="chapter.xhtml" media-type="application/xhtml+xml"/></manifest><spine>' +
           '<itemref idref="a"/>'.repeat(30) +
           "</spine></package>",
-      )
-      .file("chapter.xhtml", "<html><body>" + "<figcaption/>".repeat(30_000) + "</body></html>");
+        "chapter.xhtml": "<html><body>" + "<figcaption/>".repeat(30_000) + "</body></html>",
+      }),
+    );
     await expect(openEpub(archive)).rejects.toThrow("too large");
   });
 
@@ -249,9 +247,11 @@ Third}`;
   });
 
   it("resolves scoped ODF namespaces and explicit spreadsheet whitespace", async () => {
-    const archive = new JSZip().file(
-      "content.xml",
-      '<o:document-content xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:t="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><o:body><o:spreadsheet><t:table t:name="Accounts &amp; names"><t:table-row><t:table-cell><p xmlns="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:x="urn:oasis:names:tc:opendocument:xmlns:text:1.0">Account<s/>Name<s x:c="3"/>A<tab/>B<line-break/>C &amp; <![CDATA[&amp;]]></p></t:table-cell></t:table-row></t:table></o:spreadsheet></o:body></o:document-content>',
+    const archive = new Map(
+      Object.entries({
+        "content.xml":
+          '<o:document-content xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:t="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><o:body><o:spreadsheet><t:table t:name="Accounts &amp; names"><t:table-row><t:table-cell><p xmlns="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:x="urn:oasis:names:tc:opendocument:xmlns:text:1.0">Account<s/>Name<s x:c="3"/>A<tab/>B<line-break/>C &amp; <![CDATA[&amp;]]></p></t:table-cell></t:table-row></t:table></o:spreadsheet></o:body></o:document-content>',
+      }),
     );
     const result = await openDocument(archive, "ods");
     if (result.type !== "ods") throw new Error("Expected workbook");
@@ -267,19 +267,20 @@ Third}`;
         "base64",
       ),
     );
-    const archive = new JSZip()
-      .file(
-        "content.xml",
-        '<o:document-content xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:d="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:l="http://www.w3.org/1999/xlink"><o:body>' +
+    const archive = new Map(
+      Object.entries({
+        "content.xml":
+          '<o:document-content xmlns:o="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:d="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:l="http://www.w3.org/1999/xlink"><o:body>' +
           '<d:page><d:image l:href="picture.png"/></d:page>'.repeat(500) +
           "</o:body></o:document-content>",
-      )
-      .file("picture.png", pixels);
-    const image = archive.file("picture.png")!;
-    const read = vi.spyOn(image, "async");
+        "picture.png": pixels,
+      }),
+    );
+    using read = vi.spyOn(archive, "get");
+    using encode = vi.spyOn(globalThis, "btoa");
     await expect(openDocument(archive, "odp")).rejects.toThrow("too large");
-    expect(read.mock.calls.filter(([type]) => type === "base64")).toHaveLength(2);
-    expect(read).toHaveBeenCalledTimes(5);
+    expect(encode).toHaveBeenCalledTimes(2);
+    expect(read.mock.calls.filter(([path]) => path === "picture.png")).toHaveLength(3);
   });
 
   it("reads saved notebook cells and preferred outputs without executing code", () => {
@@ -393,9 +394,11 @@ Third}`;
   });
 
   it("bounds repeated OpenDocument spreadsheet cells and keeps sheet names and values", async () => {
-    const archive = new JSZip().file(
-      "content.xml",
-      '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:spreadsheet><table:table table:name="Budget"><table:table-row table:number-rows-repeated="999999999"><table:table-cell table:number-columns-repeated="999999999"><text:p>Research &amp; design</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>',
+    const archive = new Map(
+      Object.entries({
+        "content.xml":
+          '<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:spreadsheet><table:table table:name="Budget"><table:table-row table:number-rows-repeated="999999999"><table:table-cell table:number-columns-repeated="999999999"><text:p>Research &amp; design</text:p></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>',
+      }),
     );
     const result = await openDocument(archive, "ods");
     expect(result.type).toBe("ods");
@@ -408,9 +411,10 @@ Third}`;
   });
 
   it("reads an ODS time cell that has no display paragraph", async () => {
-    const archive = new JSZip().file(
-      "content.xml",
-      `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><office:body><office:spreadsheet><table:table table:name="Values"><table:table-row><table:table-cell office:value-type="time" office:time-value="PT03H30M00S"></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`,
+    const archive = new Map(
+      Object.entries({
+        "content.xml": `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0"><office:body><office:spreadsheet><table:table table:name="Values"><table:table-row><table:table-cell office:value-type="time" office:time-value="PT03H30M00S"></table:table-cell></table:table-row></table:table></office:spreadsheet></office:body></office:document-content>`,
+      }),
     );
     const result = await openDocument(archive, "ods");
     if (result.type !== "ods") throw new Error("Expected workbook");
@@ -418,9 +422,10 @@ Third}`;
   });
 
   it.each([1, 500])("ignores styled ODS filler after %s populated rows", async (count) => {
-    const archive = new JSZip().file(
-      "content.xml",
-      `<office:document><table:table><table:table-row table:number-rows-repeated="${count}"><table:table-cell><text:p>North</text:p></table:table-cell><table:table-cell table:number-columns-repeated="1024"/></table:table-row><table:table-row table:number-rows-repeated="1048570"><table:table-cell table:number-columns-repeated="1024"/></table:table-row></table:table></office:document>`,
+    const archive = new Map(
+      Object.entries({
+        "content.xml": `<office:document><table:table><table:table-row table:number-rows-repeated="${count}"><table:table-cell><text:p>North</text:p></table:table-cell><table:table-cell table:number-columns-repeated="1024"/></table:table-row><table:table-row table:number-rows-repeated="1048570"><table:table-cell table:number-columns-repeated="1024"/></table:table-row></table:table></office:document>`,
+      }),
     );
     const result = await openDocument(archive, "ods");
     if (result.type !== "ods") throw new Error("Expected workbook");
@@ -431,9 +436,10 @@ Third}`;
   it.each([2, 999999])(
     "preserves internal ODS gaps of %s rows and reports real overflow",
     async (gap) => {
-      const archive = new JSZip().file(
-        "content.xml",
-        `<office:document><table:table><table:table-row><table:table-cell><text:p>First</text:p></table:table-cell></table:table-row><table:table-row table:number-rows-repeated="${gap}"><table:table-cell/></table:table-row><table:table-row><table:table-cell table:number-columns-repeated="2"/><table:table-cell><text:p>Last</text:p></table:table-cell></table:table-row></table:table></office:document>`,
+      const archive = new Map(
+        Object.entries({
+          "content.xml": `<office:document><table:table><table:table-row><table:table-cell><text:p>First</text:p></table:table-cell></table:table-row><table:table-row table:number-rows-repeated="${gap}"><table:table-cell/></table:table-row><table:table-row><table:table-cell table:number-columns-repeated="2"/><table:table-cell><text:p>Last</text:p></table:table-cell></table:table-row></table:table></office:document>`,
+        }),
       );
       const result = await openDocument(archive, "ods");
       if (result.type !== "ods") throw new Error("Expected workbook");
@@ -461,9 +467,10 @@ Third}`;
       `<tr>${"<td><p>x</p></td>".repeat(50)}</tr>`.repeat(500),
     ],
   ])("%s repeated ODT table rows and cells", async (_, rows, html) => {
-    const archive = new JSZip().file(
-      "content.xml",
-      `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:text><table:table><table:table-column table:number-columns-repeated="2"/>${rows}</table:table></office:text></office:body></office:document-content>`,
+    const archive = new Map(
+      Object.entries({
+        "content.xml": `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:text><table:table><table:table-column table:number-columns-repeated="2"/>${rows}</table:table></office:text></office:body></office:document-content>`,
+      }),
     );
     const result = await openDocument(archive, "odt");
     if (result.type !== "document") throw new Error("Expected document");
@@ -471,16 +478,17 @@ Third}`;
   });
 
   it.each(["odt", "odp"] as const)("reads %s text and rejects XML entities", async (kind) => {
-    const archive = new JSZip().file(
-      "content.xml",
-      `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"><office:body>${kind === "odt" ? "<office:text><text:p>Field notes</text:p></office:text>" : '<draw:page draw:name="Overview"><text:h>Launch plan</text:h><presentation:notes><draw:frame><draw:text-box><text:p>Speaker only</text:p></draw:text-box></draw:frame></presentation:notes></draw:page>'}</office:body></office:document-content>`,
+    const archive = new Map(
+      Object.entries({
+        "content.xml": `<office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"><office:body>${kind === "odt" ? "<office:text><text:p>Field notes</text:p></office:text>" : '<draw:page draw:name="Overview"><text:h>Launch plan</text:h><presentation:notes><draw:frame><draw:text-box><text:p>Speaker only</text:p></draw:text-box></draw:frame></presentation:notes></draw:page>'}</office:body></office:document-content>`,
+      }),
     );
     const result = await openDocument(archive, kind);
     expect(result.type).toBe("document");
     if (result.type !== "document") throw new Error("Expected document");
     expect(result.pages[0]!.html).toContain(kind === "odt" ? "Field notes" : "Launch plan");
     expect(result.pages[0]!.html).not.toContain("Speaker only");
-    archive.file(
+    archive.set(
       "content.xml",
       '<!DOCTYPE x [<!ENTITY external SYSTEM "file:///etc/passwd">]><x>&external;</x>',
     );
@@ -488,30 +496,22 @@ Third}`;
   });
 
   it("reads EPUB chapters in spine order and removes active and remote content", async () => {
-    const archive = new JSZip()
-      .file(
-        "META-INF/container.xml",
-        '<container><rootfiles><rootfile full-path="Book/book.opf"/></rootfiles></container>',
-      )
-      .file(
-        "Book/book.opf",
-        '<package><manifest><item id="a" href="one.xhtml" media-type="application/xhtml+xml"/><item id="b" href="two&amp;&#x26;&#38;.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="b"/><itemref idref="a"/></spine></package>',
-      )
-      .file(
-        "Book/one.xhtml",
-        '<html><head><title>First</title></head><body><h1>First chapter</h1><img src="cover.png" alt="Cover"/><img src="https://example.com/tracker.png"/><script>alert(1)</script><style>@import "https://example.com/style.css";</style></body></html>',
-      )
-      .file(
-        "Book/two&&&.xhtml",
-        '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html><head><title>Second</title></head><body><h1>Second chapter</h1><p>A&nbsp;B &copy; &mdash; &NotEqualTilde; &amp;lt;</p><pre><![CDATA[Use &amp; and &lt; literally]]></pre><img src="cover.png" alt="&copy; &NotEqualTilde;"/></body></html>',
-      )
-      .file(
-        "Book/cover.png",
-        Buffer.from(
+    const archive = new Map(
+      Object.entries({
+        "META-INF/container.xml":
+          '<container><rootfiles><rootfile full-path="Book/book.opf"/></rootfiles></container>',
+        "Book/book.opf":
+          '<package><manifest><item id="a" href="one.xhtml" media-type="application/xhtml+xml"/><item id="b" href="two&amp;&#x26;&#38;.xhtml" media-type="application/xhtml+xml"/></manifest><spine><itemref idref="b"/><itemref idref="a"/></spine></package>',
+        "Book/one.xhtml":
+          '<html><head><title>First</title></head><body><h1>First chapter</h1><img src="cover.png" alt="Cover"/><img src="https://example.com/tracker.png"/><script>alert(1)</script><style>@import "https://example.com/style.css";</style></body></html>',
+        "Book/two&&&.xhtml":
+          '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd"><html><head><title>Second</title></head><body><h1>Second chapter</h1><p>A&nbsp;B &copy; &mdash; &NotEqualTilde; &amp;lt;</p><pre><![CDATA[Use &amp; and &lt; literally]]></pre><img src="cover.png" alt="&copy; &NotEqualTilde;"/></body></html>',
+        "Book/cover.png": Buffer.from(
           "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
           "base64",
         ),
-      );
+      }),
+    );
     const result = await openEpub(archive);
     expect(result.type).toBe("document");
     if (result.type !== "document") throw new Error("Expected document");

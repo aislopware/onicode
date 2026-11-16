@@ -1,7 +1,7 @@
 //! A short-lived QML overlay hosted by KWin, not a persistent desktop effect.
 //! Commands arrive on our parent's private stdin; only KWin can consume them.
 use super::*;
-use std::io::BufRead;
+use std::{future::poll_fn, io::BufRead, pin::Pin};
 
 const OBJECT: &str = "/dev/onicode/KdeCapture/Feedback";
 
@@ -25,7 +25,7 @@ enum Event {
 struct Bridge {
     owner: String,
     commands: async_channel::Receiver<String>,
-    done: mpsc::SyncSender<()>,
+    done: async_channel::Sender<()>,
 }
 impl Bridge {
     fn authorize(&self, header: &zbus::message::Header<'_>) -> zbus::fdo::Result<()> {
@@ -69,21 +69,24 @@ impl Bridge {
     }
 }
 
-pub(super) fn supported(connection: &Connection) -> bool {
+pub(super) async fn supported(connection: &Connection) -> bool {
     let Ok(proxy) = Proxy::new(
         connection,
         "org.kde.KWin",
         "/Scripting",
         "org.freedesktop.DBus.Introspectable",
-    ) else {
+    )
+    .await
+    else {
         return false;
     };
     proxy
         .call::<_, _, String>("Introspect", &())
+        .await
         .is_ok_and(|xml| xml.contains("name=\"loadDeclarativeScript\""))
 }
 
-pub(super) fn run(connection: &Connection, directory: &Path, options: &str) -> Result<()> {
+pub(super) async fn run(connection: &Connection, directory: &Path, options: &str) -> Result<()> {
     let mut options: Options = serde_json::from_str(options)?;
     if options.bounds.width == 0 || options.bounds.height == 0 || options.pid == 0 {
         return Err("Invalid capture feedback geometry".into());
@@ -109,19 +112,24 @@ pub(super) fn run(connection: &Connection, directory: &Path, options: &str) -> R
         return Err("Invalid KDE animation preference".into());
     }
     options.animate &= factor > 0.0;
-    let owner = zbus::blocking::fdo::DBusProxy::new(connection)?
-        .get_name_owner("org.kde.KWin".try_into()?)?
+    let owner = zbus::fdo::DBusProxy::new(connection)
+        .await?
+        .get_name_owner("org.kde.KWin".try_into()?)
+        .await?
         .to_string();
     let (send, commands) = async_channel::bounded(4);
-    let (done, finished) = mpsc::sync_channel(1);
-    connection.object_server().at(
-        OBJECT,
-        Bridge {
-            owner,
-            commands,
-            done,
-        },
-    )?;
+    let (done, finished) = async_channel::bounded(1);
+    connection
+        .object_server()
+        .at(
+            OBJECT,
+            Bridge {
+                owner,
+                commands,
+                done,
+            },
+        )
+        .await?;
 
     // Subscribe before checking, so a lock racing setup can't expose the snapshot.
     let locker = Proxy::new(
@@ -129,20 +137,23 @@ pub(super) fn run(connection: &Connection, directory: &Path, options: &str) -> R
         "org.freedesktop.ScreenSaver",
         "/ScreenSaver",
         "org.freedesktop.ScreenSaver",
-    )?;
-    let signals = locker.receive_signal("ActiveChanged")?;
-    if locker.call::<_, _, bool>("GetActive", &())? {
+    )
+    .await?;
+    let mut signals = locker.receive_signal("ActiveChanged").await?;
+    if locker.call::<_, _, bool>("GetActive", &()).await? {
         return Err("Screen is locked".into());
     }
     let lock_commands = send.clone();
-    std::thread::spawn(move || {
-        for signal in signals {
+    let _lock_watch = zruntime::spawn(async move {
+        while let Some(signal) =
+            poll_fn(|cx| futures_core::Stream::poll_next(Pin::new(&mut signals), cx)).await
+        {
             if signal
                 .body()
                 .deserialize::<(bool,)>()
                 .is_ok_and(|(active,)| active)
             {
-                let _ = lock_commands.send_blocking("{\"command\":\"close\"}".into());
+                let _ = lock_commands.send("{\"command\":\"close\"}".into()).await;
                 break;
             }
         }
@@ -187,12 +198,15 @@ pub(super) fn run(connection: &Connection, directory: &Path, options: &str) -> R
         "org.kde.KWin",
         "/Scripting",
         "org.kde.kwin.Scripting",
-    )?;
-    let result = (|| {
-        let id: i32 = scripting.call(
-            "loadDeclarativeScript",
-            &(path.to_str().ok_or("Invalid script path")?, &name),
-        )?;
+    )
+    .await?;
+    let result = async {
+        let id: i32 = scripting
+            .call(
+                "loadDeclarativeScript",
+                &(path.to_str().ok_or("Invalid script path")?, &name),
+            )
+            .await?;
         if id < 0 {
             return Err("KWin could not load capture feedback".into());
         }
@@ -202,13 +216,15 @@ pub(super) fn run(connection: &Connection, directory: &Path, options: &str) -> R
             "org.kde.KWin",
             object.as_str(),
             "org.kde.kwin.Script",
-        )?;
-        let _: () = loaded.call("run", &())?;
-        finished.recv_timeout(Duration::from_secs(12))?;
+        )
+        .await?;
+        let _: () = loaded.call("run", &()).await?;
+        within(Duration::from_secs(12), finished.recv()).await??;
         Ok(())
-    })();
-    let _: zbus::Result<bool> = scripting.call("unloadScript", &(&name,));
-    let _ = connection.object_server().remove::<Bridge, _>(OBJECT);
+    }
+    .await;
+    let _: zbus::Result<bool> = scripting.call("unloadScript", &(&name,)).await;
+    let _ = connection.object_server().remove::<Bridge, _>(OBJECT).await;
     result
 }
 
@@ -218,74 +234,91 @@ mod tests {
 
     #[test]
     fn only_kwin_can_read_commands_or_acknowledge_feedback() {
-        let f = crate::transport_tests::Fixture::new();
-        let (send, commands) = async_channel::bounded(4);
-        let (done, finished) = mpsc::sync_channel(1);
-        // Build with the bridge registered so zbus waits for its method-call listener.
-        // Registering it after build can drop the first call while that listener starts.
-        let bridge = Builder::address(f.address.as_str())
-            .unwrap()
-            .method_timeout(DEADLINE)
-            .serve_at(
+        zbus::block_on(async {
+            let f = crate::transport_tests::Fixture::new().await;
+            let (send, commands) = async_channel::bounded(4);
+            let (done, finished) = async_channel::bounded(1);
+            // Build with the bridge registered so zbus waits for its method-call listener.
+            // Registering it after build can drop the first call while that listener starts.
+            let bridge = Builder::address(f.address.as_str())
+                .method_timeout(DEADLINE)
+                .serve_at(
+                    OBJECT,
+                    Bridge {
+                        owner: f._server.unique_name().unwrap().to_string(),
+                        commands,
+                        done,
+                    },
+                )
+                .build()
+                .await
+                .unwrap();
+            let destination = bridge.unique_name().unwrap().to_string();
+            let stranger = Builder::address(f.address.as_str())
+                .method_timeout(DEADLINE)
+                .build()
+                .await
+                .unwrap();
+            let unrelated = Proxy::new(
+                &stranger,
+                destination.as_str(),
                 OBJECT,
-                Bridge {
-                    owner: f._server.unique_name().unwrap().to_string(),
-                    commands,
-                    done,
-                },
+                "dev.onicode.KdeCapture.Feedback",
             )
-            .unwrap()
-            .build()
+            .await
             .unwrap();
-        let destination = bridge.unique_name().unwrap().to_string();
-        let stranger = Builder::address(f.address.as_str())
-            .unwrap()
-            .method_timeout(DEADLINE)
-            .build()
-            .unwrap();
-        let unrelated = Proxy::new(
-            &stranger,
-            destination.as_str(),
-            OBJECT,
-            "dev.onicode.KdeCapture.Feedback",
-        )
-        .unwrap();
-        let error = unrelated.call::<_, _, String>("Next", &()).unwrap_err();
-        assert!(
-            matches!(&error, zbus::Error::MethodError(name, _, _) if name.as_str() == "org.freedesktop.DBus.Error.AccessDenied"),
-            "{error:?}"
-        );
-        assert!(
-            unrelated
-                .call::<_, _, ()>("Event", &("{\"event\":\"done\"}",))
-                .is_err()
-        );
-        assert!(finished.try_recv().is_err());
+            let error = unrelated
+                .call::<_, _, String>("Next", &())
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(&error, zbus::Error::FDO(error) if matches!(**error, zbus::fdo::Error::AccessDenied(_))),
+                "{error:?}"
+            );
+            assert!(
+                unrelated
+                    .call::<_, _, ()>("Event", &("{\"event\":\"done\"}",))
+                    .await
+                    .is_err()
+            );
+            assert!(finished.try_recv().is_err());
 
-        let kwin = Proxy::new(
-            &f._server,
-            destination.clone(),
-            OBJECT,
-            "dev.onicode.KdeCapture.Feedback",
-        )
-        .unwrap();
-        // Event remains responsive while Next waits. No blocking the D-Bus executor.
-        let next = kwin.clone();
-        let request = std::thread::spawn(move || next.call::<_, _, String>("Next", &()).unwrap());
-        kwin.call::<_, _, ()>("Event", &("{\"event\":\"ready\",\"animate\":true}",))
+            let kwin = Proxy::new(
+                &f._server,
+                destination.clone(),
+                OBJECT,
+                "dev.onicode.KdeCapture.Feedback",
+            )
+            .await
             .unwrap();
-        send.send_blocking("{\"command\":\"close\"}".into())
-            .unwrap();
-        assert_eq!(request.join().unwrap(), "{\"command\":\"close\"}");
-        kwin.call::<_, _, ()>("Event", &("{\"event\":\"done\"}",))
-            .unwrap();
-        finished.recv_timeout(DEADLINE).unwrap();
-        bridge.object_server().remove::<Bridge, _>(OBJECT).unwrap();
+            // Event remains responsive while Next waits. No blocking the D-Bus executor.
+            let next = kwin.clone();
+            let request =
+                zruntime::spawn(
+                    async move { next.call::<_, _, String>("Next", &()).await.unwrap() },
+                );
+            kwin.call::<_, _, ()>("Event", &("{\"event\":\"ready\",\"animate\":true}",))
+                .await
+                .unwrap();
+            send.send("{\"command\":\"close\"}".into()).await.unwrap();
+            assert_eq!(request.await.unwrap(), "{\"command\":\"close\"}");
+            kwin.call::<_, _, ()>("Event", &("{\"event\":\"done\"}",))
+                .await
+                .unwrap();
+            within(DEADLINE, finished.recv()).await.unwrap().unwrap();
+            bridge
+                .object_server()
+                .remove::<Bridge, _>(OBJECT)
+                .await
+                .unwrap();
+        });
     }
 
     #[test]
     fn capability_probe_rejects_missing_declarative_api_without_running_a_script() {
-        let f = crate::transport_tests::Fixture::new();
-        assert!(!supported(&f.client));
+        zbus::block_on(async {
+            let f = crate::transport_tests::Fixture::new().await;
+            assert!(!supported(&f.client).await);
+        });
     }
 }
