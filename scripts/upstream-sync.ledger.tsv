@@ -2179,3 +2179,4 @@ cef0f5d473	skip	T3 mobile EAS PR preview comment script; Onicode has no EAS prev
 e00614e126	take	fix(server): a hung branch name no longer holds a new thread in setup for minutes
 5dd8cde083	take	fix(server): idle ACP child output no longer leaks into root history
 dfeaf7b137	take	fix(web): Tab from a citation comment reaches Save, not Cancel
+50b885e036	take	fix(web): switching a draft's machine uses that machine's default model; conflict: kept Onicode's carryFanoutSelections import
