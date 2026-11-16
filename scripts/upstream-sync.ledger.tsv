@@ -2208,3 +2208,4 @@ b0f0c44d22	take	fix(shared): open Forgejo and Gitea /pulls/ tab and commit links
 4247b5aa1a	take	taken; user docs say desktop only (Onicode has no web app); mobile toggle is a follow-up
 375343aaf3	take	taken; pnpm-lock.yaml patch hash regenerated with vp i
 bc0988d4d3	skip	mobile-eas-preview.yml is T3's EAS preview pipeline; Onicode releases through better-update and has no such workflow
+c02b98bb3f	take	taken as is; only Codex sets a stop reason on completed turns, so no other adapter gains the notice
