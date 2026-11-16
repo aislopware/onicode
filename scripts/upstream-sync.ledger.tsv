@@ -2213,3 +2213,4 @@ c02b98bb3f	take	taken as is; only Codex sets a stop reason on completed turns, s
 02f8a3280b	take	taken as is
 7d32075e37	take	adapted: kept Onicode's single built-in theme id and legacy-CSS filter beside the background field; startThemeBackground sits next to Onicode's startDocumentBackgroundSync; eval case uses builtIn [onicode]
 cfb1f12541	take	adopted upstream over Onicode's dispatching-message upload skip (e656994407): the shared RcMap upload lets delivery join the worker's upload, so the skip is redundant and would release the worker's hold at dispatch, aborting and restarting the upload
+07e8bfa70d	take	adapted: dropped the cloud sign-out snapshot step (forgetCloudQueuedMessage) and its tests, since Onicode removed cloud drafts; kept Onicode's per-thread useThreadQueuedMessages (one array per thread, no app-wide outbox re-render) beside upstream's per-thread dispatching ids
