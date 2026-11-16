@@ -684,13 +684,15 @@ export const withCodexAppServerClient = Effect.fn("withCodexAppServerClient")(fu
 // for it, so stopping a short probe mid-fetch strands ssh in an SSH-agent request.
 const CODEX_STARTUP_WORK_GRACE = Duration.minutes(1);
 
+// Only git and ssh count: an npm wrapper's native Codex or a stdio MCP server Codex starts also
+// lives in the group and would hold every probe open for the whole grace period.
 const codexProcessGroupIsBusy = Effect.fn("codexProcessGroupIsBusy")(
   function* (pid: number) {
     const { stdout } = yield* spawnAndCollect(
       "pgrep",
-      ChildProcess.make("pgrep", ["-g", `${pid}`]),
+      ChildProcess.make("pgrep", ["-g", `${pid}`, "^(git|ssh)"]),
     );
-    return stdout.split("\n").some((line) => line.trim() !== "" && Number(line) !== pid);
+    return stdout.trim() !== "";
   },
   Effect.orElseSucceed(() => false),
 );
