@@ -2158,3 +2158,4 @@ f083f26cd5	take	fix(provider-core): generated thread titles keep the closing quo
 1b84e72a6d	take	fix(web): Cmd+Enter on an edited queued message steers it into the running turn
 e8bfabaa39	take	fix(server): preserve whitespace in ACP history replay
 7f1fa0d447	take	fix(acp): keep providers available after naming custom models
+f8c8f30e49	take	fix(mobile): switching threads no longer flashes the feed header or misplaces the composer
