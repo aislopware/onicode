@@ -2177,3 +2177,4 @@ d6672df273	take	test(acp-registry): Kimi outcome test waits for each poll before
 cef0f5d473	skip	T3 mobile EAS PR preview comment script; Onicode has no EAS preview workflows (see b78c04d3e1, 183029dee8)
 4da2bc520c	take	perf(server): CLI startup no longer takes the write lock when the schema is current
 e00614e126	take	fix(server): a hung branch name no longer holds a new thread in setup for minutes
+5dd8cde083	take	fix(server): idle ACP child output no longer leaks into root history
