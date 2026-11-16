@@ -393,6 +393,23 @@ it("uploads draft attachments for threads whose ids contain colons", () => {
   );
 });
 
+it("leaves a queued message's attachments to delivery while it dispatches that message", () => {
+  const message = { ...queuedMessage(), attachments: [image] };
+  const requests = (dispatchingQueuedMessageId: MessageId | null) =>
+    composerAttachmentUploadRequests({
+      drafts: {},
+      queuedMessagesByThreadKey: { [`${environmentId}:thread-1`]: [message] },
+      editingQueuedMessageIds: {},
+      dispatchingQueuedMessageId,
+      knownEnvironmentIds: [environmentId],
+      connectedEnvironmentIds: new Set([environmentId]),
+      operableEnvironmentIds: new Set([environmentId]),
+      serverConfigs: new Map([[environmentId, config]]),
+    });
+  expect(requests(null)).toHaveLength(1);
+  expect(requests(message.messageId)).toEqual([]);
+});
+
 it("does not upload a disconnected colon environment's draft to its connected prefix", () => {
   const connected = EnvironmentId.make("a");
   const disconnected = EnvironmentId.make("a:vcs-status:b");
