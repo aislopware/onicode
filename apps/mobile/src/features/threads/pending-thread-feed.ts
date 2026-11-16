@@ -163,13 +163,13 @@ export function createPendingTurnAppender() {
     options: { readonly zen: boolean; readonly dispatchingMessageId: string | null },
   ): ReadonlyArray<PendingThreadFeedEntry | PendingFoldFeedEntry> => {
     // Queued behind a lost connection or missing access, a message is waiting, not sending.
+    // The oldest sent message runs first, so its rows go under it.
     let anchorIndex = -1;
     for (let index = feed.length - 1; index >= 0; index -= 1) {
       const entry = feed[index];
       if (entry?.type !== "message" || entry.pendingMessage === undefined) break;
       if (entry.acknowledged || entry.pendingMessage.messageId === options.dispatchingMessageId) {
         anchorIndex = index;
-        break;
       }
     }
     const anchor = feed[anchorIndex];
