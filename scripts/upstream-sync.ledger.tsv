@@ -2243,3 +2243,4 @@ c24255826b	take	feat(web): dictation keeps recording into its thread when you sw
 f9db865403	take	fix(mobile): a pasted pairing link fills both Address and Code (#28635); kept Onicode's QR-scan test beside it
 e8e7fb7e9a	take	fix(mobile): one Working row after worktree setup (#37797); kept Onicode's server-clock correction on the setup card
 4b22bb47d4	take	perf(pr): PR panel paints from saved data and reads ahead on intent (#32911); Code-tab rest test hovers with a synchronous pointerover (vite-plus 1.6 ticks fake timers during userEvent.hover)
+6794d5646c	skip	relay tracing telemetry opt-out: Onicode has no relay tracing or relay telemetry IPC (removed surfaces: relay, telemetry); discoveryFinished only serves it
