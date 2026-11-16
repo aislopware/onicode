@@ -9,7 +9,7 @@ import {
 } from "@handy-computer/models";
 import { format } from "vite-plus/fmt";
 
-// ASR architectures registered in transcribe.cpp v0.4.1's src/transcribe-arch.cpp.
+// ASR architectures registered in transcribe.cpp v0.4.2's src/transcribe-arch.cpp.
 const ASR_FAMILIES = new Set([
   "parakeet",
   "cohere_asr",
@@ -49,7 +49,7 @@ export function generateSpeechCatalog(
   engineVersion: string,
 ) {
   if (data.schema !== 2) throw new Error("Unsupported speech catalog schema.");
-  if (engineVersion !== "0.4.1")
+  if (engineVersion !== "0.4.2")
     throw new Error("Review speech catalog loader support for this engine.");
   const ids = new Set<string>();
   const filenames = new Set<string>();

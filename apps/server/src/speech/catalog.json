@@ -1,7 +1,7 @@
 {
   "source": "@handy-computer/models",
   "sourceVersion": "0.2.3",
-  "engineVersion": "0.4.1",
+  "engineVersion": "0.4.2",
   "models": [
     {
       "id": "handy-computer/parakeet-unified-en-0.6b-gguf",
