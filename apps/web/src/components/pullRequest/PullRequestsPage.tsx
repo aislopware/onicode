@@ -616,8 +616,9 @@ export function PullRequestsPage() {
         entries: rankPullRequestMatches(answered.entries, sentParsed.text),
       });
     } else if (sentCursors !== null) {
-      const held = new Set(ordered.entries.map(pullRequestEntryKey));
-      const arrived = answered.entries.filter((entry) => !held.has(pullRequestEntryKey(entry)));
+      // By URL: a later page may bring a pull request another environment already listed.
+      const held = new Set(ordered.entries.map((entry) => entry.url));
+      const arrived = answered.entries.filter((entry) => !held.has(entry.url));
       const appended = rankPullRequestMatches(
         arrived.toSorted(comparePullRequestsByRecency),
         sentParsed.text,
