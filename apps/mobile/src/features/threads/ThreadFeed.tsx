@@ -1064,8 +1064,9 @@ function PendingMessageImage(props: {
 
 /**
  * A sent video from queueing through delivery. Every stage renders this one player under a
- * thumbnail key of message and position, so swapping the local file for the server copy keeps
- * the poster on screen instead of remounting to black and extracting a frame again.
+ * thumbnail key of message, position, name and size, so swapping the local file for the server
+ * copy keeps the poster on screen instead of remounting to black and extracting a frame again.
+ * Name and size keep a queued edit that shifts videos from inheriting another video's poster.
  */
 function UserMessageVideo(props: {
   readonly environmentId: EnvironmentId;
@@ -1088,15 +1089,25 @@ function UserMessageVideo(props: {
       : props.uploaded !== null
         ? attachmentVideoPreviewSource(props.environmentId, props.uploaded, sourceIdentifier)
         : null;
+  const video = props.local ?? props.uploaded;
+  const thumbnailKey = JSON.stringify([
+    "user-message-video",
+    props.messageId,
+    props.index,
+    video?.name ?? null,
+    video?.sizeBytes ?? null,
+  ]);
   // Each copy of a message reopens its local file; keep the last source while the next one loads.
-  const [shown, setShown] = useState(current);
+  const [shown, setShown] = useState({ thumbnailKey, source: current });
+  const shownSource = shown.thumbnailKey === thumbnailKey ? shown.source : null;
   if (
     current !== null &&
-    (shown === null || mediaVideoThumbnailKey(current) !== mediaVideoThumbnailKey(shown))
+    (shownSource === null ||
+      mediaVideoThumbnailKey(current) !== mediaVideoThumbnailKey(shownSource))
   ) {
-    setShown(current);
+    setShown({ thumbnailKey, source: current });
   }
-  const source = current ?? shown;
+  const source = current ?? shownSource;
   if (source === null) {
     return (
       <View className="aspect-video items-center justify-center bg-black">
@@ -1111,7 +1122,7 @@ function UserMessageVideo(props: {
   return (
     <ThreadMarkdownVideo
       source={source}
-      thumbnailKey={JSON.stringify(["user-message-video", props.messageId, props.index])}
+      thumbnailKey={thumbnailKey}
       onPlaybackStart={props.onPlaybackStart}
       borderRadius={20}
     />
