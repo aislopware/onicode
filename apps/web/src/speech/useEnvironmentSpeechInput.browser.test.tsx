@@ -432,6 +432,18 @@ it.each([
   expect(mocks.committed).not.toHaveBeenCalled();
 });
 
+it("ends the recording this editor began after it switches to another thread", async () => {
+  setup({ destination: "env-a" });
+  mocks.storedDraft = "Earlier text";
+  await using screen = await render(<Probe ownerKey="thread-a" persistent />);
+  await act(() => mocks.voice.start());
+  await screen.rerender(<Probe ownerKey="thread-b" persistent />);
+  // A held dictation shortcut released on thread B stops through B's editor.
+  await act(() => mocks.voice.stop());
+  await vi.waitFor(() => expect(mocks.storedDraft).toBe("Earlier text dictated"));
+  expect(mocks.committed).not.toHaveBeenCalled();
+});
+
 it("keeps an off-screen recording's words when its draft is disabled on return", async () => {
   setup({ destination: "env-a" });
   mocks.storedDraft = "Earlier text";
