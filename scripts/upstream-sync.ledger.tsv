@@ -2142,3 +2142,4 @@ eeae88de5c	take	relocated cloud/serviceProtection* to Onicode's service/serviceP
 ddb7fb3f50	take	fix(cli): onicode pair --tailscale names the operator fix when Tailscale denies Serve (#37466); test runtime state uses Onicode's dev: false (no devUrl)
 82ce7456de	take	fix(server): fx and Muse refreshes drop models they no longer list (#37457)
 e47a96e88d	take	fix(pi): image reads show a preview in the work log (#37471)
+05ccd6bfb5	take	fix(pi): resume the session file an extension switched the thread to (#37472)
