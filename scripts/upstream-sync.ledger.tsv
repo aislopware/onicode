@@ -2191,3 +2191,4 @@ ab8ff33a16	take	fix(mobile): Duo scroll views recheck their bleed after a fold
 59df51f6e1	take	perf(mobile): switching back to a thread lays its feed out once
 1c7d945439	take	fix(web): typing in a file after a find match stays in the file; lockfile patch hash regenerated with vp i
 023620d3a5	take	fix(server): Codex health checks no longer kill ssh mid SSH-agent request
+5a20d59db3	take	fix(shell): Windows PATH probe reads User and Machine registry
