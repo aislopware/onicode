@@ -2147,3 +2147,4 @@ e47a96e88d	take	fix(pi): image reads show a preview in the work log (#37471)
 ad1b136599	take	taken as is; KeyedLock.makeRunner replaces the Orchestrator's hand-rolled reactInThreadOrder, which Onicode had in the same shape
 83f35dac5c	take	adapted: single channel, so the pre-download and pre-install checks call electronUpdater.checkForUpdates / checkForUpdates(reason) directly; upstream's runUpdaterCheck and allowDowngrade track-switch plumbing not ported
 a7d17cd2f5	take	taken as is
+399ea10f4e	skip	nightly channel only: Onicode is single-channel and its updateEverything.logic.ts has no release-channel check to fix
