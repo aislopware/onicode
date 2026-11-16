@@ -401,7 +401,6 @@ function ThreadTerminal(props: {
     isReady: hasResolvedFontPreference,
     appearance,
     themeAppearance: appearanceScheme,
-    themeId,
     setTerminalFontSize,
     themeVariables,
   } = useAppearancePreferences();
@@ -537,7 +536,7 @@ function ThreadTerminal(props: {
     [hostOs, selectedEnvironmentConnection?.environmentLabel],
   );
 
-  const terminalTheme = getMobileTerminalTheme(themeId, appearanceScheme);
+  const terminalTheme = getMobileTerminalTheme(appearanceScheme);
   const headerSubtitle = selectedThreadProject?.title ?? "";
   const terminalToolbarActions = useMemo<ReadonlyArray<TerminalToolbarAction>>(() => {
     const modifierActions: ReadonlyArray<TerminalToolbarAction> =

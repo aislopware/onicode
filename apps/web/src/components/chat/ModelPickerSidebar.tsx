@@ -1,6 +1,6 @@
 import { Toolbar } from "@base-ui/react/toolbar";
 import { type ProviderInstanceId } from "@onicode/contracts";
-import { memo, useLayoutEffect, useRef, useState } from "react";
+import { memo, useState } from "react";
 import { StarIcon } from "lucide-react";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
@@ -26,8 +26,12 @@ function describeUnavailableInstance(entry: ProviderInstanceEntry): string {
   return msg ? `${label}: ${kind}. ${msg}` : `${label}: ${kind}.`;
 }
 
-const PICKER_TOOLTIP_SIDE = "left" as const;
-const PICKER_TOOLTIP_SIDE_OFFSET = 8;
+const PICKER_TOOLTIP_SIDE = "top" as const;
+const PICKER_TOOLTIP_SIDE_OFFSET = 6;
+// One look for every tab: the chosen one keeps the fill the others only get on hover.
+const TAB_FILL = "color-mix(in srgb, var(--foreground) 9%, var(--popover))";
+const TAB_BUTTON =
+  "relative isolate flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/[0.09] hover:text-foreground focus-visible:bg-foreground/[0.09] focus-visible:text-foreground focus-visible:outline-none aria-pressed:bg-foreground/[0.09] aria-pressed:text-foreground";
 
 export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   selectedInstanceId: ProviderInstanceId | "favorites";
@@ -44,166 +48,128 @@ export const ModelPickerSidebar = memo(function ModelPickerSidebar(props: {
   };
   const showFavorites = props.showFavorites ?? true;
   const [hoveredInstanceId, setHoveredInstanceId] = useState<ProviderInstanceId | null>(null);
-  const sidebarContentRef = useRef<HTMLDivElement>(null);
-  const [selectedIndicatorTop, setSelectedIndicatorTop] = useState<number | null>(null);
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- reads the selected provider item's DOM offset to position the selection indicator
-  useLayoutEffect(() => {
-    const content = sidebarContentRef.current;
-    if (!content) {
-      return;
-    }
-    const selectedItem = Array.from(
-      content.querySelectorAll<HTMLElement>("[data-model-picker-provider]"),
-    ).find((item) => item.dataset.modelPickerProvider === props.selectedInstanceId);
-    if (!selectedItem) {
-      setSelectedIndicatorTop(null);
-      return;
-    }
-    setSelectedIndicatorTop(selectedItem.offsetTop + selectedItem.offsetHeight / 2 - 10);
-  }, [props.instanceEntries, props.selectedInstanceId, showFavorites]);
 
   return (
     <Toolbar.Root
-      className="w-11 shrink-0 overflow-hidden bg-muted/30"
+      className="shrink-0"
       data-model-picker-sidebar="true"
       aria-label="Providers"
-      orientation="vertical"
+      orientation="horizontal"
       onKeyDown={(event) => {
         if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-        if (event.key === "ArrowRight") {
+        // The list is driven from the search field, so Up and Down both return to it.
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
           event.preventDefault();
           props.onFocusSearch();
           return;
         }
       }}
     >
-      <div className="h-full overflow-y-auto overscroll-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        <div ref={sidebarContentRef} className="relative flex min-h-full flex-col gap-1 p-1">
-          {selectedIndicatorTop !== null ? (
+      <div className="flex items-center gap-0.5 overflow-x-auto overscroll-x-contain px-1.75 pt-1.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {showFavorites ? (
+          <div className="relative" data-model-picker-provider="favorites">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Toolbar.Button
+                    className={TAB_BUTTON}
+                    onClick={() => handleSelect("favorites")}
+                    type="button"
+                    aria-label="Favorites"
+                    aria-pressed={props.selectedInstanceId === "favorites"}
+                  >
+                    <StarIcon className="size-4.5 shrink-0" aria-hidden />
+                  </Toolbar.Button>
+                }
+              />
+              <TooltipPopup
+                side={PICKER_TOOLTIP_SIDE}
+                sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
+                align="center"
+              >
+                Favorites
+              </TooltipPopup>
+            </Tooltip>
+          </div>
+        ) : null}
+
+        {props.instanceEntries.map((entry) => {
+          const isUnavailable = !isProviderInstancePickerReady(entry);
+          const isContextDisabled = props.disabledInstanceIds?.has(entry.instanceId) ?? false;
+          const unavailableSelectionIsReachable =
+            props.selectableUnavailableInstanceIds?.has(entry.instanceId) ?? false;
+          const isDisabled =
+            (isUnavailable && !unavailableSelectionIsReachable) || isContextDisabled;
+          const isSelected = props.selectedInstanceId === entry.instanceId;
+          const isHovered = hoveredInstanceId === entry.instanceId;
+          const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
+
+          const tooltip = isUnavailable
+            ? describeUnavailableInstance(entry)
+            : isContextDisabled
+              ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
+              : entry.displayName;
+
+          const button = (
+            <Toolbar.Button
+              className={cn(
+                TAB_BUTTON,
+                isDisabled && "cursor-not-allowed opacity-50 hover:bg-transparent",
+              )}
+              data-provider-accent-color={entry.accentColor}
+              onClick={() => !isDisabled && handleSelect(entry.instanceId)}
+              onMouseEnter={() => setHoveredInstanceId(entry.instanceId)}
+              onMouseLeave={() =>
+                setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
+              }
+              onFocus={() => setHoveredInstanceId(entry.instanceId)}
+              onBlur={() =>
+                setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
+              }
+              disabled={isDisabled}
+              focusableWhenDisabled={!isDisabled}
+              aria-pressed={isSelected}
+              type="button"
+              aria-label={isUnavailable || isContextDisabled ? tooltip : entry.displayName}
+            >
+              <ProviderInstanceIcon
+                driverKind={entry.driverKind}
+                displayName={entry.displayName}
+                accentColor={entry.accentColor}
+                acpRegistryAgentId={entry.acpRegistryAgentId}
+                acpRegistryIconUrl={entry.acpRegistryIconUrl}
+                showBadge={showInstanceBadge}
+                className="z-30 size-5"
+                iconClassName="size-4.5"
+                indicatorBackground={
+                  (isHovered && !isDisabled) || isSelected ? TAB_FILL : "var(--popover)"
+                }
+                {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
+              />
+            </Toolbar.Button>
+          );
+
+          const trigger = isDisabled ? <span className="relative block">{button}</span> : button;
+
+          return (
             <div
-              data-model-picker-selected-indicator="true"
-              className="pointer-events-none absolute right-1 z-10 h-5 w-0.75 rounded-full bg-primary transition-[top] duration-200 ease-out"
-              style={{ top: selectedIndicatorTop }}
-            />
-          ) : null}
-          {showFavorites ? (
-            <>
-              <div className="relative w-full" data-model-picker-provider="favorites">
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Toolbar.Button
-                        className={cn(
-                          "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
-                        )}
-                        onClick={() => handleSelect("favorites")}
-                        type="button"
-                        aria-label="Favorites"
-                        aria-pressed={props.selectedInstanceId === "favorites"}
-                      >
-                        <StarIcon className="size-5 fill-current shrink-0" aria-hidden />
-                      </Toolbar.Button>
-                    }
-                  />
-                  <TooltipPopup
-                    side={PICKER_TOOLTIP_SIDE}
-                    sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
-                    align="center"
-                  >
-                    Favorites
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
-              <div className="border-b border-border/70" aria-hidden="true" />
-            </>
-          ) : null}
-
-          {props.instanceEntries.map((entry) => {
-            const isUnavailable = !isProviderInstancePickerReady(entry);
-            const isContextDisabled = props.disabledInstanceIds?.has(entry.instanceId) ?? false;
-            const unavailableSelectionIsReachable =
-              props.selectableUnavailableInstanceIds?.has(entry.instanceId) ?? false;
-            const isDisabled =
-              (isUnavailable && !unavailableSelectionIsReachable) || isContextDisabled;
-            const isSelected = props.selectedInstanceId === entry.instanceId;
-            const isHovered = hoveredInstanceId === entry.instanceId;
-            const showInstanceBadge = shouldShowInstanceBadge(entry, props.instanceEntries);
-
-            const tooltip = isUnavailable
-              ? describeUnavailableInstance(entry)
-              : isContextDisabled
-                ? (props.getDisabledInstanceTooltip?.(entry) ?? entry.displayName)
-                : entry.displayName;
-
-            const button = (
-              <Toolbar.Button
-                className={cn(
-                  "relative isolate flex w-full cursor-pointer aspect-square items-center justify-center rounded-md transition-colors hover:bg-foreground/10 focus-visible:bg-foreground/10 focus-visible:outline-none",
-                  isDisabled && "opacity-50 cursor-not-allowed hover:bg-transparent",
-                )}
-                data-provider-accent-color={entry.accentColor}
-                onClick={() => !isDisabled && handleSelect(entry.instanceId)}
-                onMouseEnter={() => setHoveredInstanceId(entry.instanceId)}
-                onMouseLeave={() =>
-                  setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
-                }
-                onFocus={() => setHoveredInstanceId(entry.instanceId)}
-                onBlur={() =>
-                  setHoveredInstanceId((current) => (current === entry.instanceId ? null : current))
-                }
-                disabled={isDisabled}
-                focusableWhenDisabled={!isDisabled}
-                aria-pressed={isSelected}
-                type="button"
-                aria-label={isUnavailable || isContextDisabled ? tooltip : entry.displayName}
-              >
-                <ProviderInstanceIcon
-                  driverKind={entry.driverKind}
-                  displayName={entry.displayName}
-                  accentColor={entry.accentColor}
-                  acpRegistryAgentId={entry.acpRegistryAgentId}
-                  acpRegistryIconUrl={entry.acpRegistryIconUrl}
-                  showBadge={showInstanceBadge}
-                  className="size-6 z-30"
-                  iconClassName="size-5"
-                  indicatorBackground={
-                    isHovered && !isDisabled
-                      ? "var(--muted)"
-                      : isSelected
-                        ? "var(--background)"
-                        : "color-mix(in oklab, var(--muted) 30%, transparent)"
-                  }
-                  {...(entry.accentColor ? { badgeClassName: "h-3 min-w-3 px-0.5 text-5xs" } : {})}
-                />
-              </Toolbar.Button>
-            );
-
-            const trigger = isDisabled ? (
-              <span className="relative block w-full">{button}</span>
-            ) : (
-              button
-            );
-
-            return (
-              <div
-                key={entry.instanceId}
-                className="relative w-full"
-                data-model-picker-provider={entry.instanceId}
-              >
-                <Tooltip>
-                  <TooltipTrigger render={trigger} />
-                  <TooltipPopup
-                    side={PICKER_TOOLTIP_SIDE}
-                    sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
-                    align="center"
-                  >
-                    {tooltip}
-                  </TooltipPopup>
-                </Tooltip>
-              </div>
-            );
-          })}
-        </div>
+              key={entry.instanceId}
+              className="relative"
+              data-model-picker-provider={entry.instanceId}
+            >
+              <Tooltip>
+                <TooltipTrigger render={trigger} />
+                <TooltipPopup
+                  side={PICKER_TOOLTIP_SIDE}
+                  sideOffset={PICKER_TOOLTIP_SIDE_OFFSET}
+                  align="center"
+                >
+                  {tooltip}
+                </TooltipPopup>
+              </Tooltip>
+            </div>
+          );
+        })}
       </div>
     </Toolbar.Root>
   );

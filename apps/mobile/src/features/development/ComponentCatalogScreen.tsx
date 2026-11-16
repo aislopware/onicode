@@ -3,13 +3,15 @@ import { Toast } from "../../components/ui/Toast";
 import { Progress } from "../../components/ui/Progress";
 import { useNavigation } from "@react-navigation/native";
 import { useRef, useState } from "react";
-import { View, type TextInputInstance } from "react-native";
+import { Pressable, View, type TextInputInstance } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText, AppTextInput } from "../../components/ui/AppText";
 import { Sheet } from "../../components/ui/Sheet";
 import { Chip } from "../../components/ui/Chip";
+import { ControlPill } from "../../components/ui/ControlPill";
 import { Menu } from "../../components/ui/Menu";
+import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 import { ListActionRow } from "../../components/ui/ListActionRow";
 import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { ListRow } from "../../components/ui/ListRow";
@@ -33,6 +35,57 @@ const CHOICES = [
   { value: "overview", label: "Overview" },
   { value: "activity", label: "Activity" },
 ];
+
+const SELECT_OPTIONS = [
+  { id: "all", title: "All" },
+  { id: "attention", title: "Needs your attention" },
+  { id: "running", title: "Running" },
+];
+
+/** Selects whose trigger changes width on selection, one per way a trigger reaches the native menu. */
+function SelectMenuExamples() {
+  const [selected, setSelected] = useState("all");
+  const label = SELECT_OPTIONS.find((option) => option.id === selected)?.title ?? "All";
+  const actions = SELECT_OPTIONS.map((option) => ({
+    ...option,
+    state: option.id === selected ? ("on" as const) : ("off" as const),
+  }));
+  return (
+    <View className="flex-row flex-wrap items-center gap-2">
+      <Menu
+        title="Plain select"
+        actions={actions}
+        onPressAction={({ nativeEvent }) => setSelected(nativeEvent.event)}
+      >
+        <Chip label={label} trailingIcon="chevron.down" />
+      </Menu>
+      <ListFilterMenu
+        label={label}
+        accessibilityLabel="Glass select"
+        active={selected !== "all"}
+        actions={actions}
+        onSelect={setSelected}
+      />
+      <Menu
+        title="Pill select"
+        actions={actions}
+        onPressAction={({ nativeEvent }) => setSelected(nativeEvent.event)}
+      >
+        <ControlPill variant="pill" label={label} accessibilityLabel="Pill select" />
+      </Menu>
+      <Menu
+        title="Long-press select"
+        shouldOpenOnLongPress
+        actions={actions}
+        onPressAction={({ nativeEvent }) => setSelected(nativeEvent.event)}
+      >
+        <Pressable accessibilityRole="button" onPress={() => setSelected("all")}>
+          <Chip label={`Hold: ${label}`} />
+        </Pressable>
+      </Menu>
+    </View>
+  );
+}
 
 export function ComponentCatalogScreen() {
   const insets = useSafeAreaInsets();
@@ -258,6 +311,7 @@ export function ComponentCatalogScreen() {
                 <Chip label="Menu" trailingIcon="chevron.down" />
               </Menu>
             </View>
+            <SelectMenuExamples />
             <Progress value={0.6} label="Example upload" />
             <Progress label="Connecting" />
             <View className="items-start">

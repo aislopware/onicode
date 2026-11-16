@@ -4,6 +4,7 @@ import {
   EnvironmentThemeId,
   OrchestratorMcpFailure,
 } from "@onicode/contracts";
+import { BUILT_IN_THEME_ID } from "@onicode/shared/themePalettes";
 import * as Schema from "effect/Schema";
 import { Tool, Toolkit } from "effect/ai";
 import * as EnvironmentTheme from "../../../environmentTheme.ts";
@@ -52,8 +53,7 @@ const ThemeReadTool = Tool.make("oni_theme_read", {
 
 const ThemeSetTool = Tool.make("oni_theme_set", {
   ...shared,
-  description:
-    "Restyle Onicode itself, only when the user asks. With `theme`, publish it as `themeId` (same id updates it) and switch the desktop app running on this machine to it. Without `theme`, switch to a built-in or published `themeId`. `appearance` sets light, dark, or system mode. Live full-access or default caller thread only.",
+  description: `Restyle Onicode itself, only when the user asks. With \`theme\`, publish it as \`themeId\` (same id updates it) and switch the desktop app running on this machine to it. Without \`theme\`, switch to a published \`themeId\`, or to \`${BUILT_IN_THEME_ID}\`, the built-in look. \`appearance\` sets light, dark, or system mode. Live full-access or default caller thread only.`,
   parameters: Schema.Struct({
     themeId: Schema.optionalKey(EnvironmentThemeId),
     theme: Schema.optionalKey(EnvironmentThemeFile),

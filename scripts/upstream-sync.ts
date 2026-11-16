@@ -64,12 +64,6 @@ const REPO_RULES: ReadonlyArray<readonly [RegExp, string]> = [
   [/https:\/\/t3\.codes(?![A-Za-z0-9./-])/g, "https://github.com/aislopware/onicode"],
 ];
 
-// The T3 Chat palette is Sakura here; other T3 Chat mentions stay protected.
-const THEME_RULES: ReadonlyArray<readonly [RegExp, string]> = [
-  [/T3_CHAT_THEME/g, "SAKURA_THEME"],
-  [/\bt3-chat\b/g, "sakura"],
-];
-
 const applyRules = (text: string, rules: ReadonlyArray<readonly [RegExp, string]>) =>
   rules.reduce((value, [pattern, replacement]) => value.replace(pattern, replacement), text);
 
@@ -83,8 +77,7 @@ const rebrand = (text: string) => {
   return out + applyRules(text.slice(last), RULES);
 };
 
-export const translateText = (text: string) =>
-  applyRules(rebrand(applyRules(text, THEME_RULES)), REPO_RULES);
+export const translateText = (text: string) => applyRules(rebrand(text), REPO_RULES);
 export const translatePath = (path: string) => path.split("/").map(rebrand).join("/");
 
 const git = (args: ReadonlyArray<string>, input?: Buffer) =>

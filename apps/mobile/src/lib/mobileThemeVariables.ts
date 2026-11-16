@@ -1,12 +1,9 @@
 import defaultThemeVariables from "../../generated-uniwind-default-theme-variables.json";
 import {
-  DEFAULT_MOBILE_THEME_ID,
   flattenThemeColor,
-  getMobileThemeVariables,
   themeColorWithAlpha,
   themeColorWithContrast,
   type MobileThemeAppearance,
-  type MobileThemeId,
   type MobileThemeVariables,
 } from "./mobileTheme";
 
@@ -43,27 +40,19 @@ function withVisibleSelection(variables: MobileThemeVariables): MobileThemeVaria
 }
 
 export function getMobileThemeRuntimeVariables(
-  themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
   platform: string,
 ): MobileThemeVariables {
-  return withVisibleSelection(platformThemeVariables(themeId, appearance, platform));
+  return withVisibleSelection(platformThemeVariables(appearance, platform));
 }
 
 function platformThemeVariables(
-  themeId: MobileThemeId,
   appearance: MobileThemeAppearance,
   platform: string,
 ): MobileThemeVariables {
-  const usesDefaultPalette = themeId === DEFAULT_MOBILE_THEME_ID || themeId === "material-you";
-  const variables = usesDefaultPalette
-    ? defaults[appearance]
-    : getMobileThemeVariables(themeId, appearance);
-  const frame = themeColorWithAlpha(
-    variables[usesDefaultPalette ? "--color-row-hover" : "--color-drawer"],
-    1,
-  );
-  if (platform === "ios" && usesDefaultPalette && appearance === "light") {
+  const variables = defaults[appearance];
+  const frame = themeColorWithAlpha(variables["--color-row-hover"], 1);
+  if (platform === "ios" && appearance === "light") {
     return {
       ...variables,
       "--color-header": frame,

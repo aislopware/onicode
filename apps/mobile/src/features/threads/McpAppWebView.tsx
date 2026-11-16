@@ -141,10 +141,8 @@ export function ThreadMcpApp(props: {
   const [closed, setClosed] = useState(false);
   const [presentedFullscreen, setPresentedFullscreen] = useState(false);
 
-  const { themeId, themeAppearance, themeVariables, systemColorsActive } =
-    useAppearancePreferences();
+  const { themeAppearance, themeVariables, systemColorsActive } = useAppearancePreferences();
   const theme = mobileHtmlRenderTheme({
-    themeId,
     appearance: themeAppearance,
     variables: themeVariables,
     systemColors: systemColorsActive,

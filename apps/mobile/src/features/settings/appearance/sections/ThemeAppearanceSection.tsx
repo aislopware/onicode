@@ -3,19 +3,20 @@ import { Pressable, View } from "react-native";
 import Svg, { Circle, Defs, RadialGradient, Stop } from "react-native-svg";
 import { ScopedTheme, ScopedVariables } from "uniwind";
 
-import { mixThemePreviewBase, THEME_PREVIEW_RENDER_SPECS } from "@onicode/shared/themePreview";
+import {
+  mixThemePreviewBase,
+  STANDARD_THEME_PREVIEW_COLORS,
+  THEME_PREVIEW_RENDER_SPECS,
+} from "@onicode/shared/themePreview";
 
 import { SymbolView } from "../../../../components/ui/AppSymbol";
 import { AppText as Text } from "../../../../components/ui/AppText";
 import {
-  getMobileThemePreviewColors,
   MOBILE_THEME_OPTIONS,
   type MobileThemeAppearance,
   type MobileThemeId,
-  type MobileThemeIds,
   type MobileThemeMode,
 } from "../../../../lib/mobileTheme";
-import { getMobileUniwindThemeName } from "../../../../lib/mobileThemeRuntime";
 import { cn } from "../../../../lib/cn";
 import { useAppearancePreferences } from "../AppearancePreferencesProvider";
 
@@ -43,7 +44,7 @@ const PreviewOrb = memo(function PreviewOrb(props: {
   const colors =
     props.themeId === "material-you" && palette
       ? { canvas: palette.surface, accent: palette.primary, messageAction: palette.tertiary }
-      : getMobileThemePreviewColors(props.themeId, props.appearance);
+      : STANDARD_THEME_PREVIEW_COLORS[props.appearance];
   const spec = THEME_PREVIEW_RENDER_SPECS[props.appearance];
   const accentRadius = Math.hypot(
     Math.max(spec.accent.center[0], 1 - spec.accent.center[0]),
@@ -208,18 +209,18 @@ function PreviewPane(props: { readonly compact?: boolean }) {
   );
 }
 
-function ModePreview(props: { readonly mode: MobileThemeMode; readonly themeIds: MobileThemeIds }) {
+function ModePreview(props: { readonly mode: MobileThemeMode }) {
   const { themeVariablesByAppearance } = useAppearancePreferences();
   if (props.mode === "system") {
     return (
       <View className="h-24 w-14 self-center rounded-[16px] border-[1.5px] border-border bg-drawer p-[3px]">
         <View className="flex-1 flex-row overflow-hidden rounded-[11px]">
-          <ScopedTheme theme={getMobileUniwindThemeName(props.themeIds.light, "light")}>
+          <ScopedTheme theme="light">
             <ScopedVariables variables={themeVariablesByAppearance.light}>
               <PreviewPane compact />
             </ScopedVariables>
           </ScopedTheme>
-          <ScopedTheme theme={getMobileUniwindThemeName(props.themeIds.dark, "dark")}>
+          <ScopedTheme theme="dark">
             <ScopedVariables variables={themeVariablesByAppearance.dark}>
               <PreviewPane compact />
             </ScopedVariables>
@@ -231,7 +232,7 @@ function ModePreview(props: { readonly mode: MobileThemeMode; readonly themeIds:
   }
 
   return (
-    <ScopedTheme theme={getMobileUniwindThemeName(props.themeIds[props.mode], props.mode)}>
+    <ScopedTheme theme={props.mode}>
       <View className="h-24 w-14 self-center rounded-[16px] border-[1.5px] border-border bg-drawer p-[3px]">
         <View className="flex-1 flex-row overflow-hidden rounded-[11px]">
           <ScopedVariables variables={themeVariablesByAppearance[props.mode]}>
@@ -250,7 +251,6 @@ function ModeCard(props: {
   readonly mode: MobileThemeMode;
   readonly onPress: () => void;
   readonly selected: boolean;
-  readonly themeIds: MobileThemeIds;
 }) {
   return (
     <Pressable
@@ -266,7 +266,7 @@ function ModeCard(props: {
       disabled={props.disabled}
       onPress={props.onPress}
     >
-      <ModePreview mode={props.mode} themeIds={props.themeIds} />
+      <ModePreview mode={props.mode} />
       <Text
         className={
           props.selected
@@ -294,6 +294,9 @@ export function ThemeAppearanceSection() {
     themeMode,
     systemColorsAvailable,
   } = useAppearancePreferences();
+  const themeOptions = MOBILE_THEME_OPTIONS.filter(
+    (theme) => theme.id !== "material-you" || systemColorsAvailable,
+  );
 
   return (
     <View className="gap-6">
@@ -308,31 +311,30 @@ export function ThemeAppearanceSection() {
               mode={mode.id}
               onPress={() => setThemeMode(mode.id)}
               selected={mode.id === themeMode}
-              themeIds={themeIds}
             />
           ))}
         </View>
       </View>
 
-      <View className="gap-3">
-        <SectionLabel>Themes</SectionLabel>
-        <View className="flex-row flex-wrap gap-3">
-          {MOBILE_THEME_OPTIONS.filter(
-            (theme) => theme.id !== "material-you" || systemColorsAvailable,
-          ).map((theme) => (
-            <ThemeCard
-              disabled={!isReady}
-              key={theme.id}
-              label={theme.label}
-              darkSelected={theme.id === themeIds.dark}
-              lightSelected={theme.id === themeIds.light}
-              onSelect={(appearance) => setThemeIdForAppearance(appearance, theme.id)}
-              onSelectBoth={() => setThemeIdForBothAppearances(theme.id)}
-              themeId={theme.id}
-            />
-          ))}
+      {themeOptions.length > 1 ? (
+        <View className="gap-3">
+          <SectionLabel>Themes</SectionLabel>
+          <View className="flex-row flex-wrap gap-3">
+            {themeOptions.map((theme) => (
+              <ThemeCard
+                disabled={!isReady}
+                key={theme.id}
+                label={theme.label}
+                darkSelected={theme.id === themeIds.dark}
+                lightSelected={theme.id === themeIds.light}
+                onSelect={(appearance) => setThemeIdForAppearance(appearance, theme.id)}
+                onSelectBoth={() => setThemeIdForBothAppearances(theme.id)}
+                themeId={theme.id}
+              />
+            ))}
+          </View>
         </View>
-      </View>
+      ) : null}
     </View>
   );
 }

@@ -4,24 +4,17 @@ import indexHtml from "../index.html?raw";
 import {
   CUSTOM_THEMES_STORAGE_KEY,
   ENVIRONMENT_THEMES_STORAGE_KEY,
-  getDefaultThemeColors,
-  getThemeColorsForMode,
+  getStandardThemeColors,
   invalidateCustomThemes,
   isKnownThemePreference,
   publishedThemeDefinitions,
   resolveThemeAppearance,
-  SAKURA_THEME,
-  EMBER_THEME,
-  GROVE_THEME,
-  IRIS_THEME,
-  OCEAN_THEME,
   THEME_APPEARANCE_MODE_STORAGE_KEY,
   THEME_FOLLOW_SYSTEM_STORAGE_KEY,
   toCanonicalThemeColor,
 } from "./themePalette";
 
 const THEME_STORAGE_KEY = "onicode:theme";
-const DEFAULT_DARK_CHROME = getDefaultThemeColors("dark").chrome;
 
 const bootScript = (() => {
   const match = indexHtml.match(/<script>([\s\S]*?)<\/script>/);
@@ -144,38 +137,13 @@ describe("index.html boot script", () => {
   }> = [
     { name: "no stored preference on a dark OS", storage: {}, prefersDark: true },
     {
-      name: "Sakura follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "sakura", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
-      prefersDark: true,
-    },
-    {
-      name: "an explicit global dark mode applies to Sakura",
+      name: "a removed preset keeps the stored dark mode",
       storage: {
         [THEME_STORAGE_KEY]: "sakura",
         [THEME_APPEARANCE_MODE_STORAGE_KEY]: "dark",
         [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "false",
       },
       prefersDark: false,
-    },
-    {
-      name: "Grove follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "grove", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
-      prefersDark: true,
-    },
-    {
-      name: "Ocean follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "ocean", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
-      prefersDark: true,
-    },
-    {
-      name: "Ember follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "ember", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
-      prefersDark: true,
-    },
-    {
-      name: "Iris follows a dark OS",
-      storage: { [THEME_STORAGE_KEY]: "iris", [THEME_FOLLOW_SYSTEM_STORAGE_KEY]: "true" },
-      prefersDark: true,
     },
     {
       name: "a dual-mode custom theme follows the OS",
@@ -287,49 +255,40 @@ describe("index.html boot script", () => {
     expect(boot.backgroundColor).toBe(published.colors.chrome);
   });
 
-  it("keeps every built-in boot splash in sync with the real palettes", () => {
-    for (const theme of [SAKURA_THEME, GROVE_THEME, OCEAN_THEME, EMBER_THEME, IRIS_THEME]) {
-      expect(theme.appearance).toBe("light");
-      for (const mode of ["light", "dark"] as const) {
-        const colors = getThemeColorsForMode(theme, mode);
-        expect(colors).not.toBeNull();
-        const boot = runBootScript({
-          storage: {
-            [THEME_STORAGE_KEY]: theme.id,
-            [THEME_APPEARANCE_MODE_STORAGE_KEY]: mode,
-          },
-          prefersDark: mode === "dark",
-        });
-        expect(boot.themeId).toBe(theme.id);
-        expect(boot.isDark).toBe(mode === "dark");
-        expect(boot.bootVariables["--boot-background"]).toBe(colors!.canvas);
-        expect(boot.bootVariables["--boot-foreground"]).toBe(colors!.text);
-        expect(boot.bootVariables["--boot-accent"]).toBe(colors!.accent);
-        expect(boot.backgroundColor).toBe(colors!.chrome);
-      }
-    }
+  it("paints the standard look when stored ids name removed presets", () => {
+    const boot = runBootScript({
+      storage: {
+        [THEME_STORAGE_KEY]: "sakura",
+        [THEME_APPEARANCE_MODE_STORAGE_KEY]: "dark",
+        "onicode:theme-halves:v1": JSON.stringify({ light: "grove", dark: "ocean" }),
+      },
+      prefersDark: false,
+    });
+
+    expect(boot.isDark).toBe(true);
+    expect(boot.themeId).toBeUndefined();
+    expect(boot.themeSelected).toBeUndefined();
+    expect(boot.bootVariables).toEqual({});
+    expect(boot.backgroundColor).toBe("#000000");
   });
 
   it("applies the matching half of an automatic mix to the splash", () => {
     const storage = {
-      [THEME_STORAGE_KEY]: "sakura",
+      [THEME_STORAGE_KEY]: AURORA_DUAL.id,
       [THEME_APPEARANCE_MODE_STORAGE_KEY]: "system",
-      "onicode:theme-halves:v1": JSON.stringify({ dark: GROVE_THEME.id }),
+      [CUSTOM_THEMES_STORAGE_KEY]: JSON.stringify([AURORA_DUAL, CHARCOAL_DARK_ONLY]),
+      "onicode:theme-halves:v1": JSON.stringify({ dark: CHARCOAL_DARK_ONLY.id }),
     };
 
     const dark = runBootScript({ storage, prefersDark: true });
     expect(dark.isDark).toBe(true);
-    expect(dark.themeId).toBe(GROVE_THEME.id);
-    expect(dark.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(GROVE_THEME, "dark")!.canvas,
-    );
+    expect(dark.themeId).toBe(CHARCOAL_DARK_ONLY.id);
+    expect(dark.bootVariables["--boot-background"]).toBe(CHARCOAL_DARK_ONLY.colors.canvas);
 
     const light = runBootScript({ storage, prefersDark: false });
     expect(light.isDark).toBe(false);
-    expect(light.themeId).toBe("sakura");
-    expect(light.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(SAKURA_THEME, "light")!.canvas,
-    );
+    expect(light.themeId).toBe(AURORA_DUAL.id);
+    expect(light.bootVariables["--boot-background"]).toBe(AURORA_DUAL.colors.canvas);
   });
 
   it("paints the half's splash when the base theme no longer exists", () => {
@@ -337,16 +296,15 @@ describe("index.html boot script", () => {
       storage: {
         [THEME_STORAGE_KEY]: "gone-theme",
         [THEME_APPEARANCE_MODE_STORAGE_KEY]: "system",
-        "onicode:theme-halves:v1": JSON.stringify({ dark: GROVE_THEME.id }),
+        [CUSTOM_THEMES_STORAGE_KEY]: JSON.stringify([CHARCOAL_DARK_ONLY]),
+        "onicode:theme-halves:v1": JSON.stringify({ dark: CHARCOAL_DARK_ONLY.id }),
       },
       prefersDark: true,
     });
     expect(boot.isDark).toBe(true);
-    expect(boot.themeId).toBe(GROVE_THEME.id);
+    expect(boot.themeId).toBe(CHARCOAL_DARK_ONLY.id);
     expect(boot.themeSelected).toBe("true");
-    expect(boot.bootVariables["--boot-background"]).toBe(
-      getThemeColorsForMode(GROVE_THEME, "dark")!.canvas,
-    );
+    expect(boot.bootVariables["--boot-background"]).toBe(CHARCOAL_DARK_ONLY.colors.canvas);
   });
 
   it("uses runtime defaults for malformed custom roles", () => {
@@ -367,10 +325,11 @@ describe("index.html boot script", () => {
     });
 
     expect(boot.themeId).toBe("partial");
-    expect(boot.bootVariables["--boot-background"]).toBe(getDefaultThemeColors("dark").canvas);
+    const standard = getStandardThemeColors("dark");
+    expect(toCanonicalThemeColor(boot.bootVariables["--boot-background"])).toBe(standard.canvas);
     expect(boot.bootVariables["--boot-foreground"]).toBe("#fffaff");
-    expect(boot.bootVariables["--boot-accent"]).toBe(getDefaultThemeColors("dark").accent);
-    expect(boot.backgroundColor).toBe(DEFAULT_DARK_CHROME);
+    expect(toCanonicalThemeColor(boot.bootVariables["--boot-accent"])).toBe(standard.accent);
+    expect(toCanonicalThemeColor(boot.backgroundColor)).toBe(standard.chrome);
   });
 
   it("follows the OS appearance when storage is unavailable", () => {

@@ -3,7 +3,6 @@ const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { getDefaultConfig } = require("expo/metro-config");
 const { withUniwindConfig } = require("uniwind/metro");
-const extraThemes = require("./generated-uniwind-theme-names.json");
 
 /** @type {import("expo/metro-config").MetroConfig} */
 const config = getDefaultConfig(__dirname);
@@ -129,7 +128,6 @@ module.exports = Promise.all([generateMobileThirdPartyLicenses(), prepareStreamS
   () =>
     withUniwindConfig(config, {
       cssEntryFile: "./global.css",
-      extraThemes,
       polyfills: { rem: 14 },
     }),
 );

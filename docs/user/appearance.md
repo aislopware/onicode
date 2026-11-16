@@ -11,11 +11,11 @@ Use **Change appearance** in the command palette to choose System, Light, or Dar
 the theme. **Cmd+Option+Shift+A** on macOS or **Ctrl+Alt+Shift+A** on Windows/Linux cycles through
 those modes. Customize these shortcuts under **Settings → Keybindings**.
 
-On mobile, open **Settings → Appearance**. Mobile has its own themes and text,
-code, and terminal preferences. It does not follow environment themes or defaults.
+On mobile, open **Settings → Appearance**. Mobile uses the Onicode theme and has its own text,
+code, and terminal preferences. It does not follow custom themes, environment themes, or defaults.
 
 On Android 12 or newer, choose the **Material You** theme in Appearance to use colors from
-your wallpaper. Selecting another theme replaces those colors. Like other themes, Material You
+your wallpaper. Selecting the Onicode theme replaces those colors. Material You
 can be selected separately for light and dark appearances.
 Android uses **Material You Layout** by default unless you have turned it off in Appearance.
 It changes shapes, spacing, and controls independently
@@ -67,9 +67,9 @@ to another site.
 Class names in the app change between releases. For rules that keep working, target `data-slot`
 and other `data-` attributes, such as `[data-chat-header]` or `[data-slot="button"]`.
 
-If a rule hides something you need, run `onicode theme set sakura` on the server to switch to a
-built-in theme, or press **Cmd+Option+A** on macOS or **Ctrl+Alt+A** on Windows/Linux to pick
-another theme.
+If a rule hides something you need, run `onicode theme set onicode` on the server to switch back
+to the built-in theme, or press **Cmd+Option+A** on macOS or **Ctrl+Alt+A** on Windows/Linux to
+pick another theme.
 
 ### Ask an agent
 
@@ -77,7 +77,7 @@ An agent running in the desktop app's local environment can restyle Onicode for 
 for example "make Onicode's chat header taller" or "give Onicode a solarized theme". It publishes
 an [environment theme](#environment-themes) with colors and CSS, and the desktop app switches to it.
 It can also switch it to light, dark, or system mode. The thread must run
-in Full access. Ask the agent to set a built-in theme to undo it.
+in Full access. Ask the agent to set the built-in `onicode` theme to undo it.
 
 ## Environment themes
 
@@ -100,6 +100,7 @@ A desktop app that is closed applies it when it reconnects. It applies the setti
 choosing another theme afterward sticks until the next `onicode theme set`. Run the command again to
 reapply it, even if the name is unchanged.
 
+`onicode theme set onicode` switches the desktop app back to the built-in theme.
 `onicode theme clear` removes the default without changing anyone's current theme. `onicode theme show` lists
 the default and published themes.
 
@@ -108,7 +109,7 @@ the default and published themes.
 Save a theme exported from Onicode into `~/.onicode/userdata/themes/` on the server, or the `themes`
 directory under your custom state directory. The filename supplies the theme ID: `nightfall.json`
 can be selected with `onicode theme set nightfall`. Keep the filename stable when updating its colors.
-Do not use `system`, `light`, `dark`, or a built-in theme's ID.
+Do not use `system`, `light`, `dark`, or `onicode`.
 
 For an integration that generates a palette, this shorter format also works:
 

@@ -47,7 +47,7 @@ it("drops theme defaults from a client's settings patch", () => {
   expect(
     decodeClientServerSettingsPatch({
       newWorktreesStartFromOrigin: false,
-      defaultTheme: "grove",
+      defaultTheme: "nightfall",
       defaultThemeSetAt: "2026-11-13T00:00:00.000Z",
       defaultAppearance: "dark",
       defaultAppearanceSetAt: "2026-11-13T00:00:00.000Z",

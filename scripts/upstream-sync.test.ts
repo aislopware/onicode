@@ -36,9 +36,10 @@ describe("upstream-sync translation", () => {
     ],
     ['first_t3="$(command -v t3)"', 'first_onicode="$(command -v onicode)"'],
     ["mcp__t3_code__delegate_task", "mcp__onicode__delegate_task"],
+    // Onicode has no T3 Chat theme, so its names stay upstream's and a port that uses them fails.
     [
       'T3_CHAT_THEME.id === "t3-chat" && host === "t3.chat"',
-      'SAKURA_THEME.id === "sakura" && host === "t3.chat"',
+      'T3_CHAT_THEME.id === "t3-chat" && host === "t3.chat"',
     ],
     ["com.t3tools.t3code.widgets", "dev.aislopware.onicode.widgets"],
     ["java/com/t3tools/t3code/MainActivity.kt", "java/dev/aislopware/onicode/MainActivity.kt"],

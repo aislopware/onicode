@@ -9,6 +9,24 @@ const appearance = () => ({
   theme: document.documentElement.dataset.themeId ?? null,
 });
 
+// Onicode ships one theme, so the scenario saves a custom one to switch to.
+const saveCustomTheme = () => {
+  window.localStorage.setItem(
+    "onicode:themes:v1",
+    JSON.stringify([
+      {
+        id: "nightfall",
+        label: "Nightfall",
+        appearance: "dark",
+        colors: { canvas: "#1a1b26", accent: "#7aa2f7" },
+        variants: { light: { canvas: "#f4f5fb", accent: "#3d59a1" } },
+      },
+    ]),
+  );
+  window.dispatchEvent(new StorageEvent("storage", { key: "onicode:themes:v1" }));
+  return null;
+};
+
 test(
   "The color scheme and theme apply at once, reach the native shell, and survive a reload",
   WEB,
@@ -23,13 +41,16 @@ test(
     await expect.poll(() => browser.evaluate(appearance)).toEqual({ dark: true, theme: null });
     await expect.poll(async () => (await desktop.window()).themeSource).toBe("dark");
 
-    await screen.getByRole("button", "Use Sakura theme").tap();
-    await expect.poll(() => browser.evaluate(appearance)).toEqual({ dark: true, theme: "sakura" });
-    await app.screenshot("sakura-dark");
+    await browser.evaluate(saveCustomTheme);
+    await screen.getByRole("button", "Use Nightfall theme").tap();
+    await expect
+      .poll(() => browser.evaluate(appearance))
+      .toEqual({ dark: true, theme: "nightfall" });
+    await app.screenshot("nightfall-dark");
 
     await onicode.open("/settings/appearance");
     await expect(dark).toHaveAttribute("aria-pressed", "true");
-    expect(await browser.evaluate(appearance)).toEqual({ dark: true, theme: "sakura" });
+    expect(await browser.evaluate(appearance)).toEqual({ dark: true, theme: "nightfall" });
 
     await screen.getByRole("button", "Use Onicode theme").tap();
     await light.tap();

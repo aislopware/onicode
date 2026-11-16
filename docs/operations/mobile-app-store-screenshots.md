@@ -55,11 +55,10 @@ Every configured device defaults to dark appearance and the `onicode` palette, s
 `pnpm screenshots:mobile` produces 45 dark PNGs. Pass `--appearance light`, `--appearance dark`, or
 `--appearance both` to override the configured appearance; `both` produces 90 PNGs.
 
-Pass `--theme <id>` (repeatable) or `--theme all` to capture the app's other palettes: `onicode`,
-`sakura`, `grove`, `ocean`, `ember`, and `iris`. The runner hands the palette to the app as a launch
-argument, the app applies it to both color schemes, and a scene only reports itself ready once the
-requested palette is active — so a capture can never show the previous theme. `--theme all`
-multiplies the run by six; only the native build is shared.
+`onicode` is the app's only palette, so `--theme <id>` and `--theme all` accept nothing else. The
+runner hands the palette to the app as a launch argument, the app applies it to both color schemes,
+and a scene only reports itself ready once the requested palette is active — so a capture can never
+show the previous theme.
 
 The default matrix is:
 
@@ -101,13 +100,13 @@ The generated tree is deliberately aligned with the store upload fields:
         └── tablet-10/dark/onicode/{thread,terminal,review,threads,environments}.png
 
 A light-only run writes the same tree under `light/`; `--appearance both` writes both appearance
-folders, and each requested theme adds a sibling folder next to `onicode/`.
+folders.
 
 Edit [mobile-showcase.config.ts](../../scripts/mobile-showcase.config.ts) to change simulator or AVD
 names, light/dark appearance, default palette, iOS orientation, scenes, output directory, capture
-delay, Android ABI, or viewport. The selectable palette ids come from `MOBILE_THEME_IDS` in
-[themePalettes.ts](../../packages/shared/src/themePalettes.ts), so the harness and the app's
-appearance settings can never drift apart.
+delay, Android ABI, or viewport. The palette id is `BUILT_IN_THEME_ID` in
+[themePalettes.ts](../../packages/shared/src/themePalettes.ts), the same id the app's appearance
+settings use.
 
 ## Android ABI
 
@@ -127,12 +126,6 @@ Override the configured appearance or capture both variants:
     pnpm screenshots:mobile --appearance light
     pnpm screenshots:mobile --appearance dark
     pnpm screenshots:mobile --appearance both
-
-Capture other palettes:
-
-    pnpm screenshots:mobile --device iphone-6.9 --theme ocean
-    pnpm screenshots:mobile --device iphone-6.9 --theme ocean --theme ember
-    pnpm screenshots:mobile --device iphone-6.9 --theme all
 
 Reuse the native build and retain the disposable environment:
 

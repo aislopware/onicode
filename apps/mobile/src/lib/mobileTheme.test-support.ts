@@ -7,27 +7,23 @@ import {
   type MobileThemeVariables,
 } from "./mobileTheme";
 
-import { SAKURA_THEME } from "@onicode/shared/themePalettes";
+import { ONICODE_CODE_LIGHT_THEME_COLORS } from "@onicode/shared/themePalettes";
 
 const MOBILE_THEME_VARIABLE_NAMES = Object.keys(
-  createMobileThemeVariables(SAKURA_THEME.colors, "light"),
+  createMobileThemeVariables(ONICODE_CODE_LIGHT_THEME_COLORS, "light"),
 ) as ReadonlyArray<MobileThemeVariable>;
 
 export function readDefaultMobileThemeVariables(
   appearance: MobileThemeAppearance,
 ): MobileThemeVariables {
-  return readGeneratedMobileThemeVariables(appearance);
-}
-
-export function readGeneratedMobileThemeVariables(themeName: string): MobileThemeVariables {
   const stylesheet = NodeFS.readFileSync(
     new URL("../../generated-uniwind-themes.css", import.meta.url),
     "utf8",
   );
-  const variant = new RegExp(`@variant ${themeName} \\{([\\s\\S]*?)\\n    \\}`, "u").exec(
+  const variant = new RegExp(`@variant ${appearance} \\{([\\s\\S]*?)\\n    \\}`, "u").exec(
     stylesheet,
   )?.[1];
-  if (variant === undefined) throw new Error(`Missing generated ${themeName} theme.`);
+  if (variant === undefined) throw new Error(`Missing generated ${appearance} theme.`);
 
   return Object.fromEntries(
     Array.from(variant.matchAll(/(--color-[a-z0-9-]+):\s*([^;]+);/gu), ([, name, value]) => [

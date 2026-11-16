@@ -34,10 +34,9 @@ import { ensureLocalApi } from "~/localApi";
 import { subscribeBrowserClientSettingsWrites } from "~/clientPersistenceStorage";
 import {
   getThemeDefinition,
-  getThemePreviewSidebarArtwork,
+  getThemePreviewAppearance,
   resolveThemeHalf,
   subscribeToThemePreview,
-  themeAllowsSidebarArtwork,
 } from "~/themePalette";
 import {
   modelPreferencesMigrationPatch,
@@ -411,22 +410,19 @@ function resolveEnvironmentIdentificationMode(input: {
   mode: EnvironmentIdentificationMode;
   settingsHydrated: boolean;
   paletteThemeActive?: boolean;
-  paletteThemeAllowsArtwork?: boolean;
 }): EnvironmentIdentificationMode {
   if (!input.settingsHydrated) return "none";
   const isArtwork = input.mode !== "pill" && input.mode !== "none";
-  return input.paletteThemeActive && !input.paletteThemeAllowsArtwork && isArtwork
-    ? "pill"
-    : input.mode;
+  return input.paletteThemeActive && isArtwork ? "pill" : input.mode;
 }
 
 export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMode {
   const settingsHydrated = useClientSettingsHydrated();
   const mode = useClientSettings((settings) => settings.environmentIdentificationMode);
   const { resolvedTheme, theme, themeHalves } = useTheme();
-  const previewSidebarArtwork = useSyncExternalStore(
+  const previewAppearance = useSyncExternalStore(
     subscribeToThemePreview,
-    getThemePreviewSidebarArtwork,
+    getThemePreviewAppearance,
     () => null,
   );
   const activeTheme = resolveThemeHalf(theme, themeHalves, resolvedTheme);
@@ -434,8 +430,7 @@ export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMod
   return resolveEnvironmentIdentificationMode({
     mode,
     settingsHydrated,
-    paletteThemeActive: previewSidebarArtwork !== null || activeThemeDefinition !== null,
-    paletteThemeAllowsArtwork: previewSidebarArtwork ?? themeAllowsSidebarArtwork(activeTheme),
+    paletteThemeActive: previewAppearance !== null || activeThemeDefinition !== null,
   });
 }
 

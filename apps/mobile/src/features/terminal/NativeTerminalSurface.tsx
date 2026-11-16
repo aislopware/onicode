@@ -90,8 +90,8 @@ const FallbackTerminalSurface = memo(function FallbackTerminalSurface({
 }: ReadyTerminalSurfaceProps) {
   const fontSize = props.fontSize ?? MOBILE_TYPOGRAPHY.label.fontSize;
   const inputRef = useRef<TextInputInstance>(null);
-  const { themeAppearance, themeId } = useAppearancePreferences();
-  const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance);
+  const { themeAppearance } = useAppearancePreferences();
+  const theme = props.theme ?? getMobileTerminalTheme(themeAppearance);
   const statusLabel = props.readOnly
     ? "Viewing terminal output."
     : props.isRunning
@@ -219,8 +219,8 @@ const ReadyTerminalSurface = memo(function ReadyTerminalSurface({
   ...props
 }: ReadyTerminalSurfaceProps) {
   const fontSize = props.fontSize ?? MOBILE_TYPOGRAPHY.label.fontSize;
-  const { themeAppearance, themeId } = useAppearancePreferences();
-  const theme = props.theme ?? getMobileTerminalTheme(themeId, themeAppearance);
+  const { themeAppearance } = useAppearancePreferences();
+  const theme = props.theme ?? getMobileTerminalTheme(themeAppearance);
   const { onInput, onResize } = props;
   const NativeTerminalSurfaceView = resolveNativeTerminalSurfaceView();
   const gridCols = grid?.cols;

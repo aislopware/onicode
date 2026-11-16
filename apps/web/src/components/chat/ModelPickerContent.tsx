@@ -170,6 +170,7 @@ const MODEL_LIST_ESTIMATED_ITEM_SIZE = 32;
 const ROW_UNITS = 8;
 const ROW_SEPARATOR_UNITS = 0.5;
 const LIST_CHROME_UNITS = 15.5;
+const PROVIDER_TABS_UNITS = 8.5;
 
 function ModelListSeparator() {
   return <div className="h-0.5" />;
@@ -343,11 +344,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
-  /** Sits beside an effort column: fills the shared row, and stacks above it on narrow screens. */
+  /** Sits above the popup's effort section and takes the height it leaves. */
   docked?: boolean;
-  /** Right at the end of the search text moves into the popup's effort column. */
+  /** Right at the end of the search text moves into the popup's effort section. */
   onFocusEffort?: () => void;
-  /** Closes the list column, inside the popup's fixed height. */
+  /** Closes the list, inside the popup's fixed height. */
   listFooter?: ReactNode;
 }) {
   const {
@@ -589,7 +590,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   const isLocked = lockedProvider !== null;
   const isSearching = searchQuery.trim().length > 0;
-  // Fit the tallest tab so switching tabs never resizes the popup and moves the rail under the cursor.
+  // Fit the tallest tab so switching tabs never resizes the popup and moves the tabs under the cursor.
   const tallestTabUnits = (() => {
     const unitsByTab = new Map<ProviderInstanceId | "favorites", number>();
     const addRow = (tab: ProviderInstanceId | "favorites") => {
@@ -843,8 +844,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <div
         ref={pickerContentRef}
         className={cn(
-          "relative flex w-screen max-w-90 flex-row overflow-hidden",
-          props.docked ? "max-sm:h-56 max-sm:w-full max-sm:max-w-none" : "max-h-86.5",
+          "relative flex w-screen max-w-96 flex-col overflow-hidden",
+          // Docked, the list takes what the popup's fixed height leaves above the options.
+          props.docked ? "min-h-24 flex-1" : "max-h-86.5",
         )}
         // Docked, the popup sets the height; a minimum here would overflow short windows.
         style={
@@ -853,29 +855,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             : isSearching
               ? { height: searchHeight }
               : {
-                  minHeight: `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS} + 1px), calc(var(--spacing) * 86.5))`,
+                  minHeight: `min(calc(var(--spacing) * ${tallestTabUnits + LIST_CHROME_UNITS + (showSidebar ? PROVIDER_TABS_UNITS : 0)} + 1px), calc(var(--spacing) * 86.5))`,
                 }
         }
         data-model-picker-content="true"
       >
-        {showSidebar && (
-          <ModelPickerSidebar
-            selectedInstanceId={selectedInstanceId}
-            onSelectInstance={handleSelectInstance}
-            onFocusSearch={focusSearchInput}
-            instanceEntries={sidebarInstanceEntries}
-            showFavorites
-            {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
-            {...(lockedDisabledInstanceIds
-              ? {
-                  disabledInstanceIds: lockedDisabledInstanceIds,
-                  getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
-                    `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
-                }
-              : {})}
-          />
-        )}
-
         <Combobox<string, boolean>
           inline
           items={allItemKeys}
@@ -918,12 +902,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             }
           }}
         >
-          <div
-            className={cn(
-              "flex min-h-0 flex-1 flex-col overflow-hidden bg-muted/40",
-              showSidebar && "border-l border-border/70",
-            )}
-          >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <ComboboxSearchInput
               ref={searchInputRef}
               placeholder="Search models..."
@@ -943,8 +922,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                   !e.altKey &&
                   !e.ctrlKey &&
                   !e.metaKey &&
-                  ((e.key === "ArrowLeft" && !e.shiftKey && searchQuery.length === 0) ||
-                    (e.key === "Tab" && e.shiftKey))
+                  e.key === "ArrowLeft" &&
+                  !e.shiftKey &&
+                  searchQuery.length === 0
                 ) {
                   const sidebar = e.currentTarget
                     .closest("[data-model-picker-content]")
@@ -977,7 +957,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 ) {
                   e.preventDefault();
                   e.stopPropagation();
-                  // The column shows the selected model's effort, so a highlighted model is picked
+                  // The section shows the selected model's effort, so a highlighted model is picked
                   // first; the owning popup then moves focus to that model's levels.
                   const highlighted = highlightedModelKeyRef.current
                     ? parseModelPickerModelKey(highlightedModelKeyRef.current)
@@ -1011,6 +991,24 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
             />
+            {/* Under the field, so typing a search swaps the tabs for results without moving it. */}
+            {showSidebar && (
+              <ModelPickerSidebar
+                selectedInstanceId={selectedInstanceId}
+                onSelectInstance={handleSelectInstance}
+                onFocusSearch={focusSearchInput}
+                instanceEntries={sidebarInstanceEntries}
+                showFavorites
+                {...(selectableUnavailableInstanceIds ? { selectableUnavailableInstanceIds } : {})}
+                {...(lockedDisabledInstanceIds
+                  ? {
+                      disabledInstanceIds: lockedDisabledInstanceIds,
+                      getDisabledInstanceTooltip: (entry: ProviderInstanceEntry) =>
+                        `${entry.displayName} is unavailable in this thread. Start a new thread to switch providers.`,
+                    }
+                  : {})}
+              />
+            )}
 
             <ModelPickerList
               listRef={modelListRef}
