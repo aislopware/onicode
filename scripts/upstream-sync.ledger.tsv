@@ -2204,3 +2204,4 @@ c8c51af4e3	take	fix(server): recover gateway cooldown after last error
 caef8c3847	take	fix(composer): show local command actions while running; adapted: Onicode's provider session view commands (/context, /status...) also count as local on web and mobile
 b0f0c44d22	take	fix(shared): open Forgejo and Gitea /pulls/ tab and commit links
 0a842b222d	take	fix(web): list each pull request once across servers
+1d1489d0b8	take	fix(web): keyboard-opened sidebar menus select their first item; sidebar hook order unchanged, re-render test green
