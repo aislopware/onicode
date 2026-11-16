@@ -738,20 +738,19 @@ export const make = Effect.gen(function* () {
     );
 
   // A thread's sibling syncs and relinks must not re-read a pull request its project's host
-  // could not find; the slow cadence and explicit refreshes still do.
+  // could not find or is backing off from; the cadence and explicit refreshes still do.
   const requestUnsyncedLinks = Effect.fnUntraced(
     function* (threadId: ThreadId, links: ReadonlyArray<ThreadPullRequestLink>) {
       const unsynced = links.filter((link) => link.snapshot === null);
       if (unsynced.length === 0) return;
       const [thread] =
-        missing.size === 0 ? [] : yield* projections.getThreadsWithPullRequests(threadId);
+        missing.size === 0 && failedReads.size === 0
+          ? []
+          : yield* projections.getThreadsWithPullRequests(threadId);
       for (const link of unsynced) {
-        if (
-          thread !== undefined &&
-          missing.has(`${thread.projectId}\0${threadPullRequestKeyOf(link)}`)
-        ) {
-          continue;
-        }
+        const key =
+          thread === undefined ? null : `${thread.projectId}\0${threadPullRequestKeyOf(link)}`;
+        if (key !== null && (missing.has(key) || failedReads.has(key))) continue;
         yield* requestSync(link);
       }
     },
