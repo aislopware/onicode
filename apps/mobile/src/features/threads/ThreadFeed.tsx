@@ -2805,9 +2805,13 @@ function ThreadFeedPlaceholder(props: {
 }
 
 // A hook for the same reason as useThreadFeedPresentation below.
-function usePendingTurnRows(feed: ReadonlyArray<PendingThreadFeedEntry>, zen: boolean) {
+function usePendingTurnRows(
+  feed: ReadonlyArray<PendingThreadFeedEntry>,
+  zen: boolean,
+  dispatchingMessageId: string | null,
+) {
   const [appendPendingTurn] = useState(createPendingTurnAppender);
-  return appendPendingTurn(feed, { zen });
+  return appendPendingTurn(feed, { zen, dispatchingMessageId });
 }
 
 // A hook's return value is frozen to the compiler, so ThreadFeed's later
@@ -3654,6 +3658,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
   const presentedFeed = usePendingTurnRows(
     useThreadFeedPresentation(props, expandedTurnIds, expandedWorkGroups, revealedMessageId),
     props.toolCallVisibility === "zen",
+    props.dispatchingMessageId,
   );
   const pendingFoldMessageId =
     presentedFeed.findLast((entry) => entry.type === "pending-fold")?.messageId ?? null;
