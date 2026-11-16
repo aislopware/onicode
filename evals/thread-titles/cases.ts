@@ -248,6 +248,21 @@ export const threadTitleEvaluationCases = [
     rubric:
       "Name the address autocomplete crash fix. It may keep ACME-164. A title that only says a ticket is being checked fails.",
   },
+  {
+    id: "custom-title-scheme",
+    source: "https://github.com/aislopware/onicode/pull/37565",
+    request: "Relay chat to the lead agent, titled with the user's naming scheme.",
+    previousTitle: "Relay chat to lead agent",
+    instructions: 'Title every thread "Owner: what it does (model effort)".',
+    messages: [
+      {
+        role: "user",
+        text: "Make the relay forward every chat message to the lead agent so reviewers can see questions from subagents.",
+      },
+    ],
+    rubric:
+      'Use the user\'s "Owner: what it does (model effort)" shape with all three parts, even past the default 8-word, 40-character limit. A bare short title fails.',
+  },
 ] satisfies ReadonlyArray<{
   id: string;
   source: string;
@@ -256,6 +271,7 @@ export const threadTitleEvaluationCases = [
   previousTitle: string;
   /** Titles the thread as the server's own refresh does, which keeps a title that is still right. */
   automatic?: boolean;
+  instructions?: string;
   messages: ReadonlyArray<ThreadTitleMessage>;
   rubric: string;
 }>;

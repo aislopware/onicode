@@ -17,4 +17,4 @@ pnpm thread-titles --model <codex model> --out runs/titles-new --baseline runs/t
 
 ## Add a case
 
-Add an entry to `cases.ts` with an `id`, a `source`, the thread `messages`, the `previousTitle`, an optional `projectTitle`, and a `rubric` that says what a good title names. Set `automatic` for a case about the refresh the server runs on its own, where keeping a title that is still right is the correct answer.
+Add an entry to `cases.ts` with an `id`, a `source`, the thread `messages`, the `previousTitle`, an optional `projectTitle`, optional `instructions` (the Thread title instructions setting), and a `rubric` that says what a good title names. Set `automatic` for a case about the refresh the server runs on its own, where keeping a title that is still right is the correct answer.
