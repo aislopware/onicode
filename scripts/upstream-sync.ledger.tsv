@@ -2156,3 +2156,4 @@ c1b23e903c	take	taken as is
 3cf00c3e8b	take	fix(web): composer drafts keep underscores in non-Latin names
 f083f26cd5	take	fix(provider-core): generated thread titles keep the closing quote of a quoted term
 1b84e72a6d	take	fix(web): Cmd+Enter on an edited queued message steers it into the running turn
+e8bfabaa39	take	fix(server): preserve whitespace in ACP history replay
