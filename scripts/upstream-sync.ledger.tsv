@@ -2159,3 +2159,4 @@ f083f26cd5	take	fix(provider-core): generated thread titles keep the closing quo
 e8bfabaa39	take	fix(server): preserve whitespace in ACP history replay
 7f1fa0d447	take	fix(acp): keep providers available after naming custom models
 f8c8f30e49	take	fix(mobile): switching threads no longer flashes the feed header or misplaces the composer
+e5b6c96a46	take	fix(pi): restore selected model after native extension switches
