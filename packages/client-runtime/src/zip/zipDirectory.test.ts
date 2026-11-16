@@ -89,4 +89,21 @@ describe("readZipDirectory", () => {
     truncatedRecord.view.setUint32(truncatedRecord.offset + 20, size - 4, true);
     await expect(text(readZipDirectory(truncated).get("a.txt")!)).rejects.toThrow();
   });
+
+  it.each([
+    ["more", 0, 1],
+    ["less", 0, 7],
+    ["more", 6, 1],
+    ["less", 6, 7],
+  ] as const)(
+    "rejects an entry holding %s data than its directory size (level %i)",
+    async (_, level, declared) => {
+      const bytes = zipSync({ "a.txt": strToU8("abcdef") }, { level });
+      const { view, offset } = centralRecord(bytes);
+      view.setUint32(offset + 24, declared, true);
+      await expect(text(readZipDirectory(bytes).get("a.txt")!)).rejects.toThrow(
+        UnreadableZipEntryError,
+      );
+    },
+  );
 });

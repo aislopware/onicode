@@ -152,10 +152,9 @@ function zipEntry(bytes: Uint8Array, view: DataView, offset: number, shift: numb
   }
   const header = local + shift;
   if (header + 30 > bytes.length || view.getUint32(header, true) !== 0x04034b50)
-    throw new UnreadableZipEntryError({ message: "This ZIP archive has a damaged entry." });
+    throw damagedEntry();
   const start = header + 30 + view.getUint16(header + 26, true) + view.getUint16(header + 28, true);
-  if (start + compressedSize > bytes.length)
-    throw new UnreadableZipEntryError({ message: "This ZIP archive has a damaged entry." });
+  if (start + compressedSize > bytes.length) throw damagedEntry();
   const originalName = new TextDecoder().decode(storedName);
   const directory =
     (external & 0x10) !== 0 ||
@@ -179,7 +178,9 @@ function zipEntry(bytes: Uint8Array, view: DataView, offset: number, shift: numb
     ),
     size,
     async read(onChunk: (chunk: Uint8Array) => void) {
+      let emitted = 0;
       const emit = (chunk: Uint8Array) => {
+        if ((emitted += chunk.length) > size) throw damagedEntry();
         for (let at = 0; at < chunk.length; at += CHUNK_BYTES)
           onChunk(chunk.subarray(at, at + CHUNK_BYTES));
       };
@@ -192,8 +193,13 @@ function zipEntry(bytes: Uint8Array, view: DataView, offset: number, shift: numb
         if (position < data.length && position % YIELD_EVERY_BYTES === 0)
           await new Promise((resolve) => setTimeout(resolve, 0));
       } while (position < data.length);
+      if (emitted !== size) throw damagedEntry();
     },
   } satisfies ZipEntry;
+}
+
+function damagedEntry() {
+  return new UnreadableZipEntryError({ message: "This ZIP archive has a damaged entry." });
 }
 
 function crc32(bytes: Uint8Array) {
