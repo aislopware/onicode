@@ -1,6 +1,10 @@
 import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { useAtomValue } from "@effect/atom-react";
-import { AuthOrchestrationOperateScope, type EnvironmentId } from "@onicode/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type EnvironmentId,
+  type MessageId,
+} from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import { Atom, AsyncResult } from "effect/reactivity";
 
@@ -26,7 +30,7 @@ import {
   updateThreadOutboxMessage,
   type QueuedThreadMessage,
 } from "./thread-outbox";
-import { editingQueuedMessageIdsAtom } from "./use-thread-outbox";
+import { dispatchingQueuedMessageIdAtom, editingQueuedMessageIdsAtom } from "./use-thread-outbox";
 import {
   ComposerDraftPersistenceError,
   type ComposerDraft,
@@ -76,6 +80,8 @@ export function composerAttachmentUploadRequests(input: {
   readonly queuedMessagesByThreadKey: Parameters<typeof flattenQueuedThreadMessages>[0];
   /** An edited message's attachments upload through its editor draft. */
   readonly editingQueuedMessageIds: Readonly<Record<string, true>>;
+  /** Delivery uploads the message it is dispatching itself; a second upload would race it. */
+  readonly dispatchingQueuedMessageId?: MessageId | null;
   /** Every environment the client knows, so a draft key never resolves to a shorter connected prefix. */
   readonly knownEnvironmentIds: Iterable<EnvironmentId>;
   readonly connectedEnvironmentIds: ReadonlySet<EnvironmentId>;
@@ -109,7 +115,8 @@ export function composerAttachmentUploadRequests(input: {
     // Sending mid-upload hands the attachment to the outbox; requesting it here keeps that
     // upload running instead of aborting it for the outbox to start over.
     ...queued.flatMap((message) =>
-      input.editingQueuedMessageIds[message.messageId]
+      input.editingQueuedMessageIds[message.messageId] ||
+      message.messageId === input.dispatchingQueuedMessageId
         ? []
         : uploadable(
             message.environmentId,
@@ -186,6 +193,7 @@ const composerAttachmentUploadRequestsAtom = Atom.make((get) => {
     drafts: get(composerDraftUploadSourcesAtom),
     queuedMessagesByThreadKey: get(threadOutboxManager.queuedMessagesByThreadKeyAtom),
     editingQueuedMessageIds: get(editingQueuedMessageIdsAtom),
+    dispatchingQueuedMessageId: get(dispatchingQueuedMessageIdAtom),
     knownEnvironmentIds: environments.map((environment) => environment.environmentId),
     connectedEnvironmentIds: new Set(connected.map((environment) => environment.environmentId)),
     operableEnvironmentIds,
