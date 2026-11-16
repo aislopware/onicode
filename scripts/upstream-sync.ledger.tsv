@@ -2206,3 +2206,4 @@ b0f0c44d22	take	fix(shared): open Forgejo and Gitea /pulls/ tab and commit links
 0a842b222d	take	fix(web): list each pull request once across servers
 1d1489d0b8	take	fix(web): keyboard-opened sidebar menus select their first item; sidebar hook order unchanged, re-render test green
 4247b5aa1a	take	taken; user docs say desktop only (Onicode has no web app); mobile toggle is a follow-up
+375343aaf3	take	taken; pnpm-lock.yaml patch hash regenerated with vp i
