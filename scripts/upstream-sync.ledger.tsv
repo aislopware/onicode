@@ -2150,3 +2150,4 @@ a7d17cd2f5	take	taken as is
 399ea10f4e	skip	nightly channel only: Onicode is single-channel and its updateEverything.logic.ts has no release-channel check to fix
 39e269a37c	take	taken as is
 45dedf2955	take	taken as is; adopted upstream's resolveListedAncestorThreadRef in client-runtime over Onicode's web-only resolveSidebarRowThreadId (also covers delegated tasks and mobile); Sidebar.tsx hook order untouched
+558790aae5	take	taken as is (mobile has no prompt stash)
