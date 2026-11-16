@@ -84,6 +84,7 @@ import { resolveAssetUrl } from "@onicode/client-runtime/state/assets";
 import { formatAttachmentSize } from "@onicode/client-runtime/state/attachments";
 import {
   executeAtomQuery,
+  isAtomCommandInterrupted,
   settlePromise,
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
@@ -448,7 +449,14 @@ function AssistantForkButton(props: {
           },
         })
           .then(async (result) => {
-            if (result._tag !== "Success") return;
+            if (isAtomCommandInterrupted(result)) return;
+            if (result._tag !== "Success") {
+              Dialog.alert(
+                "Could not confirm fork",
+                "Reconnect and check the thread list before trying again.",
+              );
+              return;
+            }
             const targetThreadReady = await waitForThreadShell(
               scopeThreadRef(props.environmentId, targetThreadId),
             );
