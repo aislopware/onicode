@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as HostProcess from "@onicode/shared/HostProcess";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -31,18 +32,30 @@ const completedTurn = (turnId: number) =>
   JSON.stringify({ type: "turn.ended", agentId: "main", turnId, reason: "completed" }) + "\n";
 
 it.layer(NodeServices.layer)("makeKimiPromptOutcomeWatch", (it) => {
-  it.effect("fails only the turn this prompt ended, once Kimi writes its outcome", () =>
+  it.effect.each([
+    { home: "KIMI_CODE_HOME", kimiHome: [] },
+    // A provider instance that overrides HOME moves Kimi's default home with it.
+    { home: "HOME", kimiHome: [".kimi-code"] },
+  ])("fails only the turn this prompt ended, once Kimi writes its outcome ($home)", (layout) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const path = yield* Path.Path;
       const home = yield* fileSystem.makeTempDirectoryScoped();
-      const agentDirectory = path.join(home, "sessions", "wd_proj_1", SESSION_ID, "agents", "main");
+      const agentDirectory = path.join(
+        home,
+        ...layout.kimiHome,
+        "sessions",
+        "wd_proj_1",
+        SESSION_ID,
+        "agents",
+        "main",
+      );
       yield* fileSystem.makeDirectory(agentDirectory, { recursive: true });
       const wire = path.join(agentDirectory, "wire.jsonl");
       // An earlier turn's failure is history, not this prompt's outcome.
       yield* fileSystem.writeFileString(wire, failedTurn(0));
       const append = (text: string) => fileSystem.writeFileString(wire, text, { flag: "a" });
-      const watch = yield* makeKimiPromptOutcomeWatch(home);
+      const watch = yield* makeKimiPromptOutcomeWatch({ [layout.home]: home });
 
       const completed = yield* watch(SESSION_ID);
       yield* append(completedTurn(1));
@@ -61,6 +74,6 @@ it.layer(NodeServices.layer)("makeKimiPromptOutcomeWatch", (it) => {
         code: "provider.overloaded",
         retryable: true,
       });
-    }),
+    }).pipe(Effect.provideService(HostProcess.Platform, "linux")),
   );
 });
