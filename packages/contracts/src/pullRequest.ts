@@ -1004,6 +1004,8 @@ export class PullRequestUnavailableError extends Schema.TaggedError<PullRequestU
      * reasons above, so a repository without a project rides on that reason instead of a new one.
      */
     repository: Schema.optional(TrimmedNonEmptyString),
+    /** For `provider-unsupported` on a host read through any checkout on it: the host no project is on. */
+    host: Schema.optional(TrimmedNonEmptyString),
     cause: Schema.optional(Schema.Defect()),
   },
   { httpApiStatus: 503 },
@@ -1019,6 +1021,9 @@ export class PullRequestUnavailableError extends Schema.TaggedError<PullRequestU
       case "cli-unauthenticated":
         return this.requirement ?? "This host has no working credentials.";
       case "provider-unsupported":
+        if (this.host !== undefined) {
+          return `No project in Onicode is on ${this.host}. Add any ${this.host} project to read its change requests.`;
+        }
         return this.repository === undefined
           ? "Change requests cannot be browsed for this project's host yet."
           : `${this.repository} is not a project in Onicode. Add it as a project to read its change requests.`;
