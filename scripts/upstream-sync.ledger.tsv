@@ -2217,3 +2217,4 @@ cfb1f12541	take	adopted upstream over Onicode's dispatching-message upload skip 
 1da6b14e92	take	taken as is; web and client-runtime files had no Onicode divergence
 8bbe7fdd1a	take	adapted: stripped guest-share rows (guest links removed) and upstream's device-approval label (connectionAwaitingApproval is not in Onicode); kept Onicode's forceStop placement next to upstream's lifecycleEvent
 6f5861fa27	take	taken as is
+6dd092315e	take	taken as is
