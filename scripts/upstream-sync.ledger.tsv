@@ -2327,3 +2327,4 @@ d27002bf99	take	merged clean
 09458669ea	take	merged clean
 0072f66ec1	take	3-way merge mangled the reindented open(); re-applied by hand on Onicode's adapter: openQuery fnUntraced + catchIf retry (fresh session retries under a new uuid, resumed reuses)
 5b91a5a00e	take	http.test.ts keeps Onicode 'API CORS' describe (browser wording removed)
+48a64a8b68	take	quit-confirmation row stays unconditional (Onicode is desktop-only, no isElectron); confirmTerminalClose has a decoding default, wire-safe
