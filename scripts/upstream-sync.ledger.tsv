@@ -2415,3 +2415,4 @@ e5d757f51b	take	taken as is
 a774d7f473	take	fix(server): issue links on a custom GitHub Enterprise hostname resolve
 f92c5e8f98	take	fix(web): review summary line comments keep which side they refer to
 74b1f97ce9	take	fix(web): reopening Settings reloads WSL distributions
+2df750e0c9	take	fix(web): MCP app full screen header clears the native window controls
