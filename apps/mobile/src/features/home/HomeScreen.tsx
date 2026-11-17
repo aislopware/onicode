@@ -312,7 +312,7 @@ export function HomeScreen(props: HomeScreenProps) {
       touches.map((touch) => String(touch.identifier)),
     );
   };
-  const { swipeEnabled, scrollGateHandlers } = useSwipeableScrollGate({
+  const { gate: swipeGate, scrollGateHandlers } = useSwipeableScrollGate({
     onScroll: handleListScroll,
     onScrollBeginDrag: handleScrollBeginDrag,
   });
@@ -449,10 +449,14 @@ export function HomeScreen(props: HomeScreenProps) {
     onSelectThread(thread);
   };
   useThreadJumpShortcuts(threadListV2Items, selectThread);
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- reads the list's visible range after commit to enable swipe gestures on those rows
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- reads the list's visible range after commit and when a scroll settles to enable swipe gestures on those rows
   useEffect(() => {
-    if (swipeEnabled) activateVisibleRows(threadListV2Items);
-  }, [activateVisibleRows, swipeEnabled, threadListV2Items]);
+    const activate = () => {
+      if (swipeGate.isEnabled()) activateVisibleRows(threadListV2Items);
+    };
+    activate();
+    return swipeGate.subscribe(activate);
+  }, [activateVisibleRows, swipeGate, threadListV2Items]);
 
   const renderV2Item = ({ item }: { readonly item: ThreadListV2ListItem }) => {
     if (item.type === "v2-pending") {
@@ -750,7 +754,7 @@ export function HomeScreen(props: HomeScreenProps) {
     <View className={containerClassName}>
       <ScreenContent surface="screen">
         <View className={cn("flex-1", Platform.OS !== "android" && contentBackground)}>
-          <SwipeableScrollGateProvider enabled={swipeEnabled} activation={swipeRowActivation}>
+          <SwipeableScrollGateProvider gate={swipeGate} activation={swipeRowActivation}>
             <GestureDetector gesture={homeScrollGesture}>
               <AnimatedLegendList
                 itemLayoutAnimation={THREAD_LIST_ROW_LAYOUT}

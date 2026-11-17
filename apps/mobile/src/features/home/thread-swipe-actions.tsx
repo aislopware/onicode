@@ -31,11 +31,13 @@ import Animated, {
   Extrapolation,
   ReduceMotion,
   interpolate,
+  makeMutable,
   runOnJS,
   runOnUI,
   type SharedValue,
   useAnimatedReaction,
   useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withTiming,
 } from "react-native-reanimated";
@@ -132,19 +134,44 @@ function resolveSecondaryAction(input: {
   };
 }
 
-/** Keep the scroll gate in context so scroll start cannot re-render every row and its subscriptions. */
-const SwipeableScrollGateContext = createContext(true);
+/**
+ * Rows read the gate on the UI thread, so scroll start and end re-render neither the list
+ * nor its rows, and the gesture config updates without waiting on JS.
+ */
+function createSwipeableScrollGate() {
+  let enabled = true;
+  const shared = makeMutable(true);
+  const listeners = new Set<() => void>();
+  return {
+    shared,
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    isEnabled: () => enabled,
+    setEnabled(next: boolean) {
+      if (enabled === next) return;
+      enabled = next;
+      shared.set(next);
+      for (const listener of listeners) listener();
+    },
+  };
+}
+
+export type SwipeableScrollGate = ReturnType<typeof createSwipeableScrollGate>;
+
+const SwipeableScrollGateContext = createContext<SwipeableScrollGate>(createSwipeableScrollGate());
 // Swipeable rebuilds its native pan gesture whenever its config changes identity, so the props
 // that feed it stay stable across row re-renders such as selection.
 const FAIL_OFFSET_Y: [number, number] = [-10, 10];
 
 export function SwipeableScrollGateProvider(props: {
-  readonly enabled: boolean;
+  readonly gate: SwipeableScrollGate;
   readonly activation?: SwipeRowActivation;
   readonly children: ReactNode;
 }) {
   return (
-    <SwipeableScrollGateContext.Provider value={props.enabled}>
+    <SwipeableScrollGateContext.Provider value={props.gate}>
       <SwipeRowActivationContext value={props.activation ?? null}>
         {props.children}
       </SwipeRowActivationContext>
@@ -157,20 +184,14 @@ export function useSwipeableScrollGate(options?: {
   readonly onScroll?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
   readonly onScrollBeginDrag?: (event: NativeSyntheticEvent<NativeScrollEvent>) => void;
 }) {
-  const [gateActive, setGateActive] = useState(false);
-  const gateActiveRef = useRef(false);
+  const [gate] = useState(createSwipeableScrollGate);
   const draggingRef = useRef(false);
   const dragStartYRef = useRef(0);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const externalOnScroll = options?.onScroll;
   const externalOnScrollBeginDrag = options?.onScrollBeginDrag;
 
-  const update = useCallback((next: boolean) => {
-    if (gateActiveRef.current !== next) {
-      gateActiveRef.current = next;
-      setGateActive(next);
-    }
-  }, []);
+  const update = useCallback((active: boolean) => gate.setEnabled(!active), [gate]);
   const clearSettle = useCallback(() => {
     if (settleTimerRef.current !== null) {
       clearTimeout(settleTimerRef.current);
@@ -193,14 +214,14 @@ export function useSwipeableScrollGate(options?: {
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       if (
         draggingRef.current &&
-        !gateActiveRef.current &&
+        gate.isEnabled() &&
         Math.abs(event.nativeEvent.contentOffset.y - dragStartYRef.current) > 4
       ) {
         update(true);
       }
       externalOnScroll?.(event);
     },
-    [externalOnScroll, update],
+    [externalOnScroll, gate, update],
   );
   const onScrollEndDrag = useCallback(() => {
     draggingRef.current = false;
@@ -215,7 +236,7 @@ export function useSwipeableScrollGate(options?: {
   }, [update]);
 
   return {
-    swipeEnabled: !gateActive,
+    gate,
     scrollGateHandlers: {
       onScroll,
       onScrollBeginDrag,
@@ -261,7 +282,7 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
   const fullSwipeAction =
     props.fullSwipeAction ?? (props.secondaryAction === undefined ? "delete" : "primary");
   const close = useCallback(() => swipeableRef.current?.close(), []);
-  const gateEnabled = use(SwipeableScrollGateContext);
+  const gate = use(SwipeableScrollGateContext);
   const mountedRef = useRef(true);
   const dismissalRef = useRef<{ finished: Promise<void>; restore: () => void } | null>(null);
   const pendingDismissRef = useRef<{ id: number; resolve: () => void } | null>(null);
@@ -525,6 +546,12 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
     rightActions.current = { deps, element };
     return element;
   };
+  const rowSwipeEnabled = !props.dormant && !isDismissing && props.enabled !== false;
+  const gateEnabled = gate.shared;
+  const swipeEnabled = useDerivedValue(
+    () => rowSwipeEnabled && gateEnabled.get(),
+    [rowSwipeEnabled, gateEnabled],
+  );
   const childrenContainerStyle = useMemo(() => ({ backgroundColor }), [backgroundColor]);
   const swipeableContainerStyle = useMemo(
     () => [{ backgroundColor }, containerStyle],
@@ -547,7 +574,7 @@ export function ThreadSwipeable(props: ThreadSwipeableProps) {
             childrenContainerStyle={childrenContainerStyle}
             containerStyle={swipeableContainerStyle}
             dragOffsetFromRight={-8}
-            enabled={!props.dormant && !isDismissing && props.enabled !== false && gateEnabled}
+            enabled={swipeEnabled}
             enableTrackpadTwoFingerGesture={props.enableTrackpadSwipe ?? true}
             // Reject vertical pans via patched RNGH failOffsetY; simultaneous trackpad scrolls otherwise open rows on horizontal drift.
             failOffsetY={FAIL_OFFSET_Y}
