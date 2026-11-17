@@ -347,7 +347,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
     openSwipeableRef.current?.close();
   };
   const onFabScroll = useFabScroll();
-  const { swipeEnabled, scrollGateHandlers } = useSwipeableScrollGate({
+  const { gate: swipeGate, scrollGateHandlers } = useSwipeableScrollGate({
     onScroll: onFabScroll,
     onScrollBeginDrag: handleScrollBeginDrag,
   });
@@ -602,7 +602,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
       <>
         {header}
         <View className="flex-1">
-          <SwipeableScrollGateProvider enabled={swipeEnabled}>
+          <SwipeableScrollGateProvider gate={swipeGate}>
             <GestureDetector gesture={sidebarScrollGesture}>
               <AnimatedLegendList
                 renderScrollComponent={NativeScrollView}
@@ -659,7 +659,7 @@ function ThreadNavigationSidebarPane(props: ThreadNavigationSidebarProps) {
         {listItems.length === 0 ? (
           <View className="flex-1 items-center justify-center">{listEmpty}</View>
         ) : (
-          <SwipeableScrollGateProvider enabled={swipeEnabled}>
+          <SwipeableScrollGateProvider gate={swipeGate}>
             <GestureDetector gesture={sidebarScrollGesture}>
               {/* oxlint-disable-next-line onicode/require-registered-list-scroll -- The Android sidebar has no native header to register with. */}
               <AnimatedLegendList
