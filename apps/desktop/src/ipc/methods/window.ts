@@ -14,6 +14,7 @@ import {
   SystemSettingsPaneSchema,
   type DesktopEnvironmentBootstrap,
   type PickedThemeFile,
+  type SystemSettingsPane,
 } from "@onicode/contracts";
 import { PROJECT_FAVICON_EXTENSIONS } from "@onicode/shared/projectFavicon";
 import { resolveEditorCommand } from "@onicode/shared/editor";
@@ -44,6 +45,7 @@ import * as ElectronWindow from "../../electron/ElectronWindow.ts";
 import * as Electron from "electron";
 import * as MacPermissions from "../../permissions/MacPermissions.ts";
 import { safariPermissionCheck } from "../../preview/BrowserImport/SafariPermission.ts";
+import { developerToolsGranted } from "../../permissions/DeveloperToolsPermission.ts";
 import * as IpcChannels from "../channels.ts";
 import * as DesktopIpc from "../DesktopIpc.ts";
 import {
@@ -397,11 +399,18 @@ export const openSystemSettings = DesktopIpc.makeIpcMethod({
     const opened = yield* shell.openSystemSettings(pane);
     if (opened && environment.isPackaged) {
       const permissions = yield* MacPermissions.MacPermissions;
-      const isGranted = yield* safariPermissionCheck;
+      const isGranted = yield* systemPermissionCheck(pane);
       yield* permissions.showHelper(pane, owner, isGranted);
     }
     return opened;
   }),
+});
+
+const systemPermissionCheck = Effect.fn("desktop.ipc.window.systemPermissionCheck")(function* (
+  pane: SystemSettingsPane,
+) {
+  if (pane === "developer-tools") return developerToolsGranted;
+  return yield* safariPermissionCheck;
 });
 
 const REMOTE_EDITOR_PROBE_CONCURRENCY = 8;
@@ -564,10 +573,10 @@ export const checkSystemPermission = DesktopIpc.makeIpcMethod({
   channel: IpcChannels.CHECK_SYSTEM_PERMISSION_CHANNEL,
   payload: SystemSettingsPaneSchema,
   result: Schema.Boolean,
-  handler: Effect.fn("desktop.ipc.window.checkSystemPermission")(function* () {
+  handler: Effect.fn("desktop.ipc.window.checkSystemPermission")(function* (pane) {
     const environment = yield* DesktopEnvironment.DesktopEnvironment;
     if (environment.platform !== "darwin") return false;
-    const check = yield* safariPermissionCheck;
+    const check = yield* systemPermissionCheck(pane);
     return yield* Effect.promise(check);
   }),
 });

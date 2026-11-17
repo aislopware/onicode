@@ -871,6 +871,14 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["cli terminal shell path install command line"],
   },
   {
+    id: "developer-tools",
+    title: "Developer Tools access",
+    to: "/settings/about",
+    searchTerms: ["macos xprotect gatekeeper syspolicyd cpu scan privacy security permission"],
+    macOnly: true,
+    localEnvironmentOnly: true,
+  },
+  {
     id: "welcome-page",
     title: "Welcome page",
     to: "/settings/about",

@@ -31,6 +31,7 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ChevronRightIcon,
+  GaugeIcon,
   PlusIcon,
   SmartphoneIcon,
   TerminalIcon,
@@ -90,6 +91,7 @@ import { useAtomCommand } from "../../state/use-atom-command";
 import { getProviderSummary } from "../settings/providerStatus";
 import { AddProviderInstanceDialog } from "../settings/AddProviderInstanceDialog";
 import { useDesktopCliCommand } from "../settings/CliCommandSettingsRow";
+import { useDeveloperToolsAccess } from "../settings/DeveloperToolsSettingsRow";
 import { CodexSetupSection } from "../settings/CodexSetupSection";
 import { readCodexSetupMode } from "../settings/CodexSetupSection.logic";
 import { TerminalViewport } from "../ThreadTerminalDrawer";
@@ -661,6 +663,7 @@ function AgentsSection({
         </div>
       ) : null}
       {isPrimary ? <CliPathSetup /> : null}
+      {isPrimary ? <DeveloperToolsSetup /> : null}
       {terminalSession !== null ? (
         <AgentInstallTerminal
           key={`${terminalSession.environmentId}:${terminalSession.providerInstanceId}:${terminalSession.driver}`}
@@ -1766,6 +1769,25 @@ function CliPathSetup() {
           Add to PATH
         </Button>
       )}
+    </div>
+  );
+}
+
+function DeveloperToolsSetup() {
+  const { granted, openSettings } = useDeveloperToolsAccess();
+  if (granted !== false) return null;
+  return (
+    <div className="flex min-h-10 items-center gap-3">
+      <RowIcon>
+        <GaugeIcon className="size-4" />
+      </RowIcon>
+      <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+        Skip the macOS scans that slow down programs agents build. Add Onicode to Developer Tools in
+        System Settings.
+      </p>
+      <Button size="xs" variant="outline" onClick={openSettings}>
+        Allow
+      </Button>
     </div>
   );
 }

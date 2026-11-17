@@ -28,6 +28,7 @@ import * as Equal from "effect/Equal";
 import * as Schema from "effect/Schema";
 import { AboutVersionTitle } from "./AboutVersionTitle";
 import { CliCommandSettingsRow } from "./CliCommandSettingsRow";
+import { DeveloperToolsSettingsRow } from "./DeveloperToolsSettingsRow";
 import {
   canCheckForUpdate,
   getDesktopUpdateButtonTooltip,
@@ -278,6 +279,7 @@ function AboutVersionSection() {
         }
       />
       {hasDesktopBridge ? <CliCommandSettingsRow /> : null}
+      <DeveloperToolsSettingsRow />
     </>
   );
 }
