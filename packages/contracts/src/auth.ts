@@ -410,6 +410,14 @@ export const mcpClientScopes = (access: AuthMcpClientAccess): ReadonlyArray<Auth
         ]
       : [AuthOrchestrationReadScope, AuthOrchestrationOperateScope];
 
+/** The scopes a pairing code minted for `input` carries; the mint route checks the same set. */
+export const pairingCredentialScopes = (
+  input: AuthCreatePairingCredentialInput | undefined,
+): ReadonlyArray<AuthGrantScope> =>
+  input?.purpose === "peer-link"
+    ? mcpClientScopes(input.access)
+    : (input?.scopes ?? AuthStandardClientScopes);
+
 /**
  * The `software_id` another Onicode environment registers with when it links
  * to this one; registration refuses every other client. The session it gets is

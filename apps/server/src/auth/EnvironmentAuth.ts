@@ -18,6 +18,7 @@ import {
   type AuthWebSocketTicketResult,
   type AuthWebSocketTicketUse,
   mcpClientScopes,
+  pairingCredentialScopes,
 } from "@onicode/contracts";
 import { isLocalLoopbackHost } from "@onicode/shared/hostClassification";
 import { encodeOAuthScope } from "@onicode/shared/oauthScope";
@@ -739,10 +740,7 @@ export const make = Effect.gen(function* () {
 
   const issuePairingCredential: EnvironmentAuth["Service"]["issuePairingCredential"] = (input) =>
     createPairingLink({
-      scopes:
-        input?.purpose === "peer-link"
-          ? mcpClientScopes(input.access)
-          : (input?.scopes ?? AuthStandardClientScopes),
+      scopes: pairingCredentialScopes(input),
       subject:
         input?.purpose === "peer-link"
           ? `${PEER_LINK_PAIRING_SUBJECT_PREFIX}${input.access}`
