@@ -2431,3 +2431,4 @@ b387e3a179	take	fix(server): Claude turns receive MCP app model context
 94dc06e7ac	take	fix(cli): keep the old database when project or thread records are missing
 54ad956ff2	take	fix(server): file search keeps Git-ignored files a .ignore re-includes
 4ecbe55087	take	fix(pi): Reasoning that Pi starts again no longer repeats the abandoned attempt
+2ebe7f8e22	take	fix(pi): fork historical turns from their original session; ProviderTurn.nativeThreadRef is optional, so older mobile builds still decode
