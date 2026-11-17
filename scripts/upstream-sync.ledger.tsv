@@ -2363,3 +2363,4 @@ d35ec21cdd	take	taken as is
 786cf6a736	take	taken: Onicode's Linux desktop packaging uses the same libc6 floor script
 6ef2c05410	take	taken as is (t3_ tool name translated to oni_)
 1379dd0bc6	take	taken as is
+0b3ebcf268	take	taken as is; scenario sent-message-keeps-leading-spaces ported (WEB runs on Onicode's desktop target); mobile renders user messages through its own markdown, follow-up
