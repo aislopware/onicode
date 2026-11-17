@@ -2246,3 +2246,4 @@ e8e7fb7e9a	take	fix(mobile): one Working row after worktree setup (#37797); kept
 6794d5646c	skip	relay tracing telemetry opt-out: Onicode has no relay tracing or relay telemetry IPC (removed surfaces: relay, telemetry); discoveryFinished only serves it
 b79d277cdd	take	fix(server): a thread_send follow-up waits only on background work its own runs started (#37793)
 e65a790ac5	take	taken as is; Onicode server mints the same /api/assets and /api/attachments/upload shapes
+82afb28794	take	adapted: kept Onicode's toServerClock(environmentId) on the new chip, summary row and details sheet
