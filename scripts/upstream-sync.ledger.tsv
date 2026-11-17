@@ -2260,3 +2260,4 @@ b4e47a5a62	take	fix(providers): enforce approval and settings boundaries (#37826
 ba1193273a	take	fix(desktop): SSH environments download the remote runtime from ONICODE_RELEASE_BASE_URL (#31396)
 6fa874e98e	take	fix(opencode): unanswered stop now offers Force stop (#31021)
 9b313f2f09	take	fix(composer): open PR completion after opening brackets (#37827)
+3605d52842	take	fix(server): background tasks survive a failed Claude turn on a live process (#31840)
