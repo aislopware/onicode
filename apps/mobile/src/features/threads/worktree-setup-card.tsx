@@ -46,9 +46,15 @@ interface SetupDetailsControl {
   readonly onOpenDetails: () => void;
 }
 
-export function WorktreeSetupCard(props: WorktreeSetupCardProps & SetupDetailsControl) {
+export function WorktreeSetupCard(
+  props: WorktreeSetupCardProps & SetupDetailsControl & { readonly chipOnFoldRow: boolean },
+) {
   // Once the agent has the turn, running setup is a chip on the live Working row.
-  if (worktreeSetupHandedOff(props)) {
+  // Zen has no Working row, so the card stays until setup ends.
+  if (
+    worktreeSetupHandedOff(props) &&
+    (props.chipOnFoldRow || props.snapshot.phase !== "running")
+  ) {
     // As on web, only a setup that went wrong stays in view.
     return setupWentWrong(props.snapshot) ? <WorktreeSetupSummaryRow {...props} /> : null;
   }
@@ -214,7 +220,6 @@ export function WorktreeSetupDetails(
   return <SetupDetailsSheet {...props} now={now} />;
 }
 
-/** Holds the card's place until the server publishes the first setup snapshot. */
 // Same rows the first snapshot brings, so the card keeps its height when that snapshot lands.
 const PREPARING_STAGES: ReadonlyArray<WorktreeSetupStage> = WORKTREE_SETUP_STAGE_ORDER.filter(
   (id) => id !== "agent",

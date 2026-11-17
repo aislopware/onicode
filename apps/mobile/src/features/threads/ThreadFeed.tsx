@@ -4089,6 +4089,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
               {...props.worktreeSetup}
               detailsOpen={setupDetailsOpen}
               onOpenDetails={openSetupDetails}
+              chipOnFoldRow={setupFoldRowId !== null}
             />
           ) : props.preparingWorktree && info.index === setupAnchorIndex ? (
             <WorktreePreparingHeader />
@@ -4141,7 +4142,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
             maintainScrollAtEnd={jumpReady ? false : THREAD_FEED_MAINTAIN_SCROLL_AT_END}
             maintainVisibleContentPosition
             data={groupedFeed}
-            extraData={listAppearanceData}
+            extraData={{ ...listAppearanceData, setupFoldRowId }}
             renderItem={renderItem}
             viewabilityConfig={THREAD_MEDIA_VIEWABILITY_CONFIG}
             keyExtractor={(entry) => entry.id}
@@ -4199,6 +4200,7 @@ export const ThreadFeed = memo(function ThreadFeed(props: ThreadFeedProps) {
                     {...props.worktreeSetup}
                     detailsOpen={setupDetailsOpen}
                     onOpenDetails={openSetupDetails}
+                    chipOnFoldRow={setupFoldRowId !== null}
                   />
                 ) : setupAnchorIndex < 0 && props.preparingWorktree ? (
                   <WorktreePreparingHeader />
