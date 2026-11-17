@@ -79,7 +79,6 @@ jobs:
             exit 1
           fi
 
-      # Lint runs on every push, so it is the one job that saves the pnpm store.
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
 
@@ -132,8 +131,6 @@ jobs:
 
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
-        with:
-          save-pnpm-store: "false"
 
       # electron's install.js (run by ensure:electron) reads this cache before it
       # downloads from GitHub. The key changes only with the Electron version.
@@ -288,10 +285,6 @@ jobs:
       - name: Setup Vite+
         if: steps.select.outputs.filters != ''
         uses: ./.github/actions/setup-ci-deps
-        with:
-          save-pnpm-store: "false"
-          # Experiment, to be removed: one group installs from the registry to time it.
-          pnpm-store: ${{ matrix.group == 'packages' && 'false' || 'true' }}
 
       # electron's install.js (run by ensure:electron) reads this cache before it
       # downloads from GitHub. The key changes only with the Electron version.
@@ -353,8 +346,6 @@ jobs:
 
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
-        with:
-          save-pnpm-store: "false"
 
       # The browser project runs React tests in headless Chromium. Same cache key as
       # test_server, so both jobs share one downloaded browser.
@@ -421,8 +412,6 @@ jobs:
       - name: Setup Vite+
         if: steps.changes.outputs.test_server != 'false'
         uses: ./.github/actions/setup-ci-deps
-        with:
-          save-pnpm-store: "false"
 
       # No Electron setup here: `onicode` (apps/server) has no Electron dependency
       # and none of its tests touch the runtime. Only the non-server `test`

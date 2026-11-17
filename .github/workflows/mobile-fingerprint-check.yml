@@ -46,14 +46,13 @@ jobs:
             echo "No native fingerprint inputs changed." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # Installs from the pnpm store CI saves on main. setup-vp's own cache kept a 570 MB
-      # copy per pull request, which no other pull request could read.
+      # setup-vp's own cache kept a 570 MB pnpm copy per pull request, which no other
+      # pull request could read.
       - name: Setup Vite+
         if: steps.changes.outputs.relevant == 'true'
         uses: ./.github/actions/setup-ci-deps
         with:
           install-args: --filter=@onicode/mobile...
-          save-pnpm-store: "false"
 
       - name: Expose pnpm
         if: steps.changes.outputs.relevant == 'true'

@@ -1,22 +1,14 @@
 name: Setup CI dependencies
-description: Install Vite+ and the workspace dependencies from cache.
+description: Install Vite+ from cache and the workspace dependencies from the registry.
 inputs:
   install:
-    description: Set to "false" to set up Vite+ only, with no pnpm store or install
+    description: Set to "false" to set up Vite+ only, with no install
     required: false
     default: "true"
   install-args:
     description: Arguments for `vp install`, such as filters. Empty installs the whole workspace.
     required: false
     default: ""
-  save-pnpm-store:
-    description: Set to "false" when a concurrent job with the same install args saves the pnpm store
-    required: false
-    default: "true"
-  pnpm-store:
-    description: Set to "false" to install straight from the registry, without restoring or saving the pnpm store
-    required: false
-    default: "true"
 runs:
   using: composite
   steps:
@@ -34,38 +26,18 @@ runs:
         cache-toolchain: true
         run-install: false
 
-    # A shared key lets whichever install saves first, often a small filtered
-    # one, become every job's store. Each set of install args gets its own.
-    - name: Resolve pnpm store
+    # No pnpm store cache: on a hosted runner the registry is faster than the cache.
+    # Installing 1,561 packages into an empty store takes 20 s; restoring the 1.1 GB
+    # store took 28 s, and up to 100 s, before a 7 s install. The stores also filled
+    # the repository's 10 GB of cache, which evicted caches that are slow to rebuild.
+    - name: Locate pnpm metadata
       id: pnpm_store
       if: inputs.install == 'true'
       shell: bash
-      env:
-        INSTALL_ARGS: ${{ inputs.install-args }}
       run: |
-        echo "path=$(vp pm cache dir)" >> "$GITHUB_OUTPUT"
         metadata_dir="${pnpm_config_cache_dir:-$RUNNER_TEMP/pnpm-metadata}"
         echo "pnpm_config_cache_dir=$metadata_dir" >> "$GITHUB_ENV"
         echo "verified=$metadata_dir/lockfile-verified.jsonl" >> "$GITHUB_OUTPUT"
-        if [[ -z "$INSTALL_ARGS" ]]; then
-          echo "namespace=full" >> "$GITHUB_OUTPUT"
-        else
-          echo "namespace=filtered-$(printf '%s' "$INSTALL_ARGS" | cksum | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-        fi
-
-    # Filtered installs prefer the current full store, which holds every package,
-    # over an older store of their own.
-    - name: Restore pnpm store
-      id: pnpm_cache
-      if: inputs.install == 'true' && inputs.pnpm-store == 'true'
-      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ steps.pnpm_store.outputs.path }}
-        key: pnpm-${{ steps.pnpm_store.outputs.namespace }}-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json') }}
-        restore-keys: |
-          pnpm-full-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json') }}
-          pnpm-${{ steps.pnpm_store.outputs.namespace }}-v1-${{ runner.os }}-${{ runner.arch }}-
-          pnpm-full-v1-${{ runner.os }}-${{ runner.arch }}-
 
     # pnpm accepts an earlier pass for the same lockfile and policy at any age, so
     # a cached record skips fetching registry metadata for every package.
@@ -91,22 +63,3 @@ runs:
       with:
         path: ${{ steps.pnpm_store.outputs.verified }}
         key: ${{ steps.pnpm_verified.outputs.cache-primary-key }}
-
-    # A filtered install that started from the current full store adds nothing
-    # worth a second copy of it. A pull request never saves: its ~1 GB store is one
-    # only its own reruns can read, and those copies filled the repository's 10 GB of
-    # cache, which evicted the caches that are slow to rebuild. It installs what its
-    # lockfile adds over main's store from the registry instead.
-    # Concurrent jobs with the same install args reserve one key, so the losers
-    # compress the store for nothing; all but one pass save-pnpm-store: false.
-    - name: Save pnpm store
-      if: >-
-        inputs.install == 'true' && inputs.pnpm-store == 'true' && inputs.save-pnpm-store == 'true' &&
-        github.event_name != 'pull_request' &&
-        steps.pnpm_cache.outputs.cache-hit != 'true' &&
-        (steps.pnpm_store.outputs.namespace == 'full' ||
-          steps.pnpm_cache.outputs.cache-matched-key != format('pnpm-full-v1-{0}-{1}-{2}', runner.os, runner.arch, hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json')))
-      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-      with:
-        path: ${{ steps.pnpm_store.outputs.path }}
-        key: ${{ steps.pnpm_cache.outputs.cache-primary-key }}
