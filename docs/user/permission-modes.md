@@ -45,9 +45,11 @@ ACP Registry agents run their own tools in their own mode; Onicode answers their
 by the permission mode. See [ACP Registry permissions](./providers-acp.md#permissions-and-terminals).
 
 Claude can still ask in **Full access** when its settings disable bypass permissions or require
-approval for an action. Dangerous-removal safety checks in bypass mode reject the command with
-the original warning. Claude can use a safe rewrite when the warning supplies one; otherwise it
-continues without the removal and tells you what it skipped.
+approval for an action, and in **Auto** when its settings require approval or its review cannot
+decide. Dangerous-removal safety checks in bypass mode reject the command with the original
+warning, including a command Claude Code cannot read the way the shell will. Claude can use a
+safe rewrite when the warning supplies one or rewrite the command in plain shell syntax;
+otherwise it continues without the command and tells you what it skipped.
 While a Claude approval is pending, type a text reply to decline that request and give feedback
 directly to the agent that asked, including a subagent. Other pending requests stay unanswered.
 

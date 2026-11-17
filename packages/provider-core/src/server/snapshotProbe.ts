@@ -102,6 +102,7 @@ export interface ServerProviderPresentation {
   readonly reportsContextUsage?: boolean;
   readonly managesMcpServers?: boolean;
   readonly managesSessionSettings?: boolean;
+  readonly acceptsDraftActivity?: boolean;
   readonly supportedRuntimeModes?: ReadonlyArray<RuntimeMode>;
   readonly supportsConversationRollback?: boolean;
 }
@@ -301,6 +302,7 @@ export function buildServerProvider(input: {
     ...(input.presentation.reportsContextUsage === true ? { reportsContextUsage: true } : {}),
     ...(input.presentation.managesMcpServers === true ? { managesMcpServers: true } : {}),
     ...(input.presentation.managesSessionSettings === true ? { managesSessionSettings: true } : {}),
+    ...(input.presentation.acceptsDraftActivity === true ? { acceptsDraftActivity: true } : {}),
     ...(input.presentation.supportedRuntimeModes === undefined
       ? {}
       : { supportedRuntimeModes: [...input.presentation.supportedRuntimeModes] }),

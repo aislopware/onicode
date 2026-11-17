@@ -46,13 +46,21 @@ export const makeClaudeEnvironment = Effect.fn("makeClaudeEnvironment")(function
 });
 
 // A Claude Code session that launched Onicode exports these. A claude spawned with them acts as part of
-// that session: its session id, messaging socket and token, and effort.
+// that session: its session id, lineage and notes directory, worktree fence, messaging socket and
+// token, and effort. Claude Code 2.1.326 drops the same session variables from the clients it starts.
 const CLAUDE_HOST_SESSION_VARIABLES = [
   "CLAUDECODE",
   "CLAUDE_CODE_SESSION_ID",
   "CLAUDE_CODE_HOST_SESSION_ID",
+  "CLAUDE_CODE_BRIDGE_SESSION_ID",
+  "CLAUDE_CODE_EVAL_INTERVIEW_SESSION",
+  "CLAUDE_CODE_LAUNCHED_BY_SESSION_IDS",
   "CLAUDE_CODE_CHILD_SESSION",
+  "CLAUDE_CODE_CHILD_NOTES_DIR",
   "CLAUDE_CODE_SESSION_ATTENDED",
+  "CLAUDE_CODE_HOST_WORKTREE",
+  "CLAUDE_CODE_HOST_WORKTREE_FENCE",
+  "CLAUDE_CODE_CHROME_MCP_ORG_DENIED",
   "CLAUDE_CODE_MESSAGING_SOCKET",
   "CLAUDE_CODE_MESSAGING_TOKEN",
   "CLAUDE_CODE_EXECPATH",

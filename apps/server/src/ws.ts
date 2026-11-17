@@ -2407,6 +2407,8 @@ export const layerWsRpc = (
         [WS_METHODS.providerSessionInfo]: (input) => providerSessionRequests.info(input),
         [WS_METHODS.providerSessionMemoryFile]: (input) =>
           providerSessionRequests.memoryFile(input),
+        [WS_METHODS.providerSessionDraftActivity]: (input) =>
+          providerSessionRequests.draftActivity(input),
         [WS_METHODS.providerUploadFeedback]:
           /* Request instrumentation already owns the span; keep this helper in that context. */
           Effect.fnUntraced(

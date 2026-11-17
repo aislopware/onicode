@@ -236,6 +236,8 @@ export const ServerProvider = Schema.Struct({
   managesMcpServers: Schema.optional(Schema.Boolean),
   /** The live session answers `providerSession.info` and `providerSession.memoryFile`. */
   managesSessionSettings: Schema.optional(Schema.Boolean),
+  /** The live session takes `providerSession.draftActivity` while the user types the next prompt. */
+  acceptsDraftActivity: Schema.optional(Schema.Boolean),
   supportedRuntimeModes: Schema.optional(ForwardCompatibleArray(RuntimeMode)),
   supportsConversationRollback: Schema.optional(Schema.Boolean),
   supportsTextGeneration: Schema.optional(Schema.Boolean),

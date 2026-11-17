@@ -181,6 +181,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.providerSessionMcpOAuthCallback]: "provider",
   [WS_METHODS.providerSessionInfo]: "provider",
   [WS_METHODS.providerSessionMemoryFile]: "provider",
+  [WS_METHODS.providerSessionDraftActivity]: "provider",
   [WS_METHODS.subscribeVcsStatus]: "vcs",
   [WS_METHODS.subscribeVcsBranch]: "vcs",
   [WS_METHODS.vcsRefreshBranch]: "vcs",

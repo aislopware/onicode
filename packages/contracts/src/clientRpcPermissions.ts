@@ -73,6 +73,8 @@ export const CLIENT_GUARDED_RPC_SCOPES = {
   [ORCHESTRATION_V2_WS_METHODS.forceStopThread]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerSessionMcpServerAction]: AuthOrchestrationOperateScope,
   [WS_METHODS.providerSessionMcpOAuthCallback]: AuthOrchestrationOperateScope,
+  // Typing can make the provider upload the conversation ahead of the prompt, which spends usage.
+  [WS_METHODS.providerSessionDraftActivity]: AuthOrchestrationOperateScope,
   // Seeing and driving the host's screen is at least what a terminal on it allows.
   [WS_METHODS.remoteDesktopConnect]: AuthTerminalOperateScope,
   [WS_METHODS.peerLinksLink]: AuthAccessWriteScope,

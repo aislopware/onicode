@@ -137,4 +137,39 @@ describe("ProviderSessionRequests", () => {
       assert.strictEqual(failure.message, "Server not found: linear");
     }),
   );
+
+  it.effect("passes typing to a session that takes it and is silent everywhere else", () =>
+    Effect.gen(function* () {
+      const typing = Effect.flatMap(ProviderSessionRequests.ProviderSessionRequests, (requests) =>
+        requests.draftActivity({ threadId }),
+      );
+      let reports = 0;
+      yield* typing.pipe(Effect.provide(makeLayer({ session: null })));
+      yield* typing.pipe(Effect.provide(makeLayer({ session: {} })));
+      yield* typing.pipe(
+        Effect.provide(
+          makeLayer({
+            session: {
+              draftActivity: () =>
+                Effect.fail(new ProviderAdapter.ProviderAdapterSessionStoppedError({ driver })),
+            },
+          }),
+        ),
+      );
+      assert.strictEqual(reports, 0);
+      yield* typing.pipe(
+        Effect.provide(
+          makeLayer({
+            session: {
+              draftActivity: () =>
+                Effect.sync(() => {
+                  reports += 1;
+                }),
+            },
+          }),
+        ),
+      );
+      assert.strictEqual(reports, 1);
+    }),
+  );
 });

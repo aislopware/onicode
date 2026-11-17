@@ -107,6 +107,7 @@ const CLAUDE_PRESENTATION = {
   reportsContextUsage: true,
   managesMcpServers: true,
   managesSessionSettings: true,
+  acceptsDraftActivity: true,
 } as const;
 function toTitleCaseWords(value: string): string {
   const parts: Array<string> = [];

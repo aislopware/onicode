@@ -707,6 +707,8 @@ export interface ClaudeAgentSdkQuerySession {
     mode: PermissionMode,
   ) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly renameSession: (title: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
+  /** Tells Claude Code the person is typing the next prompt. Absent when the runner cannot say so. */
+  readonly draftActivity?: Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly stopTask: (taskId: string) => Effect.Effect<void, ClaudeAgentSdkQueryRunnerError>;
   readonly backgroundTasks: (
     toolUseId: string,
@@ -958,6 +960,7 @@ async function sendClaudeControlRequest(
       | "mcp_clear_auth"
       | "mcp_oauth_callback_url"
       | "rename_session"
+      | "prompt_draft_activity"
       | ClaudeSessionSettings.ClaudeSessionDialog;
     readonly [key: string]: unknown;
   },
@@ -993,6 +996,10 @@ const CLAUDE_MCP_APP_CAPABILITIES = [
 ] as const;
 // Captured inline, unlike Codex's shared app-server: a slow read delays only this session's stream, and only this long.
 const CLAUDE_MCP_APP_CAPTURE_TIMEOUT = "20 seconds";
+
+// Older clients answer prompt_draft_activity with an unknown-subtype error, and no capability
+// advertises it.
+const CLAUDE_DRAFT_ACTIVITY_MIN_VERSION = "2.1.326";
 
 function claudeSupportsMcpApps(capabilities: ReadonlySet<string>): boolean {
   return CLAUDE_MCP_APP_CAPABILITIES.every((capability) => capabilities.has(capability));
@@ -1975,6 +1982,11 @@ export const layerQueryRunner: Layer.Layer<
                   }),
                 ),
               ),
+            draftActivity: Effect.tryPromise({
+              try: () =>
+                sendClaudeControlRequest(queryRuntime, { subtype: "prompt_draft_activity" }),
+              catch: (cause) => queryRunnerError(cause, "draftActivity"),
+            }).pipe(Effect.asVoid),
             stopTask: (taskId) =>
               Effect.tryPromise({
                 try: () => queryRuntime.stopTask(taskId),
@@ -3704,13 +3716,6 @@ function claudeBypassAvailability(
   };
 }
 
-function requiresClaudeApproval(context: ActiveClaudeTurnContext): boolean {
-  // CLI-forwarded requests need a person's decision even under bypass (ask rules,
-  // safety checks, or settings fallback). Do not wait for queued init/status updates.
-  const policy = context.queryPolicy;
-  return policy.installPermissionCallback || policy.permissionMode === "bypassPermissions";
-}
-
 function claudeRuntimeQueryPolicyKey(policy: ClaudeRuntimeQueryPolicy): string {
   return JSON.stringify({
     permissionMode: policy.permissionMode,
@@ -4495,31 +4500,49 @@ const CLAUDE_NO_STANDING_GRANT_OPTIONS = [
   { decision: "accept", label: "Approve" },
 ] satisfies ReadonlyArray<ProviderApprovalOption>;
 
+// The SDK passes the CLI's decision_reason_type to the callback but leaves it out of its types.
+function claudeDecisionReasonType(callbackOptions: object): string | undefined {
+  const reasonType: unknown = Reflect.get(callbackOptions, "decisionReasonType");
+  return typeof reasonType === "string" ? reasonType : undefined;
+}
+
+type ClaudeAskCallbackOptions = Pick<
+  Parameters<CanUseTool>[2],
+  "decisionReason" | "matchedAskRule" | "suppressAlwaysAllowRule"
+>;
+
+// The reason can carry terminal escapes from the CLI's own prompt renderer.
+function claudeDecisionReason(callbackOptions: ClaudeAskCallbackOptions): string {
+  return NodeUtil.stripVTControlCharacters(callbackOptions.decisionReason ?? "").trim();
+}
+
+// An ask rule that replaced the tool's own ask arrives as the reason type; one that rides
+// beside a safety check arrives as matchedAskRule.
+function claudeAskRuleForcedPrompt(callbackOptions: ClaudeAskCallbackOptions): boolean {
+  return (
+    callbackOptions.matchedAskRule !== undefined ||
+    claudeDecisionReasonType(callbackOptions) === "rule"
+  );
+}
+
 export function claudeApprovalPresentation(input: {
   readonly permissionMode: PermissionMode;
   readonly prompt: string;
-  readonly callbackOptions: Pick<
-    Parameters<CanUseTool>[2],
-    "decisionReason" | "matchedAskRule" | "suppressAlwaysAllowRule"
-  >;
+  readonly callbackOptions: ClaudeAskCallbackOptions;
 }): {
   readonly reason?: string;
   readonly fullAccessOverride?: ProviderApprovalFullAccessOverride;
   readonly options?: ReadonlyArray<ProviderApprovalOption>;
 } {
-  // The reason can carry terminal escapes from the CLI's own prompt renderer.
-  const reason = NodeUtil.stripVTControlCharacters(
-    input.callbackOptions.decisionReason ?? "",
-  ).trim();
+  const reason = claudeDecisionReason(input.callbackOptions);
   // Bypass auto-allows everything it can, so any ask that still reaches the
-  // callback is one bypass refused. The SDK drops the CLI's decision_reason_type,
-  // leaving the matched ask rule as the only way to tell the two causes apart.
+  // callback is one bypass refused: the user's ask rule or a Claude Code check.
   const fullAccessOverride: ProviderApprovalFullAccessOverride | undefined =
     input.permissionMode !== "bypassPermissions"
       ? undefined
-      : input.callbackOptions.matchedAskRule === undefined
-        ? "provider_check"
-        : "ask_rule";
+      : claudeAskRuleForcedPrompt(input.callbackOptions)
+        ? "ask_rule"
+        : "provider_check";
   return {
     ...(reason === "" || reason === input.prompt ? {} : { reason }),
     ...(fullAccessOverride === undefined ? {} : { fullAccessOverride }),
@@ -4527,6 +4550,74 @@ export function claudeApprovalPresentation(input: {
       ? { options: CLAUDE_NO_STANDING_GRANT_OPTIONS }
       : {}),
   };
+}
+
+// Every reason Claude Code 2.1.326 gives its dangerousRemoval circuit breaker. The breaker's
+// name never reaches the callback, so its wording is the only way to recognise it.
+const CLAUDE_REMOVAL_SAFETY_REASONS: ReadonlyArray<RegExp> = [
+  /^Dangerous rm(?:dir)?\b/i,
+  /\brule out a dangerous removal\b/i,
+  /^This shell -c script runs rm and could not be checked$/,
+  /^A permission rule denies a command in this shell -c script$/,
+];
+
+function isClaudeRemovalSafetyAsk(callbackOptions: ClaudeAskCallbackOptions): boolean {
+  // A hook or a rule can word its own reason like the check does.
+  const reasonType = claudeDecisionReasonType(callbackOptions);
+  if (
+    reasonType !== undefined &&
+    reasonType !== "safetyCheck" &&
+    reasonType !== "subcommandResults"
+  ) {
+    return false;
+  }
+  const reason = claudeDecisionReason(callbackOptions);
+  return CLAUDE_REMOVAL_SAFETY_REASONS.some((pattern) => pattern.test(reason));
+}
+
+export type ClaudeForwardedAskDisposition =
+  | { readonly type: "ask" }
+  | { readonly type: "deny"; readonly message: string };
+
+/**
+ * What Onicode does with a tool call Claude Code asked a person about. It never allows one:
+ * Claude Code forwards only what its mode, rules and classifier did not approve, so a silent
+ * allow here would overrule the user's ask rules and Claude Code's own checks.
+ */
+export function claudeForwardedAskDisposition(input: {
+  readonly toolName: string;
+  readonly runtimePolicy: Pick<
+    ProviderAdapter.ProviderAdapterV2RuntimePolicy,
+    "interactionMode" | "approvalPolicy"
+  >;
+  /** The mode the Claude process is in now, which a settings fallback can make stricter. */
+  readonly permissionMode: PermissionMode;
+  readonly callbackOptions: ClaudeAskCallbackOptions;
+}): ClaudeForwardedAskDisposition {
+  if (input.runtimePolicy.approvalPolicy === "never") {
+    return {
+      type: "deny",
+      message:
+        input.runtimePolicy.interactionMode === "plan"
+          ? "This tool requires approval in Plan mode, but approvals are disabled for this thread."
+          : "Claude Code asked for a person's approval of this tool call, but approvals are disabled for this thread; the user did not reject it. The call did not run. Continue the task without it and tell the user what needed approval.",
+    };
+  }
+  // Full access means the person chose not to be asked, and a removal the check cannot clear
+  // usually has a safe rewrite, so Claude gets the warning back instead of a card. An ask rule
+  // is the person asking to be prompted, so it still reaches them.
+  if (
+    input.toolName === "Bash" &&
+    input.permissionMode === "bypassPermissions" &&
+    !claudeAskRuleForcedPrompt(input.callbackOptions) &&
+    isClaudeRemovalSafetyAsk(input.callbackOptions)
+  ) {
+    return {
+      type: "deny",
+      message: `Claude Code's removal safety check denied this command; the user did not reject it. The command did not run. Do not bypass the check by splitting the removal, putting it in a script, or using another tool or shell. If the warning below supplies a safe rewrite, use it and let the same check evaluate it. If it says the command could not be read the way the shell will read it, rewrite the command in plain shell syntax the check can read and run that. Otherwise continue the rest of the task without the removal and tell the user what you needed to delete and why. Warning: ${claudeDecisionReason(input.callbackOptions)}`,
+    };
+  }
+  return { type: "ask" };
 }
 
 export function permissionResultFromDecision(input: {
@@ -5321,6 +5412,8 @@ interface ClaudeLiveQueryContext {
   // From system/init; feature-detects control requests such as MCP Apps.
   capabilities: ReadonlySet<string>;
   claudeCodeVersion: string | undefined;
+  // Set once this process refuses prompt_draft_activity, so typing stops asking it.
+  draftActivityRefused: boolean;
   // Read at init, once a self-updating launcher has replaced itself and started its build.
   installedAtInit: ClaudeInstalledBuild | undefined;
   permissionMode: PermissionMode;
@@ -12568,11 +12661,18 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             });
           }
 
-          if (
-            heldForEcho &&
-            toolName !== "ExitPlanMode" &&
-            (toolName === "AskUserQuestion" || requiresClaudeApproval(context))
-          ) {
+          const disposition =
+            toolName === "AskUserQuestion" || toolName === "ExitPlanMode"
+              ? undefined
+              : claudeForwardedAskDisposition({
+                  toolName,
+                  runtimePolicy: context.input.runtimePolicy,
+                  permissionMode:
+                    (yield* Ref.get(queryContext))?.permissionMode ??
+                    context.queryPolicy.permissionMode,
+                  callbackOptions,
+                });
+          if (heldForEcho && (toolName === "AskUserQuestion" || disposition?.type === "ask")) {
             // The SDK blocks prompt echoes on permission answers; release held output except for ExitPlanMode.
             yield* releaseHeldRootFrames(context);
             if (startToolCall) {
@@ -12676,43 +12776,10 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             } satisfies PermissionResult;
           }
 
-          if (
-            context.input.runtimePolicy.interactionMode === "plan" &&
-            context.input.runtimePolicy.approvalPolicy === "never"
-          ) {
+          if (disposition?.type === "deny") {
             return {
               behavior: "deny",
-              message:
-                "This tool requires approval in Plan mode, but approvals are disabled for this thread.",
-              toolUseID: callbackOptions.toolUseID,
-            } satisfies PermissionResult;
-          }
-
-          if (!requiresClaudeApproval(context)) {
-            return {
-              behavior: "allow",
-              updatedInput: toolInput,
-              toolUseID: callbackOptions.toolUseID,
-            } satisfies PermissionResult;
-          }
-
-          const activePermissionMode =
-            (yield* Ref.get(queryContext))?.permissionMode ?? context.queryPolicy.permissionMode;
-          const safetyReason = NodeUtil.stripVTControlCharacters(
-            callbackOptions.decisionReason ?? "",
-          ).trim();
-          // The SDK omits the CLI's dangerousRemoval discriminator, so match its removal warnings.
-          if (
-            toolName === "Bash" &&
-            activePermissionMode === "bypassPermissions" &&
-            callbackOptions.matchedAskRule === undefined &&
-            (/^Dangerous rm(?:dir)?\b/i.test(safetyReason) ||
-              safetyReason === "This shell -c script runs rm and could not be checked" ||
-              safetyReason === "A permission rule denies a command in this shell -c script")
-          ) {
-            return {
-              behavior: "deny",
-              message: `Claude Code's removal safety check denied this command; the user did not reject it. The command did not run. Do not bypass the check by splitting the removal, putting it in a script, or using another tool or shell. If the warning below supplies a safe rewrite, use it and let the same check evaluate it. Otherwise continue the rest of the task without the removal and tell the user what you needed to delete and why. Warning: ${safetyReason}`,
+              message: disposition.message,
               toolUseID: callbackOptions.toolUseID,
             } satisfies PermissionResult;
           }
@@ -13368,6 +13435,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             receivedInit: false,
             capabilities: new Set(),
             claudeCodeVersion: undefined,
+            draftActivityRefused: false,
             installedAtInit: undefined,
             permissionMode: queryOptions.permissionMode,
             stopping: false,
@@ -14816,6 +14884,45 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               return;
             }
             yield* applySessionTitle(live.query, live.nativeThreadId, title);
+          }),
+          draftActivity: Effect.fn("ClaudeAdapterV2.draftActivity")(function* ({ providerThread }) {
+            // The span says why nothing was sent; the request itself has no visible effect.
+            const outcome = (value: string) =>
+              Effect.annotateCurrentSpan({ "claude.draft_activity": value });
+            const live = yield* Ref.get(queryContext);
+            if (
+              live === null ||
+              live.stopping ||
+              live.nativeThreadId !== providerThread.nativeThreadRef?.nativeId
+            ) {
+              return yield* outcome("no_process");
+            }
+            const report = live.query.draftActivity;
+            if (report === undefined || live.draftActivityRefused) {
+              return yield* outcome("refused");
+            }
+            if (
+              live.claudeCodeVersion === undefined ||
+              compareSemverVersions(live.claudeCodeVersion, CLAUDE_DRAFT_ACTIVITY_MIN_VERSION) < 0
+            ) {
+              return yield* outcome("client_too_old");
+            }
+            // Claude Code uses the signal only between turns.
+            if ((yield* Ref.get(activeTurn)) !== null) return yield* outcome("turn_running");
+            yield* report.pipe(
+              Effect.andThen(outcome("sent")),
+              Effect.catch((cause) => {
+                live.draftActivityRefused = true;
+                return Effect.logInfo("orchestration-v2.claude-draft-activity-refused", {
+                  nativeThreadId: live.nativeThreadId,
+                  claudeCodeVersion: live.claudeCodeVersion,
+                  cause,
+                }).pipe(Effect.andThen(outcome("refused")));
+              }),
+              // A busy process is not a refusal; the next keystroke asks again.
+              Effect.timeout("10 seconds"),
+              Effect.ignore,
+            );
           }),
           stopTask: Effect.fn("ClaudeAdapterV2.stopTask")(function* ({ providerThread, taskId }) {
             const liveQuery = yield* Ref.get(queryContext);
