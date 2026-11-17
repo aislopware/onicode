@@ -2339,3 +2339,4 @@ a2bace5cf4	take	merged clean
 c2eb8f3369	take	merged clean
 cd9c39fe3c	take	conflict: kept Onicode's getStandardThemeColors fallback name
 49c3ab8632	take	taken as is
+6ec1d31b1e	take	conflict: test fixtures kept Onicode's Map archive in place of JSZip
