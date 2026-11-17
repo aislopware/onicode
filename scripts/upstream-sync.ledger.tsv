@@ -2276,3 +2276,4 @@ d775f6bff1	take	fix(web,mobile): message timestamps follow a system time zone ch
 75683c8f93	take	fix(contracts): preserve whitespace in diff file paths (#37835); pnpm-lock patch hash regenerated with vp i
 9e32c95576	take	fix(client-runtime): show routes whose host refused this device's sign-in (#33199); adapted: no DPoP renewal or failureCause in Onicode, so the clock-skew exclusion is dropped; relay fixtures in tests swapped for the SSH route
 77aaabb061	take	adopted upstream over Onicode's follow-up e831f9d7ed: same fix, upstream's nullish form and exact trailing-space test name
+f68d9704fc	take	cloud/selfUpdate.ts and cloud/servicePreflight.ts hunks applied to service/; channel arg dropped (single channel); upstream version claim in the protocol-3 comment removed
