@@ -1,7 +1,6 @@
 // @effect-diagnostics nodeBuiltinImport:off - Hands a real file on disk to a real desktop browser.
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
-import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -22,16 +21,31 @@ vi.spyOn(chromium, "launch").mockImplementation(launches.launch);
 vi.spyOn(chromium, "launchPersistentContext").mockImplementation(launches.persistent);
 vi.mock("node:fs/promises", () => ({ mkdir: launches.mkdir, rm: launches.rm }));
 
-// Chromium reports its DevTools port as open before it writes DevToolsActivePort, so reading that
-// file right after launch can miss it. A port picked up front needs no file.
-const freeLoopbackPort = async () => {
-  const server = NodeNet.createServer().listen(0, "127.0.0.1");
-  await NodeEvents.once(server, "listening");
-  const address = server.address();
-  server.close();
-  await NodeEvents.once(server, "close");
-  if (address === null || typeof address === "string") throw new Error("No TCP port was assigned");
-  return address.port;
+// Playwright drives Chromium over a pipe, so its launch returns before the DevTools port server
+// may be listening. Chromium writes DevToolsActivePort ("<port>\n<path>") once it listens.
+const devToolsActivePort = async (userDataDir: string) => {
+  const read = () => {
+    try {
+      const [port, path] = NodeFS.readFileSync(
+        NodePath.join(userDataDir, "DevToolsActivePort"),
+        "utf8",
+      ).split("\n");
+      return path ? port : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const watcher = NodeFS.watch(userDataDir);
+  try {
+    let port = read();
+    while (port === undefined) {
+      await NodeEvents.once(watcher, "change");
+      port = read();
+    }
+    return port;
+  } finally {
+    watcher.close();
+  }
 };
 
 const makeContext = () => {
@@ -371,12 +385,12 @@ describe("ServerBrowserContexts", () => {
     const userDataDir = NodePath.join(directory, "profile");
     const pool = new ServerBrowserContexts(options());
     try {
-      const port = await freeLoopbackPort();
       const desktop = await launchPersistentChromium(userDataDir, {
         headless: true,
-        args: [`--remote-debugging-port=${port}`],
+        args: ["--remote-debugging-port=0"],
       });
       try {
+        const port = await devToolsActivePort(userDataDir);
         const { browser, page } = await pool.connectDesktopPage(`http://127.0.0.1:${port}`);
         try {
           const file = NodePath.join(directory, "large.bin");
