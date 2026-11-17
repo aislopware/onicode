@@ -1067,6 +1067,18 @@ describe("ClaudeAdapterV2 approval presentation", () => {
       },
     });
     assert.deepEqual(presentation, { fullAccessOverride: "ask_rule" });
+    // A plain ask rule arrives as the reason type, with no matchedAskRule.
+    const plainAskRule: { decisionReason?: string; decisionReasonType: string } = {
+      decisionReasonType: "rule",
+    };
+    assert.deepEqual(
+      ClaudeAdapterV2.claudeApprovalPresentation({
+        permissionMode: "bypassPermissions",
+        prompt: "Claude wants to run git push",
+        callbackOptions: plainAskRule,
+      }),
+      { fullAccessOverride: "ask_rule" },
+    );
   });
 
   it("adds nothing to ordinary approvals outside full access", () => {
@@ -1076,6 +1088,98 @@ describe("ClaudeAdapterV2 approval presentation", () => {
       callbackOptions: { decisionReason: "Run make?" },
     });
     assert.deepEqual(presentation, {});
+  });
+});
+
+describe("ClaudeAdapterV2 forwarded ask policy", () => {
+  const removalReason = "Dangerous rm operation on possibly-empty variable path: $TARGET";
+  const disposition = (input: {
+    readonly toolName?: string;
+    readonly permissionMode?: "bypassPermissions" | "auto" | "default" | "acceptEdits" | "plan";
+    readonly interactionMode?: "default" | "plan";
+    readonly approvalPolicy?: "never";
+    readonly callbackOptions?: Record<string, unknown>;
+  }) =>
+    ClaudeAdapterV2.claudeForwardedAskDisposition({
+      toolName: input.toolName ?? "Bash",
+      permissionMode: input.permissionMode ?? "bypassPermissions",
+      runtimePolicy: {
+        interactionMode: input.interactionMode ?? "default",
+        ...(input.approvalPolicy === undefined ? {} : { approvalPolicy: input.approvalPolicy }),
+      },
+      callbackOptions: { ...input.callbackOptions },
+    }).type;
+
+  it.each([
+    {
+      name: "a removal check in full access",
+      input: { callbackOptions: { decisionReason: removalReason } },
+      expected: "deny",
+    },
+    {
+      name: "a removal check nested in a compound command",
+      input: {
+        callbackOptions: {
+          decisionReason: removalReason,
+          decisionReasonType: "subcommandResults",
+        },
+      },
+      expected: "deny",
+    },
+    {
+      name: "a hook that words its reason like the removal check",
+      input: { callbackOptions: { decisionReason: removalReason, decisionReasonType: "hook" } },
+      expected: "ask",
+    },
+    {
+      name: "the user's ask rule in full access",
+      input: { callbackOptions: { decisionReasonType: "rule" } },
+      expected: "ask",
+    },
+    {
+      name: "another Claude Code check in full access",
+      input: {
+        callbackOptions: {
+          decisionReason:
+            "The permission check for this command did not finish, so its safety checks did not run.",
+          decisionReasonType: "safetyCheck",
+        },
+      },
+      expected: "ask",
+    },
+    {
+      name: "a removal warning on a tool that is not Bash",
+      input: { toolName: "Write", callbackOptions: { decisionReason: removalReason } },
+      expected: "ask",
+    },
+    {
+      name: "a removal check outside full access",
+      input: {
+        permissionMode: "default" as const,
+        callbackOptions: { decisionReason: removalReason },
+      },
+      expected: "ask",
+    },
+    {
+      name: "the user's ask rule in Auto",
+      input: { permissionMode: "auto" as const, callbackOptions: { decisionReasonType: "rule" } },
+      expected: "ask",
+    },
+    {
+      name: "any ask when the thread allows no approvals",
+      input: { permissionMode: "acceptEdits" as const, approvalPolicy: "never" as const },
+      expected: "deny",
+    },
+    {
+      name: "an ask rule when the thread allows no approvals",
+      input: {
+        approvalPolicy: "never" as const,
+        callbackOptions: { decisionReasonType: "rule" },
+      },
+      expected: "deny",
+    },
+  ])("answers $name with $expected", ({ input, expected }) => {
+    assert.equal(disposition(input), expected);
   });
 });
 
@@ -1190,8 +1294,11 @@ describe("ClaudeAdapterV2 session permissions", () => {
   });
 });
 
-describe("ClaudeAdapterV2 Auto-accept edits", () => {
-  it.effect("asks before a command instead of allowing it", () =>
+describe("ClaudeAdapterV2 asks Claude Code forwards", () => {
+  it.effect.each([
+    { runtimeMode: "auto-accept-edits", permissionMode: "acceptEdits" },
+    { runtimeMode: "auto", permissionMode: "auto" },
+  ] as const)("asks before a command in $runtimeMode instead of allowing it", (mode) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -1246,7 +1353,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
         },
       });
       const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
-        runtimeMode: "auto-accept-edits",
+        runtimeMode: mode.runtimeMode,
         interactionMode: "default",
         cwd: "/workspace",
       });
@@ -1274,7 +1381,7 @@ describe("ClaudeAdapterV2 Auto-accept edits", () => {
           runtimePolicy,
         }),
       );
-      assert.equal(openedOptions?.permissionMode, "acceptEdits");
+      assert.equal(openedOptions?.permissionMode, mode.permissionMode);
       const canUseTool = openedOptions?.canUseTool;
       assert.isFunction(canUseTool);
 
@@ -2114,6 +2221,11 @@ describe("ClaudeAdapterV2 resume compaction", () => {
         },
         { askRule: false, reason: "This shell -c script runs rm and could not be checked" },
         { askRule: false, reason: "A permission rule denies a command in this shell -c script" },
+        {
+          askRule: false,
+          reason:
+            "Claude Code can't be sure it read this command the way the shell will, so it can't rule out a dangerous removal. Read the command, and don't go ahead if you can't tell what it does.",
+        },
       ].entries()) {
         const safetyRequest = yield* runtime.events.pipe(
           Stream.filter((event) => event.type === "runtime_request.updated"),
@@ -3699,6 +3811,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       offerAndWait: (message: SDKMessage) => Effect.Effect<void>,
     ) => Effect.Effect<void>;
     readonly renameSession?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["renameSession"];
+    readonly draftActivity?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["draftActivity"];
     readonly applyFlagSettings?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["applyFlagSettings"];
     readonly stopTask?: (
       taskId: string,
@@ -3943,6 +4056,9 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 stopTask: options?.stopTask ?? (() => Effect.void),
                 interrupt: options?.interrupt ?? Effect.void,
                 close: options?.close?.(sdkMessages) ?? Effect.void,
+                ...(options?.draftActivity === undefined
+                  ? {}
+                  : { draftActivity: options.draftActivity }),
               };
             }),
           forkSession: options?.forkSession ?? (() => Effect.die("unused forkSession")),
@@ -10105,6 +10221,79 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         ),
       ),
     ),
+  );
+
+  it.effect.each([
+    { installed: "2.1.326", reports: ["sent", "refused"] },
+    { installed: "2.1.325", reports: [] },
+  ])(
+    "tells an idle Claude Code $installed process that the user is typing, until it refuses",
+    ({ installed, reports: expected }) =>
+      Effect.gen(function* () {
+        const reports: Array<string> = [];
+        let refuses = false;
+        const harness = yield* makeWakeHarnessWithOptions({
+          draftActivity: Effect.suspend(() => {
+            reports.push(refuses ? "refused" : "sent");
+            return refuses
+              ? Effect.fail(
+                  new ClaudeAdapterV2.ClaudeAgentSdkQueryRunnerError({
+                    method: "draftActivity",
+                    cause: "Unsupported control request subtype: prompt_draft_activity",
+                  }),
+                )
+              : Effect.void;
+          }),
+        });
+        const typing = Effect.suspend(
+          () =>
+            harness.runtime.draftActivity?.({ providerThread: harness.providerThread }) ??
+            Effect.die("Claude sessions take draft activity"),
+        );
+        // No process yet: typing must not start one.
+        yield* typing;
+        yield* harness.runtime.startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: yield* DateTime.now,
+            attemptId: RunAttemptId.make("attempt-draft-activity"),
+            text: "Continue.",
+            attachments: [],
+          }),
+        );
+        yield* harness.offerAndWait(
+          claudeSdkFrame({
+            type: "system",
+            subtype: "init",
+            uuid: "00000000-0000-4000-8000-000000000694",
+            session_id: WAKE_NATIVE_SESSION,
+            claude_code_version: installed,
+          }),
+        );
+        // Claude Code ignores the signal during a turn.
+        yield* typing;
+        assert.deepEqual(reports, []);
+        yield* Queue.offer(
+          harness.sdkMessages,
+          makeResultFrame({ uuid: "00000000-0000-4000-8000-000000000695", result: "OK" }),
+        );
+        assert.equal((yield* Queue.take(harness.terminalReceipts)).status, "completed");
+        yield* typing;
+        refuses = true;
+        yield* typing;
+        yield* typing;
+        assert.deepEqual(reports, expected);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
   );
 
   it.effect("measures context against the window Claude itself works in", () =>

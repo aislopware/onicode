@@ -254,6 +254,7 @@ import { assistantCitationLabel } from "@onicode/shared/assistantCitations";
 import { assistantCitationNavigation } from "../../lib/assistantCitationNavigation";
 import { Button } from "../ui/button";
 import { useManagedPolicy } from "../../state/managedPolicy";
+import { reportDraftActivity } from "../../state/providerSession";
 import { hasProviderSetup } from "./ProviderStatusBanner";
 import { type AppModelOption, getAppModelOptionsForInstance } from "../../modelSelection";
 import type { UnifiedSettings } from "@onicode/contracts/settings";
@@ -1626,6 +1627,15 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       return;
     }
     onTypingGuardDraftChange();
+    if (
+      routeKind === "server" &&
+      activeThreadId !== null &&
+      phase !== "running" &&
+      nextPrompt.length > 0 &&
+      selectedProviderStatus?.acceptsDraftActivity === true
+    ) {
+      reportDraftActivity(scopeThreadRef(environmentId, activeThreadId));
+    }
     promptRef.current = nextPrompt;
     setPrompt(nextPrompt);
     if (promptHistoryPositionRef.current?.position.recalled !== nextPrompt) {

@@ -43,6 +43,8 @@ export class ProviderSessionRequests extends Context.Service<
     readonly memoryFile: (
       input: ProviderMemoryFileInput,
     ) => Effect.Effect<ProviderMemoryFile, ProviderSessionRequestError>;
+    /** A hint, so it never fails: no live session, another provider, or a refusal all end in nothing. */
+    readonly draftActivity: (input: ProviderSessionThreadInput) => Effect.Effect<void>;
   }
 >()("onicode/orchestration-v2/ProviderSessionRequests") {}
 
@@ -170,6 +172,17 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError(adapterFailure(input.threadId)));
   });
 
+  const draftActivity = Effect.fn("ProviderSessionRequests.draftActivity")(function* (
+    input: ProviderSessionThreadInput,
+  ) {
+    yield* resolve(input.threadId).pipe(
+      Effect.flatMap(
+        ({ providerThread, runtime }) => runtime.draftActivity?.({ providerThread }) ?? Effect.void,
+      ),
+      Effect.ignore,
+    );
+  });
+
   return ProviderSessionRequests.of({
     contextUsage,
     mcpServers,
@@ -177,6 +190,7 @@ const make = Effect.gen(function* () {
     mcpOAuthCallback,
     info,
     memoryFile,
+    draftActivity,
   });
 });
 

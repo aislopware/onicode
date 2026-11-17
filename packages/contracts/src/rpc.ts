@@ -459,6 +459,7 @@ export const WS_METHODS = {
   providerSessionMcpOAuthCallback: "providerSession.mcpOAuthCallback",
   providerSessionInfo: "providerSession.info",
   providerSessionMemoryFile: "providerSession.memoryFile",
+  providerSessionDraftActivity: "providerSession.draftActivity",
   providerAuthStart: "provider.auth.start",
   providerConsumeResetCredit: "provider.consumeResetCredit",
   providerAuthComplete: "provider.auth.complete",
@@ -1554,6 +1555,11 @@ const WsProviderSessionMemoryFileRpc = Rpc.make(WS_METHODS.providerSessionMemory
   error: Schema.Union([ProviderSessionRequestError, EnvironmentAuthorizationError]),
 });
 
+const WsProviderSessionDraftActivityRpc = Rpc.make(WS_METHODS.providerSessionDraftActivity, {
+  payload: ProviderSessionThreadInput,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsProviderUploadFeedbackRpc = Rpc.make(WS_METHODS.providerUploadFeedback, {
   payload: ProviderUploadFeedbackInput,
   success: ProviderUploadFeedbackResult,
@@ -2300,6 +2306,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsProviderSessionMcpOAuthCallbackRpc,
   WsProviderSessionInfoRpc,
   WsProviderSessionMemoryFileRpc,
+  WsProviderSessionDraftActivityRpc,
   WsSubscribeVcsStatusRpc,
   WsSubscribeVcsBranchRpc,
   WsVcsRefreshBranchRpc,

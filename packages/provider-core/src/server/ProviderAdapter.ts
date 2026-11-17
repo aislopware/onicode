@@ -845,6 +845,13 @@ export interface ProviderAdapterV2SessionRuntime {
   }) => Effect.Effect<ProviderContextUsage, ProviderAdapterV2Error>;
   readonly mcpServers?: ProviderAdapterV2McpServers;
   readonly sessionSettings?: ProviderAdapterV2SessionSettings;
+  /**
+   * The person is typing the thread's next prompt. Carries none of the text, and never starts
+   * or wakes a session: a provider may only use the time to prepare its next request.
+   */
+  readonly draftActivity?: (input: {
+    readonly providerThread: OrchestrationV2ProviderThread;
+  }) => Effect.Effect<void, ProviderAdapterV2Error>;
   readonly rollbackThread: (
     input: ProviderAdapterV2RollbackThreadInput,
   ) => Effect.Effect<ProviderAdapterV2ThreadSnapshot, ProviderAdapterV2Error>;

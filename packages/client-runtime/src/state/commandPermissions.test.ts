@@ -210,6 +210,18 @@ describe("command permissions", () => {
         expect(denied._tag).toBe("EnvironmentAuthorizationError");
       }),
   );
+  it.effect("keeps typing reports from a connection that cannot operate threads", () =>
+    Effect.gen(function* () {
+      const registry = yield* setup;
+      const typing = createCommandPermissions(runtime, WS_METHODS.providerSessionDraftActivity);
+      registry.set(sessions(env), AsyncResult.success(grant(false)));
+      expect((yield* typing.authorize(registry, env).pipe(Effect.flip)).requiredPermission).toBe(
+        AuthOrchestrationOperateScope,
+      );
+      registry.set(sessions(env), AsyncResult.success(grant(true)));
+      yield* typing.authorize(registry, env);
+    }),
+  );
   it.effect("waits for an initial grant", () =>
     Effect.gen(function* () {
       const registry = yield* setup;

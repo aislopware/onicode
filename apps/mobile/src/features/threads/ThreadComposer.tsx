@@ -76,6 +76,7 @@ import {
 import { useProject, useVisibleThreadShells } from "../../state/entities";
 import { useMentionableEnvironments } from "../../state/environments";
 import { useLinkedEnvironments } from "../../state/peerLinks";
+import { reportDraftActivity } from "../../state/providerSession";
 import { useEnvironmentScopeDenied } from "../../state/session";
 import { environmentThreadDetails } from "../../state/threads";
 import { scopeProjectRef, scopeThreadRef } from "@onicode/client-runtime/environment";
@@ -1120,7 +1121,18 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   skills={composerMenu.skills}
                   selection={composerMenu.selection}
                   onChangeText={(text) => {
-                    if (!isSubmissionLocked) onChangeDraftMessage(text);
+                    if (isSubmissionLocked) return;
+                    onChangeDraftMessage(text);
+                    if (
+                      !props.isDraft &&
+                      !props.activeThreadBusy &&
+                      text.length > 0 &&
+                      selectedProviderStatus?.acceptsDraftActivity === true
+                    ) {
+                      reportDraftActivity(
+                        scopeThreadRef(props.environmentId, props.selectedThread.id),
+                      );
+                    }
                   }}
                   onSelectionChange={composerMenu.onSelectionChange}
                   onPasteImages={(uris) => {
