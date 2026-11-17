@@ -2314,3 +2314,4 @@ adffb3623f	take	taken as is
 0597b9edcd	take	relay/AgentAwarenessRelay.ts hunk dropped (relay removed); agentContextBudget.json re-measured on Onicode's text (mcpToolListJsonBytes 50143); evals/mcp-tool-use lists IssuesToolkit so evals see the shipped tool set; test scope string rebranded
 86863beede	take	upstream migration 097 renumbered to Onicode 102; scripts/release-smoke.ts dropped (T3 release pipeline); rpc.ts GuestShare context dropped; pnpm-lock regenerated
 6ad58a8485	take	ListSearchToolbar keeps Onicode openEnvironmentSettings(environmentId); iOS tab icon keeps Onicode imageSource/template shape; native changes (fingerprint bump)
+60f7e5d9b1	take	IssuesPage drops upstream isElectron import (no web surface in Onicode)
