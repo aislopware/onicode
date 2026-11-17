@@ -2422,3 +2422,4 @@ fd7d2aec5e	take	fix(azure-devops): issue list no longer fails looking up the sig
 439c96550c	take	fix(server): review diffs no longer stall on large reordered files
 b3df47942a	skip	Onicode's mobile-fingerprint-check.yml triggers on default pull_request types (no 'edited'), so a title or body edit never starts or cancels the run
 e3949714e3	take	fix(web): restore the Issues right panel shortcut; import-block conflict resolved keeping isElectron out (desktop-only); scenario ported
+13ecf5b22e	take	feat(cursor): edit earlier messages by rewinding the Cursor agent
