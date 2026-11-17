@@ -12,7 +12,9 @@ name: Release
 # build yet, and otherwise as an OTA update to the builds that share it.
 #
 # iOS builds on the self-hosted runner labelled onicode-ios (a macOS VM that keeps its ccache, pnpm
-# store and CocoaPods cache between runs); -f ios_runner=github falls back to a hosted macOS runner.
+# store and CocoaPods cache between runs), and so does macOS when no iOS build shares the run: the
+# one runner would make the desktop release wait for the iOS build. -f mac_runner=github moves both
+# to hosted macOS runners.
 #
 # Hosted runners install from the registry with no pnpm store cache: restoring one took as long as
 # the downloads, and the stores filled the repository's 10 GB of cache, which evicted the Gradle
@@ -37,8 +39,8 @@ on:
         description: Build macOS and Linux. Releasing needs them.
         type: boolean
         default: true
-      ios_runner:
-        description: Where the iOS store build runs.
+      mac_runner:
+        description: Where the macOS and iOS builds run. Self-hosted builds macOS on a hosted runner when the run also ships iOS.
         type: choice
         options: [self-hosted, github]
         default: self-hosted
@@ -59,7 +61,7 @@ jobs:
   macos:
     name: Build macOS
     if: github.ref == 'refs/heads/main' && inputs.desktop
-    runs-on: macos-26
+    runs-on: ${{ inputs.mac_runner == 'self-hosted' && (inputs.mobile == 'none' || inputs.mobile == 'android') && fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') || 'macos-26' }}
     timeout-minutes: 90
     env:
       # The desktop build needs every workspace package but the mobile app, whose React Native
@@ -69,6 +71,10 @@ jobs:
       build: ${{ steps.build.outputs.build }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The runner empties its temporary directory before every job; the user's own one stays.
+      - name: Keep the build's temporary files in the job
+        if: runner.environment == 'self-hosted'
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
       - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca # stable
         with:
           toolchain: stable
@@ -115,7 +121,7 @@ jobs:
   mobile:
     name: Ship ${{ matrix.platform }}
     if: github.ref == 'refs/heads/main' && inputs.mobile != 'none'
-    runs-on: ${{ matrix.platform == 'android' && 'ubuntu-24.04' || inputs.ios_runner == 'github' && 'macos-26' || fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') }}
+    runs-on: ${{ matrix.platform == 'android' && 'ubuntu-24.04' || inputs.mac_runner == 'github' && 'macos-26' || fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') }}
     timeout-minutes: 120
     strategy:
       fail-fast: false

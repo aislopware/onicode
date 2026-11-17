@@ -280,7 +280,7 @@ its own native code.
 [`scenarios.yml`](../../.github/workflows/scenarios.yml) runs both suites when a pull request
 changes a scenario, the harness, or what the harness starts the app through, on every such push to
 `main`, and by hand from the Actions tab: the desktop suite on Linux under xvfb, split across four runners, and the iOS
-scenarios on a hosted macOS runner. Neither is part of the `Check` gate: an app change that breaks
+scenarios on macOS. Neither is part of the `Check` gate: an app change that breaks
 a scenario does not fail its own pull request. Run the suite locally before a change to a surface
 the scenarios cover.
 
@@ -288,10 +288,15 @@ The four desktop runners split the scenarios by run time, from
 [`shard-weights.json`](../../scripts/scenarios/shard-weights.json). A scenario with no entry there
 still runs; add one when a scenario takes more than about 15 seconds.
 
-The iOS job keeps the dev client in the Actions cache under its native fingerprint. A pull request
-restores what `main` saved, and [`ios-dev-client.yml`](../../.github/workflows/ios-dev-client.yml)
-builds it on `main` when a push changes the fingerprint. Only a pull request that changes native
-code itself builds the client, which takes far longer than the scenarios do.
+The iOS job runs on `main` and on pull requests from this repository's branches on the self-hosted
+runner on the maintainers' Mac Studio (see [Releases](release.md) for who it admits). That machine
+runs one job at a time, so an iOS run can wait behind a release's iOS build. It keeps the dev
+client, CocoaPods and Metro's cache itself, and the job clears its simulator and ports before and
+after each run. A fork's pull request runs on a hosted macOS runner instead, which keeps the dev
+client in the Actions cache under its native fingerprint and restores what `main` saved there.
+[`ios-dev-client.yml`](../../.github/workflows/ios-dev-client.yml) builds the client on `main`
+when a push changes the fingerprint. Only a pull request that changes native code itself builds
+the client, which takes far longer than the scenarios do.
 
 ## What a scenario cannot cover
 
