@@ -2290,3 +2290,4 @@ ccae953c46	take	taken as is; ACP's checkpointing flag change reaches Grok and Ki
 f390ae7f15	take	cloud/serviceProtocol import pointed at service/; the archive-launch tests need node on sh's default PATH (Linux CI has it, macOS does not)
 d7373c44fe	skip	Onicode has no dev --share (scripts/lib/dev-share.ts was never taken); only that file changes
 e9d5bae5cf	take	taken as is
+f6d196463c	take	taken as is
