@@ -9,6 +9,8 @@ import {
   AuthStandardClientScopes,
   authScopeResponse,
   AuthSessionState,
+  mcpClientScopes,
+  pairingCredentialScopes,
   sessionGrantsScope,
 } from "./auth.ts";
 
@@ -124,5 +126,17 @@ describe("authorization grants", () => {
     },
   ] as const)("sessionGrantsScope accepts $label", ({ session, scope, expected }) => {
     expect(sessionGrantsScope(session, scope)).toBe(expected);
+  });
+});
+
+describe("pairingCredentialScopes", () => {
+  it("delegates only the link's scopes for a peer-link code", () => {
+    expect(pairingCredentialScopes({ access: "approval-required", purpose: "peer-link" })).toEqual(
+      mcpClientScopes("approval-required"),
+    );
+    expect(pairingCredentialScopes({ scopes: ["orchestration:read"] })).toEqual([
+      "orchestration:read",
+    ]);
+    expect(pairingCredentialScopes(undefined)).toEqual(AuthStandardClientScopes);
   });
 });
