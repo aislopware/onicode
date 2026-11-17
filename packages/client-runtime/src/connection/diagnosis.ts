@@ -68,7 +68,7 @@ function headline(host: string, located: Located, failure: ConnectionAttemptErro
   }
 }
 
-function steps(host: string, located: Located): string[] {
+function steps(host: string, located: Located, failure: ConnectionAttemptError | null): string[] {
   switch (located.cause) {
     case "offline":
       return ["Connect this device to the network. Onicode reconnects on its own."];
@@ -84,10 +84,14 @@ function steps(host: string, located: Located): string[] {
         `If it keeps failing, remove ${host} from this device and add it again.`,
       ];
     case "server":
-      return [
-        `Make sure Onicode is running on ${host}.`,
-        "Retry. If it keeps failing, copy the diagnostics.",
-      ];
+      return failure?.reason === "authentication"
+        ? [
+            `This device's sign-in to ${host} expired or was revoked. Pair it again with a new pairing link from ${host}.`,
+          ]
+        : [
+            `Make sure Onicode is running on ${host}.`,
+            "Retry. If it keeps failing, copy the diagnostics.",
+          ];
   }
 }
 
@@ -145,7 +149,7 @@ export function presentConnectionDiagnosis(
   return {
     headline: headline(host, located, failure),
     hops,
-    steps: steps(host, located),
+    steps: steps(host, located, failure),
     facts,
   };
 }

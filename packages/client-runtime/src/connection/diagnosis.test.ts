@@ -1,3 +1,4 @@
+import { EnvironmentAuthInvalidError } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
 import { presentConnectionDiagnosis } from "./diagnosis.ts";
@@ -45,6 +46,19 @@ describe("presentConnectionDiagnosis", () => {
 
   it("returns nothing before any attempt fails", () => {
     expect(diagnose(AVAILABLE_CONNECTION_STATE)).toBeNull();
+  });
+
+  it("tells a host that refused this device's login to sign in again, not to start Onicode", () => {
+    const failure = mapRemoteEnvironmentError(
+      new EnvironmentAuthInvalidError({
+        code: "auth_invalid",
+        reason: "invalid_credential",
+        traceId: "trace-1",
+      }),
+    );
+    const steps = diagnose(backoff(failure))?.steps.join(" ");
+    expect(steps).not.toContain("Make sure Onicode is running");
+    expect(steps).toMatch(/pair|sign in/i);
   });
 
   it("does not report hops as working when the failure names none", () => {

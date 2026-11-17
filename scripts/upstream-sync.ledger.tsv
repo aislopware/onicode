@@ -2357,3 +2357,4 @@ f1cd57bbf9	take	taken as is
 d1f7683d7e	take	conflict: kept Onicode's declineSocketCompression next to upstream's transport capture; SessionStore mocks drop cookieName (Onicode has no browser cookies); invalidation check is its own stream test because Onicode's frames test ends on the 4001 lease close
 d35ec21cdd	take	taken as is
 135d7a9801	take	taken as is
+10784e01f8	take	conflict: dropped relay imports from the test; Onicode's diagnose has no connection mode argument, and steps() now takes the failure as upstream's does
