@@ -2340,3 +2340,4 @@ c2eb8f3369	take	merged clean
 cd9c39fe3c	take	conflict: kept Onicode's getStandardThemeColors fallback name
 49c3ab8632	take	taken as is
 6ec1d31b1e	take	conflict: test fixtures kept Onicode's Map archive in place of JSZip
+980f5d4128	take	migration renumbered 98 -> 103 (next free Onicode number); comment in ProjectionStore updated
