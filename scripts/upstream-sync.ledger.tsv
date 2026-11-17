@@ -2261,3 +2261,4 @@ ba1193273a	take	fix(desktop): SSH environments download the remote runtime from 
 6fa874e98e	take	fix(opencode): unanswered stop now offers Force stop (#31021)
 9b313f2f09	take	fix(composer): open PR completion after opening brackets (#37827)
 3605d52842	take	fix(server): background tasks survive a failed Claude turn on a live process (#31840)
+4ffa1da7cf	take	fix(server): oni_thread_launch refuses an explicit branch that already exists (#31279)
