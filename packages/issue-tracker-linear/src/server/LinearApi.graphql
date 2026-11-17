@@ -119,6 +119,13 @@ query OniIssues($first: Int!, $after: String, $filter: IssueFilter!, $orderBy: P
 query OniIssue($id: String!, $comments: Int!) {
   issue(id: $id) {
     ...LinearIssue
+    team {
+      states(first: 100) {
+        nodes {
+          ...LinearWorkflowState
+        }
+      }
+    }
     comments(first: $comments, orderBy: createdAt) {
       nodes {
         ...LinearComment
