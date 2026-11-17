@@ -2267,3 +2267,4 @@ ba1193273a	take	fix(desktop): SSH environments download the remote runtime from 
 5adbd28d46	take	fix(opencode): external OpenCode 2 servers list models without the host's cwd (#30932)
 b75424062a	take	fix(web): retry a failed theme wallpaper download when back online (#37843)
 1402a2c9bf	take	fix(provider-core): ACP sign-in failures tell the user to sign in (#29548)
+b50e98e71c	take	fix(ssh): count bytes for Include question-mark wildcards (#37840)
