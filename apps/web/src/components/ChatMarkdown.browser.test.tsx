@@ -498,7 +498,7 @@ describe("ChatMarkdown workspace file opens", () => {
 });
 
 describe("ChatMarkdown skill chips", () => {
-  it("shows the skill's details and opens its instructions", async () => {
+  it("shows the skill's details and opens its instructions, closing the details", async () => {
     setup();
     const threadRef = {
       environmentId: EnvironmentId.make("workspace"),
@@ -525,6 +525,7 @@ describe("ChatMarkdown skill chips", () => {
     await userEvent.click(page.getByRole("button", { name: "View instructions" }));
 
     expect(openFile).toHaveBeenCalledExactlyOnceWith(threadRef, "/skills/review/SKILL.md");
+    await expect.element(page.getByText("Reviews the current branch.")).not.toBeInTheDocument();
   });
 
   it("names a mentioned model as its provider does, without a thread", async () => {
