@@ -1,14 +1,15 @@
 diff --git a/dist/observe.js b/dist/observe.js
-index 430182c..4552cf4 100644
+index 430182c..1b4f526 100644
 --- a/dist/observe.js
 +++ b/dist/observe.js
-@@ -24,12 +24,37 @@ const MASK_COLOR = '#000000';
+@@ -24,12 +24,38 @@ const MASK_COLOR = '#000000';
   * it would wait for its navigation to commit.
   */
  export async function secureFieldMasks(page) {
 -    return (await readableFrames(page.frames()))
-+    const placeholders = await Promise.all(page.frames().map(isWebviewPlaceholder));
-+    return (await readableFrames(page.frames().filter((_, index) => !placeholders[index])))
++    const frames = page.frames();
++    const placeholders = await Promise.all(frames.map(isWebviewPlaceholder));
++    return (await readableFrames(frames.filter((_, index) => !placeholders[index])))
          .flatMap((frame) => [
          frame.locator(SECURE_FIELD_SELECTOR),
          frame.locator(`${CLOSED_SHADOW_SELECTOR_ENGINE}=${SECURE_FIELD_SELECTOR}`),
