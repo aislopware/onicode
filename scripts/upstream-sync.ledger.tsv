@@ -2289,3 +2289,4 @@ f39ecd3df8	take	taken as is
 ccae953c46	take	taken as is; ACP's checkpointing flag change reaches Grok and Kiro through the shared capabilities (same as upstream); Muse and Cursor keep rollback off
 f390ae7f15	take	cloud/serviceProtocol import pointed at service/; the archive-launch tests need node on sh's default PATH (Linux CI has it, macOS does not)
 d7373c44fe	skip	Onicode has no dev --share (scripts/lib/dev-share.ts was never taken); only that file changes
+e9d5bae5cf	take	taken as is
