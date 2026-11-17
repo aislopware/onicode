@@ -39,6 +39,8 @@ const mintPeerPairingCode = Effect.fn("clientRuntime.state.mintPeerPairingCode")
   prepared: PreparedConnection,
   access: AuthMcpClientAccess,
 ): Effect.fn.Return<string, PeerPairingCodeError, HttpClient.HttpClient> {
+  // Servers without peer-link codes get a plain code scoped to the access, as before.
+  const bound = prepared.descriptor?.capabilities.peerLinkPairingCodes === true;
   const minted = yield* executeAuthenticatedEnvironmentHttpRequest({
     prepared,
     group: "auth",
@@ -48,7 +50,9 @@ const mintPeerPairingCode = Effect.fn("clientRuntime.state.mintPeerPairingCode")
     request: ({ client, headers }) =>
       client.pairingCredential({
         headers,
-        payload: { label: PEER_PAIRING_CODE_LABEL, scopes: mcpClientScopes(access) },
+        payload: bound
+          ? { label: PEER_PAIRING_CODE_LABEL, access, purpose: "peer-link" }
+          : { label: PEER_PAIRING_CODE_LABEL, scopes: mcpClientScopes(access) },
       }),
   }).pipe(
     Effect.mapError(
@@ -63,6 +67,12 @@ const mintPeerPairingCode = Effect.fn("clientRuntime.state.mintPeerPairingCode")
         }),
     ),
   );
+  if (bound && (minted.purpose !== "peer-link" || minted.access !== access)) {
+    return yield* new PeerPairingCodeError({
+      reason: "unavailable",
+      cause: "The environment did not issue a peer-link code.",
+    });
+  }
   return minted.credential;
 });
 

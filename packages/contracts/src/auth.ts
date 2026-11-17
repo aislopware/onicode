@@ -230,11 +230,23 @@ export type AuthWebSocketTicketUse = typeof AuthWebSocketTicketUse.Type;
 
 export const AuthWebSocketTicketParams = Schema.Struct({ use: AuthWebSocketTicketUse });
 
+export const AuthMcpClientAccess = Schema.Literals([
+  "read-only",
+  "approval-required",
+  "auto-accept-edits",
+  "auto",
+  "full-access",
+]);
+export type AuthMcpClientAccess = typeof AuthMcpClientAccess.Type;
+
 export const AuthPairingCredentialResult = Schema.Struct({
   id: TrimmedNonEmptyString,
   credential: TrimmedNonEmptyString,
   label: Schema.optionalKey(TrimmedNonEmptyString),
   expiresAt: Schema.DateTimeUtc,
+  purpose: Schema.optionalKey(Schema.Literal("peer-link")),
+  /** The level a peer-link code is bound to. Older servers omit it. */
+  access: Schema.optionalKey(AuthMcpClientAccess),
 });
 export type AuthPairingCredentialResult = typeof AuthPairingCredentialResult.Type;
 
@@ -357,10 +369,23 @@ export const AuthRevokeClientSessionInput = Schema.Struct({
 });
 export type AuthRevokeClientSessionInput = typeof AuthRevokeClientSessionInput.Type;
 
-export const AuthCreatePairingCredentialInput = Schema.Struct({
+const pairingCredentialFields = {
   label: Schema.optionalKey(TrimmedNonEmptyString),
   scopes: Schema.optionalKey(AuthGrantScopes),
-});
+};
+
+export const AuthCreatePairingCredentialInput = Schema.Union([
+  Schema.Struct({
+    ...pairingCredentialFields,
+    purpose: Schema.optionalKey(Schema.Undefined),
+  }),
+  /** A code only a peer link at this level can spend. The server derives the scopes from it. */
+  Schema.Struct({
+    ...pairingCredentialFields,
+    access: AuthMcpClientAccess,
+    purpose: Schema.Literal("peer-link"),
+  }),
+]);
 export type AuthCreatePairingCredentialInput = typeof AuthCreatePairingCredentialInput.Type;
 
 export const AuthSessionState = Schema.Struct({
@@ -371,15 +396,6 @@ export const AuthSessionState = Schema.Struct({
   expiresAt: Schema.optionalKey(Schema.DateTimeUtc),
 });
 export type AuthSessionState = typeof AuthSessionState.Type;
-
-export const AuthMcpClientAccess = Schema.Literals([
-  "read-only",
-  "approval-required",
-  "auto-accept-edits",
-  "auto",
-  "full-access",
-]);
-export type AuthMcpClientAccess = typeof AuthMcpClientAccess.Type;
 
 /** The scopes an agent session gets for an access level, and a pairing code must carry. */
 export const mcpClientScopes = (access: AuthMcpClientAccess): ReadonlyArray<AuthGrantScope> =>

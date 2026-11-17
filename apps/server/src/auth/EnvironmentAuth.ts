@@ -39,6 +39,10 @@ import * as SessionStore from "./SessionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as ManagedLimits from "../policy/managedLimits.ts";
 import * as ManagedPolicy from "../policy/ManagedPolicy.ts";
+import {
+  MCP_APPROVAL_SUBJECT_PREFIX,
+  PEER_LINK_PAIRING_SUBJECT_PREFIX,
+} from "../persistence/AuthPairingLinks.ts";
 import { requestUrl } from "../requestUrl.ts";
 
 const DEFAULT_SESSION_SUBJECT = "cli-issued-session";
@@ -539,6 +543,7 @@ export const make = Effect.gen(function* () {
     input?: {
       readonly requestedScopes?: ReadonlyArray<AuthEnvironmentScope>;
       readonly requiredScopes?: ReadonlyArray<AuthEnvironmentScope>;
+      readonly allowedSubject?: string;
     },
   ) =>
     bootstrapCredentials
@@ -666,7 +671,11 @@ export const make = Effect.gen(function* () {
           INTERNAL_ADMINISTRATIVE_BOOTSTRAP_SUBJECT,
         ];
         return pairingLinks
-          .filter((pairingLink) => !excludedSubjects.includes(pairingLink.subject))
+          .filter(
+            (pairingLink) =>
+              !excludedSubjects.includes(pairingLink.subject) &&
+              !pairingLink.subject.startsWith(MCP_APPROVAL_SUBJECT_PREFIX),
+          )
           .map((link) => ({ ...link, ...authScopeResponse(link.scopes) }))
           .toSorted(
             (left, right) => right.createdAt.epochMilliseconds - left.createdAt.epochMilliseconds,
@@ -730,11 +739,20 @@ export const make = Effect.gen(function* () {
 
   const issuePairingCredential: EnvironmentAuth["Service"]["issuePairingCredential"] = (input) =>
     createPairingLink({
-      scopes: input?.scopes ?? AuthStandardClientScopes,
-      subject: "one-time-token",
+      scopes:
+        input?.purpose === "peer-link"
+          ? mcpClientScopes(input.access)
+          : (input?.scopes ?? AuthStandardClientScopes),
+      subject:
+        input?.purpose === "peer-link"
+          ? `${PEER_LINK_PAIRING_SUBJECT_PREFIX}${input.access}`
+          : "one-time-token",
       ...(input?.label ? { label: input.label } : {}),
     }).pipe(
-      Effect.map(toPairingCredential),
+      Effect.map((issued) => ({
+        ...toPairingCredential(issued),
+        ...(input?.purpose === "peer-link" ? { access: input.access, purpose: input.purpose } : {}),
+      })),
       Effect.withSpan("EnvironmentAuth.issuePairingCredential"),
     );
 
@@ -878,7 +896,10 @@ export const make = Effect.gen(function* () {
     code,
     access,
   ) =>
-    consumeBootstrapGrant(code.trim(), { requiredScopes: mcpClientScopes(access) }).pipe(
+    consumeBootstrapGrant(code.trim(), {
+      requiredScopes: mcpClientScopes(access),
+      allowedSubject: `${PEER_LINK_PAIRING_SUBJECT_PREFIX}${access}`,
+    }).pipe(
       Effect.catchTags({
         ServerAuthInvalidCredentialError: () =>
           Effect.fail(new ServerAuthMcpApprovalCodeError({ reason: "unknown_or_used" })),
@@ -953,7 +974,10 @@ const revokePairedClientsThePolicyDisallows = Effect.fn(
         !isLocalLoopbackHost(session.client.ipAddress)),
   );
   const links = (yield* stores.pairingLinks.listActive()).filter(
-    (link) => link.subject === LINK_PAIRED_SUBJECT,
+    (link) =>
+      link.subject === LINK_PAIRED_SUBJECT ||
+      // Peer-link codes let an environment elsewhere sign in, as plain codes do.
+      link.subject.startsWith(PEER_LINK_PAIRING_SUBJECT_PREFIX),
   );
   yield* Effect.forEach(sessions, (session) => stores.sessions.revoke(session.sessionId), {
     discard: true,
