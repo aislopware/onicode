@@ -22,6 +22,7 @@ export type ServerAuthBootstrapMethod = typeof ServerAuthBootstrapMethod.Type;
 export const AuthOrchestrationReadScope = "orchestration:read" as const;
 export const AuthOrchestrationOperateScope = "orchestration:operate" as const;
 export const AuthSettingsWriteScope = "settings:write" as const;
+// Also decides where credentials go: secret providers, references, and key-bearing endpoints.
 export const AuthProvidersManageScope = "providers:manage" as const;
 export const AuthEnvironmentMaintainScope = "environment:maintain" as const;
 export const AuthPreviewOperateScope = "preview:operate" as const;

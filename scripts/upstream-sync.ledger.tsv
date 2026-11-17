@@ -2351,3 +2351,4 @@ d6419d92a0	take	taken as is
 d051d9822f	take	taken as is
 48359de5f4	take	taken as is
 25da86c29b	take	taken as is (local resource metrics, not T3 telemetry)
+42a5aade84	take	conflict: test dropped the requireConnectDeviceApproval (T3 Connect) assertion, kept the new Simlock secret-reference case
