@@ -2367,3 +2367,4 @@ d35ec21cdd	take	taken as is
 33542a53be	take	taken as is
 218c18bc02	take	taken as is; mobile list does not narrow by host, so unaffected
 9830b857de	take	taken as is
+79aa7a7b5c	take	taken: user-configured OTLP export (not T3 telemetry); metric renamed t3_ -> oni_ by translation
