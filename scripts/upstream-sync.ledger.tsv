@@ -2266,3 +2266,4 @@ ba1193273a	take	fix(desktop): SSH environments download the remote runtime from 
 88fc9ace2d	take	fix(scenarios): second server startup failure no longer hangs (#37847); adapted: the fix and its test go to Onicode's second-environment.ts, which has the same hang, since Onicode uses it instead of upstream's second-server.ts
 5adbd28d46	take	fix(opencode): external OpenCode 2 servers list models without the host's cwd (#30932)
 b75424062a	take	fix(web): retry a failed theme wallpaper download when back online (#37843)
+1402a2c9bf	take	fix(provider-core): ACP sign-in failures tell the user to sign in (#29548)
