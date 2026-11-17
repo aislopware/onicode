@@ -2253,3 +2253,4 @@ d6a28f4faa	take	taken as is; Onicode keeps desktop SSH onboarding, so the pendin
 1fe416ae40	take	taken as is
 6b134a7add	take	fix(github): PR Code tab reads files 30 per page so GitHub keeps their patches (#31419)
 4021638273	take	fix(web): thread hover cards show the provider icon in its brand color (#31527)
+25c06e571e	take	fix(mobile): iPad reopens agent-started threads after a restart (#31260)
