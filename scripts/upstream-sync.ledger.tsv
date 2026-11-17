@@ -2423,3 +2423,4 @@ fd7d2aec5e	take	fix(azure-devops): issue list no longer fails looking up the sig
 b3df47942a	skip	Onicode's mobile-fingerprint-check.yml triggers on default pull_request types (no 'edited'), so a title or body edit never starts or cancels the run
 e3949714e3	take	fix(web): restore the Issues right panel shortcut; import-block conflict resolved keeping isElectron out (desktop-only); scenario ported
 13ecf5b22e	take	feat(cursor): edit earlier messages by rewinding the Cursor agent
+3d7b74a7ea	take	fix(server): omit ODF comments from extracted document text
