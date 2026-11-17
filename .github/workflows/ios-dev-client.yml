@@ -1,0 +1,81 @@
+name: iOS Dev Client
+
+# Builds the iOS dev client for main's native fingerprint when no saved one matches, so the
+# iOS scenarios of later pull requests restore it instead of building it. A pull request cannot
+# read another pull request's cache, only main's, and Scenarios runs on main for few paths: a
+# native change that merged without touching them left every later pull request to spend 20 to
+# 27 minutes on the same build. A push that leaves the fingerprint alone ends after the lookup.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # What the native fingerprint reads, as in mobile-fingerprint-check.yml.
+    paths:
+      - apps/mobile/**
+      - packages/client-runtime/**
+      - packages/contracts/**
+      - packages/shared/**
+      - assets/**
+      - scripts/**
+      - patches/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .github/workflows/ios-dev-client.yml
+
+permissions:
+  contents: read
+
+# A newer push replaces the fingerprint pull requests are tested against.
+concurrency:
+  group: ios-dev-client
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the iOS dev client
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      # The shared client cache needs a login this job does not have; actions/cache stands in.
+      ONICODE_NATIVE_CLIENT_CACHE: "off"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: |
+            /*
+            !/.repos/
+          sparse-checkout-cone-mode: false
+
+      - name: Setup Vite+
+        uses: ./.github/actions/setup-ci-deps
+
+      - name: Restore the dev client
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/onicode/native-clients/artifacts/ios
+          key: ios-dev-client-none
+          restore-keys: ios-dev-client-
+
+      - name: Cache CocoaPods
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/CocoaPods
+          key: cocoapods-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: cocoapods-
+
+      - name: Fetch or build the dev client
+        id: client
+        run: |
+          prepared="$(node scripts/mobile-native-client.ts ensure ios --prepare | tail -n 1)"
+          echo "$prepared"
+          echo "source=$(jq -er .source <<< "$prepared")" >> "$GITHUB_OUTPUT"
+          echo "fingerprint=$(jq -er .fingerprint <<< "$prepared")" >> "$GITHUB_OUTPUT"
+
+      - name: Save the dev client
+        if: steps.client.outputs.source == 'build'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/onicode/native-clients/artifacts/ios
+          key: ios-dev-client-${{ steps.client.outputs.fingerprint }}

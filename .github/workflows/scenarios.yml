@@ -4,13 +4,15 @@ name: Scenarios
 # a simulator. They run when a scenario, the harness, or what the harness starts the app through
 # changes, and by hand. They stay out of the `Check` gate: neither has a long enough record to
 # block every pull request on it.
-# The run on main is what later pull requests restore the iOS dev client from.
+# Later pull requests restore the iOS dev client that ios-dev-client.yml builds on main.
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
       - scripts/scenarios/**
+      - scripts/scenario-shard.ts
+      - scripts/lib/scenario-shards.ts
       - scripts/e2e.config.ts
       - scripts/prove-scenario.ts
       - scripts/package.json
@@ -23,6 +25,8 @@ on:
   pull_request:
     paths:
       - scripts/scenarios/**
+      - scripts/scenario-shard.ts
+      - scripts/lib/scenario-shards.ts
       - scripts/e2e.config.ts
       - scripts/prove-scenario.ts
       - scripts/package.json
@@ -105,8 +109,12 @@ jobs:
       - name: Allow Electron's sandbox
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      # e2e's own --shard cuts the sorted list into equal counts, and one slice then held most
+      # of the slow scenarios. This one balances by the run times in shard-weights.json.
       - name: Run the desktop scenarios
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1440x900x24" vp run scenarios --target desktop --shard ${{ matrix.shard }}/${{ strategy.job-total }}
+        run: |
+          read -ra files < <(node scripts/scenario-shard.ts ${{ matrix.shard }}/${{ strategy.job-total }})
+          xvfb-run --auto-servernum --server-args="-screen 0 1440x900x24" vp run scenarios --target desktop "${files[@]}"
 
       - name: Print the summary
         if: ${{ !cancelled() }}

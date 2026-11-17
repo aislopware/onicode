@@ -13,6 +13,10 @@ name: Release
 #
 # iOS builds on the self-hosted runner labelled onicode-ios (a macOS VM that keeps its ccache, pnpm
 # store and CocoaPods cache between runs); -f ios_runner=github falls back to a hosted macOS runner.
+#
+# Hosted runners install from the registry with no pnpm store cache: restoring one took as long as
+# the downloads, and the stores filled the repository's 10 GB of cache, which evicted the Gradle
+# and ccache entries that the Android build takes 20 minutes to do without.
 on:
   workflow_dispatch:
     inputs:
@@ -69,9 +73,6 @@ jobs:
         with:
           toolchain: stable
       - uses: ./.github/actions/setup-release
-      - uses: ./.github/actions/pnpm-store-cache
-        with:
-          key: desktop
 
       - name: Build
         id: build
@@ -160,10 +161,6 @@ jobs:
       - uses: ./.github/actions/setup-release
       # better-update fingerprints the native project with bunx @expo/fingerprint.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-      - if: runner.environment == 'github-hosted'
-        uses: ./.github/actions/pnpm-store-cache
-        with:
-          key: mobile
       # better-update loads the Expo config and its plugins from here before it stages the build.
       - name: Install the mobile workspace
         run: pnpm install --frozen-lockfile --prefer-offline --filter "@onicode/mobile..."
