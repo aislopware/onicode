@@ -2298,3 +2298,4 @@ a5c28da6c8	take	taken as is
 f0572cf1b9	take	taken as is
 4f781196e1	take	one CONFLICT was formatting only, took upstream; the new field is an optional onicode.json key, so the wire is unchanged
 ebd007e6ae	take	taken as is
+84d34d40f8	take	docs/user/outside-agents.md hunk dropped (Onicode does not have that page)
