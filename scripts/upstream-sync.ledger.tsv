@@ -2426,3 +2426,4 @@ e3949714e3	take	fix(web): restore the Issues right panel shortcut; import-block 
 3d7b74a7ea	take	fix(server): omit ODF comments from extracted document text
 81fd06998c	take	fix(server): steering onto another Codex instance keeps its context handoff row
 e9dc20d063	take	test(server): document extraction slot test no longer races its second waiter
+b387e3a179	take	fix(server): Claude turns receive MCP app model context
