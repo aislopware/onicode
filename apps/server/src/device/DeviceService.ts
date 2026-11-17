@@ -1,5 +1,6 @@
 import {
   type DeviceActionInput,
+  DeviceBootError,
   type DeviceCloseInput,
   type DeviceConfigureInput,
   type DeviceDetail,
@@ -831,12 +832,24 @@ export const makeWithHosts = Effect.fn("DeviceService.makeWithHosts")(function* 
         );
         state = yield* refresh(ready);
         // Retained entries predate the boot, so only a complete listing confirms the booted device.
-        device = state.hostStatuses[host.id]?.incompletePlatforms?.includes(device.platform)
+        const listed = state.hostStatuses[host.id]?.incompletePlatforms?.includes(device.platform)
           ? undefined
           : (findDevice(state, host.id, bootedId) ?? findDevice(state, host.id, device.id));
-        if (!device) {
+        if (!listed) {
           return yield* new DeviceNotFoundError({ hostId: host.id, deviceId: bootedId });
         }
+        // The hub can report success for an emulator that exits before it comes online,
+        // leaving only the stopped AVD entry, which has no stream to open.
+        if (!listed.booted) {
+          return yield* new DeviceBootError({
+            hostId: host.id,
+            deviceId: device.id,
+            reason: "launch_failed",
+            diagnostics: `${device.name} was not running after its boot finished.`,
+            cause: listed,
+          });
+        }
+        device = listed;
       } else if (device.booted) {
         yield* ready.devices.attach(device);
       }
