@@ -23,7 +23,8 @@
     "@onicode/provider-core": "workspace:*",
     "@onicode/shared": "workspace:*",
     "@onicode/source-control-core": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "yaml": "catalog:"
   },
   "devDependencies": {
     "@effect/graphql-generator": "catalog:",

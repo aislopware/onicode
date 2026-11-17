@@ -2308,3 +2308,4 @@ ebd007e6ae	take	taken as is
 2b2d65d131	take	taken as is
 a6016e64f8	take	taken as is
 c71f98cadf	take	relay/AgentAwarenessRelay.test.ts hunk dropped (relay removed)
+20501a0221	take	rpc.ts: GuestShare lines from upstream's context dropped; pnpm-lock regenerated with vp i
