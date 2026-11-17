@@ -2417,3 +2417,4 @@ f92c5e8f98	take	fix(web): review summary line comments keep which side they refe
 74b1f97ce9	take	fix(web): reopening Settings reloads WSL distributions
 2df750e0c9	take	fix(web): MCP app full screen header clears the native window controls
 33892dcc71	take	fix(server): images from refused Claude starts survive a fresh-session recovery
+de7b5e05f6	take	fix(server): oni_thread_read names the thread a pasted link points to; hosted thread link case dropped (hosted web app removed)
