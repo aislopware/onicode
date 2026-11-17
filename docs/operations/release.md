@@ -131,11 +131,14 @@ when the run ships no iOS build; with one, it takes a hosted runner so the deskt
 wait behind iOS. If the runner is offline its jobs wait in the queue; cancel the run and rerun with
 `-f mac_runner=github` for hosted macOS runners, which are far slower.
 
-The repository is public, so the organization's runner group admits only `release.yml`,
-`ios-dev-client.yml` and `scenarios.yml` on `main`, plus `scenarios.yml` at a pull request's merge
-ref. The runner's job-started hook (`~/runner-hooks/job-started.sh` in the VM) is the stricter
-check: it refuses any other repository, workflow or event, and any pull request whose head is not a
-branch of this repository. A change to which workflows use the runner needs both.
+The repository is public, and code from a fork's pull request must never run there. The
+organization's runner group admits only this repository and `oni-browser-use`, but it cannot be
+pinned to workflows: GitHub accepts only refs that exist, never `refs/pull/<n>/merge`, so a
+restricted group would refuse every pull request run. The runner's job-started hook
+(`~/runner-hooks/job-started.sh` in the VM) is the check. Before any step runs it refuses every
+job but `release.yml` dispatched on `main`, `ios-dev-client.yml` and `scenarios.yml` on `main`,
+and `scenarios.yml` on a pull request whose head is a branch of this repository. A workflow that
+starts using the runner needs an entry there.
 Locally, from `apps/mobile`, whose `eas.json` holds the profiles:
 
 ```sh
