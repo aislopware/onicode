@@ -2265,3 +2265,4 @@ ba1193273a	take	fix(desktop): SSH environments download the remote runtime from 
 1d20ad013f	skip	T3's release pipeline: version bumps for t3code v0.1.10; Onicode versions and releases through better-update
 88fc9ace2d	take	fix(scenarios): second server startup failure no longer hangs (#37847); adapted: the fix and its test go to Onicode's second-environment.ts, which has the same hang, since Onicode uses it instead of upstream's second-server.ts
 5adbd28d46	take	fix(opencode): external OpenCode 2 servers list models without the host's cwd (#30932)
+b75424062a	take	fix(web): retry a failed theme wallpaper download when back online (#37843)
