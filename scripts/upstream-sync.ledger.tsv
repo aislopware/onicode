@@ -2392,3 +2392,4 @@ d085ee5d15	take	fix(web): decode HEIC previews under desktop CSP; vite.config co
 100ba49a65	take	fix(ssh): Host patterns match Unicode aliases byte by byte like OpenSSH
 56e449ff58	take	fix(server): worktree recovery no longer fails on Windows when the emptied folder is in use
 983654b3b2	take	fix(web): an invalid host filter in an Issues link no longer crashes the page; scenario ported to desktop
+b91ea5443c	take	taken as is
