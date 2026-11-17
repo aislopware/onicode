@@ -83,7 +83,7 @@ const browserTestProject = {
       "fast-xml-parser",
       "entities",
       "dompurify",
-      "heic-to/next",
+      "heic-to/csp",
       "fflate",
       "pdfjs-dist",
       "sql.js",
