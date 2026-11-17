@@ -2382,3 +2382,4 @@ ecb295516f	take	taken as is
 ea6d3fc30f	take	fix(server): a Codex speed change sent during a running turn reaches Codex
 31706f3d41	take	fix(shared): theme CSS check no longer rejects @import text inside a string
 e9b48b7809	take	fix(muse): usage scanning no longer makes mise download Muse
+0c676d95b1	take	fix(web): screen readers name thread details issue and PR rows by number and title
