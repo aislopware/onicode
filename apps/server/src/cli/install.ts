@@ -1,5 +1,5 @@
 import * as HostProcess from "@onicode/shared/HostProcess";
-import { pathSetupCommand } from "@onicode/shared/shell";
+import { pathSetupCommand, resolveCommandPath } from "@onicode/shared/shell";
 import * as Console from "effect/Console";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -162,7 +162,7 @@ export const installCli = Effect.fn("cli.install.install")(function* () {
       if (!path.isAbsolute(entry) || detectCliRunner(`${entry}/`) !== null) continue;
       for (const name of windows ? ["onicode.cmd", "onicode.exe"] : ["onicode"]) {
         const candidate = path.join(entry, name);
-        if (yield* fs.exists(candidate).pipe(Effect.orElseSucceed(() => false))) return candidate;
+        if (yield* resolveCommandPath(candidate, { env: environment })) return candidate;
       }
     }
     return undefined;
