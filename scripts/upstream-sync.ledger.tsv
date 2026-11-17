@@ -2310,3 +2310,4 @@ a6016e64f8	take	taken as is
 c71f98cadf	take	relay/AgentAwarenessRelay.test.ts hunk dropped (relay removed)
 20501a0221	take	rpc.ts: GuestShare lines from upstream's context dropped; pnpm-lock regenerated with vp i
 85dcfa61ca	take	CommandPalette keeps Onicode's remote-desktop action and drops upstream's 'Use in another app (MCP)' action (declined wizard); sidebar keeps Onicode's wordmark, stage label and remote-desktop route; IssuesPage drops the isElectron/isWeb branching (desktop only); routeTree.gen.ts regenerated; issue key link is an anchor (Onicode lint forbids restyling InlineButton)
+adffb3623f	take	taken as is
