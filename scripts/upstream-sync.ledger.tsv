@@ -2405,3 +2405,4 @@ a99faf5a62	take	taken; user doc says desktop only (Onicode has no web app)
 0597532f16	take	taken as is
 4d0e2f52d2	take	taken as is
 b46edac5c1	take	taken as is
+f596689035	take	taken; lockfile and pnpm-workspace.yaml regenerated on Onicode's versions (conflicts only from unrelated catalog drift); 3.7.3 carries the dropped patch's fixes
