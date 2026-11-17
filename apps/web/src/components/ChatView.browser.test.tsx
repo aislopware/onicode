@@ -299,9 +299,9 @@ it("an interrupted image-only first send of a new thread says it may not have be
   editor
     .element()
     .dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
-  await expect.element(page.getByRole("img", { name: "shot.png" })).toBeVisible();
+  // The tile shows the image while it still compresses, and a send meanwhile is refused.
+  await expect.element(page.getByRole("button", { name: "Preview shot.png" })).toBeEnabled();
   await userEvent.keyboard("{Enter}");
-  // The send first waits for the upload, which can outlast a polling wait on a busy runner.
   await launch.called;
   await userEvent.keyboard("next draft");
   await expect.element(editor).toHaveTextContent("next draft");
