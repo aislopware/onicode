@@ -12,6 +12,8 @@ const INSIGHT_CLOSE_PATTERN = /^( {0,3})(`?)─{3,}\2[ \t]*$/u;
 // An ATX heading, also inside a list item or blockquote; group 1 is its text.
 const ATX_HEADING_PATTERN =
   /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*#{1,6}(?:[ \t]+(.*?))?(?:[ \t]+#+)?[ \t]*$/;
+// An in-text link to a fragment: `[a](#b)`, `[a](<#b>)` or raw `href="#b"`.
+const HEADING_LINK_PATTERN = /\]\(\s*<?#|href\s*=\s*["']?#/i;
 // Setext headings may span a paragraph and containers, so leave their parsing to the renderer.
 const SETEXT_UNDERLINE_PATTERN =
   /^(?:[ \t]*(?:>|[-*+](?=[ \t])|\d{1,9}[.)](?=[ \t])))*[ \t]*(?:=+|-+)[ \t]*$/;
@@ -19,7 +21,7 @@ const SETEXT_UNDERLINE_PATTERN =
 /**
  * Cuts Markdown at blank lines that close every open block, so each piece renders exactly as it
  * would inside the whole text. Returns null when the text uses syntax that spans blocks, such as
- * headings with the same slug, whose ids are numbered across the whole text.
+ * headings with the same slug when the text links to a heading, since ids number across the text.
  */
 export function splitMarkdownBlocks(text: string): string[] | null {
   // remark-parse strips a leading BOM before recognizing the first heading.
@@ -43,9 +45,13 @@ export function splitMarkdownBlocks(text: string): string[] | null {
     headingKeys.add(key);
     return false;
   };
+  // Mid-stream, heading ids reach the user only through a link to one; the full render that
+  // ends the stream numbers them anyway, so other replies keep the incremental render.
+  const linksToHeading = HEADING_LINK_PATTERN.test(text);
   const headingNeedsWholeDocument = (line: string, mayUnderline = true) =>
-    (mayUnderline && SETEXT_UNDERLINE_PATTERN.test(line)) ||
-    needsWholeHeading(ATX_HEADING_PATTERN.exec(line)?.[1]);
+    linksToHeading &&
+    ((mayUnderline && SETEXT_UNDERLINE_PATTERN.test(line)) ||
+      needsWholeHeading(ATX_HEADING_PATTERN.exec(line)?.[1]));
   // Only a line right after paragraph text can underline it; elsewhere "---" is a thematic break.
   let afterContentLine = false;
   for (const line of text.split("\n")) {

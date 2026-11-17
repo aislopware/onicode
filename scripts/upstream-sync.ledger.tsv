@@ -2347,7 +2347,7 @@ f79ab79721	take	taken as is; web and mobile both covered
 b78914e4f3	take	conflict: kept Onicode's environmentId + tracker match from 629e039e33 (upstream's dedupe merges same-named scopes across environments); new contract field optional
 9bc3fda0ac	take	taken as is
 16548ab8a4	take	taken as is
-d6419d92a0	take	taken as is
+d6419d92a0	take	adapted: heading checks run only when the reply links to a fragment, so headings with inline syntax keep the incremental streaming render (follow-up commit)
 d051d9822f	take	taken as is
 48359de5f4	take	taken as is
 25da86c29b	take	taken as is (local resource metrics, not T3 telemetry)
