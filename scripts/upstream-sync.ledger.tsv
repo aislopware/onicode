@@ -2432,3 +2432,4 @@ b387e3a179	take	fix(server): Claude turns receive MCP app model context
 54ad956ff2	take	fix(server): file search keeps Git-ignored files a .ignore re-includes
 4ecbe55087	take	fix(pi): Reasoning that Pi starts again no longer repeats the abandoned attempt
 2ebe7f8e22	take	fix(pi): fork historical turns from their original session; ProviderTurn.nativeThreadRef is optional, so older mobile builds still decode
+009966d073	take	fix(web): find in thread paints only matches near the viewport; scenario ported to the desktop target (Cmd/Ctrl+F), thread-find-large-row now asserts the bounded paint
