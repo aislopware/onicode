@@ -5,6 +5,7 @@ import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient";
 import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
@@ -17,6 +18,7 @@ import {
   LOCAL_DEVICE_HOST_ID,
 } from "@onicode/contracts";
 import * as EnvironmentAuth from "../auth/EnvironmentAuth.ts";
+import * as SessionStore from "../auth/SessionStore.ts";
 import * as DeviceService from "./DeviceService.ts";
 import * as DeviceHubProxy from "./DeviceHubProxy.ts";
 
@@ -48,6 +50,9 @@ it.effect("preserves binary frames and the hub's close code through the real soc
     const services = yield* Layer.build(
       HttpRouter.serve(DeviceHubProxy.layer, { disableListenLog: true }).pipe(
         Layer.provideMerge(NodeHttpServer.layerTest),
+        Layer.provide(
+          Layer.mock(SessionStore.SessionStore, { awaitInvalidation: () => Effect.never }),
+        ),
         Layer.provide(
           Layer.succeed(EnvironmentAuth.EnvironmentAuth, {
             authenticateWebSocketUpgrade: () =>
@@ -101,6 +106,93 @@ it.effect("preserves binary frames and the hub's close code through the real soc
   }),
 );
 
+it.effect("closes both sockets when the session is invalidated", () =>
+  Effect.gen(function* () {
+    const hub = yield* Effect.acquireRelease(
+      Effect.sync(() => new NodeWS.WebSocketServer({ port: 0 })),
+      (server) =>
+        Effect.promise(
+          () =>
+            new Promise<void>((resolve) => {
+              for (const client of server.clients) client.terminate();
+              server.close(() => resolve());
+            }),
+        ),
+    );
+    if (!hub.address())
+      yield* Effect.promise(() => new Promise<void>((resolve) => hub.once("listening", resolve)));
+    const address = hub.address();
+    if (typeof address !== "object" || !address) throw new Error("Missing hub port");
+    const upstreamClosed = Promise.withResolvers<void>();
+    hub.on("connection", (socket) => {
+      socket.once("close", upstreamClosed.resolve);
+      socket.send(Uint8Array.of(0x83));
+      socket.on("message", (data, binary) => socket.send(data, { binary }));
+    });
+    const invalidated = yield* Deferred.make<void>();
+    const services = yield* Layer.build(
+      HttpRouter.serve(DeviceHubProxy.layer, { disableListenLog: true }).pipe(
+        Layer.provideMerge(NodeHttpServer.layerTest),
+        Layer.provide(
+          Layer.mock(SessionStore.SessionStore, {
+            awaitInvalidation: () => Deferred.await(invalidated),
+          }),
+        ),
+        Layer.provide(
+          Layer.succeed(EnvironmentAuth.EnvironmentAuth, {
+            authenticateWebSocketUpgrade: () =>
+              Effect.succeed({
+                sessionId: AuthSessionId.make("test"),
+                subject: "test",
+                scopes: [AuthOrchestrationOperateScope],
+              }),
+          } as unknown as EnvironmentAuth.EnvironmentAuth["Service"]),
+        ),
+        Layer.provide(
+          Layer.succeed(DeviceService.DeviceService, {
+            currentReadiness: () =>
+              Effect.succeed({
+                hostId: LOCAL_DEVICE_HOST_ID,
+                hub: { origin: `http://127.0.0.1:${address.port}` },
+              }),
+          } as DeviceService.DeviceService["Service"]),
+        ),
+      ),
+    );
+    const origin = HttpServer.formatAddress(
+      Context.get(services, HttpServer.HttpServer).address,
+    ).replace(/^http/, "ws");
+    const client = yield* Effect.acquireRelease(
+      Effect.sync(
+        () =>
+          new WebSocket(
+            `${origin}/api/device-hub/vendor/serve-sim/helper/ws?device=test&wsTicket=test`,
+          ),
+      ),
+      (socket) => Effect.sync(() => socket.close()),
+    );
+    client.binaryType = "arraybuffer";
+    const frames: number[][] = [];
+    const received = Promise.withResolvers<void>();
+    client.addEventListener("error", () => received.reject(new Error("Proxy failed")));
+    client.addEventListener("message", ({ data }) => {
+      frames.push(Array.from(new Uint8Array(data as ArrayBuffer)));
+      if (frames.length === 1) {
+        client.send(Uint8Array.of(0x03, 1));
+        client.send(Uint8Array.of(0x03, 2));
+      } else if (frames.length === 3) received.resolve();
+    });
+    yield* Effect.promise(() => received.promise);
+    expect(frames).toEqual([[0x83], [0x03, 1], [0x03, 2]]);
+
+    const closed = new Promise<void>((resolve) =>
+      client.addEventListener("close", () => resolve(), { once: true }),
+    );
+    yield* Deferred.succeed(invalidated, undefined);
+    yield* Effect.promise(() => Promise.all([closed, upstreamClosed.promise]));
+  }),
+);
+
 it.effect("does not negotiate compression for proxied device frames", () =>
   Effect.gen(function* () {
     const hub = yield* Effect.acquireRelease(
@@ -127,6 +219,9 @@ it.effect("does not negotiate compression for proxied device frames", () =>
             host: "127.0.0.1",
             websocket: { perMessageDeflate: true },
           }),
+        ),
+        Layer.provide(
+          Layer.mock(SessionStore.SessionStore, { awaitInvalidation: () => Effect.never }),
         ),
         Layer.provide(
           Layer.succeed(EnvironmentAuth.EnvironmentAuth, {
@@ -193,6 +288,7 @@ it.live("closes an upstream socket that is still connecting without an unhandled
     );
     const connection = yield* Effect.promise(() => dialed.promise);
     const abandoned = new Promise<void>((resolve) => connection.once("close", () => resolve()));
+    connection.resume();
     yield* Fiber.interrupt(reading);
     yield* Effect.promise(() => abandoned);
   }),
