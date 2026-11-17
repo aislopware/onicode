@@ -18,7 +18,7 @@ interface CdpTarget {
 test(
   "The browser panel loads a page in a webview of its own and closes it with the tab",
   WEB,
-  async ({ onicode, screen }) => {
+  async ({ onicode, app, screen }) => {
     const { cdpPort } = await Effect.runPromise(
       readDesktopStack.pipe(Effect.provide(NodeServices.layer)),
     );
@@ -48,8 +48,9 @@ test(
       await url.fill(`http://127.0.0.1:${address.port}/`);
       await url.press("Enter");
       await expect.poll(webviews).toEqual(["Scenario page"]);
-      // The panel takes the page's title, and a screenshot never returns while a webview shows one.
+      // The panel takes the page's title.
       await expect(screen.getByRole("region", "Workspace panel: Scenario page")).toBeVisible();
+      await app.screenshot("page-in-webview");
 
       await screen.getByRole("button", "Close Scenario page").tap();
       await expect.poll(webviews).toEqual([]);
