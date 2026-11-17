@@ -157,6 +157,35 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodePlatformCrypto.layer))(
         }).pipe(Effect.provide(layerEnvironmentAuth())),
     );
 
+    it.effect("spends peer-link pairing codes only for the chosen link access", () =>
+      Effect.gen(function* () {
+        const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;
+        const pairing = yield* serverAuth.issuePairingCredential({
+          access: "approval-required",
+          purpose: "peer-link",
+        });
+        expect(pairing).toMatchObject({ purpose: "peer-link", access: "approval-required" });
+        expect((yield* serverAuth.listPairingLinks()).map((link) => link.id)).not.toContain(
+          pairing.id,
+        );
+
+        const ordinarySession = yield* serverAuth
+          .exchangeBootstrapCredentialForAccessToken(pairing.credential, undefined, requestMetadata)
+          .pipe(Effect.flip);
+        expect(ordinarySession._tag).toBe("ServerAuthInvalidCredentialError");
+
+        // A lower level needs no scope the code lacks, so only its subject refuses it.
+        for (const access of ["read-only", "auto"] as const) {
+          const rejected = yield* serverAuth
+            .consumeMcpApprovalCode(pairing.credential, access)
+            .pipe(Effect.flip);
+          expect(rejected._tag).toBe("ServerAuthMcpApprovalCodeError");
+        }
+
+        yield* serverAuth.consumeMcpApprovalCode(pairing.credential, "approval-required");
+      }).pipe(Effect.provide(layerEnvironmentAuth())),
+    );
+
     it.effect("narrows seeded desktop grants to the requested scopes", () =>
       Effect.gen(function* () {
         const serverAuth = yield* EnvironmentAuth.EnvironmentAuth;

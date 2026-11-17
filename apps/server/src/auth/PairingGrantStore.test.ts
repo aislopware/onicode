@@ -15,6 +15,7 @@ import {
 } from "@onicode/shared/desktopBootstrapToken";
 
 import * as ServerConfig from "../config.ts";
+import { PEER_LINK_PAIRING_SUBJECT_PREFIX } from "../persistence/AuthPairingLinks.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as PairingGrantStore from "./PairingGrantStore.ts";
 
@@ -222,6 +223,13 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PairingGrantStor
         Stream.runForEach((change) => Queue.offer(changes, change)),
         Effect.forkScoped({ startImmediately: true }),
       );
+      // A peer-link code sends no update, issued or spent; the next belongs to a plain code.
+      const peerLink = yield* grants.issueOneTimeToken({
+        subject: `${PEER_LINK_PAIRING_SUBJECT_PREFIX}auto`,
+      });
+      yield* grants.consume(peerLink.credential, {
+        allowedSubject: `${PEER_LINK_PAIRING_SUBJECT_PREFIX}auto`,
+      });
       for (const input of [{}, { label: "Synthetic phone" }]) {
         const issued = yield* grants.issueOneTimeToken(input);
         const change = yield* Queue.take(changes);
