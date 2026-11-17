@@ -2257,3 +2257,4 @@ d6a28f4faa	take	taken as is; Onicode keeps desktop SSH onboarding, so the pendin
 1adc05b844	take	fix(server): enforce authorization on MCP retries (#37822)
 27411651a4	take	fix(auth): bind automatic pairing codes to peer links (#37825); adapted: Onicode has no MCP approval codes, so only peer-link codes are purpose-bound (subject mcp-approval:peer-link:<access>, hidden from pairing links, refused for ordinary sessions, revoked with plain codes under a no-remote policy); McpOAuth unchanged since only peer links register; client falls back to the old scoped code on servers without peerLinkPairingCodes instead of refusing
 b4e47a5a62	take	fix(providers): enforce approval and settings boundaries (#37826)
+ba1193273a	take	fix(desktop): SSH environments download the remote runtime from ONICODE_RELEASE_BASE_URL (#31396)
