@@ -1,0 +1,18 @@
+{
+  "scenarios/distinct-same-size-pasted-images-both-attach.e2e.ts": 18,
+  "scenarios/edit-from-here-keeps-thread-mention.e2e.ts": 17,
+  "scenarios/first-send-keeps-sidebar-scroll.e2e.ts": 37,
+  "scenarios/machine-switch-keeps-selected-models.e2e.ts": 29,
+  "scenarios/mention-finds-older-linked-thread.e2e.ts": 93,
+  "scenarios/native-folder-picker-adds-a-project.e2e.ts": 18,
+  "scenarios/ods-time-cell-shows-its-value.e2e.ts": 32,
+  "scenarios/panel-conditioned-enter-still-sends.e2e.ts": 19,
+  "scenarios/queued-edit-keeps-thread-mention.e2e.ts": 40,
+  "scenarios/remote-environment-runs-a-turn.e2e.ts": 20,
+  "scenarios/removed-environment-closes-its-toasts.e2e.ts": 21,
+  "scenarios/rtf-preview-keeps-named-text-characters.e2e.ts": 23,
+  "scenarios/terminal-file-uri-opens-its-exact-file.e2e.ts": 19,
+  "scenarios/terminal-reports-focus-while-enabled.e2e.ts": 17,
+  "scenarios/welcome-leads-to-a-first-project-and-turn.e2e.ts": 20,
+  "scenarios/worktree-thread-reverts-its-files.e2e.ts": 16
+}
