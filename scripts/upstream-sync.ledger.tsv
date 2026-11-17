@@ -2360,3 +2360,4 @@ d35ec21cdd	take	taken as is
 10784e01f8	take	conflict: dropped relay imports from the test; Onicode's diagnose has no connection mode argument, and steps() now takes the failure as upstream's does
 215bd59a98	take	conflict was formatting only; new test added beside Onicode's suite
 134580067f	take	taken as is
+786cf6a736	take	taken: Onicode's Linux desktop packaging uses the same libc6 floor script
