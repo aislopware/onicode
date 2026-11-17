@@ -103,47 +103,60 @@ export const make = Effect.gen(function* () {
       ),
     );
     const now = DateTime.toEpochMillis(yield* DateTime.now);
+    const settings = yield* serverSettings.getSettings.pipe(
+      Effect.mapError(
+        (cause) =>
+          new TextGenerationError({
+            operation,
+            detail: "Could not read provider settings.",
+            cause,
+          }),
+      ),
+    );
     const selected = snapshots.find((provider) => provider.instanceId === selection.instanceId);
+    const off =
+      selected !== undefined &&
+      (!selected.enabled ||
+        !resolveProjectProviderInstanceEnabled(settings, projectId ?? null, selected.instanceId));
     // Only a failed probe counts: a pending one is also not installed yet.
     const unusable =
       textGeneratorCannotRun ||
-      (selected?.enabled === true &&
+      off ||
+      (selected !== undefined &&
         (!isProviderTextGenerationCapable(selected) ||
           selected.models.find((model) => model.slug === selection.model)
             ?.supportsTextGeneration === false ||
           (selected.status === "error" &&
             (!selected.installed || selected.auth.status === "unauthenticated"))));
     if (unusable || exhaustedUsageWindow(selected, now, selection.model)) {
-      const settings = yield* serverSettings.getSettings.pipe(
-        Effect.mapError(
-          (cause) =>
-            new TextGenerationError({
-              operation,
-              detail: "Could not read fallback model settings.",
-              cause,
-            }),
-        ),
+      const fallback = fallbackTextGenerationModelSelection(
+        settings.providerInstances,
+        (instanceId, driver, model) => {
+          const provider = snapshots.find((candidate) => candidate.instanceId === instanceId);
+          return (
+            instanceId !== selection.instanceId &&
+            provider?.enabled === true &&
+            resolveProjectProviderInstanceEnabled(settings, projectId ?? null, instanceId) &&
+            provider.installed &&
+            provider.auth.status !== "unauthenticated" &&
+            provider.status !== "error" &&
+            isProviderAvailable(provider) &&
+            isProviderTextGenerationCapable(provider) &&
+            (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(driver)) &&
+            !exhaustedUsageWindow(provider, now, model)
+          );
+        },
+        { defaultModelSelection: settings.defaultModelSelection },
       );
-      selection =
-        fallbackTextGenerationModelSelection(
-          settings.providerInstances,
-          (instanceId, driver, model) => {
-            const provider = snapshots.find((candidate) => candidate.instanceId === instanceId);
-            return (
-              instanceId !== selection.instanceId &&
-              provider?.enabled === true &&
-              resolveProjectProviderInstanceEnabled(settings, projectId ?? null, instanceId) &&
-              provider.installed &&
-              provider.auth.status !== "unauthenticated" &&
-              provider.status !== "error" &&
-              isProviderAvailable(provider) &&
-              isProviderTextGenerationCapable(provider) &&
-              (operation !== "generateReviewGuide" || INVESTIGATING_DRIVERS.has(driver)) &&
-              !exhaustedUsageWindow(provider, now, model)
-            );
-          },
-          { defaultModelSelection: settings.defaultModelSelection },
-        ) ?? selection;
+      // A provider the user turned off is never run, even when nothing else can take over.
+      if (fallback === null && off) {
+        return yield* new TextGenerationError({
+          operation,
+          detail:
+            "The selected provider is off and no other provider can take over. Turn one on in Settings → Providers.",
+        });
+      }
+      selection = fallback ?? selection;
     }
     if (textGeneratorCannotRun && selection.instanceId === textGeneratorId) {
       return yield* new TextGenerationError({

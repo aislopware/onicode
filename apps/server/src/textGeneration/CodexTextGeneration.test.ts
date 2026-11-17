@@ -643,7 +643,14 @@ const PREFLIGHT_PRIMARY_STATES = [
   "signed out, fallback failed",
   "cannot generate text",
   "model cannot generate text",
+  "disabled",
+  "disabled for project",
+  "disabled, fallback disabled for project",
 ] as const;
+const DISABLED_IN_SETTINGS = new Set<string>([
+  "disabled",
+  "disabled, fallback disabled for project",
+]);
 
 it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (primaryState) =>
   Effect.gen(function* () {
@@ -703,6 +710,9 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
               ],
             }
           : {}),
+        ...(DISABLED_IN_SETTINGS.has(primaryState) && instanceId === primary
+          ? { enabled: false }
+          : {}),
         ...(primaryState === "exhausted" && instanceId === primary
           ? {
               usageLimits: {
@@ -750,10 +760,17 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
               },
             },
             defaultModelSelection: threadDefault,
-            ...(primaryState === "not installed, fallback disabled for project"
+            ...(primaryState.endsWith("fallback disabled for project")
               ? {
                   projectSettingsOverrides: {
                     [projectId]: { providerInstances: { [fallback]: { enabled: false } } },
+                  },
+                }
+              : {}),
+            ...(primaryState === "disabled for project"
+              ? {
+                  projectSettingsOverrides: {
+                    [projectId]: { providerInstances: { [primary]: { enabled: false } } },
                   },
                 }
               : {}),
@@ -766,15 +783,20 @@ it.effect.each(PREFLIGHT_PRIMARY_STATES)("text generation preflight: %s", (prima
         ),
       ),
     );
-    expect(
-      yield* service.generateThreadTitle({
-        cwd: "/tmp",
-        message: "hello",
-        linkedContext: "",
-        modelSelection: selection,
-        projectId,
-      }),
-    ).toEqual({ title: "Generated title" });
+    const generate = service.generateThreadTitle({
+      cwd: "/tmp",
+      message: "hello",
+      linkedContext: "",
+      modelSelection: selection,
+      projectId,
+    });
+    if (primaryState === "disabled, fallback disabled for project") {
+      // A provider that is off is never run, even when nothing else can take over.
+      expect((yield* Effect.flip(generate)).detail).toMatch(/is off/);
+      expect(calls).toEqual([]);
+      return;
+    }
+    expect(yield* generate).toEqual({ title: "Generated title" });
     expect(calls).toEqual([
       primaryState === "ready" ||
       primaryState === "pending" ||
