@@ -79,6 +79,14 @@ Download the newest release:
 On macOS, unzip the download and move **Onicode** to Applications. The app updates
 itself from then on. If you used the earlier native Onicode, it updates to this app on its own.
 
+macOS scans each new program before it first runs, so agents that build or
+download programs can keep XProtect busy and use a lot of CPU. To skip those
+scans for agents the desktop app runs on this Mac, choose **Allow** on the Welcome
+page or next to **Developer Tools access** in **Settings → About**, then drag Onicode
+into the list. If Privacy & Security has no Developer Tools entry, run
+`spctl developer-mode enable-terminal` in Terminal once and try again. The grant
+does not cover the background service or Onicode servers on other machines.
+
 ### Linux
 
 To launch the AppImage, open a terminal in its download folder. Replace
