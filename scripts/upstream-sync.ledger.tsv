@@ -2390,3 +2390,4 @@ cc8593e06d	take	fix(server): keep truncated document text valid Unicode
 8009cd8c3b	take	fix(server): a Codex speed pick made during a running turn reaches Codex
 d085ee5d15	take	fix(web): decode HEIC previews under desktop CSP; vite.config conflict kept Onicode's fflate in place of jszip
 100ba49a65	take	fix(ssh): Host patterns match Unicode aliases byte by byte like OpenSSH
+56e449ff58	take	fix(server): worktree recovery no longer fails on Windows when the emptied folder is in use
