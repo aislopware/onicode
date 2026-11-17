@@ -57,6 +57,9 @@ export function useCloseAppModal() {
   const navigate = useNavigate();
   const router = useRouter();
   return () => {
+    // The modal closes after its exit animation. A navigation made meanwhile has already left
+    // it, and may still be loading, so the history is the only place that shows it yet.
+    if (!isAppModalPage(router.history.location.pathname)) return;
     const href = appModalReturnHref ?? mainAppHref ?? "/";
     const returnIndex = appModalReturnHistoryIndex ?? 0;
     const steps = router.state.location.state.__TSR_index - returnIndex;
