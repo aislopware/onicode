@@ -290,6 +290,8 @@ jobs:
         uses: ./.github/actions/setup-ci-deps
         with:
           save-pnpm-store: "false"
+          # Experiment, to be removed: one group installs from the registry to time it.
+          pnpm-store: ${{ matrix.group == 'packages' && 'false' || 'true' }}
 
       # electron's install.js (run by ensure:electron) reads this cache before it
       # downloads from GitHub. The key changes only with the Electron version.
