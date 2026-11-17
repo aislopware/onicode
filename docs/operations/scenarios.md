@@ -282,9 +282,14 @@ scenarios on a hosted macOS runner. Neither is part of the `Check` gate: an app 
 a scenario does not fail its own pull request. Run the suite locally before a change to a surface
 the scenarios cover.
 
+The four desktop runners split the scenarios by run time, from
+[`shard-weights.json`](../../scripts/scenarios/shard-weights.json). A scenario with no entry there
+still runs; add one when a scenario takes more than about 15 seconds.
+
 The iOS job keeps the dev client in the Actions cache under its native fingerprint. A pull request
-restores what `main` saved, so the first run after a native change builds the client, which takes
-far longer than the scenarios do.
+restores what `main` saved, and [`ios-dev-client.yml`](../../.github/workflows/ios-dev-client.yml)
+builds it on `main` when a push changes the fingerprint. Only a pull request that changes native
+code itself builds the client, which takes far longer than the scenarios do.
 
 ## What a scenario cannot cover
 
