@@ -2331,3 +2331,4 @@ d27002bf99	take	merged clean
 0df1967cfa	take	merged clean
 2904c397ad	take	canForkWhileSourceRunning is optional in contracts (wire-safe); only Claude sets it
 85a90b60ac	take	ported to Onicode's desktop harness (scripts/scenarios/onicode.ts): keeps desktop header comment, drops unused e2e expect import
+0ff1495c05	take	merged clean
