@@ -1503,7 +1503,11 @@ const canBind = (port) =>
   const runScript = (home: string, args: ReadonlyArray<string>) =>
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-      const child = yield* spawner.spawn(ChildProcess.make("sh", args, { env: { HOME: home } }));
+      // The fake runtime runs `node`; put this test's node first, since sh's default PATH lacks it on macOS.
+      const PATH = `${NodePath.dirname(process.execPath)}:/usr/bin:/bin`;
+      const child = yield* spawner.spawn(
+        ChildProcess.make("sh", args, { env: { HOME: home, PATH } }),
+      );
       const collect = (stream: Stream.Stream<Uint8Array, PlatformError.PlatformError>) =>
         stream.pipe(Stream.decodeText(), Stream.mkString);
       const [stdout, stderr, exitCode] = yield* Effect.all(
