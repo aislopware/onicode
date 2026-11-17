@@ -111,6 +111,17 @@ describe("native device stream transport", () => {
     client.stop();
   });
 
+  it("reports Android input only once video arrives, since serve-emu also opens sockets to stopped emulators", async () => {
+    const { client, opened, events } = setup("android");
+    client.start();
+    const socket = await opened;
+    socket.onopen?.();
+    expect(events.onInputConnected).not.toHaveBeenCalledWith(true);
+    socket.onmessage?.({ data: Uint8Array.of(0, 0, 0, 1, 0x41).buffer });
+    expect(events.onInputConnected).toHaveBeenLastCalledWith(true);
+    client.stop();
+  });
+
   it.each(["ios", "android"] as const)(
     "keeps a restarted %s stream connected when the discarded socket closes late",
     async (platform) => {

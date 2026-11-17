@@ -132,7 +132,11 @@ const fixture = Effect.fn("fixture")(function* (
   const iosAvailable = yield* Ref.make(true);
   const encoderResult = yield* Ref.make({ code: 0, stdout: " V....D libx264", stderr: "" });
   const screenshotBody = yield* Ref.make(minimalPng);
-  const listing = { hangs: false, requested: yield* Deferred.make<void>() };
+  const listing = {
+    hangs: false,
+    emulatorExited: false,
+    requested: yield* Deferred.make<void>(),
+  };
   let booted = false;
   let shutDown = false;
   const connection = { online: true, kind: "local" as "local" | "ssh", failShutdown: false };
@@ -209,7 +213,7 @@ const fixture = Effect.fn("fixture")(function* (
           simulators: devices.filter((device) => device.platform === "ios"),
           emulators: [
             ...devices.filter((device) => device.platform === "android"),
-            ...(booted
+            ...(booted && !listing.emulatorExited
               ? [
                   {
                     id: "emulator-5554",
@@ -543,6 +547,24 @@ describe("device setup consent", () => {
       const state = yield* service.state;
       expect(state.devices.map((device) => device.id)).toEqual(["emulator-5554"]);
       expect(state.bootingDevices).toEqual([]);
+    }),
+  );
+
+  it.effect("fails the open when the emulator exits before it comes online", () =>
+    Effect.gen(function* () {
+      const { service, listing } = yield* fixture();
+      listing.emulatorExited = true;
+      yield* service.configure({ enabled: true });
+      const error = yield* service
+        .open({
+          threadId: ThreadId.make("emulator-exited"),
+          deviceId: "Pixel_API_35",
+          platform: "android",
+        })
+        .pipe(Effect.flip);
+      expect(error._tag).toBe("DeviceBootError");
+      expect(error.message).toContain("was not running");
+      expect((yield* service.state).sessions).toEqual([]);
     }),
   );
 

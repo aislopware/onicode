@@ -1197,13 +1197,20 @@ export function createDeviceStreamClient(
     );
     ws.binaryType = "arraybuffer";
     socket = ws;
+    // serve-emu accepts the upgrade for a device that is not running and closes it
+    // right after, so a full socket counts as connected only once video arrives.
+    let admitted = false;
     ws.onopen = () => {
       if (stopped || socket !== ws) return;
-      if (!inputOnly) connecting();
-      events.onInputConnected(true);
+      if (inputOnly) events.onInputConnected(true);
+      else connecting();
     };
     ws.onmessage = (event) => {
       if (stopped || socket !== ws || inputOnly) return;
+      if (!admitted && event.data instanceof ArrayBuffer) {
+        admitted = true;
+        events.onInputConnected(true);
+      }
       if (typeof event.data === "string") {
         // The encoder restarts at a new size when the device rotates; the
         // next keyframe carries a fresh SPS, so the decoder is rebuilt from it.

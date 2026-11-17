@@ -99,10 +99,11 @@ export function DevicePreviewScreen({
   const [selectedKey, setSelectedKey] = useState<string | null>(initialDeviceKey ?? null);
   const [inputConnected, setInputConnected] = useState(false);
   const [streamAttempt, setStreamAttempt] = useState(0);
-  const [shuttingDown, setShuttingDown] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"close" | "shutdown" | null>(null);
   const [controlsVisible, setControlsVisible] = useState(true);
   const retryHost = useAtomCommand(deviceEnvironment.list);
   const shutdown = useAtomCommand(deviceEnvironment.shutdown, { reportFailure: false });
+  const close = useAtomCommand(deviceEnvironment.close, { reportFailure: false });
   const streamRef = useRef<DeviceStreamRef>(null);
   const state = useEnvironmentQuery(deviceEnvironment.state({ environmentId, input: {} }));
   const previews = threadDevicePreviews(state.data, threadId);
@@ -133,8 +134,8 @@ export function DevicePreviewScreen({
   });
 
   const shutDownDevice = async () => {
-    if (!preview || shuttingDown) return;
-    setShuttingDown(true);
+    if (!preview || pendingAction) return;
+    setPendingAction("shutdown");
     const result = await shutdown({
       environmentId,
       input: {
@@ -142,9 +143,25 @@ export function DevicePreviewScreen({
         deviceId: preview.session.deviceId,
         platform: preview.session.platform,
       },
-    }).finally(() => setShuttingDown(false));
+    }).finally(() => setPendingAction(null));
     if (result._tag === "Failure") {
       Dialog.alert("Could not shut down device", String(Cause.squash(result.cause)));
+    }
+  };
+
+  const closeDevice = async () => {
+    if (!preview || pendingAction) return;
+    setPendingAction("close");
+    const result = await close({
+      environmentId,
+      input: {
+        threadId,
+        hostId: preview.session.hostId,
+        deviceId: preview.session.deviceId,
+      },
+    }).finally(() => setPendingAction(null));
+    if (result._tag === "Failure") {
+      Dialog.alert("Could not close device", String(Cause.squash(result.cause)));
     }
   };
 
@@ -201,7 +218,7 @@ export function DevicePreviewScreen({
       id: "reload",
       title: "Reload stream",
       icon: "arrow.clockwise" as const,
-      disabled: !preview || shuttingDown,
+      disabled: !preview || pendingAction !== null,
       onPress: () => {
         setInputConnected(false);
         setStreamAttempt((attempt) => attempt + 1);
@@ -237,10 +254,18 @@ export function DevicePreviewScreen({
         ]
       : []),
     {
+      id: "close",
+      title: pendingAction === "close" ? "Closing…" : "Close device",
+      subtitle: "Keeps it running",
+      icon: "xmark",
+      disabled: !preview || pendingAction !== null,
+      onPress: () => void closeDevice(),
+    },
+    {
       id: "shutdown",
-      title: shuttingDown ? "Shutting down…" : "Shut down device",
+      title: pendingAction === "shutdown" ? "Shutting down…" : "Shut down device",
       icon: "power",
-      disabled: !preview || shuttingDown,
+      disabled: !preview || pendingAction !== null,
       onPress: () => void shutDownDevice(),
     },
   ];
