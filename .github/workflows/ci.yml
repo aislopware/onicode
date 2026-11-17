@@ -443,24 +443,28 @@ jobs:
             node apps/server/node_modules/playwright-core/cli.js install-deps chromium
           fi
 
-      # Each server test file runs in its own Vitest process, and a fresh install starts
-      # Vitest's content-keyed module cache empty, so every file re-transformed its imports.
-      # Only pushes to main save it, so pull requests never evict each other's entries, and
+      # Two caches a fresh install starts without. The task cache holds each test file's
+      # result with the files it read, so a file none of whose inputs changed is not run
+      # again. Vitest's content-keyed module cache saves re-transforming imports in the
+      # files that do run, each in its own process.
+      # Only pushes to main save them, so pull requests never evict each other's entries, and
       # only the first push of a day does: a key per commit filled the repository's 10 GB of
       # cache within a day, which evicted the caches Scenarios and Release rebuild slowly.
-      - name: Date the Vitest module cache
+      - name: Date the server test caches
         id: vitest_cache_day
         if: steps.changes.outputs.test_server != 'false'
         run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
 
-      - name: Restore Vitest module cache
+      - name: Restore server test caches
         id: vitest_cache
         if: steps.changes.outputs.test_server != 'false'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: node_modules/.vitest-cache
-          key: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.vitest_cache_day.outputs.day }}
-          restore-keys: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+          path: |
+            node_modules/.vitest-cache
+            node_modules/.vite/task-cache
+          key: server-tests-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.vitest_cache_day.outputs.day }}
+          restore-keys: server-tests-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Test
         if: steps.changes.outputs.test_server != 'false'
@@ -472,11 +476,13 @@ jobs:
           --uncached apps/server/integration/transferBudgetV2.integration.test.ts
           --verify-hits 1 apps/server
 
-      - name: Save Vitest module cache
-        if: github.event_name == 'push' && steps.changes.outputs.test_server != 'false' && steps.vitest_cache.outputs.cache-hit != 'true'
+      - name: Save server test caches
+        if: steps.changes.outputs.test_server != 'false' && steps.vitest_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: node_modules/.vitest-cache
+          path: |
+            node_modules/.vitest-cache
+            node_modules/.vite/task-cache
           key: ${{ steps.vitest_cache.outputs.cache-primary-key }}
 
       # integration/transferBudgetV2.integration.test.ts writes the report; exactly one shard runs it.
@@ -538,13 +544,9 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@cab1ab9eaff52d4857875f4f2c016e36af8f2c76 # v1.22.0
+        uses: ./.github/actions/setup-ci-deps
         with:
-          node-version-file: package.json
-          cache: true
-          run-install: |
-            args:
-              - --filter=@onicode/scripts...
+          install-args: --filter=@onicode/scripts...
 
       - name: Install mobile native static analysis tools
         run: brew bundle install --file apps/mobile/Brewfile
