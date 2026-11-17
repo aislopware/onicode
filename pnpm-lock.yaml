@@ -2221,6 +2221,9 @@ importers:
       effect:
         specifier: 4.1.4
         version: 4.1.4
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
     devDependencies:
       '@effect/graphql-generator':
         specifier: 'catalog:'
