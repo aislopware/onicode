@@ -63,8 +63,10 @@ it("reproduces the bundled registry byte for byte without upstream requests", as
       "0.4.2",
     );
     expect(result.models[0]?.benchmark.secondsPer30s).toEqual({
-      cpu: performance.cpu ? 30 / performance.cpu : null,
-      accelerated: performance.accelerated ? 30 / performance.accelerated : null,
+      cpu: performance.cpu ? Number((30 / performance.cpu).toFixed(2)) : null,
+      accelerated: performance.accelerated
+        ? Number((30 / performance.accelerated).toFixed(2))
+        : null,
     });
   }
 });
