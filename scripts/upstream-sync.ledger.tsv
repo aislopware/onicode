@@ -2429,3 +2429,4 @@ e9dc20d063	take	test(server): document extraction slot test no longer races its 
 b387e3a179	take	fix(server): Claude turns receive MCP app model context
 51eb2d5437	take	taken as is; Firefox-only fix (Electron renderer is Chromium), kept to stay aligned with upstream
 94dc06e7ac	take	fix(cli): keep the old database when project or thread records are missing
+54ad956ff2	take	fix(server): file search keeps Git-ignored files a .ignore re-includes
