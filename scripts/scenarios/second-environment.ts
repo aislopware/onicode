@@ -3,13 +3,16 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as NetService from "@onicode/shared/Net";
+import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
 import * as Path from "effect/Path";
 
 import { APP_DIR } from "../e2e.config.ts";
 import { makeState } from "./onicode.ts";
+import { ScenarioError } from "./shell.ts";
 import { ENVIRONMENT_LABEL, prepareHome, start } from "./start-app.ts";
 
 interface Pairing {
@@ -27,7 +30,7 @@ const serve = Effect.fn("scenario.secondEnvironment")(function* (
   const port = yield* (yield* NetService.NetService).reserveLoopbackPort();
   yield* prepareHome(home);
   const token = yield* Deferred.make<string>();
-  yield* start({
+  const server = yield* start({
     cwd: APP_DIR,
     command: node,
     args: [
@@ -52,7 +55,17 @@ const serve = Effect.fn("scenario.secondEnvironment")(function* (
       return value === undefined ? Effect.void : Deferred.succeed(token, value).pipe(Effect.asVoid);
     },
   });
-  paired({ host: `http://127.0.0.1:${port}`, token: yield* Deferred.await(token) });
+  // A server that exits before printing its token never will: fail instead of waiting forever.
+  const exited = server.exitCode.pipe(
+    Effect.flatMap(
+      (code) =>
+        new ScenarioError({ message: `The second server exited with code ${code} at startup.` }),
+    ),
+  );
+  paired({
+    host: `http://127.0.0.1:${port}`,
+    token: yield* Effect.raceFirst(Deferred.await(token), exited),
+  });
   return yield* Effect.never;
 });
 
@@ -65,7 +78,11 @@ export const startSecondEnvironment = async (home: string) => {
       Effect.provide([NodeServices.layer, NetService.layer]),
     ),
   );
-  server.addObserver(() => pairing.reject(new Error("The second server stopped.")));
+  server.addObserver((exit) =>
+    pairing.reject(
+      Exit.isFailure(exit) ? Cause.squash(exit.cause) : new Error("The second server stopped."),
+    ),
+  );
   const stop = () => Effect.runPromise(Fiber.interrupt(server));
   try {
     return { ...(await pairing.promise), ...makeState(home), stop };
