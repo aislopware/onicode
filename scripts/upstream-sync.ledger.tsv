@@ -2285,3 +2285,4 @@ d405bd94ac	take	taken as is
 ed80c2fe66	take	taken as is
 f39ecd3df8	take	taken as is
 86a028cbd4	skip	kept Onicode's stock-theme id: Onicode already lets agents set the built-in 'onicode' id, stored as is and mapped to the client's own mode by defaultThemeSelection (tested in environmentTheme.test.ts and useDefaultTheme.test.ts); upstream's empty-string-with-timestamp sentinel gives an empty defaultTheme a second meaning older clients read as 'no theme'
+9d28fc921b	skip	wire compatibility: environmentThemes rides in the server config, and mobile builds shipped with THEME_CSS_MAX_LENGTH 50,000 fail to decode a theme with longer css, so one 100k theme would break their connection; at 50k the existing total cap (6 x 316 KB) already stays under the 2 MB localStorage budget the commit adds
