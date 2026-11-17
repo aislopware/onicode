@@ -103,6 +103,10 @@ import { SettingsClientStorageRouteScreen } from "./features/settings/SettingsCl
 import { SettingsDiagnosticsRouteScreen } from "./features/diagnostics/SettingsDiagnosticsRouteScreen";
 import { SettingsProviderAccountsRouteScreen } from "./features/settings/SettingsProviderAccountsRouteScreen";
 import { SettingsEnvironmentDetailRouteScreen } from "./features/settings/SettingsEnvironmentDetailRouteScreen";
+import {
+  SettingsIssueTrackerRouteScreen,
+  SettingsSourceControlProviderRouteScreen,
+} from "./features/settings/SettingsSourceControlDetailRouteScreens";
 import { SettingsEnvironmentsRouteScreen } from "./features/settings/SettingsEnvironmentsRouteScreen";
 import { SettingsFollowUpRouteScreen } from "./features/settings/SettingsFollowUpRouteScreen";
 import { SettingsLanguageRouteScreen } from "./features/settings/SettingsLanguageRouteScreen";
@@ -195,6 +199,14 @@ const SETTINGS_SCREENS = {
     screen: SettingsEnvironmentSourceControlRouteScreen,
     linking: "settings/source-control",
     options: settingsPage("Source control & issues"),
+  }),
+  SettingsSourceControlProvider: createNativeStackScreen({
+    screen: SettingsSourceControlProviderRouteScreen,
+    options: settingsPage("Provider"),
+  }),
+  SettingsIssueTracker: createNativeStackScreen({
+    screen: SettingsIssueTrackerRouteScreen,
+    options: settingsPage("Issue tracker"),
   }),
   SettingsEnvironmentAgentBehavior: createNativeStackScreen({
     screen: SettingsThreadsRouteScreen,
