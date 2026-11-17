@@ -2350,3 +2350,4 @@ b78914e4f3	take	conflict: kept Onicode's environmentId + tracker match from 629e
 d6419d92a0	take	taken as is
 d051d9822f	take	taken as is
 48359de5f4	take	taken as is
+25da86c29b	take	taken as is (local resource metrics, not T3 telemetry)
