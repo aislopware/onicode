@@ -2379,3 +2379,4 @@ ecb295516f	take	taken as is
 077b206b33	take	taken as is; scenario theme-batch-renamed-css ported (desktop target)
 28d2262083	take	taken as is
 05d3cc94b2	take	fix(web): collapsing a timeline review thread no longer hits Unresolve
+ea6d3fc30f	take	fix(server): a Codex speed change sent during a running turn reaches Codex
