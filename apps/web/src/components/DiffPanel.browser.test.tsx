@@ -347,7 +347,7 @@ it("says a turn diff cut off at the server's size limit is incomplete", async ()
     .toBeVisible();
 });
 
-// Paths as git's numstat reports them; the parsed patch trims the trailing space from its name.
+// Paths as git's numstat reports them; an accessible name drops the trailing space.
 it.each([
   { path: " leading.ts", name: " leading.ts" },
   { path: "src/trailing.ts ", name: "src/trailing.ts" },
