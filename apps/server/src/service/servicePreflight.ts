@@ -118,7 +118,7 @@ function decodeServicePreflightResult(
 }
 
 /** Asks a staged runtime whether it can run on this database under this launcher protocol. */
-export const runStagedServicePreflight = Effect.fn("cloud.service_preflight.run_staged")(
+export const runStagedServicePreflight = Effect.fn("service.service_preflight.run_staged")(
   function* (input: {
     readonly runner: ProcessRunner.ProcessRunner["Service"];
     readonly runtime: PinnedRuntimePaths;
