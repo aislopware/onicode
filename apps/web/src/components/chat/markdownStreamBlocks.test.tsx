@@ -33,7 +33,14 @@ const renderMarkdown = (source: string, math = false) =>
 
 const html = (source: string) => renderMarkdown(source);
 
-const punctuatedHeadings = ["Step 1: Install", "Done:", "apps/web", "Fix (web)", "What's next?"];
+const punctuatedHeadings = [
+  "Step 1: Install",
+  "Done:",
+  "apps/web",
+  "Fix (web)",
+  "What's next?",
+  "Changes in `Sidebar.tsx`",
+];
 
 describe("splitMarkdownBlocks", () => {
   it.each([
@@ -68,9 +75,12 @@ describe("splitMarkdownBlocks", () => {
       const source = text.slice(0, end);
       const blocks = splitMarkdownBlocks(source) ?? [source];
       expect(blocks.join("")).toBe(source);
-      expect(blocks.map(html).join("")).toBe(html(source));
-      expect(blocks.map((block) => renderMarkdown(block, true)).join("")).toBe(
-        renderMarkdown(source, true),
+      // Heading ids must match only where the text links to a heading.
+      const ids = (rendered: string) =>
+        source.includes("](#") ? rendered : rendered.replaceAll(/ id="user-content-[^"]*"/g, "");
+      expect(ids(blocks.map(html).join(""))).toBe(ids(html(source)));
+      expect(ids(blocks.map((block) => renderMarkdown(block, true)).join(""))).toBe(
+        ids(renderMarkdown(source, true)),
       );
     }
   });
