@@ -2333,3 +2333,4 @@ d27002bf99	take	merged clean
 85a90b60ac	take	ported to Onicode's desktop harness (scripts/scenarios/onicode.ts): keeps desktop header comment, drops unused e2e expect import
 0ff1495c05	take	merged clean
 e30a27bd20	take	upstream patched expo-widgets@58.0.27; Onicode is on 58.0.28 with its own patch, so the Android size environment (Kotlin + types) was added there via pnpm patch; lockfile patch hash regenerated; native change
+b823ddadd9	take	removed 4 stale mobile keys for the dropped T3 Connect account from every catalog; AGENTS.md keeps Onicode connection-modes line, Languages line drops apps/marketing/src/i18n (not in Onicode)
