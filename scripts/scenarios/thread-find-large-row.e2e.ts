@@ -30,12 +30,15 @@ test(
     try {
       await expect
         .poll(() =>
-          browser.evaluate<number>(
-            `(CSS.highlights.get("oni-thread-find")?.size ?? 0) +
-         (CSS.highlights.get("oni-thread-find-active")?.size ?? 0)`,
-          ),
+          browser.evaluate<number>(`CSS.highlights.get("oni-thread-find-active")?.size ?? 0`),
         )
-        .toBe(200_000);
+        .toBe(1);
+      // Only matches within a screen of the viewport are painted, a few thousand on a tall window.
+      const inactive = await browser.evaluate<number>(
+        `CSS.highlights.get("oni-thread-find")?.size ?? 0`,
+      );
+      expect(inactive).toBeGreaterThan(0);
+      expect(inactive).toBeLessThan(20_000);
     } finally {
       await app.screenshot("large-row-find");
     }
