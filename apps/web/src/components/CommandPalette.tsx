@@ -999,6 +999,7 @@ function OpenCommandPaletteDialog(props: {
     threadMessageItems,
     now: searchNow,
     isSearchPending: isThreadSearchPending,
+    isSearchFailed: isThreadSearchFailed,
   } = useCommandPaletteThreadItems({ activeThread: activeThread ?? null, threadSearchQuery });
   // Recent means used recently: written in or opened, whichever is later. The
   // open thread would always lead that list, so it is left out.
@@ -3206,17 +3207,19 @@ function OpenCommandPaletteDialog(props: {
                   }
                 : isThreadSearchPending
                   ? { emptyStateMessage: "Searching thread messages…" }
-                  : searchesFoldersInView && folderSearchAvailable && !isBrowsing
-                    ? {
-                        emptyStateMessage:
-                          folderSearchQuery.length === 0
-                            ? "Type a few letters to search recent folders, or ~/ to browse."
-                            : folderSearch.isPending ||
-                                folderSearchQuery !== debouncedFolderSearchQuery
-                              ? "Searching recent folders…"
-                              : "No recent folder matches. Type a path such as ~/ to browse.",
-                      }
-                    : {})}
+                  : isThreadSearchFailed
+                    ? { emptyStateMessage: "Couldn't search thread messages." }
+                    : searchesFoldersInView && folderSearchAvailable && !isBrowsing
+                      ? {
+                          emptyStateMessage:
+                            folderSearchQuery.length === 0
+                              ? "Type a few letters to search recent folders, or ~/ to browse."
+                              : folderSearch.isPending ||
+                                  folderSearchQuery !== debouncedFolderSearchQuery
+                                ? "Searching recent folders…"
+                                : "No recent folder matches. Type a path such as ~/ to browse.",
+                        }
+                      : {})}
       />
     </CommandPaletteContent>
   );
