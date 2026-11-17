@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - Hands a real file on disk to a real desktop browser.
 import * as NodeEvents from "node:events";
 import * as NodeFS from "node:fs";
+import * as NodeNet from "node:net";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 
@@ -20,6 +21,18 @@ const launchPersistentChromium = chromium.launchPersistentContext.bind(chromium)
 vi.spyOn(chromium, "launch").mockImplementation(launches.launch);
 vi.spyOn(chromium, "launchPersistentContext").mockImplementation(launches.persistent);
 vi.mock("node:fs/promises", () => ({ mkdir: launches.mkdir, rm: launches.rm }));
+
+// Chromium reports its DevTools port as open before it writes DevToolsActivePort, so reading that
+// file right after launch can miss it. A port picked up front needs no file.
+const freeLoopbackPort = async () => {
+  const server = NodeNet.createServer().listen(0, "127.0.0.1");
+  await NodeEvents.once(server, "listening");
+  const address = server.address();
+  server.close();
+  await NodeEvents.once(server, "close");
+  if (address === null || typeof address === "string") throw new Error("No TCP port was assigned");
+  return address.port;
+};
 
 const makeContext = () => {
   const events = new NodeEvents.EventEmitter();
@@ -358,15 +371,12 @@ describe("ServerBrowserContexts", () => {
     const userDataDir = NodePath.join(directory, "profile");
     const pool = new ServerBrowserContexts(options());
     try {
+      const port = await freeLoopbackPort();
       const desktop = await launchPersistentChromium(userDataDir, {
         headless: true,
-        args: ["--remote-debugging-port=0"],
+        args: [`--remote-debugging-port=${port}`],
       });
       try {
-        const [port] = NodeFS.readFileSync(
-          NodePath.join(userDataDir, "DevToolsActivePort"),
-          "utf8",
-        ).split("\n");
         const { browser, page } = await pool.connectDesktopPage(`http://127.0.0.1:${port}`);
         try {
           const file = NodePath.join(directory, "large.bin");
