@@ -2343,3 +2343,4 @@ cd9c39fe3c	take	conflict: kept Onicode's getStandardThemeColors fallback name
 980f5d4128	take	migration renumbered 98 -> 103 (next free Onicode number); comment in ProjectionStore updated
 f98249acad	take	taken as is
 f79ab79721	take	taken as is; web and mobile both covered
+17c142588b	take	test drops SecretRequests mock (Onicode's ScheduledTaskService does not use it)
