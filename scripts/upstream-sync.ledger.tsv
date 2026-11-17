@@ -2249,3 +2249,4 @@ e65a790ac5	take	taken as is; Onicode server mints the same /api/assets and /api/
 82afb28794	take	adapted: kept Onicode's toServerClock(environmentId) on the new chip, summary row and details sheet
 4b758f49ec	take	taken as is
 b4744496f8	take	taken as is
+d6a28f4faa	take	taken as is; Onicode keeps desktop SSH onboarding, so the pending tag 'only touches areas Onicode removed' was wrong
