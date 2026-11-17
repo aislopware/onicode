@@ -126,7 +126,7 @@ class OniWorkspaceNavigationView(
   private val onTabSelected by EventDispatcher()
   private val onNewThread by EventDispatcher()
   private val onOverlayChange by EventDispatcher()
-  var tabs by mutableStateOf(listOf("threads", "pullRequests", "usage", "settings"))
+  var tabs by mutableStateOf(listOf("threads", "pullRequests", "issues", "usage", "settings"))
   var selectedTab by mutableStateOf("threads")
   var rail by mutableStateOf(false)
   var floating by mutableStateOf(false)
@@ -415,6 +415,7 @@ class OniWorkspaceNavigationView(
   private fun tabTitle(tab: String) = when (tab) {
     "threads" -> "Chats"
     "pullRequests" -> "Pulls"
+    "issues" -> "Issues"
     "usage" -> "Usage"
     else -> "Settings"
   }
@@ -427,6 +428,7 @@ class OniWorkspaceNavigationView(
     when (tab) {
       "threads" -> R.drawable.oni_chats
       "pullRequests" -> R.drawable.oni_pull_requests
+      "issues" -> R.drawable.oni_issues
       "usage" -> R.drawable.oni_usage
       else -> R.drawable.oni_settings
     }
