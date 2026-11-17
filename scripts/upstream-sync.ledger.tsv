@@ -2358,3 +2358,4 @@ d1f7683d7e	take	conflict: kept Onicode's declineSocketCompression next to upstre
 d35ec21cdd	take	taken as is
 135d7a9801	take	taken as is
 10784e01f8	take	conflict: dropped relay imports from the test; Onicode's diagnose has no connection mode argument, and steps() now takes the failure as upstream's does
+215bd59a98	take	conflict was formatting only; new test added beside Onicode's suite
