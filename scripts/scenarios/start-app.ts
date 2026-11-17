@@ -30,8 +30,8 @@ const SERVER_PATHS = /^\/(?:\.well-known|api|mcp|attachments)(?:\/|$)/;
 // The replay agent `vp run dev` registers: free, recorded turns through the real adapter.
 const REPLAY = { instanceId: "devReplay", model: "showcase" };
 // Generated text (titles) cannot go to the replay agent: the server swaps an ACP agent for the
-// first enabled real provider, else its default, Codex. So every provider it could fall back to
-// is off and Codex is a command that only fails: no run reaches a paid model.
+// first enabled real provider. Every provider it could fall back to is off, so none runs.
+// Codex, the default, is also a command that only fails, in case one is started regardless.
 // Mirror of TEXT_GENERATION_FALLBACK_DRIVERS in shared/serverSettings.
 const REAL_PROVIDERS = [
   "codex",

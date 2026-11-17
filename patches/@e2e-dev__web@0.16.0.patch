@@ -1,0 +1,44 @@
+diff --git a/dist/observe.js b/dist/observe.js
+index 430182c..1b4f526 100644
+--- a/dist/observe.js
++++ b/dist/observe.js
+@@ -24,12 +24,38 @@ const MASK_COLOR = '#000000';
+  * it would wait for its navigation to commit.
+  */
+ export async function secureFieldMasks(page) {
+-    return (await readableFrames(page.frames()))
++    const frames = page.frames();
++    const placeholders = await Promise.all(frames.map(isWebviewPlaceholder));
++    return (await readableFrames(frames.filter((_, index) => !placeholders[index])))
+         .flatMap((frame) => [
+         frame.locator(SECURE_FIELD_SELECTOR),
+         frame.locator(`${CLOSED_SHADOW_SELECTOR_ENGINE}=${SECURE_FIELD_SELECTOR}`),
+     ]);
+ }
++/**
++ * True for the frame an Electron `<webview>` leaves in its embedder. The guest
++ * is a target of its own, so Playwright never gets a script context for this
++ * frame and a mask locator in it would wait until the step times out.
++ */
++async function isWebviewPlaceholder(frame) {
++    if (frame.parentFrame() === null)
++        return false;
++    const owner = await frame.frameElement().catch(() => null);
++    if (owner === null)
++        return false;
++    try {
++        return await owner.evaluate((element) => {
++            const root = element.getRootNode();
++            return root instanceof ShadowRoot && root.host.localName === 'webview';
++        });
++    }
++    catch {
++        return false;
++    }
++    finally {
++        await owner.dispose().catch(() => undefined);
++    }
++}
+ /** Screenshot options that apply the secure-field masks; empty when there is no frame to mask. */
+ export function maskOptions(masks) {
+     return masks.length === 0 ? {} : { mask: [...masks], maskColor: MASK_COLOR };

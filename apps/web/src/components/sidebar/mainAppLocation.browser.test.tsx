@@ -88,6 +88,22 @@ describe("main app return location", () => {
     });
   });
 
+  it("keeps a navigation made while Settings was closing", async () => {
+    const otherThreadPath = "/environment-one/thread-two";
+    await using screen = await render(<ReturnControls />, { router: THREAD_PATH });
+    const router = screen.router!;
+    using _tracking = { [Symbol.dispose]: startMainAppLocationTracking(router) };
+
+    await settled(router, router.navigate({ href: "/settings/general" }));
+    // The modal returns only after its exit animation, so a jump can start first. A DOM
+    // click runs the return in the same task, while that jump is still loading.
+    const jump = router.navigate({ href: otherThreadPath });
+    (screen.getByRole("button", { name: "Close modal" }).element() as HTMLElement).click();
+    await settled(router, jump);
+
+    expect(router.state.location.pathname).toBe(otherThreadPath);
+  });
+
   it("leaves no stop on Settings for history back after it closes", async () => {
     const otherThreadPath = "/environment-one/thread-two";
     await using screen = await render(<ReturnControls />, { router: THREAD_PATH });

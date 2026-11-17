@@ -236,6 +236,9 @@ patchedDependencies:
   # Local agents honor the attribution settings in the user's Cursor CLI cli-config.json, stream
   # shell output while it runs, and expose agent.resume() (the protocol's ResumeAction).
   "@cursor/sdk@1.4.0": patches/@cursor__sdk@1.4.0.patch
+  # A scenario screenshot no longer waits forever on the frame an Electron <webview> leaves in
+  # its embedder: Playwright gets no script context for it, so its mask locator never resolves.
+  "@e2e-dev/web@0.16.0": patches/@e2e-dev__web@0.16.0.patch
 
 # Unmet peers fail resolution, so a pin outside a dependency's peer range is
 # caught when the lockfile changes instead of scrolling past as a warning.

@@ -52,17 +52,23 @@ export function useNavigateToMainApp() {
   return () => navigate({ href: mainAppHref ?? "/" });
 }
 
-/** Leaves Settings or Usage for the page that opened it. */
+/** Leaves Settings or Usage for the page that opened it. False when a newer navigation already left. */
 export function useCloseAppModal() {
   const navigate = useNavigate();
   const router = useRouter();
   return () => {
+    // The modal closes after its exit animation. A navigation made meanwhile has already left
+    // it and may still be loading; returning now would replace it.
+    if (!isAppModalPage(router.history.location.pathname)) return false;
     const href = appModalReturnHref ?? mainAppHref ?? "/";
     const returnIndex = appModalReturnHistoryIndex ?? 0;
     const steps = router.state.location.state.__TSR_index - returnIndex;
     // Stepping back past this document's first entry reloads the page. Written as a negated
     // comparison so a missing (NaN) history index also falls back to client navigation.
-    if (!(returnIndex > initialHistoryIndex && steps > 0)) return navigate({ href, replace: true });
+    if (!(returnIndex > initialHistoryIndex && steps > 0)) {
+      void navigate({ href, replace: true });
+      return true;
+    }
     // Go back to the entry before the return page and push it again: only a push drops the
     // modal's entries from forward history, and reusing the old entry avoids a duplicate stop.
     const unsubscribe = router.history.subscribe(() => {
@@ -70,5 +76,6 @@ export function useCloseAppModal() {
       void navigate({ href });
     });
     router.history.go(-(steps + 1));
+    return true;
   };
 }

@@ -27,8 +27,6 @@ test(
       const moreActions = screen.getByRole("button", `More actions for ${ENVIRONMENT_LABEL}`);
       await expect(moreActions).toBeVisible({ timeout: 60_000 });
       await screen.getByRole("region", "Settings content").getByRole("button", "Close").tap();
-      // Closing returns to the page Settings opened over; a jump made before that lands is undone.
-      await expect(screen.getByRole("dialog", "Settings")).toBeHidden();
 
       const sidebar = screen.getByRole("navigation", "Threads");
       await expect(sidebar.getByRole("button", /^Local work, /)).toBeVisible();

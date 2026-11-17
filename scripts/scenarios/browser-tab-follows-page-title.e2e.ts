@@ -15,7 +15,7 @@ const PAGE = `<!doctype html>
 test(
   "A Browser tab's label follows a title change that makes no navigation",
   WEB,
-  async ({ onicode, browser, screen }) => {
+  async ({ onicode, app, browser, screen }) => {
     const server = NodeHttp.createServer((_request, response) => {
       response.writeHead(200, { "content-type": "text/html" });
       response.end(PAGE);
@@ -39,7 +39,7 @@ test(
       // The desktop app shows the page in a webview of its own, not on the server browser's canvas.
       await browser.locator("webview").tap();
       await expect(screen.getByText("Updated title")).toBeVisible();
-      // No screenshot: capturing the window over CDP never returns while a webview shows a page.
+      await app.screenshot("updated-title");
     } finally {
       await new Promise((resolve) => server.close(resolve));
     }

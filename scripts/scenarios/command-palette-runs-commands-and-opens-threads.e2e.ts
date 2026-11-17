@@ -25,8 +25,6 @@ test(
     await expect(palette).toBeHidden();
     await expect(settings).toBeVisible();
     await settings.getByRole("region", "Settings content").getByRole("button", "Close").tap();
-    // Closing returns to the page Settings opened over; a jump made before that lands is undone.
-    await expect(settings).toBeHidden();
 
     await browser.keyboard.press("ControlOrMeta+k");
     await search.fill("Palette target");

@@ -2,10 +2,10 @@ import { expect } from "e2e";
 
 import { test, WEB } from "./desktop.ts";
 
-// Scenarios title with a Codex command that always fails, so reaching it is the fixed behavior;
-// the bug refused first with "This thread has no messages to title yet."
+// Scenarios run with every provider off, so title generation fails for want of one. Reaching
+// it is the fixed behavior; the bug refused first with "This thread has no messages to title yet."
 test(
-  "Regenerate title on a fresh fork reaches the title model with the inherited history",
+  "Regenerate title on a fresh fork reaches title generation with the inherited history",
   WEB,
   async ({ onicode, desktop, app, screen }) => {
     const project = await onicode.project("demo");
@@ -23,6 +23,8 @@ test(
     await desktop.chooseContextMenuItem("Regenerate title");
     await expect(screen.getByText("Failed to regenerate thread title")).toBeVisible();
     await app.screenshot("regenerate-result");
-    await expect(screen.getByText("Codex CLI command", { exact: false })).toBeVisible();
+    await expect(
+      screen.getByText("no other provider can take over", { exact: false }),
+    ).toBeVisible();
   },
 );

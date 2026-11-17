@@ -322,6 +322,7 @@ pnpmfileChecksum: sha256-HpBnPcFwiEfe0KUWeYKGfQUjAC0nKKHm3aBulYModeU=
 
 patchedDependencies:
   '@cursor/sdk@1.4.0': 2916f06381a59bc17f6d85d39ae6143f4b767a71eae0f51f20450149c54e78cf
+  '@e2e-dev/web@0.16.0': 913d9a9c02d8527281364e5d1bd7eb14832943e565463528977414738829ea1e
   '@effect/platform-node-shared@4.1.4': 06952843c6f431ca83c78762fd18d23cda76883801049ee311feced2438ecf14
   '@effect/vitest@4.1.4': 262b111889698ab1aaa2d439fff4e9da82c3992be451f5dad3f120445bb093a6
   '@expo/metro-config@58.0.22': 90fa980e8b6480631fb2fbb04559834e3c612db40c550cd828f11be297d8d760
@@ -2344,7 +2345,7 @@ importers:
         version: 0.12.7(e2e@0.23.1)
       '@e2e-dev/web':
         specifier: 0.16.0
-        version: 0.16.0(e2e@0.23.1)
+        version: 0.16.0(patch_hash=913d9a9c02d8527281364e5d1bd7eb14832943e565463528977414738829ea1e)(e2e@0.23.1)
       '@effect/platform-node':
         specifier: 4.1.4
         version: 4.1.4(bufferutil@4.1.0)(effect@4.1.4)(redis@6.2.1)(utf-8-validate@6.0.6)
@@ -12435,7 +12436,7 @@ snapshots:
       e2e: 0.23.1
       zod: 4.6.7
 
-  '@e2e-dev/web@0.16.0(e2e@0.23.1)':
+  '@e2e-dev/web@0.16.0(patch_hash=913d9a9c02d8527281364e5d1bd7eb14832943e565463528977414738829ea1e)(e2e@0.23.1)':
     dependencies:
       e2e: 0.23.1
       playwright-core: 1.65.0
