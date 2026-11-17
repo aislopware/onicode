@@ -3001,7 +3001,7 @@ it.effect("loads the diff again for a new guide head without sending the head", 
         label: TARGET.label,
         httpBaseUrl: "https://example.test",
         socketUrl: "wss://example.test",
-        httpAuthorization: null,
+        httpAuthorization: { _tag: "Bearer", token: "token" },
         target: TARGET,
       }),
     );
