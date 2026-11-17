@@ -58,8 +58,10 @@ fresh client. What a scenario changes on the server or in the desktop shell (a s
 keybinding, a saved environment) it puts back itself. One that fails before it does can fail the
 scenarios after it, so read a red run from its first failure.
 
-State is created through the app's own CLI, so it is real events and works on a base commit
-whose schema differs. New threads default to the replay agent's `showcase` recording: type a
+State is created through the server's own CLI and HTTP API, so it is real events and works on a
+base commit whose database schema differs. Projects go through the API (`/api/projects/mutate`),
+since each CLI call starts a process that takes about 0.7 s; a base older than that endpoint
+cannot run a scenario. New threads default to the replay agent's `showcase` recording: type a
 message and send it. To play something else, add a recording to the
 [replay agent](development.md#replay-provider).
 
