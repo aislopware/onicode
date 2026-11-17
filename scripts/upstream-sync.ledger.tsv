@@ -2329,3 +2329,4 @@ d27002bf99	take	merged clean
 5b91a5a00e	take	http.test.ts keeps Onicode 'API CORS' describe (browser wording removed)
 48a64a8b68	take	quit-confirmation row stays unconditional (Onicode is desktop-only, no isElectron); confirmTerminalClose has a decoding default, wire-safe
 0df1967cfa	take	merged clean
+2904c397ad	take	canForkWhileSourceRunning is optional in contracts (wire-safe); only Claude sets it
