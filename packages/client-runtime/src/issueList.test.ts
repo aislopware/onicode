@@ -128,6 +128,13 @@ describe("issueFilterScopes", () => {
         input: { projectId: api, tracker: "linear", host: "linear.app", scope: "ENG" },
       },
     ]);
+    // Another machine's Linear workspace can have a team with the same key.
+    const other = "env-2" as EnvironmentId;
+    held.set(other, hold(answer({ trackers: [tracker({})], entries: [linearRow] })));
+    expect(issueFilterScopes(held, []).map((scope) => scope.environmentId)).toEqual([
+      environmentId,
+      other,
+    ]);
   });
 
   it("skips a tracker that cannot be read", () => {

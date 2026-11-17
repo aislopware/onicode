@@ -180,7 +180,11 @@ export function issueFilterScopes(
       if (!tracker?.configured || tracker.capabilities === null) continue;
       if (
         scopes.some(
-          (s) => s.input.scope.toLowerCase() === scope.toLowerCase() && s.input.host === host,
+          (s) =>
+            s.environmentId === environmentId &&
+            s.input.tracker === tracker.tracker &&
+            s.input.scope.toLowerCase() === scope.toLowerCase() &&
+            s.input.host === host,
         )
       )
         continue;
@@ -199,6 +203,8 @@ export function issueFilterScopes(
       if (
         scopes.some(
           (s) =>
+            s.environmentId === environmentId &&
+            s.input.tracker === entry.tracker &&
             s.input.scope.toLowerCase() === entry.scope.toLowerCase() &&
             s.input.host?.toLowerCase() === entry.host.toLowerCase(),
         )
