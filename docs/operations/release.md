@@ -126,11 +126,20 @@ The workflow passes the planned fingerprint to the native build as
 compute it again during the native build; pass the same variable if the two must agree.
 
 iOS builds on the self-hosted runner labelled `onicode-ios`, a macOS VM on the maintainers' Mac Studio
-that keeps ccache, the pnpm store and CocoaPods between runs. If it is offline the job waits in the
-queue; cancel it and rerun with `-f ios_runner=github` for a hosted macOS runner, which is far slower.
-The repository is public, so the organization's runner group admits only
-`.github/workflows/release.yml` on `main`, and the runner's job-started hook refuses any other
-repository, workflow or event.
+that keeps ccache, the pnpm store and CocoaPods between runs. The macOS desktop build runs there too
+when the run ships no iOS build; with one, it takes a hosted runner so the desktop release does not
+wait behind iOS. If the runner is offline its jobs wait in the queue; cancel the run and rerun with
+`-f mac_runner=github` for hosted macOS runners, which are far slower.
+
+The repository is public, and code from a fork's pull request must never run there. The
+organization's runner group admits only this repository and `oni-browser-use`, but it cannot be
+pinned to workflows: GitHub accepts only refs that exist, never `refs/pull/<n>/merge`, so a
+restricted group would refuse every pull request run. The runner's job-started hook
+(`~/runner-hooks/job-started.sh` in the VM) is the check. Before any step runs it refuses every
+job but `release.yml` dispatched on `main` (here and in `oni-browser-use`), `ios-dev-client.yml`
+and `scenarios.yml` on `main`, and `scenarios.yml` on a pull request whose head is a branch of
+this repository. A workflow that
+starts using the runner needs an entry there.
 Locally, from `apps/mobile`, whose `eas.json` holds the profiles:
 
 ```sh

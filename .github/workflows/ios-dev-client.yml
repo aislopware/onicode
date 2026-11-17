@@ -5,6 +5,11 @@ name: iOS Dev Client
 # read another pull request's cache, only main's, and Scenarios runs on main for few paths: a
 # native change that merged without touching them left every later pull request to spend 20 to
 # 27 minutes on the same build. A push that leaves the fingerprint alone ends after the lookup.
+#
+# On main it runs on the self-hosted runner on the maintainers' Mac Studio, so the iOS scenarios
+# that run there find the client in its own cache. The client still goes to the Actions cache for
+# the hosted runs of forks' pull requests. A dispatch from another branch builds on a hosted
+# runner, because the runner group admits only main.
 on:
   workflow_dispatch:
   push:
@@ -34,7 +39,7 @@ concurrency:
 jobs:
   build:
     name: Build the iOS dev client
-    runs-on: macos-26
+    runs-on: ${{ github.ref == 'refs/heads/main' && fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') || 'macos-26' }}
     timeout-minutes: 60
     env:
       # The shared client cache needs a login this job does not have; actions/cache stands in.
@@ -52,6 +57,7 @@ jobs:
         uses: ./.github/actions/setup-ci-deps
 
       - name: Restore the dev client
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/onicode/native-clients/artifacts/ios
@@ -59,6 +65,7 @@ jobs:
           restore-keys: ios-dev-client-
 
       - name: Cache CocoaPods
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/Library/Caches/CocoaPods

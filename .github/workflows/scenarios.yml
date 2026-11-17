@@ -132,12 +132,17 @@ jobs:
             !scripts/.e2e/**/*.zip
           retention-days: 7
 
+  # Main and pull requests from this repository's branches run on the self-hosted runner on the
+  # maintainers' Mac Studio, which keeps the dev client, CocoaPods and Metro's cache between runs.
+  # A fork's pull request runs on a hosted runner: its code must never reach that machine, and
+  # the runner's job-started hook refuses it too.
   ios:
     name: iOS scenarios
-    runs-on: macos-26
+    runs-on: ${{ (github.ref == 'refs/heads/main' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') || 'macos-26' }}
     timeout-minutes: 90
     env:
-      # The shared client cache needs a login this job does not have; actions/cache stands in.
+      # The shared client cache needs a login this job does not have; actions/cache stands in on
+      # hosted runners.
       ONICODE_NATIVE_CLIENT_CACHE: "off"
     steps:
       - name: Checkout
@@ -148,12 +153,18 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # A cancelled run can stop before its own cleanup at the end.
+      - name: Clear what an earlier run left
+        if: runner.environment == 'self-hosted'
+        run: .github/scripts/reset-ios-scenarios.sh
+
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
 
       # The newest saved client. One built for another native fingerprint is ignored below, and
       # the build that replaces it is saved under its own.
       - name: Restore the dev client
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/onicode/native-clients/artifacts/ios
@@ -161,6 +172,7 @@ jobs:
           restore-keys: ios-dev-client-
 
       - name: Cache CocoaPods
+        if: runner.environment == 'github-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/Library/Caches/CocoaPods
@@ -176,7 +188,7 @@ jobs:
           echo "fingerprint=$(jq -er .fingerprint <<< "$prepared")" >> "$GITHUB_OUTPUT"
 
       - name: Save the dev client
-        if: steps.client.outputs.source == 'build'
+        if: runner.environment == 'github-hosted' && steps.client.outputs.source == 'build'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/onicode/native-clients/artifacts/ios
@@ -189,12 +201,13 @@ jobs:
         run: |
           # The newest iOS runtime and the first iPhone it supports: not every device type boots on
           # every runtime.
+          # Runtimes for one device only, such as iOS-27-2-iPhone19-4, are left out.
           read -r runtime type < <(xcrun simctl list runtimes available -j | jq -er '
-            [.runtimes[] | select(.platform == "iOS")]
+            [.runtimes[] | select(.platform == "iOS" and (.identifier | test("iOS-[0-9-]+$")))]
             | max_by(.version | split(".") | map(tonumber))
             | "\(.identifier) \(first(.supportedDeviceTypes[] | select(.productFamily == "iPhone")).identifier)"')
           udid="$(xcrun simctl create "Scenario iPhone" "$type" "$runtime")"
-          brew install mobai-app/tap/simslim
+          command -v simslim > /dev/null || brew install mobai-app/tap/simslim
           simslim on "$udid" --except store,web --preserve-boot-state
           echo "E2E_IOS_DEVICE=Scenario iPhone" >> "$GITHUB_ENV"
 
@@ -207,13 +220,20 @@ jobs:
           path: native/resource-monitor/target/release/oni-resource-monitor
           key: resource-monitor-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/resource-monitor/Cargo.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/src/**') }}
 
-      # Without it Metro transforms every module again, which takes four minutes here.
+      # Without it Metro transforms every module again, which takes four minutes on a hosted
+      # runner. The self-hosted runner keeps the directory, which Metro never prunes.
       - name: Locate Metro's cache
         id: metro
-        run: echo "dir=$(node -p 'require("node:os").tmpdir()')/metro-cache" >> "$GITHUB_OUTPUT"
+        run: |
+          dir="$(node -p 'require("node:os").tmpdir()')/metro-cache"
+          if [[ "$RUNNER_ENVIRONMENT" == self-hosted && -d "$dir" ]] && (( $(du -sk "$dir" | cut -f1) > 4 * 1024 * 1024 )); then
+            rm -rf "$dir"
+          fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
 
       - name: Restore Metro's cache
         id: metro_cache
+        if: runner.environment == 'github-hosted'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.metro.outputs.dir }}
@@ -224,7 +244,7 @@ jobs:
         run: vp run scenarios --target ios
 
       - name: Save Metro's cache
-        if: ${{ !cancelled() && steps.metro_cache.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && runner.environment == 'github-hosted' && steps.metro_cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.metro.outputs.dir }}
@@ -244,3 +264,7 @@ jobs:
             !scripts/.e2e/**/*.zip
           include-hidden-files: true
           retention-days: 7
+
+      - name: Leave the runner as the next run expects it
+        if: always() && runner.environment == 'self-hosted'
+        run: .github/scripts/reset-ios-scenarios.sh
