@@ -84,6 +84,9 @@ jobs:
           for platform in ios android; do
             npx expo-updates fingerprint:generate --platform "$platform" > "$RUNNER_TEMP/fp/base/$platform.json"
           done
+          # The runner reads the setup action again from the checkout when the job ends,
+          # and fails if the base commit's copy has other steps.
+          git checkout --quiet "$GITHUB_SHA"
 
       - id: compare
         name: Compare fingerprints
