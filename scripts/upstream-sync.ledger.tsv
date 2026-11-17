@@ -2274,3 +2274,4 @@ e514c36f3c	take	fix(web): project picker jump shortcuts follow the filtered rows
 861211f215	take	fix(server): skip settlement cleanup for deleted threads (#37833)
 d775f6bff1	take	fix(web,mobile): message timestamps follow a system time zone change (#32371)
 75683c8f93	take	fix(contracts): preserve whitespace in diff file paths (#37835); pnpm-lock patch hash regenerated with vp i
+9e32c95576	take	fix(client-runtime): show routes whose host refused this device's sign-in (#33199); adapted: no DPoP renewal or failureCause in Onicode, so the clock-skew exclusion is dropped; relay fixtures in tests swapped for the SSH route
