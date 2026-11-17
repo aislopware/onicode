@@ -40,6 +40,27 @@ const devClientPath = Effect.gen(function* () {
   );
 });
 
+// The dev launcher gives Metro 10 seconds for the manifest and tries a loopback address once.
+// Metro starts a process per manifest to resolve the runtime version, which a hosted runner
+// still busy starting the server does not always finish in time. The launcher then stays on
+// its error screen, so the load is tried again.
+const LOAD_ATTEMPTS = 3;
+
+/** Waits, within limits, until Metro answers for the manifest well inside the launcher's 10 s. */
+const metroAnswersInTime = async (origin: string) => {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    // @effect-diagnostics-next-line globalFetch:off - Metro's own HTTP endpoint, asked as the dev launcher asks it
+    const answered = await fetch(origin, {
+      headers: { "expo-platform": "ios", accept: "application/expo+json,application/json" },
+      signal: AbortSignal.timeout(4_000),
+    }).then(
+      (response) => response.ok,
+      () => false,
+    );
+    if (answered) return;
+  }
+};
+
 // The simulator keeps an app's data between runs, and an earlier run's server is gone. The first
 // install of a run removes the app first, so one install and pairing last the run.
 let installed = false;
@@ -69,17 +90,26 @@ export const test = base.extend<{ onicode: MobileOni }>({
           await device.openLink(url, { app: APP_ID });
           await device.alert("accept").catch(() => {});
         };
-        const metro = encodeURIComponent(`http://${MOBILE.host}:${MOBILE.metroPort}`);
-        await openLink(
-          `${SCHEME}://expo-development-client/?url=${metro}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
-        );
+        const metroOrigin = `http://${MOBILE.host}:${MOBILE.metroPort}`;
+        const load = async () => {
+          await metroAnswersInTime(metroOrigin);
+          await openLink(
+            `${SCHEME}://expo-development-client/?url=${encodeURIComponent(metroOrigin)}&disableOnboarding=1&disableFab=1&disableAutoLaunch=1`,
+          );
+        };
+        await load();
         // The first load bundles the app; the pairing link only works once it is on screen.
         if (paired) return;
         // Not the empty state's "Add environment": the simulator's keychain outlives the app, so
         // environments an earlier run saved can still be listed.
-        await expect(screen.getByTestId("adaptive-workspace-layout")).toBeVisible({
-          timeout: 240_000,
-        });
+        const workspace = screen.getByTestId("adaptive-workspace-layout");
+        const loadFailed = screen.getByText("Failed to load app", { exact: false });
+        for (let attempt = 1; attempt < LOAD_ATTEMPTS; attempt += 1) {
+          await expect(workspace.or(loadFailed)).toBeVisible({ timeout: 240_000 });
+          if (await workspace.isVisible()) break;
+          await load();
+        }
+        await expect(workspace).toBeVisible({ timeout: 240_000 });
         const query = new URLSearchParams({
           pairingUrl: await runPromise(pairingUrl),
           autoConnect: "1",

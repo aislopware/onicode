@@ -13,6 +13,10 @@ inputs:
     description: Set to "false" when a concurrent job with the same install args saves the pnpm store
     required: false
     default: "true"
+  pnpm-store:
+    description: Set to "false" to install straight from the registry, without restoring or saving the pnpm store
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -53,7 +57,7 @@ runs:
     # over an older store of their own.
     - name: Restore pnpm store
       id: pnpm_cache
-      if: inputs.install == 'true'
+      if: inputs.install == 'true' && inputs.pnpm-store == 'true'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ steps.pnpm_store.outputs.path }}
@@ -89,14 +93,16 @@ runs:
         key: ${{ steps.pnpm_verified.outputs.cache-primary-key }}
 
     # A filtered install that started from the current full store adds nothing
-    # worth a second copy of it. A stacked PR, based on a branch other than the
-    # default, saves a ~1 GB store only its own reruns can read, so it only restores.
+    # worth a second copy of it. A pull request never saves: its ~1 GB store is one
+    # only its own reruns can read, and those copies filled the repository's 10 GB of
+    # cache, which evicted the caches that are slow to rebuild. It installs what its
+    # lockfile adds over main's store from the registry instead.
     # Concurrent jobs with the same install args reserve one key, so the losers
     # compress the store for nothing; all but one pass save-pnpm-store: false.
     - name: Save pnpm store
       if: >-
-        inputs.install == 'true' && inputs.save-pnpm-store == 'true' &&
-        (github.event_name != 'pull_request' || github.base_ref == github.event.repository.default_branch) &&
+        inputs.install == 'true' && inputs.pnpm-store == 'true' && inputs.save-pnpm-store == 'true' &&
+        github.event_name != 'pull_request' &&
         steps.pnpm_cache.outputs.cache-hit != 'true' &&
         (steps.pnpm_store.outputs.namespace == 'full' ||
           steps.pnpm_cache.outputs.cache-matched-key != format('pnpm-full-v1-{0}-{1}-{2}', runner.os, runner.arch, hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json')))

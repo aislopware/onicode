@@ -79,6 +79,7 @@ jobs:
             exit 1
           fi
 
+      # Lint runs on every push, so it is the one job that saves the pnpm store.
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
 
@@ -131,6 +132,8 @@ jobs:
 
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: "false"
 
       # electron's install.js (run by ensure:electron) reads this cache before it
       # downloads from GitHub. The key changes only with the Electron version.
@@ -214,20 +217,58 @@ jobs:
           cat "$RUNNER_TEMP/typecheck.log"
           exit "$(cat "$RUNNER_TEMP/typecheck-status")"
 
-  # Everything except `onicode` (apps/server) and the web app, which has its own job
-  # below. `--parallel` drops the package dependency ordering that `vp run`
-  # applies by default: these `test` tasks declare no `dependsOn` and resolve
-  # workspace deps from source, so ordering only bought us idle runners between
-  # dependency layers. The concurrency limit stays at the default 4 so peak load
-  # per runner is unchanged.
+  # Everything except `onicode` (apps/server) and the web app, which have their own jobs
+  # below. One runner ran all of it at 4 tasks on 4 vCPUs and took 4 to 10 minutes, twice
+  # any other job, so the suite is split by measured CPU time into three runners of about
+  # equal load. `packages` takes whatever the other groups do not name, so a new package
+  # is tested without being listed here.
+  # `--parallel` drops the package dependency ordering that `vp run` applies by default:
+  # these `test` tasks declare no `dependsOn` and resolve workspace deps from source, so
+  # ordering only bought us idle runners between dependency layers.
   test:
-    name: Test
+    name: Test ${{ matrix.group }}
     needs: changes
     if: ${{ !cancelled() && needs.changes.outputs.test != 'false' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        group: [mobile, apps, packages]
     steps:
+      # `changes` lists the affected packages, or nothing when all of them are. A group
+      # none of them belongs to stops here.
+      - name: Select packages
+        id: select
+        env:
+          GROUP: ${{ matrix.group }}
+          TEST_PACKAGES: ${{ needs.changes.outputs.test_packages }}
+        run: |
+          mobile=(@onicode/mobile)
+          apps=(@onicode/desktop @onicode/client-runtime @onicode/oxlint-plugin-onicode @onicode/scripts)
+          elsewhere=("${mobile[@]}" "${apps[@]}" onicode @onicode/monorepo @onicode/web)
+          declare -n named="$GROUP"
+          in_list() { local item; for item in "${@:2}"; do [[ "$item" == "$1" ]] && return 0; done; return 1; }
+          filters=()
+          if [[ -z "$TEST_PACKAGES" ]]; then
+            if [[ "$GROUP" == packages ]]; then
+              for package in "${elsewhere[@]}"; do filters+=(--filter "!$package"); done
+            else
+              for package in "${named[@]}"; do filters+=(--filter "$package"); done
+            fi
+          else
+            for package in $TEST_PACKAGES; do
+              if [[ "$GROUP" == packages ]]; then
+                in_list "$package" "${elsewhere[@]}" || filters+=(--filter "$package")
+              elif in_list "$package" "${named[@]}"; then
+                filters+=(--filter "$package")
+              fi
+            done
+          fi
+          echo "filters=${filters[*]}" | tee -a "$GITHUB_OUTPUT"
+
       - name: Checkout
+        if: steps.select.outputs.filters != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: |
@@ -239,39 +280,43 @@ jobs:
       # The desktop tests compile the browser secret helper. The install runs in
       # the background while Vite+ installs; the step before the tests waits for it.
       - name: Start installing browser secret helper build libraries
+        if: steps.select.outputs.filters != '' && matrix.group == 'apps'
         uses: ./.github/actions/apt-install-start
         with:
           packages: libsecret-1-dev pkg-config
 
       - name: Setup Vite+
+        if: steps.select.outputs.filters != ''
         uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: "false"
 
       # electron's install.js (run by ensure:electron) reads this cache before it
       # downloads from GitHub. The key changes only with the Electron version.
+      # Only @onicode/desktop's tests touch the runtime.
       - name: Cache Electron download
+        if: steps.select.outputs.filters != '' && matrix.group == 'apps'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/electron
           key: electron-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('node_modules/.pnpm/electron@*/node_modules/electron/package.json') }}
 
       - name: Ensure Electron runtime is installed
+        if: steps.select.outputs.filters != '' && matrix.group == 'apps'
         run: vp run --filter @onicode/desktop ensure:electron
 
       - name: Finish installing browser secret helper build libraries
+        if: steps.select.outputs.filters != '' && matrix.group == 'apps'
         timeout-minutes: 10
         uses: ./.github/actions/apt-install-finish
 
-      # `changes` lists the affected packages, or nothing when all of them are.
       - name: Test
+        if: steps.select.outputs.filters != ''
         env:
-          TEST_PACKAGES: ${{ needs.changes.outputs.test_packages }}
+          FILTERS: ${{ steps.select.outputs.filters }}
         run: |
           set -o pipefail
-          filters=(--filter '!onicode' --filter '!@onicode/monorepo' --filter '!@onicode/web')
-          if [[ -n "$TEST_PACKAGES" ]]; then
-            filters=()
-            for package in $TEST_PACKAGES; do filters+=(--filter "$package"); done
-          fi
+          read -ra filters <<< "$FILTERS"
           # The runner's trace writer can crash on surrogate pairs in test output.
           vp run --parallel --concurrency-limit 4 "${filters[@]}" test 2>&1 | python3 -u -c '
           import sys
@@ -306,6 +351,8 @@ jobs:
 
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: "false"
 
       # The browser project runs React tests in headless Chromium. Same cache key as
       # test_server, so both jobs share one downloaded browser.
@@ -370,6 +417,8 @@ jobs:
       - name: Setup Vite+
         if: steps.changes.outputs.test_server != 'false'
         uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: "false"
 
       # No Electron setup here: `onicode` (apps/server) has no Electron dependency
       # and none of its tests touch the runtime. Only the non-server `test`
@@ -403,13 +452,21 @@ jobs:
 
       # Each server test file runs in its own Vitest process, and a fresh install starts
       # Vitest's content-keyed module cache empty, so every file re-transformed its imports.
-      # Only pushes to main save it, so pull requests never evict each other's entries.
+      # Only pushes to main save it, so pull requests never evict each other's entries, and
+      # only the first push of a day does: a key per commit filled the repository's 10 GB of
+      # cache within a day, which evicted the caches Scenarios and Release rebuild slowly.
+      - name: Date the Vitest module cache
+        id: vitest_cache_day
+        if: steps.changes.outputs.test_server != 'false'
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
       - name: Restore Vitest module cache
+        id: vitest_cache
         if: steps.changes.outputs.test_server != 'false'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules/.vitest-cache
-          key: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.vitest_cache_day.outputs.day }}
           restore-keys: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Test
@@ -423,11 +480,11 @@ jobs:
           --verify-hits 1 apps/server
 
       - name: Save Vitest module cache
-        if: github.event_name == 'push' && steps.changes.outputs.test_server != 'false'
+        if: github.event_name == 'push' && steps.changes.outputs.test_server != 'false' && steps.vitest_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: node_modules/.vitest-cache
-          key: vitest-modules-server-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          key: ${{ steps.vitest_cache.outputs.cache-primary-key }}
 
       # integration/transferBudgetV2.integration.test.ts writes the report; exactly one shard runs it.
       - name: Publish transfer budget report

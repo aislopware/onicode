@@ -70,8 +70,11 @@ jobs:
         with:
           packages: libsecret-1-dev pkg-config tmux xvfb
 
+      # CI's Lint job saves the same store for this commit.
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
+        with:
+          save-pnpm-store: "false"
 
       - name: Cache Electron download
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -85,6 +88,15 @@ jobs:
       - name: Finish installing the desktop build libraries and xvfb
         timeout-minutes: 10
         uses: ./.github/actions/apt-install-finish
+
+      # The dev runner builds the resource monitor when the binary is missing, which takes
+      # 25 to 60 seconds of every start. The key is the crate's whole source, so a restored
+      # binary is the one this checkout would build.
+      - name: Cache the resource monitor
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: native/resource-monitor/target/release/oni-resource-monitor
+          key: resource-monitor-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/resource-monitor/Cargo.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/src/**') }}
 
       # e2e records each scenario's video with Playwright's ffmpeg. It attaches to the app's own
       # window, so it needs no browser.
@@ -131,8 +143,12 @@ jobs:
             !/.repos/
           sparse-checkout-cone-mode: false
 
+      # No pnpm store here: restoring its 1.3 GB takes 75 to 90 seconds on a hosted macOS
+      # runner and saving it two minutes, against a minute to install from the registry.
       - name: Setup Vite+
         uses: ./.github/actions/setup-ci-deps
+        with:
+          pnpm-store: "false"
 
       # The newest saved client. One built for another native fingerprint is ignored below, and
       # the build that replaces it is saved under its own.
@@ -180,6 +196,15 @@ jobs:
           brew install mobai-app/tap/simslim
           simslim on "$udid" --except store,web --preserve-boot-state
           echo "E2E_IOS_DEVICE=Scenario iPhone" >> "$GITHUB_ENV"
+
+      # The dev runner builds the resource monitor when the binary is missing, and
+      # the server waits for it. The key is the crate's whole source, so a restored
+      # binary is the one this checkout would build.
+      - name: Cache the resource monitor
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: native/resource-monitor/target/release/oni-resource-monitor
+          key: resource-monitor-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('native/resource-monitor/Cargo.toml', 'native/resource-monitor/Cargo.lock', 'native/resource-monitor/src/**') }}
 
       # Without it Metro transforms every module again, which takes four minutes here.
       - name: Locate Metro's cache
