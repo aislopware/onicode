@@ -5,7 +5,7 @@ import { test, WEB } from "./desktop.ts";
 // Scenarios run with every provider off, so title generation fails for want of one. Reaching
 // it is the fixed behavior; the bug refused first with "This thread has no messages to title yet."
 test(
-  "Regenerate title on a fresh fork reaches the title model with the inherited history",
+  "Regenerate title on a fresh fork reaches title generation with the inherited history",
   WEB,
   async ({ onicode, desktop, app, screen }) => {
     const project = await onicode.project("demo");

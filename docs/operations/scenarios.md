@@ -110,6 +110,8 @@ test("Archive a thread from its context menu", WEB, async ({ onicode, desktop, s
 - **Shortcuts use the platform's mod key.** Press `ControlOrMeta+k`.
 - **The clipboard is the machine's own.** A scenario that copies replaces what the person running
   it had copied.
+- **A page in the Browser panel is not masked.** A screenshot covers password fields in the app's
+  own frames; a webview's page is out of e2e's reach. Load only fixture pages there.
 - **Stop then send.** The send button ignores clicks for half a second after a turn stops, so
   that a click meant for Stop does not send. Send the next message with Enter.
 

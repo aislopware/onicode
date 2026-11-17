@@ -1,4 +1,5 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
+import { useRouterState } from "@tanstack/react-router";
 import { XIcon } from "lucide-react";
 import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 
@@ -17,6 +18,16 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 export function AppRouteModal({ label, children }: { label: string; children: ReactNode }) {
   const closeAppModal = useCloseAppModal();
   const [open, setOpen] = useState(true);
+  // A close skipped for a navigation still loading normally ends with this modal unmounted.
+  // One that comes back to a modal page (a redirect) keeps it mounted, so it shows again on
+  // the new entry instead of staying closed on its own route.
+  const entryKey = useRouterState({ select: (state) => state.resolvedLocation?.state.__TSR_key });
+  const [skippedOn, setSkippedOn] = useState<{ entryKey: string | undefined } | null>(null);
+  const shown = open || (skippedOn !== null && skippedOn.entryKey !== entryKey);
+  const close = () => {
+    setOpen(false);
+    setSkippedOn(null);
+  };
   // Text selection that ends on the backdrop is not a dismissal.
   const backdropPressRef = useRef(false);
   // Focus the surface, not its first control: no stray focus ring, no phone keyboard.
@@ -29,7 +40,7 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
 
   return (
     <DialogPrimitive.Root
-      open={open}
+      open={shown}
       // Portaled layers outside this tree (toasts, confirm dialogs) are not backdrop presses.
       disablePointerDismissal
       onOpenChange={(nextOpen) => {
@@ -38,10 +49,10 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
         // drop what was typed. Blur first so they commit.
         const focused = document.activeElement;
         if (focused instanceof HTMLElement && popupRef.current?.contains(focused)) focused.blur();
-        setOpen(false);
+        close();
       }}
       onOpenChangeComplete={(nextOpen) => {
-        if (!nextOpen) void closeAppModal();
+        if (!nextOpen && !closeAppModal()) setSkippedOn({ entryKey });
       }}
     >
       <DialogPrimitive.Portal>
@@ -61,7 +72,7 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
             backdropPressRef.current = event.target === event.currentTarget;
           }}
           onClick={(event) => {
-            if (backdropPressRef.current && event.target === event.currentTarget) setOpen(false);
+            if (backdropPressRef.current && event.target === event.currentTarget) close();
             backdropPressRef.current = false;
           }}
         >

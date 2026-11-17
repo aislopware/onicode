@@ -153,7 +153,7 @@ export const make = Effect.gen(function* () {
         return yield* new TextGenerationError({
           operation,
           detail:
-            "The selected provider is off and no other provider can take over. Turn one on in Settings → Providers.",
+            "The selected provider is off and no other provider can take over. Turn one on in Settings.",
         });
       }
       selection = fallback ?? selection;
