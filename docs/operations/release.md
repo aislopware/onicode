@@ -136,8 +136,9 @@ organization's runner group admits only this repository and `oni-browser-use`, b
 pinned to workflows: GitHub accepts only refs that exist, never `refs/pull/<n>/merge`, so a
 restricted group would refuse every pull request run. The runner's job-started hook
 (`~/runner-hooks/job-started.sh` in the VM) is the check. Before any step runs it refuses every
-job but `release.yml` dispatched on `main`, `ios-dev-client.yml` and `scenarios.yml` on `main`,
-and `scenarios.yml` on a pull request whose head is a branch of this repository. A workflow that
+job but `release.yml` dispatched on `main` (here and in `oni-browser-use`), `ios-dev-client.yml`
+and `scenarios.yml` on `main`, and `scenarios.yml` on a pull request whose head is a branch of
+this repository. A workflow that
 starts using the runner needs an entry there.
 Locally, from `apps/mobile`, whose `eas.json` holds the profiles:
 

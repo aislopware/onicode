@@ -134,8 +134,8 @@ jobs:
 
   # Main and pull requests from this repository's branches run on the self-hosted runner on the
   # maintainers' Mac Studio, which keeps the dev client, CocoaPods and Metro's cache between runs.
-  # A fork's pull request runs on a hosted runner: its code must never reach that machine. The
-  # runner group and the runner's job-started hook refuse it too.
+  # A fork's pull request runs on a hosted runner: its code must never reach that machine, and
+  # the runner's job-started hook refuses it too.
   ios:
     name: iOS scenarios
     runs-on: ${{ (github.ref == 'refs/heads/main' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "onicode-ios"]') || 'macos-26' }}
