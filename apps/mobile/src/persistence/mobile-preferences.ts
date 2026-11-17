@@ -5,9 +5,12 @@ import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import { PullRequestSavedViewIdentity } from "@onicode/client-runtime/pull-request-saved-views";
+import { SavedViewIdentity } from "@onicode/client-runtime/saved-views";
 import {
   EnvironmentId,
+  IssueInvolvement,
+  IssueListSort,
+  IssueListState,
   PullRequestInvolvement,
   PullRequestListFilters,
   PullRequestListState,
@@ -41,13 +44,27 @@ export const PullRequestListControls = Schema.Struct({
 export type PullRequestListControls = typeof PullRequestListControls.Type;
 
 export const PullRequestSavedView = Schema.Struct({
-  ...PullRequestSavedViewIdentity.fields,
+  ...SavedViewIdentity.fields,
   environmentId: Schema.NullOr(Schema.String),
   controls: PullRequestListControls,
   query: Schema.String,
 });
 export type PullRequestSavedView = typeof PullRequestSavedView.Type;
 const isPullRequestSavedView = Schema.is(PullRequestSavedView);
+
+export const IssueSavedView = Schema.Struct({
+  ...SavedViewIdentity.fields,
+  query: Schema.String,
+  state: IssueListState,
+  involvement: IssueInvolvement,
+  sort: IssueListSort,
+  labels: Schema.Array(Schema.String),
+  assignee: Schema.NullOr(
+    Schema.Struct({ login: Schema.String, name: Schema.NullOr(Schema.String) }),
+  ),
+});
+export type IssueSavedView = typeof IssueSavedView.Type;
+const isIssueSavedView = Schema.is(IssueSavedView);
 
 const ThreadListFilters = Schema.Struct({
   environmentId: Schema.NullOr(EnvironmentId),
@@ -171,6 +188,7 @@ export interface Preferences {
   readonly workspaceSelections?: WorkspaceSelections;
   readonly agentNotifications?: AgentNotificationPreferences;
   readonly pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
+  readonly issueSavedViews?: ReadonlyArray<IssueSavedView>;
 }
 
 export class MobilePreferencesLoadError extends Schema.TaggedError<MobilePreferencesLoadError>()(
@@ -255,6 +273,7 @@ function sanitizePreferences(parsed: Preferences): Preferences {
     workspaceSelections?: WorkspaceSelections;
     agentNotifications?: AgentNotificationPreferences;
     pullRequestSavedViews?: ReadonlyArray<PullRequestSavedView>;
+    issueSavedViews?: ReadonlyArray<IssueSavedView>;
   } = {};
 
   if (Array.isArray(parsed.hiddenNavigationTabs)) {
@@ -408,6 +427,9 @@ function sanitizePreferences(parsed: Preferences): Preferences {
   }
   if (Array.isArray(parsed.pullRequestSavedViews)) {
     preferences.pullRequestSavedViews = parsed.pullRequestSavedViews.filter(isPullRequestSavedView);
+  }
+  if (Array.isArray(parsed.issueSavedViews)) {
+    preferences.issueSavedViews = parsed.issueSavedViews.filter(isIssueSavedView);
   }
   return preferences;
 }
