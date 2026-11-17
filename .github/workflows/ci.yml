@@ -463,21 +463,24 @@ jobs:
           path: |
             node_modules/.vitest-cache
             node_modules/.vite/task-cache
-          key: server-tests-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.vitest_cache_day.outputs.day }}
-          restore-keys: server-tests-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+          key: server-tests-v2-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ steps.vitest_cache_day.outputs.day }}
+          restore-keys: server-tests-v2-${{ matrix.shard }}-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
 
       - name: Test
         if: steps.changes.outputs.test_server != 'false'
         env:
           ONICODE_TRANSFER_BUDGET_REPORT_PATH: ${{ runner.temp }}/onicode-transfer-budget.md
         # One process per file spends ~2s starting before its tests run; one file per vCPU overlaps that.
-        run: >-
-          vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }} --concurrency 4
-          --uncached apps/server/integration/transferBudgetV2.integration.test.ts
-          --verify-hits 1 apps/server
+        # A test makes apps/server/tmp. Every file started after it recorded that directory as an
+        # input, and missed the cache on the next checkout, which has none. So it is always there.
+        run: |
+          mkdir -p apps/server/tmp
+          vp run test:cached -- --shard ${{ matrix.shard }}/${{ strategy.job-total }} --concurrency 4 \
+            --uncached apps/server/integration/transferBudgetV2.integration.test.ts \
+            --verify-hits 1 apps/server
 
       - name: Save server test caches
-        if: github.event_name == 'push' && steps.changes.outputs.test_server != 'false' && steps.vitest_cache.outputs.cache-hit != 'true'
+        if: steps.changes.outputs.test_server != 'false' && steps.vitest_cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
