@@ -626,6 +626,19 @@ it.layer(NodeServices.layer)("onicode update checks the database before switchin
         "onicode@0.1.8 could not confirm it supports this database (its check exited with code 1), so onicode did not switch to it.",
     },
     {
+      name: "checks 0.8.0, which accepts only protocol 4, with protocol 4",
+      targetVersion: "0.8.0",
+      launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
+      preflight: preflightOutput(
+        JSON.stringify({
+          status: "ready",
+          version: "0.8.0",
+          launcherProtocol: SERVICE_LAUNCHER_PROTOCOL,
+        }),
+      ),
+      failure: undefined,
+    },
+    {
       // Newer builds keep accepting the current launcher protocol, which may drop 3.
       name: "checks a newer target with the current launcher protocol",
       targetVersion: "99.0.0",

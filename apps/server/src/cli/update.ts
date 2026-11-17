@@ -64,6 +64,7 @@ const ReleaseIndex = Schema.Array(
 );
 const decodeReleaseIndex = Schema.decodeUnknownEffect(Schema.fromJsonString(ReleaseIndex));
 
+const ONLY_PROTOCOL_4_RELEASE = "0.8.0";
 const RELEASE_INDEX_TIMEOUT = Duration.seconds(30);
 const RELEASE_INDEX_MAX_PAGES = 10;
 
@@ -445,9 +446,10 @@ export const runUpdate = Effect.fn("cli.update.run")(function* (input: {
         targetVersion,
         databasePath: input.databasePath,
         // The target then runs under its own launcher, so only its database check matters. Older
-        // builds may predate protocol 4 but accept 3.
+        // builds accept protocol 3, except 0.8.0, which shipped protocol 4 and accepts only that.
         launcherProtocol:
-          compareExactServiceVersions(targetVersion, currentVersion) < 0
+          compareExactServiceVersions(targetVersion, currentVersion) < 0 &&
+          targetVersion !== ONLY_PROTOCOL_4_RELEASE
             ? 3
             : SERVICE_LAUNCHER_PROTOCOL,
       }).pipe(
