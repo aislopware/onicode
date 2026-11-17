@@ -2385,3 +2385,4 @@ e9b48b7809	take	fix(muse): usage scanning no longer makes mise download Muse
 0c676d95b1	take	fix(web): screen readers name thread details issue and PR rows by number and title
 dd40cb51ea	take	fix(web): dictating a citation comment keeps Save beside Cancel
 bee9c3b796	take	fix(server): Devin questions accept a typed answer when allowOther is set
+47888ec226	take	fix(server): storage cleanup's merge-check fetch no longer times out at 30 s or starts git gc
