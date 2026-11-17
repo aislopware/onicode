@@ -2414,3 +2414,4 @@ e5d757f51b	take	taken as is
 6ab633f6d6	take	fix(server): Android SDK detection looks past an ANDROID_HOME that is not an SDK
 a774d7f473	take	fix(server): issue links on a custom GitHub Enterprise hostname resolve
 f92c5e8f98	take	fix(web): review summary line comments keep which side they refer to
+74b1f97ce9	take	fix(web): reopening Settings reloads WSL distributions
