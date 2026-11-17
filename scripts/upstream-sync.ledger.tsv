@@ -2312,3 +2312,4 @@ c71f98cadf	take	relay/AgentAwarenessRelay.test.ts hunk dropped (relay removed)
 85dcfa61ca	take	CommandPalette keeps Onicode's remote-desktop action and drops upstream's 'Use in another app (MCP)' action (declined wizard); sidebar keeps Onicode's wordmark, stage label and remote-desktop route; IssuesPage drops the isElectron/isWeb branching (desktop only); routeTree.gen.ts regenerated; issue key link is an anchor (Onicode lint forbids restyling InlineButton)
 adffb3623f	take	taken as is
 0597b9edcd	take	relay/AgentAwarenessRelay.ts hunk dropped (relay removed); agentContextBudget.json re-measured on Onicode's text (mcpToolListJsonBytes 50143); evals/mcp-tool-use lists IssuesToolkit so evals see the shipped tool set; test scope string rebranded
+86863beede	take	upstream migration 097 renumbered to Onicode 102; scripts/release-smoke.ts dropped (T3 release pipeline); rpc.ts GuestShare context dropped; pnpm-lock regenerated
