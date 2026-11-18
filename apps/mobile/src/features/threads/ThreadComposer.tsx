@@ -594,8 +594,6 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   };
   const handleSend = async (followUp?: ActiveTurnComposerAction) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
-    // Sending now would leave a still-converting pasted image out of the turn, so wait for it.
-    if (nativeImageSubmit.deferSend(followUp)) return;
     if (pendingPastedTextAttachmentCountRef.current > 0) return;
     if (usageLimitsOffered && isUsageLimitsCommand(draftMessage) && draftAttachments.length === 0) {
       if (openUsageLimits()) onChangeDraftMessage("");
@@ -639,6 +637,13 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     onPasteImages: onNativePasteImages,
     onSubmit: (followUp) => void handleSend(followUp),
   });
+  // Kept out of handleSend: a reference to the hook declared after it stops the compiler caching it.
+  const sendOrDefer = (followUp?: ActiveTurnComposerAction) => {
+    if (isSubmissionLocked || sendBlockedReason !== null) return;
+    // Sending now would leave a still-converting pasted image out of the turn, so wait for it.
+    if (nativeImageSubmit.deferSend(followUp)) return;
+    void handleSend(followUp);
+  };
 
   const lockedProviderInstanceId = props.canSwitchProvider
     ? undefined
@@ -1017,7 +1022,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   onFocus={handleFocus}
                   onBlur={handleBlur}
                   onSubmit={(alternate) =>
-                    void handleSend(
+                    sendOrDefer(
                       alternate && sendPresentation.alternate !== null
                         ? sendPresentation.alternate
                         : undefined,
@@ -1105,7 +1110,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                     accessibilityLabel={sendBlockedReason ?? sendLabel}
                     presentation={sendPresentation}
                     disabled={!canSend}
-                    onSend={handleSend}
+                    onSend={sendOrDefer}
                   />
                 )}
               </View>
@@ -1173,7 +1178,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                       accessibilityLabel={sendBlockedReason ?? sendLabel}
                       presentation={sendPresentation}
                       disabled={!canSend}
-                      onSend={handleSend}
+                      onSend={sendOrDefer}
                     />
                   ) : null}
                 </View>
