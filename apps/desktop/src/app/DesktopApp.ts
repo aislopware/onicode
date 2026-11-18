@@ -314,7 +314,7 @@ const bootstrap = Effect.fn("desktop.bootstrap")(function* (backendStarted: bool
     if (!(yield* Ref.get(state.quitting))) {
       yield* desktopWindow.createMainIfBackendReady;
     }
-    // `onicode <dir>` still reaches the renderer, which opens it on this machine's connected service.
+    // `onicode app <dir>` still reaches the renderer, which opens it on this machine's connected service.
     yield* startAppActivation;
     return;
   }
