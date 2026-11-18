@@ -29,7 +29,7 @@ test(
     await actions.tap();
     await screen.getByRole("menuitem", "Run now").tap();
     // The run is a whole replayed turn in a new thread.
-    await expect(settings.getByText("succeeded")).toBeVisible({ timeout: 60_000 });
+    await expect(settings.getByText("Succeeded")).toBeVisible({ timeout: 60_000 });
     await app.screenshot("after-run");
 
     await actions.tap();
