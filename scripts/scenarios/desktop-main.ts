@@ -88,11 +88,15 @@ export const CAPTURE_NATIVE_UI = `(() => {
 
 // e2e's own browsers give every attempt a fresh context. The dev window is one profile for the
 // whole run, so each attempt starts by emptying what the last one stored and undoing its zoom.
-// The page is unloaded first: a page still open would write its state back.
+// The page is unloaded first: a page still open would write its state back. Default client
+// settings go through the app first: the shell keeps their language in memory for its menus.
 export const RESET_WINDOW = `(async () => {
   const { BrowserWindow } = process.mainModule.require("electron");
   for (const window of BrowserWindow.getAllWindows()) {
     if (window.isDestroyed()) continue;
+    await window.webContents
+      .executeJavaScript("window.desktopBridge?.setClientSettings({})")
+      .catch(() => undefined);
     window.webContents.setZoomFactor(1);
     await window.loadURL("about:blank");
     await window.webContents.session.clearStorageData({ storages: ["localstorage", "indexdb"] });
