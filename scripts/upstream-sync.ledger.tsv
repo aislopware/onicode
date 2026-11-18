@@ -2437,3 +2437,4 @@ b387e3a179	take	fix(server): Claude turns receive MCP app model context
 7b4478895d	take	fix(server): omit page-specific headers and footers from RTF text
 856c84e4b1	take	taken as is: detached picked element keeps its last rect, cleared on scroll
 24467d671d	take	taken as is
+ef57728059	take	taken as is
