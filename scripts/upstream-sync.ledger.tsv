@@ -2459,3 +2459,4 @@ c48825322d	skip	Onicode already dropped the current-origin pairing link (no brow
 a93e61a343	take	adapted: upload-failed predicate goes on Onicode's stripAttachments built after the last hook (compiler memo), not upstream's earlier position
 281d3e1cbe	take	adapted: test drops the SecretRequests mock (Onicode's ScheduledTaskService does not depend on it)
 a1b1a6388c	take	adapted: originator is Onicode (CODEX_CLIENT_NAME), test renamed to match
+7c67d196c5	take	taken as is (comment names Onicode)
