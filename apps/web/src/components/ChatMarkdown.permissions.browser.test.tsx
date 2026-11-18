@@ -206,6 +206,8 @@ it.each(["[Docs](https://example.com/docs)", "[Readme](docs/readme.md)"])(
     screen.anchor().focus();
     await userEvent.keyboard("{Shift>}{F10}{/Shift}");
     await vi.waitFor(() => expect(state.choose.mock.lastCall?.[2]).toBe("keyboard"));
+    // One key press opens one menu, also where the browser asks for a menu itself.
+    expect(state.choose).toHaveBeenCalledTimes(1);
     await userEvent.click(screen.anchor(), { button: "right" });
     await vi.waitFor(() => expect(state.choose.mock.lastCall?.[2]).toBe("mouse"));
   },

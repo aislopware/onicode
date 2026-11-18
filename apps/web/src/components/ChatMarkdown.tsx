@@ -130,7 +130,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
 import { Button } from "./ui/button";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { recordVisitForThread } from "../browserHistoryStore";
-import { contextMenuSourceOf } from "../contextMenuSource";
+import { contextMenuSourceOf, requestContextMenuOnMenuKey } from "../contextMenuSource";
 import {
   PreferredEditorEnvironmentRequiredError,
   useOpenInPreferredEditor,
@@ -1340,6 +1340,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
               void readLocalApi()?.shell.openExternal(href);
             });
           }}
+          onKeyDown={requestContextMenuOnMenuKey}
           onContextMenu={(event) => {
             if (!href || !faviconHost) return;
             event.preventDefault();
