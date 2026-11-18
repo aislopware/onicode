@@ -57,9 +57,11 @@ export function resolveLocalWorkspaceState(input: {
   if (input.environmentId === null) {
     return input.localEnvironmentOff && input.discoverySettled ? "unavailable" : "pending";
   }
-  // A blocked connection retries when the window activates, which `onicode app` does; these never connect.
+  // A blocked connection retries when the window activates, which `onicode app` does; these never
+  // connect. With Local on, a saved connection only stands in until the primary registers.
   if (
-    input.localEnvironmentOff &&
+    (input.localEnvironmentOff ||
+      input.environment?.entry.target._tag === "PrimaryConnectionTarget") &&
     (input.environment?.entry.enabled === false ||
       input.environment?.connection.phase === "unsupported")
   ) {

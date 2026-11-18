@@ -48,8 +48,7 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
       return;
     }
     const platform = bridge.getClientPlatform();
-    // An unavailable server never connects, so its own failure is shown per folder instead.
-    if (openLocalWorkspace.state === "pending" || !isActivationPlatform(platform)) {
+    if (openLocalWorkspace.state !== "ready" || !isActivationPlatform(platform)) {
       toastManager.add(
         stackedThreadToast({
           type: "error",
@@ -80,8 +79,6 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
           description: response?.message ?? gt("Onicode could not read the folder's path."),
         }),
       );
-      // The other folders would fail the same way.
-      if (response?.code === "environment-unavailable") return;
     }
   };
 

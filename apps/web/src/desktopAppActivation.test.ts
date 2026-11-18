@@ -113,6 +113,13 @@ describe("desktop app activation", () => {
       expected: "pending",
     },
     {
+      name: "answers at once when the Local environment's own server cannot be used",
+      environment: "unsupported",
+      primary: true,
+      localEnvironmentOff: false,
+      expected: "unavailable",
+    },
+    {
       name: "waits until it is known whether this computer runs a service",
       environment: null,
       discoverySettled: false,
@@ -134,6 +141,7 @@ describe("desktop app activation", () => {
     ({
       environment,
       enabled = true,
+      primary = false,
       shellStatus = "live",
       discoverySettled = true,
       localEnvironmentOff = true,
@@ -146,7 +154,10 @@ describe("desktop app activation", () => {
             environment === null
               ? null
               : {
-                  entry: { enabled } as never,
+                  entry: {
+                    enabled,
+                    target: { _tag: primary ? "PrimaryConnectionTarget" : "SshConnectionTarget" },
+                  } as never,
                   connection: { phase: environment, error: null, traceId: null },
                   serverConfig: {} as never,
                 },
