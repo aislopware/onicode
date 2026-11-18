@@ -22,7 +22,11 @@ interface CursorFetchRange {
   readonly untilMs: number;
 }
 
-/** A partial forward read leaves `untilMs` behind the time it ran, so it is not fresh. */
+/** A partial forward read leaves `untilMs` behind the time it ran, so it is not complete. */
+export function isCursorCacheComplete(cache: CursorAccountCache, retentionStartMs: number) {
+  return cache.sinceMs <= retentionStartMs && cache.untilMs >= cache.fetchedAtMs;
+}
+
 export function isCursorCacheFresh(
   cache: CursorAccountCache | undefined,
   nowMs: number,
@@ -30,8 +34,7 @@ export function isCursorCacheFresh(
 ): boolean {
   return (
     cache !== undefined &&
-    cache.sinceMs <= retentionStartMs &&
-    cache.untilMs >= cache.fetchedAtMs &&
+    isCursorCacheComplete(cache, retentionStartMs) &&
     nowMs - cache.fetchedAtMs < CURSOR_ACCOUNT_TTL_MS
   );
 }
@@ -142,8 +145,6 @@ interface SerializedAccount {
   readonly untilMs: number;
   readonly fetchedAtMs: number;
   readonly records: readonly SerializedRecord[];
-  /** Widest read learned to finish, so a backfill resumed after a restart need not relearn it. */
-  readonly spanMs?: number;
 }
 
 export function encodeCursorAccountCaches(
@@ -163,9 +164,7 @@ export function encodeCursorAccountCaches(
   };
   const accounts: Record<string, SerializedAccount> = {};
   for (const [credentialKey, cache] of caches) {
-    const spanMs = spans.get(credentialKey);
     accounts[credentialKey] = {
-      ...(spanMs === undefined ? {} : { spanMs }),
       accountKey: cache.accountKey,
       sinceMs: cache.sinceMs,
       untilMs: cache.untilMs,
@@ -183,7 +182,13 @@ export function encodeCursorAccountCaches(
       ]),
     };
   }
-  return JSON.stringify({ version: CURSOR_ACCOUNT_CACHE_VERSION, strings, accounts });
+  // Learned spans, also for credentials not read yet, so a restart need not relearn them.
+  return JSON.stringify({
+    version: CURSOR_ACCOUNT_CACHE_VERSION,
+    strings,
+    accounts,
+    spans: Object.fromEntries(spans),
+  });
 }
 
 const isFiniteNumber = (value: unknown): value is number =>
@@ -201,7 +206,15 @@ export function decodeCursorAccountCaches(document: unknown): {
     readonly version?: unknown;
     readonly strings?: unknown;
     readonly accounts?: unknown;
+    readonly spans?: unknown;
   };
+  if (typeof root.spans === "object" && root.spans !== null) {
+    for (const [credentialKey, spanMs] of Object.entries(root.spans)) {
+      if (Number.isSafeInteger(spanMs) && spanMs >= CURSOR_MIN_FETCH_SPAN_MS) {
+        spans.set(credentialKey, spanMs);
+      }
+    }
+  }
   const strings = root.strings;
   if (
     root.version !== CURSOR_ACCOUNT_CACHE_VERSION ||
@@ -288,9 +301,6 @@ export function decodeCursorAccountCaches(document: unknown): {
       fetchedAtMs: account.fetchedAtMs,
       records,
     });
-    if (isFiniteNumber(account.spanMs) && account.spanMs >= CURSOR_MIN_FETCH_SPAN_MS) {
-      spans.set(credentialKey, account.spanMs);
-    }
   }
   return { caches, spans };
 }

@@ -30,6 +30,7 @@ import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Fiber from "effect/Fiber";
+import * as Queue from "effect/Queue";
 import * as FileSystem from "effect/FileSystem";
 import * as Context from "effect/Context";
 import * as Layer from "effect/Layer";
@@ -370,6 +371,15 @@ function largeCursorAccount(cursor: ReturnType<typeof makeFakeCursor>) {
     Effect.gen(function* () {
       const nowMs = yield* Clock.currentTimeMillis;
       reads.push({ sinceMs, untilMs });
+      if (!Number.isSafeInteger(sinceMs) || !Number.isSafeInteger(untilMs)) {
+        // Cursor's dashboard takes whole-millisecond int64 dates and rejects anything else.
+        return {
+          accountKey: cursor.state.accountKey,
+          records: [],
+          missing: false,
+          error: "Cursor account usage could not be read.",
+        };
+      }
       if (untilMs - sinceMs <= 12 * HOUR_MS || untilMs < nowMs - 92 * 24 * HOUR_MS) {
         return yield* cursor.read(credential, sinceMs, untilMs);
       }
@@ -2043,6 +2053,10 @@ describe("UsageService", () => {
         ),
         cursor.state.events,
       );
+      // History read for the wider scan stays out of a scan that keeps less.
+      const kept = yield* accounts.scan(input);
+      assert.deepStrictEqual(cursorRecordTimes(kept), cursor.state.events.slice(1));
+      assert.strictEqual(cursor.state.calls.length, 2);
       yield* accounts.awaitPersisted;
     }),
   );
@@ -2158,7 +2172,7 @@ describe("UsageService", () => {
       ];
       const large = largeCursorAccount(cursor);
       yield* Effect.gen(function* () {
-        const accounts = yield* makeCursorAccounts(large.read);
+        let accounts = yield* makeCursorAccounts(large.read);
         let sources: ReadonlyArray<ProviderUsageScan> = [];
         let restarted = false;
         let scans = 0;
@@ -2167,20 +2181,25 @@ describe("UsageService", () => {
           yield* TestClock.adjust("2 minutes");
           sources = yield* accounts.scan(cursorScanInput(cutoff, true));
           assert.isAtMost(large.reads.length - readsBefore, CURSOR_READS_PER_AWAITED_SCAN);
-          if (!restarted && cursor.state.calls.length > 0 && sources[0]?.status !== "ok") {
+          if (!restarted && large.reads.length >= CURSOR_READS_PER_AWAITED_SCAN) {
             restarted = true;
-            // A restart resumes the backfill where the last refresh stopped, at its span.
+            // A restart resumes where the last refresh stopped, at the span it learned, and a
+            // scan that does not wait reports the half-read history as partial.
             yield* accounts.awaitPersisted;
-            const other = makeFakeCursor();
-            other.state.events = cursor.state.events;
-            const resumed = largeCursorAccount(other);
-            yield* (yield* makeCursorAccounts(resumed.read)).scan(cursorScanInput(cutoff, true));
+            const cold = cursor.state.calls.length === 0;
             const keptSinceMs = Math.min(...cursor.state.calls.map((call) => call.sinceMs));
-            const first = resumed.reads[0]!;
-            assert.strictEqual(first.untilMs, keptSinceMs);
+            accounts = yield* makeCursorAccounts(large.read);
+            const resumedFrom = large.reads.length;
+            const pending = yield* accounts.scan(cursorScanInput(cutoff, false));
+            assert.isTrue(pending[0]?.refreshing);
+            if (!cold) assert.strictEqual(pending[0]?.status, "partial");
+            yield* accounts.scan(cursorScanInput(cutoff, true));
+            const first = large.reads[resumedFrom]!;
+            assert.strictEqual(first.untilMs, cold ? yield* Clock.currentTimeMillis : keptSinceMs);
             assert.isAtMost(first.untilMs - first.sinceMs, 24 * HOUR_MS);
           }
         }
+        assert.isTrue(restarted);
         assert.isBelow(scans, 60);
         assert.isUndefined(sources[0]?.refreshing);
         assert.deepStrictEqual(cursorRecordTimes(sources), cursor.state.events);
@@ -2284,6 +2303,60 @@ describe("UsageService", () => {
         assert.strictEqual(cursor.state.calls.length, reads);
       }).pipe(
         Effect.provide(layerService({ prefix: "usage-service-cursor-cooldown", home, settings })),
+      );
+    }),
+  );
+
+  it.effect("reads a Cursor key between the reads of two slow keys", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      yield* TestClock.setTime(CURSOR_NOW);
+      const started = yield* Queue.unbounded<{
+        readonly apiKey: string;
+        readonly release: Deferred.Deferred<void>;
+      }>();
+      let stalled = true;
+      const read: CursorAccountReader.CursorAccountReader["Service"]["read"] = (credential) =>
+        Effect.gen(function* () {
+          const release = yield* Deferred.make<void>();
+          yield* Queue.offer(started, { apiKey: credential.apiKey, release });
+          if (credential.apiKey === "fast-key") {
+            return { accountKey: "fast", records: [], missing: false, error: null };
+          }
+          if (stalled) yield* Deferred.await(release);
+          // Each slow read runs out of time, so its refresh keeps reading narrower ranges.
+          return {
+            accountKey: credential.apiKey,
+            records: [],
+            missing: false,
+            error: "Cursor account usage could not be read.",
+            ...(stalled ? { rangeTooLarge: true } : {}),
+          };
+        });
+      yield* Effect.gen(function* () {
+        const accounts = yield* makeCursorAccounts(read);
+        const scan = yield* accounts
+          .scan({
+            ...cursorScanInput(0, true),
+            instances: ["slow-a-key", "slow-b-key", "fast-key"].map((apiKey) => ({
+              instanceId: ProviderInstanceId.make(apiKey),
+              environment: { CURSOR_API_KEY: apiKey },
+            })),
+          })
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        const first = yield* Queue.take(started);
+        const second = yield* Queue.take(started);
+        yield* Deferred.succeed(first.release, undefined);
+        assert.strictEqual((yield* Queue.take(started)).apiKey, "fast-key");
+
+        stalled = false;
+        for (const pending of [second, ...(yield* Queue.clear(started))]) {
+          yield* Deferred.succeed(pending.release, undefined);
+        }
+        const sources = yield* Fiber.join(scan);
+        assert.isTrue(sources.some((source) => source.dir === "cursor-account:fast"));
+      }).pipe(
+        Effect.provide(layerService({ prefix: "usage-service-cursor-fair-reads", home, settings })),
       );
     }),
   );
