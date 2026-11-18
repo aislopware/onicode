@@ -8,6 +8,7 @@ import * as Digest from "effect/crypto/Digest";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
+import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
 import * as PlatformError from "effect/PlatformError";
@@ -45,6 +46,10 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
     afterRuntimeRename?: Effect.Effect<void>;
     /** Served instead of active.json's content, one per read, while any remain. */
     staleActiveReads?: Array<string>;
+    /** Runs before each session lease file is written. */
+    beforeLeaseWrite?: Effect.Effect<void>;
+    /** Removals of matching paths delete the install record, then fail, like a crash mid-delete. */
+    interruptedRemoves?: RegExp;
     /** Served by URL instead of the pinned package. */
     responses?: Readonly<Record<string, () => Response>>;
   } = {},
@@ -96,6 +101,26 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
                 ),
               ),
       ),
+    writeFileString: (file, data, options) =>
+      (/[/\\]\.lease-[^/\\]*$/u.test(file) && !file.endsWith("-install")
+        ? (input.beforeLeaseWrite ?? Effect.void)
+        : Effect.void
+      ).pipe(Effect.andThen(fs.writeFileString(file, data, options))),
+    remove: (file, options) =>
+      input.interruptedRemoves?.test(file)
+        ? fs.remove(`${file}/.install-complete.json`, { force: true }).pipe(
+            Effect.andThen(
+              Effect.fail(
+                PlatformError.systemError({
+                  _tag: "Busy",
+                  module: "FileSystem",
+                  method: "remove",
+                  pathOrDescriptor: file,
+                }),
+              ),
+            ),
+          )
+        : fs.remove(file, options),
     readFileString: (file, encoding) =>
       Effect.suspend(() => {
         const stale = file.endsWith("active.json") ? input.staleActiveReads?.shift() : undefined;
@@ -707,6 +732,9 @@ it.effect("keeps a superseded release while another server sharing its home runs
     yield* Scope.close(sessionScope, Exit.void);
     // A lease left by a server that has exited no longer keeps the release.
     yield* h.fs.writeFileString(`${previousDirectory}/.lease-2147483646-exited`, "");
+    // So is one written before the machine last booted, whatever process now has its pid.
+    yield* h.fs.writeFileString(`${previousDirectory}/.lease-${process.pid}-before-boot`, "");
+    yield* TestClock.setTime(Date.UTC(2100, 0, 1));
     yield* makeHarness({ baseDir: h.baseDir });
     expect(yield* h.fs.exists(previousDirectory)).toBe(false);
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
@@ -738,6 +766,73 @@ it.effect("keeps a new release another server starts up beside before it is acti
       installedVersion: upstreamVersion,
     });
     expect((yield* h.installation.resolve()).version).toBe(upstreamVersion);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("keeps a release another server activates while this one is pruning", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness({ responses: upstreamResponses(yield* upstreamChecksum) });
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    const entered = yield* Deferred.make<void>();
+    const proceed = yield* Deferred.make<void>();
+    const pruning = yield* makeHarness({
+      baseDir: h.baseDir,
+      options: {
+        protectedBinaryPaths: Deferred.succeed(entered, undefined).pipe(
+          Effect.andThen(Deferred.await(proceed)),
+          Effect.as([]),
+        ),
+      },
+    }).pipe(Effect.forkScoped);
+    yield* Deferred.await(entered);
+    yield* updateToUpstream(h.installation);
+    yield* Deferred.succeed(proceed, undefined);
+    yield* Fiber.join(pruning);
+    expect((yield* h.installation.resolve()).version).toBe(upstreamVersion);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("leases the active release when another server prunes the one it resolved", () =>
+  Effect.gen(function* () {
+    const staleActiveReads: Array<string> = [];
+    let pruneBeforeLease: Effect.Effect<void> = Effect.void;
+    const h = yield* makeHarness({
+      responses: upstreamResponses(yield* upstreamChecksum),
+      staleActiveReads,
+      beforeLeaseWrite: Effect.suspend(() => {
+        const prune = pruneBeforeLease;
+        pruneBeforeLease = Effect.void;
+        return prune;
+      }),
+    });
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    const firstScope = yield* Scope.make();
+    const previous = yield* h.installation.acquire().pipe(Scope.provide(firstScope));
+    yield* updateToUpstream(h.installation);
+    yield* Scope.close(firstScope, Exit.void);
+    staleActiveReads.push(JSON.stringify({ version: asset.version }));
+    pruneBeforeLease = h.fs
+      .remove(previous.managedVersionDirectory!, { recursive: true })
+      .pipe(Effect.orDie);
+    const executable = yield* h.installation.acquire();
+    expect(executable.version).toBe(upstreamVersion);
+    expect(yield* h.fs.exists(executable.executablePath)).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("leaves no record-less release behind when a prune is interrupted", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness({
+      responses: upstreamResponses(yield* upstreamChecksum),
+      interruptedRemoves: /[/\\](?:0\.156\.1|\.install-pruned-[^/\\]+)$/u,
+    });
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    const previous = yield* h.installation.resolve();
+    yield* updateToUpstream(h.installation);
+    expect(yield* h.fs.exists(previous.managedVersionDirectory!)).toBe(false);
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 

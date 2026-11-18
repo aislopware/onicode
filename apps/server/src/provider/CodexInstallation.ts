@@ -27,6 +27,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as NodeCrypto from "node:crypto";
+import * as NodeOS from "node:os";
 import * as ServerConfig from "../config.ts";
 import { isProcessAlive } from "../serverRuntimeState.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -364,22 +365,23 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
               .pipe(Effect.ignore);
       }),
     );
-  // This server's own files are covered by `leases`; one whose server has exited is stale.
+  // This server's own files are covered by `leases`. A lease is stale once its server has
+  // exited, or when it predates the last boot and its pid may belong to another process.
   const isLeased = (directory: string) =>
     leases.has(directory)
       ? Effect.succeed(true)
-      : fs.readDirectory(directory).pipe(
-          Effect.map((entries) =>
-            entries.some((entry) => {
-              const pid =
-                entry.startsWith(LEASE_PREFIX) && !entry.startsWith(leaseName)
-                  ? Number.parseInt(entry.slice(LEASE_PREFIX.length), 10)
-                  : Number.NaN;
-              return isProcessAlive(pid);
-            }),
-          ),
-          Effect.orElseSucceed(() => false),
-        );
+      : Effect.gen(function* () {
+          const bootedAt = (yield* Clock.currentTimeMillis) - NodeOS.uptime() * 1000 - 60_000;
+          for (const entry of yield* fs.readDirectory(directory)) {
+            if (!entry.startsWith(LEASE_PREFIX) || entry.startsWith(leaseName)) continue;
+            if (!isProcessAlive(Number.parseInt(entry.slice(LEASE_PREFIX.length), 10))) continue;
+            const info = yield* fs.stat(path.join(directory, entry)).pipe(Effect.option);
+            if (Option.isNone(info)) continue;
+            const writtenAt = Option.getOrUndefined(info.value.mtime)?.getTime();
+            if (writtenAt === undefined || writtenAt > bootedAt) return true;
+          }
+          return false;
+        }).pipe(Effect.orElseSucceed(() => false));
   const compatibility = Effect.fn("CodexInstallation.compatibility")(function* (version: string) {
     const manifest = yield* manifestService.current;
     return (
@@ -470,17 +472,31 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       wrapFailure("resolve", "Codex is not installed in Onicode. Install it to continue."),
     ),
   );
+  const leaseResolved = gate.withPermit(
+    Effect.suspend(() => resolve()).pipe(
+      Effect.tap((executable) =>
+        retainLease(
+          executable.managedVersionDirectory ?? executable.executablePath,
+          executable.managedVersionDirectory,
+        ),
+      ),
+    ),
+  );
   const acquire = Effect.fn("CodexInstallation.acquire")(function* () {
     return yield* Effect.acquireRelease(
-      gate.withPermit(
-        resolve().pipe(
-          Effect.tap((executable) =>
-            retainLease(
-              executable.managedVersionDirectory ?? executable.executablePath,
-              executable.managedVersionDirectory,
-            ),
-          ),
-        ),
+      leaseResolved.pipe(
+        // Another server may have pruned the release between resolving and leasing it.
+        Effect.flatMap((executable) => {
+          const directory = executable.managedVersionDirectory;
+          return directory === null
+            ? Effect.succeed(executable)
+            : completedRelease(executable.version).pipe(
+                Effect.as(executable),
+                Effect.catch(() =>
+                  releaseLease(directory, directory).pipe(Effect.andThen(leaseResolved)),
+                ),
+              );
+        }),
       ),
       (executable) =>
         releaseLease(
@@ -676,8 +692,14 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         InstalledRelease,
       ).pipe(Effect.option);
       if (Option.isNone(record) || record.value.version !== entry) continue;
+      // An installing server switches the pointer before dropping its lease, so check in this order.
       if (yield* isLeased(directory)) continue;
-      yield* fs.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore);
+      if ((yield* readRecord(activePath, ActiveRelease)).version === entry) continue;
+      // Renamed first so an interrupted delete leaves a staging directory startup cleans up.
+      const doomed = path.join(managedDirectory, `.install-pruned-${yield* random.uuidV4()}`);
+      yield* fs
+        .rename(directory, doomed)
+        .pipe(Effect.andThen(fs.remove(doomed, { recursive: true, force: true })), Effect.ignore);
     }
   }).pipe(
     gate.withPermitsIfAvailable(1),
@@ -701,8 +723,9 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       const destination = path.join(managedDirectory, release.version);
       // Keeps other servers' pruning off the release until it is active.
       const installLease = path.join(destination, installLeaseName);
-      const dropInstallLease = fs.remove(installLease, { force: true }).pipe(Effect.ignore);
-      yield* Effect.addFinalizer(() => dropInstallLease);
+      yield* Effect.addFinalizer(() =>
+        fs.remove(installLease, { force: true }).pipe(Effect.ignore),
+      );
       yield* fs.writeFileString(installLease, "", { mode: 0o600 }).pipe(Effect.ignore);
       const activate = Effect.fn("CodexInstallation.activate")(
         function* () {
@@ -718,7 +741,6 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
           });
           yield* ensureEligible();
           yield* fs.rename(pointer, activePath);
-          yield* dropInstallLease;
           yield* pruneInactiveReleases;
           yield* SubscriptionRef.update(
             state,
