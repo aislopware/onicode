@@ -20,8 +20,15 @@ interface Pairing {
   readonly token: string;
 }
 
+interface Options {
+  /** Source of a module the server preloads, such as a `fetch` stub for a fake upstream. */
+  readonly preload?: string;
+  readonly env?: Record<string, string>;
+}
+
 const serve = Effect.fn("scenario.secondEnvironment")(function* (
   home: string,
+  options: Options,
   paired: (pairing: Pairing) => void,
 ) {
   const path = yield* Path.Path;
@@ -34,6 +41,11 @@ const serve = Effect.fn("scenario.secondEnvironment")(function* (
     cwd: APP_DIR,
     command: node,
     args: [
+      ...(options.preload === undefined
+        ? []
+        : [
+            `--import=data:text/javascript;base64,${Buffer.from(options.preload).toString("base64")}`,
+          ]),
       "apps/server/src/bin.ts",
       "serve",
       "--host",
@@ -49,6 +61,7 @@ const serve = Effect.fn("scenario.secondEnvironment")(function* (
       HOME: hostEnvironment.HOME,
       ONICODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
       ONICODE_ENVIRONMENT_LABEL: ENVIRONMENT_LABEL,
+      ...options.env,
     },
     onLine: (line) => {
       const value = /^Token:\s*(\S+)/.exec(line)?.[1];
@@ -70,10 +83,10 @@ const serve = Effect.fn("scenario.secondEnvironment")(function* (
 });
 
 /** Starts the server and resolves once it can be paired. `stop` ends it. */
-export const startSecondEnvironment = async (home: string) => {
+export const startSecondEnvironment = async (home: string, options: Options = {}) => {
   const pairing = Promise.withResolvers<Pairing>();
   const server = Effect.runFork(
-    serve(home, pairing.resolve).pipe(
+    serve(home, options, pairing.resolve).pipe(
       Effect.scoped,
       Effect.provide([NodeServices.layer, NetService.layer]),
     ),
