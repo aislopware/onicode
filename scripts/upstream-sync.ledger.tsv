@@ -2493,3 +2493,4 @@ e6265a926e	take	taken as is
 9431a9479f	take	fix(mobile): use the shared rounded frame for issue details
 b1ca56209c	take	fix(server): an Antigravity update refreshes every instance's model list
 eebb6bccdf	skip	Changes upstream's release-smoke script (T3 release pipeline); Onicode has no release-smoke and releases through better-update
+6c0698c0af	take	fix(server): Antigravity turns no longer fail on a roots notification to the Onicode MCP server; CONFLICT resolved by dropping upstream's looksLikeProviderToken (Onicode has no registry tokens there)
