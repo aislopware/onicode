@@ -101,10 +101,22 @@ After its first update, the AppImage is named `Onicode.AppImage` (`Onicode-arm64
 on ARM) in the same folder and keeps that name through later updates. Point
 launchers and shortcuts there; the downloaded filename keeps working as a link to it.
 
-Install the `.deb` with `sudo apt install ./Onicode-*.deb`. It updates itself like
+On Debian and Ubuntu, add Onicode's APT repository once, and `apt upgrade` keeps
+it current with the rest of the system:
+
+```bash
+sudo install -d /etc/apt/keyrings
+sudo curl -fsSLo /etc/apt/keyrings/onicode.asc https://onicode-apt.jmango360.dev/key.asc
+echo "deb [signed-by=/etc/apt/keyrings/onicode.asc] https://onicode-apt.jmango360.dev latest main" |
+  sudo tee /etc/apt/sources.list.d/onicode.list
+sudo apt update && sudo apt install onicode
+```
+
+To install a downloaded `.deb` without the repository, run
+`sudo apt install ./onicode_*.deb`. Either way the app also updates itself like
 the AppImage and asks for your password to install each update. If your desktop
-has no password prompt, the update fails; download the new `.deb` and install it
-the same way.
+has no password prompt, that update fails; run `sudo apt upgrade` with the
+repository added, or download the new `.deb` and install it the same way.
 
 ### The `onicode` command
 

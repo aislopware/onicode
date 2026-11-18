@@ -88,6 +88,14 @@ build needs nothing else from there.
 Apps read their feed from `app-update.yml`: `…/feeds/<project-id>/macos` and `…/linux`. A managed
 `feedUrl` policy overrides it.
 
+better-update also serves every deb release as a signed APT repository at `…/linux/apt`, suite
+`latest`, with nothing extra to run at release time. Its key derives from the server's
+`APT_SIGNING_SECRET`; changing that secret breaks `apt update` on every machine that added the
+repository.
+
+Users add it as `https://onicode-apt.jmango360.dev`, a Cloudflare Worker that forwards to that
+feed. Machines keep the hostname in their sources, so it has to keep answering.
+
 ### Taking over from the native Onicode
 
 The macOS feed used to serve the native (Rust) Onicode, and its updater installs this build only
