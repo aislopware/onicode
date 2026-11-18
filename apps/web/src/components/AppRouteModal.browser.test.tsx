@@ -2,14 +2,20 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import type { ReactNode } from "react";
 
+import appCss from "~/index.css?inline";
 import { render, type Screen } from "../../test/render";
 import { dispatchCommandPalette, handOverCommandPaletteOpener } from "../commandPaletteStore";
 import { useCommitOnBlur } from "../hooks/useCommitOnBlur";
-import { startWorkspaceFocus } from "../lib/workspaceFocus";
+import { requestWorkspaceFocus, startWorkspaceFocus } from "../lib/workspaceFocus";
 import { AppRouteModal, AppRouteModalClose } from "./AppRouteModal";
 import { startMainAppLocationTracking } from "./sidebar/mainAppLocation";
 
 vi.mock("./chat/GlobalVoiceInputIndicator", () => ({ GlobalVoiceInputIndicator: () => null }));
+// Passed through, so a test can see a deferred restore that would land after it ends.
+vi.mock("../lib/workspaceFocus", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../lib/workspaceFocus")>();
+  return { ...actual, requestWorkspaceFocus: vi.fn(actual.requestWorkspaceFocus) };
+});
 
 function CommitOnBlurField({ onCommit }: { onCommit: (next: string) => void }) {
   return <input aria-label="Instructions" {...useCommitOnBlur("", onCommit)} />;
@@ -70,8 +76,14 @@ function Sidebar({ children }: { children?: ReactNode }) {
   );
 }
 
-/** Opens the palette and closes it as a command does: one that navigates hands focus over. */
-async function runPaletteCommand(screen: Screen, { navigates }: { navigates: boolean }) {
+/**
+ * Opens the palette and closes it as a command does: one that navigates hands focus over once
+ * the palette has finished closing, and `meanwhile` runs before that.
+ */
+async function runPaletteCommand(
+  screen: Screen,
+  { navigates, meanwhile }: { navigates: boolean; meanwhile?: () => unknown },
+) {
   dispatchCommandPalette({ _tag: "SetOpen", open: true });
   await screen.rerender(
     <Sidebar>
@@ -82,6 +94,7 @@ async function runPaletteCommand(screen: Screen, { navigates }: { navigates: boo
   );
   (screen.getByRole("textbox", { name: "Search commands" }).element() as HTMLElement).focus();
   dispatchCommandPalette({ _tag: "SetOpen", open: false });
+  await meanwhile?.();
   if (navigates) handOverCommandPaletteOpener();
   await screen.rerender(<Sidebar />);
 }
@@ -140,6 +153,65 @@ describe("AppRouteModal", () => {
     await expect.element(openerButton).toHaveFocus();
   });
 
+  it("keeps focus that Tab moved on while it was closing", async () => {
+    // The app's styles give the modal the exit animation that Base UI waits for.
+    const style = document.createElement("style");
+    style.textContent = appCss;
+    document.head.append(style);
+    using _style = { [Symbol.dispose]: () => style.remove() };
+    const view = (background: boolean, modal: ReactNode = null) => (
+      <>
+        <button type="button">Elsewhere</button>
+        <Thread background={background} />
+        {modal}
+      </>
+    );
+    vi.mocked(requestWorkspaceFocus).mockClear();
+    await using screen = await render(view(false), { router: "/" });
+    using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
+    (screen.getByRole("textbox", { name: "Main message" }).element() as HTMLElement).focus();
+
+    await screen.rerender(view(true, usageModal));
+    await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
+    await userEvent.keyboard("{Escape}");
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" }).element() as HTMLElement;
+    elsewhere.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    elsewhere.focus();
+    await expect.element(page.getByRole("dialog", { name: "Usage" })).not.toBeInTheDocument();
+
+    // The thread is still inert; a restore asked for now would take focus once it is usable.
+    expect(requestWorkspaceFocus).not.toHaveBeenCalled();
+    await expect.element(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
+  });
+
+  it("returns to what Settings opened from after Usage replaced it", async () => {
+    const opener = <button type="button">Open settings</button>;
+    await using screen = await render(opener, { router: "/" });
+    (screen.getByRole("button", { name: "Open settings" }).element() as HTMLElement).focus();
+
+    await screen.rerender(
+      <>
+        {opener}
+        <AppRouteModal key="settings" label="Settings">
+          <p>Settings</p>
+        </AppRouteModal>
+      </>,
+    );
+    await expect.element(page.getByRole("dialog", { name: "Settings" })).toHaveFocus();
+    // Its own route renders each modal, so Usage mounts as Settings unmounts.
+    await screen.rerender(
+      <>
+        {opener}
+        <AppRouteModal key="usage" label="Usage">
+          <p>Usage</p>
+        </AppRouteModal>
+      </>,
+    );
+    await closeWithEsc();
+
+    await expect.element(screen.getByRole("button", { name: "Open settings" })).toHaveFocus();
+  });
+
   it.each([
     { opener: "a side chat", name: "Side message", remount: false },
     { opener: "a side chat that remounted under it", name: "Side message", remount: true },
@@ -190,6 +262,16 @@ describe("AppRouteModal", () => {
     await expect.element(screen.getByRole("button", { name: "Show file tree" })).toHaveFocus();
   });
 
+  it("focuses the Pull Requests list when Usage leads there without closing", async () => {
+    await using screen = await render(usageModal, { router: "/usage" });
+    using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
+
+    await screen.router!.navigate({ href: "/pull-requests" });
+    await screen.rerender(<PullRequests />);
+
+    await expect.element(screen.getByRole("button", { name: "Open pull request" })).toHaveFocus();
+  });
+
   it("returns focus to the palette's opener when it mounts after the palette closed", async () => {
     using _palette = endPaletteHandover();
     await using screen = await render(<Sidebar />, { router: "/" });
@@ -207,16 +289,29 @@ describe("AppRouteModal", () => {
   });
 
   it.each([
-    { after: "a palette that returned focus itself", navigates: false, elsewhere: false },
-    { after: "a palette command that opened another page", navigates: true, elsewhere: true },
-  ])("returns focus to its own opener after $after", async ({ navigates, elsewhere }) => {
+    { after: "a palette that returned focus itself", navigates: false },
+    {
+      after: "a palette command whose page resolved before the palette finished closing",
+      navigates: true,
+      meanwhile: (screen: Screen) => screen.router!.navigate({ href: "/threads/other" }),
+    },
+    {
+      after: "a key pressed before the palette finished closing",
+      navigates: true,
+      meanwhile: () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "a" })),
+    },
+    {
+      after: "a palette command that moved workspace focus",
+      navigates: true,
+      meanwhile: () => requestWorkspaceFocus({ area: "composer" }),
+    },
+  ])("returns focus to its own opener after $after", async ({ navigates, meanwhile }) => {
     using _palette = endPaletteHandover();
     await using screen = await render(<Sidebar />, { router: "/" });
     using _location = { [Symbol.dispose]: startMainAppLocationTracking(screen.router!) };
     (screen.getByRole("button", { name: "Sidebar control" }).element() as HTMLElement).focus();
 
-    await runPaletteCommand(screen, { navigates });
-    if (elsewhere) await screen.router!.navigate({ href: "/threads/other" });
+    await runPaletteCommand(screen, { navigates, meanwhile: () => meanwhile?.(screen) });
     // The palette or the new page focuses the composer; the app menu then opens the modal.
     (screen.getByRole("textbox", { name: "Message" }).element() as HTMLElement).focus();
     await screen.rerender(<Sidebar>{usageModal}</Sidebar>);

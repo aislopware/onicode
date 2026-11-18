@@ -1,5 +1,4 @@
 import type { AnyRouter } from "@tanstack/react-router";
-import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { dismissContextMenu } from "../contextMenuFallback";
 import { useRightPanelStore } from "../rightPanelStore";
 
@@ -130,7 +129,7 @@ function revealInScrollers(target: HTMLElement) {
 /** Keeps area focus local, like VS Code's layout service focusPart/visible-neighbour actions. */
 export function createWorkspaceFocusController(doc: Document) {
   const lastFocused = new Map<string, HTMLElement>();
-  let lastArea: string | undefined;
+  let lastArea: HTMLElement | undefined;
   // An area that took focus itself from the keyboard, or the non-tabbable default (the
   // conversation's scroller) standing in for it. Chromium's :focus-visible also matches a
   // clicked area after any later key press, so the ring and window return read this mark.
@@ -157,7 +156,7 @@ export function createWorkspaceFocusController(doc: Document) {
     const area = workspaceArea(event.target);
     if (!area?.dataset.workspaceArea) return;
     if (arrived && standsInFor(event.target, area)) markKeyboardArea(event.target);
-    lastArea = area.dataset.workspaceArea;
+    lastArea = area;
     const key = area.dataset.workspaceFocusKey ?? areaNames(area).join(" ");
     lastFocused.delete(key);
     // Custom file trees retarget focusin to their nonfocusable shadow host.
@@ -325,9 +324,11 @@ export function createWorkspaceFocusController(doc: Document) {
       );
     if (areas.length === 0) return false;
     const activeArea = doc.activeElement?.closest<HTMLElement>(AREA_SELECTOR);
-    const currentId = fromArea ?? activeArea?.dataset.workspaceArea ?? lastArea;
-    // A side chat nests areas with the main chat's names, so prefer the focused element.
-    const activeIndex = fromArea || !activeArea ? -1 : areas.indexOf(activeArea);
+    const currentId =
+      fromArea ?? activeArea?.dataset.workspaceArea ?? lastArea?.dataset.workspaceArea;
+    // A side chat nests areas with the main chat's names, so prefer the area element itself.
+    const knownArea = fromArea ? undefined : (activeArea ?? lastArea);
+    const activeIndex = knownArea ? areas.indexOf(knownArea) : -1;
     const current =
       activeIndex === -1
         ? areas.findIndex((area) => area.dataset.workspaceArea === currentId)
@@ -428,6 +429,8 @@ export function createWorkspaceFocusController(doc: Document) {
     },
     focus,
     request,
+    /** Whether a request to return to a control is still waiting for it. */
+    returning: () => pending?.returnTo !== undefined,
     dispose: () => {
       cancelRequest();
       unmarkKeyboardArea();
@@ -461,11 +464,11 @@ export function startWorkspaceFocus(router: AnyRouter): () => void {
     }
   });
   const stopRoute = router.subscribe("onResolved", ({ fromLocation, toLocation }) => {
-    // Closing Settings or Usage over the page restores focus itself; that is no entry.
+    // Closing Settings or Usage back onto the page restores focus to its own opener.
     if (
       toLocation.pathname === "/pull-requests" &&
       fromLocation?.pathname !== "/pull-requests" &&
-      !(fromLocation && isAppModalPage(fromLocation.pathname))
+      !active.returning()
     )
       requestWorkspaceFocus({ area: "pull-requests" });
   });
