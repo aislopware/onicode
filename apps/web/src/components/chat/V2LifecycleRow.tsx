@@ -1,7 +1,6 @@
 import { T, Var, msg, useGT, useMessages } from "gt-react";
 import { ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { AgentElapsed } from "./AgentElapsed";
-import { projectedSubagentsToRuntime } from "@onicode/client-runtime/state/subagentRuntime";
 import type { ReactNode } from "react";
 import { useThreadShell, useProject } from "../../state/entities";
 import { useEnvironment } from "../../state/environments";
@@ -185,6 +184,8 @@ export function V2LifecycleRow(props: {
         completedAt={item.completedAt}
         threadId={item.childThreadId}
         remote={item.remoteChild}
+        model={item.model}
+        modelSelection={item.modelSelection}
         onOpenThread={props.onOpenThread}
       />
     );
@@ -439,6 +440,9 @@ function SubagentTimelineLink(props: {
   readonly threadId: ThreadId | null;
   /** The thread in a linked environment that runs this task, when it runs there. */
   readonly remote?: OrchestrationV2RemoteTaskChild | undefined;
+  /** The row's copy, for a task whose record this client does not hold. */
+  readonly model?: string | undefined;
+  readonly modelSelection?: OrchestrationV2Subagent["modelSelection"];
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly event?: {
     readonly status: OrchestrationV2TurnItem["status"] | null;
@@ -569,16 +573,9 @@ function SubagentTimelineLink(props: {
       <ThreadHoverCardPopup>
         <SubagentTimelineTooltip
           {...props}
-          elapsed={
-            agent ? (
-              <AgentElapsed
-                environmentId={props.parentRef.environmentId}
-                agent={projectedSubagentsToRuntime([agent])[0]!}
-              />
-            ) : null
-          }
-          model={agent?.model ?? null}
-          modelSelection={agent?.modelSelection}
+          elapsed={<AgentElapsed environmentId={props.parentRef.environmentId} agent={timing} />}
+          model={agent?.model ?? props.model ?? null}
+          modelSelection={agent?.modelSelection ?? props.modelSelection}
           status={liveStatus}
           result={agent?.result ?? props.result}
           progress={agent?.progress ?? props.progress}
@@ -589,7 +586,7 @@ function SubagentTimelineLink(props: {
 }
 
 function SubagentTimelineTooltip(
-  props: Parameters<typeof SubagentTimelineLink>[0] & {
+  props: Omit<Parameters<typeof SubagentTimelineLink>[0], "model"> & {
     model: string | null;
     modelSelection: OrchestrationV2Subagent["modelSelection"];
     elapsed: ReactNode;

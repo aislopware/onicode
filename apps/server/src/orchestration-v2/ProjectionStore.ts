@@ -1367,6 +1367,29 @@ const decodePlanJson = Schema.decodeUnknownEffect(
 const decodeTurnItemPayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2TurnItemJsonSchema),
 );
+const decodeSubagentModel = Schema.decodeUnknownEffect(
+  Schema.fromJsonString(
+    Schema.Struct({
+      model: Schema.optionalKey(Schema.String),
+      modelSelection: OrchestrationV2SubagentJsonSchema.fields.modelSelection,
+    }),
+  ),
+);
+
+/** For a row whose subagent record a client may not hold; see the item's `model`. */
+function withSubagentModel(
+  item: OrchestrationV2TurnItem,
+  record: Partial<Pick<OrchestrationV2Subagent, "model" | "modelSelection">> | undefined,
+): OrchestrationV2TurnItem {
+  if (item.type !== "subagent" || record === undefined) return item;
+  const { model, modelSelection } = record;
+  if (model == null && modelSelection === undefined) return item;
+  return {
+    ...item,
+    ...(model == null ? {} : { model }),
+    ...(modelSelection === undefined ? {} : { modelSelection }),
+  };
+}
 const decodeCheckpointScopePayload = Schema.decodeUnknownEffect(
   Schema.fromJsonString(OrchestrationV2CheckpointScopeJsonSchema),
 );
@@ -4507,6 +4530,31 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         ),
     );
 
+    // A bounded snapshot keeps only recent or active subagent records, and the record of a row a
+    // fork inherits belongs to its source thread. Rows read the model alone from them.
+    const readSubagentModels = Effect.fn("ProjectionStore.readSubagentModels")(function* (
+      sources: ReadonlyArray<{ readonly threadId: ThreadId; readonly id: NodeId }>,
+    ) {
+      const models = new Map<string, Effect.Success<ReturnType<typeof decodeSubagentModel>>>();
+      if (sources.length === 0) return models;
+      const rows = yield* sql<{ thread_id: string; subagent_id: string; model_json: string }>`
+        SELECT subagent.thread_id, subagent.subagent_id,
+          json_patch('{}', json_object(
+            'model', subagent.payload_json -> '$.model',
+            'modelSelection', subagent.payload_json -> '$.modelSelection'
+          )) AS model_json
+        FROM json_each(${yield* encodeTimelineSources(sources)}) AS wanted
+        CROSS JOIN orchestration_v2_projection_subagents AS subagent
+          ON subagent.subagent_id = json_extract(wanted.value, '$.id')
+          AND subagent.thread_id = json_extract(wanted.value, '$.threadId')`;
+      for (const row of rows)
+        models.set(
+          `${row.thread_id}:${row.subagent_id}`,
+          yield* decodeSubagentModel(row.model_json),
+        );
+      return models;
+    });
+
     const readProjection: (
       threadId: ThreadId,
       seenThreadIds: ReadonlySet<ThreadId>,
@@ -4680,12 +4728,31 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
           new Set([...seenThreadIds, threadId]),
           sourceWindow,
         );
+        const visibleTurnItems = buildVisibleTurnItems({ projection, sourceProjection });
+        if (seenThreadIds.size > 0) return { ...projection, visibleTurnItems };
+        const models = yield* readSubagentModels(
+          visibleTurnItems.flatMap(({ visibility, sourceThreadId, item }) =>
+            visibility === "inherited" && item.type === "subagent"
+              ? [{ threadId: sourceThreadId, id: item.subagentId }]
+              : [],
+          ),
+        );
         return {
           ...projection,
-          visibleTurnItems: buildVisibleTurnItems({
-            projection,
-            sourceProjection,
-          }),
+          visibleTurnItems:
+            models.size === 0
+              ? visibleTurnItems
+              : visibleTurnItems.map((row) =>
+                  row.visibility === "inherited" && row.item.type === "subagent"
+                    ? {
+                        ...row,
+                        item: withSubagentModel(
+                          row.item,
+                          models.get(`${row.sourceThreadId}:${row.item.subagentId}`),
+                        ),
+                      }
+                    : row,
+                ),
         };
       },
       (effect, threadId, _seenThreadIds, _window?) =>
@@ -7456,27 +7523,43 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               const byIdentity = new Map(
                 payloads.map((row) => [`${row.thread_id}:${row.turn_item_id}`, row.payload_json]),
               );
-              return yield* Effect.forEach(rows, (row) =>
+              const decoded = yield* Effect.forEach(rows, (row) =>
                 Effect.gen(function* () {
                   const payload = byIdentity.get(`${row.sourceThreadId}:${row.sourceItemId}`);
-                  const item =
+                  return (
                     row.synthetic ??
                     (payload === undefined
                       ? yield* new ProjectionStoreReadError({ threadId })
-                      : yield* decodeTurnItemPayload(payload));
-                  return {
-                    position: row.canonicalPosition,
-                    visibility: row.visibility,
-                    sourceThreadId: row.sourceThreadId,
-                    sourceItemId: row.sourceItemId,
-                    item: projectTurnItemForWire(
+                      : yield* decodeTurnItemPayload(payload))
+                  );
+                }),
+              );
+              const models = yield* readSubagentModels(
+                decoded.flatMap((item, index) =>
+                  item.type === "subagent"
+                    ? [{ threadId: rows[index]!.sourceThreadId, id: item.subagentId }]
+                    : [],
+                ),
+              );
+              return rows.map((row, index) => {
+                const item = decoded[index]!;
+                return {
+                  position: row.canonicalPosition,
+                  visibility: row.visibility,
+                  sourceThreadId: row.sourceThreadId,
+                  sourceItemId: row.sourceItemId,
+                  item: projectTurnItemForWire(
+                    withSubagentModel(
                       row.item.deferredWork === undefined
                         ? item
                         : { ...item, deferredWork: row.item.deferredWork },
+                      item.type === "subagent"
+                        ? models.get(`${row.sourceThreadId}:${item.subagentId}`)
+                        : undefined,
                     ),
-                  };
-                }),
-              );
+                  ),
+                };
+              });
             });
             const items = yield* materialize(
               hasUserTurns
@@ -7499,28 +7582,13 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
               ...row,
               position,
             }));
-            const rows = conversationOnly
-              ? pageItems.filter((row) => isConversationHistoryItem(row.item))
-              : pageItems;
-            // A bounded snapshot keeps only recent or active subagents.
-            const subagentIds = rows.flatMap(({ sourceThreadId, item }) =>
-              item.type === "subagent" && sourceThreadId === threadId ? [item.subagentId] : [],
-            );
-            const subagents =
-              subagentIds.length === 0
-                ? []
-                : yield* sql<PayloadRow>`
-            SELECT payload_json FROM orchestration_v2_projection_subagents
-            WHERE thread_id = ${threadId}
-              AND subagent_id IN (SELECT value FROM json_each(${encodeIdList(subagentIds)}))
-            ORDER BY COALESCE(started_at, ''), subagent_id ASC
-          `.pipe(Effect.flatMap(decodeRows(decodeSubagentPayload, threadId)));
             return {
               snapshotSequence,
-              items: rows,
+              items: conversationOnly
+                ? pageItems.filter((row) => isConversationHistoryItem(row.item))
+                : pageItems,
               nextCursor: bounded.hasMoreHistory ? bounded.nextCursor : page.nextCursor,
               hasMoreHistory: bounded.hasMoreHistory || page.hasMoreHistory,
-              ...(subagents.length === 0 ? {} : { subagents }),
             };
           }),
         )

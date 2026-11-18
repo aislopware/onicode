@@ -51,7 +51,6 @@ import {
   EMPTY_THREAD_HISTORY_META,
   isActiveHistoryRequestCursor,
   mergeOlderHistoryIntoProjection,
-  mergeOlderSubagentsIntoProjection,
   type ThreadHistoryMeta,
 } from "./threadHistoryMerge.ts";
 import * as ThreadSnapshotLoader from "./threadSnapshotHttp.ts";
@@ -834,15 +833,12 @@ export const makeEnvironmentThreadState = Effect.fn("EnvironmentThreadState.make
                   {
                     ...latest,
                     data: Option.some(
-                      mergeOlderSubagentsIntoProjection(
-                        mergeOlderHistoryIntoProjection(
-                          latest.data.value,
-                          page.items,
-                          workAnchorId === undefined
-                            ? undefined
-                            : { anchorId: workAnchorId, nextCursor: page.nextCursor },
-                        ),
-                        page.subagents,
+                      mergeOlderHistoryIntoProjection(
+                        latest.data.value,
+                        page.items,
+                        workAnchorId === undefined
+                          ? undefined
+                          : { anchorId: workAnchorId, nextCursor: page.nextCursor },
                       ),
                     ),
                     status:
