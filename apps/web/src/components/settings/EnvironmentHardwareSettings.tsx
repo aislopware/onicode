@@ -8,7 +8,7 @@ import { useEnvironmentQuery } from "~/state/query";
 import { serverEnvironment } from "~/state/server";
 import { EnvironmentRow } from "./EnvironmentRow";
 import { SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const GAUGE_ICONS = { cpu: CpuIcon, memory: MemoryStickIcon, storage: HardDriveIcon };
 
@@ -96,12 +96,13 @@ export function EnvironmentHardwareSettings({
 }: {
   readonly environments: ReadonlyArray<EnvironmentPresentation>;
 }) {
+  const setting = useSearchableSetting();
   const connected = environments.filter(
     (environment) => environment.connection.phase === "connected",
   );
   if (connected.length === 0) return null;
   return (
-    <SettingsSection {...searchableSetting("environment-hardware")}>
+    <SettingsSection {...setting("environment-hardware")}>
       {connected.map((environment) => (
         <EnvironmentHardware key={environment.environmentId} environment={environment} />
       ))}

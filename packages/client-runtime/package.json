@@ -19,6 +19,14 @@
       "types": "./src/zip/zipDirectory.ts",
       "default": "./src/zip/zipDirectory.ts"
     },
+    "./zip/error": {
+      "types": "./src/zip/zipError.ts",
+      "default": "./src/zip/zipError.ts"
+    },
+    "./zip/error-messages": {
+      "types": "./src/zip/zipErrorMessages.ts",
+      "default": "./src/zip/zipErrorMessages.ts"
+    },
     "./workspace-basename-lookup": {
       "types": "./src/workspaceBasenameLookup.ts",
       "default": "./src/workspaceBasenameLookup.ts"
@@ -38,6 +46,10 @@
     "./composer-model-mentions": {
       "types": "./src/composerModelMentions.ts",
       "default": "./src/composerModelMentions.ts"
+    },
+    "./contract-labels": {
+      "types": "./src/contractLabels.ts",
+      "default": "./src/contractLabels.ts"
     },
     "./locales": {
       "types": "./src/locales.ts",
@@ -646,6 +658,7 @@
     "@pierre/diffs": "catalog:",
     "effect": "catalog:",
     "fflate": "0.8.3",
+    "gt-i18n": "1.0.44",
     "remark-gfm": "catalog:",
     "remark-parse": "catalog:",
     "three": "0.187.0",

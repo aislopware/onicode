@@ -1,6 +1,7 @@
 import { useAtomSet, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@onicode/contracts";
 import * as Effect from "effect/Effect";
+import { msg, T, useGT, useMessages } from "gt-react-native";
 import { AsyncResult } from "effect/reactivity";
 import * as Notifications from "expo-notifications";
 import { Linking, Platform } from "react-native";
@@ -9,6 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { AppSymbolName } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import * as Dialog from "../../components/ui/Dialog";
+import type { MessageResolver } from "../../i18n/messages";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { makePermissionStatusAtom } from "../../lib/permissionStatusAtom";
 import type { AgentNotificationPreferences } from "../../persistence/mobile-preferences";
@@ -52,80 +54,96 @@ const KINDS: ReadonlyArray<{
   {
     key: "notifyOnApproval",
     icon: "exclamationmark.shield",
-    label: "Approval",
-    subtitle: "An agent asks to run a command or edit.",
+    label: msg("Approval", { $context: "notification kind" }),
+    subtitle: msg("An agent asks to run a command or edit."),
   },
   {
     key: "notifyOnInput",
     icon: "questionmark.bubble",
-    label: "Input",
-    subtitle: "An agent asks you a question.",
+    label: msg("Input", { $context: "notification kind: agent needs user input" }),
+    subtitle: msg("An agent asks you a question."),
   },
   {
     key: "notifyOnCompletion",
     icon: "checkmark.circle",
-    label: "Completion",
-    subtitle: "A turn finishes.",
+    label: msg("Completion", { $context: "notification kind" }),
+    subtitle: msg("A turn finishes."),
   },
   {
     key: "notifyOnFailure",
     icon: "exclamationmark.triangle",
-    label: "Failure",
-    subtitle: "A turn fails.",
+    label: msg("Failure", { $context: "notification kind" }),
+    subtitle: msg("A turn fails."),
   },
 ];
 
 const ACTIVITY_LABEL =
   Platform.OS === "ios"
-    ? "Live Activity"
+    ? msg("Live Activity")
     : supportsAndroidLiveUpdateSettings()
-      ? "Live Updates"
-      : "Ongoing notification";
+      ? msg("Live Updates")
+      : msg("Ongoing notification");
 
-function environmentStatusText(status: AgentAwarenessEnvironmentStatus | undefined): string {
+function environmentStatusText(
+  status: AgentAwarenessEnvironmentStatus | undefined,
+  resolve: MessageResolver,
+): string {
   switch (status?._tag) {
     case undefined:
-      return "Not registered";
+      return resolve(msg("Not registered"));
     case "pending":
-      return "Registering…";
+      return resolve(msg("Registering…"));
     case "registered":
-      return "Registered";
+      return resolve(msg("Registered"));
     case "gateway-not-allowed":
-      return "This environment uses another push gateway";
+      return resolve(msg("This environment uses another push gateway"));
     case "unreachable":
-      return `Unreachable: ${status.message}`;
+      return resolve(msg("Unreachable: {message}", { message: status.message }));
     case "failed":
-      return `Failed: ${status.message}`;
+      return resolve(msg("Failed: {message}", { message: status.message }));
   }
 }
 
-function permissionText(permission: NotificationPermission): string | undefined {
+function permissionText(
+  permission: NotificationPermission,
+  resolve: MessageResolver,
+): string | undefined {
   switch (permission) {
     case "denied":
-      return "Notifications are off for Onicode in system Settings.";
+      return resolve(
+        msg("Notifications are off for {product} in system Settings.", { product: "Onicode" }),
+      );
     case "ask":
-      return "Onicode will ask to send notifications.";
+      return resolve(msg("{product} will ask to send notifications.", { product: "Onicode" }));
     default:
       return undefined;
   }
 }
 
-function showTestResult(environmentId: EnvironmentId) {
+function showTestResult(environmentId: EnvironmentId, resolve: MessageResolver) {
   void sendAgentNotificationTest(environmentId).then((result) => {
     switch (result.outcome) {
       case "delivered":
-        Dialog.alert("Test sent", "A test notification is on its way.");
+        Dialog.alert(resolve(msg("Test sent")), resolve(msg("A test notification is on its way.")));
         return;
       case "unregistered":
-        Dialog.alert("Not registered", "This environment has no registration for this phone.");
+        Dialog.alert(
+          resolve(msg("Not registered")),
+          resolve(msg("This environment has no registration for this phone.")),
+        );
         return;
       case "failed":
-        Dialog.alert("Test failed", result.detail ?? "The environment could not deliver it.");
+        Dialog.alert(
+          resolve(msg("Test failed")),
+          result.detail ?? resolve(msg("The environment could not deliver it.")),
+        );
     }
   });
 }
 
 export function SettingsNotificationsRouteScreen() {
+  const gt = useGT();
+  const m = useMessages();
   const insets = useSafeAreaInsets();
   const preferencesResult = useAtomValue(mobilePreferencesAtom);
   const savePreferences = useAtomSet(updateMobilePreferencesAtom);
@@ -161,18 +179,20 @@ export function SettingsNotificationsRouteScreen() {
       }
       setPermission(result.type === "denied" && !result.canAskAgain ? "denied" : "ask");
       Dialog.alert(
-        "Notifications are off",
-        "Allow notifications for Onicode in system Settings, then turn this on again.",
+        gt("Notifications are off"),
+        gt("Allow notifications for {product} in system Settings, then turn this on again.", {
+          product: "Onicode",
+        }),
         [
-          { text: "Cancel", style: "cancel" },
-          { text: "Open Settings", onPress: () => void Linking.openSettings() },
+          { text: gt("Cancel"), style: "cancel" },
+          { text: gt("Open Settings"), onPress: () => void Linking.openSettings() },
         ],
       );
     });
   };
 
   return (
-    <SettingsScreen title="Notifications">
+    <SettingsScreen title={gt("Notifications")}>
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         showsVerticalScrollIndicator={false}
@@ -183,19 +203,19 @@ export function SettingsNotificationsRouteScreen() {
         {status.unavailable !== null ? (
           <Text className="px-2 text-sm text-foreground-muted">{status.unavailable}</Text>
         ) : null}
-        <SettingsSection title="This phone">
+        <SettingsSection title={gt("This phone")}>
           <SettingsSwitchRow
             icon="bell.badge"
-            label="Notifications"
-            subtitle={enabled ? permissionText(permission) : undefined}
+            label={gt("Notifications")}
+            subtitle={enabled ? permissionText(permission, m) : undefined}
             disabled={!available || !ready || permission === "checking"}
             value={enabled}
             onValueChange={handleEnabledChange}
           />
           <SettingsSwitchRow
             icon="bolt.circle"
-            label={ACTIVITY_LABEL}
-            subtitle="Shows running agents on the Lock Screen."
+            label={m(ACTIVITY_LABEL)}
+            subtitle={gt("Shows running agents on the Lock Screen.")}
             disabled={!available || !ready}
             value={preferences.activity}
             onValueChange={(activity) => save({ activity })}
@@ -203,18 +223,18 @@ export function SettingsNotificationsRouteScreen() {
           {supportsAndroidLiveUpdateSettings() ? (
             <SettingsRow
               icon="gearshape"
-              label="Live Update Settings"
+              label={gt("Live Update Settings")}
               onPress={() => void openAndroidLiveUpdateSettings().catch(() => undefined)}
             />
           ) : null}
         </SettingsSection>
-        <SettingsSection title="Notify me about">
+        <SettingsSection title={gt("Notify me about")}>
           {KINDS.map((kind) => (
             <SettingsSwitchRow
               key={kind.key}
               icon={kind.icon}
-              label={kind.label}
-              subtitle={kind.subtitle}
+              label={m(kind.label)}
+              subtitle={m(kind.subtitle)}
               disabled={!available || !ready}
               value={preferences[kind.key]}
               onValueChange={(value) => save({ [kind.key]: value })}
@@ -222,7 +242,7 @@ export function SettingsNotificationsRouteScreen() {
           ))}
         </SettingsSection>
         {enabled && environments.length > 0 ? (
-          <SettingsSection title="Environments">
+          <SettingsSection title={gt("Environments")}>
             {environments.map((environment) => {
               const environmentStatus = status.environments.get(environment.environmentId);
               return (
@@ -230,10 +250,10 @@ export function SettingsNotificationsRouteScreen() {
                   key={environment.environmentId}
                   icon="desktopcomputer"
                   label={environment.label}
-                  value={environmentStatusText(environmentStatus)}
+                  value={environmentStatusText(environmentStatus, m)}
                   valuePosition="below"
                   disabled={environmentStatus?._tag !== "registered"}
-                  onPress={() => showTestResult(environment.environmentId)}
+                  onPress={() => showTestResult(environment.environmentId, m)}
                 />
               );
             })}
@@ -244,7 +264,7 @@ export function SettingsNotificationsRouteScreen() {
         ) : null}
         {enabled ? (
           <Text className="px-2 text-sm text-foreground-muted">
-            Tap a registered environment to send a test notification.
+            <T>Tap a registered environment to send a test notification.</T>
           </Text>
         ) : null}
       </ScrollView>

@@ -1,3 +1,5 @@
+import { msg } from "gt-i18n";
+import { translatableDetail } from "../errors/translatable.ts";
 import * as Cause from "effect/Cause";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
@@ -244,7 +246,7 @@ function failureFromExit<A>(
     stable,
     failure: new ConnectionTransientError({
       reason: "transport",
-      detail: `${target.label} connection failed unexpectedly.`,
+      ...translatableDetail(msg("{host} connection failed unexpectedly.", { host: target.label })),
     }),
   };
 }
@@ -274,7 +276,9 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
   | ConnectionWakeups.ConnectionWakeups
 > {
   const target = entry.target;
-  const setupTimeoutDetail = `${target.label} did not respond during connection setup.`;
+  const setupTimeoutDetail = translatableDetail(
+    msg("{host} did not respond during connection setup.", { host: target.label }),
+  );
   yield* annotateTarget(target);
 
   const connectivity = yield* Connectivity.Connectivity;
@@ -744,7 +748,11 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
           if (longResume) return true;
           return yield* new ConnectionTransientError({
             reason: "timeout",
-            detail: `${target.label} did not respond to a connection health check.`,
+            ...translatableDetail(
+              msg("{host} did not respond to a connection health check.", {
+                host: target.label,
+              }),
+            ),
           });
         }
         if (probeEvent._tag === "ProbeCompleted") {
@@ -848,7 +856,7 @@ export const make = Effect.fn("EnvironmentSupervisor.make")(function* (
         stable: false,
         failure: new ConnectionTransientError({
           reason: "timeout",
-          detail: setupTimeoutDetail,
+          ...setupTimeoutDetail,
         }),
       } satisfies AttemptOutcome;
     }

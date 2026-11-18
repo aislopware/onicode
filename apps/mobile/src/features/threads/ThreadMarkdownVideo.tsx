@@ -1,4 +1,4 @@
-import { MISSING_FILE_ACCESS_MESSAGE } from "@onicode/client-runtime/state/assets";
+import { useGT } from "gt-react-native";
 import { createContext, use, useSyncExternalStore } from "react";
 import { MediaVideoPlayer } from "../../components/MediaVideoPlayer";
 import { useAssetUrlState, useRefreshAssetUrl } from "../../state/assets";
@@ -54,6 +54,7 @@ export function ThreadMarkdownVideo(props: {
   readonly onPlaybackStart?: () => void;
   readonly borderRadius?: number;
 }) {
+  const gt = useGT();
   const { source } = props;
   const feedVisible = useThreadMediaVisible();
   const visible = props.thumbnailVisible ?? feedVisible;
@@ -84,7 +85,7 @@ export function ThreadMarkdownVideo(props: {
       unavailable={"resource" in source && asset._tag === "Failure"}
       unavailableDetail={
         asset._tag === "Failure" && asset.reason === "missing-file-access"
-          ? MISSING_FILE_ACCESS_MESSAGE
+          ? gt("This connection cannot read host files. Pair again with a new link to view it.")
           : undefined
       }
       actionsSource={source.actionsSource}

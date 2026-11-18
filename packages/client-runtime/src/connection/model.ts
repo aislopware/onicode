@@ -1,6 +1,8 @@
 import { EnvironmentId, type ExecutionEnvironmentDescriptor } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 
+import { MarkedText } from "../errors/translatable.ts";
+
 const ConnectionTargetBase = {
   environmentId: EnvironmentId,
   label: Schema.String,
@@ -77,6 +79,7 @@ export class ConnectionTransientError extends Schema.TaggedError<ConnectionTrans
   {
     reason: ConnectionTransientReason,
     detail: Schema.String,
+    i18nMessage: Schema.optionalKey(MarkedText),
     traceId: Schema.optionalKey(Schema.String),
     ...ConnectionFailureFields,
   },
@@ -91,6 +94,7 @@ export class ConnectionBlockedError extends Schema.TaggedError<ConnectionBlocked
   {
     reason: ConnectionBlockedReason,
     detail: Schema.String,
+    i18nMessage: Schema.optionalKey(MarkedText),
     traceId: Schema.optionalKey(Schema.String),
     ...ConnectionFailureFields,
 

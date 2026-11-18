@@ -2445,3 +2445,4 @@ ef57728059	take	taken as is
 42763ff8b1	take	taken as is
 08f324988e	take	taken as is
 724f5c6bec	take	taken as is
+055b44919e	take	Ported with adaptations: removed surfaces (T3 Connect, relay, cloud, guest, webhooks, nightly, Legal, expo-observe, cloud drafts) left out; Onicode screens kept and translated (Notifications, network access, remote desktop, SSH stubs); adopted resetCreditChoices, openVsx WeakSet, zip/preview error codes; no-untranslated-copy is a warning until 383 Onicode-only strings are translated.

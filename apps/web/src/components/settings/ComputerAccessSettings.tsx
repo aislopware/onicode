@@ -21,7 +21,8 @@ import { Switch } from "../ui/switch";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
+import { useGT } from "gt-react";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 const PERMISSION_MODES: Readonly<
@@ -72,6 +73,8 @@ function DriverStatusRefresh({ refresh }: { readonly refresh: () => void }) {
 
 /** Agents driving this machine's desktop apps: the switch, the driver's approval mode, and who gets it. */
 export function ComputerAccessSettings() {
+  const gt = useGT();
+  const setting = useSearchableSetting();
   const { scope, environment: selected } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -118,7 +121,7 @@ export function ComputerAccessSettings() {
     <SettingsSection id="computer-access" title="Computer">
       <DriverStatusRefresh key={`${enabled}:${mode}`} refresh={refresh} />
       <SettingsRow
-        {...searchableSetting("agent-computer-access")}
+        {...setting("agent-computer-access")}
         serverScoped
         settingKeys={["enableAgentComputerAccess"]}
         description={
@@ -134,7 +137,7 @@ export function ComputerAccessSettings() {
         resetAction={
           enabled !== DEFAULT_SERVER_SETTINGS.enableAgentComputerAccess ? (
             <SettingResetButton
-              label="computer access"
+              ariaLabel={gt("Reset computer access to default")}
               onClick={() =>
                 updateSettings({
                   enableAgentComputerAccess: DEFAULT_SERVER_SETTINGS.enableAgentComputerAccess,
@@ -186,14 +189,14 @@ export function ComputerAccessSettings() {
       ) : null}
       {enabled ? (
         <SettingsRow
-          {...searchableSetting("agent-computer-permission-mode")}
+          {...setting("agent-computer-permission-mode")}
           serverScoped
           settingKeys={["agentComputerPermissionMode"]}
           description={`${PERMISSION_MODES[mode].description} Changing it restarts the driver; a thread already open uses the new mode once its agent session restarts.`}
           resetAction={
             mode !== DEFAULT_SERVER_SETTINGS.agentComputerPermissionMode ? (
               <SettingResetButton
-                label="driver approvals"
+                ariaLabel={gt("Reset driver approvals to default")}
                 onClick={() =>
                   updateSettings({
                     agentComputerPermissionMode:

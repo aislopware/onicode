@@ -7,7 +7,7 @@ import { isLocalEnvironmentDisabled } from "~/localEnvironment";
 import { Button } from "../ui/button";
 import { toastManager } from "../ui/toast";
 import { SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
 
 const NO_PANE_HINT =
   "If Privacy & Security has no Developer Tools entry, run `spctl developer-mode enable-terminal` in Terminal first.";
@@ -68,11 +68,12 @@ export function useDeveloperToolsAccess() {
 }
 
 export function DeveloperToolsSettingsRow() {
+  const setting = useSearchableSetting();
   const { granted, openSettings } = useDeveloperToolsAccess();
   if (granted === null) return null;
   return (
     <SettingsRow
-      {...searchableSetting("developer-tools")}
+      {...setting("developer-tools")}
       description={
         granted
           ? "Programs that agents on this Mac build or download start without waiting for macOS security scans."

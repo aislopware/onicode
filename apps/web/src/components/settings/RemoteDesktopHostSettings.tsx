@@ -7,7 +7,8 @@ import { remoteDesktopHost, remoteDesktopHostSessionsAtom } from "../../state/re
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 import { SettingResetButton, SettingsRow, SettingsSection } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
+import { useGT } from "gt-react";
 
 function permissionLines(capabilities: RemoteDesktopHostCapabilities | null): string[] {
   if (capabilities === null) return ["Checking permissions…"];
@@ -33,6 +34,8 @@ export function RemoteDesktopHostSettings(props: {
   readonly clientLabels: ReadonlyMap<string, string>;
 }) {
   const { bridge } = props;
+  const gt = useGT();
+  const setting = useSearchableSetting();
   const enabled = useClientSettings((settings) => settings.remoteDesktopHostEnabled);
   const updateSettings = useUpdatePrimarySettings();
   const sessions = useAtomValue(remoteDesktopHostSessionsAtom);
@@ -69,12 +72,12 @@ export function RemoteDesktopHostSettings(props: {
   return (
     <SettingsSection id="remote-desktop" title="Remote desktop">
       <SettingsRow
-        {...searchableSetting("remote-desktop-host")}
+        {...setting("remote-desktop-host")}
         description="Clients that can already use this machine's terminal can see and control its screen. Keep the Onicode window open; while this is on, closing it on macOS only hides it."
         resetAction={
           enabled ? (
             <SettingResetButton
-              label="screen sharing"
+              ariaLabel={gt("Reset screen sharing to default")}
               onClick={() => updateSettings({ remoteDesktopHostEnabled: false })}
             />
           ) : null

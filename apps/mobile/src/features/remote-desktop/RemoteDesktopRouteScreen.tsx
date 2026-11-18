@@ -229,7 +229,7 @@ function RemoteDesktopScreen({
       <EnvironmentConnectionNotice
         environmentLabel={label}
         connection={environment.presentation.connection}
-        resourceName="remote desktop"
+        resource="remoteDesktop"
         onRetry={() => void retryEnvironment(environmentId)}
       />
     );
