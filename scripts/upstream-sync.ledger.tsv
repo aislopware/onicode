@@ -2499,3 +2499,4 @@ e7fa771f65	take	fix(server): integrated terminals get ONICODE_THREAD_ID like age
 c67deb12dd	take	fix(antigravity): thread sessions spawn with their Onicode thread and MCP environment
 9661141276	skip	Already fixed: Onicode subscribes to preview manager events before forking the mirror stream (same fix); kept Onicode's one-line form: identical behavior, nothing to learn
 cb129ba2cc	take	fix(server): a Claude command moved to the background keeps its command in Background work
+f4b988aeaf	take	fix(server): restart note says how to resume a cut Claude subagent
