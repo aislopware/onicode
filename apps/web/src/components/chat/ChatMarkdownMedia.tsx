@@ -89,7 +89,7 @@ const CHAT_MARKDOWN_WORKSPACE_IMAGE_CLASS_NAME = cn(
   CHAT_MARKDOWN_MEDIA_FRAME_CLASS_NAME,
 );
 export const MarkdownLinkContext = createContext(false);
-/** The thread's workspace mutation id, so a host image the agent rewrites gets a fresh URL. */
+/** The thread's workspace mutation id, so host media the agent rewrites gets a fresh URL. */
 export const WorkspaceMutationIdContext = createContext<string | null | undefined>(undefined);
 
 function expandableMarkdownImageProps(
@@ -307,6 +307,7 @@ export function ChatMarkdownVideo(props: {
   readonly unavailableDetail?: string | undefined;
   readonly style?: CSSProperties | undefined;
   readonly mediaIdentity?: string | undefined;
+  readonly revision?: string | null | undefined;
   readonly actionsSource?: MediaActionSource | undefined;
   readonly onRetry?: (() => Promise<unknown>) | undefined;
 }) {
@@ -314,6 +315,7 @@ export function ChatMarkdownVideo(props: {
     <MediaVideoPlayer
       key={props.mediaIdentity ?? props.copyMarkdown ?? props.src}
       src={props.src}
+      revision={props.revision}
       sourceFailed={props.sourceFailed}
       unavailableDetail={props.unavailableDetail}
       label={props.alt}
@@ -412,15 +414,11 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
   const resource = props.resource;
   const threadWorkspaceMutationId = use(WorkspaceMutationIdContext);
   const workspaceMutationId = props.workspaceMutationId ?? threadWorkspaceMutationId;
-  const assetUrl = useAssetUrlState(
-    props.environmentId,
-    resource,
-    workspaceMutationId !== undefined &&
-      props.kind !== "video" &&
-      (resource._tag === "media-file" || resource._tag === "workspace-file")
+  const urlRevision =
+    resource._tag === "media-file" || resource._tag === "workspace-file"
       ? workspaceMutationId
-      : undefined,
-  );
+      : undefined;
+  const assetUrl = useAssetUrlState(props.environmentId, resource, urlRevision);
   const refreshAssetUrl = useAssetUrlRefresh(props.environmentId, resource);
   const fallbackSrc = assetUrl._tag === "Failure" ? props.fallbackSrc : undefined;
   const missingFileAccess =
@@ -467,6 +465,8 @@ export const ChatMarkdownAssetImage = memo(function ChatMarkdownAssetImage(props
         originalUrl={props.originalUrl}
         style={props.style}
         mediaIdentity={JSON.stringify([props.environmentId, props.resource, props.srcFragment])}
+        // Servers that report the file's revision let an unchanged video stay loaded.
+        revision={(assetUrl._tag === "Success" ? assetUrl.fileRevision : undefined) ?? urlRevision}
         // Re-signing cannot grant the file access this connection lacks.
         onRetry={missingFileAccess ? undefined : refreshAssetUrl}
         actionsSource={actionsSource}

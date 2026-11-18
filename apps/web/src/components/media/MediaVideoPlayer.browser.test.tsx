@@ -68,6 +68,29 @@ describe("MediaVideoPlayer", () => {
     await expectVideoSrc(screen, "/asset/first/clip.mp4");
   });
 
+  it("re-signs a source that fails to load once before reporting the video unavailable", async () => {
+    using _observer = stubGlobal("IntersectionObserver", HiddenIntersectionObserver);
+    const onRetry = vi.fn(async () => {});
+    const failLoad = () =>
+      act(() => {
+        screen.getByLabelText("clip").element().dispatchEvent(new Event("error"));
+      });
+    await using screen = await render(
+      <MediaVideoPlayer src="/asset/stale/clip.mp4" label="clip" onRetry={onRetry} />,
+    );
+
+    await failLoad();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    await screen.rerender(
+      <MediaVideoPlayer src="/asset/fresh/clip.mp4" label="clip" onRetry={onRetry} />,
+    );
+    await expectVideoSrc(screen, "/asset/fresh/clip.mp4");
+
+    await failLoad();
+    await expect.element(screen.getByRole("button", { name: "Retry video" })).toBeVisible();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
   it("starts loading metadata once the player scrolls near the viewport", async () => {
     using _observer = stubGlobal("IntersectionObserver", VisibleIntersectionObserver);
     await using screen = await render(<MediaVideoPlayer src="/asset/clip.mp4" label="clip" />);
