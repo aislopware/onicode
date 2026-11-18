@@ -22,6 +22,11 @@ export interface WorkspaceFocusTarget {
   area: string;
   selector?: string;
   restore?: boolean;
+  /**
+   * A control to return to. While connected it names its own area, since a side chat repeats
+   * the main chat's area names; once its page remounts, its replacement in `area` takes focus.
+   */
+  returnTo?: HTMLElement;
 }
 
 function workspaceArea(element: Element): HTMLElement | null {
@@ -136,9 +141,9 @@ export function createWorkspaceFocusController(doc: Document) {
   };
   doc.addEventListener("focusin", remember);
 
-  const focusArea = (area: HTMLElement, restore = true, nested = true) => {
+  const focusArea = (area: HTMLElement, restore = true, nested = true, returnTo?: HTMLElement) => {
     const key = area.dataset.workspaceFocusKey ?? area.dataset.workspaceArea!;
-    const previous = restore ? lastFocused.get(key) : undefined;
+    const previous = returnTo ?? (restore ? lastFocused.get(key) : undefined);
     const usable = (element: HTMLElement) =>
       isWorkspaceElementVisible(element) && !element.matches(":disabled");
     const belongs = (element: HTMLElement) => workspaceArea(element) === area && usable(element);
@@ -208,12 +213,14 @@ export function createWorkspaceFocusController(doc: Document) {
     }
     return false;
   };
-  const focus = (name: string, restore = true, selector?: string) => {
+  const focus = (name: string, restore = true, selector?: string, returnTo?: HTMLElement) => {
     const areas = Array.from(doc.querySelectorAll<HTMLElement>(AREA_SELECTOR)).filter(
       isWorkspaceElementVisible,
     );
-    const area =
-      name === "content"
+    const ownArea = returnTo?.isConnected ? workspaceArea(returnTo) : null;
+    const area = ownArea
+      ? areas.find((element) => element === ownArea)
+      : name === "content"
         ? (areas.find((element) => element.dataset.workspaceArea === "composer") ??
           areas.find(
             (element) =>
@@ -234,7 +241,7 @@ export function createWorkspaceFocusController(doc: Document) {
       target.focus({ preventScroll: true });
       return doc.activeElement === target;
     }
-    return focusArea(area, restore);
+    return focusArea(area, restore, true, returnTo);
   };
   const move = (direction: 1 | -1, fromArea?: string, closingPalette = false) => {
     // HTML context menus close on blur, unlike modal dialogs and Base UI popups.
@@ -332,7 +339,8 @@ export function createWorkspaceFocusController(doc: Document) {
   const schedule = () => {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => {
-      if (pending && focus(pending.area, pending.restore, pending.selector)) cancelRequest();
+      if (pending && focus(pending.area, pending.restore, pending.selector, pending.returnTo))
+        cancelRequest();
     });
   };
   const request = (target: WorkspaceFocusTarget) => {

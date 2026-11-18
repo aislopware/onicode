@@ -37,11 +37,15 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   // On close, return focus to the opener only after a keyboard close; after a pointer close it
   // would paint a focus ring.
   const popupRef = useRef<HTMLDivElement>(null);
-  const [opener] = useState(
-    () =>
+  const [opener] = useState(() => {
+    const active = document.activeElement;
+    const element =
       getCommandPaletteOpener() ??
-      (document.activeElement instanceof HTMLElement ? document.activeElement : null),
-  );
+      (active instanceof HTMLElement && active !== document.body ? active : null);
+    // Read now: the page under the modal may unmount and take the opener's area with it.
+    const area = element?.closest<HTMLElement>("[data-workspace-area]")?.dataset.workspaceArea;
+    return element && { element, area };
+  });
   // Clear the native window controls (macOS traffic lights, the Windows and Linux caption
   // buttons). Below sm the modal fills the window and leaves that strip empty; up to lg its
   // 1.5rem inset is shorter than the strip.
@@ -89,13 +93,12 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
             ref={popupRef}
             initialFocus={popupRef}
             finalFocus={(closeType) => {
-              if (closeType !== "keyboard" || !opener?.isConnected) return false;
-              if (!opener.closest("[inert]")) return opener;
-              // The thread behind the modal stays inert until the route closes, so its area
-              // takes focus once it is usable again.
-              const area = opener.closest<HTMLElement>("[data-workspace-area]");
-              if (area?.dataset.workspaceArea)
-                requestWorkspaceFocus({ area: area.dataset.workspaceArea });
+              if (closeType !== "keyboard" || !opener) return false;
+              const { element, area } = opener;
+              if (element.isConnected && !element.closest("[inert]")) return element;
+              // The thread behind the modal stays inert, and a page it replaced unmounted, until
+              // the route closes; the opener or its remounted replacement takes focus then.
+              if (area) requestWorkspaceFocus({ area, returnTo: element });
               return false;
             }}
             aria-label={label}
