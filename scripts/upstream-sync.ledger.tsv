@@ -2519,3 +2519,4 @@ cf83da75a2	skip	upstream repo governance (VOUCHED.td vouch list); Onicode has no
 310baf7c99	take	Taken; CONFLICTs were only neighbouring Onicode-only code (palette mount comment, the 'shows again' modal test), both kept. Upstream's 'stays open when Esc belongs to a modal outside Base UI' test is not part of this commit and is not added.
 f1d64aa0b6	take	fix(azure-devops): legacy and project-less remotes list their work items (#38263)
 75cae42feb	take	fix(server): live-status thread lists build shells only for threads that may be live (#38733)
+68ea2220c1	take	Codex + Antigravity managed runtimes prune inactive versions; taken as is
