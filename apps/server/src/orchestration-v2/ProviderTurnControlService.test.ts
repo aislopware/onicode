@@ -128,6 +128,8 @@ function makeProjection(input: {
 
 function layerProjectionStore(
   getProviderControlContext: ProjectionStore.ProjectionStoreV2["Service"]["getProviderControlContext"],
+  getThreadRecords: ProjectionStore.ProjectionStoreV2["Service"]["getThreadRecords"] = () =>
+    Effect.die("unused record read"),
 ) {
   return Layer.succeed(
     ProjectionStore.ProjectionStoreV2,
@@ -174,7 +176,7 @@ function layerProjectionStore(
       getNextTurnItemOrdinal: () => Effect.die("unused ordinal read"),
       getTurnItem: () => Effect.die("unused turn item read"),
       getMessagesById: () => Effect.die("unused getMessagesById"),
-      getThreadRecords: () => Effect.die("unused record read"),
+      getThreadRecords,
       getRuntimeRequest: () => Effect.die("unused getRuntimeRequest"),
       getRunningTurnContext: () => Effect.die("unused getRunningTurnContext"),
       getThreadProviderContext: () => Effect.die("unused getThreadProviderContext"),
@@ -454,5 +456,56 @@ it.effect("steers a running turn with the thread's MCP app model context", () =>
     assert.deepEqual("appContext" in steered[0]! ? steered[0].appContext : undefined, [
       { key: "mcp_app_turn-item_call-1", text: "Pressed: blue" },
     ]);
+  }),
+);
+
+it.effect("pushes the thread's current title to its live provider session", () =>
+  Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const threadId = ThreadId.make("thread:apply-title");
+    const sessionId = ProviderSessionId.make("provider-session:apply-title");
+    const providerThread = {
+      id: ProviderThreadId.make("provider-thread:apply-title"),
+      driver,
+      providerInstanceId,
+      providerSessionId: sessionId,
+    } as OrchestrationV2ProviderThread;
+    const projection = makeProjection({
+      now,
+      threadId,
+      providerThread,
+      providerTurnId: ProviderTurnId.make("provider-turn:apply-title"),
+      attemptId: RunAttemptId.make("run-attempt:apply-title"),
+    });
+    const applied: Array<string> = [];
+    const runtime = {
+      instanceId: providerInstanceId,
+      driver,
+      providerSessionId: sessionId,
+      applyThreadTitle: (input: { readonly title: string }) =>
+        Effect.sync(() => void applied.push(input.title)),
+    } as unknown as ProviderAdapter.ProviderAdapterV2SessionRuntime;
+    const layerControl = ProviderTurnControlService.layer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          layerProjectionStore(() => Effect.die("unused control context"), (() =>
+            Effect.succeed({
+              thread: { ...projection.thread, title: "Renamed natively" },
+              providerThreads: [providerThread],
+            })) as unknown as ProjectionStore.ProjectionStoreV2["Service"]["getThreadRecords"]),
+          layerSessions(sessionId, runtime),
+          Layer.mock(EventSink.EventSinkV2)({}),
+          Layer.mock(McpAppModelContext.McpAppModelContext)({}),
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const control = yield* ProviderTurnControlService.ProviderTurnControlServiceV2;
+      // A native `/rename` landed after a generated title queued this push.
+      yield* control.applyThreadTitle({ threadId });
+    }).pipe(Effect.provide(layerControl));
+
+    assert.deepEqual(applied, ["Renamed natively"]);
   }),
 );

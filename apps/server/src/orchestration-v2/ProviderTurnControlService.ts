@@ -90,10 +90,12 @@ export interface ProviderTurnControlServiceV2Shape {
     | ProviderSessionManager.ProviderSessionManagerV2Error
     | ProviderAdapter.ProviderAdapterV2Error
   >;
-  /** Best effort: a provider thread that is no longer live picks the title up when its next turn starts. */
+  /**
+   * Best effort: pushes the thread's current title, which a later rename may have changed since
+   * this was queued. A provider thread that is no longer live picks it up on its next turn.
+   */
   readonly applyThreadTitle: (input: {
     readonly threadId: ThreadId;
-    readonly title: string;
   }) => Effect.Effect<
     void,
     | ProjectionStore.ProjectionStoreV2Error
@@ -278,7 +280,7 @@ export const layer: Layer.Layer<
         if (!providerThread?.providerSessionId) return;
         const session = yield* sessions.get(providerThread.providerSessionId);
         if (Option.isNone(session) || session.value.applyThreadTitle === undefined) return;
-        yield* session.value.applyThreadTitle({ providerThread, title: input.title });
+        yield* session.value.applyThreadTitle({ providerThread, title: thread.title });
       }),
       interrupt: Effect.fn("ProviderTurnControlService.interrupt")(
         function* (input) {
