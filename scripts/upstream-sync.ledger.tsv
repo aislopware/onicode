@@ -2509,3 +2509,5 @@ f4b988aeaf	take	fix(server): restart note says how to resume a cut Claude subage
 081afe08dc	take	fix(mobile): PR diffs show syntax colors before the full file arrives (#38444)
 2aacea6aa5	take	Took the narrowed turn-item read (the run's failed error items only); kept Onicode's steer check, which already reads the message on its own, so upstream's messages read and cancelled-steer branch are not added.
 f3b168b9f6	take	Ported with react-native-screens 5.0.0-oni.54 (aislopware/react-native-screens@f8edc1f2c, tag oni-v5.0.0-oni.54), which cherry-picks maschwenk 5a67ab37c, the only native change t3.59 carries beyond t3.58; the t3.59 tarball is not used.
+dd512d86c5	skip	DPoP pairing-session renewal; Onicode removed dpop.ts and its token exchange is bearer-only (see 445efb6dfc, 4ee3b602fc). Follow-up noted: Onicode bearer sessions still expire 30 days after pairing even while in use.
+e396bb2e26	skip	Client side of dd512d86c5: direct links pair with a DPoP device key and renew through it; Onicode's clients have no DPoP keys (remoteDpopTokens removed) and the server change is skipped.
