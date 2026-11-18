@@ -2532,3 +2532,4 @@ f9a3c38c50	take	Antigravity broken-thread recovery; shared turn start honors err
 1cefbc4051	take	taken as is; iPhone Duo vertical bar only, new strings already in the mobile catalog
 a5090a7576	take	fix(web): Default effort no longer shows as the lowest bar
 b6a0fd6d62	take	feat(issues): an issue shows every thread it is linked to; kept Onicode's threadTitleText in the shared picker and mobile list
+052ca497cf	take	fix(web,mobile): side chats keep your attachments and context
