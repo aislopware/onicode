@@ -23,7 +23,7 @@ let appModalReturnHistoryIndex: number | null = null;
 let appModalReturnThreadTarget: ThreadRouteTarget | null = null;
 let initialHistoryIndex = 0;
 let mainAppLocationVersion = 0;
-let appModalReturnsFocus = false;
+let appModalFocusSettled = false;
 
 /** Changes each time a page other than Settings or Usage resolves. */
 export const getMainAppLocationVersion = () => mainAppLocationVersion;
@@ -34,7 +34,7 @@ export function startMainAppLocationTracking(router: AnyRouter): () => void {
   const record = () => {
     const { pathname } = router.state.location;
     if (isAppModalPage(pathname)) {
-      appModalReturnsFocus = false;
+      appModalFocusSettled = false;
       return;
     }
     mainAppLocationVersion++;
@@ -62,11 +62,11 @@ export function useNavigateToMainApp() {
   return () => navigate({ href: mainAppHref ?? "/" });
 }
 
-/** Set when Settings or Usage closes and returns focus to its opener itself; cleared on the next open. */
-export const markAppModalReturnsFocus = () => {
-  appModalReturnsFocus = true;
+/** Set when Settings or Usage closes with focus already placed, by it or by the user; cleared on the next open. */
+export const markAppModalFocusSettled = () => {
+  appModalFocusSettled = true;
 };
-export const isAppModalReturningFocus = () => appModalReturnsFocus;
+export const isAppModalFocusSettled = () => appModalFocusSettled;
 
 /** Leaves Settings or Usage for the page that opened it. False when a newer navigation already left. */
 export function useCloseAppModal() {

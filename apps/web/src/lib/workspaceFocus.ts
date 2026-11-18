@@ -1,5 +1,5 @@
 import type { AnyRouter } from "@tanstack/react-router";
-import { isAppModalPage, isAppModalReturningFocus } from "../components/sidebar/mainAppLocation";
+import { isAppModalPage, isAppModalFocusSettled } from "../components/sidebar/mainAppLocation";
 import { dismissContextMenu } from "../contextMenuFallback";
 import { useRightPanelStore } from "../rightPanelStore";
 
@@ -472,7 +472,7 @@ export function startWorkspaceFocus(router: AnyRouter): () => void {
     if (
       toLocation.pathname === "/pull-requests" &&
       fromLocation?.pathname !== "/pull-requests" &&
-      !(fromLocation && isAppModalPage(fromLocation.pathname) && isAppModalReturningFocus())
+      !(fromLocation && isAppModalPage(fromLocation.pathname) && isAppModalFocusSettled())
     )
       requestWorkspaceFocus({ area: "pull-requests" });
   });

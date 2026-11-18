@@ -115,6 +115,32 @@ const usageModal = (
   </AppRouteModal>
 );
 
+/** The app's styles give the modal the exit animation that Base UI waits for. */
+function appStyles(): Disposable {
+  const style = document.createElement("style");
+  style.textContent = appCss;
+  document.head.append(style);
+  return { [Symbol.dispose]: () => style.remove() };
+}
+
+/** Esc, then a key in the same task, so the key lands inside the exit animation however slow the run is. */
+function escapeThenPress(key: string, target: Element) {
+  const dialog = page.getByRole("dialog", { name: "Usage" }).element();
+  dialog.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  target.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+}
+
+/** Moves focus as a workspace shortcut does: it takes the key at the window. */
+function shortcutFocuses(key: string, target: HTMLElement): Disposable {
+  const moveOn = (event: KeyboardEvent) => {
+    if (event.key !== key) return;
+    event.stopPropagation();
+    target.focus();
+  };
+  window.addEventListener("keydown", moveOn, true);
+  return { [Symbol.dispose]: () => window.removeEventListener("keydown", moveOn, true) };
+}
+
 async function closeWithEsc() {
   await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
   await userEvent.keyboard("{Escape}");
@@ -160,14 +186,9 @@ describe("AppRouteModal", () => {
 
   it.each([
     { key: "Tab", shortcut: false },
-    // A workspace shortcut takes F6 at the window, before the document sees it.
     { key: "F6", shortcut: true },
   ])("keeps focus that $key moved on while it was closing", async ({ key, shortcut }) => {
-    // The app's styles give the modal the exit animation that Base UI waits for.
-    const style = document.createElement("style");
-    style.textContent = appCss;
-    document.head.append(style);
-    using _style = { [Symbol.dispose]: () => style.remove() };
+    using _styles = appStyles();
     const view = (background: boolean, modal: ReactNode = null) => (
       <>
         <button type="button">Elsewhere</button>
@@ -179,26 +200,40 @@ describe("AppRouteModal", () => {
     await using screen = await render(view(false), { router: "/" });
     using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
     const elsewhere = screen.getByRole("button", { name: "Elsewhere" }).element() as HTMLElement;
-    const moveOn = (event: KeyboardEvent) => {
-      if (event.key !== key) return;
-      if (shortcut) event.stopPropagation();
-      elsewhere.focus();
-    };
-    window.addEventListener("keydown", moveOn, true);
-    using _moveOn = { [Symbol.dispose]: () => window.removeEventListener("keydown", moveOn, true) };
+    using _shortcut = shortcutFocuses("F6", elsewhere);
     (screen.getByRole("textbox", { name: "Main message" }).element() as HTMLElement).focus();
 
     await screen.rerender(view(true, usageModal));
-    const dialog = page.getByRole("dialog", { name: "Usage" });
-    await expect.element(dialog).toHaveFocus();
-    // One task, so the key lands inside the exit animation however slow the run is.
-    dialog.element().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
-    elsewhere.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-    await expect.element(dialog).not.toBeInTheDocument();
+    await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
+    escapeThenPress(key, elsewhere);
+    if (!shortcut) elsewhere.focus();
+    await expect.element(page.getByRole("dialog", { name: "Usage" })).not.toBeInTheDocument();
 
     // The thread is still inert; a restore asked for now would take focus once it is usable.
     expect(requestWorkspaceFocus).not.toHaveBeenCalled();
     await expect.element(screen.getByRole("button", { name: "Elsewhere" })).toHaveFocus();
+  });
+
+  it("still returns focus after a key during the close that moved nothing", async () => {
+    using _styles = appStyles();
+    const view = (background: boolean, modal: ReactNode = null) => (
+      <>
+        <Thread background={background} />
+        {modal}
+      </>
+    );
+    await using screen = await render(view(false), { router: "/" });
+    using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
+    (screen.getByRole("textbox", { name: "Main message" }).element() as HTMLElement).focus();
+
+    await screen.rerender(view(true, usageModal));
+    await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
+    // With the thread inert and the sidebar collapsed, F6 has nowhere to go.
+    escapeThenPress("F6", document.body);
+    await expect.element(page.getByRole("dialog", { name: "Usage" })).not.toBeInTheDocument();
+    await screen.rerender(view(false));
+
+    await expect.element(screen.getByRole("textbox", { name: "Main message" })).toHaveFocus();
   });
 
   it("returns to what Settings opened from after Usage replaced it", async () => {
@@ -335,6 +370,59 @@ describe("AppRouteModal", () => {
     await expect.element(screen.getByRole("button", { name: "Sidebar control" })).toHaveFocus();
     // A request for the list would take focus once the page renders.
     expect(getWorkspaceFocusRequestVersion()).toBe(requests);
+  });
+
+  it("leaves Pull Requests focus where F6 moved it while it was closing", async () => {
+    using _styles = appStyles();
+    await using screen = await render(
+      <Sidebar>
+        <PullRequests />
+      </Sidebar>,
+      { router: "/pull-requests" },
+    );
+    using _location = { [Symbol.dispose]: startMainAppLocationTracking(screen.router!) };
+    using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
+    const control = screen
+      .getByRole("button", { name: "Sidebar control" })
+      .element() as HTMLElement;
+    using _shortcut = shortcutFocuses("F6", control);
+    (screen.getByRole("button", { name: "Show file tree" }).element() as HTMLElement).focus();
+
+    await screen.router!.navigate({ href: "/usage" });
+    await screen.rerender(<Sidebar>{usageModal}</Sidebar>);
+    await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
+    const requests = getWorkspaceFocusRequestVersion();
+    escapeThenPress("F6", document.body);
+    await vi.waitFor(() =>
+      expect(screen.router!.state.resolvedLocation?.pathname).toBe("/pull-requests"),
+    );
+
+    await expect.element(screen.getByRole("button", { name: "Sidebar control" })).toHaveFocus();
+    // A request for the list would take focus once the page renders.
+    expect(getWorkspaceFocusRequestVersion()).toBe(requests);
+  });
+
+  it("focuses the Pull Requests list when its opener outside any area is gone", async () => {
+    const pullRequests = (
+      <>
+        <button type="button">Maximize</button>
+        <PullRequests />
+      </>
+    );
+    await using screen = await render(pullRequests, { router: "/pull-requests" });
+    using _location = { [Symbol.dispose]: startMainAppLocationTracking(screen.router!) };
+    using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
+    (screen.getByRole("button", { name: "Maximize" }).element() as HTMLElement).focus();
+
+    await screen.router!.navigate({ href: "/usage" });
+    await screen.rerender(usageModal);
+    await closeWithEsc();
+    await vi.waitFor(() =>
+      expect(screen.router!.state.resolvedLocation?.pathname).toBe("/pull-requests"),
+    );
+    await screen.rerender(pullRequests);
+
+    await expect.element(screen.getByRole("button", { name: "Open pull request" })).toHaveFocus();
   });
 
   it("focuses the Pull Requests list when Usage leads there without closing", async () => {

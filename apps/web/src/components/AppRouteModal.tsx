@@ -11,7 +11,7 @@ import {
   workspaceFocusTargetFor,
   type WorkspaceFocusTarget,
 } from "../lib/workspaceFocus";
-import { markAppModalReturnsFocus, useCloseAppModal } from "./sidebar/mainAppLocation";
+import { markAppModalFocusSettled, useCloseAppModal } from "./sidebar/mainAppLocation";
 import { GlobalVoiceInputIndicator } from "./chat/GlobalVoiceInputIndicator";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
@@ -127,12 +127,28 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
               const watch = inputWhileClosingRef.current;
               watch?.stop.abort();
               inputWhileClosingRef.current = null;
+              // Input that moved focus out of the modal settles it; a key with nowhere to go does not.
+              const active = document.activeElement;
+              if (
+                watch?.seen &&
+                active instanceof HTMLElement &&
+                active !== document.body &&
+                !active.closest("[data-app-modal]")
+              ) {
+                markAppModalFocusSettled();
+                return false;
+              }
               const element = opener?.returnTo;
-              if (closeType !== "keyboard" || !element || watch?.seen) return false;
-              markAppModalReturnsFocus();
-              if (element.isConnected && !element.closest("[inert]")) return element;
+              if (closeType !== "keyboard" || !element) return false;
+              if (element.isConnected && !element.closest("[inert]")) {
+                markAppModalFocusSettled();
+                return element;
+              }
+              // Gone with no area to find its replacement in: the page's own entry focus decides.
+              if (!element.isConnected && !opener.area) return false;
               // The thread behind the modal stays inert, and a page it replaced unmounted, until
               // the route closes; the opener or its remounted replacement takes focus then.
+              markAppModalFocusSettled();
               requestWorkspaceFocus(opener);
               return false;
             }}
