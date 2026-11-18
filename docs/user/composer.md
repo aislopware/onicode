@@ -73,6 +73,10 @@ If your **Send shortcut** requires `Cmd+Enter` or `Ctrl+Enter`, that shortcut us
 your default follow-up behavior; add **Shift** to use the opposite action. This
 applies only to multiline messages when you choose the multiline send option.
 
+A steer sent while the agent compacts its context waits in the queue and reaches the
+turn once compaction succeeds. Providers that accept messages mid-compaction get it
+at once. If compaction fails or the turn ends first, it stays queued as a follow-up.
+
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
 the oldest queued message as a steer. This leaves the current draft intact and
 requires an active turn that supports steering. If that shortcut sends the opposite

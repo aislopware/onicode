@@ -21,7 +21,8 @@ export function resolveComposerDispatchMode(input: {
   return defaultAction;
 }
 
-// Automatic compaction takes steers only where the provider says a steer leaves it running.
+// Automatic compaction takes steers only where one leaves it running: the provider takes it
+// natively, or the server holds it until the compaction ends.
 export function compactionBlocksSteering(input: {
   readonly compactCommandIsActive: boolean;
   readonly compactionRunning: boolean;

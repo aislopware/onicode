@@ -408,7 +408,9 @@ export function useThreadComposerState(input: {
   const compactionBlocksSteer = compactionBlocksSteering({
     compactCommandIsActive,
     compactionRunning,
-    steersDuringCompaction: threadSteersDuringCompaction(selectedThreadProjection?.projection),
+    steersDuringCompaction:
+      threadSteersDuringCompaction(selectedThreadProjection?.projection) ||
+      serverConfig?.environment.capabilities.steersAfterCompaction === true,
     run: selectedThreadProjection?.projection.runs.find((run) => run.id === activeRunId),
     messages: selectedThreadMessages,
   });

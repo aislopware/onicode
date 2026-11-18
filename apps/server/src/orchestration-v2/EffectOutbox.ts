@@ -237,6 +237,11 @@ export interface EffectOutboxV2Shape {
   readonly clearCancellation: (effectId: string) => Effect.Effect<void>;
   /** Resolves once the effect is neither pending nor running, or right away when it does not exist. */
   readonly awaitSettled: (effectId: string) => Effect.Effect<void, EffectOutboxError>;
+  /** The ids of this message's steers that are pending or running. */
+  readonly steersInFlight: (input: {
+    readonly threadId: ThreadId;
+    readonly messageId: MessageId;
+  }) => Effect.Effect<ReadonlyArray<string>, EffectOutboxError>;
   readonly reconcileAfterProcessLoss: Effect.Effect<
     { readonly requeued: number; readonly cancelled: number },
     EffectOutboxError
@@ -520,6 +525,19 @@ export const layer: Layer.Layer<EffectOutboxV2, never, SqlClient.SqlClient> = La
           return yield* Deferred.await(signal);
         }
         yield* signalSettled([effectId]);
+      }),
+      steersInFlight: Effect.fn("EffectOutbox.steersInFlight")(function* (input) {
+        const rows = yield* sql<{ readonly effect_id: string }>`
+          SELECT effect_id FROM orchestration_v2_effect_outbox
+          WHERE thread_id = ${input.threadId}
+            AND effect_type = 'provider-turn.steer'
+            AND status IN ('pending', 'running')
+            AND json_extract(payload_json, '$.messageId') = ${input.messageId}
+        `.pipe(
+          NodeSqliteClient.readOnly,
+          Effect.mapError((cause) => new EffectOutboxError({ operation: "list", cause })),
+        );
+        return rows.map((row) => row.effect_id);
       }),
       reconcileAfterProcessLoss: Effect.gen(function* () {
         const now = DateTime.formatIso(yield* DateTime.now);

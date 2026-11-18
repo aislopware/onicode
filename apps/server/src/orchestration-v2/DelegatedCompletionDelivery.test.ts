@@ -29,6 +29,7 @@ import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Stream from "effect/Stream";
 import * as Tracer from "effect/Tracer";
 import * as TestClock from "effect/testing/TestClock";
@@ -2311,6 +2312,123 @@ it.layer(Layer.merge(layerTest, ProviderContinuationRequests.layer))(
         assert.notEqual(deliveryRun?.status, "queued");
       }),
     );
+    it.effect.each([
+      { ends: "interrupted", name: "held-steer" },
+      // The process exited before the provider accepted the turn; startup releases the steer.
+      { ends: "requeued by recovery", name: "held-steer-requeued" },
+      { ends: "requeued, then sent now", name: "held-steer-sent-now" },
+    ] as const)(
+      "gives a held steer a follow-up only once its turn is over: $ends",
+      ({ ends, name }) =>
+        Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const eventSink = yield* EventSink.EventSinkV2;
+          const now = yield* DateTime.now;
+          const parentThreadId = ThreadId.make(`thread:${name}-parent`);
+          const projectId = ProjectId.make(`project:${name}`);
+          const parentRunId = RunId.make(`run:${name}-parent`);
+          const rootNodeId = NodeId.make(`node:${name}-parent`);
+          yield* seedParentWithTerminalTask({
+            threadId: parentThreadId,
+            projectId,
+            runId: parentRunId,
+            rootNodeId,
+            taskId: NodeId.make(`node:${name}-seed`),
+            deliveryState: "acknowledged",
+            now,
+          });
+          const child = yield* seedRestartCancelledChild({
+            parentThreadId,
+            projectId,
+            parentRunId,
+            rootNodeId,
+            name: `${name}-child`,
+            completionWake: "always",
+            continuationPending: false,
+            runStatus: "completed",
+            now,
+          });
+          yield* orchestrator.recoverDelegatedTasks;
+          const send = (text: string, targetRunId?: RunId) =>
+            orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "agent",
+              creationSource: "mcp",
+              commandId: CommandId.make(`command:${name}:${text}`),
+              threadId: child.childThreadId,
+              senderThreadId: parentThreadId,
+              messageId: MessageId.make(`message:${name}:${text}`),
+              text,
+              attachments: [],
+              dispatchMode:
+                targetRunId === undefined
+                  ? { type: "queue_after_active" }
+                  : { type: "steer_active", targetRunId },
+            });
+          yield* send("active");
+          const active = (yield* orchestrator.getThreadProjection(child.childThreadId)).runs.find(
+            (run) => run.ordinal === 2,
+          )!;
+          // The turn has not started, so the steer waits for it in the queue.
+          yield* send("held", active.id);
+          const held = (yield* orchestrator.getThreadProjection(child.childThreadId)).runs.find(
+            (run) => run.ordinal === 3,
+          )!;
+          assert.equal(held.steerWhenReadyRunId, active.id);
+          // Steered, it joins the running turn's task; a task of its own would end cancelled.
+          assert.isUndefined(held.delegatedTaskId);
+
+          const afterSequence = yield* eventSink.latestSequence();
+          yield* eventSink.write({
+            ...(ends === "interrupted" ? {} : { commandId: reconcileCommandId(name) }),
+            events: [
+              {
+                id: EventId.make(`event:${name}-active-ended`),
+                type: "run.updated",
+                threadId: child.childThreadId,
+                runId: active.id,
+                occurredAt: now,
+                payload:
+                  ends === "interrupted"
+                    ? { ...active, status: "interrupted", startedAt: now, completedAt: now }
+                    : { ...active, status: "queued", queueHeld: true },
+              },
+            ],
+          });
+          if (ends === "requeued by recovery") yield* orchestrator.recoverDelegatedTasks;
+          if (ends === "requeued, then sent now") {
+            yield* orchestrator.dispatch({
+              type: "queued-run.start",
+              commandId: CommandId.make(`command:${name}:send-now`),
+              threadId: child.childThreadId,
+              runId: held.id,
+            });
+          }
+          const released = Option.getOrThrow(
+            yield* eventSink.stream({ afterSequence, eventType: "run.updated" }).pipe(
+              Stream.filter(
+                (stored) =>
+                  stored.event.type === "run.updated" &&
+                  stored.event.payload.id === held.id &&
+                  (stored.event.payload.delegatedTaskId !== undefined ||
+                    stored.event.payload.status !== "queued"),
+              ),
+              Stream.take(1),
+              Stream.runHead,
+            ),
+          ).event.payload as OrchestrationV2Run;
+          assert.isUndefined(released.steerWhenReadyRunId);
+          // Bound before the queue starts it: a started run's snapshot would drop the task.
+          assert.equal(released.status, "queued");
+          assert.isDefined(released.delegatedTaskId);
+          const parent = yield* orchestrator.getThreadProjection(parentThreadId);
+          assert.equal(
+            parent.subagents.find((row) => row.id === released.delegatedTaskId)?.prompt,
+            "held",
+          );
+        }),
+    );
+
     it.effect("pauses queued follow-up cards and resumes them", () =>
       Effect.gen(function* () {
         const orchestrator = yield* Orchestrator.OrchestratorV2;

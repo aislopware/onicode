@@ -49,3 +49,12 @@ export function queuedRunsInDeliveryOrder(
     }
   }
 }
+
+/** The run the queue starts by itself: the first one in delivery order that is not held. */
+export function nextQueuedRun(
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "messages">,
+): OrchestrationV2Run | undefined {
+  const next = queuedRunsInDeliveryOrder(projection).find((run) => run.queueHeld !== true);
+  // A held steer keeps its place until it is released; the turn end that releases it starts the queue.
+  return next?.steerWhenReadyRunId === undefined ? next : undefined;
+}

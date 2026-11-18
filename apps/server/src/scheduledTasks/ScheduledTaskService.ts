@@ -617,12 +617,35 @@ export const layer = Layer.effect(
       const { runs } = yield* threadManagement.getProjectThreadRecords(thread, ["runs"]);
       const dispatched = runs.find((run) => run.userMessageId === messageId);
       if (dispatched === undefined) return;
-      const { run } = yield* threadManagement.waitForThread({
+      const { run, timedOut } = yield* threadManagement.waitForThread({
         ...thread,
         runId: dispatched.id,
         timeoutMs: RUN_OUTCOME_WAIT_MS,
       });
-      if (run === null || !ThreadManagementService.isTerminalRunStatus(run.status)) return;
+      if (timedOut || run === null || !ThreadManagementService.isTerminalRunStatus(run.status))
+        return;
+      // A queued message promoted to a steer joins the active run, whose outcome is not this task's.
+      // A run the message started is, also once a restart continued it or replaced its prompt.
+      if (run.id !== dispatched.id) {
+        const { messages } = yield* threadManagement.getProjectThreadRecords(thread, ["messages"], {
+          messageIds: [messageId],
+        });
+        const owner = messages[0]?.runId;
+        const sent =
+          owner == null
+            ? undefined
+            : (yield* threadManagement.getProjectThreadRecords(thread, ["turnItems"], {
+                turnItemRunId: owner,
+                turnItemTypes: ["user_message"],
+              })).turnItems.find(
+                (item) => item.type === "user_message" && item.messageId === messageId,
+              );
+        if (
+          sent?.type === "user_message" &&
+          (sent.inputIntent === "steer" || sent.inputIntent === "promoted_queued_to_steer")
+        )
+          return;
+      }
       if (run.status === "completed") {
         const removed = yield* sql`
           DELETE FROM scheduled_tasks
@@ -635,16 +658,7 @@ export const layer = Layer.effect(
         if (removed.length > 0) yield* notifyChanged;
         return;
       }
-      const { turnItems, messages } = yield* threadManagement.getProjectThreadRecords(thread, [
-        "turnItems",
-        "messages",
-      ]);
-      // A queued message promoted to a steer cancels its run and joins the active one.
-      if (
-        run.status === "cancelled" &&
-        messages.find((message) => message.id === messageId)?.runId !== run.id
-      )
-        return;
+      const { turnItems } = yield* threadManagement.getProjectThreadRecords(thread, ["turnItems"]);
       const error =
         latestRootProviderFailure(run, turnItems)?.message ?? UNSUCCESSFUL_RUN_ERRORS[run.status];
       const updated = yield* sql`

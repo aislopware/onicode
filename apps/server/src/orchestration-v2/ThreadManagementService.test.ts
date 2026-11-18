@@ -24,6 +24,7 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Queue from "effect/Queue";
+import * as Result from "effect/Result";
 import * as Stream from "effect/Stream";
 import * as TestClock from "effect/testing/TestClock";
 
@@ -122,9 +123,16 @@ const layerDispatchChokepointTest =
       Layer.provideMerge(layerReceiptsTest),
     );
 
-it.effect(
-  "the dispatch chokepoint refuses a continuation message.dispatch on a project-disabled instance before reaching the orchestrator",
-  () => {
+it.effect.each([
+  { label: "refuses a continuation message.dispatch", missedRunId: undefined },
+  // Held in the queue it starts nothing, and refused it would be lost with the turn that ended.
+  {
+    label: "lets a steer that missed a failed turn back into the queue",
+    missedRunId: RunId.make("run:thread-management:chokepoint-missed"),
+  },
+])(
+  "the dispatch chokepoint $label on a project-disabled instance before reaching the orchestrator",
+  ({ missedRunId }) => {
     const projectId = ProjectId.make("project:thread-management:chokepoint");
     const threadId = ThreadId.make("thread:thread-management:chokepoint");
     const instanceId = ProviderInstanceId.make("codex_work");
@@ -141,7 +149,7 @@ it.effect(
 
     return Effect.gen(function* () {
       const threads = yield* ThreadManagementService.ThreadManagementService;
-      const error = yield* Effect.flip(
+      const result = yield* Effect.result(
         threads.dispatch({
           type: "message.dispatch",
           commandId,
@@ -150,11 +158,17 @@ it.effect(
           text: "Background task completed.",
           attachments: [],
           dispatchMode: { type: "queue_after_active" },
+          ...(missedRunId === undefined ? {} : { steerMissedRunId: missedRunId }),
           createdBy: "agent",
           creationSource: "server",
         }),
       );
 
+      if (missedRunId !== undefined) {
+        expect(dispatched).toEqual(["message.dispatch"]);
+        return;
+      }
+      const error = Result.getOrThrow(Result.flip(result));
       expect(error).toBeInstanceOf(
         ThreadManagementService.ThreadManagementProviderInstanceDisabledError,
       );
@@ -373,6 +387,190 @@ it.effect("waitForThread follows a restart continuation instead of the cut run",
     expect(result).toMatchObject({
       timedOut: false,
       run: { id: continuationId, status: "completed" },
+    });
+  }),
+);
+
+it.effect("waitForThread follows a queued message steered into the running turn", () =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("project:thread-management:wait-steered");
+    const threadId = ThreadId.make("thread:thread-management:wait-steered");
+    const activeId = RunId.make("run:thread-management:wait-steered:1");
+    const queuedId = RunId.make("run:thread-management:wait-steered:2");
+    const messageId = MessageId.make("message:thread-management:wait-steered");
+    const subscribed = yield* Deferred.make<void>();
+    const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+    let promoted = false;
+    let activeStatus: OrchestrationV2Run["status"] = "running";
+    const layerTest = ThreadManagementService.layer.pipe(
+      Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+      Layer.provide(
+        Layer.mock(Orchestrator.OrchestratorV2)({
+          getThreadEventSequence: () => Effect.succeed(0),
+          restartContinuationPending: () => Effect.succeed(false),
+          steerDeliveryPending: () => Effect.succeed(false),
+          streamStoredEventsFrom: (input) =>
+            input?.eventType === "run.updated"
+              ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                  Stream.drain,
+                  Stream.concat(Stream.fromQueue(events)),
+                )
+              : Stream.never,
+          getThreadRecords: (_threadId, fields) =>
+            Effect.sync(() => {
+              const records = {
+                thread: { id: threadId, projectId, deletedAt: null },
+                runs: [
+                  { id: activeId, status: activeStatus },
+                  {
+                    id: queuedId,
+                    status: promoted ? "cancelled" : "queued",
+                    startedAt: null,
+                    userMessageId: messageId,
+                  },
+                ],
+                messages: [{ id: messageId, runId: promoted ? activeId : queuedId }],
+              } as unknown as OrchestrationV2ThreadProjection;
+              // The turn ends right after the wait learns which run took the message.
+              if (promoted && fields.some((field) => field === "messages"))
+                activeStatus = "completed";
+              return records;
+            }),
+        }),
+      ),
+      Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(layerReceiptsTest),
+    );
+    const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+      Effect.provide(layerTest),
+    );
+    const fiber = yield* service
+      .waitForThread({ projectId, threadId, runId: queuedId, timeoutMs: 60 * 60 * 1_000 })
+      .pipe(Effect.forkChild);
+    yield* Deferred.await(subscribed);
+    promoted = true;
+    // Both updates are buffered before the wait reads either.
+    yield* Queue.offerAll(
+      events,
+      [
+        { id: queuedId, status: "cancelled" },
+        { id: activeId, status: "completed" },
+      ].map(
+        (payload, index) =>
+          ({
+            sequence: index + 1,
+            event: { threadId, type: "run.updated", payload },
+          }) as unknown as OrchestrationV2StoredEvent,
+      ),
+    );
+
+    expect(yield* Fiber.join(fiber)).toMatchObject({
+      timedOut: false,
+      run: { id: activeId, status: "completed" },
+    });
+  }),
+);
+
+it.effect.each([
+  { settles: "while the wait is open" },
+  // The worker moves the message just as the wait looks; a stale owner must not answer it.
+  { settles: "as the wait first looks" },
+] as const)("waitForThread follows a steer that missed its turn, settled $settles", ({ settles }) =>
+  Effect.gen(function* () {
+    const projectId = ProjectId.make("project:thread-management:wait-missed");
+    const threadId = ThreadId.make("thread:thread-management:wait-missed");
+    const failedId = RunId.make("run:thread-management:wait-missed:1");
+    const queuedId = RunId.make("run:thread-management:wait-missed:2");
+    const requeuedId = RunId.make("run:thread-management:wait-missed:3");
+    const messageId = MessageId.make("message:thread-management:wait-missed");
+    const subscribed = yield* Deferred.make<void>();
+    const events = yield* Queue.unbounded<OrchestrationV2StoredEvent>();
+    // The turn that took the steer failed before the worker delivered it.
+    let requeued: OrchestrationV2Run["status"] | undefined;
+    let settlesOnAsk = false;
+    const steerSettled = yield* Deferred.make<void>();
+    const awaitingSteer = yield* Queue.unbounded<void>();
+    const layerTest = ThreadManagementService.layer.pipe(
+      Layer.provide(Layer.mock(ProviderSessionManager.ProviderSessionManagerV2)({})),
+      Layer.provide(
+        Layer.mock(Orchestrator.OrchestratorV2)({
+          getThreadEventSequence: () => Effect.succeed(0),
+          restartContinuationPending: () => Effect.succeed(false),
+          steerDeliveryPending: () =>
+            Effect.sync(() => {
+              if (settlesOnAsk) requeued ??= "queued";
+              return requeued === undefined;
+            }),
+          awaitSteerDelivery: () =>
+            Queue.offer(awaitingSteer, undefined).pipe(
+              Effect.andThen(Deferred.await(steerSettled)),
+            ),
+          streamStoredEventsFrom: (input) =>
+            input?.eventType === "run.updated"
+              ? Stream.fromEffect(Deferred.succeed(subscribed, undefined)).pipe(
+                  Stream.drain,
+                  Stream.concat(Stream.fromQueue(events)),
+                )
+              : Stream.never,
+          getThreadRecords: () =>
+            Effect.sync(
+              () =>
+                ({
+                  thread: { id: threadId, projectId, deletedAt: null },
+                  runs: [
+                    { id: failedId, status: "failed" },
+                    {
+                      id: queuedId,
+                      status: "cancelled",
+                      startedAt: null,
+                      userMessageId: messageId,
+                    },
+                    ...(requeued === undefined
+                      ? []
+                      : [{ id: requeuedId, status: requeued, userMessageId: messageId }]),
+                  ],
+                  messages: [
+                    { id: messageId, runId: requeued === undefined ? failedId : requeuedId },
+                  ],
+                }) as unknown as OrchestrationV2ThreadProjection,
+            ),
+        }),
+      ),
+      Layer.provide(ServerSettings.layerTest()),
+      Layer.provide(layerReceiptsTest),
+    );
+    const service = yield* ThreadManagementService.ThreadManagementService.pipe(
+      Effect.provide(layerTest),
+    );
+    // A wait that ends first reports the steer as still on its way, within its own timeout.
+    const short = yield* service
+      .waitForThread({ projectId, threadId, runId: queuedId, timeoutMs: 1_000 })
+      .pipe(Effect.forkChild);
+    yield* Queue.take(awaitingSteer);
+    yield* TestClock.adjust(Duration.millis(1_000));
+    expect(yield* Fiber.join(short)).toMatchObject({ timedOut: true, run: { id: failedId } });
+
+    settlesOnAsk = settles === "as the wait first looks";
+    const fiber = yield* service
+      .waitForThread({ projectId, threadId, runId: queuedId, timeoutMs: 60 * 60 * 1_000 })
+      .pipe(Effect.forkChild);
+    if (!settlesOnAsk) {
+      yield* Queue.take(awaitingSteer);
+      // The worker settles the steer by moving the message to a run of its own.
+      requeued = "queued";
+      yield* Deferred.succeed(steerSettled, undefined);
+    }
+    // A wait that settles on the failed turn never subscribes.
+    yield* Effect.raceFirst(Deferred.await(subscribed), Fiber.join(fiber));
+    requeued = "completed";
+    yield* Queue.offer(events, {
+      sequence: 1,
+      event: { threadId, type: "run.updated", payload: { id: requeuedId, status: "completed" } },
+    } as unknown as OrchestrationV2StoredEvent);
+
+    expect(yield* Fiber.join(fiber)).toMatchObject({
+      timedOut: false,
+      run: { id: requeuedId, status: "completed" },
     });
   }),
 );

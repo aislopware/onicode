@@ -301,7 +301,8 @@ export const OrchestrationV2TurnCapabilities = Schema.Struct({
   activeSteeringInterruptsTools: Schema.optional(Schema.Boolean),
   // Some take text only, so a steer with attachments restarts the turn instead.
   activeSteeringAcceptsAttachments: Schema.optional(Schema.Boolean),
-  // Only where a steer leaves a running automatic compaction intact; otherwise clients queue.
+  // Only where the provider takes a steer during an automatic compaction without aborting it;
+  // otherwise the server holds the steer until the compaction ends.
   activeSteeringDuringCompaction: Schema.optional(Schema.Boolean),
   supportsSteeringByInterruptRestart: Schema.Boolean,
   supportsQueuedMessages: Schema.Boolean,
@@ -3403,6 +3404,8 @@ export const OrchestrationV2Command = Schema.Union([
     manualContinuationOfRunId: Schema.optional(RunId),
     steerFollowUpOfRunId: Schema.optional(RunId),
     steerFollowUpAfterRunOrdinal: Schema.optional(NonNegativeInt),
+    /** The run whose turn failed or was stopped before it took this steer; it returns to the queue, held. */
+    steerMissedRunId: Schema.optional(RunId),
     usageLimitRecoveryRequestId: Schema.optional(CommandId),
     deliveryIntent: Schema.optional(Schema.Literals(["auto", "steer", "restart"])),
     delegatedCompletion: Schema.optional(
@@ -3613,6 +3616,13 @@ export type OrchestrationV2Command = typeof OrchestrationV2Command.Type;
 
 // Excluded from dispatchCommand so only the server can send these.
 const OrchestrationV2InternalCommand = Schema.Union([
+  /** The turn a held steer waited for is over, so the steer is an ordinary queued message. */
+  Schema.Struct({
+    type: Schema.Literal("queued-run.steer-target-ended"),
+    commandId: CommandId,
+    threadId: ThreadId,
+    runId: RunId,
+  }),
   /** Regenerates a title the generator owns from the thread as it now stands. */
   Schema.Struct({
     type: Schema.Literal("thread.title.refresh"),
