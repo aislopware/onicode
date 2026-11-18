@@ -373,7 +373,13 @@ describe("highlightNativeReviewDiffVisibleRows", () => {
   });
 
   it("tokenizes only the viewport of a large new file for its provisional colors", async () => {
-    const lines = Array.from({ length: 10_000 }, (_, index) => `const value${index} = ${index};`);
+    // CRLF rows, and a doc comment that opens above the viewport.
+    const lines = Array.from({ length: 10_000 }, (_, index) => {
+      if (index === 4_990) return "/**\r";
+      if (index > 4_990 && index < 5_005) return ` * doc line ${index}\r`;
+      if (index === 5_005) return " */\r";
+      return `const value${index} = ${index};\r`;
+    });
     const rows = lines.map((content, index) =>
       makeLine({
         id: `line-${index}`,
@@ -383,33 +389,36 @@ describe("highlightNativeReviewDiffVisibleRows", () => {
         newLineNumber: index + 1,
       }),
     );
-    const response = Promise.withResolvers<{ oldContents: string; newContents: string }>();
-    const provisional = Promise.withResolvers<NativeReviewDiffHighlightChunk>();
-    const highlighting = highlightNativeReviewDiffVisibleRows({
+    const viewport = {
       rows,
-      files: [{ ...TYPESCRIPT_FILE, loadContents: () => response.promise }],
-      scheme: "dark",
+      scheme: "dark" as const,
       firstRowIndex: 5_000,
       lastRowIndex: 5_019,
       overscanRows: 0,
+    };
+    const patchTokens = (
+      await highlightNativeReviewDiffVisibleRows({ ...viewport, files: [TYPESCRIPT_FILE] })
+    ).tokensByRowId;
+    tokenization.calls = [];
+    const response = Promise.withResolvers<{ oldContents: string; newContents: string }>();
+    const provisional = Promise.withResolvers<NativeReviewDiffHighlightChunk>();
+    const highlighting = highlightNativeReviewDiffVisibleRows({
+      ...viewport,
+      files: [{ ...TYPESCRIPT_FILE, loadContents: () => response.promise }],
       onChunk: provisional.resolve,
     });
     const tokenizedLines = () => tokenization.calls.map((code) => code.split("\n").length);
     let result: Awaited<typeof highlighting>;
     try {
       const chunk = await provisional.promise;
-      const viewportIds = Array.from({ length: 20 }, (_, index) => `line-${5_000 + index}`);
-      expect(Object.keys(chunk.tokensByRowId)).toEqual(viewportIds);
-      expect(chunk.retryableRowIds).toEqual(viewportIds);
-      for (const tokens of Object.values(chunk.tokensByRowId)) {
-        expect(tokens.some((token) => token.color !== null)).toBe(true);
-      }
-      expect(tokenizedLines()).toEqual([20]);
+      expect(chunk.tokensByRowId).toEqual(patchTokens);
+      expect(chunk.retryableRowIds).toEqual(Object.keys(patchTokens));
+      expect(tokenizedLines()).toEqual([181]);
     } finally {
       response.resolve({ oldContents: "", newContents: lines.join("\n") });
       result = await highlighting;
     }
-    expect(tokenizedLines()).toEqual([20, 10_000]);
+    expect(tokenizedLines()).toEqual([181, 10_000]);
     expect(result.retryableRowIds).toEqual([]);
     expect(Object.keys(result.tokensByRowId)).toHaveLength(20);
   });
