@@ -975,6 +975,24 @@ describe("ProviderInstanceRegistry secret environment", () => {
     });
   });
 
+  it.effect("rebuilds the selected instances once for each change of the host PATH", () => {
+    const fixture = setup({ [secret.reference]: "sk-live" });
+    const env: NodeJS.ProcessEnv = { PATH: "/usr/bin" };
+    return Effect.gen(function* () {
+      const { mutator } = yield* fixture.make;
+      const rebuild = mutator.rebuildOnHostPathChange(Effect.succeed([instanceId]));
+
+      yield* rebuild;
+      expect(fixture.created).toHaveLength(1);
+
+      // The desktop app sends the login shell's PATH after the server has built its instances.
+      env.PATH = "/usr/bin:/home/me/.local/bin";
+      yield* rebuild;
+      yield* rebuild;
+      expect(fixture.created).toHaveLength(2);
+    }).pipe(Effect.provideService(HostProcess.Environment, env));
+  });
+
   it.effect("reads a config field typed SettingsSecretValue and rebuilds when it rotates", () => {
     const apiKey: SecretReference = { ...secret, reference: "op://Private/Gateway/key" };
     const fixture = setup(

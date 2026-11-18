@@ -11,8 +11,13 @@ export interface ProviderInstanceRegistryMutatorShape {
   readonly reconcile: (configMap: ProviderInstanceConfigMap) => Effect.Effect<void>;
   /** Re-reads the secrets of every instance, or one, and rebuilds those whose secrets changed. */
   readonly reloadSecrets: (instanceId?: ProviderInstanceId) => Effect.Effect<void>;
-  /** Rebuilds these live instances from their current configuration and the host environment. */
-  readonly rebuild: (instanceIds: ReadonlyArray<ProviderInstanceId>) => Effect.Effect<void>;
+  /**
+   * Rebuilds the instances `select` names from the host environment, once per change of the host
+   * PATH since instances were built on it. Drivers copy the environment when built.
+   */
+  readonly rebuildOnHostPathChange: (
+    select: Effect.Effect<ReadonlyArray<ProviderInstanceId>>,
+  ) => Effect.Effect<void>;
   /**
    * Rebuilds the instances that read `reference` with `value`, keeping the other secrets a live
    * instance holds, and returns them. A parked instance reads its other secrets from the resolver.

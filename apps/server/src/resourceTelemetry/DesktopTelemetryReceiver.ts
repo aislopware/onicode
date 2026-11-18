@@ -30,6 +30,7 @@ import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Scope from "effect/Scope";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import * as Ndjson from "effect/encoding/Ndjson";
 
 import { eventVersion as messageVersion } from "./NativeTelemetryClient.ts";
@@ -168,6 +169,11 @@ export class DesktopTelemetryReceiver extends Context.Service<
       never,
       Scope.Scope
     >;
+    /**
+     * How many times the desktop app has changed the server's PATH, starting from the current
+     * count. Its login shell answers after the server starts when no earlier answer is cached.
+     */
+    readonly hostPathChanges: Stream.Stream<number>;
     readonly health: Effect.Effect<DesktopTelemetryReceiverHealth>;
     readonly subscribeHealth: Effect.Effect<
       {
@@ -214,15 +220,18 @@ class DesktopShellCertificatesUpdateFailed extends Schema.TaggedError<DesktopShe
   }
 }
 
+/** The returned effect answers whether the snapshot changed PATH. */
 export function makeApplyDesktopShellEnvironmentSnapshot(
   environment: NodeJS.ProcessEnv,
   platform: NodeJS.Platform,
 ) {
   let baseCertificates: Array<string> | undefined;
+  const readPath = () => environment.PATH ?? environment.Path ?? environment.path;
   return Effect.fn("resourceTelemetry.desktopTelemetryReceiver.applyShellEnvironment")(function* (
     message: DesktopShellEnvironmentSnapshot,
   ) {
-    if (message.platform !== platform) return;
+    if (message.platform !== platform) return false;
+    const previousPath = readPath();
     // Node's first default-CA enumeration consults process.env, so capture it before the patch.
     if (message.environment.NODE_EXTRA_CA_CERTS !== undefined && baseCertificates === undefined) {
       // Remove only the startup extras, preserving duplicates from bundled or system trust.
@@ -266,6 +275,7 @@ export function makeApplyDesktopShellEnvironmentSnapshot(
       );
     }
     if (message.discovered) delete environment.ONICODE_DESKTOP_SHELL_DISCOVERY_PENDING;
+    return readPath() !== previousPath;
   });
 }
 
@@ -398,6 +408,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
   const environment = yield* HostProcess.Environment;
   const platform = yield* HostProcess.Platform;
   const applyShellSnapshot = makeApplyDesktopShellEnvironmentSnapshot(environment, platform);
+  const hostPathChanges = yield* SubscriptionRef.make(0);
   const serverSettings = yield* ServerSettings.ServerSettingsService;
   const latest = yield* Ref.make(Option.none<DesktopHostTelemetrySnapshot>());
   const receiverStartedAt = yield* DateTime.now;
@@ -594,7 +605,14 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         }
 
         if (message.type === "shellEnvironment") {
-          return recordContact.pipe(Effect.andThen(applyShellSnapshot(message)));
+          return recordContact.pipe(
+            Effect.andThen(applyShellSnapshot(message)),
+            Effect.flatMap((pathChanged) =>
+              pathChanged
+                ? SubscriptionRef.update(hostPathChanges, (count) => count + 1)
+                : Effect.void,
+            ),
+          );
         }
 
         if (message.type === "desktopUpdateStatus") {
@@ -711,6 +729,7 @@ export const make = Effect.fn("resourceTelemetry.desktopTelemetryReceiver.make")
         };
       }),
     ),
+    hostPathChanges: SubscriptionRef.changes(hostPathChanges),
     health: Ref.get(health),
     subscribeHealth: subscribeBeforeSnapshotWithoutMutex(healthChanges, Ref.get(health)),
     setDiagnosticsDemand,
@@ -775,6 +794,7 @@ export const layerTest = (
             changes,
           })),
         ),
+      hostPathChanges: Stream.empty,
       health,
       subscribeHealth:
         overrides.subscribeHealth ??

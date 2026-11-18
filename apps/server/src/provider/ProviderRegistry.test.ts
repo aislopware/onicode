@@ -120,9 +120,10 @@ const withBundledCompatibility = (snapshot: ServerProvider) =>
     ModelManifest.BUNDLED_MODEL_MANIFEST.compatibility,
   );
 
+// Every refresh asks about the host PATH, which these tests leave alone.
 const layerUnusedMutator = Layer.mock(
   ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator,
-)({});
+)({ rebuildOnHostPathChange: () => Effect.void });
 
 const layerTestHttpClient = Layer.succeed(
   HttpClient.HttpClient,
@@ -2429,9 +2430,13 @@ it.layer(
         }),
     );
 
-    it.effect(
-      "rebuilds only instances missing their CLI when a refresh finds a new Windows PATH",
-      () => {
+    it.effect.each([
+      { platform: "win32", path: "C:\\Windows;C:\\Tools" },
+      // Windows reads its registry; elsewhere the desktop app sends the login shell's PATH later.
+      { platform: "darwin", path: "C:\\Windows" },
+    ] as const)(
+      "a refresh on $platform offers only instances missing their CLI for a rebuild on a new PATH",
+      ({ platform, path }) => {
         const env: NodeJS.ProcessEnv = { PATH: "C:\\Windows" };
         return Effect.gen(function* () {
           const driver = ProviderDriverKind.make("codex");
@@ -2481,7 +2486,8 @@ it.layer(
               ProviderRegistry.layer.pipe(
                 Layer.provide(
                   Layer.mock(ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator)({
-                    rebuild: (ids) => Effect.sync(() => void rebuilt.push(ids)),
+                    rebuildOnHostPathChange: (select) =>
+                      select.pipe(Effect.map((ids) => void rebuilt.push(ids))),
                   }),
                 ),
                 Layer.provideMerge(
@@ -2503,10 +2509,10 @@ it.layer(
 
           yield* registry.refresh();
 
-          assert.strictEqual(env.PATH, "C:\\Windows;C:\\Tools");
+          assert.strictEqual(env.PATH, path);
           assert.deepStrictEqual(rebuilt, [[ProviderInstanceId.make("missing")]]);
         }).pipe(
-          Effect.provideService(HostProcess.Platform, "win32"),
+          Effect.provideService(HostProcess.Platform, platform),
           Effect.provideService(HostProcess.Environment, env),
           Effect.provideService(WindowsShellEnvironment, () =>
             Effect.succeed({ PATH: "C:\\Windows;C:\\Tools" }),

@@ -171,16 +171,17 @@ NodeAssert.deepEqual(fingerprints(NodeTls.getCACertificates("default")), expecte
           UNRELATED: "keep",
           ONICODE_DESKTOP_SHELL_DISCOVERY_PENDING: "1",
         };
-        yield* makeApplyDesktopShellEnvironmentSnapshot(
-          environment,
-          "darwin",
-        )({
+        const applySnapshot = makeApplyDesktopShellEnvironmentSnapshot(environment, "darwin");
+        const message = {
           version: 1,
           type: "shellEnvironment",
           platform,
           discovered,
           environment: { PATH: "/fresh/bin", JAVA_HOME: null },
-        });
+        } as const;
+        // Only a changed PATH asks providers to look for their CLIs again.
+        expect(yield* applySnapshot(message)).toBe(applied);
+        expect(yield* applySnapshot(message)).toBe(false);
         expect(environment).toEqual({
           PATH: applied ? "/fresh/bin" : "/old/bin",
           ...(applied ? {} : { JAVA_HOME: "/old/java" }),

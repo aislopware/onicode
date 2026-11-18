@@ -26,6 +26,7 @@ import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
 
 import * as SecretResolver from "@onicode/secret-provider-core/server/SecretResolver";
+import * as HostProcess from "@onicode/shared/HostProcess";
 
 import { buildUnavailableProviderSnapshot } from "./unavailableProviderSnapshot.ts";
 import * as ProviderInstanceRegistryMutator from "./ProviderInstanceRegistryMutator.ts";
@@ -555,6 +556,10 @@ export const makeProviderInstanceRegistry = Effect.fn(
   });
   const configMapRef = yield* Ref.make(input.configMap);
   const semaphore = yield* Semaphore.make(1);
+  const hostEnvironment = yield* HostProcess.Environment;
+  const readHostPath = () => hostEnvironment.PATH ?? hostEnvironment.Path ?? hostEnvironment.path;
+  // Read before the first build, so a PATH that changes during a build still counts as a change.
+  const builtOnHostPath = yield* Ref.make(readHostPath());
   const reconcile: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape["reconcile"] =
     (configMap) =>
       semaphore.withPermits(1)(
@@ -637,15 +642,19 @@ export const makeProviderInstanceRegistry = Effect.fn(
         (rawInstanceId) => instanceId === undefined || rawInstanceId === instanceId,
         undefined,
       ).pipe(Effect.asVoid);
-  const rebuild: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape["rebuild"] = (
-    instanceIds,
-  ) =>
-    semaphore.withPermits(1)(
-      Ref.get(configMapRef).pipe(
-        Effect.flatMap((configMap) => reconcileWithR(configMap, new Set(instanceIds))),
-        Effect.provideContext(driverContext),
-      ),
-    );
+  const rebuildOnHostPathChange = Effect.fn("ProviderInstanceRegistry.rebuildOnHostPathChange")(
+    function* (select: Effect.Effect<ReadonlyArray<ProviderInstanceId>>) {
+      const hostPath = readHostPath();
+      // Checked outside the lock, so a refresh never waits behind a reconcile for an unchanged PATH.
+      if (hostPath === (yield* Ref.getAndSet(builtOnHostPath, hostPath))) return;
+      yield* semaphore.withPermits(1)(
+        Effect.gen(function* () {
+          const instanceIds = yield* select;
+          yield* reconcileWithR(yield* Ref.get(configMapRef), new Set(instanceIds));
+        }).pipe(Effect.provideContext(driverContext)),
+      );
+    },
+  );
   const applySecret: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape["applySecret"] =
     (reference, value) =>
       reloadWhere(
@@ -706,7 +715,7 @@ export const makeProviderInstanceRegistry = Effect.fn(
   const mutator: ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutatorShape = {
     reconcile,
     reloadSecrets,
-    rebuild,
+    rebuildOnHostPathChange,
     applySecret,
   };
 
