@@ -2,16 +2,16 @@ import { EnvironmentId, IssueTrackerKind, ProjectId } from "@onicode/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-const state = vi.hoisted(() => ({ detail: null as unknown, error: null as unknown }));
+const state = vi.hoisted(() => ({ summary: null as unknown, error: null as unknown }));
 vi.mock(import("~/state/query"), async (original) => ({
   ...(await original()),
   useEnvironmentQuery: ((atom: unknown) => ({
-    data: atom === null ? null : state.detail,
+    data: atom === null ? null : state.summary,
     dataUpdatedAt: 0,
     error: atom === null ? null : state.error,
     failure: null,
     isPending: false,
-    isSuccess: state.detail !== null,
+    isSuccess: state.summary !== null,
     refresh: () => undefined,
   })) as never,
 }));
@@ -21,8 +21,8 @@ import { IssueLinkPreview } from "./IssueLinkPreview";
 
 const url = "https://github.com/owner/repo/issues/7";
 
-function setup({ detail = null as unknown, error = null as unknown } = {}) {
-  state.detail = detail;
+function setup({ summary = null as unknown, error = null as unknown } = {}) {
+  state.summary = summary;
   state.error = error;
 }
 
@@ -46,7 +46,7 @@ function renderPreview() {
 
 it("shows the issue's title, state and author on hover", async () => {
   setup({
-    detail: {
+    summary: {
       scope: "owner/repo",
       displayKey: "#7",
       title: "Hover cards for issues",
