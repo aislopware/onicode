@@ -1967,7 +1967,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           new Map<string, NonNullable<CodexTurnStartParams["additionalContext"]>>(),
         );
         const threadsAwaitingContextRestore = yield* Ref.make(new Set<string>());
-        // An interrupt drops a steer Codex has not read yet, though Codex keeps the notes it carried.
+        // An interrupt drops a steer Codex has not read yet, though Codex keeps the notes it carried;
+        // a turn that ends otherwise records it.
         const threadsWithSteeredNotes = yield* Ref.make(new Set<string>());
         // Keeps the turn's Onicode entries, swaps in the thread's current app notes, and says whether
         // that adds or changes a note.
@@ -1989,7 +1990,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             const next = new Map(current);
             if (Object.keys(context).length > 0) next.set(threadId, context);
             else next.delete(threadId);
-            return [{ context, changed }, next] as const;
+            return [{ context, changed, previous: current.get(threadId) }, next] as const;
           });
         // Codex drops client developer messages during compaction but only resends additionalContext
         // when it changes. Restore after turn/completed: items injected mid-turn make the turn sample again.
@@ -7359,7 +7360,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               next.delete(payload.threadId);
               return [true, next] as const;
             });
-            if (compacted || (steered && payload.turn.status !== "completed"))
+            if (compacted || (steered && payload.turn.status === "interrupted"))
               // Fork requests off the notification reader so it can read their responses.
               yield* restoreAdditionalContext(payload.threadId).pipe(
                 Effect.forkIn(scope, { startImmediately: true }),
@@ -8089,8 +8090,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               yield* Ref.update(pendingRootTurns, (current) =>
                 new Map(current).set(threadId, turnInput),
               );
-              // The restore after compaction sends the thread's notes now, not the last turn's.
-              yield* replaceAppNotes(threadId, turnInput.appContext);
               // Clear on interruption; a late turn/started must not be adopted after an interrupted start.
               yield* client.request("thread/compact/start", { threadId }).pipe(
                 Effect.onError(() =>
@@ -8204,23 +8203,48 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               const codexInput = yield* toCodexInput(turnInput);
               // Codex replaces its keyed context with each steer's. Cached before the request:
               // Codex can complete the turn, and the restore read the cache, before the reply.
-              const { context: additionalContext, changed } = yield* replaceAppNotes(
-                threadId,
-                turnInput.appContext,
-              );
+              const {
+                context: additionalContext,
+                changed,
+                previous,
+              } = yield* replaceAppNotes(threadId, turnInput.appContext);
+              const flagged = (yield* Ref.get(threadsWithSteeredNotes)).has(threadId);
               if (changed) {
                 yield* Ref.update(threadsWithSteeredNotes, (current) =>
                   new Set(current).add(threadId),
                 );
               }
               const hasContext = Object.keys(additionalContext).length > 0;
+              // Codex merges nothing when it answers with an error; a lost reply leaves that unknown.
+              const undoRejectedSteer = Effect.all([
+                Ref.update(additionalContextByThread, (current) => {
+                  if (current.get(threadId) !== (hasContext ? additionalContext : undefined))
+                    return current;
+                  const next = new Map(current);
+                  if (previous === undefined) next.delete(threadId);
+                  else next.set(threadId, previous);
+                  return next;
+                }),
+                Ref.update(threadsWithSteeredNotes, (current) => {
+                  if (flagged || !changed) return current;
+                  const next = new Set(current);
+                  next.delete(threadId);
+                  return next;
+                }),
+              ]);
               const steerParams: typeof CodexClient.V2TurnSteerParams.Type = {
                 expectedTurnId: activeTurn.nativeTurnId,
                 input: codexInput,
                 threadId,
                 ...(hasContext ? { additionalContext } : {}),
               };
-              yield* client.request("turn/steer", steerParams);
+              yield* client
+                .request("turn/steer", steerParams)
+                .pipe(
+                  Effect.tapError((error) =>
+                    error._tag === "CodexAppServerRequestError" ? undoRejectedSteer : Effect.void,
+                  ),
+                );
             },
             (effect, turnInput) =>
               effect.pipe(

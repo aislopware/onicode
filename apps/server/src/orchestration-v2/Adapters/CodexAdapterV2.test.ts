@@ -1921,49 +1921,55 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   );
 
   // regression: #38541 an MCP app note that changes mid-turn reaches the next steer.
-  // Codex replaces its keyed context with each steer's, so a note the app cleared must not
-  // come back when Onicode restores the context after compaction.
-  it.effect("steers carry MCP app notes as Codex's keyed context", () =>
-    Effect.gen(function* () {
-      const nativeThreadId = "steer-app-context-thread";
-      const nativeTurnId = "steer-app-context-turn";
-      const startParams = yield* CodexAdapterV2.buildCodexTurnStartParams({
-        nativeThreadId,
-        codexInput: [{ type: "text", text: "Work." }],
-        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
-        modelSelection: CODEX_TEST_MODEL_SELECTION,
-        hasOniMcp: true,
-      });
-      const oniContext = startParams.additionalContext ?? {};
-      assert.isDefined(oniContext.oni_code_runtime);
-      const note = (key: string, value: string) => ({
-        [`mcp_app_${key}`]: { kind: "untrusted" as const, value },
-      });
-      const steerFrame = (
-        id: number,
-        text: string,
-        additionalContext: NonNullable<typeof startParams.additionalContext>,
-      ) =>
-        ({
-          type: "expect_outbound",
-          label: "turn/steer",
-          frame: {
-            id,
-            method: "turn/steer",
-            params: {
-              threadId: nativeThreadId,
-              expectedTurnId: nativeTurnId,
-              input: [{ type: "text", text }],
-              additionalContext,
+  // Codex replaces its keyed context with each steer's, so the context Onicode restores after
+  // compaction, or after an interrupt drops an unread steer, holds what Codex holds.
+  it.effect.each(["compacted", "interrupted", "rejected"] as const)(
+    "steers carry MCP app notes as Codex's keyed context when the turn ends %s",
+    (ending) =>
+      Effect.gen(function* () {
+        const nativeThreadId = "steer-app-context-thread";
+        const nativeTurnId = "steer-app-context-turn";
+        const startParams = yield* CodexAdapterV2.buildCodexTurnStartParams({
+          nativeThreadId,
+          codexInput: [{ type: "text", text: "Work." }],
+          runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+          modelSelection: CODEX_TEST_MODEL_SELECTION,
+          hasOniMcp: true,
+        });
+        const oniContext = startParams.additionalContext ?? {};
+        assert.isDefined(oniContext.oni_code_runtime);
+        const note = (key: string, value: string) => ({
+          [`mcp_app_${key}`]: { kind: "untrusted" as const, value },
+        });
+        const steerFrame = (
+          id: number,
+          text: string,
+          additionalContext: NonNullable<typeof startParams.additionalContext>,
+        ) =>
+          ({
+            type: "expect_outbound",
+            label: "turn/steer",
+            frame: {
+              id,
+              method: "turn/steer",
+              params: {
+                threadId: nativeThreadId,
+                expectedTurnId: nativeTurnId,
+                input: [{ type: "text", text }],
+                additionalContext,
+              },
             },
-          },
-        }) as const;
-      const steerReply = (id: number) =>
-        ({ type: "emit_inbound", frame: { id, result: { turnId: nativeTurnId } } }) as const;
-      const restored = {
-        threadId: nativeThreadId,
-        items: Object.entries({ ...oniContext, ...note("item-2", "Draft saved") }).map(
-          ([key, entry]) =>
+          }) as const;
+        const steerReply = (id: number) =>
+          ({ type: "emit_inbound", frame: { id, result: { turnId: nativeTurnId } } }) as const;
+        // Codex rejects the second steer in one case, so it keeps the first steer's notes.
+        const heldNotes = {
+          ...(ending === "rejected" ? note("item-1", "Pressed: blue") : {}),
+          ...note("item-2", "Draft saved"),
+        };
+        const restored = {
+          threadId: nativeThreadId,
+          items: Object.entries({ ...oniContext, ...heldNotes }).map(([key, entry]) =>
             entry.kind === "untrusted"
               ? {
                   type: "message",
@@ -1980,124 +1986,145 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                   role: "developer",
                   content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
                 },
-        ),
-      };
-      const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "Work." });
-      const restoreRequested = yield* Deferred.make<unknown>();
-      const harness = yield* makeCodexReplayHarness(
-        makeCodexReplayTranscript({
-          scenario: "steer-app-context",
-          entries: [
-            ...entries.slice(0, 5),
-            {
-              type: "expect_outbound",
-              label: "turn/start",
-              frame: { id: 3, method: "turn/start", params: startParams },
-            },
-            ...entries.slice(6),
-            steerFrame(4, "What did the app report?", {
-              ...oniContext,
-              ...note("item-1", "Pressed: blue"),
-              ...note("item-2", "Draft saved"),
-            }),
-            steerReply(4),
-            // Codex can finish the turn before the steer's reply reaches Onicode.
-            steerFrame(5, "And now?", { ...oniContext, ...note("item-2", "Draft saved") }),
-            {
-              type: "emit_inbound",
-              frame: {
-                method: "item/completed",
-                params: {
-                  threadId: nativeThreadId,
-                  turnId: nativeTurnId,
-                  item: { type: "contextCompaction", id: "steer-app-context-compact" },
+          ),
+        };
+        const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "Work." });
+        const restoreRequested = yield* Deferred.make<unknown>();
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: "steer-app-context",
+            entries: [
+              ...entries.slice(0, 5),
+              {
+                type: "expect_outbound",
+                label: "turn/start",
+                frame: { id: 3, method: "turn/start", params: startParams },
+              },
+              ...entries.slice(6),
+              steerFrame(4, "What did the app report?", {
+                ...oniContext,
+                ...note("item-1", "Pressed: blue"),
+                ...note("item-2", "Draft saved"),
+              }),
+              steerReply(4),
+              steerFrame(5, "And now?", { ...oniContext, ...note("item-2", "Draft saved") }),
+              ...(ending === "rejected"
+                ? [
+                    {
+                      type: "emit_inbound",
+                      frame: { id: 5, error: { code: -32600, message: "Turn is not steerable" } },
+                    } as const,
+                  ]
+                : []),
+              ...(ending === "compacted"
+                ? [
+                    {
+                      type: "emit_inbound",
+                      frame: {
+                        method: "item/completed",
+                        params: {
+                          threadId: nativeThreadId,
+                          turnId: nativeTurnId,
+                          item: { type: "contextCompaction", id: "steer-app-context-compact" },
+                        },
+                      },
+                    } as const,
+                  ]
+                : []),
+              {
+                type: "emit_inbound",
+                frame: {
+                  method: "turn/completed",
+                  params: {
+                    threadId: nativeThreadId,
+                    turn: makeCodexReplayTurn({
+                      id: nativeTurnId,
+                      status: ending === "compacted" ? "completed" : "interrupted",
+                    }),
+                  },
                 },
               },
-            },
-            {
-              type: "emit_inbound",
-              frame: {
-                method: "turn/completed",
-                params: {
-                  threadId: nativeThreadId,
-                  turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
-                },
+              // Codex can finish the turn before the steer's reply reaches Onicode.
+              ...(ending === "rejected" ? [] : [steerReply(5)]),
+              {
+                type: "expect_outbound",
+                label: "restore context",
+                frame: { id: 6, method: "thread/inject_items", params: restored },
               },
-            },
-            steerReply(5),
-            {
-              type: "expect_outbound",
-              label: "restore context",
-              frame: { id: 6, method: "thread/inject_items", params: restored },
-            },
-            { type: "emit_inbound", frame: { id: 6, result: {} } },
+              { type: "emit_inbound", frame: { id: 6, result: {} } },
+            ],
+          }),
+          undefined,
+          (method, params) =>
+            method === "thread/inject_items"
+              ? Deferred.succeed(restoreRequested, params).pipe(Effect.asVoid)
+              : Effect.void,
+        );
+        yield* (yield* McpProviderSessions.McpProviderSessions).set({
+          environmentId: EnvironmentId.make("test"),
+          threadId: harness.threadId,
+          providerSessionId: "steer-app-context-session",
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer test",
+          browserToolsAvailable: true,
+        });
+        const turnInput = makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("steer-app-context-attempt"),
+          text: "Work.",
+        });
+        yield* harness.runtime.startTurn(turnInput);
+        yield* harness.until(() =>
+          harness.events.some(
+            (event) =>
+              event.type === "provider_turn.updated" &&
+              event.providerTurn.nativeTurnRef?.nativeId === nativeTurnId,
+          ),
+        );
+        const providerTurnId = harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" ? [event.providerTurn.id] : [],
+        )[0];
+        assert.isDefined(providerTurnId);
+        if (providerTurnId === undefined) return;
+        yield* harness.runtime.steerTurn({
+          ...turnInput,
+          providerTurnId,
+          appContext: [
+            { key: "mcp_app_item-1", text: "Pressed: blue" },
+            { key: "mcp_app_item-2", text: "Draft saved" },
           ],
-        }),
-        undefined,
-        (method, params) =>
-          method === "thread/inject_items"
-            ? Deferred.succeed(restoreRequested, params).pipe(Effect.asVoid)
-            : Effect.void,
-      );
-      yield* (yield* McpProviderSessions.McpProviderSessions).set({
-        environmentId: EnvironmentId.make("test"),
-        threadId: harness.threadId,
-        providerSessionId: "steer-app-context-session",
-        providerInstanceId: ProviderInstanceId.make("codex"),
-        endpoint: "http://127.0.0.1:43123/mcp",
-        authorizationHeader: "Bearer test",
-        browserToolsAvailable: true,
-      });
-      const turnInput = makeCodexTestTurnInput({
-        threadId: harness.threadId,
-        providerThread: harness.providerThread,
-        now: yield* DateTime.now,
-        attemptId: RunAttemptId.make("steer-app-context-attempt"),
-        text: "Work.",
-      });
-      yield* harness.runtime.startTurn(turnInput);
-      yield* harness.until(() =>
-        harness.events.some(
-          (event) =>
-            event.type === "provider_turn.updated" &&
-            event.providerTurn.nativeTurnRef?.nativeId === nativeTurnId,
-        ),
-      );
-      const providerTurnId = harness.events.flatMap((event) =>
-        event.type === "provider_turn.updated" ? [event.providerTurn.id] : [],
-      )[0];
-      assert.isDefined(providerTurnId);
-      if (providerTurnId === undefined) return;
-      yield* harness.runtime.steerTurn({
-        ...turnInput,
-        providerTurnId,
-        appContext: [
-          { key: "mcp_app_item-1", text: "Pressed: blue" },
-          { key: "mcp_app_item-2", text: "Draft saved" },
-        ],
-        message: { ...turnInput.message, text: "What did the app report?" },
-      });
-      // The app cleared item-1's note.
-      yield* harness.runtime.steerTurn({
-        ...turnInput,
-        providerTurnId,
-        appContext: [{ key: "mcp_app_item-2", text: "Draft saved" }],
-        message: { ...turnInput.message, text: "And now?" },
-      });
-      yield* harness.firstTerminal;
-      assert.equal(harness.terminalEvents()[0]?.status, "completed");
-      assert.deepEqual(yield* Deferred.await(restoreRequested), restored);
-    }).pipe(
-      Effect.scoped,
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
+          message: { ...turnInput.message, text: "What did the app report?" },
+        });
+        // The app cleared item-1's note.
+        const steered = yield* Effect.exit(
+          harness.runtime.steerTurn({
+            ...turnInput,
+            providerTurnId,
+            appContext: [{ key: "mcp_app_item-2", text: "Draft saved" }],
+            message: { ...turnInput.message, text: "And now?" },
+          }),
+        );
+        assert.equal(Exit.isFailure(steered), ending === "rejected");
+        yield* harness.firstTerminal;
+        assert.equal(
+          harness.terminalEvents()[0]?.status,
+          ending === "compacted" ? "completed" : "interrupted",
+        );
+        assert.deepEqual(yield* Deferred.await(restoreRequested), restored);
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
-    ),
   );
 
   it.effect("a speed change with no message updates Codex's next-turn settings", () =>
@@ -3854,58 +3881,20 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       const nativeThreadId = "compact-thread";
       const nativeTurnId = "compact-turn";
       const item = { type: "contextCompaction", id: "compact-item" };
-      const note = (key: string, value: string) => ({
-        [`mcp_app_${key}`]: { kind: "untrusted" as const, value },
-      });
-      const restoreRequested = yield* Deferred.make<unknown>();
-      // The app cleared item-1's note after the last turn; the restore must not bring it back.
-      const restored = {
-        threadId: nativeThreadId,
-        items: [
-          {
-            type: "message",
-            role: "user",
-            content: [
-              {
-                type: "input_text",
-                text: "<external_mcp_app_item-2>Draft saved</external_mcp_app_item-2>",
-              },
-            ],
-          },
-        ],
-      };
       const transcript = makeCodexReplayTranscript({
         scenario: "native-compaction",
         entries: [
-          ...codexReplayPreamble({
-            nativeThreadId,
-            nativeTurnId: "compact-earlier-turn",
-            prompt: "Work.",
-            additionalContext: {
-              ...note("item-1", "Pressed: blue"),
-              ...note("item-2", "Draft saved"),
-            },
-          }),
-          {
-            type: "emit_inbound",
-            frame: {
-              method: "turn/completed",
-              params: {
-                threadId: nativeThreadId,
-                turn: makeCodexReplayTurn({ id: "compact-earlier-turn", status: "completed" }),
-              },
-            },
-          },
+          ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "unused" }).slice(0, 5),
           {
             type: "expect_outbound",
             label: "compact",
             frame: {
-              id: 4,
+              id: 3,
               method: "thread/compact/start",
               params: { threadId: nativeThreadId },
             },
           },
-          { type: "emit_inbound", label: "compact", frame: { id: 4, result: {} } },
+          { type: "emit_inbound", label: "compact", frame: { id: 3, result: {} } },
           {
             type: "emit_inbound",
             label: "start",
@@ -3933,44 +3922,20 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               },
             },
           },
-          {
-            type: "expect_outbound",
-            label: "restore context",
-            frame: { id: 5, method: "thread/inject_items", params: restored },
-          },
-          { type: "emit_inbound", frame: { id: 5, result: {} } },
         ],
       });
-      const harness = yield* makeCodexReplayHarness(transcript, undefined, (method, params) =>
-        method === "thread/inject_items"
-          ? Deferred.succeed(restoreRequested, params).pipe(Effect.asVoid)
-          : Effect.void,
-      );
-      const turnInput = (attempt: string, text: string) =>
-        Effect.map(DateTime.now, (now) =>
-          makeCodexTestTurnInput({
-            threadId: harness.threadId,
-            providerThread: harness.providerThread,
-            now,
-            attemptId: RunAttemptId.make(attempt),
-            text,
-          }),
-        );
-      yield* harness.runtime.startTurn({
-        ...(yield* turnInput("compact-earlier-attempt", "Work.")),
-        appContext: [
-          { key: "mcp_app_item-1", text: "Pressed: blue" },
-          { key: "mcp_app_item-2", text: "Draft saved" },
-        ],
-      });
-      yield* harness.firstTerminal;
+      const harness = yield* makeCodexReplayHarness(transcript);
       assert.isDefined(harness.runtime.compactThread);
-      yield* harness.runtime.compactThread!({
-        ...(yield* turnInput("compact-attempt", "/compact")),
-        appContext: [{ key: "mcp_app_item-2", text: "Draft saved" }],
-      });
-      yield* harness.awaitTerminal(2);
-      assert.deepEqual(yield* Deferred.await(restoreRequested), restored);
+      yield* harness.runtime.compactThread!(
+        makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("compact-attempt"),
+          text: "/compact",
+        }),
+      );
+      yield* harness.firstTerminal;
       const items = harness.events.flatMap((event) =>
         event.type === "turn_item.updated" && event.turnItem.type === "compaction"
           ? [event.turnItem]
@@ -4689,7 +4654,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       // A speed picked while the first attempt runs; the retry must not send the old one.
       const changedTier = outcome === "keep-changed-tier" ? "fast" : undefined;
       const retryRequestId = (attempt: number) =>
-        3 + (changedTier === undefined ? 0 : 1) + (steeredNotes ? 2 : 0) + attempt;
+        3 + (changedTier === undefined && !steeredNotes ? 0 : 1) + attempt;
       if (steeredNotes) {
         entries.push(
           {
@@ -4726,35 +4691,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       entries.push(
         ...(outcome === "completion-only" ? failureEntries(0).slice(1) : failureEntries(0)),
       );
-      if (steeredNotes) {
-        // The failed attempt may have dropped the steer, so its note is shown again.
-        entries.push(
-          {
-            type: "expect_outbound",
-            label: "restore steered notes",
-            frame: {
-              id: 5,
-              method: "thread/inject_items",
-              params: {
-                threadId: nativeThreadId,
-                items: [
-                  {
-                    type: "message",
-                    role: "user",
-                    content: [
-                      {
-                        type: "input_text",
-                        text: "<external_mcp_app_item-1>PROJ-44</external_mcp_app_item-1>",
-                      },
-                    ],
-                  },
-                ],
-              },
-            },
-          },
-          { type: "emit_inbound", frame: { id: 5, result: {} } },
-        );
-      }
       if (outcome === "completion-only") entries.push(...failureEntries(0).slice(1));
       const retries = outcome === "exhaust" ? 5 : outcome === "stop" ? 0 : 1;
       for (let attempt = 1; attempt <= retries; attempt++) {
