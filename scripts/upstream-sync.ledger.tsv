@@ -2527,3 +2527,4 @@ c7ce74fce6	take	provider commit batching per thread; nodeSqliteClient CONFLICT m
 6d1381f04c	take	titleRenamed (optional, wire-compatible) kept beside Onicode's generatedTitle; scenario ported
 f9a3c38c50	take	Antigravity broken-thread recovery; shared turn start honors error status (Claude/Codex never emit broken); taken as is
 378584a760	take	issue link hover preview card; taken as is
+39ad0c58ec	take	runtime instruction and eval cases taken; eval runner keeps Onicode's output-regex check beside upstream's argsAnyOf/success; IssuesToolkit already listed in the eval tool set; agentContextBudget.json re-measured on Onicode's text (+107 bytes each)
