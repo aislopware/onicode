@@ -7,6 +7,7 @@ import { useState, type ReactNode } from "react";
 import { useActiveProjectTarget, type ActiveProjectTarget } from "~/hooks/useActiveProjectTarget";
 import { useRenderedAppearance, useTheme } from "~/hooks/useTheme";
 import { cn } from "~/lib/utils";
+import { noteHoveredRow, revealHighlightedRow } from "~/lib/highlightedRow";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useProjectContentSearch } from "~/state/queries";
 import { readEnvironmentScope } from "~/state/session";
@@ -98,10 +99,6 @@ function EmptyContentSearchDialog() {
     </CommandPaletteContent>
   );
 }
-
-const scrollSelectedRowIntoView = (row: HTMLElement | null) => {
-  row?.scrollIntoView({ block: "nearest" });
-};
 
 function OpenContentSearchDialog(props: {
   readonly onOpenChange: (open: boolean) => void;
@@ -297,15 +294,16 @@ function OpenContentSearchDialog(props: {
                     <button
                       type="button"
                       key={`${match.path}:${match.lineNumber}:${match.resultIndex}`}
-                      ref={
-                        match.resultIndex === selectedIndex ? scrollSelectedRowIntoView : undefined
-                      }
+                      ref={match.resultIndex === selectedIndex ? revealHighlightedRow : undefined}
                       className={cn(
                         "flex h-7 w-full min-w-0 items-center gap-3 px-3 text-left font-mono text-xs hover:bg-accent/60 disabled:pointer-events-none",
                         match.resultIndex === selectedIndex && "bg-accent text-accent-foreground",
                       )}
                       disabled={!canOpenMatches}
-                      onMouseEnter={() => setSelectedIndex(match.resultIndex)}
+                      onMouseEnter={(event) => {
+                        noteHoveredRow(event.currentTarget);
+                        setSelectedIndex(match.resultIndex);
+                      }}
                       onClick={() => openMatch(match)}
                     >
                       <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">

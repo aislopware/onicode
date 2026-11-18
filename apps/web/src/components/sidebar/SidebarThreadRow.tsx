@@ -83,6 +83,7 @@ import { formatRelativeTime, parseTimestampDate } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
+import { noteHoveredRow, revealHighlightedRow } from "~/lib/highlightedRow";
 import { textDirection } from "~/textDirection";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import {
@@ -1682,13 +1683,6 @@ function latestRunDiff(
   return null;
 }
 
-// Attached only to the highlighted result, so React calls it each time the
-// highlight lands on a different row: a new query, late rows replacing the first
-// result, or arrow keys moving past the scrolled edge.
-const scrollHighlightedResultIntoView = (node: HTMLLIElement | null) => {
-  node?.scrollIntoView({ block: "nearest" });
-};
-
 export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   isSettled: boolean;
   thread: SidebarThreadSummary;
@@ -1782,7 +1776,9 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   });
   return (
     <li
-      ref={props.isHighlighted ? scrollHighlightedResultIntoView : undefined}
+      // Attached only to the highlighted result, so React calls it each time the highlight lands
+      // on a different row: a new query, late rows replacing the first result, or arrow keys.
+      ref={props.isHighlighted ? revealHighlightedRow : undefined}
       role="presentation"
       className="list-none"
       {...fileDropHandlers}
@@ -1801,7 +1797,10 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               aria-describedby={`${props.resultId}-pr`}
               aria-label={accessibility.label}
               {...dragListeners}
-              onMouseMove={props.onHighlight}
+              onMouseMove={(event) => {
+                noteHoveredRow(event.currentTarget);
+                props.onHighlight();
+              }}
               // Focus stays in the search box, as for Enter. A focused result would lose focus as
               // the results close, and its recovery scrolls the list away from the opened thread.
               // dnd-kit ignores a prevented press, so the drag listener runs first.
