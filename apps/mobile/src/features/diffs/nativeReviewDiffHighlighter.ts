@@ -32,6 +32,8 @@ export interface NativeReviewDiffHighlightChunk {
 
 const NATIVE_REVIEW_DIFF_VISIBLE_OVERSCAN_ROWS = 160;
 const NATIVE_REVIEW_DIFF_VISIBLE_MAX_ROWS = 360;
+// Rows above a provisional selection that carry most grammar state into it.
+const PROVISIONAL_LEAD_ROWS = 160;
 function isHighlightableLineRow(row: NativeReviewDiffRow): row is NativeReviewDiffLineRow {
   return row.kind === "line" && typeof row.fileId === "string" && typeof row.content === "string";
 }
@@ -354,13 +356,14 @@ export async function highlightNativeReviewDiffVisibleRows(
       if (input.signal?.aborted) return;
       const file = fileMap.get(segment.fileId);
       if (!file) continue;
-      // Full-source tokens replace provisional ones, so a huge hunk costs only its
-      // selected lines here, uncached, rather than a second whole-segment pass.
-      const offset = provisional ? firstSelected : 0;
+      // Full-source tokens replace provisional ones, so a huge hunk costs only a
+      // bounded window here, uncached. One row past the selection keeps its last
+      // line ending whole, so a CRLF row matches its whole-segment tokens.
+      const offset = provisional ? Math.max(0, firstSelected - PROVISIONAL_LEAD_ROWS) : 0;
       const tokens = provisional
         ? tokenizeCode(
             segment.rows
-              .slice(firstSelected, lastSelected + 1)
+              .slice(offset, lastSelected + 2)
               .map((row) => row.content)
               .join("\n"),
             file.language,

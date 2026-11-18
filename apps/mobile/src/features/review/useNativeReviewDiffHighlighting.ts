@@ -167,7 +167,7 @@ export function useNativeReviewDiffHighlighting(input: {
         if (result.rowCount === 0) continue;
         retryableViewportRowIds = result.retryableRowIds;
 
-        // Provisional tokens differ from the final ones, so only those rows are sent again.
+        // Skip rows a chunk already delivered with these exact tokens.
         const remaining = Object.fromEntries(
           Object.entries(result.tokensByRowId).filter(
             ([rowId, tokens]) => deliveredTokens.get(rowId) !== tokens,
