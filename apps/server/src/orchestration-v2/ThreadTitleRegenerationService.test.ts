@@ -342,9 +342,10 @@ describe("ThreadTitleRegenerationService", () => {
         const threads = yield* ThreadManagement.ThreadManagementService;
         const outbox = yield* EffectOutbox.EffectOutboxV2;
         // An MCP launch names the thread, or leaves a placeholder, and sends no message.
-        for (const [key, title, expectedTitle, generates] of [
+        for (const [key, title, expectedTitle, generates, compactsFirst] of [
           ["preset", "[API] #4821 — retry webhook deliveries after a timeout", undefined, false],
           ["placeholder", placeholderThreadTitle("Parent", 0), seed, true],
+          ["preset, then compacted", "Release checklist", undefined, false, true],
         ] as const) {
           const threadId = ThreadId.make(`thread:title:${key}`);
           yield* threads.dispatch({
@@ -361,6 +362,13 @@ describe("ThreadTitleRegenerationService", () => {
             createdBy: "agent",
             creationSource: "mcp",
           });
+          if (compactsFirst) {
+            yield* dispatchUserMessage({
+              command: `command:title:${key}:compact`,
+              threadId,
+              text: "/compact",
+            });
+          }
           const requestId = CommandId.make(`command:title:${key}:message`);
           yield* threads.dispatch({
             type: "message.dispatch",

@@ -4238,25 +4238,28 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     it.effect("a native /rename retitles the thread without renaming it back", () =>
       Effect.gen(function* () {
         const harness = yield* makeWakeHarnessWithOptions();
+        const renameNatively = Effect.fnUntraced(function* (ordinal: number) {
+          yield* harness.offerAndWait(
+            claudeSdkFrame({
+              type: "system",
+              subtype: "session_title_changed",
+              title: "Native title",
+              uuid: `title-changed-${ordinal}`,
+              session_id: WAKE_NATIVE_SESSION,
+            }),
+          );
+          yield* harness.offerAndWait({
+            ...makeResultFrame({
+              uuid: `title-result-${ordinal}`,
+              result: "Session renamed to: Native title",
+              numTurns: 0,
+            }),
+            local_command: "rename",
+          } as SDKMessage);
+          yield* Queue.take(harness.terminalReceipts);
+        });
         yield* startTurn(harness, "First title", 1);
-        yield* harness.offerAndWait(
-          claudeSdkFrame({
-            type: "system",
-            subtype: "session_title_changed",
-            title: "Native title",
-            uuid: "title-changed-1",
-            session_id: WAKE_NATIVE_SESSION,
-          }),
-        );
-        yield* harness.offerAndWait({
-          ...makeResultFrame({
-            uuid: "title-result-1",
-            result: "Session renamed to: Native title",
-            numTurns: 0,
-          }),
-          local_command: "rename",
-        } as SDKMessage);
-        yield* Queue.take(harness.terminalReceipts);
+        yield* renameNatively(1);
         assert.deepEqual(
           harness.events.flatMap((event) =>
             event.type === "app_thread.created" ? [event.appThread.title] : [],
@@ -4266,7 +4269,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
 
         yield* startTurn(harness, "Native title", 2);
         assert.deepEqual(harness.renameCalls, []);
-        yield* finishTurn(harness, 2);
+        // Renaming to the current text still claims the title from the generator.
+        yield* renameNatively(2);
+        assert.deepEqual(
+          harness.events.flatMap((event) =>
+            event.type === "app_thread.created" ? [event.appThread.title] : [],
+          ),
+          ["Native title", "Native title"],
+        );
       }).pipe(
         Effect.provide(
           Layer.mergeAll(

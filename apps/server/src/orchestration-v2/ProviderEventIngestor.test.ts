@@ -2215,6 +2215,32 @@ layer("ProviderEventIngestorV2", (it) => {
       const renamedAgain = yield* projectionStore.getThread(childThreadId);
       assert.equal(renamedAgain.title, "Renamed natively again");
       assert.isNull(renamedAgain.titleRegeneration);
+      // A regenerated title belongs to the generator, which the label does not override either.
+      yield* eventSink.write({
+        events: [
+          {
+            ...rootEvent,
+            id: yield* idAllocator.allocate.event({ threadId: childThreadId }),
+            threadId: childThreadId,
+            type: "thread.metadata-updated",
+            payload: {
+              ...renamedAgain,
+              title: "Generated name",
+              titleRenamed: false,
+              generatedTitle: { needsRefinement: false, refinements: 0, coveredAt: now },
+            },
+          },
+        ],
+      });
+      yield* ingest({ ...offered, modelSelection });
+      const regenerated = yield* projectionStore.getThread(childThreadId);
+      assert.equal(regenerated.title, "Generated name");
+      assert.isNotNull(regenerated.generatedTitle);
+      // Renaming natively to the same text still makes the name the user's.
+      yield* rename("Generated name");
+      const confirmed = yield* projectionStore.getThread(childThreadId);
+      assert.isTrue(confirmed.titleRenamed);
+      assert.isNull(confirmed.generatedTitle);
     }),
   );
 

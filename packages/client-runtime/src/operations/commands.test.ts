@@ -278,6 +278,7 @@ describe("V2 environment commands", () => {
 
       for (const [mode, expectedType] of [
         ["queue", "queue_after_active"],
+        ["start", "start_immediately"],
         ["auto", "start_immediately"],
         ["steer", "start_immediately"],
         ["restart", "start_immediately"],
@@ -294,12 +295,14 @@ describe("V2 environment commands", () => {
           runtimeMode: "full-access",
           interactionMode: "default",
           dispatchMode: mode,
+          titleSeed: mode,
         }).pipe(Effect.provideService(EnvironmentSupervisor.EnvironmentSupervisor, supervisor));
 
         expect(commands.at(-1)).toMatchObject({
           type: "message.dispatch",
           dispatchMode: { type: expectedType },
-          ...(mode === "queue" ? {} : { deliveryIntent: mode }),
+          titleSeed: mode,
+          ...(mode === "queue" || mode === "start" ? {} : { deliveryIntent: mode }),
         });
       }
       expect(projectionRequests).toEqual([]);

@@ -469,19 +469,27 @@ export const layer: Layer.Layer<
                 }),
               );
               const rename = input.event.titleOnly === true;
+              // A `/rename` makes the title the user's even when its text is unchanged.
+              const claimsTitle =
+                existing !== null &&
+                rename &&
+                (existing.title !== input.event.appThread.title ||
+                  existing.titleRenamed !== true ||
+                  existing.titleRegeneration != null);
               const offered =
                 existing === null
                   ? input.event.appThread
                   : rename
                     ? { ...input.event.appThread, modelSelection: existing.modelSelection }
-                    : existing.titleRenamed === true
-                      ? // A provider's own label for the thread does not undo the user's name.
+                    : existing.titleRenamed === true || existing.generatedTitle != null
+                      ? // A provider's own label replaces only a title nobody chose or generated.
                         { ...input.event.appThread, title: existing.title }
                       : input.event.appThread;
               if (
                 existing !== null &&
                 (input.event.createOnly === true ||
-                  (existing.title === offered.title &&
+                  (!claimsTitle &&
+                    existing.title === offered.title &&
                     modelSelectionsEqual(existing.modelSelection, offered.modelSelection)))
               )
                 return [];
@@ -497,14 +505,8 @@ export const layer: Layer.Layer<
                           ...existing,
                           title: offered.title,
                           modelSelection: offered.modelSelection,
-                          // A `/rename` is the user's name, as a rename in the app is.
-                          ...(existing.title !== offered.title &&
-                          (rename || existing.generatedTitle != null)
-                            ? {
-                                generatedTitle: null,
-                                titleRegeneration: null,
-                                ...(rename ? { titleRenamed: true } : {}),
-                              }
+                          ...(claimsTitle
+                            ? { titleRenamed: true, generatedTitle: null, titleRegeneration: null }
                             : {}),
                           updatedAt: now,
                         },
