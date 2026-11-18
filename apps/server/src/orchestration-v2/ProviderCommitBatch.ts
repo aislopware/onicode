@@ -61,6 +61,12 @@ interface Job {
   readonly cancel: Effect.Effect<void>;
   readonly settled: Effect.Effect<void>;
 }
+interface Reservation {
+  readonly threadIds: ReadonlyArray<string> | undefined;
+  readonly done: Deferred.Deferred<void>;
+}
+const reserves = (reservation: Reservation, threadId: string) =>
+  reservation.threadIds === undefined || reservation.threadIds.includes(threadId);
 interface Batch {
   readonly events: ReadonlyArray<Job>;
   readonly reason: "ready" | "limit";
@@ -105,6 +111,8 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
 ) {
   const queue = yield* Queue.bounded<Job>(MAX_EVENTS);
   const pending = new Set<Job>();
+  // Writes in `barrier`; a snapshot for their threads that arrives later waits for them.
+  const reservations = new Set<Reservation>();
   let closed = false;
   // Writes in `barrier` that have not finished; they wait on the batch or the writer it holds.
   let waitingWriters = 0;
@@ -166,10 +174,13 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     };
     yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
+        const earlier = Array.from(reservations).filter((r) => reserves(r, threadId));
         pending.add(job);
-        const accepted = yield* restore(Queue.offer(queue, job)).pipe(
-          Effect.onError(() => job.cancel),
-        );
+        const accepted = yield* restore(
+          Effect.forEach(earlier, (r) => Deferred.await(r.done), { discard: true }).pipe(
+            Effect.andThen(Queue.offer(queue, job)),
+          ),
+        ).pipe(Effect.onError(() => job.cancel));
         if (!accepted) yield* job.cancel;
       }),
     );
@@ -253,8 +264,8 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     );
   }
   /**
-   * Runs `effect` after queued snapshots for `threadIds` commit; omitted, after every queued
-   * snapshot. Other threads' snapshots never delay it.
+   * Runs `effect` after queued snapshots for `threadIds` commit, and before ones that arrive
+   * later; omitted, every thread. Other threads' snapshots never delay it.
    */
   const barrier = Effect.fnUntraced(function* <A, E, R>(
     effect: Effect.Effect<A, E, R>,
@@ -263,19 +274,22 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     if (closed) return yield* Effect.interrupt;
     if (!enabled || (yield* CurrentWorker) === (yield* Effect.fiberId)) return yield* effect;
     return yield* Effect.uninterruptibleMask((restore) => {
+      const reservation: Reservation = { threadIds, done: Deferred.makeUnsafe() };
+      const earlier = Array.from(pending).filter((job) => reserves(reservation, job.threadId));
+      reservations.add(reservation);
       waitingWriters++;
       return restore(
         Effect.gen(function* () {
-          for (const job of Array.from(pending)) {
-            if (threadIds === undefined || threadIds.includes(job.threadId)) yield* job.settled;
-          }
+          for (const job of earlier) yield* job.settled;
           if (closed) return yield* Effect.interrupt;
           return yield* effect;
         }),
       ).pipe(
         Effect.ensuring(
-          Effect.sync(() => {
+          Effect.suspend(() => {
             waitingWriters--;
+            reservations.delete(reservation);
+            return Deferred.done(reservation.done, Exit.void);
           }),
         ),
       );
@@ -309,9 +323,13 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
           const processed = yield* Deferred.make<void>();
           let reply: Effect.Effect<boolean, E | E2 | CommitBatchError, R2>;
           let check = false;
-          if (signal._tag === "End") reply = Effect.succeed(true);
-          else if (signal._tag === "Failure") reply = Effect.failCause(signal.cause);
-          else if (isSnapshot(signal.event) && (yield* canBatch)) {
+          if (signal._tag !== "Event") {
+            // Cleanup after a stream ends reads other streams' work, so let what they queued land.
+            const earlier = Array.from(pending, (job) => job.settled);
+            const end =
+              signal._tag === "End" ? Effect.succeed(true) : Effect.failCause(signal.cause);
+            reply = Effect.all(earlier, { discard: true }).pipe(Effect.andThen(end));
+          } else if (isSnapshot(signal.event) && (yield* canBatch)) {
             const bytes = Buffer.byteLength(yield* encodeQueue(signal.event));
             reply = yield* enqueue(
               process(signal.event).pipe(Effect.as(false)),

@@ -81,13 +81,16 @@ const CurrentProviderBatch = Context.Reference<ProviderBatchPublication | undefi
   "onicode/orchestration-v2/EventSink/CurrentProviderBatch",
   { defaultValue: () => undefined },
 );
-// Projecting `provider-thread.updated` also rewrites its app thread's row.
+// Projecting `provider-thread.updated` also rewrites its app thread's row. A context transfer
+// follows its source's earlier snapshots, which the target's next turn reads.
 const projectedThreadIds = (events: ReadonlyArray<OrchestrationV2DomainEvent>) =>
-  events.flatMap((event) =>
-    event.type === "provider-thread.updated" && event.payload.appThreadId !== null
-      ? [event.threadId, event.payload.appThreadId]
-      : [event.threadId],
-  );
+  events.flatMap((event) => {
+    if (event.type === "provider-thread.updated" && event.payload.appThreadId !== null)
+      return [event.threadId, event.payload.appThreadId];
+    if (event.type === "context-transfer.created" || event.type === "context-transfer.updated")
+      return [event.threadId, event.payload.sourceThreadId, event.payload.targetThreadId];
+    return [event.threadId];
+  });
 
 export interface EventSinkV2Shape {
   /** Items that are not provider snapshots, such as a consumer's own control items, never batch. */
@@ -1145,6 +1148,7 @@ const layerBase: Layer.Layer<
         ),
       yield* ProviderCommitBatch.enabled,
       // Each snapshot owns a savepoint and its deferred publications within the shared commit.
+      // Batch state rolls back only here: work inside a batch must not survive a nested rollback.
       Effect.fnUntraced(function* (
         work: Effect.Effect<void, ProviderCommitBatch.CommitBatchError>,
       ) {
