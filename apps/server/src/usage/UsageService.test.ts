@@ -2193,6 +2193,14 @@ describe("UsageService", () => {
             const pending = yield* accounts.scan(cursorScanInput(cutoff, false));
             assert.isTrue(pending[0]?.refreshing);
             if (!cold) assert.strictEqual(pending[0]?.status, "partial");
+            // An account stopped at the read cap before its first read is loading, not missing.
+            else
+              assert.deepStrictEqual(sources[0], {
+                dir: "cursor-account",
+                files: [],
+                status: "partial",
+                message: "Older Cursor account usage is still loading.",
+              });
             yield* accounts.scan(cursorScanInput(cutoff, true));
             const first = large.reads[resumedFrom]!;
             assert.strictEqual(first.untilMs, cold ? yield* Clock.currentTimeMillis : keptSinceMs);
