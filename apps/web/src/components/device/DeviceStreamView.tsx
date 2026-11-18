@@ -441,7 +441,7 @@ export function DeviceStreamView(props: {
           />
         ) : null}
         {props.allowPhoneView && !props.renderControls && status === "streaming" ? (
-          <div className="absolute top-3 left-3 flex gap-1 rounded-lg border border-border/50 bg-background/90 p-1 shadow-sm">
+          <div className="absolute top-3 left-3 flex gap-1 rounded-lg border border-border bg-background/90 p-1 shadow-sm">
             <Button
               variant={showPhone ? "secondary" : "ghost"}
               size="xs"

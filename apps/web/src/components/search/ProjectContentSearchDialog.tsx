@@ -308,7 +308,7 @@ function OpenContentSearchDialog(props: {
                       onMouseEnter={() => setSelectedIndex(match.resultIndex)}
                       onClick={() => openMatch(match)}
                     >
-                      <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground/70">
+                      <span className="w-10 shrink-0 text-right tabular-nums text-muted-foreground">
                         {match.lineNumber}
                       </span>
                       <span className="min-w-0 flex-1 truncate whitespace-pre">

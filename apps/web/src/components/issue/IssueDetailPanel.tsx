@@ -925,7 +925,7 @@ export function IssueDetailPanel({
               item.kind === "comment" ? (
                 <article
                   key={`c:${item.comment.id}`}
-                  className="flex flex-col gap-2 rounded-lg border border-border/60 p-3"
+                  className="flex flex-col gap-2 rounded-lg border border-border p-3"
                 >
                   <PullRequestMetaLine className="text-xs text-muted-foreground">
                     <PullRequestActorLabel actor={item.comment.author} />

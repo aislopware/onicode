@@ -269,7 +269,7 @@ describe("index.html boot script", () => {
     expect(boot.themeId).toBeUndefined();
     expect(boot.themeSelected).toBeUndefined();
     expect(boot.bootVariables).toEqual({});
-    expect(boot.backgroundColor).toBe("#000000");
+    expect(boot.backgroundColor).toBe("#121213");
   });
 
   it("applies the matching half of an automatic mix to the splash", () => {

@@ -1,6 +1,7 @@
 import { ProviderInstanceId } from "@onicode/contracts";
 import { describe, expect, it } from "vite-plus/test";
 import {
+  modelPickerFavoriteKey,
   modelPickerLegacySectionKey,
   modelPickerModelKey,
   parseModelPickerLegacySectionKey,
@@ -27,5 +28,9 @@ describe("model picker item keys", () => {
     const key = modelPickerModelKey(instanceId, slug);
 
     expect(parseModelPickerModelKey(key)).toEqual({ instanceId, slug });
+    expect(parseModelPickerModelKey(modelPickerFavoriteKey(instanceId, slug))).toEqual({
+      instanceId,
+      slug,
+    });
   });
 });

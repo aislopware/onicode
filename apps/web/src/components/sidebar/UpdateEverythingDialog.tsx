@@ -167,7 +167,7 @@ function UpdateEverythingDialogContent({
               <div
                 key={row.environmentId ?? "this-app"}
                 role="row"
-                className="col-span-full grid grid-cols-subgrid border-b border-border/50 py-1.5 last:border-b-0"
+                className="col-span-full grid grid-cols-subgrid border-b border-border py-1.5 last:border-b-0"
               >
                 <span role="cell" className="max-w-32 min-w-0">
                   <span className="sr-only">{row.label}</span>

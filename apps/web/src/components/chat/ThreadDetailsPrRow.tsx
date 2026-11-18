@@ -327,11 +327,11 @@ export function ThreadDetailsPrRow({
                 aria-hidden
                 className={cn("size-3 shrink-0", statePresentation.toneClassName)}
               />
-              <div className="min-w-0 truncate text-foreground/75">{statePresentation.label}</div>
+              <div className="min-w-0 truncate text-foreground/80">{statePresentation.label}</div>
             </div>
             <div className="flex min-w-0 items-center gap-2">
               <GitBranchIcon className="size-3 shrink-0 stroke-muted-foreground" />
-              <div className="min-w-0 truncate text-foreground/75">
+              <div className="min-w-0 truncate text-foreground/80">
                 {detail.baseBranch} ← {detail.headBranch}
               </div>
             </div>
@@ -346,7 +346,7 @@ export function ThreadDetailsPrRow({
                         : "success"
                   }
                 />
-                <div className="min-w-0 truncate text-foreground/75">
+                <div className="min-w-0 truncate text-foreground/80">
                   {describePullRequestChecks(detail.checks, m)}
                 </div>
               </div>
@@ -363,7 +363,7 @@ export function ThreadDetailsPrRow({
             ) : null}
             <div className="flex min-w-0 items-center gap-2">
               <FileDiffIcon className="size-3 shrink-0 stroke-muted-foreground" />
-              <div className="min-w-0 flex items-baseline gap-1 truncate text-foreground/75">
+              <div className="min-w-0 flex items-baseline gap-1 truncate text-foreground/80">
                 {gt("{count, plural, one {{formatted} file} other {{formatted} files}}", {
                   count: detail.changedFiles,
                   formatted: detail.changedFiles.toLocaleString(),
@@ -375,7 +375,7 @@ export function ThreadDetailsPrRow({
               <PullRequestChangeBreakdownRows
                 environmentId={environmentId}
                 reference={reference}
-                className="pl-5 text-foreground/75"
+                className="pl-5 text-foreground/80"
               />
             ) : null}
           </div>

@@ -221,11 +221,11 @@ function RootRouteErrorView({ error }: ErrorComponentProps) {
         <CopyErrorButton report={report} />
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-border/70 bg-background/55">
+      <div className="mt-5 overflow-hidden rounded-lg border border-border bg-background/55">
         <p className="px-3 py-1.5 text-xs font-medium text-muted-foreground">
           <T>Error report</T>
         </p>
-        <pre className="max-h-64 overflow-auto border-t border-border/70 bg-background/80 px-3 py-2 text-xs whitespace-pre-wrap text-foreground/85">
+        <pre className="max-h-64 overflow-auto border-t border-border bg-background/80 px-3 py-2 text-xs whitespace-pre-wrap text-foreground">
           {report}
         </pre>
       </div>

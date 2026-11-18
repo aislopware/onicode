@@ -97,11 +97,11 @@ export function SourceControlTokenSettings({
         <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
           <T>
             A token saved here is used before{" "}
-            <code className="rounded bg-muted px-1 py-px text-2xs">
+            <code className="rounded-sm bg-muted px-1 py-px text-2xs">
               <Var>{credentials.tokenEnvVar}</Var>
             </code>{" "}
             and the{" "}
-            <code className="rounded bg-muted px-1 py-px text-2xs">
+            <code className="rounded-sm bg-muted px-1 py-px text-2xs">
               <Var>{credentials.cliName}</Var>
             </code>{" "}
             login, so <Var>{definition.label}</Var> works without the{" "}

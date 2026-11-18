@@ -829,7 +829,7 @@ function ManagedCodexSetup({
   }
 
   return (
-    <section aria-label={gt("Codex setup")} className="divide-y divide-border/50">
+    <section aria-label={gt("Codex setup")} className="divide-y divide-border">
       {accountPicker}
       <SettingsRow
         title={gt("ChatGPT account")}

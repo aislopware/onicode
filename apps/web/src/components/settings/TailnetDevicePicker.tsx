@@ -112,7 +112,7 @@ export function TailnetDevicePicker({
 
   if (source === null) {
     return (
-      <p className="rounded-lg border border-border/60 px-4 py-6 text-center text-sm text-muted-foreground">
+      <p className="rounded-lg border border-border px-4 py-6 text-center text-sm text-muted-foreground">
         Connect an Onicode server running on a machine with Tailscale to list the devices on your
         tailnet.
       </p>
@@ -173,8 +173,8 @@ export function TailnetDevicePicker({
   };
 
   return (
-    <div className="rounded-lg border border-border/60">
-      <div className="flex min-h-9 items-center gap-2 border-b border-border/60 px-3">
+    <div className="rounded-lg border border-border">
+      <div className="flex min-h-9 items-center gap-2 border-b border-border px-3">
         <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {result?.tailnetName ? `${result.tailnetName} · ` : ""}
           Listed by {source.label}

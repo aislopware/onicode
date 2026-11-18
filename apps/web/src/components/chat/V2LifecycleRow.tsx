@@ -118,7 +118,7 @@ export function V2LifecycleRow(props: {
       return (
         <div
           data-v2-item-type={item.type}
-          className="flex min-w-0 items-center gap-3 rounded-lg border border-border/60 p-3"
+          className="flex min-w-0 items-center gap-3 rounded-lg border border-border p-3"
         >
           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-muted/60">
             <MessageSquareIcon className="size-4 text-secondary-label" aria-hidden />
@@ -257,7 +257,7 @@ function SubagentAvatar({
     <span
       aria-hidden
       className={cn(
-        "relative inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border/70 bg-muted ring-2 ring-background",
+        "relative inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border bg-muted ring-2 ring-background",
         className,
       )}
     >
@@ -533,7 +533,7 @@ function SubagentTimelineLink(props: {
       {open !== null ? (
         <ChevronRightIcon
           aria-hidden
-          className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover/subagent:text-foreground"
+          className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover/subagent:text-foreground"
         />
       ) : null}
     </>
@@ -558,7 +558,7 @@ function SubagentTimelineLink(props: {
               onClick={open}
               className={cn(
                 className,
-                "cursor-pointer transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+                "cursor-pointer transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               )}
             >
               {content}

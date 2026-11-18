@@ -762,10 +762,10 @@ const sidebarMenuButtonVariants = cva(
     variants: {
       size: {
         default:
-          "h-8 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-1.5 text-sm",
-        icon: "size-8 justify-center rounded-[var(--control-radius)] p-0",
-        lg: "h-12 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-2 text-sm group-data-[collapsible=icon]:p-0!",
-        sm: "h-7 rounded-[var(--control-radius)] px-[var(--sidebar-row-content-inset)] py-2 text-xs",
+          "h-8 rounded-(--control-radius) px-[var(--sidebar-row-content-inset)] py-1.5 text-sm",
+        icon: "size-8 justify-center rounded-(--control-radius) p-0",
+        lg: "h-12 rounded-(--control-radius) px-[var(--sidebar-row-content-inset)] py-2 text-sm group-data-[collapsible=icon]:p-0!",
+        sm: "h-7 rounded-(--control-radius) px-[var(--sidebar-row-content-inset)] py-2 text-xs",
       },
       variant: {
         default: "font-medium text-sidebar-muted-foreground/80",

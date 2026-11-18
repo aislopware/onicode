@@ -269,7 +269,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
               cwd={cwd}
               threadRef={threadRef}
               lineBreaks
-              className={cn("pt-0.5 text-foreground/85", questionTextAlign)}
+              className={cn("pt-0.5 text-foreground", questionTextAlign)}
             />
             {/* Rows span the header row's width so the radios align with the question text and the shortcut column sits under the dismiss button. */}
             <div className="-ms-2 mt-1.5 sm:-ms-1.5">
@@ -283,7 +283,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                 const className = cn(
                   questionTextAlign,
                   "group flex w-full items-start gap-2.5 rounded-md bg-transparent py-1.5 ps-2 sm:ps-1.5 outline-none transition-colors duration-150 focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary/25",
-                  isSelected ? "text-foreground" : "text-foreground/70 hover:bg-muted/30",
+                  isSelected ? "text-foreground" : "text-foreground/80 hover:bg-accent/60",
                   (disabled || isResponding) && "opacity-50 cursor-not-allowed",
                   !disabled && !isResponding && "cursor-pointer",
                 );
@@ -337,7 +337,7 @@ const ComposerPendingUserInputCard = memo(function ComposerPendingUserInputCard(
                         cwd={cwd}
                         threadRef={threadRef}
                         lineBreaks
-                        className="ps-9 pe-2 pb-1.5 text-xs text-foreground/70 sm:ps-8"
+                        className="ps-9 pe-2 pb-1.5 text-xs text-foreground/80 sm:ps-8"
                       />
                     ) : null}
                   </div>

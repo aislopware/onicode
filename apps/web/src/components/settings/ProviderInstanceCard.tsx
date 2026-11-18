@@ -662,7 +662,7 @@ function ProjectOverrideInheritance({
               key={layer.key}
               className={cn(
                 "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 rounded-md px-2 py-1",
-                layer.effective && "bg-foreground/[0.06]",
+                layer.effective && "bg-row-selected",
               )}
             >
               <span
@@ -1140,7 +1140,7 @@ export function ProviderInstanceCard({
             </div>
           ) : null}
           {updateCommand ? (
-            <div className="flex min-w-0 items-center gap-1 rounded-md border border-border/70 bg-muted/40 py-0.5 pr-0.5 pl-2">
+            <div className="flex min-w-0 items-center gap-1 rounded-md border border-border bg-muted/40 py-0.5 pr-0.5 pl-2">
               <code className="min-w-0 flex-1 truncate font-mono text-2xs text-foreground">
                 {updateCommand}
               </code>
@@ -1176,7 +1176,7 @@ export function ProviderInstanceCard({
         data-slot="settings-row"
         className={cn(
           "group relative flex min-h-18 items-center gap-3 px-3 py-3 transition-colors sm:px-4",
-          selected ? "bg-foreground/[0.06]" : "hover:bg-muted/25",
+          selected ? "bg-row-selected" : "hover:bg-accent/60",
         )}
       >
         <div
@@ -1203,7 +1203,7 @@ export function ProviderInstanceCard({
               ) : null}
               {versionAdvisoryNode}
             </span>
-            <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground/80">
+            <span className="mt-0.5 flex items-start gap-1.5 text-xs leading-normal text-muted-foreground">
               {statusDotNode && !updateProgress ? (
                 <span className="flex h-[1.45em] shrink-0 items-center">{statusDotNode}</span>
               ) : null}

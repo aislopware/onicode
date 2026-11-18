@@ -497,7 +497,7 @@ function QueuedMessage(props: {
   return (
     <>
       {attribution === "onicode" ? (
-        <p className="me-1 text-2xs text-muted-foreground/70">
+        <p className="me-1 text-2xs text-muted-foreground">
           <T>Sent by Onicode</T>
         </p>
       ) : null}
@@ -537,7 +537,7 @@ function QueuedMessage(props: {
                     type="button"
                     aria-label={gt("Preview {name}", { name: thumbnail.name })}
                     disabled={!thumbnail.previewUrl}
-                    className="size-8 overflow-hidden rounded-md border border-border/70 bg-background enabled:cursor-zoom-in"
+                    className="size-8 overflow-hidden rounded-md border border-border bg-background enabled:cursor-zoom-in"
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => {
                       const preview = buildExpandedImagePreview(props.thumbnails, thumbnail.id);

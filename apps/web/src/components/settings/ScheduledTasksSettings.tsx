@@ -194,9 +194,7 @@ function Field({
     <div className="space-y-1.5">
       <Label className="flex items-baseline justify-between" htmlFor={htmlFor}>
         <span>{label}</span>
-        {hint ? (
-          <span className="font-normal text-2xs text-muted-foreground/80">{hint}</span>
-        ) : null}
+        {hint ? <span className="font-normal text-2xs text-muted-foreground">{hint}</span> : null}
       </Label>
       {children}
     </div>
@@ -457,7 +455,7 @@ function ScheduledTaskEnvironmentList({
       {populated.map(({ environment, tasks, timeZone }) => {
         const { primary, secondary } = settingsScopeEnvironmentLabels(environment, environments);
         return (
-          <div key={environment.environmentId} className="divide-y divide-border/50">
+          <div key={environment.environmentId} className="divide-y divide-border">
             <EnvironmentRow
               kind={resolveEnvironmentMachineKind(environment.serverConfig)}
               label={primary}

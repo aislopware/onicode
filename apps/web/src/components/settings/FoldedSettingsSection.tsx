@@ -44,7 +44,7 @@ export function FoldedSettingsSection({
               className="flex min-h-7 items-start justify-between gap-4 px-3 sm:px-4"
             >
               <h2>
-                <CollapsibleTrigger className="flex min-h-7 items-center gap-2 rounded-md text-sm font-normal text-foreground/70 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
+                <CollapsibleTrigger className="flex min-h-7 items-center gap-2 rounded-md text-sm font-normal text-foreground/80 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
                   {title}
                   <ChevronRightIcon
                     aria-hidden
@@ -86,10 +86,10 @@ export function FoldedSettingsSection({
           {control ? <div className="flex shrink-0 items-center">{control}</div> : null}
         </div>
         {!open && collapsedContent ? (
-          <div className="border-t border-border/50 empty:hidden">{collapsedContent}</div>
+          <div className="border-t border-border empty:hidden">{collapsedContent}</div>
         ) : null}
         <CollapsiblePanel>
-          <div className="border-t border-border/50 *:not-first:border-t *:not-first:border-border/50">
+          <div className="border-t border-border *:not-first:border-t *:not-first:border-border">
             {children}
           </div>
         </CollapsiblePanel>

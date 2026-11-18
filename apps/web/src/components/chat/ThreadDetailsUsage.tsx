@@ -292,7 +292,7 @@ function UsageRow({
                   },
                 }
               : {})}
-            className="col-span-3 grid h-6 cursor-default grid-cols-subgrid items-center rounded-lg px-2.5 outline-none hover:bg-black/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-black/[0.035] dark:hover:bg-white/[0.08] dark:data-popup-open:bg-white/[0.08]"
+            className="col-span-3 grid h-6 cursor-default grid-cols-subgrid items-center rounded-lg px-2.5 outline-none hover:bg-row-highlight focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-popup-open:bg-row-highlight"
           />
         }
       >

@@ -389,9 +389,11 @@ export const SETTINGS_SEARCH_ITEMS = [
   },
   {
     id: "environment-identification",
-    title: msg("Environment identification"),
+    title: msg("Sidebar header"),
     to: "/settings/appearance",
-    searchTerms: [msg("dev artwork pill label hide none")],
+    searchTerms: [
+      msg("scenery landscape sky artwork environment identification dev pill hide none"),
+    ],
     targetId: "appearance-interface",
   },
   {

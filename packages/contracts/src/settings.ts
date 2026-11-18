@@ -197,8 +197,8 @@ export const TerminalFontSize = Schema.Int.check(
 export type TerminalFontSize = typeof TerminalFontSize.Type;
 const DEFAULT_TERMINAL_FONT_SIZE: TerminalFontSize = 12;
 
-// "artwork" shows the dev art on development builds and nothing otherwise; "dev-artwork"
-// shows it everywhere.
+// What the sidebar header shows. "artwork" is its scenery; "dev-artwork" is an older name for
+// the same choice that saved settings may still hold.
 export const EnvironmentIdentificationMode = Schema.Literals([
   "artwork",
   "dev-artwork",

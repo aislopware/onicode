@@ -53,7 +53,7 @@ export function PreviewFaviconIcon(props: {
     <FaviconImage
       sources={[source]}
       fallback={fallback}
-      className={cn("size-7 shrink-0 rounded object-contain", props.className)}
+      className={cn("size-7 shrink-0 rounded-sm object-contain", props.className)}
     />
   );
 }

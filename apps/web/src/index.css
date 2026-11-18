@@ -145,7 +145,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
 
   @variant dark {
     --appearance-contrast-target: white;
-    /* Keeps the idle thumb above 3:1 (WCAG 1.4.11) on #000; 35% renders as gray 89, just under. */
+    /* Keeps the idle thumb above 3:1 (WCAG 1.4.11) on the sidebar and the canvas; 35% falls just under. */
     --app-scrollbar-thumb: rgb(255 255 255 / 36%);
     --app-scrollbar-thumb-hover: rgb(255 255 255 / 45%);
     --glass-blur: 16px;
@@ -199,6 +199,10 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
      by the composer, its context strip and attached banners. */
   --shadow-composer: 0 1px 2px rgb(0 0 0 / 5%);
   --shadow-composer-dark: 0 14px 32px -18px rgb(0 0 0 / 75%);
+  /* Menus, popovers and pickers: three short layers, so a popup sits on the page rather than floats. */
+  --shadow-popup: 0 3px 8px rgb(0 0 0 / 7%), 0 2px 5px rgb(0 0 0 / 4%), 0 1px 1px rgb(0 0 0 / 3%);
+  --shadow-popup-dark:
+    0 3px 8px rgb(0 0 0 / 28%), 0 2px 5px rgb(0 0 0 / 18%), 0 1px 1px rgb(0 0 0 / 14%);
   /* Overlap the lower toolbar backdrop by one pixel to cover the composer seam. */
   --spacing-composer-seam: calc(var(--spacing) * 4 - 1px);
   /* Dark-mode shade where an attached surface meets the composer: 10px of
@@ -282,6 +286,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --color-sidebar-foreground: var(--contrast-sidebar-foreground);
   --color-sidebar-muted-foreground: var(--contrast-sidebar-muted-foreground);
   --color-sidebar-control-surface: var(--sidebar-control-surface);
+  --color-row-highlight: var(--row-highlight);
+  --color-row-selected: var(--row-selected);
   --color-sidebar-row-hover: var(--sidebar-row-hover);
   --color-sidebar-row-active: var(--sidebar-row-active);
   --color-sidebar-row-selected: var(--sidebar-row-selected);
@@ -361,7 +367,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   }
 }
 
-/* The effort slider's track and handle. The lit field between them is drawn on a canvas. */
+/* The effort slider's track, the fill from its left edge to the thumb, and the handle. */
 @utility effort-slider-track {
   background: color-mix(in srgb, var(--foreground) 7%, transparent);
 
@@ -370,13 +376,24 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   }
 }
 
+/* The fill takes the level's hue, as the level's name does. */
+@utility effort-slider-fill {
+  background: var(--primary);
+  background: oklch(
+    from var(--primary) clamp(0.46, l, 0.56) max(c, 0.16) calc(h + var(--effort-level-hue, 0))
+  );
+
+  @variant dark {
+    background: oklch(from var(--primary) 0.6 max(c, 0.15) calc(h + var(--effort-level-hue, 0)));
+  }
+}
+
 /* A white handle in both appearances, like the knob on a system switch. */
 @utility effort-slider-thumb {
   background: white;
   box-shadow:
-    0 0 0 0.5px rgb(0 0 0 / 10%),
-    0 1px 2px rgb(0 0 0 / 18%),
-    0 3px 8px rgb(0 0 0 / 14%);
+    0 0 0 0.5px rgb(0 0 0 / 12%),
+    0 1px 2px rgb(0 0 0 / 22%);
 }
 
 /* The level's name takes the hue the field has at that level: the accent's own at the default
@@ -454,7 +471,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
 }
 
 @utility dialog-glass {
-  background: color-mix(in srgb, var(--background) var(--glass-opacity), transparent);
+  /* A dialog floats, so it takes the card tone, one step above the canvas it covers. */
+  background: color-mix(in srgb, var(--card) var(--glass-opacity), transparent);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   border-color: color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
@@ -490,7 +508,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   );
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
   backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturation));
-  border: 1px solid color-mix(in srgb, var(--contrast-foreground) 10%, transparent);
+  border: 0.5px solid color-mix(in srgb, var(--contrast-foreground) 14%, transparent);
 
   @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     background: var(--popover) !important;
@@ -552,31 +570,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   mask-size:
     calc(100% - var(--app-scrollbar-lane)) 100%,
     var(--app-scrollbar-lane) 100%;
-}
-
-/* Stage-channel art needs a mask and pseudo-element gradient, so keep the
-   behavior composable without tying it to the global components layer. */
-@utility sidebar-stage-backdrop {
-  --stage-fade: var(--sidebar-stage-fade, var(--app-chrome-background));
-  mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
-  -webkit-mask-image: linear-gradient(to bottom, black 0%, black 55%, transparent 92%);
-
-  &::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      to bottom,
-      transparent 0%,
-      transparent 28%,
-      color-mix(in srgb, var(--stage-fade) 10%, transparent) 40%,
-      color-mix(in srgb, var(--stage-fade) 30%, transparent) 52%,
-      color-mix(in srgb, var(--stage-fade) 58%, transparent) 64%,
-      color-mix(in srgb, var(--stage-fade) 82%, transparent) 75%,
-      color-mix(in srgb, var(--stage-fade) 96%, transparent) 85%,
-      var(--stage-fade) 93%
-    );
-  }
 }
 
 @keyframes live-tool-shine {
@@ -707,28 +700,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   ::highlight(oni-assistant-citation-comment) {
     background-color: color-mix(in oklab, var(--primary) 45%, transparent);
   }
-  :root {
-    /* Keep the original Onicode artwork palettes as the defaults. Built-in
-       themes override them with their own pigments in the components layer. */
-    --stage-art-top: oklch(0.782169 0.123386 240.226);
-    --stage-art-mid: oklch(0.616111 0.195824 259.735);
-    --stage-art-bottom: oklch(0.441553 0.232394 265.474);
-    --stage-art-highlight: oklch(0.951597 0.037289 215.482);
-    --stage-art-secondary: oklch(0.794668 0.12136 235.46);
-    --stage-art-tertiary: oklch(0.678991 0.170261 275.365);
-    --stage-art-line: oklch(0.959666 0.029238 218.179);
-    --stage-art-celeste-highlight: oklch(0.968763 0.045822 196.42);
-    --stage-art-celeste-secondary: oklch(0.827395 0.126071 211.26);
-    --stage-art-violet-highlight: oklch(0.895381 0.053248 286.447);
-    --stage-art-grid-line: oklch(0.966822 0.01757 239.99);
-
-    @variant dark {
-      --stage-art-top: oklch(0.581473 0.149124 256.9);
-      --stage-art-mid: oklch(0.456509 0.159377 261.945);
-      --stage-art-bottom: oklch(0.291327 0.136578 267.649);
-    }
-  }
-
   * {
     @apply border-border outline-ring/50;
   }
@@ -829,14 +800,14 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
       color-mix(in srgb, var(--contrast-muted-foreground) 22%, transparent)
         var(--settings-slider-fill-position) 100%
     );
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--contrast-border) 55%, transparent);
+    box-shadow: inset 0 0 0 1px var(--contrast-border);
   }
 
   .settings-slider::-moz-range-track {
     height: 0.375rem;
     border-radius: 9999px;
     background: color-mix(in srgb, var(--contrast-muted-foreground) 22%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--contrast-border) 55%, transparent);
+    box-shadow: inset 0 0 0 1px var(--contrast-border);
   }
 
   .settings-slider::-moz-range-progress {
@@ -992,12 +963,17 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --message-action-hover: color-mix(in srgb, var(--primary) 90%, var(--background));
   --accent: var(--color-zinc-100);
   --accent-foreground: var(--color-zinc-900);
+  /* The one recipe for rows in menus, selects, comboboxes and the command palette: an alpha of
+     the text colour, so it reads the same on any surface and under any theme. */
+  --row-highlight: color-mix(in srgb, var(--foreground) 7%, transparent);
+  --row-selected: color-mix(in srgb, var(--foreground) 5%, transparent);
   --error: var(--color-red-500);
   --error-foreground: var(--color-red-700);
   --tool-error-icon: var(--error);
   --error-surface: color-mix(in srgb, var(--error) 8%, transparent);
   --destructive: var(--error);
-  --border: var(--color-zinc-200);
+  /* The one border weight. Call sites use it as is, never at a partial opacity. */
+  --border: --alpha(var(--color-zinc-200) / 65%);
   --input: var(--color-zinc-300);
   --ring: var(--primary);
   --destructive-foreground: var(--error-foreground);
@@ -1012,15 +988,14 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --update-foreground: var(--primary);
   /* Keep every sidebar primitive on the same light surface hierarchy, including
      portaled mobile sheets and settings navigation outside the app sidebar. */
-  --sidebar: var(--color-zinc-50);
+  --sidebar: #f3f3f5;
   --sidebar-foreground: var(--foreground);
   --sidebar-muted-foreground: var(--muted-foreground);
-  --sidebar-control-surface: var(--color-zinc-100);
-  --sidebar-row-hover: var(--color-zinc-25);
+  --sidebar-control-surface: #eaeaed;
+  --sidebar-row-hover: #f9f9fa;
   --sidebar-row-active: var(--color-white);
   --sidebar-row-selected: var(--color-white);
   --sidebar-border: var(--border);
-  --sidebar-stage-fade: var(--sidebar);
   --code-background: color-mix(in srgb, var(--card) 90%, var(--background));
   --code-foreground: var(--foreground);
   --terminal-background: var(--background);
@@ -1030,30 +1005,29 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
 
   @variant dark {
     color-scheme: dark;
-    /* The canvas is true black, matching the sidebar. Raised surfaces keep the tone they had
-       over neutral-950, so cards, popovers, and the composer still lift. Borders and hover
-       states provide separation without milky gray fills. */
-    --background: #000;
-    --surface-raised: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
-    --foreground: var(--color-neutral-100);
-    --card: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
-    --card-foreground: var(--color-neutral-100);
-    --popover: color-mix(in srgb, var(--color-neutral-950) 97%, var(--color-white));
-    --popover-foreground: var(--color-neutral-100);
+    /* One ladder, each step about seven levels up: sidebar #0a0a0b, canvas, card, popover.
+       The sidebar is the darkest surface so the content panel reads as lifted off it. */
+    --background: #121213;
+    --surface-raised: #19191a;
+    --foreground: #ededee;
+    --card: #19191a;
+    --card-foreground: var(--foreground);
+    --popover: #212122;
+    --popover-foreground: var(--foreground);
     --primary: oklch(0.571 0.21 264);
     --secondary: --alpha(var(--color-white) / 3%);
     --secondary-foreground: var(--color-neutral-100);
     --muted: --alpha(var(--color-white) / 3%);
-    --muted-foreground: var(--color-neutral-400);
-    --accent: --alpha(var(--color-white) / 4%);
+    --muted-foreground: #a0a0a2;
+    --accent: --alpha(var(--color-white) / 6%);
     --accent-foreground: var(--color-neutral-100);
     /* A user turn sits above the composer tone, level with the selected sidebar row. */
-    --message-surface: color-mix(in srgb, var(--color-neutral-950) 92%, var(--color-white));
+    --message-surface: #262627;
     --error: color-mix(in srgb, var(--color-red-500) 90%, var(--color-white));
     --error-foreground: var(--color-red-400);
     --tool-error-icon: #fca5a5;
     --error-surface: color-mix(in srgb, var(--error) 16%, transparent);
-    --border: --alpha(var(--color-white) / 8%);
+    --border: --alpha(var(--color-white) / 5.5%);
     --input: --alpha(var(--color-white) / 11%);
     --info-foreground: var(--color-blue-400);
     --success-foreground: var(--color-emerald-400);
@@ -1065,15 +1039,14 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --sidebar-row-hover: var(--accent);
     --sidebar-row-active: var(--accent);
     --sidebar-row-selected: var(--muted);
-    --sidebar-stage-fade: var(--card);
     --terminal-cursor: rgb(180 203 255);
     --terminal-selection-background: rgb(180 203 255 / 25%);
   }
 }
 
 /* Keep both sidebar implementations (default and legacy) on the same quiet
-   zinc hierarchy: zinc-50 navigation, zinc-25 hover, and white selected/raised
-   surfaces. */
+   hierarchy: a navigation tone one step below the canvas, a lighter hover, and
+   white selected/raised surfaces. */
 [data-app-sidebar] {
   --background: var(--color-zinc-25);
   --foreground: var(--color-zinc-900);
@@ -1081,30 +1054,29 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --card-foreground: var(--color-zinc-900);
   --accent: var(--color-zinc-100);
   --accent-foreground: var(--color-zinc-900);
-  --muted: var(--color-zinc-50);
+  --muted: #f3f3f5;
   --muted-foreground: var(--color-zinc-500);
-  --border: var(--color-zinc-200);
+  --border: --alpha(var(--color-zinc-200) / 65%);
   --input: var(--color-zinc-300);
-  --sidebar: var(--color-zinc-50);
+  --sidebar: #f3f3f5;
   --sidebar-foreground: var(--color-zinc-900);
   --sidebar-muted-foreground: var(--color-zinc-500);
-  --sidebar-control-surface: var(--color-zinc-100);
-  --sidebar-row-hover: var(--color-zinc-25);
+  --sidebar-control-surface: #eaeaed;
+  --sidebar-row-hover: #f9f9fa;
   --sidebar-row-active: var(--color-white);
   --sidebar-row-selected: var(--color-white);
   --sidebar-border: var(--color-zinc-200);
-  --sidebar-stage-fade: var(--sidebar);
 
   @variant dark {
-    --background: #000;
-    --foreground: #f1f3f7;
-    --card: #000;
+    --background: #0a0a0b;
+    --foreground: #ededee;
+    --card: #0a0a0b;
     --card-foreground: var(--foreground);
-    --accent: #191a1d;
-    --accent-foreground: #f7f9ff;
-    --muted: #0a0a0a;
-    --muted-foreground: #a3a3a3;
-    --border: rgb(255 255 255 / 8%);
+    --accent: #1a1a1b;
+    --accent-foreground: #f7f7f8;
+    --muted: #111112;
+    --muted-foreground: #a0a0a2;
+    --border: rgb(255 255 255 / 5.5%);
     --input: rgb(255 255 255 / 18%);
     --sidebar: var(--card);
     --sidebar-foreground: var(--foreground);
@@ -1114,7 +1086,6 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
     --sidebar-row-active: color-mix(in srgb, var(--contrast-foreground) 11%, transparent);
     --sidebar-row-selected: color-mix(in srgb, var(--contrast-foreground) 7%, transparent);
     --sidebar-border: var(--border);
-    --sidebar-stage-fade: var(--card);
     /* Row metadata sits a step below read titles (75% white). */
     --secondary-label: #8f8f8f;
   }
@@ -1211,7 +1182,8 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --warning-surface: var(--app-theme-warning-surface);
   --update: var(--app-theme-update);
   --update-foreground: var(--app-theme-update-foreground);
-  --border: var(--app-theme-border);
+  /* A theme names the full-strength colour; borders are drawn at the app's one weight. */
+  --border: color-mix(in srgb, var(--app-theme-border) 65%, transparent);
   --input: var(--app-theme-input);
   --ring: var(--app-theme-focus);
   --sidebar: var(--app-theme-sidebar);
@@ -1222,7 +1194,6 @@ html[data-theme-id]:not([data-theme-id=""]) {
   --sidebar-row-active: var(--app-theme-sidebar-row-active);
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
-  --sidebar-stage-fade: var(--app-theme-sidebar);
   --code-background: var(--app-theme-code-background);
   --code-foreground: var(--app-theme-code-foreground);
   --terminal-background: var(--app-theme-terminal-background);
@@ -1391,7 +1362,7 @@ html[data-theme-id] [data-app-sidebar] {
   --muted: var(--app-theme-muted);
   --muted-foreground: var(--app-theme-muted-foreground);
   --secondary-label: var(--app-theme-secondary-label);
-  --border: var(--app-theme-border);
+  --border: color-mix(in srgb, var(--app-theme-border) 65%, transparent);
   --input: var(--app-theme-input);
   --sidebar: var(--app-theme-sidebar);
   --sidebar-foreground: var(--app-theme-sidebar-foreground);
@@ -1401,7 +1372,6 @@ html[data-theme-id] [data-app-sidebar] {
   --sidebar-row-active: var(--app-theme-sidebar-row-active);
   --sidebar-row-selected: var(--app-theme-sidebar-row-selected);
   --sidebar-border: var(--app-theme-sidebar-border);
-  --sidebar-stage-fade: var(--app-theme-sidebar);
   border-color: color-mix(in srgb, var(--contrast-sidebar-foreground) 10%, transparent);
 
   @variant dark {
@@ -2038,7 +2008,7 @@ code {
   background: var(--muted);
   padding: 0.8rem 0.9rem;
   scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--contrast-border) 78%, transparent) transparent;
+  scrollbar-color: var(--contrast-border) transparent;
 }
 
 .chat-markdown pre code {
@@ -2053,7 +2023,7 @@ code {
 
 .chat-markdown pre::-webkit-scrollbar-thumb {
   border-radius: 999px;
-  background: color-mix(in srgb, var(--contrast-border) 78%, transparent);
+  background: var(--contrast-border);
 }
 
 :is(.chat-markdown, .composer-tiptap) .chat-markdown-codeblock-header {
@@ -2152,13 +2122,13 @@ code {
 }
 
 .chat-markdown thead th {
-  border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
+  border-bottom: 1px solid var(--contrast-border);
   padding-block: 0.55rem;
   font-weight: 600;
 }
 
 .chat-markdown tbody td {
-  border-bottom: 1px solid color-mix(in srgb, var(--contrast-border) 60%, transparent);
+  border-bottom: 1px solid var(--contrast-border);
 }
 
 /* Caps a long path, URL, or chip at 24rem; text past the cap wraps. */

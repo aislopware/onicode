@@ -54,7 +54,7 @@ export function MicrophoneOrderList(props: {
       <SortableContext items={keys} strategy={verticalListSortingStrategy}>
         <ol
           aria-label={gt("Microphones, preferred first")}
-          className="divide-y divide-border/60 rounded-lg border border-border/60"
+          className="divide-y divide-border rounded-lg border border-border"
         >
           {order.map((entry, index) => {
             const key = microphoneEntryKey(entry);
@@ -133,7 +133,7 @@ function MicrophoneRow(props: {
         ref={setActivatorNodeRef}
         {...listeners}
         aria-hidden
-        className="hidden size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/70 hover:text-foreground active:cursor-grabbing @min-[32rem]/settings-row:flex"
+        className="hidden size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-sm text-muted-foreground hover:text-foreground active:cursor-grabbing @min-[32rem]/settings-row:flex"
       >
         <GripVerticalIcon className="size-3.5" />
       </span>

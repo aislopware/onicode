@@ -8,7 +8,7 @@ export function NoActiveThreadState() {
     <SidebarInset className="h-dvh min-h-0 overflow-hidden overscroll-y-none">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden bg-background">
         <WorkspacePageHeader className="border-b border-border">
-          <span className="text-xs text-muted-foreground/50">
+          <span className="text-xs text-muted-foreground">
             <T>No active thread</T>
           </span>
         </WorkspacePageHeader>

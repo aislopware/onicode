@@ -168,7 +168,7 @@ export function FontFamilyPicker({
           </span>
           <span className="flex shrink-0 items-center gap-1.5">
             {isDefault ? (
-              <span className="text-3xs text-muted-foreground/60">
+              <span className="text-3xs text-muted-foreground">
                 {gt("default", { $context: "marks the default font" })}
               </span>
             ) : null}

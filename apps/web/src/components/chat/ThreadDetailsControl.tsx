@@ -60,7 +60,7 @@ export function ThreadDetailsControl({
           tone === "muted" && "text-muted-foreground hover:text-foreground/80",
           tone === "primary" &&
             // The row surface forces a faint hover fill with !important; the pill keeps its own.
-            "bg-black/[0.035] text-foreground/80 hover:text-foreground hover:!bg-black/[0.06] data-pressed:!bg-black/[0.06] dark:bg-white/[0.08] dark:hover:!bg-white/[0.12] dark:data-pressed:!bg-white/[0.12]",
+            "bg-row-selected text-foreground/80 hover:text-foreground hover:!bg-row-highlight data-pressed:!bg-row-highlight",
           tone === "destructive" &&
             "text-destructive hover:text-destructive data-pressed:text-destructive",
           // Keep the inset focus ring clear of the 20px PR action label.

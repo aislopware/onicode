@@ -85,7 +85,6 @@ it("keeps each registry image when adding a model from another ACP agent", async
     );
   await vi.waitFor(() => expect(imageWidths()).toEqual([11]));
   await screen.getByRole("button", { name: "First model", exact: true }).click();
-  await page.getByRole("button", { name: "Second agent", exact: true }).click();
   await userEvent.keyboard("{Shift>}");
   try {
     await page.getByRole("option", { name: /Second model/ }).click();
@@ -160,7 +159,7 @@ it("keeps a docked picker open after a pick and hands focus to that model's effo
 
   await using screen = await render(<Picker />);
   await screen.getByRole("button", { name: "Choose model" }).click();
-  const search = page.getByPlaceholder("Search models...");
+  const search = page.getByPlaceholder("Search models");
   await expect.element(search).toHaveFocus();
   await userEvent.keyboard("{ArrowRight}");
   await expect.element(page.getByRole("radio", { name: "High" })).toHaveFocus();
@@ -233,7 +232,7 @@ it("lists a model reported twice by one provider once, with contiguous jump shor
         .elements()
         .map((row) => [
           row.textContent?.match(/Model [A-Z]/)?.[0],
-          row.querySelector("kbd")?.textContent?.slice(-1),
+          row.querySelector("[data-model-jump-label]")?.textContent?.slice(-1),
         ]),
     ).toEqual([
       ["Model A", "1"],
@@ -287,7 +286,7 @@ it("opens on the active provider when every favorite belongs to a disabled provi
   await expect.element(page.getByRole("option", { name: /Codex model/ })).toBeVisible();
 });
 
-it("keeps the touch keyboard down while choosing a provider", async () => {
+it("keeps the touch keyboard down when the picker opens", async () => {
   const entries = deriveProviderInstanceEntries(
     ["Codex", "Claude"].map((name) => ({
       instanceId: ProviderInstanceId.make(name.toLowerCase()),
@@ -335,11 +334,86 @@ it("keeps the touch keyboard down while choosing a provider", async () => {
     />,
   );
   await screen.getByRole("button", { name: "Choose model" }).click();
-  const search = page.getByPlaceholder("Search models...");
+  const search = page.getByPlaceholder("Search models");
   const popup = search.element().closest('[data-slot="popover-popup"]');
   await vi.waitFor(() => expect(document.activeElement).toBe(popup));
-
-  await page.getByRole("button", { name: /^Claude/ }).click();
   await expect.element(page.getByRole("option", { name: /Claude model/ })).toBeVisible();
   await expect.element(search).not.toHaveFocus();
+});
+
+it("describes the hovered model on a card beside the list, with options only for the selected one", async () => {
+  await page.viewport(1280, 800);
+  const instanceId = ProviderInstanceId.make("claude");
+  const entries = deriveProviderInstanceEntries([
+    {
+      instanceId,
+      driver: ProviderDriverKind.make("claudeAgent"),
+      displayName: "Claude",
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [],
+      slashCommands: [],
+      skills: [],
+    },
+  ]);
+  const options = new Map([
+    [
+      instanceId,
+      [
+        { slug: "opus", name: "Opus" },
+        { slug: "haiku", name: "Haiku" },
+      ],
+    ],
+  ]);
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    favorites: [{ provider: instanceId, model: "haiku" }],
+  });
+  using _settings = {
+    [Symbol.dispose]: () => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS),
+  };
+
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      activeInstanceId={instanceId}
+      model="opus"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={options}
+      triggerAriaLabel="Choose model"
+      onInstanceModelChange={() => {}}
+      effortColumn={<span>Opus levels</span>}
+    />,
+  );
+  await screen.getByRole("button", { name: "Choose model" }).click();
+  const card = (name: string) => page.getByRole("group", { name });
+  const cardText = (name: string) => card(name).element().textContent;
+  // Haiku is listed under Favorites and again under its provider.
+  await expect.element(page.getByText("Favorites")).toBeVisible();
+  await expect.element(page.getByRole("option", { name: /Haiku/ }).nth(1)).toBeVisible();
+  await vi.waitFor(() => expect(cardText("Opus")).toContain("Opus levels"));
+  await expect
+    .element(card("Opus").getByRole("button", { name: "Add to favorites" }))
+    .toBeVisible();
+
+  const haikuRow = page.getByRole("option", { name: /Haiku/ }).nth(1);
+  await haikuRow.hover();
+  await expect.element(card("Haiku")).toBeVisible();
+  expect(cardText("Haiku")).not.toContain("Opus levels");
+  expect(cardText("Haiku")).toContain("Runs onClaude");
+  await expect
+    .element(card("Haiku").getByRole("button", { name: "Remove from favorites" }))
+    .toBeVisible();
+  const popup = page
+    .getByPlaceholder("Search models")
+    .element()
+    .closest("[data-slot=popover-popup]")!;
+  const cardBox = card("Haiku").element().getBoundingClientRect();
+  expect(cardBox.left - popup.getBoundingClientRect().right).toBe(11);
+  expect(cardBox.top).toBe(haikuRow.element().getBoundingClientRect().top);
 });

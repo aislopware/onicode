@@ -327,7 +327,7 @@ function AssistantReplyButton({ message, itemId }: { message: ChatMessage; itemI
 
 function AssistantStatusBadge({ status }: { status: string }) {
   return (
-    <span className="rounded-full border border-border/70 px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
+    <span className="rounded-full border border-border px-1.5 py-0.5 font-mono text-3xs text-muted-foreground">
       {status}
     </span>
   );

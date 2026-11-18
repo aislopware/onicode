@@ -329,7 +329,7 @@ export function DevicePanel(props: {
                               key={deviceKey(device)}
                               className="flex items-center gap-3 px-3 py-3"
                             >
-                              <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border/60">
+                              <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border">
                                 <Smartphone className="size-4" />
                               </span>
                               <div className="flex min-w-0 flex-1 flex-col">

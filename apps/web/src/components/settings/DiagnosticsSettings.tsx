@@ -85,8 +85,8 @@ function StatBlock({
   tone?: "default" | "warning" | "danger";
 }) {
   return (
-    <div className="min-w-0 border-border/60 px-4 py-3 sm:px-5">
-      <div className="flex min-w-0 items-center gap-1.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground/70">
+    <div className="min-w-0 border-border px-4 py-3 sm:px-5">
+      <div className="flex min-w-0 items-center gap-1.5 text-2xs font-medium uppercase tracking-widest text-muted-foreground">
         <span className="min-w-0 truncate">{label}</span>
         {tooltip ? (
           <Tooltip>
@@ -94,7 +94,7 @@ function StatBlock({
               render={
                 <button
                   type="button"
-                  className="cursor-pointer inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground/60 hover:text-foreground"
+                  className="cursor-pointer inline-flex size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"
                   aria-label={`${label} details`}
                 >
                   <InfoIcon className="size-3" />
@@ -122,19 +122,19 @@ function StatsGrid({ children }: { children: ReactNode }) {
   return (
     <div className="relative grid grid-cols-2 sm:grid-cols-4">
       <span
-        className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-border/60"
+        className="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-border"
         aria-hidden
       />
       <span
-        className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-border/60 sm:hidden"
+        className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-border sm:hidden"
         aria-hidden
       />
       <span
-        className="pointer-events-none absolute inset-y-0 left-1/4 hidden w-px bg-border/60 sm:block"
+        className="pointer-events-none absolute inset-y-0 left-1/4 hidden w-px bg-border sm:block"
         aria-hidden
       />
       <span
-        className="pointer-events-none absolute inset-y-0 left-3/4 hidden w-px bg-border/60 sm:block"
+        className="pointer-events-none absolute inset-y-0 left-3/4 hidden w-px bg-border sm:block"
         aria-hidden
       />
       {children}
@@ -175,7 +175,7 @@ function DiagnosticsTable({
             ))}
           </colgroup>
         ) : null}
-        <thead className="border-b border-border/60 text-2xs uppercase tracking-widest text-muted-foreground/70">
+        <thead className="border-b border-border text-2xs uppercase tracking-widest text-muted-foreground">
           <tr>
             {headers.map((header, index) => (
               <th
@@ -190,7 +190,7 @@ function DiagnosticsTable({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-border/60">{children}</tbody>
+        <tbody className="divide-y divide-border">{children}</tbody>
       </table>
     </ScrollArea>
   );
@@ -358,7 +358,7 @@ function ProcessDiagnosticsTable({
   };
 
   return (
-    <div className="border-t border-border/60">
+    <div className="border-t border-border">
       <ScrollArea
         radius="none"
         chainVerticalScroll
@@ -376,7 +376,7 @@ function ProcessDiagnosticsTable({
             <col className="w-[11%]" />
             <col className="w-[6%]" />
           </colgroup>
-          <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-2xs uppercase tracking-widest text-muted-foreground/70">
+          <thead className="sticky top-0 z-10 border-b border-border bg-card text-2xs uppercase tracking-widest text-muted-foreground">
             <tr>
               <th className="px-4 py-2 font-semibold sm:pl-5">
                 <T>Name</T>
@@ -401,7 +401,7 @@ function ProcessDiagnosticsTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border/50">
+          <tbody className="divide-y divide-border">
             {visibleProcesses.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-4 text-xs text-muted-foreground sm:px-5">
@@ -410,7 +410,7 @@ function ProcessDiagnosticsTable({
               </tr>
             ) : null}
             {visibleProcesses.map((process) => (
-              <tr key={process.pid} className="hover:bg-muted/20">
+              <tr key={process.pid} className="hover:bg-accent/60">
                 <td className="px-4 py-2 align-middle sm:pl-5">
                   <ProcessNameCell
                     process={process}
@@ -519,7 +519,7 @@ function ProcessResourceHistoryChart({
   const maxCpuPercent = Math.max(1, ...buckets.map((bucket) => bucket.maxCpuPercent));
 
   return (
-    <div className="border-t border-border/60 px-4 py-3 sm:px-5">
+    <div className="border-t border-border px-4 py-3 sm:px-5">
       <div className="flex h-28 items-end gap-1 overflow-hidden rounded-sm bg-muted/10 p-2">
         {buckets.map((bucket) => {
           const peakHeight = Math.max(2, (bucket.maxCpuPercent / maxCpuPercent) * 100);
@@ -605,7 +605,7 @@ function ProcessResourceHistoryTable({
   }, null);
 
   return (
-    <div className="border-t border-border/60">
+    <div className="border-t border-border">
       <ScrollArea
         chainVerticalScroll
         scrollFade
@@ -623,7 +623,7 @@ function ProcessResourceHistoryTable({
             <col className="w-[16%]" />
             <col className="w-[10%]" />
           </colgroup>
-          <thead className="sticky top-0 z-10 border-b border-border/60 bg-card text-2xs uppercase tracking-widest text-muted-foreground/70">
+          <thead className="sticky top-0 z-10 border-b border-border bg-card text-2xs uppercase tracking-widest text-muted-foreground">
             <tr>
               <th className="px-4 py-2 font-semibold sm:pl-5">
                 <T>Process</T>
@@ -651,7 +651,7 @@ function ProcessResourceHistoryTable({
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-border/50">
+          <tbody className="divide-y divide-border">
             {processes.length === 0 ? (
               <tr>
                 <td colSpan={8} className="px-4 py-4 text-xs text-muted-foreground sm:px-5">
@@ -660,7 +660,7 @@ function ProcessResourceHistoryTable({
               </tr>
             ) : null}
             {processes.map((process) => (
-              <tr key={process.processKey} className="hover:bg-muted/20">
+              <tr key={process.processKey} className="hover:bg-accent/60">
                 <td className="px-4 py-2 align-middle sm:pl-5">
                   <ResourceHistoryProcessNameCell
                     process={process}
@@ -714,7 +714,7 @@ function DiagnosticsLastChecked({ checkedAt }: { checkedAt: DateTime.Utc | null 
 
   if (relative.status === "missing") {
     return (
-      <span className="text-2xs text-muted-foreground/50">
+      <span className="text-2xs text-muted-foreground">
         <T>Checking</T>
       </span>
     );
@@ -722,14 +722,14 @@ function DiagnosticsLastChecked({ checkedAt }: { checkedAt: DateTime.Utc | null 
 
   if (relative.status === "invalid") {
     return (
-      <span className="text-2xs text-muted-foreground/50">
+      <span className="text-2xs text-muted-foreground">
         <T>Checked unavailable</T>
       </span>
     );
   }
 
   return (
-    <span className="text-2xs text-muted-foreground/60">
+    <span className="text-2xs text-muted-foreground">
       {relative.suffix ? (
         <T context="the time is an elapsed time such as 5m">
           Checked{" "}
@@ -1044,7 +1044,7 @@ function DiagnosticsSettingsBody() {
           />
         </StatsGrid>
         {processDiagnosticsError || processError ? (
-          <div className="space-y-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
+          <div className="space-y-2 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-5">
             {processDiagnosticsError ? (
               <div className="flex items-start gap-2 text-destructive">
                 <AlertTriangleIcon className="size-3.5 h-lh shrink-0" />
@@ -1120,7 +1120,7 @@ function DiagnosticsSettingsBody() {
           />
         </StatsGrid>
         {processResourceError || resourceError ? (
-          <div className="space-y-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
+          <div className="space-y-2 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-5">
             {processResourceError ? (
               <div className="flex items-start gap-2 text-destructive">
                 <AlertTriangleIcon className="size-3.5 h-lh shrink-0" />
@@ -1207,7 +1207,7 @@ function DiagnosticsSettingsBody() {
           />
         </StatsGrid>
         {openLogsDirectoryError || traceDiagnosticsError || error ? (
-          <div className="space-y-2 border-t border-border/60 px-4 py-3 text-xs text-muted-foreground sm:px-5">
+          <div className="space-y-2 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-5">
             {openLogsDirectoryError ? (
               <div className="flex items-start gap-2 text-destructive">
                 <AlertTriangleIcon className="size-3.5 h-lh shrink-0" />
@@ -1349,7 +1349,7 @@ function DiagnosticsSettingsBody() {
                 <col className="w-[26%]" />
                 <col className="w-[30%]" />
               </colgroup>
-              <thead className="border-b border-border/60 text-2xs uppercase tracking-widest text-muted-foreground/70">
+              <thead className="border-b border-border text-2xs uppercase tracking-widest text-muted-foreground">
                 <tr>
                   <th className="whitespace-nowrap px-4 py-2.5 font-semibold sm:pl-5">
                     <T>Time</T>
@@ -1368,17 +1368,17 @@ function DiagnosticsSettingsBody() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border/60">
+              <tbody className="divide-y divide-border">
                 {data.latestWarningAndErrorLogs.map((event) => (
                   <tr
                     key={`${event.traceId}:${event.spanId}:${DateTime.formatIso(event.seenAt)}:${event.message}`}
-                    className="hover:bg-muted/15"
+                    className="hover:bg-accent/60"
                   >
                     <td className="whitespace-nowrap px-4 py-3 align-top font-mono tabular-nums text-muted-foreground sm:pl-5">
                       <RelativeTimeNoWrap value={event.seenAt} />
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <span className="inline-flex rounded bg-muted px-1.5 py-0.5 font-mono text-2xs font-medium uppercase text-foreground/80">
+                      <span className="inline-flex rounded-sm bg-muted px-1.5 py-0.5 font-mono text-2xs font-medium uppercase text-foreground/80">
                         {event.level}
                       </span>
                     </td>

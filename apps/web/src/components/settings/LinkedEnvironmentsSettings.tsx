@@ -182,7 +182,7 @@ function LinkedEnvironmentRow({
           <p className="text-xs text-muted-foreground">
             {m(accessConfig[link.access].label)} · {status}
           </p>
-          <p className="truncate text-xs text-muted-foreground/80">{link.urls.join(", ")}</p>
+          <p className="truncate text-xs text-muted-foreground">{link.urls.join(", ")}</p>
         </div>
         {canUnlink ? (
           <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto sm:justify-end">

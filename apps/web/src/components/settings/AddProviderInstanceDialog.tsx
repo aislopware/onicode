@@ -118,7 +118,7 @@ function ProviderOptionGrid({
         <RadioPrimitive.Root
           key={option.driverKind}
           value={option.driverKind}
-          className="relative flex cursor-pointer items-center gap-3 rounded-lg bg-card px-3 py-3 text-left text-muted-foreground outline-none ring-1 ring-black/5 hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-checked:bg-primary/8 data-checked:text-foreground data-checked:ring-2 data-checked:ring-inset data-checked:ring-primary data-checked:hover:bg-primary/8 dark:bg-white/3 dark:ring-white/5 dark:hover:bg-white/5 dark:data-checked:bg-primary/15 dark:data-checked:ring-primary dark:data-checked:hover:bg-primary/15"
+          className="relative flex cursor-pointer items-center gap-3 rounded-lg bg-card px-3 py-3 text-left text-muted-foreground outline-none ring-1 ring-black/5 hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-checked:bg-primary/8 data-checked:text-foreground data-checked:ring-2 data-checked:ring-inset data-checked:ring-primary data-checked:hover:bg-primary/8 dark:bg-white/3 dark:ring-white/5 dark:hover:bg-white/5 dark:data-checked:bg-primary/15 dark:data-checked:ring-primary dark:data-checked:hover:bg-primary/15"
         >
           <ProviderInstanceIcon
             driverKind={option.driverKind}
@@ -531,11 +531,11 @@ export function AddProviderInstanceDialog({
                       />
                       {!acpRegistryAllowed ? null : (
                         <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                          <div aria-hidden className="flex-1 border-t border-border/70" />
+                          <div aria-hidden className="flex-1 border-t border-border" />
                           <span>
                             <T>Or choose from ACP Registry</T>
                           </span>
-                          <div aria-hidden className="flex-1 border-t border-border/70" />
+                          <div aria-hidden className="flex-1 border-t border-border" />
                         </div>
                       )}
                       {!acpRegistryAllowed ? null : isAcpRegistry && isManualAcpConfiguration ? (
@@ -609,7 +609,7 @@ export function AddProviderInstanceDialog({
               ) : null}
 
               {isAcpRegistry && wizardStep === 1 && selectedAcp ? (
-                <div className="mb-4 flex items-start justify-between gap-3 border-b border-border/70 pb-3">
+                <div className="mb-4 flex items-start justify-between gap-3 border-b border-border pb-3">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-foreground">
                       {selectedAcp.name}

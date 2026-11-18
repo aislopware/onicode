@@ -952,7 +952,7 @@ function UsageOverview({
                   return (
                     <tr
                       key={key}
-                      className="relative border-b border-border/50 text-right whitespace-nowrap text-muted-foreground tabular-nums transition-colors hover:bg-muted/50 has-focus-visible:bg-muted/50"
+                      className="relative border-b border-border text-right whitespace-nowrap text-muted-foreground tabular-nums transition-colors hover:bg-accent/60 has-focus-visible:bg-accent/60"
                     >
                       <td className="py-2.5 pr-3 pl-2 text-left text-xs">{index + 1}</td>
                       <td className="py-2.5 text-left whitespace-normal">
@@ -1041,7 +1041,7 @@ function UsageOverview({
                   breakdownPeriods.map((period) => (
                     <tr
                       key={"hourStart" in period ? period.hourStart : period.day}
-                      className="border-b border-border/50 transition-colors hover:bg-muted/50"
+                      className="border-b border-border transition-colors hover:bg-accent/60"
                     >
                       <td className="py-2 pl-2 text-foreground">
                         {"hourStart" in period

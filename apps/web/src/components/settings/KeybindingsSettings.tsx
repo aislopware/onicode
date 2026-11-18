@@ -376,7 +376,7 @@ function WhenExpressionNodeEditor({
       : [condition.identifier];
 
     return (
-      <div className="flex items-center gap-2 rounded-md border border-border/70 bg-background/60 px-2 py-2">
+      <div className="flex items-center gap-2 rounded-md border border-border bg-background/60 px-2 py-2">
         <Toggle
           pressed={condition.negated}
           onPressedChange={(pressed) => onChange(setConditionNegated(node, pressed))}
@@ -407,8 +407,8 @@ function WhenExpressionNodeEditor({
     return (
       <div
         className={cn(
-          "space-y-2 rounded-lg border border-border/70 bg-muted/20 p-2",
-          depth > 0 && "border-border/50 bg-background/50",
+          "space-y-2 rounded-lg border border-border bg-muted/20 p-2",
+          depth > 0 && "bg-background/50",
         )}
       >
         <div className="flex items-center gap-2">
@@ -431,8 +431,8 @@ function WhenExpressionNodeEditor({
           ) : null}
         </div>
         <div className="relative pl-4">
-          <span className="absolute top-0 bottom-0 left-1.5 w-px bg-border/70" aria-hidden />
-          <span className="absolute top-4 left-1.5 h-px w-2.5 bg-border/70" aria-hidden />
+          <span className="absolute top-0 bottom-0 left-1.5 w-px bg-border" aria-hidden />
+          <span className="absolute top-4 left-1.5 h-px w-2.5 bg-border" aria-hidden />
           <WhenExpressionNodeEditor
             node={node.node}
             variables={variables}
@@ -509,8 +509,8 @@ function WhenExpressionNodeEditor({
   return (
     <div
       className={cn(
-        "space-y-2 rounded-lg border border-border/60 bg-muted/10 p-2",
-        depth > 0 && "border-border/70 bg-background/55",
+        "space-y-2 rounded-lg border border-border bg-muted/10 p-2",
+        depth > 0 && "bg-background/55",
       )}
     >
       <div className="flex flex-wrap items-center gap-2">
@@ -546,20 +546,8 @@ function WhenExpressionNodeEditor({
       <div className="space-y-2">
         {childEntries.map(({ child, key }) => (
           <div key={key} className="relative pl-4">
-            <span
-              className={cn(
-                "absolute top-0 bottom-0 left-1.5 w-px",
-                depth === 0 ? "bg-border" : "bg-border/70",
-              )}
-              aria-hidden
-            />
-            <span
-              className={cn(
-                "absolute top-4 left-1.5 h-px w-2.5",
-                depth === 0 ? "bg-border" : "bg-border/70",
-              )}
-              aria-hidden
-            />
+            <span className="absolute top-0 bottom-0 left-1.5 w-px bg-border" aria-hidden />
+            <span className="absolute top-4 left-1.5 h-px w-2.5 bg-border" aria-hidden />
             <WhenExpressionNodeEditor
               node={child}
               variables={variables}
@@ -679,7 +667,7 @@ function WhenExpressionBuilder({
             onRemove={() => updateExpressionValue(undefined)}
           />
         ) : (
-          <div className="rounded-md border border-dashed border-border/80 bg-muted/15 p-3">
+          <div className="rounded-md border border-dashed border-border bg-muted/15 p-3">
             <div className="flex flex-wrap gap-2">
               <Button type="button" size="compact" onClick={addRootCondition}>
                 <PlusIcon className="size-3.5" />
@@ -888,7 +876,7 @@ function KeybindingKeyControl({
               : formatShortcutLabel(row.binding.shortcut),
           })}
           className={cn(
-            "inline-flex h-8 cursor-pointer items-center rounded-md border border-transparent px-1.5 sm:h-7 outline-none transition-colors hover:border-border/70 hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/24",
+            "inline-flex h-8 cursor-pointer items-center rounded-md border border-transparent px-1.5 sm:h-7 outline-none transition-colors hover:border-border hover:bg-accent focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/24",
             pillClassName,
           )}
         >
@@ -1062,7 +1050,7 @@ function KeybindingRowWhen({
   const m = useMessages();
   return (
     <span className="flex h-6 items-center gap-1.5">
-      <span className="text-xs leading-none text-muted-foreground/70">
+      <span className="text-xs leading-none text-muted-foreground">
         {gt("When", { $context: "heading for keybinding conditions" })}
       </span>
       <WhenClauseControl
@@ -1341,7 +1329,7 @@ function NewKeybindingSettingsRow(props: NewKeybindingProps) {
       title={gt("New keybinding")}
       description={
         <span className="flex h-6 items-center gap-1.5">
-          <span className="text-xs leading-none text-muted-foreground/70">
+          <span className="text-xs leading-none text-muted-foreground">
             {gt("When", { $context: "heading for keybinding conditions" })}
           </span>
           <NewKeybindingWhen draft={draft} variables={variables} />

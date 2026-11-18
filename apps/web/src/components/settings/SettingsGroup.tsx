@@ -18,11 +18,11 @@ export function SettingsGroup({
       className={cn(
         "relative overflow-visible text-foreground",
         variant === "grouped"
-          ? "rounded-xl border border-border/60 bg-card/40 shadow-xs/5"
+          ? "rounded-xl border border-border bg-card/40 shadow-xs/5"
           : "space-y-1",
         variant === "grouped" &&
           divided &&
-          "*:not-first:border-t *:not-first:border-border/50 [&>[data-slot=settings-row]]:rounded-none",
+          "*:not-first:border-t *:not-first:border-border [&>[data-slot=settings-row]]:rounded-none",
         className,
       )}
     />

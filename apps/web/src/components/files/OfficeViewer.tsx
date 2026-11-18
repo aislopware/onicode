@@ -226,7 +226,7 @@ function ExtendedOfficeViewer(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       {count > 0 ? (
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3 text-xs">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
           <FileSurfaceAction
             label={previousLabel}
             disabled={page === 0}
@@ -298,7 +298,7 @@ function ExtendedOfficeViewer(props: {
       ) : null}
       {props.kind === "ods" && sheet ? (
         <div
-          className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-1 border-b border-border/60 px-3 py-2 text-xs text-muted-foreground tabular-nums"
+          className="flex min-h-10 shrink-0 flex-wrap items-center gap-x-1 border-b border-border px-3 py-2 text-xs text-muted-foreground tabular-nums"
           role="status"
         >
           {gt("Sheet {page} of {count}", { page: String(page + 1), count: String(count) })} ·{" "}

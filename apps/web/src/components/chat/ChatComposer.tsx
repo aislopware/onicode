@@ -3790,7 +3790,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
               // column-reverse pins the scroll to the bottom; the single inner div keeps the text in normal order.
               <div
                 aria-label={gt("Live transcription")}
-                className="mx-3 mb-3 flex max-h-32 flex-col-reverse overflow-y-auto rounded-lg border border-border/60 bg-muted/30 px-3 py-2 text-sm leading-relaxed break-words whitespace-pre-wrap sm:mx-4"
+                className="mx-3 mb-3 flex max-h-32 flex-col-reverse overflow-y-auto rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm leading-relaxed break-words whitespace-pre-wrap sm:mx-4"
               >
                 <div>
                   <span>{speechInput.preview.committed}</span>
@@ -3930,7 +3930,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     aria-hidden={restingControlsVisible ? undefined : true}
                     inert={restingControlsVisible ? undefined : true}
                     className={cn(
-                      "relative flex w-max min-w-0 max-w-full items-center gap-1 text-muted-foreground/70 [&_button]:text-xs!",
+                      "relative flex w-max min-w-0 max-w-full items-center gap-1 text-muted-foreground [&_button]:text-xs!",
                       !restingControlsVisible && "invisible",
                     )}
                   >

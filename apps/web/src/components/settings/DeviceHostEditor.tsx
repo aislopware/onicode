@@ -202,7 +202,7 @@ function DeviceHostEditorForm({
         <Collapsible
           open={checksOpen}
           onOpenChange={(open) => setExpandedChecks({ key: connectionKey, open })}
-          render={<div className="rounded-lg border border-border/60" />}
+          render={<div className="rounded-lg border border-border" />}
         >
           <div className="flex items-center justify-between gap-3 px-3 py-2.5">
             {targets.length === 1 ? (
@@ -241,7 +241,7 @@ function DeviceHostEditorForm({
           </div>
           {results ? (
             <CollapsiblePanel>
-              <ul className="border-t border-border/60 divide-y divide-border/40">
+              <ul className="border-t border-border divide-y divide-border">
                 {targets.map((target) => {
                   const result = results[target.environmentId];
                   if (!result) return null;

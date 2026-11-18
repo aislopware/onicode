@@ -16,7 +16,7 @@ import {
 import { HighlightedTokens } from "./HighlightedTokens";
 
 export const SNAP_SHOT_ATTACHMENT_FRAME_CLASS =
-  "relative h-28 w-52 max-w-full overflow-hidden rounded-lg border border-border/80";
+  "relative h-28 w-52 max-w-full overflow-hidden rounded-lg border border-border";
 
 interface SnapShotAccessibilityDetails {
   content: string;
@@ -45,7 +45,7 @@ export function SnapShotAccessibilityData({
   return (
     <pre
       className={cn(
-        "overflow-auto whitespace-pre-wrap break-words font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+        "overflow-auto whitespace-pre-wrap break-words font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         className,
       )}
       tabIndex={0}
@@ -185,17 +185,17 @@ export function SnapShotContentsButton({
           {accessibilityDetails ? (
             <SnapShotAccessibilityData
               details={accessibilityDetails}
-              className="max-h-64 rounded-md border border-border/70 bg-muted/45 p-2.5 text-2xs leading-4"
+              className="max-h-64 rounded-md border border-border bg-muted/45 p-2.5 text-2xs leading-4"
             />
           ) : includesAccessibility ? (
-            <div className="rounded-md border border-border/70 bg-muted/45 p-2.5 text-muted-foreground text-xs leading-4">
+            <div className="rounded-md border border-border bg-muted/45 p-2.5 text-muted-foreground text-xs leading-4">
               <T>
                 Structured accessibility elements were included, but they have no readable names or
                 values.
               </T>
             </div>
           ) : (
-            <div className="rounded-md border border-border/70 bg-muted/45 p-2.5 text-muted-foreground text-xs leading-4">
+            <div className="rounded-md border border-border bg-muted/45 p-2.5 text-muted-foreground text-xs leading-4">
               <T>The app or capture backend did not provide verified accessibility data.</T>
             </div>
           )}

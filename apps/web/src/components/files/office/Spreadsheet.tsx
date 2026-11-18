@@ -762,7 +762,7 @@ function SpreadsheetGrid(props: {
       {notice ? (
         <div
           role="status"
-          className="absolute inset-x-3 bottom-3 rounded-md bg-background p-2 text-xs text-foreground shadow-md"
+          className="absolute inset-x-3 bottom-3 rounded-md bg-background p-2 text-xs text-foreground shadow-popup dark:shadow-popup-dark"
         >
           {notice}
         </div>

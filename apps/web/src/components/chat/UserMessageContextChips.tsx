@@ -163,11 +163,11 @@ function UserMessagePreviewAnnotationDetails(props: {
   const visibleElements = props.record.elements ?? [];
   const targetText = previewAnnotationTargetText(props.record, messages);
   return (
-    <div className="max-w-full overflow-hidden rounded-lg border border-border/70 bg-background/70">
+    <div className="max-w-full overflow-hidden rounded-lg border border-border bg-background/70">
       {props.image?.previewUrl ? (
         <button
           type="button"
-          className="block max-h-64 w-full cursor-zoom-in overflow-hidden border-b border-border/70 bg-muted"
+          className="block max-h-64 w-full cursor-zoom-in overflow-hidden border-b border-border bg-muted"
           aria-label={gt("Preview {name}", { name: props.image.name })}
           onClick={() => {
             if (!props.image) return;
@@ -182,7 +182,7 @@ function UserMessagePreviewAnnotationDetails(props: {
           />
         </button>
       ) : (
-        <div className="border-b border-border/70 bg-muted/40 px-3 py-2 text-secondary-label text-xs">
+        <div className="border-b border-border bg-muted/40 px-3 py-2 text-secondary-label text-xs">
           <T>Screenshot unavailable</T>
         </div>
       )}
@@ -205,7 +205,7 @@ function UserMessagePreviewAnnotationDetails(props: {
           ) : null}
         </div>
         {visibleElements.length > 0 ? (
-          <div className="mt-2 space-y-2 border-t border-border/60 pt-2">
+          <div className="mt-2 space-y-2 border-t border-border pt-2">
             {visibleElements.map((element) => {
               const source = element.source;
               const sourceLabel = source?.fileName
@@ -225,7 +225,7 @@ function UserMessagePreviewAnnotationDetails(props: {
                     ) : null}
                   </div>
                   {element.htmlPreview?.trim() ? (
-                    <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded bg-muted/60 px-2 py-1.5 text-3xs leading-relaxed">
+                    <pre className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap rounded-sm bg-muted/60 px-2 py-1.5 text-3xs leading-relaxed">
                       {element.htmlPreview.trim()}
                     </pre>
                   ) : null}
@@ -248,8 +248,8 @@ function UserMessageElementDetails({
     ? `${record.source.fileName}${record.source.lineNumber === null ? "" : `:${record.source.lineNumber}`}`
     : null;
   return (
-    <div className="max-w-full overflow-hidden rounded-lg border border-border/70 bg-background/70">
-      <div className="border-b border-border/70 px-3 py-2.5">
+    <div className="max-w-full overflow-hidden rounded-lg border border-border bg-background/70">
+      <div className="border-b border-border px-3 py-2.5">
         <div className="truncate text-message-foreground text-xs font-medium">
           {record.pageTitle?.trim() || record.pageUrl}
         </div>
@@ -265,12 +265,12 @@ function UserMessageElementDetails({
           ) : null}
         </div>
         {record.htmlPreview?.trim() ? (
-          <div className="flex h-40 flex-col overflow-hidden rounded border border-border">
+          <div className="flex h-40 flex-col overflow-hidden rounded-sm border border-border">
             <ReadOnlySourcePreview name="element.html" text={record.htmlPreview} />
           </div>
         ) : null}
         {record.styles?.trim() ? (
-          <div className="flex h-32 flex-col overflow-hidden rounded border border-border">
+          <div className="flex h-32 flex-col overflow-hidden rounded-sm border border-border">
             <ReadOnlySourcePreview name="styles.css" text={record.styles} />
           </div>
         ) : null}
@@ -600,7 +600,7 @@ function UserMessageReviewCommentCard({ comment }: { comment: ReviewCommentConte
   );
 
   return (
-    <div className="space-y-2 rounded-lg border border-border/70 bg-background/70 p-3">
+    <div className="space-y-2 rounded-lg border border-border bg-background/70 p-3">
       <div className="space-y-1">
         <div className="text-xs font-medium text-foreground">
           {formatWorkspaceRelativePath(comment.filePath, ctx.workspaceRoot)}

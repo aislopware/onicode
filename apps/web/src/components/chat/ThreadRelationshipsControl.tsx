@@ -130,7 +130,7 @@ function ThreadLineageRowList(props: {
         <button
           type="button"
           onClick={props.onShowMore}
-          className={`flex h-8 w-full cursor-pointer items-center rounded-lg ${THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS} text-sm font-medium text-muted-foreground/70 hover:bg-black/[0.055] hover:text-foreground/80 dark:hover:bg-white/[0.075]`}
+          className={`flex h-8 w-full cursor-pointer items-center rounded-lg ${THREAD_DETAILS_PANEL_ROW_CONTENT_CLASS} text-sm font-medium text-muted-foreground hover:bg-row-highlight hover:text-foreground/80 `}
         >
           <PlusIcon aria-hidden className="size-4 shrink-0" />
           <T>
@@ -330,7 +330,7 @@ function RemoteSubagentRow(props: {
             status={status}
           />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
+            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground">
               {title}
             </span>
           </span>
@@ -434,7 +434,7 @@ function DelegatedFromRow(props: {
             status={null}
           />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
+            <span className="block truncate text-left text-sm font-medium leading-4 text-foreground">
               {title}
             </span>
           </span>
@@ -869,7 +869,7 @@ export function ThreadRelationshipsPanel(props: {
           status={rowStatus}
         />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-left text-sm font-medium leading-4 text-foreground/85">
+          <span className="block truncate text-left text-sm font-medium leading-4 text-foreground">
             {threadTitle}
           </span>
         </span>

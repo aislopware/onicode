@@ -267,7 +267,7 @@ export function EasDeviceHostEditor(props: {
                 ) : null}
               </div>
             </div>
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2.5">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
               <p role="status" className="min-w-0 text-xs text-muted-foreground">
                 {account.status === "signed-in"
                   ? m(SIGNED_IN_MESSAGES[account.account.credentialSource], {

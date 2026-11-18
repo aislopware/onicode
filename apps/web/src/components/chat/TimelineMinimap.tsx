@@ -153,7 +153,7 @@ export function TimelineMinimap({
             aria-label={gt("Jump to message: {text}", {
               text: activeItem?.userText ?? gt("User message"),
             })}
-            className="absolute inset-y-0 left-0 w-full cursor-pointer bg-transparent before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+            className="absolute inset-y-0 left-0 w-full cursor-pointer bg-transparent before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             onBlur={() => setActiveIndex(null)}
             onClick={(event) => {
               const nextIndex = resolveActiveIndexFromPointer(event);
@@ -234,7 +234,7 @@ export function TimelineMinimap({
                 className="pointer-events-none absolute left-8 w-80 -translate-y-1/2"
                 style={{ top: `${activeTopPercent}%` }}
               >
-                <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-xl shadow-black/25">
+                <span className="dropdown-glass block rounded-xl p-3 text-left text-popover-foreground shadow-popup dark:shadow-popup-dark">
                   <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium leading-5">
                     {activeItem.userText ?? <T>User message</T>}
                   </span>
@@ -305,7 +305,7 @@ function TimelineMinimapNavigationButton({
           type="button"
           variant="ghost-muted"
         >
-          <Icon className="size-4 text-foreground/90" />
+          <Icon className="size-4 text-foreground" />
         </Button>
       </TooltipTrigger>
       <TooltipPopup side={previous ? "top" : "bottom"}>{label}</TooltipPopup>

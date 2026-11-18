@@ -257,7 +257,7 @@ export function SavedBackendListRow({
             type="button"
             aria-expanded={routesOpen}
             onClick={() => setRoutesOpen((open) => !open)}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             {routeCount === 1 ? gt("Routes") : `${routeCount} routes`}
             <ChevronRightIcon
@@ -276,7 +276,7 @@ export function SavedBackendListRow({
             aria-expanded={permissionsOpen}
             aria-controls={`remote-permissions-${environmentId}`}
             onClick={() => setPermissionsOpen((open) => !open)}
-            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+            className="inline-flex shrink-0 items-center gap-0.5 rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
           >
             <T>Permissions</T>
             <ChevronRightIcon
@@ -323,10 +323,7 @@ export function SavedBackendListRow({
             />
           )}
           {permissionsOpen && (
-            <div
-              id={`remote-permissions-${environmentId}`}
-              className="mt-2 border-t border-border/50"
-            >
+            <div id={`remote-permissions-${environmentId}`} className="mt-2 border-t border-border">
               <SessionPermissions
                 environmentId={environmentId}
                 connected={isConnected}

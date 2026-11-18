@@ -142,7 +142,7 @@ export function NewProjectSummary(props: {
           <span className="truncate text-foreground text-sm">
             {props.name.length > 0 ? props.name : gt("New project")}
           </span>
-          <span className="truncate text-muted-foreground/85 text-xs">
+          <span className="truncate text-muted-foreground text-xs">
             {props.name.length > 0
               ? environment === null
                 ? gt("Creates {path}", { path: props.pathPreview })
@@ -176,7 +176,7 @@ export function RemoteRepositorySummary(props: {
         </CommandPaletteTitleIcon>
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-foreground text-sm">{props.title}</span>
-          <span className="truncate text-muted-foreground/85 text-xs">{props.description}</span>
+          <span className="truncate text-muted-foreground text-xs">{props.description}</span>
         </span>
       </div>
     </div>

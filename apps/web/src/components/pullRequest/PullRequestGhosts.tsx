@@ -41,7 +41,9 @@ import { resolveFilterOptions } from "./pullRequestListOptions";
 import { changeRequestTermKind } from "./changeRequestTerm";
 
 export function GhostBar({ className }: { className?: string | undefined }) {
-  return <span aria-hidden className={cn("block h-3 rounded bg-muted-foreground/15", className)} />;
+  return (
+    <span aria-hidden className={cn("block h-3 rounded-sm bg-muted-foreground/15", className)} />
+  );
 }
 
 const TITLE_WIDTHS = ["w-3/5", "w-2/5", "w-1/2", "w-2/3", "w-2/5", "w-3/5", "w-1/2"];
@@ -147,7 +149,7 @@ export function PullRequestDetailGhost({
         !seed && "motion-safe:animate-skeleton",
       )}
     >
-      <div className="@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border/60">
+      <div className="@container/pr-header grid min-w-0 shrink-0 grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 border-b border-border">
         <div className="pl-4 grid h-7 min-w-0 items-center overflow-hidden">
           <div className="flex min-w-0 items-center gap-1 text-sm text-muted-foreground sm:text-xs">
             {onBack ? (
@@ -412,10 +414,7 @@ export function PullRequestDetailGhost({
               <span>
                 <T>Description</T>
               </span>
-              <ChevronRightIcon
-                aria-hidden
-                className="size-3.5 rotate-90 text-muted-foreground/60"
-              />
+              <ChevronRightIcon aria-hidden className="size-3.5 rotate-90 text-muted-foreground" />
             </div>
           </div>
           <div className="space-y-3 px-4 pb-4">
@@ -459,7 +458,7 @@ export function PullRequestTimelineGhost({ rows = 6 }: { rows?: number }) {
       aria-label={gt("Loading timeline")}
       className="motion-safe:animate-skeleton px-4 py-5"
     >
-      <div className="relative ml-2 border-l border-border/70 pl-5">
+      <div className="relative ml-2 border-l border-border pl-5">
         {Array.from({ length: rows }, (_, index) => (
           <div key={index} className="relative pb-5">
             <GhostBar className="absolute -left-[1.55rem] top-1 size-2 rounded-full" />

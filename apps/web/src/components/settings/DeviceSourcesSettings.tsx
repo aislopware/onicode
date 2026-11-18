@@ -713,7 +713,7 @@ function PlatformIcon(props: {
             }
             className={cn(
               "relative grid size-6 shrink-0 place-items-center rounded-md outline-hidden hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              available ? "text-foreground" : "text-muted-foreground/45",
+              available ? "text-foreground" : "text-muted-foreground",
             )}
           />
         }
@@ -811,12 +811,12 @@ function DeviceSourceRow(props: { row: SourceRow }) {
   const problems = issues.filter((environment) => environment.status.tone !== "pending");
   const pending = issues.find((environment) => environment.status.tone === "pending");
   return (
-    <div className="flex items-center gap-3 border-t border-border/60 px-3 py-3 first:border-t-0 sm:px-4">
+    <div className="flex items-center gap-3 border-t border-border px-3 py-3 first:border-t-0 sm:px-4">
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-1.5">
           <p className="truncate text-sm font-medium">{row.title}</p>
           {row.kind ? (
-            <span className="shrink-0 rounded border border-border px-1 text-3xs uppercase tracking-wide text-muted-foreground">
+            <span className="shrink-0 rounded-sm border border-border px-1 text-3xs uppercase tracking-wide text-muted-foreground">
               {row.kind}
             </span>
           ) : null}

@@ -165,7 +165,7 @@ function UserFileCard({
             type="button"
             aria-label={gt("Preview {label}", { label })}
             onClick={() => ctx.onFileOpen(file)}
-            className="group/file focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl text-left focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
+            className="group/file focus-visible:ring-ring flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-xl text-left focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
           >
             {identity}
           </button>
@@ -224,7 +224,7 @@ function UserVideoAttachment({
           "flex aspect-[4/3] w-full items-center justify-center bg-black px-2 py-3 text-center text-2xs text-white/70",
           standalone
             ? cn(MEDIA_EDGE_CLASS_NAME, "rounded-2xl", cornerClassName)
-            : "rounded-lg border border-border/80",
+            : "rounded-lg border border-border",
         )}
       >
         {file.name}
@@ -245,13 +245,10 @@ function UserVideoAttachment({
         if (preview) ctx.onImageExpand(preview);
       }}
       className="block aspect-[4/3] w-full"
-      videoClassName={cn(
-        "aspect-auto size-full",
-        !standalone && "rounded-lg border border-border/80",
-      )}
+      videoClassName={cn("aspect-auto size-full", !standalone && "rounded-lg border border-border")}
       stateClassName={cn(
         "aspect-auto min-h-full bg-black text-white",
-        !standalone && "rounded-lg border border-border/80",
+        !standalone && "rounded-lg border border-border",
       )}
       onRetry={asset ? refreshAssetUrl : undefined}
       actionsSource={asset ? { kind: "video", name: file.name, src, asset } : undefined}
@@ -768,7 +765,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                       )
                     : standaloneMedia
                       ? cn(MEDIA_EDGE_CLASS_NAME, "aspect-[4/3] overflow-hidden rounded-2xl")
-                      : "aspect-[4/3] overflow-hidden rounded-lg border border-border/80",
+                      : "aspect-[4/3] overflow-hidden rounded-lg border border-border",
             )}
           >
             {image.previewUrl ? (
@@ -803,7 +800,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
             ) : (
               <div
                 className={cn(
-                  "flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-2xs text-muted-foreground/70",
+                  "flex min-h-[72px] items-center justify-center px-2 py-3 text-center text-2xs text-muted-foreground",
                   loneImage && "h-48 w-64 max-w-full",
                   collage && "h-full",
                 )}
@@ -898,10 +895,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
       data-user-message-attribution={folded ? "agent" : undefined}
     >
       {userMessage.attribution === "onicode" ? (
-        <p
-          className="me-1 text-2xs text-muted-foreground/70"
-          data-user-message-attribution="onicode"
-        >
+        <p className="me-1 text-2xs text-muted-foreground" data-user-message-attribution="onicode">
           <T>Sent by Onicode</T>
         </p>
       ) : null}
@@ -1029,7 +1023,7 @@ function UserTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "message" 
                           type="button"
                           aria-label={gt("Preview {label}", { label })}
                           onClick={() => ctx.onFileOpen(file)}
-                          className="focus-visible:ring-ring/70 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
+                          className="focus-visible:ring-ring flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md py-1 text-left text-sm hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:outline-none"
                         >
                           {fileIdentity}
                           <EyeIcon className="size-4 shrink-0" />

@@ -41,18 +41,19 @@ const STANDARD_THEME_PREVIEW_COLORS: Record<
   Readonly<Record<ThemePreviewRole, string>>
 > = {
   light: {
-    sidebar: "#fafafa",
+    sidebar: "#f3f3f5",
     surface: "#ffffff",
     accentSurface: "#f4f4f5",
     messageSurface: "#e4e4e7",
     ...SHARED_STANDARD_THEME_PREVIEW_COLORS.light,
   },
   dark: {
-    sidebar: "#0f0f10",
-    surface: "#121212",
+    sidebar: "#0a0a0b",
+    surface: "#19191a",
     accentSurface: "#27272a",
     messageSurface: "#27272a",
     ...SHARED_STANDARD_THEME_PREVIEW_COLORS.dark,
+    canvas: "#121213",
   },
 };
 
@@ -197,7 +198,7 @@ export function ThemePreviewCircles({
                       />
                       <span
                         aria-hidden
-                        className="pointer-events-none absolute bottom-0.5 right-0.5 flex size-5 items-center justify-center rounded-full border border-border/70 bg-background text-foreground shadow-sm"
+                        className="pointer-events-none absolute bottom-0.5 right-0.5 flex size-5 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm"
                       >
                         {mode === "light" ? (
                           <SunIcon className="size-3" />

@@ -498,7 +498,7 @@ function ThemeImportBody({
         if (conflicts) {
           return (
             <div className="space-y-3">
-              <div className="rounded-xl border border-border/70 bg-muted/20 p-3">
+              <div className="rounded-xl border border-border bg-muted/20 p-3">
                 <p className="text-sm font-medium">
                   <T>Already installed</T>
                 </p>
@@ -528,7 +528,7 @@ function ThemeImportBody({
             <div
               className={cn(
                 "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed px-3 py-3 transition-colors",
-                isDropTarget ? "border-ring bg-accent/20" : "border-border/80 bg-muted/20",
+                isDropTarget ? "border-ring bg-accent/20" : "border-border bg-muted/20",
               )}
               {...dropHandlers}
             >

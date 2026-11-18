@@ -145,7 +145,7 @@ function WorkflowMemberRow(props: {
                 onClick={() => props.onOpenThread(threadId)}
                 className={cn(
                   className,
-                  "cursor-pointer transition-colors hover:bg-accent/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70",
+                  "cursor-pointer transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                 )}
               />
             )
@@ -180,7 +180,7 @@ function WorkflowMemberRow(props: {
           {threadId !== null ? (
             <ChevronRightIcon
               aria-hidden
-              className="size-3.5 shrink-0 text-muted-foreground/60 transition-colors group-hover/subagent:text-foreground"
+              className="size-3.5 shrink-0 text-muted-foreground transition-colors group-hover/subagent:text-foreground"
             />
           ) : null}
         </TooltipTrigger>

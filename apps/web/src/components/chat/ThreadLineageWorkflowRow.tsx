@@ -297,7 +297,7 @@ export function ThreadLineageWorkflowRow({
             />
           ))}
           {phases.length === 0 && group.unphasedMembers.length === 0 ? (
-            <li className="px-2.5 py-1.5 text-2xs text-muted-foreground/70">
+            <li className="px-2.5 py-1.5 text-2xs text-muted-foreground">
               <T>No agents yet</T>
             </li>
           ) : null}

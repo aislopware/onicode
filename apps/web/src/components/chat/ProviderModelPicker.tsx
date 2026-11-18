@@ -8,7 +8,6 @@ import {
 import { RegistryContext } from "@effect/atom-react";
 import { T, useGT } from "gt-react";
 import {
-  createContext,
   memo,
   type ReactNode,
   useContext,
@@ -53,7 +52,7 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
     return (
       target instanceof Element &&
       target.closest(
-        "[data-model-picker-content], [data-model-picker-effort], [data-model-picker-option-menu]",
+        "[data-model-picker-content], [data-model-picker-card], [data-model-picker-effort], [data-model-picker-option-menu]",
       )
     );
   };
@@ -84,9 +83,6 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
     body.style.paddingRight = previousBodyPaddingRight;
   };
 }
-
-/** What a docked effort section needs from its picker: the model it serves. */
-export const DockedPickerContext = createContext<{ modelLabel: string }>({ modelLabel: "" });
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -123,8 +119,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Composer shortcuts this trigger answers besides the picker's own. */
   triggerShortcuts?: string;
   /**
-   * Docks the model's effort and options under the list and a footer under both. The popup then
-   * stays open until Escape or an outside press, and picking a model moves focus to its levels.
+   * The selected model's effort and options, shown on its detail card, with a footer under the
+   * list. The popup then stays open until Escape or an outside press, and picking a model moves
+   * focus to its levels.
    */
   effortColumn?: ReactNode;
   footer?: ReactNode;
@@ -152,6 +149,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
+  // The detail card floats beside the popup when the window has room for both.
+  const [popupElement, setPopupElement] = useState<HTMLDivElement | null>(null);
+  const roomForCard = useMediaQuery("(min-width: 45rem)");
   // Touch opens on the popup itself so the on-screen keyboard stays down until the search is tapped.
   const isCoarsePointer = useMediaQuery({ pointer: "coarse" });
   const size = props.size ?? "sm";
@@ -319,11 +319,31 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           : (props.getModelDisabledReason?.(instanceId, model) ?? null)
       }
       onInstanceModelChange={handleInstanceModelChange}
+      cardHost={roomForCard ? popupElement : null}
       {...(docked
         ? {
-            docked,
+            controls: (
+              <div
+                data-model-picker-effort
+                className="flex min-h-0 flex-col"
+                onKeyDown={(event) => {
+                  // Up leaves the options for the list; Left is the older way back.
+                  if (
+                    (event.key !== "ArrowUp" && event.key !== "ArrowLeft") ||
+                    event.altKey ||
+                    event.ctrlKey ||
+                    event.metaKey
+                  )
+                    return;
+                  event.preventDefault();
+                  event.stopPropagation();
+                  searchInputRef.current?.focus();
+                }}
+              >
+                {props.effortColumn}
+              </div>
+            ),
             onFocusEffort: () => void focusEffort("any"),
-            // Inside the fixed height, so switching to or from a ChatGPT plan never resizes it.
             ...(props.selectedModels === undefined
               ? { listFooter: <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} /> }
               : {}),
@@ -452,9 +472,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {...(props.isComposerOwned ? composerFloatingLayerProps : {})}
         ref={(popup) => {
           popupRef.current = popup;
+          setPopupElement(popup);
           const unlock = lockBackgroundScroll(popup);
           return () => {
             popupRef.current = null;
+            setPopupElement(null);
             unlock?.();
           };
         }}
@@ -469,37 +491,11 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         padding="none"
         touchBackdrop
       >
-        {props.effortColumn ? (
-          <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className="flex max-h-(--available-height) flex-col">
-              {/* One fixed height, so neither a provider with fewer models nor a model with more
-                  options resizes the popup: the list gives up the room. Short windows shrink it
-                  and keep the footer. */}
-              <div className="flex h-91 min-h-0 flex-col overflow-hidden">
-                {picker}
-                <div
-                  data-model-picker-effort
-                  className="flex max-h-48 min-h-0 shrink-0 flex-col border-t border-border/70"
-                  onKeyDown={(event) => {
-                    // Up leaves the options for the list above; Left is the older way back.
-                    if (
-                      (event.key !== "ArrowUp" && event.key !== "ArrowLeft") ||
-                      event.altKey ||
-                      event.ctrlKey ||
-                      event.metaKey
-                    )
-                      return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    searchInputRef.current?.focus();
-                  }}
-                >
-                  {props.effortColumn}
-                </div>
-              </div>
-              {props.footer}
-            </div>
-          </DockedPickerContext>
+        {docked ? (
+          <div className="flex max-h-(--available-height) flex-col bg-popover">
+            {picker}
+            {props.footer}
+          </div>
         ) : (
           picker
         )}

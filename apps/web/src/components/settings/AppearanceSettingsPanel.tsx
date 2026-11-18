@@ -14,12 +14,8 @@ import {
   MIN_GLASS_OPACITY,
   MIN_PANEL_ANIMATION_DURATION_MS,
 } from "@onicode/contracts/settings";
-import {
-  resolveSidebarStageBackdropVariant,
-  type SidebarStageBackdropVariant,
-} from "../SidebarStageBackdrop";
+import { APP_STAGE_LABEL } from "../../branding";
 import { useCustomThemes } from "../../hooks/useCustomThemes";
-import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";
 import { useTheme } from "../../hooks/useTheme";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
@@ -36,30 +32,26 @@ import { AdvancedSettings } from "./AdvancedSettings";
 import { PanelAnimationsPreview } from "./PanelAnimationsPreview";
 import { TypographySection } from "./TypographySettings";
 import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";
+import type { MessageResolver } from "~/i18n/messages";
 
-const ENVIRONMENT_IDENTIFICATION_LABELS: Record<EnvironmentIdentificationMode, string> = {
-  artwork: msg("Artwork"),
-  "dev-artwork": msg("Dev artwork"),
-  pill: msg("Version pill"),
-  none: msg("None"),
-};
+// The version pill names the build's stage, so it is only offered on builds that have one.
+// "dev-artwork" is what older settings saved for the same scenery.
+const ENVIRONMENT_IDENTIFICATION_OPTIONS: ReadonlyArray<
+  readonly [EnvironmentIdentificationMode, string]
+> = [
+  ["artwork", msg("Scenery")],
+  ...(APP_STAGE_LABEL === null ? [] : ([["pill", msg("Version pill")]] as const)),
+  ["none", msg("None")],
+];
 
-// The default "artwork" follows the running build, so it is labeled "Dev artwork" in dev
-// and "None" elsewhere, where the dev art is offered as a fixed choice.
-function environmentIdentificationOptions(
-  stageVariant: SidebarStageBackdropVariant | null,
-): ReadonlyArray<readonly [EnvironmentIdentificationMode, string]> {
-  if (stageVariant === "dev") {
-    return [
-      ["artwork", msg("Dev artwork")],
-      ["pill", msg("Version pill")],
-      ["none", msg("None")],
-    ];
-  }
-  return [
-    ["artwork", msg("None")],
-    ["dev-artwork", msg("Dev artwork")],
-  ];
+function environmentIdentificationLabel(
+  mode: EnvironmentIdentificationMode,
+  resolve: MessageResolver,
+): string {
+  const shown = mode === "dev-artwork" ? "artwork" : mode;
+  return resolve(
+    ENVIRONMENT_IDENTIFICATION_OPTIONS.find(([value]) => value === shown)?.[1] ?? msg("None"),
+  );
 }
 
 const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {
@@ -91,25 +83,6 @@ export function AppearanceSettingsPanel() {
   const [isImportThemeOpen, setIsImportThemeOpen] = useState(false);
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
-  const environmentStageVariant = resolveSidebarStageBackdropVariant();
-  const environmentIdentificationOptionList =
-    environmentIdentificationOptions(environmentStageVariant);
-  const environmentIdentificationLabel = m(
-    environmentIdentificationOptionList.find(
-      ([value]) => value === settings.environmentIdentificationMode,
-    )?.[1] ?? ENVIRONMENT_IDENTIFICATION_LABELS[settings.environmentIdentificationMode],
-  );
-  const effectiveEnvironmentIdentificationMode = useEnvironmentIdentificationMode();
-  const themeHidesEnvironmentArtwork =
-    effectiveEnvironmentIdentificationMode === "pill" &&
-    resolveSidebarStageBackdropVariant(settings.environmentIdentificationMode) !== null;
-  const environmentIdentificationDescription = themeHidesEnvironmentArtwork
-    ? environmentStageVariant
-      ? gt("Only built-in themes show artwork, so this theme shows the version pill.")
-      : gt("Only built-in themes show artwork.")
-    : environmentStageVariant
-      ? gt("Choose how Dev environments are identified.")
-      : gt("Show Dev artwork in the sidebar header.");
   const glassOpacityRatio =
     (settings.glassOpacity - MIN_GLASS_OPACITY) / (MAX_GLASS_OPACITY - MIN_GLASS_OPACITY);
   const glassOpacitySliderStyle = {
@@ -349,7 +322,7 @@ export function AppearanceSettingsPanel() {
           targetIds={[
             searchableSetting("panel-animations").id,
             searchableSetting("environment-identification").id,
-            // Environment identification's search result lands on this section.
+            // The sidebar header setting's search result lands on this section.
             "appearance-interface",
             searchableSetting("composer-context").id,
           ]}
@@ -407,11 +380,11 @@ export function AppearanceSettingsPanel() {
           />
           <SettingsRow
             {...searchableSetting("environment-identification")}
-            description={environmentIdentificationDescription}
+            description={gt("A landscape behind the sidebar header that follows the time of day.")}
             resetAction={
               settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
                 <SettingResetButton
-                  ariaLabel={gt("Reset environment identification to default")}
+                  ariaLabel={gt("Reset sidebar header to default")}
                   onClick={() =>
                     updateSettings({
                       environmentIdentificationMode: DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
@@ -422,9 +395,13 @@ export function AppearanceSettingsPanel() {
             }
             control={
               <Select
-                value={settings.environmentIdentificationMode}
+                value={
+                  settings.environmentIdentificationMode === "dev-artwork"
+                    ? "artwork"
+                    : settings.environmentIdentificationMode
+                }
                 onValueChange={(value) => {
-                  const option = environmentIdentificationOptionList.find(
+                  const option = ENVIRONMENT_IDENTIFICATION_OPTIONS.find(
                     ([optionValue]) => optionValue === value,
                   );
                   if (option) updateSettings({ environmentIdentificationMode: option[0] });
@@ -433,12 +410,14 @@ export function AppearanceSettingsPanel() {
                 <SelectTrigger
                   size="sm"
                   className="w-full sm:w-40"
-                  aria-label={gt("Environment identification")}
+                  aria-label={gt("Sidebar header")}
                 >
-                  <SelectValue>{environmentIdentificationLabel}</SelectValue>
+                  <SelectValue>
+                    {environmentIdentificationLabel(settings.environmentIdentificationMode, m)}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="end" alignItemWithTrigger={false}>
-                  {environmentIdentificationOptionList.map(([value, label]) => (
+                  {ENVIRONMENT_IDENTIFICATION_OPTIONS.map(([value, label]) => (
                     <SelectItem hideIndicator key={value} value={value}>
                       {m(label)}
                     </SelectItem>
