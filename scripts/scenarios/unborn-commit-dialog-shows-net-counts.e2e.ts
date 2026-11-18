@@ -31,6 +31,6 @@ test(
     const row = screen.getByRole("button", "Open new.txt in editor");
     await expect(row).toBeVisible();
     await app.screenshot("commit-dialog");
-    await expect(row).toHaveText(/\+1 \/ -0/);
+    await expect(row).toHaveText(/\+1 \/ −0/);
   },
 );
