@@ -17,7 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../ui/dialog";
-import { backgroundTaskCommand } from "./BackgroundWorkDetails.logic";
+import { backgroundTaskLaunch } from "./BackgroundWorkDetails.logic";
 import { CommandOutputPanel, useCommandOutputStreaming } from "./CommandOutputPanel";
 import { ShellCommandBlock } from "./ShellCommandBlock";
 
@@ -59,12 +59,7 @@ export function BackgroundWorkDetails(props: {
         <DialogPanel>
           <div className="space-y-5">
             {props.tasks.map((task) => {
-              const item = props.turnItems.findLast((candidate) =>
-                task.itemId === undefined
-                  ? (candidate.nativeItemRef?.nativeId || candidate.id) === task.taskId
-                  : candidate.id === task.itemId,
-              );
-              const command = backgroundTaskCommand(task, item);
+              const { item, command } = backgroundTaskLaunch(task, props.turnItems);
               const description = task.description?.trim();
               const title =
                 description && description !== backgroundWorkTextPreview(command?.trim() ?? "")

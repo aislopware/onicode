@@ -13232,7 +13232,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             subtype: "task_started",
             task_id: "moved-build",
             tool_use_id: "toolu_moved_build",
-            description: movedScript,
+            description: `\n${movedScript}`,
             is_backgrounded: false,
             task_type: "local_bash",
             uuid: "00000000-0000-4000-8000-000000000205",
@@ -13246,7 +13246,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             subtype: "background_tasks_changed",
             tasks: [
               { task_id: WAKE_TASK_ID, task_type: "local_bash", description: "Audit" },
-              { task_id: "moved-build", task_type: "local_bash", description: movedScript },
+              {
+                task_id: "moved-build",
+                task_type: "local_bash",
+                description: `\n${movedScript}`,
+              },
             ],
             uuid: "00000000-0000-4000-8000-000000000206",
             session_id: WAKE_NATIVE_SESSION,
@@ -13291,6 +13295,8 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           assert.isAtMost(text?.length ?? 0, 1_000);
           assert.isTrue(text?.startsWith("python3 - <<'EOF'\nprint('step')"));
         }
+        // Details titles a description that repeats the command as "Command".
+        assert.equal(moved?.description, moved?.command);
         yield* harness.offerAndWait(
           claudeSdkFrame({
             type: "system",
