@@ -2502,3 +2502,4 @@ cb129ba2cc	take	fix(server): a Claude command moved to the background keeps its 
 f4b988aeaf	take	fix(server): restart note says how to resume a cut Claude subagent
 7396f135ed	take	fix(server): preserve explicit document breaks in RTF attachment text
 3f3f7f9a76	take	fix(server): preserve raw notebook cell labels in attachment text
+961233137d	take	fix(server): Hermes Agent's reply after a background process finishes reaches the thread
