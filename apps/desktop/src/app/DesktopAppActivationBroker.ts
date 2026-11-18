@@ -8,12 +8,14 @@ import {
 
 interface PendingActivation {
   readonly request: DesktopAppActivationRequest;
+  readonly deadlineAt: number;
   readonly resolve: (response: DesktopAppActivationResponse) => void;
   readonly timeout: ReturnType<typeof setTimeout>;
   dispatched: boolean;
 }
 
-type RendererSender = (request: DesktopAppActivationRequest) => void;
+/** `deadlineAt` is when this request times out, in epoch ms; the renderer skips it after that. */
+type RendererSender = (request: DesktopAppActivationRequest, deadlineAt: number) => void;
 
 function failure(
   requestId: string,
@@ -33,12 +35,18 @@ export class DesktopAppActivationBroker {
   readonly #pending = new Map<string, PendingActivation>();
   readonly #requestTimeoutMs: number;
   readonly #activate: () => void;
+  readonly #now: () => number;
   #renderer: RendererSender | null = null;
   #closed = false;
 
-  constructor(input: { readonly requestTimeoutMs: number; readonly activate: () => void }) {
+  constructor(input: {
+    readonly requestTimeoutMs: number;
+    readonly activate: () => void;
+    readonly now?: () => number;
+  }) {
     this.#requestTimeoutMs = input.requestTimeoutMs;
     this.#activate = input.activate;
+    this.#now = input.now ?? Date.now;
   }
 
   request(request: DesktopAppActivationRequest): Promise<DesktopAppActivationResponse> {
@@ -65,6 +73,7 @@ export class DesktopAppActivationBroker {
       }, this.#requestTimeoutMs);
       this.#pending.set(request.requestId, {
         request,
+        deadlineAt: this.#now() + this.#requestTimeoutMs,
         resolve,
         timeout,
         dispatched: false,
@@ -130,7 +139,7 @@ export class DesktopAppActivationBroker {
       if (pending.dispatched) continue;
       try {
         pending.dispatched = true;
-        renderer(pending.request);
+        renderer(pending.request, pending.deadlineAt);
       } catch {
         pending.dispatched = false;
         this.#renderer = null;

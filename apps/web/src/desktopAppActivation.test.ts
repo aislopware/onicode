@@ -1,5 +1,4 @@
 import {
-  DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS,
   EnvironmentId,
   ProjectId,
   ThreadId,
@@ -184,11 +183,11 @@ describe("desktop app activation", () => {
     },
     {
       name: "drops a request the desktop app already gave up on before a handler came back",
-      waitedMs: DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS + 1,
+      waitedMs: 1_001,
     },
   ])("$name", async ({ waitedMs }) => {
     let nowMs = 0;
-    let deliver: (input: DesktopAppActivationRequest) => void = () => undefined;
+    let deliver: (input: DesktopAppActivationRequest, deadlineAt: number) => void = () => undefined;
     const receiver = createDesktopAppActivationReceiver(
       {
         onRequest: (listener) => {
@@ -215,7 +214,7 @@ describe("desktop app activation", () => {
 
     receiver.setHandler(unmounted);
     receiver.setHandler(null);
-    deliver(request);
+    deliver(request, 1_000);
     nowMs += waitedMs;
     receiver.setHandler(async (input) => {
       const response = await remounted(input);
@@ -223,12 +222,39 @@ describe("desktop app activation", () => {
       return response;
     });
     // A dropped request never reaches the handler, so a second request marks the queue's progress.
-    deliver({ ...request, requestId: "request-2" });
+    deliver({ ...request, requestId: "request-2" }, nowMs + 1_000);
     await handledOrDropped;
 
     expect(unmounted).not.toHaveBeenCalled();
     expect(remounted.mock.calls.map(([input]) => input.requestId)).toEqual(
       waitedMs === 0 ? ["request-1", "request-2"] : ["request-2"],
     );
+  });
+
+  it("answers a request whose handler throws instead of leaving the command waiting", async () => {
+    let completed: (response: unknown) => void = () => undefined;
+    const completion = new Promise((resolve) => {
+      completed = resolve;
+    });
+    const receiver = createDesktopAppActivationReceiver(
+      {
+        onRequest: (listener) => {
+          listener(request, Number.POSITIVE_INFINITY);
+          return () => undefined;
+        },
+        complete: async (response) => completed(response),
+      },
+      () => 0,
+    );
+
+    receiver.setHandler(async () => {
+      throw new Error("boom");
+    });
+
+    await expect(completion).resolves.toMatchObject({
+      requestId: request.requestId,
+      ok: false,
+      code: "internal-error",
+    });
   });
 });

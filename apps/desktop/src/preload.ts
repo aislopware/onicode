@@ -375,9 +375,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     complete: (response) =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_APP_ACTIVATION_COMPLETE_CHANNEL, response),
     onRequest: (listener) => {
-      const wrappedListener = (_event: Electron.IpcRendererEvent, request: unknown) => {
-        if (typeof request !== "object" || request === null) return;
-        listener(request as Parameters<typeof listener>[0]);
+      const wrappedListener = (
+        _event: Electron.IpcRendererEvent,
+        request: unknown,
+        deadlineAt: unknown,
+      ) => {
+        if (typeof request !== "object" || request === null || typeof deadlineAt !== "number") {
+          return;
+        }
+        listener(request as Parameters<typeof listener>[0], deadlineAt);
       };
       ipcRenderer.on(IpcChannels.DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL, wrappedListener);
       return () => {

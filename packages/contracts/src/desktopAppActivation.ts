@@ -3,8 +3,6 @@ import * as Schema from "effect/Schema";
 import { ProjectId, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION = 1 as const;
-/** How long the desktop app waits for the renderer to open a request before failing it. */
-export const DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS = 15_000;
 
 export const DesktopAppActivationPlatform = Schema.Literals(["darwin", "linux", "win32"]);
 export type DesktopAppActivationPlatform = typeof DesktopAppActivationPlatform.Type;

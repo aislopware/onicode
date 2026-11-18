@@ -1,6 +1,5 @@
 import type { EnvironmentPresentation } from "@onicode/client-runtime/connection";
 import type { EnvironmentShellStatus } from "@onicode/client-runtime/state/shell";
-import { DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS } from "@onicode/contracts";
 import type {
   DesktopAppActivationFailure,
   DesktopBridge,
@@ -182,14 +181,20 @@ export function createDesktopAppActivationReceiver(
     }
     return handler;
   };
-  activation.onRequest((request) => {
-    const receivedAt = now();
+  activation.onRequest((request, deadlineAt) => {
     queue = queue
       .then(async () => {
         const handle = await awaitHandler();
         // The command already reported a timeout; opening the folder now would surprise the user.
-        if (now() - receivedAt > DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS) return;
-        await activation.complete(await handle(request));
+        if (now() > deadlineAt) return;
+        const response = await handle(request).catch((error: unknown) =>
+          failure(
+            request.requestId,
+            "internal-error",
+            errorMessage(error, "Onicode could not open the project."),
+          ),
+        );
+        await activation.complete(response);
       })
       .catch(() => undefined);
   });
