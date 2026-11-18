@@ -34,7 +34,8 @@ server to read a different data directory; comma-separated paths read multiple d
 Cursor reads account usage from Cursor's API for the account you signed in with in Onicode or set as
 `CURSOR_API_KEY`. This includes headless Onicode sessions and desktop usage across machines; the same
 account counts once across connected environments. Onicode does not estimate missing tokens from
-conversation text.
+conversation text. A large account's older history loads a part at a time; until it is complete,
+Usage says older Cursor usage is still loading, and each refresh of Usage loads more.
 
 Usage includes each configured account's history, including disabled accounts. Custom homes follow
 the account's home setting or its `CODEX_HOME`, `CLAUDE_CONFIG_DIR`, or `GROK_HOME` environment

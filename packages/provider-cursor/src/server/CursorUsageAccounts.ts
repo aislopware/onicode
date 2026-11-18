@@ -18,6 +18,7 @@ import * as Semaphore from "effect/Semaphore";
 import {
   CURSOR_ACCOUNT_CACHE_FILE_NAME,
   CURSOR_ACCOUNT_TTL_MS,
+  CURSOR_MAX_READS_PER_REFRESH,
   CURSOR_MIN_FETCH_SPAN_MS,
   cursorFetchRange,
   decodeCursorAccountCaches,
@@ -31,6 +32,7 @@ import * as CursorAccountReader from "./CursorAccountReader.ts";
 import { readStoredCursorApiKey } from "./credentialStore.ts";
 
 const CURSOR_ACCOUNT_READ_ERROR = "Cursor account usage could not be read.";
+const CURSOR_ACCOUNT_LOADING = "Older Cursor account usage is still loading.";
 
 const decodeCacheFile = Schema.decodeUnknownEffect(
   Schema.fromJsonString(Schema.Unknown as unknown as Schema.Codec<unknown>),
@@ -65,7 +67,7 @@ const make = Effect.gen(function* () {
   /** Failed refreshes share the cache TTL to prevent repeated requests; null means no login. */
   const failures = new Map<string, { readonly atMs: number; readonly error: string | null }>();
   const refreshes = new Map<string, Deferred.Deferred<void>>();
-  /** Widest range the next read asks for, narrowed after failures until the cache is complete. */
+  /** Widest range a read asks for: halved when a read runs out of time, doubled when one finishes. */
   const fetchSpans = new Map<string, number>();
 
   const ensureLoaded = yield* Effect.cached(
@@ -73,7 +75,9 @@ const make = Effect.gen(function* () {
       Effect.flatMap((raw) => decodeCacheFile(raw)),
       Effect.catchCause(() => Effect.succeed(null)),
       Effect.map((document) => {
-        for (const [key, cache] of decodeCursorAccountCaches(document)) caches.set(key, cache);
+        const decoded = decodeCursorAccountCaches(document);
+        for (const [key, cache] of decoded.caches) caches.set(key, cache);
+        for (const [key, spanMs] of decoded.spans) fetchSpans.set(key, spanMs);
       }),
     ),
   );
@@ -83,7 +87,7 @@ const make = Effect.gen(function* () {
   const persist = Effect.gen(function* () {
     if (!cacheDirty) return;
     cacheDirty = false;
-    yield* Effect.sync(() => encodeCursorAccountCaches(caches)).pipe(
+    yield* Effect.sync(() => encodeCursorAccountCaches(caches, fetchSpans)).pipe(
       Effect.flatMap((contents) => writeFileStringAtomically({ filePath: cachePath, contents })),
       Effect.provideService(FileSystem.FileSystem, fileSystem),
       Effect.provideService(Path.Path, path),
@@ -107,49 +111,45 @@ const make = Effect.gen(function* () {
   );
   yield* Effect.addFinalizer(() => awaitPersisted);
 
-  const refreshLock = yield* Semaphore.make(2);
+  // Per read, not per refresh, so a long backfill takes turns with other credentials.
+  const readLock = yield* Semaphore.make(2);
   const refreshAccount = Effect.fn("CursorUsageAccounts.refreshAccount")(function* (
     credential: CursorCredentialSource,
     credentialKey: string,
     retentionStartMs: number,
   ) {
     const nowMs = yield* Clock.currentTimeMillis;
-    let checkedAccount = false;
-    let span = fetchSpans.get(credentialKey) ?? Number.POSITIVE_INFINITY;
-    // Widen after each success so a span narrowed by earlier failures recovers in a few reads.
-    let widening = true;
-    let widened = false;
-    for (;;) {
+    // Widening stops below a width that ran out of time in this refresh.
+    let failedWidthMs = Number.POSITIVE_INFINITY;
+    for (let reads = 0; reads < CURSOR_MAX_READS_PER_REFRESH; reads++) {
       const base = caches.get(credentialKey);
-      const range = cursorFetchRange(base, retentionStartMs, nowMs, span);
-      const result = yield* accountReader.read(credential, range.sinceMs, range.untilMs);
+      const spanMs = fetchSpans.get(credentialKey) ?? Number.POSITIVE_INFINITY;
+      const range = cursorFetchRange(base, retentionStartMs, nowMs, spanMs);
+      if (range === null) return;
+      const result = yield* readLock.withPermit(
+        accountReader.read(credential, range.sinceMs, range.untilMs),
+      );
       if (
-        !checkedAccount &&
         base !== undefined &&
         result.accountKey !== null &&
         result.accountKey !== base.accountKey
       ) {
         caches.delete(credentialKey);
         cacheDirty = true;
-        checkedAccount = true;
         continue;
       }
-      checkedAccount = true;
+      const widthMs = range.untilMs - range.sinceMs;
       if (result.missing || result.error !== null || result.accountKey === null) {
-        // A large account's full history can outlast the read deadlines; try a narrower range.
-        span = Math.max(CURSOR_MIN_FETCH_SPAN_MS, (range.untilMs - range.sinceMs) / 2);
-        fetchSpans.set(credentialKey, span);
-        if (widened) {
-          // The span before widening just worked: keep going with it instead of failing.
-          widened = false;
-          widening = false;
+        if (result.rangeTooLarge === true && widthMs > CURSOR_MIN_FETCH_SPAN_MS) {
+          failedWidthMs = widthMs;
+          fetchSpans.set(credentialKey, Math.max(CURSOR_MIN_FETCH_SPAN_MS, widthMs / 2));
+          cacheDirty = true;
           continue;
         }
         failures.set(credentialKey, {
-          atMs: nowMs,
+          atMs: yield* Clock.currentTimeMillis,
           error: result.missing || result.error !== null ? result.error : CURSOR_ACCOUNT_READ_ERROR,
         });
-        yield* schedulePersist;
         return;
       }
       const merged = mergeCursorFetch(
@@ -163,16 +163,13 @@ const make = Effect.gen(function* () {
       caches.set(credentialKey, merged.cache);
       failures.delete(credentialKey);
       if (merged.changed) cacheDirty = true;
-      yield* schedulePersist;
-      if (merged.cache.sinceMs <= retentionStartMs && merged.cache.untilMs >= nowMs) break;
-      widened = widening && Number.isFinite(span);
-      if (widened) {
-        span *= 2;
-        fetchSpans.set(credentialKey, span);
+      // A clipped read says nothing about whether the full span would finish.
+      if (widthMs >= spanMs && spanMs * 2 < failedWidthMs) {
+        fetchSpans.set(credentialKey, spanMs * 2);
+        cacheDirty = true;
       }
     }
-    fetchSpans.delete(credentialKey);
-  }, refreshLock.withPermit);
+  }, Effect.ensuring(schedulePersist));
 
   const startRefresh = (
     credential: CursorCredentialSource,
@@ -216,29 +213,33 @@ const make = Effect.gen(function* () {
     yield* ensureLoaded;
     const credentialKey = `api-key:${Hex.encode(yield* digest.digest(Digest.sha256, new TextEncoder().encode(credential.apiKey)))}`;
     const nowMs = yield* Clock.currentTimeMillis;
-    const recentFailure = failures.get(credentialKey);
+    const needsRefresh = () => {
+      const failure = failures.get(credentialKey);
+      return (
+        (failure === undefined || nowMs - failure.atMs >= CURSOR_ACCOUNT_TTL_MS) &&
+        !isCursorCacheFresh(caches.get(credentialKey), nowMs, retentionStartMs)
+      );
+    };
     let refreshing = false;
-    if (
-      (recentFailure === undefined || nowMs - recentFailure.atMs >= CURSOR_ACCOUNT_TTL_MS) &&
-      !isCursorCacheFresh(caches.get(credentialKey), nowMs, retentionStartMs)
-    ) {
+    if (needsRefresh()) {
       const refresh = yield* startRefresh(credential, credentialKey, retentionStartMs);
       if (awaitRefresh) {
         yield* Deferred.await(refresh);
-        if (
-          !failures.has(credentialKey) &&
-          !isCursorCacheFresh(caches.get(credentialKey), nowMs, retentionStartMs)
-        ) {
-          const retry = yield* startRefresh(credential, credentialKey, retentionStartMs);
-          yield* Deferred.await(retry);
+        // The awaited refresh may have served a later retention start or stopped at its read cap.
+        if (needsRefresh()) {
+          yield* Deferred.await(yield* startRefresh(credential, credentialKey, retentionStartMs));
         }
       } else refreshing = true;
     }
 
     const cache = caches.get(credentialKey);
     const failure = refreshing ? undefined : failures.get(credentialKey);
-    const failureMessage = failure === undefined ? undefined : failure.error;
-    if (failureMessage === null) return null;
+    if (failure?.error === null) return null;
+    const failureMessage =
+      failure?.error ??
+      (refreshing || isCursorCacheFresh(cache, nowMs, retentionStartMs)
+        ? undefined
+        : CURSOR_ACCOUNT_LOADING);
     if (cache === undefined) {
       return {
         dir: "cursor-account",

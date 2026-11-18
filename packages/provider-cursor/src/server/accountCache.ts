@@ -22,43 +22,51 @@ interface CursorFetchRange {
   readonly untilMs: number;
 }
 
+/** A partial forward read leaves `untilMs` behind the time it ran, so it is not fresh. */
 export function isCursorCacheFresh(
   cache: CursorAccountCache | undefined,
   nowMs: number,
   retentionStartMs: number,
-): cache is CursorAccountCache {
+): boolean {
   return (
     cache !== undefined &&
     cache.sinceMs <= retentionStartMs &&
+    cache.untilMs >= cache.fetchedAtMs &&
     nowMs - cache.fetchedAtMs < CURSOR_ACCOUNT_TTL_MS
   );
 }
 
-/** Narrowest read a refresh falls back to after failed reads of wider ranges. */
-export const CURSOR_MIN_FETCH_SPAN_MS = 60 * 1000;
+/** Wider than the refetch overlap, so a forward read keeps all of it and still moves on. */
+export const CURSOR_MIN_FETCH_SPAN_MS = 2 * REFETCH_OVERLAP_MS;
+
+/** Reads one refresh may make; a refresh that stops short resumes from the cache next time. */
+export const CURSOR_MAX_READS_PER_REFRESH = 8;
 
 /**
- * The next range to read, at most `maxSpanMs` wide unless it only tops up a complete cache:
- * the newest history first, then older history down to the retention start.
+ * The next range to read, at most `maxSpanMs` wide, or null when the cache is complete: the newest
+ * history first, then forward to now, then older history down to the retention start. Every range
+ * touches a cache that still holds retained history, so a merge never drops it.
  */
 export function cursorFetchRange(
   cache: CursorAccountCache | undefined,
   retentionStartMs: number,
   nowMs: number,
-  maxSpanMs = Number.POSITIVE_INFINITY,
-): CursorFetchRange {
-  if (cache === undefined || cache.untilMs - REFETCH_OVERLAP_MS < retentionStartMs) {
+  maxSpanMs: number,
+): CursorFetchRange | null {
+  if (cache === undefined || cache.untilMs < retentionStartMs) {
     return { sinceMs: Math.max(retentionStartMs, nowMs - maxSpanMs), untilMs: nowMs };
   }
-  if (cache.untilMs < nowMs || cache.sinceMs <= retentionStartMs) {
-    // Overlap at most half the span so a narrow read still moves forward.
-    const sinceMs = cache.untilMs - Math.min(REFETCH_OVERLAP_MS, maxSpanMs / 2);
+  if (cache.untilMs < nowMs) {
+    const sinceMs = Math.max(retentionStartMs, cache.untilMs - REFETCH_OVERLAP_MS);
     return { sinceMs, untilMs: Math.min(nowMs, sinceMs + maxSpanMs) };
   }
-  return {
-    sinceMs: Math.max(retentionStartMs, cache.sinceMs - maxSpanMs),
-    untilMs: cache.sinceMs,
-  };
+  if (cache.sinceMs > retentionStartMs) {
+    return {
+      sinceMs: Math.max(retentionStartMs, cache.sinceMs - maxSpanMs),
+      untilMs: cache.sinceMs,
+    };
+  }
+  return null;
 }
 
 export function mergeCursorFetch(
@@ -84,24 +92,27 @@ export function mergeCursorFetch(
     if (inRange(record)) replacedKeys.add(record.dedupeKey);
     else if (record.timestampMs < retentionStartMs) pruned = true;
   }
-  const changed =
-    base === undefined ||
-    base.sinceMs > retentionStartMs ||
+  const recordsChanged =
     pruned ||
     replacedKeys.size !== added.length ||
     added.some((record) => !replacedKeys.has(record.dedupeKey));
   let records = previous;
-  if (changed) {
+  if (base === undefined || recordsChanged) {
     const kept = previous.filter(
       (record) => !inRange(record) && record.timestampMs >= retentionStartMs,
     );
     records = older ? added.concat(kept) : kept.concat(added);
   }
+  const sinceMs = Math.max(
+    retentionStartMs,
+    Math.min(base?.sinceMs ?? range.sinceMs, range.sinceMs),
+  );
   return {
-    changed,
+    // A newer `untilMs` alone is not worth a write: a cache that ends earlier only rereads more.
+    changed: base === undefined || recordsChanged || sinceMs !== base.sinceMs,
     cache: {
       accountKey,
-      sinceMs: Math.max(retentionStartMs, Math.min(base?.sinceMs ?? range.sinceMs, range.sinceMs)),
+      sinceMs,
       untilMs: older ? base.untilMs : range.untilMs,
       fetchedAtMs: nowMs,
       records,
@@ -131,9 +142,14 @@ interface SerializedAccount {
   readonly untilMs: number;
   readonly fetchedAtMs: number;
   readonly records: readonly SerializedRecord[];
+  /** Widest read learned to finish, so a backfill resumed after a restart need not relearn it. */
+  readonly spanMs?: number;
 }
 
-export function encodeCursorAccountCaches(caches: ReadonlyMap<string, CursorAccountCache>): string {
+export function encodeCursorAccountCaches(
+  caches: ReadonlyMap<string, CursorAccountCache>,
+  spans: ReadonlyMap<string, number>,
+): string {
   const strings: string[] = [];
   const indexes = new Map<string, number>();
   const intern = (value: string) => {
@@ -147,7 +163,9 @@ export function encodeCursorAccountCaches(caches: ReadonlyMap<string, CursorAcco
   };
   const accounts: Record<string, SerializedAccount> = {};
   for (const [credentialKey, cache] of caches) {
+    const spanMs = spans.get(credentialKey);
     accounts[credentialKey] = {
+      ...(spanMs === undefined ? {} : { spanMs }),
       accountKey: cache.accountKey,
       sinceMs: cache.sinceMs,
       untilMs: cache.untilMs,
@@ -172,9 +190,13 @@ const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
 /** Drop a malformed account whole; surviving records would leave gaps in a range marked complete. */
-export function decodeCursorAccountCaches(document: unknown): Map<string, CursorAccountCache> {
+export function decodeCursorAccountCaches(document: unknown): {
+  readonly caches: Map<string, CursorAccountCache>;
+  readonly spans: Map<string, number>;
+} {
   const caches = new Map<string, CursorAccountCache>();
-  if (typeof document !== "object" || document === null) return caches;
+  const spans = new Map<string, number>();
+  if (typeof document !== "object" || document === null) return { caches, spans };
   const root = document as {
     readonly version?: unknown;
     readonly strings?: unknown;
@@ -188,7 +210,7 @@ export function decodeCursorAccountCaches(document: unknown): Map<string, Cursor
     typeof root.accounts !== "object" ||
     root.accounts === null
   ) {
-    return caches;
+    return { caches, spans };
   }
   const stringAt = (index: unknown): string | undefined =>
     typeof index === "number" ? strings[index] : undefined;
@@ -266,6 +288,9 @@ export function decodeCursorAccountCaches(document: unknown): Map<string, Cursor
       fetchedAtMs: account.fetchedAtMs,
       records,
     });
+    if (isFiniteNumber(account.spanMs) && account.spanMs >= CURSOR_MIN_FETCH_SPAN_MS) {
+      spans.set(credentialKey, account.spanMs);
+    }
   }
-  return caches;
+  return { caches, spans };
 }
