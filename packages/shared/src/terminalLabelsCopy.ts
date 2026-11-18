@@ -11,16 +11,17 @@ export function getTerminalLabel(terminalId: string, resolve: MFunctionType = mF
 }
 
 /**
- * The server sends the running process name, or its English idle default, which is shown translated.
+ * The server sends the running process name, or its English default, which is shown translated.
+ * The default also arrives while a process runs whose name the server has not read yet.
  * @public
  */
 export function resolveTerminalSessionLabel(
   terminalId: string,
-  summary: Pick<TerminalSummary, "label" | "hasRunningSubprocess"> | null | undefined,
+  summary: Pick<TerminalSummary, "label"> | null | undefined,
   resolve: MFunctionType = mFallback,
 ): string {
   const trimmed = summary?.label.trim();
-  const isIdleDefault =
-    !summary?.hasRunningSubprocess && trimmed === getServerTerminalLabel(terminalId);
-  return trimmed && !isIdleDefault ? trimmed : getTerminalLabel(terminalId, resolve);
+  return trimmed && trimmed !== getServerTerminalLabel(terminalId)
+    ? trimmed
+    : getTerminalLabel(terminalId, resolve);
 }
