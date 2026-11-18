@@ -143,10 +143,11 @@ const make = Effect.gen(function* () {
       if (result.missing || result.error !== null || result.accountKey === null) {
         if (result.rangeTooLarge === true && widthMs > CURSOR_MIN_FETCH_SPAN_MS) {
           failedWidthMs = widthMs;
-          // Whole milliseconds: Cursor's dashboard rejects a fractional date.
+          // A read that runs out of time costs a minute, so narrow hard; finished reads widen
+          // back. Whole milliseconds: Cursor's dashboard rejects a fractional date.
           fetchSpans.set(
             credentialKey,
-            Math.max(CURSOR_MIN_FETCH_SPAN_MS, Math.floor(widthMs / 2)),
+            Math.max(CURSOR_MIN_FETCH_SPAN_MS, Math.floor(widthMs / 8)),
           );
           cacheDirty = true;
           continue;
@@ -252,9 +253,7 @@ const make = Effect.gen(function* () {
         dir: "cursor-account",
         ...(refreshing
           ? { files: [], refreshing: true }
-          : failure === undefined
-            ? { files: [], status: "partial", message: CURSOR_ACCOUNT_LOADING }
-            : { files: null, message: failure.error ?? CURSOR_ACCOUNT_READ_ERROR }),
+          : { files: null, message: failure?.error ?? CURSOR_ACCOUNT_READ_ERROR }),
       } satisfies ProviderUsageScan;
     }
     // Account history spans machines; a stable fingerprint prevents duplicate environment counts.
