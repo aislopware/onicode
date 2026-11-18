@@ -1916,13 +1916,29 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       ),
   );
 
-  // regression: #38541 an MCP app note that changes mid-turn reaches the next steer, once.
-  it.effect("steers carry MCP app notes Codex has not been sent", () =>
+  // regression: #38541 an MCP app note that changes mid-turn reaches the next steer.
+  // Codex replaces its keyed context with each steer's, so a note the app cleared must not
+  // come back when Onicode restores the context after compaction.
+  it.effect("steers carry MCP app notes as Codex's keyed context", () =>
     Effect.gen(function* () {
       const nativeThreadId = "steer-app-context-thread";
       const nativeTurnId = "steer-app-context-turn";
-      const note = "<external_mcp_app_item-1>Pressed: blue</external_mcp_app_item-1>";
-      const steerFrame = (id: number, input: ReadonlyArray<string>) =>
+      const startParams = yield* CodexAdapterV2.buildCodexTurnStartParams({
+        nativeThreadId,
+        codexInput: [{ type: "text", text: "Work." }],
+        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        modelSelection: CODEX_TEST_MODEL_SELECTION,
+        hasOniMcp: true,
+      });
+      const oniContext = startParams.additionalContext ?? {};
+      const note = (key: string, value: string) => ({
+        [`mcp_app_${key}`]: { kind: "untrusted" as const, value },
+      });
+      const steerFrame = (
+        id: number,
+        text: string,
+        additionalContext: NonNullable<typeof startParams.additionalContext>,
+      ) =>
         [
           {
             type: "expect_outbound",
@@ -1933,19 +1949,65 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               params: {
                 threadId: nativeThreadId,
                 expectedTurnId: nativeTurnId,
-                input: input.map((text) => ({ type: "text", text })),
+                input: [{ type: "text", text }],
+                additionalContext,
               },
             },
           },
           { type: "emit_inbound", frame: { id, result: { turnId: nativeTurnId } } },
         ] as const;
+      const restored = {
+        threadId: nativeThreadId,
+        items: Object.entries({ ...oniContext, ...note("item-2", "Draft saved") }).map(
+          ([key, entry]) =>
+            entry.kind === "untrusted"
+              ? {
+                  type: "message",
+                  role: "user",
+                  content: [
+                    {
+                      type: "input_text",
+                      text: `<external_${key}>${entry.value}</external_${key}>`,
+                    },
+                  ],
+                }
+              : {
+                  type: "message",
+                  role: "developer",
+                  content: [{ type: "input_text", text: `<${key}>${entry.value}</${key}>` }],
+                },
+        ),
+      };
+      const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "Work." });
+      const restoreRequested = yield* Deferred.make<unknown>();
       const harness = yield* makeCodexReplayHarness(
         makeCodexReplayTranscript({
           scenario: "steer-app-context",
           entries: [
-            ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "Work." }),
-            ...steerFrame(4, [note, "What did the app report?"]),
-            ...steerFrame(5, ["And now?"]),
+            ...entries.slice(0, 5),
+            {
+              type: "expect_outbound",
+              label: "turn/start",
+              frame: { id: 3, method: "turn/start", params: startParams },
+            },
+            ...entries.slice(6),
+            ...steerFrame(4, "What did the app report?", {
+              ...oniContext,
+              ...note("item-1", "Pressed: blue"),
+              ...note("item-2", "Draft saved"),
+            }),
+            ...steerFrame(5, "And now?", { ...oniContext, ...note("item-2", "Draft saved") }),
+            {
+              type: "emit_inbound",
+              frame: {
+                method: "item/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turnId: nativeTurnId,
+                  item: { type: "contextCompaction", id: "steer-app-context-compact" },
+                },
+              },
+            },
             {
               type: "emit_inbound",
               frame: {
@@ -1956,9 +2018,29 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 },
               },
             },
+            {
+              type: "expect_outbound",
+              label: "restore context",
+              frame: { id: 6, method: "thread/inject_items", params: restored },
+            },
+            { type: "emit_inbound", frame: { id: 6, result: {} } },
           ],
         }),
+        undefined,
+        (method, params) =>
+          method === "thread/inject_items"
+            ? Deferred.succeed(restoreRequested, params).pipe(Effect.asVoid)
+            : Effect.void,
       );
+      yield* (yield* McpProviderSessions.McpProviderSessions).set({
+        environmentId: EnvironmentId.make("test"),
+        threadId: harness.threadId,
+        providerSessionId: "steer-app-context-session",
+        providerInstanceId: ProviderInstanceId.make("codex"),
+        endpoint: "http://127.0.0.1:43123/mcp",
+        authorizationHeader: "Bearer test",
+        browserToolsAvailable: true,
+      });
       const turnInput = makeCodexTestTurnInput({
         threadId: harness.threadId,
         providerThread: harness.providerThread,
@@ -1979,21 +2061,25 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       )[0];
       assert.isDefined(providerTurnId);
       if (providerTurnId === undefined) return;
-      const appContext = [{ key: "mcp_app_item-1", text: "Pressed: blue" }];
       yield* harness.runtime.steerTurn({
         ...turnInput,
         providerTurnId,
-        appContext,
+        appContext: [
+          { key: "mcp_app_item-1", text: "Pressed: blue" },
+          { key: "mcp_app_item-2", text: "Draft saved" },
+        ],
         message: { ...turnInput.message, text: "What did the app report?" },
       });
+      // The app cleared item-1's note.
       yield* harness.runtime.steerTurn({
         ...turnInput,
         providerTurnId,
-        appContext,
+        appContext: [{ key: "mcp_app_item-2", text: "Draft saved" }],
         message: { ...turnInput.message, text: "And now?" },
       });
       yield* harness.firstTerminal;
       assert.equal(harness.terminalEvents()[0]?.status, "completed");
+      assert.deepEqual(yield* Deferred.await(restoreRequested), restored);
     }).pipe(
       Effect.scoped,
       Effect.provide(

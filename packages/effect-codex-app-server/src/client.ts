@@ -97,6 +97,15 @@ export const V2TurnStartParams = CodexSchema.V2TurnStartParams.pipe(
   }),
 );
 
+/** The generated `turn/steer` schema omits the experimental `additionalContext`. */
+export const V2TurnSteerParams = CodexSchema.V2TurnSteerParams.pipe(
+  Schema.fieldsAssign({
+    additionalContext: Schema.optionalKey(
+      Schema.Record(Schema.String, CodexSchema.V2TurnSteerParams__AdditionalContextEntry),
+    ),
+  }),
+);
+
 export const make = Effect.fn("effect-codex-app-server/CodexAppServerClient.make")(function* (
   stdio: Stdio.Stdio,
   options: CodexAppServerClientOptions = {},
@@ -134,7 +143,9 @@ export const make = Effect.fn("effect-codex-app-server/CodexAppServerClient.make
     | undefined =>
     method === "turn/start"
       ? (V2TurnStartParams as never)
-      : (CodexRpc.CLIENT_REQUEST_PARAMS[method] as never);
+      : method === "turn/steer"
+        ? (V2TurnSteerParams as never)
+        : (CodexRpc.CLIENT_REQUEST_PARAMS[method] as never);
 
   const getClientRequestResponseSchema = <M extends CodexRpc.ClientRequestMethod>(
     method: M,

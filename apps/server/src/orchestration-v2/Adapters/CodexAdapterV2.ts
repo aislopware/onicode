@@ -796,6 +796,14 @@ function codexCyberAccess(
   return descriptor?.type === "select" ? { defaultProgram: descriptor.currentValue } : undefined;
 }
 
+// MCP-written app context must be quoted user input, not developer instructions.
+const codexAppContext = (
+  appContext: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"],
+): NonNullable<CodexTurnStartParams["additionalContext"]> =>
+  Object.fromEntries(
+    (appContext ?? []).map((entry) => [entry.key, { kind: "untrusted", value: entry.text }]),
+  );
+
 export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTurnStartParams")(
   function* (input: {
     readonly nativeThreadId: string;
@@ -839,13 +847,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             getModelSelectionStringOptionValue(input.modelSelection, "cyberAccessProgram"),
             input.cyberAccess.defaultProgram,
           ].find(isCodexCyberAccessProgram);
-    // MCP-written app context must be quoted user input, not developer instructions.
-    const appContext = Object.fromEntries(
-      (input.appContext ?? []).map((entry) => [
-        entry.key,
-        { kind: "untrusted" as const, value: entry.text },
-      ]),
-    );
+    const appContext = codexAppContext(input.appContext);
     const oniContext =
       input.hasOniMcp === true
         ? buildCodexAdditionalContext(
@@ -8162,38 +8164,29 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
               yield* applyServiceTier(threadId, turnInput.modelSelection);
               const codexInput = yield* toCodexInput(turnInput);
-              // turn/steer takes no additionalContext, so notes the thread has not been sent go
-              // as quoted user input, the way restoreAdditionalContext resends them.
-              const sentContext = (yield* Ref.get(additionalContextByThread)).get(threadId);
-              const unsentNotes = (turnInput.appContext ?? []).filter(
-                (entry) => sentContext?.[entry.key]?.value !== entry.text,
-              );
-              yield* client.request("turn/steer", {
+              // Codex replaces its keyed context with each steer's, so the steer carries the
+              // turn's Onicode entries again next to the thread's current app notes.
+              const sentContext = (yield* Ref.get(additionalContextByThread)).get(threadId) ?? {};
+              const additionalContext = {
+                ...Object.fromEntries(
+                  Object.entries(sentContext).filter(([, entry]) => entry.kind === "application"),
+                ),
+                ...codexAppContext(turnInput.appContext),
+              };
+              const hasContext = Object.keys(additionalContext).length > 0;
+              const steerParams: typeof CodexClient.V2TurnSteerParams.Type = {
                 expectedTurnId: activeTurn.nativeTurnId,
-                input: [
-                  ...unsentNotes.map((entry) => ({
-                    type: "text" as const,
-                    text: `<external_${entry.key}>${entry.text}</external_${entry.key}>`,
-                  })),
-                  ...codexInput,
-                ],
+                input: codexInput,
                 threadId,
+                ...(hasContext ? { additionalContext } : {}),
+              };
+              yield* client.request("turn/steer", steerParams);
+              yield* Ref.update(additionalContextByThread, (current) => {
+                const next = new Map(current);
+                if (hasContext) next.set(threadId, additionalContext);
+                else next.delete(threadId);
+                return next;
               });
-              if (unsentNotes.length > 0) {
-                yield* Ref.update(additionalContextByThread, (current) => {
-                  const next = new Map(current);
-                  next.set(threadId, {
-                    ...current.get(threadId),
-                    ...Object.fromEntries(
-                      unsentNotes.map((entry) => [
-                        entry.key,
-                        { kind: "untrusted" as const, value: entry.text },
-                      ]),
-                    ),
-                  });
-                  return next;
-                });
-              }
             },
             (effect, turnInput) =>
               effect.pipe(
