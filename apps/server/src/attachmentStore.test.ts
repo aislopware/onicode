@@ -134,17 +134,26 @@ describe("attachmentStore", () => {
       const pendingPath = NodePath.join(attachmentsDir, `pending-${uuid}.png`);
       const pendingFilePath = NodePath.join(attachmentsDir, `pending-${uuid}-pdf.pdf`);
       const sidecarPath = `${pendingFilePath}.txt`;
+      const versionedSidecarPath = `${pendingFilePath}.v2.txt`;
       const threadPath = NodePath.join(attachmentsDir, `thread-1-${uuid}.png`);
       const partialPath = NodePath.join(attachmentsDir, `${uuid}.part`);
-      for (const filePath of [pendingPath, pendingFilePath, sidecarPath, threadPath, partialPath]) {
+      for (const filePath of [
+        pendingPath,
+        pendingFilePath,
+        sidecarPath,
+        versionedSidecarPath,
+        threadPath,
+        partialPath,
+      ]) {
         NodeFS.writeFileSync(filePath, Buffer.from("pixels"));
         NodeFS.utimesSync(filePath, oldTimeSeconds, oldTimeSeconds);
       }
 
-      expect(sweepStalePendingAttachments({ attachmentsDir, nowMs: now })).toEqual({ deleted: 4 });
+      expect(sweepStalePendingAttachments({ attachmentsDir, nowMs: now })).toEqual({ deleted: 5 });
       expect(NodeFS.existsSync(pendingPath)).toBe(false);
       expect(NodeFS.existsSync(pendingFilePath)).toBe(false);
       expect(NodeFS.existsSync(sidecarPath)).toBe(false);
+      expect(NodeFS.existsSync(versionedSidecarPath)).toBe(false);
       expect(NodeFS.existsSync(partialPath)).toBe(false);
       expect(NodeFS.existsSync(threadPath)).toBe(true);
     } finally {

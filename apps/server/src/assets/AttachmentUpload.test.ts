@@ -105,7 +105,9 @@ describe("AttachmentUpload", () => {
         expect(yield* store(claims, bytes)).toEqual({ ok: true });
         expect(yield* store(claims, bytes)).toEqual({ ok: true });
         const path = NodePath.join(config.attachmentsDir, `${issued.attachmentId}.ipynb`);
-        expect(NodeFS.readFileSync(`${path}.txt`, "utf8")).toContain("Violet crates: 19");
+        expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toContain(
+          "Violet crates: 19",
+        );
         const replacement = new TextEncoder().encode(
           new TextDecoder().decode(bytes).replace("Violet crates: 19", "Violet crates: 28"),
         );
@@ -114,7 +116,9 @@ describe("AttachmentUpload", () => {
           status: 409,
         });
         expect(NodeFS.readFileSync(path)).toEqual(Buffer.from(bytes));
-        expect(NodeFS.readFileSync(`${path}.txt`, "utf8")).toContain("Violet crates: 19");
+        expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toContain(
+          "Violet crates: 19",
+        );
         const claimed = yield* claimPendingAttachments({
           threadId: "document-thread",
           attachments: [
@@ -133,7 +137,7 @@ describe("AttachmentUpload", () => {
         );
         yield* deletePendingAttachment(issued.attachmentId);
         expect(NodeFS.existsSync(path)).toBe(false);
-        expect(NodeFS.existsSync(`${path}.txt`)).toBe(false);
+        expect(NodeFS.existsSync(DocumentText.extractedTextPath(path))).toBe(false);
         expect(NodeFS.existsSync(claimed.claimedPaths[1]!)).toBe(true);
         yield* releaseClaimedAttachments(claimed.claimedPaths);
         expect(NodeFS.existsSync(claimed.claimedPaths[1]!)).toBe(false);

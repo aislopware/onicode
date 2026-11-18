@@ -53,7 +53,11 @@ export const releaseClaimedAttachments = Effect.fn("AttachmentClaims.releaseClai
           .remove(path)
           .pipe(
             Effect.ignore,
-            Effect.andThen(fileSystem.remove(`${path}.txt`, { force: true }).pipe(Effect.ignore)),
+            Effect.andThen(
+              Effect.forEach(DocumentText.extractedTextPaths(path), (sidecar) =>
+                fileSystem.remove(sidecar, { force: true }).pipe(Effect.ignore),
+              ),
+            ),
           ),
       {
         concurrency: 1,
@@ -149,12 +153,13 @@ export const claimPendingAttachments = Effect.fn("AttachmentClaims.claimPendingA
             Effect.andThen(Effect.sync(() => claimedPaths.push(claim.finalPath))),
             Effect.uninterruptible,
           );
-          const sidecar = `${claim.currentPath}.txt`;
+          const sidecar = DocumentText.extractedTextPath(claim.currentPath);
+          const claimedSidecar = DocumentText.extractedTextPath(claim.finalPath);
           if (yield* fileSystem.exists(sidecar).pipe(Effect.orElseSucceed(() => false))) {
-            yield* fileSystem.copyFile(sidecar, `${claim.finalPath}.txt`).pipe(
-              Effect.andThen(Effect.sync(() => claimedPaths.push(`${claim.finalPath}.txt`))),
+            yield* fileSystem.copyFile(sidecar, claimedSidecar).pipe(
+              Effect.andThen(Effect.sync(() => claimedPaths.push(claimedSidecar))),
               Effect.onError(() =>
-                fileSystem.remove(`${claim.finalPath}.txt`, { force: true }).pipe(Effect.ignore),
+                fileSystem.remove(claimedSidecar, { force: true }).pipe(Effect.ignore),
               ),
               Effect.uninterruptible,
               Effect.ignore,

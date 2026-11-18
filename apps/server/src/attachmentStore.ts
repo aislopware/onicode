@@ -275,8 +275,9 @@ export function sweepStalePendingAttachments(input: {
   for (const entry of entries) {
     const isPartial = entry.endsWith(".part");
     if (!isPartial) {
+      // Extracted text sidecars are `<file>.txt` or `<file>.v<version>.txt`.
       const attachmentId = parseAttachmentIdFromRelativePath(
-        entry.endsWith(".txt") && entry.slice(0, -4).includes(".") ? entry.slice(0, -4) : entry,
+        entry.replace(/^([^.]+\.[^.]+)(?:\.v\d+)?\.txt$/, "$1"),
       );
       if (
         !attachmentId ||

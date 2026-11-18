@@ -3290,6 +3290,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   readonly uuid?: SDKUserMessage["uuid"];
   readonly attachmentsDir: string;
   readonly fileSystem: FileSystem.FileSystem;
+  readonly resolveExtractedTextPath: (path: string) => Effect.Effect<string | undefined>;
   readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
   readonly skillMentionsFrom?: number;
@@ -3313,10 +3314,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   const textWithAttachmentPaths = yield* providerMessageTextWithAttachmentPaths({
     text: input.text,
     attachments: input.attachments,
-    resolveExtractedTextPath: (path) =>
-      DocumentText.resolveExtractedTextPath(path).pipe(
-        Effect.provideService(FileSystem.FileSystem, input.fileSystem),
-      ),
+    resolveExtractedTextPath: input.resolveExtractedTextPath,
     resolveAttachmentPath: (attachment) =>
       resolveAttachmentPath({ attachmentsDir: input.attachmentsDir, attachment }),
   });
@@ -5903,6 +5901,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
   const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
+  const resolveExtractedTextPath = yield* DocumentText.turnTextResolver.pipe(
+    Effect.provideService(FileSystem.FileSystem, adapterOptions.fileSystem),
+  );
   const { attachmentsDir, fileSystem, path, random, idAllocator, queryRunner } = adapterOptions;
   const loadModelCatalog = (
     adapterOptions.modelCatalog ?? Effect.succeed(BUNDLED_CLAUDE_MODEL_CATALOG)
@@ -13800,6 +13801,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       attachments: turnInput.message.attachments,
                       attachmentsDir,
                       fileSystem,
+                      resolveExtractedTextPath,
                       pdfReservation,
                       ...(skills === undefined ? {} : { skills }),
                       uuid: promptUuid,
@@ -14358,6 +14360,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               uuid: steerUuid,
               attachmentsDir,
               fileSystem,
+              resolveExtractedTextPath,
               pdfReservation,
               skills: yield* userInvocableSkills(currentTurn.input.runtimePolicy.cwd),
             }).pipe(
