@@ -239,7 +239,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
       : scopedProjectKey(projectRef);
     // Matches lag the location during a navigation, so compare against the location.
-    const resultIfAbandoned = () => {
+    const resultIfAbandoned = (envMode: DraftThreadEnvMode) => {
       if (options?.acceptOpenedMeanwhile !== true) return null;
       const draft = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       if (draft === null || draft.promotedTo != null || readProject(projectRef) === null) {
@@ -255,13 +255,29 @@ export function createNewThreadHandler(router: AnyRouter) {
         draft.environmentId !== projectRef.environmentId ||
         draft.projectId !== projectRef.projectId
       ) {
-        if (composerDraftHasUserContent(getComposerDraft(draft.draftId))) return null;
+        const composerDraft = getComposerDraft(draft.draftId);
+        if (composerDraftHasUserContent(composerDraft)) return null;
+        // The other machine's defaults do not apply here.
         setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draft.draftId, {
           threadId: draft.threadId,
           createdAt: draft.createdAt,
-          runtimeMode: draft.runtimeMode,
+          branch: null,
+          worktreePath: null,
+          envMode,
+          startFromOrigin: resolveNewDraftStartFromOrigin({
+            envMode,
+            newWorktreesStartFromOrigin: projectSettings.settings.newWorktreesStartFromOrigin,
+          }),
+          runtimeMode: defaultRuntimeMode,
           interactionMode: draft.interactionMode,
         });
+        if (!hasExplicitComposerModelSelection(composerDraft)) {
+          applyStickyState(draft.draftId);
+          const modelSelectionOverride = resolveModelSelectionOverride(draft.draftId);
+          if (modelSelectionOverride) {
+            setModelSelection(draft.draftId, modelSelectionOverride, { replaceOptions: true });
+          }
+        }
       }
       return { draftId: draft.draftId, threadId: draft.threadId };
     };
@@ -306,7 +322,7 @@ export function createNewThreadHandler(router: AnyRouter) {
         } else if (!isDraftAlreadyOpen) {
           const defaultEnvMode = await resolveDefaultEnvMode();
           if (abandonedSinceRequest()) {
-            return resultIfAbandoned();
+            return resultIfAbandoned(defaultEnvMode);
           }
           // Concurrent calls may change the draft; stale resets, remaps, or navigation could clobber it.
           const routeTargetNow = getCurrentRouteTarget();
@@ -422,7 +438,7 @@ export function createNewThreadHandler(router: AnyRouter) {
     return (async () => {
       const initialEnvMode = options?.envMode ?? (await resolveDefaultEnvMode());
       if (abandonedSinceRequest()) {
-        return resultIfAbandoned();
+        return resultIfAbandoned(initialEnvMode);
       }
       // Reuse drafts registered while awaiting so their pending navigation cannot lose them.
       const racedDraft = getDraftSessionByLogicalProjectKey(logicalProjectKey);

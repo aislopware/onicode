@@ -349,7 +349,14 @@ describe.each([
         "remote-project",
         projectRef,
         "draft-home",
-        expect.objectContaining({ threadId: "thread-home" }),
+        expect.objectContaining({
+          threadId: "thread-home",
+          branch: null,
+          worktreePath: null,
+          envMode: "local",
+          startFromOrigin: false,
+          runtimeMode: "full-access",
+        }),
       );
     } else {
       expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();

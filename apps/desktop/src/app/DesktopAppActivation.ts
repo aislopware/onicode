@@ -356,7 +356,7 @@ export const make = Effect.gen(function* () {
     ).pipe(Effect.asVoid),
     setRendererReady: Effect.fn("DesktopAppActivation.setRendererReady")(function* (ready) {
       if (!ready) {
-        clearRegisteredRenderer();
+        broker.pauseRenderer();
         return;
       }
       const main = yield* electronWindow.main;

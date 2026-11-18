@@ -81,6 +81,11 @@ export class DesktopAppActivationBroker {
     this.#flush();
   }
 
+  /** Holds new requests; one already sent can still complete, since its page is still loaded. */
+  pauseRenderer(): void {
+    this.#renderer = null;
+  }
+
   clearRenderer(): void {
     this.#renderer = null;
     for (const pending of this.#pending.values()) {
