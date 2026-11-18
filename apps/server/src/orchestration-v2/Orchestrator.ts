@@ -735,6 +735,7 @@ function hasTitleSetBeforeFirstMessage(
   titleSeed: string | undefined,
 ): boolean {
   if (thread.titleRenamed === true) return true;
+  if (thread.generatedTitle != null) return false;
   const title = thread.title.trim();
   return (
     thread.forkedFrom === null &&

@@ -2241,6 +2241,23 @@ layer("ProviderEventIngestorV2", (it) => {
       const confirmed = yield* projectionStore.getThread(childThreadId);
       assert.isTrue(confirmed.titleRenamed);
       assert.isNull(confirmed.generatedTitle);
+      // Older servers could leave a rename with generator state; renaming natively clears it.
+      yield* eventSink.write({
+        events: [
+          {
+            ...rootEvent,
+            id: yield* idAllocator.allocate.event({ threadId: childThreadId }),
+            threadId: childThreadId,
+            type: "thread.metadata-updated",
+            payload: {
+              ...confirmed,
+              generatedTitle: { needsRefinement: true, refinements: 0, coveredAt: null },
+            },
+          },
+        ],
+      });
+      yield* rename("Generated name");
+      assert.isNull((yield* projectionStore.getThread(childThreadId)).generatedTitle);
     }),
   );
 

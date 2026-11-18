@@ -54,7 +54,12 @@ export class ThreadTitleRegenerationService extends Context.Service<
 
 type Outcome =
   | { readonly status: "renamed"; readonly title: string; readonly needsRefinement: boolean }
-  | { readonly status: "unchanged"; readonly needsRefinement: boolean }
+  | {
+      readonly status: "unchanged";
+      /** The title the generator read and kept, restored over a label that landed meanwhile. */
+      readonly title: string;
+      readonly needsRefinement: boolean;
+    }
   | { readonly status: "failed"; readonly message: string };
 
 const MAX_FAILURE_MESSAGE_LENGTH = 300;
@@ -95,7 +100,7 @@ const make = Effect.gen(function* () {
         commandId: CommandId.make(`${input.requestId}:title-complete`),
         threadId: input.threadId,
         requestId: input.requestId,
-        ...(input.outcome.status === "renamed" ? { title: input.outcome.title } : {}),
+        ...(input.outcome.status === "failed" ? {} : { title: input.outcome.title }),
         ...(input.outcome.status === "failed"
           ? {}
           : {
@@ -246,7 +251,7 @@ const make = Effect.gen(function* () {
         result.needsRefinement === true || generatedTitle === NEW_THREAD_TITLE;
       return generatedTitle === NEW_THREAD_TITLE ||
         (input.kind.type !== "initial" && generatedTitle === projection.thread.title.trim())
-        ? { status: "unchanged" as const, needsRefinement }
+        ? { status: "unchanged" as const, title: projection.thread.title, needsRefinement }
         : { status: "renamed" as const, title: result.title, needsRefinement };
     }).pipe(
       Effect.retry({

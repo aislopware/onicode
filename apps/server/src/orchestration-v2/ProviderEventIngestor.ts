@@ -475,6 +475,7 @@ export const layer: Layer.Layer<
                 rename &&
                 (existing.title !== input.event.appThread.title ||
                   existing.titleRenamed !== true ||
+                  existing.generatedTitle != null ||
                   existing.titleRegeneration != null);
               const offered =
                 existing === null

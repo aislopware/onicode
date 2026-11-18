@@ -459,6 +459,24 @@ describe("ThreadTitleRegenerationService", () => {
         const titled = yield* fork("titled", "Release checklist");
         // A client names a fork after the thread on screen, which can lag behind the source.
         const clientTitled = yield* fork("client-titled", "Seed title fork", "user");
+        // A title generated from only a `/compact` is the generator's, not a name to keep.
+        const generatedAfterCompact = yield* createThread({
+          command: `${prefix}:generated-after-compact:create`,
+          thread: `${prefix}:generated-after-compact`,
+        });
+        yield* dispatchUserMessage({
+          command: `${prefix}:generated-after-compact:compact`,
+          threadId: generatedAfterCompact,
+          text: "/compact",
+        });
+        yield* titleRegeneration.execute({
+          threadId: generatedAfterCompact,
+          requestId: yield* armRegeneration({
+            command: `${prefix}:generated-after-compact:regenerate`,
+            threadId: generatedAfterCompact,
+          }),
+          kind: { type: "regenerate" },
+        });
         const compacted = yield* fork("compacted");
         yield* rename("compacted", compacted, "Storage migration notes");
         yield* dispatchUserMessage({
@@ -475,6 +493,7 @@ describe("ThreadTitleRegenerationService", () => {
           ["titled by the agent that forked it", titled, "Release checklist", false],
           ["titled by a client", clientTitled, seed, true],
           ["renamed, then compacted", compacted, "Storage migration notes", false],
+          ["generated after a /compact", generatedAfterCompact, seed, true],
         ] as const) {
           const requestId = CommandId.make(`${prefix}:${key}:message`);
           yield* threads.dispatch({
@@ -953,37 +972,62 @@ describe("ThreadTitleRegenerationService", () => {
     }),
   );
 
-  it.effect("records an unchanged outcome when the model keeps the current title", () =>
-    Effect.gen(function* () {
-      const harness = makeHarness({
-        generateTitle: () => Effect.succeed({ title: "Seed title" }),
-      });
-      yield* Effect.gen(function* () {
-        const threads = yield* ThreadManagement.ThreadManagementService;
-        const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
-        const threadId = yield* createThread({
-          command: "command:title:unchanged:create",
-          thread: "thread:title:unchanged",
+  // "New thread" is the model saying it has nothing better to name the thread by.
+  it.effect.each(["Seed title", "New thread"] as const)(
+    "records an unchanged outcome when the model answers %s",
+    (answer) =>
+      Effect.gen(function* () {
+        let duringGeneration: Effect.Effect<void> = Effect.void;
+        const harness = makeHarness({
+          generateTitle: () =>
+            Effect.suspend(() => duringGeneration).pipe(Effect.as({ title: answer })),
         });
-        yield* dispatchUserMessage({
-          command: "command:title:unchanged:message",
-          threadId,
-          text: "Some conversation",
-        });
-        const requestId = yield* armRegeneration({
-          command: "command:title:unchanged:1",
-          threadId,
-        });
+        yield* Effect.gen(function* () {
+          const threads = yield* ThreadManagement.ThreadManagementService;
+          const eventSink = yield* EventSink.EventSinkV2;
+          const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+          const threadId = yield* createThread({
+            command: "command:title:unchanged:create",
+            thread: "thread:title:unchanged",
+          });
+          yield* dispatchUserMessage({
+            command: "command:title:unchanged:message",
+            threadId,
+            text: "Some conversation",
+          });
+          const requestId = yield* armRegeneration({
+            command: "command:title:unchanged:1",
+            threadId,
+          });
+          // A provider relabels the thread while the generator reads the old title.
+          const { thread } = yield* threads.getThreadProjection(threadId);
+          const now = yield* DateTime.now;
+          duringGeneration = eventSink
+            .write({
+              events: [
+                {
+                  id: EventId.make("event:title:unchanged:relabel"),
+                  type: "thread.metadata-updated",
+                  threadId,
+                  occurredAt: now,
+                  payload: { ...thread, title: "Provider label" },
+                },
+              ],
+            })
+            .pipe(Effect.asVoid, Effect.orDie);
 
-        yield* titleRegeneration.execute({ threadId, requestId, kind: { type: "regenerate" } });
+          yield* titleRegeneration.execute({ threadId, requestId, kind: { type: "regenerate" } });
 
-        const projection = yield* threads.getThreadProjection(threadId);
-        assert.deepInclude(projection.thread.lastTitleRegeneration, {
-          requestId,
-          status: "unchanged",
-        });
-      }).pipe(Effect.provide(harness.layer));
-    }),
+          const projection = yield* threads.getThreadProjection(threadId);
+          assert.deepInclude(projection.thread.lastTitleRegeneration, {
+            requestId,
+            status: "unchanged",
+          });
+          // The generator kept the title it read, so that title is the one it now owns.
+          assert.equal(projection.thread.title, "Seed title");
+          assert.isNotNull(projection.thread.generatedTitle);
+        }).pipe(Effect.provide(harness.layer));
+      }),
   );
 
   it.effect("refreshes a generated title from the thread until it is renamed by hand", () =>
