@@ -408,7 +408,7 @@ describe("OpenCodeAdapterV2", () => {
   );
 
   it.effect.each([false, true])(
-    "adds the computer MCP server beside Onicode's own unless the server is external (%s)",
+    "adds the stdio MCP servers beside Onicode's own unless the server is external (%s)",
     (external) =>
       Effect.gen(function* () {
         const instanceId = ProviderInstanceId.make("opencode-computer-mcp");
@@ -422,6 +422,7 @@ describe("OpenCodeAdapterV2", () => {
           authorizationHeader: "Bearer opencode-token",
           browserToolsAvailable: true,
           computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+          browserMcpServer: { command: "obu", args: ["mcp"], env: {} },
         });
         const added: Array<unknown> = [];
         const events = asyncEventStream();
@@ -480,6 +481,10 @@ describe("OpenCodeAdapterV2", () => {
                     command: ["cua-driver", "mcp"],
                     environment: { CUA: "1" },
                   },
+                },
+                {
+                  name: "browser",
+                  config: { type: "local", command: ["obu", "mcp"], environment: {} },
                 },
               ],
         );

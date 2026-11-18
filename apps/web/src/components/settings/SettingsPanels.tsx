@@ -449,6 +449,15 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess
       ? ["Agent browser access"]
       : []),
+    ...(settings.enableAgentBrowserUse !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserUse
+      ? ["Agents browse with obu"]
+      : []),
+    ...(settings.agentBrowserUseTarget !== DEFAULT_UNIFIED_SETTINGS.agentBrowserUseTarget
+      ? ["Browser obu drives"]
+      : []),
+    ...(settings.agentBrowserUsePort !== DEFAULT_UNIFIED_SETTINGS.agentBrowserUsePort
+      ? ["Browser debug port"]
+      : []),
     ...(settings.remoteDesktopHostEnabled !== DEFAULT_UNIFIED_SETTINGS.remoteDesktopHostEnabled
       ? ["Share this screen"]
       : []),
@@ -579,6 +588,9 @@ export function useSettingsRestore(onRestored?: () => void) {
       browserAutoShowFloatingPreview: DEFAULT_UNIFIED_SETTINGS.browserAutoShowFloatingPreview,
       pullRequestLinksOpenInApp: DEFAULT_UNIFIED_SETTINGS.pullRequestLinksOpenInApp,
       enableAgentBrowserAccess: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess,
+      enableAgentBrowserUse: DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserUse,
+      agentBrowserUseTarget: DEFAULT_UNIFIED_SETTINGS.agentBrowserUseTarget,
+      agentBrowserUsePort: DEFAULT_UNIFIED_SETTINGS.agentBrowserUsePort,
       remoteDesktopHostEnabled: DEFAULT_UNIFIED_SETTINGS.remoteDesktopHostEnabled,
     });
     onRestored?.();

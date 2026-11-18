@@ -2,11 +2,14 @@ import { tokenizeCliArgs } from "@onicode/shared/cliArgs";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 
-import type { McpProviderSessionConfig } from "@onicode/provider-core/server/mcpSession";
+import {
+  stdioMcpServers,
+  type McpProviderSessionConfig,
+} from "@onicode/provider-core/server/mcpSession";
 import {
   PI_ONI_MCP_EXTENSION_FILENAME,
   PI_ONI_MCP_EXTENSION_SOURCE,
-  ONICODE_COMPUTER_MCP_ENV,
+  ONICODE_STDIO_MCP_ENV,
   ONICODE_MCP_BEARER_ENV,
   ONICODE_MCP_URL_ENV,
   ONICODE_PI_RUNTIME_MODE_ENV,
@@ -298,7 +301,8 @@ export function buildPiRpcLaunch(input: {
   delete environment[ONICODE_MCP_URL_ENV];
   delete environment[ONICODE_MCP_BEARER_ENV];
   delete environment[ONICODE_PI_MCP_EXTENSION_PATH_ENV];
-  delete environment[ONICODE_COMPUTER_MCP_ENV];
+  delete environment[ONICODE_STDIO_MCP_ENV];
+  const stdioServers = stdioMcpServers(input.mcpSession);
 
   return {
     args,
@@ -319,8 +323,8 @@ export function buildPiRpcLaunch(input: {
             [ONICODE_MCP_BEARER_ENV]: bearerTokenFromAuthorizationHeader(
               input.mcpSession.authorizationHeader,
             ),
-            ...(input.mcpSession.computerMcpServer
-              ? { [ONICODE_COMPUTER_MCP_ENV]: JSON.stringify(input.mcpSession.computerMcpServer) }
+            ...(stdioServers.length > 0
+              ? { [ONICODE_STDIO_MCP_ENV]: JSON.stringify(Object.fromEntries(stdioServers)) }
               : {}),
           }
         : {}),

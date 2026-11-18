@@ -2288,6 +2288,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         authorizationHeader: "Bearer secret-codex-token",
         browserToolsAvailable: true,
         computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+        browserMcpServer: { command: "obu", args: ["mcp"], env: {} },
       });
       const requests: Array<unknown> = [];
       yield* makeCodexReplayHarness(
@@ -2331,6 +2332,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
               command: "cua-driver",
               args: ["mcp"],
               env: { CUA: "1" },
+              default_tools_approval_mode: "approve",
+            },
+            "mcp_servers.browser": {
+              command: "obu",
+              args: ["mcp"],
+              env: {},
               default_tools_approval_mode: "approve",
             },
           },

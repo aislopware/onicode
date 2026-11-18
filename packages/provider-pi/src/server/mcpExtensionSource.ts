@@ -1,6 +1,5 @@
 // No Onicode imports inside the string; resolve Pi and typebox from the user's Pi install.
 import { ONICODE_CODE_ORCHESTRATION_INSTRUCTIONS } from "@onicode/provider-core/server/orchestrationInstructions";
-import { COMPUTER_MCP_SERVER_NAME } from "@onicode/provider-core/server/mcpSession";
 
 export const PI_ONI_MCP_EXTENSION_FILENAME = "pi-oni-mcp-extension.ts";
 
@@ -8,7 +7,8 @@ export const ONICODE_MCP_URL_ENV = "ONICODE_MCP_URL";
 export const ONICODE_MCP_BEARER_ENV = "ONICODE_MCP_BEARER_TOKEN";
 export const ONICODE_PI_RUNTIME_MODE_ENV = "ONICODE_PI_RUNTIME_MODE";
 export const ONICODE_PI_MCP_EXTENSION_PATH_ENV = "ONICODE_PI_MCP_EXTENSION_PATH";
-export const ONICODE_COMPUTER_MCP_ENV = "ONICODE_COMPUTER_MCP";
+/** JSON object of the stdio MCP servers to register, keyed by server name. */
+export const ONICODE_STDIO_MCP_ENV = "ONICODE_STDIO_MCP";
 export const PI_ONI_SERVICE_TIER_COMMAND = "oni-service-tier";
 
 // These tools trigger file-change approvals, bypassed by Auto-accept edits.
@@ -25,8 +25,7 @@ const URL_ENV = ${JSON.stringify(ONICODE_MCP_URL_ENV)};
 const TOKEN_ENV = ${JSON.stringify(ONICODE_MCP_BEARER_ENV)};
 const RUNTIME_MODE_ENV = ${JSON.stringify(ONICODE_PI_RUNTIME_MODE_ENV)};
 const EXTENSION_PATH_ENV = ${JSON.stringify(ONICODE_PI_MCP_EXTENSION_PATH_ENV)};
-const COMPUTER_ENV = ${JSON.stringify(ONICODE_COMPUTER_MCP_ENV)};
-const COMPUTER_SERVER = ${JSON.stringify(COMPUTER_MCP_SERVER_NAME)};
+const STDIO_ENV = ${JSON.stringify(ONICODE_STDIO_MCP_ENV)};
 const ORCHESTRATION_INSTRUCTIONS = ${JSON.stringify(ONICODE_CODE_ORCHESTRATION_INSTRUCTIONS.trim())};
 const SERVICE_TIER_COMMAND = ${JSON.stringify(PI_ONI_SERVICE_TIER_COMMAND)};
 const PROTOCOL = "2025-06-18";
@@ -364,12 +363,14 @@ export default async function oniMcpExtension(pi: ExtensionAPI) {
       NodePath.resolve(tool.sourceInfo.path) === NodePath.resolve(extensionPath));
   };
 
-  let computerRegistered = false;
+  const registeredStdioServers = new Set<string>();
   pi.on("tool_call", async (event, ctx) => {
     const mode = runtimeMode();
     if (mode === "full-access") return;
-    // Turning computer access on is the consent; a prompt per click would make it unusable.
-    if (computerRegistered && event.toolName.startsWith(\`mcp__\${COMPUTER_SERVER}__\`)) return;
+    // Turning a stdio server on is the consent; a prompt per call would make it unusable.
+    for (const server of registeredStdioServers) {
+      if (event.toolName.startsWith(\`mcp__\${server}__\`)) return;
+    }
     if ((event.toolName === "tool_search" ? hasBuiltinToolSearch() : READ_ONLY_TOOLS.has(event.toolName)) || isReadOnlyMcpTool(event.toolName)) {
       return;
     }
@@ -401,14 +402,22 @@ export default async function oniMcpExtension(pi: ExtensionAPI) {
   // Tool exposure arrived with registerMcpServer in Pi 0.99. Keep the HTTP
   // bridge as the credential owner: mcp.json overrides native registrations.
   const supportsExposure = "registerMcpServer" in pi && typeof pi.registerMcpServer === "function";
-  const computerServer = env(COMPUTER_ENV);
-  let computerError: string | undefined;
-  if (computerServer !== undefined && supportsExposure) {
+  const stdioServers = env(STDIO_ENV);
+  const stdioErrors: string[] = [];
+  if (stdioServers !== undefined && supportsExposure) {
+    let servers: Record<string, unknown> = {};
     try {
-      pi.registerMcpServer(COMPUTER_SERVER, JSON.parse(computerServer));
-      computerRegistered = true;
+      servers = JSON.parse(stdioServers);
     } catch (error) {
-      computerError = error instanceof Error ? error.message : String(error);
+      stdioErrors.push(\`stdio MCP servers unavailable: \${error instanceof Error ? error.message : String(error)}\`);
+    }
+    for (const [name, config] of Object.entries(servers)) {
+      try {
+        pi.registerMcpServer(name, config);
+        registeredStdioServers.add(name);
+      } catch (error) {
+        stdioErrors.push(\`\${name} MCP unavailable: \${error instanceof Error ? error.message : String(error)}\`);
+      }
     }
   }
   const directTools = new Set(["orchestrator_capabilities", "delegate_task", "task_status"]);
@@ -498,9 +507,7 @@ export default async function oniMcpExtension(pi: ExtensionAPI) {
   pi.on("model_select", (_event, ctx) => reconcileDiscovery(ctx));
   pi.on("session_start", async (_event, ctx) => {
     reconcileDiscovery(ctx);
-    if (computerError !== undefined) {
-      ctx.ui.notify(\`computer MCP unavailable: \${computerError}\`, "warning");
-    }
+    for (const message of stdioErrors) ctx.ui.notify(message, "warning");
     try {
       await ensureStarted();
     } catch (error) {

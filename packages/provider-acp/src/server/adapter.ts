@@ -919,19 +919,15 @@ function acpMcpContext(
   if (session === undefined) {
     return { servers: [], acpServers: [], httpServers: [] };
   }
-  const computer = session.computerMcpServer;
-  // The agent uses one of the three lists whole, so the driver's stdio server goes in each.
-  const computerServers: ReadonlyArray<EffectAcpSchema.McpServer> =
-    computer === undefined
-      ? []
-      : [
-          {
-            name: McpProviderSession.COMPUTER_MCP_SERVER_NAME,
-            command: computer.command,
-            args: [...computer.args],
-            env: Object.entries(computer.env).map(([name, value]) => ({ name, value })),
-          },
-        ];
+  // The agent uses one of the three lists whole, so the stdio servers go in each.
+  const stdioServers: ReadonlyArray<EffectAcpSchema.McpServer> = McpProviderSession.stdioMcpServers(
+    session,
+  ).map(([serverName, server]) => ({
+    name: serverName,
+    command: server.command,
+    args: [...server.args],
+    env: Object.entries(server.env).map(([name, value]) => ({ name, value })),
+  }));
   // codex-acp 1.2.0 and pi-acp drop injected HTTP servers, so HTTP is opt-in per flavor.
   return {
     servers: [
@@ -945,9 +941,9 @@ function acpMcpContext(
           { name: "ONICODE_ACP_MCP_AUTHORIZATION", value: session.authorizationHeader },
         ],
       },
-      ...computerServers,
+      ...stdioServers,
     ],
-    acpServers: [{ type: "acp", name: "onicode", serverId: "onicode" }, ...computerServers],
+    acpServers: [{ type: "acp", name: "onicode", serverId: "onicode" }, ...stdioServers],
     httpServers:
       mcpOverHttp === true
         ? [
@@ -962,7 +958,7 @@ function acpMcpContext(
                   : []),
               ],
             },
-            ...computerServers,
+            ...stdioServers,
           ]
         : [],
     endpoint: session.endpoint,

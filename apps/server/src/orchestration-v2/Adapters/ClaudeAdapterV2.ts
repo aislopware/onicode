@@ -2698,27 +2698,28 @@ export function claudeMcpQueryOverrides(input: {
   if (session === undefined) {
     return input.allowedTools === undefined ? {} : { allowedTools: input.allowedTools };
   }
-  const computer = session.computerMcpServer;
+  const stdioServers = McpProviderSession.stdioMcpServers(session);
   const mcpAllowedTools = input.readOnlySandbox
     ? CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS
     : [
         CLAUDE_ONI_MCP_TOOL_WILDCARD,
-        // Turning computer access on is the consent; a prompt per click would make it unusable.
-        ...(computer ? [`mcp__${McpProviderSession.COMPUTER_MCP_SERVER_NAME}__*`] : []),
+        // Turning a stdio server on is the consent; a prompt per call would make it unusable.
+        ...stdioServers.map(([name]) => `mcp__${name}__*`),
       ];
   return {
     allowedTools: Array.from(new Set([...(input.allowedTools ?? []), ...mcpAllowedTools])),
     mcpServers: {
-      ...(computer
-        ? {
-            [McpProviderSession.COMPUTER_MCP_SERVER_NAME]: {
-              type: "stdio" as const,
-              command: computer.command,
-              args: [...computer.args],
-              env: { ...computer.env },
-            },
-          }
-        : {}),
+      ...Object.fromEntries(
+        stdioServers.map(([name, server]) => [
+          name,
+          {
+            type: "stdio" as const,
+            command: server.command,
+            args: [...server.args],
+            env: { ...server.env },
+          },
+        ]),
+      ),
       onicode: {
         type: "http",
         url: session.endpoint,

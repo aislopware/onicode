@@ -1545,17 +1545,18 @@ function codexThreadRuntimeParams(input: {
               omit_tools_from: ["code_mode", "deferred"],
             },
           }),
-      ...(mcpSession?.computerMcpServer === undefined
-        ? {}
-        : {
-            [`mcp_servers.${McpProviderSession.COMPUTER_MCP_SERVER_NAME}`]: {
-              command: mcpSession.computerMcpServer.command,
-              args: [...mcpSession.computerMcpServer.args],
-              env: { ...mcpSession.computerMcpServer.env },
-              // Turning computer access on is the consent; a prompt per click would make it unusable.
-              default_tools_approval_mode: "approve",
-            },
-          }),
+      ...Object.fromEntries(
+        McpProviderSession.stdioMcpServers(mcpSession).map(([name, server]) => [
+          `mcp_servers.${name}`,
+          {
+            command: server.command,
+            args: [...server.args],
+            env: { ...server.env },
+            // Turning a stdio server on is the consent; a prompt per call would make it unusable.
+            default_tools_approval_mode: "approve",
+          },
+        ]),
+      ),
     },
   };
 }

@@ -3878,6 +3878,16 @@ it.effect("a full server takes back the slot of the longest idle agent tab nobod
         tabId: PreviewTabId.make(opened[0]!),
         input: {},
       });
+      // A driver that only fidgets the pointer leaves its tab as idle as it was.
+      const fidgeting = yield* (yield* ServerBrowser.ServerBrowserDrivers).attach({
+        threadId: scope.thread.threadId,
+        tabId: opened[2]!,
+        agentSessionId: Broker.hostAssignmentKey(asSession("agent-0")),
+        onEvent: () => {},
+      });
+      yield* Effect.promise(() =>
+        fidgeting.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 1, y: 1 }),
+      );
 
       // Inside the idle window every desktop tab keeps its slot.
       now.mockReturnValue(29 * 60 * 1000);
@@ -4151,6 +4161,76 @@ it.effect("a popup opens in its opener's appearance", () =>
       let event = yield* PubSub.take(events);
       while (event.type !== "opened") event = yield* PubSub.take(events);
       expect(event.snapshot.colorScheme).toBe("dark");
+    }),
+  ).pipe(Effect.provide(layer)),
+);
+
+it.effect("an agent's own driver works its tab's page until a human takes control", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { browser, tabId } = yield* ready;
+      const drivers = yield* ServerBrowser.ServerBrowserDrivers;
+      const threadId = scope.thread.threadId;
+      const agentSessionId = Broker.hostAssignmentKey(scope);
+      expect(yield* drivers.tabs({ threadId, agentSessionId })).toEqual([
+        { tabId, url: "about:blank", title: "test page", own: true },
+      ]);
+      // Another session neither lists nor attaches to a tab it may not act on.
+      const other = Broker.hostAssignmentKey(asSession("agent-b"));
+      expect(yield* drivers.tabs({ threadId, agentSessionId: other })).toEqual([]);
+
+      const events: Array<readonly [string, unknown]> = [];
+      const driver = yield* drivers.attach({
+        threadId,
+        tabId,
+        agentSessionId,
+        onEvent: (method, params) => events.push([method, params]),
+      });
+      const session = contexts[0]!.sessions.at(-1)!;
+      session.emit("Page.loadEventFired", { timestamp: 1 });
+      expect(events).toEqual([["Page.loadEventFired", { timestamp: 1 }]]);
+      yield* Effect.promise(() => driver.send("Runtime.evaluate", { expression: "1" }));
+      expect(session.send).toHaveBeenLastCalledWith("Runtime.evaluate", { expression: "1" });
+
+      // A driver's pointer walk reaches the page as the one place it stopped; a drag keeps its path.
+      const mouse = (type: string, x: number) =>
+        driver.send("Input.dispatchMouseEvent", { type, x, y: 5, button: "left", clickCount: 1 });
+      const sentMouse = () =>
+        session.send.mock.calls
+          .filter(([method]) => method === "Input.dispatchMouseEvent")
+          .map(([, params]) => {
+            const event = params as { readonly type: string; readonly x: number };
+            return [event.type, event.x];
+          });
+      yield* Effect.promise(async () => {
+        for (const x of [1, 2, 3]) expect(await mouse("mouseMoved", x)).toEqual({});
+        await mouse("mousePressed", 3);
+        for (const x of [4, 5]) await mouse("mouseMoved", x);
+        await mouse("mouseReleased", 5);
+      });
+      expect(sentMouse()).toEqual([
+        ["mouseMoved", 3],
+        ["mousePressed", 3],
+        ["mouseMoved", 4],
+        ["mouseMoved", 5],
+        ["mouseReleased", 5],
+      ]);
+
+      const viewer = yield* browser.attachViewer(viewerInput(tabId, true));
+      yield* viewer.input({ type: "takeControl" });
+      const refused = yield* Effect.promise(() =>
+        driver.send("Input.dispatchKeyEvent", { type: "keyDown" }).then(
+          () => null,
+          (cause: unknown) => cause,
+        ),
+      );
+      expect(refused).toMatchObject({ reason: "humanControl" });
+      expect(session.send).not.toHaveBeenCalledWith("Input.dispatchKeyEvent", expect.anything());
+
+      contexts[0]!.page.emit("close");
+      yield* Effect.promise(() => driver.closed);
+      // A browser that has stopped answering must not hold the driver's release, or shutdown.
+      session.detach.mockReturnValue(new Promise(() => {}));
     }),
   ).pipe(Effect.provide(layer)),
 );

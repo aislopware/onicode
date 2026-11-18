@@ -34,6 +34,12 @@ export const COMPUTER_USE_TOOL_SOURCE = {
   kind: "computer",
 } as const;
 
+export const BROWSER_USE_TOOL_SOURCE = {
+  key: "browser-use",
+  name: "Browser",
+  kind: "browser",
+} as const;
+
 export function dynamicToolSurface(toolName: string | null | undefined, input: unknown) {
   if (toolName === "cua_repl.js") return "computer" as const;
   const code = asRecord(input)?.code;

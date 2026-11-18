@@ -93,6 +93,9 @@ import * as TailnetAccess from "./tailnet/TailnetAccess.ts";
 import * as PeerMcpClient from "./peer/PeerMcpClient.ts";
 import * as McpSessionRegistry from "./mcp/McpSessionRegistry.ts";
 import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
+import * as BrowserUseDriver from "./browserUse/BrowserUseDriver.ts";
+import * as BrowserUseService from "./browserUse/BrowserUseService.ts";
+import * as BrowserUseSessionReactor from "./browserUse/BrowserUseSessionReactor.ts";
 import * as ComputerDriver from "./computer/ComputerDriver.ts";
 import * as ComputerService from "./computer/ComputerService.ts";
 import * as DeviceService from "./device/DeviceService.ts";
@@ -105,6 +108,7 @@ import * as PreviewAgentActivity from "./preview/PreviewAgentActivity.ts";
 import * as DesktopBrowserChannel from "./preview/DesktopBrowserChannel.ts";
 import * as ServerBrowserStream from "./preview/ServerBrowserStream.ts";
 import * as PreviewBrowser from "./preview/PreviewBrowser.ts";
+import * as PreviewCdpBridge from "./preview/PreviewCdpBridge.ts";
 import * as ProcessRunner from "./processRunner.ts";
 import * as GitManager from "./git/GitManager.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
@@ -486,6 +490,12 @@ const layerComputer = ComputerService.layer.pipe(
   Layer.provide(layerServerSettings),
 );
 
+const layerBrowserUse = BrowserUseService.layer.pipe(
+  Layer.provide(BrowserUseDriver.layer),
+  Layer.provide(PreviewCdpBridge.layer),
+  Layer.provide(layerServerSettings),
+);
+
 const layerDevice = DeviceService.layer.pipe(
   Layer.provide(layerServerSettings),
   Layer.provide(ProcessRunner.layer),
@@ -546,6 +556,10 @@ const layerIdleCompactionWorker = Layer.effectDiscard(
   IdleCompactionService.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(ProjectionStoreV2.layer));
 
+const layerBrowserUseSessionWorker = Layer.effectDiscard(
+  BrowserUseSessionReactor.make.pipe(Effect.flatMap((reactor) => reactor.start())),
+);
+
 const layerThreadTitleRefreshWorker = Layer.effectDiscard(
   ThreadTitleRefreshService.make.pipe(Effect.flatMap((service) => service.start())),
 ).pipe(Layer.provide(ProjectionStoreV2.layer));
@@ -604,6 +618,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   HostHardware.layer.pipe(Layer.provide(ProjectStore.layer), Layer.provide(ProcessRunner.layer)),
   layerThreadSettlementWorker,
   layerIdleCompactionWorker,
+  layerBrowserUseSessionWorker,
   layerThreadTitleRefreshWorker,
   StorageCleanup.layer.pipe(Layer.provide(ProjectionStoreV2.layer)),
   DatabaseStorage.layer.pipe(
@@ -666,7 +681,14 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.provideMerge(layerGit),
   Layer.provideMerge(layerVcs),
   Layer.provideMerge(
-    Layer.mergeAll(layerTerminal, layerPreview, layerDevice, layerComputer, RemoteDesktop.layer),
+    Layer.mergeAll(
+      layerTerminal,
+      layerPreview,
+      layerDevice,
+      layerComputer,
+      layerBrowserUse,
+      RemoteDesktop.layer,
+    ),
   ),
   Layer.provideMerge(layerPersistence),
   Layer.provideMerge(Layer.mergeAll(Keybindings.layer, UsageLimitSources.layer)),
@@ -767,6 +789,7 @@ const layerMakeRoutes = Layer.mergeAll(
     ServerHttp.layerAttachmentUploadRoute,
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
+    PreviewCdpBridge.layerBackend,
     Ws.layer,
     speechStreamRouteLayer,
   ),
@@ -797,6 +820,8 @@ const layerMakeRoutes = Layer.mergeAll(
     ),
   ),
   Layer.provide(PreviewBrowser.layer),
+  // The instance browser use hands its sessions, by layer memoization.
+  Layer.provide(PreviewCdpBridge.layer),
   // Tailnet devices and sign-in, shared by the descriptor, /oauth/token and WebSocket.
   Layer.provide(TailnetAccess.layer),
   // Links to other environments, shared by Settings (WebSocket) and agents (/mcp).

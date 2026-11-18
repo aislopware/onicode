@@ -2543,6 +2543,7 @@ describe("CursorAdapterV2", () => {
       authorizationHeader: "Bearer secret-cursor-mcp-token",
       browserToolsAvailable: true,
       computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+      browserMcpServer: { command: "obu", args: ["mcp"], env: {} },
     };
 
     assert.deepEqual(cursorMcpServers(mcpSession), {
@@ -2554,6 +2555,7 @@ describe("CursorAdapterV2", () => {
         },
       },
       computer: { type: "stdio", command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+      browser: { type: "stdio", command: "obu", args: ["mcp"], env: {} },
     });
 
     const options = makeCursorAgentOptions({

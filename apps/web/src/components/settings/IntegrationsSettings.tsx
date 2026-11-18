@@ -3,6 +3,7 @@ import { DeviceToolVersions } from "../device/DeviceToolVersions";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 import { ScopedSwitch } from "./ScopedSwitch";
 import { DeviceSourcesSettings } from "./DeviceSourcesSettings";
+import { BrowserUseSettings } from "./BrowserUseSettings";
 import { ComputerAccessSettings } from "./ComputerAccessSettings";
 import {
   AuthSettingsWriteScope,
@@ -1581,6 +1582,7 @@ export function BrowserSettingsPanel() {
     <SettingsPageContainer>
       <SettingsSection id="browser-agent-access" title="Agent access">
         <AgentBrowserAccessSetting />
+        <BrowserUseSettings />
       </SettingsSection>
       <SettingsSection id="browser" title="Browsing">
         <BrowserProfilesSetting />

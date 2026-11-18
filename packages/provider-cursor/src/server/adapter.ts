@@ -214,7 +214,6 @@ export function cursorMcpServers(
   if (session === undefined) {
     return undefined;
   }
-  const computer = session.computerMcpServer;
   return {
     onicode: {
       type: "http",
@@ -223,16 +222,17 @@ export function cursorMcpServers(
         Authorization: session.authorizationHeader,
       },
     },
-    ...(computer
-      ? {
-          [McpProviderSession.COMPUTER_MCP_SERVER_NAME]: {
-            type: "stdio" as const,
-            command: computer.command,
-            args: [...computer.args],
-            env: { ...computer.env },
-          },
-        }
-      : {}),
+    ...Object.fromEntries(
+      McpProviderSession.stdioMcpServers(session).map(([name, server]) => [
+        name,
+        {
+          type: "stdio" as const,
+          command: server.command,
+          args: [...server.args],
+          env: { ...server.env },
+        },
+      ]),
+    ),
   };
 }
 

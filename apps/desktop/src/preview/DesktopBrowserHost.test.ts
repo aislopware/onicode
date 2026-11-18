@@ -36,12 +36,18 @@ const command = (
   host: DesktopBrowserHost.DesktopBrowserHost["Service"],
   id: number,
   method: string,
+  params: Record<string, unknown> = {},
 ) =>
   host.handleCommandLine(
     encodeJson({
       type: "cdp",
       ...key,
-      message: encodeJson({ id, method, params: { id }, sessionId: "oni-preview-page" }),
+      message: encodeJson({
+        id,
+        method,
+        params: { ...params, id },
+        sessionId: "oni-preview-page",
+      }),
     }),
   );
 
@@ -433,10 +439,17 @@ describe("DesktopBrowserHost", () => {
       yield* TestClock.adjust("10 seconds");
       expect(debuggee.focusEmulation).toEqual([true, false]);
 
-      yield* command(host, 3, "Page.captureScreenshot");
+      // A driver that fidgets the pointer while idle reaches the page without waking it.
+      yield* command(host, 3, "Input.dispatchMouseEvent", { type: "mouseMoved" });
+      yield* settle;
+      debuggee.release();
+      yield* settle;
+      expect(debuggee.focusEmulation).toEqual([true, false]);
+
+      yield* command(host, 4, "Page.captureScreenshot");
       yield* settle;
       expect(debuggee.focusEmulation).toEqual([true, false, true]);
-      expect(debuggee.sent).toEqual([1, 2, 3]);
+      expect(debuggee.sent).toEqual([1, 2, 3, 4]);
     }),
   );
 
@@ -683,6 +696,7 @@ describe("DesktopBrowserHost", () => {
       debuggee.release();
       expect(yield* Queue.take(replies)).toBe(4);
       yield* settle;
+      yield* TestClock.adjust("1 minute");
       expect(painting).toEqual([true, false]);
     }),
   );
@@ -720,9 +734,9 @@ describe("DesktopBrowserHost", () => {
       debuggee.release();
       yield* settle;
       expect(debuggee.sent).toEqual([1]);
-      expect(painting).toEqual([true, false]);
       yield* TestClock.adjust("1 minute");
       expect(debuggee.focusEmulation).toEqual([true, false]);
+      expect(painting).toEqual([true, false]);
     }),
   );
 
@@ -795,9 +809,9 @@ describe("DesktopBrowserHost", () => {
       yield* raw({ id: 2, method: "Page.startScreencast", sessionId: "oni-preview-page-1" });
       expect(yield* Queue.take(replies)).toBe(2);
       yield* settle;
-      expect(painting).toEqual([true, false]);
       yield* TestClock.adjust("1 minute");
       expect(debuggee.focusEmulation).toEqual([true, false]);
+      expect(painting).toEqual([true, false]);
     }),
   );
 
@@ -997,21 +1011,26 @@ describe("DesktopBrowserHost", () => {
     }),
   );
 
-  it.effect("paints a hidden guest only while the screenshot it is taking is pending", () =>
+  it.effect("paints a hidden guest while the server drives it or a screenshot is pending", () =>
     Effect.gen(function* () {
       const host = yield* makeDrawnHost;
       const debuggee = makeDebuggee();
       host.attach(key, debuggee.tab);
       const painting = yield* watchPainting(host);
 
+      // Chromium slows a driven guest nobody draws, so any command starts painting.
       yield* command(host, 1, "DOM.enable");
       yield* settle;
-      expect(painting).toEqual([]);
+      expect(painting).toEqual([true]);
+      debuggee.release();
+      yield* settle;
+      yield* TestClock.adjust("1 minute");
+      expect(painting).toEqual([true, false]);
 
       yield* command(host, 2, "Page.captureScreenshot");
       yield* command(host, 3, "Page.captureScreenshot");
       yield* settle;
-      expect(painting).toEqual([true]);
+      expect(painting).toEqual([true, false, true]);
 
       // The first answers once the guest paints; the queued one then takes its turn.
       debuggee.release();
@@ -1019,7 +1038,8 @@ describe("DesktopBrowserHost", () => {
       expect(debuggee.sent).toEqual([1, 2, 3]);
       debuggee.release();
       yield* settle;
-      expect(painting).toEqual([true, false]);
+      yield* TestClock.adjust("1 minute");
+      expect(painting).toEqual([true, false, true, false]);
     }),
   );
 
@@ -1038,6 +1058,8 @@ describe("DesktopBrowserHost", () => {
       yield* settle;
       yield* turn(false);
       yield* settle;
+      yield* TestClock.adjust("1 minute");
+      expect(debuggee.focusEmulation).toEqual([true, false]);
       expect(painting).toEqual([true]);
 
       // The page loads a new document, which also frees the screenshot turn.
@@ -1047,6 +1069,7 @@ describe("DesktopBrowserHost", () => {
       yield* settle;
       debuggee.navigate();
       yield* settle;
+      yield* TestClock.adjust("1 minute");
       expect(painting).toEqual([true, false, true, false]);
 
       // The server releases the relay; Chromium still holds the capture.
@@ -1054,6 +1077,7 @@ describe("DesktopBrowserHost", () => {
       yield* settle;
       yield* host.handleCommandLine(encodeJson({ type: "release", ...key }));
       yield* settle;
+      yield* TestClock.adjust("1 minute");
       expect(painting).toEqual([true, false, true, false, true]);
 
       // The guest detaches; a replacement starts with no screenshot pending.
@@ -1095,6 +1119,7 @@ describe("DesktopBrowserHost", () => {
         params: { sessionId: "oni-preview-page-2" },
       });
       yield* settle;
+      yield* TestClock.adjust("1 minute");
       expect(painting).toEqual([true, false]);
     }),
   );

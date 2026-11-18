@@ -49,9 +49,11 @@ import {
 } from "../observability/Metrics.ts";
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ProviderInstallationGate from "../provider/ProviderInstallationGate.ts";
+import * as BrowserUseService from "../browserUse/BrowserUseService.ts";
 import * as ComputerService from "../computer/ComputerService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSessions from "@onicode/provider-core/server/McpProviderSessions";
+import type { McpStdioServer } from "@onicode/provider-core/server/mcpSession";
 import * as ServerSettings from "../serverSettings.ts";
 import * as McpSessionRegistry from "../mcp/McpSessionRegistry.ts";
 import * as EventSink from "./EventSink.ts";
@@ -345,6 +347,11 @@ function releasedRuntimeRequestStatusFor(
   return reason === "manual_shutdown" || reason === "server_shutdown" ? "cancelled" : "expired";
 }
 
+const sameStdioServer = (left: McpStdioServer | undefined, right: McpStdioServer | undefined) =>
+  left?.command === right?.command &&
+  left?.args.join("\0") === right?.args.join("\0") &&
+  JSON.stringify(left?.env) === JSON.stringify(right?.env);
+
 function sessionKey(providerSessionId: ProviderSessionId): string {
   return String(providerSessionId);
 }
@@ -433,6 +440,7 @@ export const layerWithOptions = (
       const serverSettings = yield* Effect.serviceOption(ServerSettings.ServerSettingsService);
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
       const computerService = yield* Effect.serviceOption(ComputerService.ComputerService);
+      const browserUseService = yield* Effect.serviceOption(BrowserUseService.BrowserUseService);
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
       const promptSuggestionStore = yield* SubscriptionRef.make<
@@ -454,12 +462,20 @@ export const layerWithOptions = (
       const agentAccessSettings = Effect.fn("ProviderSessionManagerV2.agentAccessSettings")(
         function* (threadId: ThreadId, providerInstanceId: ProviderInstanceId) {
           if (Option.isNone(serverSettings)) {
-            return { browser: true, device: false, computer: false };
+            return { browser: true, device: false, computer: false, browserUse: undefined };
           }
           return yield* Effect.gen(function* () {
             const settings = yield* serverSettings.value.getSettings;
             const thread = yield* projectionStore.getThread(threadId);
             const entries = Object.values(settings.projectSettingsOverrides);
+            const browserUseOverridden = entries.some(
+              (entry) => entry.enableAgentBrowserUse !== undefined,
+            );
+            /** A driver in the Browser panel needs the panel; without it there is nothing to drive. */
+            const browserUse = (enabled: boolean, browser: boolean) =>
+              enabled && (settings.agentBrowserUseTarget !== "panel" || browser)
+                ? { target: settings.agentBrowserUseTarget, port: settings.agentBrowserUsePort }
+                : undefined;
             const browserOverridden = entries.some(
               (entry) => entry.enableAgentBrowserAccess !== undefined,
             );
@@ -471,13 +487,19 @@ export const layerWithOptions = (
             );
             const providerAllowsComputer =
               settings.agentComputerAccessProviders[providerInstanceId] !== false;
-            if (browserOverridden || deviceOverridden || computerOverridden) {
+            if (
+              browserOverridden ||
+              deviceOverridden ||
+              computerOverridden ||
+              browserUseOverridden
+            ) {
               const project = Option.isSome(projectService)
                 ? yield* projectService.value.getById(thread.projectId)
                 : Option.none();
-              if (Option.isNone(project))
+              if (Option.isNone(project)) {
+                const browser = browserOverridden ? false : settings.enableAgentBrowserAccess;
                 return {
-                  browser: browserOverridden ? false : settings.enableAgentBrowserAccess,
+                  browser,
                   device:
                     settings.enableDeviceSupport &&
                     !deviceOverridden &&
@@ -486,20 +508,36 @@ export const layerWithOptions = (
                     !computerOverridden &&
                     settings.enableAgentComputerAccess &&
                     providerAllowsComputer,
+                  browserUse: browserUse(
+                    !browserUseOverridden && settings.enableAgentBrowserUse,
+                    browser,
+                  ),
                 };
+              }
             }
             const effective = resolveProjectSettings(settings, thread.projectId).settings;
             return {
               browser: effective.enableAgentBrowserAccess,
               device: settings.enableDeviceSupport && effective.enableAgentDeviceAccess,
               computer: effective.enableAgentComputerAccess && providerAllowsComputer,
+              browserUse: browserUse(
+                effective.enableAgentBrowserUse,
+                effective.enableAgentBrowserAccess,
+              ),
             };
           }).pipe(
             Effect.catch((cause) =>
               Effect.logWarning(
                 "Could not resolve agent access; withholding browser, device and computer tools.",
                 { threadId, cause },
-              ).pipe(Effect.as({ browser: false, device: false, computer: false })),
+              ).pipe(
+                Effect.as({
+                  browser: false,
+                  device: false,
+                  computer: false,
+                  browserUse: undefined,
+                }),
+              ),
             ),
           );
         },
@@ -581,15 +619,33 @@ export const layerWithOptions = (
                   browser: browserToolsAvailable,
                   device: deviceToolsAvailable,
                   computer: computerAllowed,
+                  browserUse: browserUseAllowed,
                 } = yield* agentAccessSettings(threadId, providerInstanceId);
                 const computerMcpServer =
                   computerAllowed && Option.isSome(computerService)
                     ? Option.getOrUndefined(yield* computerService.value.mcpServer)
                     : undefined;
+                // Settled before the credential: a driver in the panel changes which tools it lists.
+                const browserUse =
+                  browserUseAllowed !== undefined &&
+                  Option.isSome(browserUseService) &&
+                  (yield* browserUseService.value.ready)
+                    ? browserUseAllowed
+                    : undefined;
+                const drivesPanel = browserUse?.target === "panel";
+                const browserMcpServerFor = (
+                  scope: import("../mcp/McpInvocationContext.ts").McpThreadInvocationScope,
+                ) =>
+                  browserUse !== undefined && Option.isSome(browserUseService)
+                    ? browserUseService.value
+                        .mcpServer({ scope, ...browserUse })
+                        .pipe(Effect.map(Option.getOrUndefined))
+                    : Effect.undefined;
                 const capabilities = new Set<
                   import("../mcp/McpInvocationContext.ts").McpCapability
                 >(["orchestration", "worktree", "pull-requests", "issues"]);
                 if (browserToolsAvailable) capabilities.add("preview");
+                if (drivesPanel) capabilities.add("preview-driver");
                 if (deviceToolsAvailable) capabilities.add("device");
                 const subagent = yield* projectionStore.getThread(threadId).pipe(
                   Effect.map((thread) => thread.lineage.relationshipToParent === "subagent"),
@@ -616,19 +672,25 @@ export const layerWithOptions = (
                     resolved.thread.providerInstanceId === providerInstanceId &&
                     resolved.capabilities.has("preview") === browserToolsAvailable &&
                     resolved.capabilities.has("device") === deviceToolsAvailable &&
+                    resolved.capabilities.has("preview-driver") === drivesPanel &&
                     // A credential issued while the lineage read failed is replaced once it works.
                     (resolved.thread.subagent === true) === subagent
                   ) {
-                    // The driver is no part of the credential, so a restarted one swaps in place.
-                    const previous = existing.computerMcpServer;
+                    // The drivers are no part of the credential, so a changed one swaps in place.
+                    const browserMcpServer = yield* browserMcpServerFor(resolved);
                     if (
-                      previous?.command !== computerMcpServer?.command ||
-                      previous?.args.join("\0") !== computerMcpServer?.args.join("\0")
+                      !sameStdioServer(existing.computerMcpServer, computerMcpServer) ||
+                      !sameStdioServer(existing.browserMcpServer, browserMcpServer)
                     ) {
-                      const { computerMcpServer: _replaced, ...kept } = existing;
+                      const {
+                        computerMcpServer: _computer,
+                        browserMcpServer: _browser,
+                        ...kept
+                      } = existing;
                       yield* mcpSessions.set({
                         ...kept,
                         ...(computerMcpServer ? { computerMcpServer } : {}),
+                        ...(browserMcpServer ? { browserMcpServer } : {}),
                       });
                     }
                     return { mcpCredentialId: existing.providerSessionId, issued: false };
@@ -643,9 +705,16 @@ export const layerWithOptions = (
                   capabilities,
                   subagent,
                 });
+                // The panel's driver acts as this credential's session, so it is built from its scope.
+                const issuedScope = yield* mcpSessionRegistry.resolve(
+                  credential.config.authorizationHeader.replace(/^Bearer\s+/, ""),
+                );
+                const browserMcpServer =
+                  issuedScope === undefined ? undefined : yield* browserMcpServerFor(issuedScope);
                 yield* mcpSessions.set({
                   ...credential.config,
                   ...(computerMcpServer ? { computerMcpServer } : {}),
+                  ...(browserMcpServer ? { browserMcpServer } : {}),
                   hasPendingWake: projectionStore
                     .getThreadRecords(threadId, ["runs", "subagents"])
                     .pipe(

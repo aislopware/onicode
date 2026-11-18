@@ -1945,6 +1945,13 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
       const scopes = new Map([
         ["deferringToken", scopeFor("deferringToken")],
         ["otherToken", scopeFor("otherToken")],
+        [
+          "drivingToken",
+          {
+            ...scopeFor("drivingToken"),
+            capabilities: new Set(["orchestration", "preview", "preview-driver"] as const),
+          },
+        ],
       ]);
       const tool = (name: string, description: string) =>
         Tool.make(name, {
@@ -1956,6 +1963,7 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
       const OptionalToolkit = Toolkit.make(
         tool("delegate_task", "Delegates a task."),
         tool("preview_open", "Opens a browser preview."),
+        tool("preview_snapshot", "Reads a page."),
         tool("schedule_task", "Schedules a task."),
       );
       const reads = McpToolAccess.reads(() => Effect.succeed({}));
@@ -1966,6 +1974,7 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
             McpToolAccess.toLayer(OptionalToolkit, {
               delegate_task: reads,
               preview_open: reads,
+              preview_snapshot: reads,
               schedule_task: reads,
             }),
           ),
@@ -2039,8 +2048,9 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
 
       const deferring = yield* session("deferringToken", true);
       const other = yield* session("otherToken", false);
+      const everything = ["delegate_task", "preview_open", "preview_snapshot", "schedule_task"];
       expect(yield* deferring.listed).toEqual(["delegate_task", "tool_search"]);
-      expect(yield* other.listed).toEqual(["delegate_task", "preview_open", "schedule_task"]);
+      expect(yield* other.listed).toEqual(everything);
       // Unlisted tools stay callable.
       expect((yield* deferring.call("schedule_task", {})).structuredContent).toEqual({});
 
@@ -2048,7 +2058,16 @@ it.effect("lists optional tools to a deferring client only after tool_search loa
         (yield* deferring.call("tool_search", { query: "browser" })).structuredContent,
       ).toEqual({ tools: [{ name: "preview_open", description: "Opens a browser preview." }] });
       expect(yield* deferring.listed).toEqual(["delegate_task", "preview_open", "tool_search"]);
-      expect(yield* other.listed).toEqual(["delegate_task", "preview_open", "schedule_task"]);
+      expect(yield* other.listed).toEqual(everything);
+
+      // A session whose own driver works the panel's pages never lists the page tools.
+      const driving = yield* session("drivingToken", false);
+      const drivingDeferred = yield* session("drivingToken", true);
+      expect(yield* driving.listed).toEqual(["delegate_task", "preview_open", "schedule_task"]);
+      expect(
+        (yield* drivingDeferred.call("tool_search", { query: "page" })).structuredContent,
+      ).toEqual({ tools: [] });
+      expect(yield* drivingDeferred.listed).toEqual(["delegate_task", "tool_search"]);
     }),
   ).pipe(Effect.provide(NodeHttpServer.layerTest)),
 );

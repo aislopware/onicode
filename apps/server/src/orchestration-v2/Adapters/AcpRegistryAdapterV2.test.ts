@@ -1294,6 +1294,7 @@ describe("AcpRegistryAdapterV2", () => {
           endpoint,
           browserToolsAvailable: false,
           computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+          browserMcpServer: { command: "obu", args: ["mcp"], env: {} },
         };
         yield* mcpSessions.set({ ...mcpSession, authorizationHeader: "Bearer opened-token" });
         const adapter = yield* makeAcpRegistryAdapterV2({
@@ -1364,6 +1365,7 @@ describe("AcpRegistryAdapterV2", () => {
         args: ["mcp"],
         env: [{ name: "CUA", value: "1" }],
       };
+      const browser = { name: "browser", command: "obu", args: ["mcp"], env: [] };
       const plainHttp = (authorization: string) => [
         {
           type: "http",
@@ -1372,6 +1374,7 @@ describe("AcpRegistryAdapterV2", () => {
           headers: [{ name: "Authorization", value: authorization }],
         },
         computer,
+        browser,
       ];
       const http = (authorization: string) => [
         {
@@ -1384,6 +1387,7 @@ describe("AcpRegistryAdapterV2", () => {
           ],
         },
         computer,
+        browser,
       ];
       const stdio = (authorization: string) => [
         {
@@ -1397,13 +1401,14 @@ describe("AcpRegistryAdapterV2", () => {
           ],
         },
         computer,
+        browser,
       ];
 
       assert.deepEqual(
         yield* sessionMcpServers({ agentId: "github-copilot-cli" }, { ONICODE_ACP_MCP_HTTP: "1" }),
         { new: http("Bearer opened-token"), load: http("Bearer rotated-token") },
       );
-      const acp = [{ type: "acp", name: "onicode", serverId: "onicode" }, computer];
+      const acp = [{ type: "acp", name: "onicode", serverId: "onicode" }, computer, browser];
       assert.deepEqual(
         yield* sessionMcpServers(
           { agentId: "github-copilot-cli" },

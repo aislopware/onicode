@@ -53,6 +53,14 @@ export function createDeviceEnvironmentAtoms<R, E>(
         install.state === "failed" ||
         (install.state === "installed" && daemon.state !== "stopped"),
     }),
+    browserUseStatus: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:browser-use:status",
+      tag: WS_METHODS.browserUseStatus,
+      idleTtlMs: 0,
+      // Asked for only while browser use is on: follows the download, which can trail the setting.
+      refreshIntervalMs: 1_000,
+      isFinal: ({ install }) => install.state !== "installing" && install.state !== "missing",
+    }),
     configure: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:device:configure",
       tag: WS_METHODS.deviceConfigure,

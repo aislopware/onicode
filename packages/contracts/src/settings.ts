@@ -1176,6 +1176,13 @@ export type WorktreeCleanup = typeof WorktreeCleanup.Type;
 export const AgentComputerPermissionMode = Schema.Literals(["standard", "unrestricted"]);
 export type AgentComputerPermissionMode = typeof AgentComputerPermissionMode.Type;
 
+/**
+ * Where agents browse once obu's tools are on. `panel`: the Browser panel's tabs. `isolated`: a
+ * Chrome obu launches with a profile of its own. `personal`: the browser the user works in.
+ */
+export const AgentBrowserUseTarget = Schema.Literals(["panel", "isolated", "personal"]);
+export type AgentBrowserUseTarget = typeof AgentBrowserUseTarget.Type;
+
 export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "worktreeCleanup",
   "defaultModelSelection",
@@ -1186,6 +1193,7 @@ export const PROJECT_SCOPED_SERVER_SETTING_KEYS = [
   "defaultAutoPull",
   "defaultProjectScripts",
   "enableAgentBrowserAccess",
+  "enableAgentBrowserUse",
   "enableAgentDeviceAccess",
   "enableAgentComputerAccess",
   "textGenerationModelSelection",
@@ -1225,6 +1233,7 @@ export const ProjectSettingsOverrides = Schema.Struct({
   defaultAutoPull: Schema.optionalKey(Schema.Boolean),
   defaultProjectScripts: Schema.optionalKey(Schema.Array(ProjectScript)),
   enableAgentBrowserAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentBrowserUse: Schema.optionalKey(Schema.Boolean),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
   enableAgentComputerAccess: Schema.optionalKey(Schema.Boolean),
   textGenerationModelSelection: Schema.optionalKey(ModelSelection),
@@ -1447,6 +1456,15 @@ export const ServerSettings = Schema.Struct({
   projectSettingsFolded: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
 
   enableAgentDeviceAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
+  /** Agents browse with obu's tools instead of the Browser panel's own page tools. */
+  enableAgentBrowserUse: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(true))),
+  agentBrowserUseTarget: AgentBrowserUseTarget.pipe(
+    Schema.withDecodingDefault(Effect.succeed("panel" as const)),
+  ),
+  /** The debug port the user's own browser listens on. Null lets obu find a running one. */
+  agentBrowserUsePort: Schema.NullOr(
+    Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65_535 })),
+  ).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   /** Agents drive this machine's desktop apps through cua-driver. */
   enableAgentComputerAccess: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),
   /** Fixed when the driver starts, so a change restarts it. */
@@ -1912,6 +1930,11 @@ export const ServerSettingsPatch = Schema.Struct({
     ),
   ),
   enableAgentDeviceAccess: Schema.optionalKey(Schema.Boolean),
+  enableAgentBrowserUse: Schema.optionalKey(Schema.Boolean),
+  agentBrowserUseTarget: Schema.optionalKey(AgentBrowserUseTarget),
+  agentBrowserUsePort: Schema.optionalKey(
+    Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65_535 }))),
+  ),
   enableAgentComputerAccess: Schema.optionalKey(Schema.Boolean),
   agentComputerPermissionMode: Schema.optionalKey(AgentComputerPermissionMode),
   agentComputerAccessProviders: Schema.optionalKey(

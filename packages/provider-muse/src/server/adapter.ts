@@ -1945,17 +1945,18 @@ export const makeMuseAdapterV2 = Effect.fn("makeMuseAdapterV2")(function* (
                     url: mcpSession.endpoint,
                     headers: { Authorization: mcpSession.authorizationHeader },
                   },
-                  ...(mcpSession.computerMcpServer
-                    ? {
-                        [McpProviderSession.COMPUTER_MCP_SERVER_NAME]: {
-                          transport: "stdio",
-                          mode: "optional",
-                          command: mcpSession.computerMcpServer.command,
-                          args: [...mcpSession.computerMcpServer.args],
-                          env: { ...mcpSession.computerMcpServer.env },
-                        },
-                      }
-                    : {}),
+                  ...Object.fromEntries(
+                    McpProviderSession.stdioMcpServers(mcpSession).map(([name, server]) => [
+                      name,
+                      {
+                        transport: "stdio",
+                        mode: "optional",
+                        command: server.command,
+                        args: [...server.args],
+                        env: { ...server.env },
+                      },
+                    ]),
+                  ),
                 },
               }
             : undefined;

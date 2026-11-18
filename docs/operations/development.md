@@ -43,6 +43,12 @@ and no process telemetry; install Rust and run `vp run build:resource-monitor`.
 Never run a development server against the live `~/.onicode/userdata`.
 See [test data](../../AGENTS.md#test-data) for copying a consistent database snapshot.
 
+On macOS, a worktree on an external volume runs the browsers it downloads into
+`.onicode/tools` from that volume. macOS then asks, on the Mac's screen, for removable-volume
+access for each binary by its path. Until someone allows it that browser paints no frames:
+a preview page stays blank and its screenshots hang. Allow the prompt, or replace the tool's
+folder with a symlink to a copy on the internal disk.
+
 Read ports from the `[dev-runner]` output. Worktrees derive stable preferences from their paths,
 but occupied ports can shift them. `ONICODE_PORT_OFFSET` or `ONICODE_DEV_INSTANCE` can select a
 different preference when needed.

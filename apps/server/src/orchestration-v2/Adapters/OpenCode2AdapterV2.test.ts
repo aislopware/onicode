@@ -5232,7 +5232,7 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
   );
 
   it.effect(
-    "registers the computer MCP server per thread and replaces it when its launch changes",
+    "registers the stdio MCP servers per thread, replacing a changed one and removing a dropped one",
     () =>
       Effect.gen(function* () {
         const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -5250,10 +5250,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           args: ["mcp", "--socket", socket],
           env: { CUA: "1" },
         });
-        yield* mcpSessions.set({ ...session, computerMcpServer: computerMcpServer("first") });
+        const browserMcpServer = { command: "obu", args: ["mcp"], env: { OBU: "1" } };
         yield* Effect.addFinalizer(() => mcpSessions.clear(threadId));
         const server = "onicode-thread_opencode2-adapter";
         const computer = `${server}_computer`;
+        const browser = `${server}_browser`;
         const addOni = out("mcp.add", {
           server,
           "location[directory]": WORK,
@@ -5274,6 +5275,11 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
               environment: { CUA: "1" },
             },
           });
+        const addBrowser = out("mcp.add", {
+          server: browser,
+          "location[directory]": WORK,
+          config: { type: "local", command: ["obu", "mcp"], environment: { OBU: "1" } },
+        });
         const turn = [
           out("session.prompt", { sessionID: SESSION, text: "<any>" }),
           promptAccepted,
@@ -5285,8 +5291,12 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
             reply("mcp.add", null),
             addComputer("first"),
             reply("mcp.add", null),
+            addBrowser,
+            reply("mcp.add", null),
             ...turn,
             out("mcp.remove", { server: computer, "location[directory]": WORK }),
+            reply("mcp.remove", null),
+            out("mcp.remove", { server: browser, "location[directory]": WORK }),
             reply("mcp.remove", null),
             addOni,
             reply("mcp.add", null),
@@ -5301,8 +5311,15 @@ it.layer(McpProviderSessions.layer)("OpenCode2 adapter", (it) => {
           ],
           { version: "2.2.6" },
         );
-        for (const socket of ["first", "second"]) {
-          yield* mcpSessions.set({ ...session, computerMcpServer: computerMcpServer(socket) });
+        for (const [socket, withBrowser] of [
+          ["first", true],
+          ["second", false],
+        ] as const) {
+          yield* mcpSessions.set({
+            ...session,
+            computerMcpServer: computerMcpServer(socket),
+            ...(withBrowser ? { browserMcpServer } : {}),
+          });
           const terminal = yield* terminalOf(runtime).pipe(Effect.forkScoped);
           yield* runtime.startTurn(turnInput(thread));
           assert.equal((yield* Fiber.join(terminal))?.status, "completed");

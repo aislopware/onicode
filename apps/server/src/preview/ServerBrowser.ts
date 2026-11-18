@@ -122,6 +122,8 @@ const RECORDING_DOWNLOAD_TIMEOUT_MS = 5_000;
 const decodeViewportSetting = Schema.decodeUnknownSync(PreviewViewportSettingSchema);
 const AGENT_CURSOR_MOVE_MS = 160;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
+/** How long a driver's pointer rests before the page is told where it stopped. */
+const DRIVER_POINTER_REST_MS = 40;
 /** A dialog blocks page script, so a desktop size read gives up after this. */
 const DESKTOP_VIEWPORT_READ_TIMEOUT = "1 second";
 /** A desktop page that keeps its size draws nothing on a resize, so the wait gives up. */
@@ -261,6 +263,20 @@ export interface ServerBrowserViewer {
 
 export type ProfileReporter = (input: PreviewReportProfilesInput) => Effect.Effect<void>;
 
+export interface ServerBrowserDriverTab {
+  readonly tabId: string;
+  readonly url: string;
+  readonly title: string;
+  readonly own: boolean;
+}
+
+export interface ServerBrowserDriverSession {
+  /** Rejects with `BrowserControlInterrupted` while a human controls the tab. */
+  readonly send: (method: string, params: unknown) => Promise<unknown>;
+  /** Settles when the tab is gone. */
+  readonly closed: Promise<void>;
+}
+
 export class ServerBrowser extends Context.Service<
   ServerBrowser,
   {
@@ -298,6 +314,29 @@ export class ServerBrowser extends Context.Service<
     readonly profileReporter: Effect.Effect<ProfileReporter, never, Scope.Scope>;
   }
 >()("onicode/preview/ServerBrowser") {}
+
+/** What an agent's own browser driver needs from the tabs `ServerBrowser` holds. */
+export class ServerBrowserDrivers extends Context.Service<
+  ServerBrowserDrivers,
+  {
+    /** The thread's live tabs this agent session may act on, its own first, newest first. */
+    readonly tabs: (input: {
+      readonly threadId: string;
+      readonly agentSessionId: string;
+    }) => Effect.Effect<ReadonlyArray<ServerBrowserDriverTab>>;
+    /** A page-level CDP session beside Playwright's. */
+    readonly attach: (input: {
+      readonly threadId: string;
+      readonly tabId: string;
+      readonly agentSessionId: string;
+      readonly onEvent: (method: string, params: unknown) => void;
+    }) => Effect.Effect<
+      ServerBrowserDriverSession,
+      ServerBrowserTabNotFoundError | ServerBrowserLaunchError,
+      Scope.Scope
+    >;
+  }
+>()("onicode/preview/ServerBrowser/ServerBrowserDrivers") {}
 
 interface ViewerState {
   readonly id: string;
@@ -347,6 +386,8 @@ interface ServerTab {
   readonly networkEntries: Array<PreviewAutomationNetworkEntry>;
   readonly actionTimeline: Array<PreviewAutomationActionEvent>;
   readonly control: SessionControl;
+  /** Ends the driver sessions attached to this tab when it is dropped. */
+  readonly driverClosers: Set<() => void>;
   agentOperating: boolean;
   fileChooserIntercepted: boolean;
   readonly onFileChooser: (chooser: FileChooser) => void;
@@ -1019,6 +1060,7 @@ const make = Effect.gen(function* () {
     const end =
       (tab.desktop || reopening) && !closeSession && sessionOpen(tab) ? "reconnect" : "gone";
     for (const viewer of tab.viewers) viewer.push({ _tag: end });
+    for (const close of tab.driverClosers) close();
     void tab.control.close().catch(constVoid);
     if (tab.desktop) void tab.desktop.close().catch(constVoid);
     else {
@@ -1166,6 +1208,7 @@ const make = Effect.gen(function* () {
       networkEntries: [],
       actionTimeline: [],
       control,
+      driverClosers: new Set(),
       agentOperating: false,
       fileChooserIntercepted: false,
       onFileChooser: (chooser) => {
@@ -3514,13 +3557,140 @@ const make = Effect.gen(function* () {
       catch: (cause) => new PreviewClearProfileError({ profileId, cause }),
     });
 
-  return ServerBrowser.of({
-    attachViewer,
-    clearProfile,
-    profileReporter,
-    openDownload,
-    answerFileChooser,
+  const driverTabs: ServerBrowserDrivers["Service"]["tabs"] = Effect.fn("ServerBrowser.driverTabs")(
+    function* (input) {
+      const live = [...tabs.values()]
+        .filter(
+          (tab) => tab.threadId === input.threadId && tab.control.agentMayAct(input.agentSessionId),
+        )
+        .map((tab) => ({ tab, own: tab.control.agentId === input.agentSessionId }))
+        .sort(
+          (left, right) =>
+            Number(right.own) - Number(left.own) || right.tab.createdAt - left.tab.createdAt,
+        );
+      return yield* Effect.promise(() =>
+        Promise.all(
+          live.map(async ({ tab, own }) => ({
+            tabId: tab.tabId,
+            url: tab.page.url(),
+            // A page blocked by a dialog never answers.
+            title: await withinStatusDeadline(
+              tab.page.title().catch(() => ""),
+              () => "",
+            ),
+            own,
+          })),
+        ),
+      );
+    },
+  );
+
+  const attachDriver: ServerBrowserDrivers["Service"]["attach"] = Effect.fn(
+    "ServerBrowser.attachDriver",
+  )(function* (input) {
+    const tab = yield* findTab(input.threadId, input.tabId);
+    const session = yield* Effect.acquireRelease(
+      Effect.tryPromise({
+        try: () => tab.page.context().newCDPSession(tab.page),
+        catch: (cause) => new ServerBrowserLaunchError({ cause }),
+      }),
+      // Not awaited: at shutdown the browser stops answering before a driver's socket closes,
+      // and waiting on a detach it never answers would keep the server from exiting.
+      (session) => Effect.sync(() => void session.detach().catch(constVoid)),
+    );
+    // Playwright subscribes to CDP events by name; a driver needs every one its session enabled.
+    const emitter = session as unknown as {
+      emit: (event: string | symbol, ...args: Array<unknown>) => boolean;
+    };
+    const emit = emitter.emit.bind(session);
+    emitter.emit = (event, ...args) => {
+      if (typeof event === "string" && event.includes(".")) input.onEvent(event, args[0]);
+      return emit(event, ...args);
+    };
+    const closed = Promise.withResolvers<void>();
+    const close = () => closed.resolve();
+    tab.driverClosers.add(close);
+    yield* Effect.addFinalizer(() => Effect.sync(() => tab.driverClosers.delete(close)));
+    if (tab.closing) close();
+    const pointer = pointerFor(tab);
+    // A driver walks the pointer to its target in many small moves, and Chromium answers each
+    // on the page's next frame. A tab nobody watches paints a few frames a second, so the walk
+    // alone outlasts the driver's deadline: the page hears only where the pointer came to rest.
+    let travel: { readonly params: unknown; readonly rest: ReturnType<typeof setTimeout> } | null =
+      null;
+    let arrived: Promise<void> = Promise.resolve();
+    let buttonsDown = 0;
+    const dropTravel = () => {
+      if (travel !== null) clearTimeout(travel.rest);
+      travel = null;
+    };
+    const arrive = () => {
+      if (travel === null) return arrived;
+      const { params } = travel;
+      dropTravel();
+      // The page may be gone by now; the command that needed the pointer there reports that.
+      arrived = arrived
+        .then(() => session.send("Input.dispatchMouseEvent", params as never))
+        .then(constVoid, constVoid);
+      return arrived;
+    };
+    yield* Effect.addFinalizer(() => Effect.sync(dropTravel));
+    return {
+      closed: closed.promise,
+      // Unqueued: a driver pipelines commands, and one that waits on the page must not hold
+      // back the input that page waits for. Control is checked per command instead.
+      send: async (method, params) => {
+        const refusal = !tab.control.agentMayAct(input.agentSessionId)
+          ? new BrowserControlInterrupted({
+              message: "This tab belongs to another agent session. Open your own tab to act.",
+              reason: "agentMismatch",
+            })
+          : tab.control.controller !== null
+            ? new BrowserControlInterrupted({
+                message: "A human controls this tab.",
+                reason: "humanControl",
+              })
+            : null;
+        if (refusal !== null) {
+          dropTravel();
+          throw refusal;
+        }
+        const mouse = method === "Input.dispatchMouseEvent" ? asRecord(params) : null;
+        // A drag's path is the gesture itself, so moves with a button down all reach the page.
+        if (mouse?.type === "mouseMoved" && buttonsDown === 0) {
+          dropTravel();
+          travel = { params, rest: setTimeout(() => void arrive(), DRIVER_POINTER_REST_MS) };
+          return {};
+        }
+        // Not for the move above: a driver fidgets the pointer while its agent is away.
+        tab.usedAt = Date.now();
+        await arrive();
+        if (mouse?.type === "mousePressed") {
+          buttonsDown += 1;
+          await pointer({ x: num(mouse.x), y: num(mouse.y) }, "click");
+        } else if (mouse?.type === "mouseReleased") {
+          buttonsDown = Math.max(0, buttonsDown - 1);
+        }
+        return session.send(method as never, params as never);
+      },
+    };
   });
+
+  return Context.make(
+    ServerBrowser,
+    ServerBrowser.of({
+      attachViewer,
+      clearProfile,
+      profileReporter,
+      openDownload,
+      answerFileChooser,
+    }),
+  ).pipe(
+    Context.add(
+      ServerBrowserDrivers,
+      ServerBrowserDrivers.of({ tabs: driverTabs, attach: attachDriver }),
+    ),
+  );
 });
 
-export const layer = Layer.effect(ServerBrowser, make);
+export const layer = Layer.effectContext(make);

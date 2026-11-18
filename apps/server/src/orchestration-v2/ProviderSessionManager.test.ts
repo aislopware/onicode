@@ -4,6 +4,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { AgentScope } from "@onicode/shared/AgentScope";
 import {
+  type AgentBrowserUseTarget,
   EnvironmentId,
   type ModelSelection,
   type OrchestrationV2AppThread,
@@ -39,6 +40,7 @@ import { HttpServer } from "effect/http";
 
 import { ProviderWorkspaceMissingError } from "../provider/Errors.ts";
 import * as ServerEnvironment from "../environment/ServerEnvironment.ts";
+import * as BrowserUseService from "../browserUse/BrowserUseService.ts";
 import * as ComputerService from "../computer/ComputerService.ts";
 import * as ProjectService from "../project/ProjectService.ts";
 import * as McpProviderSession from "@onicode/provider-core/server/mcpSession";
@@ -653,6 +655,7 @@ function layerTest(input: {
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
   readonly computerServiceLayer?: Layer.Layer<ComputerService.ComputerService>;
+  readonly browserUseServiceLayer?: Layer.Layer<BrowserUseService.BrowserUseService>;
   readonly installationGateLayer?: Layer.Layer<ProviderInstallationGate.ProviderInstallationGate>;
 }) {
   const layerConfiguredEventSink =
@@ -748,6 +751,7 @@ function layerTest(input: {
           ...(input.serverSettingsLayer === undefined ? [] : [input.serverSettingsLayer]),
           ...(input.projectServiceLayer === undefined ? [] : [input.projectServiceLayer]),
           ...(input.computerServiceLayer === undefined ? [] : [input.computerServiceLayer]),
+          ...(input.browserUseServiceLayer === undefined ? [] : [input.browserUseServiceLayer]),
         ),
       ),
     ),
@@ -828,6 +832,11 @@ function runBrowserAccessScenario(input: {
     readonly projectOverride?: boolean;
     readonly providers?: Readonly<Record<string, boolean>>;
   };
+  readonly browserUse?: {
+    readonly enabled: boolean;
+    readonly target?: AgentBrowserUseTarget;
+    readonly projectOverride?: boolean;
+  };
   readonly enableAgentDeviceAccess?: boolean;
   readonly enableDeviceSupport?: boolean;
   readonly createThread?: boolean;
@@ -885,8 +894,17 @@ function runBrowserAccessScenario(input: {
           computerServiceLayer: Layer.mock(ComputerService.ComputerService)({
             mcpServer: Effect.succeedSome(TEST_COMPUTER_MCP_SERVER),
           }),
+          browserUseServiceLayer: Layer.mock(BrowserUseService.BrowserUseService)({
+            ready: Effect.succeed(true),
+            mcpServer: ({ target }) =>
+              Effect.succeedSome({ command: "/tools/obu", args: ["mcp", target], env: {} }),
+          }),
           serverSettingsLayer: ServerSettings.layerTest({
             enableAgentBrowserAccess: input.enableAgentBrowserAccess,
+            enableAgentBrowserUse: input.browserUse?.enabled ?? false,
+            ...(input.browserUse?.target === undefined
+              ? {}
+              : { agentBrowserUseTarget: input.browserUse.target }),
             enableAgentComputerAccess: input.computer?.enabled ?? false,
             agentComputerAccessProviders: input.computer?.providers ?? {},
             ...(input.enableAgentDeviceAccess === undefined
@@ -904,6 +922,9 @@ function runBrowserAccessScenario(input: {
                 ...(input.computer?.projectOverride === undefined
                   ? {}
                   : { enableAgentComputerAccess: input.computer.projectOverride }),
+                ...(input.browserUse?.projectOverride === undefined
+                  ? {}
+                  : { enableAgentBrowserUse: input.browserUse.projectOverride }),
               },
             },
           }),
@@ -5732,6 +5753,56 @@ it.effect("ProviderSessionManagerV2 gives computer tools per project and per pro
       TEST_COMPUTER_MCP_SERVER,
     );
   }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 gives a browser driver per project, and the panel's only with the panel",
+  () =>
+    Effect.gen(function* () {
+      const scenario = (
+        browser: boolean,
+        browserUse: NonNullable<Parameters<typeof runBrowserAccessScenario>[0]["browserUse"]>,
+      ) =>
+        runBrowserAccessScenario({
+          enableAgentBrowserAccess: browser,
+          projectOverride: browser,
+          browserUse,
+        }).pipe(
+          Effect.map((config) => ({
+            driver: config?.browserMcpServer?.args[1],
+            drivesPanel: config?.capabilities?.has("preview-driver"),
+          })),
+        );
+      assert.deepEqual(yield* scenario(true, { enabled: true }), {
+        driver: "panel",
+        drivesPanel: true,
+      });
+      assert.deepEqual(yield* scenario(false, { enabled: true }), {
+        driver: undefined,
+        drivesPanel: false,
+      });
+      // A Chrome of the agent's own needs no panel, and leaves the panel's page tools listed.
+      assert.deepEqual(yield* scenario(false, { enabled: true, target: "isolated" }), {
+        driver: "isolated",
+        drivesPanel: false,
+      });
+      assert.deepEqual(yield* scenario(true, { enabled: true, target: "personal" }), {
+        driver: "personal",
+        drivesPanel: false,
+      });
+      assert.deepEqual(yield* scenario(true, { enabled: false, projectOverride: true }), {
+        driver: "panel",
+        drivesPanel: true,
+      });
+      assert.deepEqual(yield* scenario(true, { enabled: true, projectOverride: false }), {
+        driver: undefined,
+        drivesPanel: false,
+      });
+      assert.deepEqual(yield* scenario(true, { enabled: false }), {
+        driver: undefined,
+        drivesPanel: false,
+      });
+    }),
 );
 
 it.effect("ProviderSessionManagerV2 withholds device tools while device support is off", () =>
