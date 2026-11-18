@@ -65,8 +65,13 @@ interface Reservation {
   readonly threadIds: ReadonlyArray<string> | undefined;
   readonly done: Deferred.Deferred<void>;
 }
-const reserves = (reservation: Reservation, threadId: string) =>
-  reservation.threadIds === undefined || reservation.threadIds.includes(threadId);
+const overlaps = (
+  threadIds: ReadonlyArray<string> | undefined,
+  others: ReadonlyArray<string> | undefined,
+) =>
+  threadIds === undefined ||
+  others === undefined ||
+  threadIds.some((threadId) => others.includes(threadId));
 interface Batch {
   readonly events: ReadonlyArray<Job>;
   readonly reason: "ready" | "limit";
@@ -122,6 +127,15 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     for (const job of pending) yield* job.cancel;
   });
   yield* Effect.addFinalizer(() => shutdown);
+  // Snapshots and writes registered so far on `threadIds`; omitted, on every thread.
+  const earlierWork = (threadIds?: ReadonlyArray<string>) => [
+    ...Array.from(pending)
+      .filter((job) => overlaps(threadIds, [job.threadId]))
+      .map((job) => job.settled),
+    ...Array.from(reservations)
+      .filter((reservation) => overlaps(threadIds, reservation.threadIds))
+      .map((reservation) => Deferred.await(reservation.done)),
+  ];
   // These helpers run once per raw event; the shared transaction owns the tracing span.
   const enqueue = Effect.fnUntraced(function* <A, E, R>(
     effect: Effect.Effect<A, E, R>,
@@ -174,12 +188,12 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     };
     yield* Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
-        const earlier = Array.from(reservations).filter((r) => reserves(r, threadId));
+        const earlier = Array.from(reservations)
+          .filter((reservation) => overlaps([threadId], reservation.threadIds))
+          .map((reservation) => Deferred.await(reservation.done));
         pending.add(job);
         const accepted = yield* restore(
-          Effect.forEach(earlier, (r) => Deferred.await(r.done), { discard: true }).pipe(
-            Effect.andThen(Queue.offer(queue, job)),
-          ),
+          Effect.all(earlier, { discard: true }).pipe(Effect.andThen(Queue.offer(queue, job))),
         ).pipe(Effect.onError(() => job.cancel));
         if (!accepted) yield* job.cancel;
       }),
@@ -264,8 +278,8 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     );
   }
   /**
-   * Runs `effect` after queued snapshots for `threadIds` commit, and before ones that arrive
-   * later; omitted, every thread. Other threads' snapshots never delay it.
+   * Runs `effect` after snapshots and writes queued for `threadIds` commit, and before ones that
+   * arrive later; omitted, every thread. Other threads' work never delays it.
    */
   const barrier = Effect.fnUntraced(function* <A, E, R>(
     effect: Effect.Effect<A, E, R>,
@@ -275,12 +289,12 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     if (!enabled || (yield* CurrentWorker) === (yield* Effect.fiberId)) return yield* effect;
     return yield* Effect.uninterruptibleMask((restore) => {
       const reservation: Reservation = { threadIds, done: Deferred.makeUnsafe() };
-      const earlier = Array.from(pending).filter((job) => reserves(reservation, job.threadId));
+      const earlier = earlierWork(threadIds);
       reservations.add(reservation);
       waitingWriters++;
       return restore(
         Effect.gen(function* () {
-          for (const job of earlier) yield* job.settled;
+          yield* Effect.all(earlier, { discard: true });
           if (closed) return yield* Effect.interrupt;
           return yield* effect;
         }),
@@ -314,8 +328,10 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       Stream.concat(Stream.succeed({ _tag: "End" as const })),
     );
     let resume: Effect.Effect<void> = Effect.void;
-    // Replies run in order, so EOF, failures and controls follow this stream's earlier snapshots
-    // without waiting for other streams' work.
+    // Threads this stream has queued snapshots for; its controls read them.
+    const threadIds = new Set<string>();
+    // Replies run in order after this stream's earlier snapshots. EOF, failures and controls also
+    // wait for the other work queued before them that they may read.
     yield* signals.pipe(
       Stream.mapEffect((signal) =>
         Effect.gen(function* () {
@@ -324,21 +340,26 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
           let reply: Effect.Effect<boolean, E | E2 | CommitBatchError, R2>;
           let check = false;
           if (signal._tag !== "Event") {
-            // Cleanup after a stream ends reads other streams' work, so let what they queued land.
-            const earlier = Array.from(pending, (job) => job.settled);
+            // Cleanup after a stream ends reads other threads' work, so let what they queued land.
             const end =
               signal._tag === "End" ? Effect.succeed(true) : Effect.failCause(signal.cause);
-            reply = Effect.all(earlier, { discard: true }).pipe(Effect.andThen(end));
+            reply = Effect.all(earlierWork(), { discard: true }).pipe(Effect.andThen(end));
           } else if (isSnapshot(signal.event) && (yield* canBatch)) {
             const bytes = Buffer.byteLength(yield* encodeQueue(signal.event));
+            const threadId = snapshotThreadId(signal.event);
+            threadIds.add(threadId);
             reply = yield* enqueue(
               process(signal.event).pipe(Effect.as(false)),
               token,
-              snapshotThreadId(signal.event),
+              threadId,
               bytes,
             );
           } else {
-            reply = process(signal.event).pipe(Effect.as(false));
+            const earlier = threadIds.size === 0 ? [] : earlierWork(Array.from(threadIds));
+            reply = Effect.all(earlier, { discard: true }).pipe(
+              Effect.andThen(process(signal.event)),
+              Effect.as(false),
+            );
             check = true;
             resume = Deferred.await(processed);
           }

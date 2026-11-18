@@ -46,6 +46,7 @@ const control: ProviderAdapter.ProviderAdapterV2Event = {
   providerTurnId: ProviderTurnId.make("turn"),
   pending: false,
 };
+const secondWrite: ProviderAdapter.ProviderAdapterV2Event = { ...control, pending: true };
 
 const recordBatches = Effect.fn("test.recordProviderBatches")(function* (
   beforeCommit: Effect.Effect<void> = Effect.void,
@@ -496,7 +497,7 @@ it.effect.each(["failure", "stop"] as const)(
     }),
 );
 
-it.effect("keeps a write ahead of snapshots for its threads that arrive after it", () =>
+it.effect("keeps a write ahead of later snapshots and writes for its threads", () =>
   Effect.gen(function* () {
     const started = yield* Deferred.make<void>();
     const release = yield* Deferred.make<void>();
@@ -516,6 +517,7 @@ it.effect("keeps a write ahead of snapshots for its threads that arrive after it
     const busy = event(0, "busy", "busy-thread");
     const before = event(1, "before", "parent-thread");
     const after = event(2, "after", "child-thread");
+    const unrelated = event(3, "unrelated", "other-thread");
     const leading = yield* consume(busy);
     yield* Deferred.await(started);
     const queuedBefore = yield* consume(before);
@@ -526,19 +528,31 @@ it.effect("keeps a write ahead of snapshots for its threads that arrive after it
         "child-thread",
       ])
       .pipe(Effect.forkScoped({ startImmediately: true }));
+    const laterWrite = yield* recorder
+      .barrier(Queue.offer(recorder.output, [secondWrite]).pipe(Effect.asVoid), ["child-thread"])
+      .pipe(Effect.forkScoped({ startImmediately: true }));
     const queuedAfter = yield* consume(after);
+    const queuedUnrelated = yield* consume(unrelated);
     yield* TestClock.adjust(0);
     yield* Deferred.succeed(release, undefined);
     yield* Fiber.join(leading);
     yield* Fiber.join(queuedBefore);
     yield* Fiber.join(write);
+    yield* Fiber.join(laterWrite);
     yield* Fiber.join(queuedAfter);
-    assert.deepEqual(yield* Queue.takeAll(recorder.output), [[busy], [before], [control], [after]]);
+    yield* Fiber.join(queuedUnrelated);
+    assert.deepEqual(yield* Queue.takeAll(recorder.output), [
+      [busy],
+      [before, unrelated],
+      [control],
+      [secondWrite],
+      [after],
+    ]);
   }),
 );
 
 it.effect.each(["failure", "end"] as const)(
-  "ends a stream on %s only after other streams' earlier snapshots commit",
+  "ends a stream on %s only after other streams' earlier snapshots and writes commit",
   (mode) =>
     Effect.gen(function* () {
       const started = yield* Deferred.make<void>();
@@ -562,6 +576,17 @@ it.effect.each(["failure", "end"] as const)(
         .consume(Stream.make(completed), recorder.process, Effect.succeed(false))
         .pipe(Effect.forkScoped({ startImmediately: true }));
       yield* TestClock.adjust(0);
+      // The write still holds the writer when the ending stream's last snapshot lands.
+      const committing = yield* Deferred.make<void>();
+      const write = yield* recorder
+        .barrier(
+          Deferred.await(committing).pipe(
+            Effect.andThen(Queue.offer(recorder.output, [secondWrite])),
+            Effect.asVoid,
+          ),
+          ["child-thread"],
+        )
+        .pipe(Effect.forkScoped({ startImmediately: true }));
       const ending = yield* recorder
         .consume(
           mode === "failure" ? Stream.fail("runtime lost") : Stream.empty,
@@ -577,9 +602,56 @@ it.effect.each(["failure", "end"] as const)(
       yield* Deferred.succeed(release, undefined);
       yield* Fiber.join(leading);
       yield* Fiber.join(other);
+      yield* TestClock.adjust(0);
+      yield* Deferred.succeed(committing, undefined);
+      yield* Fiber.join(write);
       yield* Fiber.join(ending);
-      assert.deepEqual(yield* Queue.takeAll(recorder.output), [[busy], [completed], [control]]);
+      assert.deepEqual(yield* Queue.takeAll(recorder.output), [
+        [busy],
+        [completed],
+        [secondWrite],
+        [control],
+      ]);
     }),
+);
+
+it.effect("runs a control after other streams' earlier snapshots for its stream's threads", () =>
+  Effect.gen(function* () {
+    const started = yield* Deferred.make<void>();
+    const release = yield* Deferred.make<void>();
+    let commits = 0;
+    const recorder = yield* recordBatches(
+      Effect.gen(function* () {
+        if (++commits !== 2) return;
+        yield* Deferred.succeed(started, undefined);
+        yield* Deferred.await(release);
+      }),
+    );
+    const own = event(1, "own", "shared-thread");
+    const other = event(2, "other", "shared-thread");
+    const busy = event(0, "busy", "busy-thread");
+    const input = yield* Queue.unbounded<ProviderAdapter.ProviderAdapterV2Event>();
+    const consumer = yield* recorder
+      .consume(Stream.fromQueue(input), recorder.process, Effect.succeed(true))
+      .pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Queue.offer(input, own);
+    assert.deepEqual(yield* Queue.take(recorder.output), [own]);
+    const leading = yield* recorder
+      .consume(Stream.make(busy), recorder.process, Effect.succeed(false))
+      .pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* Deferred.await(started);
+    const otherStream = yield* recorder
+      .consume(Stream.make(other), recorder.process, Effect.succeed(false))
+      .pipe(Effect.forkScoped({ startImmediately: true }));
+    yield* TestClock.adjust(0);
+    yield* Queue.offer(input, control);
+    yield* TestClock.adjust(0);
+    yield* Deferred.succeed(release, undefined);
+    yield* Fiber.join(leading);
+    yield* Fiber.join(otherStream);
+    yield* Fiber.join(consumer);
+    assert.deepEqual(yield* Queue.takeAll(recorder.output), [[busy], [other], [control]]);
+  }),
 );
 
 it.effect("does not force a separate commit for every consumer that ends", () =>
