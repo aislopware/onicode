@@ -508,6 +508,7 @@ describe("readCursorAccountUsage", () => {
       yield* TestClock.adjust("10 seconds");
       const result = yield* Fiber.join(read);
       assert.strictEqual(result.error, "Cursor account usage could not be read.");
+      assert.isNotTrue(result.rangeTooLarge);
     }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 
@@ -616,9 +617,28 @@ describe("readCursorAccountUsage", () => {
           },
         );
         assert.strictEqual(result.error, error);
+        assert.isNotTrue(result.rangeTooLarge);
         assert.deepStrictEqual(result.records, []);
         assert.strictEqual(open, 0);
       }
+    }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+  );
+
+  it.effect("marks a read that outlasts its deadline as one a narrower range may finish", () =>
+    Effect.gen(function* () {
+      const accessToken = `header.${Buffer.from(JSON.stringify({ sub: "auth|demo" })).toString("base64url")}.signature`;
+      const read = yield* Effect.forkChild(
+        readAccountUsage(
+          { kind: "apiKey", apiKey: accessToken },
+          0,
+          1781000000000,
+          () => new Promise<Response>(() => {}),
+        ),
+      );
+      yield* TestClock.adjust("10 seconds");
+      const result = yield* Fiber.join(read);
+      assert.strictEqual(result.error, "Cursor account usage could not be read.");
+      assert.isTrue(result.rangeTooLarge);
     }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

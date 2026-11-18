@@ -40,14 +40,20 @@ export interface CursorAccountUsageReadResult {
   readonly records: readonly UsageRecord[];
   readonly missing: boolean;
   readonly error: string | null;
+  /** The read ran out of time or pages, so a narrower range may succeed. */
+  readonly rangeTooLarge?: boolean;
 }
 
 class CursorAccountUsageInvalidError extends Schema.TaggedError<CursorAccountUsageInvalidError>()(
   "CursorAccountUsageInvalidError",
-  { reason: Schema.String },
+  { reason: Schema.String, rangeTooLarge: Schema.optionalKey(Schema.Boolean) },
 ) {}
 
+const isInvalidError = Schema.is(CursorAccountUsageInvalidError);
+
 const invalid = (reason: string) => Effect.fail(new CursorAccountUsageInvalidError({ reason }));
+const tooLarge = (reason: string) =>
+  Effect.fail(new CursorAccountUsageInvalidError({ reason, rangeTooLarge: true }));
 
 const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 
@@ -205,7 +211,7 @@ export const makeCursorAccountUsageReader = Effect.gen(function* () {
             // A count can include overlapping page boundaries. Allow room to
             // reconcile them without imposing a fixed account-size limit.
             if (page > (total === undefined ? 1000 : Math.ceil(total / pageSize) * 2 + 1)) {
-              return yield* invalid("Account usage page limit exceeded");
+              return yield* tooLarge("Account usage page limit exceeded");
             }
             const response = yield* httpClient
               .execute(
@@ -268,7 +274,7 @@ export const makeCursorAccountUsageReader = Effect.gen(function* () {
           },
           Effect.timeoutOrElse({
             duration: Duration.seconds(10),
-            orElse: () => invalid("Account usage request timed out"),
+            orElse: () => tooLarge("Account usage request timed out"),
           }),
           pageSlots.withPermit,
         );
@@ -417,21 +423,22 @@ export const makeCursorAccountUsageReader = Effect.gen(function* () {
         error: null,
       } satisfies CursorAccountUsageReadResult;
     });
-    return yield* read.pipe(
+    const result: CursorAccountUsageReadResult = yield* read.pipe(
       Effect.scoped,
       Effect.timeoutOrElse({
         duration: Duration.seconds(60),
-        orElse: () => invalid("Account usage read timed out"),
+        orElse: () => tooLarge("Account usage read timed out"),
       }),
-      Effect.orElseSucceed(
-        () =>
-          ({
-            accountKey,
-            records: [],
-            missing: false,
-            error: "Cursor account usage could not be read.",
-          }) satisfies CursorAccountUsageReadResult,
+      Effect.catch((error) =>
+        Effect.succeed({
+          accountKey,
+          records: [],
+          missing: false,
+          error: "Cursor account usage could not be read.",
+          ...(isInvalidError(error) && error.rangeTooLarge === true ? { rangeTooLarge: true } : {}),
+        } satisfies CursorAccountUsageReadResult),
       ),
     );
+    return result;
   });
 });

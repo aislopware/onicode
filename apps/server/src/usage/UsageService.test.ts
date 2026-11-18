@@ -50,7 +50,11 @@ import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as BackgroundPolicy from "../background/BackgroundPolicy.ts";
 import * as AntigravityUsage from "../provider/Drivers/AntigravityUsage.ts";
 import * as ProviderHostLive from "../provider/ProviderHostLive.ts";
-import { totalTokens, type UsageRecord } from "@onicode/provider-core/server/usage";
+import {
+  totalTokens,
+  type ProviderUsageScan,
+  type UsageRecord,
+} from "@onicode/provider-core/server/usage";
 import * as UsageService from "./UsageService.ts";
 import { DESKTOP_HOST_SCOPE_ENV, physicalSourceIdOf } from "./usageTranscriptReader.ts";
 import * as MuseSdk from "../../../../packages/provider-muse/src/server/sdk.ts";
@@ -182,6 +186,26 @@ const makeWithCursor = (read: CursorAccountReader.CursorAccountReader["Service"]
       awaitPersisted: Effect.andThen(service.awaitPersisted, accounts.awaitPersisted),
     };
   });
+
+const makeCursorAccounts = (read: CursorAccountReader.CursorAccountReader["Service"]["read"]) =>
+  Layer.build(
+    layerCursorUsageAccounts(Layer.succeed(CursorAccountReader.CursorAccountReader, { read })),
+  ).pipe(Effect.map((context) => Context.get(context, CursorUsageAccounts.CursorUsageAccounts)));
+
+const cursorScanInput = (retentionCutoffMs: number, awaitRefresh: boolean) => ({
+  instances: [
+    {
+      instanceId: ProviderInstanceId.make("cursor"),
+      environment: { CURSOR_API_KEY: "test-key" },
+    },
+  ],
+  windowStartMs: 0,
+  retentionCutoffMs,
+  awaitRefresh,
+});
+
+/** An awaited scan runs a refresh and at most one retry, each capped at eight reads. */
+const CURSOR_READS_PER_AWAITED_SCAN = 16;
 
 const layerService = (input: {
   readonly prefix: string;
@@ -330,6 +354,45 @@ function makeFakeCursor() {
       return { accountKey, records, missing: false, error: null };
     });
   return { state, read };
+}
+
+/**
+ * A large account: a window wider than half a day of its last 92 days outlasts a read. `reads`
+ * lists every read; the fake's `calls` only those that finished.
+ */
+function largeCursorAccount(cursor: ReturnType<typeof makeFakeCursor>) {
+  const reads: { readonly sinceMs: number; readonly untilMs: number }[] = [];
+  const read: CursorAccountReader.CursorAccountReader["Service"]["read"] = (
+    credential,
+    sinceMs,
+    untilMs,
+  ) =>
+    Effect.gen(function* () {
+      const nowMs = yield* Clock.currentTimeMillis;
+      reads.push({ sinceMs, untilMs });
+      if (untilMs - sinceMs <= 12 * HOUR_MS || untilMs < nowMs - 92 * 24 * HOUR_MS) {
+        return yield* cursor.read(credential, sinceMs, untilMs);
+      }
+      return {
+        accountKey: cursor.state.accountKey,
+        records: [],
+        missing: false,
+        error: "Cursor account usage could not be read.",
+        rangeTooLarge: true,
+      };
+    });
+  return { read, reads };
+}
+
+function cursorRecordTimes(sources: ReadonlyArray<ProviderUsageScan>) {
+  return (sources[0]?.files ?? [])
+    .flatMap((file) =>
+      file.records.map(({ timestampMs, totals }) => ({
+        timestampMs,
+        outputTokens: totals.outputTokens,
+      })),
+    )
+    .toSorted((left, right) => left.timestampMs - right.timestampMs);
 }
 
 function cursorSource(summary: { readonly sources: readonly UsageSource[] }) {
@@ -2080,74 +2143,147 @@ describe("UsageService", () => {
     }),
   );
 
-  it.effect("loads Cursor history that cannot be read in one request within the deadline", () =>
+  it.effect.each([
+    { label: "92-day", cutoff: CURSOR_NOW - 92 * 24 * HOUR_MS },
+    { label: "unlimited", cutoff: 0 },
+  ])("loads $label Cursor history too large for one read in bounded refreshes", ({ cutoff }) =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;
       yield* TestClock.setTime(CURSOR_NOW);
       const cursor = makeFakeCursor();
       cursor.state.events = [
+        { timestampMs: CURSOR_NOW - 80 * 24 * HOUR_MS, outputTokens: 11 },
         { timestampMs: CURSOR_NOW - 40 * HOUR_MS, outputTokens: 7 },
         { timestampMs: CURSOR_NOW - 3 * HOUR_MS, outputTokens: 5 },
       ];
-      // A large account: a window wider than half a day has too many pages for the read deadlines.
+      const large = largeCursorAccount(cursor);
+      yield* Effect.gen(function* () {
+        const accounts = yield* makeCursorAccounts(large.read);
+        let sources: ReadonlyArray<ProviderUsageScan> = [];
+        let restarted = false;
+        let scans = 0;
+        for (; sources[0]?.status !== "ok" && scans < 60; scans++) {
+          const readsBefore = large.reads.length;
+          yield* TestClock.adjust("2 minutes");
+          sources = yield* accounts.scan(cursorScanInput(cutoff, true));
+          assert.isAtMost(large.reads.length - readsBefore, CURSOR_READS_PER_AWAITED_SCAN);
+          if (!restarted && cursor.state.calls.length > 0 && sources[0]?.status !== "ok") {
+            restarted = true;
+            // A restart resumes the backfill where the last refresh stopped, at its span.
+            yield* accounts.awaitPersisted;
+            const other = makeFakeCursor();
+            other.state.events = cursor.state.events;
+            const resumed = largeCursorAccount(other);
+            yield* (yield* makeCursorAccounts(resumed.read)).scan(cursorScanInput(cutoff, true));
+            const keptSinceMs = Math.min(...cursor.state.calls.map((call) => call.sinceMs));
+            const first = resumed.reads[0]!;
+            assert.strictEqual(first.untilMs, keptSinceMs);
+            assert.isAtMost(first.untilMs - first.sinceMs, 24 * HOUR_MS);
+          }
+        }
+        assert.isBelow(scans, 60);
+        assert.isUndefined(sources[0]?.refreshing);
+        assert.deepStrictEqual(cursorRecordTimes(sources), cursor.state.events);
+
+        // An outage does not narrow later reads: the catch-up after it takes one read.
+        cursor.state.error = "Cursor account usage could not be read.";
+        for (let attempt = 0; attempt < 5; attempt++) {
+          yield* TestClock.adjust("2 minutes");
+          yield* accounts.scan(cursorScanInput(cutoff, true));
+        }
+        cursor.state.error = null;
+        yield* TestClock.adjust("5 hours");
+        const nowMs = yield* Clock.currentTimeMillis;
+        cursor.state.events.push({ timestampMs: nowMs - HOUR_MS, outputTokens: 3 });
+        const readsBefore = large.reads.length;
+        sources = yield* accounts.scan(cursorScanInput(cutoff, true));
+        assert.strictEqual(sources[0]?.status, "ok");
+        assert.deepStrictEqual(cursorRecordTimes(sources), cursor.state.events);
+        assert.strictEqual(large.reads.length - readsBefore, 1);
+      }).pipe(
+        Effect.provide(
+          layerService({ prefix: "usage-service-cursor-large-account", home, settings }),
+        ),
+      );
+    }),
+  );
+
+  it.effect("drops a Cursor account's records when the key's account changes mid-refresh", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      yield* TestClock.setTime(CURSOR_NOW);
+      const cursor = makeFakeCursor();
+      cursor.state.events = [{ timestampMs: CURSOR_NOW - 3 * HOUR_MS, outputTokens: 5 }];
+      const large = largeCursorAccount(cursor);
+      const read: CursorAccountReader.CursorAccountReader["Service"]["read"] = (...args) =>
+        large.read(...args).pipe(
+          Effect.map((result) => {
+            if (result.error === null && cursor.state.accountKey === "account-a") {
+              // The session renews to another account right after a read of the first one.
+              cursor.state.accountKey = "account-b";
+              cursor.state.events = [{ timestampMs: CURSOR_NOW - 5 * HOUR_MS, outputTokens: 3 }];
+            }
+            return result;
+          }),
+        );
+      yield* Effect.gen(function* () {
+        const accounts = yield* makeCursorAccounts(read);
+        let sources = yield* accounts.scan(cursorScanInput(CURSOR_NOW - 92 * 24 * HOUR_MS, true));
+        for (let scans = 0; sources[0]?.status !== "ok" && scans < 60; scans++) {
+          yield* TestClock.adjust("2 minutes");
+          sources = yield* accounts.scan(cursorScanInput(CURSOR_NOW - 92 * 24 * HOUR_MS, true));
+        }
+        assert.strictEqual(sources[0]?.dir, "cursor-account:account-b");
+        assert.deepStrictEqual(cursorRecordTimes(sources), cursor.state.events);
+      }).pipe(
+        Effect.provide(
+          layerService({ prefix: "usage-service-cursor-account-change", home, settings }),
+        ),
+      );
+    }),
+  );
+
+  it.effect("waits out a Cursor failure from the time it happened, not the refresh start", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      yield* TestClock.setTime(CURSOR_NOW);
+      const cursor = makeFakeCursor();
       const read: CursorAccountReader.CursorAccountReader["Service"]["read"] = (
         credential,
         sinceMs,
         untilMs,
       ) =>
-        untilMs - sinceMs > 12 * HOUR_MS
-          ? Effect.succeed({
-              accountKey: cursor.state.accountKey,
-              records: [],
-              missing: false,
-              error: "Cursor account usage could not be read.",
-            })
-          : cursor.read(credential, sinceMs, untilMs);
+        cursor.state.calls.length === 0
+          ? // A slow read that times out; the narrower read after it fails outright.
+            cursor.read(credential, sinceMs, untilMs).pipe(
+              Effect.andThen(TestClock.adjust("2 minutes")),
+              Effect.as({
+                accountKey: cursor.state.accountKey,
+                records: [],
+                missing: false,
+                error: "Cursor account usage could not be read.",
+                rangeTooLarge: true,
+              }),
+            )
+          : Effect.andThen(
+              cursor.read(credential, sinceMs, untilMs),
+              Effect.succeed({
+                accountKey: cursor.state.accountKey,
+                records: [],
+                missing: false,
+                error: "Cursor account usage could not be read.",
+              }),
+            );
       yield* Effect.gen(function* () {
-        const service = yield* makeWithCursor(read);
-        let summary = yield* service.readSummary({ ...WINDOW, awaitRefresh: true });
-        for (let attempt = 1; attempt < 10 && totalOutputTokens(summary) < 12; attempt++) {
-          yield* TestClock.adjust("2 minutes");
-          summary = yield* service.readSummary({ ...WINDOW, awaitRefresh: true });
-        }
-        assert.strictEqual(totalOutputTokens(summary), 12);
-
-        // Failed reads during an outage narrow the span; it widens back once reads work again.
-        cursor.state.error = "Cursor account usage could not be read.";
-        for (let attempt = 0; attempt < 20; attempt++) {
-          yield* TestClock.adjust("2 minutes");
-          yield* service.readSummary({ ...WINDOW, awaitRefresh: true });
-        }
-        cursor.state.error = null;
-        yield* TestClock.adjust("10 hours");
-        cursor.state.events.push({ timestampMs: CURSOR_NOW + 10 * HOUR_MS, outputTokens: 3 });
-        const callsBeforeRecovery = cursor.state.calls.length;
-        summary = yield* service.readSummary({ ...WINDOW, awaitRefresh: true });
-        assert.strictEqual(totalOutputTokens(summary), 15);
-        assert.isBelow(cursor.state.calls.length - callsBeforeRecovery, 20);
+        const accounts = yield* makeCursorAccounts(read);
+        const failed = yield* accounts.scan(cursorScanInput(0, true));
+        assert.strictEqual(failed[0]?.message, "Cursor account usage could not be read.");
+        const reads = cursor.state.calls.length;
+        yield* TestClock.adjust("30 seconds");
+        yield* accounts.scan(cursorScanInput(0, true));
+        assert.strictEqual(cursor.state.calls.length, reads);
       }).pipe(
-        Effect.provide(
-          layerService({
-            prefix: "usage-service-cursor-large-account",
-            home,
-            settings,
-            platform: "darwin",
-            environment: {},
-            secretStore: {
-              get: () =>
-                Effect.succeedSome(
-                  new TextEncoder().encode(
-                    encodeUnknownJsonString({
-                      version: 1,
-                      backendUrl: "https://api2.cursor.sh",
-                      apiKey: "large-account-key",
-                      createdAtMs: 0,
-                    }),
-                  ),
-                ),
-            },
-          }),
-        ),
+        Effect.provide(layerService({ prefix: "usage-service-cursor-cooldown", home, settings })),
       );
     }),
   );
