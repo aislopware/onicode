@@ -366,12 +366,13 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       }),
     );
   // This server's own files are covered by `leases`. A lease is stale once its server has
-  // exited, or when it predates the last boot and its pid may belong to another process.
-  const isLeased = (directory: string) =>
+  // exited, or when it predates the last boot and its pid may belong to another process; the
+  // hour absorbs the clock being stepped after boot.
+  const isLeased = (directory: string, ifUnreadable = false) =>
     leases.has(directory)
       ? Effect.succeed(true)
       : Effect.gen(function* () {
-          const bootedAt = (yield* Clock.currentTimeMillis) - NodeOS.uptime() * 1000 - 60_000;
+          const bootedAt = (yield* Clock.currentTimeMillis) - NodeOS.uptime() * 1000 - 3_600_000;
           for (const entry of yield* fs.readDirectory(directory)) {
             if (!entry.startsWith(LEASE_PREFIX) || entry.startsWith(leaseName)) continue;
             if (!isProcessAlive(Number.parseInt(entry.slice(LEASE_PREFIX.length), 10))) continue;
@@ -381,7 +382,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
             if (writtenAt === undefined || writtenAt > bootedAt) return true;
           }
           return false;
-        }).pipe(Effect.orElseSucceed(() => false));
+        }).pipe(Effect.orElseSucceed(() => ifUnreadable));
   const compatibility = Effect.fn("CodexInstallation.compatibility")(function* (version: string) {
     const manifest = yield* manifestService.current;
     return (
@@ -702,7 +703,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         .rename(directory, doomed)
         .pipe(
           Effect.andThen(
-            Effect.flatMap(isLeased(doomed), (leased) =>
+            Effect.flatMap(isLeased(doomed, true), (leased) =>
               leased
                 ? fs.rename(doomed, directory)
                 : fs.remove(doomed, { recursive: true, force: true }),
