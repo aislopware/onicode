@@ -3354,13 +3354,16 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
         resumeThread: Effect.fn("PiAdapter.resumeThread")(
           function* (threadInput) {
             const sessionFile = threadInput.providerThread.nativeThreadRef?.nativeId;
-            // Pi opens an empty session at a missing path, hiding that the imported history is gone.
+            // Pi writes a session once it holds a message, and opens an empty one at a missing or
+            // empty path, which would hide that the conversation is gone.
             if (
-              threadInput.importedNativeSession === true &&
               sessionFile != null &&
-              !(yield* fileSystem
-                .exists(path.resolve(cwd, sessionFile))
-                .pipe(Effect.orElseSucceed(() => true)))
+              (threadInput.importedNativeSession === true ||
+                threadInput.providerThread.nativeConversationHeadRef !== null) &&
+              !(yield* fileSystem.stat(path.resolve(cwd, sessionFile)).pipe(
+                Effect.map((info) => info.size > 0n),
+                Effect.orElseSucceed(() => false),
+              ))
             ) {
               return yield* protocolError(`Pi session file ${sessionFile} is gone`);
             }

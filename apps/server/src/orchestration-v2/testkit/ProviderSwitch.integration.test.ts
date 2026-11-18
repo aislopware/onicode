@@ -136,6 +136,10 @@ function makeTestAdapter(input: {
   readonly closedSessions?: Ref.Ref<ReadonlyArray<string>>;
   // ACP cannot truncate, so its rollback answers with a fresh, empty native session.
   readonly rollback?: "truncates" | "replaces_native_thread";
+  readonly holdRollback?: {
+    readonly held: Deferred.Deferred<void>;
+    readonly release: Deferred.Deferred<void>;
+  };
 }): ProviderAdapter.ProviderAdapterV2["Service"] {
   return {
     instanceId: input.instanceId,
@@ -458,22 +462,28 @@ function makeTestAdapter(input: {
           rollbackThread: ({ providerThread }) =>
             input.rollback === undefined
               ? unimplemented(input.driver, "rollbackThread unused in provider switch test")
-              : Effect.succeed({
-                  providerThread:
-                    input.rollback === "truncates" || providerThread.nativeThreadRef === null
-                      ? providerThread
-                      : {
-                          ...providerThread,
-                          nativeThreadRef: {
-                            ...providerThread.nativeThreadRef,
-                            nativeId: `${providerThread.nativeThreadRef.nativeId}:after-rollback`,
+              : Effect.gen(function* () {
+                  if (input.holdRollback === undefined) return;
+                  yield* Deferred.succeed(input.holdRollback.held, undefined);
+                  yield* Deferred.await(input.holdRollback.release);
+                }).pipe(
+                  Effect.as({
+                    providerThread:
+                      input.rollback === "truncates" || providerThread.nativeThreadRef === null
+                        ? providerThread
+                        : {
+                            ...providerThread,
+                            nativeThreadRef: {
+                              ...providerThread.nativeThreadRef,
+                              nativeId: `${providerThread.nativeThreadRef.nativeId}:after-rollback`,
+                            },
+                            nativeConversationHeadRef: null,
                           },
-                          nativeConversationHeadRef: null,
-                        },
-                  providerTurns: [],
-                  messages: [],
-                  runtimeRequests: [],
-                }),
+                    providerTurns: [],
+                    messages: [],
+                    runtimeRequests: [],
+                  }),
+                ),
           forkThread: () =>
             unimplemented(input.driver, "forkThread unused in provider switch test"),
         };
@@ -1400,9 +1410,10 @@ describe("orchestration v2 provider switching", () => {
       | "resume-fails"
       | "edit-first-turn"
       | "edit-first-turn-then-switch"
-      | "edit-first-turn-queued-after-switch"
+      | "edit-first-turn-during-rollback"
       | "edit-first-turn-truncating"
-      | "edit-imported-first-turn",
+      | "edit-imported-first-turn"
+      | "edit-imported-unaccepted-turn",
   ) =>
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace(`imported-native-session-${scenario}`);
@@ -1411,39 +1422,47 @@ describe("orchestration v2 provider switching", () => {
       const migratedFromV1 =
         scenario === "edit-first-turn" ||
         scenario === "edit-first-turn-then-switch" ||
-        scenario === "edit-first-turn-queued-after-switch" ||
+        scenario === "edit-first-turn-during-rollback" ||
         scenario === "edit-first-turn-truncating";
-      const editsFirstTurn = migratedFromV1 || scenario === "edit-imported-first-turn";
+      // The imported session's only Onicode turn fails to start, so the rollback leaves it alone.
+      const unacceptedTurn = scenario === "edit-imported-unaccepted-turn";
+      const editsFirstTurn =
+        migratedFromV1 || scenario === "edit-imported-first-turn" || unacceptedTurn;
+      const failClaudeStartOnce = yield* Ref.make(unacceptedTurn);
       const claudeOrdinal =
         scenario === "after-failed-switch" ||
         scenario === "edit-first-turn" ||
+        scenario === "edit-first-turn-during-rollback" ||
         scenario === "edit-first-turn-truncating" ||
         scenario === "edit-imported-first-turn"
           ? 2
-          : scenario === "edit-first-turn-then-switch" ||
-              scenario === "edit-first-turn-queued-after-switch"
+          : scenario === "edit-first-turn-then-switch" || unacceptedTurn
             ? 3
             : 1;
-      const queuesBehindSwitch = scenario === "edit-first-turn-queued-after-switch";
-      const codexOrdinal = scenario === "edit-first-turn-then-switch" || queuesBehindSwitch ? 2 : 1;
-      const codexHeld = yield* Deferred.make<void>();
-      const releaseCodex = yield* Deferred.make<void>();
+      const racesRollback = scenario === "edit-first-turn-during-rollback";
+      const holdRollback = {
+        held: yield* Deferred.make<void>(),
+        release: yield* Deferred.make<void>(),
+      };
       const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
         makeTestAdapter({
           instanceId: CLAUDE_MODEL_SELECTION.instanceId,
           driver: CLAUDE_DRIVER,
           // ACP cannot truncate, so its rollback swaps in an empty session.
           capabilities:
-            scenario === "edit-imported-first-turn"
+            scenario === "edit-imported-first-turn" || unacceptedTurn
               ? AcpProviderCapabilitiesV2
               : ClaudeProviderCapabilitiesV2,
           modelSelection: CLAUDE_MODEL_SELECTION,
           responseByRunOrdinal: { 1: "OK", [claudeOrdinal]: "PELICAN" },
           capturedTurns,
           failImportedResume: scenario === "resume-fails",
+          ...(unacceptedTurn ? { failStartOnce: failClaudeStartOnce } : {}),
           // Like Cursor, rolling back to the start opens an empty agent on the same row.
           ...(editsFirstTurn
             ? {
+                nativeThreadGeneration: yield* Ref.make(0),
+                ...(racesRollback ? { holdRollback } : {}),
                 // Like Codex, truncating keeps the native id but drops the turn's inline handoff.
                 rollback:
                   scenario === "edit-first-turn-truncating"
@@ -1459,10 +1478,10 @@ describe("orchestration v2 provider switching", () => {
           modelSelection: CODEX_MODEL_SELECTION,
           responseByRunOrdinal: {},
           capturedTurns,
-          failedRunOrdinals: new Set([codexOrdinal]),
-          ...(queuesBehindSwitch
-            ? { holdRunOrdinal: 2, holdFirstTurn: codexHeld, releaseFirstTurn: releaseCodex }
-            : {}),
+          // A switch away after Edit from here completes, so no run is left without history.
+          ...(scenario === "edit-first-turn-then-switch" || unacceptedTurn
+            ? {}
+            : { failedRunOrdinals: new Set([1]) }),
         }),
       ]);
       yield* Effect.gen(function* () {
@@ -1609,8 +1628,9 @@ describe("orchestration v2 provider switching", () => {
             yield* worker.drain();
           });
         if (scenario === "after-failed-switch") yield* send(1, CODEX_MODEL_SELECTION);
+        if (unacceptedTurn) yield* send(1, CODEX_MODEL_SELECTION);
         if (editsFirstTurn) {
-          yield* send(1, CLAUDE_MODEL_SELECTION);
+          yield* send(unacceptedTurn ? 2 : 1, CLAUDE_MODEL_SELECTION);
           const baseline = (yield* orchestrator.getThreadProjection(threadId)).checkpoints.find(
             (checkpoint) => (checkpoint.appRunOrdinal ?? 0) === 0 && checkpoint.status === "ready",
           );
@@ -1625,51 +1645,31 @@ describe("orchestration v2 provider switching", () => {
             checkpointId: baseline.id,
             restoreFiles: false,
           });
-          yield* orchestrator.streamStoredEvents.pipe(
-            Stream.filter(
-              ({ event }) =>
-                (event.type === "run.updated" &&
-                  event.payload.ordinal === 1 &&
-                  event.payload.status === "rolled_back") ||
-                (event.type === "thread.metadata-updated" && event.payload.rollbackFailure != null),
-            ),
-            Stream.runHead,
-          );
-          yield* worker.drain();
+          if (racesRollback) {
+            // Another client sends while the rollback is still emptying the session.
+            yield* Deferred.await(holdRollback.held);
+            const sending = yield* send(claudeOrdinal, CLAUDE_MODEL_SELECTION).pipe(
+              Effect.forkChild,
+            );
+            yield* Deferred.succeed(holdRollback.release, undefined);
+            yield* Fiber.join(sending);
+          } else {
+            yield* orchestrator.streamStoredEvents.pipe(
+              Stream.filter(
+                ({ event }) =>
+                  (event.type === "run.updated" &&
+                    event.payload.ordinal === (unacceptedTurn ? 2 : 1) &&
+                    event.payload.status === "rolled_back") ||
+                  (event.type === "thread.metadata-updated" &&
+                    event.payload.rollbackFailure != null),
+              ),
+              Stream.runHead,
+            );
+            yield* worker.drain();
+          }
           if (scenario === "edit-first-turn-then-switch") yield* send(2, CODEX_MODEL_SELECTION);
         }
-        if (queuesBehindSwitch) {
-          const message = (ordinal: number, modelSelection: ModelSelection, queued: boolean) =>
-            orchestrator.dispatch({
-              type: "message.dispatch",
-              commandId: CommandId.make(`imported-native:${ordinal}`),
-              threadId,
-              messageId: MessageId.make(`imported-native:${ordinal}`),
-              createdBy: "user",
-              creationSource: "web",
-              text: "What was the code word?",
-              attachments: [],
-              modelSelection,
-              dispatchMode: queued ? { type: "queue_after_active" } : { type: "start_immediately" },
-            });
-          yield* message(2, CODEX_MODEL_SELECTION, false);
-          yield* Deferred.await(codexHeld);
-          yield* worker.drain();
-          yield* message(3, CLAUDE_MODEL_SELECTION, true);
-          yield* Deferred.succeed(releaseCodex, undefined);
-          yield* orchestrator.streamStoredEvents.pipe(
-            Stream.filter(
-              ({ event }) =>
-                event.type === "run.updated" &&
-                event.payload.ordinal === 3 &&
-                (event.payload.status === "completed" || event.payload.status === "failed"),
-            ),
-            Stream.runHead,
-          );
-          yield* worker.drain();
-        } else {
-          yield* send(claudeOrdinal, CLAUDE_MODEL_SELECTION);
-        }
+        if (!racesRollback) yield* send(claudeOrdinal, CLAUDE_MODEL_SELECTION);
 
         const projection = yield* orchestrator.getThreadProjection(threadId);
         assert.equal(projection.runs.at(-1)?.status, "completed");
@@ -1731,17 +1731,20 @@ describe("orchestration v2 provider switching", () => {
   it.live("resends a V1 import's history after Edit from here empties its session", () =>
     importedNativeSessionScenario("edit-first-turn"),
   );
-  it.live("resends a V1 import's history on returning to a session Edit from here emptied", () =>
+  it.live("resends a V1 import's history on returning after a switch Edit from here preceded", () =>
     importedNativeSessionScenario("edit-first-turn-then-switch"),
   );
-  it.live("resends a V1 import's history to a queued turn after Edit from here", () =>
-    importedNativeSessionScenario("edit-first-turn-queued-after-switch"),
+  it.live("resends a V1 import's history to a message sent during Edit from here", () =>
+    importedNativeSessionScenario("edit-first-turn-during-rollback"),
   );
   it.live("resends a V1 import's history after Edit from here truncates its session", () =>
     importedNativeSessionScenario("edit-first-turn-truncating"),
   );
   it.live("recovers an imported session's history after Edit from here replaces it", () =>
     importedNativeSessionScenario("edit-imported-first-turn"),
+  );
+  it.live("keeps an imported session that Edit from here has nothing to undo in", () =>
+    importedNativeSessionScenario("edit-imported-unaccepted-turn"),
   );
 
   it.live.each(["native", "legacy"] as const)(

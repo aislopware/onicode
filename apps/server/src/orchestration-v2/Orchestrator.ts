@@ -122,7 +122,6 @@ import {
 import { CommandReceiptStoreV2, type CommandReceiptV2 } from "./CommandReceiptStore.ts";
 import {
   ContextHandoffServiceV2,
-  nativeSessionHoldsImportedHistory,
   readForkHistoryItems,
   readInheritedHandoffItems,
   visibleConversationItems,
@@ -1747,25 +1746,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
       );
 
-  // Command reads omit handoffs, so this reads them only where an import could still be resent.
-  const nativeSessionHoldsImport = Effect.fn("Orchestrator.nativeSessionHoldsImport")(function* (
-    projection: Pick<OrchestrationV2ThreadProjection, "thread" | "runs">,
-    providerThread: OrchestrationV2ProviderThread | undefined,
-  ) {
-    if (providerThread === undefined || providerThread.nativeThreadRef === null) return false;
-    const { contextHandoffs } = yield* projectionStore
-      .getThreadRecords(projection.thread.id, ["contextHandoffs"])
-      .pipe(
-        Effect.mapError(
-          (cause) => new OrchestratorProjectionError({ threadId: projection.thread.id, cause }),
-        ),
-      );
-    return nativeSessionHoldsImportedHistory(
-      { contextHandoffs, runs: projection.runs },
-      providerThread,
-    );
-  });
-
   // Command reads omit settled tasks, but a completion notice counts its whole cohort.
   const notificationTasks = (
     threadId: ThreadId,
@@ -2861,9 +2841,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 ),
               );
       const legacyImportRecoveryHandoff =
-        latestCompletedRun === undefined &&
-        legacyImportItems.length > 0 &&
-        !(yield* nativeSessionHoldsImport(projection, deliveryProviderThread))
+        latestCompletedRun === undefined && needsFullContext && legacyImportItems.length > 0
           ? yield* contextHandoffService
               .prepareLegacyImport({
                 threadId,
@@ -8081,9 +8059,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       const legacyImportHandoff = shouldPrepareLegacyImportHandoff({
         hasNativeHistory:
-          latestCompletedRun === undefined &&
-          legacyImportItems.length > 0 &&
-          (yield* nativeSessionHoldsImport(projection, activeProviderThread)),
+          activeProviderThread !== undefined && activeProviderThread.nativeThreadRef !== null,
         historyOrigin: projection.thread.historyOrigin,
         hasCompletedRun: latestCompletedRun !== undefined,
         legacyImportItemCount: legacyImportItems.length,
@@ -8792,9 +8768,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     const legacyImportRecoveryHandoff =
       isProviderSwitch &&
       !canResumeAcrossInstances &&
+      ensuredProviderThread.nativeThreadRef === null &&
       latestCompletedRun === undefined &&
-      legacyImportItems.length > 0 &&
-      !(yield* nativeSessionHoldsImport(projection, ensuredProviderThread))
+      legacyImportItems.length > 0
         ? yield* contextHandoffService
             .prepareLegacyImport({
               threadId: command.threadId,
