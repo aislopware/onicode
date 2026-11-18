@@ -112,3 +112,18 @@ it("waits for other attachment preparation and sends once after all images join 
   state.setBlocked(false);
   expect(state.onSubmit).toHaveBeenCalledOnce();
 });
+
+it("holds a released send again for an image pasted while it waited on another blocker", async () => {
+  using state = setup();
+  const first = state.queue.pasteImages(["first"]);
+  state.queue.deferSend();
+  state.setBlocked(true);
+  await state.finish(true);
+  await first;
+  const second = state.queue.pasteImages(["second"]);
+  state.setBlocked(false);
+  expect(state.onSubmit).not.toHaveBeenCalled();
+  await state.finish(true);
+  await second;
+  expect(state.onSubmit).toHaveBeenCalledOnce();
+});
