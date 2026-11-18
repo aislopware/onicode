@@ -94,9 +94,11 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
 }
 
+/** `signal` aborts once the desktop app stops waiting; the thread then stays unopened. */
 export async function handleDesktopAppActivationRequest(
   request: DesktopAppActivationRequest,
   dependencies: DesktopAppActivationDependencies,
+  signal?: AbortSignal,
 ): Promise<DesktopAppActivationResponse> {
   const target = dependencies.getTarget();
   if (target === null) {
@@ -130,6 +132,9 @@ export async function handleDesktopAppActivationRequest(
     }
   }
 
+  if (signal?.aborted) {
+    return failure(request.requestId, "request-timeout", "The desktop app stopped waiting.");
+  }
   try {
     const opened = await dependencies.openThread({
       environmentId: target.environmentId,
@@ -160,6 +165,7 @@ export async function handleDesktopAppActivationRequest(
 
 type DesktopAppActivationHandler = (
   request: DesktopAppActivationRequest,
+  signal: AbortSignal,
 ) => Promise<DesktopAppActivationResponse>;
 
 /**
@@ -167,10 +173,10 @@ type DesktopAppActivationHandler = (
  * /welcome) waits for it instead of reaching no listener. Requests run one at a time.
  */
 export function createDesktopAppActivationReceiver(
-  activation: Pick<DesktopBridge["appActivation"], "onRequest" | "complete">,
-  now: () => number = Date.now,
+  activation: Pick<DesktopBridge["appActivation"], "onRequest" | "onAbandoned" | "complete">,
 ) {
   let handler: DesktopAppActivationHandler | null = null;
+  const queued = new Map<string, AbortController>();
   let wakeWaiter: (() => void) | null = null;
   let queue = Promise.resolve();
   const awaitHandler = async () => {
@@ -181,22 +187,29 @@ export function createDesktopAppActivationReceiver(
     }
     return handler;
   };
-  activation.onRequest((request, deadlineAt) => {
+  activation.onAbandoned((requestId) => queued.get(requestId)?.abort());
+  activation.onRequest((request) => {
+    const abandoned = new AbortController();
+    queued.set(request.requestId, abandoned);
     queue = queue
       .then(async () => {
         const handle = await awaitHandler();
-        // The command already reported a timeout; opening the folder now would surprise the user.
-        if (now() > deadlineAt) return;
-        const response = await handle(request).catch((error: unknown) =>
-          failure(
+        // The command already has its answer; opening the folder now would surprise the user.
+        if (abandoned.signal.aborted) return;
+        let response: DesktopAppActivationResponse;
+        try {
+          response = await handle(request, abandoned.signal);
+        } catch (error) {
+          response = failure(
             request.requestId,
             "internal-error",
             errorMessage(error, "Onicode could not open the project."),
-          ),
-        );
+          );
+        }
         await activation.complete(response);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => queued.delete(request.requestId));
   });
   return {
     setHandler: (next: DesktopAppActivationHandler | null) => {

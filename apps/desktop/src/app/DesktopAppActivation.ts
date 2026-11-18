@@ -25,7 +25,10 @@ import * as Scope from "effect/Scope";
 import type * as Electron from "electron";
 
 import * as ElectronWindow from "../electron/ElectronWindow.ts";
-import { DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL } from "../ipc/channels.ts";
+import {
+  DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL,
+  DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL,
+} from "../ipc/channels.ts";
 import * as DesktopWindow from "../window/DesktopWindow.ts";
 import { DesktopAppActivationBroker } from "./DesktopAppActivationBroker.ts";
 import * as DesktopEnvironment from "./DesktopEnvironment.ts";
@@ -381,8 +384,13 @@ export const make = Effect.gen(function* () {
         };
       }
 
-      broker.registerRenderer((request, deadlineAt) => {
-        webContents.send(DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL, request, deadlineAt);
+      broker.registerRenderer({
+        send: (request) => webContents.send(DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL, request),
+        abandon: (requestId) => {
+          if (!webContents.isDestroyed()) {
+            webContents.send(DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL, requestId);
+          }
+        },
       });
     }),
     // The IPC handler owns the activation-completion span.

@@ -24,6 +24,7 @@ export const SYNC_HTML_FULLSCREEN_CHANNEL = "desktop:sync-html-fullscreen";
 export const DESKTOP_APP_ACTIVATION_READY_CHANNEL = "desktop:app-activation-ready";
 export const DESKTOP_APP_ACTIVATION_COMPLETE_CHANNEL = "desktop:app-activation-complete";
 export const DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL = "desktop:app-activation-request";
+export const DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL = "desktop:app-activation-abandoned";
 export const UPDATE_STATE_CHANNEL = "desktop:update-state";
 export const UPDATE_GET_STATE_CHANNEL = "desktop:update-get-state";
 export const UPDATE_DOWNLOAD_CHANNEL = "desktop:update-download";

@@ -1191,10 +1191,9 @@ export interface DesktopBridge {
   appActivation: {
     setReady: (ready: boolean) => Promise<void>;
     complete: (response: DesktopAppActivationResponse) => Promise<void>;
-    /** `deadlineAt` (epoch ms) is when the desktop app stops waiting for this request. */
-    onRequest: (
-      listener: (request: DesktopAppActivationRequest, deadlineAt: number) => void,
-    ) => () => void;
+    onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
+    /** The desktop app answered the command without the page; the page must not open it now. */
+    onAbandoned: (listener: (requestId: string) => void) => () => void;
   };
   preview: DesktopPreviewBridge;
 }
