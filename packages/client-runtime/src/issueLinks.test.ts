@@ -81,6 +81,8 @@ describe("createIssueLinkResolver", () => {
     );
     using issueScope = vi.spyOn(sourceControlClients, "issueScope");
     const resolve = createIssueLinkResolver(projects);
+    // A message without links never pays for them.
+    expect(issueScope).not.toHaveBeenCalled();
     for (let index = 0; index < 50; index++) {
       expect(resolve(`https://docs.example.com/guide/page-${index}`)).toBeNull();
     }
