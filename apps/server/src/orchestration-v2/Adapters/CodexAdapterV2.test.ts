@@ -1969,7 +1969,11 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         };
         const restored = {
           threadId: nativeThreadId,
-          items: Object.entries({ ...oniContext, ...heldNotes }).map(([key, entry]) =>
+          // An interrupt dropped only the steers, so only their notes come back.
+          items: Object.entries({
+            ...(ending === "compacted" ? oniContext : {}),
+            ...heldNotes,
+          }).map(([key, entry]) =>
             entry.kind === "untrusted"
               ? {
                   type: "message",

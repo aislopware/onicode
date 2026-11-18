@@ -1995,12 +1995,14 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
         // Codex drops client developer messages during compaction but only resends additionalContext
         // when it changes. Restore after turn/completed: items injected mid-turn make the turn sample again.
         const restoreAdditionalContext = Effect.fn("CodexAdapterV2.restoreAdditionalContext")(
-          function* (threadId: string) {
-            const context = (yield* Ref.get(additionalContextByThread)).get(threadId);
-            if (!context) return;
+          function* (threadId: string, notesOnly: boolean) {
+            const context = Object.entries(
+              (yield* Ref.get(additionalContextByThread)).get(threadId) ?? {},
+            ).filter(([, entry]) => !notesOnly || entry.kind === "untrusted");
+            if (context.length === 0) return;
             yield* client.request("thread/inject_items", {
               threadId,
-              items: Object.entries(context).map(([key, entry]) =>
+              items: context.map(([key, entry]) =>
                 entry.kind === "untrusted"
                   ? {
                       type: "message",
@@ -7362,7 +7364,8 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             });
             if (compacted || (steered && payload.turn.status === "interrupted"))
               // Fork requests off the notification reader so it can read their responses.
-              yield* restoreAdditionalContext(payload.threadId).pipe(
+              // An interrupt drops only steers, whose new context is app notes.
+              yield* restoreAdditionalContext(payload.threadId, !compacted).pipe(
                 Effect.forkIn(scope, { startImmediately: true }),
               );
             const context = (yield* Ref.get(activeTurns)).get(payload.turn.id);
