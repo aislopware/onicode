@@ -87,6 +87,10 @@ describe("cursorAccountCache", () => {
     assert.isFalse(
       mergeCursorFetch(cache, "a", range, [record(10 * DAY_MS)], 11 * DAY_MS, 0).changed,
     );
+    // A retention start that moved on without pruning a record is not worth a write either.
+    assert.isFalse(
+      mergeCursorFetch(cache, "a", range, [record(10 * DAY_MS)], 11 * DAY_MS, DAY_MS / 2).changed,
+    );
     const pruned = mergeCursorFetch(
       cache,
       "a",

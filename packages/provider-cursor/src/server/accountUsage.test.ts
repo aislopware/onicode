@@ -627,7 +627,7 @@ describe("readCursorAccountUsage", () => {
   it.effect("marks a read that outlasts its deadline as one a narrower range may finish", () =>
     Effect.gen(function* () {
       const accessToken = `header.${Buffer.from(JSON.stringify({ sub: "auth|demo" })).toString("base64url")}.signature`;
-      const read = yield* Effect.forkChild(
+      const stalled = yield* Effect.forkChild(
         readAccountUsage(
           { kind: "apiKey", apiKey: accessToken },
           0,
@@ -636,9 +636,30 @@ describe("readCursorAccountUsage", () => {
         ),
       );
       yield* TestClock.adjust("10 seconds");
-      const result = yield* Fiber.join(read);
-      assert.strictEqual(result.error, "Cursor account usage could not be read.");
-      assert.isTrue(result.rangeTooLarge);
+      const stall = yield* Fiber.join(stalled);
+      assert.strictEqual(stall.error, "Cursor account usage could not be read.");
+      // A page that never answers is a stalled API, not a range too wide.
+      assert.isNotTrue(stall.rangeTooLarge);
+
+      // Each page answers within its own deadline, but there are too many for the whole read's.
+      const fullPage = Array.from({ length: 1000 }, () => ({ tokenUsage: null }));
+      const slow = yield* Effect.forkChild(
+        makeCursorAccountUsageReader.pipe(
+          Effect.flatMap((reader) =>
+            reader({ kind: "apiKey", apiKey: accessToken }, 0, 1781000000000),
+          ),
+          Effect.provideService(
+            HttpClient.HttpClient,
+            dashboard(() =>
+              Response.json({ totalUsageEventsCount: 1_000_000, usageEventsDisplay: fullPage }),
+            ).pipe(HttpClient.transform((response) => Effect.delay(response, "5 seconds"))),
+          ),
+        ),
+      );
+      for (let second = 0; second < 61; second += 5) yield* TestClock.adjust("5 seconds");
+      const large = yield* Fiber.join(slow);
+      assert.strictEqual(large.error, "Cursor account usage could not be read.");
+      assert.isTrue(large.rangeTooLarge);
     }).pipe(Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
   );
 });

@@ -108,8 +108,8 @@ export function mergeCursorFetch(
     Math.min(base?.sinceMs ?? range.sinceMs, range.sinceMs),
   );
   return {
-    // A newer `untilMs` alone is not worth a write: a cache that ends earlier only rereads more.
-    changed: base === undefined || recordsChanged || sinceMs !== base.sinceMs,
+    // Only new records or older coverage are worth a write; a saved copy that lags only rereads more.
+    changed: base === undefined || recordsChanged || sinceMs < base.sinceMs,
     cache: {
       accountKey,
       sinceMs,

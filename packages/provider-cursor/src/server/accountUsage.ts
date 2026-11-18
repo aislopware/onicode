@@ -40,7 +40,7 @@ export interface CursorAccountUsageReadResult {
   readonly records: readonly UsageRecord[];
   readonly missing: boolean;
   readonly error: string | null;
-  /** The read ran out of time or pages, so a narrower range may succeed. */
+  /** Pages kept answering but the whole read ran out of time or pages: a narrower range may finish. */
   readonly rangeTooLarge?: boolean;
 }
 
@@ -274,7 +274,7 @@ export const makeCursorAccountUsageReader = Effect.gen(function* () {
           },
           Effect.timeoutOrElse({
             duration: Duration.seconds(10),
-            orElse: () => tooLarge("Account usage request timed out"),
+            orElse: () => invalid("Account usage request timed out"),
           }),
           pageSlots.withPermit,
         );
