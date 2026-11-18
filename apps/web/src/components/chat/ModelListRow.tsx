@@ -1,42 +1,42 @@
 import { T, useGT } from "gt-react";
 import { Combobox as ComboboxPrimitive } from "@base-ui/react/combobox";
-import { type ProviderDriverKind } from "@onicode/contracts";
-import { CheckIcon } from "lucide-react";
-import { memo, type ReactNode } from "react";
+import { type ProviderDriverKind, type ProviderInstanceId } from "@onicode/contracts";
+import { CheckIcon, StarIcon } from "lucide-react";
+import { memo, type ComponentProps } from "react";
 import { cn } from "~/lib/utils";
 import { Badge } from "../ui/badge";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
+import { getDisplayModelName } from "./providerIconUtils";
 
 /** One look for every row the list highlights: model rows and the quiet "Show more" toggle. */
 const MODEL_PICKER_ROW =
-  "flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none select-none data-highlighted:bg-row-highlight data-disabled:cursor-not-allowed data-disabled:opacity-50";
+  "group/model-row flex h-7 w-full min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none select-none data-highlighted:bg-row-highlight data-disabled:cursor-not-allowed data-disabled:opacity-50";
 
-export function ModelPickerRowItem(props: {
-  index: number;
+/** Passes every other prop on, so a tooltip can use the row as its trigger. */
+export function ModelPickerRowItem({
+  value,
+  className,
+  ...props
+}: Omit<ComponentProps<typeof ComboboxPrimitive.Item>, "value" | "className"> & {
   value: string;
-  disabled?: boolean;
   className?: string;
-  "aria-expanded"?: boolean;
-  children: ReactNode;
 }) {
   return (
     <ComboboxPrimitive.Item
-      index={props.index}
-      value={props.value}
-      disabled={props.disabled}
-      aria-expanded={props["aria-expanded"]}
-      data-model-picker-row={props.value}
-      className={cn(MODEL_PICKER_ROW, props.className)}
-    >
-      {props.children}
-    </ComboboxPrimitive.Item>
+      {...props}
+      value={value}
+      data-model-picker-row={value}
+      className={cn(MODEL_PICKER_ROW, className)}
+    />
   );
 }
 
 export const ModelListRow = memo(function ModelListRow(props: {
   index: number;
   rowKey: string;
+  instanceId: ProviderInstanceId;
+  slug: string;
   name: string;
   subProvider?: string | undefined;
   driverKind: ProviderDriverKind;
@@ -45,15 +45,25 @@ export const ModelListRow = memo(function ModelListRow(props: {
   acpRegistryAgentId?: string | undefined;
   acpRegistryIconUrl?: string | undefined;
   isSelected: boolean;
+  isFavorite: boolean;
+  /** In the Favorites section every row is one, so its star waits for the pointer. */
+  quietFavorite: boolean;
   /** Marks this instance apart from another of the same provider. */
   showInstanceBadge: boolean;
   showNewBadge?: boolean;
   unavailable?: boolean;
-  contextLabel?: string | null;
   jumpLabel?: string | null;
   disabledReason?: string | null;
+  onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
   const gt = useGT();
+  const name = getDisplayModelName({
+    slug: props.slug,
+    name: props.name,
+    subProvider: props.subProvider,
+  });
+  // The star rests in view only where it tells favorites apart; elsewhere it shows for the pointer.
+  const starRests = props.isFavorite && !props.quietFavorite && !props.jumpLabel;
   const row = (
     <ModelPickerRowItem
       index={props.index}
@@ -78,11 +88,11 @@ export const ModelListRow = memo(function ModelListRow(props: {
         className="min-w-0 truncate"
         // Names the row in full on hover only when it is cut off.
         onPointerEnter={(event) => {
-          const name = event.currentTarget;
-          name.title = name.scrollWidth > name.clientWidth ? props.name : "";
+          const label = event.currentTarget;
+          label.title = label.scrollWidth > label.clientWidth ? name : "";
         }}
       >
-        {props.name}
+        {name}
         {/* The logo is decorative, so name the provider for screen readers. */}
         <span className="sr-only">, {props.providerDisplayName}</span>
       </span>
@@ -105,15 +115,45 @@ export const ModelListRow = memo(function ModelListRow(props: {
         </Badge>
       ) : null}
       <span className="ms-auto flex shrink-0 items-center gap-2 ps-2 text-xs text-muted-foreground tabular-nums">
-        {props.contextLabel ? <span>{props.contextLabel}</span> : null}
         {props.isSelected ? (
           <CheckIcon aria-hidden="true" className="size-3.5 text-foreground" />
         ) : null}
-        {props.jumpLabel ? (
-          <span data-model-jump-label className="text-muted-foreground">
-            {props.jumpLabel}
-          </span>
-        ) : null}
+        {/* The shortcut and the star share one slot, so rows end on the same edge. */}
+        <span className="relative flex h-5 min-w-5 items-center justify-end">
+          {props.jumpLabel ? (
+            <span
+              data-model-jump-label
+              className={cn(
+                !props.disabledReason && "group-hover/model-row:invisible pointer-coarse:invisible",
+              )}
+            >
+              {props.jumpLabel}
+            </span>
+          ) : null}
+          {props.disabledReason ? null : (
+            <button
+              type="button"
+              aria-label={props.isFavorite ? gt("Remove from favorites") : gt("Add to favorites")}
+              aria-pressed={props.isFavorite}
+              className={cn(
+                "absolute inset-y-0 right-0 flex w-5 cursor-pointer items-center justify-center rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                !starRests &&
+                  "opacity-0 group-hover/model-row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
+              )}
+              // The row is an option: a press here must not pick the model.
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onToggleFavorite(props.instanceId, props.slug);
+              }}
+              onKeyDown={(event) => event.stopPropagation()}
+            >
+              <StarIcon
+                aria-hidden="true"
+                className={cn("size-3.5", props.isFavorite && "fill-current")}
+              />
+            </button>
+          )}
+        </span>
       </span>
     </ModelPickerRowItem>
   );

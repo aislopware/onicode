@@ -9,7 +9,7 @@ import {
   type ResolvedKeybindingsConfig,
   MODEL_PICKER_JUMP_KEYBINDING_COMMANDS,
 } from "@onicode/contracts";
-import { getProviderOptionCurrentLabel, resolveSelectableModel } from "@onicode/shared/model";
+import { resolveSelectableModel } from "@onicode/shared/model";
 import { useAtomValue } from "@effect/atom-react";
 import { formatProviderUpdateRequiredNotice } from "@onicode/client-runtime/providerUpdateRequiredModels";
 import { useNavigate } from "@tanstack/react-router";
@@ -21,17 +21,12 @@ import {
   useEffectEvent,
   useLayoutEffect,
   useRef,
-  useSyncExternalStore,
-  type PointerEvent,
   type ReactNode,
   type RefObject,
 } from "react";
-import { createPortal } from "react-dom";
 import { ModelListRow, ModelPickerRowItem } from "./ModelListRow";
-import { ModelDetailCard, type ModelDetail } from "./ModelDetailCard";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
-import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import {
   modelPickerFavoriteKey,
   modelPickerLegacySectionKey,
@@ -56,7 +51,6 @@ import {
   useToggleEnvironmentModelFavorite,
 } from "~/hooks/useSettings";
 import { announce } from "~/lib/announce";
-import { observeResize } from "~/lib/observeResize";
 import { cn } from "~/lib/utils";
 import { getVirtualizedScrollFadeClassName } from "../ui/scroll-area";
 import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "../ui/tooltip";
@@ -140,11 +134,10 @@ function shouldOfferModelPickerSetup(
 
 const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const ROW_PX = 28;
+const RULE_PX = 9;
 const NOTICE_ESTIMATED_PX = 56;
 const LIST_MAX_PX = 320;
 const LIST_PADDING_PX = 8;
-const CARD_GAP_PX = 11;
-const CARD_VIEWPORT_MARGIN_PX = 8;
 const FAVORITES_SECTION_KEY = "section:favorites";
 
 type ListRow =
@@ -152,29 +145,25 @@ type ListRow =
       kind: "header";
       key: string;
       label: string;
-      entry: ProviderInstanceEntry | null;
       /** A provider this thread cannot switch to. */
       lockedOut: boolean;
     }
-  | { kind: "model"; key: string; model: ModelPickerItem }
+  /** The line between two sections. Its own row, so a header that sticks leaves it behind. */
+  | { kind: "rule"; key: string }
+  | { kind: "model"; key: string; model: ModelPickerItem; inFavorites: boolean }
   | { kind: "legacy"; key: string; expanded: boolean }
-  | { kind: "setup"; key: string; entry: ProviderInstanceEntry; label: string }
+  /** Why a provider lists no models, with the way to set it up when there is one. */
+  | { kind: "status"; key: string; entry: ProviderInstanceEntry; action: string | null }
   | { kind: "notice"; key: string; notice: string };
 
 function isHighlightableRow(row: ListRow): boolean {
   return row.kind === "model" || row.kind === "legacy";
 }
 
-function estimatedRowHeight(row: ListRow): number {
-  return row.kind === "setup" || row.kind === "notice" ? NOTICE_ESTIMATED_PX : ROW_PX;
-}
-
-/** The context window a model runs with unless the thread picks another. */
-function modelContextLabel(entry: ProviderInstanceEntry | undefined, slug: string): string | null {
-  const descriptor = entry?.models
-    .find((model) => model.slug === slug)
-    ?.capabilities?.optionDescriptors?.find((candidate) => candidate.id === "contextWindow");
-  return getProviderOptionCurrentLabel(descriptor) ?? null;
+/** Null for rows that size to their text. */
+function fixedRowHeight(row: ListRow): number | null {
+  if (row.kind === "status" || row.kind === "notice") return null;
+  return row.kind === "rule" ? RULE_PX : ROW_PX;
 }
 
 function modelJumpLabelsByKey(
@@ -197,27 +186,17 @@ function modelJumpLabelsByKey(
   return mapping.size > 0 ? mapping : EMPTY_MODEL_JUMP_LABELS;
 }
 
+/** Names a section. Each row carries its provider's logo, so the header is text alone. */
 function SectionHeader(props: { row: Extract<ListRow, { kind: "header" }> }) {
   const gt = useGT();
-  const { entry, lockedOut } = props.row;
+  const { lockedOut } = props.row;
   const header = (
     <div
       className={cn(
-        "flex h-7 items-end gap-1.5 bg-popover px-2 pb-1 text-xs font-medium text-muted-foreground",
+        "flex h-7 items-end bg-popover px-2 pb-1 text-xs font-medium text-muted-foreground",
         lockedOut && "opacity-50",
       )}
     >
-      {entry ? (
-        <ProviderInstanceIcon
-          driverKind={entry.driverKind}
-          displayName={entry.displayName}
-          accentColor={entry.accentColor}
-          acpRegistryAgentId={entry.acpRegistryAgentId}
-          acpRegistryIconUrl={entry.acpRegistryIconUrl}
-          className="mb-px size-3"
-          iconClassName="size-3"
-        />
-      ) : null}
       <span className="min-w-0 truncate">{props.row.label}</span>
     </div>
   );
@@ -234,9 +213,9 @@ function SectionHeader(props: { row: Extract<ListRow, { kind: "header" }> }) {
   );
 }
 
-function ProviderSetupRow(props: {
+function ProviderStatusRow(props: {
   entry: ProviderInstanceEntry;
-  label: string;
+  action: string | null;
   onRequestClose: (() => void) | undefined;
   onOpenProviderSetup: ((instanceId: ProviderInstanceId) => void) | undefined;
 }) {
@@ -246,17 +225,29 @@ function ProviderSetupRow(props: {
       <p className="line-clamp-3 text-muted-foreground">
         {getProviderStatusMessage(props.entry.snapshot, messages)}
       </p>
-      <InlineButton
-        className="mt-1"
-        onClick={() => {
-          props.onRequestClose?.();
-          props.onOpenProviderSetup?.(props.entry.instanceId);
-        }}
-      >
-        {props.label}
-      </InlineButton>
+      {props.action ? (
+        <InlineButton
+          className="mt-1"
+          onClick={() => {
+            props.onRequestClose?.();
+            props.onOpenProviderSetup?.(props.entry.instanceId);
+          }}
+        >
+          {props.action}
+        </InlineButton>
+      ) : null}
     </div>
   );
+}
+
+/** Keeps one listed provider's project models fresh while the picker is open. */
+function ProviderWorkspaceModels(props: {
+  environmentId: EnvironmentId | null;
+  gitCwd: string | null;
+  instanceId: ProviderInstanceId;
+}) {
+  useProviderWorkspaceSnapshotRefresh(props);
+  return null;
 }
 
 function UpdateRequiredNotice(props: {
@@ -287,8 +278,6 @@ function ModelPickerList({
   stickyHeaderIndices,
   initialScrollIndex,
   extraData,
-  onScroll,
-  onPointerMove,
   renderItem,
 }: {
   listRef: RefObject<LegendListRef | null>;
@@ -297,8 +286,6 @@ function ModelPickerList({
   stickyHeaderIndices: number[] | undefined;
   initialScrollIndex: number | undefined;
   extraData: unknown;
-  onScroll: () => void;
-  onPointerMove: (event: PointerEvent<HTMLElement>) => void;
   renderItem: (props: { item: ListRow; index: number }) => ReactNode;
 }) {
   const [showBottomScrollFade, setShowBottomScrollFade] = useState(false);
@@ -315,11 +302,11 @@ function ModelPickerList({
   return (
     <div
       className={cn(
-        "relative min-h-0 overflow-hidden px-1",
-        rows.length === 0 ? "h-0" : height === undefined ? "flex-1" : "shrink",
+        "relative overflow-hidden",
+        // Three rows stay in view when the options under the list take the popup's height.
+        rows.length === 0 ? "h-0" : height === undefined ? "min-h-0 flex-1" : "min-h-23 shrink",
       )}
       style={height === undefined ? undefined : { height }}
-      onPointerMove={onPointerMove}
     >
       <ComboboxListVirtualized>
         <LegendList<ListRow>
@@ -329,7 +316,7 @@ function ModelPickerList({
           keyExtractor={(row) => row.key}
           renderItem={renderItem}
           getItemType={(row) => row.kind}
-          getFixedItemSize={(row) => (estimatedRowHeight(row) === ROW_PX ? ROW_PX : undefined)}
+          getFixedItemSize={(row) => fixedRowHeight(row) ?? undefined}
           estimatedItemSize={ROW_PX}
           drawDistance={480}
           recycleItems
@@ -338,13 +325,10 @@ function ModelPickerList({
             ? { initialScrollIndex: { index: initialScrollIndex, viewPosition: 0.5 } }
             : {})}
           onLayout={updateScrollFades}
-          onScroll={() => {
-            updateScrollFades();
-            onScroll();
-          }}
+          onScroll={updateScrollFades}
           onReady={updateScrollFades}
           className={cn(
-            "h-full overflow-x-hidden overscroll-y-contain py-1 [scrollbar-width:thin]",
+            "h-full overflow-x-hidden overscroll-y-contain [scrollbar-width:thin]",
             getVirtualizedScrollFadeClassName({
               top: showTopScrollFade,
               bottom: showBottomScrollFade,
@@ -370,116 +354,6 @@ function WindowKeyDownListener({ onKeyDown }: { onKeyDown: (event: KeyboardEvent
   return null;
 }
 
-/**
- * Which row the detail card describes, and a nudge to re-place it. A store, not state, so a
- * hover re-renders the card alone, never the list.
- */
-function createCardStore() {
-  let key: string | null = null;
-  const listeners = new Set<() => void>();
-  const placers = new Set<() => void>();
-  return {
-    get: () => key,
-    show: (next: string) => {
-      if (next === key) return;
-      key = next;
-      for (const listener of listeners) listener();
-    },
-    subscribe: (listener: () => void) => {
-      listeners.add(listener);
-      return () => void listeners.delete(listener);
-    },
-    place: () => {
-      for (const placer of placers) placer();
-    },
-    onPlace: (placer: () => void) => {
-      placers.add(placer);
-      return () => void placers.delete(placer);
-    },
-  };
-}
-type CardStore = ReturnType<typeof createCardStore>;
-
-type CardModel = ModelDetail & { key: string; instanceId: ProviderInstanceId; slug: string };
-
-/**
- * Floats the detail card beside the list, its top on the row it describes. It stays inside the
- * window with a margin, and moves to the list's left when the right has no room.
- */
-function FloatingModelCard(props: {
-  store: CardStore;
-  host: HTMLElement;
-  fallbackKey: string | null;
-  resolve: (key: string) => CardModel | null;
-  activeModelKey: string | null;
-  controls: ReactNode;
-  onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
-}) {
-  const { store, host } = props;
-  const cardRef = useRef<HTMLDivElement>(null);
-  const shownKey = useSyncExternalStore(store.subscribe, store.get) ?? props.fallbackKey;
-  const model =
-    (shownKey ? props.resolve(shownKey) : null) ??
-    (props.fallbackKey ? props.resolve(props.fallbackKey) : null);
-
-  const place = useEffectEvent(() => {
-    const card = cardRef.current;
-    if (!card || !model) return;
-    const hostRect = host.getBoundingClientRect();
-    // The popup scales in; positions are set in its unscaled pixels.
-    const scale = host.offsetWidth > 0 ? hostRect.width / host.offsetWidth : 1;
-    const row = host.querySelector<HTMLElement>(
-      `[data-model-picker-row="${CSS.escape(model.key)}"]`,
-    );
-    const list = host.querySelector<HTMLElement>("[data-slot=combobox-list]");
-    const rowRect = row?.getBoundingClientRect();
-    const listRect = list?.getBoundingClientRect();
-    const rowShown =
-      rowRect && listRect && rowRect.bottom > listRect.top && rowRect.top < listRect.bottom;
-    const anchor = rowShown ? rowRect.top : hostRect.top;
-    const height = card.offsetHeight * scale;
-    const top = Math.max(
-      CARD_VIEWPORT_MARGIN_PX,
-      Math.min(anchor, window.innerHeight - CARD_VIEWPORT_MARGIN_PX - height),
-    );
-    const width = card.offsetWidth * scale;
-    const fitsRight =
-      hostRect.right + CARD_GAP_PX + width <= window.innerWidth - CARD_VIEWPORT_MARGIN_PX;
-    // Offsets start inside the popup's border.
-    card.style.top = `${(top - hostRect.top) / scale - host.clientTop}px`;
-    card.style.left = fitsRight
-      ? `${host.offsetWidth - host.clientLeft + CARD_GAP_PX}px`
-      : `${-host.clientLeft - CARD_GAP_PX - card.offsetWidth}px`;
-  });
-
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- re-places the card when the list scrolls, the card resizes or the window does
-  useEffect(() => {
-    const stopPlace = store.onPlace(place);
-    const card = cardRef.current;
-    const stopResize = card ? observeResize(card, place) : () => {};
-    window.addEventListener("resize", place);
-    return () => {
-      stopPlace();
-      stopResize();
-      window.removeEventListener("resize", place);
-    };
-  }, [store]);
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the row the card follows moves with every render of the list, so it is measured after each one before paint
-  useLayoutEffect(() => place());
-
-  if (!model) return null;
-  return createPortal(
-    <ModelDetailCard
-      ref={cardRef}
-      floating
-      model={model}
-      controls={model.key === props.activeModelKey ? props.controls : undefined}
-      onToggleFavorite={() => props.onToggleFavorite(model.instanceId, model.slug)}
-    />,
-    host,
-  );
-}
-
 export const ModelPickerContent = memo(function ModelPickerContent(props: {
   environmentId: EnvironmentId | null;
   /** Keeps the selected provider's catalog fresh for this directory. */
@@ -500,17 +374,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
-  /** The selected model's effort section, shown on its detail card. */
+  /** The selected model's effort section, pinned under the list. */
   controls?: ReactNode;
   /** Right at the end of the search text moves into the effort section. */
   onFocusEffort?: () => void;
   /** Closes the list. */
   listFooter?: ReactNode;
-  /**
-   * The popup the detail card floats beside. Null puts the card's content under the list for
-   * the selected model, for windows with no room beside it.
-   */
-  cardHost: HTMLElement | null;
 }) {
   const gt = useGT();
   const messages = useMessages();
@@ -529,7 +398,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const [searchQuery, setSearchQuery] = useState("");
   const modelListRef = useRef<LegendListRef | null>(null);
   const pickerContentRef = useRef<HTMLDivElement>(null);
-  const [cardStore] = useState(createCardStore);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes this picker's mount to global keydown handlers
   useLayoutEffect(() => registerModelPickerContent(), []);
   const highlightedModelKeyRef = useRef<string | null>(null);
@@ -697,6 +565,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       ? modelPickerFavoriteKey(model.instanceId, model.slug)
       : modelPickerModelKey(model.instanceId, model.slug),
     model,
+    inFavorites,
   });
 
   const favoriteModels = isSearching
@@ -719,15 +588,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       })).map((model) => modelRow(model));
     }
     const out: ListRow[] = [];
+    const pushSection = (key: string, label: string, lockedOut: boolean, section: ListRow[]) => {
+      if (out.length > 0) out.push({ kind: "rule", key: `rule:${key}` });
+      out.push({ kind: "header", key, label, lockedOut }, ...section);
+    };
     if (favoriteModels.length > 0) {
-      out.push({
-        kind: "header",
-        key: FAVORITES_SECTION_KEY,
-        label: gt("Favorites"),
-        entry: null,
-        lockedOut: false,
-      });
-      for (const model of favoriteModels) out.push(modelRow(model, true));
+      pushSection(
+        FAVORITES_SECTION_KEY,
+        gt("Favorites"),
+        false,
+        favoriteModels.map((model) => modelRow(model, true)),
+      );
     }
     const lockedOut: ProviderInstanceEntry[] = [];
     const offersSetup = (entry: ProviderInstanceEntry) =>
@@ -761,39 +632,26 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           expanded,
         });
       }
-      if (offersSetup(entry)) {
+      const notice = formatProviderUpdateRequiredNotice(entry.snapshot, "", messages, locale);
+      if (notice) section.push({ kind: "notice", key: `notice:${entry.instanceId}`, notice });
+      const setup = offersSetup(entry);
+      // An enabled provider with nothing to list says why, instead of going missing.
+      if (setup || section.length === 0) {
         section.push({
-          kind: "setup",
-          key: `setup:${entry.instanceId}`,
+          kind: "status",
+          key: `status:${entry.instanceId}`,
           entry,
-          label:
-            setupCount > 1
+          action: !setup
+            ? null
+            : setupCount > 1
               ? gt("Set up {provider}", { provider: entry.displayName })
               : gt("Open provider setup"),
         });
       }
-      const notice = formatProviderUpdateRequiredNotice(entry.snapshot, "", messages, locale);
-      if (notice) section.push({ kind: "notice", key: `notice:${entry.instanceId}`, notice });
-      if (section.length === 0) continue;
-      out.push(
-        {
-          kind: "header",
-          key: `section:${entry.instanceId}`,
-          label: entry.displayName,
-          entry,
-          lockedOut: false,
-        },
-        ...section,
-      );
+      pushSection(`section:${entry.instanceId}`, entry.displayName, false, section);
     }
     for (const entry of lockedOut) {
-      out.push({
-        kind: "header",
-        key: `section:${entry.instanceId}`,
-        label: entry.displayName,
-        entry,
-        lockedOut: true,
-      });
+      pushSection(`section:${entry.instanceId}`, entry.displayName, true, []);
     }
     return out;
   })();
@@ -804,14 +662,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const headerIndices = isSearching
     ? undefined
     : rows.flatMap((row, index) => (row.kind === "header" ? [index] : []));
+  // The combobox finds the selected row by its place among all items, so the rows in view lead
+  // in their own order and the rest follow.
   const allItemKeys = [
-    ...flatModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
-    ...favoriteModels.map((model) => modelPickerFavoriteKey(model.instanceId, model.slug)),
-    ...new Set(
-      flatModels
+    ...new Set([
+      ...filteredItemKeys,
+      ...flatModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
+      ...favoriteModels.map((model) => modelPickerFavoriteKey(model.instanceId, model.slug)),
+      ...flatModels
         .filter((model) => model.isLegacy)
         .map((model) => modelPickerLegacySectionKey(model.instanceId)),
-    ),
+    ]),
   ];
   const comboValue = [...selectedModelKeySet].flatMap((key) => {
     const model = modelByKey.get(key);
@@ -864,45 +725,24 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     isFavorite({ instanceId: props.activeInstanceId, slug: activeModelSlug });
   const initialScrollIndex =
     activeModelKey && !activeIsFavorite ? rowIndexByKey.get(activeModelKey) : undefined;
-  const floatingCardHost = props.cardHost;
-  // Under the list, the selected model's options take a fixed share of the popup's height.
-  const optionsUnderList = !floatingCardHost && props.controls !== undefined;
-  const listHeight =
-    isSearching || optionsUnderList
-      ? undefined
-      : Math.min(
-          LIST_MAX_PX,
-          rows.reduce((sum, row) => sum + estimatedRowHeight(row), 0) + LIST_PADDING_PX,
-        );
-
-  const resolveCardModel = (key: string): CardModel | null => {
-    const parsed = parseModelPickerModelKey(key);
-    if (!parsed) return null;
-    const plainKey = modelPickerModelKey(parsed.instanceId, parsed.slug);
-    const model = modelByKey.get(plainKey);
-    const entry = entryByInstanceId.get(parsed.instanceId);
-    if (!model || !entry) return null;
-    return {
-      key: plainKey,
-      instanceId: model.instanceId,
-      slug: model.slug,
-      name: model.name,
-      driverKind: model.driverKind,
-      providerDisplayName: model.instanceDisplayName,
-      providerAccentColor: model.instanceAccentColor,
-      acpRegistryAgentId: model.acpRegistryAgentId,
-      acpRegistryIconUrl: model.acpRegistryIconUrl,
-      contextLabel: modelContextLabel(entry, model.slug),
-      runsOn: model.subProvider ? `${entry.displayName} · ${model.subProvider}` : entry.displayName,
-      isFavorite: isFavorite(model),
-    };
-  };
-  const inlineCardModel = activeModelKey ? resolveCardModel(activeModelKey) : null;
+  // Favorites lists the selected model first, so that row is the one the list marks as selected.
+  const activeRowKey =
+    activeModelKey && activeIsFavorite && !isSearching
+      ? modelPickerFavoriteKey(props.activeInstanceId, activeModelSlug)
+      : activeModelKey;
+  const listHeight = isSearching
+    ? undefined
+    : Math.min(
+        LIST_MAX_PX,
+        rows.reduce((sum, row) => sum + (fixedRowHeight(row) ?? NOTICE_ESTIMATED_PX), 0) +
+          LIST_PADDING_PX,
+      );
 
   const scrollToSection = (direction: 1 | -1) => {
+    // A section with no model to pick is passed by: the highlight could not follow the view there.
     const headers = headerIndices?.filter((index) => {
-      const row = rows[index];
-      return row?.kind === "header" && !row.lockedOut;
+      const next = rows[index + 1];
+      return next !== undefined && isHighlightableRow(next);
     });
     if (!headers || headers.length === 0) return;
     const highlightedIndex = highlightedModelKeyRef.current
@@ -918,11 +758,24 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           ? 0
           : headers.length - 1
         : (current + direction + headers.length) % headers.length;
-    sectionCursorRef.current = next;
     const headerIndex = headers[next]!;
-    void modelListRef.current?.scrollToIndex({ index: headerIndex, animated: false });
     const header = rows[headerIndex];
     if (header?.kind === "header") announce(header.label, "model-picker");
+    const firstKey = rows[headerIndex + 1]?.key;
+    sectionCursorRef.current = next;
+    void Promise.resolve(
+      modelListRef.current?.scrollToIndex({ index: headerIndex, animated: false }),
+    ).then(() => {
+      // The combobox takes no highlight from code, and Enter must pick from the section in view,
+      // so its first row is highlighted the way the pointer would.
+      if (firstKey) {
+        pickerContentRef.current
+          ?.querySelector(`[data-model-picker-row="${CSS.escape(firstKey)}"]`)
+          ?.dispatchEvent(new MouseEvent("mousemove", { bubbles: true }));
+      }
+      // That highlight reset the cursor, like any other.
+      sectionCursorRef.current = next;
+    });
   };
 
   const onWindowKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -975,10 +828,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
-        className={cn(
-          "relative flex w-screen max-w-80 flex-col overflow-hidden bg-popover",
-          optionsUnderList ? "h-91 max-h-(--available-height)" : "max-h-(--available-height)",
-        )}
+        className="relative flex max-h-(--available-height) w-screen max-w-80 flex-col overflow-hidden bg-popover"
         style={isSearching && searchHeight > 0 ? { height: searchHeight } : undefined}
         data-model-picker-content="true"
       >
@@ -991,14 +841,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           open
           virtualized
           multiple={onToggleModel !== undefined}
-          value={onToggleModel ? comboValue : activeModelKey}
+          value={onToggleModel ? comboValue : activeRowKey}
           onItemHighlighted={(modelKey, eventDetails) => {
             highlightedModelKeyRef.current = typeof modelKey === "string" ? modelKey : null;
             if (typeof modelKey !== "string") return;
             sectionCursorRef.current = -1;
-            // The pointer moves the card itself (see the list), and the open's own highlight of the
-            // first row leaves it on the selected model.
-            if (eventDetails.reason === "keyboard" || isSearching) cardStore.show(modelKey);
             if (eventDetails.reason === "keyboard") {
               const index = rowIndexByKey.get(modelKey);
               if (index !== undefined) {
@@ -1030,6 +877,18 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           }}
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            {instanceEntries.map((entry) =>
+              entry.instanceId !== props.activeInstanceId &&
+              isProviderInstancePickerReady(entry) &&
+              matchesLockedProvider(entry) ? (
+                <ProviderWorkspaceModels
+                  key={entry.instanceId}
+                  environmentId={props.environmentId}
+                  gitCwd={props.workspaceCwd ?? null}
+                  instanceId={entry.instanceId}
+                />
+              ) : null,
+            )}
             <div className="shrink-0 border-b border-border p-1">
               <ComboboxPrimitive.Input
                 ref={searchInputRef}
@@ -1076,9 +935,6 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       modelPickerModelKey(highlighted.instanceId, highlighted.slug) !==
                         activeModelKey &&
                       handleModelSelect(highlighted.slug, highlighted.instanceId) !== null;
-                    if (pickedNew && highlightedModelKeyRef.current) {
-                      cardStore.show(highlightedModelKeyRef.current);
-                    }
                     if (!pickedNew) props.onFocusEffort();
                     return;
                   }
@@ -1115,22 +971,17 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               stickyHeaderIndices={headerIndices}
               initialScrollIndex={initialScrollIndex}
               extraData={modelListExtraData}
-              onScroll={cardStore.place}
-              onPointerMove={(event) => {
-                const key = (event.target as Element)
-                  .closest("[data-model-picker-row]")
-                  ?.getAttribute("data-model-picker-row");
-                if (key && parseModelPickerModelKey(key)) cardStore.show(key);
-              }}
               renderItem={({ item: row }) => {
                 switch (row.kind) {
                   case "header":
                     return <SectionHeader row={row} />;
-                  case "setup":
+                  case "rule":
+                    return <div aria-hidden="true" className="mx-2 my-1 border-t border-border" />;
+                  case "status":
                     return (
-                      <ProviderSetupRow
+                      <ProviderStatusRow
                         entry={row.entry}
-                        label={row.label}
+                        action={row.action}
                         onRequestClose={onRequestClose}
                         onOpenProviderSetup={onOpenProviderSetup}
                       />
@@ -1160,6 +1011,8 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         key={row.key}
                         index={comboIndexByKey.get(row.key) ?? -1}
                         rowKey={row.key}
+                        instanceId={model.instanceId}
+                        slug={model.slug}
                         name={model.name}
                         subProvider={model.subProvider}
                         driverKind={model.driverKind}
@@ -1168,17 +1021,16 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         acpRegistryAgentId={model.acpRegistryAgentId}
                         acpRegistryIconUrl={model.acpRegistryIconUrl}
                         isSelected={selectedModelKeySet.has(plainKey)}
+                        isFavorite={isFavorite(model)}
+                        quietFavorite={row.inFavorites}
                         showInstanceBadge={badgedInstanceIds.has(model.instanceId)}
                         showNewBadge={model.badge === "new"}
                         unavailable={model.isUnavailable === true}
-                        contextLabel={modelContextLabel(
-                          entryByInstanceId.get(model.instanceId),
-                          model.slug,
-                        )}
                         jumpLabel={modelJumpLabelByKey.get(row.key) ?? null}
                         disabledReason={
                           getModelDisabledReason?.(model.instanceId, model.slug) ?? null
                         }
+                        onToggleFavorite={toggleFavorite}
                       />
                     );
                   }
@@ -1203,26 +1055,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             {props.listFooter}
           </div>
         </Combobox>
-        {floatingCardHost ? (
-          <FloatingModelCard
-            store={cardStore}
-            host={floatingCardHost}
-            fallbackKey={activeModelKey}
-            resolve={resolveCardModel}
-            activeModelKey={activeModelKey}
-            controls={props.controls}
-            onToggleFavorite={toggleFavorite}
-          />
-        ) : inlineCardModel ? (
-          <ModelDetailCard
-            floating={false}
-            model={inlineCardModel}
-            controls={props.controls}
-            onToggleFavorite={() =>
-              toggleFavorite(inlineCardModel.instanceId, inlineCardModel.slug)
-            }
-          />
-        ) : null}
+        {props.controls}
       </div>
     </TooltipProvider>
   );

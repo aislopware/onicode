@@ -67,7 +67,7 @@ export function focusRequestedPermission(open: boolean, trigger: HTMLElement | n
 }
 
 /** Focuses the checked permission in the menu this trigger opened. */
-export function focusCheckedPermission(trigger: HTMLElement | null): void {
+function focusCheckedPermission(trigger: HTMLElement | null): void {
   const popupId = trigger?.getAttribute("aria-controls");
   const popup = popupId ? document.getElementById(popupId) : null;
   popup

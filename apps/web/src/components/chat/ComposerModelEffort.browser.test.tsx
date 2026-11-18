@@ -105,26 +105,29 @@ it("draws an agent's reasoning as bars and keeps its mode out of the levels", as
   await expect.element(levels).toHaveAttribute("aria-valuetext", "High");
   await userEvent.keyboard("{ArrowLeft}{ArrowUp}");
   await expect.element(levels).toHaveAttribute("aria-valuetext", "Medium");
-  // Down leaves the slider for the option rows without opening a menu.
-  await userEvent.keyboard("{ArrowDown}{ArrowDown}");
-  const speed = screen.getByRole("button", { name: "Speed: Standard" });
-  await expect.element(speed).toHaveFocus();
-  await expect.element(page.getByRole("menuitemradio")).not.toBeInTheDocument();
-  await userEvent.keyboard("{ArrowRight}");
-  await expect.element(page.getByRole("menuitemradio", { name: "Standard" })).toHaveFocus();
-  await userEvent.keyboard("{ArrowLeft}");
-  await expect.element(page.getByRole("menuitemradio")).not.toBeInTheDocument();
-  await expect.element(speed).toHaveFocus();
+  // Down leaves the slider for the options, whose choices sit in their rows.
+  await userEvent.keyboard("{ArrowDown}");
+  await expect.element(screen.getByRole("radio", { name: "Bypass Permissions" })).toHaveFocus();
+  await userEvent.keyboard("{ArrowDown}");
+  const standard = screen.getByRole("radio", { name: "Standard" });
+  await expect.element(standard).toHaveFocus();
+  // Left and Right walk one option's choices; Enter picks.
+  await userEvent.keyboard("{ArrowRight}{Enter}");
+  await expect.element(screen.getByRole("radio", { name: "Fast" })).toHaveFocus();
+  await expect
+    .element(screen.getByRole("radio", { name: "Fast" }))
+    .toHaveAttribute("aria-checked", "true");
+  await userEvent.keyboard("{ArrowUp}");
+  await expect.element(screen.getByRole("radio", { name: "Bypass Permissions" })).toHaveFocus();
 
   await userEvent.click(screen.getByText("Auto-approve tools"));
   await expect
     .element(screen.getByRole("switch", { name: "Auto-approve tools" }))
     .toHaveAttribute("aria-checked", "true");
 
-  await userEvent.click(screen.getByRole("button", { name: "Session Mode: Bypass Permissions" }));
-  await userEvent.click(page.getByRole("menuitemradio", { name: "Plan" }));
+  await userEvent.click(screen.getByRole("radio", { name: "Plan" }));
   await expect
-    .element(screen.getByRole("button", { name: "Session Mode: Plan" }))
-    .toBeInTheDocument();
+    .element(screen.getByRole("radio", { name: "Plan" }))
+    .toHaveAttribute("aria-checked", "true");
   await expect.element(page.getByRole("menuitemradio")).not.toBeInTheDocument();
 });

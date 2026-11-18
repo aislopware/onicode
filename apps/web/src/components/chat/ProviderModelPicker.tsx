@@ -52,7 +52,7 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
     return (
       target instanceof Element &&
       target.closest(
-        "[data-model-picker-content], [data-model-picker-card], [data-model-picker-effort], [data-model-picker-option-menu]",
+        "[data-model-picker-content], [data-model-picker-effort], [data-composer-permissions]",
       )
     );
   };
@@ -119,9 +119,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Composer shortcuts this trigger answers besides the picker's own. */
   triggerShortcuts?: string;
   /**
-   * The selected model's effort and options, shown on its detail card, with a footer under the
-   * list. The popup then stays open until Escape or an outside press, and picking a model moves
-   * focus to its levels.
+   * The selected model's effort and options, pinned under the list, with a footer below them.
+   * The popup then stays open until Escape or an outside press, and picking a model moves focus
+   * to its levels.
    */
   effortColumn?: ReactNode;
   footer?: ReactNode;
@@ -149,9 +149,6 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
-  // The detail card floats beside the popup when the window has room for both.
-  const [popupElement, setPopupElement] = useState<HTMLDivElement | null>(null);
-  const roomForCard = useMediaQuery("(min-width: 45rem)");
   // Touch opens on the popup itself so the on-screen keyboard stays down until the search is tapped.
   const isCoarsePointer = useMediaQuery({ pointer: "coarse" });
   const size = props.size ?? "sm";
@@ -218,8 +215,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       return;
     }
     popupRef.current
-      ?.querySelector<HTMLButtonElement>("[data-composer-permissions-trigger]")
-      ?.click();
+      ?.querySelector<HTMLElement>("[data-composer-permissions] [aria-checked='true']")
+      ?.focus({ preventScroll: true });
   };
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
@@ -319,21 +316,16 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
           : (props.getModelDisabledReason?.(instanceId, model) ?? null)
       }
       onInstanceModelChange={handleInstanceModelChange}
-      cardHost={roomForCard ? popupElement : null}
       {...(docked
         ? {
             controls: (
               <div
                 data-model-picker-effort
-                className="flex min-h-0 flex-col"
+                // A model with nothing to set leaves no empty section behind.
+                className="flex max-h-48 min-h-0 shrink-0 flex-col border-t border-border empty:hidden"
                 onKeyDown={(event) => {
-                  // Up leaves the options for the list; Left is the older way back.
-                  if (
-                    (event.key !== "ArrowUp" && event.key !== "ArrowLeft") ||
-                    event.altKey ||
-                    event.ctrlKey ||
-                    event.metaKey
-                  )
+                  // Up leaves the options for the list above them.
+                  if (event.key !== "ArrowUp" || event.altKey || event.ctrlKey || event.metaKey)
                     return;
                   event.preventDefault();
                   event.stopPropagation();
@@ -472,11 +464,9 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         {...(props.isComposerOwned ? composerFloatingLayerProps : {})}
         ref={(popup) => {
           popupRef.current = popup;
-          setPopupElement(popup);
           const unlock = lockBackgroundScroll(popup);
           return () => {
             popupRef.current = null;
-            setPopupElement(null);
             unlock?.();
           };
         }}
@@ -490,6 +480,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         className="before:hidden"
         padding="none"
         touchBackdrop
+        // The selected model's options and the list both change height while the picker is open.
+        resizes
       >
         {docked ? (
           <div className="flex max-h-(--available-height) flex-col bg-popover">

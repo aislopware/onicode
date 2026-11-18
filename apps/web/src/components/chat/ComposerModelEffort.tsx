@@ -8,25 +8,16 @@ import {
 import type { ProviderOptionDescriptor, RuntimeMode } from "@onicode/contracts";
 import type { EffortDisplay } from "@onicode/contracts/settings";
 import { getProviderOptionCurrentLabel } from "@onicode/shared/model";
-import { ChevronRightIcon, ChevronUpIcon, WorkflowIcon } from "lucide-react";
-import { type CSSProperties, type KeyboardEvent, type ReactNode, useRef, useState } from "react";
-import { msg, T, useGT, useMessages } from "gt-react";
+import { WorkflowIcon } from "lucide-react";
+import { type CSSProperties, type KeyboardEvent, type ReactNode, useId, useState } from "react";
+import { msg, useGT, useMessages } from "gt-react";
 
 import { m, type MessageResolver } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
-import {
-  Menu,
-  MenuPopup,
-  MenuRadioGroup,
-  MenuRadioItem,
-  MenuRadioItemIndicator,
-  MenuTrigger,
-} from "../ui/menu";
 import { Switch } from "../ui/switch";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import type { ComposerControlSize } from "./ComposerControl";
-import { ComposerPermissionsSection, type RuntimeModeOption } from "./ComposerFooterControls";
-import { composerFloatingLayerProps, focusCheckedPermission } from "./composerEventScope";
+import type { RuntimeModeOption } from "./ComposerFooterControls";
 import { EffortGlyph, FastBolt, resolveEffortGlyph } from "./EffortGlyph";
 import { EffortSliderField, effortHue, effortTone } from "./EffortSliderField";
 import {
@@ -45,7 +36,8 @@ type ColumnControl =
 
 /**
  * The section lists the model's reasoning levels under the header that names it. Every other
- * option, such as Fast mode, Ultracode or an agent's session mode, sits below as one row each.
+ * option, such as Fast mode, Ultracode or an agent's session mode, sits below as one row each,
+ * with its choices in the row: the picker is one popup, with no menu behind a row.
  */
 function columnControls(
   selects: ReadonlyArray<SelectDescriptor>,
@@ -165,7 +157,7 @@ export function describeComposerEffort(
   };
 }
 
-const COLUMN_ROW =
+const OPTION_ROW =
   "flex h-7 w-full shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-sm text-foreground outline-none hover:bg-row-highlight focus-visible:bg-row-highlight disabled:cursor-not-allowed disabled:opacity-50";
 const COLUMN_LABEL = "px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs";
 
@@ -178,8 +170,10 @@ function LevelSegment(props: {
   label: string;
   description?: string | undefined;
   selected: boolean;
-  /** The levels' one tab stop: the selected level, else the first when none shows as selected. */
+  /** The control's one tab stop: the selected choice, else the first when none shows as selected. */
   tabStop: boolean;
+  /** A choice of an option besides reasoning; focus after a model pick passes it by. */
+  option?: boolean;
   isDefault?: boolean | undefined;
   disabled?: boolean;
   onPick: () => void;
@@ -193,8 +187,8 @@ function LevelSegment(props: {
     disabled: props.disabled,
     "data-effort-row": true,
     // Focus lands on a level after a model pick.
-    "data-effort-level": true,
-    // Left and Right move between levels.
+    "data-effort-level": props.option ? undefined : true,
+    // Left and Right move between the choices.
     tabIndex: props.tabStop ? 0 : -1,
     // Levels share the row evenly until their names need more, then wrap.
     className: cn(SEGMENT, "min-w-max flex-1"),
@@ -223,48 +217,39 @@ function LevelSegment(props: {
 }
 
 /**
- * Left and Right walk the levels, which sit in one row. Down goes on to the option rows under
- * them and Up comes back; Up from the levels is left for the popup, which returns to the list.
- * A slider moves its own thumb on Left and Right, so only Down is taken from it.
+ * Left and Right walk the stops of one control: the levels, or one option's choices. Down goes on
+ * to the next control and Up comes back; Up from the first is left for the popup, which returns
+ * to the list. A slider and a switch answer Left and Right themselves.
  */
 function moveBetweenRows(event: KeyboardEvent<HTMLElement>) {
   const { key } = event;
   if (key !== "ArrowDown" && key !== "ArrowUp" && key !== "ArrowLeft" && key !== "ArrowRight")
     return;
-  // An option's side menu is a React child here, but it moves through its own items.
-  if (!event.currentTarget.contains(event.target as Node)) return;
   const rows = Array.from(
     event.currentTarget.querySelectorAll<HTMLElement>("[data-effort-row]:not(:disabled)"),
   );
-  const levels = rows.filter((row) => row.matches("[data-effort-level]"));
-  const options = rows.filter((row) => !row.matches("[data-effort-level]"));
-  const active = document.activeElement;
-  const levelIndex = levels.findIndex((row) => row === active);
-  const optionIndex = options.findIndex((row) => row === active);
-  let next: HTMLElement | undefined;
-  if (levelIndex >= 0) {
-    if (key === "ArrowUp") return;
-    if (key !== "ArrowDown" && active instanceof HTMLInputElement) return;
-    next =
-      key === "ArrowDown"
-        ? options[0]
-        : levels[
-            Math.min(levels.length - 1, Math.max(0, levelIndex + (key === "ArrowRight" ? 1 : -1)))
-          ];
-  } else if (optionIndex >= 0) {
-    // Left and Right belong to the row: they open and close its menu.
-    if (key === "ArrowLeft" || key === "ArrowRight") return;
-    if (key === "ArrowDown") next = options[optionIndex + 1] ?? options[optionIndex];
-    else if (optionIndex > 0) next = options[optionIndex - 1];
-    else if (levels.length > 0)
-      next = levels.find((row) => row.getAttribute("aria-checked") === "true") ?? levels[0];
-    else return;
+  const active = rows.find((row) => row === document.activeElement);
+  if (!active) return;
+  const controlOf = (row: HTMLElement) => row.closest('[role="radiogroup"]') ?? row;
+  const stopsOf = (control: Element) => rows.filter((row) => controlOf(row) === control);
+  const controls = [...new Set(rows.map(controlOf))];
+  const control = controlOf(active);
+  let next = active;
+  if (key === "ArrowLeft" || key === "ArrowRight") {
+    const stops = stopsOf(control);
+    if (stops.length < 2) return;
+    const index = stops.indexOf(active) + (key === "ArrowRight" ? 1 : -1);
+    next = stops[Math.min(stops.length - 1, Math.max(0, index))] ?? active;
   } else {
-    return;
+    const target = controls[controls.indexOf(control) + (key === "ArrowDown" ? 1 : -1)];
+    if (!target && key === "ArrowUp") return;
+    if (target) {
+      const stops = stopsOf(target);
+      next = stops.find((row) => row.getAttribute("aria-checked") === "true") ?? stops[0] ?? active;
+    }
   }
   event.preventDefault();
   event.stopPropagation();
-  if (!next) return;
   next.focus();
   next.scrollIntoView({ block: "nearest" });
 }
@@ -417,7 +402,7 @@ function EffortFrame(props: { label: string; level?: ReactNode; children: ReactN
       </div>
       <div
         className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-1 pb-1"
-        // Capture, so Up and Down on an option row move rows instead of opening its menu.
+        // Capture, so Up and Down move between controls before a slider takes them.
         onKeyDownCapture={moveBetweenRows}
       >
         {props.children}
@@ -453,13 +438,7 @@ function EffortSection(props: { traits: TraitsSelectionInput }) {
       </EffortFrame>
     );
   }
-  if (!effort && others.length === 0) {
-    return (
-      <EffortFrame label={label}>
-        <NoEffortRow />
-      </EffortFrame>
-    );
-  }
+  if (!effort && others.length === 0) return null;
   // Ultrathink in the prompt locks the levels; the first option then holds the tab stop.
   const locked =
     effort?.descriptor.id === traits.primarySelectDescriptor?.id && traits.ultrathinkInBodyText;
@@ -535,7 +514,7 @@ function EffortSection(props: { traits: TraitsSelectionInput }) {
                 tabStop={(!effort || locked) && index === 0}
               />
             ) : (
-              <OptionMenuRow
+              <OptionChoicesRow
                 key={control.descriptor.id}
                 descriptor={control.descriptor}
                 traits={traits}
@@ -609,116 +588,54 @@ function EffortRows(props: { control: ColumnControl; traits: TraitsSelection; lo
   );
 }
 
-const OPTION_ROW = COLUMN_ROW;
-
 /**
- * One select besides reasoning, such as an agent's session mode. It names the current choice and
- * opens the rest in a side menu, so any number of options leaves the levels in place.
+ * One select besides reasoning, such as an agent's session mode: its name, then every choice as a
+ * segment. The choices sit beside the name while they fit, and take the line under it when not.
  */
-function OptionMenuRow(props: {
+function OptionChoicesRow(props: {
   descriptor: SelectDescriptor;
   traits: TraitsSelection;
   /** Holds the section's tab stop when the model has no levels. */
   tabStop: boolean;
 }) {
-  const gt = useGT();
   const { descriptor, traits } = props;
-  const [open, setOpen] = useState(false);
-  const popupRef = useRef<HTMLDivElement>(null);
   const choices = selectableProviderOptionChoices(descriptor);
   const value = traits.selectValue(descriptor);
-  const current = choices.find((choice) => choice.id === value)?.label ?? "";
+  const shown = choices.some((choice) => choice.id === value);
   return (
-    <Menu
-      open={open}
-      // A modal menu would cover the picker, so the next click there would only close it.
-      modal={false}
-      onOpenChange={setOpen}
-      onOpenChangeComplete={(isOpen) => {
-        if (!isOpen) return;
-        const checked = popupRef.current?.querySelector<HTMLElement>(
-          '[role="menuitemradio"][aria-checked="true"]',
-        );
-        checked?.focus({ preventScroll: true });
-        checked?.scrollIntoView({ block: "nearest" });
-      }}
-    >
-      {/* No hover opening: an opened menu takes focus, which would steal typing from search. */}
-      <MenuTrigger
-        render={
-          <button
-            type="button"
-            data-effort-row
-            tabIndex={props.tabStop ? 0 : -1}
-            aria-label={`${descriptor.label}: ${current}`}
-            className={cn(OPTION_ROW, "data-popup-open:bg-row-highlight")}
-            onKeyDown={(event) => {
-              if (event.key !== "ArrowRight") return;
-              event.preventDefault();
-              event.stopPropagation();
-              setOpen(true);
-            }}
-          />
-        }
-      >
-        <span className="min-w-0 flex-1 truncate">{descriptor.label}</span>
-        <span className="max-w-32 shrink-0 truncate text-muted-foreground text-xs">{current}</span>
-        <ChevronRightIcon
-          aria-hidden="true"
-          className="-me-1 size-3.5 shrink-0 text-muted-foreground"
-        />
-      </MenuTrigger>
-      <MenuPopup
-        ref={popupRef}
-        side="right"
-        align="start"
-        sideOffset={6}
-        // A narrow window leaves no room beside the popup, so fall below or above.
-        collisionAvoidance={{ fallbackAxisSide: "end" }}
-        className="max-w-72"
-        data-model-picker-option-menu
-        {...composerFloatingLayerProps}
-        onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft") return;
-          event.preventDefault();
-          event.stopPropagation();
-          setOpen(false);
-        }}
-      >
-        <MenuRadioGroup
+    <div className="flex min-h-7 flex-wrap items-center gap-x-3 gap-y-1 px-2 py-0.5 text-sm">
+      {/* The name takes a shared line's spare room, so the choices stretch only on their own line. */}
+      <span className="grow-999 whitespace-nowrap">{descriptor.label}</span>
+      {choices.length < 2 ? (
+        // Nothing to choose between, so the row only reports the value.
+        <span className="truncate text-muted-foreground text-xs">{choices[0]?.label}</span>
+      ) : (
+        <div
+          role="radiogroup"
           aria-label={descriptor.label}
-          value={value}
-          onValueChange={(next: string) => {
-            if (next !== value) traits.changeSelect(descriptor, next);
-          }}
+          className={cn(SEGMENT_TRACK, "max-w-full grow flex-wrap")}
         >
-          {choices.map((choice) => (
-            <MenuRadioItem key={choice.id} value={choice.id} closeOnClick>
-              <span className="flex items-center gap-3">
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{choice.label}</span>
-                  {choice.description ? (
-                    <span className="line-clamp-2 text-muted-foreground text-xs">
-                      {choice.description}
-                    </span>
-                  ) : null}
-                </span>
-                {choice.isDefault ? (
-                  <span className="text-muted-foreground text-xs">
-                    {gt("Default", { $context: "marks the default option" })}
-                  </span>
-                ) : null}
-                <MenuRadioItemIndicator />
-              </span>
-            </MenuRadioItem>
+          {choices.map((choice, index) => (
+            <LevelSegment
+              key={choice.id}
+              option
+              label={choice.label}
+              description={choice.description}
+              isDefault={choice.isDefault}
+              selected={choice.id === value}
+              tabStop={props.tabStop && (shown ? choice.id === value : index === 0)}
+              onPick={() => {
+                if (choice.id !== value) traits.changeSelect(descriptor, choice.id);
+              }}
+            />
           ))}
-        </MenuRadioGroup>
-      </MenuPopup>
-    </Menu>
+        </div>
+      )}
+    </div>
   );
 }
 
-/** A two-state option toggles in place; a menu would add a click for nothing. */
+/** A two-state option toggles in place. */
 function OptionSwitchRow(props: {
   descriptor: BooleanDescriptor;
   traits: TraitsSelection;
@@ -741,86 +658,104 @@ function OptionSwitchRow(props: {
   );
 }
 
-function NoEffortRow() {
-  return (
-    <div className="flex h-7 items-center px-1 text-muted-foreground text-sm">
-      <T>No effort levels</T>
-    </div>
-  );
-}
-
 /** The model picker's effort section: the selected model's levels and its other options. */
 export function ComposerEffortColumn(props: { traits: TraitsSelectionInput | null }) {
-  const gt = useGT();
-  if (props.traits) return <EffortSection traits={props.traits} />;
-  return (
-    <EffortFrame label={gt("Effort", { $context: "heading for reasoning effort levels" })}>
-      <NoEffortRow />
-    </EffortFrame>
-  );
-}
-
-/** Permissions change rarely, so the footer names the mode and nests the choice in a menu. */
-function PermissionsMenu(props: {
-  runtimeMode: RuntimeMode;
-  options: ReadonlyArray<RuntimeModeOption>;
-  onChange: (mode: RuntimeMode) => void;
-}) {
-  const gt = useGT();
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const current = props.options.find((option) => option.mode === props.runtimeMode);
-  if (!current) return null;
-  const CurrentIcon = current.icon;
-  return (
-    <Menu
-      onOpenChangeComplete={(open) => {
-        if (open) focusCheckedPermission(triggerRef.current);
-      }}
-    >
-      <MenuTrigger
-        render={
-          <button
-            ref={triggerRef}
-            type="button"
-            data-composer-permissions-trigger
-            aria-label={gt("Permissions: {mode}", { mode: current.label })}
-            className="flex h-7 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-muted-foreground text-sm outline-none hover:bg-row-highlight hover:text-foreground focus-visible:bg-row-highlight focus-visible:text-foreground data-popup-open:bg-row-highlight data-popup-open:text-foreground"
-          />
-        }
-      >
-        <CurrentIcon aria-hidden="true" className="size-3.5" />
-        <span className="min-w-0 flex-1 truncate text-left">{current.label}</span>
-        <ChevronUpIcon aria-hidden="true" className="size-3.5" />
-      </MenuTrigger>
-      <MenuPopup side="top" align="end" {...composerFloatingLayerProps}>
-        <ComposerPermissionsSection
-          runtimeMode={props.runtimeMode}
-          runtimeModeOptions={props.options}
-          onRuntimeModeChange={props.onChange}
-        />
-      </MenuPopup>
-    </Menu>
-  );
+  return props.traits ? <EffortSection traits={props.traits} /> : null;
 }
 
 /**
- * The model picker's footer. The model's own options live with its reasoning; access belongs to
- * the thread, so it stays here, one menu deeper.
+ * The model picker's footer. Access belongs to the thread, not the model, so it sits apart from
+ * the model's options: the mode in use by name, and every mode one press away.
  */
 export function ComposerPickerFooter(props: {
-  /** Unused here: the model's own options sit in its effort section. */
-  traits: TraitsSelectionInput | null;
   runtimeMode: RuntimeMode;
   runtimeModeOptions: ReadonlyArray<RuntimeModeOption>;
   onRuntimeModeChange: (mode: RuntimeMode) => void;
 }) {
+  const gt = useGT();
+  // Hover or keyboard focus names a mode before a pick.
+  const [previewMode, setPreviewMode] = useState<RuntimeMode | null>(null);
+  const descriptionId = useId();
+  const options = props.runtimeModeOptions;
+  const shown = options.find((option) => option.mode === (previewMode ?? props.runtimeMode));
+  if (!shown) return null;
   return (
-    <div className="shrink-0 border-t border-border p-1">
-      <PermissionsMenu
-        runtimeMode={props.runtimeMode}
-        options={props.runtimeModeOptions}
-        onChange={props.onRuntimeModeChange}
-      />
+    <div className="flex shrink-0 items-center gap-3 border-t border-border px-3 py-1">
+      <span
+        aria-hidden="true"
+        className={cn(
+          "min-w-0 flex-1 truncate text-sm",
+          shown.mode === props.runtimeMode ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {shown.label}
+      </span>
+      <div
+        role="radiogroup"
+        aria-label={gt("Permissions")}
+        data-composer-permissions
+        className={SEGMENT_TRACK}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          const modes = Array.from(
+            event.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]'),
+          );
+          const next =
+            modes[
+              modes.indexOf(event.target as HTMLElement) + (event.key === "ArrowRight" ? 1 : -1)
+            ];
+          if (!next) return;
+          event.preventDefault();
+          event.stopPropagation();
+          next.focus();
+        }}
+      >
+        {options.map((option) => {
+          const OptionIcon = option.icon;
+          const checked = option.mode === props.runtimeMode;
+          const unavailable = option.disabledReason !== undefined;
+          return (
+            <Tooltip key={option.mode}>
+              <TooltipTrigger
+                render={
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={checked}
+                    data-checked={checked || undefined}
+                    aria-label={option.label}
+                    aria-describedby={`${descriptionId}-${option.mode}`}
+                    // Not `disabled`: a mode the policy rules out still shows why on hover.
+                    aria-disabled={unavailable || undefined}
+                    tabIndex={checked ? 0 : -1}
+                    className={cn(
+                      SEGMENT,
+                      "w-7 px-0 aria-disabled:cursor-not-allowed aria-disabled:opacity-40",
+                    )}
+                    onPointerEnter={() => setPreviewMode(option.mode)}
+                    onPointerLeave={() => setPreviewMode(null)}
+                    onFocus={() => setPreviewMode(option.mode)}
+                    onBlur={() => setPreviewMode(null)}
+                    onClick={() => {
+                      if (!unavailable && !checked) props.onRuntimeModeChange(option.mode);
+                    }}
+                  />
+                }
+              >
+                <OptionIcon aria-hidden="true" className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipPopup side="top" className="max-w-56">
+                {option.disabledReason ?? option.description}
+              </TooltipPopup>
+            </Tooltip>
+          );
+        })}
+      </div>
+      {options.map((option) => (
+        <span key={option.mode} id={`${descriptionId}-${option.mode}`} className="sr-only">
+          {option.disabledReason ?? option.description}
+        </span>
+      ))}
     </div>
   );
 }
