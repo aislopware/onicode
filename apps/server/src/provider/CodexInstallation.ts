@@ -696,15 +696,19 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       // An installing server switches the pointer before dropping its lease, so check in this order.
       if (yield* isLeased(directory)) continue;
       if ((yield* readRecord(activePath, ActiveRelease)).version === entry) continue;
-      // Moved aside first: a lease written since the check moved with it, and an interrupted
-      // delete leaves a staging directory that startup cleans up.
+      // Moved aside first: a lease or activation since the checks is seen afterwards, and an
+      // interrupted delete leaves a staging directory that startup cleans up.
       const doomed = path.join(managedDirectory, `.install-pruned-${yield* random.uuidV4()}`);
+      const inUse = Effect.gen(function* () {
+        if (yield* isLeased(doomed, true)) return true;
+        return (yield* readRecord(activePath, ActiveRelease)).version === entry;
+      }).pipe(Effect.orElseSucceed(() => true));
       yield* fs
         .rename(directory, doomed)
         .pipe(
           Effect.andThen(
-            Effect.flatMap(isLeased(doomed, true), (leased) =>
-              leased
+            Effect.flatMap(inUse, (used) =>
+              used
                 ? fs.rename(doomed, directory)
                 : fs.remove(doomed, { recursive: true, force: true }),
             ),
@@ -1105,7 +1109,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
           onNone: () => now,
           onSome: (date) => date.getTime(),
         });
-        if (now - modifiedAt < STAGING_STALE_AFTER_MS) continue;
+        if (now - modifiedAt < STAGING_STALE_AFTER_MS || (yield* isLeased(target))) continue;
         yield* fs.remove(target, { recursive: true, force: true }).pipe(Effect.ignore);
       }
       // Keep the empty root to avoid racing new staging directories; unreadable roots remain removable.
