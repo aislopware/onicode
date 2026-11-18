@@ -7278,9 +7278,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       // Compaction summarizes the note away, so the next turn carries it again.
       assert.include(yield* runTurn(5, "Created Jira issue PROJ-43"), "PROJ-43");
       yield* finishTurn(5);
-      // A stopped turn can keep a steer Claude took in, so its note is no longer known delivered.
-      assert.notInclude(yield* runTurn(6, "Created Jira issue PROJ-43"), "PROJ-43");
-      assert.include(yield* steer(6, "Created Jira issue PROJ-44"), "PROJ-44");
+      // A stopped turn's prompt can stay in Claude's history while its last steer is dropped
+      // unread, so no note the turn sent counts as delivered.
+      assert.include(yield* runTurn(6, "Created Jira issue PROJ-44"), "PROJ-44");
+      assert.include(yield* steer(6, "Created Jira issue PROJ-43"), "PROJ-43");
       yield* interruptTurn(6);
       assert.include(yield* runTurn(7, "Created Jira issue PROJ-43"), "PROJ-43");
       yield* finishTurn(7);

@@ -670,6 +670,7 @@ function codexReplayPreamble(input: {
     typeof CodexClient.V2TurnStartParams.Type,
     "approvalPolicy" | "sandboxPolicy"
   >;
+  readonly additionalContext?: typeof CodexClient.V2TurnStartParams.Type.additionalContext;
 }): Array<CodexReplay.CodexAppServerReplayEntry> {
   return [
     {
@@ -768,6 +769,9 @@ function codexReplayPreamble(input: {
           approvalsReviewer: "user",
           sandboxPolicy: { type: "dangerFullAccess" },
           ...input.turnPolicy,
+          ...(input.additionalContext === undefined
+            ? {}
+            : { additionalContext: input.additionalContext }),
           summary: "auto",
           ...(input.effort === undefined ? {} : { effort: input.effort }),
           collaborationMode: {
@@ -4567,6 +4571,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     "steer",
     "start-fails",
     "keep-changed-tier",
+    "keep-steered-notes",
   ] as const)("handles terminal Codex capacity failures when retries %s", (outcome) =>
     Effect.gen(function* () {
       const scenario = `capacity-${outcome}`;
@@ -4604,14 +4609,41 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           },
         },
       ];
+      const steeredText = "Use the smaller change.";
+      // A note a steer changed while the first attempt ran; the retry must not resend the old one.
+      const appNote = (text: string) => ({
+        "mcp_app_item-1": { kind: "untrusted" as const, value: text },
+      });
+      const steeredNotes = outcome === "keep-steered-notes";
       const entries = codexReplayPreamble({
         nativeThreadId,
         nativeTurnId: nativeTurnId(0),
         prompt,
+        ...(steeredNotes ? { additionalContext: appNote("PROJ-42") } : {}),
       });
       // A speed picked while the first attempt runs; the retry must not send the old one.
       const changedTier = outcome === "keep-changed-tier" ? "fast" : undefined;
-      const retryRequestId = (attempt: number) => (changedTier === undefined ? 3 : 4) + attempt;
+      const retryRequestId = (attempt: number) =>
+        (changedTier === undefined && !steeredNotes ? 3 : 4) + attempt;
+      if (steeredNotes) {
+        entries.push(
+          {
+            type: "expect_outbound",
+            label: "turn/steer",
+            frame: {
+              id: 4,
+              method: "turn/steer",
+              params: {
+                threadId: nativeThreadId,
+                expectedTurnId: nativeTurnId(0),
+                input: [{ type: "text", text: steeredText }],
+                additionalContext: appNote("PROJ-44"),
+              },
+            },
+          },
+          { type: "emit_inbound", frame: { id: 4, result: { turnId: nativeTurnId(0) } } },
+        );
+      }
       if (changedTier !== undefined) {
         entries.push(
           {
@@ -4631,7 +4663,6 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       );
       if (outcome === "completion-only") entries.push(...failureEntries(0).slice(1));
       const retries = outcome === "exhaust" ? 5 : outcome === "stop" ? 0 : 1;
-      const steeredText = "Use the smaller change.";
       for (let attempt = 1; attempt <= retries; attempt++) {
         const start = codexReplayPreamble({
           nativeThreadId,
@@ -4664,6 +4695,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                   summary: "auto",
                   collaborationMode: { mode: "default", settings: { model: "gpt-5.4" } },
                   ...(changedTier === undefined ? {} : { serviceTier: changedTier }),
+                  ...(steeredNotes ? { additionalContext: appNote("PROJ-44") } : {}),
                 },
               },
             });
@@ -4727,6 +4759,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         if (
           outcome === "recover" ||
           outcome === "keep-changed-tier" ||
+          outcome === "keep-steered-notes" ||
           outcome === "completion-only" ||
           outcome === "started-first" ||
           outcome === "stop-starting"
@@ -4802,14 +4835,37 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             }
           }),
       );
-      const turnInput = makeCodexTestTurnInput({
-        threadId: harness.threadId,
-        providerThread: harness.providerThread,
-        now: yield* DateTime.now,
-        attemptId: RunAttemptId.make(scenario),
-        text: prompt,
-      });
+      const turnInput = {
+        ...makeCodexTestTurnInput({
+          threadId: harness.threadId,
+          providerThread: harness.providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make(scenario),
+          text: prompt,
+        }),
+        ...(steeredNotes ? { appContext: [{ key: "mcp_app_item-1", text: "PROJ-42" }] } : {}),
+      };
       yield* harness.runtime.startTurn(turnInput);
+      if (steeredNotes) {
+        yield* harness.until(() =>
+          harness.events.some(
+            (event) =>
+              event.type === "provider_turn.updated" &&
+              event.providerTurn.nativeTurnRef?.nativeId === nativeTurnId(0),
+          ),
+        );
+        const providerTurnId = harness.events.flatMap((event) =>
+          event.type === "provider_turn.updated" ? [event.providerTurn.id] : [],
+        )[0];
+        assert.isDefined(providerTurnId);
+        if (providerTurnId === undefined) return;
+        yield* harness.runtime.steerTurn({
+          ...turnInput,
+          providerTurnId,
+          appContext: [{ key: "mcp_app_item-1", text: "PROJ-44" }],
+          message: { ...turnInput.message, text: steeredText },
+        });
+      }
       if (changedTier !== undefined) {
         yield* harness.until(() =>
           harness.events.some(
@@ -4882,6 +4938,12 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         }
       }
       yield* harness.awaitTerminal(1);
+      if (steeredNotes) {
+        assert.deepEqual(
+          (starts[1] as typeof CodexClient.V2TurnStartParams.Type).additionalContext,
+          appNote("PROJ-44"),
+        );
+      }
       if (outcome === "new-run") {
         assert.equal((yield* Queue.take(milestones)).type, "turn.terminal");
         yield* harness.runtime.startTurn({
@@ -4900,6 +4962,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         terminal?.status,
         outcome === "recover" ||
           outcome === "keep-changed-tier" ||
+          outcome === "keep-steered-notes" ||
           outcome === "completion-only" ||
           outcome === "steer" ||
           outcome === "started-first" ||

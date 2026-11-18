@@ -7251,9 +7251,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     );
                     if (!claimed) return;
                     // Notifications before the RPC response also take the terminalization permit.
+                    // Steers may have changed the notes since the turn started; send what Codex holds.
+                    const heldContext =
+                      (yield* Ref.get(additionalContextByThread)).get(nativeThreadId) ?? {};
                     yield* startNativeTurn(
                       {
                         ...context.input,
+                        appContext: Object.entries(heldContext).flatMap(([key, entry]) =>
+                          entry.kind === "untrusted" ? [{ key, text: entry.value }] : [],
+                        ),
                         // A speed changed during the failed attempt outlives the retry.
                         ...(context.appliedServiceTier === undefined
                           ? {}
