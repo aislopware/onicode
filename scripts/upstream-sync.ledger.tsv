@@ -2496,3 +2496,4 @@ eebb6bccdf	skip	Changes upstream's release-smoke script (T3 release pipeline); O
 6c0698c0af	take	fix(server): Antigravity turns no longer fail on a roots notification to the Onicode MCP server; CONFLICT resolved by dropping upstream's looksLikeProviderToken (Onicode has no registry tokens there)
 2ba4fde9a5	take	fix(server): Antigravity 1.5 asks for sign-in when it cannot open a browser
 e7fa771f65	take	fix(server): integrated terminals get ONICODE_THREAD_ID like agent sessions
+c67deb12dd	take	fix(antigravity): thread sessions spawn with their Onicode thread and MCP environment
