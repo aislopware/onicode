@@ -2451,3 +2451,4 @@ b8b5affac4	take	fix(server): agents read a Linear issue once when given its link
 2216ffe006	take	fix(server): All issues pages skip the signed-in account read (#38431)
 5b6f7c81ce	take	fix(server): recover JSON-stringified delegate targets (#38436)
 baab17bb03	take	fix(mobile): retrying an issue filter only reloads repositories that failed (#38423)
+c48825322d	skip	Onicode already dropped the current-origin pairing link (no browser-served UI), so the settings never offer the desktop window's own app:// or loopback address
