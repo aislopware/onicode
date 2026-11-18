@@ -2483,3 +2483,4 @@ e6265a926e	take	taken as is
 0c6d0ee862	take	conflict in ProviderTurnControlService.test.ts resolved with upstream's layerProjectionStore helper (dropped its guest-share stub)
 3088d26665	take	kept Onicode's hover-only will-change-[scale] (#47, compositor) with upstream's centered 32px touch target
 373ec12be6	take	taken as is
+5552f0aa74	take	conflict: kept Onicode's after-last-hook placement of the strip call in ThreadComposer, with upstream's status callback

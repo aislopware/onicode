@@ -674,9 +674,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   // element that reads it.
   const stripAttachments = composerStripAttachments(
     draftAttachments,
-    (attachment) =>
-      uploadStates[composerAttachmentUploadKey(props.environmentId, attachment.id)]?.status ===
-      "failed",
+    (attachment) => uploadStates[composerAttachmentUploadKey(props.environmentId, attachment.id)],
   );
   const hasEditingAttachments =
     (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) ||
