@@ -1,5 +1,6 @@
 import type { EnvironmentPresentation } from "@onicode/client-runtime/connection";
 import type { EnvironmentShellStatus } from "@onicode/client-runtime/state/shell";
+import { DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS } from "@onicode/contracts";
 import type {
   DesktopAppActivationFailure,
   DesktopBridge,
@@ -168,6 +169,7 @@ type DesktopAppActivationHandler = (
  */
 export function createDesktopAppActivationReceiver(
   activation: Pick<DesktopBridge["appActivation"], "onRequest" | "complete">,
+  now: () => number = Date.now,
 ) {
   let handler: DesktopAppActivationHandler | null = null;
   let wakeWaiter: (() => void) | null = null;
@@ -181,9 +183,12 @@ export function createDesktopAppActivationReceiver(
     return handler;
   };
   activation.onRequest((request) => {
+    const receivedAt = now();
     queue = queue
       .then(async () => {
         const handle = await awaitHandler();
+        // The command already reported a timeout; opening the folder now would surprise the user.
+        if (now() - receivedAt > DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS) return;
         await activation.complete(await handle(request));
       })
       .catch(() => undefined);

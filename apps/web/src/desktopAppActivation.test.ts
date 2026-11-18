@@ -1,4 +1,5 @@
 import {
+  DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS,
   EnvironmentId,
   ProjectId,
   ThreadId,
@@ -176,33 +177,58 @@ describe("desktop app activation", () => {
     },
   );
 
-  it("handles a request that arrived while no handler was mounted once one mounts", async () => {
+  it.each([
+    {
+      name: "handles a request that arrived during a remount once the handler is back",
+      waitedMs: 0,
+    },
+    {
+      name: "drops a request the desktop app already gave up on before a handler came back",
+      waitedMs: DESKTOP_APP_ACTIVATION_REQUEST_TIMEOUT_MS + 1,
+    },
+  ])("$name", async ({ waitedMs }) => {
+    let nowMs = 0;
     let deliver: (input: DesktopAppActivationRequest) => void = () => undefined;
-    let completed: (response: unknown) => void = () => undefined;
-    const completion = new Promise((resolve) => {
-      completed = resolve;
-    });
-    const receiver = createDesktopAppActivationReceiver({
-      onRequest: (listener) => {
-        deliver = listener;
-        return () => undefined;
+    const receiver = createDesktopAppActivationReceiver(
+      {
+        onRequest: (listener) => {
+          deliver = listener;
+          return () => undefined;
+        },
+        complete: async () => undefined,
       },
-      complete: async (response) => completed(response),
-    });
-    const handled = vi.fn(async (input: DesktopAppActivationRequest) => ({
+      () => nowMs,
+    );
+    const respond = async (input: DesktopAppActivationRequest) => ({
       version: 1 as const,
       requestId: input.requestId,
       ok: true as const,
       projectId: existingProjectId,
       threadId,
-    }));
+    });
+    const unmounted = vi.fn(respond);
+    const remounted = vi.fn(respond);
+    let handled: () => void = () => undefined;
+    const handledOrDropped = new Promise<void>((resolve) => {
+      handled = resolve;
+    });
 
-    // The handler unmounted, as when the window leaves /welcome.
+    receiver.setHandler(unmounted);
     receiver.setHandler(null);
     deliver(request);
-    receiver.setHandler(handled);
+    nowMs += waitedMs;
+    receiver.setHandler(async (input) => {
+      const response = await remounted(input);
+      if (input.requestId === "request-2") handled();
+      return response;
+    });
+    // A dropped request never reaches the handler, so a second request marks the queue's progress.
+    deliver({ ...request, requestId: "request-2" });
+    await handledOrDropped;
 
-    await expect(completion).resolves.toMatchObject({ requestId: request.requestId, ok: true });
-    expect(handled).toHaveBeenCalledOnce();
+    expect(unmounted).not.toHaveBeenCalled();
+    expect(remounted.mock.calls.map(([input]) => input.requestId)).toEqual(
+      waitedMs === 0 ? ["request-1", "request-2"] : ["request-2"],
+    );
   });
 });
