@@ -102,6 +102,11 @@ export function createNewThreadHandler(router: AnyRouter) {
       replace?: boolean;
       /** Composer text for the draft, set before it shows. A draft with user text keeps it. */
       prompt?: string;
+      /**
+       * Resolve to this project's draft when another opener (home's first-project draft) showed
+       * it meanwhile, instead of null. Callers that edit the result must leave this off.
+       */
+      acceptOpenedMeanwhile?: boolean;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     const projects = readProjects();
@@ -233,11 +238,18 @@ export function createNewThreadHandler(router: AnyRouter) {
     const logicalProjectKey = project
       ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
       : scopedProjectKey(projectRef);
-    // Another opener (home's own first-project draft) may have reached this project's draft first.
     // Matches lag the location during a navigation, so compare against the location.
     const resultIfAbandoned = () => {
+      if (options?.acceptOpenedMeanwhile !== true) return null;
       const draft = getDraftSessionByLogicalProjectKey(logicalProjectKey);
-      if (draft === null || draft.promotedTo != null || readProject(projectRef) === null) {
+      // Repository grouping shares the key with other machines' checkouts of the same repository.
+      if (
+        draft === null ||
+        draft.promotedTo != null ||
+        draft.environmentId !== projectRef.environmentId ||
+        draft.projectId !== projectRef.projectId ||
+        readProject(projectRef) === null
+      ) {
         return null;
       }
       const draftHref = router.buildLocation({

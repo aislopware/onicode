@@ -7,7 +7,8 @@ export function DesktopAppActivationCoordinator() {
   const openLocalWorkspace = useOpenLocalWorkspace();
   const queueRef = useRef(Promise.resolve());
   const activation = window.desktopBridge?.appActivation;
-  const ready = activation !== undefined && openLocalWorkspace.ready;
+  // With no environment to wait for, requests get their failure now instead of timing out.
+  const ready = activation !== undefined && openLocalWorkspace.state !== "pending";
 
   const processRequest = useEffectEvent(async (request: DesktopAppActivationRequest) =>
     openLocalWorkspace.open(request),
