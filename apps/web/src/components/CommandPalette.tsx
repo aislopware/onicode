@@ -171,6 +171,7 @@ import { resolvePastedPath } from "@onicode/shared/path";
 import {
   dispatchCommandPalette,
   getCommandPaletteReturnFocus,
+  handOverCommandPaletteOpener,
   useCommandPaletteMount,
   useCommandPaletteStore,
 } from "../commandPaletteStore";
@@ -387,7 +388,10 @@ function CommandPaletteDialog(props: {
       finalFocus={() => {
         if (restoreWorkspaceFocusFromPalette()) return false;
         const returnFocus = getCommandPaletteReturnFocus();
-        if (returnFocus === false) return false;
+        if (returnFocus === false) {
+          handOverCommandPaletteOpener();
+          return false;
+        }
         const composer = composerHandleRef?.current;
         // Behind the Settings modal the composer is inert and cannot take focus.
         if (!composer || document.querySelector("[data-app-modal]")) return returnFocus;

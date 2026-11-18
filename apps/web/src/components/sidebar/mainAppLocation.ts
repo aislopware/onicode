@@ -22,6 +22,10 @@ let appModalReturnHref: string | null = null;
 let appModalReturnHistoryIndex: number | null = null;
 let appModalReturnThreadTarget: ThreadRouteTarget | null = null;
 let initialHistoryIndex = 0;
+let mainAppLocationVersion = 0;
+
+/** Changes each time a page other than Settings or Usage resolves. */
+export const getMainAppLocationVersion = () => mainAppLocationVersion;
 
 /** Remembers where Settings, Usage, and the utility pages lead back to. */
 export function startMainAppLocationTracking(router: AnyRouter): () => void {
@@ -29,6 +33,7 @@ export function startMainAppLocationTracking(router: AnyRouter): () => void {
   const record = () => {
     const { pathname } = router.state.location;
     if (isAppModalPage(pathname)) return;
+    mainAppLocationVersion++;
     const href = withoutAssistantCitationHash(router.state.location.href);
     appModalReturnHref = href;
     // Only an entry that is exactly the return location can be stepped back to.

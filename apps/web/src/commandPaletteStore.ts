@@ -6,6 +6,7 @@ import {
   type CommandPaletteUiState,
   reduceCommandPaletteUiState,
 } from "./components/CommandPalette.logic";
+import { getMainAppLocationVersion } from "./components/sidebar/mainAppLocation";
 import { getWorkspaceFocusRequestVersion } from "./lib/workspaceFocus";
 
 const INITIAL_STATE: CommandPaletteUiState = {
@@ -18,11 +19,12 @@ const INITIAL_STATE: CommandPaletteUiState = {
 export const useCommandPaletteStore = create<CommandPaletteUiState>(() => INITIAL_STATE);
 
 let returnFocus: { element: HTMLElement | null; href: string; focusRequest: number } | null = null;
-// A command closes the palette before the route it opens mounts, and focus recovery may move
-// focus meanwhile, so the opener stays the palette's to hand over until the next key or press.
-let handingOver = false;
+// A command that navigates closes the palette before the page it opens mounts, and focus
+// recovery may move focus meanwhile. The palette hands its opener to that page until the next
+// key or press, or until a page other than Settings or Usage resolves.
+let handover: { element: HTMLElement | null; location: number } | null = null;
 const endHandover = () => {
-  handingOver = false;
+  handover = null;
   document.removeEventListener("keydown", endHandover, true);
   document.removeEventListener("pointerdown", endHandover, true);
 };
@@ -31,17 +33,13 @@ export function dispatchCommandPalette(action: CommandPaletteUiAction): void {
   const state = useCommandPaletteStore.getState();
   const next = reduceCommandPaletteUiState(state, action);
   if (!state.open && next.open) {
+    endHandover();
     // The workspace turns inert before the popup mounts, which blurs the opener.
     returnFocus = {
       element: document.activeElement instanceof HTMLElement ? document.activeElement : null,
       href: window.location.href,
       focusRequest: getWorkspaceFocusRequestVersion(),
     };
-  }
-  if (state.open && !next.open) {
-    handingOver = true;
-    document.addEventListener("keydown", endHandover, true);
-    document.addEventListener("pointerdown", endHandover, true);
   }
   useCommandPaletteStore.setState(next, true);
 }
@@ -61,11 +59,20 @@ export function getCommandPaletteReturnFocus(): HTMLElement | boolean {
   return element?.isConnected && !element.matches(":disabled") ? element : true;
 }
 
+/** Called when the palette closes without returning focus because its command took it. */
+export function handOverCommandPaletteOpener(): void {
+  // A command that asked for workspace focus already placed it; only a navigation hands over.
+  if (!returnFocus || getWorkspaceFocusRequestVersion() !== returnFocus.focusRequest) return;
+  handover = { element: returnFocus.element, location: getMainAppLocationVersion() };
+  document.addEventListener("keydown", endHandover, true);
+  document.addEventListener("pointerdown", endHandover, true);
+}
+
 /** The element the palette opened from, while the palette or the command it ran owns focus. */
 export function getCommandPaletteOpener(): HTMLElement | null {
-  if (!returnFocus) return null;
-  if (!handingOver && !document.activeElement?.closest("[data-command-palette]")) return null;
-  return returnFocus.element;
+  if (returnFocus && document.activeElement?.closest("[data-command-palette]"))
+    return returnFocus.element;
+  return handover?.location === getMainAppLocationVersion() ? handover.element : null;
 }
 
 // The palette is only mounted on app-shell routes (not error pages or

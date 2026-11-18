@@ -68,11 +68,15 @@ describe("workspace area focus", () => {
     const composer = fixture.area("composer", 2);
     const panel = fixture.area("panel", 4);
     const sideComposer = fixture.area("composer", 2, panel.element);
-    composer.button.focus();
+    const attach = document.createElement("button");
+    attach.textContent = "Attach files";
+    composer.element.append(attach);
+    attach.focus();
     fixture.controller.move(1);
     expect(document.activeElement).toBe(sideComposer.button);
+    // Each composer keeps its own last control.
     fixture.controller.move(-1);
-    expect(document.activeElement).toBe(composer.button);
+    expect(document.activeElement).toBe(attach);
   });
 
   it("skips hidden, inert, and maximized-away areas", () => {
@@ -361,16 +365,33 @@ describe("workspace area focus", () => {
     const sideComposer = fixture.area("composer", 2, fixture.area("panel", 4).element);
     const stop = () => {
       const button = document.createElement("button");
-      button.setAttribute("aria-label", "Stopping");
+      button.setAttribute("aria-label", "Stop generation");
       return button;
     };
-    // The main chat is stopping too, so its button has the lost one's label.
+    // The side chat's turn ends while the main chat's still runs, with the same Stop label.
     composer.element.append(stop());
     const sideStop = stop();
     sideComposer.element.append(sideStop);
     sideStop.focus();
     sideStop.remove();
     await vi.waitFor(() => expect(document.activeElement).toBe(sideComposer.button));
+  });
+
+  it("returns to a file tree's row, not its shadow host", async () => {
+    using fixture = setup();
+    const sidebar = fixture.area("sidebar", 0);
+    const panel = fixture.area("panel", 4);
+    const tree = document.createElement("div");
+    const row = document.createElement("button");
+    row.textContent = "src";
+    tree.attachShadow({ mode: "open" }).append(row);
+    panel.element.append(tree);
+    row.focus();
+    // The page reports the host as focused, so that is what a caller saves.
+    const saved = document.activeElement as HTMLElement;
+    sidebar.button.focus();
+    fixture.controller.request({ area: "panel", returnTo: saved });
+    await vi.waitFor(() => expect(tree.shadowRoot!.activeElement).toBe(row));
   });
 
   it("keeps moving while a hover popup without focus is open", () => {
