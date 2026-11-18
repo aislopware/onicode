@@ -6,6 +6,7 @@ import {
   type ProviderInstallState,
 } from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Deferred from "effect/Deferred";
 import * as SubscriptionRef from "effect/SubscriptionRef";
@@ -66,7 +67,7 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
 ) {
   const calls: string[] = [];
   const refreshed = yield* Deferred.make<void>();
-  const lastRefreshes = yield* Queue.unbounded<void>();
+  const refreshes = yield* Queue.unbounded<ProviderInstanceId>();
   const observed = yield* Deferred.make<void>();
   const listening = yield* Deferred.make<void>();
   const installationState = yield* SubscriptionRef.make(state);
@@ -75,6 +76,7 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
   const all = [configured, ...(input.others ?? [])];
   const refreshedInstances: ProviderInstanceId[] = [];
   let watches = 0;
+  let operations = 0;
   const dependencies = Layer.mergeAll(
     ServerSettings.layerTest(input.settings),
     Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
@@ -89,9 +91,7 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
           return [];
         }).pipe(
           Effect.tap(() => Deferred.succeed(refreshed, undefined)),
-          Effect.tap(() =>
-            id === all.at(-1)?.instanceId ? Queue.offer(lastRefreshes, undefined) : Effect.void,
-          ),
+          Effect.tap(() => Queue.offer(refreshes, id)),
         ),
     }),
     Layer.mock(CodexInstallation.CodexInstallation)({
@@ -117,10 +117,15 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
     Layer.mock(AntigravityInstallation.AntigravityInstallation)({
       managedDirectory: "/unused-managed-runtime",
       checkForUpdate: Effect.void,
-      start: Effect.sync(() => {
+      // A start during a running install joins it; a later one starts the next operation.
+      start: SubscriptionRef.modify(installationState, (current) => {
         calls.push("start");
-        return { ...state, operationId: "install-1", phase: "downloading" as const };
-      }).pipe(Effect.tap((started) => SubscriptionRef.set(installationState, started))),
+        const started =
+          current.phase === "downloading"
+            ? current
+            : { ...state, operationId: `install-${++operations}`, phase: "downloading" as const };
+        return [started, started];
+      }),
       cancel: () =>
         Effect.sync(() => {
           calls.push("cancel");
@@ -156,7 +161,7 @@ const makeHarness = Effect.fn("providerInstallation.test.makeHarness")(function*
     listening,
     calls,
     refreshed,
-    lastRefreshes,
+    refreshes,
     watches: () => watches,
     observed,
     installationState,
@@ -225,7 +230,7 @@ describe("provider installation routing", () => {
   );
 
   it.effect(
-    "checks every enabled instance on the managed runtime once, whichever instance started the install",
+    "checks every enabled instance on the managed runtime once, the one that started the install first",
     () =>
       Effect.gen(function* () {
         const checked: string[] = [];
@@ -242,13 +247,21 @@ describe("provider installation routing", () => {
         const harness = yield* makeHarness({
           // The disabled default instance is listed first, as server.getConfig lists it.
           instance: managed("antigravity", false),
-          others: [managed("antigravity_custom", true), work, personal],
+          // Deleted from settings, but the registry has not retired it yet.
+          others: [
+            managed("antigravity_custom", true),
+            managed("antigravity_old", true),
+            work,
+            personal,
+          ],
           settings: {
             providerInstances: {
               [ProviderInstanceId.make("antigravity_custom")]: {
                 driver,
                 config: { binaryPath: "/external/agy" },
               },
+              [work.instanceId]: { driver },
+              [personal.instanceId]: { driver },
             },
           },
         });
@@ -256,7 +269,7 @@ describe("provider installation routing", () => {
           const first = yield* harness.connect;
           const second = yield* harness.connect;
           yield* Effect.all(
-            [first.start({ instanceId }), second.start({ instanceId: personal.instanceId })],
+            [first.start({ instanceId: personal.instanceId }), second.start({ instanceId })],
             { concurrency: "unbounded" },
           );
           yield* Deferred.await(harness.listening);
@@ -267,16 +280,83 @@ describe("provider installation routing", () => {
           phase: "succeeded",
           installedVersion: "1.5.8",
         });
-        yield* Deferred.await(harness.observed);
-        // Instances refresh in list order, so the last one's refresh ends a watch's pass.
-        yield* Queue.take(harness.lastRefreshes);
-        assert.deepEqual(checked, [work.instanceId, personal.instanceId]);
-        // Let every other watch of this install finish its pass; none may refresh again.
-        yield* Queue.takeN(harness.lastRefreshes, harness.watches() - 1);
-        assert.deepEqual(checked, [work.instanceId, personal.instanceId]);
-        assert.deepEqual(harness.refreshedInstances, [work.instanceId, personal.instanceId]);
+        yield* Queue.takeN(harness.refreshes, 2);
+        assert.deepEqual(checked, [personal.instanceId, work.instanceId]);
+        assert.deepEqual(harness.refreshedInstances, [personal.instanceId, work.instanceId]);
         assert.strictEqual(harness.watches(), 1);
       }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect.each([
+    { ending: "interrupted", probe: Effect.failCause(Cause.interrupt()) },
+    { ending: "defective", probe: Effect.die(new Error("probe crashed")) },
+  ])("checks the next instance when one model check is $ending", ({ probe }) =>
+    Effect.gen(function* () {
+      const checked: string[] = [];
+      const personal = Object.assign(
+        instance(driver, ProviderInstanceId.make("antigravity_personal")),
+        {
+          enabled: true,
+          refreshModels: () =>
+            Effect.sync(() => {
+              checked.push("antigravity_personal");
+            }),
+        },
+      );
+      const harness = yield* makeHarness({
+        // Signed out or disabled while its check runs.
+        instance: Object.assign(instance(), { enabled: true, refreshModels: () => probe }),
+        others: [personal],
+        settings: { providerInstances: { [personal.instanceId]: { driver } } },
+      });
+      yield* harness.router.start({ instanceId });
+      yield* SubscriptionRef.set(harness.installationState, {
+        ...state,
+        operationId: "install-1",
+        phase: "succeeded",
+      });
+      assert.deepEqual(yield* Queue.takeN(harness.refreshes, 2), [instanceId, personal.instanceId]);
+      assert.deepEqual(checked, ["antigravity_personal"]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  );
+
+  it.effect("a newer install's model list is not overwritten by an older install's check", () =>
+    Effect.gen(function* () {
+      const olderCheckStarted = yield* Deferred.make<void>();
+      const releaseOlderCheck = yield* Deferred.make<void>();
+      const olderCheckEnded = yield* Deferred.make<void>();
+      const published: string[] = [];
+      let checks = 0;
+      const harness = yield* makeHarness({
+        instance: Object.assign(instance(), {
+          enabled: true,
+          refreshModels: () =>
+            Effect.suspend(() =>
+              ++checks === 1
+                ? Deferred.succeed(olderCheckStarted, undefined).pipe(
+                    Effect.andThen(Deferred.await(releaseOlderCheck)),
+                    Effect.andThen(Effect.sync(() => published.push("install-1"))),
+                    Effect.ensuring(Deferred.succeed(olderCheckEnded, undefined)),
+                  )
+                : Effect.sync(() => published.push("install-2")),
+            ),
+        }),
+      });
+      for (const operationId of ["install-1", "install-2"]) {
+        const started = yield* harness.router.start({ instanceId });
+        assert.strictEqual(started.operationId, operationId);
+        yield* SubscriptionRef.set(harness.installationState, {
+          ...state,
+          operationId,
+          phase: "succeeded",
+        });
+        if (operationId === "install-1") yield* Deferred.await(olderCheckStarted);
+      }
+      yield* Queue.take(harness.refreshes);
+      yield* Deferred.succeed(releaseOlderCheck, undefined);
+      yield* Deferred.await(olderCheckEnded);
+      assert.deepEqual(published, ["install-2"]);
+    }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );
 
   it.effect("keeps external installs manual without hiding shared install status", () =>
