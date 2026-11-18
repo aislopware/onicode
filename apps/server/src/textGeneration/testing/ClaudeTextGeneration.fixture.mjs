@@ -68,6 +68,13 @@ if (stdinMustContain && !stdinContent.includes(stdinMustContain)) {
   fail("stdin missing expected content", 4);
 }
 
+const stdinMustNotContain = JSON.parse(
+  process.env.ONICODE_FAKE_CLAUDE_STDIN_MUST_NOT_CONTAIN ?? "[]",
+);
+if (stdinMustNotContain.some((text) => stdinContent.includes(text))) {
+  fail("stdin contained forbidden content", 13);
+}
+
 const configDirMustBe = process.env.ONICODE_FAKE_CLAUDE_CONFIG_DIR_MUST_BE;
 if (configDirMustBe && process.env.CLAUDE_CONFIG_DIR !== configDirMustBe) {
   fail("CLAUDE_CONFIG_DIR was " + (process.env.CLAUDE_CONFIG_DIR ?? ""), 5);

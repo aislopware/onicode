@@ -34,7 +34,12 @@ import {
   hasClaudeManagedMcpConfig,
   makeClaudeEnvironment,
 } from "../provider/Drivers/ClaudeHome.ts";
-import { readClaudeLaunchArgSettings } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
+import {
+  CLAUDE_ATTACHMENT_MAX_BYTES,
+  claudeImageBlockBytes,
+  isSupportedClaudeImageMimeType,
+  readClaudeLaunchArgSettings,
+} from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
 
@@ -147,24 +152,34 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
       ),
     );
 
+  // Images Claude cannot take or that overflow the request budget stay as the prompt's metadata lines.
   const readImageBlocks = Effect.fn("readImageBlocks")(function* (
     attachments: TextGenerationOperations.Request<Schema.Top>["attachments"],
+    prompt: string,
   ) {
     const blocks: Array<{
       type: "image";
       source: { type: "base64"; media_type: string; data: string };
     }> = [];
+    let remainingBytes = CLAUDE_ATTACHMENT_MAX_BYTES - Buffer.byteLength(prompt);
     for (const attachment of attachments ?? []) {
-      if (attachment.type !== "image") continue;
+      if (attachment.type !== "image" || !isSupportedClaudeImageMimeType(attachment.mimeType)) {
+        continue;
+      }
       const attachmentPath = resolveAttachmentPath({
         attachmentsDir: serverConfig.attachmentsDir,
         attachment,
       });
       if (!attachmentPath) continue;
+      const info = yield* fileSystem.stat(attachmentPath).pipe(Effect.option);
+      if (Option.isNone(info)) continue;
+      const blockBytes = claudeImageBlockBytes(Number(info.value.size));
+      if (blockBytes > remainingBytes) continue;
       const bytes = yield* fileSystem
         .readFile(attachmentPath)
         .pipe(Effect.orElseSucceed(() => null));
       if (!bytes) continue;
+      remainingBytes -= blockBytes;
       blocks.push({
         type: "image",
         source: {
@@ -261,7 +276,7 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
     );
 
     // `claude -p` accepts images only as content blocks of a stream-json user message.
-    const imageBlocks = yield* readImageBlocks(attachments);
+    const imageBlocks = yield* readImageBlocks(attachments, prompt);
     const streamJson = imageBlocks.length > 0;
     const stdin = streamJson
       ? `${yield* encodeJsonForOperation(
@@ -343,9 +358,15 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         { concurrency: "unbounded" },
       );
 
-      // stream-json prints one message per line and ends with the result message.
+      // stream-json prints one message per line; as an array it reads like `--output-format json --verbose`,
+      // whose last `result` message is the answer even when a system message follows it.
       return {
-        stdout: streamJson ? (stdout.trim().split("\n").at(-1) ?? "") : stdout,
+        stdout: streamJson
+          ? `[${stdout
+              .split("\n")
+              .filter((line) => line.trim().length > 0)
+              .join(",")}]`
+          : stdout,
         stderr,
         exitCode,
       };

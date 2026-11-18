@@ -1,6 +1,10 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { ClaudeSettings, ProviderInstanceId } from "@onicode/contracts";
+import {
+  ClaudeSettings,
+  PROVIDER_SEND_TURN_MAX_IMAGE_BYTES,
+  ProviderInstanceId,
+} from "@onicode/contracts";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import { createModelSelection } from "@onicode/shared/model";
 import * as Effect from "effect/Effect";
@@ -65,6 +69,7 @@ function withFakeClaudeEnv<A, E, R>(
     expectedTools?: string;
     argsMustNotContain?: string;
     stdinMustContain?: string;
+    stdinMustNotContain?: ReadonlyArray<string>;
     configDirMustBe?: string;
     cwdMustNotBe?: string;
     claudeConfig?: Partial<ClaudeSettings>;
@@ -89,6 +94,10 @@ function withFakeClaudeEnv<A, E, R>(
       ONICODE_FAKE_CLAUDE_ARGS_MUST_CONTAIN: input.argsMustContain,
       ONICODE_FAKE_CLAUDE_ARGS_MUST_NOT_CONTAIN: input.argsMustNotContain,
       ONICODE_FAKE_CLAUDE_STDIN_MUST_CONTAIN: input.stdinMustContain,
+      ONICODE_FAKE_CLAUDE_STDIN_MUST_NOT_CONTAIN:
+        input.stdinMustNotContain === undefined
+          ? undefined
+          : JSON.stringify(input.stdinMustNotContain),
       ONICODE_FAKE_CLAUDE_CWD_MUST_NOT_BE: input.cwdMustNotBe,
       ONICODE_FAKE_CLAUDE_CONFIG_DIR_MUST_BE: input.configDirMustBe,
     };
@@ -233,7 +242,10 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
   it.effect("sends image attachments to Claude, not only their metadata", () =>
     withFakeClaudeEnv(
       {
-        output: JSON.stringify({ structured_output: { branch: "fix/login-button" } }),
+        output: JSON.stringify({
+          type: "result",
+          structured_output: { branch: "fix/login-button" },
+        }),
         stdinMustContain: Buffer.from("hello").toString("base64"),
       },
       (textGeneration) =>
@@ -265,6 +277,113 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
               },
             })
             .pipe(Effect.ensuring(fs.remove(imagePath).pipe(Effect.ignore)));
+        }),
+    ),
+  );
+
+  it.effect("leaves out images Claude cannot take or that overflow the request budget", () =>
+    withFakeClaudeEnv(
+      {
+        output: JSON.stringify({
+          type: "result",
+          structured_output: { branch: "fix/login-button" },
+        }),
+        // base64 of each image's first three bytes: "one", "two", "six".
+        stdinMustContain: '"data":"dHdv',
+        stdinMustNotContain: ['"media_type":"image/svg+xml"', '"data":"c2l4'],
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const { attachmentsDir } = yield* ServerConfig.ServerConfig;
+          yield* fs.makeDirectory(attachmentsDir, { recursive: true });
+          const imageSize = PROVIDER_SEND_TURN_MAX_IMAGE_BYTES;
+          const images = [
+            { id: "thread-1-claude-vector", mimeType: "image/svg+xml", head: "<svg/>", size: 6 },
+            { id: "thread-1-claude-one", mimeType: "image/png", head: "one", size: imageSize },
+            { id: "thread-1-claude-two", mimeType: "image/png", head: "two", size: imageSize },
+            { id: "thread-1-claude-six", mimeType: "image/png", head: "six", size: imageSize },
+          ];
+          const extension = (mimeType: string) => (mimeType === "image/png" ? "png" : "svg");
+          const paths = images.map((image) =>
+            path.join(attachmentsDir, `${image.id}.${extension(image.mimeType)}`),
+          );
+          for (const [index, image] of images.entries()) {
+            yield* fs.writeFileString(paths[index]!, image.head);
+            yield* fs.truncate(paths[index]!, image.size);
+          }
+
+          const result = yield* textGeneration
+            .generateBranchName({
+              cwd: process.cwd(),
+              message: "fix this",
+              attachments: images.map((image) => ({
+                type: "image" as const,
+                id: image.id,
+                name: `${image.head}.${extension(image.mimeType)}`,
+                mimeType: image.mimeType,
+                sizeBytes: image.size,
+              })),
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("claudeAgent"),
+                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+              },
+            })
+            .pipe(
+              Effect.ensuring(
+                Effect.forEach(paths, (imagePath) => fs.remove(imagePath)).pipe(Effect.ignore),
+              ),
+            );
+          expect(result.branch).toBe("fix/login-button");
+        }),
+    ),
+  );
+
+  it.effect("reads the result when a stream-json run ends with a later system message", () =>
+    withFakeClaudeEnv(
+      {
+        output: [
+          JSON.stringify({ type: "result", structured_output: { branch: "fix/login-button" } }),
+          JSON.stringify({
+            type: "system",
+            subtype: "session_writes_lost",
+            error_code: "EDQUOT",
+            lost: ["global_config"],
+          }),
+        ].join("\n"),
+        argsMustContain: "stream-json",
+      },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const { attachmentsDir } = yield* ServerConfig.ServerConfig;
+          const attachmentId = "thread-1-claude-writes-lost";
+          const imagePath = path.join(attachmentsDir, `${attachmentId}.png`);
+          yield* fs.makeDirectory(attachmentsDir, { recursive: true });
+          yield* fs.writeFile(imagePath, Buffer.from("hello"));
+
+          const result = yield* textGeneration
+            .generateBranchName({
+              cwd: process.cwd(),
+              message: "fix this",
+              attachments: [
+                {
+                  type: "image",
+                  id: attachmentId,
+                  name: "screen.png",
+                  mimeType: "image/png",
+                  sizeBytes: 5,
+                },
+              ],
+              modelSelection: {
+                instanceId: ProviderInstanceId.make("claudeAgent"),
+                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+              },
+            })
+            .pipe(Effect.ensuring(fs.remove(imagePath).pipe(Effect.ignore)));
+          expect(result.branch).toBe("fix/login-button");
         }),
     ),
   );

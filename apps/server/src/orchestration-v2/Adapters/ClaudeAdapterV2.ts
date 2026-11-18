@@ -3075,7 +3075,7 @@ const SUPPORTED_CLAUDE_IMAGE_MIME_TYPES = [
 type SupportedClaudeImageMimeType = (typeof SUPPORTED_CLAUDE_IMAGE_MIME_TYPES)[number];
 const supportedClaudeImageMimeTypes = new Set<string>(SUPPORTED_CLAUDE_IMAGE_MIME_TYPES);
 
-function isSupportedClaudeImageMimeType(
+export function isSupportedClaudeImageMimeType(
   mimeType: string,
 ): mimeType is SupportedClaudeImageMimeType {
   return supportedClaudeImageMimeTypes.has(mimeType);
@@ -3207,8 +3207,11 @@ const estimateClaudePdfPages = (bytes: Buffer): number | null => {
   return catalog && pageTree && pages > 0 && count === pages ? pages : null;
 };
 
-const CLAUDE_ATTACHMENT_MAX_BYTES = 28 * 1024 * 1024;
+export const CLAUDE_ATTACHMENT_MAX_BYTES = 28 * 1024 * 1024;
 const CLAUDE_ATTACHMENT_MAX_PAGES = 100;
+
+/** Request bytes a base64 image block of `size` file bytes takes, framing included. */
+export const claudeImageBlockBytes = (size: number) => 4 * Math.ceil(size / 3) + 128;
 
 const makeClaudeAttachmentBudget = (used?: { pagesUsed: number; bytesUsed: number }) => ({
   committed: { pages: used?.pagesUsed ?? 0, bytes: used?.bytesUsed ?? 0 },
@@ -3377,7 +3380,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
           }),
       ),
     );
-    const retainedBytes = 4 * Math.ceil(bytes.length / 3) + 128;
+    const retainedBytes = claudeImageBlockBytes(bytes.length);
     if (retainedBytes > input.pdfReservation.budget.remainingBytes) continue;
     input.pdfReservation.budget.pending.bytes += retainedBytes;
     input.pdfReservation.bytes += retainedBytes;
