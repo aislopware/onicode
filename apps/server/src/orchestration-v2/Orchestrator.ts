@@ -7073,12 +7073,17 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (yield* projectionStore.getMessageCount(command.threadId).pipe(mapDispatchError(command))) ===
         0 &&
       !hasTitleSetBeforeFirstMessage(projection.thread, command.titleSeed);
-    // A thread opened with `/compact` was titled after it, so only a rename keeps that title.
+    // A client titles a thread it opens with `/compact` after that command, so only a rename or
+    // an agent's launch name outlasts it.
+    const keepsTitleAfterMaintenance =
+      projection.thread.titleRenamed === true ||
+      (projection.thread.createdBy === "agent" &&
+        hasTitleSetBeforeFirstMessage(projection.thread, command.titleSeed));
     if (
       !isNativeMaintenanceCommand(command) &&
       (seedsUntitledThread ||
         (command.createdBy === "user" &&
-          projection.thread.titleRenamed !== true &&
+          !keepsTitleAfterMaintenance &&
           (yield* onlyMaintenanceHistory)))
     ) {
       const now = yield* DateTime.now;

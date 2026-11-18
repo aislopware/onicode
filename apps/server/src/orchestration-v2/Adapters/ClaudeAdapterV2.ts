@@ -11949,14 +11949,13 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             context.nativeSessionTitle = null;
             // The native session already has this title; the next turn must not send it back.
             appliedSessionTitles.set(liveQuery.nativeThreadId, title);
-            if (title !== context.input.appThread.title) {
-              yield* emitProviderEvent({
-                type: "app_thread.created",
-                driver: CLAUDE_PROVIDER,
-                appThread: { ...context.input.appThread, title },
-                titleOnly: true,
-              });
-            }
+            // Sent even when unchanged: renaming to the current title claims it from the generator.
+            yield* emitProviderEvent({
+              type: "app_thread.created",
+              driver: CLAUDE_PROVIDER,
+              appThread: { ...context.input.appThread, title },
+              titleOnly: true,
+            });
           }
 
           if (message.type === "system" && message.subtype === "task_progress") {
