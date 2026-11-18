@@ -6,6 +6,7 @@ import * as FileSystem from "effect/FileSystem";
 import * as Schema from "effect/Schema";
 import { resolveAttachmentPath } from "../attachmentStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as DocumentText from "../provider/DocumentText.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 
 import * as AttachmentClaims from "./AttachmentClaims.ts";
@@ -49,7 +50,7 @@ const releaseUnusedClaims = Effect.fn("ThreadMessageIntake.releaseUnusedClaims")
         attachmentsDir: config.attachmentsDir,
         attachment,
       });
-      return path ? [path, `${path}.txt`] : [];
+      return path ? [path, DocumentText.extractedTextPath(path)] : [];
     }),
   );
   yield* AttachmentClaims.releaseClaimedAttachments(

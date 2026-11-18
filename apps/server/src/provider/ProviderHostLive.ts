@@ -2,7 +2,6 @@ import * as ProviderHost from "@onicode/provider-core/server/ProviderHost";
 import { ProviderCredentialError } from "@onicode/provider-core/server/errors";
 import * as Digest from "effect/crypto/Digest";
 import * as Effect from "effect/Effect";
-import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
@@ -23,7 +22,7 @@ export const layer = Layer.effect(
     const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
     const secrets = yield* ServerSecretStore.ServerSecretStore;
     const digest = yield* Digest.Digest;
-    const fileSystem = yield* FileSystem.FileSystem;
+    const resolveExtractedTextPath = yield* DocumentText.turnTextResolver;
     // Optional so standalone provider layers in tests probe at once.
     const lifecycleEvents = yield* Effect.serviceOption(
       ServerLifecycleEvents.ServerLifecycleEvents,
@@ -49,13 +48,7 @@ export const layer = Layer.effect(
       }),
       resolveAttachmentPath: (attachment) =>
         resolveAttachmentPath({ attachmentsDir: config.attachmentsDir, attachment }),
-      // DocumentText owns the path-resolution span.
-      resolveExtractedTextPath: Effect.fnUntraced(
-        function* (path) {
-          return yield* DocumentText.resolveExtractedTextPath(path);
-        },
-        Effect.provideService(FileSystem.FileSystem, fileSystem),
-      ),
+      resolveExtractedTextPath,
       credentials: Effect.fn("ProviderHost.credentials")(function (namespace, bindingId) {
         return ProviderCredentialStore.make(namespace, bindingId).pipe(
           Effect.map((store) => ({

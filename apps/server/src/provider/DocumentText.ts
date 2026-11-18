@@ -7,11 +7,22 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as HostProcess from "@onicode/shared/HostProcess";
 
 const extensions = new Set(["docx", "xlsx", "pptx", "odt", "ods", "odp", "rtf", "epub", "ipynb"]);
+// Bump when documentTextWorker.ts output changes, so text an older extractor wrote is extracted again.
+const VERSION = 2;
+
+export const extractedTextPath = (path: string) => `${path}.v${VERSION}.txt`;
+
+/** Every sidecar name an extractor version has used; version 1 wrote `<path>.txt`. */
+export const extractedTextPaths = (path: string) => [
+  `${path}.txt`,
+  ...Array.from({ length: VERSION - 1 }, (_, index) => `${path}.v${index + 2}.txt`),
+];
 
 class DocumentTextError extends Schema.TaggedError<DocumentTextError>()("DocumentTextError", {
   operation: Schema.Literal("extract"),
@@ -24,22 +35,22 @@ class DocumentTextError extends Schema.TaggedError<DocumentTextError>()("Documen
   }
 }
 
-export const resolveExtractedTextPath = Effect.fn("DocumentText.resolveExtractedTextPath")(
-  function* (path: string) {
-    const extension = path.split(".").at(-1)?.toLowerCase();
-    if (!extension || !extensions.has(extension)) return;
-    const fs = yield* FileSystem.FileSystem;
-    return yield* fs.exists(path + ".txt").pipe(
-      Effect.map((exists) => (exists ? path + ".txt" : undefined)),
-      Effect.orElseSucceed(() => undefined),
-    );
-  },
-);
+const currentExtractedTextPath = (fs: FileSystem.FileSystem, path: string) => {
+  const extension = path.split(".").at(-1)?.toLowerCase();
+  if (!extension || !extensions.has(extension)) return Effect.undefined;
+  const sidecar = extractedTextPath(path);
+  return fs.exists(sidecar).pipe(
+    Effect.map((exists) => (exists ? sidecar : undefined)),
+    Effect.orElseSucceed(() => undefined),
+  );
+};
 
 export class DocumentText extends Context.Service<
   DocumentText,
   {
     readonly ensure: (path: string) => Effect.Effect<string | undefined>;
+    /** The current text, extracted again only when an older extractor wrote the existing text. */
+    readonly resolve: (path: string) => Effect.Effect<string | undefined>;
   }
 >()("onicode/provider/DocumentText") {}
 
@@ -60,7 +71,7 @@ const make = Effect.gen(function* () {
   );
   const extract = Effect.fn("DocumentText.extract")(function* (path: string) {
     const extension = path.split(".").at(-1)!.toLowerCase();
-    const sidecar = `${path}.txt`;
+    const sidecar = extractedTextPath(path);
     if (yield* fs.exists(sidecar)) return sidecar;
     if ((failed.get(path) ?? 0) > clock.currentTimeMillisUnsafe()) return;
     const info = yield* fs.stat(path);
@@ -100,13 +111,17 @@ const make = Effect.gen(function* () {
       }),
     );
     const pending = `${sidecar}.${attempt++}.part`;
-    yield* fs
-      .writeFileString(pending, content)
-      .pipe(
-        Effect.andThen(fs.rename(pending, sidecar)),
-        Effect.ensuring(fs.remove(pending, { force: true }).pipe(Effect.ignore)),
-        Effect.uninterruptible,
-      );
+    yield* fs.writeFileString(pending, content).pipe(
+      Effect.andThen(fs.rename(pending, sidecar)),
+      Effect.andThen(
+        Effect.forEach(
+          extractedTextPaths(path).filter((stale) => stale !== sidecar),
+          (stale) => fs.remove(stale, { force: true }).pipe(Effect.ignore),
+        ),
+      ),
+      Effect.ensuring(fs.remove(pending, { force: true }).pipe(Effect.ignore)),
+      Effect.uninterruptible,
+    );
     return sidecar;
   }, lock.withPermits(1));
   const extracting = yield* Cache.make({ capacity: Infinity, timeToLive: 0, lookup: extract });
@@ -114,13 +129,36 @@ const make = Effect.gen(function* () {
     function* (path: string) {
       const extension = path.split(".").at(-1)?.toLowerCase();
       if (!extension || !extensions.has(extension)) return;
-      const sidecar = `${path}.txt`;
+      const sidecar = extractedTextPath(path);
       if (yield* fs.exists(sidecar)) return sidecar;
       return yield* Cache.get(extracting, path);
     },
     Effect.orElseSucceed(() => undefined),
   );
-  return DocumentText.of({ ensure });
+  const resolve = Effect.fn("DocumentText.resolve")(
+    function* (path: string) {
+      const extension = path.split(".").at(-1)?.toLowerCase();
+      if (!extension || !extensions.has(extension)) return;
+      // Old names first: an extraction publishes the current name before it removes them.
+      for (const stale of extractedTextPaths(path)) {
+        if (stale !== extractedTextPath(path) && (yield* fs.exists(stale))) {
+          return yield* ensure(path);
+        }
+      }
+      return yield* currentExtractedTextPath(fs, path);
+    },
+    Effect.orElseSucceed(() => undefined),
+  );
+  return DocumentText.of({ ensure, resolve });
 });
 
 export const layer = Layer.effect(DocumentText, make);
+
+/** Optional so standalone provider layers in tests, which never extract, need not provide it. */
+export const turnTextResolver = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
+  const documents = yield* Effect.serviceOption(DocumentText);
+  return Option.isSome(documents)
+    ? documents.value.resolve
+    : (path: string) => currentExtractedTextPath(fs, path);
+});

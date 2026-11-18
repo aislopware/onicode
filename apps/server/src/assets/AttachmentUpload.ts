@@ -285,5 +285,7 @@ export const deletePendingAttachment = Effect.fn("AttachmentUpload.deletePending
 
   const fileSystem = yield* FileSystem.FileSystem;
   yield* fileSystem.remove(attachmentPath, { force: true }).pipe(Effect.orElseSucceed(() => {}));
-  yield* fileSystem.remove(`${attachmentPath}.txt`, { force: true }).pipe(Effect.ignore);
+  yield* Effect.forEach(DocumentText.extractedTextPaths(attachmentPath), (sidecar) =>
+    fileSystem.remove(sidecar, { force: true }).pipe(Effect.ignore),
+  );
 });

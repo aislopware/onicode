@@ -57,7 +57,7 @@ describe("AttachmentClaims", () => {
       const pendingId = createPendingAttachmentId("docx");
       const path = NodePath.join(config.attachmentsDir, pendingId + ".docx");
       NodeFS.writeFileSync(path, "invalid document");
-      NodeFS.writeFileSync(path + ".txt", "North calibration: 946");
+      NodeFS.writeFileSync(DocumentText.extractedTextPath(path), "North calibration: 946");
       const claimed = yield* claimPendingAttachments({
         threadId: "thread-document",
         attachments: [
@@ -76,7 +76,7 @@ describe("AttachmentClaims", () => {
       expect(yield* documents.ensure(claimed.claimedPaths[0]!)).toBe(claimed.claimedPaths[1]);
       yield* releaseClaimedAttachments(claimed.claimedPaths);
       expect(NodeFS.existsSync(claimed.claimedPaths[1]!)).toBe(false);
-      expect(NodeFS.existsSync(path + ".txt")).toBe(true);
+      expect(NodeFS.existsSync(DocumentText.extractedTextPath(path))).toBe(true);
     }).pipe(Effect.provide(layerTest)),
   );
 
@@ -265,11 +265,14 @@ describe("AttachmentClaims", () => {
             ensure: (path) =>
               Deferred.succeed(started, path).pipe(
                 Effect.andThen(Deferred.await(publish)),
-                Effect.andThen(fileSystem.writeFileString(path + ".txt", "extracted")),
-                Effect.as(path + ".txt"),
+                Effect.andThen(
+                  fileSystem.writeFileString(DocumentText.extractedTextPath(path), "extracted"),
+                ),
+                Effect.as(DocumentText.extractedTextPath(path)),
                 Effect.orDie,
                 Effect.uninterruptible,
               ),
+            resolve: () => Effect.die("unexpected text lookup"),
           }),
         ),
         Effect.forkChild,
@@ -279,7 +282,7 @@ describe("AttachmentClaims", () => {
       yield* Deferred.succeed(publish, undefined);
       expect(Exit.hasInterrupts(yield* Fiber.await(claimFiber))).toBe(true);
       expect(NodeFS.existsSync(claimedPath)).toBe(false);
-      expect(NodeFS.existsSync(claimedPath + ".txt")).toBe(false);
+      expect(NodeFS.existsSync(DocumentText.extractedTextPath(claimedPath))).toBe(false);
       const config = yield* ServerConfig.ServerConfig;
       expect(NodeFS.readdirSync(config.attachmentsDir)).toHaveLength(1);
     }).pipe(Effect.provide(layerTest)),

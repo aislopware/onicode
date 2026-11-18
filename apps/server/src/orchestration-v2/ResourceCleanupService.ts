@@ -10,6 +10,7 @@ import { parseAttachmentFileExtension, resolveAttachmentPathById } from "../atta
 import * as ServerConfig from "../config.ts";
 import * as DeviceService from "../device/DeviceService.ts";
 import * as PreviewManager from "../preview/Manager.ts";
+import * as DocumentText from "../provider/DocumentText.ts";
 import * as ScheduledTaskService from "../scheduledTasks/ScheduledTaskService.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
 
@@ -122,7 +123,11 @@ export const layer = Layer.effect(
             return path === null
               ? Effect.void
               : fileSystem.remove(path, { force: true }).pipe(
-                  Effect.andThen(fileSystem.remove(`${path}.txt`, { force: true })),
+                  Effect.andThen(
+                    Effect.forEach(DocumentText.extractedTextPaths(path), (sidecar) =>
+                      fileSystem.remove(sidecar, { force: true }),
+                    ),
+                  ),
                   Effect.mapError(
                     (cause) =>
                       new ResourceCleanupError({ operation: "attachment", attachmentId, cause }),

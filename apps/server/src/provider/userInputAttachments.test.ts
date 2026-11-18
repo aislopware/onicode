@@ -47,7 +47,7 @@ describe("question answer paths", () => {
         const path = NodePath.join(config.attachmentsDir, "blocked.rtf");
         const cached = NodePath.join(config.attachmentsDir, "cached.rtf");
         NodeFS.writeFileSync(path, failure ? "invalid document" : String.raw`{\rtf1 Available}`);
-        NodeFS.writeFileSync(cached + ".txt", "Cached text");
+        NodeFS.writeFileSync(DocumentText.extractedTextPath(cached), "Cached text");
         const started = yield* Deferred.make<void>();
         const release = yield* Deferred.make<void>();
         let reads = 0;
@@ -58,19 +58,26 @@ describe("question answer paths", () => {
           const duplicate = yield* documents.ensure(path).pipe(Effect.forkChild);
           expect(yield* documents.ensure(path + ".png")).toBeUndefined();
           expect(yield* documents.ensure(path + ".pdf")).toBeUndefined();
-          expect(yield* documents.ensure(cached)).toBe(cached + ".txt");
-          expect(NodeFS.readFileSync(cached + ".txt", "utf8")).toBe("Cached text");
+          expect(yield* documents.ensure(cached)).toBe(DocumentText.extractedTextPath(cached));
+          expect(NodeFS.readFileSync(DocumentText.extractedTextPath(cached), "utf8")).toBe(
+            "Cached text",
+          );
           yield* Deferred.succeed(release, undefined);
-          const expected = failure ? undefined : path + ".txt";
+          const expected = failure ? undefined : DocumentText.extractedTextPath(path);
           expect(yield* Fiber.join(extraction)).toBe(expected);
           expect(yield* Fiber.join(duplicate)).toBe(expected);
           expect(yield* documents.ensure(path)).toBe(expected);
           expect(reads).toBe(1);
           if (failure) {
-            NodeFS.writeFileSync(path + ".txt", "Recovered text");
-            expect(yield* documents.ensure(path)).toBe(path + ".txt");
-            expect(NodeFS.readFileSync(path + ".txt", "utf8")).toBe("Recovered text");
-          } else expect(NodeFS.readFileSync(path + ".txt", "utf8")).toBe("Available");
+            NodeFS.writeFileSync(DocumentText.extractedTextPath(path), "Recovered text");
+            expect(yield* documents.ensure(path)).toBe(DocumentText.extractedTextPath(path));
+            expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toBe(
+              "Recovered text",
+            );
+          } else
+            expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toBe(
+              "Available",
+            );
         }).pipe(
           Effect.provide(Layer.fresh(DocumentText.layer)),
           Effect.provideService(FileSystem.FileSystem, {
@@ -123,10 +130,10 @@ describe("question answer paths", () => {
           expect(yield* Queue.take(started)).toBe(third);
           yield* Deferred.succeed(releases.get(first!)!, undefined);
           yield* Deferred.succeed(releases.get(third!)!, undefined);
-          expect(yield* Fiber.join(staying)).toBe(first + ".txt");
-          expect(yield* Fiber.join(waiting)).toBe(third + ".txt");
+          expect(yield* Fiber.join(staying)).toBe(DocumentText.extractedTextPath(first!));
+          expect(yield* Fiber.join(waiting)).toBe(DocumentText.extractedTextPath(third!));
           expect(yield* Queue.size(started)).toBe(0);
-          expect(NodeFS.existsSync(second + ".txt")).toBe(false);
+          expect(NodeFS.existsSync(DocumentText.extractedTextPath(second!))).toBe(false);
           expect(
             NodeFS.readdirSync(config.attachmentsDir).filter((file) => file.endsWith(".part")),
           ).toEqual([]);
@@ -169,8 +176,8 @@ describe("question answer paths", () => {
         yield* Deferred.succeed(writeReleased, undefined);
         yield* Fiber.join(interrupting);
         yield* Deferred.succeed(renameReleased, undefined);
-        expect(yield* Fiber.join(retry)).toBe(path + ".txt");
-        expect(NodeFS.readFileSync(path + ".txt", "utf8")).toBe("Retried");
+        expect(yield* Fiber.join(retry)).toBe(DocumentText.extractedTextPath(path));
+        expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toBe("Retried");
         expect(
           NodeFS.readdirSync(config.attachmentsDir).filter((file) => file.endsWith(".part")),
         ).toEqual([]);
@@ -239,12 +246,14 @@ describe("question answer paths", () => {
           expect(yield* documents.ensure(path)).toBeUndefined();
           expect(yield* documents.ensure(path)).toBeUndefined();
           expect(worker).toHaveBeenCalledTimes(1);
-          expect(NodeFS.existsSync(path + ".txt")).toBe(false);
+          expect(NodeFS.existsSync(DocumentText.extractedTextPath(path))).toBe(false);
           yield* TestClock.adjust("1 second");
-          expect(yield* documents.ensure(path)).toBe(path + ".txt");
-          expect(NodeFS.readFileSync(path + ".txt", "utf8")).toBe("Available");
+          expect(yield* documents.ensure(path)).toBe(DocumentText.extractedTextPath(path));
+          expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toBe(
+            "Available",
+          );
           expect(worker).toHaveBeenCalledTimes(2);
-          expect(yield* documents.ensure(path)).toBe(path + ".txt");
+          expect(yield* documents.ensure(path)).toBe(DocumentText.extractedTextPath(path));
           expect(worker).toHaveBeenCalledTimes(2);
         }).pipe(Effect.provide(layer)),
       (worker) => Effect.sync(() => worker.mockRestore()),
@@ -269,7 +278,7 @@ describe("question answer paths", () => {
             yield* TestClock.adjust(`${seconds} seconds`);
             expect(yield* documents.ensure(path)).toBeUndefined();
             expect(worker).toHaveBeenCalledTimes(1);
-            expect(NodeFS.existsSync(path + ".txt")).toBe(false);
+            expect(NodeFS.existsSync(DocumentText.extractedTextPath(path))).toBe(false);
           }
         }).pipe(Effect.provide(layer)),
       (worker) => Effect.sync(() => worker.mockRestore()),
@@ -350,9 +359,63 @@ describe("question answer paths", () => {
       const path = NodePath.join(config.attachmentsDir, `${name}.rtf`);
       NodeFS.writeFileSync(path, source);
       expect(yield* Effect.promise(() => extractDocumentText(path, ".rtf"))).toBe(expected);
-      expect(yield* (yield* DocumentText.DocumentText).ensure(path)).toBe(path + ".txt");
-      expect(NodeFS.readFileSync(path + ".txt", "utf8")).toBe(expected);
+      expect(yield* (yield* DocumentText.DocumentText).ensure(path)).toBe(
+        DocumentText.extractedTextPath(path),
+      );
+      expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toBe(expected);
     }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect(
+    "extracts a document again at turn time only when an older extractor wrote its text",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => vi.spyOn(NodeChildProcess, "execFile")),
+        (worker) =>
+          Effect.gen(function* () {
+            const config = yield* ServerConfig.ServerConfig;
+            const documents = yield* DocumentText.DocumentText;
+            const stale = NodePath.join(config.attachmentsDir, "stale.rtf");
+            const unextracted = NodePath.join(config.attachmentsDir, "unextracted.rtf");
+            const source = String.raw`{\rtf1\ansi The fee is {\deleted $500}{\revised $700}.}`;
+            NodeFS.writeFileSync(stale, source);
+            NodeFS.writeFileSync(unextracted, source);
+            NodeFS.writeFileSync(stale + ".txt", "The fee is $500$700.");
+            expect(yield* documents.resolve(unextracted)).toBeUndefined();
+            expect(worker).not.toHaveBeenCalled();
+            const sidecar = yield* documents.resolve(stale);
+            expect(sidecar).toBe(DocumentText.extractedTextPath(stale));
+            expect(NodeFS.readFileSync(sidecar!, "utf8")).toBe("The fee is $700.");
+            expect(NodeFS.existsSync(stale + ".txt")).toBe(false);
+            expect(yield* documents.resolve(stale)).toBe(sidecar);
+            expect(worker).toHaveBeenCalledTimes(1);
+            // Another extraction publishes and removes the old text between the lookups.
+            const racing = NodePath.join(config.attachmentsDir, "racing.rtf");
+            NodeFS.writeFileSync(racing, source);
+            NodeFS.writeFileSync(racing + ".txt", "The fee is $500$700.");
+            const fs = yield* FileSystem.FileSystem;
+            let published = false;
+            const racingSidecar = yield* Effect.gen(function* () {
+              return yield* (yield* DocumentText.DocumentText).resolve(racing);
+            }).pipe(
+              Effect.provide(Layer.fresh(DocumentText.layer)),
+              Effect.provideService(FileSystem.FileSystem, {
+                ...fs,
+                exists: (file) =>
+                  file === DocumentText.extractedTextPath(racing) && !published
+                    ? Effect.sync(() => {
+                        published = true;
+                        NodeFS.writeFileSync(file, "The fee is $700.");
+                        NodeFS.rmSync(racing + ".txt");
+                        return false;
+                      })
+                    : fs.exists(file),
+              }),
+            );
+            expect(racingSidecar).toBe(DocumentText.extractedTextPath(racing));
+          }).pipe(Effect.provide(layer)),
+        (worker) => Effect.sync(() => worker.mockRestore()),
+      ),
   );
 
   it.effect.each([false, true])("limits the child heap for standalone=%s", (standalone) =>
@@ -396,8 +459,10 @@ describe("question answer paths", () => {
               NODE_OPTIONS: "--max-old-space-size=1024",
             }),
           );
-          expect(extracted).toBe(path + ".txt");
-          const heapLimit = Number(NodeFS.readFileSync(path + ".txt", "utf8"));
+          expect(extracted).toBe(DocumentText.extractedTextPath(path));
+          const heapLimit = Number(
+            NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8"),
+          );
           expect(heapLimit).toBeGreaterThan(192 * 1024 * 1024);
           // Newer V8 versions reserve up to 192 MiB for the young generation as well.
           expect(heapLimit).toBeLessThanOrEqual(384 * 1024 * 1024);
@@ -442,39 +507,49 @@ describe("question answer paths", () => {
         ],
       });
       NodeFS.writeFileSync(path, notebook);
+      // An older extractor wrote this unversioned sidecar without the raw cell label.
+      NodeFS.writeFileSync(`${path}.txt`, `## Cell 3\n${rawSource}`);
       const answers = yield* appendUserInputAttachmentPaths({
         answers: { q: "Read this" },
         attachmentsDir: config.attachmentsDir,
         attachmentsByQuestionId: { q: [file] },
       });
-      expect(answers.q).toContain(`text extracted to: ${JSON.stringify(path + ".txt")}`);
-      expect(NodeFS.readFileSync(`${path}.txt`, "utf8")).toContain("Vessel: Larkspur");
-      expect(NodeFS.readFileSync(`${path}.txt`, "utf8")).toContain("301");
-      expect(NodeFS.readFileSync(`${path}.txt`, "utf8")).toContain("42");
-      const extracted = NodeFS.readFileSync(`${path}.txt`, "utf8");
+      const sidecar = DocumentText.extractedTextPath(path);
+      expect(answers.q).toContain(`text extracted to: ${JSON.stringify(sidecar)}`);
+      expect(NodeFS.existsSync(`${path}.txt`)).toBe(false);
+      const extracted = NodeFS.readFileSync(sidecar, "utf8");
+      expect(extracted).toContain("Vessel: Larkspur");
+      expect(extracted).toContain("301");
+      expect(extracted).toContain("42");
       expect(extracted).toContain(`## Cell 3 (raw)\n${rawSource}`);
       expect(extracted).toContain(
         "ZeroDivisionError: division by zero\nCell In[1], line 1\n----> 1 1 / 0\nZeroDivisionError: division by zero",
       );
       expect(extracted).not.toContain("\u001b");
       expect(NodeFS.readFileSync(path, "utf8")).toBe(notebook);
-      const before = NodeFS.statSync(path + ".txt").mtimeMs;
+      const before = NodeFS.statSync(DocumentText.extractedTextPath(path)).mtimeMs;
       // A changed binary would fail parsing if the cached extraction were not reused.
       NodeFS.writeFileSync(path, "invalid notebook");
       const documents = yield* DocumentText.DocumentText;
       const results = yield* Effect.all([documents.ensure(path), documents.ensure(path)], {
         concurrency: "unbounded",
       });
-      expect(results).toEqual([path + ".txt", path + ".txt"]);
-      expect(NodeFS.statSync(path + ".txt").mtimeMs).toBe(before);
+      expect(results).toEqual([
+        DocumentText.extractedTextPath(path),
+        DocumentText.extractedTextPath(path),
+      ]);
+      expect(NodeFS.statSync(DocumentText.extractedTextPath(path)).mtimeMs).toBe(before);
       yield* Effect.gen(function* () {
         const cleanup = yield* Cleanup.ResourceCleanupService;
         yield* cleanup.cleanupAttachments([file.id]);
         expect(NodeFS.existsSync(path)).toBe(false);
-        expect(NodeFS.existsSync(path + ".txt")).toBe(false);
-        NodeFS.writeFileSync(path + ".txt", "orphaned extraction");
+        expect(NodeFS.existsSync(DocumentText.extractedTextPath(path))).toBe(false);
+        for (const sidecar of [`${path}.txt`, `${path}.v2.txt`]) {
+          NodeFS.writeFileSync(sidecar, "orphaned extraction");
+        }
         yield* cleanup.cleanupAttachments([file.id]);
-        expect(NodeFS.existsSync(path + ".txt")).toBe(false);
+        expect(NodeFS.existsSync(`${path}.txt`)).toBe(false);
+        expect(NodeFS.existsSync(`${path}.v2.txt`)).toBe(false);
       }).pipe(
         Effect.provide(
           Cleanup.layer.pipe(
@@ -512,7 +587,7 @@ describe("question answer paths", () => {
           });
           expect(answers.q).toContain(JSON.stringify(path));
           expect(answers.q).not.toContain("text extracted");
-          expect(NodeFS.existsSync(`${path}.txt`)).toBe(false);
+          expect(NodeFS.existsSync(DocumentText.extractedTextPath(path))).toBe(false);
           expect(NodeFS.readFileSync(path, "utf8")).toBe("invalid document");
         }
       }).pipe(Effect.provide(layer)),
@@ -1253,8 +1328,8 @@ describe("question answer paths", () => {
             1,
           );
           const documents = yield* DocumentText.DocumentText;
-          expect(yield* documents.ensure(path)).toBe(path + ".txt");
-          expect(NodeFS.readFileSync(path + ".txt", "utf8")).toBe(extracted);
+          expect(yield* documents.ensure(path)).toBe(DocumentText.extractedTextPath(path));
+          expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toBe(extracted);
         }
         if (item.ext === "docx") {
           end.writeUInt16LE(2049, 8);
@@ -1304,8 +1379,12 @@ describe("question answer paths", () => {
           expected,
         );
         const documents = yield* DocumentText.DocumentText;
-        expect(yield* documents.ensure(encodedPath)).toBe(encodedPath + ".txt");
-        expect(NodeFS.readFileSync(encodedPath + ".txt", "utf8")).toBe(expected);
+        expect(yield* documents.ensure(encodedPath)).toBe(
+          DocumentText.extractedTextPath(encodedPath),
+        );
+        expect(NodeFS.readFileSync(DocumentText.extractedTextPath(encodedPath), "utf8")).toBe(
+          expected,
+        );
       }
       const notebookPath = NodePath.join(config.attachmentsDir, "limited.ipynb");
       NodeFS.writeFileSync(
@@ -1319,9 +1398,11 @@ describe("question answer paths", () => {
       expect(notebookLimited).not.toContain("## Cell 10001");
       expect(notebookLimited.match(/\[Extracted text truncated/g)).toHaveLength(1);
       expect(yield* (yield* DocumentText.DocumentText).ensure(notebookPath)).toBe(
-        notebookPath + ".txt",
+        DocumentText.extractedTextPath(notebookPath),
       );
-      expect(NodeFS.readFileSync(notebookPath + ".txt", "utf8")).toBe(notebookLimited);
+      expect(NodeFS.readFileSync(DocumentText.extractedTextPath(notebookPath), "utf8")).toBe(
+        notebookLimited,
+      );
       const errorPath = NodePath.join(config.attachmentsDir, "limited-error.ipynb");
       NodeFS.writeFileSync(
         errorPath,
@@ -1363,7 +1444,7 @@ describe("question answer paths", () => {
         );
       });
       expect(yield* (yield* DocumentText.DocumentText).ensure(unsupportedPath)).toBeUndefined();
-      expect(NodeFS.existsSync(unsupportedPath + ".txt")).toBe(false);
+      expect(NodeFS.existsSync(DocumentText.extractedTextPath(unsupportedPath))).toBe(false);
       NodeFS.writeFileSync(
         path,
         String.raw`{\rtf1 ` + "x".repeat(999_999) + String.raw`\u-10179?\u-8576? After}`,
@@ -1378,8 +1459,10 @@ describe("question answer paths", () => {
         "First\n\n[Extracted text truncated at document extraction limits.]",
       );
       const documents = yield* DocumentText.DocumentText;
-      expect(yield* documents.ensure(path)).toBe(path + ".txt");
-      expect(NodeFS.readFileSync(path + ".txt", "utf8")).toBe(whitespaceTruncated);
+      expect(yield* documents.ensure(path)).toBe(DocumentText.extractedTextPath(path));
+      expect(NodeFS.readFileSync(DocumentText.extractedTextPath(path), "utf8")).toBe(
+        whitespaceTruncated,
+      );
       NodeFS.truncateSync(path, 17 * 1024 * 1024);
       yield* Effect.promise(async () => {
         expect(await extractDocumentText(path, ".rtf")).toContain("[Extracted text truncated");

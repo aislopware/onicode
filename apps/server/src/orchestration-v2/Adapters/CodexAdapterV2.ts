@@ -1933,6 +1933,9 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
   const readMcpSession = (threadId: ThreadId | null) =>
     threadId === null ? Effect.undefined : mcpSessions.read(threadId);
   const { clientFactory, digest, fileSystem, idAllocator, serverConfig } = adapterOptions;
+  const resolveExtractedTextPath = yield* DocumentText.turnTextResolver.pipe(
+    Effect.provideService(FileSystem.FileSystem, fileSystem),
+  );
   const continuationRequests = adapterOptions.continuationRequests;
 
   return ProviderAdapter.ProviderAdapterV2.of({
@@ -3735,10 +3738,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           const text = yield* providerMessageTextWithAttachmentPaths({
             text: codexSkillMentionText(turnInput.message.text),
             attachments: turnInput.message.attachments,
-            resolveExtractedTextPath: (path) =>
-              DocumentText.resolveExtractedTextPath(path).pipe(
-                Effect.provideService(FileSystem.FileSystem, fileSystem),
-              ),
+            resolveExtractedTextPath,
             resolveAttachmentPath: (attachment) =>
               resolveAttachmentPath({ attachmentsDir: serverConfig.attachmentsDir, attachment }),
           });
