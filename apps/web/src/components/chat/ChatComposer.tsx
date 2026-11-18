@@ -242,6 +242,7 @@ import {
   isComposerSubmissionBlocked,
   submitComposerDraft,
 } from "./composerSubmission";
+import type { ApprovalsAtPress } from "./composerSend.logic";
 import { ComposerPromptLengthValidation } from "./ComposerPromptLengthValidation";
 import { pendingDraftWork } from "./pendingDraftWork";
 import { importComposerThreadAttachment } from "./composerThreadImport";
@@ -465,6 +466,7 @@ export interface ChatComposerProps {
     e?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
+    approvalsAtPress?: ApprovalsAtPress,
   ) => void;
   onResume: () => void;
   onInterrupt: () => void;
@@ -2189,16 +2191,38 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   };
 
   const submitComposerRef = useRef<
-    (dispatchMode?: ComposerDispatchMode, submissionIntent?: ComposerSubmissionIntent) => void
+    (
+      dispatchMode?: ComposerDispatchMode,
+      submissionIntent?: ComposerSubmissionIntent,
+      approvalsAtPress?: ApprovalsAtPress,
+    ) => void
   >(() => {});
   const submitComposer = (
     event?: { preventDefault: () => void },
     dispatchMode?: ComposerDispatchMode,
     submissionIntent?: ComposerSubmissionIntent,
+    heldApprovals?: ApprovalsAtPress,
   ) => {
+    // A send that waits below keeps this press's intent and approvals, not those by then.
+    const modeAtPress =
+      dispatchMode ??
+      resolveComposerDispatchMode({
+        running: phase === "running" || phase === "connecting",
+        alternateModifier: false,
+        activeTurnDefault: followUpBehavior,
+        canSteer,
+      });
+    const approvalsAtPress = heldApprovals ?? {
+      shown: pendingApprovals
+        .map((approval) => approval.requestId)
+        .filter((requestId) => !heldRequestIds.has(requestId)),
+      pending: pendingApprovals.map((approval) => approval.requestId),
+    };
     if (voiceInputActive) {
       event?.preventDefault();
-      submitAfterDictation(() => submitComposerRef.current(dispatchMode, submissionIntent));
+      submitAfterDictation(() =>
+        submitComposerRef.current(modeAtPress, submissionIntent, approvalsAtPress),
+      );
       return false;
     }
     if (submissionBlocked || !readEnvironmentScope(environmentId, AuthOrchestrationOperateScope)) {
@@ -2208,7 +2232,9 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     // Sending now would leave a still-compressing image out of the turn, so wait for it.
     if (
       activeThreadId &&
-      submitAfterPreparingImages(() => submitComposerRef.current(dispatchMode, submissionIntent))
+      submitAfterPreparingImages(() =>
+        submitComposerRef.current(modeAtPress, submissionIntent, approvalsAtPress),
+      )
     ) {
       event?.preventDefault();
       return false;
@@ -2235,17 +2261,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       event,
       onSend: (sendEvent) => {
         providerInputRejectedRef.current = false;
-        onSend(
-          sendEvent,
-          dispatchMode ??
-            resolveComposerDispatchMode({
-              running: phase === "running" || phase === "connecting",
-              alternateModifier: false,
-              activeTurnDefault: followUpBehavior,
-              canSteer,
-            }),
-          submissionIntent,
-        );
+        onSend(sendEvent, modeAtPress, submissionIntent, approvalsAtPress);
         return !providerInputRejectedRef.current;
       },
     });
@@ -2257,7 +2273,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   const submitComposerStable = useStableCallback(submitComposer);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- publishes the committed submission handler to the asynchronous dictation completion
   useLayoutEffect(() => {
-    submitComposerRef.current = (mode, intent) => submitComposerStable(undefined, mode, intent);
+    submitComposerRef.current = (mode, intent, approvals) =>
+      submitComposerStable(undefined, mode, intent, approvals);
   }, [submitComposerStable]);
   useDictationSubmissionShortcut({
     enabled: voiceInputActive && !speechInput.preparing,

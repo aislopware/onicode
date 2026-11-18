@@ -3059,7 +3059,7 @@ export default function ChatView(props: ChatViewProps) {
     annotation: PreviewAnnotationPayload,
     image: ComposerImageAttachment | null,
   ) => {
-    void onSend(undefined, "auto", "foreground", { annotation, image });
+    void onSend(undefined, "auto", "foreground", undefined, { annotation, image });
   };
   const sendPreviewAnnotationStable = useStableCallback(sendPreviewAnnotation);
   const onComposerResumeStable = useStableCallback(onResume);

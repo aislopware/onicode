@@ -611,6 +611,8 @@ export function useThreadComposerState(input: {
       hasAttachmentsOrContext: boolean,
     ) => Promise<boolean | "responded">,
     onWillEnqueue?: () => void,
+    // False when an approval the user never saw is pending; the message then stays in the draft.
+    approvalsAsSeen?: () => boolean,
   ) => {
     if (
       selectedThreadShell &&
@@ -793,6 +795,7 @@ export function useThreadComposerState(input: {
       return null;
     }
 
+    if (approvalsAsSeen?.() === false) return null;
     if (beforeDispatch !== undefined) {
       const response = await beforeDispatch(
         text,

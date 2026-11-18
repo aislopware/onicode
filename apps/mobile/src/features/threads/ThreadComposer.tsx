@@ -17,6 +17,7 @@ import {
   type EnvironmentId,
   type MessageId,
   type ModelSelection,
+  type RuntimeRequestId,
   type ServerConfig as OniServerConfig,
   type UsageLimitsReport,
 } from "@onicode/contracts";
@@ -115,7 +116,7 @@ import {
   resolveComposerSendPresentation,
   type ComposerSendPresentation,
 } from "./composerSendPresentation";
-import { useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
+import { nativeImagePasteKey, useSubmitAfterNativeImages } from "./useSubmitAfterNativeImages";
 import { ComposerCommandPopover } from "./ComposerCommandPopover";
 import { ComposerPopoverAnchor } from "./ComposerPopoverAnchor";
 import { ComposerQueuedEditAttachments } from "./ComposerQueuedEdit";
@@ -171,6 +172,8 @@ export interface ThreadComposerProps {
   readonly activeThreadBusy: boolean;
   /** Sending declines a pending approval and redirects the agent, so `/side` is plain text. */
   readonly redirectsApproval: boolean;
+  /** Pending approvals; a send passes on those shown when it was pressed. */
+  readonly pendingApprovalIds: ReadonlyArray<RuntimeRequestId>;
   readonly canStopThread: boolean;
   readonly environmentId: EnvironmentId;
   readonly projectCwd: string | null;
@@ -195,10 +198,14 @@ export interface ThreadComposerProps {
   readonly onStopThread: () => void;
   /** Present while the thread's queue is held. */
   readonly onResumeQueue: (() => Promise<void>) | null;
-  /** `stillSendable` reports whether the draft is unchanged after any wait before sending. */
+  /**
+   * `stillSendable` reports whether the draft is unchanged after any wait before sending, and
+   * `approvalIdsAtPress` the approvals shown when Send was pressed.
+   */
   readonly onSendMessage: (
     followUp?: ActiveTurnComposerAction,
     stillSendable?: () => boolean,
+    approvalIdsAtPress?: ReadonlyArray<RuntimeRequestId>,
   ) => Promise<MessageId | null>;
   readonly onShowUsageLimits: (report: UsageLimitsReport | null) => void;
   readonly canSwitchProvider: boolean;
@@ -292,7 +299,8 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const inputRef = props.editorRef ?? fallbackInputRef;
   const [isFocused, setIsFocused] = useState(false);
   const pendingPastedTextAttachmentCountRef = useRef(0);
-  const pendingNativeImagePasteCountRef = useRef(0);
+  // Keyed like the image hold, so a paste aborted with its draft does not hold up the one shown now.
+  const pendingNativeImagePastesRef = useRef(new Map<string, number>());
   const [pendingPastedTextAttachmentCount, setPendingPastedTextAttachmentCount] = useState(0);
   const settingsRoutePresentedRef = useRef(false);
   const settingsSheetPresentation = useThreadSettingsSheetPresentation({
@@ -592,7 +600,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     settingsSheetPresentation.onEditorFocusChange(false);
     onEditorFocusChange?.(false);
   };
-  const handleSend = async (followUp?: ActiveTurnComposerAction) => {
+  const handleSend = async (
+    followUp: ActiveTurnComposerAction | undefined,
+    approvalIdsAtPress: ReadonlyArray<RuntimeRequestId>,
+  ) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
     if (pendingPastedTextAttachmentCountRef.current > 0) return;
     if (usageLimitsOffered && isUsageLimitsCommand(draftMessage) && draftAttachments.length === 0) {
@@ -614,7 +625,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       const draft = getComposerDraftSnapshot(composerDraftKey);
       return (
         pendingPastedTextAttachmentCountRef.current === 0 &&
-        pendingNativeImagePasteCountRef.current === 0 &&
+        !pendingNativeImagePastesRef.current.has(nativeImagePasteKey(composerDraftKey)) &&
         draft.text === draftAtSend.text &&
         draft.attachments.length === draftAtSend.attachments.length &&
         draft.attachments.every(
@@ -622,7 +633,9 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         )
       );
     };
-    const sent = await settlePromise(() => onSendMessage(followUp, stillSendable));
+    const sent = await settlePromise(() =>
+      onSendMessage(followUp, stillSendable, approvalIdsAtPress),
+    );
     inFlightThreadIdsRef.current.delete(threadKey);
     if (AsyncResult.isFailure(sent)) {
       console.error("[composer] send failed", squashAtomCommandFailure(sent));
@@ -634,15 +647,16 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
     draftKey: composerDraftKey,
     readResetGeneration,
     blocked: isSubmissionLocked || sendBlockedReason !== null,
+    approvalIds: props.pendingApprovalIds,
     onPasteImages: onNativePasteImages,
-    onSubmit: (followUp) => void handleSend(followUp),
+    onSubmit: (followUp, approvalIdsAtPress) => void handleSend(followUp, approvalIdsAtPress),
   });
   // Kept out of handleSend: a reference to the hook declared after it stops the compiler caching it.
   const sendOrDefer = (followUp?: ActiveTurnComposerAction) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
     // Sending now would leave a still-converting pasted image out of the turn, so wait for it.
     if (nativeImageSubmit.deferSend(followUp)) return;
-    void handleSend(followUp);
+    void handleSend(followUp, props.pendingApprovalIds);
   };
 
   const lockedProviderInstanceId = props.canSwitchProvider
@@ -949,9 +963,13 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                   onSelectionChange={composerMenu.onSelectionChange}
                   onPasteImages={(uris) => {
                     if (isSubmissionLocked) return;
-                    pendingNativeImagePasteCountRef.current += 1;
+                    const pastes = pendingNativeImagePastesRef.current;
+                    const key = nativeImagePasteKey(composerDraftKey);
+                    pastes.set(key, (pastes.get(key) ?? 0) + 1);
                     void nativeImageSubmit.pasteImages(uris).finally(() => {
-                      pendingNativeImagePasteCountRef.current -= 1;
+                      const left = (pastes.get(key) ?? 1) - 1;
+                      if (left > 0) pastes.set(key, left);
+                      else pastes.delete(key);
                     });
                   }}
                   onPasteText={(paste) => {
