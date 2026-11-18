@@ -3351,24 +3351,40 @@ export const makePiAdapterV2 = Effect.fn("makePiAdapterV2")(function* (
                 }),
             ),
           ),
-        resumeThread: (threadInput) =>
-          registerThread({
-            threadId:
-              threadInput.threadId ?? threadInput.providerThread.appThreadId ?? input.threadId,
-            modelSelection: threadInput.modelSelection ?? input.modelSelection,
-            runtimePolicy: threadInput.runtimePolicy ?? input.runtimePolicy,
-            existingProviderThread: threadInput.providerThread,
-          }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new ProviderAdapter.ProviderAdapterResumeThreadError({
-                  driver: PI_PROVIDER,
-                  providerSessionId: input.providerSessionId,
-                  providerThreadId: threadInput.providerThread.id,
-                  cause,
-                }),
+        resumeThread: Effect.fn("PiAdapter.resumeThread")(
+          function* (threadInput) {
+            const sessionFile = threadInput.providerThread.nativeThreadRef?.nativeId;
+            // Pi opens an empty session at a missing path, hiding that the imported history is gone.
+            if (
+              threadInput.importedNativeSession === true &&
+              sessionFile != null &&
+              !(yield* fileSystem
+                .exists(path.resolve(cwd, sessionFile))
+                .pipe(Effect.orElseSucceed(() => true)))
+            ) {
+              return yield* protocolError(`Pi session file ${sessionFile} is gone`);
+            }
+            return yield* registerThread({
+              threadId:
+                threadInput.threadId ?? threadInput.providerThread.appThreadId ?? input.threadId,
+              modelSelection: threadInput.modelSelection ?? input.modelSelection,
+              runtimePolicy: threadInput.runtimePolicy ?? input.runtimePolicy,
+              existingProviderThread: threadInput.providerThread,
+            });
+          },
+          (effect, threadInput) =>
+            effect.pipe(
+              Effect.mapError(
+                (cause) =>
+                  new ProviderAdapter.ProviderAdapterResumeThreadError({
+                    driver: PI_PROVIDER,
+                    providerSessionId: input.providerSessionId,
+                    providerThreadId: threadInput.providerThread.id,
+                    cause,
+                  }),
+              ),
             ),
-          ),
+        ),
         compactThread: (turnInput) =>
           runtime.startTurn({
             ...turnInput,

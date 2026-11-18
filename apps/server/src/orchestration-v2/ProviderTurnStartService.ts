@@ -146,8 +146,9 @@ const nativeSessionMissesKeptTurns = (
     .toSorted((a, b) => ordinalOf(a) - ordinalOf(b) || a.attemptOrdinal - b.attemptOrdinal)
     .at(-1);
   if (newest === undefined) return false;
-  // Inherited fork history is kept even when every local run was rolled back.
+  // Inherited fork and imported history are kept even when every local run was rolled back.
   const keepsHistory =
+    projection.thread.historyOrigin === "v1_import" ||
     (projection.thread.forkedFrom?.type === "run" && projection.thread.lineage.sideChat !== true) ||
     accepted.some((attempt) => {
       const source = runsById.get(attempt.runId);
