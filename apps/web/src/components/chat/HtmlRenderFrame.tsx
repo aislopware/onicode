@@ -22,12 +22,16 @@ import { observeResize } from "~/lib/observeResize";
 const MIN_URL_LIFE_MS = 5 * 60_000;
 const MAX_MEASURED_CONTENT_HEIGHTS = 200;
 
-// The height each render's page last reported, so a remounted frame opens at it before its page loads.
-const measuredContentHeights = new Map<string, number>();
+// The height each render's page last reported and the frame width it reported it at, so a
+// remounted frame at that width opens at it before its page loads.
+const measuredContentHeights = new Map<
+  string,
+  { readonly width: number; readonly height: number }
+>();
 
-function rememberContentHeight(attachmentId: string, height: number) {
+function rememberContentHeight(attachmentId: string, width: number, height: number) {
   measuredContentHeights.delete(attachmentId);
-  measuredContentHeights.set(attachmentId, height);
+  measuredContentHeights.set(attachmentId, { width: Math.round(width), height });
   if (measuredContentHeights.size > MAX_MEASURED_CONTENT_HEIGHTS) {
     const oldest = measuredContentHeights.keys().next().value;
     if (oldest !== undefined) measuredContentHeights.delete(oldest);
@@ -50,10 +54,13 @@ export function HtmlRenderFrame(props: {
     });
   };
   // Client fonts can exceed the server-measured height and cause nested scrolling.
-  const [contentHeight, setContentHeight] = useState(() =>
-    measuredContentHeights.get(attachmentId),
+  const [contentHeight, setContentHeight] = useState<number>();
+  const remembered = measuredContentHeights.get(attachmentId);
+  const height = htmlRenderFrameHeight(
+    props.htmlRender,
+    width,
+    contentHeight ?? (remembered?.width === Math.round(width) ? remembered.height : undefined),
   );
-  const height = htmlRenderFrameHeight(props.htmlRender, width, contentHeight);
   const fileName = htmlRenderFileName(title);
   const resource = {
     _tag: "attachment" as const,
@@ -93,7 +100,7 @@ export function HtmlRenderFrame(props: {
             threadRef={props.threadRef}
             className="block size-full"
             onContentHeight={(height) => {
-              rememberContentHeight(attachmentId, height);
+              rememberContentHeight(attachmentId, width, height);
               setContentHeight(height);
             }}
             onFullscreenChange={onFullscreenChange}

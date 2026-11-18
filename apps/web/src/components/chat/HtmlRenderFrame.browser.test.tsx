@@ -52,7 +52,7 @@ describe("HtmlRenderFrame", () => {
     expect(onFullscreenChange).toHaveBeenLastCalledWith(false);
   });
 
-  it("reopens at the page height it last measured", async () => {
+  it("reopens at the page height it last measured at the same width", async () => {
     setup();
     using page = (() => {
       const html = `<script>parent.postMessage(${JSON.stringify(sizeChanged(1500))}, "*");</script>`;
@@ -62,7 +62,15 @@ describe("HtmlRenderFrame", () => {
     const frame = () => (
       <HtmlRenderFrame
         environmentId={EnvironmentId.make("environment")}
-        htmlRender={{ attachmentId: "measured", title: "Mockup", height: 200 }}
+        htmlRender={{
+          attachmentId: "measured",
+          title: "Mockup",
+          height: 1000,
+          heights: [
+            [300, 900],
+            [1200, 400],
+          ],
+        }}
         threadRef={undefined}
       />
     );
@@ -79,5 +87,10 @@ describe("HtmlRenderFrame", () => {
     assetUrl.current = "about:blank";
     await using second = await render(frame());
     expect(frameHeight(second)).toBe("1500px");
+    await second.unmount();
+
+    // At another width the page may wrap differently, so the server's width measurements win.
+    await using narrow = await render(<div style={{ width: 300 }}>{frame()}</div>);
+    expect(frameHeight(narrow)).toBe("900px");
   });
 });
