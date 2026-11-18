@@ -236,6 +236,78 @@ describe("CDP relay extra sessions", () => {
   });
 });
 
+describe("CDP relay shared domains", () => {
+  it("keeps Runtime and Log on for one session when another turns them off", async () => {
+    // One debugger serves every session, and a real Runtime.disable drops the object
+    // handles and context events the first session still depends on.
+    const enabled = new Set<string>();
+    let relay: CdpRelayConnection | undefined;
+    const context = { context: { id: 7, origin: "null", name: "", auxData: { isDefault: true } } };
+    const send = vi.fn<CdpRelayTarget["send"]>(async (method) => {
+      const [domain, action] = method.split(".");
+      if (action === "disable") enabled.delete(domain!);
+      if (action === "enable" && !enabled.has(domain!)) {
+        enabled.add(domain!);
+        if (domain === "Runtime") relay!.event("Runtime.executionContextCreated", context, "");
+      }
+      return {};
+    });
+    const written: Array<Record<string, unknown>> = [];
+    relay = makeRelay(makeTarget(send), (raw) => written.push(JSON.parse(raw)));
+    relay.receive(JSON.stringify({ id: 1, method: "Target.setAutoAttach", params: {} }));
+    relay.receive(JSON.stringify({ id: 2, method: "Target.attachToBrowserTarget" }));
+    await settle();
+    const browserSession = (written.find((m) => m["id"] === 2)!["result"] as { sessionId: string })
+      .sessionId;
+    relay.receive(
+      JSON.stringify({
+        id: 3,
+        method: "Target.attachToTarget",
+        params: { targetId: "GUEST-TARGET", flatten: true },
+        sessionId: browserSession,
+      }),
+    );
+    await settle();
+    const late = (written.find((m) => m["id"] === 3)!["result"] as { sessionId: string }).sessionId;
+    const main = "oni-preview-page";
+    let id = 10;
+    const command = async (method: string, sessionId: string) => {
+      relay.receive(JSON.stringify({ id: ++id, method, sessionId }));
+      await settle();
+    };
+    await command("Runtime.enable", main);
+    await command("Log.enable", main);
+    const logged = { type: "log", args: [{ type: "string", value: "hello" }] };
+    const failed = { entry: { source: "network", level: "error", text: "404" } };
+    relay.event("Runtime.consoleAPICalled", logged, "");
+    relay.event("Log.entryAdded", failed, "");
+
+    // A session that enables late is told what the page has already said, as Chromium would.
+    written.length = 0;
+    await command("Runtime.enable", late);
+    await command("Log.enable", late);
+    expect(written.filter((m) => "method" in m)).toEqual([
+      { method: "Runtime.executionContextCreated", params: context, sessionId: late },
+      { method: "Runtime.consoleAPICalled", params: logged, sessionId: late },
+      { method: "Log.entryAdded", params: failed, sessionId: late },
+    ]);
+
+    await command("Log.disable", late);
+    await command("Runtime.disable", late);
+    expect([...enabled].toSorted()).toEqual(["Log", "Runtime"]);
+
+    // A new document starts a new record.
+    relay.event("Runtime.executionContextsCleared", {}, "");
+    written.length = 0;
+    await command("Runtime.enable", late);
+    expect(written.filter((m) => "method" in m)).toEqual([]);
+
+    await command("Runtime.disable", late);
+    await command("Runtime.disable", main);
+    expect([...enabled]).toEqual(["Log"]);
+  });
+});
+
 describe("CDP relay downloads", () => {
   it("captures preview downloads without changing the default browser context", async () => {
     const send = vi.fn(async () => ({}));
