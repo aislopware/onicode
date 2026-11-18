@@ -2464,3 +2464,4 @@ a1b1a6388c	take	adapted: originator is Onicode (CODEX_CLIENT_NAME), test renamed
 f5f8c8d18b	take	taken as is
 77f87ea4c1	take	taken; scenario ported to the desktop target through second-environment.ts (new preload/env options)
 b648395fa5	take	taken; scenario runs on the desktop target as is (WebSocket stub through addInitScript)
+9758cf9e13	take	taken as is
