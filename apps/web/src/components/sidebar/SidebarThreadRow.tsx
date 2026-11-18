@@ -1,4 +1,5 @@
 import { useAtomMount } from "@effect/atom-react";
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { asLaunchingThread } from "@onicode/client-runtime/state/thread-inbox";
 import { ThreadHoverCard, ThreadHoverCardPopup } from "../ThreadHoverCard";
 import { ThreadTerminalStatusButton } from "../ThreadStatusIndicators";
@@ -291,7 +292,7 @@ function SidebarThreadTooltip({
   return (
     <ThreadHoverCardPopup side="right" align="start" sideOffset={4}>
       <ThreadHoverCard
-        title={thread.title}
+        title={threadTitleText(thread.title, m)}
         footer={
           supportsMultiplePullRequests && thread.pullRequests.length > 0 ? (
             <div className="border-t border-border pt-2 pl-0.5 text-xs text-muted-foreground">
@@ -1052,7 +1053,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
     ) : null;
 
   const accessibility = resolveSidebarRowAccessibility({
-    title: thread.title,
+    title: threadTitleText(thread.title, messages),
     statusLabel: topStatus?.label ?? null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isActive,
@@ -1091,11 +1092,13 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
                       : "text-secondary-label/70",
               ),
       )}
-      dir={textDirection(thread.title)}
+      dir={textDirection(threadTitleText(thread.title, messages))}
     >
-      {thread.title}
+      {threadTitleText(thread.title, messages)}
       {isRegeneratingTitle ? (
-        <ActivityShimmerOverlay className="truncate">{thread.title}</ActivityShimmerOverlay>
+        <ActivityShimmerOverlay className="truncate">
+          {threadTitleText(thread.title, messages)}
+        </ActivityShimmerOverlay>
       ) : null}
     </span>
   );
@@ -1704,7 +1707,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   const thread =
     useThreadShell(scopeThreadRef(props.thread.environmentId, props.thread.id)) ?? props.thread;
   const accessibility = resolveSidebarRowAccessibility({
-    title: thread.title,
+    title: threadTitleText(thread.title, messages),
     statusLabel: null,
     projectDisplayName: props.projectDisplayName,
     isActive: props.isRouteActive,
@@ -1844,10 +1847,10 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                       : "text-foreground",
                 )}
               >
-                {thread.title}
+                {threadTitleText(thread.title, messages)}
                 {isRegeneratingTitle ? (
                   <ActivityShimmerOverlay className="truncate">
-                    {thread.title}
+                    {threadTitleText(thread.title, messages)}
                   </ActivityShimmerOverlay>
                 ) : null}
               </span>

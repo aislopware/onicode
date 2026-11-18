@@ -4,6 +4,7 @@ import type { ChatAttachment } from "@onicode/contracts";
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 import { replaceComposerContextReferences } from "@onicode/shared/composerContextReferences";
 import { truncate } from "@onicode/shared/String";
+import { NEW_THREAD_TITLE, UNTITLED_THREAD_TITLE } from "@onicode/shared/threadTitles";
 
 import { collectComposerModelMentions } from "../composerModelMentions.ts";
 
@@ -25,6 +26,14 @@ function modelMentionsAsSlugs(value: string): string {
     cursor = mention.end;
   }
   return result + value.slice(cursor);
+}
+
+/** A thread's title as shown. The server's own placeholders arrive in English. */
+export function threadTitleText(title: string, resolve: MFunctionType = mFallback): string {
+  const trimmed = title.trim();
+  if (trimmed === NEW_THREAD_TITLE) return resolve(msg("New thread"));
+  if (trimmed === "" || trimmed === UNTITLED_THREAD_TITLE) return resolve(msg("Untitled thread"));
+  return title;
 }
 
 function attachedImagesTitle(count: number, resolve: MFunctionType): string {

@@ -42,6 +42,7 @@ import * as ProviderSessionRuntime from "../persistence/ProviderSessionRuntime.t
 import * as ServerSettings from "../serverSettings.ts";
 import * as AgentSessionScanner from "./AgentSessionScanner.ts";
 import * as ProjectService from "./ProjectService.ts";
+import { UNTITLED_THREAD_TITLE } from "@onicode/shared/threadTitles";
 
 const isProjectionStoreThreadNotFoundError = Schema.is(
   ProjectionStore.ProjectionStoreThreadNotFoundError,
@@ -366,7 +367,7 @@ const make = Effect.gen(function* () {
             creationSource: "server",
             id: threadId,
             projectId: input.projectId,
-            title: thread.title.trim() === "" ? "Untitled thread" : thread.title,
+            title: thread.title.trim() === "" ? UNTITLED_THREAD_TITLE : thread.title,
             providerInstanceId: thread.providerInstanceId,
             modelSelection: { instanceId: thread.providerInstanceId, model },
             runtimeMode,

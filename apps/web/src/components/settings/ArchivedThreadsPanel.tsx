@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { m as resolveMessage } from "~/i18n/messages";
 import { settingsScopeEnvironmentLabels } from "./settingsScopeAxis";
@@ -256,7 +257,7 @@ export function ArchivedThreadsPanel() {
                     event.preventDefault();
                     void handleContextMenu(thread, { x: event.clientX, y: event.clientY });
                   }}
-                  title={thread.title}
+                  title={threadTitleText(thread.title, m)}
                   description={
                     <span className={hasMultipleEnvironments ? "block truncate" : undefined}>
                       {hasMultipleEnvironments ? `${thread.environmentLabel} · ` : null}

@@ -29,6 +29,7 @@ import { forkInheritedRunOrdinals, ProjectionStoreThreadNotFoundError } from "./
 import * as ThreadManagementService from "./ThreadManagementService.ts";
 
 import { formatThreadTitleContext } from "@onicode/provider-core/server/threadTitleContext";
+import { NEW_THREAD_TITLE } from "@onicode/shared/threadTitles";
 export { formatThreadTitleContext } from "@onicode/provider-core/server/threadTitleContext";
 
 export class ThreadTitleRegenerationService extends Context.Service<
@@ -241,8 +242,9 @@ const make = Effect.gen(function* () {
       });
       const generatedTitle = result.title.trim();
       // The placeholder is the generator saying it has nothing to name the thread by.
-      const needsRefinement = result.needsRefinement === true || generatedTitle === "New thread";
-      return generatedTitle === "New thread" ||
+      const needsRefinement =
+        result.needsRefinement === true || generatedTitle === NEW_THREAD_TITLE;
+      return generatedTitle === NEW_THREAD_TITLE ||
         (input.kind.type !== "initial" && generatedTitle === projection.thread.title.trim())
         ? { status: "unchanged" as const, needsRefinement }
         : { status: "renamed" as const, title: result.title, needsRefinement };

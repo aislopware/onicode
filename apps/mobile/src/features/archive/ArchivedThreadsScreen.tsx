@@ -15,7 +15,8 @@ import { useNavigation } from "@react-navigation/native";
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { AppBar } from "../../components/ui/AppBar";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { T, useGT } from "gt-react-native";
+import { T, useGT, useMessages } from "gt-react-native";
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { useMemo, useRef, type ComponentProps } from "react";
 import { useWindowDimensions, View } from "react-native";
 import { RefreshControl } from "../../components/ui/RefreshControl";
@@ -187,6 +188,8 @@ function ArchivedThreadRow(props: {
 }) {
   const { width: windowWidth } = useWindowDimensions();
   const gt = useGT();
+  const m = useMessages();
+  const title = threadTitleText(props.thread.title, m);
   const cardColor = useUniwindTheme()["--color-grouped-card"];
   const canOperateThread = useEnvironmentScope(
     props.thread.environmentId,
@@ -214,7 +217,7 @@ function ArchivedThreadRow(props: {
             className="min-w-0 flex-1 text-base font-oni-bold leading-snug text-foreground"
             numberOfLines={1}
           >
-            {props.thread.title}
+            {title}
           </Text>
           <Text className="min-w-[30px] text-right text-xs tabular-nums text-foreground-tertiary">
             <RelativeTime timestamp={props.thread.archivedAt ?? props.thread.updatedAt} />
@@ -259,13 +262,13 @@ function ArchivedThreadRow(props: {
       onSwipeableClose={props.onSwipeableClose}
       onSwipeableWillOpen={props.onSwipeableWillOpen}
       primaryAction={{
-        accessibilityLabel: gt("Unarchive {title}", { title: props.thread.title }),
+        accessibilityLabel: gt("Unarchive {title}", { title: title }),
         icon: "arrow.uturn.backward",
         label: gt("Unarchive", { $context: "verb, swipe action" }),
         onPress: props.onUnarchive,
       }}
       simultaneousWith={props.simultaneousSwipeGesture}
-      threadTitle={props.thread.title}
+      threadTitle={title}
     >
       {() => rowContent}
     </ThreadSwipeable>

@@ -45,6 +45,7 @@ import * as ServerSettings from "./serverSettings.ts";
 import { forkParked, forkParkedFiber } from "./serverActivation.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { formatHeadlessServeOutput, issueHeadlessServeAccessInfo } from "./startupAccess.ts";
+import { NEW_THREAD_TITLE } from "@onicode/shared/threadTitles";
 
 export class ServerRuntimeStartupError extends Schema.TaggedError<ServerRuntimeStartupError>()(
   "ServerRuntimeStartupError",
@@ -260,7 +261,7 @@ const resolveAutoBootstrapWelcomeTargets = Effect.gen(function* () {
         .launch({
           commandId: CommandId.make(yield* randomUUID),
           projectId: project.id,
-          title: "New thread",
+          title: NEW_THREAD_TITLE,
           modelSelection:
             resolveProjectSettings(settings, project.id, project).settings.defaultModelSelection ??
             threadModelSelection,

@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { msg, T, useGT, useMessages } from "gt-react-native";
 import { NativeScrollView } from "../../native/NativeScrollViewMarker";
 import { LegendList } from "@legendapp/list/react-native";
@@ -241,7 +242,7 @@ export function ScheduledTaskThreadPickerRouteScreen() {
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
       .map((thread) => ({
         key: thread.id,
-        title: thread.title.trim() || gt("Untitled thread"),
+        title: threadTitleText(thread.title, m),
         thread,
       })),
   ];

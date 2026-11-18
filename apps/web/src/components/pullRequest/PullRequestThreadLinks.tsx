@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { Tooltip, TooltipTrigger, TooltipPopup } from "../ui/tooltip";
 import { useAtomValue } from "@effect/atom-react";
@@ -6,7 +7,7 @@ import { visibleLinkedThreads } from "@onicode/client-runtime/state/threads";
 import { settlePromise, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import type { EnvironmentId, PullRequestRef, ScopedThreadRef, ThreadId } from "@onicode/contracts";
 import { CheckIcon, MessageSquareIcon } from "lucide-react";
-import { Branch, msg, T, useGT } from "gt-react";
+import { Branch, msg, T, useGT, useMessages } from "gt-react";
 import { useState } from "react";
 
 import { m } from "~/i18n/messages";
@@ -242,6 +243,7 @@ function ThreadPicker({
   onSelect: (threadId: ThreadId) => void;
 }) {
   const gt = useGT();
+  const m = useMessages();
   const threads = useVisibleThreadShells();
   const linking = usePullRequestLinking(environmentId);
   const projects = useProjects();
@@ -284,7 +286,7 @@ function ThreadPicker({
               >
                 <MessageSquareIcon aria-hidden className="size-4 shrink-0" />
                 <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate">{thread.title || gt("Untitled thread")}</span>
+                  <span className="truncate">{threadTitleText(thread.title, m)}</span>
                   <span className="truncate text-xs text-muted-foreground">
                     {projectNames.get(thread.projectId)}
                   </span>

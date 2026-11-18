@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { LegendList, type LegendListRef } from "@legendapp/list/react-native";
 import { SheetHeader } from "../../components/ui/SheetHeader";
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -496,10 +497,10 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
                         {thread ? (
                           <>
                             <Text numberOfLines={2} className="flex-1 text-base">
-                              {thread.title}
+                              {threadTitleText(thread.title, m)}
                             </Text>
                             <DragHandle
-                              title={thread.title}
+                              title={threadTitleText(thread.title, m)}
                               disabled={
                                 dropBusy ||
                                 pendingOrder !== null ||
@@ -598,7 +599,7 @@ function ThreadArrangementSheet(props: { onClose: () => void }) {
                       numberOfLines={visiblePreview.destination?.section ? 1 : 2}
                       className="text-base font-oni-medium"
                     >
-                      {visiblePreview.thread.title}
+                      {threadTitleText(visiblePreview.thread.title, m)}
                     </Text>
                     {visiblePreview.destination?.section ? (
                       <Text className="text-xs text-foreground-muted">

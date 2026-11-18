@@ -1,6 +1,7 @@
 import { TextGenerationError } from "@onicode/contracts";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import { NEW_THREAD_TITLE } from "@onicode/shared/threadTitles";
 
 const isTextGenerationError = Schema.is(TextGenerationError);
 const decodeJsonThreadTitle = Schema.decodeOption(
@@ -69,7 +70,7 @@ export function sanitizeThreadTitle(raw: string): string {
     .replace(/\s+/g, " ");
 
   if (!normalized || normalized.trim().length === 0) {
-    return "New thread";
+    return NEW_THREAD_TITLE;
   }
 
   if (normalized.length <= MAX_THREAD_TITLE_CHARS) {

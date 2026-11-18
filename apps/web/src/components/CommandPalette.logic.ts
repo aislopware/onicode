@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import {
   foldSearchQuery,
@@ -56,7 +57,7 @@ export function buildLinkedThreadActionItems(
     kind: "action",
     value: `thread:${input.environmentId}:${thread.id}`,
     threadRef: { environmentId: input.environmentId, threadId: thread.id },
-    title: thread.title || resolve(msg("Untitled thread")),
+    title: threadTitleText(thread.title, resolve),
     description:
       thread.archivedAt === null ? resolve(msg("Linked thread")) : resolve(msg("Archived thread")),
     searchTerms: [input.query, thread.title],
