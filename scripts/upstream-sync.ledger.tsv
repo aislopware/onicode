@@ -2516,3 +2516,4 @@ ad77fd88e2	take	Taken with the scenario ported for the desktop target (WEB = des
 c2a7c5cbc3	take	Taken; guestStream.logic.ts is MISSING (guest links removed). The new history-page subagents field is optional, so older mobile builds ignore it.
 89ac1b8ed1	skip	T3 Connect relay Postgres migration (DPoP proof index, delivery attempt fillfactor); Onicode removed infra/relay
 cf83da75a2	skip	upstream repo governance (VOUCHED.td vouch list); Onicode has no vouching file
+310baf7c99	take	Taken; CONFLICTs were only neighbouring Onicode-only code (palette mount comment, the 'shows again' modal test), both kept. Upstream's 'stays open when Esc belongs to a modal outside Base UI' test is not part of this commit and is not added.
