@@ -2457,3 +2457,4 @@ c48825322d	skip	Onicode already dropped the current-origin pairing link (no brow
 044ba3ad67	take	fix(server): preview pages loaded through a service worker identify as Chrome, not HeadlessChrome (#38445)
 70e4319da8	take	taken as is
 a93e61a343	take	adapted: upload-failed predicate goes on Onicode's stripAttachments built after the last hook (compiler memo), not upstream's earlier position
+281d3e1cbe	take	adapted: test drops the SecretRequests mock (Onicode's ScheduledTaskService does not depend on it)
