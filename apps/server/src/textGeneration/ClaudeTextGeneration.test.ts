@@ -340,50 +340,73 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("reads the result when a stream-json run ends with a later system message", () =>
+  const streamJsonResult = JSON.stringify({
+    type: "result",
+    structured_output: { branch: "fix/login-button" },
+  });
+  // One image attachment switches Claude to stream-json input and output.
+  const generateBranchNameWithImage = (textGeneration: TextGeneration.TextGeneration["Service"]) =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const { attachmentsDir } = yield* ServerConfig.ServerConfig;
+      const attachmentId = "thread-1-claude-stream-json";
+      const imagePath = path.join(attachmentsDir, `${attachmentId}.png`);
+      yield* fs.makeDirectory(attachmentsDir, { recursive: true }).pipe(Effect.orDie);
+      yield* fs.writeFile(imagePath, Buffer.from("hello")).pipe(Effect.orDie);
+      return yield* textGeneration
+        .generateBranchName({
+          cwd: process.cwd(),
+          message: "fix this",
+          attachments: [
+            {
+              type: "image",
+              id: attachmentId,
+              name: "screen.png",
+              mimeType: "image/png",
+              sizeBytes: 5,
+            },
+          ],
+          modelSelection: {
+            instanceId: ProviderInstanceId.make("claudeAgent"),
+            model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
+          },
+        })
+        .pipe(Effect.ensuring(fs.remove(imagePath).pipe(Effect.ignore)));
+    });
+
+  it.effect.each([
+    [
+      "a later system message",
+      [
+        streamJsonResult,
+        JSON.stringify({
+          type: "system",
+          subtype: "session_writes_lost",
+          error_code: "EDQUOT",
+          lost: ["global_config"],
+        }),
+      ],
+    ],
+    ["a line that is not JSON", ["Using the global credential file.", streamJsonResult]],
+  ] as const)("reads the stream-json result past %s", ([, lines]) =>
     withFakeClaudeEnv(
-      {
-        output: [
-          JSON.stringify({ type: "result", structured_output: { branch: "fix/login-button" } }),
-          JSON.stringify({
-            type: "system",
-            subtype: "session_writes_lost",
-            error_code: "EDQUOT",
-            lost: ["global_config"],
-          }),
-        ].join("\n"),
-        argsMustContain: "stream-json",
-      },
+      { output: lines.join("\n"), argsMustContain: "stream-json" },
       (textGeneration) =>
         Effect.gen(function* () {
-          const fs = yield* FileSystem.FileSystem;
-          const path = yield* Path.Path;
-          const { attachmentsDir } = yield* ServerConfig.ServerConfig;
-          const attachmentId = "thread-1-claude-writes-lost";
-          const imagePath = path.join(attachmentsDir, `${attachmentId}.png`);
-          yield* fs.makeDirectory(attachmentsDir, { recursive: true });
-          yield* fs.writeFile(imagePath, Buffer.from("hello"));
-
-          const result = yield* textGeneration
-            .generateBranchName({
-              cwd: process.cwd(),
-              message: "fix this",
-              attachments: [
-                {
-                  type: "image",
-                  id: attachmentId,
-                  name: "screen.png",
-                  mimeType: "image/png",
-                  sizeBytes: 5,
-                },
-              ],
-              modelSelection: {
-                instanceId: ProviderInstanceId.make("claudeAgent"),
-                model: SYNTHETIC_CLAUDE_STANDARD_MODEL,
-              },
-            })
-            .pipe(Effect.ensuring(fs.remove(imagePath).pipe(Effect.ignore)));
+          const result = yield* generateBranchNameWithImage(textGeneration);
           expect(result.branch).toBe("fix/login-button");
+        }),
+    ),
+  );
+
+  it.effect("reports the exit code when a stream-json run fails without output", () =>
+    withFakeClaudeEnv(
+      { output: "", exitCode: 1, argsMustContain: "stream-json" },
+      (textGeneration) =>
+        Effect.gen(function* () {
+          const error = yield* Effect.flip(generateBranchNameWithImage(textGeneration));
+          expect(error.detail).toBe("Claude CLI command failed with code 1.");
         }),
     ),
   );
