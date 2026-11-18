@@ -95,6 +95,7 @@ import {
   composerStripAttachments,
   type DraftComposerFileAttachment,
 } from "../../lib/composerImages";
+import { composerAttachmentUploadKey } from "../../lib/composerAttachmentUploadQueue";
 import {
   buildModelOptions,
   isModelSelectionUnavailable,
@@ -671,7 +672,12 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
 
   // Built after the last hook: a call's result used again after a hook costs the memo of every
   // element that reads it.
-  const stripAttachments = composerStripAttachments(draftAttachments);
+  const stripAttachments = composerStripAttachments(
+    draftAttachments,
+    (attachment) =>
+      uploadStates[composerAttachmentUploadKey(props.environmentId, attachment.id)]?.status ===
+      "failed",
+  );
   const hasEditingAttachments =
     (queuedEdit !== null && queuedEdit.existingAttachments.length > 0) ||
     stripAttachments.length > 0;
