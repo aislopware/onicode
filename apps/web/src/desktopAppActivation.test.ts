@@ -1,7 +1,13 @@
-import { EnvironmentId, ProjectId, ThreadId } from "@onicode/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ThreadId,
+  type DesktopAppActivationRequest,
+} from "@onicode/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
+  createDesktopAppActivationReceiver,
   handleDesktopAppActivationRequest,
   resolveLocalWorkspaceState,
   type DesktopAppActivationDependencies,
@@ -107,7 +113,8 @@ describe("desktop app activation", () => {
     },
     {
       name: "waits for the Local environment over a saved connection that is turned off",
-      environment: "available",
+      // Turning a connection off publishes before it disconnects.
+      environment: "connected",
       enabled: false,
       localEnvironmentOff: false,
       expected: "pending",
@@ -168,4 +175,34 @@ describe("desktop app activation", () => {
       ).toBe(expected);
     },
   );
+
+  it("handles a request that arrived while no handler was mounted once one mounts", async () => {
+    let deliver: (input: DesktopAppActivationRequest) => void = () => undefined;
+    let completed: (response: unknown) => void = () => undefined;
+    const completion = new Promise((resolve) => {
+      completed = resolve;
+    });
+    const receiver = createDesktopAppActivationReceiver({
+      onRequest: (listener) => {
+        deliver = listener;
+        return () => undefined;
+      },
+      complete: async (response) => completed(response),
+    });
+    const handled = vi.fn(async (input: DesktopAppActivationRequest) => ({
+      version: 1 as const,
+      requestId: input.requestId,
+      ok: true as const,
+      projectId: existingProjectId,
+      threadId,
+    }));
+
+    // The handler unmounted, as when the window leaves /welcome.
+    receiver.setHandler(null);
+    deliver(request);
+    receiver.setHandler(handled);
+
+    await expect(completion).resolves.toMatchObject({ requestId: request.requestId, ok: true });
+    expect(handled).toHaveBeenCalledOnce();
+  });
 });

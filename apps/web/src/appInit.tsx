@@ -39,6 +39,7 @@ import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
 import { startThemeBackground } from "./themeBackground";
 import { readLocalStorageValue, subscribeLocalStorageKey } from "./hooks/useLocalStorage";
 import { startHostEnvironmentLookup } from "./state/primaryEnvironment";
+import { startDesktopAppActivationReceiver } from "./desktopAppActivation";
 import {
   getClientSettings,
   startModelPreferencesMigration,
@@ -253,6 +254,7 @@ export function startAppServices(): AppRouter {
   startI18n();
   startDocumentTitle(router);
   startHostEnvironmentLookup();
+  startDesktopAppActivationReceiver();
   startEnvironmentThemeRepaint();
   startThemeBackground();
   startDocumentBackgroundSync(router);

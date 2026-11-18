@@ -2,6 +2,7 @@ import type { EnvironmentPresentation } from "@onicode/client-runtime/connection
 import type { EnvironmentShellStatus } from "@onicode/client-runtime/state/shell";
 import type {
   DesktopAppActivationFailure,
+  DesktopBridge,
   DesktopAppActivationRequest,
   DesktopAppActivationResponse,
   EnvironmentId,
@@ -60,12 +61,13 @@ export function resolveLocalWorkspaceState(input: {
   // A blocked connection retries when the window activates, which `onicode app` does; these never
   // connect. With Local on, a saved connection only stands in until the primary registers.
   if (
-    (input.localEnvironmentOff ||
-      input.environment?.entry.target._tag === "PrimaryConnectionTarget") &&
-    (input.environment?.entry.enabled === false ||
-      input.environment?.connection.phase === "unsupported")
+    input.environment?.entry.enabled === false ||
+    input.environment?.connection.phase === "unsupported"
   ) {
-    return "unavailable";
+    return input.localEnvironmentOff ||
+      input.environment.entry.target._tag === "PrimaryConnectionTarget"
+      ? "unavailable"
+      : "pending";
   }
   return input.environment?.connection.phase === "connected" &&
     input.environment.serverConfig !== null &&
@@ -154,4 +156,57 @@ export async function handleDesktopAppActivationRequest(
       errorMessage(error, "Onicode could not open a new thread for the project."),
     );
   }
+}
+
+type DesktopAppActivationHandler = (
+  request: DesktopAppActivationRequest,
+) => Promise<DesktopAppActivationResponse>;
+
+/**
+ * Listens for the page's whole life, so a request sent while the handler remounts (leaving
+ * /welcome) waits for it instead of reaching no listener. Requests run one at a time.
+ */
+export function createDesktopAppActivationReceiver(
+  activation: Pick<DesktopBridge["appActivation"], "onRequest" | "complete">,
+) {
+  let handler: DesktopAppActivationHandler | null = null;
+  let wakeWaiter: (() => void) | null = null;
+  let queue = Promise.resolve();
+  const awaitHandler = async () => {
+    while (handler === null) {
+      await new Promise<void>((resolve) => {
+        wakeWaiter = resolve;
+      });
+    }
+    return handler;
+  };
+  activation.onRequest((request) => {
+    queue = queue
+      .then(async () => {
+        const handle = await awaitHandler();
+        await activation.complete(await handle(request));
+      })
+      .catch(() => undefined);
+  });
+  return {
+    setHandler: (next: DesktopAppActivationHandler | null) => {
+      handler = next;
+      if (next === null) return;
+      wakeWaiter?.();
+      wakeWaiter = null;
+    },
+  };
+}
+
+let receiver: ReturnType<typeof createDesktopAppActivationReceiver> | null = null;
+
+export function startDesktopAppActivationReceiver(): void {
+  const activation = window.desktopBridge?.appActivation;
+  if (activation !== undefined && receiver === null) {
+    receiver = createDesktopAppActivationReceiver(activation);
+  }
+}
+
+export function setDesktopAppActivationHandler(handler: DesktopAppActivationHandler | null): void {
+  receiver?.setHandler(handler);
 }
