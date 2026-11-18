@@ -101,6 +101,10 @@ continue a large batch, open the Welcome page again and pick the project in
 **Review all**. Completed conversations are not imported again. You can continue
 without the remaining history.
 
+After setup, import from **Settings → Threads → Import threads**. It lists the
+same projects with none checked. Picking a project that is already in Onicode
+brings in its newer Claude Code, Codex and Pi conversations.
+
 You can start without importing. While an import runs, Onicode stays on the
 Welcome page. If you quit, open the Welcome page again from **Settings → About**; the
 projects you started stay checked.

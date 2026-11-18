@@ -5170,8 +5170,8 @@
   "d72f296745294c3a": "Projekte mit ihren Threads importieren",
   "18d144bcd97f0371": "Ausblenden",
   "54fc1526df1c0cce": "{count, plural, one {Alle {count} prüfen} other {Alle {count} prüfen}}",
-  "bd2304f25f6f999e": "{selected, plural, one {{selected} von {total} ausgewählt} other {{selected} von {total} ausgewählt}}",
   "228cd9fd55a55070": "Projekte konnten nicht erneut geprüft werden. {error}",
+  "bd2304f25f6f999e": "{selected, plural, one {{selected} von {total} ausgewählt} other {{selected} von {total} ausgewählt}}",
   "1cc599c5f5874014": "Smartphone",
   "a8c7bd8349214c14": "Codex-Einrichtung konnte nicht gespeichert werden",
   "4c180d45134b7da4": "Prüfe den Befehl und drücke dann Enter, um ihn auszuführen.",
@@ -7425,6 +7425,30 @@
   "e8622c39abe68f9d": "Standard",
   "5383ef2d2c09cdf7": "Schriften suchen…",
   "ea08337bcadd35b4": "Keine Schriften gefunden.",
+  "29e59b3bc57b8921": "Keine neuen Threads zum Importieren",
+  "9528b2c60c580603": "Kein Agent-Verlauf gefunden.",
+  "382dcc85d648b2df": "Importieren",
+  "3360b220b3d7e7aa": "{count, plural, one {{count} Projekt importieren} other {{count} Projekte importieren}}",
+  "4781d6af5c907674": [
+    "Hole Projekte und Threads aus deinem ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "-Verlauf und setze sie hier fort."
+  ],
+  "9c0f379c2345a2b0": "Importieren…",
+  "e32ccc356b3d924b": "Threads importieren",
+  "7e97f4824aae8cf9": [
+    "Wähle Projekte aus deinem ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "-Verlauf. Threads, die schon in Onicode sind, werden nicht erneut importiert."
+  ],
   "d6ad43bc4b700a88": "Es sind keine Browser-Profildaten zum Löschen verfügbar.",
   "ad8efd437b301a37": "System",
   "42e23caa6ef99cad": "Hell",
@@ -10411,6 +10435,8 @@
   "7c5f0666ccc3196e": "lange zeilen codeblöcke diffs dateivorschauen umbruch",
   "e854d0e805882190": "gleiche repositorys zusammenfassen umgebungen seitenleiste",
   "c437e0f28c6d4a4b": "projekte sortieren seitenleiste manuell erstellt zuletzt",
+  "c9988dfcc7bc9c1d": "Threads importieren",
+  "c034cae195a5b49d": "claude code codex pi verlauf unterhaltungen sitzungen transkripte projekte terminal cli",
   "cb309dc06cf679ae": "zurückstellen vorlagen zeiten später heute abend morgen nächste woche erinnern",
   "6751449c6188912d": "nutzung kontingent rate limit zurücksetzen aufwecken wiederherstellen fortsetzen",
   "0aedae6a82c09429": "nutzung kontingent rate limit zurücksetzen wiederherstellen fortsetzen",

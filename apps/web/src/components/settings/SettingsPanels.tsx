@@ -59,6 +59,7 @@ import { scopedIdleCompaction } from "./scopedSettings";
 import { ProjectDefaultsSettings } from "./ProjectDefaultsSettings";
 import { ThreadTitleInstructionsSettings } from "./ThreadTitleInstructionsSettings";
 import { SnoozePresetsRow } from "./SnoozePresetsSettings";
+import { ImportThreadsRow } from "./ImportThreadsSettings";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
 import { usePrimaryManagedPolicy } from "../../state/managedPolicy";
 import {
@@ -1827,6 +1828,12 @@ export function ThreadsSettingsPanel() {
       </SettingsSection>
 
       <ProjectDefaultsSettings category="general" />
+
+      {!isProjectScope && environmentId !== null ? (
+        <SettingsSection id="import" title={gt("Import")}>
+          <ImportThreadsRow environmentId={environmentId} />
+        </SettingsSection>
+      ) : null}
 
       {!isProjectScope ? (
         <SettingsSection id="snooze" title={gt("Snooze")}>

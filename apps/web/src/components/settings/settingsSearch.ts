@@ -455,6 +455,16 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: [msg("sort projects sidebar manual created recent")],
   },
   {
+    id: "import-threads",
+    title: msg("Import threads"),
+    to: "/settings/threads",
+    searchTerms: [
+      msg("claude code codex pi history conversations sessions transcripts projects terminal cli"),
+    ],
+    environmentOnly: true,
+    scope: "environment-defaults",
+  },
+  {
     id: "snooze-options",
     title: msg("Snooze options"),
     to: "/settings/threads",

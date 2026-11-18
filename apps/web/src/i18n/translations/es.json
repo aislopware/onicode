@@ -5168,8 +5168,8 @@
   "d72f296745294c3a": "Importar proyectos y sus hilos",
   "18d144bcd97f0371": "Ocultar",
   "54fc1526df1c0cce": "{count, plural, one {Revisar {count}} other {Revisar los {count}}}",
-  "bd2304f25f6f999e": "{selected, plural, one {{selected} de {total} seleccionado} other {{selected} de {total} seleccionados}}",
   "228cd9fd55a55070": "No se pudieron volver a comprobar los proyectos. {error}",
+  "bd2304f25f6f999e": "{selected, plural, one {{selected} de {total} seleccionado} other {{selected} de {total} seleccionados}}",
   "1cc599c5f5874014": "Teléfono",
   "a8c7bd8349214c14": "No se pudo guardar la configuración de Codex",
   "4c180d45134b7da4": "Revisa el comando y pulsa Enter para ejecutarlo.",
@@ -7422,6 +7422,30 @@
   "e8622c39abe68f9d": "predeterminada",
   "5383ef2d2c09cdf7": "Buscar fuentes…",
   "ea08337bcadd35b4": "No se encontraron fuentes.",
+  "29e59b3bc57b8921": "No hay hilos nuevos para importar",
+  "9528b2c60c580603": "No se encontró historial de agentes.",
+  "382dcc85d648b2df": "Importar",
+  "3360b220b3d7e7aa": "{count, plural, one {Importar {count} proyecto} other {Importar {count} proyectos}}",
+  "4781d6af5c907674": [
+    "Trae proyectos e hilos de tu historial de ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " y continúalos aquí."
+  ],
+  "9c0f379c2345a2b0": "Importar…",
+  "e32ccc356b3d924b": "Importar hilos",
+  "7e97f4824aae8cf9": [
+    "Elige proyectos de tu historial de ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ". Los hilos que ya están en Onicode no se importan de nuevo."
+  ],
   "d6ad43bc4b700a88": "No hay datos del perfil del navegador que borrar.",
   "ad8efd437b301a37": "Sistema",
   "42e23caa6ef99cad": "Claro",
@@ -10404,6 +10428,8 @@
   "7c5f0666ccc3196e": "líneas largas bloques de código diffs vistas previas de archivos",
   "e854d0e805882190": "combinar repositorios coincidentes entornos barra lateral",
   "c437e0f28c6d4a4b": "ordenar proyectos barra lateral manual creados recientes",
+  "c9988dfcc7bc9c1d": "Importar hilos",
+  "c034cae195a5b49d": "claude code codex pi historial conversaciones sesiones transcripciones proyectos terminal cli",
   "cb309dc06cf679ae": "posponer valores predefinidos horas más tarde esta noche mañana la próxima semana recordar",
   "6751449c6188912d": "uso cuota límite de uso restablecer reactivar recuperar continuar",
   "0aedae6a82c09429": "uso cuota límite de uso restablecer recuperar continuar",

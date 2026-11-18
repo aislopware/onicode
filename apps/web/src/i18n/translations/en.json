@@ -5170,8 +5170,8 @@
   "d72f296745294c3a": "Import projects and their threads",
   "18d144bcd97f0371": "Hide",
   "54fc1526df1c0cce": "{count, plural, one {Review all {count}} other {Review all {count}}}",
-  "bd2304f25f6f999e": "{selected, plural, one {{selected} of {total} selected} other {{selected} of {total} selected}}",
   "228cd9fd55a55070": "Could not check projects again. {error}",
+  "bd2304f25f6f999e": "{selected, plural, one {{selected} of {total} selected} other {{selected} of {total} selected}}",
   "1cc599c5f5874014": "Phone",
   "a8c7bd8349214c14": "Could not save Codex setup",
   "4c180d45134b7da4": "Review the command, then press Enter to run it.",
@@ -7432,6 +7432,30 @@
   "e8622c39abe68f9d": "default",
   "5383ef2d2c09cdf7": "Search fonts…",
   "ea08337bcadd35b4": "No fonts found.",
+  "29e59b3bc57b8921": "No new threads to import",
+  "9528b2c60c580603": "No agent history found.",
+  "382dcc85d648b2df": "Import",
+  "3360b220b3d7e7aa": "{count, plural, one {Import {count} project} other {Import {count} projects}}",
+  "4781d6af5c907674": [
+    "Bring in projects and threads from your ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " history, and continue them here."
+  ],
+  "9c0f379c2345a2b0": "Import…",
+  "e32ccc356b3d924b": "Import threads",
+  "7e97f4824aae8cf9": [
+    "Pick projects from your ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " history. Threads already in Onicode are not imported again."
+  ],
   "d6ad43bc4b700a88": "Browser profile data is not available to clear.",
   "ad8efd437b301a37": "System",
   "42e23caa6ef99cad": "Light",
@@ -10419,6 +10443,8 @@
   "7c5f0666ccc3196e": "long lines code blocks diffs file previews",
   "e854d0e805882190": "combine matching repositories environments sidebar",
   "c437e0f28c6d4a4b": "sort projects sidebar manual created recent",
+  "c9988dfcc7bc9c1d": "Import threads",
+  "c034cae195a5b49d": "claude code codex pi history conversations sessions transcripts projects terminal cli",
   "cb309dc06cf679ae": "snooze presets times later tonight tomorrow next week remind",
   "6751449c6188912d": "usage quota rate limit reset wake recover continue",
   "0aedae6a82c09429": "usage quota rate limit reset recover continue",

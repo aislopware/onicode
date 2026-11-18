@@ -156,6 +156,7 @@ vi.mock(import("../../state/use-atom-command"), async (original) => ({
 
 import { welcomeImportSelectionKey } from "../../onboarding/welcomeState";
 import { appAtomRegistry } from "../../rpc/atomRegistry";
+import { ImportThreadsRow } from "../settings/ImportThreadsSettings";
 import { toastManager } from "../ui/toast";
 import { WelcomePage } from "./WelcomePage";
 
@@ -708,4 +709,33 @@ it("starts without importing when this connection cannot import projects", async
   await click("Start");
   await vi.waitFor(() => expect(state.onDone).toHaveBeenCalledOnce());
   expect(state.createProject).not.toHaveBeenCalled();
+});
+
+it("imports only the projects picked in Settings, and leaves setup alone", async () => {
+  using _now = setup();
+  const existing = ProjectId.make("existing");
+  appAtomRegistry.set(projectsAtom(), [
+    { id: existing, environmentId: primaryId, workspaceRoot: "/projects/first" },
+  ]);
+  await using _screen = await render(
+    <RegistryContext.Provider value={appAtomRegistry}>
+      <ImportThreadsRow environmentId={primaryId} />
+    </RegistryContext.Provider>,
+  );
+  await click("Import…");
+  // Recent new projects are not checked for the user here, unlike on the Welcome page.
+  expect(button("Import").disabled).toBe(true);
+
+  const first = [...document.querySelectorAll("label")].find((label) =>
+    label.textContent?.includes("/projects/first"),
+  );
+  await act(async () => first?.querySelector<HTMLElement>('[role="checkbox"]')?.click());
+  await click("Import 1 project");
+  await vi.waitFor(() => expect(pageText()).not.toContain("1 of 2 selected"));
+  expect(state.createProject).not.toHaveBeenCalled();
+  expect(state.importThreads).toHaveBeenCalledExactlyOnceWith({
+    environmentId: primaryId,
+    input: { projectId: existing, expectedWorkspaceRoot: "/projects/first" },
+  });
+  expect(state.completeOnboarding).not.toHaveBeenCalled();
 });

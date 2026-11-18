@@ -110,7 +110,7 @@ import { cn } from "../../lib/utils";
 import { formatRelativeTime } from "../../timestampFormat";
 
 const AGENT_ONBOARDING_THREAD_ID = ThreadId.make("onboarding-agent-setup");
-const SCAN_LIMIT_MESSAGE = msg(
+export const SCAN_LIMIT_MESSAGE = msg(
   "Scan limit reached. Some projects or conversations may be missing.",
 );
 
@@ -195,22 +195,7 @@ export function WelcomePage({
         holdPageRef.current = false;
         await onDone(projectRef);
         if (!keepChoicesRef.current) setImportSelection(null);
-        if (importWarning) {
-          toastManager.add({
-            type: "warning",
-            title: gt("Some history was not imported"),
-            description: importWarning,
-            timeout: 0,
-          });
-        } else if (importedThreadCount > 0) {
-          toastManager.add({
-            type: "success",
-            title: gt(
-              "{count, plural, one {Imported {count} thread} other {Imported {count} threads}}",
-              { count: importedThreadCount },
-            ),
-          });
-        }
+        reportImportResult(gt, importWarning, importedThreadCount);
         return true;
       })
       .catch(() => {
@@ -809,7 +794,6 @@ function ProjectsSection({
     ) : null;
   }
 
-  const allKeys = candidates.map((candidate) => candidate.key);
   // Checking the box picks recent new projects, else any new ones, else everything listed.
   const fresh = candidates.filter(isNew);
   const defaultKeys = (recent.length > 0 ? recent : fresh.length > 0 ? fresh : candidates).map(
@@ -868,44 +852,7 @@ function ProjectsSection({
       {reviewing && canWrite ? (
         // The negative margin lines the list's checkboxes up with the one above it.
         <fieldset className="-mx-1.5 mt-1 min-w-0" disabled={isImporting}>
-          <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
-            <span role="status">
-              {gt(
-                "{selected, plural, one {{selected} of {total} selected} other {{selected} of {total} selected}}",
-                {
-                  selected: selected.length,
-                  total: candidates.length,
-                },
-              )}
-            </span>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="xs"
-                disabled={selected.length === candidates.length}
-                onClick={() => setSelectedKeys(new Set(allKeys))}
-              >
-                <T>Select all</T>
-              </Button>
-              <Button
-                variant="ghost"
-                size="xs"
-                disabled={selected.length === 0}
-                onClick={() => setSelectedKeys(new Set())}
-              >
-                <T>Select none</T>
-              </Button>
-            </div>
-          </div>
-          <ScrollArea scrollFade className="mt-1 h-auto max-h-80">
-            <div className="space-y-0.5 pr-3">
-              <ImportCandidateList
-                candidates={candidates}
-                selectedKeys={selectedKeys}
-                onSelectionChange={setSelectedKeys}
-              />
-            </div>
-          </ScrollArea>
+          <ImportSelectionList projectImport={projectImport} />
         </fieldset>
       ) : null}
       {scan.data?.truncated ? (
@@ -926,6 +873,61 @@ function ProjectsSection({
         <p className="pt-1 pl-8 text-sm text-destructive">{m(visibleImportError)}</p>
       ) : null}
     </WelcomeSection>
+  );
+}
+
+/** Every project found, with its checkbox, under a count and the select-all buttons. */
+export function ImportSelectionList({
+  projectImport,
+}: {
+  readonly projectImport: Pick<
+    ReturnType<typeof useProjectImport>,
+    "candidates" | "selected" | "selectedKeys" | "setSelectedKeys"
+  >;
+}) {
+  const gt = useGT();
+  const { candidates, selected, selectedKeys, setSelectedKeys } = projectImport;
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3 px-2 text-xs text-muted-foreground">
+        <span role="status">
+          {gt(
+            "{selected, plural, one {{selected} of {total} selected} other {{selected} of {total} selected}}",
+            {
+              selected: selected.length,
+              total: candidates.length,
+            },
+          )}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="xs"
+            disabled={selected.length === candidates.length}
+            onClick={() => setSelectedKeys(new Set(candidates.map((candidate) => candidate.key)))}
+          >
+            <T>Select all</T>
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            disabled={selected.length === 0}
+            onClick={() => setSelectedKeys(new Set())}
+          >
+            <T>Select none</T>
+          </Button>
+        </div>
+      </div>
+      <ScrollArea scrollFade className="mt-1 h-auto max-h-80">
+        <div className="space-y-0.5 pr-3">
+          <ImportCandidateList
+            candidates={candidates}
+            selectedKeys={selectedKeys}
+            onSelectionChange={setSelectedKeys}
+          />
+        </div>
+      </ScrollArea>
+    </>
   );
 }
 
@@ -1297,11 +1299,36 @@ function AgentInstallTerminal({
   );
 }
 
+/** Toasts what an import did. False when it brought nothing in and nothing failed. */
+export function reportImportResult(
+  gt: ReturnType<typeof useGT>,
+  importWarning: string | undefined,
+  importedThreadCount: number,
+) {
+  if (importWarning) {
+    toastManager.add({
+      type: "warning",
+      title: gt("Some history was not imported"),
+      description: importWarning,
+      timeout: 0,
+    });
+    return true;
+  }
+  if (importedThreadCount === 0) return false;
+  toastManager.add({
+    type: "success",
+    title: gt("{count, plural, one {Imported {count} thread} other {Imported {count} threads}}", {
+      count: importedThreadCount,
+    }),
+  });
+  return true;
+}
+
 const IMPORT_PERMISSION_MESSAGE = msg("This connection cannot import projects or thread history.");
 
 // Creates the selected projects, then imports each one's agent history. Owns retry state so a
 // second Start resumes instead of recreating projects.
-function useProjectImport({
+export function useProjectImport({
   scans,
   importSelection,
   onImportSelectionChange,
@@ -1780,7 +1807,7 @@ const IMPORT_SOURCE_NAMES: Record<AgentSessionSource, string> = {
   codex: "Codex",
   pi: "Pi",
 };
-function useImportSourcesLabel() {
+export function useImportSourcesLabel() {
   return new Intl.ListFormat(useLocale(), { type: "conjunction" }).format(
     AgentSessionSource.literals.map((source) => IMPORT_SOURCE_NAMES[source]),
   );
