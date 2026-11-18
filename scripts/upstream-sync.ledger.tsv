@@ -2485,3 +2485,4 @@ e6265a926e	take	taken as is
 373ec12be6	take	taken as is
 5552f0aa74	take	conflict: kept Onicode's after-last-hook placement of the strip call in ThreadComposer, with upstream's status callback
 6a29d58d14	take	taken as is
+018ca6d58e	take	fix(acp-registry): each Mistral Vibe model shows its own thinking levels (#38556)
