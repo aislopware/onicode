@@ -26,6 +26,8 @@ import {
   isCursorCacheComplete,
   isCursorCacheFresh,
   mergeCursorFetch,
+  narrowedCursorSpan,
+  widenedCursorSpan,
   type CursorAccountCache,
   type CursorCredentialSource,
 } from "./accountCache.ts";
@@ -68,7 +70,7 @@ const make = Effect.gen(function* () {
   /** Failed refreshes share the cache TTL to prevent repeated requests; null means no login. */
   const failures = new Map<string, { readonly atMs: number; readonly error: string | null }>();
   const refreshes = new Map<string, Deferred.Deferred<void>>();
-  /** Widest range a read asks for: halved when a read runs out of time, doubled when one finishes. */
+  /** Widest range a read asks for: see `narrowedCursorSpan` and `widenedCursorSpan`. */
   const fetchSpans = new Map<string, number>();
 
   const ensureLoaded = yield* Effect.cached(
@@ -143,12 +145,7 @@ const make = Effect.gen(function* () {
       if (result.missing || result.error !== null || result.accountKey === null) {
         if (result.rangeTooLarge === true && widthMs > CURSOR_MIN_FETCH_SPAN_MS) {
           failedWidthMs = widthMs;
-          // A read that runs out of time costs a minute, so narrow hard; finished reads widen
-          // back. Whole milliseconds: Cursor's dashboard rejects a fractional date.
-          fetchSpans.set(
-            credentialKey,
-            Math.max(CURSOR_MIN_FETCH_SPAN_MS, Math.floor(widthMs / 8)),
-          );
+          fetchSpans.set(credentialKey, narrowedCursorSpan(widthMs));
           cacheDirty = true;
           continue;
         }
@@ -170,8 +167,9 @@ const make = Effect.gen(function* () {
       failures.delete(credentialKey);
       if (merged.changed) cacheDirty = true;
       // A clipped read says nothing about whether the full span would finish.
-      if (widthMs >= spanMs && spanMs * 2 < failedWidthMs) {
-        fetchSpans.set(credentialKey, spanMs * 2);
+      const widenedMs = widenedCursorSpan(spanMs, failedWidthMs);
+      if (widthMs >= spanMs && widenedMs !== spanMs) {
+        fetchSpans.set(credentialKey, widenedMs);
         cacheDirty = true;
       }
     }

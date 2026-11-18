@@ -5,6 +5,8 @@ import {
   cursorFetchRange,
   isCursorCacheFresh,
   mergeCursorFetch,
+  narrowedCursorSpan,
+  widenedCursorSpan,
 } from "./accountCache.ts";
 import type { UsageRecord } from "@onicode/provider-core/server/usage";
 
@@ -219,5 +221,15 @@ describe("cursorAccountCache", () => {
       found.cache.records.map((entry) => entry.timestampMs),
       [4.5 * DAY_MS, 6 * DAY_MS],
     );
+  });
+
+  it("widens a narrowed span back to no more than half the width that ran out of time", () => {
+    for (const failedWidthMs of [1_000_000_007, 8 * DAY_MS, 92 * DAY_MS + 120_000]) {
+      let spanMs = narrowedCursorSpan(failedWidthMs);
+      for (let reads = 0; reads < 10; reads++) spanMs = widenedCursorSpan(spanMs, failedWidthMs);
+      assert.isAtMost(spanMs, failedWidthMs / 2);
+      assert.isAbove(spanMs, failedWidthMs / 4);
+      assert.isTrue(Number.isSafeInteger(spanMs));
+    }
   });
 });
