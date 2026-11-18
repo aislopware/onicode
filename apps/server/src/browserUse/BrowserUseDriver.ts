@@ -9,15 +9,15 @@ import * as PinnedTool from "../tools/PinnedTool.ts";
 
 // Update the version, sizes and hashes together from the assets of
 // https://github.com/aislopware/oni-browser-use/releases (tag v<version>).
-const VERSION = "4.7.0";
+const VERSION = "4.8.1";
 const BINARIES = {
   "darwin-arm64": {
-    bytes: 7_153_024,
-    sha256: "585bfa9dab4801c93cc266a65d20fe8c8d50cc884d6a5a510df559d26a8c8d1c",
+    bytes: 7_186_880,
+    sha256: "1e9643bd93b39e865c2fdf443194aa11e779b5349f3a68282e71a51c8e498e33",
   },
   "linux-x64": {
-    bytes: 8_415_720,
-    sha256: "2e6ccf680f1cb762df2253d81941188f317ac2588a7ba8b4cc87b3e631ea66ec",
+    bytes: 8_460_336,
+    sha256: "63cbac9b0a6ba5211b1949b116995b697d185c512414a68e76574484aba08dd0",
   },
 } as const;
 
