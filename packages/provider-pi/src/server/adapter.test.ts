@@ -2454,7 +2454,7 @@ describe("PiAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
-  it.effect("fails to resume a session whose file is gone or empty", () =>
+  it.effect("fails to resume an imported session whose file is gone or empty", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const fake = yield* makeFakePi;
@@ -2474,18 +2474,6 @@ describe("PiAdapterV2", () => {
       for (const resume of [
         { providerThread: missing, importedNativeSession: true },
         { providerThread: at(`${dir}/empty.jsonl`), importedNativeSession: true },
-        // A thread with turns had its file written, so a missing one lost them.
-        {
-          providerThread: {
-            ...missing,
-            nativeConversationHeadRef: {
-              driver: PI_PROVIDER,
-              nativeId: "entry-1",
-              strength: "strong" as const,
-            },
-          },
-          importedNativeSession: false,
-        },
       ]) {
         const error = yield* runtime.resumeThread(resume).pipe(Effect.flip);
         assert.equal(error._tag, "ProviderAdapterResumeThreadError");
