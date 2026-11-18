@@ -74,6 +74,19 @@ const ACKNOWLEDGED = new Set([
   "Browser.cancelDownload",
 ]);
 
+type SharedDomain = "Runtime" | "Log";
+const isSharedDomain = (domain: string): domain is SharedDomain =>
+  domain === "Runtime" || domain === "Log";
+// What Chromium replays to a session that enables the domain late.
+const REPLAYED: Record<string, SharedDomain | undefined> = {
+  "Runtime.consoleAPICalled": "Runtime",
+  "Runtime.exceptionThrown": "Runtime",
+  "Log.entryAdded": "Log",
+};
+const MAX_REPLAYED = 500;
+const field = (value: unknown, key: string) =>
+  typeof value === "object" && value !== null ? (value as Record<string, unknown>)[key] : undefined;
+
 export function createCdpRelayConnection(
   target: CdpRelayTarget,
   write: (message: string) => void,
@@ -118,6 +131,31 @@ export function createCdpRelayConnection(
   const sendFrame = (sessionId: string, params: Record<string, unknown>) => {
     unackedFrames.set(sessionId, params["sessionId"] as number);
     send({ method: "Page.screencastFrame", params, sessionId });
+  };
+  // Chromium keeps these domains per session; the one debugger has them on or off for all. A
+  // real disable drops the object handles and context events another session depends on, so
+  // the debugger stays on while any session holds it and the relay replays for a late enable.
+  const holders: Record<SharedDomain, Set<string>> = { Runtime: new Set(), Log: new Set() };
+  const replayed: Record<SharedDomain, Array<{ method: string; params: unknown }>> = {
+    Runtime: [],
+    Log: [],
+  };
+  const contexts = new Map<unknown, unknown>();
+  const remember = (method: string, params: unknown) => {
+    if (method === "Runtime.executionContextCreated") {
+      contexts.set(field(field(params, "context"), "id"), params);
+    } else if (method === "Runtime.executionContextDestroyed") {
+      contexts.delete(field(params, "executionContextId"));
+    } else if (method === "Runtime.executionContextsCleared") {
+      // A new document: Chromium drops its console record here too.
+      contexts.clear();
+      replayed.Runtime.length = 0;
+      replayed.Log.length = 0;
+    } else {
+      const domain = REPLAYED[method];
+      if (domain !== undefined && replayed[domain].push({ method, params }) > MAX_REPLAYED)
+        replayed[domain].shift();
+    }
   };
   let sessionSequence = 0;
   const newSession = (kind: "browser" | "page") => {
@@ -186,6 +224,8 @@ export function createCdpRelayConnection(
         const sessionId = command.params?.["sessionId"];
         if (typeof sessionId === "string" && sessionId !== PAGE_SESSION_ID) {
           sessions.delete(sessionId);
+          holders.Runtime.delete(sessionId);
+          holders.Log.delete(sessionId);
           unackedFrames.delete(sessionId);
           skippedFrames.delete(sessionId);
           releaseHeldFramesWithoutHolders();
@@ -241,6 +281,33 @@ export function createCdpRelayConnection(
     if (command.method === "Page.stopScreencast" && child === undefined) {
       skippedFrames.delete(command.sessionId!);
       releaseHeldFramesWithoutHolders();
+    }
+    const [domain = "", action] = command.method.split(".");
+    if (child === undefined && isSharedDomain(domain)) {
+      const sessionId = command.sessionId!;
+      const held = holders[domain];
+      if (action === "disable") {
+        held.delete(sessionId);
+        if (held.size > 0) return Promise.resolve({});
+      } else if (action === "enable" && !held.has(sessionId)) {
+        const late = held.size > 0;
+        held.add(sessionId);
+        if (late) {
+          if (domain === "Runtime")
+            for (const params of contexts.values())
+              send({ method: "Runtime.executionContextCreated", params, sessionId });
+          for (const event of replayed[domain]) send({ ...event, sessionId });
+          return Promise.resolve({});
+        }
+        // The debugger replays its own record to the first holder.
+        replayed[domain].length = 0;
+        if (domain === "Runtime") contexts.clear();
+      } else if (
+        command.method === "Runtime.discardConsoleEntries" ||
+        command.method === "Log.clear"
+      ) {
+        replayed[domain].length = 0;
+      }
     }
     // The shared debugger keeps Runtime enabled after an earlier connection, and a repeated
     // enable reports no existing contexts; Playwright waits for them, so reset once per connection.
@@ -323,6 +390,7 @@ export function createCdpRelayConnection(
         else target.ackScreencastFrame(frameId);
         return;
       }
+      remember(method, params);
       for (const [id, kind] of sessions)
         if (kind === "page") send({ method, params, sessionId: id });
     },
