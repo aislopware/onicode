@@ -546,9 +546,11 @@ Redact secrets before uploading.`);
     Effect.gen(function* () {
       const seen: unknown[] = [];
       const operations: Array<string | undefined> = [];
+      const queries: string[] = [];
       const api = yield* tracker((variables, query) => {
         seen.push(variables);
         operations.push(/\bquery (\w+)/.exec(query)?.[1]);
+        queries.push(query);
       });
       const issue = yield* api.getIssue({
         cwd: "/w",
@@ -640,6 +642,7 @@ Redact secrets before uploading.`);
       // A hover card's read is one request with no conversation and no page walks.
       seen.length = 0;
       operations.length = 0;
+      queries.length = 0;
       const summary = yield* api.getIssueSummary!({
         cwd: "/w",
         host: "github.com",
@@ -648,6 +651,7 @@ Redact secrets before uploading.`);
       });
       expect(seen).toEqual([{ owner: "acme", name: "web", number: 42 }]);
       expect(operations).toEqual(["IssueSummary"]);
+      expect(queries.join("\n")).not.toMatch(/\b(body|comments\(last|timelineItems)\b/);
       expect(summary).toEqual({
         key: "42",
         displayKey: "#42",

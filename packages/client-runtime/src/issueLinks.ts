@@ -30,26 +30,32 @@ function linkAuthority(url: string): string | null {
   }
 }
 
+function indexIssueBindings<Project extends LinkProject>(projects: ReadonlyArray<Project>) {
+  const bindings = projects.flatMap((project) => {
+    const binding = projectIssueBinding(project);
+    return binding === null ? [] : [{ project, binding }];
+  });
+  return { bindings, hosts: new Set(bindings.map((candidate) => candidate.binding.host)) };
+}
+
 /**
  * Resolves issue links by the server's `IssueService.resolveUrl` rule: the project bound to the
  * link's host and scope, else one on that tracker and host lending read-only credentials, so a
- * lookalike hostname stays an ordinary link. Bindings are read once per project list.
+ * lookalike hostname stays an ordinary link. Bindings are read once, at the first link.
  */
 export function createIssueLinkResolver<Project extends LinkProject>(
   /** The projects of the environment the link is read in. */
   projects: ReadonlyArray<Project>,
 ) {
-  const bindings = projects.flatMap((project) => {
-    const binding = projectIssueBinding(project);
-    return binding === null ? [] : [{ project, binding }];
-  });
-  const hosts = new Set(bindings.map((candidate) => candidate.binding.host));
+  let index: ReturnType<typeof indexIssueBindings<Project>> | undefined;
+  const bindingsRead = () => (index ??= indexIssueBindings(projects));
 
   /** A host whose hostname does not name it, such as GitHub Enterprise Server, is vouched for by a project on it. */
   const parseIssueLink = (url: string, authority: string | null) => {
     const parsed = sourceControlClients.parseIssueUrl(url);
     if (parsed !== null || authority === null) return parsed;
     const hostname = new URL(url).hostname.toLowerCase();
+    const { bindings, hosts } = bindingsRead();
     if (!hosts.has(hostname) && !hosts.has(authority)) return null;
     for (const { project, binding } of bindings) {
       if (binding.host !== hostname && binding.host !== authority) continue;
@@ -68,7 +74,7 @@ export function createIssueLinkResolver<Project extends LinkProject>(
     const parsed = parseIssueLink(url, authority);
     if (parsed === null) return null;
     const { definition, link } = parsed;
-    const onHost = bindings.filter(
+    const onHost = bindingsRead().bindings.filter(
       ({ binding }) =>
         binding.tracker === definition.kind &&
         (binding.host === link.host || binding.host === authority),
