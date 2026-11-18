@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { DEFAULT_TERMINAL_ID, TerminalOpenInput } from "@onicode/contracts";
+import { DEFAULT_TERMINAL_ID, TerminalOpenInput, type TerminalSummary } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
 import { mFallback } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
@@ -19,8 +19,13 @@ const japanese: MFunctionType = (encodedMsg, options) => {
 
 describe("resolveTerminalSessionLabel", () => {
   it("translates the default and keeps process names", () => {
-    const resolve = (label: string, hasRunningSubprocess: boolean) =>
-      resolveTerminalSessionLabel("term-2", { label, hasRunningSubprocess }, japanese);
+    const resolve = (label: string, hasRunningSubprocess: boolean) => {
+      const summary: Pick<TerminalSummary, "label" | "hasRunningSubprocess"> = {
+        label,
+        hasRunningSubprocess,
+      };
+      return resolveTerminalSessionLabel("term-2", summary, japanese);
+    };
     expect(resolve("Terminal 2", false)).toBe("ターミナル 2");
     expect(resolve(" ", false)).toBe("ターミナル 2");
     expect(resolve("sleep", true)).toBe("sleep");
