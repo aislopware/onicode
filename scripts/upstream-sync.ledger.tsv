@@ -2489,3 +2489,4 @@ e6265a926e	take	taken as is
 52f0f8afb8	take	fix(server): Cursor history on large accounts loads in pieces and keeps what was read (#38567)
 759a173e15	take	fix(web): idle numbered terminals show their name in the app language (#38565)
 2c4622efb4	take	fix(server): the first message on an imported conversation sends its history once (#38575)
+66bc6145fe	take	fix(pi): worktree handoff no longer leaves Pi threads Waiting
