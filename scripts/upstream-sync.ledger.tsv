@@ -2491,3 +2491,4 @@ e6265a926e	take	taken as is
 2c4622efb4	take	fix(server): the first message on an imported conversation sends its history once (#38575)
 66bc6145fe	take	fix(pi): worktree handoff no longer leaves Pi threads Waiting
 9431a9479f	take	fix(mobile): use the shared rounded frame for issue details
+b1ca56209c	take	fix(server): an Antigravity update refreshes every instance's model list
