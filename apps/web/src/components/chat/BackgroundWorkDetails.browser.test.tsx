@@ -14,6 +14,8 @@ import { ThreadNow } from "./ThreadNow";
 
 it("opens full command details for short labels and keeps pending tasks current", async () => {
   const command = "python3 audit.py -j 6\n> scratch/audit.log 2>&1";
+  // The task carries a preview; the dialog shows the timeline item's full command.
+  const commandPreview = "python3 audit.py -j 6…";
   const commandItem = (status: "running" | "completed") => ({
     id: TurnItemId.make("bash-1"),
     threadId: ThreadId.make("thread"),
@@ -51,7 +53,7 @@ it("opens full command details for short labels and keeps pending tasks current"
             itemId: explicitItem ? TurnItemId.make("bash-1") : undefined,
             kind: "command",
             description,
-            command,
+            command: commandPreview,
             awaited: true,
           },
         ],

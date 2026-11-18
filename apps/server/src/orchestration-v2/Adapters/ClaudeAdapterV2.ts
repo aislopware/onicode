@@ -26,6 +26,7 @@ import {
 } from "./claudeWorkflowProgress.ts";
 
 import { isWorkspaceImagePreviewPath } from "@onicode/shared/filePreview";
+import { backgroundWorkTextPreview } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import {
   addClaudeLedgerUsage,
   claudeLedgerDelta,
@@ -3951,7 +3952,7 @@ function claudePendingBackgroundTask(input: {
           ? undefined
           : CLAUDE_OPAQUE_BACKGROUND_TASK_KINDS.get(input.taskType)) ?? "background_task"),
     ...(input.description !== undefined && input.description.trim().length > 0
-      ? { description: input.description }
+      ? { description: backgroundWorkTextPreview(input.description) }
       : {}),
     ...(typeof input.parentTaskId === "string" && input.parentTaskId.trim().length > 0
       ? { parentTaskId: input.parentTaskId }
@@ -10728,7 +10729,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               : undefined;
           if (launch === undefined || command === undefined) return {};
           return {
-            command,
+            command: backgroundWorkTextPreview(command),
             itemId: idAllocator.derive.turnItemFromProviderItem({
               driver: CLAUDE_PROVIDER,
               nativeItemId: launch.nativeItemId,

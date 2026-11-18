@@ -4,6 +4,7 @@ import type {
   ThreadId,
 } from "@onicode/contracts";
 import type { ThreadStructure } from "@onicode/client-runtime/state/shell";
+import { backgroundWorkTextPreview } from "@onicode/shared/orchestrationV2PendingBackgroundWork";
 import { T, useGT } from "gt-react";
 import { useState } from "react";
 
@@ -62,11 +63,12 @@ export function BackgroundWorkDetails(props: {
                   ? (candidate.nativeItemRef?.nativeId || candidate.id) === task.taskId
                   : candidate.id === task.itemId,
               );
+              // The task carries only a preview; a loaded timeline item has the full command.
               const command =
-                task.command ?? (item?.type === "command_execution" ? item.input : undefined);
+                (item?.type === "command_execution" ? item.input : undefined) ?? task.command;
               const description = task.description?.trim();
               const title =
-                description && description !== command?.trim()
+                description && description !== backgroundWorkTextPreview(command?.trim() ?? "")
                   ? description
                   : command
                     ? gt("Command", { $context: "title of a background shell command" })
