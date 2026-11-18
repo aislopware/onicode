@@ -121,7 +121,7 @@ export function useNativeReviewDiffHighlighting(input: {
       // Deliver viewport tokens before offscreen source fetches can delay them.
       let retryableViewportRowIds: ReadonlyArray<string> = [];
       for (const overscanRows of [0, undefined]) {
-        const deliveredRowIds = new Set<string>();
+        const deliveredTokens = new Map<string, unknown>();
         const settled = await settlePromise(() =>
           highlightNativeReviewDiffVisibleRows({
             files,
@@ -137,10 +137,8 @@ export function useNativeReviewDiffHighlighting(input: {
                 : highlightedRowIdsRef.current,
             signal: abortController.signal,
             onChunk: (chunk) => {
-              // Provisional rows still need the final result's tokens.
-              const retryable = new Set(chunk.retryableRowIds);
-              for (const rowId of Object.keys(chunk.tokensByRowId)) {
-                if (!retryable.has(rowId)) deliveredRowIds.add(rowId);
+              for (const [rowId, tokens] of Object.entries(chunk.tokensByRowId)) {
+                deliveredTokens.set(rowId, tokens);
               }
               enqueueChunk(chunk);
             },
@@ -169,8 +167,11 @@ export function useNativeReviewDiffHighlighting(input: {
         if (result.rowCount === 0) continue;
         retryableViewportRowIds = result.retryableRowIds;
 
+        // Provisional tokens differ from the final ones, so only those rows are sent again.
         const remaining = Object.fromEntries(
-          Object.entries(result.tokensByRowId).filter(([rowId]) => !deliveredRowIds.has(rowId)),
+          Object.entries(result.tokensByRowId).filter(
+            ([rowId, tokens]) => deliveredTokens.get(rowId) !== tokens,
+          ),
         );
         enqueueChunk({
           ...result,

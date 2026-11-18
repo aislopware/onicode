@@ -4,7 +4,10 @@ import { highlightCode } from "../../lib/highlights";
 
 import type { NativeReviewDiffRow } from "./nativeReviewDiffSurface";
 import type { NativeReviewDiffFile } from "./nativeReviewDiffTypes";
-import { highlightNativeReviewDiffVisibleRows } from "./nativeReviewDiffHighlighter";
+import {
+  highlightNativeReviewDiffVisibleRows,
+  type NativeReviewDiffHighlightChunk,
+} from "./nativeReviewDiffHighlighter";
 import { buildNativeReviewDiffData } from "../review/nativeReviewDiffAdapter";
 import { buildReviewParsedDiff } from "../review/reviewModel";
 
@@ -297,6 +300,118 @@ describe("highlightNativeReviewDiffVisibleRows", () => {
       neighborResponse.resolve({ oldContents: "", newContents: source });
       await highlighting;
     }
+  });
+
+  it("colors a file with an unusable source before a blocked neighbor's fetch", async () => {
+    const lines = Array.from({ length: 6 }, (_, index) => `const value${index} = true;`);
+    const rows = [
+      ...lines.map((content, index) =>
+        makeLine({
+          id: `selected-${index}`,
+          content,
+          change: "add",
+          oldLineNumber: null,
+          newLineNumber: index + 1,
+        }),
+      ),
+      ...lines.slice(0, 2).map((content, index) => ({
+        ...makeLine({
+          id: `neighbor-${index}`,
+          content,
+          change: "add",
+          oldLineNumber: null,
+          newLineNumber: index + 1,
+        }),
+        fileId: "neighbor",
+      })),
+    ];
+    const selectedIds = lines.map((_, index) => `selected-${index}`);
+    const patchTokens = (await highlight(rows.slice(0, lines.length))).tokensByRowId;
+    for (const [name, loadContents, retryable] of [
+      ["missing", async () => null, []],
+      ["mismatched", async () => ({ oldContents: "", newContents: "other revision" }), []],
+      ["failed", async () => Promise.reject(new Error("offline")), selectedIds],
+    ] as const) {
+      const neighborStarted = Promise.withResolvers<void>();
+      const neighborResponse = Promise.withResolvers<null>();
+      const chunks = vi.fn();
+      const highlighting = highlightNativeReviewDiffVisibleRows({
+        rows,
+        files: [
+          { ...TYPESCRIPT_FILE, loadContents },
+          {
+            ...TYPESCRIPT_FILE,
+            id: "neighbor",
+            loadContents: () => {
+              neighborStarted.resolve();
+              return neighborResponse.promise;
+            },
+          },
+        ],
+        scheme: "dark",
+        firstRowIndex: 0,
+        lastRowIndex: rows.length - 1,
+        overscanRows: 0,
+        onChunk: chunks,
+      });
+      let result: Awaited<typeof highlighting>;
+      try {
+        await neighborStarted.promise;
+        expect(chunks, name).toHaveBeenCalledTimes(1);
+        expect(chunks.mock.calls[0]![0].tokensByRowId, name).toEqual(patchTokens);
+        expect(chunks.mock.calls[0]![0].retryableRowIds, name).toEqual(retryable);
+      } finally {
+        neighborResponse.resolve(null);
+        result = await highlighting;
+      }
+      expect(result.retryableRowIds, name).toEqual(retryable);
+      // The hook skips final rows whose tokens a chunk already delivered.
+      for (const id of selectedIds) {
+        expect(result.tokensByRowId[id], name).toBe(chunks.mock.calls[0]![0].tokensByRowId[id]);
+      }
+    }
+  });
+
+  it("tokenizes only the viewport of a large new file for its provisional colors", async () => {
+    const lines = Array.from({ length: 10_000 }, (_, index) => `const value${index} = ${index};`);
+    const rows = lines.map((content, index) =>
+      makeLine({
+        id: `line-${index}`,
+        content,
+        change: "add",
+        oldLineNumber: null,
+        newLineNumber: index + 1,
+      }),
+    );
+    const response = Promise.withResolvers<{ oldContents: string; newContents: string }>();
+    const provisional = Promise.withResolvers<NativeReviewDiffHighlightChunk>();
+    const highlighting = highlightNativeReviewDiffVisibleRows({
+      rows,
+      files: [{ ...TYPESCRIPT_FILE, loadContents: () => response.promise }],
+      scheme: "dark",
+      firstRowIndex: 5_000,
+      lastRowIndex: 5_019,
+      overscanRows: 0,
+      onChunk: provisional.resolve,
+    });
+    const tokenizedLines = () => tokenization.calls.map((code) => code.split("\n").length);
+    let result: Awaited<typeof highlighting>;
+    try {
+      const chunk = await provisional.promise;
+      const viewportIds = Array.from({ length: 20 }, (_, index) => `line-${5_000 + index}`);
+      expect(Object.keys(chunk.tokensByRowId)).toEqual(viewportIds);
+      expect(chunk.retryableRowIds).toEqual(viewportIds);
+      for (const tokens of Object.values(chunk.tokensByRowId)) {
+        expect(tokens.some((token) => token.color !== null)).toBe(true);
+      }
+      expect(tokenizedLines()).toEqual([20]);
+    } finally {
+      response.resolve({ oldContents: "", newContents: lines.join("\n") });
+      result = await highlighting;
+    }
+    expect(tokenizedLines()).toEqual([20, 10_000]);
+    expect(result.retryableRowIds).toEqual([]);
+    expect(Object.keys(result.tokensByRowId)).toHaveLength(20);
   });
 
   it("does not carry grammar state across hunk boundaries", async () => {
