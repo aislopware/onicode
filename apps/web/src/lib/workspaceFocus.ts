@@ -424,7 +424,7 @@ export function createWorkspaceFocusController(doc: Document) {
     onUserInput();
   };
   // At the window: shortcuts that take a key there stop it before the document sees it.
-  const view = doc.defaultView ?? window;
+  const view: EventTarget = doc.defaultView ?? doc;
   view.addEventListener("pointerdown", onPointerDown, true);
   view.addEventListener("keydown", onUserInput, true);
 

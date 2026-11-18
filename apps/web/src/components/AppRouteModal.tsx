@@ -36,7 +36,20 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   const entryKey = useRouterState({ select: (state) => state.resolvedLocation?.state.__TSR_key });
   const [skippedOn, setSkippedOn] = useState<{ entryKey: string | undefined } | null>(null);
   const shown = open || (skippedOn !== null && skippedOn.entryKey !== entryKey);
+  // A key or press during the exit animation moves focus on, and the close must not undo it.
+  const inputWhileClosingRef = useRef<{ seen: boolean; stop: AbortController } | null>(null);
   const close = () => {
+    // Base UI returns focus once the exit animation ends. The closing key or press is past
+    // the window's capture phase, so only later input counts.
+    const watch = { seen: false, stop: new AbortController() };
+    const see = () => {
+      watch.seen = true;
+    };
+    // Window capture: workspace shortcuts such as F6 stop the key before the document.
+    for (const type of ["keydown", "pointerdown"])
+      window.addEventListener(type, see, { capture: true, signal: watch.stop.signal });
+    inputWhileClosingRef.current?.stop.abort();
+    inputWhileClosingRef.current = watch;
     setOpen(false);
     setSkippedOn(null);
   };
@@ -64,8 +77,6 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
       if (mountedModals === 0) mountedModalOpener = null;
     };
   }, [opener]);
-  // A key or press during the exit animation moves focus on, and the close must not undo it.
-  const inputWhileClosingRef = useRef<{ seen: boolean; stop: AbortController } | null>(null);
   // Clear the native window controls (macOS traffic lights, the Windows and Linux caption
   // buttons). Below sm the modal fills the window and leaves that strip empty; up to lg its
   // 1.5rem inset is shorter than the strip.
@@ -82,17 +93,6 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
         // drop what was typed. Blur first so they commit.
         const focused = document.activeElement;
         if (focused instanceof HTMLElement && popupRef.current?.contains(focused)) focused.blur();
-        // Base UI returns focus once the exit animation ends. The closing key or press is past
-        // the window's capture phase, so only later input counts.
-        const watch = { seen: false, stop: new AbortController() };
-        const see = () => {
-          watch.seen = true;
-        };
-        // Window capture: workspace shortcuts such as F6 stop the key before the document.
-        for (const type of ["keydown", "pointerdown"])
-          window.addEventListener(type, see, { capture: true, signal: watch.stop.signal });
-        inputWhileClosingRef.current?.stop.abort();
-        inputWhileClosingRef.current = watch;
         close();
       }}
       onOpenChangeComplete={(nextOpen) => {
