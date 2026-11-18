@@ -2452,3 +2452,5 @@ b8b5affac4	take	fix(server): agents read a Linear issue once when given its link
 5b6f7c81ce	take	fix(server): recover JSON-stringified delegate targets (#38436)
 baab17bb03	take	fix(mobile): retrying an issue filter only reloads repositories that failed (#38423)
 c48825322d	skip	Onicode already dropped the current-origin pairing link (no browser-served UI), so the settings never offer the desktop window's own app:// or loopback address
+53b1c5a686	skip	upstream repo governance (VOUCHED.td vouch list); Onicode has no vouching file
+36ea2c77bc	skip	upstream contribution policy (CONTRIBUTING vouched-features exception, contribution-triage skill); Onicode keeps its own CONTRIBUTING and has no vouching or triage skill
