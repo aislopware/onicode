@@ -2454,6 +2454,35 @@ describe("PiAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
+  it.effect("fails to resume an imported session whose file is gone", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const fake = yield* makeFakePi;
+      const { runtime } = yield* openRuntime(fake);
+      const providerThread = yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      const missing = {
+        ...providerThread,
+        nativeThreadRef: {
+          driver: PI_PROVIDER,
+          nativeId: `${yield* fileSystem.makeTempDirectoryScoped()}/moved.jsonl`,
+          strength: "strong" as const,
+        },
+      };
+      // Pi opens an empty session at a missing path, so only the imported history is at stake.
+      const error = yield* runtime
+        .resumeThread({ providerThread: missing, importedNativeSession: true })
+        .pipe(Effect.flip);
+      assert.equal(error._tag, "ProviderAdapterResumeThreadError");
+      assert.isFalse(fake.allRequests().some((request) => request.type === "switch_session"));
+      fake.queueState({ sessionFile: missing.nativeThreadRef.nativeId });
+      yield* runtime.resumeThread({ providerThread: missing });
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
   it.effect("creates a distinct native session after a failed resume", () =>
     Effect.gen(function* () {
       const fake = yield* makeFakePi;

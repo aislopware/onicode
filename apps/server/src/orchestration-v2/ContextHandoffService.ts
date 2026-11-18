@@ -1,6 +1,7 @@
 import {
   type OrchestrationV2AppThread,
   OrchestrationV2ContextHandoff,
+  type OrchestrationV2ProviderThread,
   type OrchestrationV2TurnItem,
   type OrchestrationV2Run,
   type OrchestrationV2ThreadProjection,
@@ -285,6 +286,33 @@ export function makeSideChatContext(input: {
 /** Side chat context is prepended to the provider prompt, never replayed as budgeted history. */
 export const isSideChatContextHandoff = (handoff: OrchestrationV2ContextHandoff): boolean =>
   handoff.strategy === "manual_context" && handoff.transferId != null;
+
+/** Whether a provider thread's native session holds the thread's run-less imported history. */
+export const nativeSessionHoldsImportedHistory = (
+  projection: Pick<OrchestrationV2ThreadProjection, "contextHandoffs" | "runs">,
+  providerThread: OrchestrationV2ProviderThread,
+): boolean => {
+  if (providerThread.nativeThreadRef === null) return false;
+  // Without such a handoff the history came with the imported native session.
+  const handoffs = projection.contextHandoffs.filter(
+    (handoff) =>
+      (handoff.toProviderThreadId === providerThread.id ||
+        providerThread.handoffIds.includes(handoff.id)) &&
+      ((handoff.strategy === "manual_context" && !isSideChatContextHandoff(handoff)) ||
+        handoff.strategy === "full_thread_summary"),
+  );
+  // Rolling back a handoff's run (Edit from here) empties or truncates the session it reached.
+  return (
+    handoffs.length === 0 ||
+    handoffs.some(
+      (handoff) =>
+        handoff.status === "ready" &&
+        projection.runs.some(
+          (run) => run.id === handoff.targetRunId && run.status !== "rolled_back",
+        ),
+    )
+  );
+};
 
 function makeLegacyImportSummary(items: ReadonlyArray<OrchestrationV2TurnItem>): string {
   const sections = items.flatMap((item) => {

@@ -107,6 +107,8 @@ function makeTestAdapter(input: {
   readonly failInjectionOnce?: Ref.Ref<boolean>;
   readonly nativeThreadGeneration?: Ref.Ref<number>;
   readonly failResume?: boolean;
+  /** Like Claude, whose imported session's transcript is gone. */
+  readonly failImportedResume?: boolean;
   readonly failResumeOnce?: Ref.Ref<boolean>;
   readonly initialContextUsage?: OrchestrationV2ProviderThread["contextUsage"];
   readonly getModelContextWindow?: (selection: ModelSelection) => number | undefined;
@@ -226,10 +228,11 @@ function makeTestAdapter(input: {
                 updatedAt: createdAt,
               } satisfies OrchestrationV2ProviderThread;
             }),
-          resumeThread: ({ providerThread }) =>
+          resumeThread: ({ providerThread, importedNativeSession }) =>
             Effect.gen(function* () {
               if (
                 input.failResume ||
+                (input.failImportedResume === true && importedNativeSession === true) ||
                 (input.failResumeOnce !== undefined &&
                   (yield* Ref.getAndSet(input.failResumeOnce, false)))
               )
@@ -1391,21 +1394,45 @@ describe("orchestration v2 provider switching", () => {
   );
 
   const importedNativeSessionScenario = (
-    scenario: "first-send" | "after-failed-switch" | "resume-fails",
+    scenario:
+      | "first-send"
+      | "after-failed-switch"
+      | "resume-fails"
+      | "edit-first-turn"
+      | "edit-first-turn-then-switch"
+      | "edit-imported-first-turn",
   ) =>
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace(`imported-native-session-${scenario}`);
       const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
-      const claudeOrdinal = scenario === "after-failed-switch" ? 2 : 1;
+      // A V1 migration has no native session: its first turn gets the history in a handoff.
+      const migratedFromV1 =
+        scenario === "edit-first-turn" || scenario === "edit-first-turn-then-switch";
+      const editsFirstTurn = migratedFromV1 || scenario === "edit-imported-first-turn";
+      const claudeOrdinal =
+        scenario === "after-failed-switch" ||
+        scenario === "edit-first-turn" ||
+        scenario === "edit-imported-first-turn"
+          ? 2
+          : scenario === "edit-first-turn-then-switch"
+            ? 3
+            : 1;
+      const codexOrdinal = scenario === "edit-first-turn-then-switch" ? 2 : 1;
       const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
         makeTestAdapter({
           instanceId: CLAUDE_MODEL_SELECTION.instanceId,
           driver: CLAUDE_DRIVER,
-          capabilities: ClaudeProviderCapabilitiesV2,
+          // ACP cannot truncate, so its rollback swaps in an empty session.
+          capabilities:
+            scenario === "edit-imported-first-turn"
+              ? AcpProviderCapabilitiesV2
+              : ClaudeProviderCapabilitiesV2,
           modelSelection: CLAUDE_MODEL_SELECTION,
-          responseByRunOrdinal: { [claudeOrdinal]: "PELICAN" },
+          responseByRunOrdinal: { 1: "OK", [claudeOrdinal]: "PELICAN" },
           capturedTurns,
-          failResume: scenario === "resume-fails",
+          failImportedResume: scenario === "resume-fails",
+          // Like Cursor, rolling back to the start opens an empty agent on the same row.
+          ...(editsFirstTurn ? { rollback: "replaces_native_thread" as const } : {}),
         }),
         makeTestAdapter({
           instanceId: CODEX_MODEL_SELECTION.instanceId,
@@ -1414,7 +1441,7 @@ describe("orchestration v2 provider switching", () => {
           modelSelection: CODEX_MODEL_SELECTION,
           responseByRunOrdinal: {},
           capturedTurns,
-          failedRunOrdinals: new Set([1]),
+          failedRunOrdinals: new Set([codexOrdinal]),
         }),
       ]);
       yield* Effect.gen(function* () {
@@ -1484,7 +1511,7 @@ describe("orchestration v2 provider switching", () => {
               payload: {
                 ...created.thread,
                 historyOrigin: "v1_import",
-                activeProviderThreadId: providerThread.id,
+                activeProviderThreadId: migratedFromV1 ? null : providerThread.id,
               },
             },
             {
@@ -1520,15 +1547,19 @@ describe("orchestration v2 provider switching", () => {
                 streaming: false,
               },
             },
-            {
-              id: EventId.make("imported-native:provider-thread"),
-              type: "provider-thread.updated",
-              threadId,
-              driver: CLAUDE_DRIVER,
-              providerInstanceId: CLAUDE_MODEL_SELECTION.instanceId,
-              occurredAt: at,
-              payload: providerThread,
-            },
+            ...(migratedFromV1
+              ? []
+              : [
+                  {
+                    id: EventId.make("imported-native:provider-thread"),
+                    type: "provider-thread.updated" as const,
+                    threadId,
+                    driver: CLAUDE_DRIVER,
+                    providerInstanceId: CLAUDE_MODEL_SELECTION.instanceId,
+                    occurredAt: at,
+                    payload: providerThread,
+                  },
+                ]),
           ],
         });
         const send = (ordinal: number, modelSelection: ModelSelection) =>
@@ -1557,6 +1588,35 @@ describe("orchestration v2 provider switching", () => {
             yield* worker.drain();
           });
         if (scenario === "after-failed-switch") yield* send(1, CODEX_MODEL_SELECTION);
+        if (editsFirstTurn) {
+          yield* send(1, CLAUDE_MODEL_SELECTION);
+          const baseline = (yield* orchestrator.getThreadProjection(threadId)).checkpoints.find(
+            (checkpoint) => (checkpoint.appRunOrdinal ?? 0) === 0 && checkpoint.status === "ready",
+          );
+          if (baseline === undefined) {
+            return yield* Effect.die("Expected a checkpoint before the first turn.");
+          }
+          yield* orchestrator.dispatch({
+            type: "checkpoint.rollback",
+            commandId: CommandId.make("imported-native:rollback"),
+            threadId,
+            scopeId: baseline.scopeId,
+            checkpointId: baseline.id,
+            restoreFiles: false,
+          });
+          yield* orchestrator.streamStoredEvents.pipe(
+            Stream.filter(
+              ({ event }) =>
+                (event.type === "run.updated" &&
+                  event.payload.ordinal === 1 &&
+                  event.payload.status === "rolled_back") ||
+                (event.type === "thread.metadata-updated" && event.payload.rollbackFailure != null),
+            ),
+            Stream.runHead,
+          );
+          yield* worker.drain();
+          if (scenario === "edit-first-turn-then-switch") yield* send(2, CODEX_MODEL_SELECTION);
+        }
         yield* send(claudeOrdinal, CLAUDE_MODEL_SELECTION);
 
         const projection = yield* orchestrator.getThreadProjection(threadId);
@@ -1564,6 +1624,12 @@ describe("orchestration v2 provider switching", () => {
         const claudeTurn = (yield* Ref.get(capturedTurns)).findLast(
           (turn) => turn.driver === CLAUDE_DRIVER,
         );
+        if (editsFirstTurn) {
+          // The rollback emptied the session that held the import, so the next turn carries it again.
+          assert.equal(projection.runs[0]?.status, "rolled_back");
+          assert.include(claudeTurn?.text ?? "", "Remember the code word PELICAN.");
+          return;
+        }
         const importHandoffTargets = projection.contextHandoffs
           .filter((handoff) => handoff.strategy === "manual_context")
           .map((handoff) => handoff.toProviderThreadId);
@@ -1606,6 +1672,15 @@ describe("orchestration v2 provider switching", () => {
   );
   it.live("recovers an imported native session's history when its resume fails", () =>
     importedNativeSessionScenario("resume-fails"),
+  );
+  it.live("resends a V1 import's history after Edit from here empties its session", () =>
+    importedNativeSessionScenario("edit-first-turn"),
+  );
+  it.live("resends a V1 import's history on returning to a session Edit from here emptied", () =>
+    importedNativeSessionScenario("edit-first-turn-then-switch"),
+  );
+  it.live("recovers an imported session's history after Edit from here replaces it", () =>
+    importedNativeSessionScenario("edit-imported-first-turn"),
   );
 
   it.live.each(["native", "legacy"] as const)(
