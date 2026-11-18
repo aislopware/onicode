@@ -2447,3 +2447,4 @@ ef57728059	take	taken as is
 724f5c6bec	take	taken as is
 055b44919e	take	Ported with adaptations: removed surfaces (T3 Connect, relay, cloud, guest, webhooks, nightly, Legal, expo-observe, cloud drafts) left out; Onicode screens kept and translated (Notifications, network access, remote desktop, SSH stubs); adopted resetCreditChoices, openVsx WeakSet, zip/preview error codes; no-untranslated-copy is a warning until 383 Onicode-only strings are translated.
 3e1b7c4e93	take	taken as is
+b8b5affac4	take	fix(server): agents read a Linear issue once when given its link (#38425)
