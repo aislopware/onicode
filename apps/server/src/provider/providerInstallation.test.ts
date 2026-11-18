@@ -402,11 +402,18 @@ describe("provider installation routing", () => {
               config: { binaryPath: binary },
               environment: [{ name: "PATH", value: directory, sensitive: false }],
             },
+            [ProviderInstanceId.make("antigravity-home")]: {
+              driver,
+              config: { binaryPath: `~/${binary}` },
+            },
           },
         },
       });
-      yield* harness.router.remove({ instanceId });
+      yield* harness.router
+        .remove({ instanceId })
+        .pipe(Effect.provideService(HostProcess.HomeDirectory, directory));
       assert.include(harness.protectedPaths(), executable);
+      assert.notInclude(harness.protectedPaths(), `~/${binary}`);
       assert.deepEqual(harness.calls, ["remove", "refresh"]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );

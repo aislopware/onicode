@@ -28,12 +28,16 @@ import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as NodeCrypto from "node:crypto";
 import * as ServerConfig from "../config.ts";
+import { isProcessAlive } from "../serverRuntimeState.ts";
+import * as ServerSettings from "../serverSettings.ts";
+import { configuredBinaryPaths } from "./configuredBinaryPaths.ts";
 import { selectManagedRelease } from "./managedRelease.ts";
 import * as ModelManifest from "./ModelManifest.ts";
 import { resolveProviderCompatibility } from "./providerCompatibility.ts";
 
 const DRIVER = ProviderDriverKind.make("codex");
 const STAGING_STALE_AFTER_MS = 24 * 60 * 60_000;
+const LEASE_PREFIX = ".lease-";
 const UPDATE_CHECK_INTERVAL_MS = 60 * 60_000;
 const UPDATE_CHECK_TIMEOUT = "20 seconds";
 const UPSTREAM_LATEST_URL = "https://registry.npmjs.org/@openai/codex/latest";
@@ -164,13 +168,28 @@ export class CodexInstallation extends Context.Service<
     CodexInstallation,
     Effect.gen(function* () {
       const config = yield* ServerConfig.ServerConfig;
-      return yield* makeCodexInstallation({ baseDir: config.baseDir });
+      const settings = yield* ServerSettings.ServerSettingsService;
+      return yield* makeCodexInstallation({
+        baseDir: config.baseDir,
+        protectedBinaryPaths: settings.getSettings.pipe(
+          Effect.flatMap((current) =>
+            configuredBinaryPaths(Object.values(current.providerInstances)),
+          ),
+          Effect.mapError(wrapFailure("prune", "Could not read provider settings.")),
+        ),
+      });
     }),
   );
 }
 export interface CodexInstallationOptions {
   readonly baseDir: string;
   readonly releaseAsset?: CodexReleaseAsset | null;
+  /** Executables provider instances are configured to run; pruning keeps the releases holding them. */
+  readonly protectedBinaryPaths?: Effect.Effect<
+    ReadonlyArray<string>,
+    CodexInstallationError,
+    FileSystem.FileSystem | Path.Path
+  >;
   readonly validate?: (
     executable: CodexExecutable,
     expectedVersion: string,
@@ -201,6 +220,11 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
   const gate = yield* Semaphore.make(1);
   const updateCheckGate = yield* Semaphore.make(1);
   const leases = new Map<string, number>();
+  const leaseGate = yield* Semaphore.make(1);
+  // Servers sharing this home (a dev server beside the desktop app) see each other's leases
+  // only through these files, one per server per release.
+  const leaseName = `${LEASE_PREFIX}${process.pid}-${yield* random.uuidV4()}`;
+  const installLeaseName = `${leaseName}-install`;
   let running: { readonly operationId: string; readonly fiber: Fiber.Fiber<void> } | undefined;
   let upstream: CodexReleaseAsset | null = null;
   let upstreamCheckedAt: number | null = null;
@@ -297,6 +321,65 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       );
     return yield* fromDirectory(directory, version, record.target);
   });
+  // Another server can activate a newer release and prune this one between the two reads.
+  const activeRelease = Effect.fn("CodexInstallation.activeRelease")(function* () {
+    const active = yield* readRecord(activePath, ActiveRelease);
+    return yield* completedRelease(active.version).pipe(
+      Effect.catch((error) =>
+        readRecord(activePath, ActiveRelease).pipe(
+          Effect.flatMap((current) =>
+            current.version === active.version
+              ? Effect.fail(error)
+              : completedRelease(current.version),
+          ),
+        ),
+      ),
+    );
+  });
+  const retainLease = (key: string, managedVersionDirectory: string | null) =>
+    leaseGate.withPermit(
+      Effect.suspend(() => {
+        const count = leases.get(key) ?? 0;
+        leases.set(key, count + 1);
+        return count === 0 && managedVersionDirectory !== null
+          ? fs
+              .writeFileString(path.join(managedVersionDirectory, leaseName), "", { mode: 0o600 })
+              .pipe(Effect.ignore)
+          : Effect.void;
+      }),
+    );
+  const releaseLease = (key: string, managedVersionDirectory: string | null) =>
+    leaseGate.withPermit(
+      Effect.suspend(() => {
+        const remaining = (leases.get(key) ?? 1) - 1;
+        if (remaining > 0) {
+          leases.set(key, remaining);
+          return Effect.void;
+        }
+        leases.delete(key);
+        return managedVersionDirectory === null
+          ? Effect.void
+          : fs
+              .remove(path.join(managedVersionDirectory, leaseName), { force: true })
+              .pipe(Effect.ignore);
+      }),
+    );
+  // This server's own files are covered by `leases`; one whose server has exited is stale.
+  const isLeased = (directory: string) =>
+    leases.has(directory)
+      ? Effect.succeed(true)
+      : fs.readDirectory(directory).pipe(
+          Effect.map((entries) =>
+            entries.some((entry) => {
+              const pid =
+                entry.startsWith(LEASE_PREFIX) && !entry.startsWith(leaseName)
+                  ? Number.parseInt(entry.slice(LEASE_PREFIX.length), 10)
+                  : Number.NaN;
+              return isProcessAlive(pid);
+            }),
+          ),
+          Effect.orElseSucceed(() => false),
+        );
   const compatibility = Effect.fn("CodexInstallation.compatibility")(function* (version: string) {
     const manifest = yield* manifestService.current;
     return (
@@ -374,8 +457,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
     .pipe(Effect.ignore);
   const resolveManaged = Effect.fn("CodexInstallation.resolveManaged")(
     function* () {
-      const active = yield* readRecord(activePath, ActiveRelease);
-      const executable = yield* completedRelease(active.version);
+      const executable = yield* activeRelease();
       const advisory = yield* compatibility(executable.version);
       if (advisory?.status !== "supported")
         return yield* installationError(
@@ -393,20 +475,18 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       gate.withPermit(
         resolve().pipe(
           Effect.tap((executable) =>
-            Effect.sync(() => {
-              const key = executable.managedVersionDirectory ?? executable.executablePath;
-              leases.set(key, (leases.get(key) ?? 0) + 1);
-            }),
+            retainLease(
+              executable.managedVersionDirectory ?? executable.executablePath,
+              executable.managedVersionDirectory,
+            ),
           ),
         ),
       ),
       (executable) =>
-        Effect.sync(() => {
-          const key = executable.managedVersionDirectory ?? executable.executablePath;
-          const remaining = (leases.get(key) ?? 1) - 1;
-          if (remaining > 0) leases.set(key, remaining);
-          else leases.delete(key);
-        }),
+        releaseLease(
+          executable.managedVersionDirectory ?? executable.executablePath,
+          executable.managedVersionDirectory,
+        ),
     );
   });
   const runCommand = Effect.fn("CodexInstallation.runCommand")(function* (
@@ -570,17 +650,33 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       Effect.mapError(wrapFailure("verify", "The downloaded Codex runtime could not start.")),
     );
   // Each update lands in its own directory. Best effort: a busy gate means a session is
-  // resolving, so the next start or update finishes the cleanup.
+  // resolving, so the next start or update finishes the cleanup. Only a complete active
+  // release makes the others redundant, and only the installer's own releases are removed.
   const pruneInactiveReleases = Effect.gen(function* () {
-    const active = yield* readRecord(activePath, ActiveRelease);
+    const active = yield* activeRelease();
+    const realManaged = yield* fs.realPath(managedDirectory);
+    const pinned = new Set<string>();
+    for (const binary of yield* (options.protectedBinaryPaths ?? Effect.succeed([])).pipe(
+      Effect.provideService(FileSystem.FileSystem, fs),
+      Effect.provideService(Path.Path, path),
+    )) {
+      const resolved = yield* fs.realPath(binary).pipe(Effect.option);
+      const relative = path.relative(
+        realManaged,
+        Option.getOrElse(resolved, () => path.resolve(binary)),
+      );
+      const [entry] = relative.split(path.sep);
+      if (entry && entry !== ".." && !path.isAbsolute(relative)) pinned.add(entry);
+    }
     for (const entry of yield* fs.readDirectory(managedDirectory)) {
-      if (
-        entry === active.version ||
-        Option.isNone(yield* decodeVersion(entry).pipe(Effect.option))
-      )
-        continue;
+      if (entry === active.version || pinned.has(entry)) continue;
       const directory = path.join(managedDirectory, entry);
-      if (leases.has(directory)) continue;
+      const record = yield* readRecord(
+        path.join(directory, ".install-complete.json"),
+        InstalledRelease,
+      ).pipe(Effect.option);
+      if (Option.isNone(record) || record.value.version !== entry) continue;
+      if (yield* isLeased(directory)) continue;
       yield* fs.remove(directory, { recursive: true, force: true }).pipe(Effect.ignore);
     }
   }).pipe(
@@ -603,6 +699,11 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       yield* fs.makeDirectory(managedDirectory, { recursive: true });
       yield* SubscriptionRef.update(state, (current) => ({ ...current, canRemove: true }));
       const destination = path.join(managedDirectory, release.version);
+      // Keeps other servers' pruning off the release until it is active.
+      const installLease = path.join(destination, installLeaseName);
+      const dropInstallLease = fs.remove(installLease, { force: true }).pipe(Effect.ignore);
+      yield* Effect.addFinalizer(() => dropInstallLease);
+      yield* fs.writeFileString(installLease, "", { mode: 0o600 }).pipe(Effect.ignore);
       const activate = Effect.fn("CodexInstallation.activate")(
         function* () {
           const executable = yield* completedRelease(release.version);
@@ -617,6 +718,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
           });
           yield* ensureEligible();
           yield* fs.rename(pointer, activePath);
+          yield* dropInstallLease;
           yield* pruneInactiveReleases;
           yield* SubscriptionRef.update(
             state,
@@ -751,6 +853,10 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         }),
         { flag: "wx", mode: 0o600 },
       );
+      yield* fs.writeFileString(path.join(runtime, installLeaseName), "", {
+        flag: "wx",
+        mode: 0o600,
+      });
       // Windows Defender or process rundown may retain codex.exe handles briefly after --version exits.
       const renameRuntime = fs.rename(runtime, destination);
       yield* platform === "win32"
@@ -784,8 +890,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
   // than replacing it with an older pinned release.
   const reverify = Effect.fn("CodexInstallation.reverify")(
     function* () {
-      const active = yield* readRecord(activePath, ActiveRelease);
-      const executable = yield* completedRelease(active.version);
+      const executable = yield* activeRelease();
       yield* validate(executable, executable.version).pipe(Effect.scoped, withValidationTimeout);
       const kept = yield* keptInstall(executable.version);
       if (kept === null) {
@@ -899,6 +1004,15 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
               "Stop Codex sessions and sign-in flows before removing its managed runtime.",
             );
           }
+          for (const entry of yield* fs
+            .readDirectory(managedDirectory)
+            .pipe(Effect.orElseSucceed((): ReadonlyArray<string> => []))) {
+            if (yield* isLeased(path.join(managedDirectory, entry)))
+              return yield* installationError(
+                "remove",
+                "Stop Codex sessions in other Onicode servers using this runtime before removing it.",
+              );
+          }
           const realManaged = yield* fs.realPath(managedDirectory).pipe(Effect.option);
           if (Option.isSome(realManaged)) {
             for (const binary of protectedBinaryPaths) {
@@ -967,8 +1081,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
     yield* SubscriptionRef.update(state, (current) => ({ ...current, canRemove }));
     if (yield* reuseLocal()) return;
     if (!(yield* fs.exists(activePath))) return;
-    const active = yield* readRecord(activePath, ActiveRelease);
-    const installed = yield* completedRelease(active.version);
+    const installed = yield* activeRelease();
     const kept = yield* keptInstall(installed.version);
     yield* SubscriptionRef.update(
       state,
