@@ -2498,3 +2498,4 @@ eebb6bccdf	skip	Changes upstream's release-smoke script (T3 release pipeline); O
 e7fa771f65	take	fix(server): integrated terminals get ONICODE_THREAD_ID like agent sessions
 c67deb12dd	take	fix(antigravity): thread sessions spawn with their Onicode thread and MCP environment
 9661141276	skip	Already fixed: Onicode subscribes to preview manager events before forking the mirror stream (same fix); kept Onicode's one-line form: identical behavior, nothing to learn
+cb129ba2cc	take	fix(server): a Claude command moved to the background keeps its command in Background work
