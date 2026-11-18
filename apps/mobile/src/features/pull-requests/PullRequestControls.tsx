@@ -15,7 +15,7 @@ import { Button } from "../../components/ui/Button";
 import { IconButton } from "../../components/ui/IconButton";
 import { Toolbar } from "../../components/ui/Toolbar";
 import { Menu } from "../../components/ui/Menu";
-import type { AppBarMenu, AppBarMenuItem } from "../../components/ui/AppBar.types";
+import type { AppBarMenu } from "../../components/ui/AppBar.types";
 import { createNativeHeaderMenu } from "../../components/ui/nativeHeaderMenu.ios";
 
 import { useNativeLayoutMetrics } from "../../native/native-layout-metrics";
@@ -24,6 +24,7 @@ import { usePullRequestPermissions } from "./usePullRequestPermissions";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { usePullRequestReviewDraft } from "./usePullRequestReviewDraft";
 import { usePullRequestAgentActions } from "./usePullRequestAgentActions";
+import { pullRequestAgentMenuItems } from "./pullRequestAgentTasks";
 
 export function PullRequestCardGroup(props: { readonly children: ReactNode }) {
   return (
@@ -261,6 +262,36 @@ export function PullRequestActionToolbar(props: {
       />
     )
   ) : null;
+  // The vertical bar never overflows into a menu, and with a Live Activity it fits about three
+  // buttons above the workspace tabs: back, the primary action and one menu.
+  if (verticalControls)
+    return (
+      <Toolbar placement="bottom">
+        {primaryControl}
+        {createNativeHeaderMenu({
+          ...props.menu,
+          items: [
+            {
+              id: "changed-files",
+              title: gt("Changed files"),
+              icon: "doc.text.magnifyingglass",
+              onPress: openFiles,
+            },
+            ...(showAgentControls
+              ? [
+                  {
+                    id: "ai-helpers",
+                    title: gt("AI helpers"),
+                    icon: "ellipsis.bubble",
+                    items: pullRequestAgentMenuItems({ ...agent, actions: agentActions }),
+                  },
+                ]
+              : []),
+            ...props.menu.items,
+          ],
+        })}
+      </Toolbar>
+    );
   const agentControl = showAgentControls ? (
     <Toolbar.Menu
       identifier="pull-request-agent"
@@ -297,54 +328,6 @@ export function PullRequestActionToolbar(props: {
       separateBackground
     />
   );
-  // The vertical bar never overflows into a menu, and with a Live Activity it fits about three
-  // buttons above the workspace tabs: back, the primary action and one menu.
-  if (verticalControls)
-    return (
-      <Toolbar placement="bottom">
-        {primaryControl}
-        {createNativeHeaderMenu({
-          ...props.menu,
-          items: [
-            {
-              id: "changed-files",
-              title: gt("Changed files"),
-              icon: "doc.text.magnifyingglass",
-              onPress: openFiles,
-            },
-            ...(showAgentControls
-              ? [
-                  {
-                    id: "ai-helpers",
-                    title: gt("AI helpers"),
-                    icon: "ellipsis.bubble",
-                    items: agentActions.map((action): AppBarMenuItem =>
-                      chooseThread && !action.disabled
-                        ? {
-                            id: action.task,
-                            title: action.title,
-                            icon: action.icon,
-                            items: appBarThreadMenuItems(
-                              agent.threadActions(action.task),
-                              agent.select,
-                            ),
-                          }
-                        : {
-                            id: action.task,
-                            title: action.title,
-                            icon: action.icon,
-                            disabled: action.disabled || agent.disabled,
-                            onPress: () => agent.start(action.task),
-                          },
-                    ),
-                  },
-                ]
-              : []),
-            ...props.menu.items,
-          ],
-        })}
-      </Toolbar>
-    );
   return (
     <Toolbar placement="bottom">
       {agentControl}
@@ -353,29 +336,6 @@ export function PullRequestActionToolbar(props: {
       <Toolbar.Spacer flexible />
       {filesControl}
     </Toolbar>
-  );
-}
-
-function appBarThreadMenuItems(
-  items: MenuAction[],
-  select: (id: string) => void,
-): ReadonlyArray<AppBarMenuItem> {
-  return items.map((item) =>
-    item.subactions
-      ? {
-          id: item.id ?? item.title,
-          title: item.title,
-          icon: item.image,
-          items: appBarThreadMenuItems(item.subactions, select),
-        }
-      : {
-          id: item.id ?? item.title,
-          title: item.title,
-          icon: item.image,
-          subtitle: item.subtitle,
-          disabled: item.attributes?.disabled,
-          onPress: () => item.id && select(item.id),
-        },
   );
 }
 
