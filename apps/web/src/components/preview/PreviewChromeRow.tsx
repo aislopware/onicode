@@ -47,6 +47,8 @@ interface Props {
   pickDisabled?: boolean | undefined;
   pickDisabledReason?: string | undefined;
   trailingActions?: ReactNode;
+  /** Receives the slot where a streamed page puts its control toggle. */
+  controlSlotRef?: (slot: HTMLElement | null) => void;
   leadingActions?: ReactNode;
 }
 
@@ -77,6 +79,7 @@ export function PreviewChromeRow({
   pickDisabled,
   pickDisabledReason,
   trailingActions,
+  controlSlotRef,
   leadingActions,
 }: Props) {
   const gt = useGT();
@@ -229,6 +232,7 @@ export function PreviewChromeRow({
           ) : null}
         </InputGroup>
 
+        {controlSlotRef ? <span ref={controlSlotRef} className="contents" /> : null}
         {onPickElement ? (
           <Tooltip>
             <TooltipTrigger
