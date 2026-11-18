@@ -5384,6 +5384,8 @@ interface ActiveClaudeTurnContext {
   promptEcho: "pending" | "confirmed";
   // MCP app notes this turn's prompt carries, recorded as delivered only if the turn completes.
   appContextOffered?: ReadonlyMap<string, string> | undefined;
+  // Keys of every note the prompt and steers sent, forgotten as delivered if the turn stops.
+  appContextSentKeys?: ReadonlySet<string> | undefined;
   promptStarted: boolean;
   nativeWakeStarted: boolean;
   gatedFramesBeforeEcho: number;
@@ -6278,6 +6280,20 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const pdfBudgets = new Map<string, ReturnType<typeof makeClaudeAttachmentBudget>>();
         // MCP app notes already in each native session's history, by key. Cleared when it compacts.
         const deliveredAppContext = new Map<string, ReadonlyMap<string, string>>();
+        // Records an offer's notes on top of the history as it stands when Claude takes the offer.
+        const recordAppContextOffer = (
+          context: ActiveClaudeTurnContext,
+          sent: NonNullable<ProviderAdapter.ProviderAdapterV2TurnInput["appContext"]>,
+        ) => {
+          context.appContextOffered = new Map([
+            ...(context.appContextOffered ?? deliveredAppContext.get(context.nativeThreadId) ?? []),
+            ...sent.map((entry) => [entry.key, entry.text] as const),
+          ]);
+          context.appContextSentKeys = new Set([
+            ...(context.appContextSentKeys ?? []),
+            ...sent.map((entry) => entry.key),
+          ]);
+        };
         const latestPlanByKind = yield* Ref.make(new Map<string, OrchestrationV2PlanArtifact>());
         // Claude 5 task tools edit one list per native session, across turns.
         const taskListsByNativeThread = yield* Ref.make(
@@ -9676,8 +9692,19 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           } else {
             yield* cutOffStreamedText(input.context);
           }
-          if (input.status === "completed" && input.context.appContextOffered !== undefined) {
-            deliveredAppContext.set(input.context.nativeThreadId, input.context.appContextOffered);
+          const offered = input.context.appContextOffered;
+          const sentKeys = input.context.appContextSentKeys;
+          const delivered = deliveredAppContext.get(input.context.nativeThreadId);
+          if (input.status === "completed") {
+            if (offered !== undefined)
+              deliveredAppContext.set(input.context.nativeThreadId, offered);
+          } else if (sentKeys !== undefined && delivered !== undefined) {
+            // A stopped turn's prompt or steers may or may not stay in Claude's history:
+            // forget every note they sent so the next turn sends the current value.
+            deliveredAppContext.set(
+              input.context.nativeThreadId,
+              new Map([...delivered].filter(([key]) => !sentKeys.has(key))),
+            );
           }
           // A turn that completes has taken in every steer; one that stops drops them unread.
           const droppedSteers = [...input.context.pendingSteers];
@@ -13732,8 +13759,9 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               turnInput.message.text,
               compileClaudeModelSelection(turnInput.modelSelection, modelCatalog).promptEffort,
             );
-            const appContext = turnInput.appContext ?? [];
-            const delivered = deliveredAppContext.get(nativeThreadId);
+            const unsentAppContext = (turnInput.appContext ?? []).filter(
+              (entry) => deliveredAppContext.get(nativeThreadId)?.get(entry.key) !== entry.text,
+            );
             let appContextSent = false;
             const userMessage =
               promptUuid === null
@@ -13766,7 +13794,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                       Effect.map((message) => {
                         const withContext = withClaudeAppContext(
                           message,
-                          appContext.filter((entry) => delivered?.get(entry.key) !== entry.text),
+                          unsentAppContext,
                           pdfReservation,
                         );
                         appContextSent = withContext !== message;
@@ -13926,9 +13954,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               offerCommitted = true;
               pdfReservation.commit();
               if (appContextSent) {
-                context.appContextOffered = new Map(
-                  appContext.map((entry) => [entry.key, entry.text]),
-                );
+                recordAppContextOffer(context, unsentAppContext);
               }
             };
             const offerUserMessage =
@@ -14325,27 +14351,6 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
               Effect.provideService(Path.Path, path),
             );
-            // Notes this turn's prompt or an earlier steer already carried are not sent again.
-            const appContext = turnInput.appContext ?? [];
-            const seenAppContext =
-              currentTurn.appContextOffered ?? deliveredAppContext.get(existing.nativeThreadId);
-            const userMessage = withClaudeAppContext(
-              steerMessage,
-              appContext.filter((entry) => seenAppContext?.get(entry.key) !== entry.text),
-              pdfReservation,
-            );
-            // `offer` may call this twice; a second call must not restore notes compaction cleared.
-            let offerCommitted = false;
-            const commitOffer = () => {
-              if (offerCommitted) return;
-              offerCommitted = true;
-              pdfReservation.commit();
-              if (userMessage !== steerMessage) {
-                currentTurn.appContextOffered = new Map(
-                  appContext.map((entry) => [entry.key, entry.text]),
-                );
-              }
-            };
             yield* backgroundForegroundSubagents(existing, backgroundDeadline);
             if (liveSteerSelection !== undefined) {
               yield* applySelectionLive(existing, liveSteerSelection);
@@ -14378,6 +14383,27 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               return next;
             });
             yield* emitSteerStatus(currentTurn, messageId, "pending");
+            // Picked against the history as it stands now: compaction may have finished while
+            // the steer waited above. Notes the prompt or an earlier steer carried are not resent.
+            const seenAppContext =
+              currentTurn.appContextOffered ?? deliveredAppContext.get(currentTurn.nativeThreadId);
+            const unsentAppContext = (turnInput.appContext ?? []).filter(
+              (entry) => seenAppContext?.get(entry.key) !== entry.text,
+            );
+            const userMessage = withClaudeAppContext(
+              steerMessage,
+              unsentAppContext,
+              pdfReservation,
+            );
+            // `offer` may call this twice; a second call must not restore notes compaction cleared.
+            let offerCommitted = false;
+            const commitOffer = () => {
+              if (offerCommitted) return;
+              offerCommitted = true;
+              pdfReservation.commit();
+              if (userMessage !== steerMessage)
+                recordAppContextOffer(currentTurn, unsentAppContext);
+            };
             yield* Effect.uninterruptibleMask((restore) =>
               restore(existing.query.offer(userMessage, commitOffer)).pipe(
                 Effect.tap(() => Effect.sync(commitOffer)),

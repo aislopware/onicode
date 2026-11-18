@@ -796,6 +796,14 @@ function codexCyberAccess(
   return descriptor?.type === "select" ? { defaultProgram: descriptor.currentValue } : undefined;
 }
 
+// MCP-written app context must be quoted user input, not developer instructions.
+const codexAppContext = (
+  appContext: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"],
+): NonNullable<CodexTurnStartParams["additionalContext"]> =>
+  Object.fromEntries(
+    (appContext ?? []).map((entry) => [entry.key, { kind: "untrusted", value: entry.text }]),
+  );
+
 export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTurnStartParams")(
   function* (input: {
     readonly nativeThreadId: string;
@@ -839,13 +847,7 @@ export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTur
             getModelSelectionStringOptionValue(input.modelSelection, "cyberAccessProgram"),
             input.cyberAccess.defaultProgram,
           ].find(isCodexCyberAccessProgram);
-    // MCP-written app context must be quoted user input, not developer instructions.
-    const appContext = Object.fromEntries(
-      (input.appContext ?? []).map((entry) => [
-        entry.key,
-        { kind: "untrusted" as const, value: entry.text },
-      ]),
-    );
+    const appContext = codexAppContext(input.appContext);
     const oniContext =
       input.hasOniMcp === true
         ? buildCodexAdditionalContext(
@@ -1965,15 +1967,42 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           new Map<string, NonNullable<CodexTurnStartParams["additionalContext"]>>(),
         );
         const threadsAwaitingContextRestore = yield* Ref.make(new Set<string>());
+        // An interrupt drops a steer Codex has not read yet, though Codex keeps the notes it carried;
+        // a turn that ends otherwise records it.
+        const threadsWithSteeredNotes = yield* Ref.make(new Set<string>());
+        // Keeps the turn's Onicode entries, swaps in the thread's current app notes, and says whether
+        // that adds or changes a note.
+        const replaceAppNotes = (
+          threadId: string,
+          appContext: ProviderAdapter.ProviderAdapterV2TurnInput["appContext"],
+        ) =>
+          Ref.modify(additionalContextByThread, (current) => {
+            const previous = current.get(threadId) ?? {};
+            const context = {
+              ...Object.fromEntries(
+                Object.entries(previous).filter(([, entry]) => entry.kind === "application"),
+              ),
+              ...codexAppContext(appContext),
+            };
+            const changed = Object.entries(context).some(
+              ([key, entry]) => previous[key]?.value !== entry.value,
+            );
+            const next = new Map(current);
+            if (Object.keys(context).length > 0) next.set(threadId, context);
+            else next.delete(threadId);
+            return [{ context, changed, previous: current.get(threadId) }, next] as const;
+          });
         // Codex drops client developer messages during compaction but only resends additionalContext
         // when it changes. Restore after turn/completed: items injected mid-turn make the turn sample again.
         const restoreAdditionalContext = Effect.fn("CodexAdapterV2.restoreAdditionalContext")(
-          function* (threadId: string) {
-            const context = (yield* Ref.get(additionalContextByThread)).get(threadId);
-            if (!context) return;
+          function* (threadId: string, notesOnly: boolean) {
+            const context = Object.entries(
+              (yield* Ref.get(additionalContextByThread)).get(threadId) ?? {},
+            ).filter(([, entry]) => !notesOnly || entry.kind === "untrusted");
+            if (context.length === 0) return;
             yield* client.request("thread/inject_items", {
               threadId,
-              items: Object.entries(context).map(([key, entry]) =>
+              items: context.map(([key, entry]) =>
                 entry.kind === "untrusted"
                   ? {
                       type: "message",
@@ -7249,9 +7278,15 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     );
                     if (!claimed) return;
                     // Notifications before the RPC response also take the terminalization permit.
+                    // Steers may have changed the notes since the turn started; send what Codex holds.
+                    const heldContext =
+                      (yield* Ref.get(additionalContextByThread)).get(nativeThreadId) ?? {};
                     yield* startNativeTurn(
                       {
                         ...context.input,
+                        appContext: Object.entries(heldContext).flatMap(([key, entry]) =>
+                          entry.kind === "untrusted" ? [{ key, text: entry.value }] : [],
+                        ),
                         // A speed changed during the failed attempt outlives the retry.
                         ...(context.appliedServiceTier === undefined
                           ? {}
@@ -7321,9 +7356,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               next.delete(payload.threadId);
               return [true, next] as const;
             });
-            if (compacted)
+            const steered = yield* Ref.modify(threadsWithSteeredNotes, (current) => {
+              if (!current.has(payload.threadId)) return [false, current] as const;
+              const next = new Set(current);
+              next.delete(payload.threadId);
+              return [true, next] as const;
+            });
+            if (compacted || (steered && payload.turn.status === "interrupted"))
               // Fork requests off the notification reader so it can read their responses.
-              yield* restoreAdditionalContext(payload.threadId).pipe(
+              // An interrupt drops only steers, whose new context is app notes.
+              yield* restoreAdditionalContext(payload.threadId, !compacted).pipe(
                 Effect.forkIn(scope, { startImmediately: true }),
               );
             const context = (yield* Ref.get(activeTurns)).get(payload.turn.id);
@@ -8162,38 +8204,50 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
               yield* applyServiceTier(threadId, turnInput.modelSelection);
               const codexInput = yield* toCodexInput(turnInput);
-              // turn/steer takes no additionalContext, so notes the thread has not been sent go
-              // as quoted user input, the way restoreAdditionalContext resends them.
-              const sentContext = (yield* Ref.get(additionalContextByThread)).get(threadId);
-              const unsentNotes = (turnInput.appContext ?? []).filter(
-                (entry) => sentContext?.[entry.key]?.value !== entry.text,
-              );
-              yield* client.request("turn/steer", {
-                expectedTurnId: activeTurn.nativeTurnId,
-                input: [
-                  ...unsentNotes.map((entry) => ({
-                    type: "text" as const,
-                    text: `<external_${entry.key}>${entry.text}</external_${entry.key}>`,
-                  })),
-                  ...codexInput,
-                ],
-                threadId,
-              });
-              if (unsentNotes.length > 0) {
-                yield* Ref.update(additionalContextByThread, (current) => {
-                  const next = new Map(current);
-                  next.set(threadId, {
-                    ...current.get(threadId),
-                    ...Object.fromEntries(
-                      unsentNotes.map((entry) => [
-                        entry.key,
-                        { kind: "untrusted" as const, value: entry.text },
-                      ]),
-                    ),
-                  });
-                  return next;
-                });
+              // Codex replaces its keyed context with each steer's. Cached before the request:
+              // Codex can complete the turn, and the restore read the cache, before the reply.
+              const {
+                context: additionalContext,
+                changed,
+                previous,
+              } = yield* replaceAppNotes(threadId, turnInput.appContext);
+              const flagged = (yield* Ref.get(threadsWithSteeredNotes)).has(threadId);
+              if (changed) {
+                yield* Ref.update(threadsWithSteeredNotes, (current) =>
+                  new Set(current).add(threadId),
+                );
               }
+              const hasContext = Object.keys(additionalContext).length > 0;
+              // Codex merges nothing when it answers with an error; a lost reply leaves that unknown.
+              const undoRejectedSteer = Effect.all([
+                Ref.update(additionalContextByThread, (current) => {
+                  if (current.get(threadId) !== (hasContext ? additionalContext : undefined))
+                    return current;
+                  const next = new Map(current);
+                  if (previous === undefined) next.delete(threadId);
+                  else next.set(threadId, previous);
+                  return next;
+                }),
+                Ref.update(threadsWithSteeredNotes, (current) => {
+                  if (flagged || !changed) return current;
+                  const next = new Set(current);
+                  next.delete(threadId);
+                  return next;
+                }),
+              ]);
+              const steerParams: typeof CodexClient.V2TurnSteerParams.Type = {
+                expectedTurnId: activeTurn.nativeTurnId,
+                input: codexInput,
+                threadId,
+                ...(hasContext ? { additionalContext } : {}),
+              };
+              yield* client
+                .request("turn/steer", steerParams)
+                .pipe(
+                  Effect.tapError((error) =>
+                    error._tag === "CodexAppServerRequestError" ? undoRejectedSteer : Effect.void,
+                  ),
+                );
             },
             (effect, turnInput) =>
               effect.pipe(
