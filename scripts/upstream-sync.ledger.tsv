@@ -2522,3 +2522,4 @@ f1d64aa0b6	take	fix(azure-devops): legacy and project-less remotes list their wo
 68ea2220c1	take	Codex + Antigravity managed runtimes prune inactive versions; taken as is
 34b12bea8e	skip	relay unlink (ManagedEndpointProvider); relay was removed from Onicode
 7da318e2d5	skip	relay account-switch link revocation (infra/relay only); relay was removed from Onicode
+e48d6f3181	take	PDF save action in the desktop file panel; taken as is
