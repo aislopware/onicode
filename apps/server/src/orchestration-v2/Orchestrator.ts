@@ -5084,9 +5084,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           return thread.titleRegeneration?.requestId === command.requestId
             ? {
                 ...thread,
-                ...(command.title === undefined
+                ...(command.title === undefined ? {} : { title: command.title }),
+                // A generated title, even one equal to the rename, takes the title back from the user.
+                ...(command.title === undefined && command.generated === undefined
                   ? {}
-                  : { title: command.title, titleRenamed: false }),
+                  : { titleRenamed: false }),
                 ...(command.generated === undefined
                   ? {}
                   : {
