@@ -132,6 +132,7 @@ const make = Effect.gen(function* () {
       const result = yield* readLock.withPermit(
         accountReader.read(credential, range.sinceMs, range.untilMs),
       );
+      const failed = result.missing || result.error !== null || result.accountKey === null;
       if (
         base !== undefined &&
         result.accountKey !== null &&
@@ -139,10 +140,11 @@ const make = Effect.gen(function* () {
       ) {
         caches.delete(credentialKey);
         cacheDirty = true;
-        continue;
+        // The other account's failure still stands; its records start from a fresh range.
+        if (!failed) continue;
       }
       const widthMs = range.untilMs - range.sinceMs;
-      if (result.missing || result.error !== null || result.accountKey === null) {
+      if (failed) {
         if (result.rangeTooLarge === true && widthMs > CURSOR_MIN_FETCH_SPAN_MS) {
           failedWidthMs = widthMs;
           fetchSpans.set(credentialKey, narrowedCursorSpan(widthMs));
