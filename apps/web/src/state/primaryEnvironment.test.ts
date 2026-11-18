@@ -4,7 +4,12 @@ import { EnvironmentId } from "@onicode/contracts";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it } from "vite-plus/test";
 
-import { createLocalEnvironmentIdAtom } from "./primaryEnvironment";
+import {
+  createLocalEnvironmentIdAtom,
+  hostEnvironmentIdAtom,
+  hostEnvironmentLookupSettledAtom,
+  startHostEnvironmentLookup,
+} from "./primaryEnvironment";
 
 const PRIMARY = EnvironmentId.make("primary");
 const SERVICE = EnvironmentId.make("service");
@@ -39,6 +44,48 @@ describe("localEnvironmentIdAtom", () => {
   it("uses no environment when that service is not among the connections", () => {
     expect(localEnvironmentId({ primary: null, host: "service", catalog: [REMOTE] })).toBeNull();
     expect(localEnvironmentId({ primary: null, host: null, catalog: [REMOTE] })).toBeNull();
+  });
+});
+
+describe("startHostEnvironmentLookup", () => {
+  it("reads this computer's service ID again when a connection to it appears later", async () => {
+    const registry = AtomRegistry.make();
+    const catalogValueAtom = Atom.make({
+      entries: new Map<EnvironmentId, unknown>([[REMOTE, null]]),
+    });
+    let recordedId: string | null = null;
+    let pendingRead = Promise.resolve<string | null>(null);
+    let resolveRead: (id: string | null) => void = () => undefined;
+    // The lookup's own continuation runs before this test's await on the same promise.
+    const finishRead = () => {
+      resolveRead(recordedId);
+      return pendingRead;
+    };
+    const read = () => {
+      pendingRead = new Promise<string | null>((resolve) => {
+        resolveRead = resolve;
+      });
+      return pendingRead;
+    };
+
+    startHostEnvironmentLookup({ registry, catalogValueAtom, read });
+    expect(registry.get(hostEnvironmentLookupSettledAtom)).toBe(false);
+    await finishRead();
+    expect(registry.get(hostEnvironmentLookupSettledAtom)).toBe(true);
+    expect(registry.get(hostEnvironmentIdAtom)).toBeNull();
+
+    // A background service started after the window records its ID, then gets paired.
+    recordedId = SERVICE;
+    registry.set(catalogValueAtom, {
+      entries: new Map<EnvironmentId, unknown>([
+        [REMOTE, null],
+        [SERVICE, null],
+      ]),
+    });
+    expect(registry.get(hostEnvironmentLookupSettledAtom)).toBe(false);
+    await finishRead();
+    expect(registry.get(hostEnvironmentLookupSettledAtom)).toBe(true);
+    expect(registry.get(hostEnvironmentIdAtom)).toBe(SERVICE);
   });
 });
 

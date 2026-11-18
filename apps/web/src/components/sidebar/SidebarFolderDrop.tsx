@@ -48,7 +48,7 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
       return;
     }
     const platform = bridge.getClientPlatform();
-    if (!openLocalWorkspace.ready || !isActivationPlatform(platform)) {
+    if (openLocalWorkspace.state !== "ready" || !isActivationPlatform(platform)) {
       toastManager.add(
         stackedThreadToast({
           type: "error",

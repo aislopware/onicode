@@ -1,3 +1,5 @@
+import type { EnvironmentPresentation } from "@onicode/client-runtime/connection";
+import type { EnvironmentShellStatus } from "@onicode/client-runtime/state/shell";
 import type {
   DesktopAppActivationFailure,
   DesktopAppActivationRequest,
@@ -36,6 +38,25 @@ export interface DesktopAppActivationDependencies {
   ) => Promise<{ readonly threadId: ThreadId } | null>;
 }
 
+/**
+ * `pending` holds requests until this computer's environment can take them. A cached project list
+ * waits too: it can miss a project added elsewhere, and adding that folder again would conflict.
+ */
+export function resolveLocalWorkspaceState(input: {
+  readonly environmentId: EnvironmentId | null;
+  readonly environment: Pick<EnvironmentPresentation, "connection" | "serverConfig"> | null;
+  readonly shellStatus: EnvironmentShellStatus | null;
+  /** The connections and this computer's service ID are known. */
+  readonly discoverySettled: boolean;
+}): "ready" | "pending" | "unavailable" {
+  if (input.environmentId === null) return input.discoverySettled ? "unavailable" : "pending";
+  return input.environment?.connection.phase === "connected" &&
+    input.environment.serverConfig !== null &&
+    input.shellStatus === "live"
+    ? "ready"
+    : "pending";
+}
+
 function failure(
   requestId: string,
   code: DesktopAppActivationFailure["code"],
@@ -63,7 +84,7 @@ export async function handleDesktopAppActivationRequest(
     return failure(
       request.requestId,
       "environment-unavailable",
-      "The desktop app's primary local environment is not connected.",
+      "This computer's Onicode server is not connected.",
     );
   }
 
@@ -72,7 +93,7 @@ export async function handleDesktopAppActivationRequest(
     return failure(
       request.requestId,
       "platform-mismatch",
-      `The command path is for ${requestPlatform}, but the desktop app's primary environment uses ${target.platform}. Cross-platform path mapping is not supported.`,
+      `The command path is for ${requestPlatform}, but this computer's Onicode server uses ${target.platform}. Cross-platform path mapping is not supported.`,
     );
   }
 

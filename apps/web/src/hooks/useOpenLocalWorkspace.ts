@@ -7,14 +7,20 @@ import { useAtomValue } from "@effect/atom-react";
 import type { DesktopAppActivationRequest } from "@onicode/contracts";
 import { msg } from "gt-react";
 
-import { handleDesktopAppActivationRequest } from "../desktopAppActivation";
+import {
+  handleDesktopAppActivationRequest,
+  resolveLocalWorkspaceState,
+} from "../desktopAppActivation";
 import { m } from "../i18n/messages";
 import { newProjectId } from "../lib/utils";
 import { readProjects, waitForProject } from "../state/entities";
 import { useEnvironment } from "../state/environments";
-import { localEnvironmentIdAtom } from "../state/primaryEnvironment";
+import {
+  localEnvironmentDiscoverySettledAtom,
+  localEnvironmentIdAtom,
+} from "../state/primaryEnvironment";
 import { projectEnvironment } from "../state/projects";
-import { useEnvironmentShellHasSnapshot } from "../state/shell";
+import { useEnvironmentShellStatus } from "../state/shell";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { reportProjectFailure } from "./useProjectGroupUpdate";
@@ -23,21 +29,22 @@ import { useNewThreadHandler } from "./useHandleNewThread";
 /**
  * Opens a folder on this computer as a project in this computer's environment: an
  * existing project opens (and unarchives), a new one is added. Used by `onicode <dir>`
- * activations and folders dropped on the sidebar. `ready` is false until that
- * environment's projects have loaded, so a known folder is not added twice.
+ * activations and folders dropped on the sidebar. See `resolveLocalWorkspaceState` for `state`.
  */
 export function useOpenLocalWorkspace() {
-  const localEnvironment = useEnvironment(useAtomValue(localEnvironmentIdAtom));
+  const localEnvironmentId = useAtomValue(localEnvironmentIdAtom);
+  const localEnvironment = useEnvironment(localEnvironmentId);
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const updateProject = useOrchestrationCommand(projectEnvironment.update, {
     label: "project unarchive",
   });
   const openThread = useNewThreadHandler();
-  const shellHasSnapshot = useEnvironmentShellHasSnapshot(localEnvironment?.environmentId ?? null);
-  const ready =
-    localEnvironment?.connection.phase === "connected" &&
-    localEnvironment.serverConfig !== null &&
-    shellHasSnapshot;
+  const state = resolveLocalWorkspaceState({
+    environmentId: localEnvironmentId,
+    environment: localEnvironment,
+    shellStatus: useEnvironmentShellStatus(localEnvironmentId),
+    discoverySettled: useAtomValue(localEnvironmentDiscoverySettledAtom),
+  });
 
   const open = (request: DesktopAppActivationRequest) =>
     handleDesktopAppActivationRequest(request, {
@@ -94,9 +101,9 @@ export function useOpenLocalWorkspace() {
             input: { projectId: projectRef.projectId, archived: false },
           }).then((result) => reportProjectFailure(m(msg("Failed to unarchive project")), result));
         }
-        return openThread(projectRef);
+        return openThread(projectRef, { acceptOpenedMeanwhile: true });
       },
     });
 
-  return { ready, open };
+  return { state, open };
 }

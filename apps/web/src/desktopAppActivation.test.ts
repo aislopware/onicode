@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 
 import {
   handleDesktopAppActivationRequest,
+  resolveLocalWorkspaceState,
   type DesktopAppActivationDependencies,
 } from "./desktopAppActivation";
 
@@ -66,5 +67,65 @@ describe("desktop app activation", () => {
     );
 
     expect(response).toMatchObject({ ok: false, code: "platform-mismatch" });
+  });
+
+  it.each([
+    {
+      name: "waits while the project list is still the disk cache",
+      environment: "connected",
+      shellStatus: "cached",
+      discoverySettled: true,
+      expected: "pending",
+    },
+    {
+      name: "waits while the project list catches up with the server",
+      environment: "connected",
+      shellStatus: "synchronizing",
+      discoverySettled: true,
+      expected: "pending",
+    },
+    {
+      name: "opens once the project list is live",
+      environment: "connected",
+      shellStatus: "live",
+      discoverySettled: true,
+      expected: "ready",
+    },
+    {
+      name: "waits for this computer's environment to connect",
+      environment: "connecting",
+      shellStatus: "cached",
+      discoverySettled: true,
+      expected: "pending",
+    },
+    {
+      name: "waits until it is known whether this computer runs a service",
+      environment: null,
+      shellStatus: null,
+      discoverySettled: false,
+      expected: "pending",
+    },
+    {
+      name: "answers at once when this computer has no environment to wait for",
+      environment: null,
+      shellStatus: null,
+      discoverySettled: true,
+      expected: "unavailable",
+    },
+  ] as const)("$name", ({ environment, shellStatus, discoverySettled, expected }) => {
+    expect(
+      resolveLocalWorkspaceState({
+        environmentId: environment === null ? null : environmentId,
+        environment:
+          environment === null
+            ? null
+            : {
+                connection: { phase: environment, error: null, traceId: null },
+                serverConfig: {} as never,
+              },
+        shellStatus,
+        discoverySettled,
+      }),
+    ).toBe(expected);
   });
 });

@@ -15,6 +15,7 @@ const testState = vi.hoisted(() => {
   let storedDraft: {
     readonly draftId: string;
     readonly environmentId: string;
+    readonly projectId?: string;
     readonly promotedTo: null;
     readonly threadId: string;
   } | null = null;
@@ -288,27 +289,43 @@ describe.each([
     expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
   });
 
-  it("resolves to the draft another opener showed for the same project meanwhile", async () => {
+  it.each([
+    {
+      name: "resolves to the draft another opener showed for the same project meanwhile",
+      acceptOpenedMeanwhile: true,
+      shown: { environmentId: "environment-ssh", projectId: "project-remote" },
+      expected: { draftId: "draft-home", threadId: "thread-home" },
+    },
+    {
+      name: "does not resolve to another machine's checkout of the repository shown meanwhile",
+      acceptOpenedMeanwhile: true,
+      shown: { environmentId: "environment-primary", projectId: "project-local" },
+      expected: null,
+    },
+    {
+      name: "abandons the open when the caller did not ask to accept a draft shown meanwhile",
+      acceptOpenedMeanwhile: undefined,
+      shown: { environmentId: "environment-ssh", projectId: "project-remote" },
+      expected: null,
+    },
+  ])("$name", async ({ acceptOpenedMeanwhile, shown, expected }) => {
     testState.reset(draft);
     const pendingOpen = useNewThreadHandler()(
       { environmentId: "environment-ssh", projectId: "project-remote" } as never,
-      { replace: true },
+      { replace: true, ...(acceptOpenedMeanwhile ? { acceptOpenedMeanwhile } : {}) },
     );
 
     // The location moves before the route matches do.
     testState.registerDraft({
       draftId: "draft-home",
-      environmentId: "environment-ssh",
+      ...shown,
       promotedTo: null,
       threadId: "thread-home",
     });
     testState.router.state.location.href = "/draft/draft-home";
     testState.completeProjectFileRead(null);
 
-    await expect(pendingOpen).resolves.toEqual({
-      draftId: "draft-home",
-      threadId: "thread-home",
-    });
+    await expect(pendingOpen).resolves.toEqual(expected);
     expect(testState.router.navigate).not.toHaveBeenCalled();
     expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
   });
