@@ -23,6 +23,7 @@ import {
   cursorFetchRange,
   decodeCursorAccountCaches,
   encodeCursorAccountCaches,
+  isCursorCacheComplete,
   isCursorCacheFresh,
   mergeCursorFetch,
   type CursorAccountCache,
@@ -142,7 +143,11 @@ const make = Effect.gen(function* () {
       if (result.missing || result.error !== null || result.accountKey === null) {
         if (result.rangeTooLarge === true && widthMs > CURSOR_MIN_FETCH_SPAN_MS) {
           failedWidthMs = widthMs;
-          fetchSpans.set(credentialKey, Math.max(CURSOR_MIN_FETCH_SPAN_MS, widthMs / 2));
+          // Whole milliseconds: Cursor's dashboard rejects a fractional date.
+          fetchSpans.set(
+            credentialKey,
+            Math.max(CURSOR_MIN_FETCH_SPAN_MS, Math.floor(widthMs / 2)),
+          );
           cacheDirty = true;
           continue;
         }
@@ -235,9 +240,11 @@ const make = Effect.gen(function* () {
     const cache = caches.get(credentialKey);
     const failure = refreshing ? undefined : failures.get(credentialKey);
     if (failure?.error === null) return null;
+    // A half-read history is partial even while it loads, so another environment's complete
+    // copy of the account wins over it.
     const failureMessage =
       failure?.error ??
-      (refreshing || isCursorCacheFresh(cache, nowMs, retentionStartMs)
+      (cache === undefined || isCursorCacheComplete(cache, retentionStartMs)
         ? undefined
         : CURSOR_ACCOUNT_LOADING);
     if (cache === undefined) {
@@ -245,7 +252,9 @@ const make = Effect.gen(function* () {
         dir: "cursor-account",
         ...(refreshing
           ? { files: [], refreshing: true }
-          : { files: null, message: failureMessage ?? CURSOR_ACCOUNT_READ_ERROR }),
+          : failure === undefined
+            ? { files: [], status: "partial", message: CURSOR_ACCOUNT_LOADING }
+            : { files: null, message: failure.error ?? CURSOR_ACCOUNT_READ_ERROR }),
       } satisfies ProviderUsageScan;
     }
     // Account history spans machines; a stable fingerprint prevents duplicate environment counts.
@@ -257,7 +266,10 @@ const make = Effect.gen(function* () {
       files: [
         {
           path: source,
-          records: cache.records.filter((record) => record.timestampMs >= windowStartMs),
+          // The cache can hold history read for a scan that keeps more than this one.
+          records: cache.records.filter(
+            (record) => record.timestampMs >= Math.max(windowStartMs, retentionStartMs),
+          ),
         },
       ],
       ...(failureMessage === undefined
@@ -288,7 +300,8 @@ const make = Effect.gen(function* () {
               retentionCutoffMs,
               awaitRefresh,
             ),
-          { concurrency: 2 },
+          // `readLock` bounds the reads; a slow key must not hold another key's turn.
+          { concurrency: "unbounded" },
         );
         // Keys for one account share its source, and a repeated source would count sessions twice.
         // A failed key can hold older records, so a current read wins, then a refresh the client
