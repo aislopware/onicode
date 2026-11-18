@@ -172,11 +172,18 @@ function settleTurnItems(
   settled: ReadonlyMap<string, OrchestrationV2TurnItem>,
 ): OrchestrationV2ThreadProjection {
   let changed = false;
+  // One object per id, so a row and its `turnItems` entry stay the same item.
+  const replaced = new Map<string, OrchestrationV2TurnItem>();
   const settle = (item: OrchestrationV2TurnItem, id: string) => {
     const server = settled.get(id);
     if (server === undefined || !isOrchestrationV2WorkActive(item.status)) return item;
     changed = true;
-    return keepSubagentModelCopy(server, item);
+    let next = replaced.get(id);
+    if (next === undefined) {
+      next = keepSubagentModelCopy(server, item);
+      replaced.set(id, next);
+    }
+    return next;
   };
   const turnItems = projection.turnItems.map((item) => settle(item, item.id));
   const visibleTurnItems = projection.visibleTurnItems.map((row) => {

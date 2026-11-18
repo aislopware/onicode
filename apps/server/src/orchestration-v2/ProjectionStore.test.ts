@@ -10203,11 +10203,46 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         },
       });
 
+      // A record that no longer decodes, or no longer parses, costs only its own row the model.
+      const sql = yield* SqlClient.SqlClient;
+      const [subagentItem] = items;
+      const broken = [
+        [
+          NodeId.make("node:fork-subagent-model:bad-selection"),
+          `json_set(payload_json, '$.modelSelection', json('{"model":1}'))`,
+        ],
+        [NodeId.make("node:fork-subagent-model:bad-json"), `'{'`],
+      ] as const;
+      for (const [index, [id, payload]] of broken.entries()) {
+        yield* projectionStore.apply({
+          id: event(`item:${id}`),
+          type: "turn-item.updated",
+          threadId: sourceThreadId,
+          driver,
+          occurredAt: now,
+          payload: {
+            ...subagentItem!,
+            id: TurnItemId.make(`turn-item:${id}`),
+            ordinal: index + 2,
+            ...(subagentItem!.type === "subagent" ? { subagentId: id } : {}),
+          },
+        });
+        yield* sql`
+          INSERT INTO orchestration_v2_projection_subagents
+          SELECT ${id}, thread_id, run_id, parent_node_id, provider, provider_thread_id,
+            child_thread_id, origin, status, started_at, completed_at, updated_at,
+            ${sql.literal(payload)}, driver, provider_instance_id, completion_delivery_state
+          FROM orchestration_v2_projection_subagents WHERE subagent_id = ${subagentId}
+        `;
+      }
       const inheritedModel = (rows: ReadonlyArray<{ readonly item: OrchestrationV2TurnItem }>) =>
         rows.flatMap(({ item }) =>
           item.type === "subagent" ? [[item.subagentId, item.model, item.modelSelection]] : [],
         );
-      const expected = [[subagentId, "claude-haiku-4-5-20251001", modelSelection]];
+      const expected = [
+        [subagentId, "claude-haiku-4-5-20251001", modelSelection],
+        ...broken.map(([id]) => [id, undefined, undefined]),
+      ];
       const snapshot = yield* projectionStore.getThreadSnapshotWindow(forkThreadId, {
         rowLimit: THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
       });
