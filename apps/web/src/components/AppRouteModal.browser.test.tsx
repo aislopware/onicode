@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import appCss from "~/index.css?inline";
 import { render, type Screen } from "../../test/render";
 import { dispatchCommandPalette, handOverCommandPaletteOpener } from "../commandPaletteStore";
 import { useCommitOnBlur } from "../hooks/useCommitOnBlur";
-import { requestWorkspaceFocus, startWorkspaceFocus } from "../lib/workspaceFocus";
+import {
+  getWorkspaceFocusRequestVersion,
+  requestWorkspaceFocus,
+  startWorkspaceFocus,
+} from "../lib/workspaceFocus";
 import { AppRouteModal, AppRouteModalClose } from "./AppRouteModal";
 import { startMainAppLocationTracking } from "./sidebar/mainAppLocation";
 
@@ -153,7 +158,11 @@ describe("AppRouteModal", () => {
     await expect.element(openerButton).toHaveFocus();
   });
 
-  it("keeps focus that Tab moved on while it was closing", async () => {
+  it.each([
+    { key: "Tab", shortcut: false },
+    // A workspace shortcut takes F6 at the window, before the document sees it.
+    { key: "F6", shortcut: true },
+  ])("keeps focus that $key moved on while it was closing", async ({ key, shortcut }) => {
     // The app's styles give the modal the exit animation that Base UI waits for.
     const style = document.createElement("style");
     style.textContent = appCss;
@@ -169,15 +178,23 @@ describe("AppRouteModal", () => {
     vi.mocked(requestWorkspaceFocus).mockClear();
     await using screen = await render(view(false), { router: "/" });
     using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
+    const elsewhere = screen.getByRole("button", { name: "Elsewhere" }).element() as HTMLElement;
+    const moveOn = (event: KeyboardEvent) => {
+      if (event.key !== key) return;
+      if (shortcut) event.stopPropagation();
+      elsewhere.focus();
+    };
+    window.addEventListener("keydown", moveOn, true);
+    using _moveOn = { [Symbol.dispose]: () => window.removeEventListener("keydown", moveOn, true) };
     (screen.getByRole("textbox", { name: "Main message" }).element() as HTMLElement).focus();
 
     await screen.rerender(view(true, usageModal));
-    await expect.element(page.getByRole("dialog", { name: "Usage" })).toHaveFocus();
-    await userEvent.keyboard("{Escape}");
-    const elsewhere = screen.getByRole("button", { name: "Elsewhere" }).element() as HTMLElement;
-    elsewhere.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
-    elsewhere.focus();
-    await expect.element(page.getByRole("dialog", { name: "Usage" })).not.toBeInTheDocument();
+    const dialog = page.getByRole("dialog", { name: "Usage" });
+    await expect.element(dialog).toHaveFocus();
+    // One task, so the key lands inside the exit animation however slow the run is.
+    dialog.element().dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    elsewhere.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    await expect.element(dialog).not.toBeInTheDocument();
 
     // The thread is still inert; a restore asked for now would take focus once it is usable.
     expect(requestWorkspaceFocus).not.toHaveBeenCalled();
@@ -199,6 +216,40 @@ describe("AppRouteModal", () => {
     );
     await expect.element(page.getByRole("dialog", { name: "Settings" })).toHaveFocus();
     // Its own route renders each modal, so Usage mounts as Settings unmounts.
+    await screen.rerender(
+      <>
+        {opener}
+        <AppRouteModal key="usage" label="Usage">
+          <p>Usage</p>
+        </AppRouteModal>
+      </>,
+    );
+    await closeWithEsc();
+
+    await expect.element(screen.getByRole("button", { name: "Open settings" })).toHaveFocus();
+  });
+
+  it("returns to what Settings opened from when Usage replaced it from a Settings menu", async () => {
+    const opener = <button type="button">Open settings</button>;
+    await using screen = await render(opener, { router: "/" });
+    (screen.getByRole("button", { name: "Open settings" }).element() as HTMLElement).focus();
+
+    await screen.rerender(
+      <>
+        {opener}
+        <AppRouteModal key="settings" label="Settings">
+          {/* A select's options are portaled outside the modal. */}
+          {createPortal(<button type="button">Wide</button>, document.body)}
+        </AppRouteModal>
+      </>,
+    );
+    await expect.element(page.getByRole("dialog", { name: "Settings" })).toHaveFocus();
+    (
+      page.getByRole("button", { name: "Wide", includeHidden: true }).element() as HTMLElement
+    ).focus();
+    await expect
+      .element(page.getByRole("button", { name: "Wide", includeHidden: true }))
+      .toHaveFocus();
     await screen.rerender(
       <>
         {opener}
@@ -262,8 +313,33 @@ describe("AppRouteModal", () => {
     await expect.element(screen.getByRole("button", { name: "Show file tree" })).toHaveFocus();
   });
 
+  it("keeps a sidebar opener's focus when it closes back onto the Pull Requests page", async () => {
+    await using screen = await render(
+      <Sidebar>
+        <PullRequests />
+      </Sidebar>,
+      { router: "/pull-requests" },
+    );
+    using _location = { [Symbol.dispose]: startMainAppLocationTracking(screen.router!) };
+    using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
+    (screen.getByRole("button", { name: "Sidebar control" }).element() as HTMLElement).focus();
+
+    await screen.router!.navigate({ href: "/usage" });
+    await screen.rerender(<Sidebar>{usageModal}</Sidebar>);
+    const requests = getWorkspaceFocusRequestVersion();
+    await closeWithEsc();
+    await vi.waitFor(() =>
+      expect(screen.router!.state.resolvedLocation?.pathname).toBe("/pull-requests"),
+    );
+
+    await expect.element(screen.getByRole("button", { name: "Sidebar control" })).toHaveFocus();
+    // A request for the list would take focus once the page renders.
+    expect(getWorkspaceFocusRequestVersion()).toBe(requests);
+  });
+
   it("focuses the Pull Requests list when Usage leads there without closing", async () => {
     await using screen = await render(usageModal, { router: "/usage" });
+    using _location = { [Symbol.dispose]: startMainAppLocationTracking(screen.router!) };
     using _focus = { [Symbol.dispose]: startWorkspaceFocus(screen.router!) };
 
     await screen.router!.navigate({ href: "/pull-requests" });

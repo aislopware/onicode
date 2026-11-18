@@ -79,7 +79,10 @@ describe("workspace area focus", () => {
     expect(document.activeElement).toBe(attach);
   });
 
-  it("moves on from a side chat after focus left it for the body", () => {
+  it.each([
+    { after: "focus left it for the body", remount: false },
+    { after: "it remounted", remount: true },
+  ])("moves on from a side chat after $after", ({ remount }) => {
     using fixture = setup();
     fixture.area("composer", 2);
     const panel = fixture.area("panel", 4);
@@ -87,6 +90,10 @@ describe("workspace area focus", () => {
     sideComposer.button.focus();
     // The palette's "Focus Next Workspace Area" moves after its own focus has gone.
     sideComposer.button.blur();
+    if (remount) {
+      sideComposer.element.remove();
+      fixture.area("composer", 2, panel.element);
+    }
     fixture.controller.move(1);
     expect(document.activeElement).toBe(panel.button);
   });
