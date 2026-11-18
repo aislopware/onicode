@@ -8,14 +8,17 @@ import {
 
 interface PendingActivation {
   readonly request: DesktopAppActivationRequest;
-  readonly deadlineAt: number;
   readonly resolve: (response: DesktopAppActivationResponse) => void;
   readonly timeout: ReturnType<typeof setTimeout>;
-  dispatched: boolean;
+  /** The page it was sent to, which keeps it across a handler remount. */
+  dispatchedTo: RendererPort | null;
 }
 
-/** `deadlineAt` is when this request times out, in epoch ms; the renderer skips it after that. */
-type RendererSender = (request: DesktopAppActivationRequest, deadlineAt: number) => void;
+interface RendererPort {
+  readonly send: (request: DesktopAppActivationRequest) => void;
+  /** The command got its answer without the page, so the page must not open the folder later. */
+  readonly abandon: (requestId: string) => void;
+}
 
 function failure(
   requestId: string,
@@ -35,18 +38,12 @@ export class DesktopAppActivationBroker {
   readonly #pending = new Map<string, PendingActivation>();
   readonly #requestTimeoutMs: number;
   readonly #activate: () => void;
-  readonly #now: () => number;
-  #renderer: RendererSender | null = null;
+  #renderer: RendererPort | null = null;
   #closed = false;
 
-  constructor(input: {
-    readonly requestTimeoutMs: number;
-    readonly activate: () => void;
-    readonly now?: () => number;
-  }) {
+  constructor(input: { readonly requestTimeoutMs: number; readonly activate: () => void }) {
     this.#requestTimeoutMs = input.requestTimeoutMs;
     this.#activate = input.activate;
-    this.#now = input.now ?? Date.now;
   }
 
   request(request: DesktopAppActivationRequest): Promise<DesktopAppActivationResponse> {
@@ -71,13 +68,7 @@ export class DesktopAppActivationBroker {
           ),
         );
       }, this.#requestTimeoutMs);
-      this.#pending.set(request.requestId, {
-        request,
-        deadlineAt: this.#now() + this.#requestTimeoutMs,
-        resolve,
-        timeout,
-        dispatched: false,
-      });
+      this.#pending.set(request.requestId, { request, resolve, timeout, dispatchedTo: null });
     });
 
     this.#activate();
@@ -85,8 +76,8 @@ export class DesktopAppActivationBroker {
     return response;
   }
 
-  registerRenderer(send: RendererSender): void {
-    this.#renderer = send;
+  registerRenderer(renderer: RendererPort): void {
+    this.#renderer = renderer;
     this.#flush();
   }
 
@@ -98,7 +89,9 @@ export class DesktopAppActivationBroker {
   clearRenderer(): void {
     this.#renderer = null;
     for (const pending of this.#pending.values()) {
-      if (pending.dispatched) {
+      if (pending.dispatchedTo !== null) {
+        // Its page is gone, so there is nothing to tell.
+        pending.dispatchedTo = null;
         this.#settle(
           failure(
             pending.request.requestId,
@@ -111,6 +104,8 @@ export class DesktopAppActivationBroker {
   }
 
   complete(response: DesktopAppActivationResponse): void {
+    const pending = this.#pending.get(response.requestId);
+    if (pending) pending.dispatchedTo = null;
     this.#settle(response);
   }
 
@@ -133,15 +128,14 @@ export class DesktopAppActivationBroker {
   #flush(): void {
     const renderer = this.#renderer;
     if (renderer === null) return;
-    if ([...this.#pending.values()].some((pending) => pending.dispatched)) return;
+    if ([...this.#pending.values()].some((pending) => pending.dispatchedTo !== null)) return;
 
     for (const pending of this.#pending.values()) {
-      if (pending.dispatched) continue;
       try {
-        pending.dispatched = true;
-        renderer(pending.request, pending.deadlineAt);
+        pending.dispatchedTo = renderer;
+        renderer.send(pending.request);
       } catch {
-        pending.dispatched = false;
+        pending.dispatchedTo = null;
         this.#renderer = null;
       }
       return;
@@ -153,6 +147,11 @@ export class DesktopAppActivationBroker {
     if (!pending) return;
     clearTimeout(pending.timeout);
     this.#pending.delete(response.requestId);
+    try {
+      pending.dispatchedTo?.abandon(response.requestId);
+    } catch {
+      // The page is going away, and it takes its copy of the request with it.
+    }
     pending.resolve(response);
     this.#flush();
   }

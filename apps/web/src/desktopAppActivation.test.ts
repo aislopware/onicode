@@ -3,6 +3,7 @@ import {
   ProjectId,
   ThreadId,
   type DesktopAppActivationRequest,
+  type DesktopAppActivationResponse,
 } from "@onicode/contracts";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -24,6 +25,10 @@ const request = {
   workspaceRoot: "/workspace/project",
   platform: "linux",
 } as const;
+
+function success(requestId: string): DesktopAppActivationResponse {
+  return { version: 1, requestId, ok: true, projectId: existingProjectId, threadId };
+}
 
 function dependencies(
   overrides: Partial<DesktopAppActivationDependencies> = {},
@@ -176,85 +181,114 @@ describe("desktop app activation", () => {
     },
   );
 
-  it.each([
-    {
-      name: "handles a request that arrived during a remount once the handler is back",
-      waitedMs: 0,
-    },
-    {
-      name: "drops a request the desktop app already gave up on before a handler came back",
-      waitedMs: 1_001,
-    },
-  ])("$name", async ({ waitedMs }) => {
-    let nowMs = 0;
-    let deliver: (input: DesktopAppActivationRequest, deadlineAt: number) => void = () => undefined;
-    const receiver = createDesktopAppActivationReceiver(
-      {
-        onRequest: (listener) => {
-          deliver = listener;
-          return () => undefined;
-        },
-        complete: async () => undefined,
+  function receiverHarness() {
+    let deliver: (input: DesktopAppActivationRequest) => void = () => undefined;
+    let abandon: (requestId: string) => void = () => undefined;
+    const completions: DesktopAppActivationResponse[] = [];
+    let onComplete: () => void = () => undefined;
+    const receiver = createDesktopAppActivationReceiver({
+      onRequest: (listener) => {
+        deliver = listener;
+        return () => undefined;
       },
-      () => nowMs,
-    );
-    const respond = async (input: DesktopAppActivationRequest) => ({
-      version: 1 as const,
-      requestId: input.requestId,
-      ok: true as const,
-      projectId: existingProjectId,
-      threadId,
+      onAbandoned: (listener) => {
+        abandon = listener;
+        return () => undefined;
+      },
+      complete: async (response) => {
+        completions.push(response);
+        onComplete();
+      },
     });
-    const unmounted = vi.fn(respond);
-    const remounted = vi.fn(respond);
-    let handled: () => void = () => undefined;
-    const handledOrDropped = new Promise<void>((resolve) => {
-      handled = resolve;
-    });
+    const nextCompletion = () =>
+      new Promise<void>((resolve) => {
+        onComplete = resolve;
+      });
+    return {
+      receiver,
+      deliver: (input: DesktopAppActivationRequest = request) => deliver(input),
+      abandon,
+      completions,
+      nextCompletion,
+    };
+  }
 
-    receiver.setHandler(unmounted);
-    receiver.setHandler(null);
-    deliver(request, 1_000);
-    nowMs += waitedMs;
-    receiver.setHandler(async (input) => {
-      const response = await remounted(input);
-      if (input.requestId === "request-2") handled();
-      return response;
-    });
-    // A dropped request never reaches the handler, so a second request marks the queue's progress.
-    deliver({ ...request, requestId: "request-2" }, nowMs + 1_000);
-    await handledOrDropped;
+  it("handles a request that arrived during a remount once the handler is back", async () => {
+    const harness = receiverHarness();
+    const unmounted = vi.fn(async () => success("request-1"));
+    harness.receiver.setHandler(unmounted);
+    harness.receiver.setHandler(null);
+    const completed = harness.nextCompletion();
+    harness.deliver();
+    // Lets the queue reach the request while no handler is set.
+    await Promise.resolve();
+    harness.receiver.setHandler(async (input) => success(input.requestId));
+    await completed;
 
     expect(unmounted).not.toHaveBeenCalled();
-    expect(remounted.mock.calls.map(([input]) => input.requestId)).toEqual(
-      waitedMs === 0 ? ["request-1", "request-2"] : ["request-2"],
-    );
+    expect(harness.completions).toEqual([success("request-1")]);
   });
 
-  it("answers a request whose handler throws instead of leaving the command waiting", async () => {
-    let completed: (response: unknown) => void = () => undefined;
-    const completion = new Promise((resolve) => {
-      completed = resolve;
+  it("drops a request the desktop app gave up on before a handler came back", async () => {
+    const harness = receiverHarness();
+    const handled = vi.fn(async (input: DesktopAppActivationRequest) => success(input.requestId));
+    harness.deliver();
+    harness.abandon(request.requestId);
+    const completed = harness.nextCompletion();
+    harness.receiver.setHandler(handled);
+    // A dropped request never reaches the handler, so a second request marks the queue's progress.
+    harness.deliver({ ...request, requestId: "request-2" });
+    await completed;
+
+    expect(handled.mock.calls.map(([input]) => input.requestId)).toEqual(["request-2"]);
+  });
+
+  it("does not open a thread once the desktop app gives up while the project is added", async () => {
+    const harness = receiverHarness();
+    const deps = dependencies({
+      findProject: () => null,
+      waitForProject: vi.fn(async () => harness.abandon(request.requestId)),
     });
-    const receiver = createDesktopAppActivationReceiver(
-      {
-        onRequest: (listener) => {
-          listener(request, Number.POSITIVE_INFINITY);
-          return () => undefined;
-        },
-        complete: async (response) => completed(response),
+    const completed = harness.nextCompletion();
+    harness.receiver.setHandler((input, signal) =>
+      handleDesktopAppActivationRequest(input, deps, signal),
+    );
+    harness.deliver();
+    await completed;
+
+    expect(deps.createProject).toHaveBeenCalledOnce();
+    expect(deps.openThread).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "rejects",
+      handler: async (): Promise<DesktopAppActivationResponse> => {
+        throw new Error("boom");
       },
-      () => 0,
-    );
+    },
+    {
+      name: "throws before returning a promise",
+      handler: (): Promise<DesktopAppActivationResponse> => {
+        throw new Error("boom");
+      },
+    },
+  ])(
+    "answers a request whose handler $name instead of leaving the command waiting",
+    async ({ handler }) => {
+      const harness = receiverHarness();
+      const completed = harness.nextCompletion();
+      harness.receiver.setHandler(handler);
+      harness.deliver();
+      await completed;
 
-    receiver.setHandler(async () => {
-      throw new Error("boom");
-    });
-
-    await expect(completion).resolves.toMatchObject({
-      requestId: request.requestId,
-      ok: false,
-      code: "internal-error",
-    });
-  });
+      expect(harness.completions).toEqual([
+        expect.objectContaining({
+          requestId: request.requestId,
+          ok: false,
+          code: "internal-error",
+        }),
+      ]);
+    },
+  );
 });

@@ -375,20 +375,26 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     complete: (response) =>
       ipcRenderer.invoke(IpcChannels.DESKTOP_APP_ACTIVATION_COMPLETE_CHANNEL, response),
     onRequest: (listener) => {
-      const wrappedListener = (
-        _event: Electron.IpcRendererEvent,
-        request: unknown,
-        deadlineAt: unknown,
-      ) => {
-        if (typeof request !== "object" || request === null || typeof deadlineAt !== "number") {
-          return;
-        }
-        listener(request as Parameters<typeof listener>[0], deadlineAt);
+      const wrappedListener = (_event: Electron.IpcRendererEvent, request: unknown) => {
+        if (typeof request !== "object" || request === null) return;
+        listener(request as Parameters<typeof listener>[0]);
       };
       ipcRenderer.on(IpcChannels.DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL, wrappedListener);
       return () => {
         ipcRenderer.removeListener(
           IpcChannels.DESKTOP_APP_ACTIVATION_REQUEST_CHANNEL,
+          wrappedListener,
+        );
+      };
+    },
+    onAbandoned: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, requestId: unknown) => {
+        if (typeof requestId === "string") listener(requestId);
+      };
+      ipcRenderer.on(IpcChannels.DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL, wrappedListener);
+      return () => {
+        ipcRenderer.removeListener(
+          IpcChannels.DESKTOP_APP_ACTIVATION_ABANDONED_CHANNEL,
           wrappedListener,
         );
       };
