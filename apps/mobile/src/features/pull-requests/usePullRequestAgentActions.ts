@@ -36,7 +36,7 @@ export function usePullRequestAgentActions(
   const chooseThread =
     links.threads.length > 1 || links.threads.some((thread) => thread.settled || thread.archivedAt);
   const threadActions = (task: PullRequestAgentTask) =>
-    pullRequestAgentThreadActions(links.threads, task, links.canAsk, m);
+    pullRequestAgentThreadActions(links.threads, task, links.canAsk, disabled, m);
   const menuAction = (task: PullRequestAgentTask) =>
     pullRequestAgentMenuAction(
       {

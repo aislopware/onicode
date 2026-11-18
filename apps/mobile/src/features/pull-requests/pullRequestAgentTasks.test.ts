@@ -55,6 +55,13 @@ describe("PR agent tasks", () => {
     expect(pullRequestAgentThreadActions([archived], "feedback", true)[1]).toMatchObject({
       attributes: { disabled: true },
     });
+    // A busy helper rejects every choice, so none may look tappable.
+    const busy = pullRequestAgentThreadActions([thread, settled], "ask", true, true);
+    expect(
+      [...busy, ...(busy.at(-1)?.subactions ?? [])]
+        .filter((action) => !action.attributes?.disabled)
+        .map((action) => action.id),
+    ).toEqual([]);
   });
   it("offers no AI helper thread choice while a helper is busy", () => {
     const thread = {
