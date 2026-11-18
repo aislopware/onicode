@@ -804,6 +804,12 @@ const codexAppContext = (
     (appContext ?? []).map((entry) => [entry.key, { kind: "untrusted", value: entry.text }]),
   );
 
+// Codex merges keyed context only after admitting a request; an undecodable reply was admitted.
+const isCodexRequestError = Schema.is(CodexErrors.CodexAppServerRequestError);
+const codexRefusedRequest = (error: unknown) =>
+  isCodexRequestError(error) &&
+  (error.operation === "receive-response" || error.operation === "encode-payload");
+
 export const buildCodexTurnStartParams = Effect.fn("CodexAdapterV2.buildCodexTurnStartParams")(
   function* (input: {
     readonly nativeThreadId: string;
@@ -7627,6 +7633,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               updated.set(threadId, turnInput);
               return updated;
             });
+            const heldContext = (yield* Ref.get(additionalContextByThread)).get(threadId);
             yield* Ref.update(additionalContextByThread, (current) => {
               const next = new Map(current);
               if (turnStartParams.additionalContext)
@@ -7639,7 +7646,20 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
               ...(yield* Ref.get(settledTurns)),
               ...(yield* Ref.get(activeTurns)),
             ]);
-            const started = yield* client.request("turn/start", turnStartParams);
+            const started = yield* client.request("turn/start", turnStartParams).pipe(
+              Effect.tapError((error) =>
+                codexRefusedRequest(error)
+                  ? Ref.update(additionalContextByThread, (current) => {
+                      if (current.get(threadId) !== turnStartParams.additionalContext)
+                        return current;
+                      const next = new Map(current);
+                      if (heldContext === undefined) next.delete(threadId);
+                      else next.set(threadId, heldContext);
+                      return next;
+                    })
+                  : Effect.void,
+              ),
+            );
             const previousTurn =
               previousTurns.get(started.turn.id) ??
               (yield* Ref.get(activeTurns)).get(started.turn.id);
@@ -8218,7 +8238,6 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 );
               }
               const hasContext = Object.keys(additionalContext).length > 0;
-              // Codex merges nothing when it answers with an error; a lost reply leaves that unknown.
               const undoRejectedSteer = Effect.all([
                 Ref.update(additionalContextByThread, (current) => {
                   if (current.get(threadId) !== (hasContext ? additionalContext : undefined))
@@ -8245,7 +8264,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 .request("turn/steer", steerParams)
                 .pipe(
                   Effect.tapError((error) =>
-                    error._tag === "CodexAppServerRequestError" ? undoRejectedSteer : Effect.void,
+                    codexRefusedRequest(error) ? undoRejectedSteer : Effect.void,
                   ),
                 );
             },
@@ -8932,6 +8951,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                 Effect.andThen(revertCodexThread(client, threadId, numTurns)),
               );
               turnTokenUsageByThread.delete(threadId);
+              // Codex reloads a reverted thread with an empty keyed context.
+              yield* Ref.update(additionalContextByThread, (current) => {
+                const next = new Map(current);
+                next.delete(threadId);
+                return next;
+              });
               return {
                 providerThread: {
                   ...threadInput.providerThread,

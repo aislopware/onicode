@@ -1923,7 +1923,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
   // regression: #38541 an MCP app note that changes mid-turn reaches the next steer.
   // Codex replaces its keyed context with each steer's, so the context Onicode restores after
   // compaction, or after an interrupt drops an unread steer, holds what Codex holds.
-  it.effect.each(["compacted", "interrupted", "rejected"] as const)(
+  it.effect.each(["compacted", "interrupted", "rejected", "undecodable"] as const)(
     "steers carry MCP app notes as Codex's keyed context when the turn ends %s",
     (ending) =>
       Effect.gen(function* () {
@@ -1962,7 +1962,8 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           }) as const;
         const steerReply = (id: number) =>
           ({ type: "emit_inbound", frame: { id, result: { turnId: nativeTurnId } } }) as const;
-        // Codex rejects the second steer in one case, so it keeps the first steer's notes.
+        // Codex rejects the second steer in one case, so it keeps the first steer's notes. A reply
+        // Onicode cannot decode still means Codex took the steer.
         const heldNotes = {
           ...(ending === "rejected" ? note("item-1", "Pressed: blue") : {}),
           ...note("item-2", "Draft saved"),
@@ -2019,7 +2020,9 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                       frame: { id: 5, error: { code: -32600, message: "Turn is not steerable" } },
                     } as const,
                   ]
-                : []),
+                : ending === "undecodable"
+                  ? [{ type: "emit_inbound", frame: { id: 5, result: {} } } as const]
+                  : []),
               ...(ending === "compacted"
                 ? [
                     {
@@ -2049,7 +2052,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 },
               },
               // Codex can finish the turn before the steer's reply reaches Onicode.
-              ...(ending === "rejected" ? [] : [steerReply(5)]),
+              ...(ending === "rejected" || ending === "undecodable" ? [] : [steerReply(5)]),
               {
                 type: "expect_outbound",
                 label: "restore context",
@@ -2111,7 +2114,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
             message: { ...turnInput.message, text: "And now?" },
           }),
         );
-        assert.equal(Exit.isFailure(steered), ending === "rejected");
+        assert.equal(Exit.isFailure(steered), ending === "rejected" || ending === "undecodable");
         yield* harness.firstTerminal;
         assert.equal(
           harness.terminalEvents()[0]?.status,
