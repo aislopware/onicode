@@ -2530,3 +2530,4 @@ f9a3c38c50	take	Antigravity broken-thread recovery; shared turn start honors err
 39ad0c58ec	take	runtime instruction and eval cases taken; eval runner keeps Onicode's output-regex check beside upstream's argsAnyOf/success; IssuesToolkit already listed in the eval tool set; agentContextBudget.json re-measured on Onicode's text (+107 bytes each)
 6927cfe2ad	take	taken; DesktopApp.test.ts conflict resolved to upstream's activation assertion, keeping Onicode's temp-dir prefix
 1cefbc4051	take	taken as is; iPhone Duo vertical bar only, new strings already in the mobile catalog
+a5090a7576	take	fix(web): Default effort no longer shows as the lowest bar
