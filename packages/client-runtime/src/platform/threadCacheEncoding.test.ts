@@ -1,9 +1,13 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
   EnvironmentId,
+  NodeId,
+  ProviderDriverKind,
+  ProviderInstanceId,
   ThreadId,
   TurnItemId,
   type OrchestrationV2ThreadProjection,
+  type OrchestrationV2TurnItem,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -45,9 +49,30 @@ const notice = (index: number, threadId = v2ThreadId) => ({
   message: `Notice ${index}`,
 });
 
+// A fork's row carries its source record's model, which no event brings back after a reopen.
+const inheritedSubagent = (index: number): OrchestrationV2TurnItem => {
+  const { type: _type, message: _message, ...base } = notice(index, otherThreadId);
+  const providerInstanceId = ProviderInstanceId.make("claudeAgent");
+  return {
+    ...base,
+    type: "subagent",
+    subagentId: NodeId.make(`subagent-${index}`),
+    origin: "provider_native",
+    driver: ProviderDriverKind.make("claudeAgent"),
+    providerInstanceId,
+    childThreadId: null,
+    prompt: "Look",
+    result: "Done",
+    model: "claude-haiku-4-5",
+    modelSelection: { instanceId: providerInstanceId, model: "claude-haiku-4-5" },
+  };
+};
+
 // Inherited rows come first, as in a fork, then local rows whose items alias turnItems.
 function projectionWith(count: number): OrchestrationV2ThreadProjection {
-  const inherited = Array.from({ length: 5 }, (_, index) => notice(index, otherThreadId));
+  const inherited = Array.from({ length: 5 }, (_, index) =>
+    index === 4 ? inheritedSubagent(index) : notice(index, otherThreadId),
+  );
   const turnItems = Array.from({ length: count }, (_, index) => notice(index));
   return {
     ...v2Projection,

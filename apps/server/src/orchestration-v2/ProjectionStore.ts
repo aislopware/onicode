@@ -51,6 +51,7 @@ import {
   IDLE_COMPACTION_TEXT,
   idleCompactionOf,
   isQueuedProviderThreadPlaceholder,
+  ModelSelection as ModelSelectionSchema,
   OrchestrationV2AppThreadJson as OrchestrationV2AppThreadJsonSchema,
   OrchestrationV2CheckpointJson as OrchestrationV2CheckpointJsonSchema,
   OrchestrationV2CheckpointScopeJson as OrchestrationV2CheckpointScopeJsonSchema,
@@ -88,6 +89,7 @@ import {
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -1369,17 +1371,14 @@ const decodeTurnItemPayload = Schema.decodeUnknownEffect(
 );
 const decodeSubagentModel = Schema.decodeUnknownEffect(
   Schema.fromJsonString(
-    Schema.Struct({
-      model: Schema.optionalKey(Schema.String),
-      modelSelection: OrchestrationV2SubagentJsonSchema.fields.modelSelection,
-    }),
+    Schema.Tuple([Schema.NullOr(Schema.String), Schema.NullOr(ModelSelectionSchema)]),
   ),
 );
 
 /** For a row whose subagent record a client may not hold; see the item's `model`. */
 function withSubagentModel(
   item: OrchestrationV2TurnItem,
-  record: Partial<Pick<OrchestrationV2Subagent, "model" | "modelSelection">> | undefined,
+  record: Pick<OrchestrationV2Subagent, "model" | "modelSelection"> | undefined,
 ): OrchestrationV2TurnItem {
   if (item.type !== "subagent" || record === undefined) return item;
   const { model, modelSelection } = record;
@@ -4535,23 +4534,25 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
     const readSubagentModels = Effect.fn("ProjectionStore.readSubagentModels")(function* (
       sources: ReadonlyArray<{ readonly threadId: ThreadId; readonly id: NodeId }>,
     ) {
-      const models = new Map<string, Effect.Success<ReturnType<typeof decodeSubagentModel>>>();
+      const models = new Map<string, Pick<OrchestrationV2Subagent, "model" | "modelSelection">>();
       if (sources.length === 0) return models;
       const rows = yield* sql<{ thread_id: string; subagent_id: string; model_json: string }>`
         SELECT subagent.thread_id, subagent.subagent_id,
-          json_patch('{}', json_object(
-            'model', subagent.payload_json -> '$.model',
-            'modelSelection', subagent.payload_json -> '$.modelSelection'
-          )) AS model_json
+          json_extract(subagent.payload_json, '$.model', '$.modelSelection') AS model_json
         FROM json_each(${yield* encodeTimelineSources(sources)}) AS wanted
         CROSS JOIN orchestration_v2_projection_subagents AS subagent
           ON subagent.subagent_id = json_extract(wanted.value, '$.id')
           AND subagent.thread_id = json_extract(wanted.value, '$.threadId')`;
-      for (const row of rows)
-        models.set(
-          `${row.thread_id}:${row.subagent_id}`,
-          yield* decodeSubagentModel(row.model_json),
-        );
+      for (const row of rows) {
+        // A record that no longer decodes costs its row the model, not the whole read.
+        const decoded = yield* Effect.option(decodeSubagentModel(row.model_json));
+        if (Option.isNone(decoded)) continue;
+        const [model, modelSelection] = decoded.value;
+        models.set(`${row.thread_id}:${row.subagent_id}`, {
+          model,
+          ...(modelSelection === null ? {} : { modelSelection }),
+        });
+      }
       return models;
     });
 
