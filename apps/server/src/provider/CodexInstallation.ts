@@ -695,11 +695,21 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
       // An installing server switches the pointer before dropping its lease, so check in this order.
       if (yield* isLeased(directory)) continue;
       if ((yield* readRecord(activePath, ActiveRelease)).version === entry) continue;
-      // Renamed first so an interrupted delete leaves a staging directory startup cleans up.
+      // Moved aside first: a lease written since the check moved with it, and an interrupted
+      // delete leaves a staging directory that startup cleans up.
       const doomed = path.join(managedDirectory, `.install-pruned-${yield* random.uuidV4()}`);
       yield* fs
         .rename(directory, doomed)
-        .pipe(Effect.andThen(fs.remove(doomed, { recursive: true, force: true })), Effect.ignore);
+        .pipe(
+          Effect.andThen(
+            Effect.flatMap(isLeased(doomed), (leased) =>
+              leased
+                ? fs.rename(doomed, directory)
+                : fs.remove(doomed, { recursive: true, force: true }),
+            ),
+          ),
+          Effect.ignore,
+        );
     }
   }).pipe(
     gate.withPermitsIfAvailable(1),
@@ -779,6 +789,7 @@ export const makeCodexInstallation = Effect.fn("makeCodexInstallation")(function
         directory: managedDirectory,
         prefix: ".install-",
       });
+      yield* fs.writeFileString(path.join(staging, installLeaseName), "", { mode: 0o600 });
       const archivePath = path.join(staging, "download.tar.gz");
       const runtime = path.join(staging, "runtime");
       yield* fs.makeDirectory(runtime);

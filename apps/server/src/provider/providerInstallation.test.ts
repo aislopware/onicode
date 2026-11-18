@@ -404,7 +404,7 @@ describe("provider installation routing", () => {
             },
             [ProviderInstanceId.make("antigravity-home")]: {
               driver,
-              config: { binaryPath: `~/${binary}` },
+              config: { binaryPath: "~/agy-home" },
             },
           },
         },
@@ -413,7 +413,7 @@ describe("provider installation routing", () => {
         .remove({ instanceId })
         .pipe(Effect.provideService(HostProcess.HomeDirectory, directory));
       assert.include(harness.protectedPaths(), executable);
-      assert.notInclude(harness.protectedPaths(), `~/${binary}`);
+      assert.include(harness.protectedPaths(), path.join(directory, "agy-home"));
       assert.deepEqual(harness.calls, ["remove", "refresh"]);
     }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
   );

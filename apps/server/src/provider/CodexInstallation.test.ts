@@ -46,6 +46,8 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
     afterRuntimeRename?: Effect.Effect<void>;
     /** Served instead of active.json's content, one per read, while any remain. */
     staleActiveReads?: Array<string>;
+    /** Runs before a release is moved aside for deletion. */
+    beforePruneRename?: Effect.Effect<void>;
     /** Runs before each session lease file is written. */
     beforeLeaseWrite?: Effect.Effect<void>;
     /** Removals of matching paths delete the install record, then fail, like a crash mid-delete. */
@@ -78,28 +80,30 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
     // Suspended so each retry of the same effect is a fresh attempt, like the real rename.
     rename: (from, to) =>
       Effect.suspend(() =>
-        /[/\\]runtime$/u.test(from) && runtimeRenameFailures-- > 0
-          ? Queue.offer(failedRenames, undefined).pipe(
-              Effect.andThen(
-                Effect.fail(
-                  PlatformError.systemError({
-                    _tag: "PermissionDenied",
-                    module: "FileSystem",
-                    method: "rename",
-                    pathOrDescriptor: from,
-                  }),
-                ),
-              ),
-            )
-          : fs
-              .rename(from, to)
-              .pipe(
+        /[/\\]\.install-pruned-[^/\\]+$/u.test(to)
+          ? (input.beforePruneRename ?? Effect.void).pipe(Effect.andThen(fs.rename(from, to)))
+          : /[/\\]runtime$/u.test(from) && runtimeRenameFailures-- > 0
+            ? Queue.offer(failedRenames, undefined).pipe(
                 Effect.andThen(
-                  /[/\\]runtime$/u.test(from)
-                    ? (input.afterRuntimeRename ?? Effect.void)
-                    : Effect.void,
+                  Effect.fail(
+                    PlatformError.systemError({
+                      _tag: "PermissionDenied",
+                      module: "FileSystem",
+                      method: "rename",
+                      pathOrDescriptor: from,
+                    }),
+                  ),
                 ),
-              ),
+              )
+            : fs
+                .rename(from, to)
+                .pipe(
+                  Effect.andThen(
+                    /[/\\]runtime$/u.test(from)
+                      ? (input.afterRuntimeRename ?? Effect.void)
+                      : Effect.void,
+                  ),
+                ),
       ),
     writeFileString: (file, data, options) =>
       (/[/\\]\.lease-[^/\\]*$/u.test(file) && !file.endsWith("-install")
@@ -833,6 +837,52 @@ it.effect("leaves no record-less release behind when a prune is interrupted", ()
     const previous = yield* h.installation.resolve();
     yield* updateToUpstream(h.installation);
     expect(yield* h.fs.exists(previous.managedVersionDirectory!)).toBe(false);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("keeps a release another server leases while this one is pruning it", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness({ responses: upstreamResponses(yield* upstreamChecksum) });
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    const firstScope = yield* Scope.make();
+    yield* h.installation.acquire().pipe(Scope.provide(firstScope));
+    yield* updateToUpstream(h.installation);
+    const staleActiveReads: Array<string> = [];
+    const other = yield* makeHarness({ baseDir: h.baseDir, staleActiveReads });
+    yield* Scope.close(firstScope, Exit.void);
+    let leased: CodexInstallation.CodexExecutable | undefined;
+    const sessionScope = yield* Effect.scope;
+    yield* makeHarness({
+      baseDir: h.baseDir,
+      beforePruneRename: Effect.suspend(() => {
+        staleActiveReads.push(JSON.stringify({ version: asset.version }));
+        return other.installation.acquire().pipe(
+          Scope.provide(sessionScope),
+          Effect.tap((executable) => Effect.sync(() => (leased = executable))),
+          Effect.orDie,
+          Effect.asVoid,
+        );
+      }),
+    });
+    expect(leased?.version).toBe(asset.version);
+    expect(yield* h.fs.exists(leased!.executablePath)).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("refuses to remove the runtime while another server is installing", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness();
+    const verifying = yield* Deferred.make<void>();
+    const installing = yield* makeHarness({
+      baseDir: h.baseDir,
+      options: {
+        validate: () => Deferred.succeed(verifying, undefined).pipe(Effect.andThen(Effect.never)),
+      },
+    });
+    yield* installing.installation.start;
+    yield* Deferred.await(verifying);
+    expect((yield* Effect.flip(h.installation.remove())).detail).toContain("Stop Codex sessions");
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
