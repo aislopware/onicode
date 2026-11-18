@@ -400,13 +400,28 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
     ),
   );
 
-  it.effect("reports the exit code when a stream-json run fails without output", () =>
+  it.effect.each([
+    ["the exit code without output", [], "Claude CLI command failed with code 1."],
+    [
+      "an untyped error line",
+      [JSON.stringify({ is_error: true, result: "quota exceeded" })],
+      "Claude CLI command failed: quota exceeded",
+    ],
+    [
+      "an earlier error result over a blank one",
+      [
+        JSON.stringify({ type: "result", is_error: true, errors: ["quota exceeded"] }),
+        JSON.stringify({ type: "result", is_error: true, result: " " }),
+      ],
+      "Claude CLI command failed: quota exceeded",
+    ],
+  ] as const)("reports %s when a stream-json run fails", ([, lines, expected]) =>
     withFakeClaudeEnv(
-      { output: "", exitCode: 1, argsMustContain: "stream-json" },
+      { output: lines.join("\n"), exitCode: 1, argsMustContain: "stream-json" },
       (textGeneration) =>
         Effect.gen(function* () {
           const error = yield* Effect.flip(generateBranchNameWithImage(textGeneration));
-          expect(error.detail).toBe("Claude CLI command failed with code 1.");
+          expect(error.detail).toBe(expected);
         }),
     ),
   );

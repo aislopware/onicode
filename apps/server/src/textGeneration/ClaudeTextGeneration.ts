@@ -86,7 +86,9 @@ const ClaudeErrorResult = Schema.Struct({
 const isClaudeErrorResult = Schema.is(ClaudeErrorResult);
 const decodeJsonOption = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
 const decodeClaudeResultLine = Schema.decodeUnknownOption(
-  Schema.fromJsonString(Schema.Struct({ type: Schema.Literal("result") })),
+  Schema.fromJsonString(
+    Schema.Union([Schema.Struct({ type: Schema.Literal("result") }), ClaudeErrorResult]),
+  ),
 );
 
 // Claude reports JSON errors on stdout; stderr may contain only wrapper notices.
@@ -364,12 +366,13 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         { concurrency: "unbounded" },
       );
 
-      // stream-json prints one message per line; system messages can follow the result.
+      // stream-json prints one message per line; keep the results and errors, as
+      // `--output-format json --verbose` would list them, without the transcript around them.
+      const resultLines = streamJson
+        ? stdout.split("\n").filter((line) => Option.isSome(decodeClaudeResultLine(line)))
+        : [];
       return {
-        stdout: streamJson
-          ? (stdout.split("\n").findLast((line) => Option.isSome(decodeClaudeResultLine(line))) ??
-            "")
-          : stdout,
+        stdout: streamJson ? (resultLines.length > 0 ? `[${resultLines.join(",")}]` : "") : stdout,
         stderr,
         exitCode,
       };
