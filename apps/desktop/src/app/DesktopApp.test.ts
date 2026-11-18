@@ -323,7 +323,7 @@ it.effect.each([false, true])(
 );
 
 it.effect(
-  "points a stale onicode launcher at the updated AppImage and accepts onicode <dir> with Local environment off",
+  "points a stale onicode launcher at the updated AppImage and accepts onicode app <dir> with Local environment off",
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -375,7 +375,7 @@ it.effect(
       );
       assert.isTrue(
         yield* Deferred.isDone(activationStarted),
-        "startup left the onicode <dir> control socket closed",
+        "startup left the onicode app <dir> control socket closed",
       );
     }).pipe(Effect.provide(Layer.mergeAll(DesktopShutdown.layer, NodeServices.layer))),
 );
