@@ -18,6 +18,14 @@ const INITIAL_STATE: CommandPaletteUiState = {
 export const useCommandPaletteStore = create<CommandPaletteUiState>(() => INITIAL_STATE);
 
 let returnFocus: { element: HTMLElement | null; href: string; focusRequest: number } | null = null;
+// A command closes the palette before the route it opens mounts, and focus recovery may move
+// focus meanwhile, so the opener stays the palette's to hand over until the next key or press.
+let handingOver = false;
+const endHandover = () => {
+  handingOver = false;
+  document.removeEventListener("keydown", endHandover, true);
+  document.removeEventListener("pointerdown", endHandover, true);
+};
 
 export function dispatchCommandPalette(action: CommandPaletteUiAction): void {
   const state = useCommandPaletteStore.getState();
@@ -29,6 +37,11 @@ export function dispatchCommandPalette(action: CommandPaletteUiAction): void {
       href: window.location.href,
       focusRequest: getWorkspaceFocusRequestVersion(),
     };
+  }
+  if (state.open && !next.open) {
+    handingOver = true;
+    document.addEventListener("keydown", endHandover, true);
+    document.addEventListener("pointerdown", endHandover, true);
   }
   useCommandPaletteStore.setState(next, true);
 }
@@ -48,10 +61,10 @@ export function getCommandPaletteReturnFocus(): HTMLElement | boolean {
   return element?.isConnected && !element.matches(":disabled") ? element : true;
 }
 
-/** The element the palette opened from, while focus is still inside the palette. */
+/** The element the palette opened from, while the palette or the command it ran owns focus. */
 export function getCommandPaletteOpener(): HTMLElement | null {
-  const active = document.activeElement;
-  if (!returnFocus || !active?.closest("[data-command-palette]")) return null;
+  if (!returnFocus) return null;
+  if (!handingOver && !document.activeElement?.closest("[data-command-palette]")) return null;
   return returnFocus.element;
 }
 
