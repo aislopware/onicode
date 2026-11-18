@@ -96,6 +96,14 @@ const devWindow: BrowserProvider = {
       Effect.tap(({ inspectPort }) =>
         Effect.promise(() => evaluateInMain(inspectPort, RESET_WINDOW)),
       ),
+      // The desktop shell keeps client settings, such as the app language, in a file that
+      // clearing the window's storage misses. Removed once the page is unloaded.
+      Effect.tap(() =>
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          yield* fs.remove(`${ONICODE_HOME}/userdata/client-settings.json`, { force: true });
+        }),
+      ),
       Effect.map(({ cdpPort }) => ({
         id: "dev-window",
         cdpEndpoint: `http://${LOOPBACK}:${cdpPort}`,
