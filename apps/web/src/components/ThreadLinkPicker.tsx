@@ -41,7 +41,7 @@ export function ThreadLinkPicker({
       (thread) =>
         thread.environmentId === environmentId &&
         thread.archivedAt === null &&
-        `${thread.title} ${projectNames.get(thread.projectId) ?? ""}`
+        `${threadTitleText(thread.title, m)} ${projectNames.get(thread.projectId) ?? ""}`
           .toLocaleLowerCase()
           .includes(search),
     )
