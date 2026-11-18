@@ -2,46 +2,51 @@ import { EnvironmentId, IssueTrackerKind, ProjectId } from "@onicode/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
-const state = vi.hoisted(() => ({ summary: null as unknown, error: null as unknown }));
+const state = vi.hoisted(() => ({
+  summary: null as unknown,
+  error: null as unknown,
+  read: [] as unknown[],
+}));
 vi.mock(import("~/state/query"), async (original) => ({
   ...(await original()),
-  useEnvironmentQuery: ((atom: unknown) => ({
-    data: atom === null ? null : state.summary,
-    dataUpdatedAt: 0,
-    error: atom === null ? null : state.error,
-    failure: null,
-    isPending: false,
-    isSuccess: state.summary !== null,
-    refresh: () => undefined,
-  })) as never,
+  useEnvironmentQuery: ((atom: unknown) => (
+    state.read.push(atom),
+    {
+      data: atom === null ? null : state.summary,
+      dataUpdatedAt: 0,
+      error: atom === null ? null : state.error,
+      failure: null,
+      isPending: false,
+      isSuccess: state.summary !== null,
+      refresh: () => undefined,
+    }
+  )) as never,
 }));
+
+import { issueEnvironment } from "~/state/issues";
 
 import { render } from "../../../test/render";
 import { IssueLinkPreview } from "./IssueLinkPreview";
 
 const url = "https://github.com/owner/repo/issues/7";
+const target = {
+  environmentId: EnvironmentId.make("environment"),
+  input: {
+    projectId: ProjectId.make("project"),
+    tracker: IssueTrackerKind.make("github"),
+    scope: "owner/repo",
+    key: "7",
+  },
+};
 
 function setup({ summary = null as unknown, error = null as unknown } = {}) {
   state.summary = summary;
   state.error = error;
+  state.read = [];
 }
 
 function renderPreview() {
-  return render(
-    <IssueLinkPreview
-      link={<a href={url}>#7</a>}
-      originalUrl={url}
-      target={{
-        environmentId: EnvironmentId.make("environment"),
-        input: {
-          projectId: ProjectId.make("project"),
-          tracker: IssueTrackerKind.make("github"),
-          scope: "owner/repo",
-          key: "7",
-        },
-      }}
-    />,
-  );
+  return render(<IssueLinkPreview link={<a href={url}>#7</a>} originalUrl={url} target={target} />);
 }
 
 it("shows the issue's title, state and author on hover", async () => {
@@ -62,6 +67,11 @@ it("shows the issue's title, state and author on hover", async () => {
   await expect.element(page.getByText("Hover cards for issues")).toBeVisible();
   await expect.element(page.getByText("Closed", { exact: true })).toBeVisible();
   await expect.element(page.getByText("octocat")).toBeVisible();
+  // The card reads the summary, never the detail with its whole conversation.
+  expect(state.read.filter((atom) => atom !== null)).toEqual(
+    expect.arrayContaining([issueEnvironment.summary(target)]),
+  );
+  expect(state.read).not.toContain(issueEnvironment.detail(target));
 });
 
 it("falls back to the link's URL when the issue cannot be read", async () => {

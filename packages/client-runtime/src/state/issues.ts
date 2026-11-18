@@ -183,9 +183,8 @@ export function createIssueEnvironmentAtoms<R, E>(
     Effect.sync(() => {
       const target = { environmentId, input: detailRef(input) };
       registry.refresh(detail(target));
-      // Only a card already read: refreshing creates the node and reads it.
-      const card = summary(target);
-      if (registry.getNodes().has(card)) registry.refresh(card);
+      // A closed card's value is only marked stale; nothing is read until the next hover.
+      registry.refresh(summary(target));
     });
   return {
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
