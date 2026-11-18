@@ -49,22 +49,6 @@ export function useEnvironmentShellHasSnapshot(environmentId: EnvironmentId | nu
   );
 }
 
-const NO_SHELL_CAUGHT_UP_ATOM = Atom.make(false).pipe(
-  Atom.withLabel("web-environment-shell-caught-up:none"),
-);
-const shellCaughtUpAtom = Atom.family((environmentId: EnvironmentId) =>
-  Atom.make((get) => get(environmentShell.stateValueAtom(environmentId)).generation !== 0).pipe(
-    Atom.withLabel(`web-environment-shell-caught-up:${environmentId}`),
-  ),
-);
-
-/** The shell has matched the server since the app started; a later resync keeps this true. */
-export function useEnvironmentShellCaughtUp(environmentId: EnvironmentId | null): boolean {
-  return useAtomValue(
-    environmentId === null ? NO_SHELL_CAUGHT_UP_ATOM : shellCaughtUpAtom(environmentId),
-  );
-}
-
 let previousLiveEnvironmentIds: ReadonlySet<EnvironmentId> = new Set();
 /** Environments whose threads reflect the server now, not a cache or a resync in flight. */
 export const liveShellEnvironmentIdsAtom = Atom.make((get) => {

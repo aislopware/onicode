@@ -22,7 +22,7 @@ import {
   localEnvironmentIdAtom,
 } from "../state/primaryEnvironment";
 import { projectEnvironment } from "../state/projects";
-import { useEnvironmentShellCaughtUp } from "../state/shell";
+import { useEnvironmentShellStatus } from "../state/shell";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { reportProjectFailure } from "./useProjectGroupUpdate";
@@ -46,7 +46,7 @@ export function useOpenLocalWorkspace() {
   const state = resolveLocalWorkspaceState({
     environmentId: localEnvironmentId,
     environment: localEnvironment,
-    shellCaughtUp: useEnvironmentShellCaughtUp(localEnvironmentId),
+    shellStatus: useEnvironmentShellStatus(localEnvironmentId),
     discoverySettled: useAtomValue(localEnvironmentDiscoverySettledAtom),
     localEnvironmentOff,
   });
@@ -54,12 +54,7 @@ export function useOpenLocalWorkspace() {
   const open = (request: DesktopAppActivationRequest) =>
     handleDesktopAppActivationRequest(request, {
       getTarget: () => {
-        if (
-          localEnvironment?.connection.phase !== "connected" ||
-          localEnvironment.serverConfig === null
-        ) {
-          return null;
-        }
+        if (state !== "ready" || localEnvironment?.serverConfig == null) return null;
         return {
           environmentId: localEnvironment.environmentId,
           platform: localEnvironment.serverConfig.environment.platform.os,
