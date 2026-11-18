@@ -34,7 +34,7 @@ function readTops(list: HTMLElement) {
  * to the neighbouring row. Call `update` after each commit that can move rows.
  * The list must be positioned so every direct child's offsetTop shares its origin.
  */
-export function createSidebarShiftGuard(list: HTMLElement) {
+export function createSidebarShiftGuard(list: HTMLElement, clock = () => performance.now()) {
   const view = list.ownerDocument.defaultView;
   let tops = readTops(list);
   const movedAt = new WeakMap<Element, number>();
@@ -58,7 +58,7 @@ export function createSidebarShiftGuard(list: HTMLElement) {
     // A new press from the same pointer means its earlier release was missed.
     heldDrops.delete(event.pointerId);
     if (releasedDrop === event.pointerId) releasedDrop = null;
-    const now = performance.now();
+    const now = clock();
     const row = rowOf(event.target);
     const moved = row === null ? undefined : movedAt.get(row);
     if (moved !== undefined && now - moved < MOVED_ROW_PRESS_DELAY_MS) {
@@ -78,14 +78,14 @@ export function createSidebarShiftGuard(list: HTMLElement) {
       if (rowOf(event.target) !== null) swallow(event);
       return;
     }
-    lastInputAt = performance.now();
+    lastInputAt = clock();
   };
   const onPointerCancel = (event: PointerEvent) => {
     heldDrops.delete(event.pointerId);
   };
   const onKeyDown = (event: KeyboardEvent) => {
     pressDropped = false;
-    if (!editsText(event)) lastInputAt = performance.now();
+    if (!editsText(event)) lastInputAt = clock();
   };
   const onPressFollowUp = (event: MouseEvent) => {
     // Keyboard activation clicks carry no click count; only pointer presses are dropped.
@@ -109,7 +109,7 @@ export function createSidebarShiftGuard(list: HTMLElement) {
   return {
     update() {
       const next = readTops(list);
-      const now = performance.now();
+      const now = clock();
       // A list filling from empty slid nothing under the pointer.
       const ownMove = tops.size === 0 || now - lastInputAt < OWN_INPUT_WINDOW_MS;
       for (const [row, top] of next) {

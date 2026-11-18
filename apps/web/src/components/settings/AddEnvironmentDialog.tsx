@@ -448,7 +448,7 @@ export function AddEnvironmentDialog({
         aria-pressed={selected}
         className={cn(
           "group flex min-h-24 items-start gap-3 rounded-lg border p-4 text-left",
-          selected ? "border-primary/50 bg-primary/5" : "border-border/60 hover:bg-muted/40",
+          selected ? "border-primary/50 bg-primary/5" : "border-border hover:bg-accent/60",
         )}
         disabled={isAddingSavedBackend}
         onClick={() => {
@@ -463,7 +463,7 @@ export function AddEnvironmentDialog({
               "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md border",
               selected
                 ? "border-primary/30 bg-primary/10 text-primary"
-                : "border-border/70 bg-background text-muted-foreground group-hover:text-foreground",
+                : "border-border bg-background text-muted-foreground group-hover:text-foreground",
             )}
           >
             {input.icon}

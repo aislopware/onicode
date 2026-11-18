@@ -18,14 +18,13 @@ const EYE_STYLE = { transformBox: "fill-box", transformOrigin: "50% 60%" } as co
 
 /**
  * The mochi oni from the app icon: a blush face with dark eyes. On light it sits inside a rim in
- * the text colour; on dark, and over media (`onBackdrop`), the rim would only bloat a face that
- * already stands out, so it is dropped. `tiny` thickens rim and eyes for marks under 14px.
+ * the text colour; on dark the rim would only bloat a face that already stands out, so it is
+ * dropped. `tiny` thickens rim and eyes for marks under 14px.
  */
 export function OniWordmark({
   tiny = false,
-  onBackdrop = false,
   ...props
-}: SVGProps<SVGSVGElement> & { tiny?: boolean; onBackdrop?: boolean }) {
+}: SVGProps<SVGSVGElement> & { tiny?: boolean }) {
   const faceId = `oni-face-${useId().replace(/[^\w-]/g, "")}`;
   const weight = tiny ? ONI_MARK_WEIGHTS.tiny : ONI_MARK_WEIGHTS.regular;
   return (
@@ -43,17 +42,15 @@ export function OniWordmark({
         </linearGradient>
       </defs>
       <g data-oni-body="" style={BODY_STYLE}>
-        {onBackdrop ? null : (
-          <path
-            data-oni-outline=""
-            className="text-foreground dark:hidden"
-            d={ANGLED_OUTLINE}
-            fill="currentColor"
-            stroke="currentColor"
-            strokeWidth={weight.rim}
-            strokeLinejoin="round"
-          />
-        )}
+        <path
+          data-oni-outline=""
+          className="text-foreground dark:hidden"
+          d={ANGLED_OUTLINE}
+          fill="currentColor"
+          stroke="currentColor"
+          strokeWidth={weight.rim}
+          strokeLinejoin="round"
+        />
         <path data-oni-outline="" d={ANGLED_OUTLINE} fill={`url(#${faceId})`} stroke="none" />
         <g fill="none" stroke={INK} strokeWidth={weight.eye} strokeLinecap="round">
           {SIDES.map((side) => (

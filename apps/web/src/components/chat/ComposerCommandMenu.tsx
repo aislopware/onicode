@@ -36,6 +36,7 @@ import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import { PierreEntryIcon } from "./PierreEntryIcon";
 import { ProviderInstanceIcon } from "./ProviderInstanceIcon";
 import { ComposerBanner } from "./ComposerBanner";
+import { noteHoveredRow, revealHighlightedRow } from "~/lib/highlightedRow";
 import { resolvePullRequestState } from "../pullRequest/pullRequestPresentation";
 
 export type ComposerCommandItem =
@@ -115,6 +116,9 @@ export type ComposerCommandItem =
       description: string;
     };
 
+const itemRow = (list: HTMLElement, itemId: string) =>
+  list.querySelector(`[data-composer-item-id="${CSS.escape(itemId)}"]`);
+
 export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   listId: string;
   items: ComposerCommandItem[];
@@ -133,20 +137,19 @@ export const ComposerCommandMenu = memo(function ComposerCommandMenu(props: {
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- scrolls the highlighted menu item's DOM node into view
   useLayoutEffect(() => {
     if (!props.activeItemId || !listRef.current) return;
-    const el = listRef.current.querySelector<HTMLElement>(
-      `[data-composer-item-id="${CSS.escape(props.activeItemId)}"]`,
-    );
-    el?.scrollIntoView({ block: "nearest" });
+    revealHighlightedRow(itemRow(listRef.current, props.activeItemId));
   }, [props.activeItemId]);
 
   return (
     <Command
       autoHighlight={false}
       mode="none"
-      onItemHighlighted={(highlightedValue) => {
-        props.onHighlightedItemChange(
-          typeof highlightedValue === "string" ? highlightedValue : null,
-        );
+      onItemHighlighted={(highlightedValue, details) => {
+        const itemId = typeof highlightedValue === "string" ? highlightedValue : null;
+        if (details.reason === "pointer" && itemId !== null && listRef.current) {
+          noteHoveredRow(itemRow(listRef.current, itemId));
+        }
+        props.onHighlightedItemChange(itemId);
       }}
     >
       <ComposerBanner.Surface
@@ -247,7 +250,8 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
       value={props.item.id}
       data-composer-item-id={props.item.id}
       active={props.isActive}
-      onMouseMove={() => {
+      onMouseMove={(event) => {
+        noteHoveredRow(event.currentTarget);
         if (!props.isActive) props.onHighlight(props.item.id);
       }}
       onMouseDown={(event) => {

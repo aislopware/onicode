@@ -195,6 +195,42 @@ describe("thread workflows", () => {
     expect(state.promoteSkipsCompaction).toBe(true);
   });
 
+  it("marks a held steer as waiting only while its turn is compacting", () => {
+    const waiting = (
+      activeStatus: "running" | "waiting",
+      compaction: "running" | "completed" | "failed" | null,
+    ) =>
+      deriveThreadQueueWorkflowState({
+        thread: { id: "thread", activeProviderThreadId: null },
+        runs: [
+          { id: "earlier", status: "completed", ordinal: 1 },
+          { id: "active", status: activeStatus, ordinal: 2 },
+          { id: "steer", status: "queued", ordinal: 3, steerWhenReadyRunId: "active" },
+          // The turn this one waited for is over; the server keeps the field.
+          { id: "stale", status: "queued", ordinal: 4, steerWhenReadyRunId: "earlier" },
+          { id: "follow-up", status: "queued", ordinal: 5 },
+        ],
+        messages: [],
+        turnItems: [
+          { type: "compaction", runId: "earlier", status: "running" },
+          ...(compaction === null
+            ? []
+            : [{ type: "compaction", runId: "active", status: compaction }]),
+        ],
+        providerThreads: [],
+        providerTurns: [],
+        providerSessions: [],
+      } as never)
+        .queuedRuns.filter((queued) => queued.awaitsCompaction)
+        .map(({ run }) => run.id);
+
+    expect(waiting("running", "running")).toEqual(["steer"]);
+    expect(waiting("running", "completed")).toEqual([]);
+    expect(waiting("running", "failed")).toEqual([]);
+    expect(waiting("running", null)).toEqual([]);
+    expect(waiting("waiting", "running")).toEqual([]);
+  });
+
   it("keeps held messages visible and clears the hold when they leave the queue", () => {
     for (const status of ["queued", "cancelled", "starting"] as const) {
       const state = deriveThreadQueueWorkflowState({

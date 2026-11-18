@@ -237,6 +237,7 @@ export function PreviewView({
     );
   }, [serverToolbarShown]);
   const [serverControlledTabId, setServerControlledTabId] = useState<string | null>(null);
+  const [serverControlSlot, setServerControlSlot] = useState<HTMLElement | null>(null);
   const serverInputDisabled = isServerTab && serverControlledTabId !== runtimeTabId;
   const [serverFrameTabId, setServerFrameTabId] = useState<string | null>(null);
   // A desktop page that mounted before its tab went headless leaves its stale state here.
@@ -1000,6 +1001,7 @@ export function PreviewView({
         canGoForward={canGoForward && !serverInputDisabled}
         refreshDisabled={refreshDisabled || serverInputDisabled}
         inputDisabled={serverInputDisabled}
+        {...(isServerTab ? { controlSlotRef: setServerControlSlot } : {})}
         urlInputRef={urlInputRef}
         onBack={handleBack}
         onForward={handleForward}
@@ -1105,6 +1107,7 @@ export function PreviewView({
                     : null
                 }
                 visible={visible}
+                controlSlot={serverControlSlot}
                 onFirstFrame={() => setServerFrameTabId(runtimeTabId)}
                 onControl={(control) =>
                   setServerControlledTabId(control?.controller === "you" ? runtimeTabId : null)

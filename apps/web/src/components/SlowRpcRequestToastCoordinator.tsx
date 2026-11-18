@@ -23,7 +23,7 @@ function SlowRequestDetails({ requests }: { requests: ReadonlyArray<SlowRpcAckRe
     <ul className="space-y-2.5 text-xs text-muted-foreground">
       {requests.map((request) => (
         <li
-          className="min-w-0 border-border/50 border-b pb-2 last:border-b-0 last:pb-0"
+          className="min-w-0 border-border border-b pb-2 last:border-b-0 last:pb-0"
           key={request.requestId}
         >
           <div className="wrap-break-word font-medium text-foreground">{request.tag}</div>

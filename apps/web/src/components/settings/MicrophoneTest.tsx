@@ -261,7 +261,7 @@ export function MicrophoneTest({
       {panel ? (
         <div
           className={cn(
-            "mt-3 mb-2 flex min-h-10 items-center gap-3 rounded-lg border border-border/60 bg-muted/30 py-1 pe-1",
+            "mt-3 mb-2 flex min-h-10 items-center gap-3 rounded-lg border border-border bg-muted/30 py-1 pe-1",
             phase === "ready" && !error ? "ps-1" : "ps-3",
           )}
         >

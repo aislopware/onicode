@@ -23,6 +23,7 @@ import {
   CalendarClockIcon,
   ChevronDownIcon,
   Clock3Icon,
+  HourglassIcon,
   MessagesSquareIcon,
   PencilIcon,
   XIcon,
@@ -119,6 +120,8 @@ export function QueuedRunsControl({
   const workflow = projection ? deriveThreadQueueWorkflowState(projection, messages) : null;
   const queued = workflow?.queuedRuns ?? [];
   const activeRun = workflow?.activeRun ?? null;
+  // A row waiting on compaction is already headed into the turn; the steer key takes the next one.
+  const steerTarget = queued.find((queuedRun) => !queuedRun.awaitsCompaction);
   // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
   const canSendRun = (freshContext: boolean) =>
     workflow?.canSendNow === true ||
@@ -134,8 +137,9 @@ export function QueuedRunsControl({
     (message) => message.inputIntent === "queued_turn" && !acknowledgedMessageIds.has(message.id),
   );
   const items = [
-    ...queued.map(({ run, text, attachments, message }, serverIndex) => ({
+    ...queued.map(({ run, text, attachments, message, awaitsCompaction }, serverIndex) => ({
       key: run.id,
+      awaitsCompaction,
       message,
       runId: run.id,
       messageId: run.userMessageId,
@@ -155,6 +159,7 @@ export function QueuedRunsControl({
     })),
     ...optimisticQueued.map((message) => ({
       key: message.id,
+      awaitsCompaction: false,
       message: undefined,
       runId: null,
       messageId: null,
@@ -202,7 +207,7 @@ export function QueuedRunsControl({
 
   useImperativeHandle(ref, () => ({
     steerNext(repeat) {
-      const next = queued[0];
+      const next = steerTarget;
       if (!next || !canSendRun(next.run.freshContext === true)) return false;
       if (!repeat && busyRunId === null) void sendQueuedMessage(next.run.id);
       return true;
@@ -290,7 +295,18 @@ export function QueuedRunsControl({
                 onOpenThread={props.onOpenThread}
                 onImageExpand={props.onImageExpand}
               >
-                {canSendRun(item.freshContext) && !isEditing ? (
+                {item.awaitsCompaction && !isEditing ? (
+                  // Already on its way into the turn, so it names the wait instead of offering Send now.
+                  <Tooltip>
+                    <TooltipTrigger render={<span className="flex items-center gap-1 px-1" />}>
+                      <HourglassIcon aria-hidden className="size-3" />
+                      <T>After compaction</T>
+                    </TooltipTrigger>
+                    <TooltipPopup>
+                      <T>Sends into the current turn when compaction finishes</T>
+                    </TooltipPopup>
+                  </Tooltip>
+                ) : canSendRun(item.freshContext) && !isEditing ? (
                   <>
                     <Tooltip>
                       <TooltipTrigger render={<span className="flex shrink-0" />}>
@@ -309,7 +325,7 @@ export function QueuedRunsControl({
                         </Button>
                       </TooltipTrigger>
                       <TooltipPopup>
-                        {item.serverIndex === 0 && props.steerShortcutLabel
+                        {item.runId === steerTarget?.run.id && props.steerShortcutLabel
                           ? workflow?.canSendNow
                             ? gt("Start a turn with this message ({shortcut})", {
                                 shortcut: props.steerShortcutLabel,
@@ -497,7 +513,7 @@ function QueuedMessage(props: {
   return (
     <>
       {attribution === "onicode" ? (
-        <p className="me-1 text-2xs text-muted-foreground/70">
+        <p className="me-1 text-2xs text-muted-foreground">
           <T>Sent by Onicode</T>
         </p>
       ) : null}
@@ -537,7 +553,7 @@ function QueuedMessage(props: {
                     type="button"
                     aria-label={gt("Preview {name}", { name: thumbnail.name })}
                     disabled={!thumbnail.previewUrl}
-                    className="size-8 overflow-hidden rounded-md border border-border/70 bg-background enabled:cursor-zoom-in"
+                    className="size-8 overflow-hidden rounded-md border border-border bg-background enabled:cursor-zoom-in"
                     onPointerDown={(event) => event.preventDefault()}
                     onClick={() => {
                       const preview = buildExpandedImagePreview(props.thumbnails, thumbnail.id);

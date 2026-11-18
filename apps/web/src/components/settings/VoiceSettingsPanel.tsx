@@ -457,7 +457,7 @@ function DictionaryEditor(props: {
           {words.map(({ term, aliases }) => (
             <li
               key={term}
-              className="flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 py-0.5 pl-2 pr-0.5 text-xs"
+              className="flex items-center gap-1 rounded-md border border-border bg-muted/30 py-0.5 pl-2 pr-0.5 text-xs"
             >
               <span className="font-medium">{term}</span>
               {aliases.length > 0 ? (
@@ -1096,7 +1096,7 @@ function SpeechModelBrowser(props: {
         </Menu>
       </div>
       <div
-        className="mt-2 mb-2 max-h-96 divide-y divide-border/60 overflow-y-auto rounded-lg border border-border/60"
+        className="mt-2 mb-2 max-h-96 divide-y divide-border overflow-y-auto rounded-lg border border-border"
         role="region"
         aria-label={gt("Transcription models")}
         tabIndex={0}
@@ -1254,7 +1254,7 @@ function TranscriptionTest(props: {
         }
       >
         {showTranscript ? (
-          <div className="mt-3 flex items-start gap-3 rounded-lg border border-border/60 bg-muted/30 py-1 ps-3 pe-1">
+          <div className="mt-3 flex items-start gap-3 rounded-lg border border-border bg-muted/30 py-1 ps-3 pe-1">
             <div className="min-w-0 flex-1 py-1.5">
               {speech.preview || transcript !== null ? null : (
                 <p className="text-xs text-muted-foreground">

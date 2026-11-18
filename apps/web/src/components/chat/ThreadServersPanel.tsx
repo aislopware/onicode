@@ -141,7 +141,7 @@ function ThreadServersList(props: ThreadServersPanelProps) {
                   <GlobeIcon aria-hidden className={THREAD_DETAILS_PANEL_ICON_CLASS} />
                   {/* The end padding keeps text clear of the stop button. */}
                   <span className={cn("flex min-w-0 flex-1 flex-col gap-0.5", stoppable && "pe-6")}>
-                    <span className="truncate text-sm font-medium leading-4 text-foreground/85">
+                    <span className="truncate text-sm font-medium leading-4 text-foreground">
                       localhost:{server.port}
                     </span>
                     <span className="truncate text-2xs font-normal leading-4 text-muted-foreground">

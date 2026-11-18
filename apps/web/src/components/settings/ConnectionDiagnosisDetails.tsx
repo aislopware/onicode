@@ -107,7 +107,7 @@ export function ConnectionDiagnosisSummary({
           type="button"
           aria-expanded={expanded}
           onClick={onToggle}
-          className="inline-flex items-center gap-0.5 rounded-sm outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
+          className="inline-flex items-center gap-0.5 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <T>Details</T>
           <ChevronRightIcon
@@ -151,7 +151,7 @@ export function ConnectionDiagnosisPanel({
       ),
   });
   return (
-    <div className="mt-2 grid gap-3 border-t border-border/50 pt-2 text-xs">
+    <div className="mt-2 grid gap-3 border-t border-border pt-2 text-xs">
       <ol className="grid gap-0.5">
         {diagnosis.hops.map((hop) => (
           <li

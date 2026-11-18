@@ -9,7 +9,7 @@
     <script>
       (() => {
         const LIGHT_BACKGROUND = "#ffffff";
-        const DARK_BACKGROUND = "#000000";
+        const DARK_BACKGROUND = "#121213";
         const CUSTOM_THEMES_STORAGE_KEY = "onicode:themes:v1";
         const ENVIRONMENT_THEMES_STORAGE_KEY = "onicode:environment-themes:v1";
         const THEME_FOLLOW_SYSTEM_STORAGE_KEY = "onicode:theme-follow-system";
@@ -22,7 +22,7 @@
             accent: "#4f46e5",
           },
           dark: {
-            background: "#000000",
+            background: "#121213",
             foreground: "#f5f5f5",
             accent: "#818cf8",
           },
@@ -39,10 +39,10 @@
             chrome: "#fcfcfc",
           },
           dark: {
-            background: "#000000",
+            background: "#121213",
             foreground: "#f5f5f5",
             accent: "#346bf1",
-            chrome: "#0a0a0a",
+            chrome: "#121213",
           },
         };
         const RESERVED_THEME_IDS = ["system", "light", "dark"];
@@ -273,7 +273,7 @@
       }
 
       html.dark body {
-        background: #000000;
+        background: #121213;
         color: #f5f5f5;
       }
 
@@ -333,7 +333,7 @@
 
       html.dark #boot-error {
         --boot-error-fg: #f5f5f5;
-        --boot-error-bg: #000000;
+        --boot-error-bg: #121213;
       }
 
       html[data-theme-selected="true"] #boot-error {

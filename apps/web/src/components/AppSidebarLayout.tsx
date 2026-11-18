@@ -43,7 +43,7 @@ import ThreadSidebar from "./Sidebar";
 import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";
 import { isAppModalPage } from "./sidebar/mainAppLocation";
 import type { SidebarRouteReveal } from "./sidebar/routeReveal";
-import { resolveSidebarStageBackdropVariant } from "./SidebarStageBackdrop";
+import { showsSidebarStageBackdrop } from "./SidebarStageBackdrop";
 import {
   clampThreadSidebarWidth,
   resolveInitialThreadSidebarWidth,
@@ -321,7 +321,8 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
   const mobileSidebarSheetMounted = useMobileSidebarSheetMounted();
   const isSidebarVisible = useSidebarVisibility();
   const environmentIdentificationMode = useEnvironmentIdentificationMode();
-  const stageBackdropVariant = resolveSidebarStageBackdropVariant(environmentIdentificationMode);
+  const onStageBackdrop =
+    isSidebarVisible && showsSidebarStageBackdrop(environmentIdentificationMode);
   const shortcutLabel = shortcutLabelForCommand(keybindings, "sidebar.toggle", {
     context: { usagePageOpen },
   });
@@ -393,11 +394,8 @@ function SidebarControl({ showSidebar }: { readonly showSidebar: boolean }) {
           <TooltipTrigger
             render={
               <SidebarTrigger
-                variant={isSidebarVisible && stageBackdropVariant ? "media-navigation" : "ghost"}
-                className={cn(
-                  "pointer-events-auto",
-                  isSidebarVisible && stageBackdropVariant && "relative top-auto translate-y-0",
-                )}
+                variant={onStageBackdrop ? "scenery" : "ghost"}
+                className="pointer-events-auto"
                 aria-label={gt("Toggle main sidebar")}
               />
             }

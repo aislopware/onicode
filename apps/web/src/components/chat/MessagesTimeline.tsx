@@ -1532,11 +1532,11 @@ function TimelineHistoryControl(props: MessagesTimelineHistoryControls) {
             onClick={() => props.onLoadEarlier()}
             className="flex w-full cursor-pointer items-center gap-3 py-1.5 text-muted-foreground text-xs hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default"
           >
-            <span aria-hidden="true" className="h-px flex-1 bg-border/70" />
+            <span aria-hidden="true" className="h-px flex-1 bg-border" />
             <span className="shrink-0">
               {props.loading ? gt("Loading earlier turns…") : gt("Load earlier turns")}
             </span>
-            <span aria-hidden="true" className="h-px flex-1 bg-border/70" />
+            <span aria-hidden="true" className="h-px flex-1 bg-border" />
           </button>
         ) : null}
         {props.error !== null ? (
@@ -1778,7 +1778,7 @@ function ContextCompactionTimelineRow({
         row.failed ? "text-destructive" : "text-muted-foreground",
       )}
     >
-      <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border/70")} />
+      <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border")} />
       <span
         ref={row.active ? observeVisibleAnimation : undefined}
         className="relative min-w-0 overflow-hidden"
@@ -1786,7 +1786,7 @@ function ContextCompactionTimelineRow({
         {content}
         {row.active ? <ActivityShimmerOverlay>{content}</ActivityShimmerOverlay> : null}
       </span>
-      <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border/70")} />
+      <span className={cn("h-px flex-1", row.failed ? "bg-destructive/30" : "bg-border")} />
     </div>
   );
 }
@@ -1855,7 +1855,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
   );
 
   return (
-    <div className="group/timeline-row border-b border-border/60 pb-2 pe-0.5 pt-1">
+    <div className="group/timeline-row border-b border-border pb-2 pe-0.5 pt-1">
       <div className="relative flex items-center gap-1">
         <button
           type="button"
@@ -1863,7 +1863,7 @@ function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-
           data-scroll-anchor-ignore
           onClick={toggle}
           aria-busy={loading}
-          className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+          className="flex cursor-pointer select-none items-center gap-1 rounded-md px-1 text-sm leading-relaxed text-muted-foreground tabular-nums transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
         >
           <span>
             {row.label}
@@ -1901,7 +1901,7 @@ function AttemptFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "at
         data-superseded-attempt-id={row.attemptId}
         onClick={toggle}
         aria-busy={loading}
-        className="flex w-full cursor-pointer select-none items-center gap-2 rounded-md border border-border/60 bg-muted/20 px-2.5 py-2 text-left transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70"
+        className="flex w-full cursor-pointer select-none items-center gap-2 rounded-md border border-border bg-muted/20 px-2.5 py-2 text-left transition-colors hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {row.expanded ? (
           <ChevronDownIcon className="size-3.5 shrink-0 text-muted-foreground" />

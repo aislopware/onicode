@@ -31,6 +31,11 @@ export interface QueuedThreadRun {
   readonly context?: Message["context"];
   /** Carries the attribution a sent message shows: automation or agent sender. */
   readonly message?: Message;
+  /**
+   * Held as a steer for the active turn while that turn compacts. A compaction that completes
+   * sends it into the turn; one that fails or is stopped leaves it an ordinary queued message.
+   */
+  readonly awaitsCompaction: boolean;
 }
 
 export interface ThreadQueueWorkflowState {
@@ -165,6 +170,16 @@ export function deriveThreadQueueWorkflowState(
     const message = projection.messages.find((candidate) => candidate.id === run.userMessageId);
     return {
       run,
+      // The server keeps the field after the turn or its compaction ends, so the running
+      // compaction decides, not the field alone.
+      awaitsCompaction:
+        run.steerWhenReadyRunId !== undefined &&
+        activeRun?.status === "running" &&
+        run.steerWhenReadyRunId === activeRun.id &&
+        projection.turnItems.some(
+          (item) =>
+            item.type === "compaction" && item.runId === activeRun.id && item.status === "running",
+        ),
       text: message?.text ?? resolve(msg("Queued message")),
       attachments: message?.attachments ?? [],
       messageId: run.userMessageId,

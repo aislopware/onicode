@@ -200,7 +200,7 @@ export function CustomModelEditor({
   const renderDescriptor = (descriptor: EditorDescriptor, index: number) => (
     <div
       key={descriptor.key}
-      className="flex flex-col gap-2 rounded-md border border-border/60 bg-background/40 p-2.5"
+      className="flex flex-col gap-2 rounded-md border border-border bg-background/40 p-2.5"
     >
       <div className="flex flex-wrap items-center gap-2">
         <span className="w-14 shrink-0 text-2xs text-muted-foreground">
@@ -357,7 +357,7 @@ export function CustomModelEditor({
           ) : null}
         </div>
         {draft.descriptors.length === 0 ? (
-          <p className="text-xs text-muted-foreground/70">
+          <p className="text-xs text-muted-foreground">
             <T>No custom options. The composer uses the provider's default options.</T>
           </p>
         ) : null}

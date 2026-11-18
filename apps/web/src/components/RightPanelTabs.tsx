@@ -990,7 +990,7 @@ function RightPanelTab(
             render={
               <button
                 type="button"
-                className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-muted"
+                className="cursor-pointer flex size-4 shrink-0 items-center justify-center rounded-sm hover:bg-accent"
                 aria-label={
                   audio === "muted"
                     ? gt("Unmute {title}", { title })

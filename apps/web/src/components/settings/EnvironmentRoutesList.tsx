@@ -101,7 +101,7 @@ export function EnvironmentRoutesList({
   };
 
   return (
-    <div className="mt-2 border-t border-border/50 py-2">
+    <div className="mt-2 border-t border-border py-2">
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -209,7 +209,7 @@ function SortableRouteRow({
         {...attributes}
         {...listeners}
         aria-label={gt("Reorder {route}, position {position}", { route: label, position })}
-        className="flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded text-muted-foreground/70 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:cursor-grabbing"
+        className="flex size-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring active:cursor-grabbing"
       >
         <GripVerticalIcon className="size-3.5" />
       </button>

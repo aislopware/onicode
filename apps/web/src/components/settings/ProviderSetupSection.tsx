@@ -53,7 +53,7 @@ export function ProviderSetupSection(props: ProviderSetupSectionProps) {
   return (
     <section
       aria-label={gt("Antigravity setup")}
-      className="@container/setup divide-y divide-border/50 text-xs [&_[data-slot=settings-row]]:rounded-none"
+      className="@container/setup divide-y divide-border text-xs [&_[data-slot=settings-row]]:rounded-none"
     >
       <SettingsRow
         className="@max-lg/setup:[&>div:first-child]:flex @max-lg/setup:[&>div:first-child]:items-stretch @max-lg/setup:[&>div:first-child]:gap-3"
@@ -213,7 +213,7 @@ function ProviderSetupActions({
   }
 
   return (
-    <div className="divide-y divide-border/50">
+    <div className="divide-y divide-border">
       {/* Keep the live region first so sibling divider rules do not add a divider after the last visible
        * row. */}
       <p className="sr-only" role="status">

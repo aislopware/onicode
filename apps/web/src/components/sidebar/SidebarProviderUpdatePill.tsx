@@ -13,8 +13,8 @@ import {
 } from "../ProviderUpdateLaunchNotification.logic";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-// Matches the pill's `duration-180` class.
-const PROVIDER_UPDATE_PILL_EXIT_MS = 180;
+// Matches the pill's `duration-200` class.
+const PROVIDER_UPDATE_PILL_EXIT_MS = 200;
 
 const PROVIDER_UPDATE_PILL_STYLES = {
   loading:
@@ -147,7 +147,7 @@ export function SidebarProviderUpdatePill() {
 
   return (
     <div
-      className={`group/provider-update relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-lg text-2xs leading-4 font-medium transform-gpu transition-all duration-180 ease-drawer will-change-transform ${
+      className={`group/provider-update relative flex min-h-7 w-full shrink-0 items-center overflow-hidden rounded-lg text-2xs leading-4 font-medium transform-gpu transition-all duration-200 ease-drawer will-change-transform ${
         PROVIDER_UPDATE_PILL_STYLES[displayedView.tone]
       } ${
         exitingKey === displayedView.key

@@ -25,10 +25,12 @@ export const chooseReplay = async (
     new RegExp(`^(${Object.values(RECORDINGS).join("|")})$`),
   );
   await picker.tap();
+  // The picker opens on favorites and recent picks; searching reaches every recording.
+  const search = screen.getByRole("combobox", "Search models");
+  await search.fill(name);
   await screen.getByRole("option", new RegExp(`^${name} `)).tap();
   await expect(picker).toHaveAccessibleName(name);
   // A click selects without closing, so the effort can be set next; Escape closes.
-  const search = screen.getByRole("combobox", "Search models...");
   await search.press("Escape");
   await expect(search).toBeHidden();
 

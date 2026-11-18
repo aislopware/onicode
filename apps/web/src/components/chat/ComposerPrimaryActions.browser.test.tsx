@@ -5,12 +5,7 @@ import { expect, it, vi } from "vite-plus/test";
 import { act, fakeTimers, render } from "../../../test/render";
 
 vi.mock("~/hooks/useSettings", () => ({
-  useEnvironmentIdentificationMode: () => "none",
   useClientSettings: () => false,
-}));
-vi.mock("../SidebarStageBackdrop", () => ({
-  StageBackdropButtonArt: () => null,
-  resolveSidebarStageBackdropVariant: () => null,
 }));
 
 import { CollapsedComposerStopAction, ComposerPrimaryActions } from "./ComposerPrimaryActions";

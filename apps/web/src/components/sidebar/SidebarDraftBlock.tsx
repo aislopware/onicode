@@ -138,7 +138,7 @@ const SidebarDraftRow = memo(function SidebarDraftRow(props: {
               </Tooltip>
             </span>
           </div>
-          <div className="mt-0.5 truncate text-sm font-medium text-foreground/90">{preview}</div>
+          <div className="mt-0.5 truncate text-sm font-medium text-foreground">{preview}</div>
         </div>
       </div>
     </li>
@@ -241,7 +241,7 @@ export const SidebarDraftBlock = memo(function SidebarDraftBlock(props: {
       <li
         aria-hidden
         data-testid="sidebar-draft-divider"
-        className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border/60"
+        className="mx-2.5 my-1.5 h-px list-none bg-sidebar-border"
       />
     </>
   );

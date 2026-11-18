@@ -472,7 +472,7 @@ function InstanceSessionManagement(
         {canList && (sessions.length > 0 || nextCursor !== null) ? (
           <>
             {sessions.length > 0 ? (
-              <div className="divide-y divide-border/60 border-y border-border/60">
+              <div className="divide-y divide-border border-y border-border">
                 {sessions.map((session) => (
                   <div
                     key={session.sessionId}
@@ -545,7 +545,7 @@ function InstanceSessionManagement(
       </SettingsRow>
 
       {canConfigureProviders ? (
-        <div className="grid gap-3 border-t border-border/60 px-3 py-3 sm:px-4">
+        <div className="grid gap-3 border-t border-border px-3 py-3 sm:px-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-medium text-foreground">
@@ -601,7 +601,7 @@ function InstanceSessionManagement(
           ) : null}
 
           {providers.length > 0 ? (
-            <div className="divide-y divide-border/60 border-y border-border/60">
+            <div className="divide-y divide-border border-y border-border">
               {providers.map((provider) => {
                 const draft = providerDrafts[provider.providerId] ?? {
                   apiType: provider.current?.apiType ?? provider.supported[0] ?? "",

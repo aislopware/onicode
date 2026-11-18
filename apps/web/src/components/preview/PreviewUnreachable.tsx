@@ -28,7 +28,7 @@ export function PreviewFileNotShown({
   return (
     <div className="scrollbar-gutter-both relative flex h-full min-h-0 w-full overflow-y-auto bg-background">
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-8 py-12 sm:py-16">
-        <ErrorIcon className="mb-6 size-12 text-muted-foreground/70" />
+        <ErrorIcon className="mb-6 size-12 text-muted-foreground" />
         <h1 className="mb-3 text-2xl font-semibold leading-tight text-foreground">
           <T>This file can&rsquo;t be shown here</T>
         </h1>
@@ -67,7 +67,7 @@ export function PreviewUnreachable({ url, code, description, onReload, move }: P
   return (
     <div className="scrollbar-gutter-both relative flex h-full min-h-0 w-full overflow-y-auto bg-background">
       <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-8 py-12 sm:py-16">
-        <ErrorIcon className="mb-6 size-12 text-muted-foreground/70" />
+        <ErrorIcon className="mb-6 size-12 text-muted-foreground" />
         <h1 className="mb-3 text-2xl font-semibold leading-tight text-foreground">
           <T>This site can&rsquo;t be reached</T>
         </h1>
@@ -104,7 +104,7 @@ export function PreviewUnreachable({ url, code, description, onReload, move }: P
           </div>
         ) : null}
 
-        <div className="mt-8 text-xs uppercase tracking-wide text-muted-foreground/70">
+        <div className="mt-8 text-xs uppercase tracking-wide text-muted-foreground">
           {errorLabel}
         </div>
 

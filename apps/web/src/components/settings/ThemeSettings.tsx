@@ -137,7 +137,7 @@ function ThemeLibraryCard({
         render={
           <div
             className={cn(
-              "cursor-pointer overflow-hidden rounded-xl border border-border/70 bg-card/60 transition-colors hover:bg-accent/10",
+              "cursor-pointer overflow-hidden rounded-xl border border-border bg-card/60 transition-colors hover:bg-accent/60",
               isActive && "bg-accent/30",
             )}
             data-theme-library-card={theme.id}
@@ -220,7 +220,7 @@ function ThemeLibraryCard({
                               />
                             ) : null}
                             {isActive ? (
-                              <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-border/70 bg-background text-foreground shadow-sm">
+                              <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-4 items-center justify-center rounded-full border border-border bg-background text-foreground shadow-sm">
                                 {mode === "light" ? (
                                   <SunIcon className="size-2.5" />
                                 ) : (
@@ -277,7 +277,7 @@ function ThemeLibraryCard({
                                       "absolute left-1/2 top-1 z-30 flex size-7 items-center justify-center rounded-full bg-background shadow-sm outline-none transition-[opacity,transform] duration-200 ease-out motion-reduce:transition-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
                                       optionIsActive
                                         ? "ring-2 ring-inset ring-ring"
-                                        : "ring-1 ring-border/70",
+                                        : "ring-1 ring-border",
                                     )}
                                     style={{
                                       opacity: isOpen ? 1 : 0,
@@ -737,7 +737,7 @@ export function ThemeLibrary({
               "flex cursor-pointer flex-col items-stretch gap-1.5 rounded-xl border p-2 outline-none transition-colors focus-visible:outline-2 focus-visible:outline-solid focus-visible:-outline-offset-7 focus-visible:outline-foreground/60",
               isActive
                 ? "border-transparent bg-accent/30 ring-2 ring-inset ring-ring"
-                : "border-border/70 bg-card/60 hover:bg-accent/10",
+                : "border-border bg-card/60 hover:bg-accent/60",
             )}
             key={mode}
             onClick={() => setMode(mode)}
@@ -966,7 +966,7 @@ export function ThemeLibrary({
                 const checkboxId = `remove-theme-${customTheme.id}`;
                 return (
                   <label
-                    className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border/70 bg-muted/25 p-3 has-checked:border-ring has-checked:bg-accent/20 hover:bg-muted/40"
+                    className="group relative flex min-h-28 cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-border bg-muted/25 p-3 has-checked:border-ring has-checked:bg-accent/20 hover:bg-accent/60"
                     htmlFor={checkboxId}
                     key={customTheme.id}
                   >

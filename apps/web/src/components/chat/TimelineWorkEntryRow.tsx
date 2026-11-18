@@ -741,7 +741,7 @@ function QuestionAnswerHistory({
                     <img
                       src={url}
                       alt={attachment.name}
-                      className="h-20 max-w-32 rounded object-contain"
+                      className="h-20 max-w-32 rounded-sm object-contain"
                     />
                   ) : (
                     attachment.name

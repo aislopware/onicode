@@ -16,7 +16,7 @@ import {
   hasQueuedTurnStart,
   QUEUED_TURN_START_GRACE_MS,
 } from "@onicode/client-runtime/state/thread-settled";
-import { formatDiffCount } from "@onicode/client-runtime/diff-count";
+import { formatCompactDiffCount } from "../chat/DiffStatLabel";
 import {
   resolveSettledThreadTimestamp,
   resolveThreadActivityTimestamp,
@@ -83,6 +83,7 @@ import { formatRelativeTime, parseTimestampDate } from "../../timestampFormat";
 import type { SidebarThreadSummary } from "../../types";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
 import { cn } from "~/lib/utils";
+import { noteHoveredRow, revealHighlightedRow } from "~/lib/highlightedRow";
 import { textDirection } from "~/textDirection";
 import { EnvironmentMachineIcon } from "../EnvironmentMachineIcon";
 import {
@@ -293,7 +294,7 @@ function SidebarThreadTooltip({
         title={thread.title}
         footer={
           supportsMultiplePullRequests && thread.pullRequests.length > 0 ? (
-            <div className="border-t border-border/60 pt-2 pl-0.5 text-xs text-muted-foreground">
+            <div className="border-t border-border pt-2 pl-0.5 text-xs text-muted-foreground">
               <ThreadPullRequestsMiniList pullRequests={thread.pullRequests} />
             </div>
           ) : null
@@ -302,7 +303,7 @@ function SidebarThreadTooltip({
         {projectDisplayName ? (
           <div className="flex min-w-0 items-center gap-2">
             {project ? <ProjectFavicon project={project} className="size-3 shrink-0" /> : null}
-            <div className="min-w-0 truncate text-foreground/75">{projectDisplayName}</div>
+            <div className="min-w-0 truncate text-foreground/80">{projectDisplayName}</div>
           </div>
         ) : null}
         {environmentLabel ? (
@@ -311,7 +312,7 @@ function SidebarThreadTooltip({
               kind={environmentMachine}
               className="size-3 shrink-0 stroke-muted-foreground"
             />
-            <div className="min-w-0 truncate text-foreground/75">{environmentLabel}</div>
+            <div className="min-w-0 truncate text-foreground/80">{environmentLabel}</div>
           </div>
         ) : null}
         {thread.branch ? (
@@ -343,7 +344,7 @@ function SidebarThreadTooltip({
               badgeClassName="h-2 min-w-2 px-0"
               iconClassName="size-3 shrink-0 opacity-60"
             />
-            <div className="min-w-0 truncate text-foreground/75">
+            <div className="min-w-0 truncate text-foreground/80">
               {showInstanceBadge && providerEntry
                 ? `${modelLabel} · ${providerEntry.displayName}`
                 : modelLabel}
@@ -353,7 +354,7 @@ function SidebarThreadTooltip({
         {previousProviderNames.length > 0 ? (
           <div className="flex min-w-0 items-center gap-2">
             <ArrowRightLeftIcon className="size-3 shrink-0 stroke-muted-foreground" />
-            <div className="min-w-0 truncate text-foreground/75">
+            <div className="min-w-0 truncate text-foreground/80">
               <T>
                 Handed off from <Var>{previousProviderNames.join(", ")}</Var>
               </T>
@@ -366,7 +367,7 @@ function SidebarThreadTooltip({
               aria-hidden
               className={cn("size-3 shrink-0", terminalStatus.colorClass)}
             />
-            <div className="min-w-0 truncate text-foreground/75">
+            <div className="min-w-0 truncate text-foreground/80">
               {terminalProcessLabel(terminalProcessCount, m)}
             </div>
           </div>
@@ -997,14 +998,14 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   };
 
   const rowSurfaceClassName = cn(
-    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-md text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "group/sidebar-row relative w-full cursor-pointer overflow-hidden rounded-lg text-left outline-none select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     variantAction === "unsettle" &&
       !props.isActive &&
       "[&:not(:hover):not(:focus-within)_*:not(.live-activity-focus_*)]:text-secondary-label",
     props.isActive
-      ? "bg-sidebar-row-active text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+      ? "bg-sidebar-row-active text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border"
       : isSelected || props.sweepAction !== null
-        ? "bg-sidebar-row-selected text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+        ? "bg-sidebar-row-selected text-sidebar-foreground light:ring-1 light:ring-inset light:ring-sidebar-border"
         : hasUnsentDraft
           ? cn(draftSurfaceClassName, "text-sidebar-foreground")
           : shouldRecede
@@ -1076,10 +1077,8 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
             ? cn(
                 "truncate",
                 shouldRecede
-                  ? "text-foreground/75 group-hover/sidebar-row:text-foreground group-focus-visible/sidebar-row:text-foreground"
-                  : status === "failed" && !isUnread && !isWoke
-                    ? "text-foreground/95"
-                    : "text-foreground",
+                  ? "text-foreground/80 group-hover/sidebar-row:text-foreground group-focus-visible/sidebar-row:text-foreground"
+                  : "text-foreground",
               )
             : cn(
                 "truncate group-focus-within/sidebar-row:text-foreground group-hover/sidebar-row:text-foreground",
@@ -1158,7 +1157,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
               type="button"
               aria-label={gt("Unpin thread")}
               onClick={handleUnpinClick}
-              className="group/unpin inline-flex cursor-pointer items-center rounded-sm text-muted-foreground/65 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              className="group/unpin inline-flex cursor-pointer items-center rounded-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             />
           }
         >
@@ -1179,7 +1178,7 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       <PinIcon
         aria-label={gt("Pinned")}
         role="img"
-        className="size-3 shrink-0 text-muted-foreground/65"
+        className="size-3 shrink-0 text-muted-foreground"
       />
     )
   ) : null;
@@ -1223,8 +1222,12 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
       {prBadge}
       {diff ? (
         <span className="shrink-0 font-mono">
-          <span className="text-diff-addition-foreground">+{formatDiffCount(diff.insertions)}</span>{" "}
-          <span className="text-diff-deletion-foreground">−{formatDiffCount(diff.deletions)}</span>
+          <span className="text-diff-addition-foreground">
+            +{formatCompactDiffCount(diff.insertions)}
+          </span>{" "}
+          <span className="text-diff-deletion-foreground">
+            −{formatCompactDiffCount(diff.deletions)}
+          </span>
         </span>
       ) : null}
       <span
@@ -1678,13 +1681,6 @@ function latestRunDiff(
   return null;
 }
 
-// Attached only to the highlighted result, so React calls it each time the
-// highlight lands on a different row: a new query, late rows replacing the first
-// result, or arrow keys moving past the scrolled edge.
-const scrollHighlightedResultIntoView = (node: HTMLLIElement | null) => {
-  node?.scrollIntoView({ block: "nearest" });
-};
-
 export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props: {
   isSettled: boolean;
   thread: SidebarThreadSummary;
@@ -1778,7 +1774,9 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
   });
   return (
     <li
-      ref={props.isHighlighted ? scrollHighlightedResultIntoView : undefined}
+      // Attached only to the highlighted result, so React calls it each time the highlight lands
+      // on a different row: a new query, late rows replacing the first result, or arrow keys.
+      ref={props.isHighlighted ? revealHighlightedRow : undefined}
       role="presentation"
       className="list-none"
       {...fileDropHandlers}
@@ -1797,7 +1795,10 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               aria-describedby={`${props.resultId}-pr`}
               aria-label={accessibility.label}
               {...dragListeners}
-              onMouseMove={props.onHighlight}
+              onMouseMove={(event) => {
+                noteHoveredRow(event.currentTarget);
+                props.onHighlight();
+              }}
               // Focus stays in the search box, as for Enter. A focused result would lose focus as
               // the results close, and its recovery scrolls the list away from the opened thread.
               // dnd-kit ignores a prevented press, so the drag listener runs first.
@@ -1807,7 +1808,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
               }}
               onClick={props.onSelect}
               className={cn(
-                "group/sidebar-row group/v2-row flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-1 text-left text-sm outline-none",
+                "group/sidebar-row group/v2-row flex min-h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1 text-left text-sm outline-none",
                 props.isHighlighted || props.isRouteActive
                   ? "bg-sidebar-row-active text-sidebar-foreground"
                   : "text-sidebar-muted-foreground/75 hover:bg-sidebar-row-hover hover:text-sidebar-foreground",
@@ -1858,7 +1859,7 @@ export const SidebarSearchResultRow = memo(function SidebarSearchResultRow(props
                   settled={props.isSettled}
                 />
               </span>
-              <span className="w-8 shrink-0 text-right text-xs text-muted-foreground/55 tabular-nums">
+              <span className="w-8 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
                 <RelativeTimeLabel timestamp={resolveThreadActivityTimestamp(thread)} />
               </span>
             </span>

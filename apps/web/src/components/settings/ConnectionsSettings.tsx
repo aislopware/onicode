@@ -1705,7 +1705,7 @@ function ConnectionsSettingsContent({
                     <T>Enter a port from 1 to 65535.</T>
                   </p>
                 ) : null}
-                <div className="rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+                <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
                   <p className="text-xs font-medium text-muted-foreground">
                     <T>HTTPS endpoint</T>
                   </p>

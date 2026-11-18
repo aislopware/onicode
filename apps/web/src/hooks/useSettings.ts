@@ -34,12 +34,6 @@ import {
 import { ensureLocalApi } from "~/localApi";
 import { subscribeBrowserClientSettingsWrites } from "~/clientPersistenceStorage";
 import {
-  getThemeDefinition,
-  getThemePreviewAppearance,
-  resolveThemeHalf,
-  subscribeToThemePreview,
-} from "~/themePalette";
-import {
   modelPreferencesMigrationPatch,
   resolveModelPreferences,
 } from "@onicode/shared/serverSettings";
@@ -52,7 +46,6 @@ import { environmentCatalog } from "~/connection/catalog";
 import { primaryServerSettingsAtom, serverEnvironment } from "~/state/server";
 import { useEnvironments, usePrimaryEnvironment } from "~/state/environments";
 import { useAtomCommand } from "~/state/use-atom-command";
-import { useTheme } from "./useTheme";
 import { msg } from "gt-react";
 import { m } from "~/i18n/messages";
 import {
@@ -409,32 +402,11 @@ export function useMergedSettings<T = UnifiedSettings>(
   });
 }
 
-function resolveEnvironmentIdentificationMode(input: {
-  mode: EnvironmentIdentificationMode;
-  settingsHydrated: boolean;
-  paletteThemeActive?: boolean;
-}): EnvironmentIdentificationMode {
-  if (!input.settingsHydrated) return "none";
-  const isArtwork = input.mode !== "pill" && input.mode !== "none";
-  return input.paletteThemeActive && isArtwork ? "pill" : input.mode;
-}
-
 export function useEnvironmentIdentificationMode(): EnvironmentIdentificationMode {
   const settingsHydrated = useClientSettingsHydrated();
   const mode = useClientSettings((settings) => settings.environmentIdentificationMode);
-  const { resolvedTheme, theme, themeHalves } = useTheme();
-  const previewAppearance = useSyncExternalStore(
-    subscribeToThemePreview,
-    getThemePreviewAppearance,
-    () => null,
-  );
-  const activeTheme = resolveThemeHalf(theme, themeHalves, resolvedTheme);
-  const activeThemeDefinition = getThemeDefinition(activeTheme);
-  return resolveEnvironmentIdentificationMode({
-    mode,
-    settingsHydrated,
-    paletteThemeActive: previewAppearance !== null || activeThemeDefinition !== null,
-  });
+  // Until the saved choice is known, showing nothing avoids a flash of the wrong header.
+  return settingsHydrated ? mode : "none";
 }
 
 export async function prepareModelPreferencesPatch(

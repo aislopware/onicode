@@ -9,7 +9,7 @@ import type {
   PullRequestReviewDecision,
   PullRequestState,
 } from "@onicode/contracts";
-import { formatDiffCount } from "@onicode/client-runtime/diff-count";
+import { formatCompactDiffCount } from "../chat/DiffStatLabel";
 import {
   CircleCheckIcon,
   CircleDashedIcon,
@@ -93,7 +93,7 @@ function reviewDecisionPresentation(decision: PullRequestReviewDecision) {
       return {
         Icon: UserRoundIcon,
         label: msg("Awaiting review"),
-        toneClassName: "text-muted-foreground/60",
+        toneClassName: "text-muted-foreground",
       };
   }
 }
@@ -242,17 +242,17 @@ const CHECK_STATUS_PRESENTATION = {
   cancelled: {
     label: msg("Cancelled", { $context: "check status" }),
     Icon: OctagonXIcon,
-    toneClassName: "text-muted-foreground/70",
+    toneClassName: "text-muted-foreground",
   },
   skipped: {
     label: msg("Skipped", { $context: "check status" }),
     Icon: CircleSlashIcon,
-    toneClassName: "text-muted-foreground/70",
+    toneClassName: "text-muted-foreground",
   },
   neutral: {
     label: msg("Neutral", { $context: "check status" }),
     Icon: CircleDashedIcon,
-    toneClassName: "text-muted-foreground/70",
+    toneClassName: "text-muted-foreground",
   },
 } as const satisfies Record<
   PullRequestCheckStatus,
@@ -358,7 +358,7 @@ const REVIEW_OUTCOME_PRESENTATION = {
       $context: "tooltip: a review of an older version, before the latest commits, was dismissed",
     }),
     Icon: CircleDashedIcon,
-    toneClassName: "text-muted-foreground/70",
+    toneClassName: "text-muted-foreground",
     ringClassName: "ring-2 ring-muted-foreground/60",
     staleRingClassName:
       "ring-2 ring-[color-mix(in_srgb,var(--contrast-muted-foreground)_30%,var(--background))]",
@@ -565,8 +565,8 @@ export function PullRequestDiffStat({
   }
   return (
     <span className={cn("inline-flex items-baseline gap-1 tabular-nums", className)}>
-      <span className="text-diff-addition-foreground">+{formatDiffCount(additions)}</span>
-      <span className="text-diff-deletion">-{formatDiffCount(deletions)}</span>
+      <span className="text-diff-addition-foreground">+{formatCompactDiffCount(additions)}</span>
+      <span className="text-diff-deletion">−{formatCompactDiffCount(deletions)}</span>
     </span>
   );
 }
@@ -591,7 +591,7 @@ export function PullRequestMetaLine({
           : [
               <span
                 aria-hidden
-                className="shrink-0 text-muted-foreground/50"
+                className="shrink-0 text-muted-foreground"
                 key={separatorKey(segment)}
               >
                 ·

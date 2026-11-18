@@ -26,7 +26,7 @@ export function ComposerContextLabel({
           "block w-full min-w-0 truncate",
           THREAD_DETAILS_PANEL_LABEL_CLASS,
           displayMode === "toolbar" &&
-            "max-w-[240px] transition-opacity duration-180 ease-drawer group-data-[compact]/composer-context:opacity-0 motion-reduce:transition-none",
+            "max-w-[240px] transition-opacity duration-200 ease-drawer group-data-[compact]/composer-context:opacity-0 motion-reduce:transition-none",
         )}
       >
         {children}

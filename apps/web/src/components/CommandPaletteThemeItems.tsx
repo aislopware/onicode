@@ -95,7 +95,7 @@ export function useCommandPaletteThemeItems() {
           titleTrailingContent: (
             <span className="flex shrink-0 items-center gap-2">
               {(themeHalves?.[resolvedTheme] ?? getThemeDefinition(theme)?.id ?? null) === id ? (
-                <span className="text-xs text-muted-foreground/70">
+                <span className="text-xs text-muted-foreground">
                   <T context="the theme or mode in use now">Current</T>
                 </span>
               ) : null}
@@ -143,7 +143,7 @@ export function useCommandPaletteThemeItems() {
           icon: <Icon className={ITEM_ICON_CLASS} />,
           titleTrailingContent:
             appearanceMode === mode ? (
-              <span className="text-xs text-muted-foreground/70">
+              <span className="text-xs text-muted-foreground">
                 <T context="the theme or mode in use now">Current</T>
               </span>
             ) : undefined,

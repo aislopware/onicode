@@ -133,6 +133,7 @@ import {
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { scopeProjectRef } from "@onicode/client-runtime/environment";
 import { formatDiffCount } from "@onicode/client-runtime/diff-count";
+import { formatCompactDiffCount } from "./chat/DiffStatLabel";
 import { ChangeBreakdownGrid } from "./pullRequest/ChangeBreakdownGrid";
 import { useOpenLink } from "~/browser/useOpenLink";
 
@@ -634,7 +635,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                   return (
                     <div
                       key={option.value}
-                      className="relative flex cursor-not-allowed items-center gap-3 rounded-lg border border-border bg-background px-3 py-3 text-left opacity-64 dark:border-transparent dark:bg-white/[0.035]"
+                      className="relative flex cursor-not-allowed items-center gap-3 rounded-lg border border-border bg-background px-3 py-3 text-left opacity-64 dark:border-transparent dark:bg-muted"
                     >
                       <option.Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
@@ -676,7 +677,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                       "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                       isSelected
                         ? "border-primary bg-background shadow-sm ring-2 ring-inset ring-primary/35 dark:border-transparent dark:bg-primary/10 dark:shadow-none dark:ring-1 dark:ring-primary/30"
-                        : "border-border bg-background hover:border-foreground/20 hover:bg-muted/50 dark:border-transparent dark:bg-white/[0.035] dark:hover:bg-accent",
+                        : "border-border bg-background hover:border-foreground/20 hover:bg-accent/60 dark:border-transparent dark:bg-muted dark:hover:bg-accent",
                     )}
                   >
                     <option.Icon className="size-5 shrink-0" aria-hidden />
@@ -721,7 +722,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                   }}
                   placeholder={publishPathPlaceholder}
                   disabled={publishRepositoryAction.isPending}
-                  className="w-full bg-transparent px-3 py-2 font-mono text-sm placeholder:text-muted-foreground/60 focus:outline-none"
+                  className="w-full bg-transparent px-3 py-2 font-mono text-sm placeholder:text-muted-foreground focus:outline-none"
                 />
               </div>
             </div>
@@ -766,7 +767,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                         "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background",
                         isSelected
                           ? "border-primary bg-background shadow-sm ring-2 ring-inset ring-primary/35 dark:border-transparent dark:bg-primary/10 dark:shadow-none dark:ring-1 dark:ring-primary/30"
-                          : "border-border bg-background hover:border-foreground/20 hover:bg-muted/50 dark:border-transparent dark:bg-white/[0.035] dark:hover:bg-accent",
+                          : "border-border bg-background hover:border-foreground/20 hover:bg-accent/60 dark:border-transparent dark:bg-muted dark:hover:bg-accent",
                       )}
                     >
                       <option.Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
@@ -843,7 +844,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
               <div
                 role="status"
                 aria-live="polite"
-                className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-2 text-xs text-muted-foreground dark:border-transparent dark:bg-white/[0.035]"
+                className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-3 py-2 text-xs text-muted-foreground dark:border-transparent dark:bg-muted"
               >
                 <Spinner size="sm" aria-hidden />
                 <T>
@@ -888,7 +889,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                         )}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 rounded-lg border border-input bg-muted/40 px-3 py-2 dark:border-transparent dark:bg-white/[0.035]">
+                <div className="flex items-center gap-2 rounded-lg border border-input bg-muted/40 px-3 py-2 dark:border-transparent dark:bg-muted">
                   <currentPublishProvider.Icon className="size-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
                     {publishResult.repository.nameWithOwner}
@@ -908,7 +909,7 @@ export function PublishRepositoryDialog(props: PublishRepositoryDialogProps) {
                 </Button>
               </>
             ) : (
-              <div className="rounded-md border border-input bg-background px-3 py-2 text-xs text-muted-foreground dark:border-transparent dark:bg-white/[0.035]">
+              <div className="rounded-md border border-input bg-background px-3 py-2 text-xs text-muted-foreground dark:border-transparent dark:bg-muted">
                 <T>Publish result unavailable.</T>
               </div>
             )}
@@ -1654,7 +1655,7 @@ export default function GitActionsControl({
           className={cn(
             "shrink-0",
             THREAD_DETAILS_PANEL_SPLIT_GROUP_CLASS,
-            gitActionProgress && "bg-black/[0.035] dark:bg-white/[0.055]",
+            gitActionProgress && "bg-row-selected",
           )}
         >
           {gitActionProgress ? (
@@ -1824,7 +1825,7 @@ export default function GitActionsControl({
                       : "text-muted-foreground"
                   }
                 >
-                  +{formatDiffCount(changesTotals.insertions)}
+                  +{formatCompactDiffCount(changesTotals.insertions)}
                 </span>
                 <span
                   className={
@@ -1833,7 +1834,7 @@ export default function GitActionsControl({
                       : "text-muted-foreground"
                   }
                 >
-                  -{formatDiffCount(changesTotals.deletions)}
+                  −{formatCompactDiffCount(changesTotals.deletions)}
                 </span>
               </span>
             </span>
@@ -1867,7 +1868,7 @@ export default function GitActionsControl({
             <DialogDescription>{messages(COMMIT_DIALOG_DESCRIPTION)}</DialogDescription>
           </DialogHeader>
           <DialogPanel>
-            <div className="space-y-3 rounded-xl bg-zinc-25 p-3 text-sm ring-1 ring-black/5 dark:bg-white/[0.035] dark:ring-white/5">
+            <div className="space-y-3 rounded-xl bg-zinc-25 p-3 text-sm ring-1 ring-black/5 dark:bg-muted dark:ring-white/5">
               <div className="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1">
                 <span className="text-muted-foreground">
                   <T context="git branch">Branch</T>
@@ -1930,7 +1931,7 @@ export default function GitActionsControl({
                   </p>
                 ) : (
                   <div className="space-y-2">
-                    <div className="h-44 rounded-lg bg-card ring-1 ring-black/5 dark:bg-white/[0.025] dark:ring-white/5">
+                    <div className="h-44 rounded-lg bg-card ring-1 ring-black/5 dark:bg-muted dark:ring-white/5">
                       <ScrollArea>
                         <div className="space-y-1 p-1">
                           {allFiles.map((file) => {
@@ -1938,7 +1939,7 @@ export default function GitActionsControl({
                             return (
                               <div
                                 key={file.path}
-                                className="flex w-full items-center gap-2 rounded-md px-2 py-1 font-mono hover:bg-accent/50"
+                                className="flex w-full items-center gap-2 rounded-md px-2 py-1 font-mono hover:bg-accent/60"
                               >
                                 {isEditingFiles && (
                                   <Checkbox
@@ -1980,7 +1981,7 @@ export default function GitActionsControl({
                                         </span>
                                         <span className="text-muted-foreground"> / </span>
                                         <span className="text-diff-deletion">
-                                          -{formatDiffCount(file.deletions)}
+                                          −{formatDiffCount(file.deletions)}
                                         </span>
                                       </>
                                     )}
@@ -1998,7 +1999,7 @@ export default function GitActionsControl({
                       </span>
                       <span className="text-muted-foreground"> / </span>
                       <span className="text-diff-deletion">
-                        -{formatDiffCount(selectedFiles.reduce((sum, f) => sum + f.deletions, 0))}
+                        −{formatDiffCount(selectedFiles.reduce((sum, f) => sum + f.deletions, 0))}
                       </span>
                     </div>
                   </div>

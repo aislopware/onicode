@@ -222,7 +222,7 @@ export function ComposerAttachmentMediaRow({
                 "group/attachment shrink-0 snap-start bg-background",
                 source?.kind === "snap-shot"
                   ? SNAP_SHOT_ATTACHMENT_FRAME_CLASS
-                  : "relative h-16 w-16 overflow-hidden rounded-lg border border-border/80",
+                  : "relative h-16 w-16 overflow-hidden rounded-lg border border-border",
                 snapShotAnimationPending && "invisible",
               )}
             >
@@ -277,7 +277,7 @@ export function ComposerAttachmentMediaRow({
                       <span
                         role="img"
                         aria-label={gt("Draft attachment may not persist")}
-                        className="absolute left-1 top-1 inline-flex items-center justify-center rounded bg-background/85 p-0.5 text-warning-foreground"
+                        className="absolute left-1 top-1 inline-flex items-center justify-center rounded-sm bg-background/85 p-0.5 text-warning-foreground"
                       >
                         <CircleAlertIcon className="size-3" />
                       </span>
@@ -372,7 +372,7 @@ export function ComposerAttachmentMediaRow({
         return (
           <div
             key={file.id}
-            className="relative h-16 w-16 shrink-0 snap-start overflow-hidden rounded-lg border border-border/80 bg-black"
+            className="relative h-16 w-16 shrink-0 snap-start overflow-hidden rounded-lg border border-border bg-black"
           >
             <button
               type="button"
@@ -628,7 +628,7 @@ export function ComposerRestingImagePreviews({
         <button
           key={image.id}
           type="button"
-          className="relative size-7 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-border/70 bg-muted/60"
+          className="relative size-7 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-border bg-muted/60"
           aria-label={gt("Preview {name}", { name: image.name })}
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => {
@@ -673,7 +673,7 @@ export function ComposerRestingImagePreviews({
       {counts.overflowCount > 0 ? (
         <button
           type="button"
-          className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border/70 bg-muted/60 font-medium text-secondary-label text-xs tabular-nums outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
+          className="flex size-7 shrink-0 cursor-pointer items-center justify-center rounded-md border border-border bg-muted/60 font-medium text-secondary-label text-xs tabular-nums outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background"
           aria-label={gt(
             "{count, plural, one {Show {count} more image attachments} other {Show {count} more image attachments}}",
             {
@@ -707,7 +707,7 @@ export function ComposerQueuedAttachmentRow({
       {attachments.map(({ attachment, url }) => (
         <div
           key={attachment.id}
-          className="relative h-16 w-16 overflow-hidden rounded-lg border border-border/80 bg-background"
+          className="relative h-16 w-16 overflow-hidden rounded-lg border border-border bg-background"
         >
           {attachment.type === "image" && url ? (
             <img src={url} alt={attachment.name} className="h-full w-full object-cover" />

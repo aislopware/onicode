@@ -30,6 +30,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { T, useGT, useMessages } from "gt-react";
 
 import { cn } from "../../lib/utils";
+import { noteHoveredRow, revealHighlightedRow } from "~/lib/highlightedRow";
 import { Button } from "../ui/button";
 import { Kbd } from "../ui/kbd";
 import {
@@ -99,11 +100,6 @@ const SETTINGS_DETAIL_PAGE_PARENTS: Readonly<Record<string, SettingsPath>> = {
   "/settings/diagnostics": "/settings/maintenance",
   "/settings/open-source-licenses": "/settings/about",
 };
-
-// Attached only to the highlighted result, so it runs whenever the highlight lands on a row.
-function scrollResultIntoView(row: HTMLElement | null) {
-  row?.scrollIntoView({ block: "nearest" });
-}
 
 function SettingsSectionIcon({ to }: { to: SettingsPath }) {
   const Icon = SETTINGS_SECTION_ICONS[to];
@@ -318,7 +314,8 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                   <SidebarMenuItem
                     key={item.id}
                     role="presentation"
-                    ref={index === activeResultIndex ? scrollResultIntoView : undefined}
+                    // Attached only to the highlighted result, so it runs whenever the highlight lands on a row.
+                    ref={index === activeResultIndex ? revealHighlightedRow : undefined}
                   >
                     <SidebarMenuButton
                       id={`settings-search-result-${item.id}`}
@@ -328,7 +325,10 @@ export function SettingsSidebarNav({ pathname }: { pathname: string }) {
                       size="sm"
                       isActive={index === activeResultIndex}
                       className="h-auto min-h-10 items-start"
-                      onMouseMove={() => setActiveResultIndex(index)}
+                      onMouseMove={(event) => {
+                        noteHoveredRow(event.currentTarget);
+                        setActiveResultIndex(index);
+                      }}
                       onClick={() => handleSearchResultClick(item)}
                     >
                       <SettingsSectionIcon to={item.to} />

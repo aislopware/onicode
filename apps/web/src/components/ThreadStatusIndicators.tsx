@@ -585,7 +585,7 @@ function ThreadPullRequestMiniListItem({
         className={cn("size-3 shrink-0", presentation?.toneClassName ?? "stroke-muted-foreground")}
       />
       <span className="shrink-0 font-mono tabular-nums">#{number}</span>
-      <span className="min-w-0 truncate text-foreground/75">{title}</span>
+      <span className="min-w-0 truncate text-foreground/80">{title}</span>
       {children}
     </>
   );
@@ -650,7 +650,7 @@ function PrStatusTooltipContent({ status }: { status: PrStatusIndicator }) {
   return (
     <span className="flex max-w-[min(34rem,calc(100vw-2rem))] items-stretch overflow-hidden whitespace-nowrap">
       <span className="shrink-0 pr-2 font-medium">{status.tooltipLead}</span>
-      <span className="min-h-4 shrink-0 border-border/70 border-l" aria-hidden="true" />
+      <span className="min-h-4 shrink-0 border-border border-l" aria-hidden="true" />
       <span className="min-w-0 truncate pl-2">{status.tooltipTitle}</span>
     </span>
   );
@@ -1023,10 +1023,7 @@ export function ThreadRowTrailingStatus({ thread }: { thread: SidebarThreadSumma
               />
             }
           >
-            <EnvironmentMachineIcon
-              kind={remoteMachine}
-              className="size-3 text-muted-foreground/60"
-            />
+            <EnvironmentMachineIcon kind={remoteMachine} className="size-3 text-muted-foreground" />
           </TooltipTrigger>
           <TooltipPopup side="top">{threadEnvironmentLabel}</TooltipPopup>
         </Tooltip>

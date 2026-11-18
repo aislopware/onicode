@@ -43,8 +43,7 @@ import {
   type PullRequestCompletionScope,
 } from "./PullRequestMarkdownTextarea";
 
-const CARD_CLASS =
-  "mx-3 my-2 rounded-xl border border-border/70 bg-background p-3 text-sm shadow-sm";
+const CARD_CLASS = "mx-3 my-2 rounded-xl border border-border bg-background p-3 text-sm shadow-sm";
 
 function submitKeys(input: {
   readonly value: string;

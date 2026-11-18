@@ -418,7 +418,7 @@ const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelec
                 <div className="px-2 pt-1.5 pb-1 font-medium text-muted-foreground text-xs">
                   {descriptor.label}
                 </div>
-                <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">{value}</div>
+                <div className="px-2 pb-1.5 text-muted-foreground text-xs">{value}</div>
               </MenuGroup>
             </div>
           );
@@ -437,7 +437,7 @@ const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelec
               {descriptor.label}
             </div>
             {ultrathinkInBodyText && descriptor.id === primarySelectDescriptor?.id ? (
-              <div className="px-2 pb-1.5 text-muted-foreground/80 text-xs">
+              <div className="px-2 pb-1.5 text-muted-foreground text-xs">
                 {resolve(ULTRATHINK_IN_BODY_NOTE)}
               </div>
             ) : null}
@@ -459,7 +459,7 @@ const TraitsMenuContent = memo(function TraitsMenuContentImpl(props: TraitsSelec
                       {option.isDefault ? <DefaultBadge /> : null}
                     </span>
                     {option.description ? (
-                      <span className="max-w-56 text-pretty text-muted-foreground/80 text-xs">
+                      <span className="max-w-56 text-pretty text-muted-foreground text-xs">
                         {option.description}
                       </span>
                     ) : null}

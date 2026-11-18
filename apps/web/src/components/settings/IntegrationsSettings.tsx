@@ -1447,7 +1447,7 @@ function BrowserProfilesSetting() {
         </Menu>
       }
     >
-      <div className="mt-2 mb-2 overflow-hidden rounded-lg border border-border/60">
+      <div className="mt-2 mb-2 overflow-hidden rounded-lg border border-border">
         {listedProfiles.map((profile, index) => {
           const builtIn = isBuiltInBrowserProfileId(profile.id);
           const isDefault = profile.id === resolvedDefaultId;
@@ -1456,7 +1456,7 @@ function BrowserProfilesSetting() {
               key={profile.id}
               className={cn(
                 "flex items-center gap-3 px-3 py-2",
-                index > 0 && "border-t border-border/60",
+                index > 0 && "border-t border-border",
               )}
             >
               <span className="flex min-w-0 flex-1 items-center gap-2">

@@ -44,6 +44,7 @@ function PopoverPopup({
   keepMounted = false,
   anchor,
   touchBackdrop = false,
+  resizes = false,
   ...props
 }: PopoverPrimitive.Popup.Props & {
   padding?: keyof typeof popoverViewportPaddingClassName;
@@ -58,10 +59,12 @@ function PopoverPopup({
   anchor?: PopoverPrimitive.Positioner.Props["anchor"];
   width?: keyof typeof popoverPopupWidthClassName;
   touchBackdrop?: boolean;
+  /** The content changes height while open, so the popup is placed again when it does. */
+  resizes?: boolean;
 }) {
   // Viewport rekeys on close; persistent single-trigger forms need stable containers for drafts and submit
-  // guards.
-  const Viewport = keepMounted ? "div" : PopoverPrimitive.Viewport;
+  // guards. It also sizes the positioner once, on open, so content that grows later would run past it.
+  const Viewport = keepMounted || resizes ? "div" : PopoverPrimitive.Viewport;
   return (
     <PopoverPrimitive.Portal keepMounted={keepMounted}>
       {touchBackdrop ? (
@@ -99,10 +102,8 @@ function PopoverPopup({
             // Electron drag hit-testing ignores z-index; popups over a drag region would swallow hover.
             "[-webkit-app-region:no-drag]",
             tooltipStyle &&
-              "w-fit rounded-md text-xs shadow-md/5 before:rounded-[calc(var(--radius-md)-1px)]",
-            !tooltipStyle &&
-              variant !== "panel" &&
-              "shadow-[0_16px_40px_-18px_rgb(0_0_0/55%)] dark:shadow-[0_18px_44px_-18px_rgb(0_0_0/80%)]",
+              "w-fit rounded-md text-xs shadow-popup dark:shadow-popup-dark before:rounded-[calc(var(--radius-md)-1px)]",
+            !tooltipStyle && variant !== "panel" && "shadow-popup dark:shadow-popup-dark",
             width !== "auto" && ["max-w-[calc(100vw-2rem)]", popoverPopupWidthClassName[width]],
             variant === "panel" &&
               "w-full overflow-visible rounded-none border-0 bg-transparent shadow-none before:hidden [backdrop-filter:none] [-webkit-backdrop-filter:none]",

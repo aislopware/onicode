@@ -219,7 +219,7 @@ export default function BinaryViewer(props: {
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {archive ? (
-        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border/60 px-3 text-xs">
+        <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3 text-xs">
           <FileSurfaceAction
             label={selectedPath ? gt("Back to archive") : gt("Parent folder")}
             disabled={!selectedPath && !folder}
@@ -243,7 +243,7 @@ export default function BinaryViewer(props: {
       ) : null}
       {database && table ? (
         <>
-          <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-border/60 px-3 py-1 text-xs">
+          <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-2 border-b border-border px-3 py-1 text-xs">
             <div className="min-w-32 flex-1">
               <Select
                 value={selectedTable}
@@ -295,7 +295,7 @@ export default function BinaryViewer(props: {
             </FileSurfaceAction>
           </div>
           <div
-            className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground tabular-nums"
+            className="border-b border-border px-3 py-2 text-xs text-muted-foreground tabular-nums"
             role="status"
           >
             {rowsLabel(table.count, gt)} ·{" "}
@@ -348,9 +348,9 @@ export default function BinaryViewer(props: {
                 .map((item) => (
                   <tr
                     key={`${item.path}${item.directory ? "/" : ""}`}
-                    className="hover:bg-muted/40"
+                    className="hover:bg-accent/60"
                   >
-                    <td className="max-w-0 border-b border-border/60">
+                    <td className="max-w-0 border-b border-border">
                       <button
                         type="button"
                         className="flex w-full items-center gap-2 px-3 py-2 text-left hover:text-primary focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -371,10 +371,10 @@ export default function BinaryViewer(props: {
                         <span className="truncate">{item.path.slice(folder.length)}</span>
                       </button>
                     </td>
-                    <td className="w-20 border-b border-border/60 px-3 py-2 text-right whitespace-nowrap text-muted-foreground tabular-nums">
+                    <td className="w-20 border-b border-border px-3 py-2 text-right whitespace-nowrap text-muted-foreground tabular-nums">
                       {formatAttachmentSize(item.size, messages)}
                     </td>
-                    <td className="w-28 border-b border-border/60 px-3 py-2 text-right whitespace-nowrap text-muted-foreground">
+                    <td className="w-28 border-b border-border px-3 py-2 text-right whitespace-nowrap text-muted-foreground">
                       {item.modified ? new Date(item.modified).toLocaleDateString() : "-"}
                     </td>
                   </tr>
@@ -399,7 +399,7 @@ export default function BinaryViewer(props: {
                   <th
                     key={name}
                     scope="col"
-                    className="border-r border-b border-border/60 px-3 py-2 text-left font-medium whitespace-nowrap"
+                    className="border-r border-b border-border px-3 py-2 text-left font-medium whitespace-nowrap"
                   >
                     {name}
                   </th>
@@ -412,7 +412,7 @@ export default function BinaryViewer(props: {
                   {row.map((cell, column) => (
                     <td
                       key={column}
-                      className="max-w-80 min-w-32 border-r border-b border-border/60 px-3 py-1.5 align-top whitespace-pre-wrap break-words tabular-nums"
+                      className="max-w-80 min-w-32 border-r border-b border-border px-3 py-1.5 align-top whitespace-pre-wrap break-words tabular-nums"
                     >
                       {cell}
                     </td>

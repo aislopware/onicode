@@ -45,9 +45,7 @@ function ThreadNowLine({
         {item.description ? (
           <>
             {" "}
-            <span className="ms-0.5 text-muted-foreground/60 light:text-muted-foreground/80">
-              {item.description}
-            </span>
+            <span className="ms-0.5 text-muted-foreground">{item.description}</span>
           </>
         ) : null}
       </span>

@@ -126,7 +126,7 @@ function PendingLinkRequest(props: {
   return (
     <div
       data-v2-item-type={item.type}
-      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border/60 bg-card p-4"
+      className="flex min-w-0 flex-col gap-3 rounded-xl border border-border bg-card p-4"
     >
       <div className="flex min-w-0 flex-col gap-1">
         <p className="text-sm font-medium text-foreground">

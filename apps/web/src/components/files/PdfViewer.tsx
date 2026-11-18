@@ -16,7 +16,7 @@ import { observeResize } from "~/lib/observeResize";
 import { FileSurfaceAction, FileSurfaceFailure, FileSurfaceLoading } from "./fileSurfaceChrome";
 import { readBoundedDocument } from "./readBoundedDocument";
 import { previewErrorText } from "./previewFailureMessages";
-import { openPdf } from "./pdfDocument";
+import { closePdf, openPdf, pdfClosed } from "./pdfDocument";
 import {
   currentPdfPage,
   pdfFindIncludes,
@@ -177,7 +177,7 @@ export default function PdfViewer(props: {
     const timeout = setTimeout(() => {
       setError(m(msg("This PDF took too long to load. Try again.")));
       controller.abort();
-      void task?.destroy();
+      closePdf(task);
     }, 30_000);
     void readBoundedDocument(
       props.src,
@@ -186,6 +186,7 @@ export default function PdfViewer(props: {
       revision > 0 ? "reload" : "default",
     )
       .then(async (bytes) => {
+        await pdfClosed();
         controller.signal.throwIfAborted();
         task = openPdf(bytes);
         const document = await task.promise;
@@ -221,7 +222,7 @@ export default function PdfViewer(props: {
       disposed = true;
       controller.abort();
       clearTimeout(timeout);
-      void task?.destroy();
+      closePdf(task);
     };
   }, [props.src, revision, initialPage, savedPosition]);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- Measure the PDF viewport before paint and observe resizes for fit-width sizing and visible-page selection.
@@ -361,7 +362,7 @@ export default function PdfViewer(props: {
   }, [pdf, query]);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border/60 px-2 py-1 text-xs">
+      <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1 border-b border-border px-2 py-1 text-xs">
         <span className="mr-auto px-1 tabular-nums" aria-live="polite">
           {pdf
             ? gt(

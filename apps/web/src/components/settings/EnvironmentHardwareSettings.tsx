@@ -17,7 +17,7 @@ function HardwareGauge({ gauge }: { readonly gauge: HostHardwareGauge }) {
   const percent = gauge.fraction === null ? null : Math.round(gauge.fraction * 100);
   return (
     <li className="flex items-center gap-x-4 py-2">
-      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground/80" />
+      <Icon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-medium text-foreground">{gauge.title}</p>
         <p className="text-xs text-muted-foreground">{gauge.detail}</p>
@@ -79,7 +79,7 @@ function EnvironmentHardware({ environment }: { readonly environment: Environmen
       }
       detail={
         view ? (
-          <ul className="mt-1.5 divide-y divide-border/50">
+          <ul className="mt-1.5 divide-y divide-border">
             {view.gauges.map((gauge) => (
               <HardwareGauge key={gauge.key} gauge={gauge} />
             ))}

@@ -590,7 +590,7 @@ function ReviewThreadEvent({
             }
           />
           {thread.replies.length > 0 ? (
-            <div className="ml-2 space-y-1 border-l border-border/60 pl-3">
+            <div className="ml-2 space-y-1 border-l border-border pl-3">
               {thread.replies.map((reply) => (
                 <ConversationCard
                   key={reply.id}
@@ -997,7 +997,7 @@ export function PullRequestTimelineTab({
       renderItem={renderRow}
       estimatedItemSize={140}
       className="scrollbar-gutter-both h-full px-4"
-      contentContainerClassName="relative mx-auto w-full max-w-3xl before:absolute before:bottom-10 before:left-[15px] before:top-6 before:w-px before:bg-border/45"
+      contentContainerClassName="relative mx-auto w-full max-w-3xl before:absolute before:bottom-10 before:left-[15px] before:top-6 before:w-px before:bg-border"
       ListHeaderComponent={
         anchor !== null && targetIndex < 0 && revealUrl === undefined ? (
           <p role="status" className="py-4 text-xs text-muted-foreground">

@@ -12,14 +12,14 @@ function BranchMark({ joined }: { joined: boolean }) {
     <svg
       aria-hidden
       viewBox="0 0 120 72"
-      className="h-20 w-32 text-muted-foreground/60"
+      className="h-20 w-32 text-muted-foreground"
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M10 58h100" className="text-muted-foreground/30" stroke="currentColor" />
+      <path d="M10 58h100" className="text-muted-foreground" stroke="currentColor" />
       <circle cx="10" cy="58" r="5" fill="currentColor" fillOpacity={0.25} />
       <circle cx="110" cy="58" r="5" fill="currentColor" fillOpacity={0.25} />
       {joined ? (
@@ -30,7 +30,7 @@ function BranchMark({ joined }: { joined: boolean }) {
           <path
             d="M90 58c0-18-8-26-24-26h-4"
             strokeDasharray="2 7"
-            className="text-muted-foreground/50"
+            className="text-muted-foreground"
           />
         </>
       )}
@@ -40,7 +40,7 @@ function BranchMark({ joined }: { joined: boolean }) {
         r={joined ? 5 : 4}
         fill={joined ? "currentColor" : "none"}
         fillOpacity={0.25}
-        className={joined ? undefined : "text-muted-foreground/45"}
+        className={joined ? undefined : "text-muted-foreground"}
       />
     </svg>
   );

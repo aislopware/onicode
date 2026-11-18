@@ -84,7 +84,7 @@ export function DiffCommentAnnotation({
     return (
       <div
         data-diff-comment-annotation
-        className="group/comment flex min-w-0 items-start gap-2.5 border-s-2 border-primary/55 bg-primary/[0.045] px-3 py-2.5 font-sans text-foreground selection:bg-primary selection:text-primary-foreground"
+        className="group/comment flex min-w-0 items-start gap-2.5 border-s-2 border-primary/55 bg-primary/4.5 px-3 py-2.5 font-sans text-foreground selection:bg-primary selection:text-primary-foreground"
         contentEditable={false}
         onPointerDown={(event) => event.stopPropagation()}
       >
@@ -161,7 +161,7 @@ export function DiffCommentAnnotation({
         }}
       />
       <div className="mt-1.5 flex flex-wrap items-center gap-1">
-        <span className="mr-auto text-3xs text-muted-foreground/70">
+        <span className="mr-auto text-3xs text-muted-foreground">
           <T>⌘/Ctrl Enter to send</T>
         </span>
         {speech ? <TextFieldSpeechControls speech={speech} disabled={pending} /> : null}

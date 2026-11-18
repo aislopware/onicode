@@ -40,7 +40,7 @@ interface ExpandedImageDialogProps {
 }
 
 const EXPANDED_MEDIA_STATE_CLASS_NAME =
-  "flex aspect-auto h-48 min-h-0 w-[min(var(--media-width),32rem)] flex-col items-center justify-center gap-3 rounded-lg border border-border/70 bg-black p-6 text-center text-sm text-white shadow-2xl";
+  "flex aspect-auto h-48 min-h-0 w-[min(var(--media-width),32rem)] flex-col items-center justify-center gap-3 rounded-lg border border-border bg-black p-6 text-center text-sm text-white shadow-2xl";
 
 function ExpandedMediaFailure({ children }: { children: ReactNode }) {
   return (
@@ -78,7 +78,7 @@ function ExpandedVideo({ item }: { readonly item: ExpandedImageItem }) {
       preload="metadata"
       autoPlay={item.autoPlay ?? true}
       className="block max-h-[var(--media-height)] max-w-[var(--media-width)] text-center"
-      videoClassName="aspect-auto max-h-[var(--media-height)] w-auto max-w-[var(--media-width)] rounded-lg border border-border/70 shadow-2xl"
+      videoClassName="aspect-auto max-h-[var(--media-height)] w-auto max-w-[var(--media-width)] rounded-lg border border-border shadow-2xl"
       stateClassName={EXPANDED_MEDIA_STATE_CLASS_NAME}
       onRetry={asset ? refreshAssetUrl : undefined}
     />
@@ -229,7 +229,7 @@ export const ExpandedImageDialog = memo(function ExpandedImageDialog({
               accessibilityDetails ? (
                 <SnapShotAccessibilityData
                   details={accessibilityDetails}
-                  className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-140 ease-out starting:opacity-0 rounded-lg border border-border/70 bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
+                  className="h-[min(var(--media-height),40rem)] w-[min(var(--media-width),42rem)] transition-opacity duration-150 ease-out starting:opacity-0 rounded-lg border border-border bg-background p-4 text-xs leading-5 shadow-2xl motion-reduce:transition-none"
                 />
               ) : null
             ) : item.src === null || failedImageSrc === item.src ? (

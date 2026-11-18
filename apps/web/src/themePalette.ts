@@ -388,20 +388,50 @@ export function subscribeToCustomThemes(listener: () => void): () => void {
   };
 }
 
+// The desktop surface ladder in index.css, where it differs from the shared palette mobile uses.
+const STANDARD_WEB_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
+  light: {
+    sidebar: "#f3f3f5",
+    sidebarControlSurface: "#eaeaed",
+    sidebarRowHover: "#f9f9fa",
+  },
+  dark: {
+    canvas: "#121213",
+    chrome: "#121213",
+    toolbar: "#121213",
+    toolbarControl: "#212122",
+    surface: "#19191a",
+    surfaceRaised: "#19191a",
+    surfaceOverlay: "#212122",
+    text: "#ededee",
+    mutedForeground: "#a0a0a2",
+    messageSurface: "#262627",
+    codeBackground: "#19191a",
+    sidebar: "#0a0a0b",
+    sidebarForeground: "#ededee",
+    sidebarMutedForeground: "#a0a0a2",
+    sidebarControlSurface: "#111112",
+    terminalBackground: "#121213",
+  },
+};
+
 export function getStandardThemeColors(appearance: ThemeAppearance): ThemeColors {
   if (appearance === "dark") {
     return (standardDarkThemeColors ??= decodeThemeColors({
       ...ONICODE_CODE_DARK_THEME_COLORS,
-      canvas: "#000000",
+      ...STANDARD_WEB_COLORS.dark,
     }));
   }
-  return (standardLightThemeColors ??= decodeThemeColors(ONICODE_CODE_LIGHT_THEME_COLORS));
+  return (standardLightThemeColors ??= decodeThemeColors({
+    ...ONICODE_CODE_LIGHT_THEME_COLORS,
+    ...STANDARD_WEB_COLORS.light,
+  }));
 }
 
 // index.css paints the light bubble a step darker than the shared palette mobile uses.
 const STANDARD_WEB_PAINTED_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
   light: { messageSurface: "#ebebed" },
-  dark: { canvas: "#000000", messageSurface: "#1e1e1e" },
+  dark: {},
 };
 
 /** The standard theme as index.css paints it, for solves that measure the page. */

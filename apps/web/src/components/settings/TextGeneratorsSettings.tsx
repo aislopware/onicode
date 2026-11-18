@@ -394,7 +394,7 @@ function TextGeneratorWizard({
                             className={
                               selected
                                 ? "flex flex-col items-center gap-2 rounded-lg border border-primary bg-primary/5 px-2 py-3 text-sm font-medium text-foreground ring-1 ring-primary ring-inset outline-none focus-visible:ring-2 focus-visible:ring-inset"
-                                : "flex flex-col items-center gap-2 rounded-lg border bg-background px-2 py-3 text-sm text-muted-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                                : "flex flex-col items-center gap-2 rounded-lg border bg-background px-2 py-3 text-sm text-muted-foreground outline-none hover:bg-accent/60 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                             }
                             onClick={() => {
                               setPreset(candidate);
@@ -673,7 +673,7 @@ function TextGeneratorModelList({
           onChange={(event) => setQuery(event.target.value)}
         />
       ) : null}
-      <div className="max-h-80 overflow-y-auto rounded-lg border divide-y divide-border/60">
+      <div className="max-h-80 overflow-y-auto rounded-lg border divide-y divide-border">
         {shown.length === 0 ? (
           <p className="px-3 py-2 text-sm text-muted-foreground">
             <T>No models match.</T>

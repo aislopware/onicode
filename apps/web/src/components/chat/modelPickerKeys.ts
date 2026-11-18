@@ -2,14 +2,34 @@ import type { ProviderInstanceId } from "@onicode/contracts";
 
 const MODEL_KEY_PREFIX = "model:";
 const LEGACY_SECTION_KEY_PREFIX = "legacy-models:";
+const FAVORITE_KEY_PREFIX = "favorite:";
+const RECENT_KEY_PREFIX = "recent:";
+/** The row that opens the whole catalogue under Favorites and Recent. */
+export const MODEL_PICKER_ALL_MODELS_KEY = "all-models";
 
 export function modelPickerModelKey(instanceId: ProviderInstanceId, slug: string): string {
   return `${MODEL_KEY_PREFIX}${instanceId.length}:${instanceId}${slug}`;
 }
 
+/** A model's row in Favorites, apart from its row in its provider's section. */
+export function modelPickerFavoriteKey(instanceId: ProviderInstanceId, slug: string): string {
+  return `${FAVORITE_KEY_PREFIX}${modelPickerModelKey(instanceId, slug)}`;
+}
+
+/** A model's row in Recent, apart from its row in its provider's section. */
+export function modelPickerRecentKey(instanceId: ProviderInstanceId, slug: string): string {
+  return `${RECENT_KEY_PREFIX}${modelPickerModelKey(instanceId, slug)}`;
+}
+
+/** The model a row picks, from its provider row or its Favorites or Recent row. */
 export function parseModelPickerModelKey(
-  key: string,
+  rowKey: string,
 ): { instanceId: ProviderInstanceId; slug: string } | null {
+  const key = rowKey.startsWith(FAVORITE_KEY_PREFIX)
+    ? rowKey.slice(FAVORITE_KEY_PREFIX.length)
+    : rowKey.startsWith(RECENT_KEY_PREFIX)
+      ? rowKey.slice(RECENT_KEY_PREFIX.length)
+      : rowKey;
   if (!key.startsWith(MODEL_KEY_PREFIX)) {
     return null;
   }

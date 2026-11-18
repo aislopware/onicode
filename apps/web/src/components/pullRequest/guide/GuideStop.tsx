@@ -184,14 +184,14 @@ export function GuideStop({
               {stop.excerpts.length > 0 ? gt("Also in this stop") : gt("Files in this stop")}
             </h3>
             <DiffWorkerPoolProvider>
-              <ul className="flex flex-col overflow-hidden rounded-lg border border-border/60">
+              <ul className="flex flex-col overflow-hidden rounded-lg border border-border">
                 {otherFiles.map((file) => {
                   const diff = files.get(file.path);
                   const stat = diff === undefined ? null : getDiffLineStat([diff]);
                   return (
-                    <li key={file.path} className="border-border/60 not-first:border-t">
+                    <li key={file.path} className="border-border not-first:border-t">
                       <Collapsible>
-                        <CollapsibleTrigger className="group flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
+                        <CollapsibleTrigger className="group flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-xs outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset">
                           <ChevronRightIcon
                             aria-hidden
                             className="size-3.5 shrink-0 text-muted-foreground group-data-panel-open:rotate-90"
@@ -254,7 +254,7 @@ export function GuideStop({
                     key={question}
                     type="button"
                     onClick={() => onAsk(question)}
-                    className="flex min-w-0 items-start gap-2 rounded-lg border border-border/60 px-3 py-1.5 text-left text-sm text-foreground outline-none hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    className="flex min-w-0 items-start gap-2 rounded-lg border border-border px-3 py-1.5 text-left text-sm text-foreground outline-none hover:bg-accent/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                   >
                     <MessageCircleQuestionIcon
                       aria-hidden
@@ -277,7 +277,7 @@ export function GuideStop({
           </section>
         ) : null}
 
-        <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-border/60 pt-4">
+        <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-border pt-4">
           {nextTitle !== null ? (
             <Button size="multiline" className="max-w-full" onClick={() => onStep(1)}>
               <span className="min-w-0 break-words">

@@ -14,6 +14,7 @@ import {
   type SidebarProjectGroupingMode,
 } from "@onicode/contracts";
 import {
+  currentEnvironmentIdentificationMode,
   DEFAULT_UNIFIED_SETTINGS,
   type DiffLayout,
   MAX_SIDEBAR_AUTO_SETTLE_AFTER_DAYS,
@@ -346,9 +347,9 @@ export function useSettingsRestore(onRestored?: () => void) {
     ...(settings.panelAnimationDurationMs !== DEFAULT_UNIFIED_SETTINGS.panelAnimationDurationMs
       ? [gt("Panel animations")]
       : []),
-    ...(settings.environmentIdentificationMode !==
+    ...(currentEnvironmentIdentificationMode(settings.environmentIdentificationMode) !==
     DEFAULT_UNIFIED_SETTINGS.environmentIdentificationMode
-      ? [gt("Environment identification")]
+      ? [gt("Sidebar header")]
       : []),
     ...(settings.language !== DEFAULT_UNIFIED_SETTINGS.language ? [gt("Language")] : []),
     ...(settings.timestampFormat !== DEFAULT_UNIFIED_SETTINGS.timestampFormat

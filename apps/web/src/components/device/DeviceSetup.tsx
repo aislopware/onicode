@@ -440,7 +440,7 @@ function PlatformStatus(props: {
   const gt = useGT();
   return (
     <div
-      className={cn("flex gap-2", !props.compact && "rounded-md border border-border/60 px-3 py-2")}
+      className={cn("flex gap-2", !props.compact && "rounded-md border border-border px-3 py-2")}
     >
       {props.status.ready ? (
         <Check className="mt-0.5 size-4 shrink-0 text-success" />

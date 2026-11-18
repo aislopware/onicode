@@ -9,6 +9,8 @@ import {
 export const REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL = msg("Remove queued message");
 
 export interface ThreadQueueRowControls {
+  /** Already headed into the turn once it finishes compacting, so there is nothing to send. */
+  readonly awaitsCompaction: boolean;
   readonly canDismiss: boolean;
   readonly canEdit: boolean;
   readonly canSend: boolean;
@@ -18,6 +20,7 @@ export interface ThreadQueueRowControls {
 }
 
 export function resolveThreadQueueRowControls(input: {
+  readonly awaitsCompaction?: boolean;
   readonly busy: boolean;
   readonly canPromoteToSteer: boolean;
   readonly canSendNow: boolean;
@@ -28,13 +31,19 @@ export function resolveThreadQueueRowControls(input: {
 }): ThreadQueueRowControls {
   const mutationEnabled = !input.busy;
   const isEditing = input.isEditing === true;
+  const awaitsCompaction = input.awaitsCompaction === true && !isEditing;
 
   return {
+    awaitsCompaction,
     canDismiss: !input.busy,
     // Re-opening the row already in the composer would reload it and throw
     // away whatever has been typed since.
     canEdit: mutationEnabled && !isEditing && input.editBlocked !== true,
-    canSend: mutationEnabled && (input.canPromoteToSteer || input.canSendNow) && !isEditing,
+    canSend:
+      mutationEnabled &&
+      (input.canPromoteToSteer || input.canSendNow) &&
+      !isEditing &&
+      !awaitsCompaction,
     dismissAccessibilityLabel: REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL,
     // Editing and sending keep the original text so quoted citations stay linked.
     displayText: isAttachmentOnlyBootstrapPrompt(input.text)

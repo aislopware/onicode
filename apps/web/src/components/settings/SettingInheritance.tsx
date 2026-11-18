@@ -307,7 +307,7 @@ export function SettingInheritance({
         <TooltipPopup side="top">{overrideSummary}</TooltipPopup>
       </Tooltip>
       <PopoverPopup align="start" width="md" padding="none">
-        <div className="divide-y divide-border/60">
+        <div className="divide-y divide-border">
           {groups.map((members) => {
             const first = members[0];
             if (!first) return null;
@@ -319,7 +319,7 @@ export function SettingInheritance({
                     key={layer.key}
                     className={cn(
                       "grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 rounded-md px-2 py-1",
-                      layer.effective && "bg-foreground/[0.06]",
+                      layer.effective && "bg-row-selected",
                     )}
                   >
                     <span
@@ -333,11 +333,7 @@ export function SettingInheritance({
                     <span
                       className={cn(
                         "flex items-center gap-1.5 tabular-nums",
-                        layer.effective
-                          ? "text-foreground"
-                          : layer.set
-                            ? "text-muted-foreground"
-                            : "text-muted-foreground/60",
+                        layer.effective ? "text-foreground" : "text-muted-foreground",
                       )}
                     >
                       <span className="max-w-32 truncate">{layer.value}</span>
@@ -488,7 +484,7 @@ export function SettingInheritance({
                     </ul>
                   );
                   return (
-                    <div className="mt-2 border-t border-border/60 pt-2">
+                    <div className="mt-2 border-t border-border pt-2">
                       {foldOverrides ? (
                         <Collapsible>
                           {header}

@@ -53,12 +53,12 @@ describe("SidebarProviderUpdatePill exit", () => {
 
     setup([provider("succeeded")]);
     await screen.rerender(<SidebarProviderUpdatePill />);
-    await advance(180);
+    await advance(200);
     expect(screen.container.textContent).toContain("Claude updated: v2.1.303");
     expect(screen.container.querySelector('[role="status"]')).toBeNull();
 
     await advance(3_000);
-    await advance(180);
+    await advance(200);
     expect(screen.container.textContent).toBe("");
   });
 
@@ -73,7 +73,7 @@ describe("SidebarProviderUpdatePill exit", () => {
         .querySelector<HTMLButtonElement>('[aria-label="Dismiss provider update notice"]')
         ?.click(),
     );
-    await advance(180);
+    await advance(200);
     expect(screen.container.textContent).toBe("");
   });
 });

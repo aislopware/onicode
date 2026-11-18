@@ -32,6 +32,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
+import { BotIcon, EyeIcon, MousePointer2Icon, UsersIcon } from "lucide-react";
 import { msg, T, useGT, useMessages } from "gt-react";
 
 import { AgentCursorMark } from "~/components/preview/AgentBrowserCursor";
@@ -39,6 +41,7 @@ import { CommandBlock } from "~/components/CommandBlock";
 import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { toastManager } from "~/components/ui/toast";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "~/components/ui/tooltip";
 import { thrownErrorMessage } from "@onicode/client-runtime/errors";
 import { m } from "~/i18n/messages";
 import { cn } from "~/lib/utils";
@@ -143,13 +146,104 @@ function offerDownload(download: PreviewStreamDownload) {
   });
 }
 
+/**
+ * Who drives the page, and the way to take or give back control. In an icon row it is one toggle;
+ * floating over the page it names its action, and shrinks to its icon while you drive so it stays
+ * out of the page's way.
+ */
+function StreamControl(props: {
+  readonly control: PreviewStreamControl;
+  readonly label: string;
+  readonly onToggle: () => void;
+  readonly floating?: boolean;
+}) {
+  const gt = useGT();
+  const { control, label } = props;
+  const you = control.controller === "you";
+  const locked = !control.canOperate || control.controller === "another-viewer";
+  const Icon =
+    control.controller === "another-viewer"
+      ? UsersIcon
+      : !control.canOperate
+        ? EyeIcon
+        : control.controller === "agent"
+          ? BotIcon
+          : MousePointer2Icon;
+  const action = you ? gt("Release control") : gt("Take control");
+
+  if (props.floating) {
+    return (
+      <div
+        data-stream-control
+        className="group/control pointer-events-auto flex h-7 items-center rounded-lg border border-border bg-popover p-0.5 text-xs shadow-lg/20"
+      >
+        {locked ? (
+          <span className="flex items-center gap-1.5 px-1.5 text-muted-foreground">
+            <Icon aria-hidden="true" className="size-3.5" />
+            {label}
+          </span>
+        ) : (
+          <Button
+            variant="ghost"
+            size="xs"
+            aria-label={action}
+            aria-pressed={you}
+            onClick={props.onToggle}
+          >
+            <Icon aria-hidden="true" className={cn(you && "text-primary")} />
+            <span
+              className={cn(
+                you && "hidden group-focus-within/control:inline group-hover/control:inline",
+              )}
+            >
+              {action}
+            </span>
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          locked ? (
+            <span
+              role="img"
+              aria-label={label}
+              className="flex size-6 shrink-0 items-center justify-center text-muted-foreground"
+            />
+          ) : (
+            <Button
+              variant={you ? "secondary" : "ghost"}
+              size="icon-xs"
+              type="button"
+              aria-label={action}
+              aria-pressed={you}
+              onClick={props.onToggle}
+            />
+          )
+        }
+      >
+        <Icon aria-hidden="true" className={cn(locked ? "size-3.5" : you && "text-primary")} />
+      </TooltipTrigger>
+      <TooltipPopup>{locked ? label : `${label} · ${action}`}</TooltipPopup>
+    </Tooltip>
+  );
+}
+
 export function ServerBrowserSurface(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: string;
   readonly tabId: string;
   readonly visible: boolean;
   readonly followSize?: boolean;
-  readonly controlPosition?: "top" | "bottom";
+  /**
+   * An icon row that takes the control toggle, or null until that row mounts. Without one the
+   * control floats over the page.
+   */
+  readonly controlSlot?: HTMLElement | null;
   readonly onFirstFrame?: () => void;
   readonly onViewport?: (viewport: PreviewStreamViewport) => void;
   readonly onControl?: (control: PreviewStreamControl | null) => void;
@@ -164,7 +258,7 @@ export function ServerBrowserSurface(props: {
     tabId,
     visible,
     followSize = true,
-    controlPosition = "top",
+    controlSlot,
     onFirstFrame,
     onViewport,
     onControl,
@@ -747,35 +841,43 @@ export function ServerBrowserSurface(props: {
     resetInput(textarea);
   };
 
+  const controlLabel = previewStreamControlLabel(control, resolve);
+  const toggleControl = () =>
+    send({ type: control?.controller === "you" ? "releaseControl" : "takeControl" });
+
   return (
     <div
       className={cn("relative flex flex-col overflow-hidden", className)}
       data-server-browser-surface={tabId}
       onMouseUp={handleMouseUp}
     >
-      <div
-        className={cn(
-          "visible relative z-20 flex shrink-0 items-center justify-between gap-2 border-border bg-background px-2 py-1",
-          controlPosition === "bottom" ? "order-last border-t" : "border-b",
-        )}
-      >
-        <span role="status" className="text-xs text-muted-foreground">
-          {previewStreamControlLabel(control, resolve)}
-        </span>
-        {control?.canOperate ? (
-          <Button
-            variant="outline"
-            size="xs"
-            disabled={control.controller === "another-viewer"}
-            onClick={() =>
-              send({ type: control.controller === "you" ? "releaseControl" : "takeControl" })
-            }
-          >
-            {control.controller === "you" ? <T>Release control</T> : <T>Take control</T>}
-          </Button>
-        ) : null}
-      </div>
+      {control && controlSlot
+        ? createPortal(
+            <StreamControl control={control} label={controlLabel} onToggle={toggleControl} />,
+            controlSlot,
+          )
+        : null}
       <div className="relative min-h-0 flex-1">
+        <span
+          role="status"
+          className={
+            control
+              ? "sr-only"
+              : "pointer-events-none absolute inset-0 z-10 flex items-center justify-center text-xs text-muted-foreground"
+          }
+        >
+          {controlLabel}
+        </span>
+        {control && controlSlot === undefined ? (
+          <div className="pointer-events-none absolute bottom-2 left-2 z-20 flex">
+            <StreamControl
+              control={control}
+              label={controlLabel}
+              onToggle={toggleControl}
+              floating
+            />
+          </div>
+        ) : null}
         {pdfUrl ? (
           <embed
             src={pdfUrl}
@@ -831,7 +933,7 @@ export function ServerBrowserSurface(props: {
         />
         {fileChooser && control?.controller === "you" ? (
           <div
-            className="absolute inset-x-2 top-2 z-10 flex flex-col gap-2 rounded-lg border border-border bg-background p-3 shadow-lg"
+            className="absolute inset-x-2 top-2 z-10 flex flex-col gap-2 rounded-lg border border-border bg-background p-3 shadow-popup dark:shadow-popup-dark"
             role="dialog"
             aria-label={gt("Choose files for the page")}
           >
@@ -866,7 +968,7 @@ export function ServerBrowserSurface(props: {
         ) : null}
         {control?.dialog ? (
           <div
-            className="absolute inset-x-2 top-2 z-10 flex flex-col gap-2 rounded-lg border border-border bg-background p-3 shadow-lg"
+            className="absolute inset-x-2 top-2 z-10 flex flex-col gap-2 rounded-lg border border-border bg-background p-3 shadow-popup dark:shadow-popup-dark"
             role="dialog"
             aria-label={gt("Browser dialog")}
           >

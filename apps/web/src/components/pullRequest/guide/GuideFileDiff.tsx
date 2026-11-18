@@ -34,7 +34,7 @@ export function GuideFileDiff({
     loadDiffFiles,
   };
   return (
-    <div className="border-t border-border/60">
+    <div className="border-t border-border">
       <FileDiff fileDiff={expandable} options={options} />
     </div>
   );

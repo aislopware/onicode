@@ -183,7 +183,7 @@ export function ContextUsageDetails(props: {
       <ul className="flex flex-col">{used.map(({ category, color }) => row(category, color))}</ul>
       {deferred.length > 0 ? (
         <>
-          <p className="px-2.5 pt-2 pb-0.5 text-2xs text-muted-foreground/70">Loaded on use</p>
+          <p className="px-2.5 pt-2 pb-0.5 text-2xs text-muted-foreground">Loaded on use</p>
           <ul className="flex flex-col">{deferred.map((category) => row(category, null))}</ul>
         </>
       ) : null}
@@ -206,12 +206,7 @@ function CompactCategoryRow(props: {
   const name = category.name.replace(/\s*\(deferred\)$/i, "");
   const content = (
     <>
-      <span
-        className={cn(
-          "flex min-w-0 items-center gap-1",
-          bar === null ? "text-muted-foreground/70" : "text-muted-foreground",
-        )}
-      >
+      <span className="flex min-w-0 items-center gap-1 text-muted-foreground">
         <span className="truncate">{name}</span>
         {detail !== null ? (
           <ChevronRightIcon
@@ -231,7 +226,7 @@ function CompactCategoryRow(props: {
       <span
         className={cn(
           "text-end tabular-nums",
-          bar === null ? "text-muted-foreground/70" : "text-foreground/80",
+          bar === null ? "text-muted-foreground" : "text-foreground/80",
         )}
       >
         {formatContextWindowTokens(category.tokens)}
@@ -248,7 +243,7 @@ function CompactCategoryRow(props: {
           aria-expanded={props.open}
           className={cn(
             rowClass,
-            "outline-none hover:bg-black/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring dark:hover:bg-white/[0.08]",
+            "outline-none hover:bg-row-highlight focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ",
           )}
           onClick={props.onToggle}
         >
@@ -258,9 +253,7 @@ function CompactCategoryRow(props: {
         <div className={rowClass}>{content}</div>
       )}
       {detail !== null && props.open ? (
-        <div className="ms-2.5 mb-1 border-s border-border/65 ps-1">
-          {props.renderDetail(detail)}
-        </div>
+        <div className="ms-2.5 mb-1 border-s border-border ps-1">{props.renderDetail(detail)}</div>
       ) : null}
     </li>
   );
@@ -421,7 +414,7 @@ function DetailRow(props: {
       className={cn(
         rowClass,
         "w-full text-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-        props.compact ? "hover:bg-black/[0.035] dark:hover:bg-white/[0.08]" : "hover:bg-accent",
+        props.compact ? "hover:bg-row-highlight" : "hover:bg-accent",
       )}
       onClick={props.onClick}
     >

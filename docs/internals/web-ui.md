@@ -20,6 +20,10 @@ Style with Tailwind classes in the component that renders the element.
 - No `style={{ ... }}` or inline `<style>` for static values a class covers. Values computed at
   runtime are fine.
 - Theme-only rules use `@variant dark` and `@variant light`, not `.dark` selectors.
+- Text has three greys: `text-foreground`, `text-foreground/80` for softened text, and
+  `text-muted-foreground`. Borders and dividers have one weight: `border-border`, `bg-border`,
+  `divide-border`. Don't put another opacity on these colours; each extra step is a grey nobody
+  can tell apart, and the faint ones fail contrast. To dim a state, use `opacity-*` on the element.
 
 ## Composition
 

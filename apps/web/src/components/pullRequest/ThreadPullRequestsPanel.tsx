@@ -161,7 +161,7 @@ function LinkRowImpl({
       }}
       style={{ paddingLeft: `${0.5 + Math.min(depth, 3) * 1.25}rem` }}
     >
-      {depth > 0 ? <span aria-hidden className="-ml-2 h-6 w-px shrink-0 bg-border/70" /> : null}
+      {depth > 0 ? <span aria-hidden className="-ml-2 h-6 w-px shrink-0 bg-border" /> : null}
       {snapshot === null ? (
         <PullRequestGlyph.pullRequest
           aria-label={gt("Waiting for host state")}
@@ -262,7 +262,7 @@ function LinkRowImpl({
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <span className="inline-flex shrink-0 items-center gap-0.5 text-foreground/70" />
+                      <span className="inline-flex shrink-0 items-center gap-0.5 text-foreground/80" />
                     }
                   >
                     <PullRequestGlyph.stack aria-hidden className="size-3" />
@@ -512,7 +512,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   if (linkCount === 0) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-        <PullRequestGlyph.link aria-hidden className="size-6 text-muted-foreground/60" />
+        <PullRequestGlyph.link aria-hidden className="size-6 text-muted-foreground" />
         <p className="text-sm font-medium">
           <T>No linked pull requests</T>
         </p>
@@ -561,7 +561,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
           drawDistance={440}
           className="min-h-0 flex-1 overscroll-contain p-1.5"
         />
-        <footer className="flex items-center justify-between border-t border-border/60 px-2 py-1.5 text-2xs text-muted-foreground">
+        <footer className="flex items-center justify-between border-t border-border px-2 py-1.5 text-2xs text-muted-foreground">
           <span>
             {gt(
               "{openCount, plural, one {{openCount} open} other {{openCount} open}} · {linkCount, plural, one {{linkCount} linked} other {{linkCount} linked}}",

@@ -240,7 +240,7 @@ function itemSummary({
           <T>
             <Var>{item.label}</Var> is not authenticated on this server. Sign in or configure
             credentials using the{" "}
-            <code className="rounded bg-muted px-1 py-px text-2xs">
+            <code className="rounded-sm bg-muted px-1 py-px text-2xs">
               <Var>{item.executable}</Var>
             </code>{" "}
             tool on the server host to enable change request features.
@@ -298,7 +298,7 @@ function DiscoveryItemRow({
   return (
     <div
       className={cn(
-        "first:rounded-t-xl last:rounded-b-xl transition-colors hover:bg-muted/20",
+        "first:rounded-t-xl last:rounded-b-xl transition-colors hover:bg-accent/60",
         isVcsNotReady(item) && "opacity-80",
       )}
     >
@@ -320,7 +320,7 @@ function DiscoveryItemRow({
                 </Badge>
               ) : null}
             </div>
-            <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-xs leading-normal text-muted-foreground/80">
+            <p className="flex min-w-0 flex-wrap items-center gap-x-1 text-xs leading-normal text-muted-foreground">
               {itemSummary({ item, auth, authAccount, resolve: messages })}
             </p>
           </div>

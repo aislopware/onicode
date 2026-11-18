@@ -258,6 +258,11 @@ not been sent yet. On mobile they appear above the composer. Each shows its text
 images. **Send now** sends a message right away, into the running turn if there is one. You can
 also edit or remove it.
 
+A message sent into a turn that is compacting its context waits for the compaction: its row
+shows **After compaction** on desktop and an hourglass on mobile in place of **Send now**, and it
+goes into the turn when compaction finishes. If the compaction fails or is stopped, the message
+stays in the queue like any other.
+
 If you stop the agent or the server restarts, queued messages keep their order and are held.
 Press **Resume** in an empty composer to continue. For stopped runs and usage limits,
 this uses the provider's native continuation without sending a new prompt. Providers without

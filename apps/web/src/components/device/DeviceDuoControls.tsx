@@ -73,7 +73,7 @@ export function DeviceDuoControls(props: {
     </Tooltip>
   );
   const group =
-    "pointer-events-auto flex shrink-0 flex-col items-center gap-1 rounded-full border border-border/50 bg-background/80 p-1 shadow-sm";
+    "pointer-events-auto flex shrink-0 flex-col items-center gap-1 rounded-full border border-border bg-background/80 p-1 shadow-sm";
   return (
     <div aria-label={gt("iPhone Duo stands")} className="flex flex-col items-center gap-2">
       <div role="group" aria-label={gt("Fold shape")} className={group}>

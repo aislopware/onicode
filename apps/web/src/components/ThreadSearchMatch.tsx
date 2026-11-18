@@ -26,8 +26,8 @@ export function SearchMatchHintLine(props: { hint: SearchMatchHint }) {
   const gt = useGT();
   const messages = useMessages();
   return (
-    <span className="truncate text-xs text-muted-foreground/85">
-      <span className="text-muted-foreground/70">
+    <span className="truncate text-xs text-muted-foreground">
+      <span className="text-muted-foreground">
         {gt("{label}:", { label: searchMatchHintLabel(props.hint.field, messages) })}
       </span>{" "}
       <HighlightedSearchText text={props.hint.text} ranges={props.hint.ranges} />
@@ -44,7 +44,7 @@ export function ThreadSearchMatchExcerpt(props: {
 }) {
   const isUser = props.match.source === "user";
   return (
-    <span className="truncate text-xs text-muted-foreground/85">
+    <span className="truncate text-xs text-muted-foreground">
       <span className={isUser ? "text-info-foreground" : "text-success-foreground"}>
         {isUser ? <T>You:</T> : <T>Agent:</T>}
       </span>{" "}

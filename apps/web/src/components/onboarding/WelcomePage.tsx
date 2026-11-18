@@ -266,7 +266,7 @@ export function WelcomePage({
                 .
               </T>
             </p>
-            <div className="mt-10 border-t border-border/60">
+            <div className="mt-10 border-t border-border">
               <AgentsSection
                 environmentId={environmentId}
                 label={label}
@@ -326,7 +326,7 @@ function WelcomeSection({
   readonly children: ReactNode;
 }) {
   return (
-    <section className="grid gap-x-10 border-b border-border/60 py-4 sm:grid-cols-[6rem_minmax(0,1fr)]">
+    <section className="grid gap-x-10 border-b border-border py-4 sm:grid-cols-[6rem_minmax(0,1fr)]">
       <h2 className="text-sm leading-10 text-muted-foreground">{title}</h2>
       <div className="min-w-0">{children}</div>
     </section>
@@ -1236,16 +1236,16 @@ function AgentInstallTerminal({
   return (
     <div
       data-thread-terminal-drawer
-      className="mt-4 overflow-hidden rounded-lg border border-border/70 bg-background text-foreground"
+      className="mt-4 overflow-hidden rounded-lg border border-border bg-background text-foreground"
     >
-      <div className="flex items-center justify-between border-b border-border/60 bg-background/60 px-3 py-1.5">
+      <div className="flex items-center justify-between border-b border-border bg-background/60 px-3 py-1.5">
         <span className="text-2xs font-medium text-muted-foreground">
           {!canOperateTerminal ? (
             gt("This connection cannot control terminals.")
           ) : setupState === "writeFailed" ? (
             <T>
               Run{" "}
-              <code className="rounded bg-muted px-1 font-mono">
+              <code className="rounded-sm bg-muted px-1 font-mono">
                 <Var>{command}</Var>
               </code>{" "}
               in this terminal.
@@ -1639,7 +1639,7 @@ function ImportCandidateList({
       ))}
       {other.length > 0 ? (
         <Collapsible>
-          <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/40">
+          <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-accent/60">
             <Checkbox
               checked={otherSelected === other.length}
               indeterminate={otherSelected > 0 && otherSelected < other.length}
@@ -1706,7 +1706,7 @@ function ImportRepositoryGroup({
   }
   return (
     <Collapsible defaultOpen>
-      <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/40">
+      <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-accent/60">
         <Checkbox
           checked={selectedCount === keys.length}
           indeterminate={selectedCount > 0 && selectedCount < keys.length}
@@ -1772,7 +1772,7 @@ function ImportCandidateRow({
   return (
     <label
       className={cn(
-        "flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-muted/40 has-disabled:cursor-default",
+        "flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-accent/60 has-disabled:cursor-default",
         nested && "pl-8",
       )}
     >

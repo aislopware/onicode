@@ -107,7 +107,7 @@ export function IssueDetailGhost({ seed }: { seed?: IssueListEntry | null }) {
         </>
       )}
       <div className={cn("flex flex-col gap-4", seed && "motion-safe:animate-skeleton")}>
-        <div className="flex flex-col gap-2.5 rounded-lg border border-border/60 p-3">
+        <div className="flex flex-col gap-2.5 rounded-lg border border-border p-3">
           <GhostBar className="w-20" />
           <GhostBar className="h-3.5 w-full" />
           <GhostBar className="h-3.5 w-5/6" />

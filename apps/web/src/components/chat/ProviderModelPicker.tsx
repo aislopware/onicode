@@ -8,7 +8,6 @@ import {
 import { RegistryContext } from "@effect/atom-react";
 import { T, useGT } from "gt-react";
 import {
-  createContext,
   memo,
   type ReactNode,
   useContext,
@@ -53,7 +52,7 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
     return (
       target instanceof Element &&
       target.closest(
-        "[data-model-picker-content], [data-model-picker-effort], [data-model-picker-option-menu]",
+        "[data-model-picker-content], [data-model-picker-effort], [data-composer-permissions]",
       )
     );
   };
@@ -84,9 +83,6 @@ function lockBackgroundScroll(popup: HTMLElement | null) {
     body.style.paddingRight = previousBodyPaddingRight;
   };
 }
-
-/** What a docked effort section needs from its picker: the model it serves. */
-export const DockedPickerContext = createContext<{ modelLabel: string }>({ modelLabel: "" });
 
 export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   environmentId: EnvironmentId | null;
@@ -123,8 +119,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Composer shortcuts this trigger answers besides the picker's own. */
   triggerShortcuts?: string;
   /**
-   * Docks the model's effort and options under the list and a footer under both. The popup then
-   * stays open until Escape or an outside press, and picking a model moves focus to its levels.
+   * The selected model's effort and options with a footer below them: beside the list in a wide
+   * window, under it in a narrow one.
+   * The popup then stays open until Escape or an outside press, and picking a model moves focus
+   * to its levels.
    */
   effortColumn?: ReactNode;
   footer?: ReactNode;
@@ -218,8 +216,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       return;
     }
     popupRef.current
-      ?.querySelector<HTMLButtonElement>("[data-composer-permissions-trigger]")
-      ?.click();
+      ?.querySelector<HTMLElement>("[data-composer-permissions] [aria-checked='true']")
+      ?.focus({ preventScroll: true });
   };
 
   const handleInstanceModelChange = (instanceId: ProviderInstanceId, model: string) => {
@@ -321,9 +319,46 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       onInstanceModelChange={handleInstanceModelChange}
       {...(docked
         ? {
-            docked,
+            side: (
+              <>
+                {activeEntry ? (
+                  // Names the model the options belong to, level with the search field.
+                  <div className="hidden h-9.25 shrink-0 items-center gap-2 border-b border-border px-3 text-sm font-medium text-foreground min-[45rem]:flex">
+                    <ProviderInstanceIcon
+                      driverKind={activeEntry.driverKind}
+                      displayName={activeEntry.displayName}
+                      accentColor={activeEntry.accentColor}
+                      acpRegistryAgentId={activeEntry.acpRegistryAgentId}
+                      acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
+                      showBadge={showInstanceBadge}
+                      className="size-3.5"
+                      iconClassName="size-3.5"
+                      indicatorBackground="var(--popover)"
+                      badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"
+                    />
+                    <span className="min-w-0 truncate">{triggerLabel}</span>
+                  </div>
+                ) : null}
+                <div
+                  data-model-picker-effort
+                  // A model with nothing to set leaves no empty section behind.
+                  className="flex max-h-48 min-h-0 shrink-0 flex-col border-t border-border empty:hidden min-[45rem]:max-h-80 min-[45rem]:shrink min-[45rem]:border-t-0"
+                  onKeyDown={(event) => {
+                    // Up leaves the options for the list above them.
+                    if (event.key !== "ArrowUp" || event.altKey || event.ctrlKey || event.metaKey)
+                      return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    searchInputRef.current?.focus();
+                  }}
+                >
+                  {props.effortColumn}
+                </div>
+                {/* Access belongs to the thread, so it closes the column, apart from the model. */}
+                <div className="shrink-0 empty:hidden min-[45rem]:mt-auto">{props.footer}</div>
+              </>
+            ),
             onFocusEffort: () => void focusEffort("any"),
-            // Inside the fixed height, so switching to or from a ChatGPT plan never resizes it.
             ...(props.selectedModels === undefined
               ? { listFooter: <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} /> }
               : {}),
@@ -468,41 +503,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         className="before:hidden"
         padding="none"
         touchBackdrop
+        // The selected model's options and the list both change height while the picker is open.
+        resizes
       >
-        {props.effortColumn ? (
-          <DockedPickerContext value={{ modelLabel: triggerTitle }}>
-            <div className="flex max-h-(--available-height) flex-col">
-              {/* One fixed height, so neither a provider with fewer models nor a model with more
-                  options resizes the popup: the list gives up the room. Short windows shrink it
-                  and keep the footer. */}
-              <div className="flex h-91 min-h-0 flex-col overflow-hidden">
-                {picker}
-                <div
-                  data-model-picker-effort
-                  className="flex max-h-48 min-h-0 shrink-0 flex-col border-t border-border/70"
-                  onKeyDown={(event) => {
-                    // Up leaves the options for the list above; Left is the older way back.
-                    if (
-                      (event.key !== "ArrowUp" && event.key !== "ArrowLeft") ||
-                      event.altKey ||
-                      event.ctrlKey ||
-                      event.metaKey
-                    )
-                      return;
-                    event.preventDefault();
-                    event.stopPropagation();
-                    searchInputRef.current?.focus();
-                  }}
-                >
-                  {props.effortColumn}
-                </div>
-              </div>
-              {props.footer}
-            </div>
-          </DockedPickerContext>
-        ) : (
-          picker
-        )}
+        {picker}
         {props.selectedModels === undefined && !docked ? (
           <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />
         ) : null}

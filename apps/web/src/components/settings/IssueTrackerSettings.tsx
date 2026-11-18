@@ -128,7 +128,7 @@ function TrackerRow({
   const summary = issueTrackerSummary(tracker, bindings, messages);
 
   return (
-    <div className="first:rounded-t-xl last:rounded-b-xl transition-colors hover:bg-muted/20">
+    <div className="first:rounded-t-xl last:rounded-b-xl transition-colors hover:bg-accent/60">
       <div className="flex items-center justify-between gap-3 px-3 py-3 sm:px-4">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -151,7 +151,7 @@ function TrackerRow({
               </Badge>
             ) : null}
           </div>
-          <p className="text-xs leading-normal text-muted-foreground/80">{summary}</p>
+          <p className="text-xs leading-normal text-muted-foreground">{summary}</p>
         </div>
         <Button
           size="icon-xs"

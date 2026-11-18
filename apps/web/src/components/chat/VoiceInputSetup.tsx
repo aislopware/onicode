@@ -114,7 +114,7 @@ export function VoiceInputSetup(props: {
           {props.step === 0 ? (
             <section className="space-y-3 text-sm">
               {model ? (
-                <div className="space-y-3 rounded-lg border border-border/70 bg-card/60 p-3">
+                <div className="space-y-3 rounded-lg border border-border bg-card/60 p-3">
                   <div className="flex items-baseline justify-between gap-3">
                     <h3 className="min-w-0 truncate font-medium">{model.name}</h3>
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
