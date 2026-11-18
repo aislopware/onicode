@@ -253,7 +253,7 @@ export async function highlightNativeReviewDiffVisibleRows(
   input: HighlightNativeReviewDiffVisibleRowsInput,
 ): Promise<{
   readonly tokensByRowId: Record<string, ReadonlyArray<NativeReviewDiffToken>>;
-  // Deliver plain tokens for these rows without marking them permanently highlighted.
+  // Patch-only tokens for these rows, retried with the full source on a later viewport.
   readonly retryableRowIds: ReadonlyArray<string>;
   readonly rowCount: number;
   readonly durationMs: number;
@@ -331,6 +331,7 @@ export async function highlightNativeReviewDiffVisibleRows(
   const highlightSegmentRows = (
     rowIds: ReadonlySet<string>,
     out: Record<string, ReadonlyArray<NativeReviewDiffToken>>,
+    provisional = false,
   ) => {
     const sourceSegments = getSourceSegments(input.rows);
     const selectedSegments = new Map<
@@ -353,15 +354,23 @@ export async function highlightNativeReviewDiffVisibleRows(
       if (input.signal?.aborted) return;
       const file = fileMap.get(segment.fileId);
       if (!file) continue;
-      const tokens = tokenize(
-        segment,
-        () => segment.rows.map((row) => row.content).join("\n"),
-        file.language,
-      );
+      // Full-source tokens replace provisional ones, so a huge hunk costs only its
+      // selected lines here, uncached, rather than a second whole-segment pass.
+      const offset = provisional ? firstSelected : 0;
+      const tokens = provisional
+        ? tokenizeCode(
+            segment.rows
+              .slice(firstSelected, lastSelected + 1)
+              .map((row) => row.content)
+              .join("\n"),
+            file.language,
+          )
+        : tokenize(segment, () => segment.rows.map((row) => row.content).join("\n"), file.language);
       for (let index = firstSelected; index <= lastSelected; index += 1) {
         const row = segment.rows[index]!;
         if (rowIds.has(row.id) && displaySide(row) === segment.side) {
-          out[row.id] = tokens.highlightLine(index, input.scheme) ?? makePlainTokenFallback(row);
+          out[row.id] =
+            tokens.highlightLine(index - offset, input.scheme) ?? makePlainTokenFallback(row);
         }
       }
     }
@@ -392,7 +401,7 @@ export async function highlightNativeReviewDiffVisibleRows(
   const emitProvisionalChunk = (rows: ReadonlyArray<NativeReviewDiffLineRow>) => {
     if (!input.onChunk) return;
     const provisional: Record<string, ReadonlyArray<NativeReviewDiffToken>> = {};
-    highlightSegmentRows(new Set(rows.map((row) => row.id)), provisional);
+    highlightSegmentRows(new Set(rows.map((row) => row.id)), provisional, true);
     traceDiffHighlight("highlight-provisional", { request, rows: rows.length });
     emitChunk(provisional, Object.keys(provisional));
   };
@@ -410,14 +419,13 @@ export async function highlightNativeReviewDiffVisibleRows(
       provisionalFrom = entryIndex;
       emitProvisionalChunk(sourceEntries.slice(entryIndex).flatMap(([, rows]) => rows));
     }
-    let source: NativeReviewDiffSource | null;
+    let source: NativeReviewDiffSource | null = null;
+    let failed = false;
     try {
       source = await loading;
     } catch {
       traceDiffHighlight("highlight-source-error", { request, file: fileTraceId });
-      // Patch-only colors below, retried with the source on a later viewport.
-      for (const row of fileRows) retryableRowIds.push(row.id);
-      continue;
+      failed = true;
     }
     if (input.signal?.aborted) break;
     const contexts = source ? getFullSourceContexts(source) : null;
@@ -439,7 +447,6 @@ export async function highlightNativeReviewDiffVisibleRows(
         knownLines: context?.comparisonLines.length,
       });
       if (!context) continue;
-      // Rows the source cannot vouch for keep patch-only grammar below.
       const matchingRows: { row: NativeReviewDiffLineRow; lineIndex: number }[] = [];
       for (const row of fileRows) {
         if (displaySide(row) !== side) continue;
@@ -461,7 +468,20 @@ export async function highlightNativeReviewDiffVisibleRows(
           tokens.highlightLine(lineIndex, input.scheme) ?? makePlainTokenFallback(row);
       }
     }
-    emitChunk(fileTokens, []);
+    // Rows the source cannot vouch for keep patch-only grammar, shown now rather
+    // than after slower neighbors. A failed fetch retries on a later viewport.
+    const patchRowIds = new Set(
+      fileRows.filter((row) => selectedRowIds.has(row.id)).map((row) => row.id),
+    );
+    if (patchRowIds.size > 0 && !input.signal?.aborted) {
+      highlightSegmentRows(patchRowIds, fileTokens);
+      for (const rowId of patchRowIds) {
+        selectedRowIds.delete(rowId);
+        if (fileTokens[rowId]) tokensByRowId[rowId] = fileTokens[rowId];
+      }
+      if (failed) retryableRowIds.push(...patchRowIds);
+    }
+    emitChunk(fileTokens, failed ? [...patchRowIds] : []);
     await new Promise<void>((resolve) => setTimeout(resolve, 0));
   }
 
