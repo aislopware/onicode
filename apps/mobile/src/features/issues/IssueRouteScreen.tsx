@@ -131,7 +131,12 @@ function IssueStateControl(props: {
       <Menu
         title={gt("Issue state")}
         // The name is the id: unique within a workflow, and a NUL separator would end the native string.
-        actions={moves.map((move) => ({ id: move.name, title: move.name }))}
+        // Menus open from a disabled trigger, so the choices carry the busy state themselves.
+        actions={moves.map((move) => ({
+          id: move.name,
+          title: move.name,
+          attributes: { disabled: props.busy },
+        }))}
         onPressAction={({ nativeEvent }) => {
           if (moves.some((move) => move.name === nativeEvent.event))
             props.onMove(nativeEvent.event);
@@ -654,7 +659,7 @@ function IssueRoute({ params }: { readonly params: IssueParams }) {
                 <IssueIdentity
                   issue={issue}
                   access={access}
-                  busy={busy === "state"}
+                  busy={busy !== null || loadingOlder}
                   onMove={moveTo}
                   onEditLabels={() => navigation.navigate("IssueLabels", identity)}
                   onEditAssignees={() => navigation.navigate("IssueAssignees", identity)}
