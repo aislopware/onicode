@@ -299,7 +299,8 @@ export const nativeSessionHoldsImportedHistory = (
       (handoff.toProviderThreadId === providerThread.id ||
         providerThread.handoffIds.includes(handoff.id)) &&
       ((handoff.strategy === "manual_context" && !isSideChatContextHandoff(handoff)) ||
-        handoff.strategy === "full_thread_summary"),
+        (handoff.strategy === "full_thread_summary" &&
+          handoff.history?.messages.some((message) => message.runId === null) === true)),
   );
   // Rolling back a handoff's run (Edit from here) empties or truncates the session it reached.
   return (

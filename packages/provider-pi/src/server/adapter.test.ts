@@ -2454,7 +2454,7 @@ describe("PiAdapterV2", () => {
     }).pipe(Effect.scoped, Effect.provide(layerTest)),
   );
 
-  it.effect("fails to resume an imported session whose file is gone", () =>
+  it.effect("fails to resume a session whose file is gone or empty", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
       const fake = yield* makeFakePi;
@@ -2464,20 +2464,34 @@ describe("PiAdapterV2", () => {
         modelSelection: modelSelection("default"),
         runtimePolicy,
       });
-      const missing = {
+      const dir = yield* fileSystem.makeTempDirectoryScoped();
+      const at = (file: string) => ({
         ...providerThread,
-        nativeThreadRef: {
-          driver: PI_PROVIDER,
-          nativeId: `${yield* fileSystem.makeTempDirectoryScoped()}/moved.jsonl`,
-          strength: "strong" as const,
+        nativeThreadRef: { driver: PI_PROVIDER, nativeId: file, strength: "strong" as const },
+      });
+      const missing = at(`${dir}/moved.jsonl`);
+      yield* fileSystem.writeFileString(`${dir}/empty.jsonl`, "");
+      for (const resume of [
+        { providerThread: missing, importedNativeSession: true },
+        { providerThread: at(`${dir}/empty.jsonl`), importedNativeSession: true },
+        // A thread with turns had its file written, so a missing one lost them.
+        {
+          providerThread: {
+            ...missing,
+            nativeConversationHeadRef: {
+              driver: PI_PROVIDER,
+              nativeId: "entry-1",
+              strength: "strong" as const,
+            },
+          },
+          importedNativeSession: false,
         },
-      };
-      // Pi opens an empty session at a missing path, so only the imported history is at stake.
-      const error = yield* runtime
-        .resumeThread({ providerThread: missing, importedNativeSession: true })
-        .pipe(Effect.flip);
-      assert.equal(error._tag, "ProviderAdapterResumeThreadError");
+      ]) {
+        const error = yield* runtime.resumeThread(resume).pipe(Effect.flip);
+        assert.equal(error._tag, "ProviderAdapterResumeThreadError");
+      }
       assert.isFalse(fake.allRequests().some((request) => request.type === "switch_session"));
+      // A new session has no file until its first message.
       fake.queueState({ sessionFile: missing.nativeThreadRef.nativeId });
       yield* runtime.resumeThread({ providerThread: missing });
     }).pipe(Effect.scoped, Effect.provide(layerTest)),

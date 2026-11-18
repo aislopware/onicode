@@ -148,7 +148,8 @@ const nativeSessionMissesKeptTurns = (
   if (newest === undefined) return false;
   // Inherited fork and imported history are kept even when every local run was rolled back.
   const keepsHistory =
-    projection.thread.historyOrigin === "v1_import" ||
+    (projection.thread.historyOrigin === "v1_import" &&
+      projection.thread.lineage.sideChat !== true) ||
     (projection.thread.forkedFrom?.type === "run" && projection.thread.lineage.sideChat !== true) ||
     accepted.some((attempt) => {
       const source = runsById.get(attempt.runId);
@@ -968,14 +969,7 @@ export const layer: Layer.Layer<
           (handoff) =>
             handoff.toProviderThreadId === providerThread.id &&
             handoff.delivery?.nativeThreadId === loadedProviderThread.nativeThreadRef?.nativeId &&
-            handoff.delivery?.status !== "pending" &&
-            // An inline handoff rode in its run's prompt, which a truncating rollback removed.
-            !(
-              handoff.delivery?.status === "inline" &&
-              projection.runs.some(
-                (source) => source.id === handoff.targetRunId && source.status === "rolled_back",
-              )
-            ),
+            handoff.delivery?.status !== "pending",
         );
         const deliveredItemIds = new Set(
           settledHandoffs.flatMap((handoff) => handoff.delivery?.itemIds ?? []),
@@ -1424,6 +1418,10 @@ export const layer: Layer.Layer<
         const nativeSessionLacksKeptTurns =
           !session.providerSession.capabilities.checkpointing.providerCanRollbackConversation &&
           nativeSessionMissesKeptTurns(projection, providerThread, run);
+        // Checked here, after commit, so switches, queued starts and racing rollbacks all see it.
+        const nativeSessionLostImport =
+          projection.thread.historyOrigin === "v1_import" &&
+          !ContextHandoffService.nativeSessionHoldsImportedHistory(projection, providerThread);
         // Dispatch prepares no import handoff for a session import: its history is in the native session.
         const importedNativeSession =
           projection.thread.historyOrigin === "v1_import" &&
@@ -1434,7 +1432,7 @@ export const layer: Layer.Layer<
               handoff.strategy === "manual_context",
           );
         const resumed = yield* Effect.result(
-          uncertainDelivery || nativeSessionLacksKeptTurns
+          uncertainDelivery || nativeSessionLacksKeptTurns || nativeSessionLostImport
             ? Effect.fail(
                 new ProviderAdapter.ProviderAdapterTurnStartError({
                   driver: session.driver,
@@ -1443,7 +1441,9 @@ export const layer: Layer.Layer<
                   runId,
                   cause: uncertainDelivery
                     ? "Uncertain native history injection"
-                    : "Native session holds none of the kept conversation",
+                    : nativeSessionLacksKeptTurns
+                      ? "Native session holds none of the kept conversation"
+                      : "Native session lost the imported conversation",
                 }),
               )
             : session.resumeThread({
@@ -1526,9 +1526,11 @@ export const layer: Layer.Layer<
             ? "uncertain_history_delivery"
             : nativeSessionLacksKeptTurns
               ? "native_session_lacks_kept_turns"
-              : resumed._tag === "Success"
-                ? "handoff_budget_exhausted"
-                : "resume_failed",
+              : nativeSessionLostImport
+                ? "native_session_lost_import"
+                : resumed._tag === "Success"
+                  ? "handoff_budget_exhausted"
+                  : "resume_failed",
           errorTag: resumed._tag === "Failure" ? resumed.failure._tag : "ContextHandoffBudgetError",
         });
         const replacement = yield* loadFromProvider(
