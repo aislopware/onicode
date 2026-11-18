@@ -1,11 +1,11 @@
 import { expect } from "e2e";
 
-import { test, WEB } from "./onicode.ts";
+import { test, WEB } from "./desktop.ts";
 
 test(
   "A fork renamed before its first message keeps that name",
   WEB,
-  async ({ onicode, app, screen }) => {
+  async ({ onicode, desktop, app, screen }) => {
     const project = await onicode.project("demo");
     const thread = await onicode.thread({ project, title: "Earlier work", messages: ["first"] });
     await onicode.open(thread);
@@ -15,8 +15,10 @@ test(
     const forkActions = screen.getByRole("button", "Thread actions for Earlier work fork");
     await expect(forkActions).toBeVisible();
 
+    // Thread actions is a native menu in the desktop app.
     await forkActions.tap();
-    await screen.getByRole("menuitem", "Rename thread").tap();
+    await expect.poll(() => desktop.contextMenu()).not.toBeNull();
+    await desktop.chooseContextMenuItem("Rename thread");
     const title = screen.getByRole("textbox", "Thread title");
     await title.fill("Storage notes");
     await title.press("Enter");
