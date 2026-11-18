@@ -320,7 +320,16 @@ it("opens on favorites and recent picks, with every other model behind All model
     [Symbol.dispose]: () => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS),
   };
 
-  await using screen = await render(
+  const keybindings = compileResolvedKeybindingsConfig([
+    ...([1, 2, 3, 4, 5, 6] as const).map((index) => ({
+      key: `mod+${index}`,
+      command: `modelPicker.jump.${index}` as const,
+      when: "modelPickerOpen",
+    })),
+    { key: "ctrl+[", command: "modelPicker.previousProvider", when: "modelPickerOpen" },
+  ]);
+
+  const picker = () => (
     <ProviderModelPicker
       environmentId={null}
       activeInstanceId={claude!.instanceId}
@@ -328,16 +337,22 @@ it("opens on favorites and recent picks, with every other model behind All model
       lockedProvider={null}
       instanceEntries={entries}
       modelOptionsByInstance={new Map(entries.map((entry) => [entry.instanceId, entry.models]))}
+      keybindings={keybindings}
       triggerAriaLabel="Choose model"
       onInstanceModelChange={() => {}}
-    />,
+    />
   );
+  await using screen = await render(picker());
   await screen.getByRole("button", { name: "Choose model" }).click();
-  const names = () =>
+  const rows = () =>
     page
       .getByRole("option")
       .elements()
-      .map((row) => row.textContent?.match(/Haiku|Opus|Sonnet|Sol|All models/)?.[0]);
+      .map((row) => [
+        row.textContent?.match(/Haiku|Opus|Sonnet|Sol|All models/)?.[0],
+        row.querySelector("[data-model-jump-label]")?.textContent?.slice(-1),
+      ]);
+  const names = () => rows().map(([name]) => name);
   // The favorite, then the selected model as the newest pick, which Recent marks as selected.
   await vi.waitFor(() => expect(names()).toEqual(["Haiku", "Opus", "All models"]));
   await expect
@@ -350,10 +365,36 @@ it("opens on favorites and recent picks, with every other model behind All model
   await userEvent.clear(page.getByPlaceholder("Search models"));
   await vi.waitFor(() => expect(names()).toEqual(["Haiku", "Opus", "All models"]));
 
+  // A star changed while the list is open leaves it folded the way it opened.
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, favorites: [] });
+  await screen.rerender(picker());
+  await vi.waitFor(() => expect(names()).toEqual(["Opus", "All models"]));
+
+  // Opus is listed under Recent and under its provider, and takes one jump shortcut.
   await page.getByRole("option", { name: /All models/ }).click();
   await vi.waitFor(() =>
-    expect(names()).toEqual(["Haiku", "Opus", "Opus", "Haiku", "Sonnet", "Sol"]),
+    expect(rows()).toEqual([
+      ["Opus", "1"],
+      ["Opus", undefined],
+      ["Haiku", "2"],
+      ["Sonnet", "3"],
+      ["Sol", "4"],
+    ]),
   );
+
+  // Provider navigation moves between providers; Recent only repeats their models.
+  await userEvent.keyboard("{Control>}[[{/Control}");
+  await expect
+    .element(page.getByRole("option", { name: /Sol/ }))
+    .toHaveAttribute("data-highlighted");
+  await userEvent.keyboard("{Control>}[[{/Control}");
+  await expect
+    .element(page.getByRole("option", { name: /Opus/ }).nth(1))
+    .toHaveAttribute("data-highlighted");
+  await userEvent.keyboard("{Control>}[[{/Control}");
+  await expect
+    .element(page.getByRole("option", { name: /Sol/ }))
+    .toHaveAttribute("data-highlighted");
 });
 
 it("keeps the touch keyboard down when the picker opens", async () => {

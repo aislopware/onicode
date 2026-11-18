@@ -208,7 +208,9 @@ export function QueuedRunsControl({
   useImperativeHandle(ref, () => ({
     steerNext(repeat) {
       const next = steerTarget;
-      if (!next || !canSendRun(next.run.freshContext === true)) return false;
+      // A row being edited has no Send now either: its saved text is about to change.
+      if (!next || next.run.id === props.editingRunId) return false;
+      if (!canSendRun(next.run.freshContext === true)) return false;
       if (!repeat && busyRunId === null) void sendQueuedMessage(next.run.id);
       return true;
     },

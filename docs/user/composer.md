@@ -79,7 +79,9 @@ at once. If compaction fails or the turn ends first, it stays queued as a follow
 
 Use `Cmd+Shift+Enter` on macOS or `Ctrl+Shift+Enter` on Windows and Linux to send
 the oldest queued message as a steer. This leaves the current draft intact and
-requires an active turn that supports steering. If that shortcut sends the opposite
+requires an active turn that supports steering. A message marked **After compaction**
+is already on its way, so the shortcut takes the next one, and it does nothing while
+you are editing the message it would send. If that shortcut sends the opposite
 action for your draft, move focus outside the composer to steer the queued message. Change
 `thread.steerQueuedMessage` in **Settings → Keybindings** to use another shortcut.
 

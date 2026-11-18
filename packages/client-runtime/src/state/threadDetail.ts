@@ -92,6 +92,13 @@ const structureTurnItems = new WeakMap<TurnItem, ThreadStructureTurnItem>();
 const structureVisibleTurnItems = new WeakMap<VisibleTurnItem, ThreadStructureVisibleTurnItem>();
 
 // Queued text, attachments and attribution all come from the message, so its identity covers them.
+// Turn items stream; only a steer held for the running turn reads them, for its compaction.
+function holdsSteerForActiveRun(state: ThreadQueueWorkflowState | null): boolean {
+  if (!state?.activeRun) return false;
+  const { id } = state.activeRun;
+  return state.queuedRuns.some(({ run }) => run.steerWhenReadyRunId === id);
+}
+
 function queueWorkflowStatesEqual(
   left: ThreadQueueWorkflowState,
   right: ThreadQueueWorkflowState,
@@ -438,9 +445,7 @@ export function createEnvironmentThreadDetailAtoms<E>(
         projection.providerThreads !== previous.providerThreads ||
         projection.providerSessions !== previous.providerSessions ||
         projection.providerTurns !== previous.providerTurns ||
-        // Turn items stream; only a held steer reads them, for the compaction it waits on.
-        (projection.turnItems !== previous.turnItems &&
-          value?.queuedRuns.some(({ run }) => run.steerWhenReadyRunId !== undefined) === true)
+        (projection.turnItems !== previous.turnItems && holdsSteerForActiveRun(value))
       ) {
         const next = deriveThreadQueueWorkflowState(projection);
         if (value === null || !queueWorkflowStatesEqual(value, next)) value = next;

@@ -48,7 +48,8 @@ let worker: PDFWorker | undefined;
 let closing: Promise<unknown> = Promise.resolve();
 
 export function closePdf(task: PDFDocumentLoadingTask | undefined) {
-  if (task) closing = Promise.allSettled([closing, task.destroy()]);
+  // Mapped to nothing so a settled close does not keep every earlier result alive.
+  if (task) closing = Promise.allSettled([closing, task.destroy()]).then(() => undefined);
 }
 
 /** Settles once every closed document has freed its renderer. Await it before `openPdf`. */
