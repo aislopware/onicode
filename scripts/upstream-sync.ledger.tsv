@@ -2481,3 +2481,4 @@ e6265a926e	take	taken as is
 2d558c4dad	take	taken; scenario ported for the desktop target and run locally
 03822a8312	take	taken as is
 0c6d0ee862	take	conflict in ProviderTurnControlService.test.ts resolved with upstream's layerProjectionStore helper (dropped its guest-share stub)
+3088d26665	take	kept Onicode's hover-only will-change-[scale] (#47, compositor) with upstream's centered 32px touch target
