@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   appendPullRequestAgentPrompt,
+  pullRequestAgentMenuAction,
   pullRequestAgentMenuItems,
   pullRequestAgentPrompt,
   pullRequestAgentThread,
@@ -82,6 +83,20 @@ describe("PR agent tasks", () => {
       "explain:thread-two",
     ]);
     expect(enabledLeaves(items(true))).toEqual([]);
+    const menuAction = (disabled: boolean, android = false) =>
+      pullRequestAgentMenuAction({
+        task: "conflicts",
+        action: { title: "Resolve conflicts", icon: "arrow.triangle.branch", disabled: false },
+        threadActions: pullRequestAgentThreadActions(threads, "conflicts", true),
+        disabled,
+        chooseThread: true,
+        android,
+      });
+    expect(menuAction(false).subactions).toHaveLength(3);
+    expect(menuAction(true)).toMatchObject({ attributes: { disabled: true } });
+    expect(menuAction(true).subactions).toBeUndefined();
+    // Android greys out the row and its submenu chevron instead.
+    expect(menuAction(true, true).subactions).toHaveLength(3);
   });
   it("replaces the helper's own text when switching tasks, keeping user edits", () => {
     const first = appendPullRequestAgentPrompt("My question", "explain", GITHUB);
