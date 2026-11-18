@@ -163,6 +163,12 @@ export function createIssueEnvironmentAtoms<R, E>(
     tag: WS_METHODS.issuesDetail,
     staleTimeMs: 30_000,
   });
+  /** A link's hover card: the detail without its conversation, so hovering stays cheap. */
+  const summary = createEnvironmentRpcQueryAtomFamily(runtime, {
+    label: "environment-data:issues:summary",
+    tag: WS_METHODS.issuesSummary,
+    staleTimeMs: 30_000,
+  });
   const detailRef = ({ projectId, tracker, host, scope, key }: IssueRef): IssueRef => ({
     projectId,
     tracker,
@@ -173,7 +179,14 @@ export function createIssueEnvironmentAtoms<R, E>(
   const refreshDetail = (
     { environmentId, input }: { readonly environmentId: EnvironmentId; readonly input: IssueRef },
     registry: AtomRegistry.AtomRegistry,
-  ) => Effect.sync(() => registry.refresh(detail({ environmentId, input: detailRef(input) })));
+  ) =>
+    Effect.sync(() => {
+      const target = { environmentId, input: detailRef(input) };
+      registry.refresh(detail(target));
+      // Only a card already read: refreshing creates the node and reads it.
+      const card = summary(target);
+      if (registry.getNodes().has(card)) registry.refresh(card);
+    });
   return {
     list: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:issues:list",
@@ -194,12 +207,7 @@ export function createIssueEnvironmentAtoms<R, E>(
       },
     }),
     detail,
-    /** A link's hover card: the detail without its conversation, so hovering stays cheap. */
-    summary: createEnvironmentRpcQueryAtomFamily(runtime, {
-      label: "environment-data:issues:summary",
-      tag: WS_METHODS.issuesSummary,
-      staleTimeMs: 30_000,
-    }),
+    summary,
     /** Older comments past the cursor the detail handed over; the panel prepends what arrives. */
     comments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issues:comments",

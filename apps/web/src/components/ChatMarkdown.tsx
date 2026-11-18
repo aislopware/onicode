@@ -444,7 +444,9 @@ type MarkdownServerConfigFields = ReturnType<typeof markdownServerConfigFields>;
 function markdownServerConfigFields(config: ServerConfig | null) {
   return {
     pullRequestsEnabled: config !== null,
-    issuesEnabled: config?.environment.capabilities.issues === true,
+    issuePreviewsEnabled:
+      config?.environment.capabilities.issues === true &&
+      config.environment.capabilities.issueSummaries === true,
     isMacOS: config?.environment.platform.os === "darwin",
     availableEditors: config?.availableEditors ?? NO_MARKDOWN_EDITORS,
     revealInFileManager:
@@ -460,7 +462,7 @@ function markdownServerConfigFieldsEqual(
 ): boolean {
   return (
     previous.pullRequestsEnabled === next.pullRequestsEnabled &&
-    previous.issuesEnabled === next.issuesEnabled &&
+    previous.issuePreviewsEnabled === next.issuePreviewsEnabled &&
     previous.isMacOS === next.isMacOS &&
     previous.revealInFileManager === next.revealInFileManager &&
     previous.availableEditors.length === next.availableEditors.length &&
@@ -663,8 +665,13 @@ function useChatMarkdownState({
       },
     );
   };
-  const { pullRequestsEnabled, issuesEnabled, availableEditors, revealInFileManager, isMacOS } =
-    useAtomValue(markdownServerConfigFieldsAtom(environmentId));
+  const {
+    pullRequestsEnabled,
+    issuePreviewsEnabled,
+    availableEditors,
+    revealInFileManager,
+    isMacOS,
+  } = useAtomValue(markdownServerConfigFieldsAtom(environmentId));
   const revealInFileManagerLabel =
     revealInFileManager === undefined
       ? undefined
@@ -1030,7 +1037,7 @@ function useChatMarkdownState({
     resolveThreadPullRequest,
     resolvedTheme,
     pullRequestsEnabled,
-    issuesEnabled,
+    issuePreviewsEnabled,
     skills,
     threadRef,
     updateThreadPullRequestLink,
@@ -1200,7 +1207,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
       pullRequestsEnabled,
-      issuesEnabled,
+      issuePreviewsEnabled,
       updateThreadPullRequestLink,
       fileLinkChip,
       renderContextReference,
@@ -1266,7 +1273,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           })
         : null;
       const issueTarget =
-        issuesEnabled && environmentId !== null && href ? resolveIssueLink(href) : null;
+        issuePreviewsEnabled && environmentId !== null && href ? resolveIssueLink(href) : null;
       const issuePreviewTarget =
         issueTarget === null || environmentId === null
           ? null

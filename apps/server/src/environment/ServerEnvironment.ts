@@ -226,6 +226,7 @@ export const make = Effect.gen(function* () {
       pullRequests: true,
       pullRequestChecks: true,
       issues: true,
+      issueSummaries: true,
       linkedThreadRefreshes: true,
       sideChats: true,
       vcsBranchStatus: true,

@@ -166,15 +166,18 @@ function transport(httpClient: HttpClient.HttpClient) {
   );
 }
 
-function tracker(onRequest: (variables: unknown) => void, templateRepository?: unknown) {
+function tracker(
+  onRequest: (variables: unknown, query: string) => void,
+  templateRepository?: unknown,
+) {
   return GitHubIssueTracker.make.pipe(
     Effect.provide(
       transport(
         HttpClient.make((request) => {
           if (request.body._tag !== "Uint8Array")
             return Effect.die("Expected a GraphQL JSON request.");
-          const { variables } = decodeVariables(new TextDecoder().decode(request.body.body));
-          onRequest(variables);
+          const { query, variables } = decodeVariables(new TextDecoder().decode(request.body.body));
+          onRequest(variables, query);
           const body =
             templateRepository !== undefined
               ? JSON.stringify({ data: { repository: templateRepository } })
@@ -542,8 +545,10 @@ Redact secrets before uploading.`);
   it.effect("maps a detail read to the neutral issue shape", () =>
     Effect.gen(function* () {
       const seen: unknown[] = [];
-      const api = yield* tracker((variables) => {
+      const operations: Array<string | undefined> = [];
+      const api = yield* tracker((variables, query) => {
         seen.push(variables);
+        operations.push(/\bquery (\w+)/.exec(query)?.[1]);
       });
       const issue = yield* api.getIssue({
         cwd: "/w",
@@ -634,6 +639,7 @@ Redact secrets before uploading.`);
 
       // A hover card's read is one request with no conversation and no page walks.
       seen.length = 0;
+      operations.length = 0;
       const summary = yield* api.getIssueSummary!({
         cwd: "/w",
         host: "github.com",
@@ -641,6 +647,7 @@ Redact secrets before uploading.`);
         key: "42",
       });
       expect(seen).toEqual([{ owner: "acme", name: "web", number: 42 }]);
+      expect(operations).toEqual(["IssueSummary"]);
       expect(summary).toEqual({
         key: "42",
         displayKey: "#42",
