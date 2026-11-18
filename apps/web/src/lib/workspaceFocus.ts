@@ -1,4 +1,5 @@
 import type { AnyRouter } from "@tanstack/react-router";
+import { isAppModalPage } from "../components/sidebar/mainAppLocation";
 import { dismissContextMenu } from "../contextMenuFallback";
 import { useRightPanelStore } from "../rightPanelStore";
 
@@ -19,13 +20,13 @@ export function workspaceAreaProps(name: string, order: number, label?: string) 
 }
 
 export interface WorkspaceFocusTarget {
-  area: string;
+  /** Left out only for a `returnTo` outside any area. */
+  area?: string | undefined;
+  /** Names of the areas around `area`, outermost first; a side chat nests the main chat's names. */
+  within?: readonly string[];
   selector?: string;
   restore?: boolean;
-  /**
-   * A control to return to. While connected it names its own area, since a side chat repeats
-   * the main chat's area names; once its page remounts, its replacement in `area` takes focus.
-   */
+  /** A control to return to while connected, else its replacement in `area` once that remounts. */
   returnTo?: HTMLElement;
 }
 
@@ -36,10 +37,30 @@ function workspaceArea(element: Element): HTMLElement | null {
   return root instanceof ShadowRoot ? workspaceArea(root.host) : null;
 }
 
-/** The area around an element's own area: a side chat's panel, or null in the main chat. */
-function outerArea(element: Element): HTMLElement | null {
-  const parent = workspaceArea(element)?.parentElement;
-  return parent ? workspaceArea(parent) : null;
+/** Names of the areas an element sits in, outermost first: a side chat's are `panel`, `composer`. */
+function areaNames(element: Element): string[] {
+  const area = workspaceArea(element);
+  if (!area) return [];
+  return [
+    ...(area.parentElement ? areaNames(area.parentElement) : []),
+    area.dataset.workspaceArea!,
+  ];
+}
+
+const sameNames = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((name, index) => name === right[index]);
+
+/** What finds `element` again: its area, or the same-named control once that area remounts. */
+export function workspaceFocusTargetFor(element: HTMLElement): WorkspaceFocusTarget {
+  const names = areaNames(element);
+  return { area: names.at(-1), within: names.slice(0, -1), returnTo: element };
+}
+
+/** Whether `element` sits inside `host`'s shadow tree, as a file tree's focused row does. */
+function insideShadowOf(host: Element, element: Element) {
+  for (let root = element.getRootNode(); root instanceof ShadowRoot; root = root.host.getRootNode())
+    if (root.host === host) return true;
+  return false;
 }
 
 function isWorkspaceElementVisible(element: HTMLElement): boolean {
@@ -137,7 +158,7 @@ export function createWorkspaceFocusController(doc: Document) {
     if (!area?.dataset.workspaceArea) return;
     if (arrived && standsInFor(event.target, area)) markKeyboardArea(event.target);
     lastArea = area.dataset.workspaceArea;
-    const key = area.dataset.workspaceFocusKey ?? lastArea;
+    const key = area.dataset.workspaceFocusKey ?? areaNames(area).join(" ");
     lastFocused.delete(key);
     // Custom file trees retarget focusin to their nonfocusable shadow host.
     const target = event.composedPath().find((element) => element instanceof HTMLElement);
@@ -148,8 +169,13 @@ export function createWorkspaceFocusController(doc: Document) {
   doc.addEventListener("focusin", remember);
 
   const focusArea = (area: HTMLElement, restore = true, nested = true, returnTo?: HTMLElement) => {
-    const key = area.dataset.workspaceFocusKey ?? area.dataset.workspaceArea!;
-    const previous = returnTo ?? (restore ? lastFocused.get(key) : undefined);
+    const key = area.dataset.workspaceFocusKey ?? areaNames(area).join(" ");
+    const remembered = restore ? lastFocused.get(key) : undefined;
+    // The page reports a file tree's shadow host as focused; the row inside it is remembered.
+    const previous =
+      returnTo && remembered && insideShadowOf(returnTo, remembered)
+        ? remembered
+        : (returnTo ?? remembered);
     const usable = (element: HTMLElement) =>
       isWorkspaceElementVisible(element) && !element.matches(":disabled");
     const belongs = (element: HTMLElement) => workspaceArea(element) === area && usable(element);
@@ -219,18 +245,22 @@ export function createWorkspaceFocusController(doc: Document) {
     }
     return false;
   };
-  /** Focuses an area by name, or a given area element; `returnTo` is preferred inside it. */
-  const focus = (
-    name: string | HTMLElement,
+  const focusTarget = ({
+    area: name,
+    within,
+    selector,
     restore = true,
-    selector?: string,
-    returnTo?: HTMLElement,
-  ) => {
+    returnTo,
+  }: WorkspaceFocusTarget) => {
+    const ownArea = returnTo?.isConnected ? workspaceArea(returnTo) : null;
+    if (returnTo?.isConnected && !ownArea) {
+      if (!isWorkspaceElementVisible(returnTo) || returnTo.matches(":disabled")) return false;
+      returnTo.focus({ preventScroll: true });
+      return doc.activeElement === returnTo;
+    }
     const areas = Array.from(doc.querySelectorAll<HTMLElement>(AREA_SELECTOR)).filter(
       isWorkspaceElementVisible,
     );
-    const ownArea =
-      typeof name !== "string" ? name : returnTo?.isConnected ? workspaceArea(returnTo) : null;
     const area = ownArea
       ? areas.find((element) => element === ownArea)
       : name === "content"
@@ -241,7 +271,11 @@ export function createWorkspaceFocusController(doc: Document) {
           ) ??
           areas.find((element) => element.dataset.workspaceArea === "conversation") ??
           areas.find((element) => element.dataset.workspaceArea === "panel"))
-        : areas.find((element) => element.dataset.workspaceArea === name);
+        : areas.find(
+            (element) =>
+              element.dataset.workspaceArea === name &&
+              (!within || sameNames(areaNames(element).slice(0, -1), within)),
+          );
     if (!area) return false;
     const surface = area.querySelector("[data-right-panel-surface-content]");
     // A lazy surface's Suspense fallback is empty. Wait for its content instead
@@ -256,6 +290,8 @@ export function createWorkspaceFocusController(doc: Document) {
     }
     return focusArea(area, restore, true, returnTo);
   };
+  const focus = (name: string, restore = true, selector?: string) =>
+    focusTarget({ area: name, restore, ...(selector ? { selector } : {}) });
   const move = (direction: 1 | -1, fromArea?: string, closingPalette = false) => {
     // HTML context menus close on blur, unlike modal dialogs and Base UI popups.
     dismissContextMenu(false);
@@ -308,13 +344,13 @@ export function createWorkspaceFocusController(doc: Document) {
 
   // Focus that drops to the body because its element was hidden, made inert, disabled, or removed
   // returns to a remounted control, else its area, or the composer for a finished timeline prompt.
-  // A side chat repeats the main chat's area names, so both stay inside the chat that lost focus.
+  // A side chat repeats the main chat's names, so both stay inside the chat that lost focus.
   const recover = (event: FocusEvent) => {
     const lost = event.target;
     if (!(lost instanceof HTMLElement) || event.relatedTarget) return;
-    const areaName = workspaceArea(lost)?.dataset.workspaceArea;
+    const names = areaNames(lost);
+    const areaName = names.at(-1);
     const recoveryArea = areaName === "conversation" ? "composer" : areaName;
-    const outer = outerArea(lost);
     const label = lost.getAttribute("aria-label");
     requestAnimationFrame(() => {
       if (
@@ -328,18 +364,13 @@ export function createWorkspaceFocusController(doc: Document) {
           element.tagName === lost.tagName &&
           ((lost.id && element.id === lost.id) ||
             (label && element.getAttribute("aria-label") === label)) &&
-          outerArea(element) === outer &&
+          sameNames(areaNames(element), names) &&
           isWorkspaceElementVisible(element) &&
           !element.matches(":disabled"),
       );
-      const area = Array.from(doc.querySelectorAll<HTMLElement>(AREA_SELECTOR)).find(
-        (element) =>
-          element.dataset.workspaceArea === recoveryArea &&
-          outerArea(element) === outer &&
-          isWorkspaceElementVisible(element),
-      );
       if (remounted) remounted.focus({ preventScroll: true });
-      else if (!area || !focus(area)) focus("content");
+      else if (!recoveryArea || !focusTarget({ area: recoveryArea, within: names.slice(0, -1) }))
+        focus("content");
     });
   };
   doc.addEventListener("focusout", recover);
@@ -361,8 +392,7 @@ export function createWorkspaceFocusController(doc: Document) {
   const schedule = () => {
     cancelAnimationFrame(frame);
     frame = requestAnimationFrame(() => {
-      if (pending && focus(pending.area, pending.restore, pending.selector, pending.returnTo))
-        cancelRequest();
+      if (pending && focusTarget(pending)) cancelRequest();
     });
   };
   const request = (target: WorkspaceFocusTarget) => {
@@ -431,7 +461,12 @@ export function startWorkspaceFocus(router: AnyRouter): () => void {
     }
   });
   const stopRoute = router.subscribe("onResolved", ({ fromLocation, toLocation }) => {
-    if (toLocation.pathname === "/pull-requests" && fromLocation?.pathname !== "/pull-requests")
+    // Closing Settings or Usage over the page restores focus itself; that is no entry.
+    if (
+      toLocation.pathname === "/pull-requests" &&
+      fromLocation?.pathname !== "/pull-requests" &&
+      !(fromLocation && isAppModalPage(fromLocation.pathname))
+    )
       requestWorkspaceFocus({ area: "pull-requests" });
   });
   return () => {
