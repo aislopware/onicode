@@ -41,6 +41,10 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
     platform?: NodeJS.Platform;
     spawner?: ChildProcessSpawner.ChildProcessSpawner["Service"];
     runtimeRenameFailures?: number;
+    /** Runs after the new runtime is renamed into place, before it is activated. */
+    afterRuntimeRename?: Effect.Effect<void>;
+    /** Served instead of active.json's content, one per read, while any remain. */
+    staleActiveReads?: Array<string>;
     /** Served by URL instead of the pinned package. */
     responses?: Readonly<Record<string, () => Response>>;
   } = {},
@@ -82,8 +86,21 @@ const makeHarness = Effect.fn("test.makeCodexInstallation")(function* (
                 ),
               ),
             )
-          : fs.rename(from, to),
+          : fs
+              .rename(from, to)
+              .pipe(
+                Effect.andThen(
+                  /[/\\]runtime$/u.test(from)
+                    ? (input.afterRuntimeRename ?? Effect.void)
+                    : Effect.void,
+                ),
+              ),
       ),
+    readFileString: (file, encoding) =>
+      Effect.suspend(() => {
+        const stale = file.endsWith("active.json") ? input.staleActiveReads?.shift() : undefined;
+        return stale === undefined ? fs.readFileString(file, encoding) : Effect.succeed(stale);
+      }),
   };
   const spawner = input.spawner ?? (yield* ChildProcessSpawner.ChildProcessSpawner);
   const installation = yield* CodexInstallation.makeCodexInstallation({
@@ -656,6 +673,131 @@ it.effect("updates a managed install to OpenAI's newest release and never downgr
     });
     expect(restarted.downloads()).toBe(0);
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+const upstreamChecksum = Effect.gen(function* () {
+  const digest = yield* Digest.Digest;
+  return Hex.encode(yield* digest.digest(Digest.sha256, upstreamArchive).pipe(Effect.orDie));
+});
+const updateToUpstream = Effect.fn("test.updateToUpstream")(function* (
+  installation: CodexInstallation.CodexInstallation["Service"],
+) {
+  yield* installation.checkForUpdate;
+  yield* installation.start;
+  expect(yield* terminalState(installation)).toMatchObject({
+    phase: "succeeded",
+    installedVersion: upstreamVersion,
+  });
+});
+
+it.effect("keeps a superseded release while another server sharing its home runs it", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness({ responses: upstreamResponses(yield* upstreamChecksum) });
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    const other = yield* makeHarness({ baseDir: h.baseDir });
+    const sessionScope = yield* Scope.make();
+    const previous = yield* other.installation.acquire().pipe(Scope.provide(sessionScope));
+    const previousDirectory = previous.managedVersionDirectory!;
+    expect((yield* Effect.flip(h.installation.remove())).detail).toContain("Stop Codex sessions");
+    yield* updateToUpstream(h.installation);
+    yield* makeHarness({ baseDir: h.baseDir });
+    expect(yield* h.fs.exists(previousDirectory)).toBe(true);
+
+    yield* Scope.close(sessionScope, Exit.void);
+    // A lease left by a server that has exited no longer keeps the release.
+    yield* h.fs.writeFileString(`${previousDirectory}/.lease-2147483646-exited`, "");
+    yield* makeHarness({ baseDir: h.baseDir });
+    expect(yield* h.fs.exists(previousDirectory)).toBe(false);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("keeps a new release another server starts up beside before it is activated", () =>
+  Effect.gen(function* () {
+    const renamed = yield* Deferred.make<void>();
+    const proceed = yield* Deferred.make<void>();
+    let pauseAfterRename = false;
+    const h = yield* makeHarness({
+      responses: upstreamResponses(yield* upstreamChecksum),
+      afterRuntimeRename: Effect.suspend(() =>
+        pauseAfterRename
+          ? Deferred.succeed(renamed, undefined).pipe(Effect.andThen(Deferred.await(proceed)))
+          : Effect.void,
+      ),
+    });
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    pauseAfterRename = true;
+    yield* h.installation.checkForUpdate;
+    yield* h.installation.start;
+    yield* Deferred.await(renamed);
+    yield* makeHarness({ baseDir: h.baseDir });
+    yield* Deferred.succeed(proceed, undefined);
+    expect(yield* terminalState(h.installation)).toMatchObject({
+      phase: "succeeded",
+      installedVersion: upstreamVersion,
+    });
+    expect((yield* h.installation.resolve()).version).toBe(upstreamVersion);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("keeps releases it did not install and releases a provider instance points at", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "onicodex-prune-test-" });
+    const pinned = `${baseDir}/tools/codex/${asset.version}`;
+    const backup = `${baseDir}/tools/codex/0.166.0-backup`;
+    const options = { protectedBinaryPaths: Effect.succeed([`${pinned}/bin/codex`]) };
+    const h = yield* makeHarness({
+      baseDir,
+      options,
+      responses: upstreamResponses(yield* upstreamChecksum),
+    });
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    yield* fs.makeDirectory(backup);
+    yield* fs.writeFileString(`${backup}/notes.txt`, "kept by hand");
+    yield* updateToUpstream(h.installation);
+    yield* makeHarness({ baseDir, options });
+    expect(yield* fs.exists(`${pinned}/codex-path/rg`)).toBe(true);
+    expect(yield* fs.readFileString(`${backup}/notes.txt`)).toBe("kept by hand");
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("keeps complete releases when the active one is broken so a reinstall reuses them", () =>
+  Effect.gen(function* () {
+    const h = yield* makeHarness();
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    const installed = yield* h.installation.resolve();
+    yield* h.fs.writeFileString(
+      `${h.installation.managedDirectory}/active.json`,
+      JSON.stringify({ version: "0.156.2" }),
+    );
+    const restarted = yield* makeHarness({ baseDir: h.baseDir });
+    expect((yield* restarted.installation.state).phase).toBe("failed");
+    expect(yield* h.fs.exists(installed.managedVersionDirectory!)).toBe(true);
+    yield* restarted.installation.start;
+    expect((yield* terminalState(restarted.installation)).phase).toBe("succeeded");
+    expect(restarted.downloads()).toBe(0);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect(
+  "resolves the new release when an update lands between reading the pointer and its release",
+  () =>
+    Effect.gen(function* () {
+      const staleActiveReads: Array<string> = [];
+      const h = yield* makeHarness({
+        responses: upstreamResponses(yield* upstreamChecksum),
+        staleActiveReads,
+      });
+      yield* h.installation.start;
+      yield* terminalState(h.installation);
+      yield* updateToUpstream(h.installation);
+      staleActiveReads.push(JSON.stringify({ version: asset.version }));
+      expect((yield* h.installation.resolve()).version).toBe(upstreamVersion);
+    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
 it.effect("keeps the managed install when an update fails its published checksum", () =>

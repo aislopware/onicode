@@ -8,7 +8,6 @@ import {
   ProviderSetupError,
   type ProviderSetupInput,
 } from "@onicode/contracts";
-import { resolveCommandPath } from "@onicode/shared/shell";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as FiberHandle from "effect/FiberHandle";
@@ -20,15 +19,14 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as CodexInstallation from "./CodexInstallation.ts";
+import { configuredBinaryPaths } from "./configuredBinaryPaths.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as AntigravityInstallation from "./AntigravityInstallation.ts";
 import { deriveProviderInstanceConfigMap } from "./ProviderInstanceRegistryHydration.ts";
 import * as ProviderInstanceRegistry from "./ProviderInstanceRegistry.ts";
 import * as ProviderRegistry from "./ProviderRegistry.ts";
-import { mergeProviderInstanceEnvironment } from "@onicode/provider-core/server/instanceEnvironment";
 
 const ANTIGRAVITY = ProviderDriverKind.make("antigravity");
-const hasBinaryPath = Schema.is(Schema.Struct({ binaryPath: Schema.String }));
 const decodeCodexSettings = Schema.decodeUnknownEffect(CodexSettings);
 const decodeAntigravitySettings = Schema.decodeUnknownEffect(AntigravitySettings);
 
@@ -240,25 +238,11 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
       true,
     );
     const entries = yield* readEntries(input.instanceId, "remove-install");
-    const protectedPaths = yield* Effect.forEach(
-      Object.values(entries),
-      Effect.fnUntraced(function* (entry) {
-        if (!hasBinaryPath(entry.config) || !entry.config.binaryPath.trim()) {
-          return [];
-        }
-        const binaryPath = entry.config.binaryPath.trim();
-        const resolved = yield* resolveCommandPath(binaryPath, {
-          env: yield* mergeProviderInstanceEnvironment(entry.environment),
-        }).pipe(
-          Effect.provideService(FileSystem.FileSystem, fileSystem),
-          Effect.provideService(Path.Path, path),
-        );
-        return resolved === null ? [binaryPath] : [binaryPath, resolved];
-      }),
+    const protectedPaths = yield* configuredBinaryPaths(Object.values(entries)).pipe(
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
     );
-    yield* installation
-      .remove(protectedPaths.flat())
-      .pipe(Effect.mapError(failure(input.instanceId)));
+    yield* installation.remove(protectedPaths).pipe(Effect.mapError(failure(input.instanceId)));
     const allInstances = yield* instances.listInstances;
     yield* Effect.forEach(
       allInstances.filter((instance) => instance.driverKind === driver),
