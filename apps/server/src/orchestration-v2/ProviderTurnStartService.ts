@@ -968,7 +968,14 @@ export const layer: Layer.Layer<
           (handoff) =>
             handoff.toProviderThreadId === providerThread.id &&
             handoff.delivery?.nativeThreadId === loadedProviderThread.nativeThreadRef?.nativeId &&
-            handoff.delivery?.status !== "pending",
+            handoff.delivery?.status !== "pending" &&
+            // An inline handoff rode in its run's prompt, which a truncating rollback removed.
+            !(
+              handoff.delivery?.status === "inline" &&
+              projection.runs.some(
+                (source) => source.id === handoff.targetRunId && source.status === "rolled_back",
+              )
+            ),
         );
         const deliveredItemIds = new Set(
           settledHandoffs.flatMap((handoff) => handoff.delivery?.itemIds ?? []),

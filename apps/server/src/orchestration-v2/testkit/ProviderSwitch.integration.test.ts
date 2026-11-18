@@ -1400,6 +1400,8 @@ describe("orchestration v2 provider switching", () => {
       | "resume-fails"
       | "edit-first-turn"
       | "edit-first-turn-then-switch"
+      | "edit-first-turn-queued-after-switch"
+      | "edit-first-turn-truncating"
       | "edit-imported-first-turn",
   ) =>
     Effect.gen(function* () {
@@ -1407,17 +1409,25 @@ describe("orchestration v2 provider switching", () => {
       const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
       // A V1 migration has no native session: its first turn gets the history in a handoff.
       const migratedFromV1 =
-        scenario === "edit-first-turn" || scenario === "edit-first-turn-then-switch";
+        scenario === "edit-first-turn" ||
+        scenario === "edit-first-turn-then-switch" ||
+        scenario === "edit-first-turn-queued-after-switch" ||
+        scenario === "edit-first-turn-truncating";
       const editsFirstTurn = migratedFromV1 || scenario === "edit-imported-first-turn";
       const claudeOrdinal =
         scenario === "after-failed-switch" ||
         scenario === "edit-first-turn" ||
+        scenario === "edit-first-turn-truncating" ||
         scenario === "edit-imported-first-turn"
           ? 2
-          : scenario === "edit-first-turn-then-switch"
+          : scenario === "edit-first-turn-then-switch" ||
+              scenario === "edit-first-turn-queued-after-switch"
             ? 3
             : 1;
-      const codexOrdinal = scenario === "edit-first-turn-then-switch" ? 2 : 1;
+      const queuesBehindSwitch = scenario === "edit-first-turn-queued-after-switch";
+      const codexOrdinal = scenario === "edit-first-turn-then-switch" || queuesBehindSwitch ? 2 : 1;
+      const codexHeld = yield* Deferred.make<void>();
+      const releaseCodex = yield* Deferred.make<void>();
       const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
         makeTestAdapter({
           instanceId: CLAUDE_MODEL_SELECTION.instanceId,
@@ -1432,7 +1442,15 @@ describe("orchestration v2 provider switching", () => {
           capturedTurns,
           failImportedResume: scenario === "resume-fails",
           // Like Cursor, rolling back to the start opens an empty agent on the same row.
-          ...(editsFirstTurn ? { rollback: "replaces_native_thread" as const } : {}),
+          ...(editsFirstTurn
+            ? {
+                // Like Codex, truncating keeps the native id but drops the turn's inline handoff.
+                rollback:
+                  scenario === "edit-first-turn-truncating"
+                    ? ("truncates" as const)
+                    : ("replaces_native_thread" as const),
+              }
+            : {}),
         }),
         makeTestAdapter({
           instanceId: CODEX_MODEL_SELECTION.instanceId,
@@ -1442,6 +1460,9 @@ describe("orchestration v2 provider switching", () => {
           responseByRunOrdinal: {},
           capturedTurns,
           failedRunOrdinals: new Set([codexOrdinal]),
+          ...(queuesBehindSwitch
+            ? { holdRunOrdinal: 2, holdFirstTurn: codexHeld, releaseFirstTurn: releaseCodex }
+            : {}),
         }),
       ]);
       yield* Effect.gen(function* () {
@@ -1617,7 +1638,38 @@ describe("orchestration v2 provider switching", () => {
           yield* worker.drain();
           if (scenario === "edit-first-turn-then-switch") yield* send(2, CODEX_MODEL_SELECTION);
         }
-        yield* send(claudeOrdinal, CLAUDE_MODEL_SELECTION);
+        if (queuesBehindSwitch) {
+          const message = (ordinal: number, modelSelection: ModelSelection, queued: boolean) =>
+            orchestrator.dispatch({
+              type: "message.dispatch",
+              commandId: CommandId.make(`imported-native:${ordinal}`),
+              threadId,
+              messageId: MessageId.make(`imported-native:${ordinal}`),
+              createdBy: "user",
+              creationSource: "web",
+              text: "What was the code word?",
+              attachments: [],
+              modelSelection,
+              dispatchMode: queued ? { type: "queue_after_active" } : { type: "start_immediately" },
+            });
+          yield* message(2, CODEX_MODEL_SELECTION, false);
+          yield* Deferred.await(codexHeld);
+          yield* worker.drain();
+          yield* message(3, CLAUDE_MODEL_SELECTION, true);
+          yield* Deferred.succeed(releaseCodex, undefined);
+          yield* orchestrator.streamStoredEvents.pipe(
+            Stream.filter(
+              ({ event }) =>
+                event.type === "run.updated" &&
+                event.payload.ordinal === 3 &&
+                (event.payload.status === "completed" || event.payload.status === "failed"),
+            ),
+            Stream.runHead,
+          );
+          yield* worker.drain();
+        } else {
+          yield* send(claudeOrdinal, CLAUDE_MODEL_SELECTION);
+        }
 
         const projection = yield* orchestrator.getThreadProjection(threadId);
         assert.equal(projection.runs.at(-1)?.status, "completed");
@@ -1627,7 +1679,10 @@ describe("orchestration v2 provider switching", () => {
         if (editsFirstTurn) {
           // The rollback emptied the session that held the import, so the next turn carries it again.
           assert.equal(projection.runs[0]?.status, "rolled_back");
-          assert.include(claudeTurn?.text ?? "", "Remember the code word PELICAN.");
+          assert.equal(
+            (claudeTurn?.text ?? "").split("Remember the code word PELICAN.").length - 1,
+            1,
+          );
           return;
         }
         const importHandoffTargets = projection.contextHandoffs
@@ -1678,6 +1733,12 @@ describe("orchestration v2 provider switching", () => {
   );
   it.live("resends a V1 import's history on returning to a session Edit from here emptied", () =>
     importedNativeSessionScenario("edit-first-turn-then-switch"),
+  );
+  it.live("resends a V1 import's history to a queued turn after Edit from here", () =>
+    importedNativeSessionScenario("edit-first-turn-queued-after-switch"),
+  );
+  it.live("resends a V1 import's history after Edit from here truncates its session", () =>
+    importedNativeSessionScenario("edit-first-turn-truncating"),
   );
   it.live("recovers an imported session's history after Edit from here replaces it", () =>
     importedNativeSessionScenario("edit-imported-first-turn"),
