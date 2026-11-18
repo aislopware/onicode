@@ -5169,8 +5169,8 @@
   "d72f296745294c3a": "Importera projekt och deras trådar",
   "18d144bcd97f0371": "Dölj",
   "54fc1526df1c0cce": "{count, plural, one {Granska alla {count}} other {Granska alla {count}}}",
-  "bd2304f25f6f999e": "{selected, plural, one {{selected} av {total} markerad} other {{selected} av {total} markerade}}",
   "228cd9fd55a55070": "Kunde inte kontrollera projekten igen. {error}",
+  "bd2304f25f6f999e": "{selected, plural, one {{selected} av {total} markerad} other {{selected} av {total} markerade}}",
   "1cc599c5f5874014": "Telefon",
   "a8c7bd8349214c14": "Kunde inte spara Codex-konfigurationen",
   "4c180d45134b7da4": "Granska kommandot och tryck sedan på Enter för att köra det.",
@@ -7430,6 +7430,30 @@
   "e8622c39abe68f9d": "standard",
   "5383ef2d2c09cdf7": "Sök teckensnitt…",
   "ea08337bcadd35b4": "Inga teckensnitt hittades.",
+  "29e59b3bc57b8921": "Inga nya trådar att importera",
+  "9528b2c60c580603": "Ingen agenthistorik hittades.",
+  "382dcc85d648b2df": "Importera",
+  "3360b220b3d7e7aa": "{count, plural, one {Importera {count} projekt} other {Importera {count} projekt}}",
+  "4781d6af5c907674": [
+    "Hämta projekt och trådar från din ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "-historik och fortsätt dem här."
+  ],
+  "9c0f379c2345a2b0": "Importera…",
+  "e32ccc356b3d924b": "Importera trådar",
+  "7e97f4824aae8cf9": [
+    "Välj projekt från din ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    "-historik. Trådar som redan finns i Onicode importeras inte igen."
+  ],
   "d6ad43bc4b700a88": "Det finns inga webbläsarprofildata att rensa.",
   "ad8efd437b301a37": "System",
   "42e23caa6ef99cad": "Ljust",
@@ -10417,6 +10441,8 @@
   "7c5f0666ccc3196e": "långa rader kodblock diffar filförhandsvisningar radbrytning",
   "e854d0e805882190": "kombinera matchande repon miljöer sidofält",
   "c437e0f28c6d4a4b": "sortera projekt sidofält manuellt skapade senaste",
+  "c9988dfcc7bc9c1d": "Importera trådar",
+  "c034cae195a5b49d": "claude code codex pi historik konversationer sessioner transkript projekt terminal cli",
   "cb309dc06cf679ae": "snooza förval tider senare i kväll i morgon nästa vecka påminn snooze",
   "6751449c6188912d": "användning kvot hastighetsbegränsning återställning vakna återhämta fortsätt",
   "0aedae6a82c09429": "användning kvot hastighetsbegränsning återställning återhämta fortsätt",

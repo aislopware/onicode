@@ -5168,8 +5168,8 @@
   "d72f296745294c3a": "Importar projetos e suas threads",
   "18d144bcd97f0371": "Ocultar",
   "54fc1526df1c0cce": "{count, plural, one {Revisar {count}} other {Revisar todos os {count}}}",
-  "bd2304f25f6f999e": "{selected, plural, one {{selected} de {total} selecionado} other {{selected} de {total} selecionados}}",
   "228cd9fd55a55070": "Não foi possível verificar os projetos novamente. {error}",
+  "bd2304f25f6f999e": "{selected, plural, one {{selected} de {total} selecionado} other {{selected} de {total} selecionados}}",
   "1cc599c5f5874014": "Celular",
   "a8c7bd8349214c14": "Não foi possível salvar a configuração do Codex",
   "4c180d45134b7da4": "Revise o comando e pressione Enter para executá-lo.",
@@ -7422,6 +7422,30 @@
   "e8622c39abe68f9d": "padrão",
   "5383ef2d2c09cdf7": "Pesquisar fontes…",
   "ea08337bcadd35b4": "Nenhuma fonte encontrada.",
+  "29e59b3bc57b8921": "Nenhuma thread nova para importar",
+  "9528b2c60c580603": "Nenhum histórico de agentes encontrado.",
+  "382dcc85d648b2df": "Importar",
+  "3360b220b3d7e7aa": "{count, plural, one {Importar {count} projeto} other {Importar {count} projetos}}",
+  "4781d6af5c907674": [
+    "Traga projetos e threads do seu histórico do ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " e continue-os aqui."
+  ],
+  "9c0f379c2345a2b0": "Importar…",
+  "e32ccc356b3d924b": "Importar threads",
+  "7e97f4824aae8cf9": [
+    "Escolha projetos do seu histórico do ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ". As threads que já estão no Onicode não são importadas de novo."
+  ],
   "d6ad43bc4b700a88": "Os dados do perfil do navegador não estão disponíveis para limpeza.",
   "ad8efd437b301a37": "Sistema",
   "42e23caa6ef99cad": "Claro",
@@ -10408,6 +10432,8 @@
   "7c5f0666ccc3196e": "linhas longas blocos de código diffs pré-visualizações de arquivos",
   "e854d0e805882190": "combinar repositórios correspondentes ambientes barra lateral",
   "c437e0f28c6d4a4b": "ordenar projetos barra lateral manual criação recentes",
+  "c9988dfcc7bc9c1d": "Importar threads",
+  "c034cae195a5b49d": "claude code codex pi histórico conversas sessões transcrições projetos terminal cli",
   "cb309dc06cf679ae": "adiar predefinições horários mais tarde hoje à noite amanhã próxima semana lembrar",
   "6751449c6188912d": "uso cota limite de taxa redefinir despertar recuperar continuar",
   "0aedae6a82c09429": "uso cota limite de taxa redefinir recuperar continuar",

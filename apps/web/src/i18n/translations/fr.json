@@ -5169,8 +5169,8 @@
   "d72f296745294c3a": "Importer les projets et leurs fils",
   "18d144bcd97f0371": "Masquer",
   "54fc1526df1c0cce": "{count, plural, one {Passer en revue les {count}} other {Passer en revue les {count}}}",
-  "bd2304f25f6f999e": "{selected, plural, one {{selected} sélectionné sur {total}} other {{selected} sélectionnés sur {total}}}",
   "228cd9fd55a55070": "Impossible de vérifier à nouveau les projets. {error}",
+  "bd2304f25f6f999e": "{selected, plural, one {{selected} sélectionné sur {total}} other {{selected} sélectionnés sur {total}}}",
   "1cc599c5f5874014": "Téléphone",
   "a8c7bd8349214c14": "Impossible d’enregistrer la configuration de Codex",
   "4c180d45134b7da4": "Vérifiez la commande, puis appuyez sur Enter pour l’exécuter.",
@@ -7423,6 +7423,30 @@
   "e8622c39abe68f9d": "par défaut",
   "5383ef2d2c09cdf7": "Rechercher des polices…",
   "ea08337bcadd35b4": "Aucune police trouvée.",
+  "29e59b3bc57b8921": "Aucun nouveau fil à importer",
+  "9528b2c60c580603": "Aucun historique d’agent trouvé.",
+  "382dcc85d648b2df": "Importer",
+  "3360b220b3d7e7aa": "{count, plural, one {Importer {count} projet} other {Importer {count} projets}}",
+  "4781d6af5c907674": [
+    "Récupérez les projets et les fils de votre historique ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " et poursuivez-les ici."
+  ],
+  "9c0f379c2345a2b0": "Importer…",
+  "e32ccc356b3d924b": "Importer des fils",
+  "7e97f4824aae8cf9": [
+    "Choisissez des projets dans votre historique ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    ". Les fils déjà présents dans Onicode ne sont pas réimportés."
+  ],
   "d6ad43bc4b700a88": "Aucune donnée de profil de navigateur à effacer.",
   "ad8efd437b301a37": "Système",
   "42e23caa6ef99cad": "Clair",
@@ -10409,6 +10433,8 @@
   "7c5f0666ccc3196e": "lignes longues blocs de code diffs aperçus de fichiers",
   "e854d0e805882190": "combiner dépôts correspondants environnements barre latérale",
   "c437e0f28c6d4a4b": "trier projets barre latérale manuel créés récents",
+  "c9988dfcc7bc9c1d": "Importer des fils",
+  "c034cae195a5b49d": "claude code codex pi historique conversations sessions transcriptions projets terminal cli",
   "cb309dc06cf679ae": "reporter préréglages heures plus tard ce soir demain semaine prochaine rappel",
   "6751449c6188912d": "utilisation quota limite de débit réinitialisation réveil récupérer continuer",
   "0aedae6a82c09429": "utilisation quota limite de débit réinitialisation récupérer continuer",
