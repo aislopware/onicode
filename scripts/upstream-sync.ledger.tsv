@@ -2508,3 +2508,4 @@ f4b988aeaf	take	fix(server): restart note says how to resume a cut Claude subage
 8cf97b5f06	take	fix(server): a finished run no longer keeps an unused file index alive
 081afe08dc	take	fix(mobile): PR diffs show syntax colors before the full file arrives (#38444)
 2aacea6aa5	take	Took the narrowed turn-item read (the run's failed error items only); kept Onicode's steer check, which already reads the message on its own, so upstream's messages read and cancelled-steer branch are not added.
+f3b168b9f6	take	Ported with react-native-screens 5.0.0-oni.54 (aislopware/react-native-screens@f8edc1f2c, tag oni-v5.0.0-oni.54), which cherry-picks maschwenk 5a67ab37c, the only native change t3.59 carries beyond t3.58; the t3.59 tarball is not used.
