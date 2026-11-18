@@ -11,6 +11,7 @@ import {
 import { resolveCommandPath } from "@onicode/shared/shell";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
+import * as FiberHandle from "effect/FiberHandle";
 import * as Layer from "effect/Layer";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -60,6 +61,8 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
   const scope = yield* Effect.scope;
   // A start during a running install joins it, so one operation is checked once whichever instance asked.
   let accountCheckOperation: string | undefined;
+  // A newer install's check replaces an older one, so an older runtime cannot publish last.
+  const managedRuntimeCheck = yield* FiberHandle.make();
 
   const readEntries = Effect.fn("ProviderInstallation.readEntries")(function* (
     instanceId: ProviderInstanceId,
@@ -140,15 +143,28 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
     "ProviderInstallation.checkManagedRuntimeInstances",
   )(function* (instanceId: ProviderInstanceId) {
     const entries = yield* readEntries(instanceId, "install");
-    for (const instance of yield* instances.listInstances) {
-      if (instance.driverKind !== ANTIGRAVITY || !instance.enabled || !instance.refreshModels) {
+    const listed = yield* instances.listInstances;
+    // Each check launches a runtime that unpacks about 1 GB, so they run one at a time,
+    // starting with the instance whose user asked for the install.
+    const ordered = [
+      ...listed.filter((instance) => instance.instanceId === instanceId),
+      ...listed.filter((instance) => instance.instanceId !== instanceId),
+    ];
+    for (const instance of ordered) {
+      // An instance missing from settings was deleted and is about to be retired.
+      const entry = entries[instance.instanceId];
+      if (
+        entry === undefined ||
+        instance.driverKind !== ANTIGRAVITY ||
+        !instance.enabled ||
+        !instance.refreshModels
+      ) {
         continue;
       }
-      const config = yield* decodeAntigravitySettings(
-        entries[instance.instanceId]?.config ?? {},
-      ).pipe(Effect.option);
+      const config = yield* decodeAntigravitySettings(entry.config ?? {}).pipe(Effect.option);
       if (Option.isNone(config) || config.value.binaryPath) continue;
-      yield* instance.refreshModels().pipe(Effect.ignore({ log: true }));
+      // A sign-out or disable interrupts this instance's check; the others still need theirs.
+      yield* instance.refreshModels().pipe(Effect.ignoreCause({ log: true }));
       yield* providers.refreshInstance(instance.instanceId);
     }
   });
@@ -176,7 +192,10 @@ const make = Effect.fn("makeProviderInstallation")(function* () {
           Option.isSome(result) &&
           result.value.operationId === started.operationId &&
           result.value.phase === "succeeded"
-            ? checkManagedRuntimeInstances(input.instanceId)
+            ? FiberHandle.run(
+                managedRuntimeCheck,
+                checkManagedRuntimeInstances(input.instanceId).pipe(Effect.ignore({ log: true })),
+              )
             : Effect.void,
         ),
         Effect.ignore({ log: true }),
