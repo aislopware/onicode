@@ -40,7 +40,10 @@ import {
   subscriptionRetryDelay,
 } from "../rpc/client.ts";
 import { parseThreadKey, threadKey } from "./entities.ts";
-import { applyOrchestrationV2ProjectionEvent } from "./orchestrationV2Projection.ts";
+import {
+  applyOrchestrationV2ProjectionEvent,
+  keepSubagentModelCopy,
+} from "./orchestrationV2Projection.ts";
 import { THREAD_SNAPSHOT_IDLE_TTL_MS } from "./threadRetention.ts";
 import { followStreamInEnvironment } from "./runtime.ts";
 import * as ThreadHistoryController from "./threadHistoryController.ts";
@@ -173,7 +176,7 @@ function settleTurnItems(
     const server = settled.get(id);
     if (server === undefined || !isOrchestrationV2WorkActive(item.status)) return item;
     changed = true;
-    return server;
+    return keepSubagentModelCopy(server, item);
   };
   const turnItems = projection.turnItems.map((item) => settle(item, item.id));
   const visibleTurnItems = projection.visibleTurnItems.map((row) => {

@@ -130,6 +130,11 @@ export function ThreadSubagentGroup(props: {
   const { presentationById } = useEnvironments();
   const agents = members.map((item) => {
     const live = liveAgents?.find((agent) => agent.id === item.subagentId);
+    // The record's model and selection go together, so a row's older copy cannot mix with them.
+    const modelSource =
+      live !== undefined && (live.model !== null || live.modelSelection !== undefined)
+        ? live
+        : item;
     return {
       ...item,
       item,
@@ -138,8 +143,8 @@ export function ThreadSubagentGroup(props: {
       completedAt: live?.completedAt ?? item.completedAt,
       result: live?.result ?? item.result,
       progress: live?.progress ?? item.progress,
-      model: live?.model ?? item.model ?? null,
-      modelSelection: live?.modelSelection ?? item.modelSelection,
+      model: modelSource.model ?? null,
+      modelSelection: modelSource.modelSelection,
     };
   });
   const grouped = agents.length > 1;

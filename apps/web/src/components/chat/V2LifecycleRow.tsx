@@ -480,6 +480,9 @@ function SubagentTimelineLink(props: {
   const rawDetail = settled ? result || progress : progress || result;
   const detail = subagentCardDetail(rawDetail);
   const failed = status === "failed";
+  // The record's model and selection go together, so a row's older copy cannot mix with them.
+  const modelSource =
+    agent !== null && (agent.model !== null || agent.modelSelection !== undefined) ? agent : props;
   const timing = {
     status: liveStatus,
     startedAt: isoOrNull(agent?.startedAt ?? props.startedAt),
@@ -574,8 +577,8 @@ function SubagentTimelineLink(props: {
         <SubagentTimelineTooltip
           {...props}
           elapsed={<AgentElapsed environmentId={props.parentRef.environmentId} agent={timing} />}
-          model={agent?.model ?? props.model ?? null}
-          modelSelection={agent?.modelSelection ?? props.modelSelection}
+          model={modelSource?.model ?? null}
+          modelSelection={modelSource?.modelSelection}
           status={liveStatus}
           result={agent?.result ?? props.result}
           progress={agent?.progress ?? props.progress}
