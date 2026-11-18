@@ -2449,3 +2449,4 @@ ef57728059	take	taken as is
 3e1b7c4e93	take	taken as is
 b8b5affac4	take	fix(server): agents read a Linear issue once when given its link (#38425)
 2216ffe006	take	fix(server): All issues pages skip the signed-in account read (#38431)
+5b6f7c81ce	take	fix(server): recover JSON-stringified delegate targets (#38436)
