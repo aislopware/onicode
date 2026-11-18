@@ -124,15 +124,23 @@ const layerDispatchChokepointTest =
     );
 
 it.effect.each([
-  { label: "refuses a continuation message.dispatch", missedRunId: undefined },
+  { label: "refuses a continuation message.dispatch", missedRunId: undefined, passes: false },
   // Held in the queue it starts nothing, and refused it would be lost with the turn that ended.
   {
     label: "lets a steer that missed a failed turn back into the queue",
     missedRunId: RunId.make("run:thread-management:chokepoint-missed"),
+    passes: true,
+  },
+  // A delivery intent can turn the message into a new turn, so the claim alone opens nothing.
+  {
+    label: "refuses a missed steer that names a delivery intent",
+    missedRunId: RunId.make("run:thread-management:chokepoint-missed"),
+    deliveryIntent: "auto" as const,
+    passes: false,
   },
 ])(
   "the dispatch chokepoint $label on a project-disabled instance before reaching the orchestrator",
-  ({ missedRunId }) => {
+  ({ missedRunId, deliveryIntent, passes }) => {
     const projectId = ProjectId.make("project:thread-management:chokepoint");
     const threadId = ThreadId.make("thread:thread-management:chokepoint");
     const instanceId = ProviderInstanceId.make("codex_work");
@@ -159,12 +167,13 @@ it.effect.each([
           attachments: [],
           dispatchMode: { type: "queue_after_active" },
           ...(missedRunId === undefined ? {} : { steerMissedRunId: missedRunId }),
+          ...(deliveryIntent === undefined ? {} : { deliveryIntent }),
           createdBy: "agent",
           creationSource: "server",
         }),
       );
 
-      if (missedRunId !== undefined) {
+      if (passes) {
         expect(dispatched).toEqual(["message.dispatch"]);
         return;
       }

@@ -519,6 +519,13 @@ it.effect.each([
     owner: "run:0",
     removed: false,
   },
+  // The promotion restarted that turn with the task's prompt, so the turn carries its message id.
+  {
+    label: "stays when its message restarted another turn as a steer",
+    ended: "run:1",
+    owner: "run:1",
+    removed: false,
+  },
 ])("a one-time task $label", (outcome) =>
   Effect.gen(function* () {
     yield* TestClock.setTime(Date.parse("2026-11-01T07:00:00.000Z"));
@@ -606,8 +613,9 @@ it.effect.each([
       // The dispatch alone keeps it: the turn can still fail.
       assert.isNull(Option.getOrThrow(yield* Fiber.join(recorded))?.nextRunAt);
       yield* Deferred.succeed(ended, undefined);
-      if (outcome.removed) yield* Fiber.join(gone);
-      else yield* Deferred.await(decided);
+      yield* outcome.removed
+        ? Fiber.join(gone)
+        : Effect.raceFirst(Deferred.await(decided), Fiber.join(gone));
       assert.lengthOf((yield* service.list()).tasks, outcome.removed ? 0 : 1);
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
