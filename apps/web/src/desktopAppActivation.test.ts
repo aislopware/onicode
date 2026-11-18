@@ -89,6 +89,19 @@ describe("desktop app activation", () => {
       expected: "pending",
     },
     {
+      name: "answers at once when the connection to this computer's service is turned off",
+      environment: "available",
+      enabled: false,
+      shellCaughtUp: true,
+      expected: "unavailable",
+    },
+    {
+      name: "answers at once when this computer's service cannot be used",
+      environment: "unsupported",
+      shellCaughtUp: true,
+      expected: "unavailable",
+    },
+    {
       name: "waits until it is known whether this computer runs a service",
       environment: null,
       discoverySettled: false,
@@ -109,6 +122,7 @@ describe("desktop app activation", () => {
     "$name",
     ({
       environment,
+      enabled = true,
       shellCaughtUp = false,
       discoverySettled = true,
       localEnvironmentOff = true,
@@ -121,6 +135,7 @@ describe("desktop app activation", () => {
             environment === null
               ? null
               : {
+                  entry: { enabled } as never,
                   connection: { phase: environment, error: null, traceId: null },
                   serverConfig: {} as never,
                 },
