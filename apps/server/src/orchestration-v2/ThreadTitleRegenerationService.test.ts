@@ -407,7 +407,7 @@ describe("ThreadTitleRegenerationService", () => {
             threadId,
             title,
           });
-        const fork = (key: string) =>
+        const fork = (key: string, title?: string) =>
           Effect.gen(function* () {
             const targetThreadId = ThreadId.make(`${prefix}:${key}`);
             yield* threads.dispatch({
@@ -416,8 +416,9 @@ describe("ThreadTitleRegenerationService", () => {
               sourceThreadId,
               targetThreadId,
               sourcePoint: { type: "run", runId: forkRunId },
-              createdBy: "user",
-              creationSource: "web",
+              ...(title === undefined
+                ? { createdBy: "user", creationSource: "web" }
+                : { title, createdBy: "agent", creationSource: "mcp" }),
             });
             return targetThreadId;
           });
@@ -445,12 +446,22 @@ describe("ThreadTitleRegenerationService", () => {
           }),
           kind: { type: "regenerate" },
         });
+        const titled = yield* fork("titled", "Release checklist");
+        const compacted = yield* fork("compacted");
+        yield* rename("compacted", compacted, "Storage migration notes");
+        yield* dispatchUserMessage({
+          command: `${prefix}:compacted:compact`,
+          threadId: compacted,
+          text: "/compact",
+        });
 
         for (const [key, threadId, expectedTitle, generates] of [
           ["renamed", forkThreadId, "Storage migration notes", false],
           ["fork of a renamed source", forkOfRenamedSource, seed, true],
           ["renamed, then regenerated", regenerated, seed, true],
           ["renamed, then regenerated to the same name", regeneratedUnchanged, seed, true],
+          ["titled by the agent that forked it", titled, "Release checklist", false],
+          ["renamed, then compacted", compacted, "Storage migration notes", false],
         ] as const) {
           const requestId = CommandId.make(`${prefix}:${key}:message`);
           yield* threads.dispatch({

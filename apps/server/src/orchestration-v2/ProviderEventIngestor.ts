@@ -468,10 +468,16 @@ export const layer: Layer.Layer<
                   ProjectionStoreThreadNotFoundError: () => Effect.succeed(null),
                 }),
               );
+              const rename = input.event.titleOnly === true;
               const offered =
-                input.event.titleOnly === true && existing !== null
-                  ? { ...input.event.appThread, modelSelection: existing.modelSelection }
-                  : input.event.appThread;
+                existing === null
+                  ? input.event.appThread
+                  : rename
+                    ? { ...input.event.appThread, modelSelection: existing.modelSelection }
+                    : existing.titleRenamed === true
+                      ? // A provider's own label for the thread does not undo the user's name.
+                        { ...input.event.appThread, title: existing.title }
+                      : input.event.appThread;
               if (
                 existing !== null &&
                 (input.event.createOnly === true ||
@@ -491,9 +497,14 @@ export const layer: Layer.Layer<
                           ...existing,
                           title: offered.title,
                           modelSelection: offered.modelSelection,
-                          // A title the provider set, such as a `/rename`, is no longer generated.
-                          ...(existing.title !== offered.title && existing.generatedTitle != null
-                            ? { generatedTitle: null, titleRegeneration: null }
+                          // A `/rename` is the user's name, as a rename in the app is.
+                          ...(existing.title !== offered.title &&
+                          (rename || existing.generatedTitle != null)
+                            ? {
+                                generatedTitle: null,
+                                titleRegeneration: null,
+                                ...(rename ? { titleRenamed: true } : {}),
+                              }
                             : {}),
                           updatedAt: now,
                         },
