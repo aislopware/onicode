@@ -14,6 +14,7 @@ import { WindowHingeContext } from "../../native/window-hinge-context";
 import { OverlayPortal } from "./OverlayPortal";
 import { useAndroidControlSizing } from "./useAndroidControlSizing";
 import { MenuPopup } from "./MenuPopup";
+import { currentMenuPath } from "./AndroidAnchoredMenu.logic";
 
 const SCREEN_MARGIN = 12;
 const ANCHOR_GAP = 6;
@@ -46,7 +47,7 @@ export type AndroidAnchoredMenuProps = {
 export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   const { scale, menuWidth: desiredMenuWidth, menuItemHeight } = useAndroidControlSizing();
   const [anchor, setAnchor] = useState<AnchorSnapshot | null>(null);
-  const [path, setPath] = useState<readonly MenuAction[]>([]);
+  const [opened, setOpened] = useState<readonly MenuAction[]>([]);
   const [overlay, setOverlay] = useState<OverlayFrame | null>(null);
   const windowHinge = use(WindowHingeContext);
   // State, not a ref: `open` reaches render-prop children, and the compiler
@@ -58,9 +59,13 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   const keyboardHeight = useKeyboardState((state) => state.height);
   const close = () => {
     setAnchor(null);
-    setPath([]);
+    setOpened([]);
     setOverlay(null);
   };
+  // Actions can refresh while a submenu is open, such as a helper turning busy.
+  const path = currentMenuPath(props.actions, opened);
+  // A submenu that lost its choices stays closed when they come back.
+  if (path.length < opened.length) setOpened(path);
   // The in-window menu is pinned to the trigger's spot above the keyboard, which is stale once it hides.
   if (anchor?.keyboardWasVisible === true && !keyboardVisible) {
     close();
@@ -82,7 +87,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
   // handles back itself.
   useHardwareBack(anchor?.keyboardWasVisible === true, () => {
     if (path.length > 0) {
-      setPath((current) => current.slice(0, -1));
+      setOpened(path.slice(0, -1));
     } else {
       close();
     }
@@ -130,7 +135,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
 
   const onPressItem = (action: MenuAction) => {
     if ((action.subactions?.length ?? 0) > 0) {
-      setPath((current) => [...current, action]);
+      setOpened([...path, action]);
       return;
     }
     close();
@@ -182,7 +187,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                 title={props.title}
                 parent={parent}
                 onPress={onPressItem}
-                onBack={() => setPath((current) => current.slice(0, -1))}
+                onBack={() => setOpened(path.slice(0, -1))}
                 onClose={close}
               />
             ) : (
@@ -213,7 +218,7 @@ export function AndroidAnchoredMenu(props: AndroidAnchoredMenuProps) {
                     title={props.title}
                     parent={parent}
                     onPress={onPressItem}
-                    onBack={() => setPath((current) => current.slice(0, -1))}
+                    onBack={() => setOpened(path.slice(0, -1))}
                     onClose={close}
                   />
                 </ScrollView>
