@@ -1,11 +1,12 @@
 import type { EnvironmentId, RunId, ThreadId } from "@onicode/contracts";
+import { msg } from "gt-react-native";
 import { assistantCitationsToPlainText } from "@onicode/shared/assistantCitations";
 import {
   isAttachmentOnlyBootstrapPrompt,
   replaceComposerContextReferences,
 } from "@onicode/shared/composerContextReferences";
 
-export const REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL = "Remove queued message";
+export const REMOVE_QUEUED_MESSAGE_ACCESSIBILITY_LABEL = msg("Remove queued message");
 
 export interface ThreadQueueRowControls {
   readonly canDismiss: boolean;

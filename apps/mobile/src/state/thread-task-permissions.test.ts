@@ -89,6 +89,15 @@ vi.mock("react", () => ({
   ],
 }));
 vi.mock("expo-crypto", () => ({ randomUUID: () => "uuid" }));
+vi.mock("gt-react-native", async (importOriginal) => {
+  const gt = await importOriginal<typeof import("gt-react-native")>();
+  return {
+    ...gt,
+    useGT: () => gt.mFallback,
+    useLocale: () => "en",
+    useMessages: () => gt.mFallback,
+  };
+});
 vi.mock("@onicode/client-runtime/state/context-window", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@onicode/client-runtime/state/context-window")>()),
   compactBeforeSendTokens: (input: { readonly selection: ModelSelection; readonly now: string }) =>

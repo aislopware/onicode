@@ -31,6 +31,7 @@ import { readLocalApi } from "../localApi";
 import type { Project } from "../types";
 import Sidebar from "./Sidebar";
 import { THREAD_JUMP_HINT_SHOW_DELAY_MS } from "./Sidebar.logic";
+import { I18nProvider } from "../i18n/I18nProvider";
 import { SortableThreadRow } from "./sidebar/SidebarThreadRow";
 import { SidebarProvider } from "./ui/sidebar";
 
@@ -171,10 +172,13 @@ describe("sidebar render isolation", () => {
   it("does not re-render thread rows when the sidebar renders with nothing changed", async () => {
     mockSidebarThreads();
     const routeReveal = { observedKey: null, pendingKey: null };
+    // The app's GT provider, without which useGT() returns a new function every render.
     const sidebar = () => (
-      <SidebarProvider>
-        <Sidebar routeReveal={routeReveal} />
-      </SidebarProvider>
+      <I18nProvider>
+        <SidebarProvider>
+          <Sidebar routeReveal={routeReveal} />
+        </SidebarProvider>
+      </I18nProvider>
     );
     await using screen = await render(sidebar());
     await expect.element(screen.getByText("Thread 4").first()).toBeInTheDocument();

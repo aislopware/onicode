@@ -1,4 +1,5 @@
 import { readZipDirectory } from "./zipDirectory.ts";
+import { ZipError } from "./zipError.ts";
 
 export const ARCHIVE_MAX_BYTES = 50 * 1024 * 1024;
 export const ARCHIVE_ENTRY_MAX_BYTES = 10 * 1024 * 1024;
@@ -15,8 +16,7 @@ export async function boundedZip(
     markupLimit?: number;
   } = {},
 ) {
-  if (bytes.byteLength > ARCHIVE_MAX_BYTES)
-    throw new Error("Preview limited to files under 50 MB.");
+  if (bytes.byteLength > ARCHIVE_MAX_BYTES) throw new ZipError({ code: "file-too-large" });
   const entries = readZipDirectory(bytes, ARCHIVE_MAX_ENTRIES);
   const files = new Map<
     string,
@@ -25,7 +25,7 @@ export async function boundedZip(
   let total = 0;
   let markup = 0;
   for (const entry of entries.values()) {
-    if (entry.name.length > 1024) throw new Error("An archive path is too long to preview.");
+    if (entry.name.length > 1024) throw new ZipError({ code: "archive-path-too-long" });
     const chunks: Uint8Array[] = [];
     let length = 0;
     await entry.read((chunk) => {
@@ -41,9 +41,7 @@ export async function boundedZip(
         length > entryLimit ||
         (entry.name.endsWith(".xml") && length > (limits.xmlLimit ?? 8 * 1024 * 1024))
       )
-        throw new Error(
-          "The expanded archive exceeds the preview size or compression ratio limit.",
-        );
+        throw new ZipError({ code: "archive-expanded-too-large" });
       chunks.push(chunk);
     });
     const content = new Uint8Array(length);

@@ -12,6 +12,8 @@ import { HttpClientError } from "effect/http";
 
 import { PrimaryEnvironmentHttpClient } from "./httpClient";
 import { runPrimaryHttp } from "../../lib/runtime";
+import { msg } from "gt-react";
+import { m } from "../../i18n/messages";
 
 const PrimaryEnvironmentRequestOperation = Schema.Literals([
   "fetch-session-state",
@@ -52,7 +54,12 @@ export class PrimaryEnvironmentRequestError extends Schema.TaggedError<PrimaryEn
   }
 
   override get message(): string {
-    return `Primary environment request failed during ${this.operation} (HTTP ${this.status}).`;
+    return m(
+      msg("Primary environment request failed during {operation} (HTTP {status}).", {
+        operation: this.operation,
+        status: this.status,
+      }),
+    );
   }
 }
 
@@ -181,7 +188,7 @@ async function bootstrapServerAuth(): Promise<ServerAuthGateState> {
     ? { status: "authenticated" }
     : {
         status: "requires-auth",
-        errorMessage: "The server did not accept the credential the desktop app gave it.",
+        errorMessage: m(msg("The server did not accept the credential the desktop app gave it.")),
       };
 }
 

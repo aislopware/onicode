@@ -3,6 +3,9 @@ import { LIVE_ACTIVITY_ROW_ID, type ThreadFeedEntry } from "../../lib/threadActi
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { threadHasCaughtUpTo } from "@onicode/client-runtime/state/threads";
 import { resolveUserMessageGrouping } from "@onicode/client-runtime/user-message";
+import { msg } from "gt-react-native";
+
+import { m, type MessageResolver } from "../../i18n/messages";
 import type {
   AcknowledgedThreadMessage,
   QueuedThreadMessage,
@@ -161,6 +164,7 @@ export function createPendingTurnAppender() {
   return (
     feed: ReadonlyArray<PendingThreadFeedEntry>,
     options: { readonly zen: boolean; readonly dispatchingMessageId: string | null },
+    resolve: MessageResolver = m,
   ): ReadonlyArray<PendingThreadFeedEntry | PendingFoldFeedEntry> => {
     // Queued behind a lost connection or missing access, a message is waiting, not sending.
     // The oldest sent message runs first, so its rows go under it.
@@ -187,7 +191,7 @@ export function createPendingTurnAppender() {
     ) {
       return feed;
     }
-    const label = anchor.acknowledged ? "Starting…" : "Sending…";
+    const label = anchor.acknowledged ? resolve(msg("Starting…")) : resolve(msg("Sending…"));
     if (activity?.createdAt !== anchor.createdAt || activity.label !== label) {
       activity = {
         type: "thinking",

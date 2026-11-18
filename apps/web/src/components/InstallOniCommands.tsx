@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import { cn } from "~/lib/utils";
 
 import { CommandBlock } from "./CommandBlock";
@@ -13,12 +14,16 @@ export function InstallOniCommands({
   return (
     <div className={cn("space-y-2", className)}>
       <CommandBlock command="npm install -g onicode" />
-      <p className="text-xs text-muted-foreground">Then</p>
+      <p className="text-xs text-muted-foreground">
+        <T>Then</T>
+      </p>
       <CommandBlock command={command} />
       <p className="text-xs text-muted-foreground">
-        Skip the install if you already have <code className="font-mono">onicode</code>. If{" "}
-        <code className="font-mono">onicode</code> is not found after installing, add npm's global
-        bin folder to your PATH.
+        <T>
+          Skip the install if you already have <code className="font-mono">onicode</code>. If{" "}
+          <code className="font-mono">onicode</code> is not found after installing, add npm's global
+          bin folder to your PATH.
+        </T>
       </p>
     </div>
   );

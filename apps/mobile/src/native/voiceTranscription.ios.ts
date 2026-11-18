@@ -1,7 +1,9 @@
 import * as Schema from "effect/Schema";
 import AppleTranscription from "@react-native-ai/apple/src/NativeAppleTranscription";
 import { File } from "expo-file-system";
+import { msg } from "gt-react-native";
 import { Settings } from "react-native";
+import { m } from "../i18n/messages";
 
 import {
   VoiceTranscriptionError,
@@ -111,7 +113,7 @@ async function prepareLocale(locale: string, signal: AbortSignal): Promise<strin
     if (info.locale === undefined || info.assets === "unsupported") {
       throw new VoiceTranscriptionError({
         code: "unsupported-locale",
-        message: "Voice transcription does not support any of your languages.",
+        message: m(msg("Voice transcription does not support any of your languages.")),
       });
     }
     await AppleTranscription.prepare(info.locale);
@@ -121,7 +123,7 @@ async function prepareLocale(locale: string, signal: AbortSignal): Promise<strin
     throwIfVoiceTranscriptionAborted(signal);
     throw wrapError(
       "preparation-failed",
-      "Voice transcription could not prepare this language.",
+      m(msg("Voice transcription could not prepare this language.")),
       error,
     );
   }
@@ -144,6 +146,6 @@ async function transcribeVoiceRecording(
       .trim();
   } catch (error) {
     throwIfVoiceTranscriptionAborted(signal);
-    throw wrapError("transcription-failed", "Voice transcription failed.", error);
+    throw wrapError("transcription-failed", m(msg("Voice transcription failed.")), error);
   }
 }

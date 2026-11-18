@@ -1,3 +1,5 @@
+import { msg } from "gt-i18n";
+import { translatableMessage } from "../errors/translatable.ts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import {
@@ -64,7 +66,7 @@ export const executeConnectedEnvironmentHttpRequest = Effect.fn(
   const prepared = yield* SubscriptionRef.get(supervisor.prepared);
   if (Option.isNone(prepared)) {
     return yield* new RemoteEnvironmentAuthFetchError({
-      message: "The environment is not connected.",
+      ...translatableMessage(msg("The environment is not connected.")),
       cause: supervisor.target._tag,
     });
   }

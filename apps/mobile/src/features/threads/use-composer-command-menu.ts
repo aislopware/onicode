@@ -59,6 +59,7 @@ import {
 } from "@onicode/client-runtime/composer-model-mentions";
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import { Atom } from "effect/reactivity";
+import { msg, useGT, useMessages } from "gt-react-native";
 import { useEffect, useState } from "react";
 
 import type { ComposerEditorSelection } from "../../components/ComposerEditor";
@@ -72,6 +73,7 @@ import {
 } from "../../state/queries";
 import { composerFolderParentPath } from "@onicode/client-runtime/composer-folder-mentions";
 import type { ModelOption } from "../../lib/modelOptions";
+import { m, type MessageResolver } from "../../i18n/messages";
 import type { ComposerCommandItem } from "./ComposerCommandPopover";
 import { matchesSlashSkillQuery } from "./composerSlashSkillSearch";
 
@@ -106,19 +108,28 @@ export function resolveComposerMenuSelection(input: {
   return { start: Math.min(input.local.start, length), end: Math.min(input.local.end, length) };
 }
 
-export function buildComposerSlashCommandItems(input: {
-  readonly query: string;
-  readonly atMessageStart: boolean;
-  readonly hasThread: boolean;
-  readonly hasCompactableConversation?: boolean;
-  readonly offersUsageLimits?: boolean;
-  /** Onicode's `/clear` replaces the provider's, which would clear a session Onicode still treats as live. */
-  readonly offersFreshSession?: boolean;
-  readonly offersSideChat?: boolean;
-  /** Onicode's `/context` and `/mcp` views replace the provider's text output. */
-  readonly providerSessionViews?: ReadonlyArray<ProviderSessionView>;
-  readonly selectedProviderStatus: Pick<ServerProvider, "driver" | "slashCommands"> | null;
-}): ComposerCommandItem[] {
+const PULL_REQUEST_STATE_LABELS = {
+  open: msg("open", { $context: "pull request state" }),
+  closed: msg("closed", { $context: "pull request state" }),
+  merged: msg("merged", { $context: "pull request state" }),
+} as const;
+
+export function buildComposerSlashCommandItems(
+  input: {
+    readonly query: string;
+    readonly atMessageStart: boolean;
+    readonly hasThread: boolean;
+    readonly hasCompactableConversation?: boolean;
+    readonly offersUsageLimits?: boolean;
+    /** Onicode's `/clear` replaces the provider's, which would clear a session Onicode still treats as live. */
+    readonly offersFreshSession?: boolean;
+    readonly offersSideChat?: boolean;
+    /** Onicode's `/context` and `/mcp` views replace the provider's text output. */
+    readonly providerSessionViews?: ReadonlyArray<ProviderSessionView>;
+    readonly selectedProviderStatus: Pick<ServerProvider, "driver" | "slashCommands"> | null;
+  },
+  resolve: MessageResolver = m,
+): ComposerCommandItem[] {
   const query = input.query.toLowerCase();
   const items: ComposerCommandItem[] = "model".includes(query)
     ? [
@@ -127,7 +138,7 @@ export function buildComposerSlashCommandItems(input: {
           type: "slash-command",
           command: "model",
           label: "/model",
-          description: "Switch model",
+          description: resolve(msg("Switch model")),
         },
       ]
     : [];
@@ -137,8 +148,8 @@ export function buildComposerSlashCommandItems(input: {
   if (!input.atMessageStart) return items;
   if (input.offersSideChat) {
     for (const [command, description] of [
-      ["side", "Ask a side question in a new side chat"],
-      ["btw", "Same as /side"],
+      ["side", resolve(msg("Ask a side question in a new side chat"))],
+      ["btw", resolve(msg("Same as /side"))],
     ] as const) {
       if (!command.includes(query)) continue;
       items.push({
@@ -156,7 +167,7 @@ export function buildComposerSlashCommandItems(input: {
       type: "slash-command",
       command: "clear",
       label: "/clear",
-      description: "Start a fresh session",
+      description: resolve(msg("Start a fresh session")),
     });
   }
   const sessionViews = input.providerSessionViews ?? [];
@@ -316,6 +327,8 @@ export function useComposerCommandMenu({
   readonly providerSessionViews?: ReadonlyArray<ProviderSessionView>;
   readonly onProviderSessionView?: (view: ProviderSessionView) => void;
 }) {
+  const gt = useGT();
+  const messages = useMessages();
   const [localSelection, setLocalSelection] = useState(() => ({
     ownerKey,
     ...composerSelectionAtEnd(draftMessage),
@@ -414,7 +427,7 @@ export function useComposerCommandMenu({
           isDraft: entry.isDraft,
         },
         label: `#${entry.number}`,
-        description: `${entry.isDraft ? "Draft" : entry.state} · ${
+        description: `${entry.isDraft ? gt("Draft", { $context: "pull request state" }) : messages(PULL_REQUEST_STATE_LABELS[entry.state])} · ${
           entry.repository.toLowerCase() === pullRequestRepository?.toLowerCase()
             ? ""
             : `${entry.repository} · `
@@ -425,25 +438,28 @@ export function useComposerCommandMenu({
     if (trigger.kind === "slash-command") {
       const q = trigger.query.toLowerCase();
       const visibleSkills = getProviderSkillsForSlashMenu(skills, true);
-      const commandItems = buildComposerSlashCommandItems({
-        query: q,
-        atMessageStart: trigger.rangeStart === 0,
-        hasThread,
-        hasCompactableConversation,
-        offersUsageLimits,
-        offersFreshSession: onFreshSession !== undefined,
-        offersSideChat,
-        providerSessionViews: onProviderSessionView ? providerSessionViews : undefined,
-        selectedProviderStatus: selectedProviderStatus
-          ? {
-              ...selectedProviderStatus,
-              slashCommands: getProviderSlashCommandsForSlashMenu(
-                resolveProviderSlashCommandsForCwd(selectedProviderStatus, projectCwd),
-                visibleSkills,
-              ),
-            }
-          : null,
-      });
+      const commandItems = buildComposerSlashCommandItems(
+        {
+          query: q,
+          atMessageStart: trigger.rangeStart === 0,
+          hasThread,
+          hasCompactableConversation,
+          offersUsageLimits,
+          offersFreshSession: onFreshSession !== undefined,
+          offersSideChat,
+          providerSessionViews: onProviderSessionView ? providerSessionViews : undefined,
+          selectedProviderStatus: selectedProviderStatus
+            ? {
+                ...selectedProviderStatus,
+                slashCommands: getProviderSlashCommandsForSlashMenu(
+                  resolveProviderSlashCommandsForCwd(selectedProviderStatus, projectCwd),
+                  visibleSkills,
+                ),
+              }
+            : null,
+        },
+        messages,
+      );
 
       const skillItems = visibleSkills
         .filter((skill) => matchesSlashSkillQuery(skill, q))
@@ -543,17 +559,23 @@ export function useComposerCommandMenu({
 
     if (trigger.kind === "path") {
       const threadItems = environmentId
-        ? matchComposerThreadItems({
-            shells: threadShells,
-            environmentId,
-            linkedEnvironments,
-            excludeThreadId: currentThreadId,
-            query: trigger.query,
-            now,
-          })
+        ? matchComposerThreadItems(
+            {
+              shells: threadShells,
+              environmentId,
+              linkedEnvironments,
+              excludeThreadId: currentThreadId,
+              query: trigger.query,
+              now,
+            },
+            messages,
+          )
         : [];
       const environmentItems = environmentId
-        ? matchComposerEnvironmentItems({ environments, environmentId, query: trigger.query })
+        ? matchComposerEnvironmentItems(
+            { environments, environmentId, query: trigger.query },
+            messages,
+          )
         : [];
       const modelItems =
         modelOptions && modelProviders
@@ -596,7 +618,10 @@ export function useComposerCommandMenu({
       const existing = getComposerDraftSnapshot(ownerKey).context?.records ?? [];
       const alreadyAttached = existing.some((entry) => entry.contextId === record.contextId);
       if (!alreadyAttached && existing.length >= COMPOSER_CONTEXT_MAX_RECORDS) {
-        Dialog.alert("Too many context items", "Remove some context from the draft and try again.");
+        Dialog.alert(
+          gt("Too many context items"),
+          gt("Remove some context from the draft and try again."),
+        );
         return;
       }
       const result = replaceTextRange(
@@ -628,7 +653,10 @@ export function useComposerCommandMenu({
       const existing = getComposerDraftSnapshot(ownerKey).context?.records ?? [];
       const alreadyAttached = existing.some((entry) => entry.contextId === record.contextId);
       if (!alreadyAttached && existing.length >= COMPOSER_CONTEXT_MAX_RECORDS) {
-        Dialog.alert("Too many context items", "Remove some context from the draft and try again.");
+        Dialog.alert(
+          gt("Too many context items"),
+          gt("Remove some context from the draft and try again."),
+        );
         return;
       }
       const result = replaceTextRange(
@@ -660,7 +688,10 @@ export function useComposerCommandMenu({
         (getComposerDraftSnapshot(ownerKey).context?.records.length ?? 0) >=
         COMPOSER_CONTEXT_MAX_RECORDS
       ) {
-        Dialog.alert("Too many context items", "Remove some context from the draft and try again.");
+        Dialog.alert(
+          gt("Too many context items"),
+          gt("Remove some context from the draft and try again."),
+        );
         return;
       }
       const result = replaceTextRange(
@@ -728,7 +759,7 @@ export function useComposerCommandMenu({
     error:
       trigger?.kind === "pull-request"
         ? pullRequestProjectId === null || pullRequestRepository === null
-          ? "Pull requests are unavailable for this project."
+          ? gt("Pull requests are unavailable for this project.")
           : pullRequestSearch.error
         : null,
     onSelect,

@@ -1,16 +1,22 @@
 import Constants from "expo-constants";
 import { Image } from "expo-image";
+import { msg, T, useMessages } from "gt-react-native";
 import { View } from "react-native";
 
 import { AppText as Text } from "./ui/AppText";
 import { ONICODE_CODE_BRAND_MARK_SOURCE } from "./brandAssets";
 import { resolveMobileStageLabel } from "../lib/mobileBranding";
 
-const stageLabel = resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant);
+const STAGE_LABEL =
+  resolveMobileStageLabel(Constants.expoConfig?.extra?.appVariant) === null
+    ? null
+    : msg("Dev", { $context: "app release stage badge" });
 
 export function BrandMark(props: { readonly compact?: boolean }) {
+  const m = useMessages();
   const compact = props.compact ?? false;
   const iconSize = compact ? 32 : 44;
+  const stageLabel = STAGE_LABEL === null ? null : m(STAGE_LABEL);
 
   return (
     <View className="flex-row items-center gap-3">
@@ -36,7 +42,7 @@ export function BrandMark(props: { readonly compact?: boolean }) {
         </View>
         {!compact ? (
           <Text className="text-xs font-medium text-foreground-muted">
-            Mobile control surface for your live coding environments
+            <T>Mobile control surface for your live coding environments</T>
           </Text>
         ) : null}
       </View>

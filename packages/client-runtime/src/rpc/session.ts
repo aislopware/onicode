@@ -1,3 +1,5 @@
+import { msg } from "gt-i18n";
+import { translatableDetail } from "../errors/translatable.ts";
 import {
   type ServerConfig,
   type ServerConfigStreamEvent,
@@ -199,11 +201,21 @@ export const make = Effect.fn("RpcSessionFactory.make")(function* (
               reason: "transport",
               // Once the socket opened, the path worked, and a host that goes
               // quiet is more often overloaded or asleep than blocked.
-              detail: !wasConnected
-                ? `${connection.label} could not establish a WebSocket connection.`
+              ...(!wasConnected
+                ? translatableDetail(
+                    msg("{host} could not establish a WebSocket connection.", {
+                      host: connection.label,
+                    }),
+                  )
                 : timedOut
-                  ? `${connection.label} stopped responding for ${PING_TIMEOUT_SECONDS}s. ${UNRESPONSIVE_HOST_HINT}`
-                  : `${connection.label} disconnected.`,
+                  ? translatableDetail(
+                      msg("{host} stopped responding for {seconds}s.", {
+                        host: connection.label,
+                        seconds: String(PING_TIMEOUT_SECONDS),
+                      }),
+                      UNRESPONSIVE_HOST_HINT,
+                    )
+                  : translatableDetail(msg("{host} disconnected.", { host: connection.label }))),
               hop: "server",
             }),
           ),

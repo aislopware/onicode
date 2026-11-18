@@ -35,6 +35,7 @@ import {
   SmartphoneIcon,
 } from "lucide-react";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { T, useMessages, Var } from "gt-react";
 
 import { isSecretsFeatureEnabled } from "../../env";
 import { useProject, useQuietThreadShell } from "../../state/entities";
@@ -52,7 +53,8 @@ export function SecretRequestCard(props: {
   readonly visibility: OrchestrationV2ProjectedTurnItem["visibility"];
 }) {
   const { item } = props;
-  const display = secretRequestDisplay(item, props.visibility);
+  const messages = useMessages();
+  const display = secretRequestDisplay(item, props.visibility, messages);
   if (display.kind === "answered" || display.kind === "pending-elsewhere") {
     const Icon =
       display.kind === "pending-elsewhere"
@@ -97,6 +99,7 @@ function PendingSecretRequestForm(props: {
   readonly item: SecretRequestItem;
 }) {
   const { item } = props;
+  const messages = useMessages();
   const inputId = useId();
   const errorId = useId();
   const privacyId = useId();
@@ -108,7 +111,7 @@ function PendingSecretRequestForm(props: {
   });
   const config = useAtomValue(serverEnvironment.configValueAtom(props.environmentId));
   const sources = isSecretsFeatureEnabled
-    ? secretRequestSources(config, config?.settings.secretProviders ?? {})
+    ? secretRequestSources(config, config?.settings.secretProviders ?? {}, messages)
     : NO_SOURCES;
   const thread = useQuietThreadShell(scopeThreadRef(props.environmentId, item.threadId));
   const project = useProject(
@@ -143,7 +146,11 @@ function PendingSecretRequestForm(props: {
       return;
     }
     if (!isAtomCommandInterrupted(result)) {
-      pipe(squashAtomCommandFailure(result), secretRequestFailureMessage, setError);
+      pipe(
+        squashAtomCommandFailure(result),
+        (failure) => secretRequestFailureMessage(failure, messages),
+        setError,
+      );
     }
   };
 
@@ -192,7 +199,9 @@ function PendingSecretRequestForm(props: {
             size="sm"
             render={<a href={link.href} target="_blank" rel="noopener noreferrer" />}
           >
-            Open {link.host}
+            <T>
+              Open <Var>{link.host}</Var>
+            </T>
             <ExternalLinkIcon aria-hidden />
           </Button>
           {/* A link found in the reason is already shown there. */}
@@ -227,7 +236,7 @@ function PendingSecretRequestForm(props: {
               data-1p-ignore
               data-lpignore="true"
               data-bwignore
-              placeholder={item.placeholder ?? SECRET_REQUEST_DEFAULT_PLACEHOLDER}
+              placeholder={item.placeholder ?? messages(SECRET_REQUEST_DEFAULT_PLACEHOLDER)}
               value={secret}
               disabled={submitting}
               aria-invalid={error !== null || undefined}
@@ -255,7 +264,7 @@ function PendingSecretRequestForm(props: {
           )}
         </div>
         <Button type="submit" disabled={submitting || draft.trim().length === 0}>
-          Save securely
+          <T>Save securely</T>
         </Button>
       </div>
       {error !== null ? (
@@ -275,20 +284,33 @@ function PendingSecretRequestForm(props: {
                 />
               }
             >
-              Goes to{" "}
-              {destination.project !== null ? <DestinationName name={destination.project} /> : null}
-              {destination.project !== null && destination.environment !== null ? " on " : null}
-              {destination.environment !== null ? (
-                <DestinationName name={destination.environment} />
-              ) : null}
+              {destination.project !== null && destination.environment !== null ? (
+                <T>
+                  Goes to{" "}
+                  <Var>
+                    <DestinationName name={destination.project} />
+                  </Var>{" "}
+                  on{" "}
+                  <Var>
+                    <DestinationName name={destination.environment} />
+                  </Var>
+                </T>
+              ) : (
+                <T>
+                  Goes to{" "}
+                  <Var>
+                    <DestinationName name={destination.project ?? destination.environment ?? ""} />
+                  </Var>
+                </T>
+              )}
             </CardNote>
           ) : null}
           <CardNote icon={<ShieldCheckIcon className={NOTE_ICON_CLASS} aria-hidden />}>
-            {SECRET_REQUEST_PRIVACY_NOTE}
+            {messages(SECRET_REQUEST_PRIVACY_NOTE)}
           </CardNote>
           {config?.phoneAlertedOnInput === true ? (
             <CardNote icon={<SmartphoneIcon className={NOTE_ICON_CLASS} aria-hidden />}>
-              {SECRET_REQUEST_PHONE_NOTE}
+              {messages(SECRET_REQUEST_PHONE_NOTE)}
             </CardNote>
           ) : null}
         </div>
@@ -299,7 +321,7 @@ function PendingSecretRequestForm(props: {
           disabled={submitting}
           onClick={() => void send({ type: "decline" })}
         >
-          Decline
+          <T>Decline</T>
         </Button>
       </div>
     </form>

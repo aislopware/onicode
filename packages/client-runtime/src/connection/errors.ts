@@ -1,5 +1,7 @@
 import type { EnvironmentId } from "@onicode/contracts";
+import { msg } from "gt-i18n";
 import type { RemoteEnvironmentAuthError } from "../authorization/remote.ts";
+import { detailFromError, translatableDetail } from "../errors/translatable.ts";
 import {
   ConnectionBlockedError,
   type ConnectionAttemptError,
@@ -9,7 +11,9 @@ import {
 export function profileMissingError(connectionId: string): ConnectionBlockedError {
   return new ConnectionBlockedError({
     reason: "configuration",
-    detail: `Connection profile ${connectionId} is unavailable.`,
+    ...translatableDetail(
+      msg("Connection profile {connectionId} is unavailable.", { connectionId }),
+    ),
     hop: "device",
   });
 }
@@ -17,7 +21,9 @@ export function profileMissingError(connectionId: string): ConnectionBlockedErro
 export function credentialMissingError(connectionId: string): ConnectionBlockedError {
   return new ConnectionBlockedError({
     reason: "authentication",
-    detail: `Connection credential ${connectionId} is unavailable.`,
+    ...translatableDetail(
+      msg("Connection credential {connectionId} is unavailable.", { connectionId }),
+    ),
     hop: "device",
   });
 }
@@ -37,7 +43,12 @@ export function environmentMismatchError(input: {
 }): ConnectionBlockedError {
   return new ConnectionBlockedError({
     reason: "configuration",
-    detail: `Connected environment ${input.actual} does not match ${input.expected}.`,
+    ...translatableDetail(
+      msg("Connected environment {actual} does not match {expected}.", {
+        actual: input.actual,
+        expected: input.expected,
+      }),
+    ),
   });
 }
 
@@ -48,10 +59,13 @@ export function mapRemoteEnvironmentError(
     case "EnvironmentAuthInvalidError":
       return new ConnectionBlockedError({
         reason: "authentication",
-        detail:
+        ...translatableDetail(
           error.reason === "tailnet_identity_refused"
-            ? "That machine does not sign in this device from the tailnet. Pair it with a code from that machine instead."
-            : "The environment credential is invalid.",
+            ? msg(
+                "That machine does not sign in this device from the tailnet. Pair it with a code from that machine instead.",
+              )
+            : msg("The environment credential is invalid."),
+        ),
         traceId: error.traceId,
         hop: "server",
       });
@@ -59,40 +73,42 @@ export function mapRemoteEnvironmentError(
     case "EnvironmentOperationForbiddenError":
       return new ConnectionBlockedError({
         reason: "permission",
-        detail: "The environment credential does not grant the required access.",
+        ...translatableDetail(
+          msg("The environment credential does not grant the required access."),
+        ),
         traceId: error.traceId,
         hop: "server",
       });
     case "EnvironmentRequestInvalidError":
       return new ConnectionBlockedError({
         reason: "configuration",
-        detail: "The environment rejected the authentication request.",
+        ...translatableDetail(msg("The environment rejected the authentication request.")),
         traceId: error.traceId,
         hop: "server",
       });
     case "EnvironmentResourceNotFoundError":
       return new ConnectionBlockedError({
         reason: "configuration",
-        detail: "The environment endpoint could not be found.",
+        ...translatableDetail(msg("The environment endpoint could not be found.")),
         traceId: error.traceId,
         hop: "server",
       });
     case "RemoteEnvironmentAuthTimeoutError":
       return new ConnectionTransientError({
         reason: "timeout",
-        detail: error.message,
+        ...detailFromError(error),
         hop: "server",
       });
     case "RemoteEnvironmentAuthFetchError":
       return new ConnectionTransientError({
         reason: "network",
-        detail: error.message,
+        ...detailFromError(error),
         hop: "server",
       });
     case "EnvironmentInternalError":
       return new ConnectionTransientError({
         reason: "remote-unavailable",
-        detail: "The environment could not authorize the connection.",
+        ...translatableDetail(msg("The environment could not authorize the connection.")),
         traceId: error.traceId,
         hop: "server",
       });
@@ -100,7 +116,7 @@ export function mapRemoteEnvironmentError(
     case "RemoteEnvironmentAuthUndeclaredStatusError":
       return new ConnectionTransientError({
         reason: "remote-unavailable",
-        detail: error.message,
+        ...detailFromError(error),
         hop: "server",
       });
   }

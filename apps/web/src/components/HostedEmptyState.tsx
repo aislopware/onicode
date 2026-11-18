@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { T } from "gt-react";
 import type { ReactNode } from "react";
 
 import { APP_DISPLAY_NAME } from "~/branding";
@@ -27,18 +28,20 @@ export function HostedEmptyState() {
         <Empty className="flex-1">
           <EmptyHeader>
             <EmptyTitle>
-              {localEnvironmentOff ? "This computer is off" : "No computer connected"}
+              {localEnvironmentOff ? <T>This computer is off</T> : <T>No computer connected</T>}
             </EmptyTitle>
             <EmptyDescription>
-              {localEnvironmentOff
-                ? "Turn it back on, or connect a different computer."
-                : "Your agents run on your computer. Start Onicode there first."}
+              {localEnvironmentOff ? (
+                <T>Turn it back on, or connect a different computer.</T>
+              ) : (
+                <T>Your agents run on your computer. Start Onicode there first.</T>
+              )}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             {localEnvironmentOff ? (
               <Button render={<Link to="/settings/connections" />} size="sm">
-                Open Environments
+                <T>Open Environments</T>
               </Button>
             ) : (
               <ol className="w-full space-y-4 text-left">
@@ -60,7 +63,7 @@ function PairingSteps() {
       </SetupStep>
       <SetupStep number={2}>
         <Button render={<Link to="/settings/connections" />} size="sm">
-          Add pairing link
+          <T>Add pairing link</T>
         </Button>
       </SetupStep>
     </>
@@ -85,7 +88,9 @@ function SetupStep({
 function RunOnComputer({ command }: { readonly command: string }) {
   return (
     <>
-      <p>Run on your computer:</p>
+      <p>
+        <T>Run on your computer:</T>
+      </p>
       <InstallOniCommands command={command} className="mt-2" />
     </>
   );

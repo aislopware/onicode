@@ -8,6 +8,7 @@ import {
   type PreviewAnnotationPayload,
 } from "@onicode/contracts";
 import * as Schema from "effect/Schema";
+import { decodeMsg, decodeOptions } from "gt-react";
 import { upgradeLegacyContextMessage } from "@onicode/shared/composerContextLegacy";
 
 import {
@@ -15,6 +16,9 @@ import {
   removeInlineContextReference,
 } from "./composerContextReferences";
 import { describe, expect, it } from "vite-plus/test";
+
+import de from "../i18n/translations/de.json";
+import type { MessageResolver } from "../i18n/messages";
 
 import {
   asKnownContextRecord,
@@ -446,6 +450,19 @@ describe("reviewCommentContextLabel", () => {
   it("names the pull request a selection came from", () => {
     expect(reviewCommentContextLabel(selection("pull-request:42"))).toBe("#42 page.tsx L12 to L18");
     expect(reviewCommentContextLabel(selection("turn-diff"))).toBe("page.tsx L12 to L18");
+  });
+
+  it("keeps the diff context so removed lines find their translation", () => {
+    const catalog: Record<string, unknown> = de;
+    const german = ((message: string) => {
+      const options = decodeOptions(message);
+      const entry = options?.$_hash === undefined ? undefined : catalog[options.$_hash];
+      const text = typeof entry === "string" ? entry : decodeMsg(message);
+      return text.replace(/\{(\w+)\}/gu, (_, key: string) => String(options?.[key]));
+    }) as MessageResolver;
+    expect(
+      reviewCommentContextLabel({ ...selection("turn-diff"), rangeLabel: "-12 to -18" }, german),
+    ).toBe("page.tsx Z. 12 bis Z. 18 (vorher)");
   });
 });
 

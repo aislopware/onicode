@@ -5,6 +5,8 @@ import {
   type OrchestrationV2ProviderCapabilities,
 } from "@onicode/contracts";
 import { copySorted } from "@onicode/shared/Array";
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 
 import type { ThreadStructure } from "./models.ts";
 
@@ -136,7 +138,10 @@ export function getUserQueuedThreadRuns(
   );
 }
 
-export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQueueWorkflowState {
+export function deriveThreadQueueWorkflowState(
+  projection: Projection,
+  resolve: MFunctionType = mFallback,
+): ThreadQueueWorkflowState {
   const activeRun = resolveActiveThreadRun(projection);
   const session = resolveThreadProviderSession(projection);
   const capabilities = session?.capabilities.turns;
@@ -160,7 +165,7 @@ export function deriveThreadQueueWorkflowState(projection: Projection): ThreadQu
     const message = projection.messages.find((candidate) => candidate.id === run.userMessageId);
     return {
       run,
-      text: message?.text ?? "Queued message",
+      text: message?.text ?? resolve(msg("Queued message")),
       attachments: message?.attachments ?? [],
       messageId: run.userMessageId,
       ...(message?.context ? { context: message.context } : {}),

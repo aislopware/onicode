@@ -1,3 +1,5 @@
+import { errorDisplayMessage } from "@onicode/client-runtime/errors";
+import { T, useGT } from "gt-react-native";
 import * as Dialog from "../../components/ui/Dialog";
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -34,6 +36,7 @@ import { autoConnectReport, devAutoConnectAttemptAtom } from "./devAutoConnect";
 import { leaveSettingsPage } from "../settings/settings-navigation";
 import { workspaceHasColumns } from "../layout/workspace/workspace-selection-store";
 import { TailnetDevicesSection, type TailnetPairingPrefill } from "./TailnetDevicesSection";
+import { m } from "../../i18n/messages";
 
 type ConnectionsNewRouteParams = {
   readonly mode?: string;
@@ -65,6 +68,7 @@ function PairingForm({
   readonly routePairingUrl: string;
   readonly routeFor: EnvironmentId | undefined;
 }) {
+  const gt = useGT();
   const { connectionPairingUrl, onChangeConnectionPairingUrl, onConnectPress } =
     useRemoteConnections();
   const navigation = useNavigation();
@@ -146,11 +150,11 @@ function PairingForm({
     }
     if (permission.canAskAgain) return;
     Dialog.alert(
-      "Camera access needed",
-      "Camera access was denied for this app. Open Settings to enable it.",
+      gt("Camera access needed"),
+      gt("Camera access was denied for this app. Open Settings to enable it."),
       [
-        { text: "Cancel", style: "cancel" },
-        { text: "Open Settings", onPress: () => void Linking.openSettings() },
+        { text: gt("Cancel"), style: "cancel" },
+        { text: gt("Open Settings"), onPress: () => void Linking.openSettings() },
       ],
     );
   };
@@ -190,8 +194,10 @@ function PairingForm({
     } catch (error) {
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Dialog.alert(
-        "Invalid QR code",
-        error instanceof Error ? error.message : "Scanned QR code was not recognized.",
+        gt("Invalid QR code"),
+        error instanceof Error
+          ? (errorDisplayMessage(error, m) ?? error.message)
+          : gt("Scanned QR code was not recognized."),
       );
       setTimeout(() => {
         setScannerLocked(false);
@@ -201,10 +207,12 @@ function PairingForm({
 
   return (
     <SettingsScreen
-      title="Add environment"
+      title={gt("Add environment")}
       actions={[
         {
-          accessibilityLabel: connecting ? "Connecting" : "Add environment",
+          accessibilityLabel: connecting
+            ? gt("Connecting", { $context: "connection status" })
+            : gt("Add environment"),
           loading: connecting,
           icon: "checkmark",
           tintColor: headerIconColor,
@@ -238,7 +246,9 @@ function PairingForm({
           />
 
           <View collapsable={false} className="gap-2">
-            <Text className="px-4 text-sm font-oni-medium text-foreground-muted">Or enter it</Text>
+            <Text className="px-4 text-sm font-oni-medium text-foreground-muted">
+              <T>Or enter it</T>
+            </Text>
             <View
               collapsable={false}
               className={cn(
@@ -247,7 +257,7 @@ function PairingForm({
               )}
             >
               <PairingInputRow
-                label="Address"
+                label={gt("Address")}
                 keyboardType="url"
                 placeholder="192.168.1.100:3773"
                 value={hostInput}
@@ -256,8 +266,8 @@ function PairingForm({
               <View className="ml-4 border-t border-border-subtle" />
               <PairingInputRow
                 ref={codeInputRef}
-                label="Code"
-                placeholder="Pairing code"
+                label={gt("Code", { $context: "pairing code field" })}
+                placeholder={gt("Pairing code")}
                 returnKeyType="go"
                 value={codeInput}
                 onChangeText={handleCodeChange}
@@ -275,7 +285,9 @@ function PairingForm({
             >
               {pairingConnectionError ??
                 pairingNotice ??
-                "For machines on your local network or tailnet. The machine keeps its own provider credentials."}
+                gt(
+                  "For machines on your local network or tailnet. The machine keeps its own provider credentials.",
+                )}
             </Text>
           </View>
 
@@ -315,11 +327,12 @@ function PairingScanCard(props: {
   readonly onScan: (result: { readonly data: string }) => void;
   readonly onScanPress: () => void;
 }) {
+  const gt = useGT();
   const light = useAppearancePreferences().themeAppearance === "light";
   return (
     <Pressable
       accessibilityRole={props.cameraActive ? undefined : "button"}
-      accessibilityLabel={props.cameraActive ? undefined : "Scan QR code"}
+      accessibilityLabel={props.cameraActive ? undefined : gt("Scan QR code")}
       disabled={props.cameraActive}
       onPress={props.onScanPress}
       className={cn(
@@ -384,13 +397,15 @@ function PairingScanCard(props: {
               <Text
                 className={cn("font-oni-medium text-sm", light ? "text-black/70" : "text-white/80")}
               >
-                Tap to scan
+                <T>Tap to scan</T>
               </Text>
             </>
           )}
         </View>
         <Text className={cn("text-center text-sm", light ? "text-black/70" : "text-white/80")}>
-          Scan the code from onicode pair or desktop Connections settings
+          {gt("Scan the code from {command} or desktop Connections settings", {
+            command: "onicode pair",
+          })}
         </Text>
       </View>
     </Pressable>

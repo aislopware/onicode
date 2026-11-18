@@ -3,6 +3,7 @@ import type { HostHardwareAlert } from "@onicode/client-runtime/hostHardware";
 import type { EnvironmentId } from "@onicode/contracts";
 import { createContext, use, useEffect, useState, type ReactNode } from "react";
 import { Animated, Platform, Pressable, View } from "react-native";
+import { useGT, useMessages } from "gt-react-native";
 
 import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -37,7 +38,8 @@ const HardwareAlertContext = createContext<HostHardwareAlert | null>(null);
  */
 export function WorkspaceConnectionStatusProvider(props: { readonly children: ReactNode }) {
   const { state } = useWorkspaceState();
-  const presentation = workspaceConnectionStatusPresentation(state);
+  const m = useMessages();
+  const presentation = workspaceConnectionStatusPresentation(state, m);
   const hasStatus = presentation !== null;
   // When the current status run began; a gap in the status restarts the delay.
   const [statusSince, setStatusSince] = useState(() => (hasStatus ? Date.now() : null));
@@ -115,6 +117,7 @@ export function WorkspaceConnectionTitle(props: {
 }) {
   const status = use(ConnectionStatusContext);
   const hardwareAlert = use(HardwareAlertContext);
+  const gt = useGT();
   const size = props.size ?? "navbar";
   const { scale } = useAndroidControlSizing();
 
@@ -167,7 +170,7 @@ export function WorkspaceConnectionTitle(props: {
   return (
     <StatusFadeIn animate={status.fadeIn} grow={props.grow} maxWidth={props.maxWidth}>
       <Pressable
-        accessibilityHint="Opens environment settings"
+        accessibilityHint={gt("Opens environment settings")}
         accessibilityLabel={status.label}
         accessibilityRole="button"
         disabled={props.onPress === undefined}

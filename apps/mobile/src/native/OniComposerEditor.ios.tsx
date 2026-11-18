@@ -4,6 +4,7 @@ import { collectComposerInlineTokens } from "@onicode/shared/composerInlineToken
 import { composerContextEditorTokens, composerSkillLabels } from "../lib/composerContext";
 import { useComposerModelTokens } from "./useComposerModelTokens";
 import { requireNativeView } from "expo";
+import { useGT } from "gt-react-native";
 import {
   useCallback,
   useEffect,
@@ -160,6 +161,7 @@ export function ComposerEditor({
   readResetGeneration = NO_RESET,
   ...props
 }: ComposerEditorProps) {
+  const gt = useGT();
   const nativeRef = useRef<NativeComposerEditorRef>(null);
   const mostRecentEventCountRef = useRef(0);
   const [mostRecentEventCount, setMostRecentEventCount] = useState(0);
@@ -371,8 +373,8 @@ export function ComposerEditor({
       editable={props.editable ?? true}
       readOnly={props.readOnly ?? false}
       enterBehavior={props.enterBehavior ?? DEFAULT_COMPOSER_ENTER_BEHAVIOR}
-      submitTitle={props.submitTitle ?? "Send Message"}
-      alternateSubmitTitle={props.alternateSubmitTitle ?? props.submitTitle ?? "Send Message"}
+      submitTitle={props.submitTitle ?? gt("Send Message")}
+      alternateSubmitTitle={props.alternateSubmitTitle ?? props.submitTitle ?? gt("Send Message")}
       scrollEnabled={props.scrollEnabled ?? true}
       autoFocus={props.autoFocus ?? false}
       autoCorrect={props.autoCorrect ?? true}

@@ -22,8 +22,6 @@ import * as DateTime from "effect/DateTime";
 import { isLocalLoopbackHost, isWildcardHost } from "./hostClassification.ts";
 
 const MINUTE = 60_000;
-const HOUR = 60 * MINUTE;
-const DAY = 24 * HOUR;
 
 export function exhaustedUsageWindow(
   provider: ServerProvider | undefined,
@@ -160,7 +158,9 @@ function cursorUsageWindowRank(id: string): number {
   return rank < 0 ? CURSOR_USAGE_WINDOWS.length : rank;
 }
 
-function providersWithLimits(providers: readonly ServerProvider[]): readonly ServerProvider[] {
+export function providersWithLimits(
+  providers: readonly ServerProvider[],
+): readonly ServerProvider[] {
   return providers.filter(
     (provider) =>
       provider.enabled &&
@@ -181,7 +181,10 @@ export type LimitPresentations = ReadonlyMap<
   }
 >;
 
-export function collectExternalUsageLinks(presentations: LimitPresentations) {
+export function collectExternalUsageLinks(
+  presentations: LimitPresentations,
+  accountLabel = (provider: string, environment: string) => `${provider} on ${environment}`,
+) {
   const links = new Map<
     string,
     {
@@ -195,7 +198,10 @@ export function collectExternalUsageLinks(presentations: LimitPresentations) {
     for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
       const external = provider.usageLimits?.externalUsage;
       if (external && provider.auth.status === "authenticated") {
-        const account = `${provider.displayName ?? provider.instanceId} on ${presentation.entry.target.label}`;
+        const account = accountLabel(
+          provider.displayName ?? provider.instanceId,
+          presentation.entry.target.label,
+        );
         links.set(external.url, {
           ...external,
           message: provider.usageLimits?.unavailable?.message,
@@ -423,29 +429,6 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
     }
   }
   return [...accounts.values()];
-}
-
-export function collectLimitNotices(presentations: LimitPresentations): readonly string[] {
-  const label = (environmentLabel: string, subject: string) =>
-    presentations.size > 1 ? `${environmentLabel} · ${subject}` : subject;
-  const notices = new Set<string>();
-  for (const presentation of presentations.values()) {
-    const environmentLabel = presentation.entry.target.label;
-    for (const provider of providersWithLimits(presentation.serverConfig?.providers ?? [])) {
-      if (provider.usageLimits?.unavailable?.reason === "unsupported") continue;
-      const notice = provider.usageLimits ? limitsNotice(provider.usageLimits) : null;
-      const name = provider.displayName?.trim() || String(provider.driver);
-      if (notice) notices.add(`${label(environmentLabel, name)}: ${notice}`);
-    }
-    for (const source of presentation.serverConfig?.usageLimitSources ?? []) {
-      if (source.error) {
-        notices.add(`${label(environmentLabel, source.label)}: ${source.error}`);
-      } else if (source.accounts.length === 0) {
-        notices.add(`${label(environmentLabel, source.label)}: No accounts reported.`);
-      }
-    }
-  }
-  return [...notices];
 }
 
 export interface LimitPoolMember {
@@ -704,7 +687,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
   return pools.sort((left, right) => WINDOW_KIND_ORDER[left.kind] - WINDOW_KIND_ORDER[right.kind]);
 }
 
-export function limitsNotice(limits: ServerProviderUsageLimits): string | null {
+function limitsNotice(limits: ServerProviderUsageLimits): string | null {
   if (limits.unavailable?.reason === "unsupported") {
     return limits.unavailable.message ?? "This account has no subscription limits.";
   }
@@ -755,22 +738,30 @@ function paceOfShares(usedPercent: number, elapsed: number): LimitPace {
   return "on";
 }
 
-export function formatDuration(ms: number): string {
-  const remaining = Math.max(0, ms);
-  const days = Math.floor(remaining / DAY);
-  const hours = Math.floor((remaining % DAY) / HOUR);
-  const minutes = Math.floor((remaining % HOUR) / MINUTE);
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
+/** One redeemable reset as clients offer it; `input` already names the chosen credit. */
+export interface ResetCreditChoice {
+  readonly key: string;
+  readonly summary: string;
+  readonly actionLabel: string;
+  readonly confirmDescription: string;
+  readonly availableCount: number;
+  readonly input: ProviderConsumeResetCreditInput;
 }
 
-export function formatResetsIn(window: ServerProviderUsageWindow, now: number): string | null {
+export type ResetCountdown =
+  | { readonly kind: "now" }
+  | { readonly kind: "momentarily" }
+  | { readonly kind: "in"; readonly ms: number };
+
+export function resetCountdown(
+  window: ServerProviderUsageWindow,
+  now: number,
+): ResetCountdown | null {
   const resetsAt = resetMillis(window);
   if (resetsAt === null) return null;
-  if (resetsAt <= now) return "resets now";
-  if (resetsAt - now < MINUTE) return "Resets momentarily";
-  return `resets in ${formatDuration(resetsAt - now)}`;
+  if (resetsAt <= now) return { kind: "now" };
+  if (resetsAt - now < MINUTE) return { kind: "momentarily" };
+  return { kind: "in", ms: resetsAt - now };
 }
 
 export const USAGE_LIMITS_COMMAND = {

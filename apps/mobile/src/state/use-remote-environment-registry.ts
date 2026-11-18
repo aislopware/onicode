@@ -1,10 +1,13 @@
 import * as Dialog from "../components/ui/Dialog";
+import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@onicode/contracts";
 import * as Cause from "effect/Cause";
+import { msg } from "gt-react-native";
 import { AsyncResult, Atom } from "effect/reactivity";
 import { runAtomCommand } from "@onicode/client-runtime/state/runtime";
 
+import { m } from "../i18n/messages";
 import { useConnectionController } from "../features/connection/useConnectionController";
 import { useRetryEnvironment } from "../features/connection/useRetryEnvironment";
 import { environmentPresentations } from "./presentation";
@@ -66,9 +69,9 @@ function failureReason(error: unknown): unknown {
 }
 
 function pairingFailure(error: unknown): PairingOutcome {
-  const message = error instanceof Error ? error.message : "Failed to pair with the environment.";
+  const message = errorDisplayMessage(error, m) ?? m(msg("Failed to pair with the environment."));
   if (failureReason(error) === "unsupported") {
-    Dialog.alert("Client not supported", message);
+    Dialog.alert(m(msg("Client not supported")), message);
     return { ok: false, error: null };
   }
   return { ok: false, error: message };
@@ -199,16 +202,21 @@ export function useRemoteConnections() {
       return;
     }
     const remove = {
-      text: "Remove",
+      text: m(msg("Remove")),
       style: "destructive",
       onPress: () => {
         void controller.removeEnvironment(environmentId);
       },
     } as const;
     Dialog.alert(
-      "Remove from this device?",
-      `Forget ${environment.environmentLabel} and its cached threads on this device. Switch it off instead to keep it saved.`,
-      [{ text: "Cancel", style: "cancel" }, remove],
+      m(msg("Remove from this device?")),
+      m(
+        msg(
+          "Forget {name} and its cached threads on this device. Switch it off instead to keep it saved.",
+          { name: environment.environmentLabel },
+        ),
+      ),
+      [{ text: m(msg("Cancel")), style: "cancel" }, remove],
     );
   };
 

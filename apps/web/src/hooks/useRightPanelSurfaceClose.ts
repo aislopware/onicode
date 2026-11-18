@@ -5,10 +5,11 @@ import {
   type ScopedThreadRef,
 } from "@onicode/contracts";
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
-import { getTerminalLabel } from "@onicode/shared/terminalLabels";
+import { getTerminalLabel } from "@onicode/shared/terminalLabelsCopy";
 import { agentControlledBrowserCloseConfirmation } from "../components/ChatView.logic";
 import { closePreviewSession } from "../components/preview/closePreviewSession";
 import { useThreadTerminalActions } from "../components/terminal/useThreadTerminalActions";
+import { m } from "../i18n/messages";
 import { confirmTerminalClose } from "../lib/terminalCloseConfirm";
 import { focusPanelTerminalAfterClose } from "../lib/terminalFocus";
 import { readLocalApi } from "../localApi";
@@ -128,7 +129,7 @@ export function useRightPanelSurfaceClose(input: {
     focusPanelTerminalAfterClose(threadRef, activeId);
   };
   const labelFor = (terminalId: string) =>
-    terminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId);
+    terminalLabelsById.get(terminalId) ?? getTerminalLabel(terminalId, m);
   const closeSurfaces = (toClose: readonly RightPanelSurface[]) => {
     if (!threadRef) return;
     closeAfterAgentBrowserConfirmation(toClose, () => {

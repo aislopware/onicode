@@ -1,5 +1,8 @@
 import * as DateTime from "effect/DateTime";
 
+import { mFallback, msg } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
+
 import type { ConnectionAttemptError, ConnectionHop, SupervisorConnectionState } from "./model.ts";
 
 export type ConnectionHopResult = "ok" | "failed" | "unchecked";
@@ -49,60 +52,77 @@ function locate(input: ConnectionDiagnosisInput): Located | null {
   return null;
 }
 
-function headline(host: string, located: Located, failure: ConnectionAttemptError | null): string {
+function headline(
+  host: string,
+  located: Located,
+  failure: ConnectionAttemptError | null,
+  resolve: MFunctionType,
+): string {
   switch (located.cause) {
     case "offline":
-      return "This device is offline";
+      return resolve(msg("This device is offline"));
     case "outdated":
-      return `${host} runs an older Onicode`;
+      return resolve(msg("{host} runs an older Onicode", { host }));
     case null:
       break;
   }
   switch (located.hop) {
     case "device":
-      return "This device could not prepare the connection";
+      return resolve(msg("This device could not prepare the connection"));
     case "server":
       return failure?.reason === "authentication" || failure?.reason === "permission"
-        ? `Onicode on ${host} did not accept this device`
-        : `Onicode on ${host} did not answer`;
+        ? resolve(msg("Onicode on {host} did not accept this device", { host }))
+        : resolve(msg("Onicode on {host} did not answer", { host }));
   }
 }
 
-function steps(host: string, located: Located, failure: ConnectionAttemptError | null): string[] {
+function steps(
+  host: string,
+  located: Located,
+  failure: ConnectionAttemptError | null,
+  resolve: MFunctionType,
+): string[] {
   switch (located.cause) {
     case "offline":
-      return ["Connect this device to the network. Onicode reconnects on its own."];
+      return [resolve(msg("Connect this device to the network. Onicode reconnects on its own."))];
     case "outdated":
-      return [`Update Onicode on ${host}.`];
+      return [resolve(msg("Update Onicode on {host}.", { host }))];
     case null:
       break;
   }
   switch (located.hop) {
     case "device":
       return [
-        "Restart Onicode on this device.",
-        `If it keeps failing, remove ${host} from this device and add it again.`,
+        resolve(msg("Restart Onicode on this device.")),
+        resolve(
+          msg("If it keeps failing, remove {host} from this device and add it again.", { host }),
+        ),
       ];
     case "server":
       return failure?.reason === "authentication"
         ? [
-            `This device's sign-in to ${host} expired or was revoked. Pair it again with a new pairing link from ${host}.`,
+            resolve(
+              msg(
+                "This device's sign-in to {host} expired or was revoked. Pair it again with a new pairing link from {host}.",
+                { host },
+              ),
+            ),
           ]
         : [
-            `Make sure Onicode is running on ${host}.`,
-            "Retry. If it keeps failing, copy the diagnostics.",
+            resolve(msg("Make sure Onicode is running on {host}.", { host })),
+            resolve(msg("Retry. If it keeps failing, copy the diagnostics.")),
           ];
   }
 }
 
 const HOP_ORDER: ReadonlyArray<ConnectionHop> = ["device", "server"];
 
-function hopLabel(hop: ConnectionHop, host: string): string {
+function hopLabel(hop: ConnectionHop, host: string, resolve: MFunctionType): string {
   switch (hop) {
     case "device":
-      return "This device";
+      return resolve(msg("This device"));
     case "server":
-      return `Onicode on ${host}`;
+      return resolve(msg("Onicode on {host}", { host }));
   }
 }
 
@@ -112,6 +132,7 @@ function hopLabel(hop: ConnectionHop, host: string): string {
  */
 export function presentConnectionDiagnosis(
   input: ConnectionDiagnosisInput,
+  resolve: MFunctionType = mFallback,
 ): ConnectionDiagnosis | null {
   const located = locate(input);
   if (located === null) return null;
@@ -120,7 +141,7 @@ export function presentConnectionDiagnosis(
   const failedIndex = HOP_ORDER.indexOf(located.hop);
   const hops = HOP_ORDER.map((hop, index): ConnectionDiagnosisHop => ({
     hop,
-    label: hopLabel(hop, host),
+    label: hopLabel(hop, host, resolve),
     result:
       index === failedIndex
         ? "failed"
@@ -133,23 +154,29 @@ export function presentConnectionDiagnosis(
   const add = (label: string, value: string | number | null | undefined) => {
     if (value !== null && value !== undefined && value !== "") facts.push([label, String(value)]);
   };
-  add("Cause", located.cause ?? failure?.reason);
-  add("Attempts", input.state.attempt > 0 ? input.state.attempt : null);
   add(
-    "Next retry",
+    resolve(msg("Cause", { $context: "diagnostics field label" })),
+    located.cause ?? failure?.reason,
+  );
+  add(
+    resolve(msg("Attempts", { $context: "diagnostics field label" })),
+    input.state.attempt > 0 ? input.state.attempt : null,
+  );
+  add(
+    resolve(msg("Next retry")),
     input.state.retryAt === null
       ? null
       : DateTime.formatIso(DateTime.makeUnsafe(input.state.retryAt)),
   );
-  add("App version", input.clientVersion);
-  add("Host version", input.serverVersion);
-  add("Error", failure?.detail);
-  add("Trace ID", failure?.traceId);
+  add(resolve(msg("App version")), input.clientVersion);
+  add(resolve(msg("Host version")), input.serverVersion);
+  add(resolve(msg("Error", { $context: "diagnostics field label" })), failure?.detail);
+  add(resolve(msg("Trace ID")), failure?.traceId);
 
   return {
-    headline: headline(host, located, failure),
+    headline: headline(host, located, failure, resolve),
     hops,
-    steps: steps(host, located, failure),
+    steps: steps(host, located, failure, resolve),
     facts,
   };
 }

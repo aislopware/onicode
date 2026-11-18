@@ -87,6 +87,7 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
         previous !== null &&
         connection.phase === previousConnection?.phase &&
         connection.error === previousConnection?.error &&
+        connection.i18nError === previousConnection?.i18nError &&
         connection.traceId === previousConnection?.traceId &&
         serverConfig === previousServerConfig
       ) {
@@ -98,6 +99,9 @@ export function createRemoteEnvironmentProjectionAtoms(input: {
       previous = {
         connectionState: connection.phase,
         connectionError: connection.error,
+        ...(connection.i18nError !== undefined
+          ? { i18nConnectionError: connection.i18nError }
+          : {}),
         connectionErrorTraceId: connection.traceId,
         serverConfig,
       };

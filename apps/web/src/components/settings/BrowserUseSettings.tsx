@@ -13,7 +13,8 @@ import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../
 import { ScopedSwitch } from "./ScopedSwitch";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingResetButton, SettingsRow } from "./settingsLayout";
-import { searchableSetting } from "./settingsSearch";
+import { useSearchableSetting } from "./settingsSearch";
+import { useGT } from "gt-react";
 import { useScopedSettings, useUpdateScopedSettings } from "./useScopedSettings";
 
 const TARGETS: Readonly<
@@ -96,6 +97,8 @@ function PersonalBrowserPort({
 
 /** Agents browsing with obu: the switch, which browser it drives, and that browser's port. */
 export function BrowserUseSettings() {
+  const gt = useGT();
+  const setting = useSearchableSetting();
   const { scope, environment: selected } = useSettingsScope();
   const settings = useScopedSettings();
   const updateSettings = useUpdateScopedSettings();
@@ -115,7 +118,7 @@ export function BrowserUseSettings() {
   return (
     <>
       <SettingsRow
-        {...searchableSetting("agent-browser-use")}
+        {...setting("agent-browser-use")}
         serverScoped
         settingKeys={["enableAgentBrowserUse"]}
         description={
@@ -134,7 +137,7 @@ export function BrowserUseSettings() {
         resetAction={
           enabled !== DEFAULT_SERVER_SETTINGS.enableAgentBrowserUse ? (
             <SettingResetButton
-              label="browser use"
+              ariaLabel={gt("Reset browser use to default")}
               onClick={() =>
                 updateSettings({
                   enableAgentBrowserUse: DEFAULT_SERVER_SETTINGS.enableAgentBrowserUse,
@@ -154,14 +157,14 @@ export function BrowserUseSettings() {
       />
       {enabled && !projectScope ? (
         <SettingsRow
-          {...searchableSetting("agent-browser-use-target")}
+          {...setting("agent-browser-use-target")}
           serverScoped
           settingKeys={["agentBrowserUseTarget"]}
           description={`${TARGETS[target].description} Open threads switch when their agent session restarts.`}
           resetAction={
             target !== DEFAULT_SERVER_SETTINGS.agentBrowserUseTarget ? (
               <SettingResetButton
-                label="the browser obu drives"
+                ariaLabel={gt("Reset the browser obu drives to default")}
                 onClick={() =>
                   updateSettings({
                     agentBrowserUseTarget: DEFAULT_SERVER_SETTINGS.agentBrowserUseTarget,
@@ -195,7 +198,7 @@ export function BrowserUseSettings() {
       ) : null}
       {enabled && !projectScope && target === "personal" ? (
         <SettingsRow
-          {...searchableSetting("agent-browser-use-port")}
+          {...setting("agent-browser-use-port")}
           serverScoped
           settingKeys={["agentBrowserUsePort"]}
           description="The port your browser was started with (--remote-debugging-port). Leave it empty for a browser that had remote debugging turned on in its settings."
