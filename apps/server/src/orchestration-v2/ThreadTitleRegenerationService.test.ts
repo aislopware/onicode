@@ -434,11 +434,23 @@ describe("ThreadTitleRegenerationService", () => {
           }),
           kind: { type: "regenerate" },
         });
+        // The generator returns the name the user typed, so the title stays but is generated now.
+        const regeneratedUnchanged = yield* fork("regenerated-unchanged");
+        yield* rename("regenerated-unchanged", regeneratedUnchanged, "Generated title");
+        yield* titleRegeneration.execute({
+          threadId: regeneratedUnchanged,
+          requestId: yield* armRegeneration({
+            command: `${prefix}:regenerated-unchanged:regenerate`,
+            threadId: regeneratedUnchanged,
+          }),
+          kind: { type: "regenerate" },
+        });
 
         for (const [key, threadId, expectedTitle, generates] of [
           ["renamed", forkThreadId, "Storage migration notes", false],
           ["fork of a renamed source", forkOfRenamedSource, seed, true],
           ["renamed, then regenerated", regenerated, seed, true],
+          ["renamed, then regenerated to the same name", regeneratedUnchanged, seed, true],
         ] as const) {
           const requestId = CommandId.make(`${prefix}:${key}:message`);
           yield* threads.dispatch({
