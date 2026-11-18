@@ -2466,3 +2466,4 @@ f5f8c8d18b	take	taken as is
 b648395fa5	take	taken; scenario runs on the desktop target as is (WebSocket stub through addInitScript)
 9758cf9e13	take	taken as is
 8a6342e761	take	taken as is
+37e9217b56	take	taken; cloud/ hunks applied to Onicode's service/ (same files, moved)

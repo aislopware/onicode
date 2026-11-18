@@ -22,6 +22,7 @@ import { serviceLauncherLockPath } from "../serviceLauncher.ts";
 import * as BootService from "./bootService.ts";
 import { pinnedRuntimePaths } from "./pinnedRuntime.ts";
 import {
+  decodeServiceUnit,
   disabledServiceTask,
   parseServiceState,
   serviceTaskIsDisabled,
@@ -259,7 +260,7 @@ const makeHarness = Effect.fn("test.make_boot_service_harness")(function* (
         input.command === "schtasks" && input.args[0] !== "/Create" && control.task === undefined;
       if (input.command === "schtasks" && !failed) {
         if (input.args[0] === "/Create") {
-          const xml = yield* fs.readFileString(input.args[2] ?? "");
+          const xml = decodeServiceUnit(yield* fs.readFile(input.args[2] ?? ""));
           control.task = { xml, enabled: !serviceTaskIsDisabled(xml) };
         }
         if (control.task !== undefined && input.args[0] === "/Change") {
@@ -1446,7 +1447,7 @@ process.disconnect();
       const { service, fs, statePath, commands, control, runtime } = yield* makeHarness("win32");
       const path = yield* Path.Path;
       const plan = yield* service.install();
-      const task = yield* fs.readFileString(plan.unitPath);
+      const task = decodeServiceUnit(yield* fs.readFile(plan.unitPath));
 
       expect(plan.unitPath).toBe(
         path.join(path.dirname(plan.baseDir), "AppData", "Local", "onicode", "onicode-task.xml"),
@@ -1455,6 +1456,8 @@ process.disconnect();
       expect(BootService.bootServiceBaseDirOf(task)).toBe(plan.baseDir);
       expect(task).toContain("<UserId>PC\\theo</UserId>");
       expect(task).toContain("<MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>");
+      // schtasks decodes undeclared UTF-8 with the ANSI code page; UTF-16LE with a BOM is read as is.
+      expect([...(yield* fs.readFile(plan.unitPath)).subarray(0, 2)]).toEqual([0xff, 0xfe]);
       expect(parseServiceState(yield* fs.readFileString(statePath))).toEqual({
         protocol: SERVICE_LAUNCHER_PROTOCOL,
         activeVersion: "1.2.3",
