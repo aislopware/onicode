@@ -2350,18 +2350,23 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     return true;
   });
 
+  interface QueueStartOptions {
+    readonly failedRunId?: RunId;
+    readonly endedRunId?: RunId;
+    readonly queuedRunId?: RunId;
+    /** Treat the latest executed run as the one that just ended, as its run-end handler would. */
+    readonly latestRunEnded?: boolean;
+    readonly userStarted?: boolean;
+  }
+  // A held steer at the head of the queue puts a start off, never cancels it: the release of
+  // that steer repeats the start, so a Resume that lands before the release still starts the queue.
+  const queueStartsAwaitingSteer = new Map<
+    ThreadId,
+    { readonly runId: RunId; readonly options: QueueStartOptions | undefined }
+  >();
+
   const startNextQueuedRunOnce = Effect.fn("Orchestrator.startNextQueuedRun")(
-    function* (
-      threadId: ThreadId,
-      options?: {
-        readonly failedRunId?: RunId;
-        readonly endedRunId?: RunId;
-        readonly queuedRunId?: RunId;
-        /** Treat the latest executed run as the one that just ended, as its run-end handler would. */
-        readonly latestRunEnded?: boolean;
-        readonly userStarted?: boolean;
-      },
-    ) {
+    function* (threadId: ThreadId, options?: QueueStartOptions) {
       if (!(yield* projectionStore.canStartQueuedRun(threadId))) return;
       let projection = yield* readCommandProjection(threadId);
       if (
@@ -2414,6 +2419,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         storedQueuedRun = projection.runs.find((run) => run.id === runId);
       }
       if (storedQueuedRun === undefined) {
+        const waiting =
+          options?.queuedRunId === undefined
+            ? queuedRunsInDeliveryOrder(projection).find((run) => run.queueHeld !== true)
+            : undefined;
+        if (waiting !== undefined) {
+          queueStartsAwaitingSteer.set(threadId, { runId: waiting.id, options });
+        }
         return;
       }
       const queuedMessage = projection.messages.find(
@@ -16000,8 +16012,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         }),
       );
       const live = new Set(runs.filter(isLiveRun).map((run) => run.id));
+      const released = new Set<RunId>();
       for (const run of runs) {
         if (run.steerWhenReadyRunId === undefined || live.has(run.steerWhenReadyRunId)) continue;
+        released.add(run.id);
         yield* dispatchWithReceipt({
           type: "queued-run.steer-target-ended",
           // A run can wait for one turn after another, and a rejected release must not block the next.
@@ -16017,6 +16031,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             }),
           ),
         );
+      }
+      // Read after the releases: a start can be put off while a release waits for the lock.
+      const start = queueStartsAwaitingSteer.get(threadId);
+      if (start !== undefined && released.has(start.runId)) {
+        queueStartsAwaitingSteer.delete(threadId);
+        yield* threadDispatch.withLock(threadId, startNextQueuedRun(threadId, start.options));
       }
     },
     Effect.catchCause((cause) => Effect.logWarning("Failed to release held steers", { cause })),
@@ -16088,7 +16108,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       const records = yield* projectionStore.getThreadRecords(
         threadId,
         ["providerThreads", "providerSessions", "providerTurns"],
-        run.activeAttemptId === null ? {} : { providerTurnAttemptIds: [run.activeAttemptId] },
+        {
+          // A dispatcher thread also owns the provider threads of every task it ever ran.
+          providerThreadIds: run.providerThreadId === null ? [] : [run.providerThreadId],
+          ...(run.activeAttemptId === null
+            ? {}
+            : { providerTurnAttemptIds: [run.activeAttemptId] }),
+        },
       );
       // The promote decides again under its lock; holding here saves a command per running report.
       if (

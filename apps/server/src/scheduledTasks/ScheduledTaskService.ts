@@ -626,26 +626,25 @@ export const layer = Layer.effect(
         return;
       // A queued message promoted to a steer joins the active run, whose outcome is not this task's.
       // A run the message started is, also once a restart continued it or replaced its prompt.
-      if (run.id !== dispatched.id) {
-        const { messages } = yield* threadManagement.getProjectThreadRecords(thread, ["messages"], {
-          messageIds: [messageId],
-        });
-        const owner = messages[0]?.runId;
-        const sent =
-          owner == null
-            ? undefined
-            : (yield* threadManagement.getProjectThreadRecords(thread, ["turnItems"], {
-                turnItemRunId: owner,
-                turnItemTypes: ["user_message"],
-              })).turnItems.find(
-                (item) => item.type === "user_message" && item.messageId === messageId,
-              );
-        if (
-          sent?.type === "user_message" &&
-          (sent.inputIntent === "steer" || sent.inputIntent === "promoted_queued_to_steer")
-        )
-          return;
-      }
+      // Asked of the message itself: a steer that restarted a turn made that turn carry its id.
+      const { messages } = yield* threadManagement.getProjectThreadRecords(thread, ["messages"], {
+        messageIds: [messageId],
+      });
+      const owner = messages[0]?.runId;
+      const sent =
+        owner == null
+          ? undefined
+          : (yield* threadManagement.getProjectThreadRecords(thread, ["turnItems"], {
+              turnItemRunId: owner,
+              turnItemTypes: ["user_message"],
+            })).turnItems.find(
+              (item) => item.type === "user_message" && item.messageId === messageId,
+            );
+      if (
+        sent?.type === "user_message" &&
+        (sent.inputIntent === "steer" || sent.inputIntent === "promoted_queued_to_steer")
+      )
+        return;
       if (run.status === "completed") {
         const removed = yield* sql`
           DELETE FROM scheduled_tasks
