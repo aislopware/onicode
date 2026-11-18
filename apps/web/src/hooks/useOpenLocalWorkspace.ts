@@ -6,12 +6,14 @@ import {
 import { useAtomValue } from "@effect/atom-react";
 import type { DesktopAppActivationRequest } from "@onicode/contracts";
 import { msg } from "gt-react";
+import { useState } from "react";
 
 import {
   handleDesktopAppActivationRequest,
   resolveLocalWorkspaceState,
 } from "../desktopAppActivation";
 import { m } from "../i18n/messages";
+import { isLocalEnvironmentDisabled } from "../localEnvironment";
 import { newProjectId } from "../lib/utils";
 import { readProjects, waitForProject } from "../state/entities";
 import { useEnvironment } from "../state/environments";
@@ -20,7 +22,7 @@ import {
   localEnvironmentIdAtom,
 } from "../state/primaryEnvironment";
 import { projectEnvironment } from "../state/projects";
-import { useEnvironmentShellStatus } from "../state/shell";
+import { useEnvironmentShellCaughtUp } from "../state/shell";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { reportProjectFailure } from "./useProjectGroupUpdate";
@@ -34,6 +36,8 @@ import { useNewThreadHandler } from "./useHandleNewThread";
 export function useOpenLocalWorkspace() {
   const localEnvironmentId = useAtomValue(localEnvironmentIdAtom);
   const localEnvironment = useEnvironment(localEnvironmentId);
+  // A sync IPC read; the setting only changes across a relaunch.
+  const [localEnvironmentOff] = useState(isLocalEnvironmentDisabled);
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
   const updateProject = useOrchestrationCommand(projectEnvironment.update, {
     label: "project unarchive",
@@ -42,8 +46,9 @@ export function useOpenLocalWorkspace() {
   const state = resolveLocalWorkspaceState({
     environmentId: localEnvironmentId,
     environment: localEnvironment,
-    shellStatus: useEnvironmentShellStatus(localEnvironmentId),
+    shellCaughtUp: useEnvironmentShellCaughtUp(localEnvironmentId),
     discoverySettled: useAtomValue(localEnvironmentDiscoverySettledAtom),
+    localEnvironmentOff,
   });
 
   const open = (request: DesktopAppActivationRequest) =>

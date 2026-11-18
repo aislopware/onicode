@@ -294,26 +294,41 @@ describe.each([
       name: "resolves to the draft another opener showed for the same project meanwhile",
       acceptOpenedMeanwhile: true,
       shown: { environmentId: "environment-ssh", projectId: "project-remote" },
+      userText: false,
       expected: { draftId: "draft-home", threadId: "thread-home" },
+      remapped: false,
     },
     {
-      name: "does not resolve to another machine's checkout of the repository shown meanwhile",
+      name: "moves an untouched draft of another machine's checkout shown meanwhile to this project",
       acceptOpenedMeanwhile: true,
       shown: { environmentId: "environment-primary", projectId: "project-local" },
+      userText: false,
+      expected: { draftId: "draft-home", threadId: "thread-home" },
+      remapped: true,
+    },
+    {
+      name: "leaves a draft of another machine's checkout the user wrote in",
+      acceptOpenedMeanwhile: true,
+      shown: { environmentId: "environment-primary", projectId: "project-local" },
+      userText: true,
       expected: null,
+      remapped: false,
     },
     {
       name: "abandons the open when the caller did not ask to accept a draft shown meanwhile",
       acceptOpenedMeanwhile: undefined,
       shown: { environmentId: "environment-ssh", projectId: "project-remote" },
+      userText: false,
       expected: null,
+      remapped: false,
     },
-  ])("$name", async ({ acceptOpenedMeanwhile, shown, expected }) => {
+  ])("$name", async ({ acceptOpenedMeanwhile, shown, userText, expected, remapped }) => {
     testState.reset(draft);
-    const pendingOpen = useNewThreadHandler()(
-      { environmentId: "environment-ssh", projectId: "project-remote" } as never,
-      { replace: true, ...(acceptOpenedMeanwhile ? { acceptOpenedMeanwhile } : {}) },
-    );
+    const projectRef = { environmentId: "environment-ssh", projectId: "project-remote" };
+    const pendingOpen = useNewThreadHandler()(projectRef as never, {
+      replace: true,
+      ...(acceptOpenedMeanwhile ? { acceptOpenedMeanwhile } : {}),
+    });
 
     // The location moves before the route matches do.
     testState.registerDraft({
@@ -322,12 +337,22 @@ describe.each([
       promotedTo: null,
       threadId: "thread-home",
     });
+    if (userText) testState.giveUserText("draft-home");
     testState.router.state.location.href = "/draft/draft-home";
     testState.completeProjectFileRead(null);
 
     await expect(pendingOpen).resolves.toEqual(expected);
     expect(testState.router.navigate).not.toHaveBeenCalled();
-    expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
+    if (remapped) {
+      expect(testState.draftStore.setLogicalProjectDraftThreadId).toHaveBeenCalledWith(
+        "remote-project",
+        projectRef,
+        "draft-home",
+        expect.objectContaining({ threadId: "thread-home" }),
+      );
+    } else {
+      expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
+    }
   });
 
   it("sets the prompt before the draft shows", async () => {

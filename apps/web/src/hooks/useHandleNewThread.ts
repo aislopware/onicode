@@ -242,23 +242,28 @@ export function createNewThreadHandler(router: AnyRouter) {
     const resultIfAbandoned = () => {
       if (options?.acceptOpenedMeanwhile !== true) return null;
       const draft = getDraftSessionByLogicalProjectKey(logicalProjectKey);
-      // Repository grouping shares the key with other machines' checkouts of the same repository.
-      if (
-        draft === null ||
-        draft.promotedTo != null ||
-        draft.environmentId !== projectRef.environmentId ||
-        draft.projectId !== projectRef.projectId ||
-        readProject(projectRef) === null
-      ) {
+      if (draft === null || draft.promotedTo != null || readProject(projectRef) === null) {
         return null;
       }
       const draftHref = router.buildLocation({
         to: "/draft/$draftId",
         params: { draftId: draft.draftId },
       }).href;
-      return router.state.location.href === draftHref
-        ? { draftId: draft.draftId, threadId: draft.threadId }
-        : null;
+      if (router.state.location.href !== draftHref) return null;
+      // Repository grouping shares the key with other machines' checkouts of the same repository.
+      if (
+        draft.environmentId !== projectRef.environmentId ||
+        draft.projectId !== projectRef.projectId
+      ) {
+        if (composerDraftHasUserContent(getComposerDraft(draft.draftId))) return null;
+        setLogicalProjectDraftThreadId(logicalProjectKey, projectRef, draft.draftId, {
+          threadId: draft.threadId,
+          createdAt: draft.createdAt,
+          runtimeMode: draft.runtimeMode,
+          interactionMode: draft.interactionMode,
+        });
+      }
+      return { draftId: draft.draftId, threadId: draft.threadId };
     };
     const hasBranchOption = options?.branch !== undefined;
     const hasWorktreePathOption = options?.worktreePath !== undefined;
