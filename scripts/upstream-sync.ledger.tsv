@@ -2507,3 +2507,4 @@ f4b988aeaf	take	fix(server): restart note says how to resume a cut Claude subage
 7e4c429482	take	fix(server): RTF tracked deletions are left out of the extracted text
 8cf97b5f06	take	fix(server): a finished run no longer keeps an unused file index alive
 081afe08dc	take	fix(mobile): PR diffs show syntax colors before the full file arrives (#38444)
+2aacea6aa5	take	Took the narrowed turn-item read (the run's failed error items only); kept Onicode's steer check, which already reads the message on its own, so upstream's messages read and cancelled-steer branch are not added.
