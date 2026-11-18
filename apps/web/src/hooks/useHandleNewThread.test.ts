@@ -323,7 +323,8 @@ describe.each([
       remapped: false,
     },
   ])("$name", async ({ acceptOpenedMeanwhile, shown, userText, expected, remapped }) => {
-    testState.reset(draft);
+    // No configured mode, so the open waits on the project file.
+    testState.reset(draft, { envMode: null, startFromOrigin: false });
     const projectRef = { environmentId: "environment-ssh", projectId: "project-remote" };
     const pendingOpen = useNewThreadHandler()(projectRef as never, {
       replace: true,

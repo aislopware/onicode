@@ -43,7 +43,10 @@ export interface DesktopAppActivationDependencies {
  */
 export function resolveLocalWorkspaceState(input: {
   readonly environmentId: EnvironmentId | null;
-  readonly environment: Pick<EnvironmentPresentation, "connection" | "serverConfig"> | null;
+  readonly environment: Pick<
+    EnvironmentPresentation,
+    "entry" | "connection" | "serverConfig"
+  > | null;
   /** The project list has matched the server since the app started, not only the disk cache. */
   readonly shellCaughtUp: boolean;
   /** The connections and this computer's service ID are known. */
@@ -53,6 +56,13 @@ export function resolveLocalWorkspaceState(input: {
 }): "ready" | "pending" | "unavailable" {
   if (input.environmentId === null) {
     return input.localEnvironmentOff && input.discoverySettled ? "unavailable" : "pending";
+  }
+  // A blocked connection retries when the window activates, which `onicode app` does; these never connect.
+  if (
+    input.environment?.entry.enabled === false ||
+    input.environment?.connection.phase === "unsupported"
+  ) {
+    return "unavailable";
   }
   return input.environment?.connection.phase === "connected" &&
     input.environment.serverConfig !== null &&
