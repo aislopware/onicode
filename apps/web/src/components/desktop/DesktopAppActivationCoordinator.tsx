@@ -14,26 +14,30 @@ export function DesktopAppActivationCoordinator() {
     openLocalWorkspace.open(request),
   );
 
-  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to desktop activation requests over the bridge and marks the renderer ready
+  // A request sent as readiness drops must still find a listener, so it gets an answer, not a timeout.
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- subscribes to desktop activation requests over the bridge
   useEffect(() => {
-    if (!ready || activation === undefined) return;
-
-    let subscribed = true;
-    const unsubscribe = activation.onRequest((request) => {
+    if (activation === undefined) return;
+    return activation.onRequest((request) => {
       queueRef.current = queueRef.current.then(async () => {
         const response = await processRequest(request);
         await activation.complete(response);
       });
       queueRef.current = queueRef.current.catch(() => undefined);
     });
-    // Skip readiness if React runs cleanup before this subscription can receive requests.
+  }, [activation]);
+
+  // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- tells the desktop app whether this renderer can take requests now
+  useEffect(() => {
+    if (!ready || activation === undefined) return;
+    let subscribed = true;
+    // Skip readiness if React runs cleanup before it is sent.
     queueMicrotask(() => {
       if (subscribed) void activation.setReady(true).catch(() => undefined);
     });
     return () => {
       subscribed = false;
       void activation.setReady(false).catch(() => undefined);
-      unsubscribe();
     };
   }, [activation, ready]);
 

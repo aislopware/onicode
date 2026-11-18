@@ -80,6 +80,8 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
           description: response?.message ?? gt("Onicode could not read the folder's path."),
         }),
       );
+      // The other folders would fail the same way.
+      if (response?.code === "environment-unavailable") return;
     }
   };
 
