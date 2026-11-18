@@ -256,7 +256,7 @@ describe("scan cache round trip", () => {
     },
   );
 
-  it("re-parses a v14 Codex entry that skipped records and restarts a clean one when it grows", () => {
+  it("re-parses v14 Codex entries with and without skipped records", () => {
     const codex = (malformedRecords: number): CachedFile => ({
       size: 10,
       mtimeMs: 100,
@@ -280,9 +280,9 @@ describe("scan cache round trip", () => {
       size: -1,
       position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
     });
-    // Served while unchanged, but its state predates the latest snapshot time, so it cannot resume.
     expect(restored.get("/clean-codex.jsonl")).toEqual({
       ...codex(0),
+      size: -1,
       position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
     });
     // The migrated entries persist without a state and load again under the current version.
@@ -291,7 +291,7 @@ describe("scan cache round trip", () => {
     );
   });
 
-  it("restarts a grown v15 Codex entry, whose baseline time can be older than its totals", () => {
+  it("re-parses a Codex entry whose totals a v15 reducer could have billed twice", () => {
     const request = {
       input_tokens: 100,
       cached_input_tokens: 0,
@@ -318,12 +318,26 @@ describe("scan cache round trip", () => {
     };
     const current = parse(makeScanCacheWriter()(new Map([["/codex.jsonl", entry]]), {}));
 
+    const reset = { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null };
+    const stale = { ...entry, position: reset };
+    // v16 and v17 kept unchanged v15 entries, without their state, instead of re-parsing them.
+    const carried = parse(makeScanCacheWriter()(new Map([["/codex.jsonl", stale]]), {}));
+    for (const [document, version] of [
+      [current, 15],
+      [carried, 17],
+    ] as const) {
+      expect(
+        decodeScanCache({ ...document, version }, TEST_FORMAT_MAP).get("/codex.jsonl"),
+      ).toEqual({
+        ...entry,
+        size: -1,
+        position: reset,
+      });
+    }
+    // A v16 or v17 parse saved its state, so its totals stay served.
     expect(
-      decodeScanCache({ ...current, version: 15 }, TEST_FORMAT_MAP).get("/codex.jsonl"),
-    ).toEqual({
-      ...entry,
-      position: { resumeOffset: 0, guardLength: 0, guardHash: 0, state: null },
-    });
+      decodeScanCache({ ...current, version: 17 }, TEST_FORMAT_MAP).get("/codex.jsonl"),
+    ).toEqual(entry);
     expect(decodeScanCache(current, TEST_FORMAT_MAP).get("/codex.jsonl")).toEqual(entry);
   });
 
