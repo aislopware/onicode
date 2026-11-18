@@ -29,6 +29,7 @@ export function runSky(canvas: HTMLCanvasElement, controlsHost: HTMLElement): ()
   let onScreen = true;
   let backdropKey = "";
   let controlColors: Record<string, string> = {};
+  let holdingStill = false;
 
   const paint = () => {
     timer = undefined;
@@ -48,6 +49,12 @@ export function runSky(canvas: HTMLCanvasElement, controlsHost: HTMLElement): ()
     };
 
     const key = `${width}|${scale}|${scene.dark}|${minute}`;
+    const events = still ? [] : skyEventsAt(scene.epochMs / 1000);
+    // A picture with nothing moving is looked at once a second and painted when something starts.
+    if (holdingStill && key === backdropKey && events.length === 0) {
+      timer = window.setTimeout(paint, 1000);
+      return;
+    }
     if (key !== backdropKey) {
       backdropKey = key;
       for (const surface of [canvas, backdrop]) {
@@ -56,21 +63,24 @@ export function runSky(canvas: HTMLCanvasElement, controlsHost: HTMLElement): ()
       }
       backdropPainter.setTransform(scale, 0, 0, scale, 0, 0);
       paintSkyBackdrop(backdropPainter, scene);
-      controlColors = skyControlColors(scene);
-      for (const [name, color] of Object.entries(controlColors)) {
-        controlsHost.style.setProperty(name, color);
+      // The host wraps the whole app, so a colour is written only when it changed.
+      const colors = skyControlColors(scene);
+      for (const [name, color] of Object.entries(colors)) {
+        if (controlColors[name] !== color) controlsHost.style.setProperty(name, color);
       }
+      controlColors = colors;
     }
 
     painter.setTransform(scale, 0, 0, scale, 0, 0);
     painter.clearRect(0, 0, width, SKY_HEIGHT);
     painter.drawImage(backdrop, 0, 0, width, SKY_HEIGHT);
-    const framesPerSecond = paintSkyLife(
-      painter,
-      scene,
-      still ? [] : skyEventsAt(scene.epochMs / 1000),
-    );
-    const wait = still ? (minute + 1) * 60_000 - now.getTime() : 1000 / framesPerSecond;
+    const framesPerSecond = paintSkyLife(painter, scene, events);
+    holdingStill = !still && framesPerSecond === 0;
+    const wait = still
+      ? (minute + 1) * 60_000 - now.getTime()
+      : holdingStill
+        ? 1000
+        : 1000 / framesPerSecond;
     timer = window.setTimeout(paint, wait);
   };
 

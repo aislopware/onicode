@@ -428,6 +428,7 @@ function EffortFrame(props: { label: string; level?: ReactNode; children: ReactN
 
 function EffortSection(props: { traits: TraitsSelectionInput }) {
   const gt = useGT();
+  const messages = useMessages();
   const traits = useTraitsSelection(props.traits);
   const { effort, others } = columnControls(traits.selectDescriptors, traits.booleanDescriptors);
   // The level under the thumb while it is dragged. The pick lands when it is let go.
@@ -501,7 +502,7 @@ function EffortSection(props: { traits: TraitsSelectionInput }) {
         <>
           {locked ? (
             <div className="px-2 pb-1.5 text-muted-foreground text-xs">
-              {ULTRATHINK_IN_BODY_NOTE}
+              {messages(ULTRATHINK_IN_BODY_NOTE)}
             </div>
           ) : null}
           <div className="px-2">

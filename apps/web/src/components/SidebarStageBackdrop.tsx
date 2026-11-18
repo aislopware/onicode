@@ -1,11 +1,14 @@
-import type { EnvironmentIdentificationMode } from "@onicode/contracts";
+import {
+  currentEnvironmentIdentificationMode,
+  type EnvironmentIdentificationMode,
+} from "@onicode/contracts/settings";
 import { useEffect, useRef } from "react";
 
 import { runSky } from "./sidebarSky/skyLoop";
 
 /** Whether the sidebar header shows its scenery. "dev-artwork" is the name older settings saved. */
 export function showsSidebarStageBackdrop(mode: EnvironmentIdentificationMode): boolean {
-  return mode === "artwork" || mode === "dev-artwork";
+  return currentEnvironmentIdentificationMode(mode) === "artwork";
 }
 
 /**

@@ -28,7 +28,7 @@ export const chooseReplay = async (
   await screen.getByRole("option", new RegExp(`^${name} `)).tap();
   await expect(picker).toHaveAccessibleName(name);
   // A click selects without closing, so the effort can be set next; Escape closes.
-  const search = screen.getByRole("combobox", "Search models...");
+  const search = screen.getByRole("combobox", "Search models");
   await search.press("Escape");
   await expect(search).toBeHidden();
 

@@ -990,7 +990,8 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
      portaled mobile sheets and settings navigation outside the app sidebar. */
   --sidebar: #f3f3f5;
   --sidebar-foreground: var(--foreground);
-  --sidebar-muted-foreground: var(--muted-foreground);
+  /* zinc-500 is 4.36:1 on this surface; this step is 4.76:1. */
+  --sidebar-muted-foreground: #6b6b74;
   --sidebar-control-surface: #eaeaed;
   --sidebar-row-hover: #f9f9fa;
   --sidebar-row-active: var(--color-white);
@@ -1060,7 +1061,7 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(oni-mobi
   --input: var(--color-zinc-300);
   --sidebar: #f3f3f5;
   --sidebar-foreground: var(--color-zinc-900);
-  --sidebar-muted-foreground: var(--color-zinc-500);
+  --sidebar-muted-foreground: #6b6b74;
   --sidebar-control-surface: #eaeaed;
   --sidebar-row-hover: #f9f9fa;
   --sidebar-row-active: var(--color-white);

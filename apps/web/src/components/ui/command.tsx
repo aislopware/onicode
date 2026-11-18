@@ -199,7 +199,7 @@ function CommandItem({
         "py-1.5 data-highlighted:text-foreground [&[data-highlighted][data-selected]]:text-foreground",
         active !== undefined &&
           "cursor-pointer hover:bg-transparent hover:text-inherit data-highlighted:bg-transparent data-highlighted:text-inherit data-selected:bg-transparent data-selected:text-inherit [&[data-highlighted][data-selected]]:bg-transparent [&[data-highlighted][data-selected]]:text-inherit",
-        active && "bg-row-highlight! text-accent-foreground!",
+        active && "bg-row-highlight! text-foreground!",
         className,
       )}
       data-active={active || undefined}

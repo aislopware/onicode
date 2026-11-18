@@ -14,7 +14,7 @@ import {
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 // Matches the pill's `duration-200` class.
-const PROVIDER_UPDATE_PILL_EXIT_MS = 180;
+const PROVIDER_UPDATE_PILL_EXIT_MS = 200;
 
 const PROVIDER_UPDATE_PILL_STYLES = {
   loading:

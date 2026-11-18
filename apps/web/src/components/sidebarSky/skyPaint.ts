@@ -662,7 +662,7 @@ function paintEvents(
 /**
  * The part that moves, drawn over the backdrop: stars, clouds and the events in the air. It ends
  * by cutting the near ridge out of the picture, so the sidebar itself is the ground. Returns the
- * frame rate the motion needs.
+ * frame rate the motion needs, 0 when nothing in the picture moves.
  */
 export function paintSkyLife(
   painter: Painter,
@@ -692,5 +692,7 @@ export function paintSkyLife(
   painter.fill();
   painter.globalCompositeOperation = "source-over";
 
-  return Math.max(IDLE_FRAMES_PER_SECOND, skyFrames, airFrames);
+  // Stars twinkle and clouds drift; a cloudless day with nothing in the air holds still.
+  const drifting = palette.night > 0.02 || scene.weather.clouds > 0;
+  return Math.max(drifting ? IDLE_FRAMES_PER_SECOND : 0, skyFrames, airFrames);
 }

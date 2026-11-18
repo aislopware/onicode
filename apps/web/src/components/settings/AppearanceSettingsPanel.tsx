@@ -5,6 +5,7 @@ import {
   DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE,
   DEFAULT_UNIFIED_SETTINGS,
   type ChatWidth,
+  currentEnvironmentIdentificationMode,
   type EffortDisplay,
   type EnvironmentIdentificationMode,
   MAX_APPEARANCE_CONTRAST,
@@ -48,7 +49,7 @@ function environmentIdentificationLabel(
   mode: EnvironmentIdentificationMode,
   resolve: MessageResolver,
 ): string {
-  const shown = mode === "dev-artwork" ? "artwork" : mode;
+  const shown = currentEnvironmentIdentificationMode(mode);
   return resolve(
     ENVIRONMENT_IDENTIFICATION_OPTIONS.find(([value]) => value === shown)?.[1] ?? msg("None"),
   );
@@ -382,7 +383,8 @@ export function AppearanceSettingsPanel() {
             {...searchableSetting("environment-identification")}
             description={gt("A landscape behind the sidebar header that follows the time of day.")}
             resetAction={
-              settings.environmentIdentificationMode !== DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
+              currentEnvironmentIdentificationMode(settings.environmentIdentificationMode) !==
+              DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE ? (
                 <SettingResetButton
                   ariaLabel={gt("Reset sidebar header to default")}
                   onClick={() =>
@@ -395,11 +397,7 @@ export function AppearanceSettingsPanel() {
             }
             control={
               <Select
-                value={
-                  settings.environmentIdentificationMode === "dev-artwork"
-                    ? "artwork"
-                    : settings.environmentIdentificationMode
-                }
+                value={currentEnvironmentIdentificationMode(settings.environmentIdentificationMode)}
                 onValueChange={(value) => {
                   const option = ENVIRONMENT_IDENTIFICATION_OPTIONS.find(
                     ([optionValue]) => optionValue === value,

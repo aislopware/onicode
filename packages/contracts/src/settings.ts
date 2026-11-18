@@ -207,6 +207,11 @@ export const EnvironmentIdentificationMode = Schema.Literals([
 ]);
 export type EnvironmentIdentificationMode = typeof EnvironmentIdentificationMode.Type;
 export const DEFAULT_ENVIRONMENT_IDENTIFICATION_MODE: EnvironmentIdentificationMode = "artwork";
+/** The mode with the older "dev-artwork" name read as "artwork". */
+export const currentEnvironmentIdentificationMode = (
+  mode: EnvironmentIdentificationMode,
+): Exclude<EnvironmentIdentificationMode, "dev-artwork"> =>
+  mode === "dev-artwork" ? "artwork" : mode;
 
 export const SnapShotKeyChord = KeybindingShortcut.check(
   Schema.makeFilter(

@@ -38,9 +38,9 @@ describe("sky", () => {
   it("keeps each event to its hours and season", () => {
     const summerNight = kindsBetween(new Date(2026, 5, 10, 23, 0), 4);
     expect(summerNight).toContain("meteor");
-    expect([...summerNight].filter((kind) => kind !== "meteor" && kind !== "aurora")).toEqual(
-      expect.not.arrayContaining(["flock", "balloon", "petals", "leaves", "snow", "fireworks"]),
-    );
+    for (const kind of ["flock", "balloon", "petals", "leaves", "snow", "fireworks"] as const) {
+      expect(summerNight).not.toContain(kind);
+    }
 
     const summerDay = kindsBetween(new Date(2026, 5, 10, 9, 0), 8);
     expect(summerDay).toContain("flock");
