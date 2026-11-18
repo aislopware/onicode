@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
 import appCss from "~/index.css?inline";
+import { fakeTimers } from "../../test/render";
 import { createWorkspaceFocusController } from "./workspaceFocus";
 
 function setup() {
@@ -362,6 +363,20 @@ describe("workspace area focus", () => {
     fixture.controller.request({ area: "pull-requests" });
     const list = fixture.area("pull-requests", 1);
     await vi.waitFor(() => expect(document.activeElement).toBe(list.button));
+  });
+
+  it("drops a request on a key that a shortcut stops at the window", async () => {
+    using fixture = setup();
+    using _frames = fakeTimers();
+    fixture.area("composer", 2);
+    fixture.controller.request({ area: "pull-requests" });
+    await Promise.resolve();
+    // Shortcuts such as Mod+B take the key at the window, so the document never sees it.
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "b" }));
+    const list = fixture.area("pull-requests", 1);
+    await Promise.resolve();
+    vi.advanceTimersToNextFrame();
+    expect(document.activeElement).not.toBe(list.button);
   });
 
   it("keeps focus on a control that React remounted elsewhere", async () => {
