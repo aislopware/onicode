@@ -2511,3 +2511,4 @@ f4b988aeaf	take	fix(server): restart note says how to resume a cut Claude subage
 f3b168b9f6	take	Ported with react-native-screens 5.0.0-oni.54 (aislopware/react-native-screens@f8edc1f2c, tag oni-v5.0.0-oni.54), which cherry-picks maschwenk 5a67ab37c, the only native change t3.59 carries beyond t3.58; the t3.59 tarball is not used.
 dd512d86c5	skip	DPoP pairing-session renewal; Onicode removed dpop.ts and its token exchange is bearer-only (see 445efb6dfc, 4ee3b602fc). Follow-up noted: Onicode bearer sessions still expire 30 days after pairing even while in use.
 e396bb2e26	skip	Client side of dd512d86c5: direct links pair with a DPoP device key and renew through it; Onicode's clients have no DPoP keys (remoteDpopTokens removed) and the server change is skipped.
+18f154a2c1	take	fix(server): decode Mac Roman in RTF attachments (#38645)
