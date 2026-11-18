@@ -47,8 +47,7 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
       );
       return;
     }
-    const platform = bridge.getClientPlatform();
-    if (openLocalWorkspace.state !== "ready" || !isActivationPlatform(platform)) {
+    const reportNotConnected = () =>
       toastManager.add(
         stackedThreadToast({
           type: "error",
@@ -56,6 +55,9 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
           description: gt("Try again when it connects."),
         }),
       );
+    const platform = bridge.getClientPlatform();
+    if (openLocalWorkspace.state !== "ready" || !isActivationPlatform(platform)) {
+      reportNotConnected();
       return;
     }
     // One at a time, so the last folder is the one left open.
@@ -72,6 +74,11 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
               platform,
             });
       if (response?.ok) continue;
+      // It went away during the batch; the rest would fail the same way.
+      if (response?.code === "environment-unavailable") {
+        reportNotConnected();
+        return;
+      }
       toastManager.add(
         stackedThreadToast({
           type: "error",
