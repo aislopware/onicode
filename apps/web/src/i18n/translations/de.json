@@ -3400,6 +3400,8 @@
   "c85985df96e582a2": "{count, plural, one {Alle {count} eingereihten anzeigen} other {Alle {count} eingereihten anzeigen}}",
   "fd97bb02b958b003": "Automatisierung",
   "fdd8b3127a343102": "Agent",
+  "28aa4c2e7674b009": "Nach der Komprimierung",
+  "22a8f4a4ef7c6a49": "Wird nach der Komprimierung in die laufende Runde gesendet",
   "d506b798402041ab": "Jetzt senden",
   "0a390286be34ef82": "Wird gespeichert",
   "aa48b4d278b7fae5": "Wird im Eingabefeld bearbeitet",

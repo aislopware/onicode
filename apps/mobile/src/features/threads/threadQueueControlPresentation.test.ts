@@ -10,10 +10,12 @@ describe("threadQueueControlPresentation", () => {
     { busy: false, isEditing: false, expected: true },
     { busy: true, isEditing: false, expected: false },
     { busy: false, isEditing: true, expected: false },
+    { busy: false, isEditing: false, awaitsCompaction: true, expected: false },
   ])(
-    "gates sending a stopped thread's queued message with $busy busy and $isEditing editing",
-    ({ busy, isEditing, expected }) => {
+    "gates sending a queued message with $busy busy, $isEditing editing, $awaitsCompaction held for compaction",
+    ({ busy, isEditing, awaitsCompaction, expected }) => {
       const controls = resolveThreadQueueRowControls({
+        awaitsCompaction,
         busy,
         isEditing,
         canPromoteToSteer: false,

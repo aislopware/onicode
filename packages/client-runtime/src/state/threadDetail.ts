@@ -106,7 +106,8 @@ function queueWorkflowStatesEqual(
     left.queuedRuns.every(
       (queued, index) =>
         queued.run === right.queuedRuns[index]!.run &&
-        queued.message === right.queuedRuns[index]!.message,
+        queued.message === right.queuedRuns[index]!.message &&
+        queued.awaitsCompaction === right.queuedRuns[index]!.awaitsCompaction,
     )
   );
 }
@@ -415,7 +416,13 @@ export function createEnvironmentThreadDetailAtoms<E>(
   const queueWorkflowAtomFamily = Atom.family((key: string) => {
     let previous: Pick<
       OrchestrationV2ThreadProjection,
-      "thread" | "runs" | "messages" | "providerThreads" | "providerSessions" | "providerTurns"
+      | "thread"
+      | "runs"
+      | "messages"
+      | "turnItems"
+      | "providerThreads"
+      | "providerSessions"
+      | "providerTurns"
     > | null = null;
     let value: ThreadQueueWorkflowState | null = null;
     return Atom.make((get) => {
@@ -430,13 +437,31 @@ export function createEnvironmentThreadDetailAtoms<E>(
         projection.messages !== previous.messages ||
         projection.providerThreads !== previous.providerThreads ||
         projection.providerSessions !== previous.providerSessions ||
-        projection.providerTurns !== previous.providerTurns
+        projection.providerTurns !== previous.providerTurns ||
+        // Turn items stream; only a held steer reads them, for the compaction it waits on.
+        (projection.turnItems !== previous.turnItems &&
+          value?.queuedRuns.some(({ run }) => run.steerWhenReadyRunId !== undefined) === true)
       ) {
         const next = deriveThreadQueueWorkflowState(projection);
         if (value === null || !queueWorkflowStatesEqual(value, next)) value = next;
-        const { thread, runs, messages, providerThreads, providerSessions, providerTurns } =
-          projection;
-        previous = { thread, runs, messages, providerThreads, providerSessions, providerTurns };
+        const {
+          thread,
+          runs,
+          messages,
+          turnItems,
+          providerThreads,
+          providerSessions,
+          providerTurns,
+        } = projection;
+        previous = {
+          thread,
+          runs,
+          messages,
+          turnItems,
+          providerThreads,
+          providerSessions,
+          providerTurns,
+        };
       }
       return value;
     }).pipe(Atom.setIdleTTL(0), Atom.withLabel(`environment-thread-queue:${key}`));

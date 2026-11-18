@@ -3398,6 +3398,8 @@
   "c85985df96e582a2": "{count, plural, one {Show all {count} queued} other {Show all {count} queued}}",
   "fd97bb02b958b003": "Automation",
   "fdd8b3127a343102": "Agent",
+  "28aa4c2e7674b009": "After compaction",
+  "22a8f4a4ef7c6a49": "Sends into the current turn when compaction finishes",
   "d506b798402041ab": "Send now",
   "0a390286be34ef82": "Saving",
   "aa48b4d278b7fae5": "Editing in the composer",

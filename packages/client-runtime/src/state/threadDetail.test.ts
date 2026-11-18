@@ -377,9 +377,9 @@ describe("derived thread state through a streamed message", () => {
     checkpoints: [checkpoint(1)],
   };
 
-  function setup() {
+  function setup(start = initial) {
     const stateAtom = Atom.make(
-      AsyncResult.success({ ...EMPTY_ENVIRONMENT_THREAD_STATE, data: Option.some(initial) }),
+      AsyncResult.success({ ...EMPTY_ENVIRONMENT_THREAD_STATE, data: Option.some(start) }),
     );
     const details = createEnvironmentThreadDetailAtoms(() => stateAtom);
     const queue = details.queueWorkflowAtom(ref);
@@ -387,7 +387,7 @@ describe("derived thread state through a streamed message", () => {
     const registry = AtomRegistry.make();
     registry.mount(queue);
     registry.mount(checkpoints);
-    let projection = initial;
+    let projection = start;
     return {
       queue: () => registry.get(queue),
       checkpoints: () => registry.get(checkpoints),
@@ -419,6 +419,33 @@ describe("derived thread state through a streamed message", () => {
 
     thread.apply(messageUpdated({ ...queuedMessage, text: "Then run lint", updatedAt: later }));
     expect(thread.queue()?.queuedRuns.map((queued) => queued.text)).toEqual(["Then run lint"]);
+  });
+
+  it("drops a held steer's wait when its turn stops compacting", () => {
+    const compaction: OrchestrationV2TurnItem = {
+      ...assistant,
+      id: TurnItemId.make("item-compaction"),
+      type: "compaction",
+      driver: null,
+    };
+    using thread = setup({
+      ...initial,
+      runs: [
+        { ...queuedRun, id: runId, ordinal: 1, status: "running", userMessageId: streamed.id },
+        { ...queuedRun, steerWhenReadyRunId: runId },
+      ],
+      turnItems: [compaction],
+    });
+    expect(thread.queue()?.queuedRuns.map((queued) => queued.awaitsCompaction)).toEqual([true]);
+
+    thread.apply({
+      id: EventId.make("compaction-failed"),
+      type: "turn-item.updated",
+      threadId: v2ThreadId,
+      occurredAt: later,
+      payload: { ...compaction, status: "failed", completedAt: later, updatedAt: later },
+    });
+    expect(thread.queue()?.queuedRuns.map((queued) => queued.awaitsCompaction)).toEqual([false]);
   });
 
   it("keeps checkpoint summaries through streamed text and follows new assistant messages and checkpoints", () => {

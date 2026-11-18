@@ -3396,6 +3396,8 @@
   "c85985df96e582a2": "{count, plural, one {Mostrar {count} en cola} other {Mostrar los {count} en cola}}",
   "fd97bb02b958b003": "Automatización",
   "fdd8b3127a343102": "Agente",
+  "28aa4c2e7674b009": "Tras compactar",
+  "22a8f4a4ef7c6a49": "Se envía al turno actual cuando termine la compactación",
   "d506b798402041ab": "Enviar ahora",
   "0a390286be34ef82": "Guardando",
   "aa48b4d278b7fae5": "Editando en el cuadro de mensaje",

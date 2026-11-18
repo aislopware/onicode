@@ -16,7 +16,7 @@ import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { AsyncResult, type Atom, AtomRegistry } from "effect/reactivity";
-import { Profiler, useState, type ComponentProps } from "react";
+import { createRef, Profiler, useState, type ComponentProps } from "react";
 import { expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 
@@ -24,6 +24,7 @@ const state = vi.hoisted(() => ({
   threadState: null as unknown as Atom.Writable<AsyncResult.AsyncResult<EnvironmentThreadState>>,
   workflow: null as unknown,
   commandResult: undefined as unknown,
+  sent: [] as unknown[],
 }));
 
 vi.mock(import("@onicode/client-runtime/state/thread-workflows"), async (importOriginal) => ({
@@ -74,7 +75,10 @@ vi.mock(import("../../state/threads"), async (importOriginal) => {
 
 vi.mock(import("../../state/use-atom-command"), async (importOriginal) => ({
   ...(await importOriginal()),
-  useAtomCommand: (() => async () => state.commandResult) as never,
+  useAtomCommand: (() => async (input: unknown) => {
+    state.sent.push(input);
+    return state.commandResult;
+  }) as never,
 }));
 
 vi.mock(import("../../assets/assetUrls"), async (importOriginal) => ({
@@ -89,13 +93,14 @@ import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@onicode/client-runtime/state/th
 import { act, render as renderUi } from "../../../test/render";
 import { makeStreamingTimelineFixture, makeThreadProjectionFixture } from "../../test-fixtures";
 import { ToastProvider } from "../ui/toast";
-import { QueuedRunsControl } from "./QueuedRunsControl";
+import { QueuedRunsControl, type QueuedRunsControlHandle } from "./QueuedRunsControl";
 import { ExpandedImageDialog } from "./ExpandedImageDialog";
 import type { ExpandedImagePreview } from "./ExpandedImagePreview";
 
 function setup() {
   state.workflow = null;
   state.commandResult = undefined;
+  state.sent = [];
 }
 
 const baseProps = {
@@ -408,6 +413,39 @@ it("does not re-render while assistant text streams into the thread", async () =
 
   await act(() => registry.set(state.threadState, thread("Hello there", true)));
   expect(renders).toBeGreaterThan(settled);
+});
+
+it("names the wait on a message held for compaction and steers the next one", async () => {
+  setup();
+  state.workflow = {
+    activeRun: { id: "run:active" },
+    canPromoteToSteer: true,
+    queuedRuns: [
+      {
+        run: { id: "run:held", userMessageId: "message:held" },
+        text: "Held",
+        attachments: [],
+        awaitsCompaction: true,
+      },
+      {
+        run: { id: "run:next", userMessageId: "message:next" },
+        text: "Next",
+        attachments: [],
+        awaitsCompaction: false,
+      },
+    ],
+  };
+  const ref = createRef<QueuedRunsControlHandle>();
+  await using _screen = await renderQueue({ ref });
+
+  await expect.element(page.getByText("After compaction", { exact: true })).toBeVisible();
+  expect(page.getByRole("button", { name: "Send now" }).elements()).toHaveLength(1);
+  expect(ref.current?.steerNext(false)).toBe(true);
+  await vi.waitFor(() =>
+    expect(state.sent).toEqual([
+      expect.objectContaining({ input: expect.objectContaining({ queuedRunId: "run:next" }) }),
+    ]),
+  );
 });
 
 it("tells the user why Send now was rejected", async () => {

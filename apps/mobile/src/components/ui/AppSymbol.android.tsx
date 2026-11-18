@@ -78,6 +78,7 @@ import IconGitMerge from "@tabler/icons-react-native/IconGitMerge";
 import IconGitPullRequest from "@tabler/icons-react-native/IconGitPullRequest";
 import IconHammer from "@tabler/icons-react-native/IconHammer";
 import IconHome from "@tabler/icons-react-native/IconHome";
+import IconHourglass from "@tabler/icons-react-native/IconHourglass";
 import IconInfoCircle from "@tabler/icons-react-native/IconInfoCircle";
 import IconKeyboard from "@tabler/icons-react-native/IconKeyboard";
 import IconKeyboardHide from "@tabler/icons-react-native/IconKeyboardHide";
@@ -196,6 +197,7 @@ const ANDROID_ICON_BY_SF_SYMBOL = {
   alarm: IconAlarm,
   clock: IconClock,
   timer: IconClock,
+  hourglass: IconHourglass,
   "face.smiling": IconMoodPlus,
   tag: IconTag,
   ticket: IconTicket,

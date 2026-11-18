@@ -3397,6 +3397,8 @@
   "c85985df96e582a2": "{count, plural, one {Mostrar a mensagem na fila} other {Mostrar todas as {count} na fila}}",
   "fd97bb02b958b003": "Automação",
   "fdd8b3127a343102": "Agente",
+  "28aa4c2e7674b009": "Após compactar",
+  "22a8f4a4ef7c6a49": "Será enviada ao turno atual quando a compactação terminar",
   "d506b798402041ab": "Enviar agora",
   "0a390286be34ef82": "Salvando",
   "aa48b4d278b7fae5": "Editando no editor de mensagens",

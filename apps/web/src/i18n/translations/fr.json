@@ -3397,6 +3397,8 @@
   "c85985df96e582a2": "{count, plural, one {Afficher le message en file d’attente} other {Afficher les {count} messages en file d’attente}}",
   "fd97bb02b958b003": "Automatisation",
   "fdd8b3127a343102": "Agent",
+  "28aa4c2e7674b009": "Après le compactage",
+  "22a8f4a4ef7c6a49": "Envoyé dans le tour en cours à la fin du compactage",
   "d506b798402041ab": "Envoyer maintenant",
   "0a390286be34ef82": "Enregistrement",
   "aa48b4d278b7fae5": "Modification dans la zone de saisie",

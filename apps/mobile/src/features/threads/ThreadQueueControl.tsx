@@ -273,8 +273,9 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
           <T>No messages waiting in this queue.</T>
         </Text>
       ) : null}
-      {queuedRuns.map(({ run, text, attachments, message }, index) => {
+      {queuedRuns.map(({ run, text, attachments, message, awaitsCompaction }, index) => {
         const controls = resolveThreadQueueRowControls({
+          awaitsCompaction,
           busy: busyRunId !== null,
           // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
           canPromoteToSteer:
@@ -303,16 +304,25 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                   shouldOpenOnLongPress
                   style={{ flex: 1 }}
                   actions={[
-                    ...(workflow?.canPromoteToSteer || workflow?.canSendNow
+                    ...(controls.awaitsCompaction
                       ? [
                           {
-                            id: "steer",
-                            title: gt("Send now"),
-                            attributes: { disabled: !controls.canSend },
-                            image: "arrow.up",
+                            id: "waiting",
+                            title: gt("Sends after compaction"),
+                            attributes: { disabled: true },
+                            image: "hourglass",
                           },
                         ]
-                      : []),
+                      : workflow?.canPromoteToSteer || workflow?.canSendNow
+                        ? [
+                            {
+                              id: "steer",
+                              title: gt("Send now"),
+                              attributes: { disabled: !controls.canSend },
+                              image: "arrow.up",
+                            },
+                          ]
+                        : []),
                     {
                       id: "edit",
                       title: gt("Edit", { $context: "verb, menu action" }),
@@ -370,7 +380,25 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
                     ) : null}
                   </Pressable>
                 </Menu>
-                {workflow?.canPromoteToSteer || workflow?.canSendNow ? (
+                {controls.awaitsCompaction ? (
+                  <View
+                    accessible
+                    accessibilityRole="text"
+                    accessibilityLabel={gt("Sends after compaction, queued message {number}", {
+                      number: index + 1,
+                    })}
+                    className="shrink-0 justify-center self-stretch pl-4"
+                  >
+                    <View className="size-9 items-center justify-center rounded-full bg-subtle">
+                      <SymbolView
+                        name="hourglass"
+                        size={14}
+                        weight="medium"
+                        tintColorClassName="accent-primary-text"
+                      />
+                    </View>
+                  </View>
+                ) : workflow?.canPromoteToSteer || workflow?.canSendNow ? (
                   // Outside the edit row and full row height, so a near miss never opens the editor.
                   <Pressable
                     accessibilityRole="button"
