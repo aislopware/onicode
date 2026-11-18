@@ -2181,29 +2181,22 @@ describe("UsageService", () => {
           yield* TestClock.adjust("2 minutes");
           sources = yield* accounts.scan(cursorScanInput(cutoff, true));
           assert.isAtMost(large.reads.length - readsBefore, CURSOR_READS_PER_AWAITED_SCAN);
+          // The first scan already finds the width a read can finish, even from the epoch.
+          if (scans === 0) assert.isNotEmpty(cursor.state.calls);
           if (!restarted && large.reads.length >= CURSOR_READS_PER_AWAITED_SCAN) {
             restarted = true;
             // A restart resumes where the last refresh stopped, at the span it learned, and a
             // scan that does not wait reports the half-read history as partial.
             yield* accounts.awaitPersisted;
-            const cold = cursor.state.calls.length === 0;
             const keptSinceMs = Math.min(...cursor.state.calls.map((call) => call.sinceMs));
             accounts = yield* makeCursorAccounts(large.read);
             const resumedFrom = large.reads.length;
             const pending = yield* accounts.scan(cursorScanInput(cutoff, false));
             assert.isTrue(pending[0]?.refreshing);
-            if (!cold) assert.strictEqual(pending[0]?.status, "partial");
-            // An account stopped at the read cap before its first read is loading, not missing.
-            else
-              assert.deepStrictEqual(sources[0], {
-                dir: "cursor-account",
-                files: [],
-                status: "partial",
-                message: "Older Cursor account usage is still loading.",
-              });
+            assert.strictEqual(pending[0]?.status, "partial");
             yield* accounts.scan(cursorScanInput(cutoff, true));
             const first = large.reads[resumedFrom]!;
-            assert.strictEqual(first.untilMs, cold ? yield* Clock.currentTimeMillis : keptSinceMs);
+            assert.strictEqual(first.untilMs, keptSinceMs);
             assert.isAtMost(first.untilMs - first.sinceMs, 24 * HOUR_MS);
           }
         }
@@ -2214,12 +2207,13 @@ describe("UsageService", () => {
 
         // An outage does not narrow later reads: the catch-up after it takes one read.
         cursor.state.error = "Cursor account usage could not be read.";
+        yield* TestClock.adjust("5 hours");
         for (let attempt = 0; attempt < 5; attempt++) {
           yield* TestClock.adjust("2 minutes");
           yield* accounts.scan(cursorScanInput(cutoff, true));
         }
         cursor.state.error = null;
-        yield* TestClock.adjust("5 hours");
+        yield* TestClock.adjust("2 minutes");
         const nowMs = yield* Clock.currentTimeMillis;
         cursor.state.events.push({ timestampMs: nowMs - HOUR_MS, outputTokens: 3 });
         const readsBefore = large.reads.length;
