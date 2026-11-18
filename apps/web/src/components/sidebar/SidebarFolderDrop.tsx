@@ -48,7 +48,8 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
       return;
     }
     const platform = bridge.getClientPlatform();
-    if (openLocalWorkspace.state !== "ready" || !isActivationPlatform(platform)) {
+    // An unavailable server never connects, so its own failure is shown per folder instead.
+    if (openLocalWorkspace.state === "pending" || !isActivationPlatform(platform)) {
       toastManager.add(
         stackedThreadToast({
           type: "error",

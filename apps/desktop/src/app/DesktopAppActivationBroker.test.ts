@@ -49,6 +49,32 @@ describe("DesktopAppActivationBroker", () => {
     broker.close();
   });
 
+  it("lets an in-flight request finish when the renderer only stops taking new ones", async () => {
+    const send = vi.fn();
+    const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate: vi.fn() });
+    broker.registerRenderer(send);
+    const secondRequest = { ...request, requestId: "request-2" };
+
+    const response = broker.request(request);
+    // The page stays loaded; its handler unmounted or is waiting for the connection.
+    broker.pauseRenderer();
+    const secondResponse = broker.request(secondRequest);
+    broker.complete({
+      version: 1,
+      requestId: request.requestId,
+      ok: true,
+      projectId: ProjectId.make("project-1"),
+      threadId: ThreadId.make("thread-1"),
+    });
+
+    await expect(response).resolves.toMatchObject({ ok: true });
+    expect(send).toHaveBeenCalledTimes(1);
+    broker.registerRenderer(send);
+    expect(send).toHaveBeenLastCalledWith(secondRequest);
+    broker.close();
+    await expect(secondResponse).resolves.toMatchObject({ ok: false });
+  });
+
   it("never sends a canceled request that was queued behind another request", async () => {
     const send = vi.fn();
     const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate: vi.fn() });
