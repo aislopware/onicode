@@ -178,6 +178,8 @@ export function usePullRequestListActions(
   };
   const actions = (entry: EnvironmentPullRequestListEntry): MenuProps["actions"] => {
     const terminology = sourceControlClients.get(entry.provider).changeRequest;
+    // One change runs at a time across the list; perform drops the others.
+    const disabled = busyKey !== null;
     return [
       {
         id: "open",
@@ -193,17 +195,19 @@ export function usePullRequestListActions(
               id: "request-review",
               title: gt("Request review"),
               image: "person.badge.plus",
+              attributes: { disabled },
             },
             {
               id: entry.isDraft ? "ready" : "draft",
               title: entry.isDraft ? gt("Mark ready for review") : gt("Convert to draft"),
               image: "pencil",
+              attributes: { disabled },
             },
             {
               id: "close",
               title: pullRequestActionLabel("close", terminology, m),
               image: "xmark",
-              attributes: { destructive: true },
+              attributes: { destructive: true, disabled },
             },
           ]
         : writableEnvironments.has(entry.environmentId) && entry.state === "closed"
@@ -212,6 +216,7 @@ export function usePullRequestListActions(
                 id: "reopen",
                 title: pullRequestActionLabel("reopen", terminology, m),
                 image: "arrow.clockwise",
+                attributes: { disabled },
               },
             ]
           : []),

@@ -93,14 +93,14 @@ export function ClaudeAccount({
       `providerInstances.${provider.instanceId}`,
     );
   const actions: MenuAction[] = [
-    { id: "edit", title: gt("Edit"), image: "pencil" },
+    { id: "edit", title: gt("Edit"), image: "pencil", attributes: { disabled: pending } },
     ...(removable
       ? [
           {
             id: "remove",
             title: gt("Remove"),
             image: "trash",
-            attributes: { destructive: true },
+            attributes: { destructive: true, disabled: pending },
           } satisfies MenuAction,
         ]
       : []),
