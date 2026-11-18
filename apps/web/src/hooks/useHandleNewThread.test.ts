@@ -16,6 +16,10 @@ const testState = vi.hoisted(() => {
     readonly draftId: string;
     readonly environmentId: string;
     readonly projectId?: string;
+    readonly envMode?: string;
+    readonly branch?: string;
+    readonly worktreePath?: string;
+    readonly runtimeMode?: string;
     readonly promotedTo: null;
     readonly threadId: string;
   } | null = null;
@@ -114,6 +118,7 @@ const testState = vi.hoisted(() => {
       draftStore.setDraftThreadContext.mockClear();
       draftStore.setLogicalProjectDraftThreadId.mockClear();
       draftStore.setPrompt.mockClear();
+      draftStore.applyStickyState.mockClear();
       projectFileRead = new Promise<null>((resolve) => {
         completeProjectFileRead = resolve;
       });
@@ -301,7 +306,15 @@ describe.each([
     {
       name: "moves an untouched draft of another machine's checkout shown meanwhile to this project",
       acceptOpenedMeanwhile: true,
-      shown: { environmentId: "environment-primary", projectId: "project-local" },
+      // That machine's workspace and defaults, which must not carry over.
+      shown: {
+        environmentId: "environment-primary",
+        projectId: "project-local",
+        envMode: "worktree",
+        branch: "feature",
+        worktreePath: "/other/worktree",
+        runtimeMode: "approval-required",
+      },
       userText: false,
       expected: { draftId: "draft-home", threadId: "thread-home" },
       remapped: true,
@@ -358,6 +371,7 @@ describe.each([
           runtimeMode: "full-access",
         }),
       );
+      expect(testState.draftStore.applyStickyState).toHaveBeenCalledWith("draft-home");
     } else {
       expect(testState.draftStore.setLogicalProjectDraftThreadId).not.toHaveBeenCalled();
     }
