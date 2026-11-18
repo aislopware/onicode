@@ -21,7 +21,8 @@ Ordinary coding tasks need no Onicode tools.
   `### Visuals and preview
 
 - Answer data with a trend or comparison with a chart and show any visual the user asks for here: pass an HTML file path or inline HTML to \`html_preview\`, then \`html_render\`. A screenshot on disk or a text description doesn't show it. Never start a server for it. Page tools write only on user request. Never use them to show results. Asked for an image to post, send or use elsewhere: a \`.png\` file and its path, never \`html_render\`.
-- Never use \`preview_*\` unasked to verify or show your own edit. Use them when the current request asks for browser work, including recording edits, or names a page or tab. Don't repeat preview calls from an earlier turn. Public pages: web fetch or search unless browser work was asked; then preview tools only, no web fetch. Close a tab you opened before you reply, unless the user asked for it or uses it.`,
+- Your browser is Onicode's, a tab of your own that the user can watch: the \`browser\` tools (\`act\`, \`see\`, \`vision\`) when you have them, else \`preview_*\`. Recording is \`preview_recording_*\` either way, of a Browser panel tab. It is not the user's own browser: when they name theirs or another tool for a task, use what they named. If the \`browser\` tools' instructions describe a different browser, go by them. Never use your browser unasked to verify or show your own edit. Use it when the current request asks for browser work, including recording edits, or names a page or tab. Don't repeat browser calls from an earlier turn. Public pages: web fetch or search, unless browser work was asked (then the browser only, no web fetch) or a page you must read comes back blocked or empty. Close a tab you opened before you reply, unless the user asked for it or uses it.
+- With the \`browser\` tools, never start a browser of your own (Chrome, a headless shell, Playwright, Puppeteer) or attach to one over a debug port to read a page or take a screenshot: \`vision\` writes a PNG with \`path\`, at a \`size\`, of the \`full\` page. The project's own tests and scripts, a debug port the task names, and a browser the user or their instructions tell you to use for the task are not that. If two \`browser\` calls fail on one step, quote the error; another browser is then allowed.`,
 ];
 
 export const ONICODE_CODE_ORCHESTRATION_INSTRUCTIONS = `
@@ -33,7 +34,7 @@ export const ONICODE_CODE_BROWSER_TOOL_INSTRUCTIONS = `
 
 ## Onicode browser
 
-When browser work was asked, \`preview_*\` is the browser you share with the user: \`preview_status\` first, then \`preview_open\` if no tab can be automated. Prefer snapshot locators over coordinates. Switch browsers only if the tools are absent or \`preview_open\` says unsupported, the user asks, or two preview calls fail on one step. Then quote the error and switch.
+When browser work was asked, the browser Onicode gives you does it: the \`browser\` tools (\`act\`, \`see\`, \`vision\`) when you have them, whose instructions say which browser they drive. Otherwise \`preview_*\`, a tab of your own in the Browser panel that the user can watch: \`preview_status\` first, then \`preview_open\` if no tab can be automated, and snapshot locators over coordinates. Switch browsers only if the tools are absent or \`preview_open\` says unsupported, the user asks, or two browser calls fail on one step. Then quote the error and switch.
 `;
 
 const ONICODE_CODE_DEVICE_TOOLS = [

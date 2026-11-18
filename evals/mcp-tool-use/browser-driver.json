@@ -1,0 +1,575 @@
+{
+  "version": "4.9.0",
+  "instructions": "Stealth browser driver. act interacts (navigate/click/type/fill/batch/eval), see reads (extract=\"auto\" first on list/search/product pages; mode=\"content\" for articles; format=\"json\" for pure JSON), state manages cookies/tabs/sessions, run executes step batches with branching and inline reads, vision screenshots (path= saves the PNG, size= sets the viewport, full= takes the whole page). WORK LOOP: navigate -> act by text (no see needed) or by ref (refs are page-scoped: refresh them after a navigation or tab switch; within a page they self-heal) -> every action returns an observation, so a see after acting is usually unnecessary. act eval answers one line, `result: <compact JSON>` (a returned string containing JSON is flagged in a note). Results disclose what the driver cannot verify: page_total/partial (lazy or paginated results), sponsored items, unwrapped redirect links, duplicates removed, and a URL range filter whose page prices fall outside it. Oversized payloads go to an artifact file, read back with see artifact=\"...\" - nothing is truncated silently. Errors carry the current page state; never blind-retry a submit. HOST: {{HOST_NOTE}}",
+  "tools": [
+    {
+      "name": "act",
+      "description": "Interact; verified verdict + page delta, navigate also returns refs/content. Prefer ref, then text/label, then CSS; click x,y overrides other targets. Refs self-heal within a page; refresh after navigation/tab switch. Ambiguity returns candidates: choose ref/selector/nth. Popup clicks keep opener active; switch-tab by returned ID.\nType replaces/verifies text; type+press=Enter submits once. Targeted press focuses first; otherwise current focus. fill sets multiple fields then optionally submits once.\nwait text= matches visible page text; selector= traverses open shadows/same-origin frames; condition=element matches visible role/text. title/url match text; js evaluates js= (legacy text=); settle waits DOM quiet; network waits 300ms without tracked requests, excluding streams.\nbatch runs sequential steps; optional:true continues runtime failures. Plans validate before effects (1000 steps, nesting 32); runtime failures retain prior effects. slim inherits through batch/run, preserves reads/errors. url= navigates first except download/state ops.\nErrors carry page state. trusted:false means untrusted input fallback; degraded:true means client deadline/transport failure with unknown outcome. Observe destination before repeating input. Quiet dispatched clicks never replay.",
+      "input_schema": {
+        "properties": {
+          "accept": {
+            "description": "act dialog: accept (default true) or cancel the matching dialog.",
+            "type": "boolean"
+          },
+          "action": {
+            "enum": [
+              "click",
+              "type",
+              "clear",
+              "select",
+              "press",
+              "scroll",
+              "navigate",
+              "read",
+              "wait",
+              "dialog",
+              "back",
+              "forward",
+              "reload",
+              "hover",
+              "upload",
+              "fill",
+              "batch",
+              "eval",
+              "pdf",
+              "download",
+              "collect",
+              "paginate",
+              "extract",
+              "open-tab",
+              "close-tab",
+              "switch-tab",
+              "save",
+              "load"
+            ],
+            "type": "string"
+          },
+          "block": {
+            "description": "navigate: comma-separated images,fonts,media,trackers; applied before loading.",
+            "type": "string"
+          },
+          "body": {
+            "description": "Download: HTTP body instead of browser attachment, <=32 MiB/30s. No browser cookies; honors HTTP(S) OBU_PROXY, refuses other proxy types; returns status/path.",
+            "type": "boolean"
+          },
+          "condition": {
+            "description": "Wait kind; js needs js=, selector uses selector= (or text= with condition=selector). network waits 300ms idle.",
+            "enum": [
+              "element",
+              "selector",
+              "title",
+              "settle",
+              "network",
+              "network-idle",
+              "url",
+              "text",
+              "js"
+            ],
+            "type": "string"
+          },
+          "dx": {
+            "type": "integer"
+          },
+          "dy": {
+            "type": "integer"
+          },
+          "expect": {
+            "description": "dialog: alert|confirm|prompt|beforeunload|any|clear; arm before trigger. Other actions: expected navigation|dom-change|none|any.",
+            "type": "string"
+          },
+          "extract": {
+            "description": "Extract/paginate read kind; default auto.",
+            "enum": ["auto", "json", "links", "forms"],
+            "type": "string"
+          },
+          "fields": {
+            "description": "Fill: [{ref|label|selector,text|option|check}]. Toggles accept only check=true/false; omit values to toggle.",
+            "items": {
+              "properties": {
+                "check": {
+                  "description": "true=check, false=uncheck, omit=toggle.",
+                  "type": "boolean"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "option": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "selector": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "format": {
+            "description": "read: live value/toggle state + select options (first 80; clipping explicit). eval/read/extract json: payload, {data,note} for notices, or {artifact,bytes,next_offset:0}; page artifacts with see.",
+            "enum": ["text", "json"],
+            "type": "string"
+          },
+          "js": {
+            "description": "eval: required JavaScript; ref/selector exposes target as el. wait/if/while condition=js: expression.",
+            "type": "string"
+          },
+          "key": {
+            "description": "Key or chord: Enter, Tab, Escape, Backspace, ArrowDown, Control+a, Meta+Enter, Shift+Tab.",
+            "type": "string"
+          },
+          "label": {
+            "description": "Field label for click/type/fill/select/clear/read/hover/press.",
+            "type": "string"
+          },
+          "landscape": {
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Per-page extraction item limit.",
+            "type": "integer"
+          },
+          "max": {
+            "description": "Collect items (default 100); paginate pages (default 5, max 100).",
+            "type": "integer"
+          },
+          "message": {
+            "description": "act dialog: only match dialogs whose text contains this (case-insensitive).",
+            "type": "string"
+          },
+          "name": {
+            "description": "save/load: session name (state tool contract).",
+            "type": "string"
+          },
+          "next": {
+            "description": "Paginate: CSS selector or text=Next / label= / ref=.",
+            "type": "string"
+          },
+          "nth": {
+            "description": "1-based match index; out of range refuses with the real count.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "option": {
+            "description": "Select: label, text or value.",
+            "type": "string"
+          },
+          "path": {
+            "description": "PDF: output path.",
+            "type": "string"
+          },
+          "press": {
+            "description": "type: key/chord to dispatch once after verified typing, e.g. Enter.",
+            "type": "string"
+          },
+          "printBackground": {
+            "type": "boolean"
+          },
+          "prompt_text": {
+            "description": "act dialog: text typed into a matching prompt() when accepting.",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Page-scoped element ID, e.g. e5; refresh after navigation/tab switch.",
+            "type": "string"
+          },
+          "role": {
+            "description": "Filter by role (button, textbox, link, etc.).",
+            "type": "string"
+          },
+          "scale": {
+            "type": "number"
+          },
+          "selector": {
+            "description": "CSS target (including press/wait); open shadows. Wait selectors also traverse same-origin frames. nth disambiguates; hidden targets refuse.",
+            "type": "string"
+          },
+          "slim": {
+            "description": "Verdicts only for successful actions; batch/run inherit. Reads and errors retained.",
+            "type": "boolean"
+          },
+          "sort": {
+            "description": "Reddit post extract sort.",
+            "enum": ["confidence", "top", "new", "controversial", "old", "qa"],
+            "type": "string"
+          },
+          "steps": {
+            "description": "Sequential act steps (no nested batch), see/extract reads and {action:state,op,...}. Reuse each tool's fields. optional:true continues runtime failures; otherwise stops with prior results/page state. Navigation continues on the new page.",
+            "items": {
+              "properties": {
+                "action": {
+                  "enum": [
+                    "click",
+                    "type",
+                    "clear",
+                    "select",
+                    "press",
+                    "scroll",
+                    "navigate",
+                    "read",
+                    "wait",
+                    "dialog",
+                    "back",
+                    "forward",
+                    "reload",
+                    "hover",
+                    "upload",
+                    "fill",
+                    "eval",
+                    "pdf",
+                    "download",
+                    "collect",
+                    "paginate",
+                    "extract",
+                    "open-tab",
+                    "close-tab",
+                    "switch-tab",
+                    "save",
+                    "load",
+                    "see",
+                    "state"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": ["action"],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "submit": {
+            "description": "Fill: ref or text of submit button. Dispatched once; inspect the verdict before repeating.",
+            "type": "string"
+          },
+          "target_id": {
+            "description": "close-tab/switch-tab: ID returned by state tabs/open-tab.",
+            "type": "string"
+          },
+          "template": {
+            "description": "See template contract; for extract=json.",
+            "type": "object"
+          },
+          "text": {
+            "description": "click/hover: visible text; type: replacement value; upload: file path; wait: match text. navigate uses url=.",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Seconds, integer 0-3600. Defaults: wait 10, download/collect/dialog 30.",
+            "maximum": 3600,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "url": {
+            "description": "navigate requires url; download uses file URL; other actions navigate first except state ops (cookie scope/tab URL).",
+            "type": "string"
+          },
+          "x": {
+            "description": "click: viewport CSS pixels; supply both x and y. Coordinates override other targets.",
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          }
+        },
+        "required": ["action"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "see",
+      "description": "Read: model gives refs, content rendered markdown, outline headings. extract=auto detects list/search/product/site fields; preview=true samples schema without rows. Reddit comments disclose complete/partial, API denial and fuzzed_score; sort overrides page sort. Opaque redirects are flagged. find searches text; scope narrows reads. Logs: console=current document, network=current navigation; clear=true reads then clears.\nformat=json: payload, {data,note} for caveats/events, or artifact envelope. Default artifact pages are character chunks: concatenate data strings before parsing payload. items=true pages JSON array rows independently. next_offset=0 starts paging; null ends. changes=true gives model delta since last capture (JSON supported). Large reads offload; inspect partial/limit notes.",
+      "input_schema": {
+        "properties": {
+          "artifact": {
+            "description": "Read a previously offloaded payload from disk, paged. Pass the full payload path from a previous response; offset/limit are char-based (defaults 0 and 20000). With format=json each envelope is valid JSON; data is a text chunk, concatenate before parsing. items=true pages array rows.",
+            "type": "string"
+          },
+          "budget": {
+            "description": "Max chars in response. Default 8000.",
+            "type": "integer"
+          },
+          "changes": {
+            "description": "Model delta since last capture; format=json for structured output.",
+            "type": "boolean"
+          },
+          "clear": {
+            "description": "Read then clear selected log.",
+            "type": "boolean"
+          },
+          "content": {
+            "description": "Include page's visible text. model mode only. Use mode=content instead for clean markdown.",
+            "type": "boolean"
+          },
+          "extract": {
+            "description": "auto (site-aware; Reddit posts attempt the full tree, inspect complete/partial), json (template), links, forms.",
+            "enum": ["links", "forms", "json", "auto"],
+            "type": "string"
+          },
+          "filter": {
+            "description": "Filter by role/name (comma-separated). model mode only.",
+            "type": "string"
+          },
+          "find": {
+            "description": "Search elements by text. Returns refs + scores.",
+            "type": "string"
+          },
+          "format": {
+            "description": "text (default) | json — pure JSON output for extract= and artifact= reads (zero preamble; never truncated JSON).",
+            "enum": ["text", "json"],
+            "type": "string"
+          },
+          "items": {
+            "description": "Artifact: page JSON array rows, not character chunks; offset/limit in items.",
+            "type": "boolean"
+          },
+          "limit": {
+            "description": "Max items for extract. Default 50 (Reddit post comments: all available, capped at 1000, unless set). Artifact: chars (default 20000), or rows with items=true (default 50).",
+            "type": "integer"
+          },
+          "logs": {
+            "description": "Console: current document - logs, uncaught errors with stack, failed loads. Network: current navigation.",
+            "enum": ["console", "network"],
+            "type": "string"
+          },
+          "mode": {
+            "description": "model (default): interactive elements with refs. content: page text as markdown for reading. outline: headings only, ultra-minimal.",
+            "enum": ["model", "content", "outline"],
+            "type": "string"
+          },
+          "offset": {
+            "description": "Artifact read: start char (row with items=true). Default 0.",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "preview": {
+            "description": "extract=auto: sampled container and fields, without rows.",
+            "type": "boolean"
+          },
+          "scope": {
+            "description": "Ref id of element to view subtree text of; with mode=content, returns just that element's subtree as markdown (budget honored).",
+            "type": "string"
+          },
+          "sort": {
+            "description": "Reddit post auto-extract sort; overrides page sort.",
+            "enum": ["confidence", "top", "new", "controversial", "old", "qa"],
+            "type": "string"
+          },
+          "template": {
+            "description": "For extract=json: {\"items\":{\"container\":\"css\",\"fields\":{\"name\":\"css or css@attr\"}}}. @attr reads the container attribute. Text reads are RENDERED - a hidden element is omitted (the item lists it in _omitted); read one explicitly with {\"sel\":\"css\",\"raw\":true}. Lookups span light DOM, open shadow roots and same-origin frames; skipped frames are reported.",
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "state",
+      "description": "Manage tabs, cookies, storage, sessions, blocking. open-tab opens AND switches, returning an ID; switch-tab/close-tab require target_id. Save after login; navigate to saved origin before load, then reload. Setters require name/value (empty value allowed); ls/ss/cookies preserve full values, large reads offload to JSON artifacts. block affects inert assets, never first-party scripts. compress toggles response pruning. As steps use {action:\"state\",op:...,...}.",
+      "input_schema": {
+        "properties": {
+          "classes": {
+            "description": "Block: comma-separated (images, fonts, media, trackers).",
+            "type": "string"
+          },
+          "clear": {
+            "description": "Block: true stops blocking. Without classes/clear, returns measured blocked-request count; byte/time savings unmeasured.",
+            "type": "boolean"
+          },
+          "domain": {
+            "description": "Domain for del-cookie (alternative to url).",
+            "type": "string"
+          },
+          "httpOnly": {
+            "type": "boolean"
+          },
+          "mode": {
+            "description": "compress: response pruning toggle.",
+            "enum": ["on", "off", "status"],
+            "type": "string"
+          },
+          "name": {
+            "description": "Cookie name, storage key, or session name.",
+            "type": "string"
+          },
+          "op": {
+            "enum": [
+              "cookies",
+              "set-cookie",
+              "del-cookie",
+              "ls",
+              "ss",
+              "set-ls",
+              "set-ss",
+              "rm-ls",
+              "rm-ss",
+              "clear-ls",
+              "clear-ss",
+              "tabs",
+              "open-tab",
+              "close-tab",
+              "switch-tab",
+              "save",
+              "load",
+              "block",
+              "compress"
+            ],
+            "type": "string"
+          },
+          "path": {
+            "description": "set-cookie scope path.",
+            "type": "string"
+          },
+          "sameSite": {
+            "enum": ["Strict", "Lax", "None"],
+            "type": "string"
+          },
+          "secure": {
+            "type": "boolean"
+          },
+          "slim": {
+            "description": "Tab lifecycle: retain tab ID, omit model.",
+            "type": "boolean"
+          },
+          "target_id": {
+            "description": "Tab id for close-tab/switch-tab.",
+            "type": "string"
+          },
+          "url": {
+            "description": "URL for open-tab, cookie scope (set-cookie/del-cookie), or domain filter (cookies).",
+            "type": "string"
+          },
+          "value": {
+            "description": "Cookie or storage value.",
+            "type": "string"
+          }
+        },
+        "required": ["op"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "run",
+      "description": "Sequential act actions (fill/eval included), see/extract reads and state ops with branches/loops. Reuse act/see/state fields. if: {action:\"if\",condition,text,then:[...],else:[...]}; while: {action:\"while\",condition,text,steps:[...],max:5}. JS conditions use js=; CSS uses selector=. False branches may finish before timeout on quiet pages; use wait for a deadline. wait+else falls back on timeout. optional:true continues runtime failure locally, including nested steps. Invalid plans fail before effects (1000 steps, nesting 32, while max 0-100). Other failures stop, preserving prior observations/effects; a failed batch stops enclosing run. slim inherits, reads/errors retained. url= navigates before each step; open-tab switches.",
+      "input_schema": {
+        "properties": {
+          "format": {
+            "description": "json: {status:completed|stopped,results:[{step,status:ok|optional_failed|failed,output,error?}],stopped_at?,error?,page?,note?}. Steps are 1-based; nested observations stay in output text. Not inherited: set each read's format explicitly. Oversized results use artifact paging.",
+            "enum": ["text", "json"],
+            "type": "string"
+          },
+          "slim": {
+            "description": "Inherit verdict-only actions; preserve reads and errors.",
+            "type": "boolean"
+          },
+          "steps": {
+            "description": "Steps reuse act/see/state fields plus optional:true and if/while branches. wait may carry else:[...].",
+            "items": {
+              "properties": {
+                "action": {
+                  "enum": [
+                    "click",
+                    "type",
+                    "clear",
+                    "select",
+                    "press",
+                    "scroll",
+                    "navigate",
+                    "read",
+                    "wait",
+                    "dialog",
+                    "back",
+                    "forward",
+                    "reload",
+                    "hover",
+                    "upload",
+                    "fill",
+                    "eval",
+                    "pdf",
+                    "download",
+                    "collect",
+                    "paginate",
+                    "extract",
+                    "open-tab",
+                    "close-tab",
+                    "switch-tab",
+                    "save",
+                    "load",
+                    "see",
+                    "state",
+                    "batch",
+                    "if",
+                    "while",
+                    "js",
+                    "vision"
+                  ],
+                  "type": "string"
+                },
+                "condition": {
+                  "description": "Same condition fields as act wait; js= expression, selector= CSS.",
+                  "type": "string"
+                },
+                "else": {
+                  "description": "Sub-steps if condition times out.",
+                  "type": "array"
+                },
+                "max": {
+                  "description": "Max iterations 0-100. Default 10.",
+                  "maximum": 100,
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                "steps": {
+                  "description": "Body steps for while loop.",
+                  "type": "array"
+                },
+                "then": {
+                  "description": "Sub-steps if condition met.",
+                  "type": "array"
+                }
+              },
+              "required": ["action"],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": ["steps"],
+        "type": "object"
+      }
+    },
+    {
+      "name": "vision",
+      "description": "PNG screenshot for canvas/image UIs, visual checks, or when refs/content cannot answer. marks=true overlays ref badges for visible main-frame elements; frames may be unmarked. Inline unless path= names a file; large PNGs offload to a local artifact. Also a run step. Prefer act/see for structural interactions.",
+      "input_schema": {
+        "properties": {
+          "full": {
+            "description": "Whole page.",
+            "type": "boolean"
+          },
+          "marks": {
+            "description": "Overlay numbered ref badges on visible elements.",
+            "type": "boolean"
+          },
+          "path": {
+            "description": "Write the .png here; no inline image.",
+            "type": "string"
+          },
+          "size": {
+            "description": "Viewport for this capture, WxH[@scale]: 1440x900@2.",
+            "type": "string"
+          },
+          "url": {
+            "description": "Navigate first.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ]
+}

@@ -969,12 +969,25 @@ it.effect("a tab the desktop does not draw is marked headless, so the desktop st
         operation: "open",
         input: { reuseExistingTab: false, show: false },
       });
+      // A hidden window: the desktop mounts the agent's tab, but its page answers no capture.
+      desktopRendersNext = true;
+      heldStill = () => Promise.reject(new Error("No frame"));
+      const hiddenTab = yield* broker.invoke<PreviewAutomationStatus>({
+        scope,
+        operation: "open",
+        input: { reuseExistingTab: false, show: false },
+      });
+      heldStill = null;
       const { sessions } = yield* manager.list({ threadId: scope.thread.threadId });
       const headlessOf = (id: string | null) =>
         sessions.find((session) => session.tabId === id)?.headless;
 
       expect(headlessOf(tabId)).toBe(true);
       expect(headlessOf(desktopTab.tabId)).toBeUndefined();
+      expect(headlessOf(hiddenTab.tabId)).toBe(true);
+      expect(desktopConnections.map(({ browser }) => browser.close.mock.calls.length)).toEqual([
+        0, 1,
+      ]);
     }),
   ).pipe(Effect.provide(layer)),
 );
@@ -4250,6 +4263,63 @@ it.effect("an agent's own driver works its tab's page until a human takes contro
         ["mouseReleased", 5],
       ]);
 
+      // A capture's size goes to the page the way a resize does, since Playwright holds its metrics.
+      const { page } = contexts[0]!;
+      const sized = () =>
+        driver.send("Emulation.setDeviceMetricsOverride", {
+          width: 1920,
+          height: 1080,
+          deviceScaleFactor: 1,
+          mobile: false,
+        });
+      // A driver pipelines: the clear that follows a set undoes it, however long the set takes.
+      page.setViewportSize.mockClear();
+      yield* Effect.promise(() =>
+        Promise.all([sized(), driver.send("Emulation.clearDeviceMetricsOverride", undefined)]),
+      );
+      const widths = page.setViewportSize.mock.calls.map(([size]) => size?.width);
+      expect([widths[0], widths.at(-1)]).toEqual([1920, 1280]);
+      yield* Effect.promise(sized);
+      expect(page.setViewportSize).toHaveBeenLastCalledWith({ width: 1920, height: 1080 });
+
+      // A driver that leaves while the page has not answered its size change: the wait is
+      // bounded, and the page has its own size back before the session detaches, since a clear
+      // sent after that reaches no page.
+      const left = Promise.withResolvers<unknown>();
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      let unanswered: Promise<string> = Promise.resolve("never sent");
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const leaving = yield* drivers.attach({
+            threadId,
+            tabId,
+            agentSessionId,
+            onEvent: () => {},
+          });
+          contexts[0]!.sessions
+            .at(-1)!
+            .detach.mockImplementation(async () =>
+              left.resolve(page.setViewportSize.mock.lastCall?.[0]),
+            );
+          page.setViewportSize.mockImplementationOnce(() => new Promise(() => {}));
+          unanswered = leaving
+            .send("Emulation.setDeviceMetricsOverride", { width: 390, height: 844 })
+            .then(String, String);
+        }),
+      );
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(5_000));
+      expect(yield* Effect.promise(() => unanswered)).toContain("did not answer a size change");
+      expect(yield* Effect.promise(() => left.promise)).toEqual({ width: 1280, height: 800 });
+      // A pointer move the page never answers holds the command behind it that long and no more.
+      session.send.mockImplementationOnce(() => new Promise(() => {}));
+      yield* Effect.promise(() => mouse("mouseMoved", 9));
+      const behind = driver.send("Runtime.evaluate", { expression: "2" });
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(5_000));
+      yield* Effect.promise(() => behind);
+      expect(session.send).toHaveBeenLastCalledWith("Runtime.evaluate", { expression: "2" });
+      vi.useRealTimers();
+      yield* Effect.promise(sized);
+
       const viewer = yield* browser.attachViewer(viewerInput(tabId, true));
       yield* viewer.input({ type: "takeControl" });
       const refused = yield* Effect.promise(() =>
@@ -4260,13 +4330,129 @@ it.effect("an agent's own driver works its tab's page until a human takes contro
       );
       expect(refused).toMatchObject({ reason: "humanControl" });
       expect(session.send).not.toHaveBeenCalledWith("Input.dispatchKeyEvent", expect.anything());
+      // The page gets its own size back even while the human holds it.
+      yield* Effect.promise(() => driver.send("Emulation.clearDeviceMetricsOverride", undefined));
+      expect(page.setViewportSize).toHaveBeenLastCalledWith({ width: 1280, height: 800 });
+      expect(session.send).not.toHaveBeenCalledWith(
+        expect.stringContaining("DeviceMetricsOverride"),
+        expect.anything(),
+      );
 
       contexts[0]!.page.emit("close");
       yield* Effect.promise(() => driver.closed);
       // A browser that has stopped answering must not hold the driver's release, or shutdown.
       session.detach.mockReturnValue(new Promise(() => {}));
     }),
-  ).pipe(Effect.provide(layer)),
+  ).pipe(Effect.ensuring(Effect.sync(() => vi.useRealTimers())), Effect.provide(layer)),
+);
+
+it.effect("a driver's captures of a desktop tab take their turn with its size changes", () =>
+  Effect.scoped(
+    Effect.gen(function* () {
+      const { broker } = yield* ready;
+      const drivers = yield* ServerBrowser.ServerBrowserDrivers;
+      desktopRendersNext = true;
+      const opened = yield* broker.invoke<PreviewAutomationStatus>({
+        scope,
+        operation: "open",
+        input: { reuseExistingTab: false, show: false },
+      });
+      const driver = yield* drivers.attach({
+        threadId: scope.thread.threadId,
+        tabId: PreviewTabId.make(opened.tabId!),
+        agentSessionId: Broker.hostAssignmentKey(scope),
+        onEvent: () => {},
+      });
+      const session = desktopConnections[0]!.context.sessions.at(-1)!;
+      const sent = () =>
+        session.send.mock.calls.flatMap(([method, input]) =>
+          method === "Page.captureScreenshot"
+            ? ["capture"]
+            : method === "Emulation.setDeviceMetricsOverride"
+              ? [`set ${(input as { width: number }).width}`]
+              : method === "Emulation.clearDeviceMetricsOverride"
+                ? ["clear"]
+                : [],
+        );
+      const size = (width: number) =>
+        driver.send("Emulation.setDeviceMetricsOverride", { width, height: 1080 });
+      const shot = () =>
+        driver.send("Page.captureScreenshot", { format: "png" }).then(() => "captured", String);
+      const clear = () => driver.send("Emulation.clearDeviceMetricsOverride", undefined);
+
+      // A driver pipelines: the capture is taken at the size set before it, not after the clear
+      // behind it. The first capture is the server's own, measuring what the page paints.
+      yield* Effect.promise(() => Promise.all([size(1920), shot(), clear()]));
+      expect(sent()).toEqual(["capture", "set 1920", "capture", "clear"]);
+
+      // A capture the page answers too late: Chromium then puts back the size that capture
+      // began at, so no other is taken until it has answered and the size is repaired.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      yield* Effect.promise(() => size(1920));
+      const late = Promise.withResolvers<Record<string, unknown>>();
+      session.send.mockImplementationOnce(() => late.promise);
+      const missed = shot();
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(3_000));
+      expect(yield* Effect.promise(() => missed)).toContain("not producing screenshot frames");
+      // A clear partway through that capture costs Chromium the size to go back to, so it is
+      // left to the repair, and the driver hears when the capture has not answered by then.
+      session.send.mockClear();
+      const leftSized = clear().then(() => "cleared", String);
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(5_000));
+      expect(yield* Effect.promise(() => leftSized)).toContain("did not answer a size change");
+      yield* Effect.promise(() => size(390));
+      expect(yield* Effect.promise(shot)).toContain("not producing screenshot frames");
+      expect(sent()).toEqual(["set 390"]);
+
+      const repaired = Promise.withResolvers<void>();
+      const answer = session.send.getMockImplementation()!;
+      session.send.mockImplementation(async (method, input) => {
+        const result = await answer(method, input);
+        if (method === "Emulation.setDeviceMetricsOverride") repaired.resolve();
+        return result;
+      });
+      session.send.mockClear();
+      late.resolve({ data: "ZnJhbWU=" });
+      yield* Effect.promise(() => repaired.promise);
+      expect(yield* Effect.promise(shot)).toBe("captured");
+      expect(sent()).toEqual(["set 390", "capture"]);
+
+      // A repair the page refuses leaves its size unknown: no capture until the driver's next
+      // size change lands.
+      const again = Promise.withResolvers<Record<string, unknown>>();
+      session.send.mockImplementationOnce(() => again.promise);
+      const missedAgain = shot();
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(3_000));
+      expect(yield* Effect.promise(() => missedAgain)).toContain("not producing screenshot frames");
+      const refusedRepair = Promise.withResolvers<void>();
+      let refuse = true;
+      session.send.mockImplementation(async (method, input) => {
+        if (method !== "Emulation.setDeviceMetricsOverride" || !refuse)
+          return answer(method, input);
+        refuse = false;
+        refusedRepair.resolve();
+        throw new Error("No page");
+      });
+      again.resolve({ data: "ZnJhbWU=" });
+      yield* Effect.promise(() => refusedRepair.promise);
+      expect(yield* Effect.promise(shot)).toContain("not producing screenshot frames");
+      yield* Effect.promise(() => size(390));
+      expect(yield* Effect.promise(shot)).toBe("captured");
+
+      // A clear behind a late capture is sent once that capture has answered, and only then.
+      session.send.mockImplementation(answer);
+      const last = Promise.withResolvers<Record<string, unknown>>();
+      session.send.mockImplementationOnce(() => last.promise);
+      const missedLast = shot();
+      yield* Effect.promise(() => vi.advanceTimersByTimeAsync(3_000));
+      expect(yield* Effect.promise(() => missedLast)).toContain("not producing screenshot frames");
+      session.send.mockClear();
+      const handedBack = clear();
+      last.resolve({ data: "ZnJhbWU=" });
+      yield* Effect.promise(() => handedBack);
+      expect(sent()).toEqual(["clear"]);
+    }),
+  ).pipe(Effect.ensuring(Effect.sync(() => vi.useRealTimers())), Effect.provide(layer)),
 );
 
 it.live("a page's title change without navigation reaches its session", () =>

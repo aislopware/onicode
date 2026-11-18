@@ -26,7 +26,8 @@ environment.
 panel, so you watch it work, and you can take the tab over at any moment; the
 agent's actions are refused while you hold it. This choice needs **Agent
 browser access** on, and nothing else installed. The panel opens http and https
-pages only. A thread's panel tabs close when you archive or delete the thread.
+pages only, so for a local HTML file the agent serves its folder first. A
+thread's panel tabs close when you archive or delete the thread.
 
 **Its own Chrome** gives the agent a separate Chrome with logins of its own.
 You do not see that browser. Sign-ins made there stay for later threads, and
@@ -40,6 +41,13 @@ to it: turn the option on at `chrome://inspect/#remote-debugging`, or start the
 browser with `--remote-debugging-port` and enter that port in **Browser debug
 port** on the desktop app. Otherwise obu starts your browser on a copy of your
 profile. Tabs the agent opened close when you archive or delete its thread.
+
+## Screenshots
+
+Ask for a screenshot as a file and the agent saves a PNG where you say: at a
+size you name, such as 1920×1080 (or twice that for a sharper image), or of the
+whole page. In the Browser panel the page takes that size for the capture only;
+the tab's own size setting does not change.
 
 ## What agents can reach
 

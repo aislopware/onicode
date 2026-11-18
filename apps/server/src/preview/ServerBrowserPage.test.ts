@@ -18,6 +18,7 @@ import {
   vi,
 } from "vite-plus/test";
 
+import { decodePng } from "./pngTiles.ts";
 import * as ServerBrowserPage from "./ServerBrowserPage.ts";
 import { SessionControl } from "./SessionControl.ts";
 
@@ -685,6 +686,46 @@ describe("server browser snapshot screenshot", () => {
       metadataSize: { width: 1280, height: 800 },
       colors: ["blue", "red", "red"],
     });
+  });
+
+  it("joins the tiles of a region larger than a desktop page paints into the same pixels", async () => {
+    const page = await context.newPage();
+    await page.setContent(halves(""));
+    const cdp = await context.newCDPSession(page);
+    const params = {
+      format: "png",
+      clip: { x: 320, y: 200, width: 640, height: 400, scale: 1 },
+    } as const;
+    const rgb = (data: string) => {
+      const image = decodePng(Buffer.from(data, "base64"));
+      const size = [image.width, image.height];
+      if (image.channels === 3) return { size, pixels: image.data };
+      return { size, pixels: Buffer.from(image.data.filter((_, index) => index % 4 !== 3)) };
+    };
+    const send = vi.spyOn(cdp, "send");
+
+    const painted = async () => ({ width: 500, height: 300 });
+    const joined = await ServerBrowserPage.captureDesktopPage(cdp, params, painted, () => {});
+    const tiles = send.mock.calls.filter(([method]) => method === "Page.captureScreenshot");
+    const whole = await cdp.send("Page.captureScreenshot", params);
+
+    expect(tiles).toHaveLength(9);
+    expect(rgb(joined.data).size).toEqual([1280, 800]);
+    expect(rgb(joined.data).pixels.equals(rgb(whole.data).pixels)).toBe(true);
+    // A region whose pixels the server cannot hold whole is refused before any tile is taken.
+    await expect(
+      ServerBrowserPage.captureDesktopPage(
+        cdp,
+        { format: "png", clip: { x: 0, y: 0, width: 8192, height: 8192, scale: 1 } },
+        painted,
+        () => {},
+      ),
+    ).rejects.toThrow("at most 40 megapixels");
+    // A reply the driver's connection would close on is refused, not sent.
+    expect(ServerBrowserPage.carried(joined, joined.data.length)).toBe(joined);
+    expect(() => ServerBrowserPage.carried(joined, joined.data.length - 1)).toThrow(
+      "more than the driver's connection carries",
+    );
   });
 
   it("records the destination of a finite entrance animation without waiting on infinite ones", async () => {

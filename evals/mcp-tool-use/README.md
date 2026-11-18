@@ -270,6 +270,64 @@ Fidelity limits:
 - **Shared framing.** GPT gets the same Claude Code CLAUDE.md header in its context, so on Codex the cases check the worlds and text rather than reproduce Codex's own AGENTS.md loading.
 - **Out of scope.** Prior turns are synthetic, so the seeded resume and hCaptcha histories are not native resume. Native subagents are not covered.
 
+## Browser driver cases
+
+`cases/browser-driver.ndjson` checks that an agent with obu's `browser` tools does its browser work with them and starts no browser of its own. The bad cases come from the maintainers' 2026-11 field review: three days of Claude threads that listed the `browser` tools, where requested screenshots, blocked fetches and delegated checks went to a headless Chrome, a cached Playwright shell or a Playwright script. Prompts, files and pages are authored Acme data.
+
+| Case                                 | Kind    | What it checks                                                                                         |
+| ------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------ |
+| bd-look-on-web                       | bad     | "How does it look on web?" after the agent's own edit: a `browser` tool, no launched browser.          |
+| bd-deck-slides-to-png                | bad     | Six slides of a local HTML deck as 1920x1080 PNGs: `vision` writes them. The panel refuses `file://`.  |
+| bd-deck-slides-to-png-isolated       | bad     | The same export where the driver runs its own Chrome, which opens the file directly.                   |
+| bd-full-page-reference               | bad     | A full-page PNG of a public page at 1440 wide: `vision`, not a Playwright `fullPage` script.           |
+| bd-child-research-fetch-blocked      | bad     | A research child whose WebFetch and curl meet a bot challenge reads the page with the driver.          |
+| bd-child-brief-forbids-users-browser | bad     | A brief forbids the user's own browser: the child's panel tab is not that, so it takes the screenshot. |
+| bd-guard-unasked-edit                | guard   | A styling edit nobody asked to check: no browser call of any kind.                                     |
+| bd-guard-signed-in-dashboard         | guard   | The user names playwriter and their signed-in Chrome: playwriter, no driver call.                      |
+| bd-guard-desktop-debug-port          | guard   | An Electron dev app the project drives over its documented debug port: that script, no driver call.    |
+| bd-guard-public-page-fetch           | guard   | Public pages a fetch can read stay with web fetch.                                                     |
+| bd-control-repo-e2e                  | control | "Run the e2e suite": the project's own runner, no driver call.                                         |
+
+Bad cases need the named `browser` call, with the page or the capture in its result so an empty `run` does not pass, and no launched browser, graded by the browser routing cases' `shellMustNot` patterns. The screenshot cases also need each file the user asked for in the result of a `vision` or `run` call, at the size asked (a call's `output`). Beyond that they gate on the routing decision, not on a finished task.
+
+Runner support:
+
+- An expected call's `output` is a regex its result must match. A failed call never matches.
+- `world.browserDriver` (`panel` or `isolated`) lists obu's tools as `mcp__browser__*`, adds obu's MCP instructions with Onicode's host note, and for the panel leaves out the page tools obu replaces, as Onicode does.
+- obu is a binary, so its instructions and tool list come from `browser-driver.json`, captured from the release Onicode pins. `run.test.ts` fails when the capture's version is not the pinned one. Refresh it with `pnpm mcp-tool-use:capture-browser-driver <path-to-obu>`.
+- `browserDriver.ts` answers driver calls a case does not mock: a page has the world's `pages` text, the panel refuses a URL that is not http or https with Onicode's own message, and `vision` with `path` names the file it wrote, which the shell simulator then finds. It accepts only the arguments the capture's schema has, so the cases fail on a driver without `path`, `size` and `full`.
+
+From `evals/`:
+
+```sh
+pnpm mcp-tool-use --cases mcp-tool-use/cases/browser-driver.ndjson --model gpt-6.2-sol --shell-model gpt-6.1-terra --samples 3 --out runs/browser-driver
+```
+
+Fidelity limits, beyond those of the browser routing cases:
+
+- **A scripted driver.** Results are text. No page renders, a click changes nothing, a saved PNG exists only as a line the shell simulator is told, and a screenshot result ends with the address of the page it was taken of, which obu's does not.
+- **One capture.** A case replays the tool list of one obu release. A release that renames a tool or an argument needs a new capture before its cases mean anything.
+- **Routing only.** Whether a capture has the right pixels is tested in obu and in `apps/server/src/preview`, not here.
+- **A capture of any page counts.** The scripted driver names the file a `vision` call asked for whether or not the agent opened the page first, so a case does not catch a capture of the wrong page.
+
+### Results
+
+Passing samples, the text and driver before the change → after, 3 samples a case on GPT-6.2 Sol. Before: 17/33. After: 33/33.
+
+| Case                                 | GPT-6.2 Sol   |
+| ------------------------------------ | ------------- |
+| bd-look-on-web                       | 0/3 → 3/3     |
+| bd-deck-slides-to-png                | 0/3 → 3/3     |
+| bd-deck-slides-to-png-isolated       | 0/3 → 3/3     |
+| bd-full-page-reference               | 0/3 → 3/3     |
+| bd-child-research-fetch-blocked      | 2/3 → 3/3     |
+| bd-child-brief-forbids-users-browser | 0/3 → 3/3     |
+| guards and control                   | 15/15 → 15/15 |
+
+Smaller Claude models are sensitive to the wording of the first browser bullet. In real Onicode turns on Claude Haiku 5.5, exporting a local deck's slides as PNG files went through the driver in 7 of 7 turns with one wording, in 0 of 4 with a rewording that meant the same, and in 6 of 7 with the current one. After an edit to the browser bullets, run `bd-deck-slides-to-png` with `--model claude-haiku-5-5` as well.
+
+A first draft of the text said the agent's browser was "never" the user's own. GPT-6.2 Sol then refused playwriter in `bd-guard-signed-in-dashboard` (0/3); the shipped wording passes 3/3.
+
 ## File links cases
 
 `cases/file-links.ndjson` checks the file references in an agent's final answer. Chat turns every file-shaped Markdown link and inline code span into a pill, resolves it against the thread's cwd, and opens that path. `expect.fileLinks` replays the final answer through the same shared resolver (`file-link-grading.ts`) and fails on any pill that lands on no `world.files` entry, except a bare basename that the client's on-click lookup finds exactly once. `minWorking` sets how many working pills the answer needs, so an answer that cites no files cannot pass. Paths outside the thread cwd, `/home` and `/Users` are ignored.
@@ -294,6 +352,7 @@ After the change, the first reference to a file is an absolute link. The remaini
 - `packages/provider-core/src/server/runtimeInstructions.ts`
 - `packages/provider-core/src/server/orchestrationInstructions.ts`
 - `apps/server/src/provider/CodexDeveloperInstructions.ts`
+- `apps/server/src/browserUse/BrowserUseService.ts` (the host notes obu passes on)
 - `apps/server/src/mcp/toolkits/*/tools.ts` (tool descriptions)
 - `packages/contracts/src/*Mcp.ts` (parameter descriptions and result text)
 

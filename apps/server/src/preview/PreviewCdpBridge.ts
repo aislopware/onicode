@@ -25,6 +25,8 @@ import {
   cdpErrorMessage,
   driverTargetId,
   isPanelUrl,
+  PANEL_URL_REQUIRED,
+  pageCommandParams,
   routePageCommand,
 } from "./previewCdpPolicy.ts";
 import * as ServerBrowser from "./ServerBrowser.ts";
@@ -90,7 +92,6 @@ const HOST = "127.0.0.1";
 const ENDPOINT_PATH = /^\/k\/([A-Za-z0-9_-]+)(\/.*)$/;
 const BROWSER_SOCKET = "/devtools/browser/onicode";
 const PAGE_SOCKET = "/devtools/page/";
-const PANEL_URL_REQUIRED = "The Browser panel opens http and https pages only.";
 const textDecoder = new TextDecoder();
 
 const stringField = (value: unknown, field: string) =>
@@ -244,7 +245,7 @@ const make = Effect.gen(function* () {
           return Effect.fail(new CommandRefused({ message: PANEL_URL_REQUIRED }));
         }
         return Effect.tryPromise({
-          try: () => driver.send(command.method, command.params ?? {}),
+          try: () => driver.send(command.method, pageCommandParams(command.method, command.params)),
           catch: (cause) => new CommandRefused({ message: cdpErrorMessage(cause) }),
         });
       }

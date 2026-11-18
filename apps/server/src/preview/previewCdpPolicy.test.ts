@@ -4,6 +4,7 @@ import {
   cdpErrorMessage,
   driverTargetId,
   isPanelUrl,
+  pageCommandParams,
   routePageCommand,
 } from "./previewCdpPolicy.ts";
 
@@ -41,6 +42,16 @@ it("opens web pages and a driver's blank start page, nothing else", () => {
       isPanelUrl,
     ),
   ).toEqual([]);
+});
+
+it("captures the page, never the window a tab sits in", () => {
+  const clip = { x: 0, y: 0, width: 800, height: 600, scale: 1 };
+  expect(
+    pageCommandParams("Page.captureScreenshot", { format: "png", clip, fromSurface: false }),
+  ).toEqual({ format: "png", clip });
+  expect(pageCommandParams("Runtime.evaluate", { fromSurface: false })).toEqual({
+    fromSurface: false,
+  });
 });
 
 it("names a tab with an id obu accepts as a file name, the same every time", () => {

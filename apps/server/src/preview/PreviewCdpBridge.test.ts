@@ -168,7 +168,10 @@ it.live("serves a thread's panel tabs as a debug endpoint only its driver can re
       });
       expect(yield* page.call(4, "Page.navigate", { url: "file:///etc/passwd" })).toMatchObject({
         id: 4,
-        error: { message: "The Browser panel opens http and https pages only." },
+        error: {
+          message:
+            "The Browser panel opens http and https pages only. To open a local file, serve its folder over http, as with `python3 -m http.server`, and open that address.",
+        },
       });
       expect(yield* page.call(5, "Target.getTargets")).toMatchObject({
         id: 5,

@@ -25,6 +25,7 @@ import * as Schema from "effect/Schema";
 import type { CDPSession, ConsoleMessage, Frame, Locator, Page } from "playwright-core";
 import * as NodeCrypto from "node:crypto";
 import * as NodeUtil from "node:util";
+import { type CaptureClip, joinTiles, tileClip } from "./pngTiles.ts";
 import { BrowserControlInterrupted } from "./SessionControl.ts";
 
 const isBrowserControlInterrupted = Schema.is(BrowserControlInterrupted);
@@ -549,34 +550,144 @@ const readPageMetrics = async (cdp: CDPSession) => {
   );
 };
 
+// Hidden native guests can leave CDP captures pending forever. This deadline also
+// releases a viewer's still-capture lock, which an agent snapshot may be waiting for.
+const NO_FRAMES =
+  "The browser is not producing screenshot frames. For a desktop tab the Onicode window is hidden: close the tab and open the page in a new one, which captures without the window.";
+
+/** What a capture of a page that paints nothing fails with. */
+export const noFrames = (message = NO_FRAMES) =>
+  new ServerBrowserOperationError({ tag: "PreviewAutomationExecutionError", message });
+
+/** `onExpired` is handed a promise that settles once the abandoned work is answered after all. */
+const withinFrameDeadline = <A>(
+  capture: Promise<A>,
+  onExpired?: (answered: Promise<void>) => void,
+  message = NO_FRAMES,
+) => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      onExpired?.(capture.then(constVoid, constVoid));
+      reject(noFrames(message));
+    }, SCREENSHOT_TIMEOUT_MS);
+  });
+  return Promise.race([capture, expired]).finally(() => clearTimeout(timer));
+};
+
+// A page whose script is busy answers no read. A capture waits its turn behind this one.
+const measuredForCapture = (cdp: CDPSession) =>
+  withinFrameDeadline(
+    readPageMetrics(cdp),
+    undefined,
+    "The page did not answer in time to be measured for a capture. Try again once it is idle.",
+  );
+
 // Never pass a clip scale: Chromium mirrors the top-left of the page into a `backdrop-filter`
 // in any capture it shrinks.
 export const captureViewport = async (
   cdp: CDPSession,
   options: { readonly format: "png" | "jpeg"; readonly quality?: number },
 ) => {
-  const capture = cdp.send("Page.captureScreenshot", {
-    format: options.format,
-    ...(options.quality === undefined ? {} : { quality: options.quality }),
-  });
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () =>
-        reject(
-          new ServerBrowserOperationError({
-            tag: "PreviewAutomationExecutionError",
-            message:
-              "The browser is not producing screenshot frames. For a desktop tab, show or restore the Onicode window and try again.",
-          }),
-        ),
-      SCREENSHOT_TIMEOUT_MS,
-    );
-  });
-  // Hidden native guests can leave CDP captures pending forever. This deadline also
-  // releases a viewer's still-capture lock, which an agent snapshot may be waiting for.
-  const { data } = await Promise.race([capture, expired]).finally(() => clearTimeout(timer));
+  const { data } = await withinFrameDeadline(
+    cdp.send("Page.captureScreenshot", {
+      format: options.format,
+      ...(options.quality === undefined ? {} : { quality: options.quality }),
+    }),
+  );
   return data;
+};
+
+/** Whether a desktop page answers a capture. In a hidden or covered window it paints nothing. */
+export const paints = (cdp: CDPSession) =>
+  captureViewport(cdp, { format: "jpeg", quality: 1 }).then(
+    () => true,
+    () => false,
+  );
+
+// The app's smallest window, which every desktop page paints at least.
+const SMALLEST_PAINTED = { width: 400, height: 360 };
+
+/**
+ * How much of a desktop page Chromium paints, in display-independent pixels. Fails when the page
+ * paints nothing, as in a hidden window: no capture of it would answer either.
+ */
+export const paintedSize = async (cdp: CDPSession) => {
+  const page = await measuredForCapture(cdp);
+  const shown = pngSize(await captureViewport(cdp, { format: "png" }));
+  const display = page.ratio / page.zoom;
+  return {
+    width: Math.max(SMALLEST_PAINTED.width, Math.floor(shown.width / display)),
+    height: Math.max(SMALLEST_PAINTED.height, Math.floor(shown.height / display)),
+  };
+};
+
+const finite = (value: unknown) =>
+  typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const clipOf = (value: unknown): CaptureClip | null => {
+  const clip =
+    typeof value === "object" && value !== null ? (value as Readonly<Record<string, unknown>>) : {};
+  const x = finite(clip.x);
+  const y = finite(clip.y);
+  const width = finite(clip.width);
+  const height = finite(clip.height);
+  const scale = clip.scale === undefined ? 1 : finite(clip.scale);
+  if (x === null || y === null || width === null || height === null || scale === null) return null;
+  return width > 0 && height > 0 && scale > 0 ? { x, y, width, height, scale } : null;
+};
+
+/**
+ * A driver's `Page.captureScreenshot` on a desktop page. A clip larger than the page paints is
+ * captured in tiles and joined, since Chromium repeats the page across a capture it cannot paint.
+ * `onExpired` is told of a capture that missed its deadline: when Chromium answers it after all,
+ * it puts back the emulation it saved when that capture began.
+ */
+export const captureDesktopPage = async (
+  cdp: CDPSession,
+  params: Readonly<Record<string, unknown>>,
+  painted: () => Promise<{ readonly width: number; readonly height: number }>,
+  onExpired: (answered: Promise<void>) => void,
+) => {
+  const send = (clip?: CaptureClip) =>
+    withinFrameDeadline(
+      cdp.send("Page.captureScreenshot", { ...params, ...(clip ? { format: "png", clip } : {}) }),
+      onExpired,
+    );
+  const clip = clipOf(params.clip);
+  if (clip === null) return send();
+  const page = await measuredForCapture(cdp);
+  const plan = tileClip(clip, page.ratio / page.zoom, await painted());
+  if (plan.tiles.length === 1) return send();
+  if (params.format !== undefined && params.format !== "png") {
+    throw new Error("The Browser panel captures a region this large as PNG only.");
+  }
+  const tiles: Array<{ left: number; top: number; png: Buffer }> = [];
+  // As large as its tiles came back: how Chromium rounds a clip's last part pixel is its own.
+  let width = 0;
+  let height = 0;
+  for (const tile of plan.tiles) {
+    const { data } = await send(tile.clip);
+    const size = pngSize(data);
+    width = Math.max(width, tile.left + size.width);
+    height = Math.max(height, tile.top + size.height);
+    tiles.push({ left: tile.left, top: tile.top, png: Buffer.from(data, "base64") });
+  }
+  return { data: (await joinTiles(width, height, tiles)).toString("base64") };
+};
+
+// obu closes its connection on a CDP message above 224 MiB, and a capture travels in base64.
+const MAX_CAPTURE_REPLY_CHARS = 215 * 1024 * 1024;
+
+/** A capture a driver's connection carries, refused when its reply would close that connection. */
+export const carried = <A extends { readonly data: string }>(
+  shot: A,
+  limit = MAX_CAPTURE_REPLY_CHARS,
+) => {
+  if (shot.data.length <= limit) return shot;
+  throw new Error(
+    `The capture is ${Math.round((shot.data.length * 0.75) / 1_000_000)} MB as an image, more than the driver's connection carries. Capture a smaller size or scale.`,
+  );
 };
 
 export const captureFinalRecordingFrame = (cdp: CDPSession, quality: number) =>

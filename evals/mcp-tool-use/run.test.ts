@@ -43,6 +43,10 @@ import {
   withDevices,
 } from "./run.ts";
 import { briefRoute, gradeDevice, shellInvocations } from "./device-grading.ts";
+import { browserDriverCapture } from "./browserDriver.ts";
+import { VERSION as BROWSER_DRIVER_VERSION } from "../../apps/server/src/browserUse/BrowserUseDriver.ts";
+import { PANEL_NOTE } from "../../apps/server/src/browserUse/BrowserUseService.ts";
+import { PANEL_URL_REQUIRED } from "../../apps/server/src/preview/previewCdpPolicy.ts";
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
 
 it("grades Codex shell and subagent calls with the shared rules", () => {
@@ -348,7 +352,10 @@ const failed = (expect: Parameters<typeof gradeSample>[0], run: SampleRun) =>
 
 it("passes a good run and names every rule a bad run breaks", () => {
   const expect = {
-    calls: [{ tool: "delegate_task", args: { task: "~FINDING", "target.options": "~max" } }],
+    calls: [
+      { tool: "delegate_task", args: { task: "~FINDING", "target.options": "~max" } },
+      { tool: "vision|run", output: "saved to \\S+/slide-1\\.png" },
+    ],
     callsMustNot: [{ tool: "delegate_task", args: { runtimeMode: "approval-required" } }],
     notCalls: ["oni_thread_send"],
     order: ["orchestrator_capabilities", "delegate_task"],
@@ -364,6 +371,7 @@ it("passes a good run and names every rule a bad run breaks", () => {
   const good: SampleRun = {
     calls: [
       { step: 0, tool: "orchestrator_capabilities", input: {} },
+      { step: 0, tool: "vision", input: {}, output: "screenshot saved to /out/slide-1.png" },
       {
         step: 1,
         tool: "delegate_task",
@@ -384,14 +392,29 @@ it("passes a good run and names every rule a bad run breaks", () => {
         input: { task: "Review again", runtimeMode: "approval-required" },
       },
       { step: 1, tool: "oni_thread_send", input: {} },
-      { step: 2, tool: "Monitor", input: { command: "sleep 60" } },
+      // Another tool's result is not the capture's, whatever it prints.
+      {
+        step: 2,
+        tool: "Monitor",
+        input: { command: "sleep 60" },
+        output: "saved to /o/slide-1.png",
+      },
       { step: 3, tool: "task_status", input: { taskId: "task-1" } },
+      // A call that failed wrote nothing, whatever its text says.
+      {
+        step: 4,
+        tool: "vision",
+        input: {},
+        failed: true,
+        output: "saved to /out/slide-1.png",
+      },
     ],
     text: "Paste your token here.",
     stopReason: "max_steps",
   };
   assert.deepEqual(failed(expect, bad), [
     'calls delegate_task {"task":"~FINDING","target.options":"~max"}',
+    "calls vision|run -> /saved to \\S+/slide-1\\.png/",
     'callsMustNot delegate_task {"runtimeMode":"approval-required"}',
     "notCalls oni_thread_send",
     "order orchestrator_capabilities > delegate_task",
@@ -992,6 +1015,66 @@ it.effect("saves a new secret file for each request and tells the shell simulato
       input: {},
     });
     assert.deepEqual(declined.secretFiles, []);
+  }).pipe(Effect.provide(FetchHttpClient.layer)),
+);
+
+it.effect("gives a driver world obu's own tools and answers them as the panel does", () =>
+  Effect.gen(function* () {
+    // The capture is the release Onicode installs: refresh it with the pin.
+    assert.equal(browserDriverCapture.version, BROWSER_DRIVER_VERSION);
+    const base = buildBase(template, {
+      model: "claude-sonnet-5-5",
+      keepUserInstructions: false,
+      browserDriver: "panel",
+    });
+    const names = base.onicode.map((tool) => tool.name);
+    assert.includeMembers(names, [
+      "mcp__browser__act",
+      "mcp__browser__vision",
+      "mcp__onicode__preview_open",
+    ]);
+    // The driver replaces the panel's own page tools.
+    assert.notInclude(names, "mcp__onicode__preview_snapshot");
+    assert.include(String(base.system.at(-1)?.text), `## browser\n`);
+    assert.include(String(base.system.at(-1)?.text), `HOST: ${PANEL_NOTE}`);
+
+    const sample = makeSample(
+      { ...childCase, setup: { role: "top", world: { browserDriver: "panel" } } },
+      base,
+    );
+    sample.tools.push({ name: "mcp__browser__vision" });
+    const config = {
+      apiKey: "",
+      model: "claude-sonnet-5-5",
+      effort: "high",
+      maxSteps: 6,
+      shellModel: "claude-haiku-5-5",
+    } as const;
+    const vision = (id: string, input: Readonly<Record<string, unknown>>) =>
+      answerToolCall(sample, config, {
+        type: "tool_use",
+        id,
+        name: "mcp__browser__vision",
+        input,
+      });
+    const refused = yield* vision("a", { url: "file:///home/user/app/deck/index.html" });
+    assert.isTrue(refused.is_error);
+    assert.include(String(refused.content), PANEL_URL_REQUIRED);
+    const saved = yield* vision("b", {
+      url: "http://localhost:8000/?slide=2",
+      path: "deck/out/slide-2.png",
+      size: "1920x1080@2",
+    });
+    assert.include(
+      String(saved.content),
+      "screenshot saved to /home/user/app/deck/out/slide-2.png (3840x2160 px",
+    );
+    const call = { tool: "Bash", input: { command: "file deck/out/slide-2.png" } };
+    const [machine] = shellRequest(sample, call, "claude-haiku-5-5").messages[0]?.content ?? [];
+    assert.include(
+      machine?.text,
+      "/home/user/app/deck/out/slide-2.png (PNG image data, 3840 x 2160)",
+    );
   }).pipe(Effect.provide(FetchHttpClient.layer)),
 );
 
