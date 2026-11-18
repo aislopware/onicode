@@ -2313,6 +2313,38 @@ describe("UsageService", () => {
     }),
   );
 
+  it.effect("reports a Cursor sign-in error that comes back with another account", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      yield* TestClock.setTime(CURSOR_NOW);
+      const cursor = makeFakeCursor();
+      cursor.state.events = [{ timestampMs: CURSOR_NOW - 3 * HOUR_MS, outputTokens: 5 }];
+      const large = largeCursorAccount(cursor);
+      const signIn = "Sign in to Cursor again to read account usage.";
+      // The session renews to another account, which then refuses the last read of the scan.
+      const read: CursorAccountReader.CursorAccountReader["Service"]["read"] = (...args) =>
+        large
+          .read(...args)
+          .pipe(
+            Effect.map((result) =>
+              large.reads.length === CURSOR_READS_PER_AWAITED_SCAN
+                ? { accountKey: "account-b", records: [], missing: false, error: signIn }
+                : result,
+            ),
+          );
+      yield* Effect.gen(function* () {
+        const accounts = yield* makeCursorAccounts(read);
+        const sources = yield* accounts.scan(cursorScanInput(0, true));
+        assert.strictEqual(large.reads.length, CURSOR_READS_PER_AWAITED_SCAN);
+        assert.deepStrictEqual(sources, [{ dir: "cursor-account", files: null, message: signIn }]);
+      }).pipe(
+        Effect.provide(
+          layerService({ prefix: "usage-service-cursor-switch-sign-in", home, settings }),
+        ),
+      );
+    }),
+  );
+
   it.effect("waits out a Cursor failure from the time it happened, not the refresh start", () =>
     Effect.gen(function* () {
       const { settings, home } = yield* setup;
