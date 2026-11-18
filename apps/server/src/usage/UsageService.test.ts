@@ -206,7 +206,8 @@ const cursorScanInput = (retentionCutoffMs: number, awaitRefresh: boolean) => ({
 });
 
 /** An awaited scan runs a refresh and at most one retry, each capped at eight reads. */
-const CURSOR_READS_PER_AWAITED_SCAN = 16;
+const CURSOR_READS_PER_REFRESH = 8;
+const CURSOR_READS_PER_AWAITED_SCAN = 2 * CURSOR_READS_PER_REFRESH;
 
 const layerService = (input: {
   readonly prefix: string;
@@ -2181,8 +2182,17 @@ describe("UsageService", () => {
           yield* TestClock.adjust("2 minutes");
           sources = yield* accounts.scan(cursorScanInput(cutoff, true));
           assert.isAtMost(large.reads.length - readsBefore, CURSOR_READS_PER_AWAITED_SCAN);
-          // The first scan already finds the width a read can finish, even from the epoch.
-          if (scans === 0) assert.isNotEmpty(cursor.state.calls);
+          // The first refresh already finds the width a read can finish, even from the epoch.
+          if (scans === 0) {
+            const firstFinished = cursor.state.calls[0];
+            assert.isBelow(
+              large.reads.findIndex(
+                (read) =>
+                  read.sinceMs === firstFinished?.sinceMs && read.untilMs === firstFinished.untilMs,
+              ),
+              CURSOR_READS_PER_REFRESH,
+            );
+          }
           if (!restarted && large.reads.length >= CURSOR_READS_PER_AWAITED_SCAN) {
             restarted = true;
             // A restart resumes where the last refresh stopped, at the span it learned, and a
@@ -2259,6 +2269,44 @@ describe("UsageService", () => {
       }).pipe(
         Effect.provide(
           layerService({ prefix: "usage-service-cursor-account-change", home, settings }),
+        ),
+      );
+    }),
+  );
+
+  it.effect("reports a Cursor account still loading when its last read finds another account", () =>
+    Effect.gen(function* () {
+      const { settings, home } = yield* setup;
+      yield* TestClock.setTime(CURSOR_NOW);
+      const cursor = makeFakeCursor();
+      cursor.state.events = [{ timestampMs: CURSOR_NOW - 3 * HOUR_MS, outputTokens: 5 }];
+      const large = largeCursorAccount(cursor);
+      // The session renews to another account on the last read the awaited scan may make.
+      const read: CursorAccountReader.CursorAccountReader["Service"]["read"] = (...args) =>
+        large
+          .read(...args)
+          .pipe(
+            Effect.map((result) =>
+              large.reads.length === CURSOR_READS_PER_AWAITED_SCAN
+                ? { ...result, accountKey: "account-b" }
+                : result,
+            ),
+          );
+      yield* Effect.gen(function* () {
+        const accounts = yield* makeCursorAccounts(read);
+        const sources = yield* accounts.scan(cursorScanInput(0, true));
+        assert.strictEqual(large.reads.length, CURSOR_READS_PER_AWAITED_SCAN);
+        assert.deepStrictEqual(sources, [
+          {
+            dir: "cursor-account",
+            files: [],
+            status: "partial",
+            message: "Older Cursor account usage is still loading.",
+          },
+        ]);
+      }).pipe(
+        Effect.provide(
+          layerService({ prefix: "usage-service-cursor-last-read-switch", home, settings }),
         ),
       );
     }),

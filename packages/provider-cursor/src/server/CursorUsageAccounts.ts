@@ -249,9 +249,12 @@ const make = Effect.gen(function* () {
     if (cache === undefined) {
       return {
         dir: "cursor-account",
+        // A refresh whose last read found another account ends with neither a cache nor a failure.
         ...(refreshing
           ? { files: [], refreshing: true }
-          : { files: null, message: failure?.error ?? CURSOR_ACCOUNT_READ_ERROR }),
+          : failure === undefined
+            ? { files: [], status: "partial", message: CURSOR_ACCOUNT_LOADING }
+            : { files: null, message: failure.error ?? CURSOR_ACCOUNT_READ_ERROR }),
       } satisfies ProviderUsageScan;
     }
     // Account history spans machines; a stable fingerprint prevents duplicate environment counts.
