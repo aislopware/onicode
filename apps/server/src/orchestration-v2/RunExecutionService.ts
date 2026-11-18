@@ -1927,6 +1927,7 @@ export const layer: Layer.Layer<
               return yield* shouldStopProviderEventIngestion;
             }),
             Ref.get(rootTerminalSeen).pipe(Effect.map((seen) => !seen)),
+            [input.run.threadId],
           )
           .pipe(
             Effect.ensuring(closeIdleFlush),

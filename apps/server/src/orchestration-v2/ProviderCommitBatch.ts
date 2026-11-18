@@ -314,6 +314,7 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
     process: (event: A) => Effect.Effect<void, E2, R2>,
     after: Effect.Effect<boolean, E2, R2>,
     canBatch: Effect.Effect<boolean, never, R2> = Effect.succeed(true),
+    ownThreadIds: ReadonlyArray<string> = [],
   ) {
     if (!enabled)
       return yield* source.pipe(
@@ -328,8 +329,8 @@ export const make = Effect.fn("ProviderCommitBatch.make")(function* (
       Stream.concat(Stream.succeed({ _tag: "End" as const })),
     );
     let resume: Effect.Effect<void> = Effect.void;
-    // Threads this stream has queued snapshots for; its controls read them.
-    const threadIds = new Set<string>();
+    // Its own threads and those it has queued snapshots for; its controls read them.
+    const threadIds = new Set(ownThreadIds);
     // Replies run in order after this stream's earlier snapshots. EOF, failures and controls also
     // wait for the other work queued before them that they may read.
     yield* signals.pipe(
