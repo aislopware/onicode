@@ -28,9 +28,13 @@ describe("backgroundTaskLaunch", () => {
         item("command_execution", script),
       ]),
     ).toBe(script);
-    // A task published before its launch was linked still names the tool call.
+    // A task published before its launch was linked still names the tool call, which its
+    // approval card shares.
     expect(
-      launch({ ...monitor, nativeItemId: "toolu_1" }, [item("dynamic_tool", { command: script })]),
+      launch({ ...monitor, nativeItemId: "toolu_1" }, [
+        item("dynamic_tool", { command: script }),
+        { ...item("dynamic_tool", null), type: "approval_request" } as never,
+      ]),
     ).toBe(script);
     expect(launch(command, [])).toBe(preview);
     // Only a Monitor's dynamic tool input is a shell command.
