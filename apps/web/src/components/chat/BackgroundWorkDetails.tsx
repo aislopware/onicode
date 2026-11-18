@@ -17,6 +17,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "../ui/dialog";
+import { backgroundTaskCommand } from "./BackgroundWorkDetails.logic";
 import { CommandOutputPanel, useCommandOutputStreaming } from "./CommandOutputPanel";
 import { ShellCommandBlock } from "./ShellCommandBlock";
 
@@ -63,9 +64,7 @@ export function BackgroundWorkDetails(props: {
                   ? (candidate.nativeItemRef?.nativeId || candidate.id) === task.taskId
                   : candidate.id === task.itemId,
               );
-              // The task carries only a preview; a loaded timeline item has the full command.
-              const command =
-                (item?.type === "command_execution" ? item.input : undefined) ?? task.command;
+              const command = backgroundTaskCommand(task, item);
               const description = task.description?.trim();
               const title =
                 description && description !== backgroundWorkTextPreview(command?.trim() ?? "")

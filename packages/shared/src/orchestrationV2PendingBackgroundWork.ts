@@ -308,7 +308,10 @@ export function derivePendingBackgroundWork(input: {
         ...(task.kind === "subagent"
           ? { providerInstanceId: providerThread.providerInstanceId }
           : {}),
-        ...(description === undefined || description.length === 0 ? {} : { description }),
+        ...(task.command === undefined ? {} : { command: backgroundWorkTextPreview(task.command) }),
+        ...(description === undefined || description.length === 0
+          ? {}
+          : { description: backgroundWorkTextPreview(description) }),
       });
     }
   }

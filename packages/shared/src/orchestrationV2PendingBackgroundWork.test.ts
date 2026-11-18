@@ -152,9 +152,17 @@ describe("derivePendingBackgroundWork", () => {
   });
 
   it("includes nonterminal turn items and excludes completed ones", () => {
+    const script = `python3 - <<'EOF'\n${"print('step')\n".repeat(2_000)}EOF`;
     const tasks = derivePendingBackgroundWork({
       latestRun: { id: "run-1" as never, ordinal: 1, status: "completed" },
-      providerThreads: [{ id: "pt-1" as never }],
+      providerThreads: [
+        {
+          id: "pt-1" as never,
+          pendingBackgroundTasks: [
+            { taskId: "roster", kind: "command", description: script, command: script },
+          ],
+        },
+      ],
       turnItems: [
         {
           id: "item-1" as never,
@@ -182,10 +190,13 @@ describe("derivePendingBackgroundWork", () => {
         },
       ],
     });
-    const [command, subagent] = tasks;
+    const [roster, command, subagent] = tasks;
     expect(command).toEqual({ taskId: "cmd-1", description: "npm test", kind: "command" });
-    // Shell rows reach every thread list, so a long prompt is cut to a preview.
-    expect(subagent?.description?.length).toBeLessThanOrEqual(1_000);
+    // Shell rows reach every thread list, so long commands and prompts are cut to a preview.
+    for (const text of [roster?.description, roster?.command, subagent?.description]) {
+      expect(text?.length).toBeLessThanOrEqual(1_000);
+    }
+    expect(roster?.command?.startsWith("python3 - <<'EOF'\nprint('step')")).toBe(true);
     expect(subagent?.description?.startsWith("Review this diff:\n+ line")).toBe(true);
   });
 
