@@ -17,7 +17,7 @@ import {
   type RightPanelSurface,
 } from "~/rightPanelStore";
 import { Button } from "~/components/ui/button";
-import { DiscoveryList } from "~/components/ui/discovery-list";
+import { DiscoveryList, DiscoveryListRow } from "~/components/ui/discovery-list";
 import { Dialog } from "~/components/ui/dialog";
 import { Popover, PopoverPopup, PopoverTrigger } from "~/components/ui/popover";
 import { WizardPopup } from "~/components/ui/wizard";
@@ -325,44 +325,46 @@ export function DevicePanel(props: {
                         </div>
                         <DiscoveryList>
                           {group.devices.map((device) => (
-                            <div
+                            <DiscoveryListRow
                               key={deviceKey(device)}
-                              className="flex items-center gap-3 px-3 py-3"
-                            >
-                              <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border">
-                                <Smartphone className="size-4" />
-                              </span>
-                              <div className="flex min-w-0 flex-1 flex-col">
-                                <span className="truncate text-sm font-medium text-foreground">
-                                  {device.name}
+                              disabled={pendingDeviceKey !== null}
+                              aria-label={
+                                device.booted
+                                  ? gt("Open {name}", { name: device.name })
+                                  : gt("Start {name}", { name: device.name })
+                              }
+                              onClick={() => void selectDevice(deviceKey(device))}
+                              icon={
+                                <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border">
+                                  <Smartphone className="size-4" />
                                 </span>
-                                <span className="truncate text-xs text-muted-foreground">
-                                  {`${state.hosts.find((host) => host.id === device.hostId)?.label} · ${device.version} · ${device.booted ? gt("Running", { $context: "device state" }) : gt("Stopped", { $context: "device state" })}`}
+                              }
+                              title={device.name}
+                              // The host says something only when there is more than one, and a
+                              // stopped device is the ordinary case.
+                              description={[
+                                state.hosts.length > 1
+                                  ? state.hosts.find((host) => host.id === device.hostId)?.label
+                                  : undefined,
+                                device.version,
+                                device.booted
+                                  ? gt("Running", { $context: "device state" })
+                                  : undefined,
+                              ]
+                                .filter((part) => part !== undefined)
+                                .join(" · ")}
+                              action={
+                                <span className="grid size-6 shrink-0 place-items-center text-muted-foreground/70 group-hover:text-foreground [&>svg]:size-4">
+                                  {pendingDeviceKey === deviceKey(device) ? (
+                                    <Spinner size="xs" />
+                                  ) : device.booted ? (
+                                    <ArrowUpRight />
+                                  ) : (
+                                    <Play />
+                                  )}
                                 </span>
-                              </div>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={pendingDeviceKey !== null}
-                                aria-label={
-                                  device.booted
-                                    ? gt("Open {name}", { name: device.name })
-                                    : gt("Start {name}", { name: device.name })
-                                }
-                                onClick={() => void selectDevice(deviceKey(device))}
-                              >
-                                {pendingDeviceKey === deviceKey(device) ? (
-                                  <Spinner size="xs" />
-                                ) : device.booted ? (
-                                  <ArrowUpRight />
-                                ) : (
-                                  <Play />
-                                )}
-                                {device.booted
-                                  ? gt("Open", { $context: "verb, opens a running device" })
-                                  : gt("Start", { $context: "verb, boots a device" })}
-                              </Button>
-                            </div>
+                              }
+                            />
                           ))}
                         </DiscoveryList>
                       </section>
