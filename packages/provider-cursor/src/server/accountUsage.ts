@@ -40,7 +40,7 @@ export interface CursorAccountUsageReadResult {
   readonly records: readonly UsageRecord[];
   readonly missing: boolean;
   readonly error: string | null;
-  /** Pages kept answering but the whole read ran out of time or pages: a narrower range may finish. */
+  /** The read ran out of time past its first page, or out of pages: a narrower range may finish. */
   readonly rangeTooLarge?: boolean;
 }
 

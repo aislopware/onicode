@@ -42,6 +42,22 @@ export function isCursorCacheFresh(
 /** Wider than the refetch overlap, so a forward read keeps all of it and still moves on. */
 export const CURSOR_MIN_FETCH_SPAN_MS = 2 * REFETCH_OVERLAP_MS;
 
+/**
+ * The span after a read of `widthMs` ran out of time. Such a read costs up to a minute, so narrow
+ * hard and let finished reads widen back. Whole milliseconds: Cursor rejects a fractional date.
+ */
+export function narrowedCursorSpan(widthMs: number) {
+  return Math.max(CURSOR_MIN_FETCH_SPAN_MS, Math.floor(widthMs / 8));
+}
+
+/**
+ * The span after a full-width read finished: doubled, up to half a width that ran out of time.
+ * Narrowing rounds down, so a bound of the failed width itself would probe it again.
+ */
+export function widenedCursorSpan(spanMs: number, failedWidthMs: number) {
+  return spanMs * 2 <= failedWidthMs / 2 ? spanMs * 2 : spanMs;
+}
+
 /** Reads one refresh may make; a refresh that stops short resumes from the cache next time. */
 export const CURSOR_MAX_READS_PER_REFRESH = 8;
 
