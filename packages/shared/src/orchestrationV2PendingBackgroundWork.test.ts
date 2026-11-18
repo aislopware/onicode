@@ -172,9 +172,21 @@ describe("derivePendingBackgroundWork", () => {
           nativeItemRef: { nativeId: "cmd-2" },
           input: "echo done",
         },
+        {
+          id: "item-3" as never,
+          type: "subagent",
+          status: "running",
+          title: null,
+          nativeItemRef: { nativeId: "sub-3" },
+          prompt: `Review this diff:\n${"+ line\n".repeat(10_000)}`,
+        },
       ],
     });
-    expect(tasks).toEqual([{ taskId: "cmd-1", description: "npm test", kind: "command" }]);
+    const [command, subagent] = tasks;
+    expect(command).toEqual({ taskId: "cmd-1", description: "npm test", kind: "command" });
+    // Shell rows reach every thread list, so a long prompt is cut to a preview.
+    expect(subagent?.description?.length).toBeLessThanOrEqual(1_000);
+    expect(subagent?.description?.startsWith("Review this diff:\n+ line")).toBe(true);
   });
 
   it("dedupes roster entries against turn items by native task id", () => {

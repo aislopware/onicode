@@ -13201,6 +13201,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         yield* Queue.offer(harness.sdkMessages, wakeTaskStarted);
         // Claude moves a long foreground command to the background mid-turn.
+        const movedScript = `python3 - <<'EOF'\n${"print('step')\n".repeat(2_000)}EOF`;
         yield* Queue.offer(
           harness.sdkMessages,
           claudeSdkFrame({
@@ -13215,7 +13216,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                   type: "tool_use",
                   id: "toolu_moved_build",
                   name: "Bash",
-                  input: { command: "vp run build" },
+                  input: { command: movedScript },
                 },
               ],
             },
@@ -13231,7 +13232,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             subtype: "task_started",
             task_id: "moved-build",
             tool_use_id: "toolu_moved_build",
-            description: "vp run build",
+            description: movedScript,
             is_backgrounded: false,
             task_type: "local_bash",
             uuid: "00000000-0000-4000-8000-000000000205",
@@ -13245,7 +13246,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             subtype: "background_tasks_changed",
             tasks: [
               { task_id: WAKE_TASK_ID, task_type: "local_bash", description: "Audit" },
-              { task_id: "moved-build", task_type: "local_bash", description: "vp run build" },
+              { task_id: "moved-build", task_type: "local_bash", description: movedScript },
             ],
             uuid: "00000000-0000-4000-8000-000000000206",
             session_id: WAKE_NATIVE_SESSION,
@@ -13282,11 +13283,14 @@ describe("ClaudeAdapterV2 background wake turns", () => {
         );
         assert.equal(movedCommand?.type, "turn_item.updated");
         if (movedCommand?.type !== "turn_item.updated") return;
-        assert.deepInclude(afterStart.at(-1)?.providerThread.pendingBackgroundTasks?.[1], {
-          taskId: "moved-build",
-          command: "vp run build",
-          itemId: movedCommand.turnItem.id,
-        });
+        const moved = afterStart.at(-1)?.providerThread.pendingBackgroundTasks?.[1];
+        assert.deepInclude(moved, { taskId: "moved-build", itemId: movedCommand.turnItem.id });
+        // Every roster publication reaches thread lists; the timeline item keeps the script.
+        assert.deepInclude(movedCommand.turnItem, { input: movedScript });
+        for (const text of [moved?.command, moved?.description]) {
+          assert.isAtMost(text?.length ?? 0, 1_000);
+          assert.isTrue(text?.startsWith("python3 - <<'EOF'\nprint('step')"));
+        }
         yield* harness.offerAndWait(
           claudeSdkFrame({
             type: "system",

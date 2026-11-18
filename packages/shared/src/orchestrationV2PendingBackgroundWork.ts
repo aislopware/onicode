@@ -12,6 +12,18 @@ import * as Predicate from "effect/Predicate";
 
 import { resolveOniMcpToolId } from "./oniMcpToolPresentation.ts";
 
+const BACKGROUND_WORK_TEXT_MAX_CHARS = 1_000;
+
+/**
+ * Pending background work rides every roster update and thread-list row, so a command or
+ * prompt taken from tool input keeps only a preview. The timeline item holds the full text.
+ */
+export function backgroundWorkTextPreview(text: string): string {
+  if (text.length <= BACKGROUND_WORK_TEXT_MAX_CHARS) return text;
+  const cut = text.slice(0, BACKGROUND_WORK_TEXT_MAX_CHARS - 1);
+  return `${/[\uD800-\uDBFF]$/.test(cut) ? cut.slice(0, -1) : cut}…`;
+}
+
 const BACKGROUND_TURN_ITEM_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
   "command_execution",
   "dynamic_tool",
@@ -176,6 +188,11 @@ function isPersistentDynamicToolInput(input: unknown): boolean {
 }
 
 function descriptionFromTurnItem(item: PendingBackgroundWorkTurnItem): string | undefined {
+  const description = fullDescriptionFromTurnItem(item);
+  return description === undefined ? undefined : backgroundWorkTextPreview(description);
+}
+
+function fullDescriptionFromTurnItem(item: PendingBackgroundWorkTurnItem): string | undefined {
   if (typeof item.title === "string" && item.title.trim().length > 0) {
     return item.title.trim();
   }
