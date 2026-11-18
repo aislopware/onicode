@@ -2828,6 +2828,9 @@ export const OrchestrationV2TurnItemJson = Schema.Union([
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
+    // Client caches store wire rows with this schema; see the `OrchestrationV2TurnItem` fields.
+    model: Schema.optionalKey(Schema.String),
+    modelSelection: Schema.optionalKey(ModelSelection),
   }),
   Schema.Struct({
     ...OrchestrationV2TurnItemJsonBaseFields,
