@@ -4,19 +4,20 @@ import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { render } from "../../../test/render";
+import { render, stubGlobal } from "../../../test/render";
 import { ChatMarkdownAssetImage, markdownImageCopy } from "./ChatMarkdownMedia";
 
 // Every evaluation of the URL query is one mint: the first read, then one per refresh.
 const assetQuery = vi.hoisted(() => ({ mints: 0 }));
 vi.mock(import("~/state/assets"), async (original) => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
-  const createUrl = Atom.family((_key: string) =>
+  const createUrl = Atom.family((key: string) =>
     Atom.make(() => {
       assetQuery.mints += 1;
       return AsyncResult.success({
-        relativeUrl:
-          "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
+        relativeUrl: key.includes(".mp4")
+          ? `/asset/mint-${assetQuery.mints}/clip.mp4`
+          : "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7",
         expiresAt: Number.MAX_SAFE_INTEGER,
       });
     }).pipe(Atom.keepAlive),
@@ -84,6 +85,40 @@ describe("ChatMarkdownAssetImage", () => {
     await using screen = await render(<ChatMarkdownAssetImage {...image.props} />);
     await expect.element(screen.getByRole("img", { name: "diagram" })).toBeInTheDocument();
     expect(assetQuery.mints).toBe(2);
+  });
+
+  it("loads a host video's new URL once the workspace changes", async () => {
+    assetQuery.mints = 0;
+    // Never visible, so the player keeps preload="none" and never requests the fake URL.
+    using _observer = stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const video = (workspaceMutationId: string) => (
+      <ChatMarkdownAssetImage
+        environmentId={EnvironmentId.make("environment-1")}
+        resource={{
+          _tag: "media-file",
+          threadId: ThreadId.make("thread-1"),
+          path: "/renders/clip.mp4",
+        }}
+        kind="video"
+        alt="clip"
+        workspaceMutationId={workspaceMutationId}
+      />
+    );
+    await using screen = await render(video("mutation-1"));
+    await expect
+      .element(screen.getByLabelText("clip"))
+      .toHaveAttribute("src", "http://localhost:1/asset/mint-2/clip.mp4");
+
+    await screen.rerender(video("mutation-2"));
+    await expect
+      .element(screen.getByLabelText("clip"))
+      .toHaveAttribute("src", "http://localhost:1/asset/mint-3/clip.mp4");
   });
 });
 

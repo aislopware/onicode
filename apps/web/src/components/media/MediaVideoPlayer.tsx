@@ -56,6 +56,7 @@ export function MediaVideoPlayer({
   const [playing, setPlaying] = useState(false);
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [recovered, setRecovered] = useState(false);
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [preloadedSrc, setPreloadedSrc] = useState<string | null>(null);
   const src = playbackSource?.src ?? latestSrc;
@@ -190,7 +191,15 @@ export function MediaVideoPlayer({
           onError={() => {
             setPlaying(false);
             setPlaybackSource(null);
-            if (latestSrc === null || src === latestSrc) setFailedSrc(src);
+            if (latestSrc !== null && src !== latestSrc) return;
+            // A signed URL dies with the file it was minted for, so a replaced file needs a
+            // new one. Once per player: a file that cannot play fails again on the new URL.
+            if (onRetry && !recovered) {
+              setRecovered(true);
+              void retry();
+            } else {
+              setFailedSrc(src);
+            }
           }}
         />
       ) : (
