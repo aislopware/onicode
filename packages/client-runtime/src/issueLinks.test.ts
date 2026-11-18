@@ -1,7 +1,8 @@
 import { EnvironmentId, ProjectId, SourceControlProviderKind } from "@onicode/contracts";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
 
-import { resolveIssueLinkTarget } from "./issueLinks.ts";
+import { createIssueLinkResolver, resolveIssueLinkTarget } from "./issueLinks.ts";
+import { sourceControlClients } from "./sourceControlClients.ts";
 
 const project = (id: string, repository: string) =>
   ({
@@ -70,5 +71,23 @@ describe("resolveIssueLinkTarget", () => {
     "https://github.com/acme/web/pull/7",
   ])("leaves %s an ordinary link", (url) => {
     expect(resolveIssueLinkTarget({ url, projects })).toBeNull();
+  });
+});
+
+describe("createIssueLinkResolver", () => {
+  it("reads each project's binding once, not once per link", () => {
+    const projects = Array.from({ length: 100 }, (_, index) =>
+      project(`p${index}`, `acme/r${index}`),
+    );
+    using issueScope = vi.spyOn(sourceControlClients, "issueScope");
+    const resolve = createIssueLinkResolver(projects);
+    for (let index = 0; index < 50; index++) {
+      expect(resolve(`https://docs.example.com/guide/page-${index}`)).toBeNull();
+    }
+    expect(resolve("https://github.com/acme/r7/issues/3")?.ref).toMatchObject({
+      projectId: "p7",
+      key: "3",
+    });
+    expect(issueScope).toHaveBeenCalledTimes(projects.length);
   });
 });

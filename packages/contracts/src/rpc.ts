@@ -193,6 +193,7 @@ import {
   IssueCreateInput,
   IssueCreateResult,
   IssueDetail,
+  IssueSummary,
   IssueListInput,
   IssueListResult,
   IssueOperationError,
@@ -643,6 +644,7 @@ export const WS_METHODS = {
   // Issue tracking methods
   issuesList: "issues.list",
   issuesDetail: "issues.detail",
+  issuesSummary: "issues.summary",
   issuesComments: "issues.comments",
   issuesTemplates: "issues.templates",
   issuesCandidates: "issues.candidates",
@@ -1341,6 +1343,13 @@ const WsIssuesListRpc = Rpc.make(WS_METHODS.issuesList, {
 const WsIssuesDetailRpc = Rpc.make(WS_METHODS.issuesDetail, {
   payload: IssueRef,
   success: IssueDetail,
+  error: IssueRpcError,
+});
+
+/** The issue without its conversation, for a link's hover card. */
+const WsIssuesSummaryRpc = Rpc.make(WS_METHODS.issuesSummary, {
+  payload: IssueRef,
+  success: IssueSummary,
   error: IssueRpcError,
 });
 
@@ -2305,6 +2314,7 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 export const WsRpcGroup = RpcGroup.make(
   WsIssuesListRpc,
   WsIssuesDetailRpc,
+  WsIssuesSummaryRpc,
   WsIssuesCommentsRpc,
   WsIssuesTemplatesRpc,
   WsIssuesCandidatesRpc,

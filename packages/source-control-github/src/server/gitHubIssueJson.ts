@@ -300,6 +300,11 @@ export function toIssueSearch({ search }: Issues.IssueSearch.Result) {
   };
 }
 
+export function toIssueSummary({ repository }: Issues.IssueSummary.Result) {
+  const issue = repository?.issue;
+  return issue == null ? null : toSummary(issue);
+}
+
 export function toIssueComments({ viewer, repository }: Issues.IssueComments.Result) {
   const comments = repository?.issue?.comments;
   return {

@@ -30,67 +30,77 @@ function linkAuthority(url: string): string | null {
   }
 }
 
-/** A host whose hostname does not name it, such as GitHub Enterprise Server, is vouched for by a project on it. */
-function parseIssueLink(
-  url: string,
-  authority: string | null,
-  projects: ReadonlyArray<LinkProject>,
+/**
+ * Resolves issue links by the server's `IssueService.resolveUrl` rule: the project bound to the
+ * link's host and scope, else one on that tracker and host lending read-only credentials, so a
+ * lookalike hostname stays an ordinary link. Bindings are read once per project list.
+ */
+export function createIssueLinkResolver<Project extends LinkProject>(
+  /** The projects of the environment the link is read in. */
+  projects: ReadonlyArray<Project>,
 ) {
-  const parsed = sourceControlClients.parseIssueUrl(url);
-  if (parsed !== null || authority === null) return parsed;
-  const hostname = new URL(url).hostname.toLowerCase();
-  for (const project of projects) {
+  const bindings = projects.flatMap((project) => {
     const binding = projectIssueBinding(project);
-    if (binding === null || (binding.host !== hostname && binding.host !== authority)) continue;
-    const known = sourceControlClients.parseIssueUrl(url, project.repositoryIdentity?.provider);
-    if (known !== null) return known;
-  }
-  return null;
+    return binding === null ? [] : [{ project, binding }];
+  });
+  const hosts = new Set(bindings.map((candidate) => candidate.binding.host));
+
+  /** A host whose hostname does not name it, such as GitHub Enterprise Server, is vouched for by a project on it. */
+  const parseIssueLink = (url: string, authority: string | null) => {
+    const parsed = sourceControlClients.parseIssueUrl(url);
+    if (parsed !== null || authority === null) return parsed;
+    const hostname = new URL(url).hostname.toLowerCase();
+    if (!hosts.has(hostname) && !hosts.has(authority)) return null;
+    for (const { project, binding } of bindings) {
+      if (binding.host !== hostname && binding.host !== authority) continue;
+      const known = sourceControlClients.parseIssueUrl(url, project.repositoryIdentity?.provider);
+      if (known !== null) return known;
+    }
+    return null;
+  };
+
+  return (
+    url: string,
+    preferredProjectId?: string,
+  ): { readonly project: Project; readonly ref: IssueRef } | null => {
+    // A link names its server's port; a binding does only when its remote or web URL did.
+    const authority = linkAuthority(url);
+    const parsed = parseIssueLink(url, authority);
+    if (parsed === null) return null;
+    const { definition, link } = parsed;
+    const onHost = bindings.filter(
+      ({ binding }) =>
+        binding.tracker === definition.kind &&
+        (binding.host === link.host || binding.host === authority),
+    );
+    const onAuthority = onHost.filter((candidate) => candidate.binding.host === authority);
+    const bound = onAuthority.length > 0 ? onAuthority : onHost;
+    const preferFirst = (candidates: typeof bound) =>
+      candidates.find((candidate) => candidate.project.id === preferredProjectId) ?? candidates[0];
+    const own =
+      preferFirst(bound.filter((candidate) => candidate.binding.scope === link.scope)) ??
+      preferFirst(bound.filter((candidate) => candidate.binding.scope === link.scopeAlias));
+    const lender = own ?? preferFirst(bound);
+    if (lender === undefined) return null;
+    return {
+      project: lender.project,
+      ref: {
+        projectId: lender.project.id,
+        tracker: lender.binding.tracker as IssueRef["tracker"],
+        host: lender.binding.host,
+        scope: own === undefined ? link.scope : lender.binding.scope,
+        key: link.key,
+      },
+    };
+  };
 }
 
-/**
- * The reference an issue link resolves to, and the project it is read through: the project whose
- * tracker binding is that host and scope, else any project on the same tracker and host lending
- * its credentials for a read-only view. The same rule as the server's `IssueService.resolveUrl`,
- * applied on the client so a lookalike hostname matches no project and stays an ordinary link.
- */
+/** One link resolved on its own, for a click or press; see `createIssueLinkResolver`. */
 export function resolveIssueLinkTarget<Project extends LinkProject>(input: {
   readonly url: string;
   /** The projects of the environment the link is read in. */
   readonly projects: ReadonlyArray<Project>;
   readonly preferredProjectId?: string | undefined;
 }): { readonly project: Project; readonly ref: IssueRef } | null {
-  // A link names its server's port; a binding does only when its remote or web URL did.
-  const authority = linkAuthority(input.url);
-  const parsed = parseIssueLink(input.url, authority, input.projects);
-  if (parsed === null) return null;
-  const { definition, link } = parsed;
-  const onHost = input.projects.flatMap((project) => {
-    const binding = projectIssueBinding(project);
-    return binding === null ||
-      binding.tracker !== definition.kind ||
-      (binding.host !== link.host && binding.host !== authority)
-      ? []
-      : [{ project, binding }];
-  });
-  const onAuthority = onHost.filter((candidate) => candidate.binding.host === authority);
-  const bound = onAuthority.length > 0 ? onAuthority : onHost;
-  const preferFirst = (candidates: typeof bound) =>
-    candidates.find((candidate) => candidate.project.id === input.preferredProjectId) ??
-    candidates[0];
-  const own =
-    preferFirst(bound.filter((candidate) => candidate.binding.scope === link.scope)) ??
-    preferFirst(bound.filter((candidate) => candidate.binding.scope === link.scopeAlias));
-  const lender = own ?? preferFirst(bound);
-  if (lender === undefined) return null;
-  return {
-    project: lender.project,
-    ref: {
-      projectId: lender.project.id,
-      tracker: lender.binding.tracker as IssueRef["tracker"],
-      host: lender.binding.host,
-      scope: own === undefined ? link.scope : lender.binding.scope,
-      key: link.key,
-    },
-  };
+  return createIssueLinkResolver(input.projects)(input.url, input.preferredProjectId);
 }

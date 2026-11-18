@@ -46,6 +46,31 @@ query IssueSearch($q: String!, $cursor: String, $rows: Int!) {
   }
 }
 
+# What a hover card shows, without the conversation the detail carries.
+query IssueSummary($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    issue(number: $number) {
+      ...IssueRow
+      assignees(first: 20) {
+        nodes {
+          login
+          name
+          avatarUrl
+        }
+      }
+      labels(first: 20) {
+        nodes {
+          name
+          color
+        }
+      }
+      comments {
+        totalCount
+      }
+    }
+  }
+}
+
 query IssueDetail($owner: String!, $name: String!, $number: Int!) {
   viewer {
     login

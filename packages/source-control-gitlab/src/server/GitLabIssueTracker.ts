@@ -481,6 +481,20 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
         );
       }),
 
+      // The issue's own row: its comment count rides on it, so no notes are read.
+      getIssueSummary: (input) =>
+        issuePath(input, "getIssueSummary").pipe(
+          Effect.flatMap(({ path }) =>
+            read({
+              cwd: input.cwd,
+              host: input.host,
+              operation: "getIssueSummary",
+              path,
+              decode: decodeIssueDetailJson,
+            }),
+          ),
+        ),
+
       getIssue: (input) =>
         issuePath(input, "getIssue").pipe(
           Effect.flatMap(({ number, path }) =>

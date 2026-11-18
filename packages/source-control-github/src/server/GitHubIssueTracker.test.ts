@@ -631,6 +631,30 @@ Redact secrets before uploading.`);
         ["referenced", "acme/web#50"],
         ["closed", null],
       ]);
+
+      // A hover card's read is one request with no conversation and no page walks.
+      seen.length = 0;
+      const summary = yield* api.getIssueSummary!({
+        cwd: "/w",
+        host: "github.com",
+        scope: "acme/web",
+        key: "42",
+      });
+      expect(seen).toEqual([{ owner: "acme", name: "web", number: 42 }]);
+      expect(summary).toEqual({
+        key: "42",
+        displayKey: "#42",
+        title: issue.title,
+        url: issue.url,
+        author: issue.author,
+        state: issue.state,
+        createdAt: issue.createdAt,
+        updatedAt: issue.updatedAt,
+        closedAt: issue.closedAt,
+        assignees: issue.assignees,
+        labels: [{ name: "bug", color: "d73a4a" }],
+        commentCount: 3,
+      });
     }),
   );
 });
