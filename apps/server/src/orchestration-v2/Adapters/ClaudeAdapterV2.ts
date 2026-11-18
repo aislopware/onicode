@@ -3953,7 +3953,7 @@ function claudePendingBackgroundTask(input: {
           ? undefined
           : CLAUDE_OPAQUE_BACKGROUND_TASK_KINDS.get(input.taskType)) ?? "background_task"),
     ...(input.description !== undefined && input.description.trim().length > 0
-      ? { description: backgroundWorkTextPreview(input.description) }
+      ? { description: backgroundWorkTextPreview(input.description.trim()) }
       : {}),
     ...(typeof input.parentTaskId === "string" && input.parentTaskId.trim().length > 0
       ? { parentTaskId: input.parentTaskId }
