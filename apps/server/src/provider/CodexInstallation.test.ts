@@ -955,7 +955,7 @@ it.effect("keeps a cached release another server activates while this one is pru
       Effect.flatMap((entries) =>
         Effect.forEach(
           entries.filter((entry) => entry.endsWith("-install")),
-          (entry) => h.fs.remove(`${upstreamDirectory}/${entry}`),
+          (entry) => h.fs.remove(`${upstreamDirectory}/${entry}`, { force: true }),
         ),
       ),
       Effect.asVoid,
