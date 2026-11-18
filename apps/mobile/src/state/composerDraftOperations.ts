@@ -1,4 +1,5 @@
 const operationsByDraftKey = new Map<string, Set<AbortController>>();
+const abortGenerations = new Map<string, number>();
 
 /**
  * Async work that writes into one draft (a context import, a picker) starts
@@ -24,10 +25,16 @@ export function startComposerDraftOperation(draftKey: string): {
   };
 }
 
+/** Advances on each abort, so work keyed by it can tell aborted runs from ones still landing. */
+export function composerDraftAbortGeneration(draftKey: string): number {
+  return abortGenerations.get(draftKey) ?? 0;
+}
+
 export function abortComposerDraftOperations(draftKey: string): void {
   const operations = operationsByDraftKey.get(draftKey);
   if (!operations) return;
   operationsByDraftKey.delete(draftKey);
+  abortGenerations.set(draftKey, composerDraftAbortGeneration(draftKey) + 1);
   for (const controller of operations) controller.abort();
 }
 

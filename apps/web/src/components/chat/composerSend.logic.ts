@@ -1,4 +1,4 @@
-import type { EnvironmentId, ThreadContextRecord } from "@onicode/contracts";
+import type { EnvironmentId, RuntimeRequestId, ThreadContextRecord } from "@onicode/contracts";
 import { msg } from "gt-react";
 import { m, type MessageResolver } from "../../i18n/messages";
 import { collectInlineContextIds } from "../../lib/composerContextReferences";
@@ -119,4 +119,14 @@ export function approvalRedirectNotice(
     return resolve(msg("Another approval arrived, so your message wasn't sent."));
   }
   return null;
+}
+
+/**
+ * The approvals when Send was pressed. A send declines or answers only the shown ones, and stops
+ * if one is pending that was not then. `pending` also holds those the typing guard hid, which a
+ * send leaves pending rather than treating as new.
+ */
+export interface ApprovalsAtPress {
+  readonly shown: ReadonlyArray<RuntimeRequestId>;
+  readonly pending: ReadonlyArray<RuntimeRequestId>;
 }

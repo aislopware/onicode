@@ -106,6 +106,7 @@ import { useStableCallback } from "../../hooks/useStableCallback";
 import { environmentPresentations } from "../../state/presentation";
 import {
   approvalRedirectNotice,
+  type ApprovalsAtPress,
   composerDraftContentChanged,
   loadBalancingSendWarning,
   multipleModelSendBlock,
@@ -393,6 +394,8 @@ export function useComposerSend(input: ComposerSendInput) {
     e?: { preventDefault: () => void },
     dispatchMode: ComposerDispatchMode = "auto",
     submissionIntent: ComposerSubmissionIntent = "foreground",
+    // A held or refreshed send acts only on what the user saw when pressing Send.
+    approvalsAtPress?: ApprovalsAtPress,
     directAnnotation?: {
       annotation: PreviewAnnotationPayload;
       image: ComposerImageAttachment | null;
@@ -428,6 +431,12 @@ export function useComposerSend(input: ComposerSendInput) {
     }
 
     const sendCtx = composerRef.current?.getSendContext();
+    const shownIdsAtSend = sendCtx?.shownPendingApprovalIds ?? [];
+    const atPress = approvalsAtPress ?? {
+      shown: shownIdsAtSend,
+      pending: pendingApprovalsRef.current.map((approval) => approval.requestId),
+    };
+    const seenApprovalIds = shownIdsAtSend.filter((id) => atPress.shown.includes(id));
     // `/side` beats an open question and a plan follow-up, which would send the text to main.
     const sideChatCommand =
       sendCtx && !directAnnotation && !queuedRunEdit.isEditing
@@ -570,8 +579,7 @@ export function useComposerSend(input: ComposerSendInput) {
     }
     const multipleModelSelections = sendCtx.multipleModelSelections;
     const approvalFeedbackTarget = pendingApprovalsRef.current.find(
-      (approval) =>
-        approval.supportsFeedback && approval.requestId === sendCtx.shownPendingApprovalIds[0],
+      (approval) => approval.supportsFeedback && approval.requestId === seenApprovalIds[0],
     );
     const multipleModelBlock =
       multipleModelSelections === null
@@ -1020,7 +1028,7 @@ export function useComposerSend(input: ComposerSendInput) {
     if (
       turnUsesAttachmentUploads &&
       composerAttachmentsSnapshot.length > 0 &&
-      (sendCtx?.shownPendingApprovalIds.length ?? 0) > 0
+      seenApprovalIds.length > 0
     ) {
       await refreshExpiredAttachmentUploads({
         environmentId,
@@ -1056,12 +1064,29 @@ export function useComposerSend(input: ComposerSendInput) {
     // here, after everything above has accepted the send, so local commands and rejected
     // drafts leave them alone. After navigating away during an upload, the shown approvals
     // are another thread's, so this send leaves them alone too.
-    const approvalsToDecline =
-      currentRouteThreadKeyRef.current === routeThreadKey
-        ? pendingApprovalsRef.current.filter((approval) =>
-            sendCtx?.shownPendingApprovalIds.includes(approval.requestId),
-          )
-        : [];
+    const onRoute = currentRouteThreadKeyRef.current === routeThreadKey;
+    // One that arrived since Send was pressed was never seen: the message was not written for
+    // it, and a redirect must not decline it.
+    if (
+      onRoute &&
+      pendingApprovalsRef.current.some((approval) => !atPress.pending.includes(approval.requestId))
+    ) {
+      sendInFlightRef.current = false;
+      setDockedDraftHeroThreadKey((currentThreadKey) =>
+        currentThreadKey === activeThreadKey ? null : currentThreadKey,
+      );
+      toastManager.add({
+        type: "info",
+        title: m(msg("Another approval arrived, so your message wasn't sent.")),
+        description: m(msg("Send again when it's ready.")),
+      });
+      return;
+    }
+    const approvalsToDecline = onRoute
+      ? pendingApprovalsRef.current.filter((approval) =>
+          seenApprovalIds.includes(approval.requestId),
+        )
+      : [];
     if (approvalsToDecline.length > 0 || approvalFeedbackTarget !== undefined) {
       // A draft edited since send, or a paste still landing in it, is no longer the message
       // the user sent.
@@ -1604,7 +1629,7 @@ export function useComposerSend(input: ComposerSendInput) {
   const onSendWithRouting = async (...args: Parameters<typeof onSend>) => {
     args[0]?.preventDefault();
     const refresh =
-      args[3] || sendInFlightRef.current || readPendingEnvironmentChange() !== null
+      args[4] || sendInFlightRef.current || readPendingEnvironmentChange() !== null
         ? null
         : refreshBeforeSend();
     if (refresh === null) return onSend(...args);

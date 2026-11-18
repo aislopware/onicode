@@ -303,6 +303,7 @@ export interface ThreadDetailScreenProps {
       hasAttachmentsOrContext: boolean,
     ) => Promise<boolean | "responded">,
     onWillEnqueue?: () => void,
+    approvalsAsSeen?: () => boolean,
   ) => Promise<MessageId | null>;
   readonly onReconnectEnvironment: () => void;
   readonly canSwitchThreadProvider: boolean;
@@ -1259,6 +1260,7 @@ function ThreadDetailBody(
   const handleSendMessage = async (
     followUp?: ActiveTurnComposerAction,
     stillSendable?: () => boolean,
+    approvalIdsAtPress?: ReadonlyArray<RuntimeRequestId>,
   ) => {
     const scope = threadScope.current.signal;
     const targetThreadKey = selectedThreadKey;
@@ -1267,7 +1269,15 @@ function ThreadDetailBody(
     );
     // Runs only once the send path has validated the draft and is about to deliver it, so an
     // empty submit, a queued-message edit, or `/feedback` leaves approvals alone.
-    const approvalsToDecline = props.activePendingApprovals;
+    const idsAtPress =
+      approvalIdsAtPress ?? props.activePendingApprovals.map((approval) => approval.requestId);
+    // One that arrived since Send was pressed was never seen: the message was not written for it,
+    // and a redirect must not decline it.
+    const approvalsAsSeen = () =>
+      currentPendingApprovals().every((approval) => idsAtPress.includes(approval.requestId));
+    const approvalsToDecline = props.activePendingApprovals.filter((approval) =>
+      idsAtPress.includes(approval.requestId),
+    );
     const declineBeforeDispatch =
       approvalsToDecline.length > 0 && props.activePendingUserInput === null
         ? async (text: string, hasAttachmentsOrContext: boolean) => {
@@ -1302,17 +1312,22 @@ function ThreadDetailBody(
           }
         : undefined;
     let dismissingKeyboard = false;
-    const messageId = await onSendMessage(followUp, declineBeforeDispatch, () => {
-      if (
-        scope.aborted ||
-        Platform.OS !== "ios" ||
-        !hasUserMessage ||
-        !KeyboardController.isVisible()
-      )
-        return;
-      setSendingWithKeyboard(true);
-      dismissingKeyboard = true;
-    });
+    const messageId = await onSendMessage(
+      followUp,
+      declineBeforeDispatch,
+      () => {
+        if (
+          scope.aborted ||
+          Platform.OS !== "ios" ||
+          !hasUserMessage ||
+          !KeyboardController.isVisible()
+        )
+          return;
+        setSendingWithKeyboard(true);
+        dismissingKeyboard = true;
+      },
+      approvalsAsSeen,
+    );
     if (messageId === null || scope.aborted) {
       return messageId;
     }
@@ -1871,6 +1886,9 @@ function ThreadDetailBody(
                           props.activePendingApprovals.length > 0 &&
                           props.activePendingUserInput === null
                         }
+                        pendingApprovalIds={props.activePendingApprovals.map(
+                          (approval) => approval.requestId,
+                        )}
                         canStopThread={props.canStopThread}
                         environmentId={props.environmentId}
                         projectCwd={props.threadCwd ?? props.projectWorkspaceRoot}
