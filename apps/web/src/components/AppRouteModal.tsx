@@ -6,12 +6,19 @@ import { useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 import { getCommandPaletteOpener } from "../commandPaletteStore";
 import { useNativeTitlebarHeight } from "../lib/windowControlsOverlay";
-import { requestWorkspaceFocus, workspaceFocusTargetFor } from "../lib/workspaceFocus";
+import {
+  requestWorkspaceFocus,
+  workspaceFocusTargetFor,
+  type WorkspaceFocusTarget,
+} from "../lib/workspaceFocus";
 import { useCloseAppModal } from "./sidebar/mainAppLocation";
 import { GlobalVoiceInputIndicator } from "./chat/GlobalVoiceInputIndicator";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+
+// The open modal's opener, for the modal that replaces it (Usage opened from Settings).
+let replacedModalOpener: WorkspaceFocusTarget | null = null;
 
 /**
  * Large modal for the Settings and Usage routes. Esc, the close button, or a press on the
@@ -41,10 +48,16 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
   // nothing focused there is no opener; Base UI would send focus to the page's first control.
   const [opener] = useState(() => {
     const element = getCommandPaletteOpener() ?? document.activeElement;
-    return element instanceof HTMLElement && element !== document.body
-      ? workspaceFocusTargetFor(element)
-      : null;
+    // Usage opened from Settings replaces it, so it returns to what Settings opened from.
+    if (element?.closest("[data-app-modal]")) return replacedModalOpener;
+    replacedModalOpener =
+      element instanceof HTMLElement && element !== document.body
+        ? workspaceFocusTargetFor(element)
+        : null;
+    return replacedModalOpener;
   });
+  // A key or press during the exit animation moves focus on, and the close must not undo it.
+  const inputWhileClosingRef = useRef<{ seen: boolean; stop: AbortController } | null>(null);
   // Clear the native window controls (macOS traffic lights, the Windows and Linux caption
   // buttons). Below sm the modal fills the window and leaves that strip empty; up to lg its
   // 1.5rem inset is shorter than the strip.
@@ -61,6 +74,16 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
         // drop what was typed. Blur first so they commit.
         const focused = document.activeElement;
         if (focused instanceof HTMLElement && popupRef.current?.contains(focused)) focused.blur();
+        // Base UI returns focus once the exit animation ends. The closing key or press is past
+        // the document's capture phase, so only later input counts.
+        const watch = { seen: false, stop: new AbortController() };
+        const see = () => {
+          watch.seen = true;
+        };
+        for (const type of ["keydown", "pointerdown"])
+          document.addEventListener(type, see, { capture: true, signal: watch.stop.signal });
+        inputWhileClosingRef.current?.stop.abort();
+        inputWhileClosingRef.current = watch;
         close();
       }}
       onOpenChangeComplete={(nextOpen) => {
@@ -92,8 +115,11 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
             ref={popupRef}
             initialFocus={popupRef}
             finalFocus={(closeType) => {
+              const watch = inputWhileClosingRef.current;
+              watch?.stop.abort();
+              inputWhileClosingRef.current = null;
               const element = opener?.returnTo;
-              if (closeType !== "keyboard" || !element) return false;
+              if (closeType !== "keyboard" || !element || watch?.seen) return false;
               if (element.isConnected && !element.closest("[inert]")) return element;
               // The thread behind the modal stays inert, and a page it replaced unmounted, until
               // the route closes; the opener or its remounted replacement takes focus then.

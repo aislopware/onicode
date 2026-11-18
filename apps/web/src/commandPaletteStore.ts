@@ -18,12 +18,19 @@ const INITIAL_STATE: CommandPaletteUiState = {
 
 export const useCommandPaletteStore = create<CommandPaletteUiState>(() => INITIAL_STATE);
 
-let returnFocus: { element: HTMLElement | null; href: string; focusRequest: number } | null = null;
+let returnFocus: {
+  element: HTMLElement | null;
+  href: string;
+  focusRequest: number;
+  location: number;
+} | null = null;
 // A command that navigates closes the palette before the page it opens mounts, and focus
-// recovery may move focus meanwhile. The palette hands its opener to that page until the next
-// key or press, or until a page other than Settings or Usage resolves.
+// recovery may move focus meanwhile. The palette hands its opener to that page until a key or
+// press after the close, or until a page other than Settings or Usage resolves.
 let handover: { element: HTMLElement | null; location: number } | null = null;
+let inputSinceClose = false;
 const endHandover = () => {
+  inputSinceClose = true;
   handover = null;
   document.removeEventListener("keydown", endHandover, true);
   document.removeEventListener("pointerdown", endHandover, true);
@@ -39,7 +46,14 @@ export function dispatchCommandPalette(action: CommandPaletteUiAction): void {
       element: document.activeElement instanceof HTMLElement ? document.activeElement : null,
       href: window.location.href,
       focusRequest: getWorkspaceFocusRequestVersion(),
+      location: getMainAppLocationVersion(),
     };
+  }
+  if (state.open && !next.open) {
+    // The key or press that closes it is already past the document's capture phase.
+    inputSinceClose = false;
+    document.addEventListener("keydown", endHandover, true);
+    document.addEventListener("pointerdown", endHandover, true);
   }
   useCommandPaletteStore.setState(next, true);
 }
@@ -62,10 +76,13 @@ export function getCommandPaletteReturnFocus(): HTMLElement | boolean {
 /** Called when the palette closes without returning focus because its command took it. */
 export function handOverCommandPaletteOpener(): void {
   // A command that asked for workspace focus already placed it; only a navigation hands over.
-  if (!returnFocus || getWorkspaceFocusRequestVersion() !== returnFocus.focusRequest) return;
-  handover = { element: returnFocus.element, location: getMainAppLocationVersion() };
-  document.addEventListener("keydown", endHandover, true);
-  document.addEventListener("pointerdown", endHandover, true);
+  if (
+    !returnFocus ||
+    inputSinceClose ||
+    getWorkspaceFocusRequestVersion() !== returnFocus.focusRequest
+  )
+    return;
+  handover = { element: returnFocus.element, location: returnFocus.location };
 }
 
 /** The element the palette opened from, while the palette or the command it ran owns focus. */
