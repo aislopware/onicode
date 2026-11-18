@@ -85,6 +85,9 @@ const ClaudeErrorResult = Schema.Struct({
 });
 const isClaudeErrorResult = Schema.is(ClaudeErrorResult);
 const decodeJsonOption = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown));
+const decodeClaudeResultLine = Schema.decodeUnknownOption(
+  Schema.fromJsonString(Schema.Struct({ type: Schema.Literal("result") })),
+);
 
 // Claude reports JSON errors on stdout; stderr may contain only wrapper notices.
 function claudeErrorResult(stdout: string): string | undefined {
@@ -171,14 +174,17 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         attachment,
       });
       if (!attachmentPath) continue;
+      // Stat first so an image that cannot fit is never read.
       const info = yield* fileSystem.stat(attachmentPath).pipe(Effect.option);
-      if (Option.isNone(info)) continue;
-      const blockBytes = claudeImageBlockBytes(Number(info.value.size));
-      if (blockBytes > remainingBytes) continue;
+      if (Option.isNone(info) || claudeImageBlockBytes(Number(info.value.size)) > remainingBytes) {
+        continue;
+      }
       const bytes = yield* fileSystem
         .readFile(attachmentPath)
         .pipe(Effect.orElseSucceed(() => null));
       if (!bytes) continue;
+      const blockBytes = claudeImageBlockBytes(bytes.length);
+      if (blockBytes > remainingBytes) continue;
       remainingBytes -= blockBytes;
       blocks.push({
         type: "image",
@@ -358,14 +364,11 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
         { concurrency: "unbounded" },
       );
 
-      // stream-json prints one message per line; as an array it reads like `--output-format json --verbose`,
-      // whose last `result` message is the answer even when a system message follows it.
+      // stream-json prints one message per line; system messages can follow the result.
       return {
         stdout: streamJson
-          ? `[${stdout
-              .split("\n")
-              .filter((line) => line.trim().length > 0)
-              .join(",")}]`
+          ? (stdout.split("\n").findLast((line) => Option.isSome(decodeClaudeResultLine(line))) ??
+            "")
           : stdout,
         stderr,
         exitCode,
