@@ -727,7 +727,8 @@ function pendingThreadTitleGenerationEffect(
 }
 
 // Clients seed a new thread with its first message, and empty threads start as "New thread" or
-// an agent's placeholder. Any other title on a thread without messages was chosen on purpose.
+// an agent's placeholder. Any other title on a thread without messages was chosen on purpose,
+// unless it is a `/compact` that named the thread it opened.
 // A fork or side chat starts with a title its first message replaces, so only a rename keeps it.
 function hasTitleSetBeforeFirstMessage(
   thread: OrchestrationV2AppThread,
@@ -741,6 +742,7 @@ function hasTitleSetBeforeFirstMessage(
     title.length > 0 &&
     title !== NEW_THREAD_TITLE &&
     !isPlaceholderThreadTitle(title) &&
+    !isNativeMaintenanceCommand({ text: title, attachments: [] }) &&
     title !== titleSeed?.trim()
   );
 }
@@ -7068,23 +7070,15 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       : Effect.succeed(false);
     // A thread named before its first message (for example by an MCP launch that tracks an issue)
     // keeps that name instead of a title generated from a terse prompt such as "work on this".
-    const seedsUntitledThread =
-      command.titleSeed !== undefined &&
-      (yield* projectionStore.getMessageCount(command.threadId).pipe(mapDispatchError(command))) ===
-        0 &&
-      !hasTitleSetBeforeFirstMessage(projection.thread, command.titleSeed);
-    // A client titles a thread it opens with `/compact` after that command, so only a rename or
-    // an agent's launch name outlasts it.
-    const keepsTitleAfterMaintenance =
-      projection.thread.titleRenamed === true ||
-      (projection.thread.createdBy === "agent" &&
-        hasTitleSetBeforeFirstMessage(projection.thread, command.titleSeed));
+    // A `/compact` or `/logout` is not that first message.
     if (
       !isNativeMaintenanceCommand(command) &&
-      (seedsUntitledThread ||
-        (command.createdBy === "user" &&
-          !keepsTitleAfterMaintenance &&
-          (yield* onlyMaintenanceHistory)))
+      !hasTitleSetBeforeFirstMessage(projection.thread, command.titleSeed) &&
+      ((command.titleSeed !== undefined &&
+        (yield* projectionStore
+          .getMessageCount(command.threadId)
+          .pipe(mapDispatchError(command))) === 0) ||
+        (command.createdBy === "user" && (yield* onlyMaintenanceHistory)))
     ) {
       const now = yield* DateTime.now;
       const thread: OrchestrationV2AppThread = {

@@ -346,6 +346,8 @@ describe("ThreadTitleRegenerationService", () => {
           ["preset", "[API] #4821 — retry webhook deliveries after a timeout", undefined, false],
           ["placeholder", placeholderThreadTitle("Parent", 0), seed, true],
           ["preset, then compacted", "Release checklist", undefined, false, true],
+          // An agent that gives only a prompt gets the prompt as the title.
+          ["prompt-titled, then compacted", "/compact", seed, true, true],
         ] as const) {
           const threadId = ThreadId.make(`thread:title:${key}`);
           yield* threads.dispatch({
