@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import {
   scopedThreadKey,
   scopeProjectRef,
@@ -157,7 +158,7 @@ function startDocumentTitle(router: AppRouter): void {
               scopeProjectRef(thread.environmentId, thread.projectId),
             ),
           );
-    const threadTitle = thread?.title.trim() ?? "";
+    const threadTitle = thread === null ? "" : threadTitleText(thread.title, m).trim();
     const projectTitle = project?.title.trim() ?? "";
     // Screen readers read from the start, so that title leads with the status, then the thread.
     const screenReader = getClientSettings().screenReaderWindowTitle;

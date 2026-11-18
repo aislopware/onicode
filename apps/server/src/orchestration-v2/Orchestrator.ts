@@ -202,6 +202,7 @@ import {
 import { planThreadDeletion } from "./ThreadDeletion.ts";
 import type * as ProviderAdapter from "@onicode/provider-core/server/ProviderAdapter";
 import * as ServerSettings from "../serverSettings.ts";
+import { NEW_THREAD_TITLE } from "@onicode/shared/threadTitles";
 
 const isMessageQuestionAnswer = Schema.is(
   Schema.Union([TrimmedNonEmptyString, Schema.NonEmptyArray(TrimmedNonEmptyString)]),
@@ -737,7 +738,7 @@ function hasTitleSetBeforeFirstMessage(
     thread.forkedFrom === null &&
     thread.lineage.sideChat !== true &&
     title.length > 0 &&
-    title !== "New thread" &&
+    title !== NEW_THREAD_TITLE &&
     !isPlaceholderThreadTitle(title) &&
     title !== titleSeed?.trim()
   );

@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import * as Dialog from "../../components/ui/Dialog";
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { useRememberThreadProject } from "./useRememberThreadProject";
@@ -258,6 +259,7 @@ export function ThreadRouteScreen(props: ThreadRouteScreenProps) {
 
 function LiveThreadRouteController(props: ThreadRouteScreenProps) {
   const gt = useGT();
+  const m = useMessages();
   useAndroidWorkspaceBack();
   const connectionsReady = useConnectionsReady();
   const { connectionState } = useRemoteConnectionStatus();
@@ -293,7 +295,7 @@ function LiveThreadRouteController(props: ThreadRouteScreenProps) {
     props.inspectorPresentation ? (
       <InspectorHeaderShownContext value>
         <ThreadInspectorHeader
-          title={selectedThread?.title ?? gt("Thread")}
+          title={selectedThread ? threadTitleText(selectedThread.title, m) : gt("Thread")}
           {...props.inspectorPresentation}
         />
         {content}
@@ -1012,7 +1014,7 @@ function ThreadRouteContent(
   );
   const inspectorHeader = props.inspectorPresentation ? (
     <ThreadInspectorHeader
-      title={selectedThread?.title ?? gt("Thread")}
+      title={selectedThread ? threadTitleText(selectedThread.title, m) : gt("Thread")}
       subtitle={threadStatusLabel ?? undefined}
       {...props.inspectorPresentation}
     />
@@ -1040,7 +1042,7 @@ function ThreadRouteContent(
           header={
             props.inspectorPresentation ? null : (
               <ThreadHeader
-                title={selectedThread.title}
+                title={threadTitleText(selectedThread.title, m)}
                 subtitle={threadStatusLabel ?? headerSubtitle}
                 gitControls={threadGitControlProps}
                 hasThreadCwd={selectedThreadCwd !== null}

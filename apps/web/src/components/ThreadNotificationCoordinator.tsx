@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { msg } from "gt-react";
 import { m } from "../i18n/messages";
 import {
@@ -170,7 +171,7 @@ export function startThreadNotifications(
         onRemove: (): void => forgetToast(toastKey, toastId),
         type: kind === "completion" ? "success" : status === "failed" ? "error" : "warning",
         title,
-        description: thread.title,
+        description: threadTitleText(thread.title, m),
         data: {
           hideCopyButton: true,
           leadingIcon:
@@ -209,7 +210,7 @@ export function startThreadNotifications(
       return;
     try {
       const notification = new Notification(title, {
-        body: thread.title,
+        body: threadTitleText(thread.title, m),
         tag: threadNotificationTag(environmentId, thread.id),
         silent: true,
         // Windows drops clicks after a toast moves into Notification Center.

@@ -1,3 +1,4 @@
+import { threadTitleText } from "@onicode/client-runtime/operations";
 import { ChildThreadApprovals } from "./ChildThreadApprovals";
 import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 import { useOpenThreadInspector } from "./thread-inspector-navigation";
@@ -1492,7 +1493,7 @@ function ThreadDetailBody(
                       : handleEditPendingMessage
                   }
                   contentPresentation={props.contentPresentation}
-                  threadTitle={props.selectedThread.title}
+                  threadTitle={threadTitleText(props.selectedThread.title, messages)}
                   latestRun={props.activityRun}
                   activeWorkStartedAt={props.activeWorkStartedAt}
                   runlessWorkActive={props.runlessWorkActive ?? false}

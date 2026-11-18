@@ -34,6 +34,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 
 import * as EventSink from "../EventSink.ts";
 import { randomUuidV4 } from "@onicode/provider-core/server/randomUuid";
+import { UNTITLED_THREAD_TITLE } from "@onicode/shared/threadTitles";
 
 const IMPORT_EVENT_PREFIX = "migration:v1";
 const TRANSCRIPT_EVENT_BATCH_SIZE = 100;
@@ -219,7 +220,7 @@ function importedThread(row: LegacyThreadRow, importedAt: DateTime.Utc): Orchest
     creationSource: "server",
     id: threadId,
     projectId: ProjectId.make(row.project_id),
-    title: row.title.trim() === "" ? "Untitled thread" : row.title,
+    title: row.title.trim() === "" ? UNTITLED_THREAD_TITLE : row.title,
     providerInstanceId: modelSelection.instanceId,
     modelSelection,
     runtimeMode: runtimeModeFor(row.runtime_mode),
