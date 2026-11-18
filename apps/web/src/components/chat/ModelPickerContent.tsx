@@ -136,8 +136,9 @@ const EMPTY_MODEL_JUMP_LABELS = new Map<string, string>();
 const ROW_PX = 28;
 const RULE_PX = 9;
 const NOTICE_ESTIMATED_PX = 56;
-const LIST_MAX_PX = 320;
+const LIST_MAX_PX = 272;
 const LIST_PADDING_PX = 8;
+const WIDE_LIST_GROWS = "min-[45rem]:grow";
 const FAVORITES_SECTION_KEY = "section:favorites";
 
 type ListRow =
@@ -279,10 +280,13 @@ function ModelPickerList({
   initialScrollIndex,
   extraData,
   renderItem,
+  fillsColumn,
 }: {
   listRef: RefObject<LegendListRef | null>;
   rows: ReadonlyArray<ListRow>;
   height: number | undefined;
+  /** Beside a taller options column, the list grows to that column's height. */
+  fillsColumn: boolean;
   stickyHeaderIndices: number[] | undefined;
   initialScrollIndex: number | undefined;
   extraData: unknown;
@@ -304,11 +308,16 @@ function ModelPickerList({
       className={cn(
         "relative overflow-hidden",
         // Three rows stay in view when the options under the list take the popup's height.
-        rows.length === 0 ? "h-0" : height === undefined ? "min-h-0 flex-1" : "min-h-23 shrink",
+        rows.length === 0
+          ? "h-0"
+          : height === undefined
+            ? "min-h-0 flex-1"
+            : cn("min-h-23 shrink", fillsColumn && WIDE_LIST_GROWS),
       )}
-      style={height === undefined ? undefined : { height }}
+      style={height === undefined ? undefined : { flexBasis: height }}
     >
-      <ComboboxListVirtualized>
+      {/* Out of flow, so the list takes the height the columns settle on. */}
+      <ComboboxListVirtualized className="absolute inset-0">
         <LegendList<ListRow>
           ref={scrollRef}
           data={rows}
@@ -374,8 +383,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   onInstanceModelChange: (instanceId: ProviderInstanceId, model: string) => void;
   /** The owning popup moves focus here when it opens (its `initialFocus`). */
   searchInputRef: RefObject<HTMLInputElement | null>;
-  /** The selected model's effort section, pinned under the list. */
-  controls?: ReactNode;
+  /**
+   * The selected model's options and what else the popup sets: a column beside the list in a
+   * wide window, a section under it in a narrow one.
+   */
+  side?: ReactNode;
   /** Right at the end of the search text moves into the effort section. */
   onFocusEffort?: () => void;
   /** Closes the list. */
@@ -828,7 +840,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       <WindowKeyDownListener onKeyDown={onWindowKeyDown} />
       <div
         ref={pickerContentRef}
-        className="relative flex max-h-(--available-height) w-screen max-w-80 flex-col overflow-hidden bg-popover"
+        className={cn(
+          "relative flex max-h-(--available-height) w-screen max-w-80 flex-col overflow-hidden bg-popover",
+          props.side !== undefined && "min-[45rem]:max-w-148 min-[45rem]:flex-row",
+        )}
         style={isSearching && searchHeight > 0 ? { height: searchHeight } : undefined}
         data-model-picker-content="true"
       >
@@ -876,7 +891,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             }
           }}
         >
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col overflow-hidden",
+              props.side !== undefined && "min-[45rem]:w-80 min-[45rem]:flex-none",
+            )}
+          >
             {instanceEntries.map((entry) =>
               entry.instanceId !== props.activeInstanceId &&
               isProviderInstancePickerReady(entry) &&
@@ -968,6 +988,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               listRef={modelListRef}
               rows={rows}
               height={listHeight}
+              fillsColumn={props.side !== undefined}
               stickyHeaderIndices={headerIndices}
               initialScrollIndex={initialScrollIndex}
               extraData={modelListExtraData}
@@ -1055,7 +1076,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
             {props.listFooter}
           </div>
         </Combobox>
-        {props.controls}
+        {props.side === undefined ? null : (
+          <div className="flex min-h-0 shrink-0 flex-col border-border min-[45rem]:w-68 min-[45rem]:border-l">
+            {props.side}
+          </div>
+        )}
       </div>
     </TooltipProvider>
   );

@@ -119,7 +119,8 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
   /** Composer shortcuts this trigger answers besides the picker's own. */
   triggerShortcuts?: string;
   /**
-   * The selected model's effort and options, pinned under the list, with a footer below them.
+   * The selected model's effort and options with a footer below them: beside the list in a wide
+   * window, under it in a narrow one.
    * The popup then stays open until Escape or an outside press, and picking a model moves focus
    * to its levels.
    */
@@ -318,22 +319,44 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       onInstanceModelChange={handleInstanceModelChange}
       {...(docked
         ? {
-            controls: (
-              <div
-                data-model-picker-effort
-                // A model with nothing to set leaves no empty section behind.
-                className="flex max-h-48 min-h-0 shrink-0 flex-col border-t border-border empty:hidden"
-                onKeyDown={(event) => {
-                  // Up leaves the options for the list above them.
-                  if (event.key !== "ArrowUp" || event.altKey || event.ctrlKey || event.metaKey)
-                    return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  searchInputRef.current?.focus();
-                }}
-              >
-                {props.effortColumn}
-              </div>
+            side: (
+              <>
+                {activeEntry ? (
+                  // Names the model the options belong to, level with the search field.
+                  <div className="hidden h-9.25 shrink-0 items-center gap-2 border-b border-border px-3 text-sm font-medium text-foreground min-[45rem]:flex">
+                    <ProviderInstanceIcon
+                      driverKind={activeEntry.driverKind}
+                      displayName={activeEntry.displayName}
+                      accentColor={activeEntry.accentColor}
+                      acpRegistryAgentId={activeEntry.acpRegistryAgentId}
+                      acpRegistryIconUrl={activeEntry.acpRegistryIconUrl}
+                      showBadge={showInstanceBadge}
+                      className="size-3.5"
+                      iconClassName="size-3.5"
+                      indicatorBackground="var(--popover)"
+                      badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"
+                    />
+                    <span className="min-w-0 truncate">{triggerLabel}</span>
+                  </div>
+                ) : null}
+                <div
+                  data-model-picker-effort
+                  // A model with nothing to set leaves no empty section behind.
+                  className="flex max-h-48 min-h-0 shrink-0 flex-col border-t border-border empty:hidden min-[45rem]:max-h-80 min-[45rem]:shrink min-[45rem]:border-t-0"
+                  onKeyDown={(event) => {
+                    // Up leaves the options for the list above them.
+                    if (event.key !== "ArrowUp" || event.altKey || event.ctrlKey || event.metaKey)
+                      return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    searchInputRef.current?.focus();
+                  }}
+                >
+                  {props.effortColumn}
+                </div>
+                {/* Access belongs to the thread, so it closes the column, apart from the model. */}
+                <div className="shrink-0 empty:hidden min-[45rem]:mt-auto">{props.footer}</div>
+              </>
             ),
             onFocusEffort: () => void focusEffort("any"),
             ...(props.selectedModels === undefined
@@ -483,14 +506,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
         // The selected model's options and the list both change height while the picker is open.
         resizes
       >
-        {docked ? (
-          <div className="flex max-h-(--available-height) flex-col bg-popover">
-            {picker}
-            {props.footer}
-          </div>
-        ) : (
-          picker
-        )}
+        {picker}
         {props.selectedModels === undefined && !docked ? (
           <ChatGptSharingControl provider={activeEntry?.snapshot ?? null} />
         ) : null}

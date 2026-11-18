@@ -44,7 +44,7 @@ Both are unbound by default. Increase wraps from the highest level to the
 lowest, and decrease wraps from the lowest level to the highest.
 
 In the model picker, Up/Down move through the models and Enter chooses one. The
-chosen model's effort levels and options sit under the list: Right at the end of the
+chosen model's effort levels and options sit next to the list: Right at the end of the
 search moves to them, and Up comes back. Choosing a model keeps the picker open on its
 effort. `mod+shift+up` and `mod+shift+down` move to the previous or next provider and
 clear the search. These provider shortcuts can also be changed in Settings.
