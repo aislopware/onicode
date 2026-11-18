@@ -82,6 +82,7 @@ interface StubbedDesktop {
   readonly backends?: ReadonlyArray<{ readonly stop: () => Effect.Effect<void> }>;
   readonly flushRendererHistory?: Effect.Effect<void>;
   readonly tokenRequested?: Deferred.Deferred<void>;
+  readonly activationStarted?: Deferred.Deferred<void>;
 }
 
 const runStubbedDesktop = (stub: StubbedDesktop) =>
@@ -185,7 +186,9 @@ const runStubbedDesktop = (stub: StubbedDesktop) =>
           reconcile: Effect.void,
         } as DesktopWslBackend.DesktopWslBackend["Service"]),
         Effect.provideService(DesktopAppActivation.DesktopAppActivation, {
-          start: Effect.void,
+          start: stub.activationStarted
+            ? Deferred.succeed(stub.activationStarted, undefined)
+            : Effect.void,
         } as unknown as DesktopAppActivation.DesktopAppActivation["Service"]),
         Effect.provideService(DesktopRendererHistory.DesktopRendererHistory, {
           shutdown: stub.flushRendererHistory ?? Effect.void,
@@ -320,7 +323,7 @@ it.effect.each([false, true])(
 );
 
 it.effect(
-  "points a stale onicode launcher at the updated AppImage with Local environment off",
+  "points a stale onicode launcher at the updated AppImage and accepts onicode <dir> with Local environment off",
   () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
@@ -344,9 +347,11 @@ it.effect(
       );
       yield* fs.writeFileString(updatedAppImage, "", { mode: 0o755 });
       const windowStarted = yield* Deferred.make<void>();
+      const activationStarted = yield* Deferred.make<void>();
 
       const app = yield* runStubbedDesktop({
         localEnvironmentEnabled: false,
+        activationStarted,
         environment: {
           path,
           baseDir,
@@ -367,6 +372,10 @@ it.effect(
         content,
         `app='${updatedAppImage}'`,
         "startup left the onicode launcher pointing at the removed AppImage",
+      );
+      assert.isTrue(
+        yield* Deferred.isDone(activationStarted),
+        "startup left the onicode <dir> control socket closed",
       );
     }).pipe(Effect.provide(Layer.mergeAll(DesktopShutdown.layer, NodeServices.layer))),
 );
