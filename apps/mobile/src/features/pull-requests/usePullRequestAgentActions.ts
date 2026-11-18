@@ -1,8 +1,9 @@
-import { msg, useMessages } from "gt-react-native";
+import { useMessages } from "gt-react-native";
 import { Platform } from "react-native";
 import type { PullRequestDetail } from "@onicode/contracts";
 import {
   pullRequestAgentActions,
+  pullRequestAgentMenuAction,
   pullRequestAgentThread,
   pullRequestAgentThreadActions,
   type PullRequestAgentTask,
@@ -36,28 +37,18 @@ export function usePullRequestAgentActions(
     links.threads.length > 1 || links.threads.some((thread) => thread.settled || thread.archivedAt);
   const threadActions = (task: PullRequestAgentTask) =>
     pullRequestAgentThreadActions(links.threads, task, links.canAsk, m);
-  const menuAction = (task: PullRequestAgentTask) => {
-    const action = actions.find((action) => action.task === task);
-    const items = threadActions(task);
-    // Android supports only one submenu level beneath each helper action.
-    const subactions =
-      Platform.OS === "android"
-        ? items.flatMap(
-            (item) =>
-              item.subactions?.map((child) => ({
-                ...child,
-                title: m(msg("Settled: {title}", { title: child.title })),
-              })) ?? [item],
-          )
-        : items;
-    return {
-      id: task,
-      title: action?.title ?? m(msg("Open thread")),
-      image: action?.icon,
-      attributes: { disabled: disabled || !links.canAsk || action?.disabled },
-      ...(chooseThread ? { subactions } : {}),
-    };
-  };
+  const menuAction = (task: PullRequestAgentTask) =>
+    pullRequestAgentMenuAction(
+      {
+        task,
+        action: actions.find((action) => action.task === task),
+        threadActions: threadActions(task),
+        disabled: disabled || !links.canAsk,
+        chooseThread,
+        android: Platform.OS === "android",
+      },
+      m,
+    );
   const select = (event: string) => {
     const action = actions.find(
       (action) => event === action.task || event.startsWith(`${action.task}:`),

@@ -55,6 +55,41 @@ export function pullRequestAgentThreadActions(
   ];
 }
 
+/** One helper as a native menu action, with its thread choices when there are several. */
+export function pullRequestAgentMenuAction(
+  input: {
+    readonly task: PullRequestAgentTask;
+    readonly action:
+      | { readonly title: string; readonly icon: string; readonly disabled: boolean }
+      | undefined;
+    readonly threadActions: MenuAction[];
+    readonly disabled: boolean;
+    readonly chooseThread: boolean;
+    readonly android: boolean;
+  },
+  resolve: MessageResolver = m,
+) {
+  // Android supports only one submenu level beneath each helper action.
+  const subactions = input.android
+    ? input.threadActions.flatMap(
+        (item) =>
+          item.subactions?.map((child) => ({
+            ...child,
+            title: resolve(msg("Settled: {title}", { title: child.title })),
+          })) ?? [item],
+      )
+    : input.threadActions;
+  const disabled = input.disabled || input.action?.disabled === true;
+  return {
+    id: input.task,
+    title: input.action?.title ?? resolve(msg("Open thread")),
+    image: input.action?.icon,
+    attributes: { disabled },
+    // iOS opens an action with subactions as a submenu even when it is disabled.
+    ...(input.chooseThread && (input.android || !disabled) ? { subactions } : {}),
+  };
+}
+
 /** The AI helpers as a menu of the PR's vertical bar, where they share the screen's menu. */
 export function pullRequestAgentMenuItems(agent: {
   readonly actions: ReadonlyArray<{
