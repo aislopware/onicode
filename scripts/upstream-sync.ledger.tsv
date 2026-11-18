@@ -2506,3 +2506,4 @@ f4b988aeaf	take	fix(server): restart note says how to resume a cut Claude subage
 9415a2e52d	take	fix(server): Claude text generation sends attached images
 7e4c429482	take	fix(server): RTF tracked deletions are left out of the extracted text
 8cf97b5f06	take	fix(server): a finished run no longer keeps an unused file index alive
+081afe08dc	take	fix(mobile): PR diffs show syntax colors before the full file arrives (#38444)
