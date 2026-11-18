@@ -1933,6 +1933,12 @@ export const OrchestrationV2TurnItem = Schema.Union([
     prompt: Schema.String,
     progress: Schema.optional(Schema.String),
     result: Schema.NullOr(Schema.String),
+    /**
+     * Wire-only copies of subagent `subagentId`'s model, on rows whose record a client may not
+     * hold: older history pages and rows a fork inherits. The record wins when both are held.
+     */
+    model: Schema.optionalKey(Schema.String),
+    modelSelection: Schema.optionalKey(ModelSelection),
     /** Same as the prompt and result of subagent `subagentId`. */
     promptOmitted: DedupedBodyMarker,
     resultOmitted: DedupedBodyMarker,
@@ -4134,8 +4140,6 @@ export const OrchestrationV2ThreadHistoryPage = withRecordIdTable(
     ),
     nextCursor: Schema.NullOr(TrimmedNonEmptyString),
     hasMoreHistory: Schema.Boolean,
-    /** Records of the page's subagent items, which a bounded snapshot can omit. */
-    subagents: Schema.optionalKey(Schema.Array(OrchestrationV2Subagent)),
     idTable: IdTableMarker,
   }),
   () => null,

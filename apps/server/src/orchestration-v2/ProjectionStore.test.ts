@@ -14,7 +14,7 @@ import {
   type ModelSelection,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2TurnItem,
-  type OrchestrationV2ThreadHistoryPage,
+  OrchestrationV2ThreadHistoryPage,
   type OrchestrationV2ThreadShellSnapshot,
   NodeId,
   PlanId,
@@ -81,6 +81,7 @@ const modelSelection = {
 const driver = ProviderDriverKind.make("codex");
 const providerInstanceId = modelSelection.instanceId;
 const encodeUnknownJsonString = Schema.encodeSync(Schema.fromJsonString(Schema.Unknown));
+const encodeHistoryPage = Schema.encodeSync(OrchestrationV2ThreadHistoryPage);
 
 const traceSqlStatements = () => {
   const statements: Array<string> = [];
@@ -4328,7 +4329,8 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
         WHERE thread_id = ${threadId} AND ordinal IN (500, 580)
       `;
 
-      // A settled subagent of an old run is outside the window; its page carries its record.
+      // A settled subagent of an old run is outside the window, so its row carries its model.
+      // Its long result stays out of the page, which keeps to its byte budget.
       const subagentId = NodeId.make("node:bounded-sql-history:subagent");
       yield* sql`
         UPDATE orchestration_v2_projection_turn_items
@@ -4361,8 +4363,9 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           prompt: "Look",
           title: "Old child",
           model: "claude-haiku-4-5-20251001",
+          modelSelection,
           status: "completed",
-          result: "Done",
+          result: "Done".padEnd(THREAD_HISTORY_PAGE_POLICY.maxEncodedBytes, "."),
           startedAt: now,
           completedAt: now,
           updatedAt: now,
@@ -4382,9 +4385,16 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
           position: 589,
         }),
       );
+      assert.isAtMost(
+        Buffer.byteLength(JSON.stringify(encodeHistoryPage(subagentPage)), "utf8"),
+        THREAD_HISTORY_PAGE_POLICY.maxEncodedBytes,
+      );
+      const subagentRow = subagentPage.items.find(({ item }) => item.type === "subagent")?.item;
       assert.deepEqual(
-        subagentPage.subagents?.map((agent) => [agent.id, agent.model]),
-        [[subagentId, "claude-haiku-4-5-20251001"]],
+        subagentRow?.type === "subagent"
+          ? [subagentRow.subagentId, subagentRow.model, subagentRow.modelSelection]
+          : null,
+        [subagentId, "claude-haiku-4-5-20251001", modelSelection],
       );
       yield* sql`DELETE FROM orchestration_v2_projection_subagents WHERE subagent_id = ${subagentId}`;
       yield* sql`
@@ -10026,6 +10036,197 @@ it.layer(layerTest)("ProjectionStoreV2", (it) => {
       assert.isDefined(rolledBackShellThread);
       assert.isNull(rolledBackShellThread.latestVisibleMessage);
       assert.deepEqual(rolledBackShellThread?.pendingBackgroundTasks ?? [], []);
+    }),
+  );
+
+  it.effect("gives subagent rows a fork inherits the model of their source thread's record", () =>
+    Effect.gen(function* () {
+      const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+      const now = yield* DateTime.now;
+      const projectId = ProjectId.make("project:fork-subagent-model");
+      const sourceThreadId = ThreadId.make("thread:fork-subagent-model:source");
+      const forkThreadId = ThreadId.make("thread:fork-subagent-model:fork");
+      const sourceRunId = RunId.make("run:fork-subagent-model:source");
+      const forkRunId = RunId.make("run:fork-subagent-model:fork");
+      const subagentId = NodeId.make("node:fork-subagent-model:subagent");
+      const event = (name: string) => EventId.make(`event:fork-subagent-model:${name}`);
+      for (const [id, forkedFrom] of [
+        [sourceThreadId, null],
+        [forkThreadId, { type: "run" as const, threadId: sourceThreadId, runId: sourceRunId }],
+      ] as const) {
+        yield* projectionStore.apply({
+          id: event(`thread:${id}`),
+          type: "thread.created",
+          threadId: id,
+          occurredAt: now,
+          payload: {
+            createdBy: "user",
+            creationSource: "web",
+            id,
+            projectId,
+            title: id,
+            providerInstanceId,
+            modelSelection,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: null,
+            activeProviderThreadId: null,
+            lineage: {
+              parentThreadId: forkedFrom === null ? null : sourceThreadId,
+              relationshipToParent: forkedFrom === null ? null : "fork",
+              rootThreadId: sourceThreadId,
+            },
+            forkedFrom,
+            createdAt: now,
+            updatedAt: now,
+            archivedAt: null,
+            settledOverride: null,
+            settledAt: null,
+            lastVisitedAt: null,
+            deletedAt: null,
+          },
+        });
+      }
+      for (const [threadId, runId] of [
+        [sourceThreadId, sourceRunId],
+        [forkThreadId, forkRunId],
+      ] as const) {
+        yield* projectionStore.apply({
+          id: event(`run:${threadId}`),
+          type: "run.created",
+          threadId,
+          runId,
+          driver,
+          occurredAt: now,
+          payload: {
+            id: runId,
+            threadId,
+            ordinal: 1,
+            providerInstanceId,
+            modelSelection,
+            providerThreadId: null,
+            userMessageId: MessageId.make(`message:${threadId}`),
+            rootNodeId: null,
+            activeAttemptId: null,
+            status: "completed",
+            requestedAt: now,
+            startedAt: now,
+            completedAt: now,
+            checkpointId: null,
+            contextHandoffId: null,
+          },
+        });
+      }
+      const base = {
+        nodeId: null,
+        providerThreadId: null,
+        providerTurnId: null,
+        nativeItemRef: null,
+        parentItemId: null,
+        status: "completed" as const,
+        title: null,
+        startedAt: now,
+        completedAt: now,
+        updatedAt: now,
+      };
+      const items: ReadonlyArray<OrchestrationV2TurnItem> = [
+        {
+          ...base,
+          id: TurnItemId.make("turn-item:fork-subagent-model:subagent"),
+          threadId: sourceThreadId,
+          runId: sourceRunId,
+          ordinal: 1,
+          type: "subagent",
+          subagentId,
+          origin: "provider_native",
+          driver,
+          providerInstanceId,
+          childThreadId: null,
+          prompt: "Look",
+          result: "Done",
+        },
+        {
+          ...base,
+          id: TurnItemId.make("turn-item:fork-subagent-model:local"),
+          threadId: forkThreadId,
+          runId: forkRunId,
+          ordinal: 1,
+          type: "user_message",
+          messageId: MessageId.make(`message:${forkThreadId}`),
+          text: "Next",
+          inputIntent: "turn_start",
+          attachments: [],
+          createdBy: "user",
+          creationSource: "web",
+        },
+      ];
+      for (const item of items) {
+        yield* projectionStore.apply({
+          id: event(`item:${item.id}`),
+          type: "turn-item.updated",
+          threadId: item.threadId,
+          driver,
+          occurredAt: now,
+          payload: item,
+        });
+      }
+      yield* projectionStore.apply({
+        id: event("subagent"),
+        type: "subagent.updated",
+        threadId: sourceThreadId,
+        nodeId: subagentId,
+        driver,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: subagentId,
+          threadId: sourceThreadId,
+          runId: sourceRunId,
+          parentNodeId: NodeId.make("node:fork-subagent-model:root"),
+          origin: "provider_native",
+          createdBy: "agent",
+          driver,
+          providerInstanceId,
+          providerThreadId: null,
+          childThreadId: null,
+          nativeTaskRef: null,
+          prompt: "Look",
+          title: "Inherited child",
+          model: "claude-haiku-4-5-20251001",
+          modelSelection,
+          status: "completed",
+          result: "Done",
+          startedAt: now,
+          completedAt: now,
+          updatedAt: now,
+        },
+      });
+
+      const inheritedModel = (rows: ReadonlyArray<{ readonly item: OrchestrationV2TurnItem }>) =>
+        rows.flatMap(({ item }) =>
+          item.type === "subagent" ? [[item.subagentId, item.model, item.modelSelection]] : [],
+        );
+      const expected = [[subagentId, "claude-haiku-4-5-20251001", modelSelection]];
+      const snapshot = yield* projectionStore.getThreadSnapshotWindow(forkThreadId, {
+        rowLimit: THREAD_HISTORY_SNAPSHOT_ROW_LIMIT,
+      });
+      // The fork holds no record of it; the client looks it up in the source thread.
+      assert.deepEqual(snapshot.projection.subagents, []);
+      assert.deepEqual(inheritedModel(snapshot.projection.visibleTurnItems), expected);
+      const local = snapshot.projection.visibleTurnItems.findIndex(
+        (row) => row.sourceThreadId === forkThreadId && row.item.type === "user_message",
+      );
+      const page = yield* projectionStore.getThreadHistoryPage(
+        forkThreadId,
+        encodeThreadHistoryCursor({
+          snapshotSequence: snapshot.snapshotSequence,
+          sourceThreadId: forkThreadId,
+          sourceItemId: TurnItemId.make("turn-item:fork-subagent-model:local"),
+          position: local,
+        }),
+      );
+      assert.deepEqual(inheritedModel(page.items), expected);
     }),
   );
 
