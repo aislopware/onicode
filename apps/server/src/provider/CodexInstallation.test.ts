@@ -6,12 +6,14 @@ import * as ModelManifest from "./ModelManifest.ts";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@onicode/shared/HostProcess";
 import * as Digest from "effect/crypto/Digest";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Hex from "effect/encoding/Hex";
 import * as Fiber from "effect/Fiber";
 import * as FileSystem from "effect/FileSystem";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as PlatformError from "effect/PlatformError";
 import * as Exit from "effect/Exit";
 import * as Queue from "effect/Queue";
@@ -885,6 +887,10 @@ it.effect("keeps a release another server leases while this one is pruning it", 
 it.effect("refuses to remove the runtime while another server is installing", () =>
   Effect.gen(function* () {
     const h = yield* makeHarness();
+    // The file clock stands in for the wall clock, so the install's timeouts never fire.
+    yield* h.fs.writeFileString(`${h.baseDir}/now`, "");
+    const now = Option.getOrThrow((yield* h.fs.stat(`${h.baseDir}/now`)).mtime).getTime();
+    yield* TestClock.setTime(now);
     const verifying = yield* Deferred.make<void>();
     const installing = yield* makeHarness({
       baseDir: h.baseDir,
@@ -895,6 +901,78 @@ it.effect("refuses to remove the runtime while another server is installing", ()
     yield* installing.installation.start;
     yield* Deferred.await(verifying);
     expect((yield* Effect.flip(h.installation.remove())).detail).toContain("Stop Codex sessions");
+    // A long install outlives the staging cutoff of a server starting beside it.
+    const managed = h.installation.managedDirectory;
+    const staging = (yield* h.fs.readDirectory(managed)).find((entry) =>
+      entry.startsWith(".install-"),
+    )!;
+    // utimes takes seconds.
+    const dayAndHourAgo = now / 1000 - 25 * 60 * 60;
+    yield* h.fs.utimes(`${managed}/${staging}`, dayAndHourAgo, dayAndHourAgo);
+    yield* makeHarness({ baseDir: h.baseDir });
+    expect(yield* h.fs.exists(`${managed}/${staging}`)).toBe(true);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
+
+it.effect("keeps a cached release another server activates while this one is pruning it", () =>
+  Effect.gen(function* () {
+    const checksum = yield* upstreamChecksum;
+    const h = yield* makeHarness({ responses: upstreamResponses(checksum) });
+    yield* h.installation.start;
+    yield* terminalState(h.installation);
+    const firstScope = yield* Scope.make();
+    yield* h.installation.acquire().pipe(Scope.provide(firstScope));
+    yield* updateToUpstream(h.installation);
+    yield* Scope.close(firstScope, Exit.void);
+    // The cached newer release is inactive again, as after a peer reinstalled the older one.
+    const pointer = `${h.installation.managedDirectory}/active.json`;
+    yield* h.fs.writeFileString(pointer, JSON.stringify({ version: asset.version }));
+    const upstreamDirectory = `${h.installation.managedDirectory}/${upstreamVersion}`;
+    const testScope = yield* Effect.scope;
+    const services = yield* Effect.context<
+      | ChildProcessSpawner.ChildProcessSpawner
+      | Digest.Digest
+      | FileSystem.FileSystem
+      | Path.Path
+      | SecureRandom.SecureRandom
+    >();
+    let activated: Effect.Effect<void> = makeHarness({
+      baseDir: h.baseDir,
+      options: {
+        releaseAsset: {
+          version: upstreamVersion,
+          target: asset.target,
+          url: `${upstreamReleaseUrl}/codex-package-aarch64-apple-darwin.tar.gz`,
+          sha256: checksum,
+          archiveBytes: null,
+        },
+      },
+    }).pipe(
+      Effect.flatMap((peer) => terminalState(peer.installation)),
+      Effect.flatMap((state) => Effect.sync(() => expect(state.phase).toBe("succeeded"))),
+      // As once the peer's install has ended.
+      Effect.andThen(h.fs.readDirectory(upstreamDirectory)),
+      Effect.flatMap((entries) =>
+        Effect.forEach(
+          entries.filter((entry) => entry.endsWith("-install")),
+          (entry) => h.fs.remove(`${upstreamDirectory}/${entry}`),
+        ),
+      ),
+      Effect.asVoid,
+      Scope.provide(testScope),
+      Effect.provideContext(services),
+      Effect.orDie,
+    );
+    yield* makeHarness({
+      baseDir: h.baseDir,
+      beforePruneRename: Effect.suspend(() => {
+        const activate = activated;
+        activated = Effect.void;
+        return activate;
+      }),
+    });
+    expect(yield* h.fs.readFileString(pointer)).toContain(upstreamVersion);
+    expect((yield* h.installation.resolve()).version).toBe(upstreamVersion);
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
