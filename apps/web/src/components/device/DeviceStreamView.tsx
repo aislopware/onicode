@@ -34,6 +34,7 @@ const NO_AX_ATOM = Atom.make(AsyncResult.initial<ReadonlyArray<DeviceAxElement>,
   Atom.withLabel("device-ax-elements:none"),
 );
 const CONTROLS_RAIL_WIDTH = 56;
+const FLAT_VIEW_MARGIN = 12;
 
 function screenAspect(platform: DevicePlatform, screen: DeviceScreenSize | null): number {
   if (!screen) return platform === "ios" ? 9 / 19.5 : 9 / 20;
@@ -177,24 +178,43 @@ export function DeviceStreamView(props: {
     update();
     return observeResize(element, update);
   };
-  const frame = fitDeviceFrame(aspect, host.width, host.height, controlsInset);
+  const flatMargin = props.allowPhoneView ? FLAT_VIEW_MARGIN : 0;
+  const frame = fitDeviceFrame(
+    aspect,
+    host.width - 2 * flatMargin,
+    host.height - 2 * flatMargin,
+    controlsInset,
+  );
+  const profile = resolveDeviceShape({
+    platform: props.platform,
+    name: props.deviceName ?? "",
+    portraitAspect: Math.min(aspect, 1 / aspect),
+  });
+  // Android frames carry black corner wedges that the mini player's radius also covers.
+  const flatRadius =
+    Math.min(frame.width, frame.height) *
+    (props.platform === "android" ? 0.14 : profile.screenRadius);
+  const flatClass = flatMargin > 0 && "overflow-hidden ring-1 ring-border";
 
   const rotation = screenRotation(props.platform, screen);
 
   const sideways = rotation === 90 || rotation === -90;
-  const mediaStyle: React.CSSProperties = sideways
-    ? {
-        width: frame.height,
-        height: frame.width,
-        left: (frame.width - frame.height) / 2,
-        top: (frame.height - frame.width) / 2,
-        transform: `rotate(${rotation}deg)`,
-      }
-    : {
-        width: frame.width,
-        height: frame.height,
-        ...(rotation ? { transform: `rotate(${rotation}deg)` } : {}),
-      };
+  const mediaStyle: React.CSSProperties = {
+    ...(flatMargin > 0 ? { borderRadius: flatRadius } : {}),
+    ...(sideways
+      ? {
+          width: frame.height,
+          height: frame.width,
+          left: (frame.width - frame.height) / 2,
+          top: (frame.height - frame.width) / 2,
+          transform: `rotate(${rotation}deg)`,
+        }
+      : {
+          width: frame.width,
+          height: frame.height,
+          ...(rotation ? { transform: `rotate(${rotation}deg)` } : {}),
+        }),
+  };
 
   const axResult = useAtomValue(
     props.axOverlay && access && props.visible
@@ -245,11 +265,6 @@ export function DeviceStreamView(props: {
     }
     resetViewRef.current?.();
   };
-  const profile = resolveDeviceShape({
-    platform: props.platform,
-    name: props.deviceName ?? "",
-    portraitAspect: Math.min(aspect, 1 / aspect),
-  });
 
   return (
     <div
@@ -374,7 +389,7 @@ export function DeviceStreamView(props: {
         >
           <div
             ref={mountCanvas}
-            className={cn("absolute top-0 left-0", mjpegUrl && "hidden")}
+            className={cn("absolute top-0 left-0", flatClass, mjpegUrl && "hidden")}
             style={mediaStyle}
           />
           {props.visible && access && mjpegUrl ? (
@@ -383,7 +398,7 @@ export function DeviceStreamView(props: {
               ref={attachMjpegImage}
               alt=""
               draggable={false}
-              className="absolute top-0 left-0 object-contain"
+              className={cn("absolute top-0 left-0 object-contain", flatClass)}
               style={mediaStyle}
             />
           ) : null}
