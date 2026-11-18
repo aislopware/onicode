@@ -1,8 +1,12 @@
+import type { ReviewDiffPreviewSource } from "@onicode/contracts";
+import { mFallback } from "gt-react-native";
 import { describe, expect, it } from "vite-plus/test";
 
+import type { MessageResolver } from "../../i18n/messages";
 import {
   applyReviewDiffMetadata,
   buildReviewParsedDiff,
+  buildReviewSectionItems,
   resolveReviewSelectedSectionId,
   type ReviewSectionItem,
 } from "./reviewModel";
@@ -29,6 +33,42 @@ describe("resolveReviewSelectedSectionId", () => {
   it("shows the default while the picked section loads and returns to the pick once it does", () => {
     expect(resolveReviewSelectedSectionId([changes], "turn:2")).toBe("git:branch-range");
     expect(resolveReviewSelectedSectionId([turn, changes], "turn:2")).toBe("turn:2");
+  });
+});
+
+describe("buildReviewSectionItems", () => {
+  it("titles the server's diffs in the app's language", () => {
+    // Brackets show the title went through the app's resolver rather than coming from the server.
+    const resolve = ((message, options) => `[${mFallback(message, options)}]`) as MessageResolver;
+    const source = (
+      kind: ReviewDiffPreviewSource["kind"],
+      baseRef: string | null,
+      title: string,
+    ): ReviewDiffPreviewSource => ({
+      id: kind,
+      kind,
+      title,
+      baseRef,
+      headRef: null,
+      diff: "",
+      diffHash: kind,
+      truncated: false,
+    });
+    const titles = (gitSections: ReadonlyArray<ReviewDiffPreviewSource>) =>
+      buildReviewSectionItems({
+        checkpoints: [],
+        gitSections,
+        turnDiffById: {},
+        loadingGitSections: false,
+        resolve,
+      }).map((item) => item.title);
+    expect(
+      titles([
+        source("working-tree", "HEAD", "Uncommitted"),
+        source("branch-range", "origin/main", "Changes vs origin/main"),
+      ]),
+    ).toEqual(["[Uncommitted]", "[Changes vs origin/main]"]);
+    expect(titles([source("branch-range", null, "Changes")])).toEqual(["[Changes]"]);
   });
 });
 

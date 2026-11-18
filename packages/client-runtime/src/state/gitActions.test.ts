@@ -1,10 +1,17 @@
-import { SourceControlProviderKind, type VcsStatusResult } from "@onicode/contracts";
+import {
+  type GitRunStackedActionResult,
+  SourceControlProviderKind,
+  type VcsStatusResult,
+} from "@onicode/contracts";
+import { mFallback } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 import { describe, expect, it } from "vite-plus/test";
 
 import { sourceControlClients } from "../sourceControlClients.ts";
 import {
   buildMenuItems,
   getGitActionDisabledReason,
+  gitActionResultTitle,
   resolveDefaultBranchActionDialogCopy,
   resolveQuickAction,
 } from "./gitActions.ts";
@@ -102,5 +109,38 @@ describe("git action copy", () => {
         terminology: sourceControlClients.get("gitlab").changeRequest,
       }).continueLabel,
     ).toBe("Commit, push & create MR");
+  });
+});
+
+describe("gitActionResultTitle", () => {
+  // Brackets show the title went through the app's resolver rather than coming from the server.
+  const translated = ((message, options) => `[${mFallback(message, options)}]`) as MFunctionType;
+  const title = (result: Partial<Pick<GitRunStackedActionResult, "commit" | "push" | "pr">>) =>
+    gitActionResultTitle(
+      {
+        commit: { status: "skipped_no_changes" },
+        push: { status: "skipped_not_requested" },
+        pr: { status: "skipped_not_requested" },
+        ...result,
+      },
+      sourceControlClients.get("gitlab").changeRequest,
+      translated,
+    );
+
+  it("words what the action did in the app's language", () => {
+    expect(title({ pr: { status: "created", number: 12 } })).toBe("[Created MR #12]");
+    expect(title({ pr: { status: "opened_existing" } })).toBe("[Opened MR]");
+    expect(
+      title({
+        commit: { status: "created", commitSha: "0123456789abcdef" },
+        push: { status: "pushed", branch: "feature", upstreamBranch: "origin/feature" },
+      }),
+    ).toBe("[Pushed 0123456 to origin/feature]");
+    expect(title({ push: { status: "pushed" } })).toBe("[Pushed]");
+    expect(title({ commit: { status: "created", commitSha: "0123456789abcdef" } })).toBe(
+      "[Committed 0123456]",
+    );
+    expect(title({ commit: { status: "created" } })).toBe("[Committed changes]");
+    expect(title({})).toBe("[Done]");
   });
 });

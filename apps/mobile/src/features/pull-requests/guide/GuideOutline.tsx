@@ -1,7 +1,7 @@
 import { Button } from "../../../components/ui/Button";
 import type { PullRequestReviewGuide } from "@onicode/contracts";
-import { stopFilePaths } from "@onicode/client-runtime/review-guide-tour";
-import { useGT } from "gt-react-native";
+import { stopFilePaths, stopText } from "@onicode/client-runtime/review-guide-tour";
+import { useGT, useMessages } from "gt-react-native";
 import { Pressable, View } from "react-native";
 import { AppText as Text } from "../../../components/ui/AppText";
 import { SymbolView } from "../../../components/ui/AppSymbol";
@@ -20,6 +20,9 @@ export function GuideOutline({
   readonly onRewrite?: () => void;
 }) {
   const gt = useGT();
+  const messages = useMessages();
+  const firstStop = guide.stops[0];
+  const intro = firstStop === undefined ? "" : stopText(firstStop, messages).summary;
   const { appearance, setCodeWordBreak } = useAppearancePreferences();
   const files = new Set(guide.stops.flatMap(stopFilePaths));
   return (
@@ -65,13 +68,14 @@ export function GuideOutline({
           </Pressable>
         </Menu>
       </View>
-      {guide.stops[0]?.summary ? (
+      {intro ? (
         <View className="mb-6">
-          <PullRequestMarkdown lineBreaks={false} markdown={guide.stops[0].summary} />
+          <PullRequestMarkdown lineBreaks={false} markdown={intro} />
         </View>
       ) : null}
       {guide.stops.map((stop, position) => {
         const paths = stopFilePaths(stop);
+        const title = stopText(stop, messages).title;
         const firstPath = paths[0];
         const filename = firstPath?.split("/").at(-1);
         return (
@@ -80,7 +84,7 @@ export function GuideOutline({
             accessibilityRole="button"
             accessibilityLabel={gt("Stop {position}: {title}", {
               position: position + 1,
-              title: stop.title,
+              title,
             })}
             onPress={() => onOpen(position)}
             className="flex-row gap-4 active:opacity-60"
@@ -94,7 +98,7 @@ export function GuideOutline({
               ) : null}
             </View>
             <View className="min-w-0 flex-1 gap-2 pb-7 pt-0.5">
-              <Text className="text-base leading-6 font-oni-medium">{stop.title}</Text>
+              <Text className="text-base leading-6 font-oni-medium">{title}</Text>
               <View className="flex-row items-center gap-1.5">
                 {stop.attention ? (
                   <SymbolView name="eye" size={14} tintColorClassName="accent-warning-foreground" />

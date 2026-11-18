@@ -51,6 +51,7 @@ import {
   buildMenuItems,
   formatGitActionElapsed,
   GIT_ACTION_SUCCESS_VISIBLE_MS,
+  gitActionResultTitle,
   hasUsableGitMenuContent,
   type GitActionProgressPresentation,
   type GitActionIconName,
@@ -1350,7 +1351,7 @@ export default function GitActionsControl({
         ? gt("Created {term, select, mr {MR} cr {change request} other {PR}}", {
             term: changeRequestTermKind(changeRequestTerminology),
           })
-        : actionResult.toast.title,
+        : gitActionResultTitle(actionResult, changeRequestTerminology, m),
       description: createdPullRequest ? null : (actionResult.toast.description ?? null),
       scopeKey: successScopeKey,
       expiresAtMs: inlineSuccessExpiresAt(),

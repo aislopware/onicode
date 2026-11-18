@@ -1,6 +1,7 @@
 import type { PullRequestReviewGuideExcerpt, PullRequestReviewGuideStop } from "@onicode/contracts";
 import type { ReviewGuideGenerationResult } from "@onicode/provider-core/server/textGeneration";
 import { unquoteGitPatchPath } from "@onicode/shared/gitPatchPath";
+import { OTHER_FILES_STOP_SUMMARY, OTHER_FILES_STOP_TITLE } from "@onicode/shared/reviewGuideStops";
 
 const MAX_EXCERPT_LINES = 25;
 
@@ -165,8 +166,8 @@ export function normalizeReviewGuide(
   const unplaced = change.files.filter((path) => !placed.has(path));
   if (unplaced.length > 0) {
     stops.push({
-      title: "Other files",
-      summary: "Changed files the tour does not otherwise cover.",
+      title: OTHER_FILES_STOP_TITLE,
+      summary: OTHER_FILES_STOP_SUMMARY,
       attention: null,
       excerpts: [],
       files: unplaced.map((path) => ({ path })),

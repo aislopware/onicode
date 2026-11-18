@@ -11,6 +11,7 @@ import {
   letterStopNotes,
   stepTourPosition,
   stopFilePaths,
+  stopText,
 } from "@onicode/client-runtime/review-guide-tour";
 import { SymbolView } from "../../../components/ui/AppSymbol";
 import { GuideOutline } from "./GuideOutline";
@@ -109,6 +110,7 @@ export function PullRequestGuideStopScreen({ route }: StaticScreenProps<GuideSto
   const { guide, stale } = reviewGuideState(state.data);
   const position = Math.max(0, Math.min(route.params.position, (guide?.stops.length ?? 1) - 1));
   const stop = guide?.stops[Math.max(0, position)];
+  const nextStop = guide?.stops[position + 1];
   const diff = usePullRequestDiff(
     route.params,
     sourceControlClients.get((detail.data ?? route.params.initialSummary)?.provider).changeRequest,
@@ -174,8 +176,10 @@ export function PullRequestGuideStopScreen({ route }: StaticScreenProps<GuideSto
             ) : (
               <>
                 <GuideNotice state={state} />
-                <Text className="text-2xl leading-8 font-oni-semibold">{stop.title}</Text>
-                <PullRequestMarkdown lineBreaks={false} markdown={stop.summary} />
+                <Text className="text-2xl leading-8 font-oni-semibold">
+                  {stopText(stop, m).title}
+                </Text>
+                <PullRequestMarkdown lineBreaks={false} markdown={stopText(stop, m).summary} />
                 {stop.attention ? (
                   <View className="gap-3 rounded-xl border border-border bg-grouped-card p-4">
                     <View className="flex-row items-center gap-2">
@@ -298,7 +302,7 @@ export function PullRequestGuideStopScreen({ route }: StaticScreenProps<GuideSto
                     </Text>
                     <Text className="text-base font-oni-semibold">
                       {guide && position < guide.stops.length - 1
-                        ? guide.stops[position + 1]?.title
+                        ? nextStop && stopText(nextStop, m).title
                         : canReview
                           ? gt("Finish review")
                           : gt("Finish tour")}
