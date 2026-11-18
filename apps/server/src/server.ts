@@ -263,6 +263,19 @@ const layerDesktopTelemetryReceiver = DesktopTelemetryReceiver.layer.pipe(
   Layer.provideMerge(layerServerSettings),
 );
 
+// The server starts on the PATH the desktop app had; providers only on the shell's PATH wait for it.
+const layerProviderHostPathRefresh = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const receiver = yield* DesktopTelemetryReceiver.DesktopTelemetryReceiver;
+    const providers = yield* ProviderRegistry.ProviderRegistry;
+    yield* receiver.hostPathChanges.pipe(
+      Stream.filter((count) => count > 0),
+      Stream.runForEach(() => providers.refresh()),
+      Effect.forkScoped,
+    );
+  }),
+).pipe(Layer.provide(layerDesktopTelemetryReceiver));
+
 const layerResourceTelemetry = ResourceTelemetry.layer.pipe(
   Layer.provideMerge(layerNativeTelemetry),
   Layer.provideMerge(layerDesktopTelemetryReceiver),
@@ -666,6 +679,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   ),
   ProviderUsageLimitsIngestion.layer,
   layerProviderInstallationRefresh,
+  layerProviderHostPathRefresh,
   ProviderInstallation.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
 ).pipe(

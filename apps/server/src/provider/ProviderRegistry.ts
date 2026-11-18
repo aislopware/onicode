@@ -701,24 +701,25 @@ export const layer = Layer.effect(
     });
 
     type RefreshAllCompletion = Deferred.Deferred<ReadonlyArray<ServerProvider>>;
-    // A refresh is how a user asks Onicode to see a CLI installed since launch; a burst shares one probe.
-    // Drivers copy the environment when built, so instances still missing their CLI are rebuilt
-    // on the new PATH. They cannot have live sessions, and installed ones keep theirs.
-    const refreshHostPath = yield* refreshWindowsPath().pipe(
-      Effect.flatMap((changed) =>
-        changed
-          ? Ref.get(providersRef).pipe(
-              Effect.flatMap((providers) =>
-                instanceRegistryMutator.rebuild(
-                  providers
-                    .filter((provider) => provider.enabled && !provider.installed)
-                    .map((provider) => provider.instanceId),
-                ),
-              ),
-            )
-          : Effect.void,
-      ),
+    // A refresh is how a user asks Onicode to see a CLI installed since launch; a burst shares one
+    // registry read. The desktop app also sends the login shell's PATH after the server starts.
+    // Instances still missing their CLI are rebuilt on a new PATH. They cannot have live sessions,
+    // and installed ones keep theirs.
+    const readWindowsPath = yield* refreshWindowsPath().pipe(
       Effect.cachedWithTTL(Duration.seconds(10)),
+    );
+    const refreshHostPath = readWindowsPath.pipe(
+      Effect.andThen(
+        instanceRegistryMutator.rebuildOnHostPathChange(
+          Ref.get(providersRef).pipe(
+            Effect.map((providers) =>
+              providers
+                .filter((provider) => provider.enabled && !provider.installed)
+                .map((provider) => provider.instanceId),
+            ),
+          ),
+        ),
+      ),
     );
     const refreshAllInFlightRef = yield* Ref.make<Option.Option<RefreshAllCompletion>>(
       Option.none(),

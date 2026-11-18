@@ -320,7 +320,9 @@ it.effect("a remote policy refresh preserves a newer health result on the regist
         ProviderRegistry.layer.pipe(
           Layer.provide(layerDependencies),
           Layer.provide(
-            Layer.mock(ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator)({}),
+            Layer.mock(ProviderInstanceRegistryMutator.ProviderInstanceRegistryMutator)({
+              rebuildOnHostPathChange: () => Effect.void,
+            }),
           ),
         ),
       ),
