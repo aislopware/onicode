@@ -12,9 +12,11 @@ export function backgroundTaskLaunch(
   turnItems: ReadonlyArray<TurnItem>,
 ): { readonly item: TurnItem | undefined; readonly command: string | undefined } {
   const nativeId = task.nativeItemId ?? task.taskId;
+  // A Claude approval card shares its tool call's native id, so only launch types match.
   const item = turnItems.findLast((candidate) =>
     task.itemId === undefined
-      ? (candidate.nativeItemRef?.nativeId || candidate.id) === nativeId
+      ? (candidate.type === "command_execution" || candidate.type === "dynamic_tool") &&
+        (candidate.nativeItemRef?.nativeId || candidate.id) === nativeId
       : candidate.id === task.itemId,
   );
   if (item?.type === "command_execution") return { item, command: item.input };
