@@ -389,6 +389,10 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
       ],
     ],
     ["a line that is not JSON", ["Using the global credential file.", streamJsonResult]],
+    [
+      "an untyped error line",
+      [JSON.stringify({ is_error: true, result: "retrying" }), streamJsonResult],
+    ],
   ] as const)("reads the stream-json result past %s", ([, lines]) =>
     withFakeClaudeEnv(
       { output: lines.join("\n"), argsMustContain: "stream-json" },
@@ -402,6 +406,11 @@ it.layer(layerClaudeTextGenerationTest)("ClaudeTextGeneration", (it) => {
 
   it.effect.each([
     ["the exit code without output", [], "Claude CLI command failed with code 1."],
+    [
+      "plain-text stdout",
+      [JSON.stringify({ type: "system", subtype: "init" }), "Error: wrapper says no"],
+      "Claude CLI command failed: Error: wrapper says no",
+    ],
     [
       "an untyped error line",
       [JSON.stringify({ is_error: true, result: "quota exceeded" })],

@@ -66,7 +66,7 @@ const ClaudeOutputEnvelope = Schema.Struct({
   structured_output: Schema.Unknown,
 });
 const ClaudeOutputMessage = Schema.Struct({
-  type: Schema.String,
+  type: Schema.optionalKey(Schema.String),
   structured_output: Schema.optionalKey(Schema.Unknown),
 });
 const isClaudeOutputEnvelope = Schema.is(ClaudeOutputEnvelope);
@@ -368,11 +368,14 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
 
       // stream-json prints one message per line; keep the results and errors, as
       // `--output-format json --verbose` would list them, without the transcript around them.
-      const resultLines = streamJson
-        ? stdout.split("\n").filter((line) => Option.isSome(decodeClaudeResultLine(line)))
-        : [];
+      const lines = streamJson ? stdout.split("\n") : [];
+      const resultLines = lines.filter((line) => Option.isSome(decodeClaudeResultLine(line)));
       return {
         stdout: streamJson ? (resultLines.length > 0 ? `[${resultLines.join(",")}]` : "") : stdout,
+        // Plain text, such as a wrapper's own error, is what a failed run can still report.
+        stdoutText: streamJson
+          ? lines.filter((line) => Option.isNone(decodeJsonOption(line))).join("\n")
+          : stdout,
         stderr,
         exitCode,
       };
@@ -384,13 +387,12 @@ export const makeClaudeTextGeneration = Effect.fn("makeClaudeTextGeneration")(fu
           result.exitCode === 0 || !result.stderr.includes(NO_SESSION_PERSISTENCE_REJECTED),
         () => runClaudeCommand(false),
       ),
-      Effect.flatMap(({ stdout, stderr, exitCode }) => {
+      Effect.flatMap(({ stdout, stdoutText, stderr, exitCode }) => {
         if (exitCode === 0) return Effect.succeed(stdout);
         const stderrDetail = stderr.trim();
-        const stdoutDetail = stdout.trim();
         const detail =
-          claudeErrorResult(stdoutDetail) ??
-          (stderrDetail.length > 0 ? stderrDetail : stdoutDetail);
+          claudeErrorResult(stdout.trim()) ??
+          (stderrDetail.length > 0 ? stderrDetail : stdoutText.trim());
         return Effect.fail(
           new TextGenerationError({
             operation,
