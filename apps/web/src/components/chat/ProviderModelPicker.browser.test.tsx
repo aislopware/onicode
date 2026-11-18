@@ -286,6 +286,76 @@ it("opens on the active provider when every favorite belongs to a disabled provi
   await expect.element(page.getByRole("option", { name: /Codex model/ })).toBeVisible();
 });
 
+it("opens on favorites and recent picks, with every other model behind All models", async () => {
+  const entries = deriveProviderInstanceEntries(
+    [
+      { name: "Claude", models: ["Opus", "Haiku", "Sonnet"] },
+      { name: "Codex", models: ["Sol"] },
+    ].map(({ name, models }) => ({
+      instanceId: ProviderInstanceId.make(name.toLowerCase()),
+      driver: ProviderDriverKind.make(name === "Claude" ? "claudeAgent" : name.toLowerCase()),
+      displayName: name,
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready" as const,
+      auth: { status: "authenticated" as const },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: models.map((model) => ({
+        slug: model.toLowerCase(),
+        name: model,
+        isCustom: false,
+        capabilities: {},
+      })),
+      slashCommands: [],
+      skills: [],
+    })),
+  );
+  const [claude] = entries;
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    favorites: [{ provider: claude!.instanceId, model: "haiku" }],
+  });
+  using _settings = {
+    [Symbol.dispose]: () => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS),
+  };
+
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      activeInstanceId={claude!.instanceId}
+      model="opus"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={new Map(entries.map((entry) => [entry.instanceId, entry.models]))}
+      triggerAriaLabel="Choose model"
+      onInstanceModelChange={() => {}}
+    />,
+  );
+  await screen.getByRole("button", { name: "Choose model" }).click();
+  const names = () =>
+    page
+      .getByRole("option")
+      .elements()
+      .map((row) => row.textContent?.match(/Haiku|Opus|Sonnet|Sol|All models/)?.[0]);
+  // The favorite, then the selected model as the newest pick, which Recent marks as selected.
+  await vi.waitFor(() => expect(names()).toEqual(["Haiku", "Opus", "All models"]));
+  await expect
+    .element(page.getByRole("option", { name: /Opus/ }))
+    .toHaveAttribute("aria-selected", "true");
+
+  // Typing searches every model, not only the ones in view.
+  await userEvent.keyboard("sol");
+  await vi.waitFor(() => expect(names()).toContain("Sol"));
+  await userEvent.clear(page.getByPlaceholder("Search models"));
+  await vi.waitFor(() => expect(names()).toEqual(["Haiku", "Opus", "All models"]));
+
+  await page.getByRole("option", { name: /All models/ }).click();
+  await vi.waitFor(() =>
+    expect(names()).toEqual(["Haiku", "Opus", "Opus", "Haiku", "Sonnet", "Sol"]),
+  );
+});
+
 it("keeps the touch keyboard down when the picker opens", async () => {
   const entries = deriveProviderInstanceEntries(
     ["Codex", "Claude"].map((name) => ({

@@ -28,12 +28,15 @@ import { ModelListRow, ModelPickerRowItem } from "./ModelListRow";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
 import {
+  MODEL_PICKER_ALL_MODELS_KEY,
   modelPickerFavoriteKey,
   modelPickerLegacySectionKey,
   modelPickerModelKey,
+  modelPickerRecentKey,
   parseModelPickerLegacySectionKey,
   parseModelPickerModelKey,
 } from "./modelPickerKeys";
+import { readRecentModels, recentModelsToShow, rememberRecentModel } from "./modelPickerRecents";
 import { rankModelPickerSearch } from "@onicode/client-runtime/model-search";
 import { Combobox, ComboboxEmpty, ComboboxListVirtualized } from "../ui/combobox";
 import { ModelEsque } from "./providerIconUtils";
@@ -140,6 +143,7 @@ const LIST_MAX_PX = 272;
 const LIST_PADDING_PX = 8;
 const WIDE_LIST_GROWS = "min-[45rem]:grow";
 const FAVORITES_SECTION_KEY = "section:favorites";
+const RECENT_SECTION_KEY = "section:recent";
 
 type ListRow =
   | {
@@ -153,12 +157,14 @@ type ListRow =
   | { kind: "rule"; key: string }
   | { kind: "model"; key: string; model: ModelPickerItem; inFavorites: boolean }
   | { kind: "legacy"; key: string; expanded: boolean }
+  /** Opens every provider's models under Favorites and Recent. */
+  | { kind: "all"; key: string; count: number }
   /** Why a provider lists no models, with the way to set it up when there is one. */
   | { kind: "status"; key: string; entry: ProviderInstanceEntry; action: string | null }
   | { kind: "notice"; key: string; notice: string };
 
 function isHighlightableRow(row: ListRow): boolean {
-  return row.kind === "model" || row.kind === "legacy";
+  return row.kind === "model" || row.kind === "legacy" || row.kind === "all";
 }
 
 /** Null for rows that size to their text. */
@@ -460,6 +466,13 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
   const keybindings = providedKeybindings ?? serverKeybindings;
   const [searchHeight, setSearchHeight] = useState(0);
+  // As they were when the picker opened: a pick in a picker that stays open must not move the
+  // rows under the pointer.
+  const [opened] = useState(() => ({
+    recents: readRecentModels(props.environmentId),
+    active: activeModelSlug ? { instanceId: props.activeInstanceId, slug: activeModelSlug } : null,
+  }));
+  const [showAll, setShowAll] = useState(false);
   const toggleFavorite = useToggleEnvironmentModelFavorite(props.environmentId);
 
   const toggleLegacySection = (instanceId: ProviderInstanceId) => {
@@ -492,6 +505,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     }
     const resolvedModel = resolveSelectableModel(entry.driverKind, modelSlug, options);
     if (!resolvedModel) return null;
+    // Taking a model out of a multiple selection is not a pick.
+    if (!additive || !selectedModelKeySet.has(modelPickerModelKey(instanceId, resolvedModel))) {
+      rememberRecentModel(props.environmentId, { instanceId, slug: resolvedModel });
+    }
     if (additive && onToggleModel) {
       onToggleModel(instanceId, resolvedModel);
     } else {
@@ -571,13 +588,16 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const pickableModels =
     lockedProvider === null ? flatModels : flatModels.filter((m) => matchesLockedProvider(m));
   const instanceOrder = instanceEntries.map((entry) => entry.instanceId);
-  const modelRow = (model: ModelPickerItem, inFavorites = false): ListRow => ({
+  const modelRow = (model: ModelPickerItem, pinned?: "favorite" | "recent"): ListRow => ({
     kind: "model",
-    key: inFavorites
-      ? modelPickerFavoriteKey(model.instanceId, model.slug)
-      : modelPickerModelKey(model.instanceId, model.slug),
+    key:
+      pinned === "favorite"
+        ? modelPickerFavoriteKey(model.instanceId, model.slug)
+        : pinned === "recent"
+          ? modelPickerRecentKey(model.instanceId, model.slug)
+          : modelPickerModelKey(model.instanceId, model.slug),
     model,
-    inFavorites,
+    inFavorites: pinned === "favorite",
   });
 
   const favoriteModels = isSearching
@@ -587,6 +607,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         groupFavorites: false,
         instanceOrder,
       });
+  const recentPicks = isSearching
+    ? []
+    : recentModelsToShow({ ...opened, models: pickableModels, isFavorite });
+  // Favorites and Recent answer most opens. A single row between them would only hide the
+  // catalogue, so then the list opens whole, as it does for someone new.
+  const leadsWithPicks = favoriteModels.length + recentPicks.length >= 2;
+  const recentModels = leadsWithPicks ? recentPicks : [];
+  const collapsed = leadsWithPicks && !showAll;
 
   const rows = ((): ListRow[] => {
     if (isSearching) {
@@ -609,8 +637,23 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         FAVORITES_SECTION_KEY,
         gt("Favorites"),
         false,
-        favoriteModels.map((model) => modelRow(model, true)),
+        favoriteModels.map((model) => modelRow(model, "favorite")),
       );
+    }
+    if (recentModels.length > 0) {
+      pushSection(
+        RECENT_SECTION_KEY,
+        gt("Recent", { $context: "heading for recently picked models" }),
+        false,
+        recentModels.map((model) => modelRow(model, "recent")),
+      );
+    }
+    if (collapsed) {
+      out.push(
+        { kind: "rule", key: "rule:all" },
+        { kind: "all", key: MODEL_PICKER_ALL_MODELS_KEY, count: pickableModels.length },
+      );
+      return out;
     }
     const lockedOut: ProviderInstanceEntry[] = [];
     const offersSetup = (entry: ProviderInstanceEntry) =>
@@ -681,16 +724,24 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       ...filteredItemKeys,
       ...flatModels.map((model) => modelPickerModelKey(model.instanceId, model.slug)),
       ...favoriteModels.map((model) => modelPickerFavoriteKey(model.instanceId, model.slug)),
+      ...recentModels.map((model) => modelPickerRecentKey(model.instanceId, model.slug)),
+      MODEL_PICKER_ALL_MODELS_KEY,
       ...flatModels
         .filter((model) => model.isLegacy)
         .map((model) => modelPickerLegacySectionKey(model.instanceId)),
     ]),
   ];
+  const pinnedKey = (model: ModelPickerItem | undefined) =>
+    model === undefined
+      ? null
+      : isFavorite(model)
+        ? modelPickerFavoriteKey(model.instanceId, model.slug)
+        : recentModels.includes(model)
+          ? modelPickerRecentKey(model.instanceId, model.slug)
+          : null;
   const comboValue = [...selectedModelKeySet].flatMap((key) => {
-    const model = modelByKey.get(key);
-    return model && isFavorite(model)
-      ? [key, modelPickerFavoriteKey(model.instanceId, model.slug)]
-      : [key];
+    const pinned = pinnedKey(modelByKey.get(key));
+    return pinned ? [key, pinned] : [key];
   });
   const comboValueSet = new Set(comboValue);
 
@@ -731,17 +782,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     selectedModelKeySet,
   };
 
-  // The selected model's row when it is not a favorite, so a long list opens on it.
-  const activeIsFavorite =
-    activeModel !== undefined &&
-    isFavorite({ instanceId: props.activeInstanceId, slug: activeModelSlug });
+  // Favorites and Recent lead the list, so the selected model's row there is the one the list
+  // marks as selected. A model in neither has only its provider row, and a long list opens on it.
+  const activePinnedKey = activeModelKey ? pinnedKey(modelByKey.get(activeModelKey)) : null;
   const initialScrollIndex =
-    activeModelKey && !activeIsFavorite ? rowIndexByKey.get(activeModelKey) : undefined;
-  // Favorites lists the selected model first, so that row is the one the list marks as selected.
-  const activeRowKey =
-    activeModelKey && activeIsFavorite && !isSearching
-      ? modelPickerFavoriteKey(props.activeInstanceId, activeModelSlug)
-      : activeModelKey;
+    activeModelKey && !activePinnedKey ? rowIndexByKey.get(activeModelKey) : undefined;
+  const activeRowKey = activePinnedKey && !isSearching ? activePinnedKey : activeModelKey;
   const listHeight = isSearching
     ? undefined
     : Math.min(
@@ -809,6 +855,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       event.preventDefault();
       event.stopPropagation();
       if (isSearching) setSearchQuery("");
+      // Providers show once the catalogue is open; the next press moves between them.
+      if (collapsed) {
+        setShowAll(true);
+        announce(gt("All models"), "model-picker");
+        return;
+      }
       scrollToSection(command === "modelPicker.nextProvider" ? 1 : -1);
       return;
     }
@@ -874,6 +926,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                 comboValue.find((key) => !value.includes(key)))
               : value;
             if (typeof modelKey !== "string") {
+              return;
+            }
+            if (modelKey === MODEL_PICKER_ALL_MODELS_KEY) {
+              setShowAll(true);
               return;
             }
             const legacyInstanceId = parseModelPickerLegacySectionKey(modelKey);
@@ -964,6 +1020,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                     ).preventBaseUIHandler?.();
                     e.preventDefault();
                     e.stopPropagation();
+                    if (highlightedModelKeyRef.current === MODEL_PICKER_ALL_MODELS_KEY) {
+                      setShowAll(true);
+                      return;
+                    }
                     const legacyInstanceId = parseModelPickerLegacySectionKey(
                       highlightedModelKeyRef.current,
                     );
@@ -1022,6 +1082,18 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         {row.expanded
                           ? gt("Show less", { $context: "collapses the list of older models" })
                           : gt("Show more", { $context: "expands the list of older models" })}
+                      </ModelPickerRowItem>
+                    );
+                  case "all":
+                    return (
+                      <ModelPickerRowItem
+                        index={comboIndexByKey.get(row.key) ?? -1}
+                        value={row.key}
+                        aria-expanded={false}
+                        className="justify-between text-muted-foreground data-highlighted:text-foreground"
+                      >
+                        <T>All models</T>
+                        <span className="tabular-nums">{row.count}</span>
                       </ModelPickerRowItem>
                     );
                   case "model": {
