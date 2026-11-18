@@ -10,7 +10,7 @@ import { createNativeHeaderMenu } from "./nativeHeaderMenu.ios";
 import { ScreenHeaderButton } from "./ScreenHeaderButton";
 import { NativeStackScreenOptions, useScreenOptionsWriter } from "../../native/StackHeader";
 import { useNativeWorkspaceColumnsSupported } from "../../native/NativeWorkspaceColumns";
-import { useDeviceType } from "../../native/native-layout-metrics";
+import { useDeviceType, useNativeLayoutMetrics } from "../../native/native-layout-metrics";
 import { isDuoDevice } from "../../lib/device-type";
 import { useAdaptiveWorkspaceLayout } from "../../features/layout/AdaptiveWorkspaceLayout";
 import { useSidebarToggle } from "../../features/layout/useSidebarToggle";
@@ -24,6 +24,8 @@ import type { AppBarMenu, AppBarMenuItem, AppBarProps } from "./AppBar.types";
 import type { AppSymbolName } from "./AppSymbol";
 import { useNativeMailSearchToolbar } from "../../native/use-native-mail-search-toolbar";
 import { useControlTheme } from "./useControlTheme";
+import { groupsAppBarTrailingTools } from "./AppBar.logic";
+import { usePaneRole } from "./Pane";
 
 function iosIcon(icon: AppSymbolName) {
   return typeof icon === "string" ? icon : icon.ios;
@@ -50,6 +52,8 @@ export function AppBar(props: AppBarProps) {
   const locale = useLocale();
   const usesNativeWorkspaceColumns = useNativeWorkspaceColumnsSupported();
   const deviceType = useDeviceType();
+  const nativeMetrics = useNativeLayoutMetrics();
+  const paneRole = usePaneRole();
   const headerId = useId();
   const { layout } = useAdaptiveWorkspaceLayout();
   const sidebarToggle = useSidebarToggle();
@@ -112,13 +116,13 @@ export function AppBar(props: AppBarProps) {
     (search.compactToolbar ?? !layout.usesSplitView) &&
     usesNativeMailSearchToolbar;
   const trailingMenus = compactSearch ? (menus?.slice(1) ?? []) : (menus ?? []);
-  // The Duo's vertical bar never overflows: items that don't fit slide under the workspace tabs,
-  // and a Live Activity pushes them down further. More than one tool shares one menu there.
-  const groupTrailing =
-    usesNativeWorkspaceColumns &&
-    isDuoDevice(deviceType) &&
-    props.onClose === undefined &&
-    (props.actions?.length ?? 0) + trailingMenus.length > 1;
+  const groupTrailing = groupsAppBarTrailingTools({
+    nativeColumns: usesNativeWorkspaceColumns,
+    metrics: nativeMetrics,
+    sidebar: paneRole === "sidebar",
+    closable: props.onClose !== undefined,
+    tools: (props.actions?.length ?? 0) + trailingMenus.length,
+  });
   const actions = groupTrailing ? [] : (props.actions ?? []);
   const visibleMenus: ReadonlyArray<AppBarMenu> = groupTrailing
     ? [

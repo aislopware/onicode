@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 import {
   appendPullRequestAgentPrompt,
+  pullRequestAgentMenuItems,
   pullRequestAgentPrompt,
   pullRequestAgentThread,
   pullRequestAgentThreadActions,
 } from "./pullRequestAgentTasks";
 import { IsoDateTime, ProjectId, ThreadId } from "@onicode/contracts";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
+import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 
 const GITHUB = sourceControlClients.get("github").changeRequest;
 
@@ -52,6 +54,34 @@ describe("PR agent tasks", () => {
     expect(pullRequestAgentThreadActions([archived], "feedback", true)[1]).toMatchObject({
       attributes: { disabled: true },
     });
+  });
+  it("offers no AI helper thread choice while a helper is busy", () => {
+    const thread = {
+      id: ThreadId.make("thread-one"),
+      projectId: ProjectId.make("project-one"),
+      title: "Existing work",
+      archivedAt: null,
+    };
+    const threads = [thread, { ...thread, id: ThreadId.make("thread-two") }];
+    const enabledLeaves = (items: ReadonlyArray<AppBarMenuItem>): string[] =>
+      items.flatMap((item) =>
+        "items" in item ? enabledLeaves(item.items) : item.disabled ? [] : [item.id],
+      );
+    const items = (disabled: boolean) =>
+      pullRequestAgentMenuItems({
+        actions: [{ task: "explain", title: "Explain this PR", icon: "book", disabled: false }],
+        chooseThread: true,
+        disabled,
+        threadActions: (task) => pullRequestAgentThreadActions(threads, task, true),
+        start: () => {},
+        select: () => {},
+      });
+    expect(enabledLeaves(items(false))).toEqual([
+      "explain:new",
+      "explain:thread-one",
+      "explain:thread-two",
+    ]);
+    expect(enabledLeaves(items(true))).toEqual([]);
   });
   it("replaces the helper's own text when switching tasks, keeping user edits", () => {
     const first = appendPullRequestAgentPrompt("My question", "explain", GITHUB);

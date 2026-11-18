@@ -6,6 +6,7 @@ import type { MenuAction } from "@react-native-menu/menu";
 import type { PullRequestDetail, PullRequestLinkedThreadsResult } from "@onicode/contracts";
 import { msg } from "gt-react-native";
 
+import type { AppBarMenuItem } from "../../components/ui/AppBar.types";
 import { m, type MessageResolver } from "../../i18n/messages";
 import { changeRequestTermKind } from "../../lib/changeRequestTerm";
 
@@ -52,6 +53,62 @@ export function pullRequestAgentThreadActions(
       ? [{ id: `${task}:settled`, title: resolve(msg("Settled threads")), subactions: settled }]
       : []),
   ];
+}
+
+/** The AI helpers as a menu of the PR's vertical bar, where they share the screen's menu. */
+export function pullRequestAgentMenuItems(agent: {
+  readonly actions: ReadonlyArray<{
+    readonly task: PullRequestAgentTask;
+    readonly title: string;
+    readonly icon: string;
+    readonly disabled: boolean;
+  }>;
+  readonly chooseThread: boolean;
+  readonly disabled: boolean;
+  readonly threadActions: (task: PullRequestAgentTask) => MenuAction[];
+  readonly start: (task: PullRequestAgentTask) => void;
+  readonly select: (id: string) => void;
+}): AppBarMenuItem[] {
+  // Menu groups can't be disabled, so a busy helper is a disabled row, not a thread picker.
+  return agent.actions.map((action) =>
+    agent.chooseThread && !action.disabled && !agent.disabled
+      ? {
+          id: action.task,
+          title: action.title,
+          icon: action.icon,
+          items: appBarThreadMenuItems(agent.threadActions(action.task), agent.select),
+        }
+      : {
+          id: action.task,
+          title: action.title,
+          icon: action.icon,
+          disabled: action.disabled || agent.disabled,
+          onPress: () => agent.start(action.task),
+        },
+  );
+}
+
+function appBarThreadMenuItems(
+  items: MenuAction[],
+  select: (id: string) => void,
+): ReadonlyArray<AppBarMenuItem> {
+  return items.map((item) =>
+    item.subactions
+      ? {
+          id: item.id ?? item.title,
+          title: item.title,
+          icon: item.image,
+          items: appBarThreadMenuItems(item.subactions, select),
+        }
+      : {
+          id: item.id ?? item.title,
+          title: item.title,
+          icon: item.image,
+          subtitle: item.subtitle,
+          disabled: item.attributes?.disabled,
+          onPress: () => item.id && select(item.id),
+        },
+  );
 }
 
 export function pullRequestAgentPrompt(
