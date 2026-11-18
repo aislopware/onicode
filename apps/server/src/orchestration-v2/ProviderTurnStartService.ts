@@ -679,7 +679,12 @@ export const layer: Layer.Layer<
                   },
             providerThreadUpdate: {
               ...providerThread,
-              status: providerThread.nativeThreadRef === null ? "not_loaded" : "idle",
+              status:
+                providerThread.status === "error"
+                  ? "error"
+                  : providerThread.nativeThreadRef === null
+                    ? "not_loaded"
+                    : "idle",
               updatedAt: now,
             },
           });
@@ -835,6 +840,12 @@ export const layer: Layer.Layer<
         run,
         checkpointScope,
       });
+      const brokenNativeThread = providerThread.status === "error";
+      // Opened without the broken native id, a session that was not live starts fresh.
+      const opensFreshSession =
+        brokenNativeThread &&
+        providerThread.nativeThreadRef !== null &&
+        !(yield* providerSessions.isLive(providerSessionId));
       const sessionResult = yield* Effect.result(
         providerSessions.open({
           threadId: projection.thread.id,
@@ -844,7 +855,7 @@ export const layer: Layer.Layer<
           ...(existingSessionProjection === undefined
             ? {}
             : { resumeFromSession: existingSessionProjection }),
-          ...(providerThread.nativeThreadRef?.nativeId == null
+          ...(providerThread.nativeThreadRef?.nativeId == null || brokenNativeThread
             ? {}
             : { initialNativeThreadId: providerThread.nativeThreadRef.nativeId }),
           ...(providerThread.nativeMetadata?.itemIdentityVersion === undefined
@@ -1156,6 +1167,7 @@ export const layer: Layer.Layer<
           const createdAt = yield* DateTime.now;
           const history = yield* projectionStore.getTurnStartHistory(input.threadId);
           const boundary = contextBoundaryOrdinal({ runs: projection.runs, turnItems: history });
+          const from = Math.max(1, boundary);
           const handoff = yield* contextHandoffService.prepareProviderHandoff({
             threadId: projection.thread.id,
             targetRunId: run.id,
@@ -1164,7 +1176,7 @@ export const layer: Layer.Layer<
             toProviderThreadId: providerThread.id,
             fromProviderInstanceId: providerThread.providerInstanceId,
             toProviderInstanceId: run.providerInstanceId,
-            coveredRunOrdinals: { from: 1, to: Math.max(1, run.ordinal - 1) },
+            coveredRunOrdinals: { from, to: Math.max(from, run.ordinal - 1) },
             strategy: "full_thread_summary",
             runs: projection.runs,
             items: [
@@ -1542,7 +1554,10 @@ export const layer: Layer.Layer<
             providerSessionId,
             // Clear the native ref to force a fresh session while preserving row identity.
             existingProviderThread: { ...providerThread, nativeThreadRef: null },
-            forceNewNativeThread: true,
+            // A fresh session that never loaded the broken history needs no replacement.
+            ...(opensFreshSession && resumed._tag === "Failure"
+              ? {}
+              : { forceNewNativeThread: true }),
           }),
         );
         if (replacement === undefined) return undefined;
