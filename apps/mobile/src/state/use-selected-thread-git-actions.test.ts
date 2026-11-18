@@ -118,6 +118,9 @@ vi.mock("./vcs", () => ({
         branch: input.featureBranch
           ? { status: "created", name: "feature" }
           : { status: "skipped_not_requested" },
+        commit: { status: input.action === "commit" ? "created" : "skipped_not_requested" },
+        push: { status: input.action === "push" ? "pushed" : "skipped_not_requested" },
+        pr: { status: "skipped_not_requested" },
         toast: { title: "Done", description: "Done", cta: { kind: "none" } },
       });
     },
