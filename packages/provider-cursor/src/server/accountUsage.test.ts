@@ -638,8 +638,26 @@ describe("readCursorAccountUsage", () => {
       yield* TestClock.adjust("10 seconds");
       const stall = yield* Fiber.join(stalled);
       assert.strictEqual(stall.error, "Cursor account usage could not be read.");
-      // A page that never answers is a stalled API, not a range too wide.
+      // A first page that never answers is a stalled API, not a range too wide.
       assert.isNotTrue(stall.rangeTooLarge);
+
+      // A later page that outlasts its deadline is a deep page a narrower range avoids.
+      const { promise: deepPageAsked, resolve: askDeepPage } = Promise.withResolvers<void>();
+      const deep = yield* Effect.forkChild(
+        readAccountUsage({ kind: "apiKey", apiKey: accessToken }, 0, 1781000000000, ({ page }) => {
+          if (page === 1) {
+            return Response.json({
+              totalUsageEventsCount: 2000,
+              usageEventsDisplay: Array.from({ length: 1000 }, () => ({ tokenUsage: null })),
+            });
+          }
+          askDeepPage();
+          return new Promise<Response>(() => {});
+        }),
+      );
+      yield* Effect.promise(() => deepPageAsked);
+      yield* TestClock.adjust("10 seconds");
+      assert.isTrue((yield* Fiber.join(deep)).rangeTooLarge);
 
       // Each page answers within its own deadline, but there are too many for the whole read's.
       const fullPage = Array.from({ length: 1000 }, () => ({ tokenUsage: null }));

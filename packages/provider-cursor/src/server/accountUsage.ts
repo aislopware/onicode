@@ -272,10 +272,13 @@ export const makeCursorAccountUsageReader = Effect.gen(function* () {
             if (typeof count === "number") total = count;
             return events as unknown[];
           },
-          Effect.timeoutOrElse({
-            duration: Duration.seconds(10),
-            orElse: () => invalid("Account usage request timed out"),
-          }),
+          // A stalled first page is an API that is not answering; a stalled later page is a
+          // deep one in a range too wide.
+          (effect, page) =>
+            Effect.timeoutOrElse(effect, {
+              duration: Duration.seconds(10),
+              orElse: () => (page === 1 ? invalid : tooLarge)("Account usage request timed out"),
+            }),
           pageSlots.withPermit,
         );
         // Cursor caps a page at 1,000 events and takes about a second to answer one, so the pages
