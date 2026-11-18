@@ -1191,7 +1191,10 @@ export interface DesktopBridge {
   appActivation: {
     setReady: (ready: boolean) => Promise<void>;
     complete: (response: DesktopAppActivationResponse) => Promise<void>;
-    onRequest: (listener: (request: DesktopAppActivationRequest) => void) => () => void;
+    /** `deadlineAt` (epoch ms) is when the desktop app stops waiting for this request. */
+    onRequest: (
+      listener: (request: DesktopAppActivationRequest, deadlineAt: number) => void,
+    ) => () => void;
   };
   preview: DesktopPreviewBridge;
 }

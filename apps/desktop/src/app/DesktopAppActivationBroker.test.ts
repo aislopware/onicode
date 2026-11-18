@@ -15,14 +15,21 @@ describe("DesktopAppActivationBroker", () => {
   it("focuses immediately and waits for renderer readiness", async () => {
     const activate = vi.fn();
     const send = vi.fn();
-    const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate });
+    let nowMs = 0;
+    const broker = new DesktopAppActivationBroker({
+      requestTimeoutMs: 1_000,
+      activate,
+      now: () => nowMs,
+    });
 
     const response = broker.request(request);
     expect(activate).toHaveBeenCalledOnce();
     expect(send).not.toHaveBeenCalled();
 
+    nowMs = 400;
     broker.registerRenderer(send);
-    expect(send).toHaveBeenCalledWith(request);
+    // The deadline counts from the command's request, not from when the renderer gets it.
+    expect(send).toHaveBeenCalledWith(request, 1_000);
     broker.complete({
       version: 1,
       requestId: request.requestId,
@@ -70,7 +77,7 @@ describe("DesktopAppActivationBroker", () => {
     await expect(response).resolves.toMatchObject({ ok: true });
     expect(send).toHaveBeenCalledTimes(1);
     broker.registerRenderer(send);
-    expect(send).toHaveBeenLastCalledWith(secondRequest);
+    expect(send).toHaveBeenLastCalledWith(secondRequest, expect.any(Number));
     broker.close();
     await expect(secondResponse).resolves.toMatchObject({ ok: false });
   });
@@ -84,7 +91,7 @@ describe("DesktopAppActivationBroker", () => {
     const firstResponse = broker.request(request);
     const secondResponse = broker.request(secondRequest);
     expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenLastCalledWith(request);
+    expect(send).toHaveBeenLastCalledWith(request, expect.any(Number));
 
     broker.cancel(secondRequest.requestId);
     broker.complete({
