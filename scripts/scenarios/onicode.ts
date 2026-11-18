@@ -230,7 +230,7 @@ const environmentId = (baseUrl: string) =>
   );
 
 export const test = base.extend<{ onicode: Onicode }>({
-  onicode: async ({ app, screen }, use) => {
+  onicode: async ({ app, browser }, use) => {
     const { state, cleanup } = makeState(ONICODE_HOME);
     await use({
       ...state,
@@ -243,10 +243,10 @@ export const test = base.extend<{ onicode: Onicode }>({
         }
         // Shortcuts and native menus reach the app only once it mounts, and the reload through
         // Vite can outlast a default wait. Not an `expect`: a proof counts a failed assertion as
-        // the bug. A narrow window collapses the sidebar to its toggle.
-        await screen
-          .getByRole("navigation", "Threads")
-          .or(screen.getByRole("button", "Toggle main sidebar"))
+        // the bug. A narrow window collapses the sidebar to its toggle. Attributes, not names,
+        // because a scenario may have switched the app's language.
+        await browser
+          .locator('[data-app-sidebar][role="navigation"], [data-sidebar="trigger"]')
           .first()
           .waitFor({ timeout: 60_000 });
       },
