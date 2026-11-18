@@ -4542,9 +4542,10 @@ export const layer: Layer.Layer<ProjectionStoreV2, never, SqlClient.SqlClient> =
         FROM json_each(${yield* encodeTimelineSources(sources)}) AS wanted
         CROSS JOIN orchestration_v2_projection_subagents AS subagent
           ON subagent.subagent_id = json_extract(wanted.value, '$.id')
-          AND subagent.thread_id = json_extract(wanted.value, '$.threadId')`;
+          AND subagent.thread_id = json_extract(wanted.value, '$.threadId')
+        WHERE json_valid(subagent.payload_json)`;
       for (const row of rows) {
-        // A record that no longer decodes costs its row the model, not the whole read.
+        // A record that no longer decodes or parses costs its row the model, not the whole read.
         const decoded = yield* Effect.option(decodeSubagentModel(row.model_json));
         if (Option.isNone(decoded)) continue;
         const [model, modelSelection] = decoded.value;
