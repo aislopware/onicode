@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Layer from "effect/Layer";
+import * as NodeOS from "node:os";
 import * as ModelManifest from "./ModelManifest.ts";
 import { expect, it } from "@effect/vitest";
 import * as HostProcess from "@onicode/shared/HostProcess";
@@ -730,6 +731,17 @@ it.effect("keeps a superseded release while another server sharing its home runs
     const previousDirectory = previous.managedVersionDirectory!;
     expect((yield* Effect.flip(h.installation.remove())).detail).toContain("Stop Codex sessions");
     yield* updateToUpstream(h.installation);
+    yield* makeHarness({ baseDir: h.baseDir });
+    expect(yield* h.fs.exists(previousDirectory)).toBe(true);
+    // Nor does the clock stepping forward after a lease written just after boot.
+    const lease = (yield* h.fs.readDirectory(previousDirectory)).find((entry) =>
+      entry.startsWith(".lease-"),
+    )!;
+    const writtenAt = Option.getOrThrow((yield* h.fs.stat(`${previousDirectory}/${lease}`)).mtime);
+    // utimes takes seconds.
+    const justAfterBoot = writtenAt.getTime() / 1000 - NodeOS.uptime() + 1;
+    yield* h.fs.utimes(`${previousDirectory}/${lease}`, justAfterBoot, justAfterBoot);
+    yield* TestClock.setTime(writtenAt.getTime() + 10 * 60_000);
     yield* makeHarness({ baseDir: h.baseDir });
     expect(yield* h.fs.exists(previousDirectory)).toBe(true);
 
