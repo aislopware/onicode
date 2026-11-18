@@ -2462,3 +2462,4 @@ a1b1a6388c	take	adapted: originator is Onicode (CODEX_CLIENT_NAME), test renamed
 7c67d196c5	take	taken as is (comment names Onicode)
 01cfac429d	take	taken as is
 f5f8c8d18b	take	taken as is
+77f87ea4c1	take	taken; scenario ported to the desktop target through second-environment.ts (new preload/env options)
