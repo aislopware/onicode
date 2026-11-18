@@ -187,6 +187,7 @@ import * as TerminalManager from "./terminal/Manager.ts";
 import { makePrepareTerminalLaunch } from "./workspace/restoreMissingWorktree.ts";
 import { terminalOutputStream, withOutputWindow } from "./terminal/OutputProtocol.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
+import * as BrowserUseService from "./browserUse/BrowserUseService.ts";
 import * as ComputerService from "./computer/ComputerService.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as RemoteDesktop from "./remoteDesktop/RemoteDesktop.ts";
@@ -1382,6 +1383,7 @@ export const layerWsRpc = (
       const pullRequestSync = yield* PullRequestSyncReactor.PullRequestSyncReactor;
       const deviceService = yield* DeviceService.DeviceService;
       const computerService = yield* ComputerService.ComputerService;
+      const browserUseService = yield* BrowserUseService.BrowserUseService;
       const remoteDesktop = yield* RemoteDesktop.RemoteDesktop;
       const deviceHostContext =
         yield* Effect.context<Effect.Services<ReturnType<typeof remoteSshDeviceHosts>>>();
@@ -3129,6 +3131,7 @@ export const layerWsRpc = (
         [WS_METHODS.previewReportStatus]: (input) => previewManager.reportStatus(input),
         [WS_METHODS.subscribePreviewEvents]: (_input) => previewManager.events,
         [WS_METHODS.computerStatus]: (_input) => computerService.status,
+        [WS_METHODS.browserUseStatus]: (_input) => browserUseService.status,
         [WS_METHODS.deviceConfigure]: (input) => deviceService.configure(input),
         [WS_METHODS.deviceTestHost]: (input) => deviceService.testHost(input),
         [WS_METHODS.deviceEasAccount]: (input) => deviceService.easAccount(input),

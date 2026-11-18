@@ -11,6 +11,19 @@ const DIRECT_TOOLS: ReadonlySet<string> = new Set([
   TOOL_SEARCH,
 ]);
 
+/** What a session's browser driver does itself, when it works the Browser panel's pages. */
+const DRIVEN_PAGE_TOOLS: ReadonlySet<string> = new Set([
+  "preview_navigate",
+  "preview_snapshot",
+  "preview_act",
+  "preview_evaluate",
+  "preview_wait_for",
+]);
+
+/** Two ways to read and act on one page make an agent mix their element refs. */
+export const isWithheld = (capabilities: ReadonlySet<string>, tool: string) =>
+  capabilities.has("preview-driver") && DRIVEN_PAGE_TOOLS.has(tool);
+
 const MAX_RESULTS = 10;
 // Sessions that ended are never reported here, so keep only the newest.
 const MAX_SESSIONS = 256;

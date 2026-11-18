@@ -384,9 +384,11 @@ interface ThreadState {
   mcp:
     | { readonly name: string; readonly directory: string; readonly credential: string }
     | undefined;
-  computer:
-    | { readonly name: string; readonly directory: string; readonly config: string }
-    | undefined;
+  /** Added stdio servers, keyed by their Onicode server name. */
+  readonly stdio: Map<
+    string,
+    { readonly name: string; readonly directory: string; readonly config: string }
+  >;
   instructions: string | undefined;
 }
 
@@ -422,15 +424,19 @@ interface PendingRequest {
 
 const rule = (action: string, effect: Rule["effect"]): Rule => ({ action, resource: "*", effect });
 
-const COMPUTER_SERVER_SUFFIX = `_${McpProviderSession.COMPUTER_MCP_SERVER_NAME}`;
+const LONGEST_STDIO_SUFFIX = Math.max(
+  ...[McpProviderSession.COMPUTER_MCP_SERVER_NAME, McpProviderSession.BROWSER_MCP_SERVER_NAME].map(
+    (serverName) => `_${serverName}`.length,
+  ),
+);
 
 /**
  * OpenCode hides tools for names over 64 chars and rejects names over 100; hash long thread IDs.
- * The thread's computer server appends its suffix to this name and has to fit too.
+ * The thread's stdio servers append `_<server>` to this name and have to fit too.
  */
 export const oniMcpServerName = Effect.fn("oniMcpServerName")(function* (threadId: string) {
   const name = `onicode-${threadId.replaceAll(/[^a-zA-Z0-9_-]/g, "_")}`;
-  if (name.length + COMPUTER_SERVER_SUFFIX.length <= 64) return name;
+  if (name.length + LONGEST_STDIO_SUFFIX <= 64) return name;
   const crypto = yield* Digest.Digest;
   const digest = yield* crypto
     .digest(Digest.sha256, new TextEncoder().encode(threadId))
@@ -932,7 +938,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       strandedSteers: new Set(),
       externalPrompts: new Map(),
       mcp: undefined,
-      computer: undefined,
+      stdio: new Map(),
       instructions: undefined,
     });
 
@@ -3796,7 +3802,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
       // The gap may have started a pending prompt unseen, so none may set a later wake's boundary.
       for (const state of threads.values()) {
         state.mcp = undefined;
-        state.computer = undefined;
+        state.stdio.clear();
         state.goalFresh = false;
         state.goalRefreshing = false;
         state.goalRevision += 1;
@@ -4294,7 +4300,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
     yield* Effect.addFinalizer(() =>
       Effect.forEach(
         [...threads.values()].flatMap((state) =>
-          [state.mcp, state.computer].filter((mcp) => mcp !== undefined),
+          [state.mcp, ...state.stdio.values()].filter((mcp) => mcp !== undefined),
         ),
         removeMcp,
         { concurrency: 8, discard: true },
@@ -4323,29 +4329,35 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         yield* removeMcp(state.mcp);
         state.mcp = undefined;
       }
-      const computer = wanted === undefined ? undefined : mcpSession?.computerMcpServer;
-      // Named under this thread's server so mcpRules scope its tools to this thread too.
-      const wantedComputer =
-        computer === undefined
-          ? undefined
-          : {
-              name: `${name}${COMPUTER_SERVER_SUFFIX}`,
-              directory,
-              // NUL cannot occur in argv or env, so the joined key is unambiguous.
-              config: [
-                computer.command,
-                ...computer.args,
-                ...Object.entries(computer.env).flat(),
-              ].join("\0"),
-            };
-      if (
-        state.computer !== undefined &&
-        (wantedComputer === undefined ||
-          state.computer.directory !== wantedComputer.directory ||
-          state.computer.config !== wantedComputer.config)
-      ) {
-        yield* removeMcp(state.computer);
-        state.computer = undefined;
+      // Named under this thread's server so mcpRules scope their tools to this thread too.
+      const wantedStdio = new Map(
+        (wanted === undefined ? [] : McpProviderSession.stdioMcpServers(mcpSession)).map(
+          ([serverName, server]) => [
+            serverName,
+            {
+              server,
+              entry: {
+                name: `${name}_${serverName}`,
+                directory,
+                // NUL cannot occur in argv or env, so the joined key is unambiguous.
+                config: [server.command, ...server.args, ...Object.entries(server.env).flat()].join(
+                  "\0",
+                ),
+              },
+            },
+          ],
+        ),
+      );
+      for (const [serverName, added] of state.stdio) {
+        const next = wantedStdio.get(serverName)?.entry;
+        if (
+          next === undefined ||
+          added.directory !== next.directory ||
+          added.config !== next.config
+        ) {
+          yield* removeMcp(added);
+          state.stdio.delete(serverName);
+        }
       }
       // Idle Location eviction drops runtime MCP servers without clearing Onicode's cache.
       // Re-adding an unchanged config keeps its existing connection.
@@ -4367,19 +4379,19 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         if (mcpAvailable) state.mcp = wanted;
         addedFresh = mcpAvailable && fresh;
       }
-      if (computer !== undefined && wantedComputer !== undefined) {
-        const fresh = state.computer === undefined;
+      for (const [serverName, { server, entry }] of wantedStdio) {
+        const fresh = !state.stdio.has(serverName);
         const added = yield* addMcp(
-          wantedComputer.name,
+          entry.name,
           directory,
           new Mcp.LocalConfig({
             type: "local",
-            command: [computer.command, ...computer.args],
-            environment: { ...computer.env },
+            command: [server.command, ...server.args],
+            environment: { ...server.env },
           }),
-          "the computer MCP server",
+          `the ${serverName} MCP server`,
         );
-        if (added) state.computer = wantedComputer;
+        if (added) state.stdio.set(serverName, entry);
         addedFresh ||= added && fresh;
       }
       // Before 2.2.6, OpenCode loads a new server's tools 100 ms after it connects, and a prompt sent sooner lacks them.
@@ -5240,7 +5252,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           threads.delete(child);
         }
         if (state.mcp !== undefined) yield* removeMcp(state.mcp);
-        if (state.computer !== undefined) yield* removeMcp(state.computer);
+        for (const added of state.stdio.values()) yield* removeMcp(added);
       }),
       respondToRuntimeRequest: Effect.fn("OpenCode2Adapter.respondToRuntimeRequest")(
         function* (requestInput) {

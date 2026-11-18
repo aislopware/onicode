@@ -21,10 +21,17 @@ describe("mcpToolPresentation", () => {
     });
   });
 
-  it("shows the driver's tools as computer use", () => {
-    expect(mcpToolPresentation({ toolName: "mcp__computer__get_window_state" })).toEqual({
-      title: "get window state",
-      toolSource: { key: "computer-use", name: "Computer Use", kind: "computer" },
-    });
-  });
+  it.each([
+    [
+      "mcp__computer__get_window_state",
+      "get window state",
+      { key: "computer-use", name: "Computer Use", kind: "computer" },
+    ],
+    ["mcp__browser__see", "see", { key: "browser-use", name: "Browser", kind: "browser" }],
+  ])(
+    "shows a driver's tool %s under the driver, not as an integration",
+    (toolName, title, toolSource) => {
+      expect(mcpToolPresentation({ toolName })).toEqual({ title, toolSource });
+    },
+  );
 });

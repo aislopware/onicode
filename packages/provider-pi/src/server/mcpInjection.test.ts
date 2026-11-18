@@ -2,7 +2,7 @@ import { assert, describe, expect, it } from "@effect/vitest";
 import { EnvironmentId, ProviderInstanceId, ThreadId } from "@onicode/contracts";
 
 import {
-  ONICODE_COMPUTER_MCP_ENV,
+  ONICODE_STDIO_MCP_ENV,
   ONICODE_MCP_BEARER_ENV,
   ONICODE_MCP_URL_ENV,
   ONICODE_PI_RUNTIME_MODE_ENV,
@@ -46,6 +46,7 @@ describe("pi Onicode MCP injection", () => {
       mcpSession: {
         ...mcpSession,
         computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+        browserMcpServer: { command: "obu", args: ["mcp"], env: {} },
       },
       extensionPath: "/tmp/cache/pi-oni-mcp-extension.ts",
       runtimeMode: "approval-required",
@@ -73,10 +74,9 @@ describe("pi Onicode MCP injection", () => {
     assert.equal(launch.env[ONICODE_MCP_URL_ENV], "http://127.0.0.1:43123/mcp");
     assert.equal(launch.env[ONICODE_MCP_BEARER_ENV], "secret-pi-token");
     assert.equal(launch.env[ONICODE_PI_RUNTIME_MODE_ENV], "approval-required");
-    assert.deepEqual(JSON.parse(launch.env[ONICODE_COMPUTER_MCP_ENV]!), {
-      command: "cua-driver",
-      args: ["mcp"],
-      env: { CUA: "1" },
+    assert.deepEqual(JSON.parse(launch.env[ONICODE_STDIO_MCP_ENV]!), {
+      computer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+      browser: { command: "obu", args: ["mcp"], env: {} },
     });
     assert.equal(
       launch.env[ONICODE_PI_MCP_EXTENSION_PATH_ENV],
@@ -89,7 +89,7 @@ describe("pi Onicode MCP injection", () => {
         [ONICODE_MCP_URL_ENV]: "http://127.0.0.1:9999/stale",
         [ONICODE_MCP_BEARER_ENV]: "stale-token",
         [ONICODE_PI_MCP_EXTENSION_PATH_ENV]: "/stale/extension.ts",
-        [ONICODE_COMPUTER_MCP_ENV]: "{}",
+        [ONICODE_STDIO_MCP_ENV]: "{}",
       },
       mcpSession: undefined,
       extensionPath: "/tmp/cache/pi-oni-mcp-extension.ts",
@@ -103,7 +103,7 @@ describe("pi Onicode MCP injection", () => {
     ]);
     assert.isUndefined(permissionOnly.env[ONICODE_MCP_URL_ENV]);
     assert.isUndefined(permissionOnly.env[ONICODE_MCP_BEARER_ENV]);
-    assert.isUndefined(permissionOnly.env[ONICODE_COMPUTER_MCP_ENV]);
+    assert.isUndefined(permissionOnly.env[ONICODE_STDIO_MCP_ENV]);
     assert.equal(permissionOnly.env[ONICODE_PI_RUNTIME_MODE_ENV], "auto-accept-edits");
     assert.equal(
       permissionOnly.env[ONICODE_PI_MCP_EXTENSION_PATH_ENV],

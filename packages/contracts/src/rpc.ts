@@ -343,6 +343,7 @@ import {
   DeviceSession,
   DeviceShutdownInput,
 } from "./device.ts";
+import { BrowserUseStatus } from "./browserUse.ts";
 import { ComputerAccessStatus } from "./computer.ts";
 import {
   RemoteDesktopAnswerInput,
@@ -547,6 +548,7 @@ export const WS_METHODS = {
   deviceAction: "device.action",
 
   computerStatus: "computer.status",
+  browserUseStatus: "browserUse.status",
 
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
@@ -1956,6 +1958,12 @@ const WsComputerStatusRpc = Rpc.make(WS_METHODS.computerStatus, {
   error: EnvironmentAuthorizationError,
 });
 
+const WsBrowserUseStatusRpc = Rpc.make(WS_METHODS.browserUseStatus, {
+  payload: Schema.Struct({}),
+  success: BrowserUseStatus,
+  error: EnvironmentAuthorizationError,
+});
+
 const WsDeviceConfigureRpc = Rpc.make(WS_METHODS.deviceConfigure, {
   payload: DeviceConfigureInput,
   success: DeviceServiceState,
@@ -2494,6 +2502,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewStopLocalServerRpc,
   WsSubscribeDiscoveredLocalServersRpc,
   WsComputerStatusRpc,
+  WsBrowserUseStatusRpc,
   WsDeviceConfigureRpc,
   WsDeviceListRpc,
   WsDeviceTestHostRpc,

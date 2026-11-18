@@ -397,6 +397,7 @@ describe("MuseAdapterV2", () => {
         authorizationHeader: "Bearer thread-scoped-test-token",
         browserToolsAvailable: true,
         computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+        browserMcpServer: { command: "obu", args: ["mcp"], env: {} },
       });
       for (const nativeId of [undefined, "saved-native-session"]) {
         const fake = yield* makeFakeMuse();
@@ -417,6 +418,13 @@ describe("MuseAdapterV2", () => {
               command: "cua-driver",
               args: ["mcp"],
               env: { CUA: "1" },
+            },
+            browser: {
+              transport: "stdio",
+              mode: "optional",
+              command: "obu",
+              args: ["mcp"],
+              env: {},
             },
           },
         });

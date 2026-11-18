@@ -1082,20 +1082,19 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               },
             }),
           );
-          const computer = mcpSession.computerMcpServer;
-          if (computer !== undefined) {
+          for (const [name, server] of McpProviderSession.stdioMcpServers(mcpSession)) {
             yield* OpenCodeRuntime.runOpenCodeSdk("mcp.add", () =>
               client.mcp.add({
-                name: McpProviderSession.COMPUTER_MCP_SERVER_NAME,
+                name,
                 config: {
                   type: "local",
-                  command: [computer.command, ...computer.args],
-                  environment: { ...computer.env },
+                  command: [server.command, ...server.args],
+                  environment: { ...server.env },
                 },
               }),
             ).pipe(
               Effect.catch((cause) =>
-                Effect.logWarning("Could not add the computer MCP server to OpenCode.", cause),
+                Effect.logWarning(`Could not add the ${name} MCP server to OpenCode.`, cause),
               ),
             );
           }

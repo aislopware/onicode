@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
-import { withAgentDeviceEnvironment } from "./mcpSession.ts";
+import { stdioMcpServers, withAgentDeviceEnvironment } from "./mcpSession.ts";
 
 describe("device CLI environment", () => {
   it("preserves provider credentials and commands while routing devices to the owned daemon", () => {
@@ -26,5 +26,19 @@ describe("device CLI environment", () => {
     const environment = { PATH: "/usr/bin", PROVIDER_KEY: "fixture" };
     expect(withAgentDeviceEnvironment(environment, undefined)).toBe(environment);
     expect(withAgentDeviceEnvironment(environment, {})).toBe(environment);
+  });
+});
+
+describe("stdioMcpServers", () => {
+  it("names each present server as its tools are named, computer first", () => {
+    const computer = { command: "cua-driver", args: ["mcp"], env: {} };
+    const browser = { command: "obu", args: ["mcp"], env: {} };
+    expect(stdioMcpServers({ browserMcpServer: browser, computerMcpServer: computer })).toEqual([
+      ["computer", computer],
+      ["browser", browser],
+    ]);
+    expect(stdioMcpServers({ browserMcpServer: browser })).toEqual([["browser", browser]]);
+    expect(stdioMcpServers({})).toEqual([]);
+    expect(stdioMcpServers(undefined)).toEqual([]);
   });
 });

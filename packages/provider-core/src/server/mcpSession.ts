@@ -15,6 +15,7 @@ export interface McpStdioServer {
 }
 
 export const COMPUTER_MCP_SERVER_NAME = "computer";
+export const BROWSER_MCP_SERVER_NAME = "browser";
 
 export interface McpProviderSessionConfig {
   readonly environmentId: EnvironmentId;
@@ -29,9 +30,26 @@ export interface McpProviderSessionConfig {
   readonly agentDeviceEnvironment?: Readonly<Record<string, string>>;
   /** cua-driver's MCP server, present when this session may drive the machine's desktop apps. */
   readonly computerMcpServer?: McpStdioServer;
+  /** obu's MCP server, present when this session browses with obu. */
+  readonly browserMcpServer?: McpStdioServer;
   /** True while a delegated task this thread started will wake it with its result. */
   readonly hasPendingWake?: Effect.Effect<boolean>;
 }
+
+/**
+ * The stdio servers a provider launches for this session, each under the name its tools carry.
+ * Turning one on is the user's consent, so providers run their tools without a prompt per call.
+ */
+export const stdioMcpServers = (
+  config: Pick<McpProviderSessionConfig, "computerMcpServer" | "browserMcpServer"> | undefined,
+): ReadonlyArray<readonly [name: string, server: McpStdioServer]> => [
+  ...(config?.computerMcpServer
+    ? [[COMPUTER_MCP_SERVER_NAME, config.computerMcpServer] as const]
+    : []),
+  ...(config?.browserMcpServer
+    ? [[BROWSER_MCP_SERVER_NAME, config.browserMcpServer] as const]
+    : []),
+];
 
 export function withAgentDeviceEnvironment(
   base: NodeJS.ProcessEnv,

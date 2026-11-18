@@ -1003,6 +1003,29 @@ export const SETTINGS_SEARCH_ITEMS = [
     searchTerms: ["allow disable enable open drive preview tools sessions project override"],
   },
   {
+    id: "agent-browser-use",
+    title: "Agents browse with obu",
+    to: "/settings/browser",
+    scope: "project-defaults",
+    searchTerms: [
+      "browser use obu driver agent web automation stealth bot detection tokens oni-browser-use",
+    ],
+  },
+  {
+    id: "agent-browser-use-target",
+    title: "Browser obu drives",
+    to: "/settings/browser",
+    targetId: "browser-agent-access",
+    searchTerms: ["browser use obu panel own chrome isolated personal real browser logins profile"],
+  },
+  {
+    id: "agent-browser-use-port",
+    title: "Browser debug port",
+    to: "/settings/browser",
+    targetId: "browser-agent-access",
+    searchTerms: ["browser use obu remote debugging port personal browser attach"],
+  },
+  {
     id: "device-sources",
     title: "Device sources",
     to: "/settings/devices",

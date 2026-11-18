@@ -169,14 +169,22 @@ describe("Pi MCP tool exposure", () => {
   };
 
   it("keeps orchestration direct and optional bridge tools discoverable on modern Pi", async () => {
-    const computerServer = { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } };
-    const bridge = await loadMcpBridge({ modern: true, toolSearchAvailable: true, computerServer });
+    const computer = { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } };
+    const browser = { command: "obu", args: ["mcp"], env: {} };
+    const bridge = await loadMcpBridge({
+      modern: true,
+      toolSearchAvailable: true,
+      stdioServers: { computer, browser },
+    });
     await bridge.handlers.get("session_start")!({ systemPrompt: "" }, discoveryContext);
     const start = bridge.handlers.get("before_agent_start");
     assert.isDefined(start);
     const prompt = await start!({ systemPrompt: "Pi system prompt" }, discoveryContext);
     assert.include(prompt?.systemPrompt ?? "", "orchestrator_capabilities");
-    assert.deepEqual(bridge.servers, [{ name: "computer", config: computerServer }]);
+    assert.deepEqual(bridge.servers, [
+      { name: "computer", config: computer },
+      { name: "browser", config: browser },
+    ]);
     assert.equal(bridge.tools.length, 4);
     assert.deepEqual(bridge.getActiveTools(), ["read", "tool_search"]);
     assert.deepEqual(
@@ -286,12 +294,15 @@ describe("Pi MCP tool schemas", () => {
 
 describe("Pi tool discovery permissions", () => {
   it.each(["approval-required", "auto-accept-edits", "auto"])(
-    "allows annotated Onicode reads and computer tools in %s while gating mutations and replacements",
+    "allows annotated Onicode reads and stdio server tools in %s while gating mutations and replacements",
     async (runtimeMode) => {
       const bridge = await loadMcpBridge({
         modern: true,
         runtimeMode,
-        computerServer: { command: "cua-driver", args: ["mcp"], env: {} },
+        stdioServers: {
+          computer: { command: "cua-driver", args: ["mcp"], env: {} },
+          browser: { command: "obu", args: ["mcp"], env: {} },
+        },
       });
       const hook = bridge.handlers.get("tool_call") as unknown as (
         event: { toolName: string; input: unknown },
@@ -310,6 +321,7 @@ describe("Pi tool discovery permissions", () => {
         await hook({ toolName: "mcp__onicode__orchestrator_capabilities", input: {} }, ctx),
       );
       assert.isUndefined(await hook({ toolName: "mcp__computer__click", input: {} }, ctx));
+      assert.isUndefined(await hook({ toolName: "mcp__browser__navigate", input: {} }, ctx));
       assert.equal(
         (await hook({ toolName: "mcp__onicode__delegate_task", input: {} }, ctx))?.block,
         true,

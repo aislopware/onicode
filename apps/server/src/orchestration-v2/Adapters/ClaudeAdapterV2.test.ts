@@ -693,6 +693,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     const mcpSession = {
       ...mcpSessionFor(threadId),
       computerMcpServer: { command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+      browserMcpServer: { command: "obu", args: ["mcp"], env: {} },
     };
     const overrides = ClaudeAdapterV2.claudeMcpQueryOverrides({
       mcpSession,
@@ -702,6 +703,7 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
 
     const mcpServers = {
       computer: { type: "stdio" as const, command: "cua-driver", args: ["mcp"], env: { CUA: "1" } },
+      browser: { type: "stdio" as const, command: "obu", args: ["mcp"], env: {} },
       ...ONICODE_MCP_SERVERS,
     };
     assert.deepEqual(overrides, {
@@ -714,7 +716,11 @@ describe("ClaudeAdapterV2 MCP query overrides", () => {
     assert.deepEqual(
       ClaudeAdapterV2.claudeMcpQueryOverrides({ mcpSession, readOnlySandbox: false }),
       {
-        allowedTools: [ClaudeAdapterV2.CLAUDE_ONI_MCP_TOOL_WILDCARD, "mcp__computer__*"],
+        allowedTools: [
+          ClaudeAdapterV2.CLAUDE_ONI_MCP_TOOL_WILDCARD,
+          "mcp__computer__*",
+          "mcp__browser__*",
+        ],
         mcpServers,
       },
     );

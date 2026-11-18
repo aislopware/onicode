@@ -214,6 +214,7 @@ export const make = Effect.gen(function* () {
         if (tab.focusChange === change) tab.focusChange = null;
       });
     tab.focusChange = change;
+    syncPainting(tab);
   };
 
   const waitingHolds = (tab: AttachedTab) =>
@@ -244,13 +245,15 @@ export const make = Effect.gen(function* () {
 
   /**
    * Electron composites no offscreen guest, so its screenshot or screencast waits for a frame
-   * that never comes. The client paints the guest behind the app while one is pending; the
-   * capture then finishes on its own, and the guest goes back offscreen once none is.
+   * that never comes, and Chromium slows a guest nobody draws to one frame a second. The
+   * client draws the guest while a capture is pending or the server drives it, and puts it
+   * back offscreen after.
    */
   const syncPainting = (tab: AttachedTab) => {
     const active =
       tabs.get(keyOf(tab.key)) === tab &&
-      (tab.screencasts.size > 0 ||
+      (tab.focusEmulated ||
+        tab.screencasts.size > 0 ||
         tab.capturing.size > 0 ||
         tab.waitingScreenshots.some((waiting) => waiting.live()));
     if (tab.painting === active) return;
@@ -382,8 +385,13 @@ export const make = Effect.gen(function* () {
             syncPainting(tab);
             if (tab.screencasts.size > 0) return Promise.resolve({});
           }
+          // A driver fidgets the pointer between actions and after its turn; that is not use.
+          const hover =
+            method === "Input.dispatchMouseEvent" &&
+            params["type"] === "mouseMoved" &&
+            !params["buttons"];
           // A person's input through a viewer, or Playwright's own housekeeping, is not the agent's.
-          if (AGENT_INPUT_METHOD.test(method)) {
+          if (!hover && AGENT_INPUT_METHOD.test(method)) {
             if (owner === undefined || !streamingOwners.has(owner)) {
               tab.agentUsed = true;
               tab.agentLedAt = performance.now();
@@ -443,7 +451,9 @@ export const make = Effect.gen(function* () {
                     throw cause;
                   },
                 )
-              : holdFocus(tab, owner, forward);
+              : hover
+                ? forward()
+                : holdFocus(tab, owner, forward);
         },
         sessionDetached: (owner) => {
           detachedOwners.add(owner);

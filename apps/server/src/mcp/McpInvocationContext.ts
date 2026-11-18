@@ -17,6 +17,8 @@ import { formatThreadLink } from "@onicode/shared/threadLinks";
 
 const ALL_MCP_CAPABILITIES = [
   "preview",
+  // The session's own browser driver works the panel's pages, so the page tools are withheld.
+  "preview-driver",
   "orchestration",
   "worktree",
   "device",

@@ -1,8 +1,8 @@
 import type { ToolActivityIcon, ToolActivitySource } from "@onicode/contracts";
 import { resolveOniMcpToolDefinition } from "@onicode/shared/oniMcpToolPresentation";
-import { COMPUTER_USE_TOOL_SOURCE } from "@onicode/shared/toolActivity";
+import { BROWSER_USE_TOOL_SOURCE, COMPUTER_USE_TOOL_SOURCE } from "@onicode/shared/toolActivity";
 
-import { COMPUTER_MCP_SERVER_NAME } from "./mcpSession.ts";
+import { BROWSER_MCP_SERVER_NAME, COMPUTER_MCP_SERVER_NAME } from "./mcpSession.ts";
 
 export function normalizeMcpText(value: unknown, maxLength = 160): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -48,6 +48,9 @@ export function mcpToolPresentation(input: {
   if (!server) return title ? { title } : {};
   if (server.toLowerCase() === COMPUTER_MCP_SERVER_NAME) {
     return { ...(title ? { title } : {}), toolSource: COMPUTER_USE_TOOL_SOURCE };
+  }
+  if (server.toLowerCase() === BROWSER_MCP_SERVER_NAME) {
+    return { ...(title ? { title } : {}), toolSource: BROWSER_USE_TOOL_SOURCE };
   }
   const name =
     normalizeMcpText(input.serverDisplayName) ??

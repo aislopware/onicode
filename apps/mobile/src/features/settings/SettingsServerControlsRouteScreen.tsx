@@ -5,6 +5,7 @@ import { readEnvironmentScope, useEnvironmentsWithScope } from "../../state/sess
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { AppText as Text } from "../../components/ui/AppText";
 import {
+  type AgentBrowserUseTarget,
   type AgentComputerPermissionMode,
   type ResponseStreamingMode,
   type ServerSettings,
@@ -62,6 +63,7 @@ const PAGE_PROJECT_KEYS: Record<SettingsPage, readonly ProjectScopedServerSettin
     "defaultRuntimeMode",
     "responseStreamingMode",
     "enableAgentBrowserAccess",
+    "enableAgentBrowserUse",
     "enableAgentComputerAccess",
     "sidebarAutoSettleOnMerge",
     "sidebarAutoSettleAfterDays",
@@ -115,6 +117,31 @@ const WORKSPACE_CHOICES: ReadonlyArray<{
     mode: "worktree",
     label: "New worktree",
     description: "Give each new thread a separate checkout.",
+  },
+];
+
+const BROWSER_USE_TARGET_CHOICES: ReadonlyArray<{
+  readonly target: AgentBrowserUseTarget;
+  readonly label: string;
+  readonly description: string;
+}> = [
+  {
+    target: "panel",
+    label: "Browser panel",
+    description:
+      "Agents drive their tab in the Browser panel, where you watch and can take over. It needs agent browser access.",
+  },
+  {
+    target: "isolated",
+    label: "Its own Chrome",
+    description:
+      "Agents get a separate Chrome with its own logins, beside the Browser panel. It needs Chrome or another Chromium browser on the machine that runs the server.",
+  },
+  {
+    target: "personal",
+    label: "Your browser",
+    description:
+      "Agents work in your own browser, signed in as you, in a window of their own. obu attaches to a browser that allows remote debugging, and otherwise runs your browser on a copy of your profile.",
   },
 ];
 
@@ -416,6 +443,30 @@ function ServerSettingsDetail(props: { readonly page: SettingsPage }) {
                     disabled={disabledFor("enableAgentBrowserAccess")}
                     onValueChange={(value) => write({ enableAgentBrowserAccess: value })}
                   />
+                  <SettingsSwitchRow
+                    icon="safari"
+                    label="Agents browse with obu"
+                    subtitle={managedSubtitle(
+                      "enableAgentBrowserUse",
+                      "Agents read and act on pages with obu, a browser driver built for agents. Applies when the agent session next starts.",
+                    )}
+                    value={uniform("enableAgentBrowserUse")}
+                    disabled={disabledFor("enableAgentBrowserUse")}
+                    onValueChange={(value) => write({ enableAgentBrowserUse: value })}
+                  />
+                  {projectSelected || uniform("enableAgentBrowserUse") !== true
+                    ? null
+                    : BROWSER_USE_TARGET_CHOICES.map((choice) => (
+                        <SettingsChoiceRow
+                          key={choice.target}
+                          label={choice.label}
+                          description={choice.description}
+                          selected={uniform("agentBrowserUseTarget") === choice.target}
+                          separated
+                          disabled={disabledFor("agentBrowserUseTarget")}
+                          onPress={() => write({ agentBrowserUseTarget: choice.target })}
+                        />
+                      ))}
                 </SettingsSection>
                 <SettingsSection title="Computer">
                   <SettingsSwitchRow
