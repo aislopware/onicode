@@ -567,6 +567,10 @@
       "types": "./src/threadLinksCopy.ts",
       "import": "./src/threadLinksCopy.ts"
     },
+    "./reviewGuideStops": {
+      "types": "./src/reviewGuideStops.ts",
+      "import": "./src/reviewGuideStops.ts"
+    },
     "./terminalLabelsCopy": {
       "types": "./src/terminalLabelsCopy.ts",
       "import": "./src/terminalLabelsCopy.ts"

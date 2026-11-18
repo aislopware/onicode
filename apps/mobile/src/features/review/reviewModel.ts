@@ -144,6 +144,17 @@ const readyCheckpointOrder = Order.make<ThreadCheckpointSummary>(
   compareCheckpointTurnCountDescending,
 );
 
+// The server's own title for a diff is English.
+function gitTitle(section: ReviewDiffPreviewSource, resolve: MessageResolver): string {
+  if (section.kind === "working-tree") {
+    return resolve(msg("Uncommitted", { $context: "diff section: working tree" }));
+  }
+  if (section.kind === "branch-range" && section.baseRef) {
+    return resolve(msg("Changes vs {ref}", { ref: section.baseRef }));
+  }
+  return section.kind === "branch-range" ? resolve(CHANGES_TITLE) : section.title;
+}
+
 function gitSubtitle(section: ReviewDiffPreviewSource, resolve: MessageResolver): string | null {
   if (section.kind === "working-tree") {
     return resolve(UNCOMMITTED_SUBTITLE);
@@ -559,7 +570,7 @@ export function buildReviewSectionItems(input: {
     .map<ReviewSectionItem>((section) => ({
       id: `git:${section.kind}`,
       kind: section.kind,
-      title: section.title,
+      title: gitTitle(section, resolve),
       subtitle: gitSubtitle(section, resolve),
       diff: section.diff,
       source: section,

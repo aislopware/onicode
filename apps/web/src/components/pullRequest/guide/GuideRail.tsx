@@ -5,7 +5,7 @@ import { CheckIcon } from "lucide-react";
 import { cn } from "~/lib/utils";
 
 import { Badge } from "../../ui/badge";
-import { stopSubline } from "@onicode/client-runtime/review-guide-tour";
+import { stopSubline, stopText } from "@onicode/client-runtime/review-guide-tour";
 
 export function GuideRail({
   stops,
@@ -27,7 +27,7 @@ export function GuideRail({
         active={position === index}
         onClick={() => onSelect(index)}
         lead={<StopBullet number={index + 1} seen={seen.has(index)} />}
-        title={stop.title}
+        title={stopText(stop, messages).title}
         detail={
           <>
             {stop.attention !== null ? (

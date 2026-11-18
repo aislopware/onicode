@@ -2,6 +2,7 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import type { PullRequestReviewGuideExcerpt, PullRequestReviewGuideStop } from "@onicode/contracts";
 import { mFallback, msg } from "gt-i18n";
 import type { MFunctionType } from "gt-i18n/types";
+import { OTHER_FILES_STOP_SUMMARY, OTHER_FILES_STOP_TITLE } from "@onicode/shared/reviewGuideStops";
 
 export function stepTourPosition(current: number, delta: 1 | -1, stopCount: number): number {
   return Math.max(Math.min(current + delta, stopCount - 1), 0);
@@ -14,6 +15,21 @@ export function stopFilePaths(stop: PullRequestReviewGuideStop): ReadonlyArray<s
       ...stop.files.map((file) => file.path),
     ]),
   ];
+}
+
+/** A stop's heading and summary. A model writes the stops; only the server's last one is translated. */
+export function stopText(
+  stop: Pick<PullRequestReviewGuideStop, "title" | "summary" | "excerpts">,
+  resolve: MFunctionType = mFallback,
+): { readonly title: string; readonly summary: string } {
+  return stop.title === OTHER_FILES_STOP_TITLE &&
+    stop.summary === OTHER_FILES_STOP_SUMMARY &&
+    stop.excerpts.length === 0
+    ? {
+        title: resolve(msg("Other files", { $context: "review guide stop" })),
+        summary: resolve(msg("Changed files the tour does not otherwise cover.")),
+      }
+    : { title: stop.title, summary: stop.summary };
 }
 
 export function stopSubline(

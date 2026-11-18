@@ -1,4 +1,7 @@
 import { parsePatchFiles } from "@pierre/diffs/utils/parsePatchFiles";
+import { OTHER_FILES_STOP_SUMMARY, OTHER_FILES_STOP_TITLE } from "@onicode/shared/reviewGuideStops";
+import { mFallback } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -6,6 +9,7 @@ import {
   excerptRows,
   fileDiffRows,
   rowsToPatch,
+  stopText,
 } from "./reviewGuideTour.js";
 
 const PATCH = `diff --git a/src/tray.ts b/src/tray.ts
@@ -82,6 +86,26 @@ const LINE_ENDING_CASES = [
   start: 1,
   end: 2,
 }));
+
+describe("stopText", () => {
+  it("translates the server's last stop and leaves the model's stops alone", () => {
+    // Brackets show the text went through the app's resolver.
+    const translated = ((message, options) => `[${mFallback(message, options)}]`) as MFunctionType;
+    const otherFiles = {
+      title: OTHER_FILES_STOP_TITLE,
+      summary: OTHER_FILES_STOP_SUMMARY,
+      excerpts: [],
+    };
+    expect(stopText(otherFiles, translated)).toEqual({
+      title: `[${OTHER_FILES_STOP_TITLE}]`,
+      summary: `[${OTHER_FILES_STOP_SUMMARY}]`,
+    });
+    expect(stopText({ ...otherFiles, summary: "Config and docs." }, translated)).toEqual({
+      title: OTHER_FILES_STOP_TITLE,
+      summary: "Config and docs.",
+    });
+  });
+});
 
 describe("fileDiffRows", () => {
   it("numbers both sides through context, deletions and additions", () => {

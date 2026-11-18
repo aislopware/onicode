@@ -1,5 +1,5 @@
 import type { EnvironmentId, PullRequestRef, PullRequestReviewGuide } from "@onicode/contracts";
-import { T, Var } from "gt-react";
+import { T, useMessages, Var } from "gt-react";
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from "react";
 
 import { createPullRequestDiffFileContentsLoader } from "~/lib/diffFileContents";
@@ -19,7 +19,11 @@ import {
   useGuideRunStore,
   type GuideProgress,
 } from "./guideRunStore";
-import { stepTourPosition, stopFilePaths } from "@onicode/client-runtime/review-guide-tour";
+import {
+  stepTourPosition,
+  stopFilePaths,
+  stopText,
+} from "@onicode/client-runtime/review-guide-tour";
 import { useGuideDiffFiles } from "./useGuideDiffFiles";
 
 export function GuideTour({
@@ -45,6 +49,7 @@ export function GuideTour({
 }) {
   const key = guideProgressKey(guideRunKey(environmentId, reference), guide.headSha);
   const tour = useGuideProgress(key);
+  const messages = useMessages();
   const update = (change: (current: GuideProgress) => Partial<GuideProgress>) =>
     useGuideRunStore.getState().setProgress(key, (current) => ({ ...current, ...change(current) }));
   const [railOpen, setRailOpen] = useState(false);
@@ -52,6 +57,7 @@ export function GuideTour({
   const stopCount = guide.stops.length;
   const position = Math.max(Math.min(tour.position, stopCount - 1), 0);
   const stop = guide.stops[position] ?? null;
+  const nextStop = guide.stops[position + 1];
 
   const wantedPaths = stop === null ? [] : stopFilePaths(stop);
   const diff = useGuideDiffFiles({
@@ -141,7 +147,7 @@ export function GuideTour({
                   onSelect={goTo}
                 />
               }
-              nextTitle={guide.stops[position + 1]?.title ?? null}
+              nextTitle={nextStop === undefined ? null : stopText(nextStop, messages).title}
               files={diff.files}
               loadDiffFiles={loadDiffFiles}
               diffLoading={diff.loading}

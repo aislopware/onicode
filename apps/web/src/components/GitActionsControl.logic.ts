@@ -21,6 +21,7 @@ import {
 } from "@onicode/client-runtime/state/vcs";
 
 export {
+  gitActionResultTitle,
   requiresDefaultBranchConfirmation,
   type DefaultBranchConfirmableAction,
   type GitActionIconName,

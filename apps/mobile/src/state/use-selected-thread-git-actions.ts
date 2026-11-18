@@ -3,8 +3,10 @@ import { errorDisplayMessage } from "@onicode/client-runtime/errors";
 
 import { EnvironmentProject, EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
 import type { AtomCommandResult } from "@onicode/client-runtime/state/runtime";
+import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import {
   createVcsStatusRevalidationAtomFamily,
+  gitActionResultTitle,
   type GitActionRequestInput,
   type VcsActionOperation,
   type VcsRef,
@@ -374,7 +376,7 @@ export function useSelectedThreadGitActions() {
     return await runSelectedThreadGitMutation(
       "run_change_request",
       m(msg("Running source control action")),
-      async ({ thread, cwd }) => {
+      async ({ thread, project, cwd }) => {
         const result = await runStackedAction({
           actionId,
           action: input.action,
@@ -404,7 +406,11 @@ export function useSelectedThreadGitActions() {
         }
         showGitActionResult({
           type: "success",
-          title: result.value.toast.title,
+          title: gitActionResultTitle(
+            result.value,
+            sourceControlClients.get(project.repositoryIdentity?.provider).changeRequest,
+            m,
+          ),
           description: result.value.toast.description,
           prUrl: result.value.toast.cta.kind === "open_pr" ? result.value.toast.cta.url : undefined,
         });

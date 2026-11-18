@@ -1,5 +1,6 @@
 import type {
   GitRunStackedActionInput,
+  GitRunStackedActionResult,
   GitStackedAction,
   VcsStatusResult,
 } from "@onicode/contracts";
@@ -49,6 +50,44 @@ export function changeRequestTerminologyFor(
   gitStatus: VcsStatusResult | null,
 ): ChangeRequestTerminology {
   return sourceControlClients.get(gitStatus?.sourceControlProvider?.kind).changeRequest;
+}
+
+const SHORT_SHA_LENGTH = 7;
+
+/** What a finished action did, in the app's language. The result's own `toast.title` is English. */
+export function gitActionResultTitle(
+  result: Pick<GitRunStackedActionResult, "commit" | "push" | "pr">,
+  terminology: ChangeRequestTerminology,
+  resolve: MFunctionType = mFallback,
+): string {
+  const { shortLabel } = terminology;
+  const number = result.pr.number;
+  if (result.pr.status === "created") {
+    return number === undefined
+      ? resolve(msg("Created {shortLabel}", { shortLabel }))
+      : resolve(msg("Created {shortLabel} #{number}", { shortLabel, number }));
+  }
+  if (result.pr.status === "opened_existing") {
+    return number === undefined
+      ? resolve(msg("Opened {shortLabel}", { shortLabel }))
+      : resolve(msg("Opened {shortLabel} #{number}", { shortLabel, number }));
+  }
+  const sha = result.commit.commitSha?.slice(0, SHORT_SHA_LENGTH);
+  if (result.push.status === "pushed") {
+    const branch = result.push.upstreamBranch ?? result.push.branch;
+    if (sha !== undefined && branch !== undefined) {
+      return resolve(msg("Pushed {sha} to {branch}", { sha, branch }));
+    }
+    if (sha !== undefined) return resolve(msg("Pushed {sha}", { sha }));
+    if (branch !== undefined) return resolve(msg("Pushed to {branch}", { branch }));
+    return resolve(msg("Pushed"));
+  }
+  if (result.commit.status === "created") {
+    return sha === undefined
+      ? resolve(msg("Committed changes"))
+      : resolve(msg("Committed {sha}", { sha }));
+  }
+  return resolve(msg("Done", { $context: "a git action finished" }));
 }
 
 export function buildMenuItems(

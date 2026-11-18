@@ -11,6 +11,8 @@ import {
   type GitRunStackedActionResult,
 } from "@onicode/contracts";
 import { describe, expect, it } from "@effect/vitest";
+import { mFallback } from "gt-i18n";
+import type { MFunctionType } from "gt-i18n/types";
 import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -43,6 +45,7 @@ import {
   VcsActionMissingTerminalEventError,
   VcsActionRemoteFailureError,
   VcsActionTargetKeyParseError,
+  vcsActionLabelText,
 } from "./vcsAction.ts";
 import { vcsRefsCacheStateAtom } from "./vcsRefInvalidation.ts";
 
@@ -116,6 +119,24 @@ function cacheStore(onClearVcsRefs: (environmentId: EnvironmentId) => void) {
 }
 
 describe("vcsActionState", () => {
+  it("shows the server's step names in the app's language", () => {
+    const translated = ((message, options) => `[${mFallback(message, options)}]`) as MFunctionType;
+    const label = (currentLabel: string) =>
+      vcsActionLabelText({ currentLabel, hookName: null }, translated);
+    for (const step of [
+      "Generating commit message...",
+      "Committing...",
+      "Preparing feature branch...",
+      "Pushing...",
+      "Generating MR content...",
+      "Creating merge request...",
+      "Preparing PR...",
+    ]) {
+      expect(label(step)).toBe(`[${step}]`);
+    }
+    expect(label("Running husky pre-commit")).toBe("Running husky pre-commit");
+  });
+
   it("preserves malformed target key diagnostics and the native cause without copying the key", () => {
     const key = "not-json-with-credential=do-not-log";
     let error: unknown;
