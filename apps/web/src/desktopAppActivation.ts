@@ -1,4 +1,5 @@
 import type { EnvironmentPresentation } from "@onicode/client-runtime/connection";
+import type { EnvironmentShellStatus } from "@onicode/client-runtime/state/shell";
 import type {
   DesktopAppActivationFailure,
   DesktopAppActivationRequest,
@@ -38,8 +39,8 @@ export interface DesktopAppActivationDependencies {
 }
 
 /**
- * `pending` holds requests until this computer's environment can take them. The disk cache's
- * project list waits too: it can miss a project added elsewhere, and adding that folder would conflict.
+ * `pending` holds requests until this computer's environment can take them. A project list that is
+ * not live waits too: it can miss a project added elsewhere, and adding that folder would conflict.
  */
 export function resolveLocalWorkspaceState(input: {
   readonly environmentId: EnvironmentId | null;
@@ -47,8 +48,7 @@ export function resolveLocalWorkspaceState(input: {
     EnvironmentPresentation,
     "entry" | "connection" | "serverConfig"
   > | null;
-  /** The project list has matched the server since the app started, not only the disk cache. */
-  readonly shellCaughtUp: boolean;
+  readonly shellStatus: EnvironmentShellStatus | null;
   /** The connections and this computer's service ID are known. */
   readonly discoverySettled: boolean;
   /** With Local on, the primary joins the connections only once its server answers. */
@@ -59,14 +59,15 @@ export function resolveLocalWorkspaceState(input: {
   }
   // A blocked connection retries when the window activates, which `onicode app` does; these never connect.
   if (
-    input.environment?.entry.enabled === false ||
-    input.environment?.connection.phase === "unsupported"
+    input.localEnvironmentOff &&
+    (input.environment?.entry.enabled === false ||
+      input.environment?.connection.phase === "unsupported")
   ) {
     return "unavailable";
   }
   return input.environment?.connection.phase === "connected" &&
     input.environment.serverConfig !== null &&
-    input.shellCaughtUp
+    input.shellStatus === "live"
     ? "ready"
     : "pending";
 }
