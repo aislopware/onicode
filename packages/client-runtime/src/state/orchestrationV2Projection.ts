@@ -283,6 +283,31 @@ function restoreQueuedUserItems(
   return visibleTurnItems;
 }
 
+/**
+ * Stored copies of a subagent row (events, `getTurnItem`) lack the server's wire-only model copy,
+ * which may be the only model this client has for it.
+ */
+export function keepSubagentModelCopy(
+  next: OrchestrationV2TurnItem,
+  previous: OrchestrationV2TurnItem | undefined,
+): OrchestrationV2TurnItem {
+  if (
+    next.type !== "subagent" ||
+    previous?.type !== "subagent" ||
+    previous.subagentId !== next.subagentId ||
+    next.model !== undefined ||
+    next.modelSelection !== undefined ||
+    (previous.model === undefined && previous.modelSelection === undefined)
+  ) {
+    return next;
+  }
+  return {
+    ...next,
+    ...(previous.model === undefined ? {} : { model: previous.model }),
+    ...(previous.modelSelection === undefined ? {} : { modelSelection: previous.modelSelection }),
+  };
+}
+
 export function applyOrchestrationV2ProjectionEvent(
   projection: OrchestrationV2ThreadProjection | null,
   event: OrchestrationV2DomainEvent,
@@ -423,9 +448,10 @@ export function applyOrchestrationV2ProjectionEvent(
       while (itemIndex >= 0 && projection.turnItems[itemIndex]!.id !== payload.id) {
         itemIndex -= 1;
       }
-      const deferredWork =
-        itemIndex === -1 ? undefined : projection.turnItems[itemIndex]?.deferredWork;
+      const held = itemIndex === -1 ? undefined : projection.turnItems[itemIndex];
+      const deferredWork = held?.deferredWork;
       if (deferredWork !== undefined) payload = { ...payload, deferredWork };
+      payload = keepSubagentModelCopy(payload, held);
       if (
         partialTimeline &&
         itemIndex === -1 &&

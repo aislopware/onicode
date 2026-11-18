@@ -8,6 +8,7 @@ import {
   type OrchestrationV2TurnItem,
   MessageId,
   ProjectId,
+  ProviderDriverKind,
   ProviderInstanceId,
   NodeId,
   ProviderThreadId,
@@ -260,6 +261,60 @@ describe("applyOrchestrationV2ProjectionEvent", () => {
     expect(next?.visibleTurnItems[0]).not.toBe(firstRow);
     expect(next?.visibleTurnItems[0]?.item).toEqual({ ...updated, deferredWork });
     expect(next?.visibleTurnItems[1]).toBe(secondRow);
+  });
+
+  it("keeps a subagent row's model copy when its stored item replaces it", () => {
+    const {
+      type: _type,
+      input: _input,
+      output: _output,
+      exitCode: _exitCode,
+      ...base
+    } = commandItem("item-subagent") as Extract<
+      OrchestrationV2TurnItem,
+      { type: "command_execution" }
+    >;
+    const providerInstanceId = ProviderInstanceId.make("claudeAgent");
+    const stored = {
+      ...base,
+      status: "running",
+      completedAt: null,
+      type: "subagent",
+      subagentId: NodeId.make("subagent-old"),
+      origin: "provider_native",
+      driver: ProviderDriverKind.make("claudeAgent"),
+      providerInstanceId,
+      childThreadId: null,
+      prompt: "Look",
+      result: null,
+    } satisfies OrchestrationV2TurnItem;
+    const copy = {
+      model: "claude-haiku-4-5",
+      modelSelection: { instanceId: providerInstanceId, model: "claude-haiku-4-5" },
+    };
+    const row = {
+      position: 0,
+      visibility: "local" as const,
+      sourceThreadId: threadId,
+      sourceItemId: stored.id,
+      item: { ...stored, ...copy },
+    };
+    const projection = {
+      ...emptyProjection,
+      runs: [run],
+      turnItems: [row.item],
+      visibleTurnItems: [row],
+    };
+    const settled = { ...stored, status: "completed" as const, completedAt: now, result: "Done" };
+    const next = applyOrchestrationV2ProjectionEvent(projection, {
+      id: "event-subagent-settled",
+      type: "turn-item.updated",
+      threadId,
+      runId,
+      occurredAt: now,
+      payload: settled,
+    } as OrchestrationV2DomainEvent);
+    expect(next?.visibleTurnItems[0]?.item).toEqual({ ...settled, ...copy });
   });
 
   it("inserts live turn items by authoritative ordinal", () => {
