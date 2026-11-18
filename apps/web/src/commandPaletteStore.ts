@@ -32,8 +32,8 @@ let inputSinceClose = false;
 const endHandover = () => {
   inputSinceClose = true;
   handover = null;
-  document.removeEventListener("keydown", endHandover, true);
-  document.removeEventListener("pointerdown", endHandover, true);
+  window.removeEventListener("keydown", endHandover, true);
+  window.removeEventListener("pointerdown", endHandover, true);
 };
 
 export function dispatchCommandPalette(action: CommandPaletteUiAction): void {
@@ -50,10 +50,11 @@ export function dispatchCommandPalette(action: CommandPaletteUiAction): void {
     };
   }
   if (state.open && !next.open) {
-    // The key or press that closes it is already past the document's capture phase.
+    // The key or press that closes it is already past the window's capture phase, where
+    // workspace shortcuts such as F6 stop keys before the document sees them.
     inputSinceClose = false;
-    document.addEventListener("keydown", endHandover, true);
-    document.addEventListener("pointerdown", endHandover, true);
+    window.addEventListener("keydown", endHandover, true);
+    window.addEventListener("pointerdown", endHandover, true);
   }
   useCommandPaletteStore.setState(next, true);
 }

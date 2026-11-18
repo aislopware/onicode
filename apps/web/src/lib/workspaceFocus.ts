@@ -423,8 +423,10 @@ export function createWorkspaceFocusController(doc: Document) {
     unmarkKeyboardArea();
     onUserInput();
   };
-  doc.addEventListener("pointerdown", onPointerDown, true);
-  doc.addEventListener("keydown", onUserInput, true);
+  // At the window: shortcuts that take a key there stop it before the document sees it.
+  const view = doc.defaultView ?? window;
+  view.addEventListener("pointerdown", onPointerDown, true);
+  view.addEventListener("keydown", onUserInput, true);
 
   return {
     move: (direction: 1 | -1, fromArea?: string, closingPalette = false) => {
@@ -438,8 +440,8 @@ export function createWorkspaceFocusController(doc: Document) {
       unmarkKeyboardArea();
       doc.removeEventListener("focusin", remember);
       doc.removeEventListener("focusout", recover);
-      doc.removeEventListener("pointerdown", onPointerDown, true);
-      doc.removeEventListener("keydown", onUserInput, true);
+      view.removeEventListener("pointerdown", onPointerDown, true);
+      view.removeEventListener("keydown", onUserInput, true);
     },
   };
 }

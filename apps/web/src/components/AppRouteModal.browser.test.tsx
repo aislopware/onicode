@@ -377,6 +377,12 @@ describe("AppRouteModal", () => {
       meanwhile: () => document.dispatchEvent(new KeyboardEvent("keydown", { key: "a" })),
     },
     {
+      after: "a workspace shortcut pressed before the palette finished closing",
+      navigates: true,
+      // Shortcuts such as F6 take the key at the window, so the document never sees it.
+      meanwhile: () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "F6" })),
+    },
+    {
       after: "a palette command that moved workspace focus",
       navigates: true,
       meanwhile: () => requestWorkspaceFocus({ area: "composer" }),
