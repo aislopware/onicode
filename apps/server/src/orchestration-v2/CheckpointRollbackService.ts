@@ -332,12 +332,8 @@ export const layer: Layer.Layer<
           (turn.runAttemptId === null || !rolledBackAttemptIds.has(turn.runAttemptId)),
       );
 
-      // With no Onicode turn in its native session there is nothing to undo, and some
-      // providers roll back to the start by replacing the session, imported history and all.
-      const undoesNativeTurns =
-        rollbackTarget.type !== "thread_start" || providerThreadTurns.length > 0;
       const snapshot =
-        runsToRollback.length === 0 || !undoesNativeTurns
+        runsToRollback.length === 0
           ? { providerThread }
           : yield* session.rollbackThread({
               providerThread,

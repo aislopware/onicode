@@ -1412,8 +1412,7 @@ describe("orchestration v2 provider switching", () => {
       | "edit-first-turn-then-switch"
       | "edit-first-turn-during-rollback"
       | "edit-first-turn-truncating"
-      | "edit-imported-first-turn"
-      | "edit-imported-unaccepted-turn",
+      | "edit-imported-first-turn",
   ) =>
     Effect.gen(function* () {
       const cwd = yield* checkpointWorkspace(`imported-native-session-${scenario}`);
@@ -1424,11 +1423,7 @@ describe("orchestration v2 provider switching", () => {
         scenario === "edit-first-turn-then-switch" ||
         scenario === "edit-first-turn-during-rollback" ||
         scenario === "edit-first-turn-truncating";
-      // The imported session's only Onicode turn fails to start, so the rollback leaves it alone.
-      const unacceptedTurn = scenario === "edit-imported-unaccepted-turn";
-      const editsFirstTurn =
-        migratedFromV1 || scenario === "edit-imported-first-turn" || unacceptedTurn;
-      const failClaudeStartOnce = yield* Ref.make(unacceptedTurn);
+      const editsFirstTurn = migratedFromV1 || scenario === "edit-imported-first-turn";
       const claudeOrdinal =
         scenario === "after-failed-switch" ||
         scenario === "edit-first-turn" ||
@@ -1436,7 +1431,7 @@ describe("orchestration v2 provider switching", () => {
         scenario === "edit-first-turn-truncating" ||
         scenario === "edit-imported-first-turn"
           ? 2
-          : scenario === "edit-first-turn-then-switch" || unacceptedTurn
+          : scenario === "edit-first-turn-then-switch"
             ? 3
             : 1;
       const racesRollback = scenario === "edit-first-turn-during-rollback";
@@ -1450,14 +1445,13 @@ describe("orchestration v2 provider switching", () => {
           driver: CLAUDE_DRIVER,
           // ACP cannot truncate, so its rollback swaps in an empty session.
           capabilities:
-            scenario === "edit-imported-first-turn" || unacceptedTurn
+            scenario === "edit-imported-first-turn"
               ? AcpProviderCapabilitiesV2
               : ClaudeProviderCapabilitiesV2,
           modelSelection: CLAUDE_MODEL_SELECTION,
           responseByRunOrdinal: { 1: "OK", [claudeOrdinal]: "PELICAN" },
           capturedTurns,
           failImportedResume: scenario === "resume-fails",
-          ...(unacceptedTurn ? { failStartOnce: failClaudeStartOnce } : {}),
           // Like Cursor, rolling back to the start opens an empty agent on the same row.
           ...(editsFirstTurn
             ? {
@@ -1479,7 +1473,7 @@ describe("orchestration v2 provider switching", () => {
           responseByRunOrdinal: {},
           capturedTurns,
           // A switch away after Edit from here completes, so no run is left without history.
-          ...(scenario === "edit-first-turn-then-switch" || unacceptedTurn
+          ...(scenario === "edit-first-turn-then-switch"
             ? {}
             : { failedRunOrdinals: new Set([1]) }),
         }),
@@ -1628,9 +1622,8 @@ describe("orchestration v2 provider switching", () => {
             yield* worker.drain();
           });
         if (scenario === "after-failed-switch") yield* send(1, CODEX_MODEL_SELECTION);
-        if (unacceptedTurn) yield* send(1, CODEX_MODEL_SELECTION);
         if (editsFirstTurn) {
-          yield* send(unacceptedTurn ? 2 : 1, CLAUDE_MODEL_SELECTION);
+          yield* send(1, CLAUDE_MODEL_SELECTION);
           const baseline = (yield* orchestrator.getThreadProjection(threadId)).checkpoints.find(
             (checkpoint) => (checkpoint.appRunOrdinal ?? 0) === 0 && checkpoint.status === "ready",
           );
@@ -1658,7 +1651,7 @@ describe("orchestration v2 provider switching", () => {
               Stream.filter(
                 ({ event }) =>
                   (event.type === "run.updated" &&
-                    event.payload.ordinal === (unacceptedTurn ? 2 : 1) &&
+                    event.payload.ordinal === 1 &&
                     event.payload.status === "rolled_back") ||
                   (event.type === "thread.metadata-updated" &&
                     event.payload.rollbackFailure != null),
@@ -1742,9 +1735,6 @@ describe("orchestration v2 provider switching", () => {
   );
   it.live("recovers an imported session's history after Edit from here replaces it", () =>
     importedNativeSessionScenario("edit-imported-first-turn"),
-  );
-  it.live("keeps an imported session that Edit from here has nothing to undo in", () =>
-    importedNativeSessionScenario("edit-imported-unaccepted-turn"),
   );
 
   it.live.each(["native", "legacy"] as const)(
