@@ -2465,6 +2465,8 @@ describe("PreviewManager", () => {
         expect(yield* Queue.take(capturing)).toBe(true);
         yield* manager.setCaptureDrawn("tab_1", true);
         screenshot.resolve({ data: "" });
+        // The guest stays drawn while the server drives it, until it has sat idle.
+        yield* TestClock.adjust("1 minute");
         expect(yield* Queue.take(capturing)).toBe(false);
       }).pipe(Effect.provide(managerLayer())),
   );
