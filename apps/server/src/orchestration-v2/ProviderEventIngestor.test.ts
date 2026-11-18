@@ -5,6 +5,7 @@ import {
   CheckpointId,
   CheckpointRef,
   CheckpointScopeId,
+  CommandId,
   MessageId,
   GitCommandError,
   type ModelSelection,
@@ -2182,6 +2183,38 @@ layer("ProviderEventIngestorV2", (it) => {
       });
       yield* rename("Renamed again");
       assert.isNull((yield* projectionStore.getThread(childThreadId)).generatedTitle);
+      // Renamed in the sidebar, then a regeneration is asked for.
+      yield* eventSink.write({
+        events: [
+          {
+            ...rootEvent,
+            id: yield* idAllocator.allocate.event({ threadId: childThreadId }),
+            threadId: childThreadId,
+            type: "thread.metadata-updated",
+            payload: {
+              ...(yield* projectionStore.getThread(childThreadId)),
+              title: "Sidebar name",
+              titleRenamed: true,
+              titleRegeneration: { requestId: CommandId.make("regenerate"), startedAt: now },
+            },
+          },
+        ],
+      });
+      // A workflow member's label comes back with every model change.
+      yield* ingest({
+        ...offered,
+        title: "Inspect checkout",
+        modelSelection: { ...modelSelection, model: "gpt-6.2-sol" },
+      });
+      const relabeled = yield* projectionStore.getThread(childThreadId);
+      assert.equal(relabeled.title, "Sidebar name");
+      assert.equal(relabeled.modelSelection.model, "gpt-6.2-sol");
+      // The regeneration asked for before a native rename must not overwrite it.
+      yield* rename("Renamed natively again");
+      const renamedAgain = yield* projectionStore.getThread(childThreadId);
+      assert.equal(renamedAgain.title, "Renamed natively again");
+      assert.isNull(renamedAgain.titleRegeneration);
+      assert.isTrue(renamedAgain.titleRenamed);
     }),
   );
 

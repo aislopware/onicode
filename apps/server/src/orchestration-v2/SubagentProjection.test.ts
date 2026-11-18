@@ -90,6 +90,7 @@ it("resets a subagent child's snooze, title job and remote delegation but keeps 
   const parentThread: OrchestrationV2AppThread = {
     ...makeParentThread(),
     titleRegeneration: { requestId: CommandId.make("command:parent-title"), startedAt: snoozedAt },
+    generatedTitle: { needsRefinement: true, refinements: 1, coveredAt: snoozedAt },
     delegatedFrom: {
       environmentId: EnvironmentId.make("linked-environment"),
       threadId: ThreadId.make("linked-parent"),
@@ -114,6 +115,8 @@ it("resets a subagent child's snooze, title job and remote delegation but keeps 
   assert.isNull(childThread.snoozedUntil);
   assert.isNull(childThread.snoozedAt);
   assert.isNull(childThread.titleRegeneration);
+  // The parent's generated title is not the child's, so no refresh may replace the child's.
+  assert.isNull(childThread.generatedTitle);
   assert.isUndefined(childThread.delegatedFrom);
   assert.equal(childThread.projectId, parentThread.projectId);
   assert.equal(childThread.runtimeMode, parentThread.runtimeMode);

@@ -667,6 +667,8 @@ it.effect.each([" /COMPACT "])(
             thread: "compact-title-thread",
             message: nativeCommand,
           }),
+          // Clients title a launched thread after its first message.
+          title: nativeCommand.trim(),
           generateTitle: true,
         });
         assert.isUndefined(
@@ -688,6 +690,7 @@ it.effect.each([" /COMPACT "])(
           createdBy: "user",
           creationSource: "web",
           text: "Fix the failing parser",
+          titleSeed: "Fix the failing parser",
           attachments: [],
           dispatchMode: { type: "defer_start" },
         });

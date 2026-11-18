@@ -7073,9 +7073,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       (yield* projectionStore.getMessageCount(command.threadId).pipe(mapDispatchError(command))) ===
         0 &&
       !hasTitleSetBeforeFirstMessage(projection.thread, command.titleSeed);
+    // A thread opened with `/compact` was titled after it, so only a rename keeps that title.
     if (
       !isNativeMaintenanceCommand(command) &&
-      (seedsUntitledThread || (command.createdBy === "user" && (yield* onlyMaintenanceHistory)))
+      (seedsUntitledThread ||
+        (command.createdBy === "user" &&
+          projection.thread.titleRenamed !== true &&
+          (yield* onlyMaintenanceHistory)))
     ) {
       const now = yield* DateTime.now;
       const thread: OrchestrationV2AppThread = {
