@@ -18,13 +18,14 @@ const japanese: MFunctionType = (encodedMsg, options) => {
 };
 
 describe("resolveTerminalSessionLabel", () => {
-  it("translates the idle default and keeps process names", () => {
+  it("translates the default and keeps process names", () => {
     const resolve = (label: string, hasRunningSubprocess: boolean) =>
       resolveTerminalSessionLabel("term-2", { label, hasRunningSubprocess }, japanese);
     expect(resolve("Terminal 2", false)).toBe("ターミナル 2");
     expect(resolve(" ", false)).toBe("ターミナル 2");
     expect(resolve("sleep", true)).toBe("sleep");
-    expect(resolve("Terminal 2", true)).toBe("Terminal 2");
+    // Busy before the server reads the command name, it still sends the default.
+    expect(resolve("Terminal 2", true)).toBe("ターミナル 2");
   });
 });
 
