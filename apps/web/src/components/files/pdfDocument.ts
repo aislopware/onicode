@@ -1,4 +1,9 @@
-import { getDocument, GlobalWorkerOptions, PDFWorker } from "pdfjs-dist";
+import {
+  getDocument,
+  GlobalWorkerOptions,
+  PDFWorker,
+  type PDFDocumentLoadingTask,
+} from "pdfjs-dist";
 import rendererUrl from "pdfjs-dist/build/pdf.renderer.min.mjs?url";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import fallbackUrl from "pdfjs-dist/wasm/openjpeg_nowasm_fallback.js?url";
@@ -37,6 +42,19 @@ export class BinaryDataFactory {
 
 // Without a shared worker, pdf.js starts a worker and recompiles its 1.3 MB script for every document.
 let worker: PDFWorker | undefined;
+
+// pdf.js frees a document's renderer only once its worker confirms the close. An open that
+// races the close finds the renderer taken and starts a second one.
+let closing: Promise<unknown> = Promise.resolve();
+
+export function closePdf(task: PDFDocumentLoadingTask | undefined) {
+  if (task) closing = Promise.allSettled([closing, task.destroy()]);
+}
+
+/** Settles once every closed document has freed its renderer. Await it before `openPdf`. */
+export function pdfClosed() {
+  return closing;
+}
 
 export function openPdf(bytes: ArrayBuffer) {
   worker ??= new PDFWorker();
