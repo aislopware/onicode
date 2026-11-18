@@ -143,7 +143,7 @@ export function providerSwitchWaitsForTurn(
 }
 
 export function providerTurnCapabilities(
-  projection: OrchestrationV2ThreadProjection,
+  projection: Pick<OrchestrationV2ThreadProjection, "providerThreads" | "providerSessions">,
   run: OrchestrationV2Run,
 ) {
   const providerThread = projection.providerThreads.find(

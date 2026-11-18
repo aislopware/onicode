@@ -1511,7 +1511,9 @@ export default function ChatView(props: ChatViewProps) {
   const compactionBlocksSteer = compactionBlocksSteering({
     compactCommandIsActive,
     compactionRunning,
-    steersDuringCompaction: threadSteersDuringCompaction(serverProjection),
+    steersDuringCompaction:
+      threadSteersDuringCompaction(serverProjection) ||
+      serverConfig?.environment.capabilities.steersAfterCompaction === true,
     run: serverProjection?.runs.find((run) => run.id === activeRuntime?.activeRunId),
     messages: serverProjection?.messages,
   });

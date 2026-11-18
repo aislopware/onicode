@@ -21,6 +21,7 @@ import {
   ProviderInstanceId,
   ProviderSessionId,
   ProviderThreadId,
+  ProviderTurnId,
   RunAttemptId,
   RunId,
   ThreadId,
@@ -2528,6 +2529,43 @@ it.layer(layerTest)("orchestration V2 foundation persistence", (it) => {
       yield* outbox.succeed({ effectId, workerId: "settle-worker" });
       yield* Fiber.join(waiter);
       yield* outbox.awaitSettled(effectId);
+    }),
+  );
+
+  it.effect("lists a message's steers while they are pending or running", () =>
+    Effect.gen(function* () {
+      const outbox = yield* EffectOutbox.EffectOutboxV2;
+      const threadId = ThreadId.make("thread:foundation-steers-in-flight");
+      const messageId = MessageId.make("message:foundation-steers-in-flight");
+      const effectId = "effect:foundation-steers-in-flight";
+      const steer = (id: string, steered: MessageId) => ({
+        id,
+        commandId: CommandId.make(`command:${id}`),
+        threadId,
+        request: {
+          type: "provider-turn.steer" as const,
+          providerSessionId: ProviderSessionId.make("provider-session:foundation-steers"),
+          providerThreadId: ProviderThreadId.make("provider-thread:foundation-steers"),
+          providerTurnId: ProviderTurnId.make("provider-turn:foundation-steers"),
+          messageId: steered,
+        },
+      });
+      yield* outbox.enqueue([
+        steer(effectId, messageId),
+        steer(`${effectId}:other`, MessageId.make("message:foundation-steers-other")),
+      ]);
+      const inFlight = outbox.steersInFlight({ threadId, messageId });
+      assert.deepEqual(yield* inFlight, [effectId]);
+
+      const claimed = yield* outbox.claimNext({ workerId: "steer-worker" });
+      assert.equal(Option.getOrThrow(claimed).id, effectId);
+      assert.deepEqual(yield* inFlight, [effectId]);
+
+      yield* outbox.succeed({ effectId, workerId: "steer-worker" });
+      assert.deepEqual(yield* inFlight, []);
+      // Later tests share this outbox.
+      yield* outbox.claimNext({ workerId: "steer-worker" });
+      yield* outbox.succeed({ effectId: `${effectId}:other`, workerId: "steer-worker" });
     }),
   );
 

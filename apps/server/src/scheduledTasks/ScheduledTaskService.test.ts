@@ -502,13 +502,31 @@ it.effect.each([
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );
 
-it.effect("a one-time task is removed once its turn completes", () =>
+it.effect.each([
+  { label: "is removed once its turn completes", ended: "run:1", owner: "run:1", removed: true },
+  // Its steer missed the running turn, so the message started a run. A later steer restarted
+  // that run with its own prompt, and a server restart then continued it.
+  {
+    label: "is removed once a continuation of the turn its missed steer started completes",
+    ended: "run:3",
+    owner: "run:2",
+    removed: true,
+  },
+  // Promoted to a steer, its message joined a turn that belongs to someone else.
+  {
+    label: "stays when its message was steered into another turn",
+    ended: "run:0",
+    owner: "run:0",
+    removed: false,
+  },
+])("a one-time task $label", (outcome) =>
   Effect.gen(function* () {
     yield* TestClock.setTime(Date.parse("2026-11-01T07:00:00.000Z"));
     const projectId = ProjectId.make("project:test");
     const ended = yield* Deferred.make<void>();
+    const decided = yield* Deferred.make<void>();
     const sent = yield* Ref.make("");
-    const run = { id: "run:1", status: "completed", rootNodeId: "node:root" };
+    const run = { id: outcome.ended, status: "completed", rootNodeId: "node:root" };
     const layer = ScheduledTaskService.layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -517,10 +535,32 @@ it.effect("a one-time task is removed once its turn completes", () =>
           Layer.mock(ThreadManagementService.ThreadManagementService)({
             sendToThread: (input) => Ref.set(sent, input.messageId).pipe(Effect.as({} as never)),
             getThreadShell: () => Effect.succeed(threadShell(projectId)),
-            getProjectThreadRecords: () =>
+            getProjectThreadRecords: (_thread, kinds) =>
               Effect.map(
-                Ref.get(sent),
-                (userMessageId) => ({ runs: [{ ...run, userMessageId }] }) as never,
+                Ref.get(sent).pipe(
+                  Effect.tap(() =>
+                    kinds.some((kind) => kind === "turnItems")
+                      ? Deferred.succeed(decided, undefined)
+                      : Effect.void,
+                  ),
+                ),
+                (userMessageId) =>
+                  ({
+                    runs: [
+                      { id: "run:1", userMessageId },
+                      { id: "run:2", userMessageId: "message:later-steer" },
+                      { id: "run:3", userMessageId: "message:continuation" },
+                    ],
+                    messages: [{ id: userMessageId, runId: outcome.owner }],
+                    turnItems: [
+                      {
+                        type: "user_message",
+                        messageId: userMessageId,
+                        runId: outcome.owner,
+                        inputIntent: outcome.removed ? "queued_turn" : "promoted_queued_to_steer",
+                      },
+                    ],
+                  }) as never,
               ),
             waitForThread: (input) =>
               Deferred.await(ended).pipe(
@@ -566,8 +606,9 @@ it.effect("a one-time task is removed once its turn completes", () =>
       // The dispatch alone keeps it: the turn can still fail.
       assert.isNull(Option.getOrThrow(yield* Fiber.join(recorded))?.nextRunAt);
       yield* Deferred.succeed(ended, undefined);
-      yield* Fiber.join(gone);
-      assert.lengthOf((yield* service.list()).tasks, 0);
+      if (outcome.removed) yield* Fiber.join(gone);
+      else yield* Deferred.await(decided);
+      assert.lengthOf((yield* service.list()).tasks, outcome.removed ? 0 : 1);
     }).pipe(Effect.provide(layer));
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),
 );

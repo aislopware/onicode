@@ -40,6 +40,8 @@ export class ProviderTurnControlError extends Schema.TaggedError<ProviderTurnCon
     operation: Schema.Literals(["interrupt", "restart", "steer"]),
     providerTurnId: ProviderTurnId,
     turnCompleted: Schema.optional(Schema.Boolean),
+    /** The turn failed or was stopped before it took the steer. */
+    turnAbandoned: Schema.optional(Schema.Boolean),
     steerDeclined: Schema.optional(Schema.Boolean),
     /** The provider never confirmed the stop; Force stop is the way out. */
     unresponsive: Schema.optional(Schema.Boolean),
@@ -48,6 +50,9 @@ export class ProviderTurnControlError extends Schema.TaggedError<ProviderTurnCon
 ) {}
 
 const isProviderTurnControlError = Schema.is(ProviderTurnControlError);
+
+const turnAbandoned = (status: string | undefined) =>
+  status === "failed" || status === "interrupted";
 
 export interface ProviderTurnControlServiceV2Shape {
   readonly interrupt: (input: {
@@ -169,6 +174,7 @@ export const layer: Layer.Layer<
             operation: "steer",
             providerTurnId: input.providerTurnId,
             turnCompleted: providerTurn.status === "completed",
+            turnAbandoned: turnAbandoned(providerTurn.status),
             cause: "The provider turn ended before the steering message was delivered.",
           });
         }
@@ -496,6 +502,7 @@ export const layer: Layer.Layer<
                     operation: "steer",
                     providerTurnId: input.providerTurnId,
                     turnCompleted: status === "completed",
+                    turnAbandoned: turnAbandoned(status),
                     cause,
                   });
                 }),

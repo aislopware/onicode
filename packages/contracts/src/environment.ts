@@ -186,6 +186,8 @@ export const ExecutionEnvironmentCapabilities = Schema.Struct({
   oneTimeSchedules: Schema.optionalKey(Schema.Boolean),
   /** Server honors `freshContext` on sends; older servers ignore it and keep the old context. */
   freshContext: Schema.optionalKey(Schema.Boolean),
+  /** Server holds a steer sent into an automatic compaction until it ends; older servers send it at once. */
+  steersAfterCompaction: Schema.optionalKey(Schema.Boolean),
   /** Server saves and runs scheduled task `threadMode`; older servers ignore it. */
   scheduledTaskThreadModes: Schema.optionalKey(Schema.Boolean),
   /** Server can transcribe 16 kHz mono PCM audio on the environment machine. */
