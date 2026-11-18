@@ -2185,10 +2185,11 @@ describe("UsageService", () => {
           // The first refresh already finds the width a read can finish, even from the epoch.
           if (scans === 0) {
             const firstFinished = cursor.state.calls[0];
+            assert.isDefined(firstFinished);
             assert.isBelow(
               large.reads.findIndex(
                 (read) =>
-                  read.sinceMs === firstFinished?.sinceMs && read.untilMs === firstFinished.untilMs,
+                  read.sinceMs === firstFinished.sinceMs && read.untilMs === firstFinished.untilMs,
               ),
               CURSOR_READS_PER_REFRESH,
             );
