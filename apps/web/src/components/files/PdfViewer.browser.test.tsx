@@ -18,12 +18,44 @@ function setup(page: number) {
   findGate.page = page;
   findGate.opened = new Promise((resolve) => (findGate.open = resolve));
 }
+// Holds a document's close until the test releases it, and counts the opens that did not wait.
+const closeGate = vi.hoisted(() => ({
+  held: false,
+  released: Promise.resolve(),
+  release: () => {},
+  reopening: () => {},
+  racedOpens: 0,
+}));
+function holdClose() {
+  closeGate.held = true;
+  closeGate.racedOpens = 0;
+  closeGate.released = new Promise((resolve) => {
+    closeGate.release = () => {
+      closeGate.held = false;
+      resolve();
+    };
+  });
+  return new Promise<void>((resolve) => (closeGate.reopening = resolve));
+}
 vi.mock(import("./pdfDocument"), async (importOriginal) => {
   const actual = await importOriginal();
   return {
     ...actual,
+    pdfClosed: () => {
+      closeGate.reopening();
+      return actual.pdfClosed();
+    },
     openPdf: (bytes) => {
+      if (closeGate.held) {
+        closeGate.racedOpens += 1;
+        closeGate.reopening();
+      }
       const task = actual.openPdf(bytes);
+      const destroy = task.destroy.bind(task);
+      task.destroy = async () => {
+        await closeGate.released;
+        return destroy();
+      };
       const promise = task.promise.then((document) => {
         const getPage = document.getPage.bind(document);
         document.getPage = async (number) => {
@@ -217,10 +249,17 @@ it("restores page, within-page offset and zoom after a remount", async () => {
       expect(region().scrollTop).toBeCloseTo(fitTop, 0);
     });
 
+    // A reopen waits for the close before it: pdf.js frees the renderer only then, and an
+    // open that finds it taken starts a second one.
+    const reopening = holdClose();
     await screen.rerender(viewer(4, "restore:b"));
+    await reopening;
+    closeGate.release();
     await expect.element(screen.getByText("1 / 2 pages")).toBeVisible();
     await expect.element(screen.getByText("Fit width")).toBeVisible();
+    expect(closeGate.racedOpens).toBe(0);
   } finally {
+    closeGate.release();
     URL.revokeObjectURL(url);
   }
 });

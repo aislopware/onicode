@@ -5,6 +5,7 @@ import {
   EnvironmentId,
   MessageId,
   OrchestrationV2DispatchCommandError,
+  RunId,
   ThreadId,
 } from "@onicode/contracts";
 import { serializeAssistantCitation } from "@onicode/shared/assistantCitations";
@@ -436,7 +437,7 @@ it("names the wait on a message held for compaction and steers the next one", as
     ],
   };
   const ref = createRef<QueuedRunsControlHandle>();
-  await using _screen = await renderQueue({ ref });
+  await using screen = await renderQueue({ ref });
 
   await expect.element(page.getByText("After compaction", { exact: true })).toBeVisible();
   expect(page.getByRole("button", { name: "Send now" }).elements()).toHaveLength(1);
@@ -446,6 +447,12 @@ it("names the wait on a message held for compaction and steers the next one", as
       expect.objectContaining({ input: expect.objectContaining({ queuedRunId: "run:next" }) }),
     ]),
   );
+
+  // The key leaves a row that is being edited alone: its saved text is about to change.
+  await screen.rerender(
+    <QueuedRunsControl {...baseProps} ref={ref} editingRunId={RunId.make("run:next")} />,
+  );
+  expect(ref.current?.steerNext(false)).toBe(false);
 });
 
 it("tells the user why Send now was rejected", async () => {

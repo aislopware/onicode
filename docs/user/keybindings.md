@@ -27,8 +27,9 @@ or **Composer: Send and Start New Thread**. These bindings take priority over th
 send shortcut. Click the send button to use the configured follow-up behavior.
 
 When a thread has queued messages, `mod+Shift+Enter` sends the first one as a steer
-while a turn is running, or as a new turn when the thread is stopped. Change it under
-**Queue: Send First Queued Message** in Keybindings.
+while a turn is running, or as a new turn when the thread is stopped. It passes over a
+message that already waits for compaction, and leaves one you are editing alone. Change
+it under **Queue: Send First Queued Message** in Keybindings.
 
 Use `mod+shift+m` to choose a model and `mod+shift+h` to choose a host.
 To step a new thread to the next machine instead of opening the menu, bind

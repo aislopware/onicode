@@ -611,10 +611,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
     ? []
     : recentModelsToShow({ ...opened, models: pickableModels, isFavorite });
   // Favorites and Recent answer most opens. A single row between them would only hide the
-  // catalogue, so then the list opens whole, as it does for someone new.
-  const leadsWithPicks = favoriteModels.length + recentPicks.length >= 2;
+  // catalogue, so then the list opens whole, as it does for someone new. Decided once per open:
+  // a star must not fold or unfold the list under the pointer.
+  const [leadsWithPicks] = useState(() => favoriteModels.length + recentPicks.length >= 2);
   const recentModels = leadsWithPicks ? recentPicks : [];
-  const collapsed = leadsWithPicks && !showAll;
+  const collapsed = leadsWithPicks && !showAll && !isSearching;
 
   const rows = ((): ListRow[] => {
     if (isSearching) {
@@ -754,14 +755,22 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       })
     : [];
 
-  // Favorites own the jump shortcuts; without any, the first models in the list do.
+  // Favorites own the jump shortcuts; without any, the first models in the list do. A model
+  // listed under Recent and again under its provider takes one shortcut, on its first row.
+  const jumpModels = new Set<ModelPickerItem>();
   const modelJumpModelKeys = rows
-    .filter(
-      (row): row is Extract<ListRow, { kind: "model" }> =>
-        row.kind === "model" &&
-        (isSearching || favoriteModels.length === 0 || row.key.startsWith("favorite:")) &&
-        !getModelDisabledReason?.(row.model.instanceId, row.model.slug),
-    )
+    .filter((row): row is Extract<ListRow, { kind: "model" }> => {
+      if (
+        row.kind !== "model" ||
+        jumpModels.has(row.model) ||
+        !(isSearching || favoriteModels.length === 0 || row.key.startsWith("favorite:")) ||
+        getModelDisabledReason?.(row.model.instanceId, row.model.slug)
+      ) {
+        return false;
+      }
+      jumpModels.add(row.model);
+      return true;
+    })
     .slice(0, MODEL_PICKER_JUMP_KEYBINDING_COMMANDS.length)
     .map((row) => row.key);
   const modelJumpLabelByKey = modelJumpLabelsByKey(
@@ -798,9 +807,12 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
 
   const scrollToSection = (direction: 1 | -1) => {
     // A section with no model to pick is passed by: the highlight could not follow the view there.
+    // So is Recent, which repeats models the provider sections hold.
     const headers = headerIndices?.filter((index) => {
       const next = rows[index + 1];
-      return next !== undefined && isHighlightableRow(next);
+      return (
+        rows[index]?.key !== RECENT_SECTION_KEY && next !== undefined && isHighlightableRow(next)
+      );
     });
     if (!headers || headers.length === 0) return;
     const highlightedIndex = highlightedModelKeyRef.current

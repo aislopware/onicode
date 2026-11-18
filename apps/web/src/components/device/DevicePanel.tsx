@@ -324,48 +324,54 @@ export function DevicePanel(props: {
                           </h3>
                         </div>
                         <DiscoveryList>
-                          {group.devices.map((device) => (
-                            <DiscoveryListRow
-                              key={deviceKey(device)}
-                              disabled={pendingDeviceKey !== null}
-                              aria-label={
-                                device.booted
-                                  ? gt("Open {name}", { name: device.name })
-                                  : gt("Start {name}", { name: device.name })
-                              }
-                              onClick={() => void selectDevice(deviceKey(device))}
-                              icon={
-                                <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border">
-                                  <Smartphone className="size-4" />
-                                </span>
-                              }
-                              title={device.name}
-                              // The host says something only when there is more than one, and a
-                              // stopped device is the ordinary case.
-                              description={[
-                                state.hosts.length > 1
-                                  ? state.hosts.find((host) => host.id === device.hostId)?.label
-                                  : undefined,
-                                device.version,
-                                device.booted
-                                  ? gt("Running", { $context: "device state" })
-                                  : undefined,
-                              ]
-                                .filter((part) => part !== undefined)
-                                .join(" · ")}
-                              action={
-                                <span className="grid size-6 shrink-0 place-items-center text-muted-foreground/70 group-hover:text-foreground [&>svg]:size-4">
-                                  {pendingDeviceKey === deviceKey(device) ? (
-                                    <Spinner size="xs" />
-                                  ) : device.booted ? (
-                                    <ArrowUpRight />
-                                  ) : (
-                                    <Play />
-                                  )}
-                                </span>
-                              }
-                            />
-                          ))}
+                          {group.devices.map((device) => {
+                            // The host says something only when there is more than one, and a
+                            // stopped device is the ordinary case.
+                            const details = [
+                              state.hosts.length > 1
+                                ? state.hosts.find((host) => host.id === device.hostId)?.label
+                                : undefined,
+                              device.version,
+                              device.booted
+                                ? gt("Running", { $context: "device state" })
+                                : undefined,
+                            ]
+                              .filter((part) => part !== undefined)
+                              .join(" · ");
+                            return (
+                              <DiscoveryListRow
+                                key={deviceKey(device)}
+                                disabled={pendingDeviceKey !== null}
+                                aria-label={
+                                  device.booted
+                                    ? gt("Open {name}", { name: device.name })
+                                    : gt("Start {name}", { name: device.name })
+                                }
+                                // The label names the action, so the details that tell two devices
+                                // of one name apart are read as its description.
+                                aria-description={details}
+                                onClick={() => void selectDevice(deviceKey(device))}
+                                icon={
+                                  <span className="grid size-8 shrink-0 place-items-center rounded-md border border-border">
+                                    <Smartphone className="size-4" />
+                                  </span>
+                                }
+                                title={device.name}
+                                description={details}
+                                action={
+                                  <span className="grid size-6 shrink-0 place-items-center text-muted-foreground/70 group-hover:text-foreground [&>svg]:size-4">
+                                    {pendingDeviceKey === deviceKey(device) ? (
+                                      <Spinner size="xs" />
+                                    ) : device.booted ? (
+                                      <ArrowUpRight />
+                                    ) : (
+                                      <Play />
+                                    )}
+                                  </span>
+                                }
+                              />
+                            );
+                          })}
                         </DiscoveryList>
                       </section>
                     ))}
