@@ -124,6 +124,7 @@ const AGENT_CURSOR_MOVE_MS = 160;
 const AGENT_CURSOR_CLICK_LEAD_MS = 40;
 /** How long a driver's pointer rests before the page is told where it stopped. */
 const DRIVER_POINTER_REST_MS = 40;
+const DRIVER_SIZING_TIMEOUT_MS = 5_000;
 /** A dialog blocks page script, so a desktop size read gives up after this. */
 const DESKTOP_VIEWPORT_READ_TIMEOUT = "1 second";
 /** A desktop page that keeps its size draws nothing on a resize, so the wait gives up. */
@@ -1149,11 +1150,25 @@ const make = Effect.gen(function* () {
   ): Promise<ServerTab> => {
     const adopted = adoptedPages.get(tabKey(snapshot.threadId, snapshot.tabId));
     adoptedPages.delete(tabKey(snapshot.threadId, snapshot.tabId));
-    const desktop =
+    let desktop =
       adopted === undefined && (await desktopRenders(snapshot))
         ? await connectDesktop(snapshot)
         : null;
     if (desktop) opened.push(desktop.close);
+    let desktopCdp = desktop ? await desktop.page.context().newCDPSession(desktop.page) : null;
+    // An agent captures its tab with nobody at the desktop. A window that is hidden or covered
+    // paints no frame for it, so the server runs such a tab itself, as it does with no desktop.
+    if (
+      desktop &&
+      desktopCdp &&
+      snapshot.automationOwner !== undefined &&
+      !(await ServerBrowserPage.paints(desktopCdp))
+    ) {
+      opened.pop();
+      await desktop.close().catch(constVoid);
+      desktop = null;
+      desktopCdp = null;
+    }
     // Attaching over CDP emulates a light scheme; a tab on System follows the desktop's.
     if (desktop) await desktop.page.emulateMedia({ colorScheme: null });
     // Otherwise a desktop that attaches late, or has no channel to draw it, shows its own page.
@@ -1181,7 +1196,7 @@ const make = Effect.gen(function* () {
     if (!desktop) await prepareContext(context);
     const page = adopted?.page ?? desktop?.page ?? (await context.newPage());
     if (!desktop) opened.push(() => page.close());
-    const cdp = await context.newCDPSession(page);
+    const cdp = desktopCdp ?? (await context.newCDPSession(page));
     await installPdfDocumentNavigation(cdp);
     // The desktop's page is already a normal browser. A popup's first request
     // precedes this override, so its Sec-CH-UA brands still name HeadlessChrome.
@@ -3597,6 +3612,7 @@ const make = Effect.gen(function* () {
     "ServerBrowser.attachDriver",
   )(function* (input) {
     const tab = yield* findTab(input.threadId, input.tabId);
+    let beforeDetach: () => Promise<unknown> = () => Promise.resolve();
     const session = yield* Effect.acquireRelease(
       Effect.tryPromise({
         try: () => tab.page.context().newCDPSession(tab.page),
@@ -3604,7 +3620,14 @@ const make = Effect.gen(function* () {
       }),
       // Not awaited: at shutdown the browser stops answering before a driver's socket closes,
       // and waiting on a detach it never answers would keep the server from exiting.
-      (session) => Effect.sync(() => void session.detach().catch(constVoid)),
+      (session) =>
+        Effect.sync(
+          () =>
+            void beforeDetach()
+              .catch(constVoid)
+              .then(() => session.detach())
+              .catch(constVoid),
+        ),
     );
     // Playwright subscribes to CDP events by name; a driver needs every one its session enabled.
     const emitter = session as unknown as {
@@ -3620,6 +3643,17 @@ const make = Effect.gen(function* () {
     tab.driverClosers.add(close);
     yield* Effect.addFinalizer(() => Effect.sync(() => tab.driverClosers.delete(close)));
     if (tab.closing) close();
+    // A page that never answers must not hold the commands behind this one, or the detach.
+    const answered = <A>(change: Promise<A>, what = "a size change") => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`The page did not answer ${what} in time.`)),
+          DRIVER_SIZING_TIMEOUT_MS,
+        );
+      });
+      return Promise.race([change, late]).finally(() => clearTimeout(timer));
+    };
     const pointer = pointerFor(tab);
     // A driver walks the pointer to its target in many small moves, and Chromium answers each
     // on the page's next frame. A tab nobody watches paints a few frames a second, so the walk
@@ -3638,30 +3672,147 @@ const make = Effect.gen(function* () {
       dropTravel();
       // The page may be gone by now; the command that needed the pointer there reports that.
       arrived = arrived
-        .then(() => session.send("Input.dispatchMouseEvent", params as never))
+        .then(() =>
+          answered(session.send("Input.dispatchMouseEvent", params as never), "a pointer move"),
+        )
         .then(constVoid, constVoid);
       return arrived;
     };
     yield* Effect.addFinalizer(() => Effect.sync(dropTravel));
+    // A driver sizes the page for one capture with a metrics override, then clears it. The
+    // panel's own viewport setting stays as it was, so nothing the user chose changes.
+    let override: { readonly params: unknown } | null = null;
+    let stale = false;
+    let painted: { readonly width: number; readonly height: number } | null = null;
+    // One at a time: a driver pipelines, so a clear can arrive while its set still measures or
+    // while a capture is partway through its tiles.
+    let sizing: Promise<unknown> = Promise.resolve();
+    const inTurn = <A>(change: () => Promise<A>) => {
+      const turn = sizing.then(change);
+      sizing = turn.catch(constVoid);
+      return turn;
+    };
+    // Captures that missed their deadline and are not answered yet. Chromium puts back the size
+    // such a capture began at when it answers, which leaves the page's size `stale` until the
+    // driver's own is applied again. No other capture is taken in either state.
+    let unanswered = 0;
+    let repaired: Promise<void> = Promise.resolve();
+    const repairAfter = (answer: Promise<void>) => {
+      unanswered += 1;
+      repaired = answer.then(() =>
+        inTurn(async () => {
+          unanswered -= 1;
+          stale = true;
+          await answered<unknown>(
+            override === null
+              ? session.send("Emulation.clearDeviceMetricsOverride")
+              : session.send("Emulation.setDeviceMetricsOverride", override.params as never),
+          );
+          if (override === null) painted = null;
+          stale = false;
+        }),
+      );
+      repaired.catch(constVoid);
+    };
+    const restoreViewport = async () => {
+      const left = await inTurn(async () => {
+        // Chromium forgets the size to go back to when a clear arrives partway through a
+        // capture, so the clear is left to that capture's repair.
+        if (unanswered > 0) {
+          override = null;
+          return { repaired };
+        }
+        if (override === null && !stale) return null;
+        // Playwright holds a headless page's viewport; a desktop page takes its webview's size.
+        await answered<unknown>(
+          tab.desktop
+            ? session.send("Emulation.clearDeviceMetricsOverride")
+            : applySetting(tab, tab.setting),
+        );
+        // Only now: a clear that failed is tried again by the next one, or on detach.
+        override = null;
+        painted = null;
+        stale = false;
+        return null;
+      });
+      // Outside the turn, which the repair needs. A capture that never answers leaves the page
+      // sized, and the driver is told so.
+      if (left !== null) await answered(left.repaired);
+    };
+    // The session detaches behind it: a clear sent after the detach reaches no page.
+    beforeDetach = restoreViewport;
+    const refusal = () =>
+      !tab.control.agentMayAct(input.agentSessionId)
+        ? new BrowserControlInterrupted({
+            message: "This tab belongs to another agent session. Open your own tab to act.",
+            reason: "agentMismatch",
+          })
+        : tab.control.controller !== null
+          ? new BrowserControlInterrupted({
+              message: "A human controls this tab.",
+              reason: "humanControl",
+            })
+          : null;
     return {
       closed: closed.promise,
       // Unqueued: a driver pipelines commands, and one that waits on the page must not hold
       // back the input that page waits for. Control is checked per command instead.
       send: async (method, params) => {
-        const refusal = !tab.control.agentMayAct(input.agentSessionId)
-          ? new BrowserControlInterrupted({
-              message: "This tab belongs to another agent session. Open your own tab to act.",
-              reason: "agentMismatch",
-            })
-          : tab.control.controller !== null
-            ? new BrowserControlInterrupted({
-                message: "A human controls this tab.",
-                reason: "humanControl",
-              })
-            : null;
-        if (refusal !== null) {
+        // Giving the page its size back is no action on it, so a human's hold does not stop it.
+        if (method === "Emulation.clearDeviceMetricsOverride") {
+          await restoreViewport();
+          return {};
+        }
+        const refused = refusal();
+        if (refused !== null) {
           dropTravel();
-          throw refusal;
+          throw refused;
+        }
+        // Before anything this awaits, so a set keeps its place ahead of the clear behind it.
+        if (method === "Emulation.setDeviceMetricsOverride") {
+          const size = asRecord(params);
+          tab.usedAt = Date.now();
+          return inTurn(async () => {
+            // Read before the override: under it a plain capture is as large as the emulated page.
+            if (tab.desktop && painted === null) {
+              painted = await ServerBrowserPage.paintedSize(session);
+            }
+            // A human may have taken the tab while this waited its turn.
+            const taken = refusal();
+            if (taken !== null) throw taken;
+            override = { params };
+            if (tab.desktop) {
+              const sized = await answered(session.send(method, params as never));
+              stale = false;
+              return sized;
+            }
+            // Playwright holds a headless page's metrics and would not notice another session's,
+            // so the page takes the size the way the panel's own resize gives it one.
+            await answered(
+              tab.page.setViewportSize({ width: num(size?.width), height: num(size?.height) }),
+            );
+            return {};
+          });
+        }
+        // In turn as well, and before anything this awaits: a clear behind a capture must not
+        // resize the page under it or between two of its tiles.
+        if (method === "Page.captureScreenshot" && tab.desktop) {
+          tab.usedAt = Date.now();
+          return inTurn(async () => {
+            await arrive();
+            const taken = refusal();
+            if (taken !== null) throw taken;
+            if (unanswered > 0 || stale) throw ServerBrowserPage.noFrames();
+            const measured = painted;
+            return ServerBrowserPage.carried(
+              await ServerBrowserPage.captureDesktopPage(
+                session,
+                asRecord(params) ?? {},
+                async () => measured ?? ServerBrowserPage.paintedSize(session),
+                repairAfter,
+              ),
+            );
+          });
         }
         const mouse = method === "Input.dispatchMouseEvent" ? asRecord(params) : null;
         // A drag's path is the gesture itself, so moves with a button down all reach the page.
@@ -3678,6 +3829,9 @@ const make = Effect.gen(function* () {
           await pointer({ x: num(mouse.x), y: num(mouse.y) }, "click");
         } else if (mouse?.type === "mouseReleased") {
           buttonsDown = Math.max(0, buttonsDown - 1);
+        }
+        if (method === "Page.captureScreenshot") {
+          return ServerBrowserPage.carried(await session.send(method, params as never));
         }
         return session.send(method as never, params as never);
       },

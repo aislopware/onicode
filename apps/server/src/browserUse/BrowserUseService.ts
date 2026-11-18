@@ -50,10 +50,10 @@ const STOP_TIMEOUT = "20 seconds";
 const SHARED_ENVIRONMENT = { OBU_NO_UPDATE_CHECK: "1" };
 // obu tells the agent these in place of its own guess that an attached browser is the user's.
 // The personal browser needs none: that guess is right there.
-const PANEL_NOTE =
-  "Use these tools for browser work: they drive your tab in Onicode's Browser panel, which the user watches.";
-const ISOLATED_NOTE =
-  "Use these tools for browser work: they drive a Chrome of your own, which the user cannot see.";
+export const PANEL_NOTE =
+  "Use these tools for browser work, in place of starting a browser of your own: they drive a tab of your own in Onicode's Browser panel, where the user can watch. It is not the user's own browser, so a task that names theirs is not for these tools. It opens http and https pages only: for a local file, serve its folder over http, as with `python3 -m http.server`, and open that address.";
+export const ISOLATED_NOTE =
+  "Use these tools for browser work, in place of starting a browser of your own: they drive a Chrome of your own, which the user cannot see. It is not the user's own browser, so a task that names theirs is not for these tools.";
 
 const RealBrowserConfig = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown));
 const decodeRealBrowserConfig = Schema.decodeUnknownOption(RealBrowserConfig);

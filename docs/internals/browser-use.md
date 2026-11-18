@@ -38,6 +38,52 @@ carries obu's commands, beside the session Playwright already holds.
   to its target in many small moves, and Chromium answers each on the page's
   next frame. A tab nobody watches paints too rarely for that, so the bridge
   forwards only where the pointer came to rest. A drag's moves all pass.
+- **A sized capture is the page's, not the panel's.** obu sizes a page for one
+  `vision` capture with `Emulation.setDeviceMetricsOverride` and clears it
+  after. A desktop page takes the override itself. Playwright holds a headless
+  page's metrics and would not see another session's override, so that page is
+  resized through its viewport and keeps the browser's own pixel ratio. The
+  tab's viewport setting never changes, and
+  [`ServerBrowser`](../../apps/server/src/preview/ServerBrowser.ts) restores the
+  page when the driver clears the override or detaches, even while a human
+  holds the tab. Sets, clears and a desktop tab's captures run one at a time in
+  the order they arrived: obu pipelines them, and a clear that overtook its set
+  or landed between two tiles would leave the page or the image at the wrong
+  size. A size change the page does not answer within five seconds gives up
+  its turn. The session detaches only after that restore, since a clear sent
+  to a detached session reaches no page.
+- **A desktop tab is captured in tiles.** Chromium paints only about as much of
+  a webview as the app window could show, and repeats the page across any
+  larger capture. The server captures a larger clip as tiles within the painted
+  size and joins them ([`pngTiles`](../../apps/server/src/preview/pngTiles.ts)).
+  Tiles step by CSS pixels that are whole output pixels too, so they meet
+  without a seam at a fractional ratio. A clip is refused before any tile is
+  taken when no such step exists, when the joined image, held whole in memory,
+  would pass 40 megapixels (obu's own cap, so a page it cut to fit is never
+  refused here), or when it needs more than 256 tiles. The joined
+  image is as large as its tiles came back, so Chromium's rounding of a clip's
+  last part pixel is kept. `fromSurface: false` would
+  capture the app window around the tab, so it is dropped. A visible tab the
+  panel shows scaled down captures soft.
+- **A hidden window paints nothing.** With the app window minimized or fully
+  covered, a desktop tab answers no capture, and no CDP command wakes it. An
+  agent works with nobody at the desktop, so its new tab is checked once: when
+  the desktop page answers no capture, the server runs the tab headless, as it
+  does with no desktop at all. A desktop tab whose window is hidden later
+  fails a capture after three seconds with a message that tells the agent to
+  open the page in a new tab, instead of hanging until obu gives up on the
+  browser. Chromium saves the page's emulation when a clipped capture begins
+  and puts it back when the capture is answered, however late. So until such
+  a capture has answered and the driver's current size has been applied again,
+  the tab takes no other capture. A clear that arrives while such a capture is
+  out is not sent: Chromium would drop the size to go back to and leave the
+  webview at the capture's. The repair sends it once the capture has answered,
+  and the driver is told the page is still sized when that takes more than
+  five seconds.
+- **A capture must fit one CDP message.** obu closes its connection on a
+  message above 224 MiB, and a capture travels as base64. obu caps what it
+  asks for, and the server refuses to send a larger reply instead of ending
+  the driver's session.
 - **Page-scoped domains only.** `Browser`, `Storage`, `SystemInfo` and the
   rest of `Target` reach other tabs, the profile or the host, and are refused.
   The table is [`previewCdpPolicy`](../../apps/server/src/preview/previewCdpPolicy.ts).
@@ -56,10 +102,11 @@ tool list. Two ways to read and act on one page make an agent mix their
 element refs. The capability is part of the credential, so changing the target
 issues a new one.
 
-The model learns which browser it holds from obu, not from Onicode's
-instructions: `OBU_HOST_NOTE` adds one line to obu's MCP instructions and to
-its first result. That text is model-facing; treat a change to it like any
-other instruction change.
+Onicode's instructions tell an agent that the `browser` tools are its browser
+and that it starts none of its own. Which browser that is comes from obu:
+`OBU_HOST_NOTE` adds one line to obu's MCP instructions and to its first
+result. Both texts are model-facing; `evals/mcp-tool-use` replays them with
+obu's captured tool list (`cases/browser-driver.ndjson`).
 
 ## One home, one session per thread
 

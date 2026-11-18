@@ -39,6 +39,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http";
 
 import { taskPrompt } from "../../apps/server/src/mcp/delegatedTaskModes.ts";
 import * as McpInvocationContext from "../../apps/server/src/mcp/McpInvocationContext.ts";
+import { isWithheld } from "../../apps/server/src/mcp/McpToolExposure.ts";
 import { advertisedJsonSchema } from "../../apps/server/src/mcp/advertisedJsonSchema.ts";
 import * as Contracts from "@onicode/contracts";
 import {
@@ -75,6 +76,14 @@ import {
   makeClaudeQueryOptions,
 } from "../../apps/server/src/orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import { proxyConfig } from "../shared/proxy.ts";
+import {
+  type BrowserDriverState,
+  BrowserDriverTarget,
+  browserDriverInstructions,
+  browserDriverResult,
+  browserDriverTools,
+  isBrowserDriverTool,
+} from "./browserDriver.ts";
 import { changeRequestsCreatedBy } from "../../apps/server/src/orchestration-v2/PullRequestSyncReactor.ts";
 import { type BackgroundWait, makeBackgroundWait } from "./backgroundWait.ts";
 import { DeviceExpect, gradeDevice } from "./device-grading.ts";
@@ -101,6 +110,7 @@ const MODELS = {
   "claude-sonnet-5-5": "Sonnet 5.5",
   "claude-opus-5-5": "Opus 5.5",
   "gpt-6.1-sol": "GPT-6.1 Sol",
+  "gpt-6.2-sol": "GPT-6.2 Sol",
   "gpt-6-astra": "GPT-6 Astra",
 } as const;
 type Model = keyof typeof MODELS;
@@ -189,6 +199,8 @@ const PriorToolCall = Schema.Struct({
 const McpToolUseCall = Schema.Struct({
   tool: Schema.String,
   args: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  /** A regex on this call's result, which a failed call never matches. Not for `distinctCalls`. */
+  output: Schema.optional(Schema.String),
 });
 type McpToolUseCall = typeof McpToolUseCall.Type;
 
@@ -277,6 +289,11 @@ const McpToolUseWorld = Schema.StructWithRest(
     deviceAgentAccess: Schema.optional(Schema.Boolean),
     /** false: agent browser access is off. Onicode denies every preview call and drops its browser text. */
     browserAgentAccess: Schema.optional(Schema.Boolean),
+    /**
+     * The thread browses with obu, driving this browser: Onicode lists obu's `browser` tools and,
+     * for the panel, leaves out the page tools obu replaces.
+     */
+    browserDriver: Schema.optional(BrowserDriverTarget),
     /** Every capture reaches Onicode with adb screencap's warning ahead of the PNG: Onicode reports 0×0. */
     deviceInvalidCapture: Schema.optional(Schema.Boolean),
     /** Devices another thread's agent-device session holds, by device id: that thread's id. */
@@ -518,12 +535,23 @@ const pastedSecret = (name: string, input: Readonly<Record<string, unknown>>) =>
 const hiddenFromSubagents = enabledWhen(McpInvocationContext.hiddenFromSubagents);
 // The Linked environments beta starts off, and Onicode lists its tools only while it is on.
 const hiddenWhileLinksOff = enabledWhen(McpInvocationContext.hiddenWhileLinksOff);
-const visibleOnicode = (options: { readonly subagent?: boolean; readonly links?: boolean }) =>
-  oniTools.filter(
+const PANEL_DRIVER = new Set(["preview-driver"]);
+const visibleOnicode = (options: {
+  readonly subagent?: boolean;
+  readonly links?: boolean;
+  readonly browserDriver?: BrowserDriverTarget | undefined;
+}): ReadonlyArray<ApiTool> => [
+  ...oniTools.filter(
     (tool) =>
       (options.links === true || !hiddenWhileLinksOff.has(tool.name)) &&
-      !(options.subagent === true && hiddenFromSubagents.has(tool.name)),
-  );
+      !(options.subagent === true && hiddenFromSubagents.has(tool.name)) &&
+      !(
+        options.browserDriver === "panel" &&
+        isWithheld(PANEL_DRIVER, tool.name.slice(ONICODE_PREFIX.length))
+      ),
+  ),
+  ...(options.browserDriver === undefined ? [] : browserDriverTools),
+];
 
 /**
  * Onicode's Claude Code options for an eval thread: its system prompt append and its hooks. `device` and
@@ -638,6 +666,7 @@ export const buildBase = (
     readonly deviceAccess?: boolean;
     /** false: the thread has no agent browser access, so Onicode's text leaves the browser out. */
     readonly browserAccess?: boolean;
+    readonly browserDriver?: BrowserDriverTarget | undefined;
   },
 ) => {
   const onicode = visibleOnicode(options);
@@ -694,7 +723,12 @@ export const buildBase = (
     NATIVE_SCHEMAS[name] ?? { description: name, input_schema: open };
   return {
     model,
-    system: system.map(text),
+    system: [
+      ...system,
+      ...(options.browserDriver === undefined
+        ? []
+        : [browserDriverInstructions(options.browserDriver)]),
+    ].map(text),
     reminders: reminders.filter((_, i) => i !== gitStatusAt).map((value) => text(anonymize(value))),
     gitStatusAt: gitStatusAt === -1 ? reminders.length : gitStatusAt,
     /** The shell simulator's cwd and OS follow the template's environment section. */
@@ -732,6 +766,7 @@ const buildCodexBase = (
     readonly deviceAccess?: boolean;
     /** false: the thread has no agent browser access, so Onicode's text leaves the browser out. */
     readonly browserAccess?: boolean;
+    readonly browserDriver?: BrowserDriverTarget | undefined;
   },
 ): Base => {
   const onicode = visibleOnicode(options);
@@ -882,6 +917,8 @@ type Sample = {
   backgroundWait?: BackgroundWait;
   /** Calls so far per mocked tool, for mocks that answer in sequence. */
   readonly mockCalls: Map<string, number>;
+  /** What the thread's obu has done, in a world with `browserDriver`. */
+  readonly browserDriver: BrowserDriverState;
 };
 
 const SHELL_TOOLS = new Set(["Bash", "Read", "Edit", "Write", "WebFetch"]);
@@ -928,8 +965,19 @@ export const makeSample = (testCase: McpToolUseCase, base: Base): Sample => {
     priorResults: new Map(),
     priorErrors: new Set(),
     mockCalls: new Map(),
+    browserDriver: { url: undefined, noted: false, saved: [] },
   };
 };
+
+/** A world's `pages`, by URL, when the case has them. */
+const worldPages = (pages: unknown): Readonly<Record<string, string>> | undefined =>
+  isRecord(pages)
+    ? Object.fromEntries(
+        Object.entries(pages).filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        ),
+      )
+    : undefined;
 
 /** A `{"$sequence": [...]}` mock answers its nth call with the nth result, then repeats the last. */
 const nextMock = (sample: Sample, name: string, mock: unknown) => {
@@ -1532,6 +1580,11 @@ export const shellRequest = (sample: Sample, call: Omit<ShellEntry, "output">, m
           `Onicode's request_secret saved these files in this sample: ${sample.secretFiles.join(", ")}. Each exists, is readable only by the user, and holds exactly the value the user gave, typed into Onicode's private card or pasted in chat and saved by the agent, the right one for the task, with no trailing newline. A program that reads it, as in "$(cat <file>)", < <file> or a --*-file flag, gets that value. What appears in the output is whatever that program prints: one that prints or logs its input shows the value. No other file in that directory exists.`,
         ]
       : []),
+    ...(sample.browserDriver.saved.length > 0
+      ? [
+          `The agent's browser tool wrote these screenshots in this sample, creating their folders: ${sample.browserDriver.saved.join(", ")}. Each exists.`,
+        ]
+      : []),
     ...(context ? [`The agent was told: ${context}`] : []),
     `The agent's task: ${testCase.prompt}`,
     ...namedPathsLine(testCase),
@@ -1674,6 +1727,15 @@ export const answerToolCall = Effect.fn("evaluateMcpToolUse.answerToolCall")(fun
     return failed(`${input.path} is not a readable HTML document. Pass an absolute path.`);
   }
   const mock = nextMock(sample, name, testCase.setup.mocks?.[name]);
+  const driver = testCase.setup.world?.browserDriver;
+  if (driver !== undefined && isBrowserDriverTool(call.name)) {
+    if (mock !== undefined && mock !== "default") return toolResult(call.id, mock);
+    const result = browserDriverResult(sample.browserDriver, driver, name, input, {
+      cwd: base.environment.cwd,
+      pages: worldPages(testCase.setup.world?.pages),
+    });
+    return result.isError ? failed(result.text) : toolResult(call.id, result.text);
+  }
   if (isOniName(call.name) && PREVIEW_TOOLS.has(name)) {
     if (testCase.setup.world?.browserAgentAccess === false)
       return failed(
@@ -1867,9 +1929,16 @@ export const gradeSample = (
   // `tool` may list alternatives, as in "link_pull_request|watch_pull_request"; counts add up.
   const count = (tool: string) =>
     calls.filter((call) => tool.split("|").includes(call.tool)).length;
-  const found = ({ tool, args = {} }: McpToolUseCall, among = calls) =>
-    among.some((call) => tool.split("|").includes(call.tool) && matches(args, call.input));
-  const label = ({ tool, args }: McpToolUseCall) => (args ? `${tool} ${valueText(args)}` : tool);
+  const test = (pattern: string, value: string) => new RegExp(pattern).test(value);
+  const found = ({ tool, args = {}, output }: McpToolUseCall, among = calls) =>
+    among.some(
+      (call) =>
+        tool.split("|").includes(call.tool) &&
+        matches(args, call.input) &&
+        (output === undefined || (call.failed !== true && test(output, call.output ?? ""))),
+    );
+  const label = ({ tool, args, output }: McpToolUseCall) =>
+    `${tool}${args ? ` ${valueText(args)}` : ""}${output === undefined ? "" : ` -> /${output}/`}`;
   for (const call of expect.calls ?? []) add(`calls ${label(call)}`, found(call));
   if (expect.distinctCalls !== undefined) {
     const expected = expect.distinctCalls.map(({ tool, args }) => ({ tool, input: args ?? {} }));
@@ -1928,7 +1997,6 @@ export const gradeSample = (
       ? [call.input.command, ...(sources[i] ?? [])]
       : [],
   );
-  const test = (pattern: string, value: string) => new RegExp(pattern).test(value);
   for (const p of expect.shellMustNot ?? [])
     add(`shellMustNot /${p}/`, !shell.some((c) => test(p, c)));
   // A positive check also reads argv lists as command lines: spawnSync('pnpm', ['exec', …]).
@@ -2569,6 +2637,7 @@ const main = Effect.gen(function* () {
     deviceAccess: boolean,
     browserAccess: boolean,
     links: boolean,
+    browserDriver?: BrowserDriverTarget,
   ): Effect.Effect<Base, Schema.SchemaError> =>
     codex
       ? decodeCodexCapture(template).pipe(
@@ -2581,6 +2650,7 @@ const main = Effect.gen(function* () {
               links,
               deviceAccess,
               browserAccess,
+              browserDriver,
             }),
           ),
         )
@@ -2594,6 +2664,7 @@ const main = Effect.gen(function* () {
               links,
               deviceAccess,
               browserAccess,
+              browserDriver,
             });
             return role === "native-subagent"
               ? Effect.promise(() =>
@@ -2604,9 +2675,9 @@ const main = Effect.gen(function* () {
         );
   // Codex has no native subagents; its cases with that role run as top-level threads.
   const baseKey = ({ setup }: McpToolUseCase) =>
-    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}`;
+    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.world?.browserAgentAccess !== false}:${setup.linkedEnvironments === true}:${setup.world?.browserDriver ?? ""}`;
   const base = yield* buildFor("top", true, true, false);
-  const bases = new Map<string, Base>([["top:true:true:false", base]]);
+  const bases = new Map<string, Base>([["top:true:true:false:", base]]);
   for (const testCase of selected) {
     const key = baseKey(testCase);
     if (bases.has(key)) continue;
@@ -2616,7 +2687,16 @@ const main = Effect.gen(function* () {
       string,
       string,
     ];
-    bases.set(key, yield* buildFor(role, device === "true", browser === "true", links === "true"));
+    bases.set(
+      key,
+      yield* buildFor(
+        role,
+        device === "true",
+        browser === "true",
+        links === "true",
+        testCase.setup.world?.browserDriver,
+      ),
+    );
   }
   const baseFor = (testCase: McpToolUseCase) => bases.get(baseKey(testCase)) ?? base;
   const effort = flags.effort ?? base.codex?.reasoning.effort ?? "high";

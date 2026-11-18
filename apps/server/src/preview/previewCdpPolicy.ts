@@ -57,6 +57,17 @@ export const routePageCommand = (method: string): PageCommandRoute => {
   return FORWARDED_DOMAINS.has(method.slice(0, method.indexOf("."))) ? "forward" : "refuse";
 };
 
+export const PANEL_URL_REQUIRED =
+  "The Browser panel opens http and https pages only. To open a local file, serve its folder over http, as with `python3 -m http.server`, and open that address.";
+
+/** What the page gets of a command: `fromSurface: false` would capture the window around a tab. */
+export const pageCommandParams = (method: string, params: unknown) => {
+  if (typeof params !== "object" || params === null) return {};
+  if (method !== "Page.captureScreenshot") return params;
+  const { fromSurface: _, ...page } = params as Readonly<Record<string, unknown>>;
+  return page;
+};
+
 /** The panel shows http and https pages; `about:blank` is what a driver's new tab starts on. */
 export const isPanelUrl = (url: string) => {
   if (url === "about:blank") return true;
