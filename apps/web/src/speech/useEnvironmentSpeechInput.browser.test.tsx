@@ -65,6 +65,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("../components/sidebar/mainAppLocation", () => ({
+  getMainAppLocationVersion: () => 0,
   useCloseAppModal: () => () => Promise.resolve(),
 }));
 vi.mock("../state/session", () => ({
