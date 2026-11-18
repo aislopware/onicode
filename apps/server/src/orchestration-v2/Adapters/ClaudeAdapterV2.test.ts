@@ -7189,6 +7189,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           ),
       });
       const runTurn = Effect.fnUntraced(function* (ordinal: number, note: string) {
+        const offered = harness.offeredMessages.length;
         yield* harness.runtime.startTurn({
           ...makeClaudeTestTurnInput({
             threadId: harness.threadId,
@@ -7201,9 +7202,11 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           }),
           appContext: [{ key: "mcp_app_item-1", text: note }],
         });
-        return lastOffered();
+        return lastOffered(offered);
       });
-      const lastOffered = () => {
+      // Fails when the call offered no prompt, so a notInclude cannot read an older one.
+      const lastOffered = (before: number) => {
+        assert.equal(harness.offeredMessages.length, before + 1);
         const content = harness.offeredMessages.at(-1)?.message.content;
         return typeof content === "string"
           ? content
@@ -7211,6 +7214,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
       const steer = Effect.fnUntraced(function* (ordinal: number, note: string) {
         const attemptId = `mcp-app-context-${ordinal}`;
+        const offered = harness.offeredMessages.length;
         yield* harness.runtime.steerTurn({
           threadId: harness.threadId,
           runId: RunId.make(`run-${attemptId}`),
@@ -7228,7 +7232,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           },
           appContext: [{ key: "mcp_app_item-1", text: note }],
         });
-        return lastOffered();
+        return lastOffered(offered);
       });
       const finishTurn = Effect.fnUntraced(function* (ordinal: number) {
         yield* harness.offerAndWait(
