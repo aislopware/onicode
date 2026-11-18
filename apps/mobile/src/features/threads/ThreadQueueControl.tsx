@@ -276,7 +276,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
       {queuedRuns.map(({ run, text, attachments, message, awaitsCompaction }, index) => {
         const controls = resolveThreadQueueRowControls({
           awaitsCompaction,
-          busy: busyRunId !== null,
+          busy: busyRunId !== null || resuming,
           // A fresh message starts its own turn: it may skip compaction, but not steer into a turn.
           canPromoteToSteer:
             (workflow?.canPromoteToSteer ?? false) &&
@@ -292,7 +292,7 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
         return (
           <View key={run.id} className="flex-row items-center border-b border-border bg-sheet">
             <QueueRowSwipeable
-              enabled={busyRunId === null && controls.canDismiss}
+              enabled={controls.canDismiss}
               // The sheet colour is slightly see-through, which would show Remove behind the row.
               background={theme["--color-sheet-solid"]}
               onRemove={() => void act(run.id, "remove")}
