@@ -29,11 +29,6 @@ import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { reportProjectFailure } from "./useProjectGroupUpdate";
 import { useNewThreadHandler } from "./useHandleNewThread";
 
-/**
- * Opens a folder on this computer as a project in this computer's environment: an
- * existing project opens (and unarchives), a new one is added. Used by `onicode <dir>`
- * activations and folders dropped on the sidebar. See `resolveLocalWorkspaceState` for `state`.
- */
 let localEnvironmentOff: boolean | undefined;
 // Read per open, not per render: one drop opens its folders across several awaits.
 const localWorkspaceAtom = Atom.make((get) => {
@@ -59,6 +54,11 @@ const localWorkspaceAtom = Atom.make((get) => {
   };
 }).pipe(Atom.withLabel("web-local-workspace"));
 
+/**
+ * Opens a folder on this computer as a project in this computer's environment: an
+ * existing project opens (and unarchives), a new one is added. Used by `onicode <dir>`
+ * activations and folders dropped on the sidebar. See `resolveLocalWorkspaceState` for `state`.
+ */
 export function useOpenLocalWorkspace() {
   const { state } = useAtomValue(localWorkspaceAtom);
   const createProject = useAtomCommand(projectEnvironment.create, { reportFailure: false });
