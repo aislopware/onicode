@@ -113,12 +113,13 @@ it("keeps the annotation when Escape dismisses an IME candidate in the comment",
 });
 
 it.each([
-  { scrolled: false, rect: { x: 40, y: 60, width: 200, height: 120 } },
+  { viewportEvent: null, rect: { x: 40, y: 60, width: 200, height: 120 } },
   // The last rect would point at whatever now sits there, so no crop beats a wrong one.
-  { scrolled: true, rect: { x: 0, y: 0, width: 0, height: 0 } },
+  { viewportEvent: "scroll", rect: { x: 0, y: 0, width: 0, height: 0 } },
+  { viewportEvent: "resize", rect: { x: 0, y: 0, width: 0, height: 0 } },
 ])(
-  "submits a replaced element's last rect unless the page scrolled ($scrolled)",
-  async ({ scrolled, rect }) => {
+  "submits a replaced element's last rect unless the viewport changed ($viewportEvent)",
+  async ({ viewportEvent, rect }) => {
     ipcSend.calls.length = 0;
     const card = document.body.appendChild(document.createElement("div"));
     const pickedRect = new DOMRect(40, 60, 200, 120);
@@ -134,7 +135,7 @@ it.each([
     );
     // A polling page re-renders while the comment is written and replaces the picked node.
     card.replaceWith(document.createElement("div"));
-    if (scrolled) window.dispatchEvent(new Event("scroll"));
+    if (viewportEvent) window.dispatchEvent(new Event(viewportEvent));
     const attach = Array.from(shadowRoot.querySelectorAll("button")).find(
       (button) => button.textContent === "Attach",
     );

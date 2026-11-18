@@ -1412,8 +1412,8 @@ function startAnnotation(
     for (const target of selected.values()) updateSelectedVisual(target);
     queueEditorLayout();
   };
-  const onScroll = (): void => {
-    // A detached element's last rect no longer matches what is on screen once the page scrolls.
+  const onViewportChange = (): void => {
+    // A detached element's last rect no longer matches what is on screen once the page scrolls or reflows.
     for (const target of selected.values()) {
       if (!target.element.isConnected) target.rect = { x: 0, y: 0, width: 0, height: 0 };
     }
@@ -1653,8 +1653,8 @@ function startAnnotation(
     window.removeEventListener("focus", onWindowFocus);
     window.removeEventListener("keydown", onKeyDown, true);
     window.removeEventListener("keyup", onVoiceKeyUp, true);
-    window.removeEventListener("scroll", onScroll, true);
-    window.removeEventListener("resize", repaint);
+    window.removeEventListener("scroll", onViewportChange, true);
+    window.removeEventListener("resize", onViewportChange);
     dragHandle.removeEventListener("pointerdown", onEditorPointerDown);
     dragHandle.removeEventListener("pointermove", onEditorPointerMove);
     dragHandle.removeEventListener("pointerup", onEditorPointerUp);
@@ -1814,8 +1814,8 @@ function startAnnotation(
   window.addEventListener("focus", onWindowFocus);
   window.addEventListener("keydown", onKeyDown, { capture: true });
   window.addEventListener("keyup", onVoiceKeyUp, { capture: true });
-  window.addEventListener("scroll", onScroll, { capture: true, passive: true });
-  window.addEventListener("resize", repaint, { passive: true });
+  window.addEventListener("scroll", onViewportChange, { capture: true, passive: true });
+  window.addEventListener("resize", onViewportChange, { passive: true });
   // Bubble phase, so the overlay's own handlers still see these events.
   for (const type of PAGE_ISOLATED_EVENTS)
     host.addEventListener(type, stopAtOverlay, { passive: true });
