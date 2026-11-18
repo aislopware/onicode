@@ -407,7 +407,7 @@ describe("ThreadTitleRegenerationService", () => {
             threadId,
             title,
           });
-        const fork = (key: string, title?: string) =>
+        const fork = (key: string, title?: string, createdBy: "user" | "agent" = "agent") =>
           Effect.gen(function* () {
             const targetThreadId = ThreadId.make(`${prefix}:${key}`);
             yield* threads.dispatch({
@@ -416,8 +416,8 @@ describe("ThreadTitleRegenerationService", () => {
               sourceThreadId,
               targetThreadId,
               sourcePoint: { type: "run", runId: forkRunId },
-              ...(title === undefined
-                ? { createdBy: "user", creationSource: "web" }
+              ...(title === undefined || createdBy === "user"
+                ? { title, createdBy: "user", creationSource: "web" }
                 : { title, createdBy: "agent", creationSource: "mcp" }),
             });
             return targetThreadId;
@@ -447,6 +447,8 @@ describe("ThreadTitleRegenerationService", () => {
           kind: { type: "regenerate" },
         });
         const titled = yield* fork("titled", "Release checklist");
+        // A client names a fork after the thread on screen, which can lag behind the source.
+        const clientTitled = yield* fork("client-titled", "Seed title fork", "user");
         const compacted = yield* fork("compacted");
         yield* rename("compacted", compacted, "Storage migration notes");
         yield* dispatchUserMessage({
@@ -461,6 +463,7 @@ describe("ThreadTitleRegenerationService", () => {
           ["renamed, then regenerated", regenerated, seed, true],
           ["renamed, then regenerated to the same name", regeneratedUnchanged, seed, true],
           ["titled by the agent that forked it", titled, "Release checklist", false],
+          ["titled by a client", clientTitled, seed, true],
           ["renamed, then compacted", compacted, "Storage migration notes", false],
         ] as const) {
           const requestId = CommandId.make(`${prefix}:${key}:message`);

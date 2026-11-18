@@ -2165,6 +2165,7 @@ layer("ProviderEventIngestorV2", (it) => {
       const renamed = yield* projectionStore.getThread(childThreadId);
       assert.equal(renamed.title, "Renamed natively");
       assert.equal(renamed.modelSelection.model, "gpt-6.1-sol");
+      assert.isTrue(renamed.titleRenamed);
       assert.deepEqual(yield* rename("Renamed natively"), []);
       // A generated title the user renames natively is theirs: no refresh may replace it.
       yield* eventSink.write({
@@ -2214,7 +2215,6 @@ layer("ProviderEventIngestorV2", (it) => {
       const renamedAgain = yield* projectionStore.getThread(childThreadId);
       assert.equal(renamedAgain.title, "Renamed natively again");
       assert.isNull(renamedAgain.titleRegeneration);
-      assert.isTrue(renamedAgain.titleRenamed);
     }),
   );
 

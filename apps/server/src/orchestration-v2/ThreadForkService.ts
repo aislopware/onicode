@@ -101,7 +101,6 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
       }
       // The remote parent delegated the source thread, not its forks.
       const { delegatedFrom: _delegatedFrom, ...inherited } = input.sourceProjection.thread;
-      const defaultTitle = `${input.sourceProjection.thread.title} fork`;
       const targetThread: OrchestrationV2AppThread = {
         ...inherited,
         // PR context follows the conversation; watching remains the source thread's responsibility.
@@ -111,13 +110,12 @@ export const layer: Layer.Layer<ThreadForkServiceV2> = Layer.succeed(
         createdBy: input.createdBy,
         creationSource: input.creationSource,
         id: input.targetThreadId,
-        title: input.title ?? defaultTitle,
-        // The source's title job and rename stay with the source thread. Clients send the default
-        // or "Side chat" as a placeholder; any other title was chosen, as an MCP fork's is.
+        title: input.title ?? `${input.sourceProjection.thread.title} fork`,
+        // The source's title job and rename stay with the source thread. A client's fork title is
+        // a placeholder for its first message; an agent's, such as an MCP fork's, is chosen.
         titleRegeneration: null,
         generatedTitle: null,
-        titleRenamed:
-          input.sideChat !== true && input.title !== undefined && input.title !== defaultTitle,
+        titleRenamed: input.title !== undefined && input.createdBy === "agent",
         activeProviderThreadId: null,
         lineage: {
           parentThreadId: input.sourceProjection.thread.id,
