@@ -186,7 +186,7 @@ import {
   workspaceLinkLookupQuery,
 } from "@onicode/client-runtime/workspace-basename-lookup";
 import { resolvePullRequestPreviewTarget } from "@onicode/client-runtime/change-request-links";
-import { resolveIssueLinkTarget } from "@onicode/client-runtime/issue-links";
+import { createIssueLinkResolver } from "@onicode/client-runtime/issue-links";
 import { sourceControlClients } from "@onicode/client-runtime/source-control-clients";
 import { useOpenChangeRequestLink } from "~/lib/openPullRequestLink";
 import { textDirection } from "~/textDirection";
@@ -674,7 +674,9 @@ function useChatMarkdownState({
         ? revealInFileExplorerLabelForKind(revealInFileManager, messages)
         : revealInFileExplorerLabelForOs(revealInFileManager, messages);
   const projects = useProjects();
-  const issueProjects = projects.filter((project) => project.environmentId === environmentId);
+  const resolveIssueLink = createIssueLinkResolver(
+    projects.filter((project) => project.environmentId === environmentId),
+  );
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const preferredEditorMenuLabel = openInEditorMenuLabel(preferredEditor, messages);
   const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors, cwd);
@@ -1023,7 +1025,7 @@ function useChatMarkdownState({
     openExternalLinkInPreview,
     openMarkdownMedia,
     projects,
-    issueProjects,
+    resolveIssueLink,
     linkedThreadPullRequestFor,
     resolveThreadPullRequest,
     resolvedTheme,
@@ -1194,7 +1196,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
       linkTargetPreference,
       openExternalLinkInPreview,
       projects,
-      issueProjects,
+      resolveIssueLink,
       linkedThreadPullRequestFor,
       resolveThreadPullRequest,
       pullRequestsEnabled,
@@ -1264,12 +1266,7 @@ const CHAT_MARKDOWN_COMPONENTS = {
           })
         : null;
       const issueTarget =
-        issuesEnabled && environmentId !== null && href
-          ? resolveIssueLinkTarget({
-              url: href,
-              projects: issueProjects,
-            })
-          : null;
+        issuesEnabled && environmentId !== null && href ? resolveIssueLink(href) : null;
       const issuePreviewTarget =
         issueTarget === null || environmentId === null
           ? null

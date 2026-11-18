@@ -26,6 +26,7 @@ import {
   type IssueRef,
   type IssueScopeRef,
   type IssueSetStateInput,
+  type IssueSummary,
   type IssueTemplateList,
   type IssueTrackerSummary,
   type IssueUpdateInput,
@@ -150,6 +151,7 @@ export class IssueService extends Context.Service<
   {
     readonly list: (input: IssueListInput) => Effect.Effect<IssueListResult, IssueError>;
     readonly detail: (input: IssueRef) => Effect.Effect<IssueDetail, IssueError>;
+    readonly summary: (input: IssueRef) => Effect.Effect<IssueSummary, IssueError>;
     readonly comments: (
       input: IssueCommentsPageInput,
     ) => Effect.Effect<IssueCommentsPage, IssueError>;
@@ -494,6 +496,39 @@ const make = Effect.gen(function* () {
       ),
     );
 
+  const summary: IssueService["Service"]["summary"] = (input) =>
+    requireProject(input).pipe(
+      Effect.flatMap((project) => {
+        const target = {
+          cwd: project.project.workspaceRoot,
+          host: project.host,
+          scope: project.scope,
+          key: input.key,
+        };
+        return (project.api.getIssueSummary?.(target) ?? project.api.getIssue(target)).pipe(
+          Effect.mapError(toIssueError("summary")),
+          // Named fields, so a tracker's fuller read never rides along to the client.
+          Effect.map((issue): IssueSummary => ({
+            tracker: project.tracker,
+            host: project.host,
+            scope: project.scope,
+            key: issue.key,
+            displayKey: issue.displayKey,
+            title: issue.title,
+            url: issue.url,
+            author: issue.author,
+            state: issue.state,
+            createdAt: issue.createdAt,
+            updatedAt: issue.updatedAt,
+            closedAt: issue.closedAt,
+            assignees: issue.assignees,
+            labels: issue.labels,
+            commentCount: issue.commentCount,
+          })),
+        );
+      }),
+    );
+
   const comments: IssueService["Service"]["comments"] = (input) =>
     requireProject(input).pipe(
       Effect.flatMap((project) =>
@@ -753,6 +788,7 @@ const make = Effect.gen(function* () {
   return IssueService.of({
     list,
     detail: traced("detail", detail),
+    summary: traced("summary", summary),
     comments: traced("comments", comments),
     templates: traced("templates", templates),
     candidates: interactive(traced("candidates", candidates)),

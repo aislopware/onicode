@@ -30,6 +30,7 @@ import {
   toIssueComments,
   toIssueDetail,
   toIssueSearch,
+  toIssueSummary,
 } from "./gitHubIssueJson.ts";
 
 const KIND = IssueTrackerKind.make("github");
@@ -223,6 +224,15 @@ export const make = Effect.gen(function* () {
             .pipe(graphql(input.host, "listIssues"), Effect.map(toIssueSearch)),
         ),
       ),
+
+    getIssueSummary: Effect.fn("GitHubIssueTracker.getIssueSummary")(function* (input) {
+      const { owner, name, number } = yield* issue(input, "getIssueSummary");
+      const summary = yield* client
+        .IssueSummary({ owner, name, number })
+        .pipe(graphql(input.host, "getIssueSummary"), Effect.map(toIssueSummary));
+      if (summary === null) return yield* notFound("getIssueSummary");
+      return summary;
+    }),
 
     getIssue: Effect.fn("GitHubIssueTracker.getIssue")(function* (input) {
       const { owner, name, number } = yield* issue(input, "getIssue");

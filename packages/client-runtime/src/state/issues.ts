@@ -194,6 +194,12 @@ export function createIssueEnvironmentAtoms<R, E>(
       },
     }),
     detail,
+    /** A link's hover card: the detail without its conversation, so hovering stays cheap. */
+    summary: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:issues:summary",
+      tag: WS_METHODS.issuesSummary,
+      staleTimeMs: 30_000,
+    }),
     /** Older comments past the cursor the detail handed over; the panel prepends what arrives. */
     comments: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:issues:comments",

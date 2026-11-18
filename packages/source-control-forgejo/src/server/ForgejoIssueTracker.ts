@@ -437,6 +437,12 @@ export const make: Effect.Effect<IssueTrackerApi, never, ForgejoCli.ForgejoCli> 
         };
       }),
 
+      getIssueSummary: (input) =>
+        issueTarget("getIssueSummary", input).pipe(
+          Effect.flatMap(({ path }) => getIssue(input, "getIssueSummary", path)),
+          Effect.map(forgejoIssue),
+        ),
+
       getIssue: (input) =>
         issueTarget("getIssue", input).pipe(
           Effect.flatMap(({ path }) =>

@@ -132,6 +132,11 @@ export interface IssueTrackerApi {
   /** The issue with its first page of conversation, in one read where the tracker allows. */
   readonly getIssue: (input: IssueTarget) => Effect.Effect<TrackerIssueDetail, IssueTrackerError>;
 
+  /** The issue without its conversation, for a hover card; without it the service trims `getIssue`. */
+  readonly getIssueSummary?: (
+    input: IssueTarget,
+  ) => Effect.Effect<TrackerIssueSummary, IssueTrackerError>;
+
   /** One page of older comments past a cursor `getIssue` or a previous page handed over. */
   readonly getComments: (
     input: IssueTarget & { readonly cursor: string },

@@ -170,6 +170,55 @@ export declare namespace IssueSearch {
   export type Result = typeof IssueSearch.result.Type
 }
 
+/** An Issue is a place to discuss ideas, enhancements, tasks, and bugs for a project. */
+export const IssueSummaryRepositoryIssueIssue = Schema.Struct({
+  ...IssueRow.fields,
+  /** A list of Users assigned to this object. */
+  assignees: NodesAssigneesUserConnection,
+  /** A list of labels associated with the object. */
+  labels: Schema.NullOr(NodesLabelsLabelConnection),
+  /** A list of comments associated with the Issue. */
+  comments: NodesCommentsIssueCommentConnection
+})
+export interface IssueSummaryRepositoryIssueIssue extends Schema.Struct.Type<typeof IssueSummaryRepositoryIssueIssue.fields> {}
+
+/** A repository contains the content for a project. */
+export const IssueSummaryRepositoryRepository = Schema.Struct({
+  /** Returns a single issue from the current repository by number. */
+  issue: Schema.NullOr(IssueSummaryRepositoryIssueIssue)
+})
+export interface IssueSummaryRepositoryRepository extends Schema.Struct.Type<typeof IssueSummaryRepositoryRepository.fields> {}
+
+/** `query IssueSummary` */
+export const IssueSummary = GraphQL.query("IssueSummary", {
+  document: {
+    variables: [
+      { name: "owner", body: "String!" },
+      { name: "name", body: "String!" },
+      { name: "number", body: "Int!" }
+    ],
+    selections: [
+      { name: "repository", body: ["(owner:$", "owner", " name:$", "name", "){issue(number:$", "number", "){...IssueRow assignees(first:20){nodes{login name avatarUrl}}labels(first:20){nodes{name color}}comments{totalCount}}}"] }
+    ],
+    fragments: [
+      { name: "IssueRow", body: ["on Issue{number title url state stateReason createdAt updatedAt closedAt author{__typename login avatarUrl...on User{name}}}"] }
+    ]
+  },
+  variables: {
+    owner: Schema.String,
+    name: Schema.String,
+    number: Shared.Int
+  },
+  result: Schema.Struct({
+    /** Lookup a given repository by the owner and repository name. */
+    repository: Schema.NullOr(IssueSummaryRepositoryRepository)
+  })
+})
+export declare namespace IssueSummary {
+  export type Variables = typeof IssueSummary.variables.Type
+  export type Result = typeof IssueSummary.result.Type
+}
+
 /** A user is an individual's account on GitHub that owns repositories and can make new content. */
 export const ViewerUser = Schema.Struct({
   /** The username used to login. */
@@ -1038,4 +1087,4 @@ export declare namespace IssueCollections {
 }
 
 /** Every operation in issues.graphql. */
-export const IssuesGraphQLGroup = GraphQLGroup.make(IssueSearch, IssueDetail, IssueComments, IssueNodeId, IssueCommentScope, IssueCandidates, IssueTemplates, IssueViewer, IssueCollections)
+export const IssuesGraphQLGroup = GraphQLGroup.make(IssueSearch, IssueSummary, IssueDetail, IssueComments, IssueNodeId, IssueCommentScope, IssueCandidates, IssueTemplates, IssueViewer, IssueCollections)

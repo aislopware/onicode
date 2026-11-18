@@ -293,6 +293,55 @@ describe("IssueService", () => {
     }),
   );
 
+  it.effect(
+    "reads a summary without the conversation, trimming a tracker that has no summary",
+    () =>
+      Effect.gen(function* () {
+        const reads: string[] = [];
+        const conversation = {
+          ...issue("4"),
+          body: "A long body",
+          comments: [
+            { id: "c1", author: null, body: "hi", createdAt: issue("4").createdAt, url: null },
+          ],
+        };
+        const ref = { projectId: "web" as ProjectId, tracker: GITHUB, scope: "acme/web", key: "4" };
+        const expected = {
+          tracker: "github",
+          host: "github.com",
+          scope: "acme/web",
+          key: "4",
+          displayKey: "#4",
+          title: "Issue 4",
+          commentCount: 0,
+        };
+        const projects = [project({ id: "web", repository: "acme/web" })];
+
+        const withSummary = yield* makeService({
+          projects,
+          trackers: [
+            fakeTracker({
+              getIssue: () => Effect.sync(() => (reads.push("detail"), conversation)),
+              getIssueSummary: () => Effect.sync(() => (reads.push("summary"), conversation)),
+            }),
+          ],
+        });
+        const summary = yield* withSummary.summary(ref);
+        expect(summary).toMatchObject(expected);
+        expect(reads).toEqual(["summary"]);
+
+        const withoutSummary = yield* makeService({
+          projects,
+          trackers: [fakeTracker({ getIssue: () => Effect.succeed(conversation) })],
+        });
+        const trimmed = yield* withoutSummary.summary(ref);
+        expect(trimmed).toMatchObject(expected);
+        expect(Object.keys(summary).sort()).toEqual(Object.keys(trimmed).sort());
+        expect(trimmed).not.toHaveProperty("body");
+        expect(trimmed).not.toHaveProperty("comments");
+      }),
+  );
+
   it.effect("resolves both legacy Azure work item URLs through the bound project", () =>
     Effect.gen(function* () {
       const tracker = IssueTrackerKind.make("azure-devops");

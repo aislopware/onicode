@@ -1,5 +1,5 @@
 import type { PreviewCard as PreviewCardPrimitive } from "@base-ui/react/preview-card";
-import type { EnvironmentId, IssueDetail, IssueRef } from "@onicode/contracts";
+import type { EnvironmentId, IssueRef, IssueSummary } from "@onicode/contracts";
 import { T, Var } from "gt-react";
 import { useRef, useState, type ComponentPropsWithoutRef, type ReactElement } from "react";
 
@@ -28,16 +28,16 @@ export function IssueLinkPreview({
 }) {
   const [open, setOpen] = useState(false);
   const previewActionsRef = useRef<PreviewCardPrimitive.Root.Actions | null>(null);
-  const detailQuery = useEnvironmentQuery(open ? issueEnvironment.detail(target) : null);
-  const detail = detailQuery.data;
-  const showUrlTooltip = open && detailQuery.error !== null && detail === null;
+  const summaryQuery = useEnvironmentQuery(open ? issueEnvironment.summary(target) : null);
+  const summary = summaryQuery.data;
+  const showUrlTooltip = open && summaryQuery.error !== null && summary === null;
 
   return (
     <PreviewCard open={open} onOpenChange={setOpen} actionsRef={previewActionsRef}>
       <Tooltip
         open={showUrlTooltip}
         onOpenChange={(nextOpen) => {
-          if (!nextOpen && detail === null) previewActionsRef.current?.close();
+          if (!nextOpen && summary === null) previewActionsRef.current?.close();
         }}
       >
         <PreviewCardTrigger
@@ -47,10 +47,10 @@ export function IssueLinkPreview({
         />
         <TooltipPopup side="top">{originalUrl}</TooltipPopup>
       </Tooltip>
-      {detail === null ? null : (
+      {summary === null ? null : (
         <PreviewCardPopup align="center" className="w-80 max-w-[calc(100vw-2rem)]">
           <div className="p-3">
-            <IssuePreviewCardBody detail={detail} />
+            <IssuePreviewCardBody summary={summary} />
           </div>
         </PreviewCardPopup>
       )}
@@ -66,18 +66,18 @@ export function IssueLinkPreviewFallback({
   originalUrl: string;
   target: IssueLinkPreviewTarget;
 }) {
-  const detail = useEnvironmentQuery(issueEnvironment.detail(target)).data;
-  return detail === null ? (
+  const summary = useEnvironmentQuery(issueEnvironment.summary(target)).data;
+  return summary === null ? (
     <p className="break-all text-xs text-muted-foreground">{originalUrl}</p>
   ) : (
-    <IssuePreviewCardBody detail={detail} />
+    <IssuePreviewCardBody summary={summary} />
   );
 }
 
-function IssuePreviewCardBody({ detail }: { detail: IssueDetail }) {
-  const state = issueStatePresentation(detail.state);
-  const createdAt = <RelativeTime timestamp={detail.createdAt} />;
-  const author = detail.author;
+function IssuePreviewCardBody({ summary }: { summary: IssueSummary }) {
+  const state = issueStatePresentation(summary.state);
+  const createdAt = <RelativeTime timestamp={summary.createdAt} />;
+  const author = summary.author;
   const authorLabel =
     author === null
       ? "ghost"
@@ -87,8 +87,8 @@ function IssuePreviewCardBody({ detail }: { detail: IssueDetail }) {
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-center gap-1.5 text-2xs text-muted-foreground">
-        <span className="min-w-0 truncate">{detail.scope}</span>
-        <span className="shrink-0">{detail.displayKey}</span>
+        <span className="min-w-0 truncate">{summary.scope}</span>
+        <span className="shrink-0">{summary.displayKey}</span>
         <span aria-hidden>·</span>
         <span className="inline-flex shrink-0 items-center gap-1">
           <state.Icon aria-hidden className={`size-3 ${state.toneClassName}`} />
@@ -96,7 +96,7 @@ function IssuePreviewCardBody({ detail }: { detail: IssueDetail }) {
         </span>
       </div>
       <p className="mt-1 text-sm font-medium leading-snug text-foreground text-pretty">
-        {detail.title}
+        {summary.title}
       </p>
       <div className="mt-2 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
         <PullRequestActorAvatar actor={author} className="size-4" />
