@@ -18,8 +18,8 @@ test(
     await expect(screen.getByText(QUESTION)).toBeVisible();
     await app.screenshot("asked");
 
+    // Picking the only question's option sends the answer by itself after a short delay.
     await screen.getByText("UI flexibility").tap();
-    await screen.getByRole("button", "Submit").tap();
     await expect(screen.getByText("plan questions fixture complete")).toBeVisible();
     await expect(screen.getByRole("button", `${QUESTION}: UI flexibility`)).toBeVisible();
     await app.screenshot("answered");
