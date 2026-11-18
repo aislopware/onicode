@@ -293,7 +293,8 @@ export function ThreadQueueSheet({ route }: StaticScreenProps<QueueTarget>) {
           <View key={run.id} className="flex-row items-center border-b border-border bg-sheet">
             <QueueRowSwipeable
               enabled={busyRunId === null && controls.canDismiss}
-              background={theme["--color-sheet"]}
+              // The sheet colour is slightly see-through, which would show Remove behind the row.
+              background={theme["--color-sheet-solid"]}
               onRemove={() => void act(run.id, "remove")}
             >
               <View className="flex-row items-center">
