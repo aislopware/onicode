@@ -36,6 +36,12 @@ function workspaceArea(element: Element): HTMLElement | null {
   return root instanceof ShadowRoot ? workspaceArea(root.host) : null;
 }
 
+/** The area around an element's own area: a side chat's panel, or null in the main chat. */
+function outerArea(element: Element): HTMLElement | null {
+  const parent = workspaceArea(element)?.parentElement;
+  return parent ? workspaceArea(parent) : null;
+}
+
 function isWorkspaceElementVisible(element: HTMLElement): boolean {
   if (
     !element.isConnected ||
@@ -213,11 +219,18 @@ export function createWorkspaceFocusController(doc: Document) {
     }
     return false;
   };
-  const focus = (name: string, restore = true, selector?: string, returnTo?: HTMLElement) => {
+  /** Focuses an area by name, or a given area element; `returnTo` is preferred inside it. */
+  const focus = (
+    name: string | HTMLElement,
+    restore = true,
+    selector?: string,
+    returnTo?: HTMLElement,
+  ) => {
     const areas = Array.from(doc.querySelectorAll<HTMLElement>(AREA_SELECTOR)).filter(
       isWorkspaceElementVisible,
     );
-    const ownArea = returnTo?.isConnected ? workspaceArea(returnTo) : null;
+    const ownArea =
+      typeof name !== "string" ? name : returnTo?.isConnected ? workspaceArea(returnTo) : null;
     const area = ownArea
       ? areas.find((element) => element === ownArea)
       : name === "content"
@@ -295,11 +308,13 @@ export function createWorkspaceFocusController(doc: Document) {
 
   // Focus that drops to the body because its element was hidden, made inert, disabled, or removed
   // returns to a remounted control, else its area, or the composer for a finished timeline prompt.
+  // A side chat repeats the main chat's area names, so both stay inside the chat that lost focus.
   const recover = (event: FocusEvent) => {
     const lost = event.target;
     if (!(lost instanceof HTMLElement) || event.relatedTarget) return;
     const areaName = workspaceArea(lost)?.dataset.workspaceArea;
     const recoveryArea = areaName === "conversation" ? "composer" : areaName;
+    const outer = outerArea(lost);
     const label = lost.getAttribute("aria-label");
     requestAnimationFrame(() => {
       if (
@@ -313,11 +328,18 @@ export function createWorkspaceFocusController(doc: Document) {
           element.tagName === lost.tagName &&
           ((lost.id && element.id === lost.id) ||
             (label && element.getAttribute("aria-label") === label)) &&
+          outerArea(element) === outer &&
           isWorkspaceElementVisible(element) &&
           !element.matches(":disabled"),
       );
+      const area = Array.from(doc.querySelectorAll<HTMLElement>(AREA_SELECTOR)).find(
+        (element) =>
+          element.dataset.workspaceArea === recoveryArea &&
+          outerArea(element) === outer &&
+          isWorkspaceElementVisible(element),
+      );
       if (remounted) remounted.focus({ preventScroll: true });
-      else if (!recoveryArea || !focus(recoveryArea)) focus("content");
+      else if (!area || !focus(area)) focus("content");
     });
   };
   doc.addEventListener("focusout", recover);

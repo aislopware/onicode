@@ -355,6 +355,24 @@ describe("workspace area focus", () => {
     await vi.waitFor(() => expect(document.activeElement).toBe(moved));
   });
 
+  it("recovers focus inside the side chat that lost it", async () => {
+    using fixture = setup();
+    const composer = fixture.area("composer", 2);
+    const sideComposer = fixture.area("composer", 2, fixture.area("panel", 4).element);
+    const stop = () => {
+      const button = document.createElement("button");
+      button.setAttribute("aria-label", "Stopping");
+      return button;
+    };
+    // The main chat is stopping too, so its button has the lost one's label.
+    composer.element.append(stop());
+    const sideStop = stop();
+    sideComposer.element.append(sideStop);
+    sideStop.focus();
+    sideStop.remove();
+    await vi.waitFor(() => expect(document.activeElement).toBe(sideComposer.button));
+  });
+
   it("keeps moving while a hover popup without focus is open", () => {
     using fixture = setup();
     const composer = fixture.area("composer", 2);
