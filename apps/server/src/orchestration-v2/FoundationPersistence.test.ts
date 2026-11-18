@@ -529,12 +529,41 @@ it.effect("commits other threads' writes ahead of a thread's queued provider sna
       },
       "busy-child",
     );
+    const sideChatOfBusy = yield* writeTo(
+      {
+        id: EventId.make("unused"),
+        type: "context-transfer.created",
+        threadId: independent!.id,
+        providerInstanceId,
+        occurredAt: now,
+        payload: {
+          id: ContextTransferId.make("context-transfer:busy-side-chat"),
+          type: "fork",
+          sourceThreadId: busy!.id,
+          targetThreadId: independent!.id,
+          sourcePoint: { threadId: busy!.id },
+          basePoint: null,
+          sourceProviderInstanceId: providerInstanceId,
+          targetProviderInstanceId: providerInstanceId,
+          targetRunId: null,
+          status: "pending",
+          resolution: null,
+          createdBy: "user",
+          error: null,
+          createdAt: now,
+          updatedAt: now,
+          consumedAt: null,
+        },
+      },
+      "busy-side-chat",
+    );
     yield* TestClock.adjust(0);
     yield* Deferred.succeed(release, undefined);
     yield* Fiber.join(provider);
     yield* Fiber.join(sameThread);
     yield* Fiber.join(otherThread);
     yield* Fiber.join(childOfBusy);
+    yield* Fiber.join(sideChatOfBusy);
     const store = yield* EventStore.EventStoreV2;
     const events = yield* store.read({ afterSequence: highWater }).pipe(Stream.runCollect);
     assert.deepEqual(
@@ -546,6 +575,7 @@ it.effect("commits other threads' writes ahead of a thread's queued provider sna
         "busy-provider-3",
         "busy-command",
         "busy-child",
+        "busy-side-chat",
       ],
     );
   }).pipe(Effect.scoped, Effect.provide(Layer.fresh(layerTest))),
