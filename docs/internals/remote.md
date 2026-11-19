@@ -244,6 +244,11 @@ undo by accident:
 - **The address the page named.** A `localhost` name dials the environment's IPv4 then IPv6
   loopback, like a browser. An IP literal such as `[::1]` dials exactly that address, so it never
   reaches a different server on the same port.
+- **Forwarded ports** listen on plain loopback without that authentication, on purpose: the user
+  asks for any app on this machine to reach the port, as with `ssh -L`. A forward first sends a
+  nonce through the tunnel to a local probe listener, because an environment whose loopback is
+  this machine's (its own Tailscale address, a route back here) would dial the forward itself
+  and loop.
 - **Mobile device preview** has its own SOCKS listener while it is open, without the desktop's
   authentication: iOS suspends other apps, but Android lets any app reach it, and apps cannot see
   another app's socket owner there.
