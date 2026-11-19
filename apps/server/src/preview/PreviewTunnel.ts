@@ -7,7 +7,9 @@ import type * as NodeNet from "node:net";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as NetAddress from "effect/net/NetAddress";
 import * as Option from "effect/Option";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import type * as Scope from "effect/Scope";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
@@ -43,9 +45,13 @@ export class PreviewTunnelConnectError extends Schema.TaggedError<PreviewTunnelC
 export class PreviewTunnel extends Context.Service<
   PreviewTunnel,
   {
-    /** Connects to a loopback port. `servedPort` is the port the request arrived on. */
+    /**
+     * Connects to a loopback port. `host` is a loopback IP the page named; without one, the port is
+     * `localhost`'s. `servedPort` is the port the request arrived on.
+     */
     readonly connect: (input: {
       readonly port: number;
+      readonly host?: string | undefined;
       readonly servedPort: number | undefined;
     }) => Effect.Effect<
       { readonly reader: Socket.Reader; readonly writer: Socket.Writer },
@@ -62,16 +68,17 @@ const make = Effect.sync(() => {
   });
 
   const connect: PreviewTunnel["Service"]["connect"] = Effect.fn("PreviewTunnel.connect")(
-    function* ({ port, servedPort }) {
+    function* ({ port, host, servedPort }) {
       yield* Effect.annotateCurrentSpan({ port });
       // Tunnelling to this server would hand the page an unauthenticated loopback client.
       if (port === servedPort) {
         return yield* new PreviewTunnelPortRefusedError({ port });
       }
-      return yield* dial("127.0.0.1", port).pipe(
-        Effect.catch(() => dial("::1", port)),
-        Effect.mapError((cause) => new PreviewTunnelConnectError({ port, cause })),
-      );
+      return yield* (
+        host === undefined
+          ? dial("127.0.0.1", port).pipe(Effect.catch(() => dial("::1", port)))
+          : dial(host, port)
+      ).pipe(Effect.mapError((cause) => new PreviewTunnelConnectError({ port, cause })));
     },
   );
 
@@ -111,15 +118,23 @@ const pump =
     }
   });
 
+const isLoopbackIp = (host: string) =>
+  Result.match(NetAddress.ipFromString(host), {
+    onSuccess: NetAddress.isLoopback,
+    onFailure: () => false,
+  });
+
 const handler = Effect.gen(function* () {
   const request = yield* HttpServerRequest.HttpServerRequest;
-  const url = requestUrl(request);
-  const port = Number(Option.getOrUndefined(url)?.searchParams.get("port") ?? Number.NaN);
+  const params = Option.getOrUndefined(requestUrl(request))?.searchParams;
+  const port = Number(params?.get("port") ?? Number.NaN);
+  const host = params?.get("host") ?? undefined;
   if (
     request.headers.upgrade?.toLowerCase() !== "websocket" ||
     !Number.isInteger(port) ||
     port < 1 ||
-    port > 65_535
+    port > 65_535 ||
+    (host !== undefined && !isLoopbackIp(host))
   ) {
     return HttpServerResponse.text("Bad Request", { status: 400 });
   }
@@ -132,7 +147,7 @@ const handler = Effect.gen(function* () {
   declineSocketCompression(request);
   return yield* Effect.gen(function* () {
     // Dialled before the upgrade so a dead port fails the handshake instead of an open socket.
-    const upstream = yield* tunnel.connect({ port, servedPort });
+    const upstream = yield* tunnel.connect({ port, host, servedPort });
     const client = yield* request.upgrade;
     const clientReader = yield* client.reader;
     const clientWriter = yield* client.writer;

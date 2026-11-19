@@ -166,6 +166,27 @@ it.effect("answers a port nothing listens on with 502", () =>
   }),
 );
 
+it.effect.each([
+  { case: "an IPv6 loopback address", host: "::1", status: 502 },
+  { case: "a non-loopback address", host: "192.168.1.20", status: 400 },
+] as const)(
+  "never dials 127.0.0.1 for $case, even when a server listens there",
+  ({ host, status }) =>
+    Effect.gen(function* () {
+      let dialled = 0;
+      const listed = yield* listen((socket) => {
+        dialled++;
+        socket.destroy();
+      });
+      const tunnel = yield* serveTunnel();
+      const client = yield* openTunnel(
+        `${tunnel.origin}/api/preview/tunnel?port=${listed.port}&host=${encodeURIComponent(host)}`,
+      );
+      expect(yield* refusal(client)).toBe(status);
+      expect(dialled).toBe(0);
+    }),
+);
+
 it.effect("closes an open tunnel when its session is revoked", () =>
   Effect.gen(function* () {
     const upstreamClosed = Promise.withResolvers<void>();
