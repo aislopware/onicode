@@ -2699,3 +2699,4 @@ f03ce68691	take	fix(server): self-settle survives a delegated wake cancelled bef
 22f006c8d7	take	fix(web): zoom shortcuts zoom the app from the PR, Diff and Files panes
 a73cdc4df1	take	fix(provider-acp-registry): a failed terminal sign-in shows what the login command printed
 8edefc8818	take	fix(desktop): Edit, Window, and context menu items follow the UI language
+3b4041a97a	take	fix(shared): theme CSS saves with escaped quotes and quoted comment markers
