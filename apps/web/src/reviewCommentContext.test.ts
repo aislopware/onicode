@@ -12,6 +12,7 @@ import {
   resolveDiffReviewPosition,
   restoreDiffReviewCommentRange,
 } from "./reviewCommentContext";
+import { getRenderablePatch } from "./lib/diffRendering";
 
 describe("review comment context parsing", () => {
   it("keeps attribute-like and closing-block text as data in file comments", () => {
@@ -115,6 +116,36 @@ describe("review comment context parsing", () => {
     expect(buildReviewCommentRenderablePatch(comment(3))).toMatch(
       /\n@@ -3,1 \+2,2 @@\n\+two\t\n $/,
     );
+  });
+
+  it("sends the text of the column a split-view selection is in when whitespace is hidden", () => {
+    const rendered = getRenderablePatch(
+      [
+        "diff --git a/app.py b/app.py",
+        "--- a/app.py",
+        "+++ b/app.py",
+        "@@ -1,2 +1,2 @@",
+        " def f():",
+        "-    return 1",
+        "+        return 1",
+      ].join("\n"),
+      "review-comment-whitespace",
+      { ignoreWhitespace: true },
+    );
+    const fileDiff = rendered?.kind === "files" ? rendered.files[0]! : null;
+    const comment = (side: "deletions" | "additions") =>
+      buildDiffReviewComment({
+        id: "comment-whitespace",
+        sectionId: "turn:1",
+        sectionTitle: "Turn 1",
+        filePath: "app.py",
+        fileDiff: fileDiff!,
+        range: { start: 2, side, end: 2, endSide: side },
+        text: "Why?",
+      })?.diff;
+
+    expect(comment("deletions")).toBe("@@ -2,1 +2,1 @@\n     return 1");
+    expect(comment("additions")).toBe("@@ -2,1 +2,1 @@\n         return 1");
   });
 
   it("restores Pierre line selections from persisted diff comment row indexes", () => {
