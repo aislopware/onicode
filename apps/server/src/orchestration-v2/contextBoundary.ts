@@ -11,7 +11,7 @@ import * as Effect from "effect/Effect";
 import { cancelledBeforeStart, neverStarted } from "./RestartBackgroundNote.ts";
 
 /** A fresh run that never reached a provider discarded nothing, also once a rollback rewound it. */
-export function startedFreshRun(run: OrchestrationV2Run): boolean {
+function startedFreshRun(run: OrchestrationV2Run): boolean {
   return (
     run.freshContext === true &&
     run.status !== "queued" &&
@@ -37,6 +37,14 @@ function scheduledRunIds(
       item.type === "user_message" && item.scheduledTaskId !== undefined ? [runId] : [],
     ),
   );
+}
+
+/** A fresh-session schedule run starts a side conversation; the thread's own one continues past it. */
+export function isScheduledFreshRun(
+  run: Pick<OrchestrationV2Run, "freshContext" | "id">,
+  turnItems: OrchestrationV2ThreadProjection["turnItems"],
+): boolean {
+  return run.freshContext === true && scheduledRunIds(turnItems).has(run.id);
 }
 
 /** Ordinals of fresh-session schedule runs: side conversations the thread's own one continues past. */
