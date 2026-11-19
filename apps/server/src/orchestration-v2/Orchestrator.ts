@@ -1410,7 +1410,7 @@ function dispatchProviderThread(
   >,
   message: Pick<OrchestrationV2ConversationMessage, "notification" | "delegatedCompletion">,
   freshContext: boolean,
-  projectionContextBoundary: number,
+  contextBoundary: number,
 ): OrchestrationV2ProviderThread | undefined {
   return freshContext ||
     message.notification !== undefined ||
@@ -1418,7 +1418,7 @@ function dispatchProviderThread(
     ? projection.providerThreads.find(
         (candidate) => candidate.id === projection.thread.activeProviderThreadId,
       )
-    : conversationProviderThread(projection, projectionContextBoundary);
+    : conversationProviderThread(projection, contextBoundary);
 }
 
 /** Threads with no started run (imported, or reserved by another queued run) never cross it. */
@@ -2599,14 +2599,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
       const followsCurrent = followsCurrentConversation(queuedMessage);
       const freshContext = queuedRun.freshContext === true;
-      const projectionContextBoundary = contextBoundaryOrdinal(projection);
+      const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
       const activeProviderThread = dispatchProviderThread(
         projection,
         queuedMessage,
         freshContext,
-        projectionContextBoundary,
+        contextBoundary,
       );
-      const contextBoundary = freshContext ? ordinal : projectionContextBoundary;
       // A run queued before a fresh run started is bound to the conversation that run left behind.
       const followsLatestContext =
         !freshContext &&
@@ -7510,12 +7509,13 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return;
     }
 
-    const projectionContextBoundary = contextBoundaryOrdinal(projection);
+    const ordinal = nextRunOrdinal(projection);
+    const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
     const activeProviderThread = dispatchProviderThread(
       projection,
       { ...command, delegatedCompletion },
       freshContext,
-      projectionContextBoundary,
+      contextBoundary,
     );
     const activeRun = projection.runs.find(isActiveRun);
     // Messages after failed or stopped worktree setup must wait for a worktree,
@@ -7611,7 +7611,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         });
       }
       const now = yield* DateTime.now;
-      const ordinal = nextRunOrdinal(projection);
       const runId = idAllocator.derive.run({ threadId: command.threadId, ordinal });
       const targetProviderThread = freshContext
         ? undefined
@@ -7997,9 +7996,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         cause: "A fresh session can't start while a fork or merge is still being applied.",
       });
     }
-    const ordinal = nextRunOrdinal(projection);
     const runId = idAllocator.derive.run({ threadId: command.threadId, ordinal });
-    const contextBoundary = freshContext ? ordinal : projectionContextBoundary;
     const latestCompletedRun = projection.runs.findLast((run) => run.status === "completed");
     const latestHandoffRun = projection.runs.findLast(isHandoffSourceRun);
     const legacyImportItems =
