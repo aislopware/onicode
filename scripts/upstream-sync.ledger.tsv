@@ -2717,3 +2717,4 @@ ff4197c480	take	taken as is
 42d2387285	take	taken as is; Onicode hook order untouched, sidebar row re-render test green
 910c1a8df9	take	fix(mobile): long user messages collapse like on web (#34319)
 3c08684f1d	take	fix(client-runtime): CamelCase account names get distinct badge initials (#35343)
+5533151d77	take	fix(server): delegated completion wakes name the child thread (#39297)
