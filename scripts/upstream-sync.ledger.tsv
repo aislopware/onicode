@@ -2618,3 +2618,4 @@ b39eb755aa	skip	T3 Connect CloudLink only; Onicode removed Connect
 7da0a166e1	take	taken as is
 eac011439a	skip	fixes the DPoP renewal chain that dd512d86c5 added (skipped: Onicode removed dpop.ts, sessions are bearer-only), so Onicode's awaitInvalidation has no renewal to follow
 c1f8459153	take	taken as is (onicode --version prints 'onicode v<version>', matching the script's check)
+0796279c1c	take	upstream migration 099 renumbered to Onicode's next free 104 (Migrations.ts, reconcileV2PreviewMigration.test.ts, ProjectionStore comment); comment names Onicode's 090 LastExecutedRunIndex instead of upstream's 084

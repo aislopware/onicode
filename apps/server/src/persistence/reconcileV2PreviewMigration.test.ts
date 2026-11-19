@@ -83,6 +83,7 @@ describe("V2 preview upgrade", () => {
         [101, "RepairStaleTitleRegeneration"],
         [102, "IssueTrackerBindings"],
         [103, "ActiveShellIndexIndexes"],
+        [104, "BackgroundRecoveryIndexes"],
       ]);
       assert.deepStrictEqual(yield* runMigrations(), []);
       assert.deepStrictEqual(yield* sql`SELECT * FROM orchestration_v2_legacy_imports`, imports);
@@ -209,6 +210,7 @@ describe("V2 preview upgrade", () => {
         [101, "RepairStaleTitleRegeneration"],
         [102, "IssueTrackerBindings"],
         [103, "ActiveShellIndexIndexes"],
+        [104, "BackgroundRecoveryIndexes"],
       ]);
     }).pipe(Effect.provide(NodeSqliteClient.layer({ filename: ":memory:" }))),
   );
