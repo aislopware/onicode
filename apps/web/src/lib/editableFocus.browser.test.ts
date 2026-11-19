@@ -1,7 +1,7 @@
 import { expect, it } from "vite-plus/test";
 import { userEvent } from "vite-plus/test/browser";
-import { createWorkspaceFocusController } from "../lib/workspaceFocus";
-import { shouldRefocusComposerOnWindowFocus } from "./ChatView.logic";
+import { createWorkspaceFocusController } from "./workspaceFocus";
+import { shouldRefocusComposerOnWindowFocus } from "./editableFocus";
 
 it("keeps keyboard focus on a sidebar row on window return, but not a clicked row", async () => {
   const list = document.createElement("ul");

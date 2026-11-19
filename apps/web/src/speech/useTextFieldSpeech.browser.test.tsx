@@ -34,6 +34,7 @@ function Field() {
     <>
       <textarea aria-label="Draft" ref={textareaRef} />
       <input aria-label="Elsewhere" />
+      <button type="button">Plain</button>
     </>
   );
 }
@@ -51,6 +52,12 @@ it("returns focus to the field after dictation only while the user has not moved
   expect(document.activeElement).toBe(elsewhere.element());
 
   elsewhere.element().blur();
+  speech.commit!("Dictated", { start: 8, end: 8 });
+  vi.advanceTimersToNextFrame();
+  expect(document.activeElement).toBe(draft.element());
+
+  // A plain button, as when a shortcut started dictation, yields like the composer does.
+  screen.getByRole("button", { name: "Plain" }).element().focus();
   speech.commit!("Dictated", { start: 8, end: 8 });
   vi.advanceTimersToNextFrame();
   expect(document.activeElement).toBe(draft.element());
