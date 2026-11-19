@@ -339,6 +339,7 @@ export class GitLabCli extends Context.Service<
       readonly target?: SourceControlProvider.SourceControlRefSelector;
       readonly title: string;
       readonly bodyFile: string;
+      readonly draft?: boolean;
     }) => Effect.Effect<void, GitLabCliError>;
 
     readonly getDefaultBranch: (input: {
@@ -749,7 +750,8 @@ export const make = Effect.gen(function* () {
             ? []
             : ["--raw-field", `target_project_id=${targetProjectId}`]),
           "--raw-field",
-          `title=${input.title}`,
+          // The REST create has no draft field; GitLab drafts a title with this prefix.
+          `title=${input.draft === true ? `Draft: ${input.title}` : input.title}`,
           "--field",
           "description=@-",
         ],

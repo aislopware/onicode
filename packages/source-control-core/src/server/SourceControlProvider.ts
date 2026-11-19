@@ -193,6 +193,8 @@ export class SourceControlProvider extends Context.Service<
       readonly headSelector: string;
       readonly title: string;
       readonly bodyFile: string;
+      /** Hosts that cannot open a draft ignore this; the caller converts the PR afterwards. */
+      readonly draft?: boolean;
     }) => Effect.Effect<void, SourceControlProviderError>;
     readonly getRepositoryCloneUrls: (input: {
       readonly cwd: string;
