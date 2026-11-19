@@ -775,6 +775,9 @@ importers:
       '@muse-code/sdk':
         specifier: 1.4.20
         version: 1.4.20(@types/node@26.6.6)
+      '@napi-rs/keyring':
+        specifier: ^2.1.2
+        version: 2.1.2
       '@onicode/issue-tracker-linear':
         specifier: workspace:*
         version: link:../../packages/issue-tracker-linear
