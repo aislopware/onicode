@@ -1,7 +1,7 @@
 import type { OrchestrationV2ThreadProjection } from "@onicode/contracts";
 import { assert, it } from "vite-plus/test";
 
-import { contextBoundaryOrdinal } from "./contextBoundary.ts";
+import { contextBoundaryOrdinal, scheduledFreshRunOrdinals } from "./contextBoundary.ts";
 
 type Projection = Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">;
 
@@ -27,9 +27,14 @@ it("reads turn items once however many fresh-session scheduled runs a thread has
       return Reflect.get(target, property, receiver);
     },
   });
+  const projection = { runs, turnItems } as unknown as Projection;
 
-  const boundary = contextBoundaryOrdinal({ runs, turnItems } as unknown as Projection);
+  assert.equal(contextBoundaryOrdinal(projection), clearOrdinal);
+  assert.isAtMost(itemReads, items.length);
 
-  assert.equal(boundary, clearOrdinal);
+  itemReads = 0;
+  const scheduledOrdinals = scheduledFreshRunOrdinals(projection);
+  assert.equal(scheduledOrdinals.size, scheduledRuns);
+  assert.isFalse(scheduledOrdinals.has(clearOrdinal));
   assert.isAtMost(itemReads, items.length);
 });
