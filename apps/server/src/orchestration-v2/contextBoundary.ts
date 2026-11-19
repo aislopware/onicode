@@ -1,4 +1,13 @@
-import type { MessageId, OrchestrationV2ThreadProjection } from "@onicode/contracts";
+import type {
+  MessageId,
+  OrchestrationV2ContextTransfer,
+  OrchestrationV2Run,
+  OrchestrationV2ThreadProjection,
+  OrchestrationV2TurnItem,
+  RunId,
+  ThreadId,
+} from "@onicode/contracts";
+import * as Effect from "effect/Effect";
 
 import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
 
@@ -48,3 +57,46 @@ export function contextBoundaryOrdinal(
   }
   return boundary;
 }
+
+/**
+ * Where a fork at `forkRun` starts reading its source, given the source's runs through it. A
+ * started fresh fork run, even a scheduled side conversation, saw nothing before itself.
+ */
+export function forkContextBoundaryOrdinal(
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+  forkRun: OrchestrationV2Run | undefined,
+): number {
+  return forkRun?.freshContext === true &&
+    forkRun.status !== "queued" &&
+    !cancelledBeforeStart(forkRun)
+    ? forkRun.ordinal
+    : contextBoundaryOrdinal(projection);
+}
+
+/** `forkContextBoundaryOrdinal`, reading only the fresh runs' items: they tell schedules apart. */
+export const readForkContextBoundaryOrdinal = <E, R>(
+  readTurnItems: (
+    runIds: ReadonlyArray<RunId>,
+  ) => Effect.Effect<ReadonlyArray<OrchestrationV2TurnItem>, E, R>,
+  runs: ReadonlyArray<OrchestrationV2Run>,
+  forkRun?: OrchestrationV2Run,
+): Effect.Effect<number, E, R> => {
+  const freshRunIds = runs.flatMap((run) => (run.freshContext === true ? [run.id] : []));
+  return freshRunIds.length === 0
+    ? Effect.succeed(0)
+    : readTurnItems(freshRunIds).pipe(
+        Effect.map((turnItems) => forkContextBoundaryOrdinal({ runs, turnItems }, forkRun)),
+      );
+};
+
+/** A fresh send before a fork's first run supersedes its transfer, discarding the parent's context. */
+export const forkContextSuperseded = (
+  threadId: ThreadId,
+  contextTransfers: ReadonlyArray<OrchestrationV2ContextTransfer>,
+) =>
+  contextTransfers.some(
+    (transfer) =>
+      transfer.type === "fork" &&
+      transfer.targetThreadId === threadId &&
+      transfer.status === "superseded",
+  );

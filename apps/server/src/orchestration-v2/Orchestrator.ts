@@ -83,7 +83,11 @@ import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { modelSelectionsEqual } from "@onicode/shared/model";
 import { expandAssistantCitationsForProvider } from "@onicode/shared/assistantCitations";
 import { modelSwitchSince } from "./modelSwitch.ts";
-import { contextBoundaryOrdinal, scheduledFreshRunOrdinals } from "./contextBoundary.ts";
+import {
+  contextBoundaryOrdinal,
+  readForkContextBoundaryOrdinal,
+  scheduledFreshRunOrdinals,
+} from "./contextBoundary.ts";
 import { isPlaceholderThreadTitle } from "./placeholderThreadTitle.ts";
 import { canRefreshGeneratedTitle } from "./threadTitleRefresh.ts";
 import { combinePullRequestWatchWakes, type PullRequestWatchWake } from "./pullRequestWatch.ts";
@@ -8476,12 +8480,25 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                   }),
               ),
             );
-    const sourceRun =
+    const sideChatFork =
+      pendingForkTransfer !== undefined && projection.thread.lineage.sideChat === true;
+    // A side chat never carries what the parent's fresh session discarded.
+    const sideChatParentBoundary =
+      !sideChatFork || sourceProjection === null
+        ? 0
+        : yield* readForkContextBoundaryOrdinal(
+            (runIds) => readHandoffItems(sourceProjection.thread.id, runIds),
+            sourceProjection.runs,
+          );
+    const anchorRun =
       pendingForkTransfer?.sourcePoint.runId === undefined || sourceProjection === null
         ? null
         : (sourceProjection.runs.find(
             (candidate) => candidate.id === pendingForkTransfer.sourcePoint.runId,
           ) ?? null);
+    const sideChatAnchorDiscarded =
+      sideChatFork && anchorRun !== null && anchorRun.ordinal < sideChatParentBoundary;
+    const sourceRun = sideChatAnchorDiscarded ? null : anchorRun;
     const sourceProviderThread =
       sourceProjection === null || sourceRun === null
         ? undefined
@@ -8494,11 +8511,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           sourceProjection.attempts.find((candidate) => candidate.id === sourceRun.activeAttemptId)
             ?.providerTurnId ??
           undefined);
-    const sideChatFork =
-      pendingForkTransfer !== undefined && projection.thread.lineage.sideChat === true;
-    // Opened during the parent's first turn: the digest is the whole context.
+    // Opened during the parent's first turn, or anchored before its fresh session: the digest
+    // is the whole context.
     const sideChatWithoutSource =
-      sideChatFork && pendingForkTransfer.sourcePoint.runId === undefined;
+      sideChatFork &&
+      (pendingForkTransfer.sourcePoint.runId === undefined || sideChatAnchorDiscarded);
     if (pendingForkTransfer !== undefined) {
       if (!sideChatWithoutSource && (sourceRun === null || sourceProviderThread === undefined)) {
         return yield* new OrchestratorDispatchError({
@@ -8685,8 +8702,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     // first, so the cap truncates them first, then imported and run items.
     const sideChatParentRunIds = [
       // Queued messages have not reached the main thread yet.
-      ...sourceRunsAfterFork.filter((run) => run.status !== "queued").map((run) => run.id),
-      ...(sourceRun === null && sourceProjection?.thread.historyOrigin === "v1_import"
+      ...sourceRunsAfterFork
+        .filter((run) => run.status !== "queued" && run.ordinal >= sideChatParentBoundary)
+        .map((run) => run.id),
+      ...(sourceRun === null &&
+      sideChatParentBoundary === 0 &&
+      sourceProjection?.thread.historyOrigin === "v1_import"
         ? [null]
         : []),
     ];
@@ -8694,7 +8715,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       !sideChatFork || sourceProjection === null
         ? []
         : [
-            ...(sideChatWithoutSource ? yield* readInheritedItems(sourceProjection.thread) : []),
+            ...(sideChatWithoutSource && sideChatParentBoundary === 0
+              ? yield* readInheritedItems(sourceProjection.thread)
+              : []),
             ...(sideChatParentRunIds.length === 0
               ? []
               : visibleConversationItems(

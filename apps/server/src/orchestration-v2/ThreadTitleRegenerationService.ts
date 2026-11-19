@@ -6,6 +6,7 @@ import {
   type MessageId,
   type OrchestrationV2AppThread,
   type OrchestrationV2ConversationMessage,
+  type OrchestrationV2Run,
   type RunId,
   type ServerSettingsError,
   TextGenerationError,
@@ -23,6 +24,7 @@ import * as Schema from "effect/Schema";
 
 import * as ServerSettings from "../serverSettings.ts";
 import * as TextGeneration from "../textGeneration/TextGeneration.ts";
+import { forkContextSuperseded, readForkContextBoundaryOrdinal } from "./contextBoundary.ts";
 import type { OrchestratorV2Error } from "./Orchestrator.ts";
 import * as ProjectStore from "./ProjectStore.ts";
 import { forkInheritedRunOrdinals, ProjectionStoreThreadNotFoundError } from "./ProjectionStore.ts";
@@ -120,35 +122,65 @@ const make = Effect.gen(function* () {
       })
       .pipe(Effect.asVoid);
 
+  const readBoundary = (
+    threadId: ThreadId,
+    runs: ReadonlyArray<OrchestrationV2Run>,
+    forkRun?: OrchestrationV2Run,
+  ) =>
+    readForkContextBoundaryOrdinal(
+      (runIds) =>
+        threads
+          .getThreadRecords(threadId, ["turnItems"], { turnItemRunIds: runIds })
+          .pipe(Effect.map((records) => records.turnItems)),
+      runs,
+      forkRun,
+    );
+
   const messagesThroughRun = Effect.fn("ThreadTitleRegenerationService.messagesThroughRun")(
     function* (threadId: ThreadId, runId: RunId, forkCreatedAt: DateTime.Utc) {
-      const source = yield* threads.getThreadRecords(threadId, ["messages", "runs"], {
-        messageRoles: ["user", "assistant"],
-      });
+      const source = yield* threads.getThreadRecords(
+        threadId,
+        ["messages", "runs", "contextTransfers"],
+        { messageRoles: ["user", "assistant"] },
+      );
       const ordinals = forkInheritedRunOrdinals(source.runs, forkCreatedAt);
       const forkOrdinal = ordinals.get(runId);
       if (forkOrdinal === undefined) return undefined;
+      const boundary = yield* readBoundary(
+        threadId,
+        source.runs.filter((run) => run.ordinal <= forkOrdinal),
+        source.runs.find((run) => run.id === runId),
+      );
       const messages = source.messages.filter((message) => {
         if (message.streaming) return false;
-        if (message.runId === null) return source.thread.historyOrigin === "v1_import";
-        return (ordinals.get(message.runId) ?? Infinity) <= forkOrdinal;
+        if (message.runId === null) {
+          return boundary === 0 && source.thread.historyOrigin === "v1_import";
+        }
+        const ordinal = ordinals.get(message.runId) ?? Infinity;
+        return ordinal >= boundary && ordinal <= forkOrdinal;
       });
-      return { thread: source.thread, messages };
+      return { ...source, messages, boundary };
     },
   );
 
   // A fork starts with no messages of its own, so its subject lives in the history it inherited.
+  // Like a portable fork handoff, it stops where a fresh session discarded the older context.
   const forkSource = Effect.fn("ThreadTitleRegenerationService.forkSource")(function* (
     thread: OrchestrationV2AppThread,
   ) {
+    if (thread.forkedFrom?.type !== "run" || thread.lineage.sideChat === true) return undefined;
+    const own = yield* threads.getThreadRecords(thread.id, ["runs", "contextTransfers"]);
+    if ((yield* readBoundary(thread.id, own.runs)) > 0) return undefined;
     let title: string | undefined;
     const history: Array<ReadonlyArray<OrchestrationV2ConversationMessage>> = [];
     const seen = new Set([thread.id]);
     let current = thread;
+    let contextTransfers = own.contextTransfers;
     while (
       current.forkedFrom?.type === "run" &&
       current.lineage.sideChat !== true &&
-      !seen.has(current.forkedFrom.threadId)
+      !seen.has(current.forkedFrom.threadId) &&
+      !forkContextSuperseded(current.id, contextTransfers)
     ) {
       const { threadId, runId } = current.forkedFrom;
       seen.add(threadId);
@@ -156,7 +188,9 @@ const make = Effect.gen(function* () {
       if (source === undefined) break;
       history.push(source.messages);
       title ??= source.thread.title;
+      if (source.boundary > 0) break;
       current = source.thread;
+      contextTransfers = source.contextTransfers;
     }
     const context = formatThreadTitleContext(history.reverse().flat());
     return title === undefined || context.message.length === 0
