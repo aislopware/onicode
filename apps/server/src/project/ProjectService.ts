@@ -4,7 +4,6 @@ import {
   ProjectId,
   type Project,
   type ProjectCreatePayload,
-  type ProjectSettingsOverrides,
   type ProjectUpdatePayload,
   type ProjectSnapshot,
   type ThreadId,
@@ -417,30 +416,21 @@ export const make = Effect.gen(function* () {
     >,
   ) => {
     // Null, like empty scripts on the legacy record, falls back to the environment default.
-    const fields = {
+    const changes = {
       defaultModelSelection: input.defaultModelSelection,
       defaultThreadEnvMode: input.defaultThreadEnvMode,
       defaultProjectScripts: input.scripts?.length === 0 ? null : input.scripts,
       defaultAutoPull: input.autoPull,
     };
-    if (Object.values(fields).every((value) => value === undefined)) return undefined;
-    return serverSettings
-      .updateProjectSettingsOverride(projectId, (current) => {
-        const entry: Record<string, unknown> = { ...current };
-        for (const [key, value] of Object.entries(fields)) {
-          if (value === null) delete entry[key];
-          else if (value !== undefined) entry[key] = value;
-        }
-        return Object.keys(entry).length === 0 ? null : (entry as ProjectSettingsOverrides);
-      })
-      .pipe(
-        Effect.asVoid,
-        Effect.mapError(
-          (cause) =>
-            new ProjectOperationError({ operation: "write-project-settings", projectId, cause }),
-        ),
-        Effect.withSpan("ProjectService.writeProjectSettings"),
-      );
+    if (Object.values(changes).every((value) => value === undefined)) return undefined;
+    return serverSettings.updateProjectSettingsOverride(projectId, changes).pipe(
+      Effect.asVoid,
+      Effect.mapError(
+        (cause) =>
+          new ProjectOperationError({ operation: "write-project-settings", projectId, cause }),
+      ),
+      Effect.withSpan("ProjectService.writeProjectSettings"),
+    );
   };
 
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
@@ -463,7 +453,7 @@ export const make = Effect.gen(function* () {
         writeProjectSettings(input.projectId, {
           // A new project has nothing to clear.
           defaultModelSelection: input.defaultModelSelection ?? undefined,
-          scripts: input.scripts,
+          scripts: input.scripts?.length === 0 ? undefined : input.scripts,
         }),
       );
       yield* projectEnrichment.invalidate([workspaceRoot]);

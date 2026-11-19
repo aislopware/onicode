@@ -28,6 +28,7 @@ import {
 import * as IdAllocator from "@onicode/provider-core/server/IdAllocator";
 import { createOrchestrationV2TurnItemVisibility } from "@onicode/shared/orchestrationV2Timeline";
 import { contextBoundaryOrdinal } from "./contextBoundary.ts";
+import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
 import type { ProjectionStoreV2Shape } from "./ProjectionStore.ts";
 
 export class ContextHandoffPrepareError extends Schema.TaggedError<ContextHandoffPrepareError>()(
@@ -167,10 +168,13 @@ const readOwnHistoryItems = Effect.fn("orchestrationV2.contextHandoff.readOwnHis
         ...(source.thread.historyOrigin === "v1_import" ? [null] : []),
       ],
     });
-    // A fresh run, even a scheduled side conversation, saw nothing before itself.
+    // A started fresh run, even a scheduled side conversation, saw nothing before itself.
+    const forkRun = runs.find((run) => run.ordinal === throughRun.ordinal);
     const boundary =
-      runs.find((run) => run.ordinal === throughRun.ordinal)?.freshContext === true
-        ? throughRun.ordinal
+      forkRun?.freshContext === true &&
+      forkRun.status !== "queued" &&
+      !cancelledBeforeStart(forkRun)
+        ? forkRun.ordinal
         : contextBoundaryOrdinal({ runs, turnItems });
     const keptRunIds = new Set(runs.filter((run) => run.ordinal >= boundary).map((run) => run.id));
     const kept = turnItems.filter((item) =>

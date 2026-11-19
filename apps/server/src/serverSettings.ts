@@ -251,13 +251,28 @@ function ensureProviderInstanceMutationAllowed(
   return Effect.void;
 }
 
-function projectOverridePatch(
+export type ProjectSettingsOverrideChanges = {
+  readonly [K in keyof ProjectSettingsOverrides]?: ProjectSettingsOverrides[K] | null | undefined;
+};
+
+/** `apply` replaces the stored entry; `vet` holds only the changed keys, so values a policy has
+ * since locked, which stay stored under the lock, do not count as this write's changes. */
+function projectOverridePatches(
   current: ServerSettings,
   projectId: ProjectId,
-  update: (entry: ProjectSettingsOverrides | undefined) => ProjectSettingsOverrides | null,
-): ServerSettingsPatch {
+  changes: ProjectSettingsOverrideChanges,
+): { readonly apply: ServerSettingsPatch; readonly vet: ServerSettingsPatch } {
+  const entry: Record<string, unknown> = { ...current.projectSettingsOverrides[projectId] };
+  const set: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) continue;
+    if (value === null) delete entry[key];
+    else entry[key] = set[key] = value;
+  }
+  const next = Object.keys(entry).length === 0 ? null : (entry as ProjectSettingsOverrides);
   return {
-    projectSettingsOverrides: { [projectId]: update(current.projectSettingsOverrides[projectId]) },
+    apply: { projectSettingsOverrides: { [projectId]: next } },
+    vet: { projectSettingsOverrides: { [projectId]: set as ProjectSettingsOverrides } },
   };
 }
 
@@ -282,10 +297,10 @@ export class ServerSettingsService extends Context.Service<
       patch?: ServerSettingsPatch,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
-    /** Replaces one project's overrides entry from its stored value, atomically with other writes. */
+    /** Sets keys of one project's stored overrides, atomically with other writes; null removes one. */
     readonly updateProjectSettingsOverride: (
       projectId: ProjectId,
-      update: (entry: ProjectSettingsOverrides | undefined) => ProjectSettingsOverrides | null,
+      changes: ProjectSettingsOverrideChanges,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
     readonly withSettingsSnapshot: <A, E, R>(
@@ -353,12 +368,12 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
           return applyProviderInstanceMutation(patched, mutation);
         }),
       ),
-    updateProjectSettingsOverride: (projectId, update) =>
+    updateProjectSettingsOverride: (projectId, changes) =>
       updateTestSettings((currentSettings) =>
         Effect.succeed(
           applyServerSettingsPatch(
             currentSettings,
-            projectOverridePatch(currentSettings, projectId, update),
+            projectOverridePatches(currentSettings, projectId, changes).apply,
           ),
         ),
       ),
@@ -1214,7 +1229,12 @@ const make = Effect.gen(function* () {
   };
 
   const updateAndPersistSettings = (
-    patchFor: ServerSettingsPatch | ((current: ServerSettings) => ServerSettingsPatch),
+    patchFor:
+      | ServerSettingsPatch
+      | ((current: ServerSettings) => {
+          readonly apply: ServerSettingsPatch;
+          readonly vet: ServerSettingsPatch;
+        }),
     update: (
       current: ServerSettings,
       patch: ServerSettingsPatch,
@@ -1230,7 +1250,8 @@ const make = Effect.gen(function* () {
             cause: parseFailure.value,
           });
         }
-        const patch = typeof patchFor === "function" ? patchFor(current) : patchFor;
+        const { apply: patch, vet: vetPatch } =
+          typeof patchFor === "function" ? patchFor(current) : { apply: patchFor, vet: patchFor };
         // An older client echoes a reference as the redacted marker; restore it before vetting so
         // a removed provider's reference is cleared below rather than restored by persistence.
         const updated = withoutRedirectedSimlockTokens(
@@ -1238,7 +1259,7 @@ const make = Effect.gen(function* () {
           withEchoedSecretReferences(current, yield* update(current, patch)),
         );
         // Vet before secrets: a variable the policy hides from clients is not one they removed.
-        const vetted = managed.vetWrite(current, yield* normalizeServerSettings(updated), patch);
+        const vetted = managed.vetWrite(current, yield* normalizeServerSettings(updated), vetPatch);
         if (vetted._tag === "Locked") {
           return yield* new ServerSettingsError({
             settingsPath,
@@ -1410,9 +1431,9 @@ const make = Effect.gen(function* () {
           Effect.as(applyServerSettingsPatch(current, patch)),
         ),
       ),
-    updateProjectSettingsOverride: (projectId, update) =>
+    updateProjectSettingsOverride: (projectId, changes) =>
       updateAndPersistSettings(
-        (current) => projectOverridePatch(current, projectId, update),
+        (current) => projectOverridePatches(current, projectId, changes),
         (current, patch) => Effect.succeed(applyServerSettingsPatch(current, patch)),
       ),
     updateProviderInstance: (mutation, patch = {}) =>
