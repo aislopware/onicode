@@ -1,21 +1,9 @@
-import {
-  type ProviderInstanceId,
-  textGeneratorForSelection,
-  type UnifiedSettings,
-} from "@onicode/contracts";
+import type { UnifiedSettings } from "@onicode/contracts";
 import { useGT } from "gt-react";
 
-import { mergeEnvironmentSettings } from "../../hooks/useSettings";
-import {
-  getCustomModelOptionsByInstance,
-  getTextGenerationModelOptionsByInstance,
-} from "../../modelSelection";
-import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
-  type ProviderInstanceEntry,
-} from "../../providerInstances";
+import type { ProviderInstanceEntry } from "../../providerInstances";
 import { useEnvironmentProviders, useEnvironments } from "../../state/environments";
+import { createScopedModelDisabledReason } from "./scopedModelAvailability.logic";
 import { useSettingsScope } from "./SettingsScopeContext";
 
 export function useScopedModelDisabledReason(
@@ -27,56 +15,21 @@ export function useScopedModelDisabledReason(
   const { targets } = useSettingsScope();
   const { environments } = useEnvironments();
   const providersByEnvironment = useEnvironmentProviders();
-  return (instanceId: ProviderInstanceId, model: string): string | null => {
-    const sourceEntry = entries.find((entry) => entry.instanceId === instanceId);
-    const shownGenerator = textGeneratorForSelection(settings, instanceId);
-    for (const candidate of targets) {
-      const environment = environments.find(
-        (entry) => entry.environmentId === candidate.environmentId,
-      );
-      const unavailable = environment
+  return createScopedModelDisabledReason({
+    settings,
+    entries,
+    targets,
+    environments,
+    providersByEnvironment,
+    textGeneration,
+    unavailableMessage: (environment) =>
+      environment === undefined
         ? gt(
-            "This model is unavailable on {environment}. Select that environment to choose its model separately.",
-            { environment: environment.label },
+            "This model is unavailable on a selected environment. Select that environment to choose its model separately.",
           )
         : gt(
-            "This model is unavailable on a selected environment. Select that environment to choose its model separately.",
-          );
-      const generator = textGeneratorForSelection(candidate.settings, instanceId);
-      if (shownGenerator !== undefined || generator !== undefined) {
-        // Only the shown environment's model list is loaded; elsewhere it must reach the same API.
-        if (
-          !generator?.enabled ||
-          generator.kind !== shownGenerator?.kind ||
-          generator.baseUrl !== shownGenerator.baseUrl
-        ) {
-          return unavailable;
-        }
-        continue;
-      }
-      const providers = providersByEnvironment.get(candidate.environmentId);
-      if (!environment?.serverConfig || !providers) continue;
-      const entry = applyProviderInstanceSettings(
-        deriveProviderInstanceEntries(providers),
-        candidate.settings,
-        candidate.projectId,
-      ).find((option) => option.instanceId === instanceId);
-      const optionsForInstance = textGeneration
-        ? getTextGenerationModelOptionsByInstance
-        : getCustomModelOptionsByInstance;
-      const options = optionsForInstance(
-        mergeEnvironmentSettings(candidate.settings, settings),
-        providers,
-      ).get(instanceId);
-      if (
-        !entry?.enabled ||
-        !entry.isAvailable ||
-        entry.driverKind !== sourceEntry?.driverKind ||
-        !options?.some((option) => option.slug === model && !option.isUnavailable)
-      ) {
-        return unavailable;
-      }
-    }
-    return null;
-  };
+            "This model is unavailable on {environment}. Select that environment to choose its model separately.",
+            { environment },
+          ),
+  });
 }
