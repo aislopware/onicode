@@ -1255,11 +1255,14 @@ const make = Effect.fn("makeWithDatabase")(function* (
       );
     });
 
-  // Runs under the connection's lock, before its next user's first statement.
+  // Runs under the connection's lock, before its next user's first statement. Checked only then,
+  // since a holder's failed ROLLBACK can mark it while the next user waits.
   const finishRollback = (connection: Connection) =>
-    rollbackPending.has(connection)
-      ? Effect.asVoid(connection.executeUnprepared("ROLLBACK", [], undefined))
-      : Effect.void;
+    Effect.suspend(() =>
+      rollbackPending.has(connection)
+        ? Effect.asVoid(connection.executeUnprepared("ROLLBACK", [], undefined))
+        : Effect.void,
+    );
 
   const acquired = (
     target: { readonly name: Acquired["connection"] },
