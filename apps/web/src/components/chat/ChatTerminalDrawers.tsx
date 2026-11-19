@@ -9,6 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import type { TerminalContextSelection } from "../../lib/terminalContext";
 import { usePanelAnimationSettings, usePanelPresence } from "../../panelAnimations";
+import { useRightPanelStore } from "../../rightPanelStore";
 import { useThreadRefs } from "../../state/entities";
 import { useTerminalUiStateStore } from "../../terminalUiStateStore";
 import {
@@ -17,6 +18,7 @@ import {
 } from "../ChatView.logic";
 import {
   PersistentThreadTerminalDrawer,
+  ThreadTerminalReconciler,
   type PersistentTerminalLaunchContext,
 } from "../PersistentThreadTerminals";
 
@@ -48,6 +50,19 @@ export function ChatTerminalDrawers(props: ChatTerminalDrawersProps) {
       ),
     ),
   );
+  const terminalStateThreadKeys = useTerminalUiStateStore(
+    useShallow((state) => [
+      ...Object.keys(state.terminalUiStateByThreadKey),
+      ...Object.keys(state.suppressedTerminalIdsByThreadKey),
+    ]),
+  );
+  const panelTerminalThreadKeys = useRightPanelStore(
+    useShallow((state) =>
+      Object.entries(state.byThreadKey).flatMap(([threadKey, panel]) =>
+        panel.surfaces.some((surface) => surface.kind === "terminal") ? [threadKey] : [],
+      ),
+    ),
+  );
   const serverThreadRefs = useThreadRefs();
   const serverThreadKeys = serverThreadRefs.map(scopedThreadKey);
   const draftThreadsByThreadKey = useComposerDraftStore((store) => store.draftThreadsByThreadKey);
@@ -64,10 +79,10 @@ export function ChatTerminalDrawers(props: ChatTerminalDrawersProps) {
     panelAnimationDurationMs,
   );
   const [mountedTerminalThreadKeys, setMountedTerminalThreadKeys] = useState<string[]>([]);
-  const existingOpenTerminalThreadKeys = (() => {
-    const existingThreadKeys = new Set<string>([...serverThreadKeys, ...draftThreadKeys]);
-    return openTerminalThreadKeys.filter((nextThreadKey) => existingThreadKeys.has(nextThreadKey));
-  })();
+  const existingThreadKeys = new Set<string>([...serverThreadKeys, ...draftThreadKeys]);
+  const existingOpenTerminalThreadKeys = openTerminalThreadKeys.filter((nextThreadKey) =>
+    existingThreadKeys.has(nextThreadKey),
+  );
   const reconciledMountedTerminalThreadKeys = reconcileMountedTerminalThreadIds({
     currentThreadIds: mountedTerminalThreadKeys,
     openThreadIds: existingOpenTerminalThreadKeys,
@@ -88,20 +103,34 @@ export function ChatTerminalDrawers(props: ChatTerminalDrawersProps) {
     return mountedThreadRef ? [{ key: mountedThreadKey, threadRef: mountedThreadRef }] : [];
   });
 
-  return mountedTerminalThreadRefs.map(({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
-    <PersistentThreadTerminalDrawer
-      key={mountedThreadKey}
-      threadRef={mountedThreadRef}
-      threadId={mountedThreadRef.threadId}
-      active={mountedThreadKey === activeThreadKey}
-      composerHeight={mountedThreadKey === activeThreadKey ? props.composerHeight : 0}
-      launchContext={mountedThreadKey === activeThreadKey ? props.launchContext : null}
-      splitShortcutLabel={props.splitShortcutLabel}
-      splitVerticalShortcutLabel={props.splitVerticalShortcutLabel}
-      newShortcutLabel={props.newShortcutLabel}
-      closeShortcutLabel={props.closeShortcutLabel}
-      keybindings={props.keybindings}
-      onAddTerminalContext={props.onAddTerminalContext}
-    />
-  ));
+  // Every thread with local terminal tabs follows the server, so closes seen while away are not missed.
+  const reconciledThreadKeys = [
+    ...new Set([
+      ...terminalStateThreadKeys,
+      ...panelTerminalThreadKeys,
+      ...(activeThreadKey === null ? [] : [activeThreadKey]),
+    ]),
+  ].filter((threadKey) => existingThreadKeys.has(threadKey));
+
+  return [
+    ...reconciledThreadKeys.map((threadKey) => (
+      <ThreadTerminalReconciler key={`reconcile:${threadKey}`} threadKey={threadKey} />
+    )),
+    ...mountedTerminalThreadRefs.map(({ key: mountedThreadKey, threadRef: mountedThreadRef }) => (
+      <PersistentThreadTerminalDrawer
+        key={mountedThreadKey}
+        threadRef={mountedThreadRef}
+        threadId={mountedThreadRef.threadId}
+        active={mountedThreadKey === activeThreadKey}
+        composerHeight={mountedThreadKey === activeThreadKey ? props.composerHeight : 0}
+        launchContext={mountedThreadKey === activeThreadKey ? props.launchContext : null}
+        splitShortcutLabel={props.splitShortcutLabel}
+        splitVerticalShortcutLabel={props.splitVerticalShortcutLabel}
+        newShortcutLabel={props.newShortcutLabel}
+        closeShortcutLabel={props.closeShortcutLabel}
+        keybindings={props.keybindings}
+        onAddTerminalContext={props.onAddTerminalContext}
+      />
+    )),
+  ];
 }

@@ -1,5 +1,6 @@
 import { scopeThreadRef } from "@onicode/client-runtime/environment";
 import { type EnvironmentId, RunId, ThreadId } from "@onicode/contracts";
+import { nextTerminalId } from "@onicode/shared/terminalLabels";
 import { beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { useClosedViewStore } from "./closedViewStore";
@@ -13,6 +14,7 @@ import {
   selectActiveRightPanelSurface,
   selectThreadPanelVisibility,
   selectThreadRightPanelState,
+  terminalIdsClaimedByPanel,
   useRightPanelStore,
 } from "./rightPanelStore";
 
@@ -1175,6 +1177,43 @@ describe("rightPanelStore", () => {
       terminalIds: ["term-2"],
       activeTerminalId: "term-2",
     });
+  });
+
+  it("drops terminals the server closed from every surface without a user action", () => {
+    const store = useRightPanelStore.getState();
+    store.openFile(refA, "src/app.ts");
+    store.openTerminal(refA, "term-1");
+    store.splitTerminal(refA, "terminal:term-1", "term-2");
+    store.splitTerminal(refA, "terminal:term-1", "term-4");
+    store.openTerminal(refA, "term-3");
+    const userActions = useRightPanelStore.getState().userActionRevisionByThreadKey;
+
+    store.dropTerminals(refA, ["term-1", "term-2", "term-3"]);
+
+    expect(selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA)).toEqual({
+      isOpen: true,
+      activeSurfaceId: "terminal:term-1",
+      surfaces: [
+        expect.objectContaining({ id: "file:src/app.ts" }),
+        expect.objectContaining({ id: "terminal:term-1", terminalIds: ["term-4"] }),
+      ],
+    });
+    expect(useRightPanelStore.getState().userActionRevisionByThreadKey).toBe(userActions);
+  });
+
+  it("does not hand out the id a split's tab is named after once its first pane closes", () => {
+    const store = useRightPanelStore.getState();
+    const surfaces = () =>
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA).surfaces;
+    store.openTerminal(refA, "term-1");
+    store.splitTerminal(refA, "terminal:term-1", "term-2");
+    store.closeTerminal(refA, "terminal:term-1", "term-1");
+
+    const nextId = nextTerminalId(terminalIdsClaimedByPanel(surfaces()));
+    store.openTerminal(refA, nextId);
+
+    expect(nextId).toBe("term-3");
+    expect(surfaces().map((surface) => surface.id)).toEqual(["terminal:term-1", "terminal:term-3"]);
   });
 
   it("closing the final terminal pane removes its surface and closes the panel", () => {
