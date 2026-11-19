@@ -1373,6 +1373,7 @@ function conversationProviderThread(
     OrchestrationV2ThreadProjection,
     "thread" | "providerThreads" | "runs" | "turnItems"
   >,
+  boundary: number,
 ): OrchestrationV2ProviderThread | undefined {
   const startedByScheduledFreshRun = (providerThread: OrchestrationV2ProviderThread) =>
     projection.runs.some(
@@ -1384,7 +1385,6 @@ function conversationProviderThread(
     (candidate) => candidate.id === projection.thread.activeProviderThreadId,
   );
   if (active === undefined) return active;
-  const boundary = contextBoundaryOrdinal(projection);
   // A pre-clear session that is still alive (background work) can become active again on its updates.
   if (!startedByScheduledFreshRun(active) && !providerThreadPredatesBoundary(active, boundary)) {
     return active;
@@ -1412,6 +1412,7 @@ function dispatchProviderThread(
   >,
   message: Pick<OrchestrationV2ConversationMessage, "notification" | "delegatedCompletion">,
   freshContext: boolean,
+  projectionContextBoundary: number,
 ): OrchestrationV2ProviderThread | undefined {
   return freshContext ||
     message.notification !== undefined ||
@@ -1419,7 +1420,7 @@ function dispatchProviderThread(
     ? projection.providerThreads.find(
         (candidate) => candidate.id === projection.thread.activeProviderThreadId,
       )
-    : conversationProviderThread(projection);
+    : conversationProviderThread(projection, projectionContextBoundary);
 }
 
 /** Threads with no started run (imported, or reserved by another queued run) never cross it. */
@@ -2600,8 +2601,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       );
       const followsCurrent = followsCurrentConversation(queuedMessage);
       const freshContext = queuedRun.freshContext === true;
-      const activeProviderThread = dispatchProviderThread(projection, queuedMessage, freshContext);
-      const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
+      const projectionContextBoundary = contextBoundaryOrdinal(projection);
+      const activeProviderThread = dispatchProviderThread(
+        projection,
+        queuedMessage,
+        freshContext,
+        projectionContextBoundary,
+      );
+      const contextBoundary = freshContext ? ordinal : projectionContextBoundary;
       // A run queued before a fresh run started is bound to the conversation that run left behind.
       const followsLatestContext =
         !freshContext &&
@@ -7505,10 +7512,12 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       return;
     }
 
+    const projectionContextBoundary = contextBoundaryOrdinal(projection);
     const activeProviderThread = dispatchProviderThread(
       projection,
       { ...command, delegatedCompletion },
       freshContext,
+      projectionContextBoundary,
     );
     const activeRun = projection.runs.find(isActiveRun);
     // Messages after failed or stopped worktree setup must wait for a worktree,
@@ -7992,7 +8001,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     const ordinal = nextRunOrdinal(projection);
     const runId = idAllocator.derive.run({ threadId: command.threadId, ordinal });
-    const contextBoundary = freshContext ? ordinal : contextBoundaryOrdinal(projection);
+    const contextBoundary = freshContext ? ordinal : projectionContextBoundary;
     const latestCompletedRun = projection.runs.findLast((run) => run.status === "completed");
     const latestHandoffRun = projection.runs.findLast(isHandoffSourceRun);
     const legacyImportItems =
