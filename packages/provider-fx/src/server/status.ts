@@ -71,23 +71,29 @@ interface FxBackendProbe {
 
 /**
  * "Default" runs what fx would start a new session on in the thread's
- * folder; the label shows the machine-wide choice. Other models carry their
- * backend in the slug, and only signed-in backends list any.
+ * folder; the label shows the machine-wide choice, and it is left out while
+ * that choice's backend is signed out. Other models carry their backend in
+ * the slug, and only signed-in backends list any.
  */
 const fxModels = (
   settings: FxSettings,
   defaultModel?: string,
   backends: ReadonlyArray<FxBackendProbe> = [],
+  defaultSignedOut = false,
 ): ReadonlyArray<ServerProviderModel> =>
   providerModelsFromSettings(
     [
-      {
-        slug: FX_DEFAULT_MODEL_SLUG,
-        name: defaultModel === undefined ? "Default" : `Default (${defaultModel})`,
-        isCustom: false,
-        isDefault: true,
-        capabilities: FX_MODEL_CAPABILITIES,
-      },
+      ...(defaultSignedOut
+        ? []
+        : [
+            {
+              slug: FX_DEFAULT_MODEL_SLUG,
+              name: defaultModel === undefined ? "Default" : `Default (${defaultModel})`,
+              isCustom: false,
+              isDefault: true,
+              capabilities: FX_MODEL_CAPABILITIES,
+            },
+          ]),
       ...backends.flatMap((backend) =>
         backend.signedIn === false
           ? []
@@ -121,13 +127,14 @@ const snapshot = (
   defaultModel?: string,
   backends: ReadonlyArray<FxBackendProbe> = [],
   fullAccess = false,
+  defaultSignedOut = false,
 ): ServerProviderDraft => ({
   ...buildServerProvider({
     driver: FX_DRIVER_KIND,
     presentation: fxPresentation(fullAccess),
     enabled: settings.enabled,
     checkedAt,
-    models: fxModels(settings, defaultModel, backends),
+    models: fxModels(settings, defaultModel, backends, defaultSignedOut),
     probe,
   }),
   ...(backends.length > 0 ? { subProviders: fxSubProviders(backends) } : {}),
@@ -398,6 +405,7 @@ export const checkFxProviderStatus = Effect.fn("checkFxProviderStatus")(function
     defaultModel,
     backends,
     status?.modes?.some((mode) => mode.id === FX_FULL_ACCESS_MODE_ID) ?? false,
+    defaultBackend?.signedIn === false,
   );
 });
 

@@ -263,10 +263,10 @@ describe("checkFxProviderStatus", () => {
         draft.message,
         "fx's default backend, Vercel AI Gateway, is signed out. Pick a model on another backend or sign in.",
       );
-      // The gateway lists its public catalog signed out, but none of it can run.
+      // The gateway lists its public catalog signed out, but none of it can run, and neither can Default.
       assert.deepEqual(
         draft.models.map((model) => model.slug),
-        ["default", "codex:gpt-5.5"],
+        ["codex:gpt-5.5"],
       );
 
       // An earlier backend whose sign-in fx could not report does not hide Codex's.

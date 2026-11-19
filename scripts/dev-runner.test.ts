@@ -473,6 +473,37 @@ it.layer(NodeServices.layer)("dev-runner", (it) => {
       }),
     );
 
+    it.effect("treats a link to ~/.onicode or its userdata as the live install", () =>
+      Effect.gen(function* () {
+        const fs = yield* FileSystem.FileSystem;
+        const path = yield* Path.Path;
+        const home = yield* fs.makeTempDirectoryScoped({ prefix: "oni-devrunner-home-" });
+        yield* fs.makeDirectory(path.join(home, ".onicode", "userdata"), { recursive: true });
+        yield* fs.symlink(path.join(home, ".onicode"), path.join(home, "live-link"));
+        yield* fs.makeDirectory(path.join(home, "userdata-link"));
+        yield* fs.symlink(
+          path.join(home, ".onicode", "userdata"),
+          path.join(home, "userdata-link", "userdata"),
+        );
+
+        for (const oniHome of ["live-link", "userdata-link"]) {
+          const env = yield* createDevRunnerEnv({
+            mode: "dev",
+            baseEnv: {},
+            serverOffset: 0,
+            webOffset: 0,
+            oniHome: path.join(home, oniHome),
+            autoBootstrapProjectFromCwd: undefined,
+            logWebSocketEvents: undefined,
+            host: undefined,
+            port: undefined,
+            devUrl: undefined,
+          }).pipe(Effect.provideService(HostProcess.HomeDirectory, home));
+          assert.equal(env.ONICODE_HOME, undefined, oniHome);
+        }
+      }).pipe(Effect.scoped),
+    );
+
     it.effect("reports non-zero exits without manufacturing a cause", () => {
       const spawnerLayer = Layer.succeed(
         ChildProcessSpawner.ChildProcessSpawner,

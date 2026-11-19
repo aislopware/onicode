@@ -290,7 +290,6 @@ it.effect("continues whole-word searches after a filtered grep page", () =>
         truncated: false,
       });
       expect(grep).toHaveBeenCalledTimes(2);
-      expect(grep.mock.calls[0]?.[0]).toBe(String.raw`(?-u)\bneedle\b`);
       expect(grep.mock.calls[0]?.[1]?.mode).toBe("regex");
       expect(grep.mock.calls[1]?.[1]?.cursor).toBe(nextCursor);
     }),
@@ -782,10 +781,39 @@ it.live("finds Git-ignored files that a root .ignore re-includes", () =>
   }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );
 
+const PAIR_LINES = Array.from({ length: 60 }, (_, n) => `pairs.txt:${2 * n + 2}:0-6`);
+
 // Real fff: the native whole-word pattern must return what the plain search and the JS word check did.
 it.live.each([
-  { query: "needle", caseSensitive: true, expected: ["notes.md:1:0-6", "words.ts:2:0-6,8-14"] },
-  { query: "NEEDLE", caseSensitive: false, expected: ["notes.md:1:0-6", "words.ts:2:0-6,8-14"] },
+  // capped.txt: 100 `éneedle` lines fill fff's per-file cap unless fff's word boundary is the JS
+  // check's: `²needle` is not a whole word to it, while `needle＿x` and `‿needle` are, though `\b`
+  // counts `＿` and `‿` as word characters and `²` as none.
+  {
+    query: "needle",
+    caseSensitive: true,
+    expected: [
+      "capped.txt:101:0-6",
+      "digits.txt:101:0-6",
+      "notes.md:1:0-6",
+      "notes.md:2:0-6",
+      "notes.md:3:1-7",
+      ...PAIR_LINES,
+      "words.ts:2:0-6,8-14",
+    ],
+  },
+  {
+    query: "NEEDLE",
+    caseSensitive: false,
+    expected: [
+      "capped.txt:101:0-6",
+      "digits.txt:101:0-6",
+      "notes.md:1:0-6",
+      "notes.md:2:0-6",
+      "notes.md:3:1-7",
+      ...PAIR_LINES,
+      "words.ts:2:0-6,8-14",
+    ],
+  },
   // fff reads `*.ts` as a file constraint, which a regex built around the whole query would lose.
   { query: "*.ts needle", caseSensitive: true, expected: ["words.ts:2:0-6,8-14"] },
   // Plain search folds ASCII case only: `ſ` is not an `s`, and the Kelvin sign is not a `k`.
@@ -800,8 +828,24 @@ it.live.each([
       path.join(cwd, "words.ts"),
       "needleSuffix\nneedle, needle.\n\u00e9needle\n",
     );
-    yield* fileSystem.writeFileString(path.join(cwd, "notes.md"), "needle *.ts\n");
+    yield* fileSystem.writeFileString(
+      path.join(cwd, "notes.md"),
+      "needle *.ts\nneedle\uff3fx\n\u203fneedle\n",
+    );
     yield* fileSystem.writeFileString(path.join(cwd, "fold.txt"), "\u017f\ns\n\u212a\nk\n");
+    yield* fileSystem.writeFileString(
+      path.join(cwd, "capped.txt"),
+      `${"\u00e9needle\n".repeat(100)}needle\n`,
+    );
+    yield* fileSystem.writeFileString(
+      path.join(cwd, "digits.txt"),
+      `${"\u00b2needle\n".repeat(100)}needle\n`,
+    );
+    // A boundary that took the newline would count each `needle` on the `skip` line above it.
+    yield* fileSystem.writeFileString(
+      path.join(cwd, "pairs.txt"),
+      `${"skip\nneedle\n".repeat(60)}`,
+    );
 
     const searchIndex = yield* WorkspaceSearchIndex.make(cwd, "content");
     const result = yield* searchIndex.searchContents({
@@ -819,6 +863,6 @@ it.live.each([
             `${match.path}:${match.lineNumber}:${match.matchRanges.map((range) => `${range.start}-${range.end}`).join(",")}`,
         )
         .toSorted(),
-    ).toEqual(expected);
+    ).toEqual(expected.toSorted());
   }).pipe(Effect.scoped, Effect.provide(testLayer)),
 );

@@ -78,7 +78,7 @@ const isSqliteBusy = (cause: unknown) =>
     ("code" in cause && cause.code === "SQLITE_BUSY"));
 
 // Pre-lock servers publish only runtime state; require start-time proof of PID reuse before treating it as stale.
-const legacyOwnerIsLive = Effect.fn("legacyOwnerIsLive")(function* (
+export const legacyOwnerIsLive = Effect.fn("legacyOwnerIsLive")(function* (
   state: PersistedServerRuntimeState,
 ) {
   if (!isProcessAlive(state.pid)) return false;
@@ -219,6 +219,7 @@ export const holdServerOwnershipLock = Effect.fn("holdServerOwnershipLock")(func
 /** Hold an exclusive lock on the state directory until the scope closes. */
 export const acquireServerOwnership = Effect.fn("acquireServerOwnership")(function* (
   statePath: string,
+  options?: { readonly clearCrashedRecord?: boolean },
 ) {
   const stateDir = NodePath.dirname(statePath);
   const random = yield* SecureRandom.SecureRandom;
@@ -241,6 +242,15 @@ export const acquireServerOwnership = Effect.fn("acquireServerOwnership")(functi
   const previous = yield* readPersistedServerRuntimeState(statePath).pipe(
     Effect.orElseSucceed(() => Option.none<PersistedServerRuntimeState>()),
   );
+  // A lock-aware owner's record outlived it. Until a starting server publishes, the CLI reads
+  // the record while the lock is busy, and its pid may belong to another process by now.
+  if (
+    options?.clearCrashedRecord &&
+    Option.isSome(previous) &&
+    previous.value.ownerId !== undefined
+  ) {
+    yield* clearPersistedServerRuntimeState(statePath).pipe(Effect.ignore({ log: true }));
+  }
   if (
     Option.isSome(previous) &&
     previous.value.ownerId === undefined &&
@@ -252,7 +262,6 @@ export const acquireServerOwnership = Effect.fn("acquireServerOwnership")(functi
   if (olderServiceHome !== undefined) {
     return yield* new OlderBootServiceError({ baseDir: olderServiceHome });
   }
-
   yield* Effect.gen(function* () {
     let lost = lock.replacedDuringAcquire;
     let statWarningLogged = false;

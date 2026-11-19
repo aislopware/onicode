@@ -8,6 +8,8 @@ import * as previewActions from "../components/preview/previewActionBus";
 import * as settings from "../hooks/useSettings";
 import * as storage from "../hooks/useLocalStorage";
 import * as threadActions from "../lib/chatThreadActions";
+import * as previewFocus from "../lib/previewFocus";
+import { isMacPlatform } from "../lib/utils";
 import * as entities from "../state/entities";
 import * as projectsState from "../state/projects";
 import * as session from "../state/session";
@@ -104,5 +106,46 @@ describe("preview commands", () => {
     register.mock.calls[0]![0][command]!(event);
 
     expect(dispatch).toHaveBeenCalledWith(action);
+  });
+
+  it("zooms the preview from a custom chord without browser focus, leaving app zoom alone", () => {
+    const draftId = DraftId.make("draft-1");
+    useComposerDraftStore
+      .getState()
+      .setProjectDraftThreadId(
+        { environmentId: EnvironmentId.make("local"), projectId: ProjectId.make("active") },
+        draftId,
+      );
+    using stack = new DisposableStack();
+    stack.defer(() => useComposerDraftStore.getState().clearDraftThread(draftId));
+    using _scope = vi.spyOn(session, "readEnvironmentScope").mockReturnValue(true);
+    using _focus = vi.spyOn(previewFocus, "isBrowserSurfaceFocused").mockReturnValue(false);
+    using dispatch = vi.spyOn(previewActions, "dispatchPreviewAction").mockImplementation(() => {});
+    using register = vi.spyOn(dispatcher, "registerCommands").mockReturnValue(() => {});
+    const router = {
+      state: { matches: [{ routeId: "/_chat/draft/$draftId", params: { draftId } }] },
+    } as unknown as AnyRouter;
+    stack.defer(installChatRouteCommands(router));
+    const zoomIn = register.mock.calls[0]![0]["preview.zoomIn"]!;
+    const mac = isMacPlatform(navigator.platform);
+    const press = (init: Partial<KeyboardEvent>) =>
+      ({
+        metaKey: false,
+        ctrlKey: false,
+        shiftKey: false,
+        altKey: false,
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+        ...init,
+      }) as unknown as KeyboardEvent;
+
+    expect(zoomIn(press({ key: "=", metaKey: mac, ctrlKey: !mac }))).toBe(false);
+    expect(dispatch).not.toHaveBeenCalled();
+
+    zoomIn(press({ key: "I", ctrlKey: true, shiftKey: true }));
+    expect(dispatch).toHaveBeenCalledWith("zoom-in");
+    // Shift+Mod+0 is no app zoom, so a custom binding on it reaches the preview.
+    zoomIn(press({ key: ")", code: "Digit0", metaKey: mac, ctrlKey: !mac, shiftKey: true }));
+    expect(dispatch).toHaveBeenCalledTimes(2);
   });
 });

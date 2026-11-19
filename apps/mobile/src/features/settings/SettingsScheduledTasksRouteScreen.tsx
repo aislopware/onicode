@@ -481,7 +481,7 @@ function SettingsScheduledTaskEditorScreen({ title }: { readonly title: string }
   });
   const preventRemove = hasChanges || saving;
   const guardRemoval = (action: NavigationAction) => {
-    if (saved.current) {
+    if (saved.current || !scheduledTaskEditorBlocksRemoval()) {
       navigation.dispatch(action);
       return;
     }

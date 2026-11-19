@@ -176,6 +176,14 @@ export function resolveShortcutCommand(
   keybindings: ResolvedKeybindingsConfig,
   options?: ShortcutMatchOptions,
 ): KeybindingCommand | null {
+  return resolveShortcutBinding(event, keybindings, options)?.command ?? null;
+}
+
+function resolveShortcutBinding(
+  event: ShortcutEventLike,
+  keybindings: ResolvedKeybindingsConfig,
+  options?: ShortcutMatchOptions,
+): ResolvedKeybindingRule | null {
   const platform = resolvePlatform(options);
   const context = resolveContext(options);
   if (options?.context?.editableFocus === undefined && typeof document !== "undefined") {
@@ -187,7 +195,7 @@ export function resolveShortcutCommand(
     if (!binding) continue;
     if (!matchesWhenClause(binding.whenAst, context)) continue;
     if (!matchesKeybindingShortcut(event, shortcutForContext(binding, context), platform)) continue;
-    return binding.command;
+    return binding;
   }
   return null;
 }
@@ -374,14 +382,30 @@ export function isDiffToggleShortcut(
   return matchesCommandShortcut(event, keybindings, "diff.toggle", options);
 }
 
+function isBareCtrlB(event: ShortcutEventLike): boolean {
+  return (
+    event.ctrlKey &&
+    !event.metaKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    resolveEventKeys(event).has("b")
+  );
+}
+
 export function isSidebarToggleShortcut(
   event: ShortcutEventLike,
   keybindings: ResolvedKeybindingsConfig,
   options?: ShortcutMatchOptions,
 ): boolean {
-  // A focused terminal owns Ctrl chords, such as tmux's Ctrl+B prefix; Cmd never reaches it.
-  if (event.ctrlKey && options?.context?.terminalFocus) return false;
-  return matchesCommandShortcut(event, keybindings, "sidebar.toggle", options);
+  const binding = resolveShortcutBinding(event, keybindings, options);
+  if (binding?.command !== "sidebar.toggle") return false;
+  if (!options?.context?.terminalFocus || !isBareCtrlB(event)) return true;
+  // A focused terminal keeps bare Ctrl+B, tmux's prefix, unless the binding applies only there.
+  const context = resolveContext(options);
+  return (
+    binding.whenAst !== undefined &&
+    !evaluateWhenNode(binding.whenAst, { ...context, terminalFocus: false })
+  );
 }
 
 export function isOpenFavoriteEditorShortcut(

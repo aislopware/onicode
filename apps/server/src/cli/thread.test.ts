@@ -19,6 +19,8 @@ import { Command } from "effect/cli";
 import { vi } from "vite-plus/test";
 
 import * as McpBridge from "../mcp/AcpMcpStdioBridge.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import * as ServerOwnership from "../serverOwnership.ts";
 import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
@@ -75,12 +77,19 @@ it.effect(
         { id: ProjectId.make("nested-project"), title: "Nested", workspaceRoot: nestedRoot },
         { id: ProjectId.make("~/literal-id"), title: "Exact id", workspaceRoot: cwd },
       ];
+      const statePath = path.join(baseDir, "userdata", "server-runtime.json");
+      yield* ServerOwnership.acquireServerOwnership(statePath).pipe(
+        Effect.provide(ProcessRunner.layer),
+      );
       yield* persistServerRuntimeState({
-        path: path.join(baseDir, "userdata", "server-runtime.json"),
-        state: yield* makePersistedServerRuntimeState({
-          config: { host: "127.0.0.1", dev: false },
-          port: 3_773,
-        }),
+        path: statePath,
+        state: {
+          ...(yield* makePersistedServerRuntimeState({
+            config: { host: "127.0.0.1", dev: false },
+            port: 3_773,
+          })),
+          ownerId: "test-owner",
+        },
       });
       using _session = vi.spyOn(McpBridge, "mcpToolSession").mockReturnValue(
         Effect.succeed({
@@ -140,7 +149,14 @@ it.effect(
     ),
 );
 
-it.effect("does not sign in to whatever took over a dead server's port", () =>
+// The lock is free in every row; a live pid stands in for one reused by another process.
+it.effect.each([
+  // Above Linux's PID ceiling, as in pair.test.ts: no process can hold it.
+  { name: "a dead pid", pid: 4_194_305 },
+  { name: "a live pid", pid: process.pid },
+  // A pre-lock record has no owner id; this process started after it was written, so it reused the pid.
+  { name: "a pre-lock record's reused pid", pid: process.pid, preLock: true },
+])("does not sign in to whatever took over a dead server's port with $name", ({ pid, ...row }) =>
   Effect.gen(function* () {
     const fs = yield* FileSystem.FileSystem;
     const path = yield* Path.Path;
@@ -151,8 +167,11 @@ it.effect("does not sign in to whatever took over a dead server's port", () =>
     });
     yield* persistServerRuntimeState({
       path: path.join(baseDir, "userdata", "server-runtime.json"),
-      // Above Linux's PID ceiling, as in pair.test.ts: no process can hold it.
-      state: { ...state, pid: 4_194_305 },
+      // An owner id skips the legacy liveness probe, so only the lock decides.
+      state:
+        "preLock" in row
+          ? { ...state, pid, startedAt: "2000-01-01T00:00:00.000Z" }
+          : { ...state, pid, ownerId: "crashed-owner" },
     });
     using session = vi
       .spyOn(McpBridge, "mcpToolSession")

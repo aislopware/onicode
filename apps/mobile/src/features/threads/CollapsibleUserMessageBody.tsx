@@ -24,12 +24,17 @@ export function CollapsibleUserMessageBody(props: {
 }) {
   const gradientId = `user-message-fade-${useId().replaceAll(":", "")}`;
   const contentRef = useRef<ViewInstance>(null);
+  const measuredWidth = useRef<number | null>(null);
   const [tallEnough, setTallEnough] = useState(false);
+  const [remeasure, setRemeasure] = useState(0);
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- the fold depends on the rendered height; measuring before paint avoids one unfolded frame
   useLayoutEffect(() => {
-    const height = contentRef.current?.getBoundingClientRect().height;
-    if (height !== undefined) setTallEnough(isTallEnoughToFold(height));
-  }, []);
+    const rect = contentRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    measuredWidth.current = rect.width;
+    setTallEnough(isTallEnoughToFold(rect.height));
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a width change while folded measures the unfolded text again.
+  }, [remeasure]);
   const canCollapse = props.collapsible && tallEnough;
   const collapsed = canCollapse && !props.expanded;
 
@@ -39,8 +44,19 @@ export function CollapsibleUserMessageBody(props: {
         <View
           ref={contentRef}
           onLayout={(event: LayoutChangeEvent) => {
+            const { width, height } = event.nativeEvent.layout;
+            if (!collapsed) {
+              measuredWidth.current = width;
+              setTallEnough(isTallEnoughToFold(height));
+              return;
+            }
             // Folded, Yoga reports the clipped height, which would read as short and unfold it in a loop.
-            if (!collapsed) setTallEnough(isTallEnoughToFold(event.nativeEvent.layout.height));
+            // A new width can make the text fit, so unfold once and measure again before paint.
+            if (Math.abs(width - (measuredWidth.current ?? width)) >= 1) {
+              measuredWidth.current = width;
+              setTallEnough(false);
+              setRemeasure((count) => count + 1);
+            }
           }}
         >
           {props.children}

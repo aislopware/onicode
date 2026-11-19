@@ -511,11 +511,26 @@ export const runMigrateDevDb = Effect.fn("runMigrateDevDb")(function* (
   if (!(yield* fs.exists(sourcePath))) {
     return yield* new MigrateDevDbSourceMissingError({ sourcePath });
   }
-  const [canonicalBaseDir, canonicalSharedHome] = yield* Effect.all([
-    fs.realPath(baseDir).pipe(Effect.orElseSucceed(() => baseDir)),
-    fs.realPath(sharedHome).pipe(Effect.orElseSucceed(() => sharedHome)),
-  ]);
-  if (canonicalBaseDir === canonicalSharedHome) {
+  // Device and inode, as macOS paths can differ in case or go through a firmlink.
+  const identity = (target: string) =>
+    fs.stat(target).pipe(
+      Effect.flatMap((info) =>
+        Option.match(info.ino, {
+          onNone: () => fs.realPath(target),
+          onSome: (ino) => Effect.succeed(`${info.dev}:${ino}`),
+        }),
+      ),
+      Effect.orElseSucceed(() => target),
+    );
+  const [canonicalBaseDir, canonicalSharedHome, canonicalStateDir, canonicalSharedStateDir] =
+    yield* Effect.all([
+      identity(baseDir),
+      identity(sharedHome),
+      identity(stateDir),
+      identity(path.join(sharedHome, "userdata")),
+    ]);
+  // A home whose userdata links to the shared one would rewrite the shared database.
+  if (canonicalBaseDir === canonicalSharedHome || canonicalStateDir === canonicalSharedStateDir) {
     return yield* new MigrateDevDbSharedHomeError();
   }
   // Both destination and snapshot are deleted below; reject sources resolving to either.

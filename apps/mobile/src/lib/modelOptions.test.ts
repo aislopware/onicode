@@ -38,6 +38,7 @@ describe("mobile model options", () => {
           displayName: "OpenCode Work",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: sources.map((source) => ({
             slug: `${source.id}/claude-fable-5`,
@@ -86,6 +87,7 @@ describe("mobile model options", () => {
           displayName: "fx",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           subProviders,
           models: [
@@ -116,6 +118,36 @@ describe("mobile model options", () => {
     ]);
   });
 
+  it("offers only providers the desktop picker offers", () => {
+    const provider = (instanceId: string, update: Record<string, unknown> = {}) => ({
+      instanceId,
+      driver: "codex",
+      enabled: true,
+      installed: true,
+      status: "ready",
+      auth: { status: "authenticated" },
+      models: [{ slug: "test", name: instanceId, isCustom: false, capabilities: null }],
+      ...update,
+    });
+    const config = {
+      providers: [
+        provider("codex"),
+        provider("codex_failed", { status: "error" }),
+        provider("codex_retained", { status: "error", modelsRetained: true }),
+      ],
+    } as unknown as ServerConfig;
+
+    expect(
+      buildModelOptions(config, null, undefined, null).map((option) => option.providerKey),
+    ).toEqual(["codex", "codex_retained"]);
+    // A saved selection on a provider the picker leaves out stays, but cannot be picked.
+    const saved = { instanceId: ProviderInstanceId.make("codex_failed"), model: "test" };
+    expect(buildModelOptions(config, saved, undefined, null).at(-1)).toMatchObject({
+      selection: saved,
+      isUnavailable: true,
+    });
+  });
+
   it("does not materialize catalog defaults for missing stored options", () => {
     const config = {
       providers: [
@@ -125,6 +157,7 @@ describe("mobile model options", () => {
           displayName: "Codex",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [
             {
@@ -216,6 +249,7 @@ describe("mobile model options", () => {
       driver: instanceId,
       enabled: true,
       installed: true,
+      status: "ready",
       auth: { status: "authenticated" },
       models: [{ slug: "test", name: instanceId, capabilities: null }],
     }));
@@ -243,6 +277,7 @@ describe("mobile model options", () => {
         ...provider,
         enabled: true,
         installed: true,
+        status: "ready",
         auth: { status: "authenticated" },
         models: [{ slug: "test", name: "Test", capabilities: null }],
       })),
@@ -265,6 +300,7 @@ describe("mobile model options", () => {
         ...provider,
         enabled: true,
         installed: true,
+        status: "ready",
         auth: { status: "authenticated" },
         models: [{ slug: "test", name: "Test", capabilities: null }],
       })),
@@ -290,6 +326,7 @@ describe("mobile model options", () => {
         ...provider,
         enabled: true,
         installed: true,
+        status: "ready",
         auth: { status: "authenticated" },
         models: [{ slug: "test", name: "Test", capabilities: null }],
       })),
@@ -327,6 +364,7 @@ describe("mobile model options", () => {
         driver: "acpRegistry",
         enabled: true,
         installed: true,
+        status: "ready",
         auth: { status: "authenticated" },
         models: [{ slug: "test", name: "Test", capabilities: null }],
       })),
@@ -367,6 +405,7 @@ describe("mobile model options", () => {
         displayName: "Google Work",
         enabled: state !== "disabled",
         installed: true,
+        status: "ready",
         availability: state === "unavailable" ? "unavailable" : "available",
         auth: { status: "authenticated" },
         models: [{ slug: selection.model, name: "Saved model", capabilities: null }],
@@ -390,6 +429,7 @@ describe("mobile model options", () => {
           driver: "codex",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [],
         },
@@ -398,6 +438,7 @@ describe("mobile model options", () => {
           driver: "claudeAgent",
           enabled: false,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [],
         },
@@ -458,6 +499,7 @@ describe("mobile model options", () => {
           displayName: "Google Work",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [model],
         },
@@ -578,6 +620,7 @@ describe("mobile model options", () => {
           displayName: "Codex",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [
             { slug: "gpt-5.6-sol", name: "GPT-5.6 Sol", isCustom: false, capabilities: null },
@@ -650,6 +693,7 @@ describe("mobile model options", () => {
             displayName: "Codex Work",
             enabled: true,
             installed: true,
+            status: "ready",
             auth: { status: "authenticated" },
             models: [{ slug: "model-a", name: "Model A", isCustom: false, capabilities: null }],
           },
@@ -747,6 +791,7 @@ describe("mobile model options", () => {
             displayName: "Antigravity Work",
             enabled: true,
             installed: true,
+            status: "ready",
             auth: { status: "authenticated" },
             availability: "available",
             models: [{ slug: "model-a", name: "Model A", isCustom: false, capabilities: null }],
@@ -805,6 +850,7 @@ describe("synchronized mobile model visibility", () => {
       driver: "codex",
       enabled: true,
       installed: true,
+      status: "ready",
       auth: { status: "authenticated" },
       models,
     })),
@@ -877,6 +923,7 @@ describe("synchronized mobile model visibility", () => {
           driver: "codex",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [{ slug: "gpt-5.6-sol", name: "GPT", isCustom: false, capabilities: null }],
         },
@@ -885,6 +932,7 @@ describe("synchronized mobile model visibility", () => {
           driver: "claudeAgent",
           enabled: true,
           installed: true,
+          status: "ready",
           auth: { status: "authenticated" },
           models: [
             { slug: "claude-sonnet-5", name: "Sonnet", isCustom: false, capabilities: null },

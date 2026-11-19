@@ -566,6 +566,16 @@ it.layer(NodeServices.layer)("migrate-dev-db", (it) => {
         { sharedHome: sourceDir },
       ).pipe(Effect.flip);
       assert.equal(error._tag, "MigrateDevDbSharedHomeError");
+
+      // A home whose userdata links to the shared userdata is the shared home too.
+      const path = yield* Path.Path;
+      const linkedHome = yield* fs.makeTempDirectoryScoped({ prefix: "migrate-dev-db-linked-" });
+      yield* fs.symlink(path.join(sourceDir, "userdata"), path.join(linkedHome, "userdata"));
+      const linked = yield* runMigrateDevDb(
+        { baseDir: linkedHome, source, projects: 5, threadsPerProject: 10 },
+        { sharedHome: sourceDir },
+      ).pipe(Effect.flip);
+      assert.equal(linked._tag, "MigrateDevDbSharedHomeError");
     }),
   );
 });

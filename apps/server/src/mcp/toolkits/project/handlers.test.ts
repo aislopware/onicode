@@ -814,6 +814,50 @@ it.effect("a defaulted worktree launch stays shared only when Git says HEAD has 
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
+// Without LANG, macOS Git follows the system language, as in an app launched from Finder.
+it.effect(
+  "a defaulted worktree launch outside a repository stays shared under a localized Git",
+  () =>
+    Effect.gen(function* () {
+      const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];
+      const { projectId, dependencies } = clientLaunchHarness({
+        runtimeModeCeiling: "auto",
+        launched,
+        defaultThreadEnvMode: "worktree",
+      });
+      const localizedGit = Layer.mock(GitVcsDriver.GitVcsDriver)({
+        execute: (input) =>
+          Effect.succeed({
+            exitCode: ChildProcessSpawner.ExitCode(128),
+            stdout: "",
+            stderr:
+              input.env?.LANGUAGE === "C"
+                ? "fatal: not a git repository (or any of the parent directories): .git\n"
+                : "schwerwiegend: Kein Git-Repository (oder irgendeines der Elternverzeichnisse): .git\n",
+            stdoutTruncated: false,
+            stderrTruncated: false,
+          }),
+      });
+      const toolkit = yield* ProjectToolkit.pipe(
+        Effect.provide(
+          McpToolAccess.HandlersLayer.layer(ProjectHandlers.layer).pipe(
+            Layer.provide(localizedGit),
+            Layer.provide(dependencies),
+          ),
+        ),
+      );
+      yield* toolkit
+        .handle("oni_thread_launch", { title: "Fix", projectId })
+        .pipe(
+          Stream.unwrap,
+          Stream.runCollect,
+          Effect.provide(Layer.merge(dependencies, localizedGit)),
+        );
+
+      expect(launched.map((launch) => launch.workspaceStrategy.type)).toEqual(["root"]);
+    }),
+);
+
 it.effect("a launch into a new worktree creates nothing when its branch collides", () =>
   Effect.gen(function* () {
     const launched: Array<ThreadLaunch.ThreadLaunchInput> = [];

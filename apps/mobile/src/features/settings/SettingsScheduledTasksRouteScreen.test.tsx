@@ -6,6 +6,7 @@ import {
   ScheduledTaskId,
   type ScheduledTask,
 } from "@onicode/contracts";
+import * as Cause from "effect/Cause";
 import { Atom } from "effect/reactivity";
 import { act, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
@@ -16,6 +17,7 @@ const { Children, mocks } = vi.hoisted(() => ({
   mocks: {
     upsert: vi.fn(),
     alert: vi.fn(),
+    dispatch: vi.fn(),
     tasks: [] as ScheduledTask[],
     preventRemove: { prevent: false, guard: (_event: { data: { action: unknown } }) => {} },
     beforeRemove: new Set<(event: RemoveEvent) => void>(),
@@ -24,6 +26,7 @@ const { Children, mocks } = vi.hoisted(() => ({
 type RemoveEvent = { data: { action: unknown }; preventDefault: () => void };
 const navigation = {
   isFocused: () => false,
+  dispatch: (action: unknown) => mocks.dispatch(action),
   addListener: (_type: "beforeRemove", listener: (event: RemoveEvent) => void) => {
     mocks.beforeRemove.add(listener);
     return () => mocks.beforeRemove.delete(listener);
@@ -178,6 +181,7 @@ beforeEach(() => {
   container = document.createElement("div");
   root = createRoot(container);
   mocks.alert.mockReset();
+  mocks.dispatch.mockReset();
   mocks.upsert.mockReset();
   mocks.upsert.mockResolvedValue({ _tag: "Success" });
   const task: ScheduledTask = {
@@ -278,6 +282,18 @@ describe("scheduled task batched edits", () => {
     expect(kept).toBe(true);
     expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Saving task", expect.any(String));
     await act(async () => held.resolve({ _tag: "Success" }));
+  });
+  it("lets a link close the clean editor when it lands in the same batch as a failed Save", async () => {
+    const held = Promise.withResolvers<{ _tag: "Failure"; cause: Cause.Cause<Error> }>();
+    mocks.upsert.mockReturnValue(held.promise);
+    act(() => button("Save changes").click());
+    await act(async () => {
+      held.resolve({ _tag: "Failure", cause: Cause.fail(new Error("offline")) });
+      await held.promise;
+      removeEditor();
+    });
+    expect(mocks.alert).toHaveBeenCalledExactlyOnceWith("Could not save task", expect.any(String));
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith({ type: "RESET" });
   });
   it("keeps an edit made while Save ran as unsaved instead of taking it as saved", async () => {
     const held = Promise.withResolvers<{ _tag: "Success" }>();
