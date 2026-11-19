@@ -125,11 +125,17 @@ export function resolvePromptLinkModelSelection(
   request: { readonly provider: string; readonly model: string | null },
 ): { readonly selection: ModelSelection; readonly exact: boolean } | null {
   const driver = PROVIDER_ALIASES[request.provider] ?? request.provider;
-  // The pickers offer the same instances.
   const usable = providers.filter(
-    (provider) => provider.driver.toLowerCase() === driver && isProviderPickerReady(provider),
+    (provider) =>
+      provider.driver.toLowerCase() === driver &&
+      provider.enabled &&
+      provider.availability !== "unavailable",
   );
-  const instance = usable.find((provider) => provider.status === "ready") ?? usable[0];
+  // Last, an instance whose check failed but whose models the pickers still offer.
+  const instance =
+    usable.find((provider) => provider.status === "ready") ??
+    usable.find((provider) => provider.status === "warning") ??
+    usable.find(isProviderPickerReady);
   if (instance === undefined) return null;
   const requested =
     request.model === null
