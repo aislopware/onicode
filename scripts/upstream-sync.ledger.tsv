@@ -2743,3 +2743,4 @@ dbee5a0af0	take	saves report their own outcome; relay registration, managedAuth 
 938feb3246	skip	T3 Connect headless CLI login (CliTokenManager), removed in Onicode
 f6881ceba0	take	fix(acp-registry): keep managed npm commands out of user PATH (#37542)
 3f5cc38805	skip	T3 Connect device approval (requires_connect_approval, auth_connect_devices), which Onicode removed; Onicode's revoke query already excludes consumed links
+571c27acab	take	fix(server): MCP apps resume an idle Codex thread in its own workspace (#38468)
