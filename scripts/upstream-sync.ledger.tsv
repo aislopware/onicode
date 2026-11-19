@@ -2735,4 +2735,4 @@ d32df2d34c	take	fix(server): native session replacement fails honestly when the 
 1e70210250	take	perf(server): avoid discarded history when retrieving remote task results (#26664)
 1e9f4c45c3	take	fix(triage): file labeled reports through the issue template (#31321)
 6d05c5f496	take	fix(server): HTML reports in dot-prefixed folders no longer open as Not Found (#38210); scenario ported to the desktop target (ControlOrMeta+p)
-0f32645852	skip	kept Onicode's node --watch dev script: the fix is for NTFS access-time events on Windows, which Onicode does not support (macOS arm64 and Linux x64); Node's built-in watch works there, so the 99-line custom watcher is heavier than Onicode needs
+0f32645852	take	fix(dev): avoid dependency-triggered server restarts on Windows (#38870); adopted upstream over Onicode's node --watch-path=../../packages: on macOS it also restarted the dev server on writes under packages/*/node_modules (vitest cache, vp i); upstream's watcher watches only src and package.json. Reverses the earlier skip after review
