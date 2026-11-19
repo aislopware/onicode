@@ -13,7 +13,10 @@ import {
   type StaticScreenProps,
 } from "@react-navigation/native";
 import { SymbolView } from "../../components/ui/AppSymbol";
-import { pickableProjectGroups } from "@onicode/client-runtime/state/project-grouping";
+import {
+  isPickableProjectMember,
+  pickableProjectGroups,
+} from "@onicode/client-runtime/state/project-grouping";
 import { isScratchProject } from "@onicode/client-runtime/state/projects";
 import {
   isAtomCommandInterrupted,
@@ -553,7 +556,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
               }
             >
               {visibleScopes.map((scope, scopeIndex) => {
-                const hasMultipleProjects = scope.projects.length > 1;
+                const openProjectCount = scope.projects.filter(isPickableProjectMember).length;
+                const hasMultipleProjects = openProjectCount > 1;
                 const selectionTarget = getProjectScopeSelectionTarget(
                   scope,
                   selectedEnvironmentId,
@@ -568,7 +572,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                       subtitle={
                         hasMultipleProjects
                           ? gt("{count, plural, other {{count} workspaces}}", {
-                              count: scope.projects.length,
+                              count: openProjectCount,
                             })
                           : selectionTarget.workspaceRoot
                       }
@@ -622,7 +626,7 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
                         >
                           {hasMultipleProjects
                             ? gt("{count, plural, other {{count} workspaces}}", {
-                                count: scope.projects.length,
+                                count: openProjectCount,
                               })
                             : selectionTarget.workspaceRoot}
                         </Text>
