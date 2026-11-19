@@ -21,6 +21,9 @@ export interface TunnelNavigation {
   readonly pageColor?: string;
 }
 
+const TUNNEL_FAILURE_CAUSES = ["environment", "port", "outdated", "address", "conflict"] as const;
+type TunnelFailureCause = (typeof TUNNEL_FAILURE_CAUSES)[number];
+
 export interface TunnelWebViewRef {
   readonly loadUrl: (url: string) => Promise<void>;
   readonly goBack: () => Promise<void>;
@@ -81,12 +84,11 @@ export function TunnelWebView({
     /** What the native proxy saw, shown with the error so a report carries it. iOS only. */
     readonly debug?: string;
     /**
-     * iOS: whether the environment itself was out of reach (`environment`) or answered that
-     * nothing listens on the port (`port`), or `address` for a loopback address other than the
-     * environment's localhost, which it doesn't carry. Android: `conflict` when another
-     * environment's page is open, which refuses every connection.
+     * Environment out of reach (`environment`), nothing on the port (`port`), or an Onicode
+     * server without the tunnel (`outdated`). iOS: `address` for a loopback address the
+     * environment doesn't carry. Android: `conflict` while another environment's page is open.
      */
-    readonly cause?: "environment" | "port" | "address" | "conflict";
+    readonly cause?: TunnelFailureCause;
   }) => void;
   /** Whether the last connection could get into the environment's tunnel at all. */
   readonly onAccess?: (available: boolean) => void;
@@ -123,13 +125,7 @@ export function TunnelWebView({
             unsupported: nativeEvent.unsupported === true,
             description: nativeEvent.description,
             debug: nativeEvent.debug,
-            cause:
-              nativeEvent.cause === "environment" ||
-              nativeEvent.cause === "port" ||
-              nativeEvent.cause === "address" ||
-              nativeEvent.cause === "conflict"
-                ? nativeEvent.cause
-                : undefined,
+            cause: TUNNEL_FAILURE_CAUSES.find((cause) => cause === nativeEvent.cause),
           })
         }
       />
