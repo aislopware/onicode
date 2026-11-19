@@ -464,6 +464,29 @@ it.effect.each([false, true])(
         yield* sql.withTransaction(sql`UPDATE counters SET value = 4 WHERE id = 1`);
         assert.equal(value(), 4);
         assert.deepEqual(yield* sql`SELECT counter FROM links`, []);
+        // So does a transaction that was already waiting for the writer when it failed.
+        const held = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const holder = yield* Effect.exit(
+          sql.withTransaction(
+            sql`INSERT INTO links VALUES (2)`.pipe(
+              Effect.andThen(Deferred.succeed(held, undefined)),
+              Effect.andThen(Deferred.await(release)),
+            ),
+          ),
+        ).pipe(Effect.forkChild({ startImmediately: true }));
+        yield* Deferred.await(held);
+        const waiter = yield* sql
+          .withTransaction(sql`UPDATE counters SET value = 6 WHERE id = 1`)
+          .pipe(Effect.forkChild({ startImmediately: true }));
+        Atomics.store(failingRollbacks.count, 0, 1);
+        yield* Deferred.succeed(release, undefined);
+        const failedHolder = yield* Fiber.join(holder);
+        assert.isTrue(Exit.isFailure(failedHolder) && Cause.hasDies(failedHolder.cause));
+        yield* Fiber.join(waiter);
+        assert.equal(value(), 6);
+        yield* sql`UPDATE counters SET value = 4 WHERE id = 1`;
+        assert.deepEqual(yield* sql`SELECT counter FROM links`, []);
         // A savepoint that cannot open, here for FTS5's pending writes, must not keep the
         // transaction's end from running.
         yield* sql`CREATE VIRTUAL TABLE docs USING fts5(body)`;
@@ -662,7 +685,10 @@ it.effect.each([false, true])(
                   ),
                 );
                 if (carriesOn) {
-                  yield* Effect.exit(sql.withTransaction(sql`INSERT INTO counters VALUES (52, 0)`));
+                  const next = yield* Effect.exit(
+                    sql.withTransaction(sql`INSERT INTO counters VALUES (52, 0)`),
+                  );
+                  assert.match(String(next), /cannot commit after a rollback failed/);
                 }
               }),
             ),
