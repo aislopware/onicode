@@ -793,7 +793,7 @@ describe("AcpRegistrySupport", () => {
   });
 
   it.effect(
-    "gives Antigravity a Onicode-owned temp directory that is removed with the process",
+    "gives Antigravity an Onicode-owned temp directory that is removed with the process",
     () => {
       const agent = {
         ...makeAgent({ binary: { "linux-x86_64": { archive: archiveUrl, cmd: "./agy" } } }),
