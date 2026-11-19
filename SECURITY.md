@@ -23,17 +23,18 @@ once it has one.
 
 ## Principals
 
-| Principal                                                               | How it gets in                              | What it may do                                                                                         |
-| ----------------------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Anyone who reaches the port                                             | Network                                     | Read the environment descriptor, pair with a valid one-time credential, run OAuth flows. Nothing else. |
-| Full-scope client (desktop, paired phone, `onicode auth session issue`) | Pairing, token exchange                     | Everything the server's OS user can do. This is the default grant.                                     |
-| Narrow client                                                           | Pairing link with explicit scopes           | Only the RPCs and routes its scopes allow. Can never widen its own grant.                              |
-| MCP client (outside agent, subject `mcp-client`)                        | OAuth on `/mcp`                             | Only `/mcp`, within a read-only grant or a runtime-mode ceiling. Every other route rejects it.         |
-| Linked environment (peer link)                                          | OAuth client `onicode-peer-link`            | Work it starts carries an immutable `linkOrigin` and never exceeds the access it was paired with.      |
-| Agent run by Onicode                                                    | Thread's runtime mode and thread credential | Within its runtime mode, managed policy, and the MCP access declared per tool.                         |
-| Signed asset URL                                                        | Minted with `filesystem:read`               | One file, by device and inode identity, until it expires.                                              |
-| Managed policy                                                          | Admin-deployed file, read at startup        | Ceilings and locks the server enforces for every client.                                               |
-| Preview pages, HTML renders, file previews, agent output                | Rendered by clients                         | Untrusted content. It must never run script in the app's origin or reach Electron IPC or Node.         |
+| Principal                                                               | How it gets in                                                                                    | What it may do                                                                                                                                                                                   |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Anyone who reaches the port                                             | Network                                                                                           | Read the environment descriptor, pair with a valid one-time credential, run OAuth flows. Nothing else.                                                                                           |
+| Full-scope client (desktop, paired phone, `onicode auth session issue`) | Pairing, token exchange                                                                           | Everything the server's OS user can do. This is the default grant.                                                                                                                               |
+| Narrow client                                                           | Pairing link with explicit scopes                                                                 | Only the RPCs and routes its scopes allow. Can never widen its own grant.                                                                                                                        |
+| Linked environment (peer link, subject `mcp-client`)                    | OAuth on `/mcp`, registering only with the peer-link software ID and a one-time pairing code      | Only `/mcp`, within a read-only grant or a runtime-mode ceiling. Work it starts carries an immutable `linkOrigin` and never exceeds the access it was paired with. Every other route rejects it. |
+| `onicode thread` (subject `thread-cli`)                                 | Short-lived session from the running server                                                       | Only `/mcp`, within the same grants as a linked environment.                                                                                                                                     |
+| Tailnet device                                                          | Tailscale sign-in on a direct tailnet socket, checked by `tailscale whois` and the tailnet policy | A client session with the scopes that policy allows.                                                                                                                                             |
+| Agent run by Onicode                                                    | Thread's runtime mode and thread credential                                                       | Within its runtime mode, managed policy, and the MCP access declared per tool.                                                                                                                   |
+| Signed asset URL                                                        | Minted with `filesystem:read`                                                                     | One file, by device and inode identity, until it expires. A workspace HTML preview gets its directory instead, so it can load sibling assets.                                                    |
+| Managed policy                                                          | Admin-deployed file, read at startup                                                              | Ceilings and locks the server enforces for every client.                                                                                                                                         |
+| Preview pages, HTML renders, file previews, agent output                | Rendered by clients                                                                               | Untrusted content. It must never run script in the app's origin or reach Electron IPC or Node.                                                                                                   |
 
 ## A real finding crosses one of these
 
@@ -44,7 +45,7 @@ once it has one.
    `mcp-client` session reaching a non-`/mcp` route; a read-only MCP grant
    calling a write tool.
 3. **Mode or policy escalation.** An agent, MCP client, or peer link acting
-   above its runtime-mode ceiling, `linkOrigin`, `Onicode-Mode-Limit`, or managed
+   above its runtime-mode ceiling, `linkOrigin`, `oni-mode-limit` header, or managed
    policy.
 4. **Revocation that doesn't take effect.** A revoked session, pairing link,
    or peer link that still works. The exception is documented:
@@ -66,8 +67,8 @@ once it has one.
 - A full-scope token gives a shell. Leaking one is serious, but the bug is the
   leak, not the shell.
 - The default grant includes `access:write`, so a full session can mint more
-  pairing links and sessions. They appear in Sharing & access, and "Revoke
-  others" removes them.
+  pairing links and sessions. They appear in Sharing & access. "Revoke
+  others" removes the other sessions; revoke unused pairing links one by one.
 - `filesystem:read` reads anything the server's user can read, including paths
   outside projects.
 - Plain HTTP on a LAN or tailnet is the user's choice. `onicode serve` warns when it
