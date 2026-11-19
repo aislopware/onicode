@@ -2757,3 +2757,4 @@ c3e82a93fe	skip	T3 Connect cloudflared minimum version (relayClient), removed in
 56b0777774	take	GPT evals use the configured Codex provider and CODEX_HOME; test-signal README left out
 54038e14ec	take	fix(pi): Pi agents get Onicode's pull request linking rules (#31727)
 178a2f1cd4	take	fix(server): oni_thread_launch refuses a defaulted worktree launch when Git cannot read HEAD (#38459)
+a8b57b07ea	take	fix(server): let parents revert after their subagents complete (#31874)
