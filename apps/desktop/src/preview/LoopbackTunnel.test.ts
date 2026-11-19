@@ -261,6 +261,12 @@ it.effect.each([
     head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0",
   },
   {
+    // A bare close would make Chromium send the request, even a POST, again.
+    case: "a response cut off inside its head",
+    reply: "HTTP/1.1 200 OK\r\nContent-",
+    head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close",
+  },
+  {
     // Passed on unread it would desynchronise later responses; a bare close would make Chromium
     // send the request again.
     case: "a response head over the size limit",

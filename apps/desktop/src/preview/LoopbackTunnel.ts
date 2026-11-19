@@ -177,7 +177,7 @@ const parseProxyRequest = (head: string, authorization: string): ProxyRequest =>
   };
 };
 
-// NaN unless the status line is unambiguous; Chromium reads loose forms the same way or not at all.
+// NaN unless the status line is strictly formed; anything looser is refused rather than guessed.
 const statusCode = (head: string) =>
   Number(/^HTTP\/1\.[01] (\d{3})(?: |$)/.exec(head.split("\r\n", 1)[0] ?? "")?.[1]);
 
@@ -417,8 +417,10 @@ const make = Effect.gen(function* () {
         const relayResponses = Effect.gen(function* () {
           let received: Buffer = Buffer.alloc(0);
           while (true) {
-            const response = yield* readHead(target.pull, received);
-            // Unread, it would desynchronise every later response; a close shows as a failure.
+            // A server gone before the head ends is answered like one that sent nonsense.
+            const response = yield* readHead(target.pull, received).pipe(
+              Effect.orElseSucceed(() => ({ head: undefined, rest: received })),
+            );
             const status = response.head === undefined ? Number.NaN : statusCode(response.head);
             // Unread, it would desynchronise every later response. Nothing of it has reached
             // Chromium, and a bare close would make Chromium send the request again.
