@@ -10,8 +10,8 @@ import { EnvironmentId, ThreadId, MessageId } from "@onicode/contracts";
 it("offers distinct source choices within a block and maps recursive folds without merging occurrences", () => {
   const paragraph = `${"x".repeat(40)}**quote**${"x".repeat(40)}`;
   const markdown = `${paragraph}\n\n<details><summary>Outer</summary>\n\n<details><summary>Inner</summary>\n\n${paragraph}\n\n</details>\n\n</details>`;
-  const [first] = collectMobileAssistantTextSelectors(markdown, "0:0", "quote", false);
-  const [second] = collectMobileAssistantTextSelectors(markdown, "1/1/0:0", "quote", false);
+  const [first] = collectMobileAssistantTextSelectors(markdown, "0:0", "quote", false, "ios");
+  const [second] = collectMobileAssistantTextSelectors(markdown, "1/1/0:0", "quote", false, "ios");
   expect([first?.index, first?.count, second?.index, second?.count]).toEqual([0, 2, 1, 2]);
   const rendered = `${"x".repeat(40)}quote${"x".repeat(40)} ${"x".repeat(40)}quote${"x".repeat(40)}`;
   expect(second?.selector.start).toBe(rendered.lastIndexOf("quote"));
@@ -35,6 +35,7 @@ it("offers distinct source choices within a block and maps recursive folds witho
     "0:0",
     "before label after",
     false,
+    "ios",
   );
   expect(reference?.selector.text).toBe("before label after");
   const sameBlock = collectMobileAssistantTextSelectors(
@@ -42,6 +43,7 @@ it("offers distinct source choices within a block and maps recursive folds witho
     "0:0",
     "quote",
     false,
+    "ios",
   );
   expect(sameBlock[1]?.selector.start).toBe(17);
   expect(sameBlock[1]?.selector.prefix).toBe("first quote then ");
@@ -50,14 +52,25 @@ it("offers distinct source choices within a block and maps recursive folds witho
     "1/0:0",
     "quote",
     false,
+    "ios",
   );
   expect(leadingSpace?.selector.start).toBe(2);
   expect(leadingSpace?.count).toBe(1);
+  // Text before a fold and text inside it never form one selection.
+  const [folded] = collectMobileAssistantTextSelectors(
+    "Run the\n\n<details><summary>More</summary>\n\ntests now and the tests again\n\n</details>",
+    "1/0:0",
+    "the tests",
+    false,
+    "ios",
+  );
+  expect([folded?.index, folded?.count]).toEqual([0, 1]);
   const codeChoices = collectMobileAssistantTextSelectors(
     "quote\n\n```text\nquote\n```\n\nquote",
     "0:0",
     "quote",
     false,
+    "ios",
   );
   expect(codeChoices.map((choice) => [choice.index, choice.count])).toEqual([
     [0, 3],
@@ -76,7 +89,7 @@ it("offers distinct source choices within a block and maps recursive folds witho
       path: "1/0:0",
     },
   ]) {
-    const selectors = collectMobileAssistantTextSelectors(source, path, "quote", false);
+    const selectors = collectMobileAssistantTextSelectors(source, path, "quote", false, "ios");
     expect(selectors).toHaveLength(2);
     for (const [index, { selector }] of selectors.entries()) {
       expect(findAssistantCitationText("quote quote", selector)).toEqual({
@@ -88,12 +101,16 @@ it("offers distinct source choices within a block and maps recursive folds witho
 });
 
 it("rejects unmappable or blank selections instead of inventing a source", () => {
-  expect(collectMobileAssistantTextSelectors("quote quote", "0:0", " ", false)).toEqual([]);
-  expect(collectMobileAssistantTextSelectors("quote ".repeat(21), "0:0", "quote", false)).toEqual(
+  expect(collectMobileAssistantTextSelectors("quote quote", "0:0", " ", false, "ios")).toEqual([]);
+  expect(
+    collectMobileAssistantTextSelectors("quote ".repeat(21), "0:0", "quote", false, "ios"),
+  ).toEqual([]);
+  expect(collectMobileAssistantTextSelectors("quote quote", "0:0", "other", false, "ios")).toEqual(
     [],
   );
-  expect(collectMobileAssistantTextSelectors("quote quote", "0:0", "other", false)).toEqual([]);
-  expect(collectMobileAssistantTextSelectors("quote quote", "missing", "quote", false)).toEqual([]);
+  expect(
+    collectMobileAssistantTextSelectors("quote quote", "missing", "quote", false, "ios"),
+  ).toEqual([]);
 });
 
 it("uses the web math representation around a selected passage", () => {
@@ -103,6 +120,7 @@ it("uses the web math representation around a selected passage", () => {
       "0:0",
       "after",
       true,
+      "ios",
     );
     expect(choice?.selector.prefix).toBe("Before \\(x\\) ");
     expect(findAssistantCitationText("Before \\(x\\) after", choice!.selector)).toEqual({
@@ -115,6 +133,7 @@ it("uses the web math representation around a selected passage", () => {
     "0:0",
     "after",
     true,
+    "ios",
   );
   expect(display?.selector.prefix).toBe("Before \\[ x \\] ");
   // Native selections carry each rendered inline formula as U+FFFC.
@@ -123,6 +142,7 @@ it("uses the web math representation around a selected passage", () => {
     "0:0",
     "Let \uFFFC and \uFFFC",
     true,
+    "ios",
   );
   expect(across?.selector.text).toBe("Let \\(a\\) and \\(b\\)");
   expect(findAssistantCitationText("Let \\(a\\) and \\(b\\) be", across!.selector)).toEqual({
@@ -134,6 +154,7 @@ it("uses the web math representation around a selected passage", () => {
     "0:0",
     "First \uFFFC line.\nSecond",
     true,
+    "ios",
   );
   expect(lines?.selector.text).toBe("First \\(a\\) line.\nSecond");
   const [literal] = collectMobileAssistantTextSelectors(
@@ -141,6 +162,7 @@ it("uses the web math representation around a selected passage", () => {
     "0:0",
     "then b",
     true,
+    "ios",
   );
   expect(literal?.selector.prefix).toBe("a \uFFFC lit \\(x\\) ");
   const [uncertainLiteral] = collectMobileAssistantTextSelectors(
@@ -148,6 +170,7 @@ it("uses the web math representation around a selected passage", () => {
     "0:0",
     "then b",
     true,
+    "ios",
   );
   expect(uncertainLiteral?.selector.prefix).toBe("a \uFFFC lit 2\\(x\\) ");
   // When md4c and this rebuild could disagree on formulas, a quote may match another occurrence.
@@ -156,21 +179,30 @@ it("uses the web math representation around a selected passage", () => {
     "<div>Use $x$ here.</div>\n\nUse $y$ here.",
     "Before $$Use $x$ here$$.\n\nUse $z$ here.",
   ]) {
-    expect(collectMobileAssistantTextSelectors(source, "0:0", "Use \uFFFC here", true)).toEqual([]);
+    expect(
+      collectMobileAssistantTextSelectors(source, "0:0", "Use \uFFFC here", true, "ios"),
+    ).toEqual([]);
   }
   expect(
-    collectMobileAssistantTextSelectors("Use $\\($\\)( here.", "0:0", "Use \uFFFC)( here.", true),
+    collectMobileAssistantTextSelectors(
+      "Use $\\($\\)( here.",
+      "0:0",
+      "Use \uFFFC)( here.",
+      true,
+      "ios",
+    ),
   ).toEqual([]);
   // md4c only opens or closes `$` beside whitespace or punctuation, so these merge natively.
-  expect(collectMobileAssistantTextSelectors("已知 $x$和$y$。", "0:0", "\uFFFC。", true)).toEqual(
-    [],
-  );
+  expect(
+    collectMobileAssistantTextSelectors("已知 $x$和$y$。", "0:0", "\uFFFC。", true, "ios"),
+  ).toEqual([]);
   expect(
     collectMobileAssistantTextSelectors(
       "see $a$b$c$ now\n\nsee $q$ now",
       "0:0",
       "see \uFFFC now",
       true,
+      "ios",
     ),
   ).toEqual([]);
   // md4c reads the text after inline HTML is stripped, where these formulas merge.
@@ -180,6 +212,7 @@ it("uses the web math representation around a selected passage", () => {
       "0:0",
       "设 \uFFFC 为常数。",
       true,
+      "ios",
     ),
   ).toEqual([]);
   // An emoji is punctuation to md4c, so this formula renders.
@@ -188,6 +221,7 @@ it("uses the web math representation around a selected passage", () => {
     "0:0",
     "Use \uFFFC\u{1F680}",
     true,
+    "ios",
   );
   expect(emoji?.selector.text).toBe("Use \\(x\\)\u{1F680}");
   // Display math on its own line is a separate native view, never part of a text selection.
@@ -197,6 +231,7 @@ it("uses the web math representation around a selected passage", () => {
       "0:0",
       "\uFFFC",
       true,
+      "ios",
     ).map((choice) => choice.selector.text),
   ).toEqual(["\\(x\\)"]);
   // md4c only moves display math that is a paragraph's own child, beside an edge or a separator.
@@ -206,6 +241,7 @@ it("uses the web math representation around a selected passage", () => {
       "0:0",
       "\uFFFC is big",
       true,
+      "ios",
     ).map((choice) => choice.selector.text),
   ).toEqual(["\\[\na\n\\]", "\\(b\\)"].map((tex) => `${tex} is big`));
   expect(
@@ -214,6 +250,7 @@ it("uses the web math representation around a selected passage", () => {
       "0:0",
       "\uFFFC so",
       true,
+      "ios",
     ).map((choice) => choice.selector.text),
   ).toEqual(["\\(y\\) so"]);
   // md4c ends the paragraph, and so the formula, at a blank line.
@@ -223,11 +260,11 @@ it("uses the web math representation around a selected passage", () => {
     "> $$\n> a\n>\n> b\n> $$",
     "$$\na\n- b\n$$",
   ]) {
-    const [blank] = collectMobileAssistantTextSelectors(source, "0:0", "a", true);
+    const [blank] = collectMobileAssistantTextSelectors(source, "0:0", "a", true, "ios");
     expect(blank?.selector.prefix).toBe("\\[ ");
   }
-  const texts = (markdown: string, quote: string) =>
-    collectMobileAssistantTextSelectors(markdown, "0:0", quote, true).map(
+  const texts = (markdown: string, quote: string, platform: "ios" | "android" = "ios") =>
+    collectMobileAssistantTextSelectors(markdown, "0:0", quote, true, platform).map(
       (choice) => choice.selector.text,
     );
   // A math fence never selects as U+FFFC, and md4c splits table cells before reading `$`.
@@ -268,6 +305,7 @@ it("uses the web math representation around a selected passage", () => {
       "0:0",
       "Open \uFFFC here",
       true,
+      "ios",
     ),
   ).toEqual([]);
   // md4c leaves `2$x + y$` and `$n$th` literal, but the web renders them as formulas.
@@ -285,7 +323,7 @@ it("uses the web math representation around a selected passage", () => {
       [9, 30],
     ],
   ] as const) {
-    const choices = collectMobileAssistantTextSelectors(source, "0:0", quote, true);
+    const choices = collectMobileAssistantTextSelectors(source, "0:0", quote, true, "ios");
     expect(choices.map((choice) => findAssistantCitationText(web, choice.selector))).toEqual(
       starts.map((start) => ({ start, end: start + quote.length })),
     );
@@ -295,15 +333,28 @@ it("uses the web math representation around a selected passage", () => {
     "0:0",
     "Use \uFFFC here",
     true,
+    "ios",
   );
   expect(shell?.selector.text).toBe("Use \\(a\\) here");
-  // Images and rules are U+FFFC natively too, so a selection may not stand for a formula.
-  for (const source of [
+  // An inline image is U+FFFC natively too and no text on the web, so both readings are offered.
+  const image = collectMobileAssistantTextSelectors(
     "Use ![i](x.png) here. Use $x$ here.",
-    "Use\n\n---\n\nhere\n\nUse $x$ here",
-  ]) {
-    expect(collectMobileAssistantTextSelectors(source, "0:0", "Use \uFFFC here", true)).toEqual([]);
-  }
+    "0:0",
+    "Use \uFFFC here",
+    true,
+    "ios",
+  );
+  expect(
+    image.map((choice) =>
+      findAssistantCitationText("Use  here. Use \\(x\\) here.", choice.selector),
+    ),
+  ).toEqual([
+    { start: 0, end: 8 },
+    { start: 10, end: 24 },
+  ]);
+  // md4c lifts display math out of a tight list item, and Android breaks the line before it.
+  expect(texts("- A\\[x\\]B\n- C", "A\n\uFFFCB", "android")).toEqual(["A\n\\[\nx\n\\]B"]);
+  expect(texts("- A\\[x\\]B\n- C", "A\uFFFCB", "ios")).toEqual(["A\\[\nx\n\\]B"]);
 });
 
 it("cites formulas as the literal text shown when math rendering is off", () => {
@@ -312,6 +363,7 @@ it("cites formulas as the literal text shown when math rendering is off", () => 
     "0:0",
     "Before $x$ after",
     false,
+    "ios",
   );
   expect(findAssistantCitationText("Before $x$ after", inline!.selector)).toEqual({
     start: 0,
@@ -322,6 +374,7 @@ it("cites formulas as the literal text shown when math rendering is off", () => 
     "0:0",
     "after",
     false,
+    "ios",
   );
   expect(escaped?.selector.prefix).toBe("Before (x) ");
   const [display] = collectMobileAssistantTextSelectors(
@@ -329,6 +382,7 @@ it("cites formulas as the literal text shown when math rendering is off", () => 
     "0:0",
     "after",
     false,
+    "ios",
   );
   expect(display?.selector.prefix).toBe("Before $$ x $$ ");
   const [authored] = collectMobileAssistantTextSelectors(
@@ -336,6 +390,7 @@ it("cites formulas as the literal text shown when math rendering is off", () => 
     "0:0",
     "Use \uFFFC here",
     false,
+    "ios",
   );
   expect(authored?.selector.text).toBe("Use \uFFFC here");
   const [privateUse] = collectMobileAssistantTextSelectors(
@@ -343,6 +398,19 @@ it("cites formulas as the literal text shown when math rendering is off", () => 
     "0:0",
     "\ue002 b \uFFFC",
     false,
+    "ios",
   );
   expect(privateUse?.selector.text).toBe("\ue002 b \uFFFC");
+  // Inline images are U+FFFC natively; iOS shows a rule as U+FFFC, Android as a space.
+  for (const [source, quote, platform, web] of [
+    ["- Run ![i](x.png) now", "Run \uFFFC now", "android", "Run  now"],
+    ["Intro\n\n---\n\nMore", "Intro\n\uFFFC\nMore", "ios", "Intro\nMore"],
+    ["Intro\n\n---\n\nMore", "Intro\n \nMore", "android", "Intro\nMore"],
+  ] as const) {
+    const [choice] = collectMobileAssistantTextSelectors(source, "0:0", quote, false, platform);
+    expect(findAssistantCitationText(web, choice!.selector)).toEqual({
+      start: 0,
+      end: web.replace(/\s+/g, " ").length,
+    });
+  }
 });

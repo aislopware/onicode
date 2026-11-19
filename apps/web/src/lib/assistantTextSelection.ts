@@ -40,6 +40,8 @@ export function findAssistantCitationSourceAnchor(
 
 const CONTROL_SELECTOR = "button, input, textarea, select, [role=button], [contenteditable]";
 const EXCLUDED_SELECTOR = `${CONTROL_SELECTOR}, [hidden], [aria-hidden=true], script, style, template, noscript, svg`;
+// A closed fold kept mounted, for find or a citation, holds its text hidden until revealed.
+const FOLD_PANEL_SELECTOR = "[data-markdown-details-panel]";
 const BLOCK_SELECTOR =
   "address, article, aside, blockquote, dd, div, dl, dt, figcaption, figure, footer, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, td, th, tr, ul";
 
@@ -48,7 +50,7 @@ type TextChunk = { node: Text | Element; start: number; end: number };
 
 const isText = (node: Node): node is Text => node.nodeType === 3;
 
-function readAssistantText(root: HTMLElement) {
+function readAssistantText(root: HTMLElement, folded = false) {
   const parts: string[] = [];
   const chunks: TextChunk[] = [];
   let length = 0;
@@ -73,7 +75,8 @@ function readAssistantText(root: HTMLElement) {
     }
     if (node.nodeType !== 1) return;
     const element = node as Element;
-    if (element.matches(EXCLUDED_SELECTOR)) return;
+    if (element.matches(EXCLUDED_SELECTOR) && !(folded && element.matches(FOLD_PANEL_SELECTOR)))
+      return;
     const block = element.matches(BLOCK_SELECTOR);
     if (block || element.tagName === "BR") separator = true;
     if (element.matches("[data-markdown-math]")) {
@@ -89,8 +92,12 @@ function readAssistantText(root: HTMLElement) {
 }
 
 function excludedAncestor(node: Node): Element | null {
-  const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
-  return element?.closest(EXCLUDED_SELECTOR) ?? null;
+  let excluded = (node.nodeType === 1 ? (node as Element) : node.parentElement)?.closest(
+    EXCLUDED_SELECTOR,
+  );
+  while (excluded?.matches(FOLD_PANEL_SELECTOR))
+    excluded = excluded.parentElement?.closest(EXCLUDED_SELECTOR);
+  return excluded ?? null;
 }
 
 function isUsableRange(root: HTMLElement, range: Range): boolean {
@@ -209,10 +216,36 @@ export function resolveAssistantCitationRange(
   selector: AssistantTextSelector,
 ): Range | null {
   if (excludedAncestor(root) !== null) return null;
-  const stream = readAssistantText(root);
-  const match = findAssistantCitationText(stream.text, selector);
-  if (match === null) return null;
+  // Desktop quotes skip folds that were closed; mobile quotes read every fold, open or not.
+  const visible = readAssistantText(root);
+  const shown = findAssistantCitationText(visible.text, selector, { requireContext: true });
+  if (shown !== null) return citationRange(root, visible, shown);
+  const all = readAssistantText(root, true);
+  const match = findAssistantCitationText(all.text, selector);
+  return match === null ? null : citationRange(root, all, match);
+}
 
+/** Opens the closed folds a resolved range sits in, and reports whether there were any. */
+export function revealAssistantCitationFolds(root: HTMLElement, range: Range): boolean {
+  const folds = new Set<Element>();
+  for (const node of [range.startContainer, range.endContainer]) {
+    const element = node.nodeType === 1 ? (node as Element) : node.parentElement;
+    for (
+      let fold = element?.closest(`${FOLD_PANEL_SELECTOR}[hidden]`);
+      fold && root.contains(fold);
+      fold = fold.parentElement?.closest(`${FOLD_PANEL_SELECTOR}[hidden]`)
+    )
+      folds.add(fold);
+  }
+  for (const fold of folds) fold.dispatchEvent(new Event("beforematch"));
+  return folds.size > 0;
+}
+
+function citationRange(
+  root: HTMLElement,
+  stream: ReturnType<typeof readAssistantText>,
+  match: { start: number; end: number },
+): Range | null {
   const start = rawTextOffset(stream.text, match.start);
   const end = rawTextOffset(stream.text, match.end);
   const first = stream.chunks.find((chunk) => chunk.end > start);

@@ -13,11 +13,15 @@ import {
   type MarkdownNode,
 } from "./markdownDocument";
 
-function renderedText(node: MarkdownNode, restoreMath: (value: string) => string): string {
+function renderedText(
+  node: MarkdownNode,
+  restoreMath: (value: string) => string,
+  attachment: (node: MarkdownNode) => string = () => "",
+): string {
+  if (node.type === "image" || node.type === "imageReference" || node.type === "thematicBreak")
+    return attachment(node);
   if (
     node.type === "definition" ||
-    node.type === "image" ||
-    node.type === "imageReference" ||
     node.type === "html" ||
     (node.type === "code" && node.lang === "mermaid")
   )
@@ -34,28 +38,24 @@ function renderedText(node: MarkdownNode, restoreMath: (value: string) => string
       node.type === "delete" ||
       node.type === "tableCell";
     return node.children
-      .map((child) => renderedText(child, restoreMath))
+      .map((child) => renderedText(child, restoreMath, attachment))
       .filter((text) => text.length > 0)
       .join(inline ? "" : "\n");
   }
   return node.type === "break" ? "\n" : "";
 }
 
-// Native text views report a rendered inline formula, an image, or a rule as this character.
+// Native text views report a rendered inline formula, an inline image, or an iOS rule as this.
 const ATTACHMENT = "\ufffc";
 // Stands in for display math md4c moves to its own view, which no text selection can include.
 const DETACHED = "\ue002";
 const EXPANDED = /[\ufffc\ue002]/g;
 
-// Images and rules are U+FFFC natively; md4c has no footnotes and reads `||text||` as a spoiler.
+type NativePlatform = "ios" | "android";
+
+// md4c has no footnotes and reads `||text||` as a spoiler.
 function rendersDifferently(node: MarkdownNode): boolean {
-  if (
-    node.type === "image" ||
-    node.type === "imageReference" ||
-    node.type === "thematicBreak" ||
-    node.type === "footnoteReference"
-  )
-    return true;
+  if (node.type === "footnoteReference") return true;
   if (node.type === "text") return node.value.includes("||");
   return "children" in node && node.children.some(rendersDifferently);
 }
@@ -107,6 +107,7 @@ function withoutCodeBlocks(node: MarkdownNode, source: string): string {
 function citationText(
   markdown: string,
   mathRenderingEnabled: boolean,
+  platform: NativePlatform,
 ): { text: string; expansions: string[]; uncertainAttachments: boolean } {
   const formulas = mathRenderingEnabled ? markdownMathRanges(markdown) : [];
   let marker = "\ue000t3math";
@@ -171,23 +172,57 @@ function citationText(
   const fenced = formulas.map((formula) => /^[ \t]*(?:`{3,}|~{3,})/.test(formula.source));
   for (const [index, fence] of fenced.entries())
     if (fence && !listed.has(index)) detached.add(index);
+  // md4c lifts display math out of a tight list item's text, and Android ends that text with a
+  // line break before it.
+  const breaksBefore = new Set<number>();
+  // A paragraph holding only an image, outside lists, is its own native view.
+  const ownViews = new Set<MarkdownNode>();
+  const visitBlocks = (node: MarkdownNode) => {
+    if (node.type === "list" && !node.spread && node.children.every((item) => !item.spread))
+      for (const item of node.children)
+        for (const child of item.children)
+          if (child.type === "paragraph")
+            for (const match of renderedText(child, (value) => value).matchAll(tokenPattern))
+              breaksBefore.add(Number(match[1]));
+    if (node.type === "root" || node.type === "blockquote")
+      for (const child of node.children)
+        if (
+          child.type === "paragraph" &&
+          child.children.length === 1 &&
+          (child.children[0]!.type === "image" || child.children[0]!.type === "imageReference")
+        )
+          ownViews.add(child.children[0]!);
+    if ("children" in node) node.children.forEach(visitBlocks);
+  };
+  visitBlocks(tree);
   const expansions: string[] = [];
   let authoredDetached = false;
-  const text = renderedText(tree, (value) =>
-    value.replace(
-      new RegExp(`${tokenPattern.source}|${EXPANDED.source}`, "g"),
-      (char: string, index: string | undefined) => {
-        if (index === undefined) {
-          authoredDetached ||= char === DETACHED;
-          expansions.push(char);
-          return char;
-        }
-        const formula = formulas[Number(index)]!;
-        const tex = formula.tex.trim();
-        expansions.push(formula.display ? `\\[\n${tex}\n\\]` : `\\(${tex}\\)`);
-        return detached.has(Number(index)) ? DETACHED : ATTACHMENT;
-      },
-    ),
+  const text = renderedText(
+    tree,
+    (value) =>
+      value.replace(
+        new RegExp(`${tokenPattern.source}|${EXPANDED.source}`, "g"),
+        (char: string, index: string | undefined) => {
+          if (index === undefined) {
+            authoredDetached ||= char === DETACHED;
+            expansions.push(char);
+            return char;
+          }
+          const formula = formulas[Number(index)]!;
+          const tex = formula.tex.trim();
+          expansions.push(formula.display ? `\\[\n${tex}\n\\]` : `\\(${tex}\\)`);
+          if (detached.has(Number(index))) return DETACHED;
+          return platform === "android" && formula.display && breaksBefore.has(Number(index))
+            ? `\n${ATTACHMENT}`
+            : ATTACHMENT;
+        },
+      ),
+    // The web shows neither images nor rules as text.
+    (node) => {
+      if (node.type === "thematicBreak" ? platform === "android" : ownViews.has(node)) return "";
+      expansions.push("");
+      return ATTACHMENT;
+    },
   );
   const unflanked = (index: number) => {
     const at = nativeProse.indexOf(tokens[index]!);
@@ -198,7 +233,7 @@ function citationText(
       !FLANKED_AFTER.test(nativeProse.slice(end, end + 2))
     );
   };
-  // Images, rules, spoilers, delimiters md4c may read differently, and `!` paths it shows as images.
+  // Spoilers, footnotes, delimiters md4c may read differently, and `!` paths it shows as images.
   const uncertainAttachments =
     mathRenderingEnabled &&
     (rendersDifferently(tree) ||
@@ -230,12 +265,19 @@ function citationText(
 function citationSegments(
   markdown: string,
   mathRenderingEnabled: boolean,
+  platform: NativePlatform,
   path = "",
   definitions = markdownReferenceDefinitions(markdown),
 ): Array<{ path: string; text: string; expansions: string[]; uncertainAttachments: boolean }> {
   return splitMarkdownDetails(markdown).flatMap((block, index) => {
     if (block.kind === "details")
-      return citationSegments(block.body, mathRenderingEnabled, `${path}${index}/`, definitions);
+      return citationSegments(
+        block.body,
+        mathRenderingEnabled,
+        platform,
+        `${path}${index}/`,
+        definitions,
+      );
     return splitCodexArtifactTemplateMarkdown(block.markdown).flatMap((segment, segmentIndex) =>
       segment.kind === "markdown"
         ? [
@@ -246,6 +288,7 @@ function citationSegments(
                   withReferenceDefinitions(segment.markdown, definitions),
                 ),
                 mathRenderingEnabled,
+                platform,
               ),
             },
           ]
@@ -266,11 +309,12 @@ export function collectMobileAssistantTextSelectors(
   path: string,
   text: string,
   mathRenderingEnabled: boolean,
+  platform: NativePlatform,
 ) {
   if (!text.trim()) return [];
   const normalize = (value: string) => value.replace(/\s+/g, " ");
   const quote = normalize(text);
-  const segments = citationSegments(markdown, mathRenderingEnabled).filter(
+  const segments = citationSegments(markdown, mathRenderingEnabled, platform).filter(
     (segment) => segment.text.trim().length > 0,
   );
   const segmentIndex = segments.findIndex((segment) => segment.path === path);
@@ -289,18 +333,20 @@ export function collectMobileAssistantTextSelectors(
       char === ATTACHMENT || char === DETACHED ? normalize(expansions[expansionIndex++]!) : char;
   }
   fullOffsets.push(fullText.length);
-  const throughSegment = segments
-    .slice(0, segmentIndex + 1)
-    .map((entry) => entry.text)
-    .join("\n");
-  const offset = normalize(throughSegment).length - normalize(segment.text).length;
-  const matches = occurrences(matchText, quote);
-  const localMatches = occurrences(normalize(segment.text), quote);
+  // Each segment is its own native view, so a match never spans two of them.
+  const segmentMatches = segments.map((entry, index) => {
+    const through = segments
+      .slice(0, index + 1)
+      .map((previous) => previous.text)
+      .join("\n");
+    const offset = normalize(through).length - normalize(entry.text).length;
+    return occurrences(normalize(entry.text), quote).map((local) => offset + local);
+  });
+  const matches = segmentMatches.flat();
+  const localMatches = segmentMatches[segmentIndex]!;
   if (localMatches.length > 20) return [];
-  return localMatches.flatMap((localStart) => {
-    const start = offset + localStart;
+  return localMatches.flatMap((start) => {
     const index = matches.indexOf(start);
-    if (index === -1) return [];
     const fullStart = fullOffsets[start]!;
     const fullEnd = fullOffsets[start + quote.length]!;
     const selector = createAssistantTextSelector(fullText, fullStart, fullEnd);

@@ -245,10 +245,14 @@ export function createAssistantTextSelector(
   };
 }
 
-/** Offsets use normalized UTF-16 units. Saved offsets may drift, so they cannot break context ties. */
+/**
+ * Offsets use normalized UTF-16 units. Saved offsets may drift, so they cannot break context ties.
+ * Without `requireContext`, a quote that occurs once matches even when its context changed.
+ */
 export function findAssistantCitationText(
   text: string,
   selector: AssistantTextSelector,
+  { requireContext = false }: { readonly requireContext?: boolean } = {},
 ): { start: number; end: number } | null {
   const normalized = normalizeWhitespace(text);
   const quote = normalizeWhitespace(selector.text);
@@ -285,5 +289,5 @@ export function findAssistantCitationText(
     match = { start, end };
   }
 
-  return match ?? (quoteCount === 1 ? onlyQuote : null);
+  return match ?? (!requireContext && quoteCount === 1 ? onlyQuote : null);
 }

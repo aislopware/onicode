@@ -1,6 +1,6 @@
 import { createContext } from "react";
 
-// Keep folded text mounted for find; reveal only the selected match.
+// Keep folded text mounted for find or a citation; reveal only the selected match.
 export const MarkdownFindContext = createContext(false);
 
 /** Create during render with stable `onReveal`; find dispatches `beforematch` to ancestors. */
