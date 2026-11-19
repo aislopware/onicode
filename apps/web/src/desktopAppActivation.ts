@@ -95,17 +95,33 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof Error && error.message.trim().length > 0 ? error.message : fallback;
 }
 
-let latestOpen: AbortController | null = null;
+let nextOpenOrder = 0;
+const runningOpens = new Map<number, AbortController>();
 
-/** The newest open wins: an older one still running stops before it shows a thread. */
+/**
+ * The newest open that reaches its thread wins: older ones still running stop before they show
+ * theirs and resolve to null, as there is nothing left to report.
+ */
 export async function handleDesktopAppActivationRequest(
   request: DesktopAppActivationRequest,
   dependencies: DesktopAppActivationDependencies,
-): Promise<DesktopAppActivationResponse> {
-  latestOpen?.abort();
+): Promise<DesktopAppActivationResponse | null> {
+  const order = nextOpenOrder++;
   const open = new AbortController();
-  latestOpen = open;
-  const { signal } = open;
+  runningOpens.set(order, open);
+  try {
+    return await openWorkspace(request, dependencies, order, open.signal);
+  } finally {
+    runningOpens.delete(order);
+  }
+}
+
+async function openWorkspace(
+  request: DesktopAppActivationRequest,
+  dependencies: DesktopAppActivationDependencies,
+  order: number,
+  signal: AbortSignal,
+): Promise<DesktopAppActivationResponse | null> {
   const target = dependencies.getTarget();
   if (target === null) {
     return failure(
@@ -138,15 +154,17 @@ export async function handleDesktopAppActivationRequest(
     }
   }
 
-  if (signal.aborted) {
-    return failure(request.requestId, "thread-open-failed", "A newer open replaced this one.");
+  for (const [otherOrder, other] of runningOpens) {
+    if (otherOrder < order) other.abort();
   }
+  if (signal.aborted) return null;
   try {
     const opened = await dependencies.openThread(
       { environmentId: target.environmentId, projectId },
       signal,
     );
     if (opened === null) {
+      if (signal.aborted) return null;
       return failure(
         request.requestId,
         "thread-open-failed",
@@ -171,7 +189,7 @@ export async function handleDesktopAppActivationRequest(
 
 type DesktopAppActivationHandler = (
   request: DesktopAppActivationRequest,
-) => Promise<DesktopAppActivationResponse>;
+) => Promise<DesktopAppActivationResponse | null>;
 
 /**
  * Listens for the page's whole life, so a request sent while the handler remounts (leaving
@@ -200,7 +218,9 @@ export function createDesktopAppActivationReceiver(
       }
       let response: DesktopAppActivationResponse;
       try {
-        response = await handle(request);
+        response =
+          (await handle(request)) ??
+          failure(request.requestId, "thread-open-failed", "A newer open replaced this one.");
       } catch (error) {
         response = failure(
           request.requestId,

@@ -184,6 +184,7 @@ describe("desktop app activation", () => {
   function receiverHarness(claim: (requestId: string) => boolean | Promise<boolean> = () => true) {
     let deliver: (input: DesktopAppActivationRequest) => void = () => undefined;
     const claims: string[] = [];
+    const claimResults: Promise<boolean>[] = [];
     const completions: DesktopAppActivationResponse[] = [];
     let onComplete: () => void = () => undefined;
     const receiver = createDesktopAppActivationReceiver({
@@ -191,9 +192,11 @@ describe("desktop app activation", () => {
         deliver = listener;
         return () => undefined;
       },
-      claim: async (requestId) => {
+      claim: (requestId) => {
         claims.push(requestId);
-        return claim(requestId);
+        const result = Promise.resolve(claim(requestId));
+        claimResults.push(result);
+        return result;
       },
       complete: async (response) => {
         completions.push(response);
@@ -208,6 +211,7 @@ describe("desktop app activation", () => {
       receiver,
       deliver: (input: DesktopAppActivationRequest = request) => deliver(input),
       claims,
+      claimResults,
       completions,
       nextCompletion,
     };
@@ -293,13 +297,8 @@ describe("desktop app activation", () => {
     await claimed;
     harness.receiver.setHandler(null);
     grant(true);
-    // Lets the receiver see the claim with no handler set; the desktop app then times it out.
-    vi.useFakeTimers();
-    try {
-      await vi.runAllTimersAsync();
-    } finally {
-      vi.useRealTimers();
-    }
+    // The receiver awaited this claim first, so it sees no handler before the test goes on.
+    await harness.claimResults[0];
     const completed = harness.nextCompletion();
     harness.receiver.setHandler(remounted);
     harness.deliver({ ...request, requestId: "request-2" });
@@ -307,7 +306,7 @@ describe("desktop app activation", () => {
 
     expect(unmounted).not.toHaveBeenCalled();
     expect(remounted.mock.calls.map(([input]) => input.requestId)).toEqual(["request-2"]);
-    expect(harness.claims).toEqual(["request-1", "request-2", "request-1"]);
+    expect(harness.claims.filter((requestId) => requestId === request.requestId)).toHaveLength(2);
   });
 
   it("keeps an older open that finishes late from replacing a newer one", async () => {
@@ -334,28 +333,62 @@ describe("desktop app activation", () => {
     ).resolves.toMatchObject({ ok: true });
     projectAppeared();
 
-    await expect(older).resolves.toMatchObject({ ok: false, code: "thread-open-failed" });
+    // Nobody is left to tell: a drop stops quietly, an activation's command is answered by the receiver.
+    await expect(older).resolves.toBeNull();
     expect(vi.mocked(deps.openThread).mock.calls.map(([projectRef]) => projectRef)).toEqual([
       { environmentId, projectId: existingProjectId },
     ]);
   });
 
+  it("lets an older open show its thread when a newer one fails before it could", async () => {
+    let projectAppeared: () => void = () => undefined;
+    const createProject = vi
+      .fn<DesktopAppActivationDependencies["createProject"]>()
+      .mockResolvedValueOnce(createdProjectId)
+      .mockRejectedValueOnce(new Error("Active project already exists for workspace root"));
+    const deps = dependencies({
+      findProject: () => null,
+      createProject,
+      waitForProject: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            projectAppeared = resolve;
+          }),
+      ),
+    });
+    // An activation and a drop of the same new folder.
+    const older = handleDesktopAppActivationRequest(request, deps);
+    await expect(
+      handleDesktopAppActivationRequest({ ...request, requestId: "request-2" }, deps),
+    ).resolves.toMatchObject({ ok: false, code: "project-create-failed" });
+    projectAppeared();
+
+    await expect(older).resolves.toMatchObject({ ok: true, projectId: createdProjectId });
+  });
+
   it.each([
     {
       name: "rejects",
-      handler: async (): Promise<DesktopAppActivationResponse> => {
+      handler: async (): Promise<DesktopAppActivationResponse | null> => {
         throw new Error("boom");
       },
+      code: "internal-error",
     },
     {
       name: "throws before returning a promise",
-      handler: (): Promise<DesktopAppActivationResponse> => {
+      handler: (): Promise<DesktopAppActivationResponse | null> => {
         throw new Error("boom");
       },
+      code: "internal-error",
+    },
+    {
+      name: "gave way to a newer open",
+      handler: async (): Promise<DesktopAppActivationResponse | null> => null,
+      code: "thread-open-failed",
     },
   ])(
     "answers a request whose handler $name instead of leaving the command waiting",
-    async ({ handler }) => {
+    async ({ handler, code }) => {
       const harness = receiverHarness();
       const completed = harness.nextCompletion();
       harness.receiver.setHandler(handler);
@@ -363,11 +396,7 @@ describe("desktop app activation", () => {
       await completed;
 
       expect(harness.completions).toEqual([
-        expect.objectContaining({
-          requestId: request.requestId,
-          ok: false,
-          code: "internal-error",
-        }),
+        expect.objectContaining({ requestId: request.requestId, ok: false, code }),
       ]);
     },
   );

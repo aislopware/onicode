@@ -65,7 +65,7 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
       const workspaceRoot = resolveDroppedFolderPath(folder, bridge.getPathForFile);
       const response =
         workspaceRoot === null
-          ? null
+          ? undefined
           : await openLocalWorkspace.open({
               version: DESKTOP_APP_ACTIVATION_PROTOCOL_VERSION,
               requestId: randomUUID(),
@@ -73,6 +73,8 @@ export function SidebarFolderDrop(props: { children: ReactNode }) {
               workspaceRoot,
               platform,
             });
+      // A newer open took over; the rest of this drop would undo it.
+      if (response === null) return;
       if (response?.ok) continue;
       // It went away during the batch; the rest would fail the same way.
       if (response?.code === "environment-unavailable") {
