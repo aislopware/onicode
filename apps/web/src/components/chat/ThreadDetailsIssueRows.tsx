@@ -156,7 +156,8 @@ export function ThreadDetailsIssueRows({
 }) {
   return links.map((link) => (
     <LinkedIssueRow
-      key={threadIssueKeyOf(link)}
+      // Links made before keys compared case-insensitively may repeat an issue.
+      key={`${threadIssueKeyOf(link)} ${link.key}`}
       link={link}
       threadRef={threadRef}
       compact={compact}

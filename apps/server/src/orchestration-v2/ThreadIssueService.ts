@@ -8,6 +8,7 @@
 import {
   CommandId,
   threadIssueKeysEqual,
+  type IssueLinkedThreadsInput,
   type IssueLinkedThreadsResult,
   type IssueOperationError,
   type IssueRef,
@@ -20,7 +21,9 @@ import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as SqlClient from "effect/sql/SqlClient";
+import { parseUrl } from "@onicode/shared/url";
 
+import * as IssueTrackerRegistry from "../issue/IssueTrackerRegistry.ts";
 import { listLinkedIssueThreads } from "../issue/linkedThreads.ts";
 import * as Orchestrator from "./Orchestrator.ts";
 
@@ -50,7 +53,7 @@ export class ThreadIssueService extends Context.Service<
     ) => Effect.Effect<{ readonly wasLinked: boolean }, Orchestrator.OrchestratorV2Error>;
     /** Every thread the issue is linked to, most recently active first. */
     readonly linkedThreads: (
-      key: ThreadIssueKey,
+      issue: IssueLinkedThreadsInput,
     ) => Effect.Effect<IssueLinkedThreadsResult, IssueOperationError>;
   }
 >()("onicode/orchestration-v2/ThreadIssueService") {}
@@ -59,6 +62,7 @@ const make = Effect.gen(function* () {
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const random = yield* SecureRandom.SecureRandom;
   const sql = yield* SqlClient.SqlClient;
+  const trackers = yield* IssueTrackerRegistry.IssueTrackerRegistry;
 
   const commandId = (tag: string, threadId: ThreadId) =>
     random.uuidV4().pipe(
@@ -112,8 +116,16 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const linkedThreads: ThreadIssueService["Service"]["linkedThreads"] = (key) =>
-    listLinkedIssueThreads(key).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+  const linkedThreads: ThreadIssueService["Service"]["linkedThreads"] = (issue) => {
+    const tracker = trackers.standalone.find((api) => api.kind === issue.tracker);
+    const workspaceOf = (value: string) => {
+      const url = parseUrl(value);
+      return url === null ? null : (tracker?.parseIssueUrl(url)?.workspace.toLowerCase() ?? null);
+    };
+    return listLinkedIssueThreads(issue, workspaceOf).pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+    );
+  };
 
   return ThreadIssueService.of({ link, unlink, linkedThreads });
 });

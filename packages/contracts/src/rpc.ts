@@ -193,6 +193,7 @@ import {
   IssueCreateInput,
   IssueCreateResult,
   IssueDetail,
+  IssueLinkedThreadsInput,
   IssueLinkedThreadsResult,
   IssueSummary,
   IssueListInput,
@@ -210,7 +211,6 @@ import {
   IssueTrackerConnectionList,
   IssueUnavailableError,
   IssueUpdateInput,
-  ThreadIssueKey,
 } from "./issue.ts";
 import { PullRequestReviewGuideResult } from "./pullRequestReviewGuide.ts";
 import {
@@ -1357,7 +1357,7 @@ const WsIssuesSummaryRpc = Rpc.make(WS_METHODS.issuesSummary, {
 });
 
 const WsIssuesLinkedThreadsRpc = Rpc.make(WS_METHODS.issuesLinkedThreads, {
-  payload: ThreadIssueKey,
+  payload: IssueLinkedThreadsInput,
   success: IssueLinkedThreadsResult,
   error: IssueRpcError,
 });

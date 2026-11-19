@@ -21,6 +21,8 @@ it.effect("finds every thread linked to exactly one issue, newest activity first
       { id: "archived", day: 4, issues: [issue], archived: true },
       { id: "deleted", day: 5, issues: [issue], deleted: true },
       { id: "side-chat", day: 5, issues: [issue], payload: { lineage: { sideChat: true } } },
+      { id: "typed-key", day: 2, issues: [{ ...issue, key: "eng-7" }] },
+      { id: "both-spellings", day: 2, issues: [issue, { ...issue, key: "eng-7" }] },
       { id: "other-key", day: 5, issues: [{ ...issue, key: "ENG-70" }] },
       { id: "other-scope", day: 5, issues: [{ ...issue, scope: "design" }] },
       { id: "other-tracker", day: 5, issues: [{ ...issue, tracker: "github" }] },
@@ -49,7 +51,9 @@ it.effect("finds every thread linked to exactly one issue, newest activity first
     expect(result.threads.map((thread) => [thread.id, thread.settled, thread.archivedAt])).toEqual([
       ["archived", false, at(4)],
       ["settled", true, null],
+      ["both-spellings", false, null],
       ["newer", false, null],
+      ["typed-key", false, null],
       ["older", false, null],
     ]);
   }).pipe(Effect.provide(SqlitePersistence.layerMemory)),

@@ -11,8 +11,12 @@ import type { EnvironmentId } from "@onicode/contracts";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "./atom-registry";
 import { formatEnvironmentQueryError } from "./query";
+import { composerPullRequests } from "./pull-requests";
 
-export const issueEnvironment = createIssueEnvironmentAtoms(connectionAtomRuntime);
+export const issueEnvironment = createIssueEnvironmentAtoms(
+  connectionAtomRuntime,
+  composerPullRequests.linkChanges,
+);
 
 const mergedIssueLists = createMergedIssueListAtoms(
   issueEnvironment.list,

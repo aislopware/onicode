@@ -412,8 +412,11 @@ const layerIssueService = Layer.merge(IssueService.layer, IssueTrackerConnection
   Layer.provide(Layer.merge(IssueTrackerRegistry.layer, IssueTrackerBindings.layer)),
 );
 
-// One instance serves MCP link calls and refreshes snapshots on thread events.
-const layerThreadIssueService = ThreadIssueService.layer;
+// One instance serves MCP link calls and refreshes snapshots on thread events. The registry is
+// layerIssueService's own instance, by layer memoization.
+const layerThreadIssueService = ThreadIssueService.layer.pipe(
+  Layer.provide(IssueTrackerRegistry.layer),
+);
 
 const layerGitManager = GitManager.layer.pipe(
   Layer.provide(Layer.merge(ProjectionStoreV2.layer, ProjectStore.layer)),

@@ -66,7 +66,10 @@ export function IssueThreadLinks({
     scope: reference.scope,
     key: reference.key,
   };
-  const relationsAtom = issueEnvironment.linkedThreads({ environmentId, input: key });
+  const relationsAtom = issueEnvironment.linkedThreads({
+    environmentId,
+    input: { ...key, url: issue.url },
+  });
   const relations = useEnvironmentQuery(listsThreads ? relationsAtom : null);
   // Retain the last count while refresh temporarily clears query data.
   const [lastRelations, setLastRelations] = useState(relations.data);
@@ -76,12 +79,15 @@ export function IssueThreadLinks({
   const [pending, setPending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const linkedHere = (thread?.issues ?? []).some((existing) => threadIssueKeysEqual(existing, key));
+  const hereLink = thread?.issues?.find((existing) => threadIssueKeysEqual(existing, key));
+  const linkedHere = hereLink !== undefined;
   const changeLink = async (threadId: ThreadId, remove: boolean) => {
     if (pending) return;
     setPending(true);
+    // The stored spelling: older servers match an unlink's key case-sensitively.
+    const unlinkKey = hereLink === undefined ? key : { ...key, key: hereLink.key };
     const result = await (remove
-      ? unlink({ environmentId, input: { threadId, ...key } })
+      ? unlink({ environmentId, input: { threadId, ...unlinkKey } })
       : link({
           environmentId,
           input: {
@@ -124,11 +130,29 @@ export function IssueThreadLinks({
           { count: linkedThreads.length },
         )
       : gt("Linked threads");
-  // A failed read shows "?" and falls back to searching threads for the issue's link.
+  // A first read that failed shows "?", which reads again: thread search does not index issue links.
   const relationsKnown = (relations.data ?? lastRelations) !== null;
+  const readFailed = !relationsKnown && relations.error !== null;
   return (
     <>
-      {linkedThreads.length > 0 || (!relationsKnown && relations.error !== null) ? (
+      {readFailed ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="xs"
+                variant="ghost"
+                aria-label={gt("Could not load linked threads. Click to try again.")}
+                onClick={relations.refresh}
+              >
+                <MessageSquareIcon aria-hidden className="size-3.5" />
+                <span aria-hidden>?</span>
+              </Button>
+            }
+          />
+          <TooltipPopup>{gt("Could not load linked threads. Click to try again.")}</TooltipPopup>
+        </Tooltip>
+      ) : linkedThreads.length > 0 ? (
         <Tooltip>
           <TooltipTrigger
             render={
@@ -139,14 +163,12 @@ export function IssueThreadLinks({
                 onClick={() =>
                   openCommandPalette({
                     query: issue.url,
-                    ...(relationsKnown
-                      ? { linkedThreads: { environmentId, threads: linkedThreads } }
-                      : {}),
+                    linkedThreads: { environmentId, threads: linkedThreads },
                   })
                 }
               >
                 <MessageSquareIcon aria-hidden className="size-3.5" />
-                <span aria-hidden>{linkedThreads.length || "?"}</span>
+                <span aria-hidden>{linkedThreads.length}</span>
               </Button>
             }
           />
