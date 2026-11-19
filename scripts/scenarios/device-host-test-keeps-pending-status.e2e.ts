@@ -94,6 +94,15 @@ test(
         window.deviceHostProbeGate?.release();
         return null;
       });
+      // The server outlives the test, so device support goes back to its default.
+      await runPromise(
+        Effect.gen(function* () {
+          const client = yield* rpcClient(ONICODE_HOME, origin);
+          yield* client["server.updateSettings"]({
+            patch: { enableDeviceSupport: false, deviceHosts: [] },
+          });
+        }).pipe(Effect.scoped, Effect.ignore),
+      );
     }
   },
 );
