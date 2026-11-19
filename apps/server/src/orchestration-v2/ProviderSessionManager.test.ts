@@ -685,6 +685,7 @@ function layerTest(input: {
   readonly scopeCloseReached?: Deferred.Deferred<void>;
   readonly eventStreamsEnded?: Queue.Queue<ProviderSessionId>;
   readonly releaseRecorded?: Deferred.Deferred<void>;
+  readonly commandOutputAppend?: CommandOutputHub.CommandOutputHubShape["append"];
   readonly serverSettingsLayer?: ReturnType<typeof ServerSettings.layerTest>;
   readonly projectServiceLayer?: Layer.Layer<ProjectService.ProjectService>;
   readonly computerServiceLayer?: Layer.Layer<ComputerService.ComputerService>;
@@ -777,9 +778,14 @@ function layerTest(input: {
       Layer.provide(
         Layer.mergeAll(
           layerRegistry.pipe(Layer.provideMerge(McpProviderSessions.layer)),
-          CommandOutputHub.layer.pipe(
-            Layer.provide(Layer.merge(layerConfiguredEventSink, layerTestStores)),
-          ),
+          input.commandOutputAppend === undefined
+            ? CommandOutputHub.layer.pipe(
+                Layer.provide(Layer.merge(layerConfiguredEventSink, layerTestStores)),
+              )
+            : Layer.mock(CommandOutputHub.CommandOutputHub)({
+                append: input.commandOutputAppend,
+                finish: () => Effect.void,
+              }),
           layerConfiguredEventSink,
           IdAllocator.layer,
           layerProviderEventIngestorTest,
@@ -1233,6 +1239,114 @@ it.effect("ProviderSessionManagerV2 closes every live session for a provider ins
           state,
           idleTimeoutMs: 60_000,
           eventStreamsEnded,
+        }),
+      ),
+    );
+  }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 stops the event pump when release gives up on a wedged finalizer",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const eventStreamsEnded = yield* Queue.unbounded<ProviderSessionId>();
+      const scopeCloseReached = yield* Deferred.make<void>();
+      const effect = Effect.gen(function* () {
+        const eventSink = yield* EventSink.EventSinkV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const now = yield* DateTime.now;
+        const threadId = ThreadId.make("thread-provider-session-manager-wedged-close");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+        });
+        yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+
+        const release = yield* manager
+          .closeInstance(modelSelection.instanceId)
+          .pipe(Effect.forkChild);
+        yield* Deferred.await(scopeCloseReached);
+        yield* TestClock.adjust("30 seconds");
+        yield* Fiber.join(release);
+
+        assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
+        assert.equal(yield* Queue.take(eventStreamsEnded), providerSessionId);
+      });
+
+      yield* effect.pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            hangSessionScopeClose: true,
+            scopeCloseReached,
+            eventStreamsEnded,
+          }),
+        ),
+      );
+    }),
+);
+
+it.effect("ProviderSessionManagerV2 lets an in-flight event finish when its session closes", () =>
+  Effect.gen(function* () {
+    const state = yield* Ref.make(emptyState);
+    const eventStreamsEnded = yield* Queue.unbounded<ProviderSessionId>();
+    const appendStarted = yield* Deferred.make<void>();
+    const appendGate = yield* Deferred.make<void>();
+    const appendFinished = yield* Deferred.make<void>();
+    const releaseRecorded = yield* Deferred.make<void>();
+    const effect = Effect.gen(function* () {
+      const eventSink = yield* EventSink.EventSinkV2;
+      const idAllocator = yield* IdAllocator.IdAllocatorV2;
+      const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+      const now = yield* DateTime.now;
+      const threadId = ThreadId.make("thread-provider-session-manager-in-flight-close");
+      const providerSessionId = yield* idAllocator.allocate.providerSession({
+        providerInstanceId: modelSelection.instanceId,
+        threadId,
+      });
+      yield* eventSink.write({
+        events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+      });
+      yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+      const events = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId));
+      assert.isDefined(events);
+      yield* Queue.offer(events, {
+        type: "command_output.delta",
+        driver: CODEX_DRIVER,
+        threadId,
+        itemId: TurnItemId.make("turn-item:in-flight-output"),
+        chunk: "output",
+      });
+      yield* Deferred.await(appendStarted);
+
+      // Wake from another fiber so the close reaches the pump before the handler resumes.
+      yield* manager.closeInstance(modelSelection.instanceId).pipe(Effect.forkChild);
+      yield* Deferred.await(releaseRecorded);
+      yield* Deferred.succeed(appendGate, undefined);
+
+      yield* Deferred.await(appendFinished);
+      assert.equal(yield* Queue.take(eventStreamsEnded), providerSessionId);
+    });
+
+    yield* effect.pipe(
+      Effect.provide(
+        layerTest({
+          state,
+          idleTimeoutMs: 60_000,
+          eventStreamsEnded,
+          releaseRecorded,
+          commandOutputAppend: () =>
+            Deferred.succeed(appendStarted, undefined).pipe(
+              Effect.andThen(Deferred.await(appendGate)),
+              Effect.andThen(Deferred.succeed(appendFinished, undefined)),
+              Effect.asVoid,
+            ),
         }),
       ),
     );
