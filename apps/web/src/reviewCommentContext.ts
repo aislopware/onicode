@@ -106,6 +106,8 @@ function buildDiffReviewLines(
   fileDiff: FileDiffMetadata,
   includeExpandedContext: boolean,
   slice?: { readonly startIndex: number; readonly endIndex: number },
+  // With whitespace hidden, a context row's sides can differ; split view shows each in its column.
+  contextFromOld = false,
 ): ReadonlyArray<DiffReviewLine> {
   const rows: DiffReviewLine[] = [];
   let rowIndex = 0;
@@ -155,7 +157,10 @@ function buildDiffReviewLines(
             oldLineNumber,
             newLineNumber,
             content: stripTrailingNewline(
-              fileDiff.additionLines[additionLineIndex] ??
+              (contextFromOld
+                ? fileDiff.deletionLines[deletionLineIndex]
+                : fileDiff.additionLines[additionLineIndex]) ??
+                fileDiff.additionLines[additionLineIndex] ??
                 fileDiff.deletionLines[deletionLineIndex] ??
                 "",
             ),
@@ -487,10 +492,12 @@ export function buildDiffReviewComment(input: {
 
   const normalizedStartIndex = Math.min(startIndex, endIndex);
   const normalizedEndIndex = Math.max(startIndex, endIndex);
-  const selectedLines = buildDiffReviewLines(input.fileDiff, includeExpandedContext, {
-    startIndex: normalizedStartIndex,
-    endIndex: normalizedEndIndex,
-  });
+  const selectedLines = buildDiffReviewLines(
+    input.fileDiff,
+    includeExpandedContext,
+    { startIndex: normalizedStartIndex, endIndex: normalizedEndIndex },
+    input.range.side === "deletions" && (input.range.endSide ?? input.range.side) === "deletions",
+  );
   const oldRange = getDiffRange(selectedLines, "oldLineNumber");
   const newRange = getDiffRange(selectedLines, "newLineNumber");
 
