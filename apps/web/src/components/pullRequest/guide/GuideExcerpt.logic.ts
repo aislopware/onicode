@@ -1,4 +1,9 @@
-import type { FileDiffContentsLoader, FileDiffMetadata, SelectedLineRange } from "@pierre/diffs";
+import type {
+  FileDiffContentsLoader,
+  FileDiffMetadata,
+  SelectedLineRange,
+  SelectionSide,
+} from "@pierre/diffs";
 import {
   excerptExpansionOldContents,
   type DiffRow,
@@ -12,6 +17,8 @@ import {
   type ReviewCommentContext,
 } from "~/reviewCommentContext";
 
+import { isLineInFileDiff } from "../pullRequestDiff.logic";
+
 export interface CommentDraft {
   readonly range: SelectedLineRange;
   readonly position: PullRequestReviewPosition;
@@ -22,7 +29,8 @@ export interface CommentDraft {
 
 // The review anchor comes from the pull request's diff. A selection can also reach unchanged
 // lines the view loaded into `drawn`, which that diff lacks. The pull request's diff goes first
-// because an expanded excerpt draws the changed lines around it as context.
+// because an expanded excerpt draws the changed lines around it as context, but only when it
+// holds both ends: a missing line would match the same number on the other side.
 export function commentDraftFor(input: {
   readonly path: string;
   readonly file: FileDiffMetadata;
@@ -45,7 +53,12 @@ export function commentDraftFor(input: {
       range,
       text: "",
     });
-  const context = contextFrom(file) ?? contextFrom(input.drawn);
+  const inFile = (side: SelectionSide | undefined, line: number) =>
+    isLineInFileDiff(file, side === "deletions" ? "left" : "right", line);
+  const context =
+    (inFile(range.side, range.start) && inFile(range.endSide ?? range.side, range.end)
+      ? contextFrom(file)
+      : null) ?? contextFrom(input.drawn);
   return context === null ? null : { range, ...anchor, context };
 }
 

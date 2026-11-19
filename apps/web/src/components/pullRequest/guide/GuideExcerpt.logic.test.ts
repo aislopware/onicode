@@ -14,6 +14,24 @@ function parse(patch: string): FileDiffMetadata {
   return renderable.files[0]!;
 }
 
+function loaderFor(original: ReadonlyArray<string>, changed: ReadonlyArray<string>) {
+  return createGitDiffFileContentsLoader(
+    async () =>
+      AsyncResult.success({
+        oldContents: `${original.join("\n")}\n`,
+        newContents: `${changed.join("\n")}\n`,
+      }),
+    {
+      environmentId: EnvironmentId.make("environment-guide-excerpt-test"),
+      cwd: "/repo",
+      sourceKind: "working-tree",
+      baseRef: null,
+      headRef: null,
+      cacheKey: "diff-hash",
+    },
+  );
+}
+
 it("expands an excerpt whose file has another hunk that changes its length", async () => {
   const original = Array.from({ length: 100 }, (_, index) => `line ${index + 1}`);
   const changed = original.map((line, index) => (index === 29 ? "line 30 changed" : line));
@@ -46,23 +64,9 @@ it("expands an excerpt whose file has another hunk that changes its length", asy
   const excerpt = { path: "file.ts", side: "new", start: 30, end: 30, caption: "" } as const;
   const rows = excerptRows(fileDiffRows(file), excerpt);
   const excerptDiff = parse(rowsToPatch("file.ts", "file.ts", rows));
-  const loadDiffFiles = createGitDiffFileContentsLoader(
-    async () =>
-      AsyncResult.success({
-        oldContents: `${original.join("\n")}\n`,
-        newContents: `${changed.join("\n")}\n`,
-      }),
-    {
-      environmentId: EnvironmentId.make("environment-guide-excerpt-test"),
-      cwd: "/repo",
-      sourceKind: "working-tree",
-      baseRef: null,
-      headRef: null,
-      cacheKey: "diff-hash",
-    },
+  const files = await excerptLoader(excerpt, file, rows, loaderFor(original, changed))!(
+    excerptDiff,
   );
-
-  const files = await excerptLoader(excerpt, file, rows, loadDiffFiles)!(excerptDiff);
   const hydrated = hydratePartialDiff("clone", excerptDiff, files);
 
   await expect(
@@ -103,6 +107,63 @@ it("keeps the lines a draft selected from expanded context for Ask agent", () =>
   expect(draft?.position).toEqual({ kind: "added", newLine: 10 });
   expect(draft?.context.diff).toBe(
     ["@@ -7,4 +7,4 @@", " line 7", " line 8", " line 9", "-line 10", "+line 10 changed"].join("\n"),
+  );
+});
+
+it("keeps the lines an expanded excerpt draws above its change for Ask agent", async () => {
+  const original = Array.from({ length: 40 }, (_, index) => `line ${index + 1}`);
+  const changed = original.map((line, index) => (index === 19 ? "line 20 changed" : line));
+  changed.splice(5, 0, ...Array.from({ length: 10 }, (_, index) => `inserted ${index + 1}`));
+  const file = parse(
+    [
+      "diff --git a/file.ts b/file.ts",
+      "--- a/file.ts",
+      "+++ b/file.ts",
+      "@@ -3,6 +3,16 @@",
+      " line 3",
+      " line 4",
+      " line 5",
+      ...Array.from({ length: 10 }, (_, index) => `+inserted ${index + 1}`),
+      " line 6",
+      " line 7",
+      " line 8",
+      "@@ -17,7 +27,7 @@",
+      " line 17",
+      " line 18",
+      " line 19",
+      "-line 20",
+      "+line 20 changed",
+      " line 21",
+      " line 22",
+      " line 23",
+      "",
+    ].join("\n"),
+  );
+  const excerpt = { path: "file.ts", side: "new", start: 30, end: 30, caption: "" } as const;
+  const rows = excerptRows(fileDiffRows(file), excerpt);
+  const excerptDiff = parse(rowsToPatch("file.ts", "file.ts", rows));
+  const files = await excerptLoader(excerpt, file, rows, loaderFor(original, changed))!(
+    excerptDiff,
+  );
+  const drawn = hydratePartialDiff("clone", excerptDiff, files);
+
+  // New line 22 is also an old line number inside the second hunk.
+  const draft = commentDraftFor({
+    path: "file.ts",
+    file,
+    drawn,
+    range: { start: 22, side: "additions", end: 30, endSide: "additions" },
+    ranged: true,
+  });
+
+  expect(draft?.position).toEqual({ kind: "added", newLine: 30 });
+  expect(draft?.context.diff).toBe(
+    [
+      "@@ -12,9 +22,9 @@",
+      ...Array.from({ length: 8 }, (_, index) => ` line ${index + 12}`),
+      "-line 20",
+      "+line 20 changed",
+    ].join("\n"),
   );
 });
 
