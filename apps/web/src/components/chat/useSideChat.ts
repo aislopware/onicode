@@ -19,17 +19,25 @@ import { readThreadShell, waitForThreadShell } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useOrchestrationCommand } from "../../state/use-orchestration-command";
+import { stackedThreadToast, toastManager } from "../ui/toast";
 
 export type SideChatMessage = Pick<
   StartThreadTurnInput["message"],
   "text" | "attachments" | "context"
 > & { readonly titleSeed: string };
 
+/** The thread a side chat forks and the parent composer's settings, read at Send. */
+export interface SideChatSource {
+  readonly threadRef: ScopedThreadRef;
+  readonly runtimeMode: RuntimeMode;
+  readonly modelSelection: ModelSelection | undefined;
+}
+
 /**
  * Starts side chats from `threadRef`, or offers none when it is null. `open` forks the
- * thread's latest stable point, sends `message` there with `readSettings()`, the parent
- * composer's settings, and shows the tab. It resolves false when the side chat did not
- * start, or another one is still starting.
+ * source thread's latest stable point, sends `message` there with the source's settings
+ * (`threadRef` and `readSettings()` when none is given), and shows the tab. It resolves
+ * false when the side chat did not start, or another one is still starting.
  */
 export function useSideChat(input: {
   readonly threadRef: ScopedThreadRef | null;
@@ -37,7 +45,8 @@ export function useSideChat(input: {
     readonly runtimeMode: RuntimeMode;
     readonly modelSelection: ModelSelection | undefined;
   };
-  readonly onError: (message: string) => void;
+  /** Reports a failed start on the thread it started from, which may no longer be on screen. */
+  readonly onError: (message: string, threadRef: ScopedThreadRef) => void;
 }) {
   const pendingRef = useRef(false);
   const forkSideChat = useAtomCommand(threadEnvironment.forkSideChat, { reportFailure: false });
@@ -48,16 +57,16 @@ export function useSideChat(input: {
   const startThreadTurn = useOrchestrationCommand(threadEnvironment.startTurn, {
     reportFailure: false,
   });
-  const reportFailure = (
-    failure: Extract<AtomCommandResult<unknown, unknown>, { readonly _tag: "Failure" }>,
-    fallback: string,
-  ) => {
-    if (isAtomCommandInterrupted(failure)) return;
-    const error = squashAtomCommandFailure(failure);
-    input.onError(thrownErrorMessage(error, m) ?? fallback);
-  };
-  const start = async (threadRef: ScopedThreadRef, message: SideChatMessage | undefined) => {
-    const { runtimeMode, modelSelection } = input.readSettings();
+  const start = async (source: SideChatSource, message: SideChatMessage | undefined) => {
+    const { threadRef, runtimeMode, modelSelection } = source;
+    const reportFailure = (
+      failure: Extract<AtomCommandResult<unknown, unknown>, { readonly _tag: "Failure" }>,
+      fallback: string,
+    ) => {
+      if (isAtomCommandInterrupted(failure)) return;
+      const error = squashAtomCommandFailure(failure);
+      input.onError(thrownErrorMessage(error, m) ?? fallback, threadRef);
+    };
     const targetThreadId = newThreadId();
     const fork = await forkSideChat({
       environmentId: threadRef.environmentId,
@@ -76,13 +85,16 @@ export function useSideChat(input: {
       });
     const targetRef = scopeThreadRef(threadRef.environmentId, targetThreadId);
     if (!(await waitForThreadShell(targetRef))) {
-      input.onError(m(msg("The side chat was created, but it did not reach this client.")));
+      input.onError(
+        m(msg("The side chat was created, but it did not reach this client.")),
+        threadRef,
+      );
       discard();
       return false;
     }
     const sideChat = readThreadShell(targetRef);
     if (sideChat === null) {
-      input.onError(m(msg("The side chat is no longer available.")));
+      input.onError(m(msg("The side chat is no longer available.")), threadRef);
       discard();
       return false;
     }
@@ -123,11 +135,24 @@ export function useSideChat(input: {
     useRightPanelStore.getState().openSideChat(threadRef, targetThreadId);
     return true;
   };
-  const open = async (message?: SideChatMessage) => {
-    const { threadRef } = input;
-    if (!threadRef || pendingRef.current) return false;
+  const open = async (message?: SideChatMessage, sent?: SideChatSource) => {
+    const source =
+      sent ?? (input.threadRef ? { threadRef: input.threadRef, ...input.readSettings() } : null);
+    if (!source) return false;
+    if (pendingRef.current) {
+      if (sent) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "warning",
+            title: m(msg("Side chat not started")),
+            description: m(msg("Another side chat is still starting. Send again once it opens.")),
+          }),
+        );
+      }
+      return false;
+    }
     pendingRef.current = true;
-    return start(threadRef, message).finally(() => {
+    return start(source, message).finally(() => {
       pendingRef.current = false;
     });
   };

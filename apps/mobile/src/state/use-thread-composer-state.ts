@@ -63,11 +63,7 @@ import {
   isModelSelectionUnavailable,
 } from "../lib/modelOptions";
 
-import {
-  type DraftComposerImageAttachment,
-  isFileBackedComposerAttachment,
-} from "../lib/composerImages";
-import { retainComposerAttachmentFileForPreview } from "../lib/composerAttachmentPreviewRetention";
+import type { DraftComposerImageAttachment } from "../lib/composerImages";
 import { scopedThreadKey } from "../lib/scopedEntities";
 import { buildThreadFeed, createThreadFeedCache } from "../lib/threadActivity";
 import {
@@ -645,8 +641,14 @@ export function useThreadComposerState(input: {
       return null;
     }
 
-    // Until a side chat start settles, its draft may be only partly back in the composer.
-    if (startingSideChatRef.current) return null;
+    // The draft holds the side question until its side chat starts, so a send now would resend it.
+    if (startingSideChatRef.current) {
+      Dialog.alert(
+        m(msg("Still sending your previous message.")),
+        m(msg("Send again once it goes through or fails.")),
+      );
+      return null;
+    }
     const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
     const draft = getComposerDraftSnapshot(threadKey);
     if (appAtomRegistry.get(composerContextImportsAtom)[threadKey]) return null;
@@ -716,12 +718,8 @@ export function useThreadComposerState(input: {
         alertModelUnavailable();
       } else {
         startingSideChatRef.current = true;
-        // Cleared at send, like a queued message, so nothing in it can vanish mid-start. The
-        // holds keep the local files until the side chat has them or the draft has them back.
-        const fileHolds = attachments
-          .filter(isFileBackedComposerAttachment)
-          .map(retainComposerAttachmentFileForPreview);
-        clearComposerDraftContent(threadKey, { deferAttachmentCleanup: true });
+        // The draft keeps the question, its uploads and their progress until the side chat has
+        // them, so a restart or a failed start leaves it to send again.
         const started = await settlePromise(async () => {
           const prepared = await Effect.runPromise(
             prepareTurnAttachments({
@@ -753,26 +751,26 @@ export function useThreadComposerState(input: {
           );
         });
         if (AsyncResult.isSuccess(started) && started.value) {
-          scheduleUnusedComposerAttachmentCleanup(attachments);
-        } else {
-          // Restore with uncapped append; a capped merge could drop attachments added meanwhile.
-          // A failed disk write still leaves the merged draft in memory, and the append saves again.
-          await mergeComposerDraftContent(threadKey, {
-            text: draft.text,
-            context: draft.context,
-            attachments: [],
-          }).catch(() => undefined);
-          appendComposerDraftAttachments(threadKey, attachments, { restore: true });
-          if (AsyncResult.isFailure(started)) {
-            const error = squashAtomCommandFailure(started);
-            Dialog.alert(
-              m(msg("Side chat not started")),
-              error instanceof Error ? error.message : m(msg("Could not start a side chat.")),
-            );
+          // Edits made meanwhile stay, along with what was sent.
+          const current = getComposerDraftSnapshot(threadKey);
+          if (
+            current.text === draft.text &&
+            JSON.stringify(current.context) === JSON.stringify(draft.context) &&
+            current.attachments.length === attachments.length &&
+            current.attachments.every(
+              (attachment, index) => attachment.id === attachments[index]?.id,
+            )
+          ) {
+            clearComposerDraftContent(threadKey);
           }
+        } else if (AsyncResult.isFailure(started)) {
+          const error = squashAtomCommandFailure(started);
+          Dialog.alert(
+            m(msg("Side chat not started")),
+            error instanceof Error ? error.message : m(msg("Could not start a side chat.")),
+          );
         }
         startingSideChatRef.current = false;
-        for (const release of fileHolds) release();
       }
       return null;
     }

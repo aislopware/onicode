@@ -62,7 +62,8 @@ const PNG = Uint8Array.from(
 );
 
 /** Accepts every attachment upload without sending its bytes, until disposed. */
-function acceptAttachmentUploads(): Disposable {
+/** Answers uploads; each waits for `gate`, when given, before it lands. */
+function acceptAttachmentUploads(gate?: () => Promise<void>): Disposable {
   const mint = answerRpc(WS_METHODS.attachmentsCreateUploadUrl, () =>
     Effect.succeed({ attachmentId: "upload-1", relativeUrl: "/upload", expiresAt: 0 }),
   );
@@ -74,7 +75,9 @@ function acceptAttachmentUploads(): Disposable {
   const send = vi.spyOn(XMLHttpRequest.prototype, "send").mockImplementation(function (
     this: XMLHttpRequest,
   ) {
-    queueMicrotask(() => this.dispatchEvent(new ProgressEvent("load")));
+    const land = () => this.dispatchEvent(new ProgressEvent("load"));
+    if (gate) void gate().then(land);
+    else queueMicrotask(land);
   });
   return {
     [Symbol.dispose]: () => {
@@ -824,11 +827,12 @@ it("selecting a side-chat tab focuses that side chat's composer", async () => {
   await expect.element(mainEditor).toHaveTextContent("main draft");
 });
 
-it("/side sends the draft's attachments and context, and keeps them when it does not start", async () => {
+it("/side sends the draft's attachments and context, and keeps them until it starts", async () => {
   await page.viewport(1400, 900);
   const thread = threadWithHistory("side-attachments", 1);
+  const other = threadWithHistory("side-attachments-other", 1);
   let holdFork = false;
-  using _environment = installFakeEnvironment([thread], {
+  using _environment = installFakeEnvironment([thread, other], {
     acceptCommands: true,
     holdCommand: (command) => holdFork && command.type === "thread.fork",
   });
@@ -844,7 +848,12 @@ it("/side sends the draft's attachments and context, and keeps them when it does
     // AppRoot brings its own router.
     router: false,
   });
-  using _uploads = acceptAttachmentUploads();
+  let uploadsStarted = 0;
+  let uploadGate: Promise<void> | null = null;
+  using _uploads = acceptAttachmentUploads(() => {
+    uploadsStarted += 1;
+    return uploadGate ?? Promise.resolve();
+  });
   await expect.element(page.getByText(`Answer 0 for ${thread.id}.`)).toBeVisible();
 
   const editor = page.getByRole("textbox", { name: `Message ${thread.title}`, exact: true });
@@ -860,7 +869,6 @@ it("/side sends the draft's attachments and context, and keeps them when it does
       );
     await expect.element(image).toBeVisible();
     await userEvent.keyboard("/side what is this?{Enter}");
-    await expect.element(image).not.toBeInTheDocument();
   };
   const sentMessage = (fields: Record<string, unknown>) =>
     vi.waitFor(() =>
@@ -868,6 +876,16 @@ it("/side sends the draft's attachments and context, and keeps them when it does
         expect.objectContaining({ type: "message.dispatch", ...fields }),
       ),
     );
+  const forks = () => dispatchedCommands().filter((command) => command.type === "thread.fork");
+  const open = async (threadId: ThreadId, text: string) => {
+    await act(() =>
+      router.navigate({
+        to: "/$environmentId/$threadId",
+        params: { environmentId: ENVIRONMENT_ID, threadId },
+      }),
+    );
+    await expect.element(page.getByText(text).first()).toBeVisible();
+  };
 
   await sendImageToSideChat();
   await sentMessage({
@@ -878,6 +896,7 @@ it("/side sends the draft's attachments and context, and keeps them when it does
       records: [expect.objectContaining({ kind: "image", attachmentId: "upload-1" })],
     },
   });
+  await expect.element(image).not.toBeInTheDocument();
 
   // A reply alone is enough to send.
   await page.getByRole("button", { name: "Reply to this response" }).first().click();
@@ -887,21 +906,48 @@ it("/side sends the draft's attachments and context, and keeps them when it does
     context: expect.objectContaining({ records: [expect.objectContaining({ kind: "response" })] }),
   });
 
-  // A failed start puts the message back after the draft typed meanwhile.
-  holdFork = true;
+  // While the upload runs the draft keeps showing it. The side chat takes the mode the
+  // composer had at Send, and starts from its thread after the user leaves.
+  const draftTarget = scopeThreadRef(ENVIRONMENT_ID, thread.id);
+  useComposerDraftStore.getState().setRuntimeMode(draftTarget, "approval-required");
+  let releaseUpload = () => {};
+  uploadGate = new Promise((resolve) => {
+    releaseUpload = resolve;
+  });
+  const startedBefore = uploadsStarted;
   await sendImageToSideChat();
-  await userEvent.keyboard("next draft");
+  await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(startedBefore));
+  await expect.element(image).toBeVisible();
+  useComposerDraftStore.getState().setRuntimeMode(draftTarget, "full-access");
+  await open(other.id, `Answer 0 for ${other.id}.`);
+  releaseUpload();
+  uploadGate = null;
+  await vi.waitFor(() => expect(forks()).toHaveLength(3));
+  const fork = forks()[2]!;
+  expect(fork).toMatchObject({ sourceThreadId: thread.id });
   await vi.waitFor(() =>
-    expect(dispatchedCommands().filter((command) => command.type === "thread.fork")).toHaveLength(
-      3,
+    expect(dispatchedCommands()).toContainEqual(
+      expect.objectContaining({
+        type: "thread.runtime-mode.set",
+        threadId: fork.type === "thread.fork" ? fork.targetThreadId : null,
+        runtimeMode: "approval-required",
+      }),
     ),
   );
+  await sentMessage({ threadId: fork.type === "thread.fork" ? fork.targetThreadId : null });
+  await open(thread.id, `Answer 0 for ${thread.id}.`);
+  await expect.element(image).not.toBeInTheDocument();
+  await expect.element(editor).not.toHaveTextContent("/side");
+
+  // A failed start leaves the question where it was, so sending again starts a side chat.
+  holdFork = true;
+  await sendImageToSideChat();
+  await vi.waitFor(() => expect(forks()).toHaveLength(4));
+  await expect.element(image).toBeVisible();
+  await userEvent.keyboard(" next");
   await rejectPendingCommand("Side chats are paused.");
   await expect.element(image).toBeVisible();
   await vi.waitFor(() =>
-    expect((editor.element() as HTMLElement).innerText.split("\n").filter(Boolean)).toEqual([
-      "next draft",
-      "/side what is this?",
-    ]),
+    expect((editor.element() as HTMLElement).innerText.trim()).toBe("/side what is this? next"),
   );
 });
