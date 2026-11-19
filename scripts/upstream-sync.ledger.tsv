@@ -2625,3 +2625,4 @@ c4dc9ed55b	take	taken as is
 6b73ca9e4b	take	taken as is
 292a8e448b	take	taken as is
 23c339e8be	take	adapted: dropped the settledRuns assertion from the new rollback test; that harness field is upstream's telemetry run reporter (b92c8f4739), which Onicode does not have
+ae3c7a68b4	take	taken as is
