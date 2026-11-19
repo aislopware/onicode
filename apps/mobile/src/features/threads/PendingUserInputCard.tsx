@@ -109,7 +109,8 @@ function QuestionText(props: {
     <SelectableMarkdownText
       markdown={markdown}
       textStyle={styles.nativeTextStyle}
-      writingDirection={markdownProseDirection(markdown)}
+      // Android maps an explicit direction to first-strong, so it keeps the word-majority default.
+      writingDirection={Platform.OS === "android" ? undefined : markdownProseDirection(markdown)}
       // Android's renderer aligns relative to each paragraph's direction.
       textAlign={
         Platform.OS === "android" ? undefined : props.setDirection === "rtl" ? "right" : "left"

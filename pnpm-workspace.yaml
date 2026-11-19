@@ -25,7 +25,7 @@ allowBuilds:
   objc-js: false
   # Its postinstall only prints a banner.
   react-native-pdf-jsi: false
-  "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.21-a423deee.tgz": true
+  "react-native-enriched-markdown@file:apps/mobile/deps/react-native-enriched-markdown-1.2.0-oni.22-0c421a6f.tgz": true
   sharp: true
   utf-8-validate: false
   # Verifies the workerd binary for the push gateway's local dev server.

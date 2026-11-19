@@ -2667,7 +2667,7 @@ bc6621d73a	take	CONFLICT resolved: kept Onicode's untrimmed-root check (and befo
 2c7bfcec84	skip	already in Onicode: the floating dictation pill already carries [-webkit-app-region:no-drag] (kept Onicode's: same fix, plus its shadow-popup tokens and a comment on why)
 470ca63499	take	taken as is
 2a411317d9	take	fix(web): PDF pages no longer turn black while the panel is resized
-0317d4f4e5	take	fix(mobile): Arabic paragraphs that open with an English word render right to left
+0317d4f4e5	take	fix(mobile): Arabic paragraphs that open with an English word render right to left; JS marks replaced by the enriched-markdown fork's native word-majority writing direction (1.2.0-oni.22), since a mark before a bare link broke its autolink
 25854935ba	take	fix(server): theme publish refuses a directory under the theme's file name; scenario cli-theme-publish-keeps-existing-directory ported (WEB runs on Onicode's desktop target)
 60c6952430	take	fix(mobile): a missing image no longer stops its gallery opening on Android (#39128)
 4113f8fee5	take	fix(web): block invalid project monograms before save (#39131)
