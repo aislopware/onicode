@@ -2005,6 +2005,8 @@ function OpenCommandPaletteDialog(props: {
     readonly rawCwd: string;
     readonly platform: string;
     readonly currentProjectCwd: string | null;
+    /** From the folder picker: used as is, so a name ending in a space is refused, not trimmed. */
+    readonly picked?: boolean;
   }) => {
     const environment = environments.find(
       (candidate) => candidate.environmentId === input.environmentId,
@@ -2045,7 +2047,9 @@ function OpenCommandPaletteDialog(props: {
       return;
     }
 
-    const cwd = resolveProjectPathForDispatch(rawCwd, input.currentProjectCwd);
+    const cwd = input.picked
+      ? rawCwd
+      : resolveProjectPathForDispatch(rawCwd, input.currentProjectCwd);
     if (cwd.length === 0) return;
 
     const existing = findProjectByPath(
@@ -2144,13 +2148,14 @@ function OpenCommandPaletteDialog(props: {
     setOpen(false);
   };
 
-  const handleAddProject = async (rawCwd: string) => {
+  const handleAddProject = async (rawCwd: string, picked = false) => {
     if (!browseEnvironmentId) return;
     await handleAddProjectForEnvironment({
       environmentId: browseEnvironmentId,
       rawCwd,
       platform: browseEnvironmentPlatform,
       currentProjectCwd: currentProjectCwdForBrowse,
+      picked,
     });
   };
 
@@ -3059,6 +3064,7 @@ function OpenCommandPaletteDialog(props: {
         rawCwd: selection.linuxPath,
         platform: "Linux",
         currentProjectCwd: null,
+        picked: true,
       });
       return;
     }
@@ -3072,7 +3078,7 @@ function OpenCommandPaletteDialog(props: {
       );
       return;
     }
-    await handleAddProject(pickedPath);
+    await handleAddProject(pickedPath, true);
   };
 
   const submitButtonId = useId();

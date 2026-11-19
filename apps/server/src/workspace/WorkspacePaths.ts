@@ -134,7 +134,7 @@ const make = Effect.gen(function* () {
     "WorkspacePaths.normalizeWorkspaceRoot",
   )(function* (workspaceRoot, options) {
     const normalizedWorkspaceRoot = path.resolve(
-      expandHomePath(workspaceRoot.trim(), yield* HostProcess.HomeDirectory),
+      expandHomePath(workspaceRoot, yield* HostProcess.HomeDirectory),
     );
     let workspaceStat = yield* statWorkspaceRoot(
       workspaceRoot,

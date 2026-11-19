@@ -255,6 +255,17 @@ export const make = Effect.gen(function* () {
         ),
       );
 
+  // Paths elsewhere on the wire trim, so git and terminals would run in the neighbouring folder.
+  const rejectUntrimmedWorkspaceRoot = (projectId: ProjectId, workspaceRoot: string) =>
+    workspaceRoot.trim() === workspaceRoot
+      ? Effect.void
+      : Effect.fail(
+          new ProjectInvalidError({
+            projectId,
+            detail: `Onicode cannot use a folder whose path starts or ends with a space: "${workspaceRoot}".`,
+          }),
+        );
+
   const rejectWorktreeContainer = Effect.fn("ProjectService.rejectWorktreeContainer")(function* (
     projectId: ProjectId,
     workspaceRoot: string,
@@ -462,6 +473,7 @@ export const make = Effect.gen(function* () {
 
   const create: ProjectService["Service"]["create"] = Effect.fn("ProjectService.create")(
     function* (input) {
+      yield* rejectUntrimmedWorkspaceRoot(input.projectId, input.workspaceRoot);
       const workspaceRoot = yield* normalizeWorkspaceRoot({
         projectId: input.projectId,
         workspaceRoot: input.workspaceRoot,
@@ -495,6 +507,9 @@ export const make = Effect.gen(function* () {
         return yield* new ProjectNotFoundError({ projectId: input.projectId });
       }
       const previousRoot = existing.value.workspaceRoot;
+      if (input.workspaceRoot !== undefined) {
+        yield* rejectUntrimmedWorkspaceRoot(input.projectId, input.workspaceRoot);
+      }
       const workspaceRoot =
         input.workspaceRoot === undefined
           ? previousRoot

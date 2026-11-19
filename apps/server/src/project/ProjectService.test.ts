@@ -925,6 +925,46 @@ it.effect("refuses a worktree container as a new project and as a new workspace 
   }).pipe(Effect.provide(ProcessRunner.layer.pipe(Layer.provideMerge(NodeServices.layer)))),
 );
 
+it.effect("refuses a folder whose path ends in a space instead of using its neighbour", () =>
+  Effect.gen(function* () {
+    const fileSystem = yield* FileSystem.FileSystem;
+    const fixture = yield* fileSystem.makeTempDirectoryScoped({ prefix: "project-space-" });
+    // Other path fields trim on the wire, so a project here would run in `foo`.
+    yield* fileSystem.makeDirectory(`${fixture}/foo`);
+    yield* fileSystem.makeDirectory(`${fixture}/foo `);
+
+    yield* Effect.gen(function* () {
+      const service = yield* ProjectService.ProjectService;
+      const rejected = yield* service
+        .create({
+          commandId: CommandId.make("command:space:create"),
+          projectId: ProjectId.make("project:space"),
+          title: "foo",
+          workspaceRoot: `${fixture}/foo `,
+        })
+        .pipe(Effect.flip);
+      assert.equal(rejected._tag, "ProjectInvalidError");
+      assert.isTrue(Option.isNone(yield* service.getByWorkspaceRoot(`${fixture}/foo`)));
+
+      const projectId = ProjectId.make("project:space:move");
+      yield* service.create({
+        commandId: CommandId.make("command:space:base"),
+        projectId,
+        title: "foo",
+        workspaceRoot: `${fixture}/foo`,
+      });
+      const moved = yield* service
+        .update({
+          commandId: CommandId.make("command:space:move"),
+          projectId,
+          workspaceRoot: `${fixture}/foo `,
+        })
+        .pipe(Effect.flip);
+      assert.equal(moved._tag, "ProjectInvalidError");
+    }).pipe(Effect.provide(layerTest));
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect("serializes two projects claiming the same workspace root", () =>
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;

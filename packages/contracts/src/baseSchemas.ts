@@ -27,6 +27,9 @@ const isNonBlank = Schema.makeFilter((value: string) => value.trim().length > 0,
   arbitraryConstraint: { minLength: 1 },
 });
 export const TrimmedNonEmptyString = TrimmedString.check(isNonBlank);
+// Untrimmed, for a folder path that may end in a space. The check sits on the decoded side, as in
+// TrimmedNonEmptyString, so the JSON Schema agents see stays the same.
+export const NonBlankString = Schema.String.pipe(Schema.decodeTo(Schema.String.check(isNonBlank)));
 
 export const NonNegativeInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0));
 export const PositiveInt = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1));

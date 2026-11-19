@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { isScratchProject } from "./projects.ts";
+import { findProjectByPath, isScratchProject } from "./projects.ts";
 
 describe("isScratchProject", () => {
   it.each([null, undefined])(
@@ -11,4 +11,13 @@ describe("isScratchProject", () => {
       expect(isScratchProject(project, scratchWorkspaceRoot)).toBe(true);
     },
   );
+});
+
+describe("findProjectByPath", () => {
+  it("leaves a folder whose name ends in a space to itself, not its neighbour", () => {
+    const projects = [{ workspaceRoot: "/code/foo" }];
+
+    expect(findProjectByPath(projects, "/code/foo/")).toBe(projects[0]);
+    expect(findProjectByPath(projects, "/code/foo ")).toBeUndefined();
+  });
 });
