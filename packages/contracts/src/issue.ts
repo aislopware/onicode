@@ -550,6 +550,23 @@ export function threadIssueKeysEqual(left: ThreadIssueKey, right: ThreadIssueKey
 }
 
 /**
+ * The link a thread holds for `key`. `formerWorkspace` is a key the caller's link named that the
+ * issue no longer reads under: after a workspace rename, links saved before it still name it.
+ */
+export function findThreadIssueLink<Link extends ThreadIssueKey>(
+  links: ReadonlyArray<Link>,
+  key: ThreadIssueKey,
+  formerWorkspace?: string,
+): Link | undefined {
+  return (
+    links.find((link) => threadIssueKeysEqual(link, key)) ??
+    (formerWorkspace === undefined
+      ? undefined
+      : links.find((link) => threadIssueKeysEqual(link, { ...key, workspace: formerWorkspace })))
+  );
+}
+
+/**
  * Which issue's linked threads to read. `url`, the issue's own, tells apart issues a key does
  * not, such as one Linear team key in two workspaces; older clients leave it out.
  */

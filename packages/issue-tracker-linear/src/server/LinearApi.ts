@@ -102,14 +102,17 @@ export class LinearApi extends Context.Service<
         readonly viewer: LinearUser;
         /** The workspace's URL key, the first path segment of its issue links. */
         readonly workspace: string;
-        /** Keys the workspace was renamed from, which Linear still redirects to it. */
-        readonly previousWorkspaces: ReadonlyArray<string>;
         readonly teams: ReadonlyArray<{
           readonly id: string;
           readonly key: string;
           readonly name: string;
         }>;
       },
+      IssueTrackerError
+    >;
+    /** The credential's workspace key, and the keys it was renamed from that Linear redirects. */
+    readonly workspace: () => Effect.Effect<
+      { readonly current: string; readonly previous: ReadonlyArray<string> },
       IssueTrackerError
     >;
     readonly listIssues: (input: {
@@ -316,8 +319,15 @@ export const make = Effect.gen(function* () {
       Effect.map((data) => ({
         viewer: data.viewer,
         workspace: data.organization.urlKey,
-        previousWorkspaces: data.organization.previousUrlKeys,
         teams: data.teams.nodes,
+      })),
+    );
+
+  const workspace: LinearApi["Service"]["workspace"] = () =>
+    call("workspace", (linear) => linear.OniWorkspace()).pipe(
+      Effect.map((data) => ({
+        current: data.organization.urlKey,
+        previous: data.organization.previousUrlKeys,
       })),
     );
 
@@ -455,6 +465,7 @@ export const make = Effect.gen(function* () {
 
   return LinearApi.of({
     viewer,
+    workspace,
     listIssues,
     getIssue,
     getIssueSummary,

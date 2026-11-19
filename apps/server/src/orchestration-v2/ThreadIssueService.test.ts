@@ -85,21 +85,28 @@ describe("ThreadIssueService", () => {
     return Effect.gen(function* () {
       const service = yield* ThreadIssueService.ThreadIssueService;
       const othercorp = { ...acme, workspace: "othercorp" };
+      const { workspace: _workspace, ...eng7 } = acme;
       expect(
         yield* service.link({
           threadId: THREAD_ID,
-          ref: { ...othercorp, projectId: "project-1" as never },
-          url: "https://linear.app/othercorp/issue/ENG-7",
+          // Named by key alone, as the agent tools do: the URL the tracker gave names the workspace.
+          ref: { ...eng7, projectId: "project-1" as never },
+          url: "https://linear.app/OtherCorp/issue/ENG-7",
           displayKey: "ENG-7",
           title: "Elsewhere",
           source: "agent",
         }),
       ).toEqual({ alreadyLinked: false });
-      expect(dispatched).toMatchObject([{ type: "thread.issue.link", workspace: "othercorp" }]);
       expect(yield* service.unlink({ threadId: THREAD_ID, key: othercorp })).toEqual({
         wasLinked: false,
       });
-      expect(dispatched).toHaveLength(1);
+      expect(yield* service.unlink({ threadId: THREAD_ID, key: acme })).toEqual({
+        wasLinked: true,
+      });
+      expect(dispatched).toMatchObject([
+        { type: "thread.issue.link", workspace: "othercorp" },
+        { type: "thread.issue.unlink", key: "ENG-7", workspace: "acme" },
+      ]);
     }).pipe(
       Effect.provide(
         testLayer({
@@ -119,20 +126,23 @@ describe("ThreadIssueService", () => {
   it.effect("tells one Linear team key in two workspaces apart by the issue's URL", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
-      const link = (url: string) => ({
+      const link = (url: string, workspace?: string) => ({
         tracker: "linear",
         host: "linear.app",
         scope: "ENG",
         key: "ENG-7",
         url,
+        ...(workspace === undefined ? {} : { workspace }),
       });
       const fixtures = [
         { id: "acme", url: "https://linear.app/acme/issue/ENG-7/title" },
         { id: "globex", url: "https://linear.app/Globex/issue/ENG-7" },
         { id: "unparsed", url: "not a url" },
+        // Linked by an agent after Globex renamed its URL key: the link keeps the live workspace.
+        { id: "renamed", url: "https://linear.app/globex-old/issue/ENG-7", workspace: "globex" },
       ];
       for (const fixture of fixtures) {
-        const payload = yield* encodePayload({ issues: [link(fixture.url)] });
+        const payload = yield* encodePayload({ issues: [link(fixture.url, fixture.workspace)] });
         yield* sql`
           INSERT INTO orchestration_v2_projection_threads (
             thread_id, project_id, title, default_provider, runtime_mode, interaction_mode,
@@ -155,9 +165,18 @@ describe("ThreadIssueService", () => {
             url: "https://linear.app/globex/issue/ENG-7/title",
           }),
         ),
-      ).toEqual(["globex", "unparsed"]);
+      ).toEqual(["globex", "renamed", "unparsed"]);
+      expect(ids(yield* service.linkedThreads({ ...key, workspace: "acme" }))).toEqual([
+        "acme",
+        "unparsed",
+      ]);
       // Older clients send no URL, and keep every match.
-      expect(ids(yield* service.linkedThreads(key))).toEqual(["acme", "globex", "unparsed"]);
+      expect(ids(yield* service.linkedThreads(key))).toEqual([
+        "acme",
+        "globex",
+        "renamed",
+        "unparsed",
+      ]);
     }).pipe(Effect.provide(testLayer())),
   );
 });

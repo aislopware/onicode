@@ -79,9 +79,19 @@ const make = Effect.gen(function* () {
         ),
       );
 
+  /** The workspace a standalone tracker's issue URL names, for keys that repeat across them. */
+  const workspaceOf = (tracker: string, value: string) => {
+    const url = parseUrl(value);
+    const api = trackers.standalone.find((candidate) => candidate.kind === tracker);
+    return url === null ? null : (api?.parseIssueUrl(url)?.workspace.toLowerCase() ?? null);
+  };
+
   const link: ThreadIssueService["Service"]["link"] = Effect.fn("ThreadIssueService.link")(
     function* (input) {
-      if (yield* isLinked(input.threadId, input.ref)) return { alreadyLinked: true };
+      // A key named without its link still has one: the URL the tracker gave names the workspace.
+      const workspace = input.ref.workspace ?? workspaceOf(input.ref.tracker, input.url);
+      const key = { ...input.ref, ...(workspace === null ? {} : { workspace }) };
+      if (yield* isLinked(input.threadId, key)) return { alreadyLinked: true };
       yield* orchestrator.dispatch({
         type: "thread.issue.link",
         commandId: yield* commandId("link", input.threadId),
@@ -90,7 +100,7 @@ const make = Effect.gen(function* () {
         host: input.ref.host,
         scope: input.ref.scope,
         key: input.ref.key,
-        ...(input.ref.workspace === undefined ? {} : { workspace: input.ref.workspace }),
+        ...(workspace === null ? {} : { workspace }),
         projectId: input.ref.projectId,
         url: input.url,
         displayKey: input.displayKey,
@@ -118,16 +128,10 @@ const make = Effect.gen(function* () {
     },
   );
 
-  const linkedThreads: ThreadIssueService["Service"]["linkedThreads"] = (issue) => {
-    const tracker = trackers.standalone.find((api) => api.kind === issue.tracker);
-    const workspaceOf = (value: string) => {
-      const url = parseUrl(value);
-      return url === null ? null : (tracker?.parseIssueUrl(url)?.workspace.toLowerCase() ?? null);
-    };
-    return listLinkedIssueThreads(issue, workspaceOf).pipe(
+  const linkedThreads: ThreadIssueService["Service"]["linkedThreads"] = (issue) =>
+    listLinkedIssueThreads(issue, (url) => workspaceOf(issue.tracker, url)).pipe(
       Effect.provideService(SqlClient.SqlClient, sql),
     );
-  };
 
   return ThreadIssueService.of({ link, unlink, linkedThreads });
 });

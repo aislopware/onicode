@@ -15,7 +15,8 @@ const decodeLinkedThreads = Schema.decodeUnknownEffect(IssueLinkedThreadsResult)
 /**
  * The threads an issue is linked to; the rows and filters `linkedThreads` uses for pull requests.
  * `workspaceOf` reads the workspace an issue URL names, for trackers whose keys repeat across
- * workspaces; a link whose URL names none is kept.
+ * workspaces. A link's stored workspace wins over its URL's, which may name a renamed one's old
+ * key; a link naming none is kept.
  */
 export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
   function* (
@@ -34,6 +35,7 @@ export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
       scope: string;
       key: string;
       url: string | null;
+      workspace: string | null;
     }>`
       SELECT t.thread_id AS id, t.project_id AS "projectId", t.title,
         t.archived_at AS "archivedAt",
@@ -44,6 +46,7 @@ export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
         json_extract(link.value, '$.scope') AS scope,
         json_extract(link.value, '$.key') AS key,
         json_extract(link.value, '$.url') AS url,
+        json_extract(link.value, '$.workspace') AS workspace,
         t.updated_at AS "updatedAt"
       FROM orchestration_v2_projection_threads AS t
       JOIN json_each(t.payload_json, '$.issues') AS link
@@ -52,14 +55,21 @@ export const listLinkedIssueThreads = Effect.fn("listLinkedIssueThreads")(
         AND json_extract(t.payload_json, '$.lineage.sideChat') IS NOT 1
       ORDER BY "updatedAt" DESC, id ASC
     `.pipe(NodeSqliteClient.readOnly);
-    const workspace = issue.url === undefined ? null : workspaceOf(issue.url);
-    const sameWorkspace = (url: string | null) =>
-      workspace === null || url === null || (workspaceOf(url) ?? workspace) === workspace;
+    const workspace =
+      issue.workspace?.toLowerCase() ?? (issue.url === undefined ? null : workspaceOf(issue.url));
+    const sameWorkspace = (row: { url: string | null; workspace: string | null }) => {
+      const linked = row.workspace ?? (row.url === null ? null : workspaceOf(row.url));
+      return workspace === null || linked === null || linked.toLowerCase() === workspace;
+    };
     // A thread may hold one issue twice, spelled `ENG-7` and `eng-7` before keys compared alike.
     const listed = new Set<string>();
     const threads = [];
     for (const row of rows) {
-      if (listed.has(row.id) || !threadIssueKeysEqual(row, issue) || !sameWorkspace(row.url)) {
+      if (
+        listed.has(row.id) ||
+        !threadIssueKeysEqual({ ...row, workspace: undefined }, issue) ||
+        !sameWorkspace(row)
+      ) {
         continue;
       }
       listed.add(row.id);

@@ -140,146 +140,153 @@ vi.mock(import("~/rpc/requestLatencyState"), async (original) => ({
   trackRpcRequestSent: () => {},
 }));
 
-it("opens a linked Linear issue from an inactive thread's sidebar badge", async () => {
-  const style = document.createElement("style");
-  style.textContent = stylesheet;
-  document.head.append(style);
-  using _style = { [Symbol.dispose]: () => style.remove() };
-  const first = threadWithHistory("issue-first", 1);
-  const linked = threadWithHistory("issue-linked", 1);
-  const issueRef = {
-    projectId: PROJECT_ID,
-    tracker: IssueTrackerKind.make("linear"),
-    host: "linear.app",
-    scope: "WEB",
-    key: "WEB-123",
-  } satisfies IssueRef;
-  const issue: ThreadIssueLink = {
-    ...issueRef,
-    url: "https://linear.app/example/issue/WEB-123/add-keyboard-support",
-    source: "manual",
-    linkedAt: "2026-01-01T00:00:00.000Z",
-    displayKey: issueRef.key,
-    title: "Add keyboard support",
-  };
-  using _environment = installFakeEnvironment([first, { ...linked, issues: [issue] }]);
-  const liveTitle = "Add keyboard shortcuts to the sidebar";
-  const liveDetail = {
-    ...issue,
-    title: liveTitle,
-    author: { login: "sam", name: null, avatarUrl: null },
-    state: { category: "open", name: "Open" },
-    createdAt: issue.linkedAt,
-    updatedAt: issue.linkedAt,
-    closedAt: null,
-    assignees: [],
-    labels: [],
-    commentCount: 3,
-    projectTitle: "render",
-    writable: false,
-    capabilities: {
-      create: false,
-      edit: false,
-      comment: false,
-      labels: false,
-      assignees: false,
-      reactions: false,
-      templates: false,
-      linkedPullRequests: false,
-      events: false,
-      search: false,
-    },
-    viewerPermissions: {
-      setState: false,
-      comment: false,
-      edit: false,
-      labels: false,
-      assignees: false,
-    },
-    states: [],
-    viewer: null,
-    body: "",
-    comments: [],
-    commentsCursor: null,
-    events: [],
-    linkedPullRequests: [],
-  } satisfies IssueDetail;
-  // Rows read the light summary; the panel the row opens reads the detail. Both keep the
-  // workspace the linked URL names, so another workspace's WEB-123 is never read in its place.
-  const readRef = { ...issueRef, workspace: "example" };
-  using _summary = answerRpc(WS_METHODS.issuesSummary, (input: IssueRef) => {
-    expect(input).toEqual(readRef);
-    const summary: IssueSummary = {
-      tracker: liveDetail.tracker,
-      host: liveDetail.host,
-      scope: liveDetail.scope,
-      key: liveDetail.key,
-      displayKey: liveDetail.displayKey,
-      title: liveDetail.title,
-      url: liveDetail.url,
-      author: liveDetail.author,
-      state: liveDetail.state,
-      createdAt: liveDetail.createdAt,
-      updatedAt: liveDetail.updatedAt,
-      closedAt: liveDetail.closedAt,
-      assignees: liveDetail.assignees,
-      labels: liveDetail.labels,
-      commentCount: liveDetail.commentCount,
+// A server from before `issues.summary` serves rows the detail, which carries the same fields.
+it.each([{ issueSummaries: false }, { issueSummaries: true }])(
+  "opens a linked Linear issue from an inactive thread's sidebar badge (summaries: $issueSummaries)",
+  async ({ issueSummaries }) => {
+    const style = document.createElement("style");
+    style.textContent = stylesheet;
+    document.head.append(style);
+    using _style = { [Symbol.dispose]: () => style.remove() };
+    const first = threadWithHistory("issue-first", 1);
+    const linked = threadWithHistory("issue-linked", 1);
+    const issueRef = {
+      projectId: PROJECT_ID,
+      tracker: IssueTrackerKind.make("linear"),
+      host: "linear.app",
+      scope: "WEB",
+      key: "WEB-123",
+    } satisfies IssueRef;
+    const issue: ThreadIssueLink = {
+      ...issueRef,
+      url: "https://linear.app/example/issue/WEB-123/add-keyboard-support",
+      source: "manual",
+      linkedAt: "2026-01-01T00:00:00.000Z",
+      displayKey: issueRef.key,
+      title: "Add keyboard support",
     };
-    return Effect.succeed(summary);
-  });
-  using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
-    expect(input).toEqual(readRef);
-    return Effect.succeed(liveDetail);
-  });
-  __setClientSettingsForTests({
-    ...DEFAULT_CLIENT_SETTINGS,
-    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
-  });
-  await page.viewport(1400, 900);
-  const router = getRouter(
-    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${first.id}`] }),
-  );
-  await router.load();
-  await using _app = await render(<AppRoot router={router} />, {
-    // AppRoot brings its own router.
-    router: false,
-  });
-  // The badge names the live title the tooltip shows, not the one stored when it was linked.
-  const badge = page.getByRole("button", {
-    name: `Issue ${issue.displayKey}: ${liveTitle}, Open`,
-  });
-  await expect.element(badge).toBeVisible();
-  expect(badge.element().querySelector("svg")).toHaveClass(/text-emerald-600/);
-  await userEvent.hover(badge);
-  const issueName = `Issue ${issue.displayKey}: ${liveTitle}`;
-  const previewLink = page.getByRole("link", { name: issueName });
-  await userEvent.hover(previewLink.getByText("sam", { exact: true }));
-  await expect.element(previewLink).toBeVisible();
-  const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
-  await act(() => previewLink.element().dispatchEvent(contextMenu));
-  expect(contextMenu.defaultPrevented).toBe(false);
-  await userEvent.click(badge);
-  const issueRow = page
-    .getByRole("region", { name: "Linked items" })
-    .getByRole("link", { name: issueName });
-  await expect.element(issueRow.getByRole("img", { name: "Open" })).toBeVisible();
-  await expect.element(issueRow.getByRole("img", { name: "3 comments" })).toBeVisible();
-  await expect.element(issueRow.getByRole("img", { name: "Linear" })).toBeVisible();
-  await expect.element(issueRow.getByText(issue.scope, { exact: true })).toBeVisible();
-  await userEvent.click(issueRow);
-  expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${linked.id}`);
-  await expect.element(page.getByRole("heading", { name: liveTitle })).toBeVisible();
-  await act(() => useRightPanelStore.getState().close(scopeThreadRef(ENVIRONMENT_ID, linked.id)));
-  await expect
-    .element(
-      page.getByRole("region", { name: "Thread details" }).getByRole("link", {
-        name: issueName,
-        exact: true,
-      }),
-    )
-    .toBeVisible();
-});
+    using _environment = installFakeEnvironment([first, { ...linked, issues: [issue] }], {
+      issueSummaries,
+    });
+    const liveTitle = "Add keyboard shortcuts to the sidebar";
+    const liveDetail = {
+      ...issue,
+      title: liveTitle,
+      author: { login: "sam", name: null, avatarUrl: null },
+      state: { category: "open", name: "Open" },
+      createdAt: issue.linkedAt,
+      updatedAt: issue.linkedAt,
+      closedAt: null,
+      assignees: [],
+      labels: [],
+      commentCount: 3,
+      projectTitle: "render",
+      writable: false,
+      capabilities: {
+        create: false,
+        edit: false,
+        comment: false,
+        labels: false,
+        assignees: false,
+        reactions: false,
+        templates: false,
+        linkedPullRequests: false,
+        events: false,
+        search: false,
+      },
+      viewerPermissions: {
+        setState: false,
+        comment: false,
+        edit: false,
+        labels: false,
+        assignees: false,
+      },
+      states: [],
+      viewer: null,
+      body: "",
+      comments: [],
+      commentsCursor: null,
+      events: [],
+      linkedPullRequests: [],
+    } satisfies IssueDetail;
+    // Rows read the light summary; the panel the row opens reads the detail. Both keep the
+    // workspace the linked URL names, so another workspace's WEB-123 is never read in its place.
+    const readRef = { ...issueRef, workspace: "example" };
+    using _summary = answerRpc(WS_METHODS.issuesSummary, (input: IssueRef) => {
+      expect(issueSummaries).toBe(true);
+      expect(input).toEqual(readRef);
+      const summary: IssueSummary = {
+        tracker: liveDetail.tracker,
+        host: liveDetail.host,
+        scope: liveDetail.scope,
+        key: liveDetail.key,
+        displayKey: liveDetail.displayKey,
+        title: liveDetail.title,
+        url: liveDetail.url,
+        author: liveDetail.author,
+        state: liveDetail.state,
+        createdAt: liveDetail.createdAt,
+        updatedAt: liveDetail.updatedAt,
+        closedAt: liveDetail.closedAt,
+        assignees: liveDetail.assignees,
+        labels: liveDetail.labels,
+        commentCount: liveDetail.commentCount,
+      };
+      return Effect.succeed(summary);
+    });
+    using _detail = answerRpc(WS_METHODS.issuesDetail, (input: IssueRef) => {
+      expect(input).toEqual(readRef);
+      return Effect.succeed(liveDetail);
+    });
+    __setClientSettingsForTests({
+      ...DEFAULT_CLIENT_SETTINGS,
+      onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+    });
+    await page.viewport(1400, 900);
+    const router = getRouter(
+      createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${first.id}`] }),
+    );
+    await router.load();
+    await using _app = await render(<AppRoot router={router} />, {
+      // AppRoot brings its own router.
+      router: false,
+    });
+    // The badge names the live title the tooltip shows, not the one stored when it was linked.
+    const badge = page.getByRole("button", {
+      name: `Issue ${issue.displayKey}: ${liveTitle}, Open`,
+    });
+    await expect.element(badge).toBeVisible();
+    expect(badge.element().querySelector("svg")).toHaveClass(/text-emerald-600/);
+    await userEvent.hover(badge);
+    const issueName = `Issue ${issue.displayKey}: ${liveTitle}`;
+    const previewLink = page.getByRole("link", { name: issueName });
+    await userEvent.hover(previewLink.getByText("sam", { exact: true }));
+    await expect.element(previewLink).toBeVisible();
+    const contextMenu = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    await act(() => previewLink.element().dispatchEvent(contextMenu));
+    expect(contextMenu.defaultPrevented).toBe(false);
+    await userEvent.click(badge);
+    const issueRow = page
+      .getByRole("region", { name: "Linked items" })
+      .getByRole("link", { name: issueName });
+    await expect.element(issueRow.getByRole("img", { name: "Open" })).toBeVisible();
+    await expect.element(issueRow.getByRole("img", { name: "3 comments" })).toBeVisible();
+    await expect.element(issueRow.getByRole("img", { name: "Linear" })).toBeVisible();
+    await expect.element(issueRow.getByText(issue.scope, { exact: true })).toBeVisible();
+    await userEvent.click(issueRow);
+    expect(router.history.location.pathname).toBe(`/${ENVIRONMENT_ID}/${linked.id}`);
+    await expect.element(page.getByRole("heading", { name: liveTitle })).toBeVisible();
+    await act(() => useRightPanelStore.getState().close(scopeThreadRef(ENVIRONMENT_ID, linked.id)));
+    await expect
+      .element(
+        page.getByRole("region", { name: "Thread details" }).getByRole("link", {
+          name: issueName,
+          exact: true,
+        }),
+      )
+      .toBeVisible();
+  },
+);
 
 it("reads only the linked issues a thread shows", async () => {
   const style = document.createElement("style");

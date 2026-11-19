@@ -57,6 +57,7 @@ describe("issuesSearchFromUrl", () => {
       key: "ENG-7",
       selectedIssueUrl: url,
     });
+    expect(search.selectedIssueUrl).toBe(url);
     expect(issueSurfaceTargetFromSearch(search)).toEqual({
       environmentId: "server",
       projectId: "project",

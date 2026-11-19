@@ -166,7 +166,7 @@ describe("LinearIssueTracker", () => {
       const { tracker, requests } = fakeLinear({
         OniViewer: () => ({
           viewer: JULIUS,
-          organization: { urlKey: "acme", previousUrlKeys: [] },
+          organization: { urlKey: "acme" },
           teams: { nodes: [] },
         }),
         OniIssues: (variables) => {
@@ -257,7 +257,7 @@ describe("LinearIssueTracker", () => {
       const { tracker } = fakeLinear({
         OniViewer: () => ({
           viewer: JULIUS,
-          organization: { urlKey: "acme", previousUrlKeys: [] },
+          organization: { urlKey: "acme" },
           teams: { nodes: [] },
         }),
         OniIssue: (variables) => {
@@ -302,9 +302,10 @@ describe("LinearIssueTracker", () => {
       const { tracker } = fakeLinear({
         OniViewer: () => ({
           viewer: JULIUS,
-          organization: { urlKey: "acme", previousUrlKeys: [] },
+          organization: { urlKey: "acme" },
           teams: { nodes: [] },
         }),
+        OniWorkspace: () => ({ organization: { urlKey: "acme", previousUrlKeys: [] } }),
         OniIssue: () => ({
           issue: issue("ENG-7", {
             comments: {
@@ -418,10 +419,8 @@ describe("LinearIssueTracker", () => {
             comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
           },
         }),
-        OniViewer: () => ({
-          viewer: JULIUS,
+        OniWorkspace: () => ({
           organization: { urlKey: "acme", previousUrlKeys: ["acme-old"] },
-          teams: { nodes: [] },
         }),
       });
       const api = yield* tracker;
@@ -494,11 +493,7 @@ describe("LinearIssueTracker", () => {
       expect(unauthenticated.reason).toBe("unauthenticated");
 
       const connected = fakeLinear({
-        OniViewer: () => ({
-          viewer: JULIUS,
-          organization: { urlKey: "acme", previousUrlKeys: [] },
-          teams: { nodes: [] },
-        }),
+        OniWorkspace: () => ({ organization: { urlKey: "acme", previousUrlKeys: [] } }),
         OniTeam: () => ({
           teams: {
             nodes: [

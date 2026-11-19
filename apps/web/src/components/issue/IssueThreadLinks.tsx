@@ -1,7 +1,7 @@
 import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { visibleLinkedThreads } from "@onicode/client-runtime/state/threads";
-import { AuthOrchestrationOperateScope, threadIssueKeysEqual } from "@onicode/contracts";
+import { AuthOrchestrationOperateScope, findThreadIssueLink } from "@onicode/contracts";
 import { issueLinkWorkspace } from "@onicode/client-runtime/issue-links";
 import type {
   EnvironmentId,
@@ -61,8 +61,8 @@ export function IssueThreadLinks({
   const hiddenKeys = useAtomValue(environmentThreadShells.hiddenThreadKeysAtom);
   const hidingAnywhere = useAnyEnvironmentHiding();
   const loadedThreadRefs = useEnvironmentThreadRefs(environmentId);
-  // The canonical URL's workspace, as the server's agent tools store it: after a rename the
-  // reference may still name the old key.
+  // Stored under the canonical URL's workspace, as the agent tools store it. After a rename the
+  // reference may still name the old key, which an earlier link may be saved under.
   const workspace = issueLinkWorkspace(issue.url) ?? reference.workspace;
   const key = {
     tracker: reference.tracker,
@@ -84,13 +84,22 @@ export function IssueThreadLinks({
   const [pending, setPending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const hereLink = thread?.issues?.find((existing) => threadIssueKeysEqual(existing, key));
+  const hereLink = findThreadIssueLink(thread?.issues ?? [], key, reference.workspace);
   const linkedHere = hereLink !== undefined;
   const changeLink = async (threadId: ThreadId, remove: boolean) => {
     if (pending) return;
     setPending(true);
-    // The stored spelling: older servers match an unlink's key case-sensitively.
-    const unlinkKey = hereLink === undefined ? key : { ...key, key: hereLink.key };
+    // The stored spelling and workspace: older servers match an unlink's key case-sensitively,
+    // and a link saved before a workspace rename names its old key.
+    const { workspace: _workspace, ...unqualified } = key;
+    const unlinkKey =
+      hereLink === undefined
+        ? key
+        : {
+            ...unqualified,
+            key: hereLink.key,
+            ...(hereLink.workspace === undefined ? {} : { workspace: hereLink.workspace }),
+          };
     const result = await (remove
       ? unlink({ environmentId, input: { threadId, ...unlinkKey } })
       : link({
@@ -226,7 +235,7 @@ export function IssueThreadLinks({
               environmentId={environmentId}
               pending={pending}
               isLinked={(candidate) =>
-                (candidate.issues ?? []).some((existing) => threadIssueKeysEqual(existing, key))
+                findThreadIssueLink(candidate.issues ?? [], key, reference.workspace) !== undefined
               }
               onSelect={(threadId) => void changeLink(threadId, false)}
             />
