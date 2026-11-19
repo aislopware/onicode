@@ -9,6 +9,7 @@ import { previewEnvironment } from "~/state/preview";
 import { useAtomCommand } from "~/state/use-atom-command";
 
 import { resolveExternalLinkUrl } from "./browserTargetResolver";
+import { canonicalLinkUrl } from "./webUrl";
 import {
   canOpenLinksInApp,
   resolveBrowserLinkTargetPreference,
@@ -33,7 +34,8 @@ export function useOpenLink(threadRef: ScopedThreadRef | null | undefined): (
   },
 ) => Promise<void> {
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
-  return async (url, options = {}) => {
+  return async (link, options = {}) => {
+    const url = canonicalLinkUrl(link);
     const targetThreadRef = options.threadRef ?? threadRef;
     const target = resolveLinkTarget({
       url,

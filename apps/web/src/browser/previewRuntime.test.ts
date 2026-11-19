@@ -130,6 +130,16 @@ describe("previewRuntimeFor on desktop", () => {
       url: "http://[::1]:52000/",
       runtime: "server",
     },
+    ...["0.0.0.0", "[::]"].map((host) => ({
+      // Desktop sends the unspecified address to `localhost`, which names the forward.
+      case: `a host from before the tunnel, ${host} at the SSH port`,
+      target: remote,
+      origin: ssh,
+      tunnel: false,
+      operate: true,
+      url: `http://${host}:52000/api/assets/a.html`,
+      runtime: undefined,
+    })),
     {
       case: "a host from before the tunnel, another port over SSH",
       target: remote,

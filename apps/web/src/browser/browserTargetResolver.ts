@@ -15,7 +15,7 @@ import type { ConnectionTarget } from "@onicode/client-runtime/connection";
 import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { readPreparedConnection } from "~/state/session";
 
-import { isWebUrl } from "./webUrl";
+import { canonicalLinkUrl, isWebUrl } from "./webUrl";
 
 export { normalizeHostname, isLocalLoopbackHost } from "@onicode/shared/hostClassification";
 
@@ -130,5 +130,4 @@ export const resolveExternalServerUrl = (
 
 /** A link's URL for the system browser: only web pages can name the environment's loopback. */
 export const resolveExternalLinkUrl = (environmentId: EnvironmentId, url: string): string | null =>
-  // The system browser reads loose spellings such as `http:localhost` the way URL does.
-  isWebUrl(url) ? resolveExternalServerUrl(environmentId, new URL(url).href) : url;
+  isWebUrl(url) ? resolveExternalServerUrl(environmentId, canonicalLinkUrl(url)) : url;
