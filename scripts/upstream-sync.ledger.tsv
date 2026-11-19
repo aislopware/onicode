@@ -2688,3 +2688,4 @@ dc7216ca23	take	fix(mobile): new-task link no longer blanks a scheduled task whi
 a1e7ac2b24	take	adapted: ChatView CONFLICT resolved keeping Onicode's provider session views next to the moved freshSessionArmed hook
 2526691ea5	take	fix(mobile): cancelling a model download keeps the current transcription model (#39157)
 cfd24da4a7	take	adapted: adapter.ts CONFLICT; adopted upstream's followPrompt refactor; kept Onicode's release-time prompt-delivery record (bf56d07904): upstream records on the response, which a late Copilot response would use to overwrite a newer turn's notes; it now lives in followPrompt keyed to each prompt's own release, and a prompt-steer records the prompt it releases
+b5be2ff8da	take	perf(server): read issue tracker bindings once per listing (#39169)
