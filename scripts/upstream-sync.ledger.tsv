@@ -2681,3 +2681,4 @@ b0e469ceb9	take	fix(updates): a stalled release download retries and resumes (#3
 016cfad012	take	perf(server): starting a turn on a long thread no longer scans its messages, tasks and transfers (#39103); upstream migration 100 is Onicode's 105_TurnStartReadIndexes (Migrations.ts, reconcileV2PreviewMigration.test.ts); turn start consumers checked: only completed provider_native subagents are routed and handoff-referenced transfers cover subagentResultTransfers
 b6afe8109c	take	fix(web): home paths like ~/.claude/CLAUDE.md no longer show under the workspace folder (#39146); scenario ported as is (mobile shows changedFiles as written, no counterpart)
 ff9efe89f6	take	fix(web): copying items within one list keeps their list markers (#39150)
+9d2db4b23f	take	fix(provider-acp): an ACP compaction no longer keeps a summary its agent cleared (#39151)
