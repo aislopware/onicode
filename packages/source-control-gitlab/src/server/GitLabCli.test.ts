@@ -126,7 +126,19 @@ layer("GitLabCli.layer", (it) => {
       const call = mockedRun.mock.calls.at(-1)?.[0];
       expect(call?.args.join(" ")).not.toContain(bodyFile);
       expect(call?.args).toContain("description=@-");
+      expect(call?.args).toContain("title=Add MR");
       assert.strictEqual(call?.stdin, "## Summary\n\nFixes the thing.\n");
+
+      mockedRun.mockReturnValueOnce(Effect.succeed(processOutput("{}")));
+      yield* glab.createMergeRequest({
+        cwd: "/repo",
+        baseBranch: "main",
+        headSelector: "feature/mr",
+        title: "Add MR",
+        bodyFile,
+        draft: true,
+      });
+      expect(mockedRun.mock.calls.at(-1)?.[0]?.args).toContain("title=Draft: Add MR");
     }).pipe(Effect.scoped),
   );
 

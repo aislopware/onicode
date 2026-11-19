@@ -2474,6 +2474,7 @@ export const make = Effect.gen(function* () {
       readonly baseRef: string;
       readonly headBranch: string;
     }) => Effect.Effect<{ readonly title: string; readonly body: string }, E>,
+    draft = false,
   ) {
     const provider = yield* sourceControlProvider(cwd);
     const terms = sourceControlDefinitions.get(provider.kind).changeRequest;
@@ -2567,6 +2568,7 @@ export const make = Effect.gen(function* () {
           : {}),
         title: generated.title,
         bodyFile,
+        ...(draft ? { draft: true } : {}),
       })
       .pipe(Effect.ensuring(fileSystem.remove(bodyFile).pipe(Effect.ignore)));
 
@@ -2657,6 +2659,7 @@ export const make = Effect.gen(function* () {
       undefined,
       input.baseBranch,
       () => Effect.succeed({ title: input.title, body: input.body }),
+      input.draft === true,
     );
     // The thread's branch PR comes from status, which may hold the lookup from before.
     if (result.status === "created") yield* invalidateStatus(input.cwd);
@@ -2684,9 +2687,8 @@ export const make = Effect.gen(function* () {
       const key = createdPullRequestKey({ pr: result }, project);
       if (key === null) return false;
       const ref = { projectId: input.projectId, ...key };
-      const isDraft =
-        result.status === "opened_existing" &&
-        (yield* pullRequests.summary({ ...ref, allowStale: false })).isDraft;
+      // A created PR is a draft already where the host opened it as one.
+      const isDraft = (yield* pullRequests.summary({ ...ref, allowStale: false })).isDraft;
       if (!isDraft) yield* pullRequests.runAction({ ...ref, action: "draft" });
       return true;
     },

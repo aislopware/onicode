@@ -119,6 +119,7 @@ type FakeProviderCall =
       readonly baseRefName: string;
       readonly headSelector: string;
       readonly title: string;
+      readonly draft: boolean | undefined;
     }
   | { readonly operation: "getChangeRequest"; readonly reference: string }
   | {
@@ -509,6 +510,7 @@ function createFakeSourceControlProvider(scenario: FakeProviderScenario = {}): {
           baseRefName: input.baseRefName,
           headSelector: input.headSelector,
           title: input.title,
+          draft: input.draft,
         }),
       getDefaultBranch: (input) =>
         record(input.cwd, { operation: "getDefaultBranch" }).pipe(
@@ -4512,6 +4514,29 @@ it.layer(layerGitManagerTest)("GitManager", (it) => {
       );
       expect(notListed.message).toContain("does not list it yet");
       expect(created(unlisted.providerCalls)).toHaveLength(1);
+
+      // The host opens the draft itself, so ready-only automation never sees a ready PR.
+      const conversions: Array<PullRequestActionInput> = [];
+      const drafted = yield* makeManager({
+        providerScenario: { prListSequence: [[], [open]] },
+        pullRequests: {
+          summary: () => Effect.succeed({ isDraft: true } as never),
+          runAction: (action) => Effect.sync(() => void conversions.push(action)),
+        },
+      });
+      yield* drafted.manager.createPullRequest({
+        cwd: repoDir,
+        projectId: ProjectId.make("project-1"),
+        title: "Feature",
+        body: "Body",
+        draft: true,
+      });
+      expect(
+        drafted.providerCalls.flatMap((call) =>
+          call.operation === "createChangeRequest" ? [call.draft] : [],
+        ),
+      ).toEqual([true]);
+      expect(conversions).toEqual([]);
     }),
   );
 
