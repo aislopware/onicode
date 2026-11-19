@@ -350,6 +350,7 @@ import { ComposerSurface } from "./chat/ComposerSurface";
 import { resolveThreadSyncPhase } from "../threadSync";
 import { hasAvailableCompactionProvider } from "./chat/compaction.logic";
 import {
+  activeSessionIsScheduledFresh,
   deriveLatestContextWindowSnapshot,
   hasDismissedResumeCompaction,
   latestProviderTurnTokenUsage,
@@ -2552,7 +2553,7 @@ export default function ChatView(props: ChatViewProps) {
   const freshSessionArmed = useFreshSessionArmed(routeThreadKey);
   const freshSessionPending = freshSessionAvailable && freshSessionArmed;
   // The context window is the current conversation's, so neither a handoff destination nor
-  // the fresh session armed by /clear inherits it.
+  // the fresh session armed by /clear inherits it, and a schedule's own session is not it.
   const resumeCompactionTokens =
     activeContextWindow &&
     pendingHandoff === null &&
@@ -2572,7 +2573,9 @@ export default function ChatView(props: ChatViewProps) {
       updatedAt: activeContextWindow.updatedAt,
       promptCacheTtlMs: activeThreadLiveTokenUsage?.promptCacheTtlMs,
       now: `${nowMinute}:00.000Z`,
-    })
+    }) &&
+    (serverProjection === null ||
+      !activeSessionIsScheduledFresh(serverProjection, serverVisibleTurnItems))
       ? activeContextWindow.usedTokens
       : null;
   const [fullHistoryThreadKeys, setFullHistoryThreadKeys] = useState<ReadonlySet<string>>(

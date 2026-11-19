@@ -92,6 +92,8 @@ export class ProviderRegistry extends Context.Service<
       /** Directory the driver scans; the snapshot stays keyed by `cwd`. Defaults to `cwd`. */
       readonly scanCwd?: string;
       readonly fresh?: boolean;
+      /** Scan only instances whose folder snapshot can list models of its own. */
+      readonly modelsOnly?: boolean;
     }) => Effect.Effect<ReadonlyArray<ServerProvider>>;
 
     /**
@@ -1138,6 +1140,7 @@ export const layer = Layer.effect(
       readonly cwd: string;
       readonly scanCwd?: string;
       readonly fresh?: boolean;
+      readonly modelsOnly?: boolean;
       // Set by an instance's own report that its workspace skills changed.
       readonly rescan?: ProviderInstance;
     }) {
@@ -1194,6 +1197,7 @@ export const layer = Layer.effect(
       const instance = yield* instanceRegistry.getInstance(input.instanceId);
       const snapshotForCwd = instance?.snapshotForCwd;
       if (!instance || !snapshotForCwd) return providers;
+      if (input.modelsOnly && !instance.listsWorkspaceModels) return providers;
       // A report never enrolls a cwd nobody requested, nor outlives the instance that made it.
       if (input.rescan && (input.rescan !== instance || (!runningScan && !scannedFrom))) {
         return providers;

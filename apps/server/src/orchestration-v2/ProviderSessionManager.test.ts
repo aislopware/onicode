@@ -1690,6 +1690,85 @@ it.effect(
     }),
 );
 
+const openSharedThreadWithProviderThread = Effect.fnUntraced(function* (fixtureName: string) {
+  const eventSink = yield* EventSink.EventSinkV2;
+  const idAllocator = yield* IdAllocator.IdAllocatorV2;
+  const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+  const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
+  const now = yield* DateTime.now;
+  const threadId = ThreadId.make(`thread-${fixtureName}`);
+  const providerSessionId = idAllocator.derive.providerSession({
+    providerInstanceId: modelSelection.instanceId,
+  });
+  const providerThread = makeProviderThread({ idAllocator, threadId, providerSessionId, now });
+  yield* eventSink.write({
+    events: [yield* makeThreadCreatedEvent({ idAllocator, threadId, now })],
+  });
+  yield* eventSink.write({
+    events: [
+      {
+        id: yield* idAllocator.allocate.event({ threadId }),
+        type: "provider-thread.updated",
+        threadId,
+        driver: CODEX_DRIVER,
+        occurredAt: now,
+        payload: providerThread,
+      },
+    ],
+  });
+  const runtime = yield* manager.open({
+    threadId,
+    providerSessionId,
+    modelSelection,
+    runtimePolicy,
+  });
+  const startTurn = (runOrdinal: number) =>
+    Effect.gen(function* () {
+      const runId = idAllocator.derive.run({ threadId, ordinal: runOrdinal });
+      return yield* runtime.startTurn({
+        appThread: (yield* projectionStore.getThreadProjection(threadId)).thread,
+        threadId,
+        runId,
+        runOrdinal,
+        providerTurnOrdinal: runOrdinal,
+        attemptId: idAllocator.derive.runAttempt({ runId, attemptOrdinal: 1 }),
+        rootNodeId: idAllocator.derive.rootNode({ runId }),
+        providerThread,
+        message: {
+          createdBy: "user",
+          creationSource: "web",
+          messageId: yield* idAllocator.allocate.message({ threadId, ordinal: runOrdinal }),
+          text: "turn",
+          attachments: [],
+        },
+        modelSelection,
+        runtimePolicy,
+      });
+    });
+  return { manager, runtime, threadId, providerSessionId, providerThread, startTurn };
+});
+
+it.effect(
+  "ProviderSessionManagerV2 releases a shared session whose busy thread detached once it idles",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      yield* Effect.gen(function* () {
+        const { manager, threadId, providerSessionId, startTurn } =
+          yield* openSharedThreadWithProviderThread("provider-session-manager-detach-busy");
+        // The provider never ends the turn, as with a Force stop it ignored.
+        yield* startTurn(1);
+
+        yield* manager.detach({ providerSessionId, threadId });
+        yield* TestClock.adjust("2 seconds");
+        yield* Effect.yieldNow;
+
+        assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
+        assert.equal((yield* Ref.get(state)).closeCount, 1);
+      }).pipe(Effect.provide(layerTest({ state, idleTimeoutMs: 1000 })));
+    }),
+);
+
 // regression: #15571 an interrupted session start did not clean up
 it.effect(
   "ProviderSessionManagerV2 keeps a shared session busy when a stopped start still ends its turn",

@@ -960,7 +960,13 @@ function delegatedCompletionWakeDetail(
     .map((taskId) => {
       const task = tasks.find((candidate) => candidate.id === taskId);
       // A follow-up gets a fresh task id; the child thread links it to the task delegate_task returned.
-      const thread = task?.childThreadId == null ? "" : ` in child thread ${task.childThreadId}`;
+      const remote = task?.remoteChild;
+      const thread =
+        task?.childThreadId != null
+          ? ` in child thread ${task.childThreadId}`
+          : remote === undefined
+            ? ""
+            : ` in thread ${remote.threadId} on linked environment ${remote.label} (${remote.environmentId})`;
       const label = `Delegated task ${taskId}${task?.title == null ? "" : ` (${task.title})`}${thread}${task === undefined ? " reached a terminal state" : ` [${task.status}]`}`;
       if (task?.result != null) {
         const detail = `${label}:\n${task.result}`;
@@ -1482,16 +1488,28 @@ function conversationProviderThread(
   );
 }
 
-/** Runs of scheduled fresh sessions, apart from the one `anchorRun` belongs to. */
+/** Runs of scheduled fresh sessions, apart from the one `anchor` belongs to. */
 function sideConversationRunIds(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems" | "providerThreads">,
-  anchorRun: OrchestrationV2Run | null,
+  anchor: Pick<OrchestrationV2Run, "providerThreadId"> | null,
 ): ReadonlySet<RunId> {
   const starts = scheduledConversationStarts(projection);
-  const anchorStart = anchorRun === null ? undefined : starts.get(anchorRun.id);
+  const anchorStart = anchor === null ? undefined : scheduledConversationStart(projection, anchor);
   return new Set(
     Array.from(starts).flatMap(([runId, start]) => (start === anchorStart ? [] : [runId])),
   );
+}
+
+/** Handoff sources of `providerThread`'s conversation, without other scheduled fresh sessions. */
+function handoffRuns(
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems" | "providerThreads">,
+  providerThread: OrchestrationV2ProviderThread | undefined,
+): ReadonlyArray<OrchestrationV2Run> {
+  const sideRunIds = sideConversationRunIds(
+    projection,
+    providerThread === undefined ? null : { providerThreadId: providerThread.id },
+  );
+  return projection.runs.filter((run) => isHandoffSourceRun(run) && !sideRunIds.has(run.id));
 }
 
 /** Wakes and fresh starts act on the active session; a message continues the conversation. */
@@ -1963,8 +1981,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         Effect.mapError((cause) => new OrchestratorProjectionError({ threadId, cause })),
       );
 
-  const readInheritedItems = (thread: OrchestrationV2AppThread) =>
-    readInheritedHandoffItems(projectionStore, thread).pipe(
+  const readInheritedItems = (thread: OrchestrationV2AppThread, withScheduledRuns = false) =>
+    readInheritedHandoffItems(projectionStore, thread, withScheduledRuns).pipe(
       Effect.mapError((cause) => new OrchestratorProjectionError({ threadId: thread.id, cause })),
     );
 
@@ -2930,7 +2948,11 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         ),
       );
       const latestCompletedRun = projection.runs.findLast((run) => run.status === "completed");
-      const latestHandoffRun = projection.runs.findLast(isHandoffSourceRun);
+      const conversationHandoffRuns =
+        freshContext || canResumeAcrossInstances
+          ? []
+          : handoffRuns(projection, activeProviderThread);
+      const latestHandoffRun = conversationHandoffRuns.at(-1);
       const targetLastCompletedRun = lastDeliveredRunForProviderThread(
         projection,
         queuedProviderThread.id,
@@ -2941,9 +2963,8 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         latestHandoffRun === undefined ||
         latestHandoffRun.providerInstanceId === queuedRun.providerInstanceId
           ? []
-          : projection.runs.filter(
+          : conversationHandoffRuns.filter(
               (run) =>
-                isHandoffSourceRun(run) &&
                 run.ordinal >= contextBoundary &&
                 run.ordinal > (targetLastCompletedRun?.ordinal ?? 0) &&
                 run.ordinal <= latestHandoffRun.ordinal,
@@ -6765,10 +6786,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
           toProviderInstanceId: input.modelSelection.instanceId,
           coveredRunOrdinals: { from: Math.max(1, contextBoundary), to: targetRun.ordinal },
           strategy: "full_thread_summary",
-          items: yield* readHandoffItems(
+          items: (yield* readHandoffItems(
             input.command.threadId,
             contextBoundary === 0 ? undefined : [...conversation.runIds],
-          ),
+          )).filter((item) => item.runId === null || conversation.runIds.has(item.runId)),
           runs: input.projection.runs,
           createdAt: now,
         })
@@ -7239,6 +7260,10 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         projection.thread.deletedAt !== null ||
         projection.thread.settledOverride === "settled" ||
         projection.thread.providerInstanceId !== run.providerInstanceId ||
+        // The continuation resumes the conversation's session, not a scheduled fresh one.
+        run.providerThreadId !==
+          (conversationProviderThread(projection, contextBoundaryOrdinal(projection))?.id ??
+            null) ||
         projection.runtimeRequests.some((request) => request.status === "pending") ||
         (projection.thread.snoozedUntil != null &&
           DateTime.toEpochMillis(projection.thread.snoozedUntil) > DateTime.toEpochMillis(now))
@@ -7302,11 +7327,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
 
     // The service checked idleness before this command; a run or a delegated result that landed
     // since makes the thread busy, and that turn refreshes the cache anyway. It measured the active
-    // session, so skip when the next message resumes another one (after a scheduled fresh run).
+    // session, so skip when the next message resumes another one (after a scheduled fresh run), a
+    // later run replaced it, or the selection moved to another instance.
     if (
       command.idleCompaction === "beforeCacheExpires" &&
-      (conversationProviderThread(projection, contextBoundaryOrdinal(projection))?.id !==
-        projection.thread.activeProviderThreadId ||
+      ((command.idleCompactionProviderThreadId !== undefined &&
+        command.idleCompactionProviderThreadId !== projection.thread.activeProviderThreadId) ||
+        activeProviderInstanceId !==
+          (command.modelSelection ?? projection.thread.modelSelection).instanceId ||
+        conversationProviderThread(projection, contextBoundaryOrdinal(projection))?.id !==
+          projection.thread.activeProviderThreadId ||
         projection.runs.some(
           (run) =>
             run.status === "queued" ||
@@ -8354,7 +8384,6 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
     }
     const runId = idAllocator.derive.run({ threadId: command.threadId, ordinal });
     const latestCompletedRun = projection.runs.findLast((run) => run.status === "completed");
-    const latestHandoffRun = projection.runs.findLast(isHandoffSourceRun);
     const legacyImportItems =
       projection.thread.historyOrigin === "v1_import" && contextBoundary === 0
         ? yield* readHandoffItems(command.threadId, [null])
@@ -9085,7 +9114,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       sourceProjection !== null &&
       sideChatWithoutSource &&
       sideChatParentBoundary === 0
-        ? yield* readInheritedItems(sourceProjection.thread)
+        ? yield* readInheritedItems(sourceProjection.thread, true)
         : undefined;
     const sideChatParentItems =
       !sideChatFork || sourceProjection === null
@@ -9128,12 +9157,16 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       targetProviderThread === undefined
         ? undefined
         : lastDeliveredRunForProviderThread(projection, targetProviderThread.id);
+    const conversationHandoffRuns =
+      !isProviderSwitch || canResumeAcrossInstances
+        ? []
+        : handoffRuns(projection, activeProviderThread);
+    const latestHandoffRun = conversationHandoffRuns.at(-1);
     const providerSwitchCoveredRuns =
       !isProviderSwitch || canResumeAcrossInstances || latestHandoffRun === undefined
         ? []
-        : projection.runs.filter(
+        : conversationHandoffRuns.filter(
             (run) =>
-              isHandoffSourceRun(run) &&
               run.ordinal >= contextBoundary &&
               run.ordinal >
                 (requiresFullProviderSwitchContext ? 0 : (targetLastCompletedRun?.ordinal ?? 0)) &&
@@ -16196,7 +16229,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         command.deliveryIntent === "steer" &&
         (steerTarget === undefined || (yield* latestActiveRunId) !== steerTarget)
       ) {
-        // Checkpoint capture ends a run outside this lock; one that ended after the first read
+        // A provider failure ends a run outside this lock; one that ended after the first read
         // still places its unread steers ahead of this one.
         if (steerTarget !== undefined) yield* placeEndedRunsSteers;
         const { deliveryIntent: _steer, ...asSend } = command;

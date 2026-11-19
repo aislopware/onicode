@@ -691,6 +691,7 @@ export const OpenCodeDriver: ProviderDriver<
       accentColor,
       enabled,
       snapshot,
+      listsWorkspaceModels: true,
       // A scan never installs OpenCode: without an offline probe result it fails and keeps the
       // last inventory rather than guessing 1.x.
       snapshotForCwd: (cwd) =>

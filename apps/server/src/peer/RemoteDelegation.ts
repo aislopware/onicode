@@ -660,9 +660,12 @@ const make = Effect.gen(function* () {
           const tailReply = tail.items.findLast(
             (item) => item.type === "assistant_message" && (runId === null || item.runId === runId),
           );
-          if (!tail.hasMore && tailReply !== undefined) {
+          // A reply here bounds the run's last one from below, so paging on from the tail is enough.
+          if (tailReply !== undefined) {
             reply = tailReply;
-            break;
+            if (!tail.hasMore || tail.nextPosition === null) break;
+            afterPosition = tail.nextPosition;
+            continue;
           }
         }
       }

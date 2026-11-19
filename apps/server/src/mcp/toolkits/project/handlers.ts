@@ -317,7 +317,12 @@ export const layer = McpToolAccess.toLayer(ProjectToolkit, {
                     Project.ProjectService.pipe(
                       Effect.flatMap((projects) => projects.workspaceScanDirectory(cwd)),
                       Effect.flatMap((scanCwd) =>
-                        registry.refreshWorkspaceSnapshot({ instanceId, cwd, scanCwd }),
+                        registry.refreshWorkspaceSnapshot({
+                          instanceId,
+                          cwd,
+                          scanCwd,
+                          modelsOnly: true,
+                        }),
                       ),
                       Effect.flatMap(requireModel),
                     ),

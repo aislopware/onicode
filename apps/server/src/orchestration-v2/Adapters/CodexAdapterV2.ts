@@ -2211,17 +2211,26 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           string,
           { readonly runtimeMode: RuntimeMode; readonly kinds: Set<ProviderRequestKind> }
         >();
-        // `codex resume` and the Codex app list the native name. A failed rename, including on a
-        // Codex without thread/name/set, is forgotten so the next turn sends it again.
+        // `codex resume` and the Codex app list the native name. A failed rename is retried on the
+        // next turn, unless this Codex lacks thread/name/set.
         const appliedThreadNames = new Map<string, string>();
+        let threadNameUnsupported = false;
         const applyThreadName = Effect.fn("CodexAdapterV2.applyThreadName")(function* (
           threadId: string,
           name: string,
         ) {
-          if (appliedThreadNames.get(threadId) === name) return;
-          const renamed = yield* client
-            .request("thread/name/set", { threadId, name })
-            .pipe(Effect.timeout("10 seconds"), Effect.isSuccess);
+          if (threadNameUnsupported || appliedThreadNames.get(threadId) === name) return;
+          const renamed = yield* client.request("thread/name/set", { threadId, name }).pipe(
+            Effect.timeout("10 seconds"),
+            Effect.tapError((error) =>
+              Effect.sync(() => {
+                if (isCodexAppServerRequestError(error) && error.code === -32601) {
+                  threadNameUnsupported = true;
+                }
+              }),
+            ),
+            Effect.isSuccess,
+          );
           if (renamed) appliedThreadNames.set(threadId, name);
           else appliedThreadNames.delete(threadId);
         });

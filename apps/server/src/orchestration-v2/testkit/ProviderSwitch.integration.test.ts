@@ -5084,12 +5084,14 @@ describe("orchestration v2 provider switching", () => {
         // The scheduled run's fresh session must not replace the user's conversation.
         assert.equal(turnFor("user-second")!.nativeThreadId, turnFor("user-first")!.nativeThreadId);
         assert.equal(turnFor("user-third")!.nativeThreadId, turnFor("user-first")!.nativeThreadId);
-        // The user's session broke; recovery reads the whole thread, so scheduled runs do not cut it.
+        // The user's session broke; recovery reads the whole thread, so scheduled runs do not cut
+        // it, and leaves their output out, as the user's session never saw it.
         const recovered = turnFor("user-fourth")!;
         assert.equal(recovered.providerThreadId, turnFor("user-first")!.providerThreadId);
         assert.notEqual(recovered.nativeThreadId, turnFor("user-first")!.nativeThreadId);
         assert.include(recovered.text, "user-first");
         assert.include(recovered.text, "user-third");
+        assert.notInclude(recovered.text, "scheduled-after-compaction");
         const projection = yield* orchestrator.getThreadProjection(threadId);
         const recoveredRun = projection.runs.find(
           (run) => run.userMessageId === "message:scheduled-fresh-user-chat:user-fourth",
@@ -5141,6 +5143,129 @@ describe("orchestration v2 provider switching", () => {
         ),
       );
     }),
+  );
+
+  it.live.each(["immediately", "behind the scheduled run"] as const)(
+    "hands the user's conversation to the provider a scheduled fresh run used, %s",
+    (variant) =>
+      Effect.gen(function* () {
+        const queued = variant === "behind the scheduled run";
+        const key = queued ? "queued" : "immediate";
+        const cwd = yield* checkpointWorkspace(`scheduled-fresh-switch-${key}`);
+        const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+        const started = yield* Deferred.make<void>();
+        const release = yield* Deferred.make<void>();
+        const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+          makeTestAdapter({
+            instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+            driver: CLAUDE_DRIVER,
+            capabilities: ClaudeProviderCapabilitiesV2,
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            nativeThreadGeneration: yield* Ref.make(0),
+          }),
+          makeTestAdapter({
+            instanceId: CODEX_MODEL_SELECTION.instanceId,
+            driver: CODEX_DRIVER,
+            capabilities: CodexProviderCapabilitiesV2,
+            modelSelection: CODEX_MODEL_SELECTION,
+            responseByRunOrdinal: {},
+            capturedTurns,
+            nativeThreadGeneration: yield* Ref.make(0),
+            holdFirstTurn: started,
+            releaseFirstTurn: release,
+            holdRunOrdinal: 2,
+          }),
+        ]);
+        const threadId = ThreadId.make(`thread:scheduled-fresh-switch:${key}`);
+        yield* Effect.gen(function* () {
+          const orchestrator = yield* Orchestrator.OrchestratorV2;
+          const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+          const send = (name: string, modelSelection: ModelSelection, scheduled: boolean) =>
+            orchestrator.dispatch({
+              type: "message.dispatch",
+              createdBy: "user",
+              creationSource: "web",
+              commandId: CommandId.make(`command:scheduled-fresh-switch:${key}:${name}`),
+              threadId,
+              messageId: MessageId.make(`message:scheduled-fresh-switch:${key}:${name}`),
+              text: name,
+              attachments: [],
+              modelSelection,
+              dispatchMode: { type: "queue_after_active" },
+              ...(scheduled
+                ? {
+                    scheduledTaskId: ScheduledTaskId.make(`scheduled-fresh-switch-${key}`),
+                    freshContext: true,
+                  }
+                : {}),
+            });
+          yield* orchestrator.dispatch({
+            type: "thread.create",
+            createdBy: "user",
+            creationSource: "web",
+            commandId: CommandId.make(`command:scheduled-fresh-switch:${key}:create`),
+            threadId,
+            projectId: ProjectId.make(`project:scheduled-fresh-switch:${key}`),
+            title: "Switch after a scheduled fresh run",
+            modelSelection: CLAUDE_MODEL_SELECTION,
+            runtimeMode: "full-access",
+            interactionMode: "default",
+            branch: null,
+            worktreePath: cwd,
+          });
+          yield* send("user-first", CLAUDE_MODEL_SELECTION, false);
+          yield* worker.drain();
+          yield* waitForIdle(threadId);
+          // The schedule's fresh session runs on the provider the user switches to next.
+          yield* send("scheduled-report", CODEX_MODEL_SELECTION, true);
+          yield* Deferred.await(started);
+          if (queued) yield* send("user-second", CODEX_MODEL_SELECTION, false);
+          yield* Deferred.succeed(release, undefined);
+          yield* worker.drain();
+          yield* waitForIdle(threadId);
+          if (!queued) {
+            yield* send("user-second", CODEX_MODEL_SELECTION, false);
+            yield* worker.drain();
+            yield* waitForIdle(threadId);
+          }
+          const turns = yield* Ref.get(capturedTurns);
+          const turnFor = (name: string) => turns.find((turn) => turn.text.endsWith(name))!;
+          const switched = turnFor("user-second");
+          assert.equal(switched.driver, CODEX_DRIVER);
+          assert.notEqual(switched.providerThreadId, turnFor("scheduled-report").providerThreadId);
+          assert.include(switched.text, "user-first");
+          assert.notInclude(switched.text, "scheduled-report");
+          const projection = yield* orchestrator.getThreadProjection(threadId);
+          const switchedRun = projection.runs.find(
+            (run) => run.userMessageId === `message:scheduled-fresh-switch:${key}:user-second`,
+          )!;
+          assert.equal(
+            projection.contextTransfers.find((transfer) => transfer.targetRunId === switchedRun.id)
+              ?.sourceProviderInstanceId,
+            CLAUDE_MODEL_SELECTION.instanceId,
+          );
+        }).pipe(
+          Effect.provide(
+            ProviderReplayHarness.layerWithRegistry(
+              {
+                name: `scheduled-fresh-switch-${key}`,
+                runtimePolicyOverride: {
+                  cwd,
+                  approvalPolicy: "never",
+                  sandboxPolicy: {
+                    type: "readOnly",
+                    access: { type: "fullAccess" },
+                    networkAccess: false,
+                  },
+                },
+              },
+              layerRegistry,
+            ),
+          ),
+        );
+      }),
   );
 
   it.live(

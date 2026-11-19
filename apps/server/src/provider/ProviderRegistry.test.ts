@@ -2912,6 +2912,92 @@ it.layer(
       }),
     );
 
+    it.effect("a models-only scan skips instances whose folders list no models of their own", () =>
+      Effect.gen(function* () {
+        const scanned = yield* Ref.make<ReadonlyArray<string>>([]);
+        const makeInstance = (kind: "codex" | "opencode"): ProviderInstance => {
+          const driver = ProviderDriverKind.make(kind);
+          const instanceId = ProviderInstanceId.make(kind);
+          const provider = {
+            instanceId,
+            driver,
+            status: "ready",
+            enabled: true,
+            installed: true,
+            auth: { status: "authenticated" },
+            checkedAt: "2026-06-10T00:00:00.000Z",
+            version: "1.0.0",
+            models: [],
+            slashCommands: [],
+            skills: [],
+          } as const satisfies ServerProvider;
+          return {
+            instanceId,
+            driverKind: driver,
+            continuationIdentity: { driverKind: driver, continuationKey: `${kind}:instance` },
+            displayName: undefined,
+            enabled: true,
+            snapshot: {
+              resolveMaintenance: () =>
+                Effect.succeed(
+                  makeManualOnlyProviderMaintenanceCapabilities({
+                    provider: driver,
+                    packageName: null,
+                  }),
+                ),
+              getSnapshot: Effect.succeed(provider),
+              refresh: Effect.succeed(provider),
+              streamChanges: Stream.empty,
+              applyUsageLimits: () => Effect.void,
+            },
+            ...(kind === "opencode" ? { listsWorkspaceModels: true } : {}),
+            snapshotForCwd: () =>
+              Ref.update(scanned, (kinds) => [...kinds, kind]).pipe(Effect.as(provider)),
+            orchestrationAdapter: {} as ProviderInstance["orchestrationAdapter"],
+            textGeneration: {} as ProviderInstance["textGeneration"],
+          };
+        };
+        const instances = [makeInstance("codex"), makeInstance("opencode")];
+        const layerInstanceRegistry = Layer.succeed(
+          ProviderInstanceRegistry.ProviderInstanceRegistry,
+          {
+            getInstance: (requestedId) =>
+              Effect.succeed(instances.find((instance) => instance.instanceId === requestedId)),
+            listInstances: Effect.succeed(instances),
+            listUnavailable: Effect.succeed([]),
+            streamChanges: Stream.empty,
+            subscribeChanges: Effect.flatMap(PubSub.unbounded<void>(), PubSub.subscribe),
+          },
+        );
+        const scope = yield* Scope.make();
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void));
+        const runtimeServices = yield* Layer.build(
+          ProviderRegistry.layer.pipe(
+            Layer.provide(layerUnusedMutator),
+            Layer.provideMerge(layerInstanceRegistry),
+            Layer.provideMerge(
+              ServerConfig.layerTest(process.cwd(), {
+                prefix: "oni-provider-registry-models-only-",
+              }),
+            ),
+            Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
+          ),
+        ).pipe(Scope.provide(scope));
+
+        yield* Effect.gen(function* () {
+          const registry = yield* ProviderRegistry.ProviderRegistry;
+          for (const instance of instances) {
+            yield* registry.refreshWorkspaceSnapshot({
+              instanceId: instance.instanceId,
+              cwd: "/workspace",
+              modelsOnly: true,
+            });
+          }
+          assert.deepStrictEqual(yield* Ref.get(scanned), ["opencode"]);
+        }).pipe(Effect.provide(runtimeServices));
+      }),
+    );
+
     it.effect("publishes workspace skills while machine health is in error", () =>
       Effect.gen(function* () {
         const driver = ProviderDriverKind.make("codex");

@@ -3464,113 +3464,127 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     ),
   );
 
-  it.effect("names the native thread after the Onicode title and retries a failed rename", () =>
-    Effect.gen(function* () {
-      const nativeThreadId = "thread-name-thread";
-      const nameSet = (
-        id: number,
-        name: string,
-        response: "result" | "error",
-      ): Array<CodexReplay.CodexAppServerReplayEntry> => [
-        {
-          type: "expect_outbound",
-          label: "thread/name/set",
-          frame: { id, method: "thread/name/set", params: { threadId: nativeThreadId, name } },
-        },
-        {
-          type: "emit_inbound",
-          label: "thread/name/set",
-          frame:
-            response === "result"
-              ? { id, result: {} }
-              : { id, error: { code: -32601, message: "Method not found" } },
-        },
-      ];
-      const turn = (
-        id: number,
-        nativeTurnId: string,
-      ): Array<CodexReplay.CodexAppServerReplayEntry> => {
-        const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
-        return [
-          withReplayRequestId(entries[5]!, id),
-          withReplayRequestId(entries[6]!, id),
+  it.effect.each([
+    { failure: "a transient error", code: -32603, retried: true },
+    { failure: "an unknown method", code: -32601, retried: false },
+  ] as const)(
+    "names the native thread after the Onicode title when the first rename fails with $failure",
+    ({ code, retried }) =>
+      Effect.gen(function* () {
+        const nativeThreadId = "thread-name-thread";
+        const nameSet = (
+          id: number,
+          name: string,
+          response: "result" | "error",
+        ): Array<CodexReplay.CodexAppServerReplayEntry> => [
+          {
+            type: "expect_outbound",
+            label: "thread/name/set",
+            frame: { id, method: "thread/name/set", params: { threadId: nativeThreadId, name } },
+          },
           {
             type: "emit_inbound",
-            label: "turn/completed",
-            frame: {
-              method: "turn/completed",
-              params: {
-                threadId: nativeThreadId,
-                turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
-              },
-            },
+            label: "thread/name/set",
+            frame:
+              response === "result"
+                ? { id, result: {} }
+                : { id, error: { code, message: "rename failed" } },
           },
         ];
-      };
-      const names: Array<unknown> = [];
-      const harness = yield* makeCodexReplayHarness(
-        makeCodexReplayTranscript({
-          scenario: "codex-thread-name",
-          entries: [
-            ...codexReplayPreamble({
-              nativeThreadId,
-              nativeTurnId: "unused",
-              prompt: "work",
-            }).slice(0, 5),
-            ...nameSet(3, CODEX_TEST_THREAD_TITLE, "error"),
-            ...turn(4, "thread-name-turn-1"),
-            ...nameSet(5, CODEX_TEST_THREAD_TITLE, "result"),
-            ...turn(6, "thread-name-turn-2"),
-            ...turn(7, "thread-name-turn-3"),
-            ...nameSet(8, "Renamed", "result"),
-          ],
-        }),
-        () => Effect.void,
-        (method, params) =>
-          Effect.sync(() => {
-            if (method === "thread/name/set") names.push(params);
+        const turn = (
+          id: number,
+          nativeTurnId: string,
+        ): Array<CodexReplay.CodexAppServerReplayEntry> => {
+          const entries = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
+          return [
+            withReplayRequestId(entries[5]!, id),
+            withReplayRequestId(entries[6]!, id),
+            {
+              type: "emit_inbound",
+              label: "turn/completed",
+              frame: {
+                method: "turn/completed",
+                params: {
+                  threadId: nativeThreadId,
+                  turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+                },
+              },
+            },
+          ];
+        };
+        const names: Array<unknown> = [];
+        const harness = yield* makeCodexReplayHarness(
+          makeCodexReplayTranscript({
+            scenario: `codex-thread-name-${code}`,
+            entries: [
+              ...codexReplayPreamble({
+                nativeThreadId,
+                nativeTurnId: "unused",
+                prompt: "work",
+              }).slice(0, 5),
+              ...nameSet(3, CODEX_TEST_THREAD_TITLE, "error"),
+              ...turn(4, "thread-name-turn-1"),
+              ...(retried
+                ? [
+                    ...nameSet(5, CODEX_TEST_THREAD_TITLE, "result"),
+                    ...turn(6, "thread-name-turn-2"),
+                    ...turn(7, "thread-name-turn-3"),
+                    ...nameSet(8, "Renamed", "result"),
+                  ]
+                : [...turn(5, "thread-name-turn-2"), ...turn(6, "thread-name-turn-3")]),
+            ],
           }),
-      );
-      const now = yield* DateTime.now;
-      for (const ordinal of [1, 2, 3]) {
-        yield* harness.runtime.startTurn({
-          ...makeCodexTestTurnInput({
-            threadId: harness.threadId,
-            providerThread: harness.providerThread,
-            now,
-            attemptId: RunAttemptId.make(`thread-name-${ordinal}`),
-            text: "work",
-          }),
-          runOrdinal: ordinal,
-          providerTurnOrdinal: ordinal,
-        });
-        yield* harness.awaitTerminal(ordinal);
-      }
-      const applyThreadTitle = harness.runtime.applyThreadTitle;
-      assert.isDefined(applyThreadTitle);
-      for (const title of ["Renamed", "Renamed"]) {
-        yield* applyThreadTitle({ providerThread: harness.providerThread, title });
-      }
+          () => Effect.void,
+          (method, params) =>
+            Effect.sync(() => {
+              if (method === "thread/name/set") names.push(params);
+            }),
+        );
+        const now = yield* DateTime.now;
+        for (const ordinal of [1, 2, 3]) {
+          yield* harness.runtime.startTurn({
+            ...makeCodexTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now,
+              attemptId: RunAttemptId.make(`thread-name-${ordinal}`),
+              text: "work",
+            }),
+            runOrdinal: ordinal,
+            providerTurnOrdinal: ordinal,
+          });
+          yield* harness.awaitTerminal(ordinal);
+        }
+        const applyThreadTitle = harness.runtime.applyThreadTitle;
+        assert.isDefined(applyThreadTitle);
+        for (const title of ["Renamed", "Renamed"]) {
+          yield* applyThreadTitle({ providerThread: harness.providerThread, title });
+        }
 
-      assert.deepEqual(names, [
-        { threadId: nativeThreadId, name: CODEX_TEST_THREAD_TITLE },
-        { threadId: nativeThreadId, name: CODEX_TEST_THREAD_TITLE },
-        { threadId: nativeThreadId, name: "Renamed" },
-      ]);
-      assert.deepEqual(
-        harness.terminalEvents().map((event) => event.status),
-        ["completed", "completed", "completed"],
-      );
-    }).pipe(
-      Effect.provide(
-        Layer.mergeAll(
-          IdAllocator.layer,
-          McpProviderSessions.layer,
-          NodeServices.layer,
-          NodeCrypto.layer,
+        assert.deepEqual(
+          names,
+          retried
+            ? [
+                { threadId: nativeThreadId, name: CODEX_TEST_THREAD_TITLE },
+                { threadId: nativeThreadId, name: CODEX_TEST_THREAD_TITLE },
+                { threadId: nativeThreadId, name: "Renamed" },
+              ]
+            : [{ threadId: nativeThreadId, name: CODEX_TEST_THREAD_TITLE }],
+        );
+        assert.deepEqual(
+          harness.terminalEvents().map((event) => event.status),
+          ["completed", "completed", "completed"],
+        );
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
         ),
       ),
-    ),
   );
 
   it.effect.each(["before", "during"] as const)(

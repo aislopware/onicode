@@ -49,6 +49,8 @@ export interface ProviderInstance {
   readonly snapshotForCwd?: (
     cwd: string,
   ) => Effect.Effect<ProviderWorkspaceSnapshot, ProviderDriverError>;
+  /** `snapshotForCwd` can return `workspaceModels`: a folder's own config adds models. */
+  readonly listsWorkspaceModels?: boolean;
   /**
    * Cwds whose workspace skills may have changed. The registry rescans only cwds already
    * requested. The stream must end when the instance is torn down.

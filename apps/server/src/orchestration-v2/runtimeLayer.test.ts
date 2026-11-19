@@ -13019,6 +13019,7 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
     "stop",
     "stop-before-arm",
     "stop-before-arm-mismatched-recovery",
+    "scheduled-session",
   ] as const)("guards a scheduled usage-limit continuation against %s", (scenario) =>
     Effect.gen(function* () {
       const orchestrator = yield* Orchestrator.OrchestratorV2;
@@ -13056,6 +13057,9 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
         dispatchMode: { type: "defer_start" },
         createdBy: "user",
         creationSource: "web",
+        ...(scenario === "scheduled-session"
+          ? { scheduledTaskId: ScheduledTaskId.make("recovery:task"), freshContext: true }
+          : {}),
       });
       if (scenario === "queued-resume") {
         yield* orchestrator.dispatch({
@@ -13122,6 +13126,31 @@ it.layer(layerTest)("usage-limit recovery", (it) => {
           },
         ],
       });
+      if (scenario === "scheduled-session") {
+        // The limited run had a fresh session of its own; the conversation resumes another one.
+        const session = projection.providerThreads.find(
+          (candidate) => candidate.id === run.providerThreadId,
+        )!;
+        yield* events.write({
+          events: [
+            {
+              id: EventId.make("recovery:main-session:scheduled-session"),
+              type: "provider-thread.updated",
+              threadId,
+              occurredAt: now,
+              payload: {
+                ...session,
+                id: ProviderThreadId.make("recovery:main-session:scheduled-session"),
+                appThreadId: threadId,
+                ownerNodeId: null,
+                nativeThreadRef: null,
+                firstRunOrdinal: null,
+                lastRunOrdinal: null,
+              },
+            },
+          ],
+        });
+      }
       if (scenario === "queued-resume") {
         const queuedRun = projection.runs[1]!;
         yield* events.write({
