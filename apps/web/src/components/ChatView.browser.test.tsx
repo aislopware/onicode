@@ -1068,7 +1068,8 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   });
   const uploadsBeforeEdit = uploadsStarted;
   await pasteImage();
-  // Typed key by key: after one inserted text event, the paste below replaces the restored draft.
+  // Typed key by key: with instant input, the next pasteImage click lands within 500 ms of two
+  // earlier ones, a ProseMirror triple-click that selects the draft for the paste to replace.
   await userEvent.keyboard("/side what is this?{Enter}");
   await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(uploadsBeforeEdit));
   await page.getByRole("button", { name: "Remove shot.png" }).click();
