@@ -2543,3 +2543,4 @@ b6ac2449f1	take	taken as is; warns on non-loopback plain-HTTP serve addresses, t
 3993cfa152	take	adapted: dropped T3 Connect, relay, guest links, webhooks, browser/web-origin, DPoP and dev-auth-token entries (not in Onicode); reporting points at .github/SECURITY.md (GitHub advisories) instead of T3's mailbox; findings renumbered
 cbd8267c2d	take	taken as is; Full access only where fx status lists the full-access mode, explicit approval/sandbox policy still runs ask
 ba640037e8	take	taken as is; geolocation now asks per origin like clipboard reads, annotation keys and pick buttons ignore synthetic events, Windows prompt is unparented
+5d3434bab2	skip	marketing site is a removed surface
