@@ -13,7 +13,7 @@ import { msg, T, useGT } from "gt-react-native";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import * as Haptics from "expo-haptics";
 import { Accelerometer } from "expo-sensors";
-import { Pressable, StatusBar, View } from "react-native";
+import { Pressable, View } from "react-native";
 import Animated, { FadeIn, FadeOut, ReduceMotion } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -296,7 +296,6 @@ export function DevicePreviewScreen({
   ];
   return (
     <View className="flex-1" style={{ backgroundColor: themeVariables["--color-sheet-solid"] }}>
-      {!embedded ? <StatusBar hidden animated /> : null}
       {embedded ? (
         <>
           <AppBar

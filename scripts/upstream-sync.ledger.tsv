@@ -2565,3 +2565,4 @@ b6d6717df6	take	taken as is
 12be92d034	take	taken as is
 528687d226	take	taken as is (Windows-only, harmless on macOS/Linux)
 4c679a21e7	take	taken; GuestHtmlRender.tsx skipped (guest links removed); mobile WebView renders cannot scroll the RN host, so no mobile counterpart
+194b332055	take	Ported with react-native-screens 5.0.0-oni.55 (aislopware/react-native-screens@bbc68f9ba, tag oni-v5.0.0-oni.55), which cherry-picks pingdotgg 9f09ae66a and f445d87d8, the only native changes t3.61 carries beyond t3.59; the t3.61 tarball is not used. Native module renamed oni-preview-tunnel; adopted upstream's shared createPreviewTunnelUrlReader over Onicode's web-only reader, without the httpAuthorization null check (always set in Onicode); docs adapted (no web app).
