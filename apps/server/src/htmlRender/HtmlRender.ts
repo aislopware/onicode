@@ -408,11 +408,12 @@ const make = Effect.gen(function* () {
 
   const measure = Effect.fn("HtmlRender.measure")(
     function* (html: string) {
-      const executable = yield* previewBrowser.installed;
-      if (Option.isNone(executable)) return undefined;
-      const heights = yield* launching(executable.value, (noSandbox) =>
+      const installed = yield* previewBrowser.installed;
+      if (Option.isNone(installed)) return undefined;
+      const executable = installed.value.path;
+      const heights = yield* launching(executable, (noSandbox) =>
         HeadlessChrome.measureHtmlHeights({
-          executable: executable.value,
+          executable,
           noSandbox,
           html,
           widths: HTML_RENDER_MEASURE_WIDTHS,
@@ -573,7 +574,7 @@ const make = Effect.gen(function* () {
     const source = yield* readSource(input);
     yield* rejectViewportHeight(source);
     const inlined = yield* inline(source);
-    const executable = yield* previewBrowser.executable;
+    const executable = (yield* previewBrowser.executable).path;
     const theme = htmlRenderTheme(
       appearance === "light" ? ONICODE_CODE_LIGHT_THEME_COLORS : ONICODE_CODE_DARK_THEME_COLORS,
       appearance,

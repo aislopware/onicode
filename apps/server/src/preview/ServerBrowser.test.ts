@@ -463,6 +463,7 @@ const dependencies = Layer.mergeAll(
   Layer.succeed(PreviewBrowser.PreviewBrowser, {
     executable: Effect.die("mock Chromium does not need an executable"),
     installed: Effect.die("mock Chromium does not need an executable"),
+    system: Effect.die("mock Chromium does not need an executable"),
   }),
   Layer.succeed(DesktopChannel.DesktopBrowserChannel, {
     available: true,

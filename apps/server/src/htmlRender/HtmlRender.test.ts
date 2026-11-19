@@ -41,8 +41,12 @@ const layerHtmlRender = (
           executable:
             executable === undefined
               ? Effect.die("This test has no preview browser.")
-              : Effect.succeed(executable),
-          installed,
+              : Effect.succeed({ path: executable, version: PreviewBrowser.VERSION }),
+          installed: Effect.map(
+            installed,
+            Option.map((path) => ({ path, version: PreviewBrowser.VERSION })),
+          ),
+          system: Effect.succeedNone,
         }),
       ),
     ),

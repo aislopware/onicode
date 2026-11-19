@@ -9,6 +9,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 
 import * as ServerConfig from "../config.ts";
+import * as PreviewBrowser from "../preview/PreviewBrowser.ts";
 import * as PreviewCdpBridge from "../preview/PreviewCdpBridge.ts";
 import * as ServerSettings from "../serverSettings.ts";
 import * as PinnedTool from "../tools/PinnedTool.ts";
@@ -20,6 +21,7 @@ const FAKE_OBU = `#!/bin/sh
 echo "$* $OBU_SESSION" >> "$0.calls"
 `;
 
+const BRAVE = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
 const threadId = ThreadId.make("browser-use-thread");
 const session = BrowserUseService.browserUseSessionName(threadId);
 const scope = {
@@ -37,6 +39,10 @@ const scope = {
 
 const makeHarness = Effect.fn("test.makeBrowserUseService")(function* (
   driver?: Partial<Pick<BrowserUseDriver.BrowserUseDriver["Service"], "state" | "executable">>,
+  host: {
+    readonly system?: PreviewBrowser.PreviewBrowserExecutable;
+    readonly environment?: NodeJS.ProcessEnv;
+  } = { system: { path: BRAVE, version: PreviewBrowser.VERSION, app: "Brave Browser" } },
 ) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -54,6 +60,15 @@ const makeHarness = Effect.fn("test.makeBrowserUseService")(function* (
         ...driver,
       }),
     ),
+    Effect.provideService(
+      PreviewBrowser.PreviewBrowser,
+      PreviewBrowser.PreviewBrowser.of({
+        executable: Effect.die("browser use launches no preview browser"),
+        installed: Effect.die("browser use launches no preview browser"),
+        system: Effect.succeed(Option.fromUndefinedOr(host.system)),
+      }),
+    ),
+    Effect.provideService(HostProcess.Environment, host.environment ?? {}),
     Effect.provideService(
       PreviewCdpBridge.PreviewCdpBridge,
       PreviewCdpBridge.PreviewCdpBridge.of({
@@ -101,7 +116,12 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("BrowserUseServ
       expect(yield* server("isolated")).toEqual({
         command: executable,
         args: ["mcp"],
-        env: { ...shared, OBU_LANE: "agent", OBU_HOST_NOTE: expect.stringContaining("your own") },
+        env: {
+          ...shared,
+          CHROME_PATH: BRAVE,
+          OBU_LANE: "agent",
+          OBU_HOST_NOTE: expect.stringContaining("your own"),
+        },
       });
 
       // The personal browser's port lives in obu's own config, beside what the user set there.
@@ -122,6 +142,32 @@ describe.skipIf(HostProcess.Platform.defaultValue() === "win32")("BrowserUseServ
       });
       yield* server("personal");
       expect(JSON.parse(yield* fs.readFileString(realBrowser))).toEqual({ mode: "attach" });
+    }).pipe(Effect.scoped, Effect.provide(layer)),
+  );
+
+  it.effect.each([
+    { name: "no installed browser", host: {} },
+    {
+      name: "a Chrome obu finds itself",
+      host: {
+        system: {
+          path: "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+          version: "157.0.1.2",
+          app: "Google Chrome",
+        },
+      },
+    },
+    {
+      name: "a CHROME_PATH the user set",
+      host: {
+        system: { path: BRAVE, version: "157.1.99.57", app: "Brave Browser" },
+        environment: { CHROME_PATH: "/opt/chromium" },
+      },
+    },
+  ])("leaves obu's own browser choice alone with $name", ({ host }) =>
+    Effect.gen(function* () {
+      const { server } = yield* makeHarness(undefined, host);
+      expect((yield* server("isolated")).env).not.toHaveProperty("CHROME_PATH");
     }).pipe(Effect.scoped, Effect.provide(layer)),
   );
 

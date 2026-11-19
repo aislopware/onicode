@@ -511,6 +511,7 @@ const layerComputer = ComputerService.layer.pipe(
 const layerBrowserUse = BrowserUseService.layer.pipe(
   Layer.provide(BrowserUseDriver.layer),
   Layer.provide(PreviewCdpBridge.layer),
+  Layer.provide(PreviewBrowser.layer),
   Layer.provide(layerServerSettings),
 );
 

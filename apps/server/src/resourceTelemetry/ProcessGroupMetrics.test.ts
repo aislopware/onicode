@@ -42,6 +42,7 @@ describe("groupProcesses", () => {
       process(30, 10, "codex"),
       process(40, 10, "zsh"),
       process(50, 10, "chrome-headless"),
+      process(55, 10, "Brave Browser"),
       process(60, 10, "git", "server-child", "git checkout claude/fix"),
       process(70, 99, "orphan"),
       // An older Claude package runs as a script under node.
@@ -62,7 +63,7 @@ describe("groupProcesses", () => {
       claude: { residentBytes: 143_000, cpuPercent: 143, count: 4 },
       codex: { residentBytes: 30_000, cpuPercent: 30, count: 1 },
       terminal: { residentBytes: 40_000, cpuPercent: 40, count: 1 },
-      browser: { residentBytes: 50_000, cpuPercent: 50, count: 1 },
+      browser: { residentBytes: 105_000, cpuPercent: 105, count: 2 },
       // `git` whose arguments mention claude, a parentless process, and a node script.
       other: { residentBytes: 220_000, cpuPercent: 220, count: 3 },
     });

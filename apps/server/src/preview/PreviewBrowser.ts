@@ -15,10 +15,12 @@ import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http";
 import * as NodeCrypto from "node:crypto";
 
 import * as ServerConfig from "../config.ts";
+import { probeBrowser } from "../htmlRender/headlessChrome.ts";
 import { openZipArchive } from "../zipArchive.ts";
 
 // Update the version, sizes and hashes from each chrome-headless-shell zip listed at
@@ -123,15 +125,28 @@ export class PreviewBrowserUnsupportedError extends Schema.TaggedError<PreviewBr
   }
 }
 
+export interface PreviewBrowserExecutable {
+  readonly path: string;
+  /** Its Chromium version, which the user agent names. */
+  readonly version: string;
+  /** The installed app it belongs to; absent for the headless shell. */
+  readonly app?: string;
+}
+
 export class PreviewBrowser extends Context.Service<
   PreviewBrowser,
   {
-    /** Starts installation on first call; returns progress after a bounded wait while installation continues. */
+    /**
+     * A browser the user installed, else the headless shell. Starts installing the shell on
+     * first call; returns progress after a bounded wait while installation continues.
+     */
     readonly executable: Effect.Effect<
-      string,
+      PreviewBrowserExecutable,
       PreviewBrowserInstallError | PreviewBrowserInstallingError | PreviewBrowserUnsupportedError
     >;
-    readonly installed: Effect.Effect<Option.Option<string>>;
+    readonly installed: Effect.Effect<Option.Option<PreviewBrowserExecutable>>;
+    /** A Chromium-family browser the user installed and keeps current. */
+    readonly system: Effect.Effect<Option.Option<PreviewBrowserExecutable>>;
   }
 >()("onicode/preview/PreviewBrowser") {}
 
@@ -140,7 +155,43 @@ export interface PreviewBrowserOptions {
   readonly release?: PreviewBrowserRelease | null;
   /** How long a caller waits on an install in progress. Provider tool calls time out near 60s. */
   readonly wait?: Duration.Input;
+  /** Where macOS apps are looked up; defaults to /Applications and ~/Applications. */
+  readonly applicationDirectories?: ReadonlyArray<string>;
+  /** The system Library, where MDM and cloud enrollment leave policies; defaults to /Library. */
+  readonly libraryDirectory?: string;
+  /** Whether an installed browser really starts; the result is kept per path and version. */
+  readonly probe?: (executable: string) => Effect.Effect<boolean>;
 }
+
+// macOS only: Linux keeps the headless shell, whose sandbox `onicode browser setup` provisions.
+// Each names itself Chrome to CDP and numbers releases from the Chromium major (Brave 157.1.99.57);
+// Edge does neither.
+const MAC_BROWSERS = ["Google Chrome", "Brave Browser", "Chromium"];
+const BUNDLE_VERSION = /<key>CFBundleShortVersionString<\/key>\s*<string>((\d+)\.[\d.]+)<\/string>/;
+const BUNDLE_ID = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/;
+// Chrome Browser Cloud Management enrolls by token, with no Managed Preferences file.
+const CLOUD_ENROLLMENT: Readonly<Record<string, ReadonlyArray<string>>> = {
+  "com.google.Chrome": [
+    "Google/Chrome/CloudManagementEnrollmentToken",
+    "Application Support/Google/Chrome Cloud Enrollment",
+  ],
+};
+// An older browser has stopped updating and lacks security fixes the pin carries.
+const SYSTEM_MIN_MAJOR = Number(VERSION.split(".")[0]) - 1;
+
+const probeInstalledBrowser = (executable: string) =>
+  probeBrowser({ executable, noSandbox: false }).pipe(
+    Effect.as(true),
+    Effect.catch((cause) =>
+      Effect.logWarning(
+        "An installed browser did not start; trying the next one or the headless shell.",
+        {
+          executable,
+          cause,
+        },
+      ).pipe(Effect.as(false)),
+    ),
+  );
 
 const DOWNLOAD_TIMEOUT = "15 minutes";
 const STAGING_STALE_AFTER_MS = 60 * 60_000;
@@ -182,17 +233,94 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
   let state: InstallState = { _tag: "idle" };
   const progress = { downloadedBytes: 0, unpacking: false };
 
-  const installedExecutable = (release: PreviewBrowserRelease) => {
-    const executable = path.join(installRoot, release.version, executableName);
-    return fs.stat(executable).pipe(
-      Effect.map((info) =>
-        info.type === "File" && (platform === "win32" || (info.mode & 0o111) !== 0)
-          ? Option.some(executable)
-          : Option.none<string>(),
+  const isExecutable = (file: string) =>
+    fs.stat(file).pipe(
+      Effect.map(
+        (info) => info.type === "File" && (platform === "win32" || (info.mode & 0o111) !== 0),
       ),
-      Effect.orElseSucceed(() => Option.none<string>()),
+      Effect.orElseSucceed(() => false),
     );
-  };
+
+  const installedExecutable = Effect.fnUntraced(function* (release: PreviewBrowserRelease) {
+    const executable = path.join(installRoot, release.version, executableName);
+    return (yield* isExecutable(executable))
+      ? Option.some<PreviewBrowserExecutable>({ path: executable, version: release.version })
+      : Option.none<PreviewBrowserExecutable>();
+  });
+
+  const applicationDirectories = options.applicationDirectories ?? [
+    "/Applications",
+    path.join(yield* HostProcess.HomeDirectory, "Applications"),
+  ];
+  const library = options.libraryDirectory ?? "/Library";
+  const managedPreferences = path.join(library, "Managed Preferences");
+  const username = yield* HostProcess.Username;
+  const probeServices = yield* Effect.context<ChildProcessSpawner.ChildProcessSpawner>();
+  const probe =
+    options.probe ??
+    ((executable: string) =>
+      probeInstalledBrowser(executable).pipe(
+        Effect.provideContext(probeServices),
+        Effect.provideService(FileSystem.FileSystem, fs),
+        Effect.provideService(Path.Path, path),
+      ));
+  // One probe per path and version. It belongs to the service, so a caller leaving does not
+  // stop it, and any end but success counts as a browser that does not start.
+  const probes = new Map<string, Deferred.Deferred<boolean>>();
+  const works = (executable: string, version: string) =>
+    Effect.suspend(() => {
+      const key = `${executable}\0${version}`;
+      const known = probes.get(key);
+      if (known) return Deferred.await(known);
+      const done = Deferred.makeUnsafe<boolean>();
+      probes.set(key, done);
+      return probe(executable).pipe(
+        Effect.interruptible,
+        Effect.onExit((exit) => Deferred.succeed(done, Exit.isSuccess(exit) && exit.value)),
+        Effect.forkIn(serviceScope),
+        Effect.uninterruptible,
+        Effect.andThen(Deferred.await(done)),
+      );
+    });
+  // A managed browser's policies outrank the flags that keep pages off the local network.
+  // A policy location that cannot be read counts as managed.
+  const managed = (bundleId: string) =>
+    Effect.forEach(
+      [
+        path.join(managedPreferences, `${bundleId}.plist`),
+        ...(username ? [path.join(managedPreferences, username, `${bundleId}.plist`)] : []),
+        ...(CLOUD_ENROLLMENT[bundleId] ?? []).map((marker) => path.join(library, marker)),
+      ],
+      (marker) => fs.exists(marker),
+    ).pipe(
+      Effect.map((found) => found.includes(true)),
+      Effect.orElseSucceed(() => true),
+    );
+
+  const system = Effect.gen(function* () {
+    if (platform !== "darwin") return Option.none<PreviewBrowserExecutable>();
+    for (const directory of applicationDirectories) {
+      for (const app of MAC_BROWSERS) {
+        const contents = path.join(directory, `${app}.app`, "Contents");
+        const plist = yield* fs
+          .readFileString(path.join(contents, "Info.plist"))
+          .pipe(Effect.orElseSucceed(() => ""));
+        const version = BUNDLE_VERSION.exec(plist);
+        const bundleId = BUNDLE_ID.exec(plist)?.[1];
+        if (!version || !bundleId || Number(version[2]) < SYSTEM_MIN_MAJOR) continue;
+        const executable = path.join(contents, "MacOS", app);
+        if (!(yield* isExecutable(executable)) || (yield* managed(bundleId))) continue;
+        if (yield* works(executable, version[1]!)) {
+          return Option.some<PreviewBrowserExecutable>({
+            path: executable,
+            version: version[1]!,
+            app,
+          });
+        }
+      }
+    }
+    return Option.none<PreviewBrowserExecutable>();
+  }).pipe(Effect.withSpan("PreviewBrowser.system"));
 
   const download = Effect.fn("PreviewBrowser.download")(
     function* (release: PreviewBrowserRelease, archivePath: string) {
@@ -366,7 +494,7 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
         }
         const installed = yield* installedExecutable(release);
         if (Option.isSome(installed)) {
-          state = { _tag: "installed", executable: installed.value };
+          state = { _tag: "installed", executable: installed.value.path };
           return state;
         }
         const done = yield* Deferred.make<string, PreviewBrowserInstallError>();
@@ -408,17 +536,21 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
     );
 
   const executable = Effect.gen(function* () {
+    const found = yield* system;
+    if (Option.isSome(found)) return found.value;
     if (release === null) {
       return yield* new PreviewBrowserUnsupportedError({ platform, arch });
     }
+    const shell = (path: string): PreviewBrowserExecutable => ({ path, version: release.version });
     const current = yield* join(release);
     switch (current._tag) {
       case "installed":
-        return current.executable;
+        return shell(current.executable);
       case "failed":
         return yield* current.error;
       case "installing":
         return yield* Deferred.await(current.done).pipe(
+          Effect.map(shell),
           Effect.tapError(clearFailure),
           Effect.timeoutOrElse({
             duration: wait,
@@ -435,9 +567,13 @@ export const makePreviewBrowser = Effect.fn("PreviewBrowser.make")(function* (
     }
   }).pipe(Effect.withSpan("PreviewBrowser.executable"));
 
-  const installed = release === null ? Effect.succeedNone : installedExecutable(release);
+  const installed = Effect.gen(function* () {
+    const found = yield* system;
+    if (Option.isSome(found) || release === null) return found;
+    return yield* installedExecutable(release);
+  });
 
-  return PreviewBrowser.of({ executable, installed });
+  return PreviewBrowser.of({ executable, installed, system });
 });
 
 export const layer = Layer.effect(

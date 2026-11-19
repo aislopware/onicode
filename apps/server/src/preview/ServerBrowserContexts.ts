@@ -52,8 +52,19 @@ const stubWorkerBadges = (client: Browser | BrowserContext) => {
 };
 
 interface Options {
+  /** The headless shell's persistent profiles. */
   readonly profilesDir: string;
-  readonly executable: () => Promise<string>;
+  /**
+   * Each installed browser's profiles, in a folder named for its app. Kept apart from the
+   * shell's, which can be an older Chromium than one that wrote a profile.
+   */
+  readonly browserProfilesDir: string;
+  /** The Chromium to launch; its version names Chrome in the browser's own user agent. */
+  readonly executable: () => Promise<{
+    readonly path: string;
+    readonly version: string;
+    readonly app?: string;
+  }>;
   /**
    * A path that starts `executable`, such as one that moves Chrome out of the server's cgroup.
    * Released after the whole launch call, since Playwright retries the same path after a glibc race.
@@ -63,8 +74,8 @@ interface Options {
   ) => Promise<{ readonly path: string; readonly release: () => Promise<void> } | undefined>;
   readonly diagnose?: (executable: string, cause: unknown) => Promise<unknown>;
   readonly env?: NodeJS.ProcessEnv;
-  /** Names Chrome in the browser's own user agent, which is all a service worker ever sends. */
-  readonly chrome: { readonly version: string; readonly platform: NodeJS.Platform };
+  /** Names the host in the browser's own user agent, which is all a service worker ever sends. */
+  readonly platform: NodeJS.Platform;
   /** Closes the shared browser once it has held no context for this long. */
   readonly idleBrowserMs?: number;
   readonly onContextClose?: (context: BrowserContext) => void;
@@ -85,9 +96,9 @@ const UA_SYSTEMS: Partial<Record<NodeJS.Platform, string>> = {
 
 const chromeToken = (major: string) => `Chrome/${major}.0.0.0`;
 
-const chromeUserAgent = (chrome: Options["chrome"]) => {
-  const major = /^\d+/.exec(chrome.version)?.[0];
-  const system = UA_SYSTEMS[chrome.platform];
+const chromeUserAgent = (version: string, platform: NodeJS.Platform) => {
+  const major = /^\d+/.exec(version)?.[0];
+  const system = UA_SYSTEMS[platform];
   return major && system
     ? `Mozilla/5.0 (${system}) AppleWebKit/537.36 (KHTML, like Gecko) ${chromeToken(major)} Safari/537.36`
     : null;
@@ -133,6 +144,11 @@ export const presentAsChrome = async (
   if (identity) await cdp.send("Emulation.setUserAgentOverride", identity);
 };
 
+const profileFolder = (profileId: string) => {
+  const encoded = encodeURIComponent(profileId);
+  return profileId === "." || profileId === ".." ? encoded.replaceAll(".", "%2E") : encoded;
+};
+
 export class ServerBrowserContexts {
   private readonly options: Options;
   private readonly contexts = new Map<string, Promise<BrowserContext>>();
@@ -147,12 +163,13 @@ export class ServerBrowserContexts {
   }
 
   private async launchOptions() {
-    const executable = await this.options.executable();
+    const { path: executable, version, app } = await this.options.executable();
     const env = this.options.env ?? process.env;
     // A page's override never reaches its workers, so the browser itself must name Chrome.
-    const userAgent = chromeUserAgent(this.options.chrome);
+    const userAgent = chromeUserAgent(version, this.options.platform);
     return {
       executable,
+      app,
       env,
       args: [
         "--disable-gpu",
@@ -182,7 +199,7 @@ export class ServerBrowserContexts {
 
   private sharedBrowser() {
     if (!this.browser) {
-      const launched = this.launchOptions().then(async ({ executable, ...options }) => {
+      const launched = this.launchOptions().then(async ({ executable, app: _app, ...options }) => {
         const { chromium } = loadPlaywright();
         const browser = await this.launch(executable, (executablePath) =>
           chromium.launch({ ...options, executablePath }),
@@ -264,9 +281,9 @@ export class ServerBrowserContexts {
     if (isolationKey !== undefined || profileId === INCOGNITO_BROWSER_PROFILE_ID) {
       return this.sharedContext(contextOptions);
     }
-    const directory = this.profileDirectory(profileId);
+    const { executable, app, ...options } = await this.launchOptions();
+    const directory = this.profileDirectory(profileId, app);
     await NodeFSP.mkdir(directory, { recursive: true });
-    const { executable, ...options } = await this.launchOptions();
     const { chromium } = loadPlaywright();
     const context = await this.launch(executable, (executablePath) =>
       chromium.launchPersistentContext(directory, {
@@ -279,11 +296,12 @@ export class ServerBrowserContexts {
     return context;
   }
 
-  private profileDirectory(profileId: string) {
-    const encoded = encodeURIComponent(profileId);
+  private profileDirectory(profileId: string, app?: string) {
     return NodePath.join(
-      this.options.profilesDir,
-      profileId === "." || profileId === ".." ? encoded.replaceAll(".", "%2E") : encoded,
+      app === undefined
+        ? this.options.profilesDir
+        : NodePath.join(this.options.browserProfilesDir, encodeURIComponent(app)),
+      profileFolder(profileId),
     );
   }
 
@@ -324,7 +342,26 @@ export class ServerBrowserContexts {
         const context = await pending.catch(() => undefined);
         await context?.close();
       }
-      await NodeFSP.rm(this.profileDirectory(profileId), { recursive: true, force: true });
+      const apps = await NodeFSP.readdir(this.options.browserProfilesDir, {
+        withFileTypes: true,
+      }).catch((cause: NodeJS.ErrnoException) => {
+        if (cause.code === "ENOENT") return [];
+        throw cause;
+      });
+      const roots = [
+        this.options.profilesDir,
+        ...apps
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => NodePath.join(this.options.browserProfilesDir, entry.name)),
+      ];
+      await Promise.all(
+        roots.map((root) =>
+          NodeFSP.rm(NodePath.join(root, profileFolder(profileId)), {
+            recursive: true,
+            force: true,
+          }),
+        ),
+      );
     })();
     this.clearing.set(key, clearing);
     try {

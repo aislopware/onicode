@@ -197,6 +197,21 @@ const launchBrowser = Effect.fnUntraced(function* (input: {
           "--remote-debugging-pipe",
           "--no-first-run",
           "--no-default-browser-check",
+          // Playwright's guards for an installed browser: no Keychain, updater, sync,
+          // extensions or background fetches in a fresh profile.
+          "--use-mock-keychain",
+          "--password-store=basic",
+          "--disable-background-networking",
+          "--disable-component-update",
+          "--disable-updater-scheduler",
+          "--no-service-autorun",
+          "--disable-breakpad",
+          "--disable-sync",
+          "--disable-extensions",
+          "--disable-component-extensions-with-background-pages",
+          "--disable-default-apps",
+          "--disable-search-engine-choice-screen",
+          "--metrics-recording-only",
           "--disable-gpu",
           "--hide-scrollbars",
           "--mute-audio",
@@ -603,6 +618,31 @@ export const captureHtmlScreenshot = Effect.fn("headlessChrome.captureHtmlScreen
       Effect.fail(
         new HtmlRenderBrowserError({
           reason: `the page did not finish loading within ${CAPTURE_TIMEOUT}`,
+        }),
+      ),
+  }),
+);
+
+/** Whether a browser starts headless, answers CDP over the pipe and paints a page. */
+export const probeBrowser = Effect.fn("headlessChrome.probeBrowser")(
+  function* (input: { readonly executable: string; readonly noSandbox: boolean }) {
+    const path = yield* Path.Path;
+    const directory = yield* scratchDirectory;
+    const browser = yield* launchBrowser({
+      executable: input.executable,
+      noSandbox: input.noSandbox,
+      profileDirectory: path.join(directory, "profile"),
+    });
+    const page = yield* browser.openPage(400, "light");
+    yield* page.load(pageBody("<!doctype html><p>Onicode</p>"), "");
+  },
+  Effect.scoped,
+  Effect.timeoutOrElse({
+    duration: CAPTURE_TIMEOUT,
+    orElse: () =>
+      Effect.fail(
+        new HtmlRenderBrowserError({
+          reason: `the browser did not paint within ${CAPTURE_TIMEOUT}`,
         }),
       ),
   }),

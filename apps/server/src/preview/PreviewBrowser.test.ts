@@ -81,6 +81,8 @@ const makeHarness = Effect.fn("test.makePreviewBrowser")(function* (
     readonly body?: Stream.Stream<Uint8Array>;
     readonly wait?: Duration.Input;
     readonly unsupported?: boolean;
+    readonly platform?: NodeJS.Platform;
+    readonly probe?: (executable: string) => Effect.Effect<boolean>;
   } = {},
 ) {
   const fs = yield* FileSystem.FileSystem;
@@ -91,8 +93,12 @@ const makeHarness = Effect.fn("test.makePreviewBrowser")(function* (
   const sha256 =
     options.sha256 ?? Hex.encode(yield* digest.digest(Digest.sha256, archive).pipe(Effect.orDie));
   const requests: Array<string> = [];
+  const applications = path.join(baseDir, "Applications");
   const browser = yield* PreviewBrowser.makePreviewBrowser({
     baseDir,
+    applicationDirectories: [applications],
+    libraryDirectory: path.join(baseDir, "Library"),
+    probe: options.probe ?? (() => Effect.succeed(true)),
     release: options.unsupported
       ? null
       : {
@@ -104,7 +110,7 @@ const makeHarness = Effect.fn("test.makePreviewBrowser")(function* (
         },
     ...(options.wait === undefined ? {} : { wait: options.wait }),
   }).pipe(
-    Effect.provideService(HostProcess.Platform, hostPlatform),
+    Effect.provideService(HostProcess.Platform, options.platform ?? hostPlatform),
     Effect.provideService(HostProcess.Architecture, "x64"),
     Effect.provideService(
       HttpClient.HttpClient,
@@ -120,7 +126,7 @@ const makeHarness = Effect.fn("test.makePreviewBrowser")(function* (
     ),
   );
   const installRoot = path.join(baseDir, "tools", "chrome-headless-shell", "fixture");
-  return { browser, fs, path, baseDir, installRoot, requests };
+  return { browser, fs, path, baseDir, installRoot, applications, requests };
 });
 
 it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PreviewBrowser", (it) => {
@@ -140,7 +146,7 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PreviewBrowser",
       const executable = yield* browser.executable;
 
       const version = path.join(installRoot, current);
-      expect(executable).toBe(path.join(version, executableName));
+      expect(executable).toEqual({ path: path.join(version, executableName), version: current });
       expect(yield* fs.readFileString(path.join(version, "locales", "en-US.pak"))).toBe("strings");
       if (hostPlatform !== "win32") {
         const mode = (file: string) =>
@@ -152,10 +158,101 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("PreviewBrowser",
       expect((yield* fs.readDirectory(installRoot)).toSorted()).toEqual(
         [".install-other", "0.10.0", current].toSorted(),
       );
-      expect(yield* browser.executable).toBe(executable);
+      expect(yield* browser.executable).toEqual(executable);
       expect(yield* browser.installed).toEqual(Option.some(executable));
       expect(requests).toHaveLength(1);
     }),
+  );
+
+  // POSIX modes decide which app is executable.
+  it.effect.skipIf(hostPlatform === "win32")(
+    "prefers a current, unmanaged browser on macOS that starts, else the headless shell",
+    () =>
+      Effect.gen(function* () {
+        const probed: Array<string> = [];
+        let starts = false;
+        const { browser, fs, path, baseDir, applications, installRoot, requests } =
+          yield* makeHarness({
+            platform: "darwin",
+            probe: (executable) =>
+              Effect.sync(() => {
+                probed.push(executable);
+                return starts;
+              }),
+          });
+        const major = Number(PreviewBrowser.VERSION.split(".")[0]);
+        const install = Effect.fnUntraced(function* (app: string, id: string, version: string) {
+          const contents = path.join(applications, `${app}.app`, "Contents");
+          yield* fs.makeDirectory(path.join(contents, "MacOS"), { recursive: true });
+          yield* fs.writeFileString(
+            path.join(contents, "Info.plist"),
+            `<plist><dict>\n\t<key>CFBundleIdentifier</key>\n\t<string>${id}</string>\n\t<key>CFBundleShortVersionString</key>\n\t<string>${version}</string>\n</dict></plist>`,
+          );
+          const executable = path.join(contents, "MacOS", app);
+          yield* fs.writeFileString(executable, "#!/bin/sh\n", { mode: 0o755 });
+          return executable;
+        });
+
+        // One that stopped updating is never tried; one that fails to start is tried once a version.
+        yield* install("Google Chrome", "com.google.Chrome", `${major - 2}.0.7000.1`);
+        const brave = yield* install("Brave Browser", "com.brave.Browser", `${major}.1.99.57`);
+        expect(yield* browser.system).toEqual(Option.none());
+        expect((yield* browser.executable).path).toBe(
+          path.join(installRoot, "1.2.3", executableName),
+        );
+        expect(probed).toEqual([brave]);
+        expect(requests).toHaveLength(1);
+
+        // An update is a new version to try.
+        starts = true;
+        yield* install("Brave Browser", "com.brave.Browser", `${major}.1.99.60`);
+        const found = { path: brave, version: `${major}.1.99.60`, app: "Brave Browser" };
+        expect(yield* browser.executable).toEqual(found);
+        expect(yield* browser.installed).toEqual(Option.some(found));
+        expect(probed).toEqual([brave, brave]);
+
+        // Managed policies outrank the flags that keep pages off the local network.
+        const chrome = yield* install("Google Chrome", "com.google.Chrome", `${major}.0.8103.79`);
+        expect((yield* browser.system).pipe(Option.map((found) => found.path))).toEqual(
+          Option.some(chrome),
+        );
+        const library = path.join(baseDir, "Library");
+        yield* fs.makeDirectory(path.join(library, "Google", "Chrome"), { recursive: true });
+        yield* fs.writeFileString(
+          path.join(library, "Google", "Chrome", "CloudManagementEnrollmentToken"),
+          "",
+        );
+        expect(yield* browser.system).toEqual(Option.some(found));
+        yield* fs.makeDirectory(path.join(library, "Managed Preferences"));
+        yield* fs.writeFileString(
+          path.join(library, "Managed Preferences", "com.brave.Browser.plist"),
+          "",
+        );
+        expect(yield* browser.system).toEqual(Option.none());
+        expect(requests).toHaveLength(1);
+      }),
+  );
+
+  it.effect.skipIf(hostPlatform === "win32")(
+    "treats a probe that dies as a browser that does not start",
+    () =>
+      Effect.gen(function* () {
+        const { browser, fs, path, applications } = yield* makeHarness({
+          platform: "darwin",
+          probe: () => Effect.die("probe crashed"),
+        });
+        const contents = path.join(applications, "Brave Browser.app", "Contents");
+        yield* fs.makeDirectory(path.join(contents, "MacOS"), { recursive: true });
+        yield* fs.writeFileString(
+          path.join(contents, "Info.plist"),
+          `<key>CFBundleIdentifier</key><string>com.brave.Browser</string><key>CFBundleShortVersionString</key><string>${PreviewBrowser.VERSION}</string>`,
+        );
+        yield* fs.writeFileString(path.join(contents, "MacOS", "Brave Browser"), "", {
+          mode: 0o755,
+        });
+        expect(yield* browser.system).toEqual(Option.none());
+        expect(yield* browser.system).toEqual(Option.none());
+      }),
   );
 
   it.effect.each([
