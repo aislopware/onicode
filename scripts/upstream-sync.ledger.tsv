@@ -2718,3 +2718,4 @@ ff4197c480	take	taken as is
 910c1a8df9	take	fix(mobile): long user messages collapse like on web (#34319)
 3c08684f1d	take	fix(client-runtime): CamelCase account names get distinct badge initials (#35343)
 5533151d77	take	fix(server): delegated completion wakes name the child thread (#39297)
+4e39664248	take	fix(server): preview_resize sizes hidden desktop tabs without a snapshot (#39269)
