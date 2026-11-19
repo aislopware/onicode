@@ -2725,3 +2725,4 @@ cdf5a6c0fc	take	fix(antigravity): allow compaction when the runtime advertises i
 031dd1a818	take	fix(ssh): report missing tar or gzip before downloading remote runtime (#35307)
 44e3f42e69	take	fix(server): starting a native subagent no longer records a failed projection read span (#39284); CONFLICT resolved: findThread lookup taken, Onicode's /rename title handling kept (upstream has no equivalent)
 a4d0151700	take	fix: match dotted capital I in Find in Thread (#39290); scenario ported to the desktop target (ControlOrMeta+f)
+55e379bb96	take	fix(server): the HEAD watch no longer spawns Git in a removed worktree (#39294)
