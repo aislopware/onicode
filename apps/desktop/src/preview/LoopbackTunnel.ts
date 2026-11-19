@@ -34,6 +34,7 @@ const REFUSAL_REASONS = {
   400: "Bad Request",
   403: "Forbidden",
   407: "Proxy Authentication Required",
+  501: "Not Implemented",
   502: "Bad Gateway",
 } as const;
 
@@ -82,10 +83,12 @@ const sendUnspecifiedToLocalhost = (
  */
 const readHead = Effect.fn("LoopbackTunnel.readHead")(function* (
   pull: Effect.Effect<NonEmptyReadonlyArray<Uint8Array>, Socket.SocketError>,
+  initial: Buffer = Buffer.alloc(0),
 ) {
-  let received = Buffer.alloc(0);
+  let received = initial;
   while (true) {
     const end = received.indexOf(HEAD_END);
+    if (end > MAX_HEAD_BYTES) return { head: undefined, rest: received };
     if (end >= 0) {
       return {
         head: received.subarray(0, end).toString("latin1"),
@@ -122,7 +125,19 @@ type ProxyRequest =
       readonly port: number;
       /** The origin-form head to send on; undefined for CONNECT, which tunnels raw bytes. */
       readonly forwardHead: string | undefined;
+      readonly bodyLength: number;
     };
+
+const fieldValues = (fields: ReadonlyArray<string>, name: RegExp) =>
+  fields.filter((field) => name.test(field)).map((field) => field.replace(/^[^:]*:\s*/, "").trim());
+
+// The request target as Chromium sent it, minus scheme and authority; URL would re-escape it.
+const originForm = (target: string) => {
+  const authorityEnd = target.slice("http://".length).search(/[/?]/);
+  if (authorityEnd < 0) return "/";
+  const path = target.slice("http://".length + authorityEnd);
+  return path.startsWith("?") ? `/${path}` : path;
+};
 
 /**
  * Chromium sends CONNECT for https and WebSockets, and an absolute-form request for plain http.
@@ -135,37 +150,48 @@ const parseProxyRequest = (head: string, authorization: string): ProxyRequest =>
   if (!method || !target || !version?.startsWith("HTTP/1.") || extra !== undefined) {
     return { refusal: 400 };
   }
-  const offered = fields
-    .find((field) => /^proxy-authorization\s*:/i.test(field))
-    ?.replace(/^[^:]*:\s*/, "");
+  const [offered] = fieldValues(fields, /^proxy-authorization\s*:/i);
   if (offered === undefined || !sameSecret(offered, authorization)) return { refusal: 407 };
   const connect = method === "CONNECT";
   const url = URL.parse(connect ? `http://${target}` : target);
   if (url === null || url.protocol !== "http:") return { refusal: 400 };
   const host = url.hostname.replace(/^\[|\]$/g, "");
   if (!isLoopbackName(host)) return { refusal: 403 };
+  const port = Number(url.port || 80);
+  if (connect) return { host, port, forwardHead: undefined, bodyLength: 0 };
+  // Only the one framed request is forwarded, so its body length must be known up front.
+  if (fieldValues(fields, /^transfer-encoding\s*:/i).length > 0) return { refusal: 501 };
+  const lengths = new Set(fieldValues(fields, /^content-length\s*:/i));
+  const [length = "0"] = lengths;
+  if (lengths.size > 1 || !/^\d+$/.test(length)) return { refusal: 400 };
   return {
     host,
-    port: Number(url.port || 80),
-    forwardHead: connect
-      ? undefined
-      : [
-          `${method} ${url.pathname}${url.search} ${version}`,
-          ...fields.filter((field) => !HOP_BY_HOP_FIELD.test(field)),
-          "Connection: close",
-          "",
-          "",
-        ].join("\r\n"),
+    port,
+    bodyLength: Number(length),
+    forwardHead: [
+      `${method} ${originForm(target)} ${version}`,
+      ...fields.filter((field) => !HOP_BY_HOP_FIELD.test(field)),
+      "Connection: close",
+      "",
+      "",
+    ].join("\r\n"),
   };
 };
 
-// Without this Chromium would keep the proxy connection open and send its next request raw.
+const statusCode = (head: string) => Number(head.split(" ", 2)[1]);
+
+// Without this Chromium would keep the proxy connection open and send its next request raw. A
+// destination's 407 would look like the listener's own challenge, answered with its credentials.
 const closingResponseHead = (head: string) => {
   const [statusLine = "", ...fields] = head.split("\r\n");
+  const challenged = statusCode(head) === 407;
   return Buffer.from(
     [
-      statusLine,
-      ...fields.filter((field) => !HOP_BY_HOP_FIELD.test(field)),
+      challenged ? "HTTP/1.1 502 Bad Gateway" : statusLine,
+      ...fields.filter(
+        (field) =>
+          !HOP_BY_HOP_FIELD.test(field) && !(challenged && /^proxy-authenticate\s*:/i.test(field)),
+      ),
       "Connection: close",
       "",
       "",
@@ -184,9 +210,16 @@ const tunnelEndpoint = (tunnelUrl: string) => {
   };
 };
 
-const isTunnelEndpoint = (tunnelUrl: string, port: number) => {
+const isTunnelEndpoint = (
+  tunnelUrl: string,
+  destination: { readonly host: string; readonly port: number },
+) => {
   const endpoint = tunnelEndpoint(tunnelUrl);
-  return isLoopbackName(endpoint.host) && endpoint.port === port;
+  return (
+    isLoopbackName(endpoint.host) &&
+    endpoint.host === destination.host &&
+    endpoint.port === destination.port
+  );
 };
 
 /** Opens a connection to the destination; `ws` pauses its socket, so a slow page slows the tunnel. */
@@ -194,7 +227,7 @@ const dialDestination = Effect.fn("LoopbackTunnel.dialDestination")(function* (
   tunnelUrl: string,
   destination: { readonly host: string; readonly port: number },
 ) {
-  if (isTunnelEndpoint(tunnelUrl, destination.port)) {
+  if (isTunnelEndpoint(tunnelUrl, destination)) {
     const endpoint = yield* NodeSocket.makeNet({
       ...tunnelEndpoint(tunnelUrl),
       openTimeout: CONNECT_TIMEOUT,
@@ -342,21 +375,47 @@ const make = Effect.gen(function* () {
           return;
         }
         const target = destination.value;
-        if (request.forwardHead === undefined) yield* writer.write(CONNECT_ESTABLISHED);
-        else yield* target.writer.write(Buffer.from(request.forwardHead, "latin1"));
-        if (rest.length > 0) yield* target.writer.write(rest);
+        if (request.forwardHead === undefined) {
+          yield* writer.write(CONNECT_ESTABLISHED);
+          if (rest.length > 0) yield* target.writer.write(rest);
+          return yield* Effect.raceFirst(
+            pump(pull, target.writer.writeAll),
+            pump(target.pull, writer.writeAll),
+          );
+        }
+        const forwardHead = Buffer.from(request.forwardHead, "latin1");
+        // One request goes on; anything Chromium sends after its body never leaves this machine.
+        const forwardBody = Effect.gen(function* () {
+          let received = rest;
+          while (received.length < request.bodyLength) {
+            received = Buffer.concat([received, ...(yield* pull)]);
+          }
+          yield* target.writer.write(
+            Buffer.concat([forwardHead, received.subarray(0, request.bodyLength)]),
+          );
+          return yield* Effect.forever(pull);
+        });
         const relayResponse = Effect.gen(function* () {
-          if (request.forwardHead !== undefined) {
-            const response = yield* readHead(target.pull);
-            yield* writer.write(
-              response.head === undefined
-                ? response.rest
-                : Buffer.concat([closingResponseHead(response.head), response.rest]),
-            );
+          let received: Buffer = Buffer.alloc(0);
+          while (true) {
+            const response = yield* readHead(target.pull, received);
+            if (response.head === undefined) {
+              yield* writer.write(response.rest);
+              break;
+            }
+            const status = statusCode(response.head);
+            if (status >= 200 || status === 101 || !(status >= 100)) {
+              yield* writer.write(
+                Buffer.concat([closingResponseHead(response.head), response.rest]),
+              );
+              break;
+            }
+            yield* writer.write(Buffer.from(`${response.head}\r\n\r\n`, "latin1"));
+            received = response.rest;
           }
           return yield* pump(target.pull, writer.writeAll);
         });
-        return yield* Effect.raceFirst(pump(pull, target.writer.writeAll), relayResponse);
+        return yield* Effect.raceFirst(forwardBody, relayResponse);
       },
       Effect.scoped,
       (effect) => Effect.ignoreCause(effect),

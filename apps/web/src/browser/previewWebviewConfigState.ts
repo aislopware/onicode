@@ -103,10 +103,13 @@ const previewWebviewConfigAtom = Atom.family((key: string) => {
   );
 });
 
+export const previewWebviewConfig = (environmentId: EnvironmentId, profileId?: string) =>
+  previewWebviewConfigAtom(configKey(environmentId, profileId));
+
 export function usePreviewWebviewConfig(
   environmentId: EnvironmentId,
   profileId?: string,
 ): DesktopPreviewWebviewConfig | null {
-  const result = useAtomValue(previewWebviewConfigAtom(configKey(environmentId, profileId)));
+  const result = useAtomValue(previewWebviewConfig(environmentId, profileId));
   return AsyncResult.getOrElse(result, () => null);
 }

@@ -23,9 +23,14 @@ describe("browser target resolver", () => {
       target: { _tag: tag, connectionId: "saved:remote" },
     });
     const { resolveExternalServerUrl } = await import("./browserTargetResolver");
-    expect(
-      resolveExternalServerUrl(EnvironmentId.make("environment-1"), "http://localhost:5173"),
-    ).toBeNull();
+    for (const url of [
+      "http://localhost:5173",
+      "http://localhost.:5173",
+      "http://app.localhost:5173",
+      "http://127.0.0.2:5173",
+    ]) {
+      expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), url)).toBeNull();
+    }
     expect(
       resolveExternalServerUrl(EnvironmentId.make("environment-1"), "https://example.com/"),
     ).toBe("https://example.com/");

@@ -4,7 +4,11 @@ import type {
   PreviewUrlResolution,
 } from "@onicode/contracts";
 import { isLoopbackHost, normalizePreviewUrl } from "@onicode/shared/preview";
-import { isLocalLoopbackHost, isPrivateNetworkHost } from "@onicode/shared/hostClassification";
+import {
+  isLocalLoopbackHost,
+  isPrivateNetworkHost,
+  normalizeHostname,
+} from "@onicode/shared/hostClassification";
 
 import type { ConnectionTarget } from "@onicode/client-runtime/connection";
 
@@ -51,6 +55,12 @@ const resolveEnvironmentPortTarget = (
   };
 };
 
+/** Every name the desktop's preview tunnel treats as the environment's loopback. */
+export const namesLoopback = (host: string): boolean =>
+  isLoopbackHost(host) ||
+  isLocalLoopbackHost(host) ||
+  normalizeHostname(host).endsWith(".localhost");
+
 // Loopback servers on the desktop's own primary and WSL backends answer on this machine's localhost.
 const reachesEnvironmentLoopback = (target: ConnectionTarget): boolean =>
   target._tag === "PrimaryConnectionTarget" || isDesktopLocalConnectionTarget(target);
@@ -86,7 +96,7 @@ export const resolveExternalServerUrl = (
   } catch {
     return rawUrl;
   }
-  if (!isLoopbackHost(parsed.hostname)) return parsed.toString();
+  if (!namesLoopback(parsed.hostname)) return parsed.toString();
   const connection = readPreparedConnection(environmentId);
   if (!connection) return null;
   if (reachesEnvironmentLoopback(connection.target)) return parsed.toString();
