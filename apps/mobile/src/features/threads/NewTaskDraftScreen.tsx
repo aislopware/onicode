@@ -506,7 +506,9 @@ export function NewTaskDraftScreen(props: {
       return;
     }
     initialPickerRef.current = "open";
-    navigation.dispatch(CommonActions.navigate("NewTaskProject"));
+    navigation.dispatch(
+      CommonActions.navigate("NewTaskProject", { incomingShareId: props.incomingShareId }),
+    );
   }, [
     goBack,
     isFocused,

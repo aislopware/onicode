@@ -202,6 +202,12 @@ describe("htmlRenderFromToolItem", () => {
   const result = { htmlRender: reference, message: "Rendered above your reply." };
 
   it("reads the reference from each provider's result envelope", () => {
+    const terminal = (stdout: string) => ({
+      output: `Created At: 2026-11-19T02:54:02Z\nCompleted At: 2026-11-19T02:54:02Z\nCommand exited with code 0.\n\nCommand output:\n${stdout}\r\n`,
+      exit_code: 0,
+    });
+    const stdout = (padding = "") =>
+      JSON.stringify({ content: [], structuredContent: result, isError: false, padding });
     for (const [toolName, output] of [
       ["mcp__onicode__html_render", [{ type: "text", text: JSON.stringify(result) }]],
       ["onicode.html_render", { structuredContent: result, content: [] }],
@@ -210,13 +216,9 @@ describe("htmlRenderFromToolItem", () => {
       // OpenCode 2 Code Mode reports a script's nested html_render call as one `execute` item.
       ["execute", JSON.stringify(result)],
       // Antigravity runs the `acp-mcp-call` terminal fallback and wraps its stdout.
-      [
-        "onicode.html_render",
-        {
-          output: `Created At: 2026-11-19T02:54:02Z\nCompleted At: 2026-11-19T02:54:02Z\nCommand exited with code 0.\n\nCommand output:\n${JSON.stringify({ content: [], structuredContent: result, isError: false })}\r\n`,
-          exit_code: 0,
-        },
-      ],
+      ["onicode.html_render", terminal(stdout())],
+      // Only the stdout counts against the parse budget, not the header before it.
+      ["onicode.html_render", terminal(stdout("x".repeat(16_382 - stdout().length)))],
     ] as const) {
       expect(htmlRenderFromToolItem({ toolName, output })).toEqual(reference);
     }

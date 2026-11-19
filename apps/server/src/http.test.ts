@@ -86,6 +86,7 @@ describe("MCP app asset responses", () => {
       const directory = yield* fs.makeTempDirectoryScoped({ prefix: "oni-mcp-csp-" });
       const file = path.join(directory, "app.html");
       const page = "<!DOCTYPE html><html><body>app</body></html>";
+      const ownPolicy = `<!DOCTYPE html><meta http-equiv="Content-Security-Policy" content="script-src 'none'; connect-src https://api.example.com"><body>app</body>`;
       const csp = {
         connectDomains: ["https://api.example.com"],
         resourceDomains: ["https://cdn.example.com", "https://*.fonts.example.com"],
@@ -100,8 +101,10 @@ describe("MCP app asset responses", () => {
       for (const [stored, current] of [
         [old(injectMcpAppCsp(page, csp)), injectMcpAppCsp(page, csp)],
         [old(injectMcpAppCsp(page, undefined)), injectMcpAppCsp(page, undefined)],
-        // A capture without a stored policy gets the strictest one.
+        // A capture without a stored policy, or with one Onicode did not write, gets the strictest
+        // one ahead of its own.
         [page, injectMcpAppCsp(page, undefined)],
+        [ownPolicy, injectMcpAppCsp(ownPolicy, undefined)],
       ] as const) {
         yield* fs.writeFileString(file, stored);
         const response = HttpServerResponse.toWeb(
