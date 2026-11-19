@@ -99,10 +99,13 @@ function ThreadServersList(props: ThreadServersPanelProps) {
     if (event.button > 1) return;
     // Like links: modified and middle clicks go to the system browser, when it can reach the server.
     // It reaches another environment's loopback only through a forward; starting one runs the
-    // probe, so only a confirmed local environment opens directly.
+    // probe. An environment the probe found on this machine is reached at its own loopback.
     const external = event.metaKey || event.ctrlKey || event.button === 1;
     const forwarding = external && forwardable && locality !== "local";
-    const directUrl = resolveExternalServerUrl(props.environmentId, server.url);
+    const directUrl =
+      forwardable && locality === "local"
+        ? server.url
+        : resolveExternalServerUrl(props.environmentId, server.url);
     if (external && (forwarding || directUrl !== null)) {
       event.preventDefault();
       // A server the system browser reaches directly still opens when the forward fails.
@@ -117,11 +120,13 @@ function ThreadServersList(props: ThreadServersPanelProps) {
             },
           )
         : directUrl;
-      if (url === null) return;
-      await readLocalApi()
-        ?.shell.openExternal(url)
-        .catch((error: unknown) => reportFailure(gt("Unable to open in browser"), error));
-      return;
+      if (url !== null) {
+        await readLocalApi()
+          ?.shell.openExternal(url)
+          .catch((error: unknown) => reportFailure(gt("Unable to open in browser"), error));
+        return;
+      }
+      // Without a forward or a direct address, the in-app preview still reaches the server.
     }
     const result = await openDiscoveredPort({ threadRef, port: server, openPreview });
     if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
