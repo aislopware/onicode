@@ -2576,3 +2576,4 @@ f69b3a27a7	take	taken as is
 888fd3f3f9	take	taken as is
 14d57b451e	take	taken; kept Onicode's controlSlot prop and index.css import in the test; only the new i18n key taken (Onicode already has Release/Take control elsewhere); mobile's streamed browser has no counterpart (follow-up)
 e8aa0debb3	take	taken as is
+899a2433ab	take	taken as is (mobile typecheck and new-task-project-selection tests pass)
