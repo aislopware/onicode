@@ -23,9 +23,12 @@ final class OniHttpRewriter {
     }
   }
 
-  /// The methods of requests still waiting for a response, so a reply to HEAD has no body.
-  final class Methods {
+  /// What the two directions of one connection share.
+  final class Exchange {
+    /// The methods of requests still waiting for a response, so a reply to HEAD has no body.
     fileprivate var pending: [String] = []
+    /// Set by a 101 reply; a request asking to upgrade stays HTTP until the server agrees.
+    fileprivate var upgraded = false
   }
 
   private enum Body {
@@ -50,7 +53,7 @@ final class OniHttpRewriter {
 
   private let role: Role
   private let rules: [Rule]
-  private let methods: Methods
+  private let exchange: Exchange
   private var state = State.head
   /// Bytes not read yet: an unfinished head, chunk-size line or trailer section.
   private var pending: [UInt8] = []
@@ -58,34 +61,38 @@ final class OniHttpRewriter {
   private var held: [UInt8] = []
   /// The text body byte sent just before `held`, which a match's start must not touch.
   private var previous: UInt8?
+  /// Chunk framing read after `held` began, sent at its offset in `held` once `held` is.
+  private var framing: [(at: Int, bytes: [UInt8])] = []
 
-  init(role: Role, rules: [Rule], methods: Methods) {
+  init(role: Role, rules: [Rule], exchange: Exchange) {
     self.role = role
     self.rules = rules
-    self.methods = methods
+    self.exchange = exchange
   }
 
   /// The page names the stand-in host, and the environment's servers expect `localhost`.
   static func pair() -> (toServer: OniHttpRewriter, toPage: OniHttpRewriter) {
-    let methods = Methods()
+    let exchange = Exchange()
+    let nameBytes = Array("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_".utf8)
     return (
       OniHttpRewriter(
         role: .request,
         rules: [.init(from: OniLoopback.standInHost, to: "localhost")],
-        methods: methods
+        exchange: exchange
       ),
       OniHttpRewriter(
         role: .response,
         rules: [
-          .init(from: "localhost", to: OniLoopback.standInHost),
+          .init(from: "localhost", to: OniLoopback.standInHost, alone: nameBytes),
           .init(from: "127.0.0.1", to: OniLoopback.standInHost, alone: Array("0123456789.".utf8)),
         ],
-        methods: methods
+        exchange: exchange
       )
     )
   }
 
   func feed(_ data: Data) -> Data {
+    if role == .request, exchange.upgraded { state = .raw }
     var input = pending + [UInt8](data)
     pending = []
     var output: [UInt8] = []
@@ -101,8 +108,7 @@ final class OniHttpRewriter {
 
   /// What is still held back, once the stream has ended.
   func finish() -> Data {
-    let output = rewrite(held, previous: previous, next: nil, limit: held.count).bytes + pending
-    held = []
+    let output = flush() + pending
     pending = []
     return Data(output)
   }
@@ -131,7 +137,10 @@ final class OniHttpRewriter {
       let count = min(remaining, input.count)
       let left = remaining - count
       let done = left == 0
-      output += bodyBytes(Array(input[..<count]), text: text, ends: done)
+      // A chunk's end is not the body's, so a match may carry on into the next chunk.
+      let ends: Bool
+      if case .length = body { ends = done } else { ends = false }
+      output += bodyBytes(Array(input[..<count]), text: text, ends: ends)
       if case .length = body {
         state = done ? .head : .body(.length(left), text: text)
       } else {
@@ -143,15 +152,19 @@ final class OniHttpRewriter {
       return input.count
     case .chunkEnd(let remaining):
       let count = min(remaining, input.count)
-      output += input[..<count]
+      frame(Array(input[..<count]), into: &output)
       state = .body(remaining == count ? .chunkSize : .chunkEnd(remaining - count), text: text)
       return count
     case .chunkSize:
       guard let end = find(Self.lineEnd, in: input) else { return hold(input) }
       let line = Array(input[..<(end + 2)])
-      output += line
+      frame(line, into: &output)
       let digits = String(decoding: line.prefix { $0 != UInt8(ascii: ";") && $0 != 13 }, as: UTF8.self)
-      guard let size = Int(digits.trimmingCharacters(in: .whitespaces), radix: 16) else {
+      let size = Int(digits.trimmingCharacters(in: .whitespaces), radix: 16).flatMap {
+        $0 >= 0 ? $0 : nil
+      }
+      if size == nil || size == 0 { output += flush() }
+      guard let size else {
         state = .raw
         return line.count
       }
@@ -188,7 +201,39 @@ final class OniHttpRewriter {
     held = Array(buffer[used...])
     if let last = rewritten.last { previous = last }
     if ends { previous = nil }
-    return rewritten
+    return interleave(rewritten)
+  }
+
+  /// Sends what is held as the end of its body.
+  private func flush() -> [UInt8] {
+    let data = rewrite(held, previous: previous, next: nil, limit: held.count).bytes
+    held = []
+    previous = nil
+    return interleave(data)
+  }
+
+  /// Chunk framing goes out in place, after the body bytes held before it.
+  private func frame(_ bytes: [UInt8], into output: inout [UInt8]) {
+    if held.isEmpty {
+      output += bytes
+    } else {
+      framing.append((held.count, bytes))
+    }
+  }
+
+  /// `data`, the start of `held` rewritten, with the framing read inside it put back.
+  private func interleave(_ data: [UInt8]) -> [UInt8] {
+    var output: [UInt8] = []
+    var start = 0
+    while let piece = framing.first, piece.at <= data.count {
+      output += data[start..<piece.at]
+      output += piece.bytes
+      start = piece.at
+      framing.removeFirst()
+    }
+    output += data[start...]
+    framing = framing.map { ($0.at - data.count, $0.bytes) }
+    return output
   }
 
   /// The longest end of `bytes` that a rule could still match from, including a whole match
@@ -207,65 +252,80 @@ final class OniHttpRewriter {
   }
 
   private func readHead(_ head: [UInt8]) -> [UInt8] {
-    var lines = String(decoding: head.dropLast(Self.headEnd.count), as: UTF8.self)
-      .components(separatedBy: "\r\n")
-    let start = lines.first ?? ""
+    // Bytes, not a String, so values that are not UTF-8 pass unchanged.
+    var lines = split(Array(head.dropLast(Self.headEnd.count)))
+    let text = { (line: [UInt8]) in String(decoding: line, as: UTF8.self) }
+    let start = lines.first.map(text) ?? ""
     var fields: [String: String] = [:]
-    for line in lines.dropFirst() {
+    for line in lines.dropFirst().map(text) {
       guard let colon = line.firstIndex(of: ":") else { continue }
       let name = line[..<colon].lowercased()
       let value = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
       fields[name] = fields[name].map { "\($0), \(value)" } ?? value
     }
-    let text = isText(fields)
+    let isText = isText(fields)
     let chunked = fields["transfer-encoding"]?.lowercased().contains("chunked") == true
-    let length = fields["content-length"].flatMap { Int($0) }
+    // Repeats of one length are that length; any other unreadable one leaves the framing unknown.
+    let lengths = Set(
+      (fields["content-length"] ?? "").split(separator: ",").map {
+        Int($0.trimmingCharacters(in: .whitespaces)) ?? -1
+      })
+    let length = lengths.count == 1 ? lengths.first.flatMap { $0 >= 0 ? $0 : nil } : nil
+    let unreadable = !chunked && fields["content-length"] != nil && length == nil
     switch role {
     case .request:
-      methods.pending.append(String(start.prefix { $0 != " " }).uppercased())
-      if fields["upgrade"] != nil {
+      exchange.pending.append(String(start.prefix { $0 != " " }).uppercased())
+      if unreadable {
         state = .raw
       } else if chunked {
-        state = .body(.chunkSize, text: text)
+        state = .body(.chunkSize, text: isText)
       } else {
-        state = length.map { $0 > 0 ? .body(.length($0), text: text) : .head } ?? .head
+        state = length.map { $0 > 0 ? .body(.length($0), text: isText) : .head } ?? .head
       }
       // An encoded reply would hide its loopback URLs from the rewrite.
       lines = lines.map {
-        $0.lowercased().hasPrefix("accept-encoding:") ? "Accept-Encoding: identity" : $0
+        text($0).lowercased().hasPrefix("accept-encoding:")
+          ? Array("Accept-Encoding: identity".utf8) : $0
       }
     case .response:
       let status = Int(start.split(separator: " ").dropFirst().first ?? "") ?? 0
       if status == 101 {
+        exchange.upgraded = true
         state = .raw
       } else if (100..<200).contains(status) {
         state = .head
       } else {
-        let method = methods.pending.isEmpty ? "" : methods.pending.removeFirst()
+        let method = exchange.pending.isEmpty ? "" : exchange.pending.removeFirst()
         if method == "HEAD" || status == 204 || status == 304 {
           state = .head
+        } else if unreadable {
+          state = .raw
         } else if chunked {
-          state = .body(.chunkSize, text: text)
+          state = .body(.chunkSize, text: isText)
         } else if let length {
-          state = length > 0 ? .body(.length(length), text: text) : .head
+          state = length > 0 ? .body(.length(length), text: isText) : .head
         } else {
-          state = .body(.untilClose, text: text)
+          state = .body(.untilClose, text: isText)
         }
       }
     }
-    let rebuilt = Array((lines.joined(separator: "\r\n") + "\r\n\r\n").utf8)
+    let rebuilt = Array(lines.joined(separator: Self.lineEnd)) + Self.headEnd
     previous = nil
     return rewrite(rebuilt, previous: nil, next: nil, limit: rebuilt.count, atEnd: true).bytes
   }
 
   private func isText(_ fields: [String: String]) -> Bool {
     let encoding = fields["content-encoding"]?.lowercased() ?? "identity"
-    guard encoding == "identity", let type = fields["content-type"]?.lowercased() else {
-      return false
-    }
-    return type.hasPrefix("text/")
-      || ["javascript", "ecmascript", "json", "xml", "x-www-form-urlencoded"]
-        .contains { type.contains($0) }
+    let transfer = fields["transfer-encoding"]?.lowercased() ?? "chunked"
+    guard encoding == "identity", transfer.trimmingCharacters(in: .whitespaces) == "chunked",
+      let value = fields["content-type"]?.lowercased()
+    else { return false }
+    let type = value.prefix { $0 != ";" }.trimmingCharacters(in: .whitespaces)
+    return type.hasPrefix("text/") || type.hasSuffix("+json") || type.hasSuffix("+xml")
+      || [
+        "application/javascript", "application/ecmascript", "application/json",
+        "application/xml", "application/x-www-form-urlencoded",
+      ].contains(type)
   }
 
   /// Swaps matches starting before `limit`. A match touching an edge that is not the message's
@@ -293,6 +353,16 @@ final class OniHttpRewriter {
       index += 1
     }
     return (Array(output[..<index]), index)
+  }
+
+  private func split(_ bytes: [UInt8]) -> [[UInt8]] {
+    var lines: [[UInt8]] = []
+    var rest = bytes[...]
+    while let end = find(Self.lineEnd, in: Array(rest)) {
+      lines.append(Array(rest.prefix(end)))
+      rest = rest.dropFirst(end + Self.lineEnd.count)
+    }
+    return lines + [Array(rest)]
   }
 
   private func find(_ needle: [UInt8], in haystack: [UInt8]) -> Int? {

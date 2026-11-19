@@ -251,7 +251,7 @@ undo by accident:
   the device preview loads them under a stand-in host. Only a page's main frame can be redirected
   there; its subresources reach the environment because the listener
   ([`OniHttpRewriter`](../../apps/mobile/modules/oni-preview-tunnel/ios/OniHttpRewriter.swift))
-  swaps `localhost` and `127.0.0.1` for the stand-in in plain HTTP heads and in unencoded text
+  swaps `localhost` and `127.0.0.1`, as whole names, for the stand-in in plain HTTP heads and in unencoded text
   bodies, and asks servers for unencoded replies. Rewriting heads alone would send the page's
   absolute URLs for other ports to the phone and break its `location.hostname === "localhost"`
   checks. Other bodies, and everything after an upgrade, pass byte for byte. The cost is
