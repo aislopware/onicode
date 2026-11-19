@@ -1338,6 +1338,9 @@ importers:
       '@onicode/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@onicode/issue-tracker-linear':
+        specifier: workspace:*
+        version: link:../issue-tracker-linear
       '@onicode/provider-acp-registry':
         specifier: workspace:*
         version: link:../provider-acp-registry
