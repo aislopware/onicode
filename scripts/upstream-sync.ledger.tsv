@@ -2640,3 +2640,4 @@ a6d2bed55b	take	Titleless ACP tool_call_update keeps the tool's name. Clean appl
 b45ca716f9	take	CONFLICT resolved: kept Onicode's stacked new-draft path in selectProject, added upstream's abort signal around it
 86b5734cfc	take	taken as is (Windows-only launcher parsing, inert on macOS/Linux)
 60e54867fc	take	CONFLICT resolved: kept Onicode's refreshDetail (also refreshes the hover summary) and linkChanges stream instead of upstream's linkedThreadSignals; test passes linkChanges; new IssueListInput.refresh is optional (wire-compatible); scenario ported
+26b872b46a	take	taken as is
