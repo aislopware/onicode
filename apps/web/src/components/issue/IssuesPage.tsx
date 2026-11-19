@@ -69,6 +69,7 @@ import { Button } from "~/components/ui/button";
 import {
   Empty,
   EmptyDescription,
+  EmptyContent,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -207,6 +208,14 @@ export function IssuesPage() {
     search.issueServer && search.issueProject
       ? { environmentId: search.issueServer, projectId: search.issueProject }
       : undefined;
+  // A saved or linked filter can name a project whose environment is gone; it reads nothing.
+  const scopedProjectUnavailable =
+    scopedProject !== undefined &&
+    !filterProjects.some(
+      (project) =>
+        project.id === scopedProject.projectId &&
+        project.environmentId === scopedProject.environmentId,
+    );
 
   const debouncedQuery = useDebouncedValue(search.q ?? "", 300);
   const listInput: IssueListInput = {
@@ -482,6 +491,29 @@ export function IssuesPage() {
       onRetry={list.refresh}
       refreshing={list.isPending}
     />
+  ) : groups.length === 0 && scopedProjectUnavailable ? (
+    <Empty>
+      <EmptyMedia variant="icon">
+        <IssueGlyph.issue />
+      </EmptyMedia>
+      <EmptyHeader>
+        <EmptyTitle>
+          <T>Project unavailable</T>
+        </EmptyTitle>
+        <EmptyDescription>
+          <T>The project this filter names is not on a connected environment.</T>
+        </EmptyDescription>
+      </EmptyHeader>
+      <EmptyContent>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => updateSearch({ issueServer: undefined, issueProject: undefined })}
+        >
+          <T>Show all projects</T>
+        </Button>
+      </EmptyContent>
+    </Empty>
   ) : groups.length === 0 ? (
     <Empty>
       <EmptyMedia variant="icon">

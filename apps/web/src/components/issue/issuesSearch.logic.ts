@@ -5,10 +5,12 @@ import type { EnvironmentId, ProjectId } from "@onicode/contracts";
 import type { IssuesSearch } from "./IssuesPage";
 
 // The router reads a bare `key=42` as a number.
-const bounded = (value: unknown): string | undefined => {
-  const text = typeof value === "number" ? String(value) : value;
-  return typeof text === "string" && text.trim() ? text.trim().slice(0, 200) : undefined;
+const text = (value: unknown): string | undefined => {
+  const raw = typeof value === "number" ? String(value) : value;
+  return typeof raw === "string" && raw.trim() ? raw.trim() : undefined;
 };
+// Only free text is capped: a shortened id or issue key names something else.
+const bounded = (value: unknown) => text(value)?.slice(0, 200);
 
 const labels = (raw: unknown): ReadonlyArray<string> | undefined => {
   const names = (Array.isArray(raw) ? raw : [raw]).flatMap((name) => bounded(name) ?? []);
@@ -21,19 +23,19 @@ export const issuesSearchFromUrl = (raw: Record<string, unknown>): IssuesSearch 
   who:
     raw.who === "assigned" || raw.who === "authored" || raw.who === "mentioned" ? raw.who : "all",
   status: raw.status === "closed" || raw.status === "all" ? raw.status : "open",
-  issueServer: bounded(raw.issueServer) as EnvironmentId | undefined,
-  issueProject: bounded(raw.issueProject) as ProjectId | undefined,
+  issueServer: text(raw.issueServer) as EnvironmentId | undefined,
+  issueProject: text(raw.issueProject) as ProjectId | undefined,
   host: bounded(raw.host),
   q: bounded(raw.q),
   label: labels(raw.label),
   assignee: bounded(raw.assignee),
   order: raw.order === "created" ? "created" : undefined,
-  selectedEnvironmentId: bounded(raw.selectedEnvironmentId) as EnvironmentId | undefined,
-  selectedProjectId: bounded(raw.selectedProjectId) as ProjectId | undefined,
-  selectedHost: bounded(raw.selectedHost),
-  tracker: bounded(raw.tracker),
-  scope: bounded(raw.scope),
-  key: bounded(raw.key),
+  selectedEnvironmentId: text(raw.selectedEnvironmentId) as EnvironmentId | undefined,
+  selectedProjectId: text(raw.selectedProjectId) as ProjectId | undefined,
+  selectedHost: text(raw.selectedHost),
+  tracker: text(raw.tracker),
+  scope: text(raw.scope),
+  key: text(raw.key),
 });
 
 /** One choice per project: projects on one repository can read different Linear teams. */

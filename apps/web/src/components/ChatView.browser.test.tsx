@@ -44,6 +44,7 @@ import {
   answerRpc,
   assistantItem,
   dispatchedCommands,
+  emitShellThread,
   emitThreadEvent,
   hasPendingAssetUrl,
   installFakeEnvironment,
@@ -239,8 +240,9 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
     // AppRoot brings its own router.
     router: false,
   });
+  // The badge names the live title the tooltip shows, not the one stored when it was linked.
   const badge = page.getByRole("button", {
-    name: `Issue ${issue.displayKey}: ${issue.title}, Open`,
+    name: `Issue ${issue.displayKey}: ${liveTitle}, Open`,
   });
   await expect.element(badge).toBeVisible();
   expect(badge.element().querySelector("svg")).toHaveClass(/text-emerald-600/);
@@ -254,7 +256,7 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
   expect(contextMenu.defaultPrevented).toBe(false);
   await userEvent.click(badge);
   const issueRow = page
-    .getByRole("region", { name: "Linked issues" })
+    .getByRole("region", { name: "Linked items" })
     .getByRole("link", { name: issueName });
   await expect.element(issueRow.getByRole("img", { name: "Open" })).toBeVisible();
   await expect.element(issueRow.getByRole("img", { name: "3 comments" })).toBeVisible();
@@ -272,6 +274,68 @@ it("opens a linked Linear issue from an inactive thread's sidebar badge", async 
       }),
     )
     .toBeVisible();
+});
+
+it("reads only the linked issues a thread shows", async () => {
+  const style = document.createElement("style");
+  style.textContent = stylesheet;
+  document.head.append(style);
+  using _style = { [Symbol.dispose]: () => style.remove() };
+  const many = threadWithHistory("issue-many", 1);
+  const issues = Array.from({ length: 100 }, (_, index): ThreadIssueLink => {
+    const key = String(index + 1);
+    return {
+      projectId: PROJECT_ID,
+      tracker: IssueTrackerKind.make("github"),
+      host: "github.com",
+      scope: "owner/repo",
+      key,
+      url: `https://github.com/owner/repo/issues/${key}`,
+      source: "agent",
+      linkedAt: "2026-01-01T00:00:00.000Z",
+      displayKey: `#${key}`,
+      title: `Issue number ${key}`,
+    };
+  });
+  using _environment = installFakeEnvironment([{ ...many, issues }]);
+  await emitShellThread(many.id);
+  const read = new Set<string>();
+  // Left pending: a row reading its summary is the cost under test.
+  using _summary = answerRpc(WS_METHODS.issuesSummary, (input: IssueRef) => {
+    read.add(input.key);
+    return Effect.never;
+  });
+  __setClientSettingsForTests({
+    ...DEFAULT_CLIENT_SETTINGS,
+    onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
+  });
+  await page.viewport(1400, 900);
+  const router = getRouter(
+    createMemoryHistory({ initialEntries: [`/${ENVIRONMENT_ID}/${many.id}`] }),
+  );
+  await router.load();
+  await using _app = await render(<AppRoot router={router} />, {
+    // AppRoot brings its own router.
+    router: false,
+  });
+  const details = page.getByRole("region", { name: "Thread details" });
+  await expect
+    .element(details.getByRole("link", { name: "Issue #1: Issue number 1" }))
+    .toBeVisible();
+  await expect.element(details.getByRole("button", { name: "Show 97 more" })).toBeVisible();
+  expect(details.getByRole("link", { name: /^Issue #/ }).elements()).toHaveLength(3);
+
+  await act(() =>
+    useRightPanelStore.getState().open(scopeThreadRef(ENVIRONMENT_ID, many.id), "pull-requests"),
+  );
+  const linkedItems = page.getByRole("region", { name: "Linked items" });
+  await expect
+    .element(linkedItems.getByRole("link", { name: "Issue #1: Issue number 1" }))
+    .toBeVisible();
+  const mounted = linkedItems.getByRole("link", { name: /^Issue #/ }).elements().length;
+  expect(mounted).toBeGreaterThan(3);
+  expect(mounted).toBeLessThan(issues.length);
+  expect(read.size).toBeLessThan(issues.length);
 });
 
 it("a machine chip stashed in one thread restores with its machine in another", async () => {

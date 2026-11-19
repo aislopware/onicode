@@ -1,4 +1,10 @@
-import type { ProjectId, ScopedThreadRef, ThreadPullRequestLink } from "@onicode/contracts";
+import {
+  threadIssueKeyOf,
+  type ProjectId,
+  type ScopedThreadRef,
+  type ThreadIssueLink,
+  type ThreadPullRequestLink,
+} from "@onicode/contracts";
 import {
   sourceControlClients,
   UNKNOWN_SOURCE_CONTROL_CLIENT,
@@ -40,7 +46,7 @@ import { PullRequestsUnavailableState } from "./PullRequestsUnavailableState";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
 import { RelativeTime } from "~/components/RelativeTime";
-import { ThreadDetailsIssueRows } from "../chat/ThreadDetailsIssueRows";
+import { LinkedIssueRow } from "../chat/ThreadDetailsIssueRows";
 import { Button } from "../ui/button";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../ui/menu";
 import { MiddleTruncate } from "../ui/middle-truncate";
@@ -401,8 +407,33 @@ function latestSyncedAt(links: ReadonlyArray<ThreadPullRequestLink>): string | n
   return latest;
 }
 
-const lineKey = (line: PullRequestListLine) =>
-  `${line.link.host}/${line.link.repository}#${line.link.number}`;
+type LinkedItem =
+  | { readonly kind: "issues-heading" }
+  | { readonly kind: "pull-requests-heading" }
+  | { readonly kind: "issue"; readonly link: ThreadIssueLink }
+  | { readonly kind: "pull-request"; readonly line: PullRequestListLine };
+
+const itemKey = (item: LinkedItem) =>
+  item.kind === "issue"
+    ? `issue:${threadIssueKeyOf(item.link)} ${item.link.key}`
+    : item.kind === "pull-request"
+      ? `${item.line.link.host}/${item.line.link.repository}#${item.line.link.number}`
+      : item.kind;
+
+function linkedItems(
+  issues: ReadonlyArray<ThreadIssueLink>,
+  lines: ReadonlyArray<PullRequestListLine>,
+): ReadonlyArray<LinkedItem> {
+  const pullRequests = lines.map((line) => ({ kind: "pull-request" as const, line }));
+  if (issues.length === 0) return pullRequests;
+  return [
+    { kind: "issues-heading" },
+    ...issues.map((link) => ({ kind: "issue" as const, link })),
+    ...(pullRequests.length > 0
+      ? [{ kind: "pull-requests-heading" as const }, ...pullRequests]
+      : []),
+  ];
+}
 
 export function ThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThreadRef }) {
   const gt = useGT();
@@ -431,6 +462,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
   // Derive lines before later hooks to preserve compiler caching and avoid LegendList renders.
   const links = visibleThreadPullRequests(thread?.pullRequests ?? []);
   const lines = pullRequestListLines(resolveThreadPullRequestChains(links));
+  const items = linkedItems(issues, lines);
   const openCount = links.filter(
     (link) => link.snapshot === null || link.snapshot.state === "open",
   ).length;
@@ -534,53 +566,50 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
 
   return (
     <PullRequestSpeedModeContext value={speedMode}>
-      <div className="flex h-full min-h-0 flex-col">
-        {/* Threads that run a stack or a sweep link hundreds of pull requests; only the rows in
-          view are mounted. */}
-        <LegendList<PullRequestListLine>
-          data={lines}
-          keyExtractor={lineKey}
+      <section aria-label={gt("Linked items")} className="flex h-full min-h-0 flex-col">
+        {/* Threads that run a stack or a sweep link hundreds of pull requests, and agents link
+          issues in bulk; only the rows in view are mounted, and only they read their issue. */}
+        <LegendList<LinkedItem>
+          data={items}
+          keyExtractor={itemKey}
+          getItemType={(item) => item.kind}
           extraData={rowInputs}
-          ListHeaderComponent={
-            issues.length > 0 ? (
-              <>
-                <section aria-label={gt("Linked issues")} className="flex flex-col">
-                  <h2 className="px-2 py-1 text-xs font-medium text-muted-foreground">
-                    <T>Issues</T>
-                  </h2>
-                  <ThreadDetailsIssueRows
-                    links={issues}
-                    threadRef={threadRef}
-                    compact={false}
-                    mountScope="linked-items"
-                  />
-                </section>
-                {linkCount > 0 ? (
-                  <h2 className="mt-2 border-t border-border/60 px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground">
-                    <T>Pull requests</T>
-                  </h2>
-                ) : null}
-              </>
-            ) : null
+          renderItem={({ item }) =>
+            item.kind === "issues-heading" ? (
+              <h2 className="px-2 py-1 text-xs font-medium text-muted-foreground">
+                <T>Issues</T>
+              </h2>
+            ) : item.kind === "pull-requests-heading" ? (
+              <h2 className="mt-2 border-t border-border/60 px-3 pt-2 pb-1 text-xs font-medium text-muted-foreground">
+                <T>Pull requests</T>
+              </h2>
+            ) : item.kind === "issue" ? (
+              <LinkedIssueRow
+                link={item.link}
+                threadRef={threadRef}
+                compact={false}
+                mountScope="linked-items"
+                onOpen={undefined}
+              />
+            ) : (
+              <LinkRow
+                line={item.line}
+                threadRef={threadRef}
+                projectId={
+                  capabilities !== undefined
+                    ? (findProjectForChangeRequest(environmentProjects, item.line.link)?.id ??
+                      thread?.projectId ??
+                      null)
+                    : null
+                }
+                speedMode={speedMode}
+                onUnlink={handleUnlink}
+                onSetWatching={supportsWatch ? handleSetWatching : null}
+                onIntent={intendLink}
+                canStartWatch={canStartWatch}
+              />
+            )
           }
-          renderItem={({ item: line }) => (
-            <LinkRow
-              line={line}
-              threadRef={threadRef}
-              projectId={
-                capabilities !== undefined
-                  ? (findProjectForChangeRequest(environmentProjects, line.link)?.id ??
-                    thread?.projectId ??
-                    null)
-                  : null
-              }
-              speedMode={speedMode}
-              onUnlink={handleUnlink}
-              onSetWatching={supportsWatch ? handleSetWatching : null}
-              onIntent={intendLink}
-              canStartWatch={canStartWatch}
-            />
-          )}
           estimatedItemSize={44}
           drawDistance={440}
           className="min-h-0 flex-1 overscroll-contain p-1.5"
@@ -610,7 +639,7 @@ function EnabledThreadPullRequestsPanel({ threadRef }: { threadRef: ScopedThread
             <T context="verb, button">Link pull request</T>
           </Button>
         </footer>
-      </div>
+      </section>
     </PullRequestSpeedModeContext>
   );
 }

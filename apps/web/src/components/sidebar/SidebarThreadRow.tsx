@@ -1135,15 +1135,16 @@ const SidebarThreadRow = memo(function SidebarThreadRow(props: SidebarThreadRowP
   );
   const issueStatus = issueDetail === null ? null : issueStatePresentation(issueDetail.state);
   const IssueIcon = issueStatus?.Icon ?? IssueGlyph.issue;
+  const issueTitle = issueDetail?.title ?? firstIssue?.title;
   const issueLabel =
     issueCount === 1 && firstIssue
       ? issueStatus
         ? gt("Issue {key}: {title}, {state}", {
             key: firstIssue.displayKey,
-            title: firstIssue.title,
+            title: issueTitle,
             state: issueStatus.label,
           })
-        : gt("Issue {key}: {title}", { key: firstIssue.displayKey, title: firstIssue.title })
+        : gt("Issue {key}: {title}", { key: firstIssue.displayKey, title: issueTitle })
       : gt("{count, plural, one {{count} linked issue} other {{count} linked issues}}", {
           count: issueCount,
         });

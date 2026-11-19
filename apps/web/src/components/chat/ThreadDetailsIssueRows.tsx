@@ -1,7 +1,7 @@
 import { threadIssueKeyOf, type ScopedThreadRef, type ThreadIssueLink } from "@onicode/contracts";
-import { useGT } from "gt-react";
-import { MessageSquareIcon } from "lucide-react";
-import type { MouseEvent } from "react";
+import { T, useGT, Var } from "gt-react";
+import { ChevronDownIcon, ChevronUpIcon, MessageSquareIcon } from "lucide-react";
+import { memo, useState, type MouseEvent } from "react";
 
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
@@ -22,7 +22,9 @@ import { PullRequestActorLabel } from "../pullRequest/pullRequestPresentation";
 import { ThreadDetailsControl } from "./ThreadDetailsControl";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-function LinkedIssueRow({
+type IssueRowMountScope = "thread-details" | "linked-items" | "sidebar-tooltip";
+
+function LinkedIssueRowImpl({
   link,
   threadRef,
   compact,
@@ -32,7 +34,7 @@ function LinkedIssueRow({
   link: ThreadIssueLink;
   threadRef: ScopedThreadRef;
   compact: boolean;
-  mountScope: "thread-details" | "linked-items" | "sidebar-tooltip";
+  mountScope: IssueRowMountScope;
   onOpen: (() => void) | undefined;
 }) {
   const gt = useGT();
@@ -141,6 +143,11 @@ function LinkedIssueRow({
   );
 }
 
+export const LinkedIssueRow = memo(LinkedIssueRowImpl);
+
+// Each row reads its own summary; agents can link dozens of issues to one thread.
+const COLLAPSED_ISSUE_ROWS = 3;
+
 export function ThreadDetailsIssueRows({
   links,
   threadRef,
@@ -151,18 +158,47 @@ export function ThreadDetailsIssueRows({
   links: ReadonlyArray<ThreadIssueLink>;
   threadRef: ScopedThreadRef;
   compact?: boolean;
-  mountScope?: "thread-details" | "linked-items" | "sidebar-tooltip";
+  mountScope?: Exclude<IssueRowMountScope, "linked-items">;
   onOpen?: () => void;
 }) {
-  return links.map((link) => (
-    <LinkedIssueRow
-      // Links made before keys compared case-insensitively may repeat an issue.
-      key={`${threadIssueKeyOf(link)} ${link.key}`}
-      link={link}
-      threadRef={threadRef}
-      compact={compact}
-      mountScope={mountScope}
-      onOpen={onOpen}
-    />
-  ));
+  const [expanded, setExpanded] = useState(false);
+  const hidden = links.length - COLLAPSED_ISSUE_ROWS;
+  return (
+    <>
+      {(expanded ? links : links.slice(0, COLLAPSED_ISSUE_ROWS)).map((link) => (
+        <LinkedIssueRow
+          // Links made before keys compared case-insensitively may repeat an issue.
+          key={`${threadIssueKeyOf(link)} ${link.key}`}
+          link={link}
+          threadRef={threadRef}
+          compact={compact}
+          mountScope={mountScope}
+          onOpen={onOpen}
+        />
+      ))}
+      {hidden > 0 ? (
+        <ThreadDetailsControl
+          variant="ghost"
+          size="sm"
+          onClick={() => setExpanded(!expanded)}
+          part="row"
+          tone="muted"
+          className="w-full active:scale-100"
+        >
+          {expanded ? (
+            <ChevronUpIcon aria-hidden className="size-4 shrink-0" />
+          ) : (
+            <ChevronDownIcon aria-hidden className="size-4 shrink-0" />
+          )}
+          {expanded ? (
+            <T>Show less</T>
+          ) : (
+            <T>
+              Show <Var>{hidden}</Var> more
+            </T>
+          )}
+        </ThreadDetailsControl>
+      ) : null}
+    </>
+  );
 }

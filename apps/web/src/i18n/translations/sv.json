@@ -3596,6 +3596,16 @@
   "e58a1d884fa1d8f2": "Tråddetaljer",
   "02d9667ff2c8e0b8": "Ärende {key}: {title}",
   "4276743ee60a3c62": "{count, plural, one {{count} kommentar} other {{count} kommentarer}}",
+  "43c5fbd02c6f330a": "Visa mindre",
+  "de45b075b016cb14": [
+    "Visa ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " till"
+  ],
   "42f634397f3960aa": "Visa i tråddetaljer",
   "e3738ef0423ddfe7": "Återställ till standard",
   "ae10d34e11064fec": "Versionshantering",
@@ -3633,16 +3643,6 @@
   ],
   "159ddd0d146a0f22": "Bevakar: agenten vaknar när kontrollerna är klara, någon kommenterar eller grenen får konflikter. Klicka för att sluta.",
   "1cbc8b5db51b4c77": "Merga",
-  "43c5fbd02c6f330a": "Visa mindre",
-  "de45b075b016cb14": [
-    "Visa ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " till"
-  ],
   "a3d040c4ef4fc6e9": "Före takten",
   "b16fdf56b16d99c9": "I takt",
   "90f977e97ae8b6c6": "Under takten",
@@ -5053,6 +5053,7 @@
   "b6a29fff7c7c0808": "Ingen",
   "54420465784bb1bd": "Läs in äldre kommentarer",
   "9d82ebf35bfb4043": "Inget har hänt här än.",
+  "1cf216566c1ee064": "Projektet är inte tillgängligt",
   "b5ddadeb0810688c": "Status",
   "93c1fc19d9bf1db0": "Inblandning",
   "2160067266a61dd8": "Alla",
@@ -5095,6 +5096,8 @@
   "297613ddcf68d031": "Sortera",
   "4aa8190ec693085e": "Filtrera efter ärendehanterare",
   "d44aed6ee67982dd": "Uppdatera ärenden",
+  "1e622c67e33d9d66": "Projektet är inte tillgängligt",
+  "466559820bc9d408": "Projektet som filtret anger finns inte i någon ansluten miljö.",
   "2ccf231996dc89c2": "Inga ärendehanterare att läsa",
   "ffdb63a22901a1fa": "Lägg till ett projekt vars fjärr finns i en ärendehanterare som stöds.",
   "403e9debff81d7df": [
@@ -6201,7 +6204,6 @@
   "13eb3e529a3e9bff": "Avfärda från tråden",
   "b872b70a1387351a": "Länkade objekt är inte tillgängliga",
   "ff700a2d719110d8": "Trådens miljö är inte tillgänglig.",
-  "b935e8d2dad4d8ba": "Länkade ärenden",
   "e18c90152452a50e": "{openCount, plural, one {{openCount} öppen} other {{openCount} öppna}} · {linkCount, plural, one {{linkCount} länkad} other {{linkCount} länkade}}",
   "106c1bf3308a8c33": "Bevakar: agenten vaknar när kontrollerna är klara, någon kommenterar eller grenen får konflikter",
   "15a560968264b0ed": "Öppna",
@@ -8927,7 +8929,6 @@
   "573ea5fdf293a9d6": "Alla utcheckningar",
   "470ad8c54049d1e1": "Sök utcheckningar",
   "7e2dfdd9f97fc027": "Projektomfång",
-  "1cf216566c1ee064": "Projektet är inte tillgängligt",
   "c1b8c351aa90f319": [
     {
       "t": "span",
