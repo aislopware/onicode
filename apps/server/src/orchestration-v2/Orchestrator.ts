@@ -15992,22 +15992,30 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       command.dispatchMode.type !== "restart_active" &&
       command.deliveryIntent !== "restart"
     ) {
-      // With no run active the steer resolves as a send, not into the run the queue starts here.
-      const steerLapsed =
-        command.deliveryIntent === "steer" &&
-        !(yield* projectionStore
-          .getThreadRecords(command.threadId, ["runs"], {
-            runStatuses: ["preparing", "starting", "running", "waiting"],
-          })
-          .pipe(mapDispatchError(command))).runs.some(isActiveRun);
+      // A steer reaches the run active when it arrives. With none, or once that run has given
+      // way to one the queue starts here, it resolves as a send, as intent resolution does idle.
+      const latestActiveRunId = projectionStore
+        .getThreadRecords(command.threadId, ["runs"], {
+          runStatuses: ["preparing", "starting", "running", "waiting"],
+        })
+        .pipe(
+          mapDispatchError(command),
+          Effect.map(
+            ({ runs }) => runs.filter(isActiveRun).toSorted((a, b) => b.ordinal - a.ordinal)[0]?.id,
+          ),
+        );
+      const steerTarget = command.deliveryIntent === "steer" ? yield* latestActiveRunId : undefined;
       yield* mapDispatchError(command)(
         requeueUnreadSteers(command.threadId).pipe(
           Effect.andThen(startNextQueuedRun(command.threadId, { latestRunEnded: true })),
         ),
       );
-      if (steerLapsed) {
+      if (
+        command.deliveryIntent === "steer" &&
+        (steerTarget === undefined || (yield* latestActiveRunId) !== steerTarget)
+      ) {
         const { deliveryIntent: _steer, ...asSend } = command;
-        decided = asSend;
+        decided = { ...asSend, dispatchMode: { type: "start_immediately" as const } };
       }
     }
 

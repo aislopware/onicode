@@ -1077,6 +1077,8 @@ it.effect.each([
   "Claude cancels it and the user stops",
   "a later steer lands before the run-end reaction",
   "a later client steer lands before the run-end reaction",
+  // A wire-valid steer that names its run as well as the intent.
+  "a later client steer names its stopped run",
   "a later restart lands before the run-end reaction",
   "a later client restart lands before the run-end reaction",
 ] as const)("handles an unread steer when %s", (outcome) =>
@@ -1317,7 +1319,14 @@ it.effect.each([
               threadId,
               runId: parent.id,
               occurredAt: now,
-              payload: { ...parent, status: "completed" as const, completedAt: now },
+              payload: {
+                ...parent,
+                status:
+                  outcome === "a later client steer names its stopped run"
+                    ? ("interrupted" as const)
+                    : ("completed" as const),
+                completedAt: now,
+              },
             },
           ],
         });
@@ -1334,9 +1343,11 @@ it.effect.each([
           ]);
           return;
         }
-        yield* client
-          ? send("late", { type: "start_immediately" }, undefined, "steer")
-          : send("late", { type: "steer_active", targetRunId: parent.id });
+        yield* outcome === "a later client steer names its stopped run"
+          ? send("late", { type: "steer_active", targetRunId: parent.id }, undefined, "steer")
+          : client
+            ? send("late", { type: "start_immediately" }, undefined, "steer")
+            : send("late", { type: "steer_active", targetRunId: parent.id });
         // The steer Claude never read keeps its place ahead of the later one, which is not
         // steered into the run the queue started.
         const behind = yield* queued;
