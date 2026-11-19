@@ -20,6 +20,7 @@ import {
   FX_DEFAULT_MODEL_SLUG,
   FX_DRIVER_KIND,
   FX_EFFORT_OPTION_DESCRIPTOR,
+  FX_FULL_ACCESS_MODE_ID,
   FX_SUPPORTED_RUNTIME_MODES,
   type FxModelChoice,
   fxModelSlug,
@@ -38,11 +39,13 @@ import {
   spawnAndCollect,
 } from "@onicode/provider-core/server/snapshotProbe";
 
-const FX_PRESENTATION = {
+const fxPresentation = (fullAccess: boolean) => ({
   displayName: "fx",
   showInteractionModeToggle: false,
-  supportedRuntimeModes: FX_SUPPORTED_RUNTIME_MODES,
-} as const;
+  supportedRuntimeModes: fullAccess
+    ? [...FX_SUPPORTED_RUNTIME_MODES, "full-access" as const]
+    : FX_SUPPORTED_RUNTIME_MODES,
+});
 const FX_MODEL_CAPABILITIES = createModelCapabilities({
   optionDescriptors: [FX_EFFORT_OPTION_DESCRIPTOR],
 });
@@ -117,10 +120,11 @@ const snapshot = (
   probe: ProviderProbeResult,
   defaultModel?: string,
   backends: ReadonlyArray<FxBackendProbe> = [],
+  fullAccess = false,
 ): ServerProviderDraft => ({
   ...buildServerProvider({
     driver: FX_DRIVER_KIND,
-    presentation: FX_PRESENTATION,
+    presentation: fxPresentation(fullAccess),
     enabled: settings.enabled,
     checkedAt,
     models: fxModels(settings, defaultModel, backends),
@@ -182,7 +186,8 @@ const readFxCli = (
 /**
  * `fx status --json`: `auth` names the login method, `missing` when signed
  * out. `model_source` names a backend other than the gateway, by its label
- * for a built-in one and its id for a configured endpoint.
+ * for a built-in one and its id for a configured endpoint. fx 0.0.14+ also
+ * lists the ACP session `modes`; 0.0.13 omits them.
  */
 const FxStatus = Schema.fromJsonString(
   Schema.Struct({
@@ -190,6 +195,7 @@ const FxStatus = Schema.fromJsonString(
     auth_help: Schema.optional(Schema.String),
     model: Schema.optional(Schema.String),
     model_source: Schema.optional(Schema.String),
+    modes: Schema.optional(Schema.Array(Schema.Struct({ id: Schema.String }))),
   }),
 );
 const decodeFxStatus = Schema.decodeUnknownOption(FxStatus);
@@ -391,6 +397,7 @@ export const checkFxProviderStatus = Effect.fn("checkFxProviderStatus")(function
     { installed: true, version, auth, ...probe },
     defaultModel,
     backends,
+    status?.modes?.some((mode) => mode.id === FX_FULL_ACCESS_MODE_ID) ?? false,
   );
 });
 
