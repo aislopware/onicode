@@ -692,6 +692,20 @@ it.effect("project defaults reach new threads once legacy project settings are f
     assert.equal(cleared.sources.defaultThreadEnvMode, "environment");
     assert.notProperty(cleared.overrides, "defaultProjectScripts");
     assert.isTrue(cleared.settings.defaultAutoPull);
+
+    // Echoing the empty scripts it read keeps a project's explicit "no scripts".
+    yield* settingsService.updateSettings({
+      projectSettingsOverrides: {
+        [projectId]: { ...cleared.overrides, defaultProjectScripts: [] },
+      },
+    });
+    yield* service.update({
+      commandId: CommandId.make("command:folded:echo"),
+      projectId,
+      title: "Folded again",
+      scripts: [],
+    });
+    assert.deepEqual((yield* resolve()).overrides.defaultProjectScripts, []);
   }).pipe(Effect.provide(layerTestFor(layerMetadata, { projectSettingsFolded: true }))),
 );
 
