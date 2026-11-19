@@ -352,7 +352,7 @@ private struct WeakView {
 /// It is as long as `localhost`, so the proxy can swap the two in plain HTTP without
 /// changing a message's length.
 enum OniLoopback {
-  static let standInHost = "onilo.test"
+  static let standInHost = "onil.test"
 
   static func isLoopbackHost(_ host: String) -> Bool {
     let host = host.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "[]"))
