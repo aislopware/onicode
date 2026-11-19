@@ -2564,3 +2564,4 @@ b6d6717df6	take	taken as is
 523a98447e	take	taken; kept Onicode's border-border class in the conflicting wrapper
 12be92d034	take	taken as is
 528687d226	take	taken as is (Windows-only, harmless on macOS/Linux)
+4c679a21e7	take	taken; GuestHtmlRender.tsx skipped (guest links removed); mobile WebView renders cannot scroll the RN host, so no mobile counterpart
