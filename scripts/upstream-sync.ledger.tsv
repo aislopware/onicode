@@ -2696,3 +2696,4 @@ e37e45fd5b	take	adapted: LinearApi.graphql.ts CONFLICT (generated); Onicode alre
 11e5b13f38	take	perf(linear): skip viewer lookup for comments without reactions (#39189); conflict resolved keeping Onicode's requireWorkspace check
 f03ce68691	take	fix(server): self-settle survives a delegated wake cancelled before it started
 78d74598d4	take	taken; supportsNativeResume optional in contracts (old mobile safe); acp-registry inherits ACP's false, Grok/Kiro/Antigravity/fx left unset as upstream (Resume still offered)
+22f006c8d7	take	fix(web): zoom shortcuts zoom the app from the PR, Diff and Files panes
