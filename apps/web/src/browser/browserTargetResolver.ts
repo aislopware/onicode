@@ -125,3 +125,7 @@ export const resolveExternalServerUrl = (
     return null;
   }
 };
+
+/** A link's URL for the system browser: only web pages can name the environment's loopback. */
+export const resolveExternalLinkUrl = (environmentId: EnvironmentId, url: string): string | null =>
+  /^https?:\/\//i.test(url) ? resolveExternalServerUrl(environmentId, url) : url;
