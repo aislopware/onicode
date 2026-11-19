@@ -2573,3 +2573,4 @@ b6d6717df6	take	taken as is
 966bdc74f3	take	Kept Onicode's createIssueLinkResolver (bindings indexed once, read lazily at a message's first link; upstream's inline resolveIssueLinkTarget rescans per link) and added upstream's standalone Linear fallback and trackers argument to it; ChatMarkdown keeps Onicode's issuePreviewsEnabled gate for the tracker query. Contract field workspace is optional.
 c57aab6fd7	take	taken as is
 f69b3a27a7	take	taken as is
+888fd3f3f9	take	taken as is
