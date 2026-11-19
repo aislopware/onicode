@@ -357,10 +357,10 @@ export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.Lin
       const wanted = workspace.toLowerCase();
       const current = workspaceOfIssueUrl(issueUrl);
       if (current?.toLowerCase() === wanted) return;
-      const connected = current === undefined ? null : yield* linear.viewer();
+      const connected = current === undefined ? null : yield* linear.workspace();
       if (
-        connected?.workspace.toLowerCase() === current?.toLowerCase() &&
-        connected?.previousWorkspaces.some((key) => key.toLowerCase() === wanted)
+        connected?.current.toLowerCase() === current?.toLowerCase() &&
+        connected?.previous.some((key) => key.toLowerCase() === wanted)
       ) {
         return;
       }

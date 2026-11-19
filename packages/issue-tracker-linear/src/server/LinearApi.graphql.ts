@@ -195,13 +195,11 @@ export const LinearPageInfo = Schema.Struct({
 export interface LinearPageInfo extends Schema.Struct.Type<typeof LinearPageInfo.fields> {}
 
 /** A workspace (referred to as Organization in the API). Workspaces are the root-level container for all teams, users, projects, issues, and settings. Every user belongs to at least one workspace, and all data is scoped within a workspace boundary. */
-export const Organization = Schema.Struct({
+export const OniViewerOrganizationOrganization = Schema.Struct({
   /** The workspace's unique URL key, used in URLs to identify the workspace. */
-  urlKey: Schema.String,
-  /** Previously used URL keys for the workspace. The last 3 are kept and automatically redirected to the current URL key. */
-  previousUrlKeys: Schema.Array(Schema.String)
+  urlKey: Schema.String
 })
-export interface Organization extends Schema.Struct.Type<typeof Organization.fields> {}
+export interface OniViewerOrganizationOrganization extends Schema.Struct.Type<typeof OniViewerOrganizationOrganization.fields> {}
 
 /** A team is the primary organizational unit in Linear. Issues belong to teams, and each team has its own workflow states, cycles, labels, and settings. Teams can be public (visible to all workspace members), private (visible only to team members), or restricted (visible only within an enclosing private-team boundary). Teams can also have sub-teams that inherit settings from their parent. */
 export const OniViewerTeamsNodesTeam = Schema.Struct({
@@ -225,7 +223,7 @@ export const OniViewer = GraphQL.query("OniViewer", {
     variables: [],
     selections: [
       { name: "viewer", body: ["{...LinearUser}"] },
-      { name: "organization", body: ["{urlKey previousUrlKeys}"] },
+      { name: "organization", body: ["{urlKey}"] },
       { name: "teams", body: ["(first:250){nodes{id key name}}"] }
     ],
     fragments: [
@@ -236,7 +234,7 @@ export const OniViewer = GraphQL.query("OniViewer", {
     /** The currently authenticated user making the API request. */
     viewer: LinearUser,
     /** The authenticated user's workspace. */
-    organization: Organization,
+    organization: OniViewerOrganizationOrganization,
     /** All teams whose issues the user can access. This includes public teams and private teams the user is a member of. This may differ from `administrableTeams`, which returns teams whose settings the user can change but whose issues they don't necessarily have access to. */
     teams: OniViewerTeamsTeamConnection
   })
@@ -244,6 +242,34 @@ export const OniViewer = GraphQL.query("OniViewer", {
 export declare namespace OniViewer {
   export type Variables = typeof OniViewer.variables.Type
   export type Result = typeof OniViewer.result.Type
+}
+
+/** A workspace (referred to as Organization in the API). Workspaces are the root-level container for all teams, users, projects, issues, and settings. Every user belongs to at least one workspace, and all data is scoped within a workspace boundary. */
+export const OniWorkspaceOrganizationOrganization = Schema.Struct({
+  /** The workspace's unique URL key, used in URLs to identify the workspace. */
+  urlKey: Schema.String,
+  /** Previously used URL keys for the workspace. The last 3 are kept and automatically redirected to the current URL key. */
+  previousUrlKeys: Schema.Array(Schema.String)
+})
+export interface OniWorkspaceOrganizationOrganization extends Schema.Struct.Type<typeof OniWorkspaceOrganizationOrganization.fields> {}
+
+/** `query OniWorkspace` */
+export const OniWorkspace = GraphQL.query("OniWorkspace", {
+  document: {
+    variables: [],
+    selections: [
+      { name: "organization", body: ["{urlKey previousUrlKeys}"] }
+    ],
+    fragments: []
+  },
+  result: Schema.Struct({
+    /** The authenticated user's workspace. */
+    organization: OniWorkspaceOrganizationOrganization
+  })
+})
+export declare namespace OniWorkspace {
+  export type Variables = typeof OniWorkspace.variables.Type
+  export type Result = typeof OniWorkspace.result.Type
 }
 
 export const IssueConnection = Schema.Struct({
@@ -886,4 +912,4 @@ export declare namespace OniCommentReactions {
 }
 
 /** Every operation in LinearApi.graphql. */
-export const LinearApiGraphQLGroup = GraphQLGroup.make(OniViewer, OniIssues, OniIssue, OniIssueSummary, OniComments, OniTeam, OniIssueCreate, OniIssueUpdate, OniCommentCreate, OniReactionCreate, OniReactionDelete, OniIssueReactions, OniCommentReactions)
+export const LinearApiGraphQLGroup = GraphQLGroup.make(OniViewer, OniWorkspace, OniIssues, OniIssue, OniIssueSummary, OniComments, OniTeam, OniIssueCreate, OniIssueUpdate, OniCommentCreate, OniReactionCreate, OniReactionDelete, OniIssueReactions, OniCommentReactions)

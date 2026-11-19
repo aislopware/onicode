@@ -8,7 +8,7 @@ import {
 } from "@onicode/client-runtime/state/issues";
 import { useAtomValue } from "@effect/atom-react";
 import { issueLinkWorkspace } from "@onicode/client-runtime/issue-links";
-import type { EnvironmentId, ThreadIssueLink } from "@onicode/contracts";
+import type { EnvironmentId, IssueRef, IssueSummary, ThreadIssueLink } from "@onicode/contracts";
 
 import { connectionAtomRuntime } from "../connection/runtime";
 import { appAtomRegistry } from "../rpc/atomRegistry";
@@ -23,27 +23,58 @@ export const issueEnvironment = createIssueEnvironmentAtoms(
   pullRequestEnvironment.linkChanges,
 );
 
-/** A linked issue's live row: the summary, not the conversation a detail carries. */
+type IssueReadScope = "sidebar" | "thread-details" | "linked-items" | "sidebar-tooltip";
+
+/**
+ * An issue's live summary, for rows and icons that show its state rather than its conversation.
+ * A server without `issues.summary` serves the detail instead, which carries the same fields.
+ */
+export function useIssueSummary(
+  environmentId: EnvironmentId | null,
+  input: IssueRef | null,
+  mountScope?: IssueReadScope,
+): IssueSummary | null {
+  const configs = useServerConfigs();
+  const capabilities =
+    environmentId === null ? undefined : configs.get(environmentId)?.environment.capabilities;
+  const target =
+    environmentId === null || input === null || capabilities?.issues !== true
+      ? null
+      : { environmentId, input };
+  const summary = useEnvironmentQuery(
+    target !== null && capabilities?.issueSummaries === true
+      ? issueEnvironment.summary(target, mountScope)
+      : null,
+  ).data;
+  const detail = useEnvironmentQuery(
+    target !== null && capabilities?.issueSummaries !== true
+      ? issueEnvironment.detail(target, mountScope)
+      : null,
+  ).data;
+  return summary ?? detail;
+}
+
+/** A linked issue's live row, read in the workspace its link named. */
 export function useLinkedIssueSummary(
   environmentId: EnvironmentId,
   link: ThreadIssueLink | undefined,
-  mountScope?: "sidebar" | "thread-details" | "linked-items" | "sidebar-tooltip",
+  mountScope?: IssueReadScope,
 ) {
-  const configs = useServerConfigs();
   const workspace = issueLinkWorkspace(link?.url);
-  const input = link && {
-    projectId: link.projectId,
-    tracker: link.tracker,
-    host: link.host,
-    scope: link.scope,
-    key: link.key,
-    ...(workspace === undefined ? {} : { workspace }),
-  };
-  return useEnvironmentQuery(
-    input && configs.get(environmentId)?.environment.capabilities.issues === true
-      ? issueEnvironment.summary({ environmentId, input }, mountScope)
-      : null,
-  ).data;
+  return useIssueSummary(
+    environmentId,
+    link === undefined
+      ? null
+      : {
+          projectId: link.projectId,
+          tracker: link.tracker,
+          host: link.host,
+          scope: link.scope,
+          key: link.key,
+          ...(workspace === undefined ? {} : { workspace }),
+        },
+    mountScope,
+  );
 }
 
 const mergedIssueLists = createMergedIssueListAtoms(

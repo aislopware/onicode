@@ -102,7 +102,6 @@ query OniViewer {
   }
   organization {
     urlKey
-    previousUrlKeys
   }
   teams(first: 250) {
     nodes {
@@ -110,6 +109,13 @@ query OniViewer {
       key
       name
     }
+  }
+}
+
+query OniWorkspace {
+  organization {
+    urlKey
+    previousUrlKeys
   }
 }
 

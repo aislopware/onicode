@@ -106,11 +106,16 @@ const decodeServerConfig = Schema.decodeUnknownSync(ServerConfig);
 const makeServerConfig = (
   providers: ReadonlyArray<unknown>,
   supportsIssues = false,
+  issueSummaries = supportsIssues,
 ): ServerConfig => ({
   ...decodeServerConfig({
     environment: {
       ...descriptor,
-      capabilities: { ...descriptor.capabilities, issues: supportsIssues },
+      capabilities: {
+        ...descriptor.capabilities,
+        issues: supportsIssues,
+        issueSummaries,
+      },
     },
     auth,
     cwd: "/workspace/render",
@@ -624,6 +629,8 @@ export function installFakeEnvironment(
     /** Commands left unanswered even when accepting, until `rejectPendingCommand`. */
     readonly holdCommand?: (command: OrchestrationV2Command) => boolean;
     readonly providers?: ReadonlyArray<unknown>;
+    /** False for a server from before `issues.summary`. */
+    readonly issueSummaries?: boolean;
   },
 ): Disposable {
   threads = fixtures;
@@ -631,6 +638,7 @@ export function installFakeEnvironment(
     ...makeServerConfig(
       options?.providers ?? [CODEX_PROVIDER],
       fixtures.some((thread) => (thread.issues?.length ?? 0) > 0),
+      options?.issueSummaries,
     ),
     keybindings: options?.keybindings ?? DEFAULT_RESOLVED_KEYBINDINGS,
   };
