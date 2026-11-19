@@ -2515,6 +2515,10 @@ export function makeClaudeQueryOptions(input: {
           },
         } as ClaudeSdkSettings);
   const deviceInstructions = input.mcpServers !== undefined && input.deviceToolsAvailable === true;
+  const disallowedTools = [
+    ...(input.disallowedTools ?? []),
+    ...(input.mcpServers === undefined ? [] : CLAUDE_TOOLS_UNUSED_UNDER_ONICODE),
+  ];
   const options: ClaudeAgentSdkQueryOptions = {
     model: compiledSelection.apiModelId,
     // Onicode names threads; a supplied title skips Claude's redundant naming request.
@@ -2535,7 +2539,7 @@ export function makeClaudeQueryOptions(input: {
     ...threadIdentity,
     ...(input.resumeSessionAt === undefined ? {} : { resumeSessionAt: input.resumeSessionAt }),
     ...(input.allowedTools === undefined ? {} : { allowedTools: [...input.allowedTools] }),
-    ...(input.disallowedTools === undefined ? {} : { disallowedTools: [...input.disallowedTools] }),
+    ...(disallowedTools.length === 0 ? {} : { disallowedTools }),
     ...(input.canUseTool === undefined ? {} : { canUseTool: input.canUseTool }),
     ...(input.allowDangerouslySkipPermissions === true
       ? { allowDangerouslySkipPermissions: true }
@@ -2562,7 +2566,15 @@ export function makeClaudeQueryOptions(input: {
     ...(input.settings?.binaryPath
       ? { pathToClaudeCodeExecutable: input.settings.binaryPath }
       : {}),
-    ...(input.environment === undefined ? {} : { env: input.environment }),
+    ...(input.environment === undefined
+      ? {}
+      : {
+          env:
+            input.mcpServers === undefined
+              ? input.environment
+              : // Drops the /loop skill, which drives the scheduling tools disallowed above.
+                { ...input.environment, CLAUDE_CODE_DISABLE_CRON: "1" },
+        }),
     ...(input.mcpServers === undefined ? {} : { mcpServers: input.mcpServers }),
     systemPrompt: {
       type: "preset" as const,
@@ -2684,6 +2696,22 @@ export const readClaudeLaunchArgSettings = Effect.fn("ClaudeAdapterV2.readLaunch
 );
 
 export const CLAUDE_ONI_MCP_TOOL_WILDCARD = "mcp__onicode__*";
+
+// Native tools that Onicode's MCP server replaces, or that only another host can use.
+export const CLAUDE_TOOLS_UNUSED_UNDER_ONICODE: ReadonlyArray<string> = [
+  // oni_thread_list and oni_thread_send reach other sessions.
+  "ListAgents",
+  // A native switch leaves the checkout the thread tracks; oni_worktree_handoff moves both.
+  "EnterWorktree",
+  "ExitWorktree",
+  // Claude Code only asks for it on hosts with a findings view.
+  "ReportFindings",
+  // These timers end with the Claude process; schedule_task outlives it.
+  "ScheduleWakeup",
+  "CronCreate",
+  "CronDelete",
+  "CronList",
+];
 
 // Keep in sync with OrchestratorToolkit Tool.Readonly annotations; ClaudeAdapterV2.test.ts checks this.
 export const CLAUDE_READ_ONLY_ONI_MCP_ALLOWED_TOOLS: ReadonlyArray<string> = [

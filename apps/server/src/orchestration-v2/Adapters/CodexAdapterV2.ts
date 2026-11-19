@@ -1554,6 +1554,11 @@ function codexThreadRuntimeParams(input: {
               enabled_tools: CODEX_DIRECT_ONLY_ONI_TOOLS,
               omit_tools_from: ["code_mode", "deferred"],
             },
+            // A delegated child does its own work, so it carries no native subagent tools.
+            // delegate_task covers a brief that asks for more.
+            ...(input.threadId !== null && IdAllocator.isDelegatedTaskThread(input.threadId)
+              ? { "agents.enabled": false }
+              : {}),
           }),
       ...Object.fromEntries(
         McpProviderSession.stdioMcpServers(mcpSession).map(([name, server]) => [
