@@ -15,6 +15,9 @@ import { FetchHttpClient } from "effect/http";
 import { vi } from "vite-plus/test";
 
 import { cli } from "../binCli.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as ProcessRunner from "../processRunner.ts";
+import * as ServerOwnership from "../serverOwnership.ts";
 import {
   makePersistedServerRuntimeState,
   persistServerRuntimeState,
@@ -113,13 +116,19 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))("CLI deferred imp
       const baseDir = NodePath.join(root, "state");
       const workspaceRoot = NodePath.join(root, "workspace");
       yield* fs.makeDirectory(workspaceRoot);
-      yield* persistServerRuntimeState({
-        path: NodePath.join(baseDir, "userdata", "server-runtime.json"),
-        state: yield* makePersistedServerRuntimeState({
+      // A live server has migrated its database, holds its ownership lock and published its origin.
+      yield* Layer.build(
+        SqlitePersistence.layerFromPath(NodePath.join(baseDir, "userdata", "statev2.sqlite")),
+      ).pipe(Effect.scoped);
+      const ownership = yield* ServerOwnership.acquireServerOwnership(
+        NodePath.join(baseDir, "userdata", "server-runtime.json"),
+      ).pipe(Effect.provide(ProcessRunner.layer));
+      yield* ownership.publish(
+        yield* makePersistedServerRuntimeState({
           config: { host: "127.0.0.1", dev: false },
           port: 3_773,
         }),
-      });
+      );
 
       hooks.importsAttempted.length = 0;
       let mutations = 0;
