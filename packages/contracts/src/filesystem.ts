@@ -39,7 +39,7 @@ export type FilesystemBrowseInput = typeof FilesystemBrowseInput.Type;
 
 // Real paths: a folder may end in a space, and trimming would name its neighbour.
 export const FilesystemBrowseEntry = Schema.Struct({
-  name: TrimmedNonEmptyString,
+  name: NonBlankString,
   fullPath: NonBlankString,
 });
 export type FilesystemBrowseEntry = typeof FilesystemBrowseEntry.Type;

@@ -93,10 +93,10 @@ export const make = Effect.gen(function* () {
       }
 
       return {
-        entries: matches.slice(0, limit).map((fullPath) => ({
-          name: path.basename(fullPath) || fullPath,
-          fullPath,
-        })),
+        entries: matches.slice(0, limit).map((fullPath) => {
+          const name = path.basename(fullPath);
+          return { name: name.trim().length > 0 ? name : fullPath, fullPath };
+        }),
       };
     },
   );

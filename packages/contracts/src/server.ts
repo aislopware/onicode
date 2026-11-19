@@ -14,6 +14,7 @@ import {
   PositiveInt,
   ProjectId,
   ThreadId,
+  NonBlankString,
   TrimmedNonEmptyString,
 } from "./baseSchemas.ts";
 import {
@@ -708,7 +709,8 @@ export type ServerEventLoopStall = typeof ServerEventLoopStall.Type;
 export const ServerConfig = Schema.Struct({
   environment: ExecutionEnvironmentDescriptor,
   auth: ServerAuthDescriptor,
-  cwd: TrimmedNonEmptyString,
+  // The server's working directory as is; a folder name can end in a space.
+  cwd: NonBlankString,
   /** The machine's own name, which file URIs from its shells may carry. Older servers omit it. */
   hostname: Schema.optionalKey(Schema.String),
   keybindingsConfigPath: TrimmedNonEmptyString,
