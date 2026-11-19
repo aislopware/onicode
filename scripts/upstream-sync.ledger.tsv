@@ -2734,3 +2734,4 @@ d32df2d34c	take	fix(server): native session replacement fails honestly when the 
 800b0748bc	take	fix(server): restart recovery no longer reads every idle thread on a shared session (#32396)
 1e70210250	take	perf(server): avoid discarded history when retrieving remote task results (#26664)
 1e9f4c45c3	take	fix(triage): file labeled reports through the issue template (#31321)
+6d05c5f496	take	fix(server): HTML reports in dot-prefixed folders no longer open as Not Found (#38210); scenario ported to the desktop target (ControlOrMeta+p)
