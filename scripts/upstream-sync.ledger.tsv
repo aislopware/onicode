@@ -2631,3 +2631,4 @@ ae3c7a68b4	take	taken as is
 f7041fabc8	take	CONFLICTs: i18n catalogs merged by key; eval shell prompt keeps Onicode's browser-driver screenshot line beside upstream's forge-changes line; agentContextBudget re-measured on Onicode's text (7225/8798/55148, same deltas as upstream). GitLab has no getCheckLogs/rerunChecks yet (queued follow-up)
 d530ef339b	take	taken as is
 e0f5acd178	take	taken as is (Sidebar.logic.ts only; Sidebar.tsx hook order untouched)
+94baff19c6	take	taken as is
