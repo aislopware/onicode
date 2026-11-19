@@ -1589,7 +1589,7 @@ export function decodeMergeMessagesJson(
 const LIST_STATE_GRAPHQL_FIELDS = `iid approved approvedBy(first: 1) { nodes { username } }
   reviewers(first: 20) { nodes { username mergeRequestInteraction { reviewState } } }
   headPipeline { status failed: jobs(retried: false, statuses: [FAILED], first: 20) {
-    count nodes { allowFailure } } }`;
+    nodes { allowFailure } } }`;
 
 export const LIST_STATES_GRAPHQL_QUERY = `query($fullPath: ID!, $iids: [String!]) {
   metadata { enterprise }
@@ -1643,7 +1643,6 @@ const RawListStateFields = {
         failed: Schema.optional(
           Schema.NullOr(
             Schema.Struct({
-              count: Schema.optional(Schema.NullOr(Schema.Number)),
               nodes: Schema.optional(
                 Schema.NullOr(
                   Schema.Array(
@@ -1694,12 +1693,10 @@ function toChecksState(
   if (pipeline?.status == null) return null;
   const status = toPipelineStatus(pipeline.status);
   // A running pipeline can already hold a failed job; as on GitHub, a failure outranks pending.
-  // Failed jobs past the listed page count too, since any of them could fail the pipeline.
-  const listed = pipeline.failed?.nodes ?? [];
+  // Allowed failures past the first page say nothing, so only a listed real one counts.
   if (
     status === "pending" &&
-    (listed.some((job) => job !== null && job.allowFailure !== true) ||
-      (pipeline.failed?.count ?? 0) > listed.length)
+    pipeline.failed?.nodes?.some((job) => job !== null && job.allowFailure !== true) === true
   ) {
     return "failing";
   }
