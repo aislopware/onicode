@@ -2646,3 +2646,4 @@ b45ca716f9	take	CONFLICT resolved: kept Onicode's stacked new-draft path in sele
 17c401ddc0	take	scenario CONFLICTs resolved onto Onicode's second-environment harness; exported rpcClient annotated (Onicode's WsRpcGroup overflows the inferred declaration, TS7056) and TerminalMetadataFeed exported for web's declaration emit; managerId optional (wire-compatible); terminal-closed-elsewhere scenario ported
 066be30005	take	taken as is
 94b54cfa9f	take	taken as is; scenario ported
+f2aa99694b	take	taken as is; scenario ported
