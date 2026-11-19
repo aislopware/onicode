@@ -2673,3 +2673,4 @@ bc6621d73a	take	CONFLICT resolved: kept Onicode's untrimmed-root check (and befo
 4113f8fee5	take	fix(web): block invalid project monograms before save (#39131)
 6dc7fdc8e8	take	fix(opencode): owned servers no longer fail turns after five stalled event subscriptions (#39134)
 d067a04175	take	fix(web): a slow chat file link no longer replaces a file opened from the picker (#39130); scenario ported with ControlOrMeta+p for the desktop target
+1a42ba1b5f	take	fix(server,web): models stay in the picker after one failed provider check (#39114); providerInstances.test conflict: kept Onicode's no-model-reads perf test with an unconfirmed sign-in, since upstream's late-catalog fallback now offers an authenticated warning provider's models

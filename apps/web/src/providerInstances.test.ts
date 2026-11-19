@@ -108,17 +108,56 @@ describe("isProviderInstancePickerReady", () => {
         },
       },
     );
+    // An unconfirmed sign-in keeps the late-catalog fallback from offering the models.
     const [entry] = deriveProviderInstanceEntries([
-      provider({
-        provider: ProviderDriverKind.make("claudeAgent"),
-        instanceId: "claudeAgent",
-        status: "warning",
-        models,
-      }),
+      {
+        ...provider({
+          provider: ProviderDriverKind.make("claudeAgent"),
+          instanceId: "claudeAgent",
+          status: "warning",
+          models,
+        }),
+        auth: { status: "unknown" },
+      },
     ]);
 
     expect(entry && isProviderInstancePickerReady(entry)).toBe(false);
     expect(reads).toBe(0);
+  });
+
+  it("keeps offering the models a refresh retained when the catalog did not arrive in time", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      {
+        ...provider({
+          provider: ProviderDriverKind.make("codex"),
+          instanceId: "codex",
+          status: "warning",
+          models: [model("gpt-5.5", false, true), model("gpt-5.4")],
+        }),
+        message: "Codex did not return its model catalog in time.",
+      },
+    ]);
+
+    expect(entry && isProviderInstancePickerReady(entry)).toBe(true);
+    expect(
+      entry && isProviderInstancePickerReady({ ...entry, models: [model("bailian", true)] }),
+    ).toBe(true);
+    expect(entry && isProviderInstancePickerReady({ ...entry, models: [] })).toBe(false);
+  });
+
+  it("offers a failed provider's models only while the server marks them retained", () => {
+    const failed = provider({
+      provider: ProviderDriverKind.make("codex"),
+      instanceId: "codex",
+      status: "error",
+      models: [model("gpt-5.5", false, true)],
+    });
+    const ready = (snapshot: ServerProvider) =>
+      deriveProviderInstanceEntries([snapshot]).map(isProviderInstancePickerReady)[0];
+
+    expect(ready({ ...failed, modelsRetained: true })).toBe(true);
+    expect(ready(failed)).toBe(false);
+    expect(ready({ ...failed, status: "warning", auth: { status: "unknown" } })).toBe(false);
   });
 });
 
