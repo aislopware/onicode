@@ -166,7 +166,7 @@ describe("desktop app control server", () => {
     }),
   );
 
-  it.effect("hands on the request id the renderer's answer will be decoded to", () =>
+  it.effect("refuses a request id the renderer's answer would not carry unchanged", () =>
     Effect.gen(function* () {
       const platform = yield* HostProcess.Platform;
       const userId = yield* HostProcess.UserId;
@@ -179,7 +179,7 @@ describe("desktop app control server", () => {
         // The completion IPC trims ids, so "abc" and " abc " must not be two pending requests.
         await expect(
           exchange(target.address, request(" padded ", platform)),
-        ).resolves.toMatchObject({ ok: true, requestId: "padded" });
+        ).resolves.toMatchObject({ ok: false, code: "invalid-request" });
         await NodeFSP.rm(root, { recursive: true, force: true });
       });
     }),
