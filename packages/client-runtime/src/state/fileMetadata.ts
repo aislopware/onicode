@@ -37,6 +37,12 @@ interface CachedMetadata {
 
 type RetainedMetadata = Map<string, CachedMetadata>;
 
+interface InFlightStat {
+  valid: boolean;
+  /** A kind a listing reported while the stat was in flight. */
+  listedKind?: ProjectEntry["kind"];
+}
+
 interface FileMetadataInput {
   path: string;
   threadId?: ThreadId;
@@ -58,7 +64,7 @@ export function createFileMetadataAtoms<R, E>(
 ) {
   const cache = new WeakMap<RpcSession, Map<string, CachedMetadata>>();
   const invalidationVersions = new WeakMap<RpcSession, number>();
-  const inFlight = new WeakMap<RpcSession, Map<string, Set<{ valid: boolean }>>>();
+  const inFlight = new WeakMap<RpcSession, Map<string, Set<InFlightStat>>>();
   const retainedThreads = new Map<
     string,
     { readers: number; sessions: WeakMap<RpcSession, RetainedMetadata> }
@@ -134,7 +140,9 @@ export function createFileMetadataAtoms<R, E>(
           requests = new Map();
           inFlight.set(session, requests);
         }
-        const tokens = new Map(paths.map((path) => [path, { valid: true }]));
+        const tokens = new Map(
+          paths.map((path): [string, InFlightStat] => [path, { valid: true }]),
+        );
         for (const [path, token] of tokens) {
           let active = requests.get(path);
           if (!active) requests.set(path, (active = new Set()));
@@ -154,11 +162,15 @@ export function createFileMetadataAtoms<R, E>(
           for (const entry of pending) {
             // Retry only paths invalidated during this request. Never retain the
             // old response or complete a waiting chip with pre-write metadata.
-            if (!tokens.get(entry.request.path)!.valid) {
+            const token = tokens.get(entry.request.path)!;
+            const value = byPath.get(entry.request.path) ?? null;
+            if (
+              !token.valid ||
+              (token.listedKind !== undefined && value?.kind !== token.listedKind)
+            ) {
               retry.push(entry);
               continue;
             }
-            const value = byPath.get(entry.request.path) ?? null;
             remember(session, entry.request.path, value, now);
             entry.request.retained?.set(entry.request.path, {
               value,
@@ -252,6 +264,24 @@ export function createFileMetadataAtoms<R, E>(
       }),
     );
 
+  const refreshPath = (
+    environmentId: EnvironmentId,
+    path: string,
+    registry: AtomRegistry.AtomRegistry,
+  ) => {
+    const signal = revision(environmentId, path);
+    registry.set(signal, registry.get(signal) + 1);
+  };
+
+  const storedEntries = (session: RpcSession, key: string) =>
+    [
+      cache.get(session),
+      ...[...retainedThreads.values()].map((thread) => thread.sessions.get(session)),
+    ].flatMap((entries) => {
+      const entry = entries?.get(key);
+      return entries && entry ? [{ entries, entry }] : [];
+    });
+
   const rememberEntries = Effect.fnUntraced(function* (
     cwd: string,
     entries: ReadonlyArray<ProjectEntry>,
@@ -262,24 +292,26 @@ export function createFileMetadataAtoms<R, E>(
     if (session._tag === "None") return;
     const now = yield* Clock.currentTimeMillis;
     if (isCurrent && !isCurrent(session.value)) return;
+    // Mounted metadata only re-reads the cache when its path's revision moves.
+    const registry = yield* Effect.serviceOption(AtomRegistry.AtomRegistry);
+    const environmentId = supervisor.target.environmentId;
     for (const entry of entries) {
       const path = resolveWorkspaceFilePath(entry.path, cwd);
-      if (entry.kind === "directory") {
-        if (knownEntry(session.value, path, now)?.value?.kind !== "directory")
-          remember(session.value, path, { kind: "directory" }, now, true);
-        continue;
-      }
-
-      // A file listing can invalidate the cached kind but only a stat supplies full metadata.
       const key = normalizeProjectPathForComparison(path);
-      const cached = cache.get(session.value);
-      if (cached?.get(key)?.value?.kind === "file") continue;
-      cached?.delete(key);
-      for (const thread of retainedThreads.values()) {
-        const retained = thread.sessions.get(session.value);
-        const previous = retained?.get(key);
-        if (previous && previous.value?.kind !== "file") retained?.delete(key);
+      const stored = storedEntries(session.value, key);
+      const stale = stored.some(({ entry: previous }) => previous.value?.kind !== entry.kind);
+      // A stat sent before this listing may still answer with the old kind.
+      for (const token of inFlight.get(session.value)?.get(key) ?? [])
+        token.listedKind = entry.kind;
+      if (entry.kind === "directory") {
+        if (stale || knownEntry(session.value, path, now)?.value?.kind !== "directory")
+          remember(session.value, path, { kind: "directory" }, now, true);
+      } else if (stale) {
+        // A file listing can invalidate the cached kind but only a stat supplies full metadata.
+        for (const { entries, entry: previous } of stored)
+          if (previous.value?.kind !== "file") entries.delete(key);
       }
+      if (stale && Option.isSome(registry)) refreshPath(environmentId, path, registry.value);
     }
   });
 
@@ -308,6 +340,13 @@ export function createFileMetadataAtoms<R, E>(
     const now = yield* Clock.currentTimeMillis;
     if (isCurrent && !isCurrent(session.value)) return;
     const previous = knownEntry(session.value, path, now)?.value;
+    // A stat sent before this read may answer with an older size.
+    const key = normalizeProjectPathForComparison(path);
+    for (const token of inFlight.get(session.value)?.get(key) ?? []) token.valid = false;
+    // Only a kind change refreshes mounted readers: a read's size may be older than a stat's.
+    const kindChanged = storedEntries(session.value, key).some(
+      ({ entry }) => entry.value?.kind !== "file",
+    );
     remember(
       session.value,
       path,
@@ -319,6 +358,9 @@ export function createFileMetadataAtoms<R, E>(
       now,
       true,
     );
+    const registry = yield* Effect.serviceOption(AtomRegistry.AtomRegistry);
+    if (kindChanged && Option.isSome(registry))
+      refreshPath(supervisor.target.environmentId, path, registry.value);
   });
 
   const seedAfterRead =
@@ -345,15 +387,6 @@ export function createFileMetadataAtoms<R, E>(
       );
       return result;
     });
-
-  const refreshPath = (
-    environmentId: EnvironmentId,
-    path: string,
-    registry: AtomRegistry.AtomRegistry,
-  ) => {
-    const signal = revision(environmentId, path);
-    registry.set(signal, registry.get(signal) + 1);
-  };
 
   return {
     metadata,
