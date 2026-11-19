@@ -85,7 +85,7 @@ function PopoverPopup({
           // Kept-mounted positioners first paint at the window origin, so a transform transition slides them in from there.
           !keepMounted && "transition-transform data-instant:transition-none",
           variant === "panel"
-            ? "z-(--z-sheet) w-[min(calc(var(--thread-details-panel-width)+--spacing(4)),calc(var(--anchor-width)---spacing(2)))] transition-[top] duration-150 ease-out data-instant:transition-[top] motion-reduce:transition-none motion-reduce:data-instant:transition-none"
+            ? "z-(--z-sheet) w-[min(calc(var(--thread-details-panel-width)+16px),calc(var(--anchor-width)---spacing(2)))] transition-[top] duration-150 ease-out data-instant:transition-[top] motion-reduce:transition-none motion-reduce:data-instant:transition-none"
             : "z-[130]",
         )}
         data-slot="popover-positioner"
@@ -120,7 +120,8 @@ function PopoverPopup({
                 : popoverViewportPaddingClassName[padding],
               !tooltipStyle && "not-data-transitioning:overflow-y-auto",
               variant === "panel" &&
-                "overflow-visible py-2 [--viewport-inline-padding:--spacing(2)]",
+                // Pixels, not rem: the details card inside lines up with the find bar at any font size.
+                "overflow-visible py-2 [--viewport-inline-padding:8px]",
             )}
             data-slot="popover-viewport"
           >

@@ -53,6 +53,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   showNewBadge?: boolean;
   unavailable?: boolean;
   jumpLabel?: string | null;
+  /** The level a pick of this model starts at, said quietly after its name. */
+  level?: string | null;
   disabledReason?: string | null;
   onToggleFavorite: (instanceId: ProviderInstanceId, slug: string) => void;
 }) {
@@ -64,6 +66,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
   });
   // The star rests in view only where it tells favorites apart; elsewhere it shows for the pointer.
   const starRests = props.isFavorite && !props.quietFavorite && !props.jumpLabel;
+  // Alone on the row, the check takes the row's end; the star then shows beside it for the pointer.
+  const checkEndsRow = props.isSelected && !props.jumpLabel && !starRests;
   const row = (
     <ModelPickerRowItem
       index={props.index}
@@ -101,6 +105,12 @@ export const ModelListRow = memo(function ModelListRow(props: {
           {props.subProvider}
         </span>
       ) : null}
+      {props.level ? (
+        // Gives way before the name does: the name is what the row is for.
+        <span className="min-w-0 shrink-[99] truncate text-xs text-muted-foreground">
+          {props.level}
+        </span>
+      ) : null}
       {props.showNewBadge ? (
         <span
           className="shrink-0 rounded-sm border border-update/35 bg-update/15 px-0.5 py-px text-3xs font-bold uppercase leading-none tracking-wide text-update-foreground"
@@ -115,11 +125,14 @@ export const ModelListRow = memo(function ModelListRow(props: {
         </Badge>
       ) : null}
       <span className="ms-auto flex shrink-0 items-center gap-2 ps-2 text-xs text-muted-foreground tabular-nums">
-        {props.isSelected ? (
+        {props.isSelected && !checkEndsRow ? (
           <CheckIcon aria-hidden="true" className="size-3.5 text-foreground" />
         ) : null}
         {/* The shortcut and the star share one slot, so rows end on the same edge. */}
         <span className="relative flex h-5 min-w-5 items-center justify-end">
+          {checkEndsRow ? (
+            <CheckIcon aria-hidden="true" className="size-3.5 text-foreground" />
+          ) : null}
           {props.jumpLabel ? (
             <span
               data-model-jump-label
@@ -136,7 +149,8 @@ export const ModelListRow = memo(function ModelListRow(props: {
               aria-label={props.isFavorite ? gt("Remove from favorites") : gt("Add to favorites")}
               aria-pressed={props.isFavorite}
               className={cn(
-                "absolute inset-y-0 right-0 flex w-5 cursor-pointer items-center justify-center rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                "absolute inset-y-0 flex w-5 cursor-pointer items-center justify-center rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                checkEndsRow ? "right-full me-1" : "right-0",
                 !starRests &&
                   "opacity-0 group-hover/model-row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100",
               )}

@@ -198,7 +198,8 @@ export function paintSkyBackdrop(painter: Painter, scene: SkyScene) {
     oklch(lifted(scene, hazeLightness), hazeChroma * 0.6, hazeHue, scene.dark ? 0.16 : 0.3),
   );
   painter.fillStyle = haze;
-  painter.fillRect(0, HORIZON - 4, scene.width, 20);
+  // To the foot of the picture: the near ridge dips below where the haze stops thickening.
+  painter.fillRect(0, HORIZON - 4, scene.width, SKY_HEIGHT - HORIZON + 4);
 
   paintDotScreen(painter, scene.width);
 }
