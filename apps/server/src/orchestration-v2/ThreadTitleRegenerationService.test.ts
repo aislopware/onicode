@@ -177,6 +177,7 @@ function recordRun(input: {
   readonly user: string;
   readonly assistant: string;
   readonly status?: "completed" | "rolled_back";
+  readonly freshContext?: boolean;
 }) {
   return Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
@@ -227,6 +228,7 @@ function recordRun(input: {
             completedAt: now,
             checkpointId: null,
             contextHandoffId: null,
+            ...(input.freshContext ? { freshContext: true } : {}),
           },
         },
         {
@@ -927,6 +929,83 @@ describe("ThreadTitleRegenerationService", () => {
         assert.include(call?.forkSource?.history, "Side topic");
         assert.include(call?.forkSource?.history, "Side answer");
         assert.notInclude(call?.forkSource?.history, "Move session storage");
+      }).pipe(Effect.provide(harness.layer));
+    }),
+  );
+
+  it.effect("inherits no history a fresh session discarded", () =>
+    Effect.gen(function* () {
+      const harness = makeHarness();
+      yield* Effect.gen(function* () {
+        const threads = yield* ThreadManagement.ThreadManagementService;
+        const titleRegeneration = yield* ThreadTitleRegeneration.ThreadTitleRegenerationService;
+        const { forkThreadId: freshSourceId } = yield* forkSeededSource("thread:title:fresh");
+        const freshRunId = RunId.make("fresh:run");
+        yield* recordRun({
+          threadId: freshSourceId,
+          runId: freshRunId,
+          ordinal: 1,
+          user: "Write the release notes",
+          assistant: "Release notes drafted.",
+          freshContext: true,
+        });
+        const fork = (name: string) =>
+          Effect.gen(function* () {
+            const threadId = ThreadId.make(`fresh:${name}`);
+            yield* threads.dispatch({
+              type: "thread.fork",
+              commandId: CommandId.make(`fresh:${name}:fork`),
+              sourceThreadId: freshSourceId,
+              targetThreadId: threadId,
+              sourcePoint: { type: "run", runId: freshRunId },
+              title: "Fresh fork",
+              createdBy: "user",
+              creationSource: "web",
+            });
+            return threadId;
+          });
+        const regenerate = (threadId: ThreadId) =>
+          Effect.gen(function* () {
+            const requestId = yield* armRegeneration({
+              command: `${threadId}:request`,
+              threadId,
+            });
+            yield* titleRegeneration.execute({ threadId, requestId, kind: { type: "regenerate" } });
+            return harness.generateThreadTitle.mock.calls.at(-1)?.[0];
+          });
+
+        const inherited = yield* regenerate(yield* fork("inherited"));
+        assert.include(inherited?.forkSource?.history, "Write the release notes");
+        assert.notInclude(inherited?.forkSource?.history, "Move session storage");
+
+        const startedOver = yield* fork("started-over");
+        yield* threads.dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("fresh:started-over:message"),
+          threadId: startedOver,
+          messageId: MessageId.make("fresh:started-over:message"),
+          text: "Plan the migration",
+          attachments: [],
+          modelSelection,
+          freshContext: true,
+          dispatchMode: { type: "defer_start" },
+          createdBy: "user",
+          creationSource: "web",
+        });
+        const own = yield* regenerate(startedOver);
+        assert.include(own?.message, "Plan the migration");
+        assert.isUndefined(own?.forkSource);
+
+        const ranFresh = yield* fork("ran-fresh");
+        yield* recordRun({
+          threadId: ranFresh,
+          runId: RunId.make("fresh:ran-fresh:run"),
+          ordinal: 1,
+          user: "Audit the logs",
+          assistant: "Logs audited.",
+          freshContext: true,
+        });
+        assert.isUndefined((yield* regenerate(ranFresh))?.forkSource);
       }).pipe(Effect.provide(harness.layer));
     }),
   );

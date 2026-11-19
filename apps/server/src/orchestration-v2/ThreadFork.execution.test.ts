@@ -666,6 +666,7 @@ const writeParentRun = (input: {
   readonly text: string;
   /** A checkpointed run on a native provider thread, which `latest_stable` forks start from. */
   readonly stable?: boolean;
+  readonly freshContext?: boolean;
 }) =>
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
@@ -736,6 +737,7 @@ const writeParentRun = (input: {
                 : now,
             checkpointId: input.stable ? CheckpointId.make(`${input.runId}:checkpoint`) : null,
             contextHandoffId: null,
+            ...(input.freshContext ? { freshContext: true } : {}),
             ...(input.status === "preparing" ||
             input.status === "failed" ||
             input.status === "interrupted"
@@ -1378,6 +1380,67 @@ it.effect("a side chat opened during the parent's first turn starts from a diges
     });
     assert.isNotNull((yield* orchestrator.getThreadProjection(sideChatId)).thread.deletedAt);
   }).pipe(Effect.provide(forkCases[0]!.layer)),
+);
+
+it.effect.each([
+  { name: "no stable run", stable: false },
+  { name: "a stable run before it", stable: true },
+])(
+  "a side chat of a parent started fresh, with $name, leaves the discarded history out",
+  ({ stable }) =>
+    Effect.gen(function* () {
+      const orchestrator = yield* Orchestrator.OrchestratorV2;
+      const prefix = `side-chat-fresh-${stable ? "stable" : "first"}`;
+      const grandparentId = ThreadId.make(`${prefix}-grandparent`);
+      const grandparentRunId = RunId.make(`${prefix}-grandparent-run`);
+      const parentId = ThreadId.make(`${prefix}-parent`);
+      const sideChatId = ThreadId.make(`${prefix}-child`);
+      yield* createParent(grandparentId);
+      yield* writeParentRun({
+        threadId: grandparentId,
+        runId: grandparentRunId,
+        ordinal: 1,
+        status: "completed",
+        text: "GRANDPARENT_MARKER",
+        stable: true,
+      });
+      yield* orchestrator.dispatch({
+        type: "thread.fork",
+        commandId: CommandId.make(`${prefix}-parent-fork`),
+        sourceThreadId: grandparentId,
+        targetThreadId: parentId,
+        sourcePoint: { type: "run", runId: grandparentRunId },
+        createdBy: "user",
+        creationSource: "web",
+      });
+      yield* writeImportedHistory(parentId, "PARENT_IMPORTED_MARKER");
+      yield* writeParentRun({
+        threadId: parentId,
+        runId: RunId.make(`${prefix}-discarded-run`),
+        ordinal: 1,
+        status: "completed",
+        text: "PARENT_DISCARDED_MARKER",
+        stable,
+      });
+      yield* writeParentRun({
+        threadId: parentId,
+        runId: RunId.make(`${prefix}-fresh-run`),
+        ordinal: 2,
+        status: "running",
+        text: "PARENT_FRESH_MARKER",
+        freshContext: true,
+      });
+      yield* forkSideChat(`${prefix}-fork`, parentId, sideChatId);
+      yield* askSideChat(sideChatId, `${prefix}-first-message`);
+
+      const started = yield* orchestrator.getThreadProjection(sideChatId);
+      assert.isNull(started.providerThreads[0]?.forkedFrom ?? null);
+      const context = started.contextHandoffs.map((handoff) => handoff.summaryText).join("\n");
+      assert.include(context, "- User: PARENT_FRESH_MARKER");
+      assert.notInclude(context, "PARENT_DISCARDED_MARKER");
+      assert.notInclude(context, "PARENT_IMPORTED_MARKER");
+      assert.notInclude(context, "GRANDPARENT_MARKER");
+    }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 
 it.effect("merge-back rejects a second fork's context until the first is consumed", () =>
