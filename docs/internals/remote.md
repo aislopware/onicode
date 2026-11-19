@@ -249,7 +249,11 @@ transport.
 
 Remote servers can outlive several client releases. Clients must use advertised
 capabilities and handle their absence, rather than assume their own version
-describes the server. Process replacement belongs to the launcher's
+describes the server. Desktop previews are one case: without `previewTunnel` on the host
+and `terminal:operate` on the session, desktop opens that environment's loopback
+and blank tabs on the server runtime
+([`previewRuntime.ts`](../../apps/web/src/browser/previewRuntime.ts)), since a
+tunnelled tab could only show a connection error. Process replacement belongs to the launcher's
 [update protocol](./server-updates.md); the connection runtime handles the
 resulting disconnect.
 

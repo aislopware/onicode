@@ -41,7 +41,7 @@ export async function openPreviewSession<E>(
   if (isBrowserSettingsReadError(defaults)) {
     return AsyncResult.failure(Cause.fail(defaults));
   }
-  const runtime = input.runtime ?? previewRuntimeFor(input.threadRef.environmentId);
+  const runtime = input.runtime ?? previewRuntimeFor(input.threadRef.environmentId, input.url);
   const result = await input.openPreview({
     environmentId: input.threadRef.environmentId,
     input: {
