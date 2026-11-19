@@ -2767,3 +2767,4 @@ c8b214158e	take	fix(server): Antigravity 1.5 temporary setup and text-helper ses
 ae268d9350	take	fix(server): a provider CLI that dies at startup names its exit and EPERM (#39299)
 c5badf4e40	take	fix(web): scope Git controls to the active checkout (#39305)
 3b199e77fb	take	index displayed file line ranges in thread search; scenario presses ControlOrMeta+f
+b68d29b2f7	take	fix(server): storage cleanup removes clean detached worktrees whose commits are on a branch (#34967)
