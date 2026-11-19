@@ -2602,3 +2602,4 @@ eb90b79217	take	taken as is
 245a1ead92	take	taken as is
 33d48867f8	take	taken as is
 f2716cd710	take	taken as is
+28d96a2a49	take	CONFLICT: eval ndjson kept Onicode's schedule-fresh-session line and added upstream's two until cases; agentContextBudget re-measured on Onicode's text (mcpToolListJsonBytes 50463); new watch.until field optional (wire-compatible)
