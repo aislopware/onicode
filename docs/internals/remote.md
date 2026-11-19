@@ -245,7 +245,9 @@ undo by accident:
   loopback, like a browser. An IP literal such as `[::1]` dials exactly that address, so it never
   reaches a different server on the same port.
 - **Forwarded ports** listen on plain loopback without that authentication, on purpose: the user
-  asks for any app on this machine to reach the port, as with `ssh -L`. A forward first sends a
+  asks for any app on this machine to reach the port, as with `ssh -L`. On Linux the listener
+  serves only this OS user's clients, read from `/proc/net/tcp`; macOS can't name a socket's
+  owner, so any local user can reach a forward there. A forward first sends a
   nonce through the tunnel to a local probe listener, because an environment whose loopback is
   this machine's (its own Tailscale address, a route back here) would dial the forward itself
   and loop.
