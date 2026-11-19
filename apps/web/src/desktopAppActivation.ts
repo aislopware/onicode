@@ -96,16 +96,18 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 let nextOpenOrder = 0;
+let highestShownOrder = -1;
 const runningOpens = new Set<{ readonly order: number; readonly abort: AbortController }>();
 
-/** Opens ordered by one call (the folders of a drop) rank by that moment, not their own start. */
+/** Opens share one order when they stem from one moment: the folders of a drop, or an activation's receipt. */
 export function reserveDesktopAppActivationOrder(): number {
   return nextOpenOrder++;
 }
 
 /**
- * The newest open that reaches its thread wins: older ones still running stop before they show
- * theirs and resolve to null, so a drop stops instead of opening its next folder over the winner.
+ * The newest open that reaches its thread wins: older ones, running or yet to start, stop before
+ * they show theirs and resolve to null, so a drop stops instead of opening its next folder over
+ * the winner.
  */
 export async function handleDesktopAppActivationRequest(
   request: DesktopAppActivationRequest,
@@ -160,10 +162,11 @@ async function openWorkspace(
     }
   }
 
+  if (signal.aborted || order < highestShownOrder) return null;
+  highestShownOrder = order;
   for (const other of runningOpens) {
     if (other.order < order) other.abort.abort();
   }
-  if (signal.aborted) return null;
   try {
     const opened = await dependencies.openThread(
       { environmentId: target.environmentId, projectId },
@@ -194,6 +197,7 @@ async function openWorkspace(
 
 type DesktopAppActivationHandler = (
   request: DesktopAppActivationRequest,
+  order: number,
 ) => Promise<DesktopAppActivationResponse | null>;
 
 /**
@@ -212,6 +216,7 @@ export function createDesktopAppActivationReceiver(
     return handler;
   };
   activation.onRequest((request) => {
+    const order = reserveDesktopAppActivationOrder();
     void (async () => {
       let handle: DesktopAppActivationHandler | null = null;
       // A handler that left during the claim may come back after the command timed out.
@@ -224,7 +229,7 @@ export function createDesktopAppActivationReceiver(
       let response: DesktopAppActivationResponse;
       try {
         response =
-          (await handle(request)) ??
+          (await handle(request, order)) ??
           failure(request.requestId, "thread-open-failed", "A newer open replaced this one.");
       } catch (error) {
         response = failure(
