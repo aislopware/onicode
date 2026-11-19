@@ -68,7 +68,7 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { providerModelKey, sortProviderModelItems } from "../../modelOrdering";
-import { hasRuntimeModelCatalog } from "../../providerModels";
+import { modelPickerOptionsForInstance } from "./ProviderModelPicker.logic";
 
 type ModelPickerItem = {
   slug: string;
@@ -102,25 +102,6 @@ export function resolveModelPickerSelectedModel(input: {
     );
   }
   return input.options.find((option) => option.slug === input.model);
-}
-
-function shouldIncludeModelPickerOption(input: {
-  readonly entry: ProviderInstanceEntry;
-  readonly option: ModelEsque;
-  readonly activeInstanceId: ProviderInstanceId;
-  readonly activeModel: string;
-}): boolean {
-  if (input.entry.driverKind === "antigravity" && input.option.slug === ANTIGRAVITY_DEFAULT_MODEL) {
-    return false;
-  }
-  if (isProviderInstancePickerReady(input.entry)) return true;
-  return (
-    input.entry.enabled &&
-    hasRuntimeModelCatalog(input.entry.driverKind) &&
-    input.entry.instanceId === input.activeInstanceId &&
-    input.option.slug === input.activeModel &&
-    input.option.isUnavailable === true
-  );
 }
 
 function shouldOfferModelPickerSetup(
@@ -591,17 +572,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       if (!entry) {
         continue;
       }
-      for (const model of models) {
+      const options = modelPickerOptionsForInstance({
+        entry,
+        options: models,
+        activeInstanceId: props.activeInstanceId,
+        activeModel: activeModelSlug,
+      });
+      for (const model of options) {
         const key = modelPickerModelKey(instanceId, model.slug);
-        if (
-          seenKeys.has(key) ||
-          !shouldIncludeModelPickerOption({
-            entry,
-            option: model,
-            activeInstanceId: props.activeInstanceId,
-            activeModel: activeModelSlug,
-          })
-        ) {
+        if (seenKeys.has(key)) {
           continue;
         }
         seenKeys.add(key);
