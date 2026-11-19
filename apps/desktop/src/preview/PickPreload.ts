@@ -258,8 +258,7 @@ window.addEventListener("keydown", reportUnhandledShortcut, true);
 // Registered before page scripts so their capture listeners never see keys typed into the
 // overlay; the closed shadow root retargets those to the host, hiding that they edit text.
 const isolateOverlayKey = (event: KeyboardEvent): void => {
-  if (!activeSession || !(event.target instanceof Element) || !isAnnotationNode(event.target))
-    return;
+  if (!activeSession || !isAnnotationEvent(event)) return;
   activeSession.handleOverlayKey(event);
   event.stopImmediatePropagation();
 };
@@ -333,6 +332,18 @@ function unionRects(
 
 function isAnnotationNode(element: Element): boolean {
   return element instanceof Element && element.closest(`[${OVERLAY_ATTRIBUTE}]`) !== null;
+}
+
+// Inside a page's shadow root the overlay's events reach window retargeted to that root's host.
+function isAnnotationEvent(event: Event): boolean {
+  return event
+    .composedPath()
+    .some((node) => node instanceof Element && node.hasAttribute(OVERLAY_ATTRIBUTE));
+}
+
+function shadowHostOf(node: Node): Element | null {
+  const root = node.getRootNode();
+  return root instanceof ShadowRoot ? root.host : null;
 }
 
 function pickFromPoint(clientX: number, clientY: number): Element | null {
@@ -1502,7 +1513,7 @@ function startAnnotation(
   };
 
   const onPointerMove = (event: PointerEvent): void => {
-    if (isAnnotationNode(event.target as Element)) {
+    if (isAnnotationEvent(event)) {
       clearHoverOutline();
       return;
     }
@@ -1537,7 +1548,7 @@ function startAnnotation(
   };
 
   const onPointerDown = (event: PointerEvent): void => {
-    if (event.button !== 0 || isAnnotationNode(event.target as Element)) return;
+    if (event.button !== 0 || isAnnotationEvent(event)) return;
     event.preventDefault();
     event.stopPropagation();
     if (tool === "select") {
@@ -1606,7 +1617,7 @@ function startAnnotation(
   };
 
   const onClick = (event: MouseEvent): void => {
-    if (isAnnotationNode(event.target as Element)) return;
+    if (isAnnotationEvent(event)) return;
     event.preventDefault();
     event.stopPropagation();
   };
@@ -1622,14 +1633,52 @@ function startAnnotation(
   // everything outside it inert, so the overlay is shown last and lives inside the topmost modal.
   // Modals in the order they opened, since DOM order does not say which one blocks the rest.
   const openedModals: Element[] = [];
+  // Toggles, removals, focus moves and document styles inside a shadow root stay inside it.
+  const watchedRoots = new Set<ShadowRoot>();
+  const shadowRootStyles = new CSSStyleSheet();
+  shadowRootStyles.replaceSync(
+    `[${OVERLAY_ATTRIBUTE}]::backdrop { display:none !important; } [${OVERLAY_ATTRIBUTE}] { cursor: default !important; }`,
+  );
+  const watchRoot = (root: ShadowRoot): void => {
+    if (watchedRoots.has(root)) return;
+    watchedRoots.add(root);
+    root.adoptedStyleSheets = [...root.adoptedStyleSheets, shadowRootStyles];
+    root.addEventListener("toggle", onPageToggle, true);
+    root.addEventListener("focusin", onPageFocusIn, true);
+    detachObserver.observe(root, { childList: true, subtree: true });
+  };
+  // A web component's modal leaves document.activeElement on the component, so follow focus into
+  // open shadow roots, and watch them for a modal opening later. Closed ones cannot be seen into.
+  const focusedModal = (): Element | null => {
+    let node = document.activeElement;
+    while (node?.shadowRoot) {
+      watchRoot(node.shadowRoot);
+      if (!node.shadowRoot.activeElement) break;
+      node = node.shadowRoot.activeElement;
+    }
+    for (; node; node = shadowHostOf(node)) {
+      const modal = node.closest("dialog:modal");
+      if (modal) return modal;
+    }
+    return null;
+  };
   const raiseOverlay = (): void => {
     const focused = shadowRoot.activeElement;
+    // A modal that opened before the overlay did had its toggle unheard.
+    const modal = focusedModal();
+    if (modal && !openedModals.includes(modal)) openedModals.push(modal);
     const parent =
-      document.activeElement?.closest("dialog:modal") ??
+      modal ??
       openedModals.findLast((dialog) => dialog.matches(":modal")) ??
       Array.from(document.querySelectorAll("dialog:modal")).at(-1) ??
       document.documentElement;
     if (host.parentElement !== parent) parent.appendChild(host);
+    for (
+      let root = parent.getRootNode();
+      root instanceof ShadowRoot;
+      root = root.host.getRootNode()
+    )
+      watchRoot(root);
     if (host.matches(":popover-open")) host.hidePopover();
     host.showPopover();
     if (focused instanceof HTMLElement && !focused.matches(":focus"))
@@ -1649,6 +1698,11 @@ function startAnnotation(
   const detachObserver = new MutationObserver(() => {
     if (!host.isConnected || !host.matches(":popover-open")) raiseOverlay();
   });
+  // Focus entering a web component finds its modal, or the root to watch for one.
+  const onPageFocusIn = (): void => {
+    const modal = focusedModal();
+    if (modal && host.parentElement !== modal) raiseOverlay();
+  };
 
   const onPointerOut = (event: PointerEvent): void => {
     if (event.relatedTarget === null) clearHoverOutline();
@@ -1695,6 +1749,14 @@ function startAnnotation(
     dragHandle.removeEventListener("pointercancel", onEditorPointerUp);
     for (const type of PAGE_ISOLATED_EVENTS) host.removeEventListener(type, stopAtOverlay);
     window.removeEventListener("toggle", onPageToggle, true);
+    window.removeEventListener("focusin", onPageFocusIn, true);
+    for (const root of watchedRoots) {
+      root.removeEventListener("toggle", onPageToggle, true);
+      root.removeEventListener("focusin", onPageFocusIn, true);
+      root.adoptedStyleSheets = root.adoptedStyleSheets.filter(
+        (sheet) => sheet !== shadowRootStyles,
+      );
+    }
     detachObserver.disconnect();
     document.documentElement.removeEventListener("focusout", onFocusOutToOverlay);
     if (editorLayoutFrame !== null) window.cancelAnimationFrame(editorLayoutFrame);
@@ -1867,6 +1929,7 @@ function startAnnotation(
   }
   raiseOverlay();
   window.addEventListener("toggle", onPageToggle, true);
+  window.addEventListener("focusin", onPageFocusIn, true);
   detachObserver.observe(document.documentElement, { childList: true, subtree: true });
   rootResizeObserver.observe(document.documentElement);
   refreshToolButtons();

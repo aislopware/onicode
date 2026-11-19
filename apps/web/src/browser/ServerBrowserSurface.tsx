@@ -5,6 +5,7 @@ import {
   previewStreamModifiers,
   type PreviewStreamClient,
   type PreviewStreamControl,
+  type PreviewFramePainter,
   type PreviewStreamDownload,
   type PreviewStreamFileChooser,
   uploadPreviewStreamFiles,
@@ -83,6 +84,12 @@ interface PagePoint {
   readonly x: number;
   readonly y: number;
   readonly scale: number;
+}
+
+/** What one stream connection has shown. A new connection starts from nothing. */
+interface StreamConnection {
+  viewport: PreviewStreamViewport | null;
+  painted: boolean;
 }
 
 interface TouchGesture {
@@ -277,9 +284,8 @@ export function ServerBrowserSurface(props: {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const keySentRef = useRef(false);
   const clientRef = useRef<PreviewStreamClient | null>(null);
-  const viewportRef = useRef<PreviewStreamViewport | null>(null);
+  const connectionRef = useRef<StreamConnection>({ viewport: null, painted: false });
   const sizeRef = useRef<{ width: number; height: number } | null>(null);
-  const hasFrameRef = useRef(false);
   const controlRef = useRef<PreviewStreamControl | null>(null);
   const [control, setControl] = useState<PreviewStreamControl | null>(null);
   const [promptText, setPromptText] = useState("");
@@ -319,7 +325,7 @@ export function ServerBrowserSurface(props: {
   const lastProbeRef = useRef<{ x: number; y: number; editable: boolean; at: number } | null>(null);
   const firstFrame = useEffectEvent(() => onFirstFrame?.());
   const noFrames = useEffectEvent(() => onNoFrames?.());
-  const [framesStalled, setFramesStalled] = useState(false);
+  const [frames, setFrames] = useState<"waiting" | "painted" | "stalled">("waiting");
   const viewportChanged = useEffectEvent((viewport: PreviewStreamViewport) =>
     onViewport?.(viewport),
   );
@@ -375,9 +381,8 @@ export function ServerBrowserSurface(props: {
 
   const pagePoint = (clientX: number, clientY: number, clamp: boolean): PagePoint | null => {
     const canvas = canvasRef.current;
-    const viewport = viewportRef.current;
-    if (!canvas || !viewport || !hasFrameRef.current || controlRef.current?.controller !== "you")
-      return null;
+    const { viewport, painted } = connectionRef.current;
+    if (!canvas || !viewport || !painted || controlRef.current?.controller !== "you") return null;
     const rect = canvas.getBoundingClientRect();
     const fit = Math.min(rect.width / canvas.width, rect.height / canvas.height);
     const width = canvas.width * fit;
@@ -419,7 +424,7 @@ export function ServerBrowserSurface(props: {
         send({ type: "reload", ...(options?.ignoreCache ? { ignoreCache: true } : {}) }),
       stopLoading: () => send({ type: "stopLoading" }),
       viewport: (setting) => send({ type: "viewport", setting }),
-      canvas: () => (!pdfUrl && hasFrameRef.current ? canvasRef.current : null),
+      canvas: () => (!pdfUrl && connectionRef.current.painted ? canvasRef.current : null),
     }),
     [pdfUrl, send],
   );
@@ -480,21 +485,28 @@ export function ServerBrowserSurface(props: {
       if (noFrameTimer !== null) clearTimeout(noFrameTimer);
       noFrameTimer = null;
     };
-    const createPainter = () =>
-      createPreviewFramePainter(canvas, () => {
-        if (hasFrameRef.current) return;
-        hasFrameRef.current = true;
+    let painter: PreviewFramePainter | null = null;
+    // The canvas keeps the last connection's pixels and its decodes may still land; only a frame
+    // from this connection shows the page.
+    const startConnection = () => {
+      painter?.stop();
+      const connection: StreamConnection = { viewport: null, painted: false };
+      connectionRef.current = connection;
+      painter = createPreviewFramePainter(canvas, () => {
+        if (connection.painted) return;
+        connection.painted = true;
         clearNoFrameTimer();
-        setFramesStalled(false);
+        setFrames("painted");
         firstFrame();
       });
-    let painter = createPainter();
+    };
+    startConnection();
     const client = createPreviewStreamClient(
       { access, threadId, tabId, maxWidth: cap.width, maxHeight: cap.height },
       {
         onFrame: (jpeg) => {
           unauthorizedRef.current = 0;
-          painter.paint(jpeg);
+          painter?.paint(jpeg);
         },
         onProbe: (result) => {
           if (controlRef.current?.controller !== "you") return;
@@ -509,7 +521,11 @@ export function ServerBrowserSurface(props: {
           else inputRef.current?.blur();
         },
         onPointer: (pointer) => {
-          const placed = placeAgentCursor(pointer, canvasRef.current, viewportRef.current);
+          const placed = placeAgentCursor(
+            pointer,
+            canvasRef.current,
+            connectionRef.current.viewport,
+          );
           if (placed) setAgentCursor(placed);
         },
         onClipboard: (text) => void copyPageText(text),
@@ -517,7 +533,7 @@ export function ServerBrowserSurface(props: {
         onPopup: popupOpened,
         onFileChooser: setFileChooser,
         onViewport: (viewport) => {
-          viewportRef.current = viewport;
+          connectionRef.current.viewport = viewport;
           viewportChanged(viewport);
         },
         onControl: (next) => {
@@ -539,14 +555,13 @@ export function ServerBrowserSurface(props: {
         },
         onConnectedChange: (connected) => {
           clearNoFrameTimer();
-          // The canvas keeps the last connection's pixels and its decodes may still land; only a
-          // frame from this connection shows the page.
-          painter.stop();
-          painter = createPainter();
-          hasFrameRef.current = false;
+          startConnection();
+          setAgentCursor(null);
+          // An alert stays over the old pixels until this connection paints.
+          setFrames((current) => (current === "stalled" ? current : "waiting"));
           if (connected) {
             noFrameTimer = setTimeout(() => {
-              setFramesStalled(true);
+              setFrames("stalled");
               noFrames();
             }, NO_FRAME_TIMEOUT_MS);
             return;
@@ -574,11 +589,13 @@ export function ServerBrowserSurface(props: {
     );
     clientRef.current = client;
     return () => {
-      painter.stop();
+      painter?.stop();
       clearNoFrameTimer();
       if (refreshTimer !== null) clearTimeout(refreshTimer);
       client.stop();
       if (clientRef.current === client) clientRef.current = null;
+      connectionRef.current = { viewport: null, painted: false };
+      setAgentCursor(null);
       controlRef.current = null;
       setControl(null);
       controlChanged(null);
@@ -610,7 +627,7 @@ export function ServerBrowserSurface(props: {
         event.deltaMode === WheelEvent.DOM_DELTA_LINE
           ? WHEEL_LINE_PX
           : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-            ? (viewportRef.current?.height ?? 0)
+            ? (connectionRef.current.viewport?.height ?? 0)
             : 1;
       queueWheel(point, event.deltaX * unit, event.deltaY * unit, previewStreamModifiers(event));
     };
@@ -939,7 +956,7 @@ export function ServerBrowserSurface(props: {
           autoComplete="off"
           autoCorrect="off"
           spellCheck={false}
-          disabled={pdfUrl !== null || control?.controller !== "you"}
+          disabled={pdfUrl !== null || control?.controller !== "you" || frames !== "painted"}
           defaultValue={INPUT_SENTINEL}
           onFocus={(event) => resetInput(event.currentTarget)}
           className="sr-only top-0 left-0 text-base"
@@ -959,7 +976,7 @@ export function ServerBrowserSurface(props: {
             if (text) send({ type: "text", text });
           }}
         />
-        {visible && framesStalled && !pdfUrl ? (
+        {visible && frames === "stalled" && !pdfUrl ? (
           <div className="absolute inset-0 flex items-center justify-center bg-background p-4 text-center">
             <p role="alert" className="max-w-sm text-sm text-muted-foreground">
               <T>

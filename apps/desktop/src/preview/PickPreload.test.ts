@@ -58,6 +58,25 @@ it("switches tools from the keyboard after a toolbar button is clicked", () => {
   ).toBe("select");
 });
 
+it("keeps the toolbar working inside a web component's modal dialog", () => {
+  const shadowRoot = startAnnotation();
+  const component = document.body.appendChild(document.createElement("div"));
+  using _component = { [Symbol.dispose]: () => component.remove() };
+  const dialog = component
+    .attachShadow({ mode: "open" })
+    .appendChild(document.createElement("dialog"));
+  // jsdom has no modal dialogs; put the overlay where it goes when that dialog is the open modal.
+  dialog.appendChild(shadowRoot.host);
+  const region = Array.from(shadowRoot.querySelectorAll("button")).find(
+    (button) => button.textContent === "Region",
+  );
+  if (!region) throw new Error("Region toolbar button not found");
+
+  region.click();
+
+  expect(document.documentElement.getAttribute("data-onicode-annotation-tool")).toBe("marquee");
+});
+
 it("keeps the tool while typing a tool key in the comment", () => {
   const shadowRoot = startAnnotation();
   const comment = shadowRoot.querySelector("textarea");

@@ -2,6 +2,7 @@ import {
   createPreviewFramePainter,
   createPreviewStreamClient,
   previewStreamModifiers,
+  type PreviewFramePainter,
   type PreviewStreamClient,
   type PreviewStreamControl,
   type PreviewStreamInput,
@@ -136,10 +137,19 @@ export function start(configuration: PreviewStreamConfiguration) {
     streaming = status === "streaming";
     post({ type: "status", status });
   };
-  const painter = createPreviewFramePainter(canvas, () => {
-    if (!streaming && !stopped) reportStatus("streaming");
-    sendPictureInPictureFrame();
-  });
+  let painter: PreviewFramePainter | null = null;
+  // A decode from a closed connection must not report the next one streaming.
+  const startConnection = () => {
+    painter?.stop();
+    painter = createPreviewFramePainter(canvas, () => {
+      if (!streaming && !stopped) reportStatus("streaming");
+      if (interactive && control?.controller === "you") input.disabled = false;
+      sendPictureInPictureFrame();
+    });
+    viewport = null;
+    if (agentCursorTimer !== null) clearTimeout(agentCursorTimer);
+    agentCursor.style.opacity = "0";
+  };
   const send = (message: PreviewStreamInput) => client?.send(message) ?? false;
   const clearInput = () => {
     if (wheelFrame !== null) cancelAnimationFrame(wheelFrame);
@@ -160,6 +170,7 @@ export function start(configuration: PreviewStreamConfiguration) {
     client?.stop();
     control = null;
     clearInput();
+    startConnection();
     if (!cap || stopped) return;
     const next = createPreviewStreamClient(
       {
@@ -171,7 +182,7 @@ export function start(configuration: PreviewStreamConfiguration) {
         interactive,
       },
       {
-        onFrame: (jpeg) => painter.paint(jpeg),
+        onFrame: (jpeg) => painter?.paint(jpeg),
         onPointer: showAgentCursor,
         onClipboard: (text) => post({ type: "clipboard", text }),
         onDownload: (download) => post({ type: "download", ...download }),
@@ -209,7 +220,8 @@ export function start(configuration: PreviewStreamConfiguration) {
           if (nextControl.controller === "you") agentCursor.style.opacity = "0";
           if (nextControl.controller !== "you") clearInput();
           else {
-            input.disabled = !interactive;
+            // The native overlay hides the page until a frame paints, but a hardware keyboard can still type.
+            input.disabled = !interactive || !streaming;
             if (interactive && size && previous?.controller !== "you")
               next.send({ type: "resize", ...size });
           }
@@ -218,6 +230,7 @@ export function start(configuration: PreviewStreamConfiguration) {
           if (!connected) {
             control = null;
             clearInput();
+            startConnection();
             if (streaming) reportStatus("connecting");
             return;
           }
@@ -690,7 +703,7 @@ export function start(configuration: PreviewStreamConfiguration) {
       if (wheelFrame !== null) cancelAnimationFrame(wheelFrame);
       if (mouseFrame !== null) cancelAnimationFrame(mouseFrame);
       if (agentCursorTimer !== null) clearTimeout(agentCursorTimer);
-      painter.stop();
+      painter?.stop();
       client?.stop();
       client = null;
       track?.stop();

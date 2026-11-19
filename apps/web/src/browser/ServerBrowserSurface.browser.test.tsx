@@ -66,9 +66,10 @@ async function renderSurface(controller: PreviewStreamControl["controller"]) {
   );
   await vi.waitFor(() => expect(mocks.createClient).toHaveBeenCalled());
   const handlers = mocks.createClient.mock.calls.at(-1)![1];
-  await act(() =>
-    handlers.onControl?.({ canOperate: true, controller, generation: 1, dialog: null }),
-  );
+  await act(() => {
+    handlers.onControl?.({ canOperate: true, controller, generation: 1, dialog: null });
+    mocks.painted?.();
+  });
   mocks.sent.length = 0;
   const input = container.querySelector("textarea")!;
   const canvas = container.querySelector("canvas")!;
@@ -198,10 +199,7 @@ describe("ServerBrowserSurface history", () => {
     // Synthetic pointers have no active pointer id to capture.
     canvas.setPointerCapture = () => undefined;
     const handlers = mocks.createClient.mock.calls.at(-1)![1];
-    await act(() => {
-      mocks.painted?.();
-      handlers.onViewport({ width: 400, height: 300 });
-    });
+    await act(() => handlers.onViewport({ width: 400, height: 300 }));
     const { left, top } = canvas.getBoundingClientRect();
     const press = (type: "pointerdown" | "pointerup", button: number) =>
       canvas.dispatchEvent(
@@ -268,5 +266,58 @@ describe("ServerBrowserSurface frames", () => {
     await act(() => vi.advanceTimersByTime(10_000));
     expect(onNoFrames).toHaveBeenCalledTimes(2);
     expect(container.querySelector('[role="alert"]')?.textContent).toContain("not drawing it");
+  });
+
+  it("keeps nothing from the previous connection's page", async () => {
+    setup();
+    const { screen, input, canvas } = await renderSurface("agent");
+    await using _screen = screen;
+    canvas.width = 400;
+    canvas.height = 300;
+    canvas.setPointerCapture = () => undefined;
+    const handlers = mocks.createClient.mock.calls.at(-1)![1];
+    const control = (controller: PreviewStreamControl["controller"]) =>
+      handlers.onControl?.({ canOperate: true, controller, generation: 1, dialog: null });
+    await act(() => {
+      handlers.onConnectedChange(true);
+      control("agent");
+      handlers.onViewport({ width: 400, height: 300 });
+      mocks.painted?.();
+      handlers.onPointer?.({ phase: "move", x: 100, y: 100, sequence: 1 });
+    });
+    expect(screen.container.querySelector("[data-agent-browser-cursor]")).not.toBeNull();
+
+    await act(() => {
+      handlers.onConnectedChange(false);
+      handlers.onConnectedChange(true);
+      control("agent");
+    });
+    expect(screen.container.querySelector("[data-agent-browser-cursor]")).toBeNull();
+
+    await act(() => control("you"));
+    expect(input.disabled).toBe(true);
+
+    // The remote page resized while disconnected, and the first frame beats its new size.
+    await act(() => mocks.painted?.());
+    expect(input.disabled).toBe(false);
+    const { left, top } = canvas.getBoundingClientRect();
+    const click = () => {
+      canvas.dispatchEvent(
+        new PointerEvent("pointerdown", {
+          button: 0,
+          buttons: 1,
+          clientX: left + 10,
+          clientY: top + 10,
+          pointerType: "mouse",
+          bubbles: true,
+        }),
+      );
+      return mocks.sent.filter((sent) => sent.type === "mouse");
+    };
+    mocks.sent.length = 0;
+    expect(click()).toEqual([]);
+
+    await act(() => handlers.onViewport({ width: 800, height: 600 }));
+    expect(click()).toMatchObject([{ action: "down", x: 20, y: 20 }]);
   });
 });
