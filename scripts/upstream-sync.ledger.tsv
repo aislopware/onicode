@@ -2544,3 +2544,4 @@ b6ac2449f1	take	taken as is; warns on non-loopback plain-HTTP serve addresses, t
 cbd8267c2d	take	taken as is; Full access only where fx status lists the full-access mode, explicit approval/sandbox policy still runs ask
 ba640037e8	take	taken as is; geolocation now asks per origin like clipboard reads, annotation keys and pick buttons ignore synthetic events, Windows prompt is unparented
 5d3434bab2	skip	marketing site is a removed surface
+685c2ebd45	take	adapted: Onicode has no Side chat tabs, so the test waits for the draft to clear (the start finished) before the next /side; same useSideChat guard refuses a second start
