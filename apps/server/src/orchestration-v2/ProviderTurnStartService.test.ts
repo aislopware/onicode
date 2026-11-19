@@ -2365,6 +2365,76 @@ effectIt.effect("a fresh side chat session leaves a failed turn's undelivered co
   }),
 );
 
+// Digests a fresh run left ready before turn starts retired them, or a schedule's fresh run kept.
+effectIt.effect.each([
+  { scheduled: false, delivered: false },
+  { scheduled: true, delivered: true },
+] as const)(
+  "a fresh run since a side chat digest's target drops it, unless that run was scheduled: %j",
+  ({ scheduled, delivered }) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "",
+        manualContinuation: true,
+        sideChat: { contextRun: "failed" },
+      });
+      const projection = harness.projection();
+      const current = projection.runs.at(-1)!;
+      const between = {
+        ...current,
+        id: RunId.make("side-chat-fresh-run"),
+        userMessageId: MessageId.make("side-chat-fresh-message"),
+        activeAttemptId: RunAttemptId.make("side-chat-fresh-attempt"),
+        status: "completed" as const,
+        completedAt: projection.updatedAt,
+        freshContext: true,
+      };
+      harness.setProjection({
+        ...projection,
+        runs: [
+          ...projection.runs.slice(0, -1),
+          between,
+          { ...current, ordinal: current.ordinal + 1 },
+        ],
+        turnItems: scheduled
+          ? [
+              ...projection.turnItems,
+              {
+                type: "user_message",
+                id: TurnItemId.make("scheduled-between-message"),
+                threadId: projection.thread.id,
+                runId: between.id,
+                nodeId: null,
+                providerThreadId: between.providerThreadId,
+                providerTurnId: null,
+                nativeItemRef: null,
+                parentItemId: null,
+                ordinal: 0,
+                status: "completed",
+                title: null,
+                startedAt: projection.updatedAt,
+                completedAt: projection.updatedAt,
+                updatedAt: projection.updatedAt,
+                createdBy: "user",
+                creationSource: "server",
+                messageId: between.userMessageId,
+                text: "Scheduled check",
+                inputIntent: "turn_start",
+                attachments: [],
+                scheduledTaskId: ScheduledTaskId.make("between-task"),
+              },
+            ]
+          : projection.turnItems,
+      });
+
+      yield* harness.start;
+
+      const texts = harness.startTurn.mock.calls.map(([turn]) => turn.message.text);
+      expect(texts).toHaveLength(1);
+      expect(texts[0]?.includes("SIDE_CHAT_CONTEXT")).toBe(delivered);
+    }),
+);
+
 effectIt.effect.each([
   { scheduled: false, status: "superseded" },
   { scheduled: true, status: "ready" },
