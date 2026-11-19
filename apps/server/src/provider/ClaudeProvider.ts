@@ -319,6 +319,8 @@ export function buildClaudeCapabilitiesProbeQueryOptions(input: {
       FORCE_CODE_TERMINAL: undefined,
       CLAUDE_CODE_AUTO_CONNECT_IDE: "0",
       CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL: "1",
+      // Threads run without /loop, so the composer does not offer it.
+      CLAUDE_CODE_DISABLE_CRON: "1",
     },
     ...(input.cwd ? { cwd: input.cwd } : {}),
     stderr: input.onStderr,
