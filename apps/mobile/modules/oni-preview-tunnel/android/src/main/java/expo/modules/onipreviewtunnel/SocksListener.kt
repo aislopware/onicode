@@ -24,6 +24,24 @@ private const val MAX_CONNECTIONS = 64
 private const val MAX_SOCKS4_STRING = 255
 private val IPV4_LITERAL = Regex("""\d{1,3}(\.\d{1,3}){3}""")
 
+internal enum class TunnelFailure(val cause: String) {
+  ENVIRONMENT("environment"),
+  PORT("port"),
+  OUTDATED("outdated");
+
+  companion object {
+    /**
+     * The environment marks a dead or blocked port. A server from before the tunnel answers the
+     * route like any other page; anything else, such as a proxy's 502, means it is out of reach.
+     */
+    fun classify(status: Int?, portRefused: Boolean): TunnelFailure = when {
+      portRefused -> PORT
+      status != null && (status in 200..299 || status == 404) -> OUTDATED
+      else -> ENVIRONMENT
+    }
+  }
+}
+
 private val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
 
 // The webview names the host as typed, so IP literals can also arrive as domain names.
@@ -63,6 +81,10 @@ internal class SocksListener(private val requestAccess: () -> String?) {
     java.util.concurrent.ConcurrentHashMap<Socket, Boolean>()
   )
   val port: Int = server.localPort
+
+  /** Why the latest tunnel failed, or null once one opened. The page's error alone can't tell. */
+  @Volatile var lastFailure: TunnelFailure? = null
+    private set
 
   init {
     Thread({
@@ -128,6 +150,7 @@ internal class SocksListener(private val requestAccess: () -> String?) {
   ) {
     val base = requestAccess()
     if (base == null) {
+      lastFailure = TunnelFailure.ENVIRONMENT
       output.write(handshake.reply(false))
     } else {
       tunnel(socket, input, output, base, handshake)
@@ -207,6 +230,7 @@ internal class SocksListener(private val requestAccess: () -> String?) {
       return
     }
     val opened = CompletableFuture<Boolean>()
+    var failure = TunnelFailure.ENVIRONMENT
     val replied = CompletableFuture<Unit>()
     val closed = CompletableFuture<Unit>()
 
@@ -240,12 +264,19 @@ internal class SocksListener(private val requestAccess: () -> String?) {
         }
 
         override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+          if (!opened.isDone) {
+            failure = TunnelFailure.classify(
+              response?.code,
+              response?.header("x-oni-tunnel-port-refused") != null
+            )
+          }
           opened.complete(false)
           closed.complete(Unit)
         }
       }
     )
     if (!runCatching { opened.get(15, TimeUnit.SECONDS) }.getOrDefault(false)) {
+      lastFailure = failure
       replied.completeExceptionally(java.io.IOException("tunnel did not open"))
       webSocket.cancel()
       output.write(handshake.reply(false))
@@ -258,6 +289,7 @@ internal class SocksListener(private val requestAccess: () -> String?) {
       webSocket.cancel()
       return
     }
+    lastFailure = null
     replied.complete(Unit)
     socket.soTimeout = 0
     val reader = Thread({ sendPageBytes(input, webSocket, closed) }, "oni-preview-tunnel-up")

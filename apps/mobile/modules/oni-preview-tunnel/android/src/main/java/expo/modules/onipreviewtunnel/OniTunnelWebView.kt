@@ -94,7 +94,7 @@ class OniTunnelWebView(context: Context, appContext: AppContext) : ExpoView(cont
   private fun fail(description: String, url: String) {
     // A loopback connection refused because another environment's page is open says so.
     val refused = TunnelProxy.mixed && android.net.Uri.parse(url).host?.loopbackHost() != null
-    val cause = if (refused) "conflict" else ""
+    val cause = if (refused) "conflict" else TunnelProxy.lastFailure?.cause ?: ""
     onLoadError(mapOf("code" to -1, "description" to description, "url" to url, "cause" to cause))
   }
 
@@ -218,6 +218,10 @@ internal object TunnelProxy {
   private var listener: SocksListener? = null
   private var environmentId: String? = null
   private var applied = false
+
+  /** Why the current listener's latest tunnel failed, or null once one opened. */
+  val lastFailure: TunnelFailure?
+    get() = listener?.lastFailure
 
   /** Whether pages of more than one environment are open, so every connection is refused. */
   val mixed: Boolean
