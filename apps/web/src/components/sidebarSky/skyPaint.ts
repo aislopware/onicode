@@ -1,18 +1,12 @@
 import {
   moonPhaseAt,
-  seasonedPalette,
-  skyGroundAt,
-  skySnowfieldAt,
-  skySnowAt,
   seededRandom,
   skyBodyAt,
   skyEventSeconds,
   skyPaletteAt,
-  skySolarHour,
   type SkyColor,
   type SkyEvent,
   type SkyPalette,
-  type SkySeason,
   type SkyWeather,
 } from "./sky";
 
@@ -29,14 +23,7 @@ export interface SkyScene {
   readonly hour: number;
   readonly epochMs: number;
   readonly weather: SkyWeather;
-  readonly season: SkySeason;
 }
-
-/** The hour on the sky's own clock, which the season stretches or shortens. */
-const solarHourOf = (scene: SkyScene) => skySolarHour(scene.hour, scene.season);
-
-const paletteOf = (scene: SkyScene): SkyPalette =>
-  seasonedPalette(skyPaletteAt(solarHourOf(scene)), scene.season);
 
 type Painter = CanvasRenderingContext2D;
 
@@ -155,10 +142,10 @@ function paintDotScreen(painter: Painter, width: number) {
  * tone, and the sun's or moon's light with a dark ink for the control under the pointer.
  */
 export function skyControlColors(scene: SkyScene): Record<string, string> {
-  const palette = paletteOf(scene);
+  const palette = skyPaletteAt(scene.hour);
   const [ridgeLightness, ridgeChroma, ridgeHue] = palette.farRidge;
   const [topLightness, topChroma, topHue] = palette.sky[0] ?? palette.farRidge;
-  const sun = skyBodyAt(solarHourOf(scene)).sun;
+  const sun = skyBodyAt(scene.hour).sun;
   // At night the ridge is as dark as the sky behind the controls, so the disc steps away from it.
   const nightStep = palette.night * (scene.dark ? 0.08 : -0.04);
   return {
@@ -178,191 +165,19 @@ export function skyControlColors(scene: SkyScene): Record<string, string> {
   };
 }
 
-const midRidgeAt = (x: number) =>
-  HORIZON + 5 - 6 * Math.sin(x / 23 + 2) - 2.5 * Math.sin(x / 9.3 + 0.7);
-
-const foldAt = (x: number) => midRidgeAt(x) + 3.5 + 4.5 * Math.sin(x / 19 + 0.8);
-
-// Gold and red against the orange slope; the tones between would be lost on it.
-const AUTUMN_LEAVES: readonly SkyColor[] = [
-  [0.86, 0.15, 90],
-  [0.86, 0.15, 90],
-  [0.52, 0.19, 27],
-];
-
-// What grows on the valley floor, per 256 points of width, from the crest `reach` points down.
-const LAND_GROWTH: readonly {
-  readonly season: keyof SkySeason;
-  readonly shape: "bloom" | "broadleaf" | "larch" | "pine";
-  readonly colors: readonly SkyColor[];
-  readonly count: number;
-  readonly reach: number;
-}[] = [
-  { season: "winter", shape: "pine", colors: [[0.36, 0.05, 170]], count: 16, reach: 7 },
-  {
-    season: "spring",
-    shape: "bloom",
-    colors: [
-      [0.98, 0.02, 100],
-      [0.98, 0.02, 100],
-      [0.84, 0.11, 350],
-      [0.84, 0.11, 350],
-      [0.92, 0.14, 100],
-    ],
-    count: 29,
-    reach: 4.6,
-  },
-  { season: "summer", shape: "pine", colors: [[0.36, 0.09, 152]], count: 14, reach: 7 },
-  { season: "summer", shape: "bloom", colors: [[0.97, 0.03, 100]], count: 5, reach: 4.6 },
-  { season: "autumn", shape: "larch", colors: AUTUMN_LEAVES, count: 9, reach: 7 },
-  { season: "autumn", shape: "broadleaf", colors: AUTUMN_LEAVES, count: 5, reach: 7 },
-  { season: "autumn", shape: "pine", colors: [[0.36, 0.07, 160]], count: 4, reach: 7 },
-];
-
-/** The valley floor in the season's colour, with what grows on it and the snow that lies on it. */
-function paintLand(painter: Painter, scene: SkyScene, season: SkySeason, palette: SkyPalette) {
-  const [lightness, chroma, hue] = skyGroundAt(season, palette);
-  traceRidge(painter, scene.width, midRidgeAt);
-  painter.fillStyle = oklch(lifted(scene, lightness) - (scene.dark ? 0 : 0.06), chroma, hue);
-  painter.fill();
-
-  // Snow settles on the crest first and reaches the valley as winter comes on.
-  const snow = skySnowfieldAt(season, palette);
-  const snowLineAt = (x: number) =>
-    midRidgeAt(x) +
-    snow.cover * 34 +
-    (1.5 * Math.sin(x / 4.3 + 1) + Math.sin(x / 1.9)) * (1 - snow.cover);
-  if (snow.cover > 0) {
-    painter.save();
-    painter.clip();
-    painter.beginPath();
-    painter.moveTo(0, 0);
-    painter.lineTo(scene.width, 0);
-    for (let x = scene.width; x >= 0; x--) painter.lineTo(x, snowLineAt(x));
-    painter.closePath();
-    const [snowLightness, snowChroma, snowHue] = snow.color;
-    painter.fillStyle = oklch(lifted(scene, snowLightness), snowChroma, snowHue);
-    painter.fill();
-    painter.restore();
-  }
-
-  // A fold of shade across the valley and a line of light on its crest: one flat band reads bare.
-  painter.save();
-  traceRidge(painter, scene.width, midRidgeAt);
-  painter.clip();
-  traceRidge(painter, scene.width, foldAt);
-  painter.fillStyle = `rgb(12 24 72 / ${scene.dark ? 0.2 : 0.1})`;
-  painter.fill();
-  painter.restore();
-  painter.beginPath();
-  for (let x = 0; x <= scene.width; x++) painter.lineTo(x, midRidgeAt(x) + 0.5);
-  painter.strokeStyle = `rgb(255 255 255 / ${0.42 * (1 - 0.75 * palette.night)})`;
-  painter.lineWidth = 0.9;
-  painter.stroke();
-
-  const dim = 1 - 0.45 * palette.night;
-  const trunk = oklch(lifted(scene, 0.34 * dim), 0.04, 50);
-  const plants = LAND_GROWTH.flatMap((kind, index) => {
-    // The same places every day, so a season fills in and thins out instead of reshuffling.
-    const random = seededRandom(4201 + index * 97);
-    const count = Math.round((kind.count * scene.width) / 256);
-    const fills = kind.colors.map(([plantLightness, plantChroma, plantHue]) =>
-      oklch(lifted(scene, plantLightness * dim), plantChroma * dim, plantHue),
-    );
-    return Array.from({ length: count }, () => {
-      const x = random() * scene.width;
-      return {
-        shape: kind.shape,
-        x,
-        // Thickest at the crest, where the tops stand against the mountains behind.
-        y: midRidgeAt(x) + random() * random() * kind.reach,
-        size: random(),
-        fill: fills[Math.floor(random() * fills.length)] ?? "transparent",
-        jitter: [random(), random(), random(), random()],
-      };
-    }).slice(0, Math.round(count * season[kind.season]));
-  });
-  // Far to near, so each tree stands in front of the ones up the slope.
-  for (const { shape, x, y, size, fill, jitter } of plants.toSorted((a, b) => a.y - b.y)) {
-    // Leaves, needles and flowers are gone where the snow lies; only the pines stand out of it.
-    if (shape !== "pine" && snow.cover > 0 && y < snowLineAt(x)) continue;
-    painter.beginPath();
-    if (shape === "larch" || shape === "pine") {
-      const half = 1.5 + 0.5 * size;
-      const height = 5 + 2.2 * size;
-      // Two tiers of boughs, the upper one narrower.
-      painter.moveTo(x, y + 1 - height);
-      painter.lineTo(x + half * 0.72, y + 1 - height * 0.42);
-      painter.lineTo(x + half * 0.34, y + 1 - height * 0.42);
-      painter.lineTo(x + half, y + 1);
-      painter.lineTo(x - half, y + 1);
-      painter.lineTo(x - half * 0.34, y + 1 - height * 0.42);
-      painter.lineTo(x - half * 0.72, y + 1 - height * 0.42);
-    } else if (shape === "broadleaf") {
-      const lobe = 1.25 + 0.4 * size;
-      painter.fillStyle = trunk;
-      painter.fillRect(x - 0.4, y - 1.4, 0.8, 2.4);
-      // Three lobes over a trunk: a crown, where one disc would be a mushroom.
-      painter.arc(x - lobe * 0.8, y - 1.6 - lobe * 0.5, lobe, 0, Math.PI * 2);
-      painter.arc(x + lobe * 0.8, y - 1.6 - lobe * 0.5, lobe, 0, Math.PI * 2);
-      painter.arc(x, y - 1.6 - lobe * 1.7, lobe, 0, Math.PI * 2);
-    } else {
-      for (let dot = 0; dot <= Math.floor(size * 3); dot++) {
-        const dotX = x + dot * 2 - 1 + (jitter[dot] ?? 0);
-        const dotY = y + 1 + (dot % 2) * 1.2;
-        painter.moveTo(dotX + 1.4, dotY);
-        painter.arc(dotX, dotY, 1 + 0.4 * (jitter[dot + 1] ?? 0), 0, Math.PI * 2);
-      }
-    }
-    painter.fillStyle = fill;
-    painter.fill();
-  }
-}
-
-/** Snow on the far ridge, from its crests down to a ragged line that winter lowers into the valley. */
-function paintSnowCaps(painter: Painter, scene: SkyScene, snow: number, palette: SkyPalette) {
-  const line = HORIZON - 19 + snow * 22;
-  const [glowLightness, glowChroma, glowHue] = palette.sky[4] ?? palette.farRidge;
-  painter.save();
-  traceRidge(painter, scene.width, farRidgeAt);
-  painter.clip();
-  painter.beginPath();
-  painter.moveTo(0, 0);
-  painter.lineTo(scene.width, 0);
-  for (let x = scene.width; x >= 0; x--) {
-    // Tongues of snow reach down the slopes between bare ribs of rock.
-    const tooth = Math.abs(((x / 6.5) % 2) - 1) * 4 + 1.6 * Math.sin(x / 3.7 + 2);
-    painter.lineTo(x, line + tooth - 2);
-  }
-  painter.closePath();
-  // Snow takes the light of the hour: white at noon, rose at dusk, blue under the moon.
-  painter.fillStyle = oklch(
-    lifted(scene, 0.97 - 0.5 * palette.night - 0.1 * Math.max(0, 0.85 - glowLightness)),
-    0.012 + 0.03 * palette.night + 0.35 * glowChroma * (1 - palette.night),
-    palette.night > 0.5 ? 250 : glowChroma > 0.08 ? glowHue : 245,
-  );
-  painter.fill();
-  painter.restore();
-}
-
 /** The part that changes at most once a minute: sky, sun or moon, the far ridge and its haze. */
 export function paintSkyBackdrop(painter: Painter, scene: SkyScene) {
-  const palette = paletteOf(scene);
+  const palette = skyPaletteAt(scene.hour);
   const sky = painter.createLinearGradient(0, 0, 0, HORIZON + 10);
   const stops = [0, 0.4, 0.68, 0.88, 1];
   palette.sky.forEach((color, index) => sky.addColorStop(stops[index] ?? 1, paint(scene, color)));
   painter.fillStyle = sky;
   painter.fillRect(0, 0, scene.width, SKY_HEIGHT);
 
-  const body = skyBodyAt(solarHourOf(scene));
+  const body = skyBodyAt(scene.hour);
   const elevation = Math.sin(Math.PI * body.progress);
   const bodyX = 16 + body.progress * (scene.width - 32);
-  const { season } = scene;
-  // The summer sun rides high and the winter sun stays low.
-  const climb = body.sun
-    ? SUN_CLIMB * (1 + 0.18 * season.summer - 0.36 * season.winter)
-    : SUN_CLIMB;
-  const bodyY = HORIZON + 5 - elevation * (climb + 5);
+  const bodyY = HORIZON + 5 - elevation * (SUN_CLIMB + 5);
   if (body.sun) paintSun(painter, bodyX, bodyY, elevation);
   else paintMoon(painter, bodyX, bodyY, moonPhaseAt(scene.epochMs));
 
@@ -375,8 +190,6 @@ export function paintSkyBackdrop(painter: Painter, scene: SkyScene) {
   );
   painter.fill();
 
-  paintSnowCaps(painter, scene, skySnowAt(season), palette);
-
   const [hazeLightness, hazeChroma, hazeHue] = palette.sky[3] ?? palette.farRidge;
   const haze = painter.createLinearGradient(0, HORIZON - 4, 0, HORIZON + 16);
   haze.addColorStop(0, "transparent");
@@ -388,7 +201,6 @@ export function paintSkyBackdrop(painter: Painter, scene: SkyScene) {
   // To the foot of the picture: the near ridge dips below where the haze stops thickening.
   painter.fillRect(0, HORIZON - 4, scene.width, SKY_HEIGHT - HORIZON + 4);
 
-  paintLand(painter, scene, season, palette);
   paintDotScreen(painter, scene.width);
 }
 
@@ -859,7 +671,7 @@ export function paintSkyLife(
   events: readonly SkyEvent[],
 ): number {
   const epochSeconds = scene.epochMs / 1000;
-  const palette = paletteOf(scene);
+  const palette = skyPaletteAt(scene.hour);
 
   painter.save();
   painter.beginPath();

@@ -3,7 +3,7 @@
 <p align="center"><b>Every coding agent, beautifully orchestrated, wherever you are.</b></p>
 
 <p align="center">
-  <img src="./assets/readme/hero.webp" alt="Onicode on desktop and iPhone. The desktop sidebar, under an autumn sunset scene, lists threads from three projects and several providers, some working and some waiting for approval or an answer. The open Claude thread waits on a Codex subagent and a Claude subagent while an iPhone simulator floats over the chat. Thread details show the branch, changes, a local server, the running subagents, usage limits and the context window. Beside the window, a Live Activity on an iPhone Lock Screen lists the same threads." />
+  <img src="./assets/readme/hero.webp" alt="Onicode on desktop and iPhone. The desktop sidebar lists threads from three projects and several providers, some working and some waiting for approval or an answer. The open Claude thread waits on a Codex subagent and a Claude subagent while an iPhone simulator floats over the chat. Thread details show the branch, changes, a local server, the running subagents, usage limits and the context window. Beside the window, a Live Activity on an iPhone Lock Screen lists the same threads." />
 </p>
 
 Onicode runs Claude Code, Codex, Cursor and [the rest](./docs/user/install.md#providers) on your own machine, and lets them work as one. A single thread can send a review to Codex and the tests to a lighter model, then carry on when both return. You steer from your desk or from your phone, in an app where a dropped frame counts as a bug.

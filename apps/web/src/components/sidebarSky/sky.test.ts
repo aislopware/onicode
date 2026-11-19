@@ -1,24 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import {
-  isSouthernTimeZone,
-  moonPhaseAt,
-  skyBodyAt,
-  skyEventsAt,
-  skyPaletteAt,
-  skySeasonAt,
-  skySnowAt,
-  skySnowfieldAt,
-  skySolarHour,
-  type SkyEventKind,
-} from "./sky";
+import { moonPhaseAt, skyBodyAt, skyEventsAt, skyPaletteAt, type SkyEventKind } from "./sky";
 
 /** Every kind of event that is in the air at some point in a stretch of local time. */
-function kindsBetween(from: Date, hours: number, southern = false): Set<SkyEventKind> {
+function kindsBetween(from: Date, hours: number): Set<SkyEventKind> {
   const kinds = new Set<SkyEventKind>();
   const start = from.getTime() / 1000;
   for (let seconds = 0; seconds < hours * 3600; seconds += 4) {
-    for (const event of skyEventsAt(start + seconds, southern)) kinds.add(event.kind);
+    for (const event of skyEventsAt(start + seconds)) kinds.add(event.kind);
   }
   return kinds;
 }
@@ -64,38 +53,6 @@ describe("sky", () => {
     expect(kindsBetween(new Date(2026, 2, 20, 9, 0), 3)).toContain("petals");
     expect(kindsBetween(new Date(2026, 9, 20, 9, 0), 3)).toContain("leaves");
     expect(kindsBetween(new Date(2026, 0, 20, 9, 0), 6)).toContain("snow");
-  });
-
-  it("turns the year through four seasons, half a year ahead south of the equator", () => {
-    const january = skySeasonAt(new Date(2026, 0, 15, 12));
-    const may = skySeasonAt(new Date(2026, 4, 30, 12));
-    const july = skySeasonAt(new Date(2026, 6, 19, 12));
-    expect(january.winter).toBeCloseTo(1, 2);
-    expect(july.summer).toBeCloseTo(1, 2);
-    expect(may.spring).toBeGreaterThan(0.1);
-    expect(may.summer).toBeGreaterThan(0.1);
-    expect(may.spring + may.summer).toBeCloseTo(1, 5);
-    expect(skySnowAt(january)).toBeGreaterThan(skySnowAt(may));
-    expect(skySnowAt(may)).toBeGreaterThan(skySnowAt(july));
-    expect(skySnowfieldAt(january, skyPaletteAt(12)).cover).toBeCloseTo(1, 2);
-    expect(skySnowfieldAt(may, skyPaletteAt(12)).cover).toBe(0);
-
-    expect(skySeasonAt(new Date(2026, 0, 15, 12), true).summer).toBeGreaterThan(0.9);
-    expect(isSouthernTimeZone("Australia/Sydney")).toBe(true);
-    expect(isSouthernTimeZone("America/Sao_Paulo")).toBe(true);
-    expect(isSouthernTimeZone("Asia/Saigon")).toBe(false);
-    expect(isSouthernTimeZone("Europe/Zurich")).toBe(false);
-    expect(kindsBetween(new Date(2026, 6, 20, 9, 0), 6, true)).toContain("snow");
-  });
-
-  it("ends a winter day early and a summer day late", () => {
-    const winter = skySeasonAt(new Date(2026, 0, 15, 12));
-    const summer = skySeasonAt(new Date(2026, 6, 19, 12));
-    expect(skyBodyAt(skySolarHour(17.5, winter)).sun).toBe(false);
-    expect(skyBodyAt(skySolarHour(17.5, summer)).sun).toBe(true);
-    expect(skyBodyAt(skySolarHour(19.5, summer)).sun).toBe(true);
-    expect(skySolarHour(0, winter)).toBe(0);
-    expect(skySolarHour(23.99, summer)).toBeLessThan(24);
   });
 
   it("celebrates the new year and the lantern nights", () => {
