@@ -2660,3 +2660,4 @@ bb234221ce	take	fix(server): Antigravity refreshes no longer erase scanned folde
 aced664ed9	take	fix(client-runtime): prefer newer completed compaction over stale liveUsage (#39024)
 bc6062805d	take	taken as is
 693e8c7db4	take	taken as is
+2f577fa397	take	scenario ported to the desktop target (onicode fixture, ONICODE_HOME)
