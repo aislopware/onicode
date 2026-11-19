@@ -2610,3 +2610,4 @@ c3ece584f9	take	taken as is
 e26a76af86	take	taken as is
 ab43269d55	take	adapted: stale-mount pattern matches Onicode's AppImage (/tmp/.mount_Onicod…, from Onicode-<version>.AppImage) instead of T3-Code's; tests renamed to match
 207fc2c48b	take	taken as is
+b39eb755aa	skip	T3 Connect CloudLink only; Onicode removed Connect
