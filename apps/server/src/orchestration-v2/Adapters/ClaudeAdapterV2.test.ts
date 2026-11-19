@@ -864,6 +864,10 @@ describe("ClaudeAdapterV2 native protocol logging", () => {
     assert.include(systemPrompt.append ?? "", "Use `delegate_task`");
     assert.include(systemPrompt.append ?? "", "call `oni_background_wait`");
     assert.notInclude(systemPrompt.append ?? "", "## Onicode devices");
+    assert.deepEqual(options.disallowedTools, [
+      ...ClaudeAdapterV2.CLAUDE_TOOLS_UNUSED_UNDER_ONICODE,
+    ]);
+    assert.deepEqual(options.env, { CLAUDE_CODE_DISABLE_CRON: "1" });
     const logged = ClaudeAdapterV2.loggedClaudeQueryOptions(options);
     assert.equal(logged.hasMcpServers, true);
     assert.notInclude(JSON.stringify(logged), "secret-claude-token");

@@ -2598,12 +2598,32 @@ describe("CodexAdapterV2 post-settle continuation", () => {
                 ...entry,
                 frame: {
                   ...entry.frame,
-                  params: { ...entry.frame["params"], threadSource: "subagent" },
+                  params: {
+                    ...entry.frame["params"],
+                    threadSource: "subagent",
+                    config: { ...CodexAdapterV2.CODEX_THREAD_CONFIG, "agents.enabled": false },
+                  },
                 },
               }
             : entry,
         );
+      const childThreadId = (yield* IdAllocator.IdAllocatorV2).derive.delegatedTaskThread({
+        commandId: CommandId.make(`mcp:${scenario}:delegate-task:child`),
+      });
+      const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+      for (const threadId of [ThreadId.make(`thread-${scenario}`), childThreadId]) {
+        yield* mcpSessions.set({
+          environmentId: EnvironmentId.make("environment-codex-mcp"),
+          threadId,
+          providerSessionId: `provider-session-${scenario}`,
+          providerInstanceId: ProviderInstanceId.make("codex"),
+          endpoint: "http://127.0.0.1:43123/mcp",
+          authorizationHeader: "Bearer secret-codex-token",
+          browserToolsAvailable: true,
+        });
+      }
       const threadSources: Array<unknown> = [];
+      const nativeSubagents: Array<unknown> = [];
       const harness = yield* makeCodexReplayHarness(
         makeCodexReplayTranscript({ scenario, entries: [...preamble, ...childStart] }),
         () => Effect.void,
@@ -2611,18 +2631,19 @@ describe("CodexAdapterV2 post-settle continuation", () => {
           Effect.sync(() => {
             if (method === "thread/start" && Predicate.isObject(params)) {
               threadSources.push(params["threadSource"]);
+              const config = params["config"];
+              nativeSubagents.push(Predicate.isObject(config) && config["agents.enabled"]);
             }
           }),
       );
-      const childThreadId = (yield* IdAllocator.IdAllocatorV2).derive.delegatedTaskThread({
-        commandId: CommandId.make(`mcp:${scenario}:delegate-task:child`),
-      });
       yield* harness.runtime.ensureThread({
         threadId: childThreadId,
         modelSelection: CODEX_TEST_MODEL_SELECTION,
         runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
       });
       assert.deepEqual(threadSources, [undefined, "subagent"]);
+      // Only the child, which has delegate_task for a brief that asks for subagents.
+      assert.deepEqual(nativeSubagents, [undefined, false]);
     }).pipe(
       Effect.scoped,
       Effect.provide(

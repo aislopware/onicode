@@ -699,7 +699,12 @@ export const buildBase = (
   if (systemTexts.filter((value) => value.includes(RUNTIME_MARKER)).length !== 1 || !deferredList) {
     throw new Error(`The template needs one ${RUNTIME_MARKER} block and a deferred tool list.`);
   }
-  const nativeDeferred = deferredList.split("\n").filter((name) => name && !isOniName(name));
+  const disallowed = new Set(
+    claudeQueryOptions(options.model, options.deviceAccess, options.browserAccess).disallowedTools,
+  );
+  const nativeDeferred = deferredList
+    .split("\n")
+    .filter((name) => name && !isOniName(name) && !disallowed.has(name));
   const names = [
     ...nativeDeferred,
     ...onicode.filter((tool) => !alwaysLoaded.has(tool.name)).map((tool) => tool.name),
@@ -755,7 +760,9 @@ export const buildBase = (
       date: /Today's date is ([\d-]+)/.exec(reminders.join("\n"))?.[1],
     },
     nativeTools: [
-      ...template.tools.filter((tool) => !isOniName(tool.name)),
+      ...template.tools.filter(
+        (tool) => !isOniName(tool.name) && !disallowed.has(normalizeToolName(tool.name)),
+      ),
       ...onicode.filter((tool) => alwaysLoaded.has(tool.name)),
     ],
     /** Tools ToolSearch loads: Onicode tools from source, and native tools the template only names. */
@@ -816,7 +823,18 @@ const buildCodexBase = (
     // every case.
     if (item.type !== "message" && item.type !== "additional_tools") return [];
     if (item.role === "assistant") return [];
-    return [JSON.parse(clean(JSON.stringify(item))) as Block];
+    // Onicode starts a delegated child with agents.enabled=false, and Codex then sends neither
+    // its subagent tools nor its team text.
+    if (options.subagent === true && content.startsWith("<multi_agent_")) return [];
+    const kept = JSON.parse(clean(JSON.stringify(item))) as Block;
+    return options.subagent === true && Array.isArray(kept.tools)
+      ? [
+          {
+            ...kept,
+            tools: kept.tools.filter((ns: unknown) => !isRecord(ns) || ns.name !== "collaboration"),
+          },
+        ]
+      : [kept];
   });
   const context = buildCodexAdditionalContext(
     { model: options.model, reasoningEffort: effort },
