@@ -2700,12 +2700,9 @@ export const readClaudeLaunchArgSettings = Effect.fn("ClaudeAdapterV2.readLaunch
 export const CLAUDE_ONI_MCP_TOOL_WILDCARD = "mcp__onicode__*";
 
 // Native tools that Onicode's MCP server replaces, or that only another host can use.
-export const CLAUDE_TOOLS_UNUSED_UNDER_ONICODE: ReadonlyArray<string> = [
+const CLAUDE_TOOLS_UNUSED_UNDER_ONICODE: ReadonlyArray<string> = [
   // oni_thread_list and oni_thread_send reach other sessions.
   "ListAgents",
-  // A native switch leaves the checkout the thread tracks; oni_worktree_handoff moves both.
-  "EnterWorktree",
-  "ExitWorktree",
   // Claude Code only asks for it on hosts with a findings view.
   "ReportFindings",
   // These timers end with the Claude process; schedule_task outlives it.

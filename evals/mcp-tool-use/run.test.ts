@@ -647,7 +647,7 @@ const template = {
     {
       role: "system",
       content:
-        "You are powered by the model named Opus 5.5. The exact model ID is claude-opus-5-5.\n\nThe following deferred tools are now available via ToolSearch. Load them first:\nMonitor\nmcp__onicode__retired_tool\n\nAfter the list.",
+        "You are powered by the model named Opus 5.5. The exact model ID is claude-opus-5-5.\n\nThe following deferred tools are now available via ToolSearch. Load them first:\nCronCreate\nMonitor\nmcp__onicode__retired_tool\n\nAfter the list.\n- loop: Run a prompt on an interval.\n- run: Launch the app.",
     },
     { role: "assistant", content: [{ type: "text", text: "A later turn." }] },
   ],
@@ -702,6 +702,10 @@ it("rebuilds the template from this checkout and sends a child Onicode's task pr
   const deferred = system[2]?.split("Load them first:\n")[1]?.split("\n\n")[0]?.split("\n") ?? [];
   assert.includeMembers(deferred, ["Monitor", "mcp__onicode__delegate_task"]);
   assert.notInclude(deferred, "mcp__onicode__retired_tool");
+  // Onicode's Claude threads run without the cron tools and the /loop skill.
+  assert.notInclude(deferred, "CronCreate");
+  assert.notInclude(system[2], "- loop:");
+  assert.include(system[2], "- run: Launch the app.");
   // A delegated child is never offered the tools Onicode hides from subagents.
   assert.include(deferred, "mcp__onicode__watch_pull_request");
   const child = buildBase(template, {
