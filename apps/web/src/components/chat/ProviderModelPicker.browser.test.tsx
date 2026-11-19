@@ -257,9 +257,9 @@ it("folds a provider's models under each backend, opening the thread's backend",
       checkedAt: "2026-01-01T00:00:00.000Z",
       models: [],
       subProviders: [
+        { name: "Grok", unavailableReason: "Signed out. Run `fx login grok` on this machine." },
         { name: "Vercel AI Gateway" },
         { name: "Codex" },
-        { name: "Grok", unavailableReason: "Signed out. Run `fx login grok` on this machine." },
       ],
       slashCommands: [],
       skills: [],
@@ -269,7 +269,6 @@ it("folds a provider's models under each backend, opening the thread's backend",
     [
       instanceId,
       [
-        { slug: "default", name: "Default" },
         { slug: "gateway:opus", name: "Opus", subProvider: "Vercel AI Gateway" },
         { slug: "codex:gpt", name: "GPT", subProvider: "Codex" },
       ],
@@ -284,6 +283,9 @@ it("folds a provider's models under each backend, opening the thread's backend",
       lockedProvider={null}
       instanceEntries={entries}
       modelOptionsByInstance={options}
+      keybindings={compileResolvedKeybindingsConfig([
+        { key: "ctrl+]", command: "modelPicker.nextProvider", when: "modelPickerOpen" },
+      ])}
       triggerAriaLabel="Choose model"
       onInstanceModelChange={() => {}}
     />,
@@ -294,15 +296,21 @@ it("folds a provider's models under each backend, opening the thread's backend",
     page
       .getByRole("option")
       .elements()
-      .map((row) => row.textContent?.match(/^(Default|Vercel AI Gateway|Codex|GPT|Opus)/)?.[1]);
-  expect(optionNames()).toEqual(["Default", "Vercel AI Gateway", "Codex", "GPT"]);
+      .map((row) => row.textContent?.match(/^(Vercel AI Gateway|Codex|GPT|Opus)/)?.[1]);
+  expect(optionNames()).toEqual(["Vercel AI Gateway", "Codex", "GPT"]);
   await expect
     .element(page.getByText("Signed out. Run `fx login grok` on this machine."))
     .toBeVisible();
 
+  // A signed-out backend leads the section, and the provider shortcut still lands on fx.
+  await userEvent.keyboard("{Control>}]{/Control}");
+  await expect
+    .element(page.getByRole("option", { name: /Vercel AI Gateway/ }))
+    .toHaveAttribute("data-highlighted");
+
   await page.getByRole("option", { name: /Vercel AI Gateway/ }).click();
   await vi.waitFor(() =>
-    expect(optionNames()).toEqual(["Default", "Vercel AI Gateway", "Opus", "Codex", "GPT"]),
+    expect(optionNames()).toEqual(["Vercel AI Gateway", "Opus", "Codex", "GPT"]),
   );
 });
 
