@@ -83,7 +83,7 @@ import * as KeyedLock from "@onicode/shared/KeyedLock";
 import { modelSelectionsEqual } from "@onicode/shared/model";
 import { expandAssistantCitationsForProvider } from "@onicode/shared/assistantCitations";
 import { modelSwitchSince } from "./modelSwitch.ts";
-import { contextBoundaryOrdinal, isScheduledFreshRun } from "./contextBoundary.ts";
+import { contextBoundaryOrdinal, scheduledFreshRunOrdinals } from "./contextBoundary.ts";
 import { isPlaceholderThreadTitle } from "./placeholderThreadTitle.ts";
 import { canRefreshGeneratedTitle } from "./threadTitleRefresh.ts";
 import { combinePullRequestWatchWakes, type PullRequestWatchWake } from "./pullRequestWatch.ts";
@@ -1375,16 +1375,14 @@ function conversationProviderThread(
   >,
   boundary: number,
 ): OrchestrationV2ProviderThread | undefined {
-  const startedByScheduledFreshRun = (providerThread: OrchestrationV2ProviderThread) =>
-    projection.runs.some(
-      (run) =>
-        run.ordinal === providerThread.firstRunOrdinal &&
-        isScheduledFreshRun(run, projection.turnItems),
-    );
   const active = projection.providerThreads.find(
     (candidate) => candidate.id === projection.thread.activeProviderThreadId,
   );
   if (active === undefined) return active;
+  const scheduledFreshOrdinals = scheduledFreshRunOrdinals(projection);
+  const startedByScheduledFreshRun = (providerThread: OrchestrationV2ProviderThread) =>
+    providerThread.firstRunOrdinal !== null &&
+    scheduledFreshOrdinals.has(providerThread.firstRunOrdinal);
   // A pre-clear session that is still alive (background work) can become active again on its updates.
   if (!startedByScheduledFreshRun(active) && !providerThreadPredatesBoundary(active, boundary)) {
     return active;

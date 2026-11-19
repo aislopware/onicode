@@ -1,25 +1,28 @@
-import type {
-  MessageId,
-  OrchestrationV2Run,
-  OrchestrationV2ThreadProjection,
-} from "@onicode/contracts";
+import type { MessageId, OrchestrationV2ThreadProjection } from "@onicode/contracts";
 
 import { cancelledBeforeStart } from "./RestartBackgroundNote.ts";
 
-/** A fresh-session schedule run starts a side conversation; the thread's own one continues past it. */
-export function isScheduledFreshRun(
-  run: Pick<OrchestrationV2Run, "freshContext" | "userMessageId">,
+// Collected in one pass: an hourly fresh-session schedule leaves thousands of fresh runs to check.
+// Turn items, unlike messages, are not narrowed to the runs since the latest compaction.
+function scheduledMessageIds(
   turnItems: OrchestrationV2ThreadProjection["turnItems"],
-): boolean {
-  // Turn items, unlike messages, are not narrowed to the runs since the latest compaction.
-  return (
-    run.freshContext === true &&
-    turnItems.some(
-      (item) =>
-        item.type === "user_message" &&
-        item.messageId === run.userMessageId &&
-        item.scheduledTaskId !== undefined,
-    )
+): ReadonlySet<MessageId> {
+  return new Set(
+    turnItems.flatMap((item) =>
+      item.type === "user_message" && item.scheduledTaskId !== undefined ? [item.messageId] : [],
+    ),
+  );
+}
+
+/** Ordinals of fresh-session schedule runs: side conversations the thread's own one continues past. */
+export function scheduledFreshRunOrdinals(
+  projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
+): ReadonlySet<number> {
+  const messageIds = scheduledMessageIds(projection.turnItems);
+  return new Set(
+    projection.runs.flatMap((run) =>
+      run.freshContext === true && messageIds.has(run.userMessageId) ? [run.ordinal] : [],
+    ),
   );
 }
 
@@ -27,8 +30,7 @@ export function isScheduledFreshRun(
 export function contextBoundaryOrdinal(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
 ): number {
-  // Built once, not searched per run: an hourly fresh-session schedule leaves thousands of fresh runs.
-  let scheduledMessageIds: ReadonlySet<MessageId> | undefined;
+  let scheduled: ReadonlySet<MessageId> | undefined;
   let boundary = 0;
   for (const run of projection.runs) {
     if (
@@ -39,12 +41,8 @@ export function contextBoundaryOrdinal(
     ) {
       continue;
     }
-    scheduledMessageIds ??= new Set(
-      projection.turnItems.flatMap((item) =>
-        item.type === "user_message" && item.scheduledTaskId !== undefined ? [item.messageId] : [],
-      ),
-    );
-    if (!scheduledMessageIds.has(run.userMessageId)) {
+    scheduled ??= scheduledMessageIds(projection.turnItems);
+    if (!scheduled.has(run.userMessageId)) {
       boundary = run.ordinal;
     }
   }
