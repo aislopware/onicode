@@ -3599,6 +3599,15 @@
   "e58a1d884fa1d8f2": "Thread-Details",
   "02d9667ff2c8e0b8": "Issue {key}: {title}",
   "4276743ee60a3c62": "{count, plural, one {{count} Kommentar} other {{count} Kommentare}}",
+  "43c5fbd02c6f330a": "Weniger anzeigen",
+  "de45b075b016cb14": [
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " weitere anzeigen"
+  ],
   "42f634397f3960aa": "In Thread-Details anzeigen",
   "e3738ef0423ddfe7": "Auf Standard zurücksetzen",
   "ae10d34e11064fec": "Versionskontrolle",
@@ -3636,15 +3645,6 @@
   ],
   "159ddd0d146a0f22": "Beobachtet: Der Agent wird geweckt, wenn Checks fertig sind, jemand kommentiert oder der Branch Konflikte hat. Klicke zum Beenden.",
   "1cbc8b5db51b4c77": "Mergen",
-  "43c5fbd02c6f330a": "Weniger anzeigen",
-  "de45b075b016cb14": [
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " weitere anzeigen"
-  ],
   "a3d040c4ef4fc6e9": "Über dem Tempo",
   "b16fdf56b16d99c9": "Im Tempo",
   "90f977e97ae8b6c6": "Unter dem Tempo",
@@ -5054,6 +5054,7 @@
   "b6a29fff7c7c0808": "Niemand",
   "54420465784bb1bd": "Ältere Kommentare laden",
   "9d82ebf35bfb4043": "Hier ist noch nichts passiert.",
+  "1cf216566c1ee064": "Projekt nicht verfügbar",
   "b5ddadeb0810688c": "Status",
   "93c1fc19d9bf1db0": "Beteiligung",
   "2160067266a61dd8": "Beliebig",
@@ -5096,6 +5097,8 @@
   "297613ddcf68d031": "Sortieren",
   "4aa8190ec693085e": "Nach Tracker filtern",
   "d44aed6ee67982dd": "Issues aktualisieren",
+  "1e622c67e33d9d66": "Projekt nicht verfügbar",
+  "466559820bc9d408": "Das Projekt dieses Filters liegt in keiner verbundenen Umgebung.",
   "2ccf231996dc89c2": "Keine Tracker zum Lesen",
   "ffdb63a22901a1fa": "Füge ein Projekt hinzu, dessen Remote bei einem unterstützten Tracker liegt.",
   "403e9debff81d7df": [
@@ -6195,7 +6198,6 @@
   "13eb3e529a3e9bff": "Aus dem Thread entfernen",
   "b872b70a1387351a": "Verknüpfte Elemente nicht verfügbar",
   "ff700a2d719110d8": "Die Umgebung des Threads ist nicht verfügbar.",
-  "b935e8d2dad4d8ba": "Verknüpfte Issues",
   "e18c90152452a50e": "{openCount, plural, one {{openCount} offen} other {{openCount} offen}} · {linkCount, plural, one {{linkCount} verknüpft} other {{linkCount} verknüpft}}",
   "106c1bf3308a8c33": "Beobachtet: Der Agent wird geweckt, wenn Checks fertig sind, jemand kommentiert oder der Branch Konflikte hat",
   "15a560968264b0ed": "Öffnen",
@@ -8921,7 +8923,6 @@
   "573ea5fdf293a9d6": "Alle Checkouts",
   "470ad8c54049d1e1": "Checkouts durchsuchen",
   "7e2dfdd9f97fc027": "Projektbereich",
-  "1cf216566c1ee064": "Projekt nicht verfügbar",
   "c1b8c351aa90f319": [
     {
       "t": "span",

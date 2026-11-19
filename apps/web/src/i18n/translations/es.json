@@ -3595,6 +3595,16 @@
   "e58a1d884fa1d8f2": "Detalles del hilo",
   "02d9667ff2c8e0b8": "Issue {key}: {title}",
   "4276743ee60a3c62": "{count, plural, one {{count} comentario} other {{count} comentarios}}",
+  "43c5fbd02c6f330a": "Mostrar menos",
+  "de45b075b016cb14": [
+    "Mostrar ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " más"
+  ],
   "42f634397f3960aa": "Mostrar en los detalles del hilo",
   "e3738ef0423ddfe7": "Restablecer al valor predeterminado",
   "ae10d34e11064fec": "Control de versiones",
@@ -3632,16 +3642,6 @@
   ],
   "159ddd0d146a0f22": "Siguiendo: el agente se activa cuando terminan las comprobaciones, alguien comenta o la rama tiene conflictos. Haz clic para dejar de seguir.",
   "1cbc8b5db51b4c77": "Fusionar",
-  "43c5fbd02c6f330a": "Mostrar menos",
-  "de45b075b016cb14": [
-    "Mostrar ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " más"
-  ],
   "a3d040c4ef4fc6e9": "Por encima del ritmo",
   "b16fdf56b16d99c9": "Al ritmo",
   "90f977e97ae8b6c6": "Por debajo del ritmo",
@@ -5052,6 +5052,7 @@
   "b6a29fff7c7c0808": "Nadie",
   "54420465784bb1bd": "Cargar comentarios anteriores",
   "9d82ebf35bfb4043": "Aquí no ha pasado nada todavía.",
+  "1cf216566c1ee064": "Proyecto no disponible",
   "b5ddadeb0810688c": "Estado",
   "93c1fc19d9bf1db0": "Participación",
   "2160067266a61dd8": "Cualquiera",
@@ -5094,6 +5095,8 @@
   "297613ddcf68d031": "Ordenar",
   "4aa8190ec693085e": "Filtrar por gestor de issues",
   "d44aed6ee67982dd": "Actualizar issues",
+  "1e622c67e33d9d66": "Proyecto no disponible",
+  "466559820bc9d408": "El proyecto de este filtro no está en ningún entorno conectado.",
   "2ccf231996dc89c2": "No hay gestores de issues que leer",
   "ffdb63a22901a1fa": "Añade un proyecto cuyo remoto esté en un gestor de issues compatible.",
   "403e9debff81d7df": [
@@ -6195,7 +6198,6 @@
   "13eb3e529a3e9bff": "Descartar del hilo",
   "b872b70a1387351a": "Elementos vinculados no disponibles",
   "ff700a2d719110d8": "El entorno del hilo no está disponible.",
-  "b935e8d2dad4d8ba": "Issues vinculadas",
   "e18c90152452a50e": "{openCount, plural, one {{openCount} abierta} other {{openCount} abiertas}} · {linkCount, plural, one {{linkCount} vinculada} other {{linkCount} vinculadas}}",
   "106c1bf3308a8c33": "Siguiendo: el agente se activa cuando terminan las comprobaciones, alguien comenta o la rama tiene conflictos",
   "15a560968264b0ed": "Abrir",
@@ -8917,7 +8919,6 @@
   "573ea5fdf293a9d6": "Todos los checkouts",
   "470ad8c54049d1e1": "Buscar checkouts",
   "7e2dfdd9f97fc027": "Ámbito de proyectos",
-  "1cf216566c1ee064": "Proyecto no disponible",
   "c1b8c351aa90f319": [
     {
       "t": "span",

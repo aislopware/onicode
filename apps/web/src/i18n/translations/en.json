@@ -3597,6 +3597,16 @@
   "e58a1d884fa1d8f2": "Thread details",
   "02d9667ff2c8e0b8": "Issue {key}: {title}",
   "4276743ee60a3c62": "{count, plural, one {{count} comment} other {{count} comments}}",
+  "43c5fbd02c6f330a": "Show less",
+  "de45b075b016cb14": [
+    "Show ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " more"
+  ],
   "42f634397f3960aa": "Show in thread details",
   "e3738ef0423ddfe7": "Reset to default",
   "ae10d34e11064fec": "Version Control",
@@ -3634,16 +3644,6 @@
   ],
   "159ddd0d146a0f22": "Watching: the agent wakes when checks finish, someone comments, or the branch conflicts. Click to stop.",
   "1cbc8b5db51b4c77": "Merge",
-  "43c5fbd02c6f330a": "Show less",
-  "de45b075b016cb14": [
-    "Show ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " more"
-  ],
   "a3d040c4ef4fc6e9": "Ahead of pace",
   "b16fdf56b16d99c9": "On pace",
   "90f977e97ae8b6c6": "Under pace",
@@ -5054,6 +5054,7 @@
   "b6a29fff7c7c0808": "None",
   "54420465784bb1bd": "Load older comments",
   "9d82ebf35bfb4043": "Nothing has happened here yet.",
+  "1cf216566c1ee064": "Unavailable project",
   "b5ddadeb0810688c": "State",
   "93c1fc19d9bf1db0": "Involvement",
   "2160067266a61dd8": "Any",
@@ -5096,6 +5097,8 @@
   "297613ddcf68d031": "Sort",
   "4aa8190ec693085e": "Filter by tracker",
   "d44aed6ee67982dd": "Refresh issues",
+  "1e622c67e33d9d66": "Project unavailable",
+  "466559820bc9d408": "The project this filter names is not on a connected environment.",
   "2ccf231996dc89c2": "No trackers to read",
   "ffdb63a22901a1fa": "Add a project whose remote is on a supported tracker.",
   "403e9debff81d7df": [
@@ -6202,7 +6205,6 @@
   "13eb3e529a3e9bff": "Dismiss from thread",
   "b872b70a1387351a": "Linked items unavailable",
   "ff700a2d719110d8": "The thread's environment is not available.",
-  "b935e8d2dad4d8ba": "Linked issues",
   "e18c90152452a50e": "{openCount, plural, one {{openCount} open} other {{openCount} open}} · {linkCount, plural, one {{linkCount} linked} other {{linkCount} linked}}",
   "106c1bf3308a8c33": "Watching: the agent wakes when checks finish, someone comments, or the branch conflicts",
   "15a560968264b0ed": "Open",
@@ -8929,7 +8931,6 @@
   "573ea5fdf293a9d6": "All checkouts",
   "470ad8c54049d1e1": "Search checkouts",
   "7e2dfdd9f97fc027": "Project scope",
-  "1cf216566c1ee064": "Unavailable project",
   "c1b8c351aa90f319": [
     {
       "t": "span",

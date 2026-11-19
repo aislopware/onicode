@@ -3596,6 +3596,16 @@
   "e58a1d884fa1d8f2": "Détails du fil",
   "02d9667ff2c8e0b8": "Ticket {key} : {title}",
   "4276743ee60a3c62": "{count, plural, one {{count} commentaire} other {{count} commentaires}}",
+  "43c5fbd02c6f330a": "Afficher moins",
+  "de45b075b016cb14": [
+    "Afficher ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    },
+    " de plus"
+  ],
   "42f634397f3960aa": "Afficher dans les détails du fil",
   "e3738ef0423ddfe7": "Rétablir la valeur par défaut",
   "ae10d34e11064fec": "Gestion de versions",
@@ -3633,16 +3643,6 @@
   ],
   "159ddd0d146a0f22": "Surveillance : l’agent se réveille quand les checks se terminent, que quelqu’un commente ou que la branche entre en conflit. Cliquez pour arrêter.",
   "1cbc8b5db51b4c77": "Fusionner",
-  "43c5fbd02c6f330a": "Afficher moins",
-  "de45b075b016cb14": [
-    "Afficher ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    },
-    " de plus"
-  ],
   "a3d040c4ef4fc6e9": "En avance sur le rythme",
   "b16fdf56b16d99c9": "Dans le rythme",
   "90f977e97ae8b6c6": "En dessous du rythme",
@@ -5053,6 +5053,7 @@
   "b6a29fff7c7c0808": "Personne",
   "54420465784bb1bd": "Charger les commentaires plus anciens",
   "9d82ebf35bfb4043": "Rien ne s’est encore passé ici.",
+  "1cf216566c1ee064": "Projet indisponible",
   "b5ddadeb0810688c": "État",
   "93c1fc19d9bf1db0": "Participation",
   "2160067266a61dd8": "Tous",
@@ -5095,6 +5096,8 @@
   "297613ddcf68d031": "Trier",
   "4aa8190ec693085e": "Filtrer par gestionnaire de tickets",
   "d44aed6ee67982dd": "Actualiser les tickets",
+  "1e622c67e33d9d66": "Projet indisponible",
+  "466559820bc9d408": "Le projet de ce filtre n’est dans aucun environnement connecté.",
   "2ccf231996dc89c2": "Aucun gestionnaire de tickets à lire",
   "ffdb63a22901a1fa": "Ajoutez un projet dont le remote est sur un gestionnaire de tickets pris en charge.",
   "403e9debff81d7df": [
@@ -6196,7 +6199,6 @@
   "13eb3e529a3e9bff": "Écarter du fil",
   "b872b70a1387351a": "Éléments associés indisponibles",
   "ff700a2d719110d8": "L’environnement du fil n’est pas disponible.",
-  "b935e8d2dad4d8ba": "Tickets associés",
   "e18c90152452a50e": "{openCount, plural, one {{openCount} ouverte} other {{openCount} ouvertes}} · {linkCount, plural, one {{linkCount} associée} other {{linkCount} associées}}",
   "106c1bf3308a8c33": "Surveillance : l’agent se réveille quand les checks se terminent, que quelqu’un commente ou que la branche entre en conflit",
   "15a560968264b0ed": "Ouvrir",
@@ -8919,7 +8921,6 @@
   "573ea5fdf293a9d6": "Tous les checkouts",
   "470ad8c54049d1e1": "Rechercher des checkouts",
   "7e2dfdd9f97fc027": "Portée des projets",
-  "1cf216566c1ee064": "Projet indisponible",
   "c1b8c351aa90f319": [
     {
       "t": "span",

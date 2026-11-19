@@ -738,6 +738,22 @@ export function isThreadSubscribed(threadId: ThreadId): boolean {
   return threadSubscribers.has(threadId);
 }
 
+/** Lists an installed thread on a shell subscribed in an earlier test, whose snapshot lacks it. */
+export async function emitShellThread(threadId: ThreadId): Promise<void> {
+  const thread = threads.find((candidate) => candidate.id === threadId);
+  if (!thread) throw new Error(`${threadId} is not installed`);
+  if (shellSubscriber === null) return;
+  sequence += 1;
+  await Effect.runPromise(
+    Queue.offer(shellSubscriber, {
+      kind: "thread.updated",
+      sequence,
+      location: "active",
+      thread: shellOf(thread),
+    }),
+  );
+}
+
 /** Delivers one domain event, such as a run or turn-item update, to the thread's subscription. */
 export async function emitThreadEvent(
   threadId: ThreadId,

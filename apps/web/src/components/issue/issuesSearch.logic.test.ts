@@ -20,6 +20,26 @@ describe("issuesSearchFromUrl", () => {
       order: "created",
     });
   });
+
+  it("keeps ids and the selected issue whole, however long", () => {
+    const long = (prefix: string) => `${prefix}-${"x".repeat(220)}`;
+    const raw = {
+      issueServer: long("server"),
+      issueProject: long("project"),
+      selectedEnvironmentId: ` ${long("selected-server")} `,
+      selectedProjectId: long("selected-project"),
+      selectedHost: long("host"),
+      tracker: long("tracker"),
+      scope: long("group/subgroup"),
+      key: long("key"),
+    };
+    expect(issuesSearchFromUrl(raw)).toMatchObject({
+      ...raw,
+      selectedEnvironmentId: raw.selectedEnvironmentId.trim(),
+    });
+    expect(issuesSearchFromUrl({ issueProject: 42 }).issueProject).toBe("42");
+    expect(issuesSearchFromUrl({ q: long("query") }).q).toHaveLength(200);
+  });
 });
 
 describe("issueFilterProjects", () => {

@@ -3596,6 +3596,15 @@
   "e58a1d884fa1d8f2": "Detalhes da thread",
   "02d9667ff2c8e0b8": "Issue {key}: {title}",
   "4276743ee60a3c62": "{count, plural, one {{count} comentário} other {{count} comentários}}",
+  "43c5fbd02c6f330a": "Mostrar menos",
+  "de45b075b016cb14": [
+    "Mostrar mais ",
+    {
+      "i": 1,
+      "k": "_gt_value_1",
+      "v": "v"
+    }
+  ],
   "42f634397f3960aa": "Mostrar nos detalhes da thread",
   "e3738ef0423ddfe7": "Redefinir para o padrão",
   "ae10d34e11064fec": "Controle de versão",
@@ -3633,15 +3642,6 @@
   ],
   "159ddd0d146a0f22": "Acompanhando: o agente é ativado quando as verificações terminam, alguém comenta ou o branch entra em conflito. Clique para parar.",
   "1cbc8b5db51b4c77": "Mesclar",
-  "43c5fbd02c6f330a": "Mostrar menos",
-  "de45b075b016cb14": [
-    "Mostrar mais ",
-    {
-      "i": 1,
-      "k": "_gt_value_1",
-      "v": "v"
-    }
-  ],
   "a3d040c4ef4fc6e9": "Acima do ritmo",
   "b16fdf56b16d99c9": "No ritmo",
   "90f977e97ae8b6c6": "Abaixo do ritmo",
@@ -5052,6 +5052,7 @@
   "b6a29fff7c7c0808": "Ninguém",
   "54420465784bb1bd": "Carregar comentários mais antigos",
   "9d82ebf35bfb4043": "Nada aconteceu aqui ainda.",
+  "1cf216566c1ee064": "Projeto indisponível",
   "b5ddadeb0810688c": "Estado",
   "93c1fc19d9bf1db0": "Envolvimento",
   "2160067266a61dd8": "Qualquer",
@@ -5094,6 +5095,8 @@
   "297613ddcf68d031": "Ordenar",
   "4aa8190ec693085e": "Filtrar por rastreador",
   "d44aed6ee67982dd": "Atualizar issues",
+  "1e622c67e33d9d66": "Projeto indisponível",
+  "466559820bc9d408": "O projeto deste filtro não está em nenhum ambiente conectado.",
   "2ccf231996dc89c2": "Nenhum rastreador para ler",
   "ffdb63a22901a1fa": "Adicione um projeto cujo remoto esteja em um rastreador compatível.",
   "403e9debff81d7df": [
@@ -6195,7 +6198,6 @@
   "13eb3e529a3e9bff": "Dispensar da thread",
   "b872b70a1387351a": "Itens vinculados indisponíveis",
   "ff700a2d719110d8": "O ambiente da thread não está disponível.",
-  "b935e8d2dad4d8ba": "Issues vinculadas",
   "e18c90152452a50e": "{openCount, plural, one {{openCount} aberto} other {{openCount} abertos}} · {linkCount, plural, one {{linkCount} vinculado} other {{linkCount} vinculados}}",
   "106c1bf3308a8c33": "Acompanhando: o agente é ativado quando as verificações terminam, alguém comenta ou o branch entra em conflito",
   "15a560968264b0ed": "Abrir",
@@ -8918,7 +8920,6 @@
   "573ea5fdf293a9d6": "Todos os checkouts",
   "470ad8c54049d1e1": "Pesquisar checkouts",
   "7e2dfdd9f97fc027": "Escopo de projeto",
-  "1cf216566c1ee064": "Projeto indisponível",
   "c1b8c351aa90f319": [
     {
       "t": "span",
