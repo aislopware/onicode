@@ -45,7 +45,7 @@ import { makeRestoreMissingWorktree } from "../workspace/restoreMissingWorktree.
 import * as EventSink from "./EventSink.ts";
 import * as ContextHandoffService from "./ContextHandoffService.ts";
 import { isActiveRun } from "./CommandPolicy.ts";
-import { contextBoundaryOrdinal } from "./contextBoundary.ts";
+import { contextBoundaryOrdinal, startedFreshRun } from "./contextBoundary.ts";
 import {
   DEFAULT_HANDOFF_TOKEN_CAP,
   handoffTokenCapConfig,
@@ -531,15 +531,26 @@ export const layer: Layer.Layer<
           (handoff.transferId == null || !subagentResultTransfers.has(handoff.transferId)) &&
           isPendingForRun(handoff),
       );
-      // Carried forward until a provider turn accepts it, also after a provider switch, but never
-      // into a fresh session.
+      // A fresh session in the side chat since the digest's target dropped it with the rest.
+      const sideChatHandoffDiscarded = (handoff: OrchestrationV2ContextHandoff) => {
+        const target = projection.runs.find((candidate) => candidate.id === handoff.targetRunId);
+        return (
+          target !== undefined &&
+          projection.runs.some(
+            (candidate) =>
+              candidate.ordinal > target.ordinal &&
+              candidate.ordinal <= run.ordinal &&
+              startedFreshRun(candidate),
+          )
+        );
+      };
+      // Carried forward until a provider turn accepts it, also after a provider switch.
       const sideChatHandoff = projection.contextHandoffs.find(
         (handoff) =>
           isSideChatHandoff(handoff) &&
           handoff.delivery === undefined &&
-          (run.freshContext === true
-            ? handoff.targetRunId === run.id
-            : isPendingForRun(handoff, true)),
+          isPendingForRun(handoff, true) &&
+          !sideChatHandoffDiscarded(handoff),
       );
       const nativeForkTransfer = projection.contextTransfers.find(
         (transfer) =>

@@ -12,7 +12,7 @@ import * as Effect from "effect/Effect";
 import { cancelledBeforeStart, neverStarted } from "./RestartBackgroundNote.ts";
 
 /** A fresh run that never reached a provider discarded nothing, also once a rollback rewound it. */
-function discardedContext(run: OrchestrationV2Run): boolean {
+export function startedFreshRun(run: OrchestrationV2Run): boolean {
   return (
     run.freshContext === true &&
     run.status !== "queued" &&
@@ -52,7 +52,7 @@ export function contextBoundaryOrdinal(
   let scheduled: ReadonlySet<MessageId> | undefined;
   let boundary = 0;
   for (const run of projection.runs) {
-    if (!discardedContext(run) || run.ordinal <= boundary) continue;
+    if (!startedFreshRun(run) || run.ordinal <= boundary) continue;
     scheduled ??= scheduledMessageIds(projection.turnItems);
     if (!scheduled.has(run.userMessageId)) {
       boundary = run.ordinal;
@@ -69,7 +69,7 @@ export function forkContextBoundaryOrdinal(
   projection: Pick<OrchestrationV2ThreadProjection, "runs" | "turnItems">,
   forkRun: OrchestrationV2Run | undefined,
 ): number {
-  return forkRun !== undefined && discardedContext(forkRun)
+  return forkRun !== undefined && startedFreshRun(forkRun)
     ? forkRun.ordinal
     : contextBoundaryOrdinal(projection);
 }

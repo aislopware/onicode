@@ -669,6 +669,8 @@ const writeParentRun = (input: {
   readonly freshContext?: boolean;
   /** Started by a scheduled task, as a fresh-session schedule does. */
   readonly scheduled?: boolean;
+  /** A stable run that continues the provider thread `continues` started, as a wake run does. */
+  readonly continues?: { readonly runId: RunId; readonly ordinal: number };
 }) =>
   Effect.gen(function* () {
     const eventSink = yield* EventSink.EventSinkV2;
@@ -676,7 +678,7 @@ const writeParentRun = (input: {
     const { driver, instanceId, modelSelection } = forkCases[0]!;
     const messageId = MessageId.make(`${input.runId}:message`);
     const providerThreadId = input.stable
-      ? ProviderThreadId.make(`${input.runId}:provider-thread`)
+      ? ProviderThreadId.make(`${input.continues?.runId ?? input.runId}:provider-thread`)
       : null;
     yield* eventSink.write({
       events: [
@@ -702,7 +704,7 @@ const writeParentRun = (input: {
                   },
                   nativeConversationHeadRef: null,
                   status: "idle" as const,
-                  firstRunOrdinal: input.ordinal,
+                  firstRunOrdinal: input.continues?.ordinal ?? input.ordinal,
                   lastRunOrdinal: input.ordinal,
                   handoffIds: [],
                   forkedFrom: null,
@@ -1387,28 +1389,51 @@ it.effect("a side chat opened during the parent's first turn starts from a diges
   }).pipe(Effect.provide(forkCases[0]!.layer)),
 );
 
-it.effect.each([
+it.effect.each<{
+  readonly name: string;
+  readonly runs: ReadonlyArray<{
+    readonly stable: boolean;
+    readonly freshContext?: boolean;
+    readonly scheduled?: boolean;
+    /** The ordinal of the run whose provider thread this one continues. */
+    readonly continuesRun?: number;
+  }>;
+  readonly kept: ReadonlyArray<string>;
+  readonly dropped: ReadonlyArray<string>;
+}>([
   {
     name: "started fresh with no stable run",
-    earlier: { stable: false },
-    latest: { stable: false, freshContext: true },
-    kept: ["PARENT_LATEST_MARKER"],
-    dropped: ["PARENT_EARLIER_MARKER", "PARENT_IMPORTED_MARKER", "GRANDPARENT_MARKER"],
+    runs: [{ stable: false }, { stable: false, freshContext: true }],
+    kept: ["PARENT_RUN_2_MARKER"],
+    dropped: ["PARENT_RUN_1_MARKER", "PARENT_IMPORTED_MARKER", "GRANDPARENT_MARKER"],
   },
   {
     name: "started fresh after a stable run",
-    earlier: { stable: true },
-    latest: { stable: false, freshContext: true },
-    kept: ["PARENT_LATEST_MARKER"],
-    dropped: ["PARENT_EARLIER_MARKER", "PARENT_IMPORTED_MARKER", "GRANDPARENT_MARKER"],
+    runs: [{ stable: true }, { stable: false, freshContext: true }],
+    kept: ["PARENT_RUN_2_MARKER"],
+    dropped: ["PARENT_RUN_1_MARKER", "PARENT_IMPORTED_MARKER", "GRANDPARENT_MARKER"],
   },
   {
     name: "whose latest stable run is a scheduled fresh session",
-    earlier: { stable: true },
-    latest: { stable: true, freshContext: true, scheduled: true },
+    runs: [{ stable: true }, { stable: true, freshContext: true, scheduled: true }],
     kept: [
-      "PARENT_EARLIER_MARKER",
-      "PARENT_LATEST_MARKER",
+      "PARENT_RUN_1_MARKER",
+      "PARENT_RUN_2_MARKER",
+      "PARENT_IMPORTED_MARKER",
+      "GRANDPARENT_MARKER",
+    ],
+    dropped: [],
+  },
+  {
+    name: "whose latest stable run continues a scheduled fresh session",
+    runs: [
+      { stable: true },
+      { stable: true, freshContext: true, scheduled: true },
+      { stable: true, continuesRun: 2 },
+    ],
+    kept: [
+      "PARENT_RUN_1_MARKER",
+      "PARENT_RUN_3_MARKER",
       "PARENT_IMPORTED_MARKER",
       "GRANDPARENT_MARKER",
     ],
@@ -1441,23 +1466,21 @@ it.effect.each([
       creationSource: "web",
     });
     yield* writeImportedHistory(parentId, "PARENT_IMPORTED_MARKER");
-    yield* writeParentRun({
-      threadId: parentId,
-      runId: RunId.make(`${prefix}-earlier-run`),
-      ordinal: 1,
-      status: "completed",
-      text: "PARENT_EARLIER_MARKER",
-      ...testCase.earlier,
-    });
     // An idle parent, so a kept anchor would fork natively.
-    yield* writeParentRun({
-      threadId: parentId,
-      runId: RunId.make(`${prefix}-latest-run`),
-      ordinal: 2,
-      status: "completed",
-      text: "PARENT_LATEST_MARKER",
-      ...testCase.latest,
-    });
+    const runId = (ordinal: number) => RunId.make(`${prefix}-run-${ordinal}`);
+    for (const [index, { continuesRun, ...run }] of testCase.runs.entries()) {
+      yield* writeParentRun({
+        threadId: parentId,
+        runId: runId(index + 1),
+        ordinal: index + 1,
+        status: "completed",
+        text: `PARENT_RUN_${index + 1}_MARKER`,
+        ...run,
+        ...(continuesRun === undefined
+          ? {}
+          : { continues: { runId: runId(continuesRun), ordinal: continuesRun } }),
+      });
+    }
     yield* forkSideChat(`${prefix}-fork`, parentId, sideChatId);
     yield* askSideChat(sideChatId, `${prefix}-first-message`);
 
