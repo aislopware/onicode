@@ -452,6 +452,19 @@ describe("project pins and archives", () => {
     expect(group({ ...local, archivedAt: at }, { ...other, archivedAt: at }).archived).toBe(true);
   });
 
+  it("represents a group by an open copy, even over the preferred machine's archived one", () => {
+    const local = makeProject("local", "/work/onicode", { archivedAt: at });
+    const other = makeProject("remote", "/work/onicode", { environmentId: remote });
+    const [preferred] = buildProjectGroups({
+      projects: [local, other],
+      settings: settings("repository"),
+      preferredEnvironmentId: environmentId,
+    });
+    expect(preferred?.representative).toMatchObject({ environmentId: remote, id: "remote" });
+    const archived = group(local, { ...other, archivedAt: at });
+    expect(archived.representative).toMatchObject({ environmentId, id: "local" });
+  });
+
   it("offers pinned projects first and leaves archived ones out", () => {
     const pickable = pickableProjectGroups([
       { key: "a", pinned: false, archived: false },

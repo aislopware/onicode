@@ -88,6 +88,7 @@ import {
   type HomeProjectScope,
 } from "../home/homeThreadList";
 import { useMobileProjectGroupingSettings } from "../../state/project-grouping";
+import { isPickableProjectMember } from "@onicode/client-runtime/state/project-grouping";
 import {
   resolveNewTaskDraftWorkspace,
   resolveNewTaskBranchWorktreePath,
@@ -589,7 +590,9 @@ export function NewTaskFlowProvider(
 
   const selectEnvironment = (environmentId: EnvironmentId) => {
     const match = resolveEnvironmentProjectMatch(
-      projects.filter((project) => project.environmentId === environmentId),
+      projects.filter(
+        (project) => project.environmentId === environmentId && isPickableProjectMember(project),
+      ),
       selectedProject,
     );
     updateFlow({

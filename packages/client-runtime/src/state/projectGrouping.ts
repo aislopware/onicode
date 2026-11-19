@@ -381,10 +381,14 @@ export function buildProjectGroups<TProject extends EnvironmentProject>(
 
   const preferredEnvironmentId = input.preferredEnvironmentId ?? null;
   return Array.from(groupedMembers, ([key, members]) => {
+    // New threads and settings start in the representative, so an open copy beats the preferred machine.
+    const open = members.filter((member) => isPickableProjectMember(member.project));
+    const candidates = open.length > 0 ? open : members;
     const representative =
       (preferredEnvironmentId
-        ? members.find((member) => member.project.environmentId === preferredEnvironmentId)?.project
-        : null) ?? members[0]!.project;
+        ? candidates.find((member) => member.project.environmentId === preferredEnvironmentId)
+            ?.project
+        : null) ?? candidates[0]!.project;
     return {
       key,
       label:

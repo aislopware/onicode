@@ -226,7 +226,14 @@ export function DraftHeroHeadline({
           return;
         }
         const entry = projectEntryByKey.get(item.value);
-        if (!entry || item.value === activeProjectKey) {
+        // Choosing its own group still moves a draft off an archived copy onto the open one.
+        if (
+          !entry ||
+          (activeProjectRef !== null &&
+            scopedProjectKey(
+              scopeProjectRef(entry.targetProject.environmentId, entry.targetProject.id),
+            ) === scopedProjectKey(activeProjectRef))
+        ) {
           return;
         }
         selectProject(entry.targetProject, entry.group.projectKey);
