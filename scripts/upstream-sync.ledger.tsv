@@ -2706,3 +2706,4 @@ c0b1d32c97	take	taken as is
 2fe74b00fa	take	taken as is
 d1f8636f49	skip	Onicode already translates every key this commit translates (web and mobile, all 9 locales); kept Onicode's wording
 9246c3235e	take	test conflict: kept Onicode's sidecar extracted-text path, took upstream's tighter output asserts
+80cf4f7945	take	taken as is (web-only store; mobile has no equivalent reconcile)
