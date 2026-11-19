@@ -2592,3 +2592,4 @@ bac1b71567	take	taken as is
 3a51807da0	take	taken as is
 3e35e7e17c	take	taken as is
 fc6c68b773	take	taken as is
+1b555ccb01	take	taken as is (Windows-only path; kept to stay aligned with upstream, inert on macOS/Linux)
