@@ -456,7 +456,11 @@ describe("workspace area focus", () => {
       // The page reports the host as focused, so that is what a caller saves.
       const saved = document.activeElement as HTMLElement;
       sidebar.button.focus();
-      if (remount) first.host.remove();
+      // Unmounting the tree empties its shadow root before its host goes.
+      if (remount) {
+        first.host.shadowRoot!.replaceChildren();
+        first.host.remove();
+      }
       const { host, row } = remount ? tree() : first;
       fixture.controller.request({ area: "panel", returnTo: saved });
       await vi.waitFor(() => expect(host.shadowRoot!.activeElement).toBe(row));

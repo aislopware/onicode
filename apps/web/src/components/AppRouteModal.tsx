@@ -1,5 +1,5 @@
 import { Dialog as DialogPrimitive } from "@base-ui/react/dialog";
-import { useRouterState } from "@tanstack/react-router";
+import { useRouter, useRouterState } from "@tanstack/react-router";
 import { T, useGT } from "gt-react";
 import { XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -12,7 +12,11 @@ import {
   workspaceFocusTargetFor,
   type WorkspaceFocusTarget,
 } from "../lib/workspaceFocus";
-import { markAppModalFocusSettled, useCloseAppModal } from "./sidebar/mainAppLocation";
+import {
+  isAppModalPage,
+  markAppModalFocusSettled,
+  useCloseAppModal,
+} from "./sidebar/mainAppLocation";
 import { GlobalVoiceInputIndicator } from "./chat/GlobalVoiceInputIndicator";
 import { Button } from "./ui/button";
 import { DialogBackdrop } from "./ui/dialog";
@@ -47,6 +51,7 @@ function focusMovedOn(watch: CloseWatch) {
  */
 export function AppRouteModal({ label, children }: { label: string; children: ReactNode }) {
   const closeAppModal = useCloseAppModal();
+  const router = useRouter();
   const [open, setOpen] = useState(true);
   // A close skipped for a navigation still loading normally ends with this modal unmounted.
   // One that comes back to a modal page (a redirect) keeps it mounted, so it shows again on
@@ -106,11 +111,11 @@ export function AppRouteModal({ label, children }: { label: string; children: Re
       watch?.stop.abort();
       if (!watch?.returnOnUnmount) return;
       // A modal that replaced this one returns focus when it closes.
-      if (focusMovedOn(watch) || document.querySelector("[data-app-modal]") || !opener) return;
+      if (focusMovedOn(watch) || isAppModalPage(router.state.location.pathname) || !opener) return;
       // The opener's area may not come back (a panel closed meanwhile); the page's content takes it.
       requestWorkspaceFocus(isWorkspaceFocusTargetShown(opener) ? opener : { area: "content" });
     },
-    [opener],
+    [opener, router],
   );
   // Clear the native window controls (macOS traffic lights, the Windows and Linux caption
   // buttons). Below sm the modal fills the window and leaves that strip empty; up to lg its
