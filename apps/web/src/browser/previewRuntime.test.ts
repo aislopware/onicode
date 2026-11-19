@@ -162,13 +162,18 @@ describe("previewRuntimeFor on desktop", () => {
   it.each([
     { url: "http://localhost:5173/", move: null },
     { url: "https://example.com/", move: "desktop" },
+    // A blank tab may be headed for a site only this computer reaches.
+    { url: undefined, move: "desktop" },
   ] as const)("offers to move a host's $url tab to desktop: $move", async ({ url, move }) => {
     host.target = remote;
     host.httpBaseUrl = lan;
     host.previewTunnel = false;
     host.canOperateTerminal = true;
     const { alternatePreviewRuntime } = await import("./previewRuntime");
-    const navStatus = { _tag: "Success", url, title: "" } as const;
+    const navStatus =
+      url === undefined
+        ? ({ _tag: "Idle" } as const)
+        : ({ _tag: "Success", url, title: "" } as const);
     expect(
       alternatePreviewRuntime(EnvironmentId.make("remote"), null, true, {
         runtime: "server",
