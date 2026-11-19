@@ -2634,3 +2634,4 @@ e0f5acd178	take	taken as is (Sidebar.logic.ts only; Sidebar.tsx hook order untou
 94baff19c6	take	taken as is
 00200bd412	take	Antigravity thread-session slash commands now land in the session cwd's snapshot; onSessionEvent gets cwd. Clean.
 43b37b6d3c	take	Antigravity 1.5.x flat invoke_subagent input parsed; subagentsOutlivingPrompt flavor hook idles subagents agy no longer runs. Clean apply.
+37f8a5325c	take	pull_request_merge stack:true lands a GitHub native stack (pins lower layer heads, bypasses stack cache). agentContextBudget.json re-measured (mcpToolListJsonBytes 55148 -> 55265; upstream's numbers differ because Onicode's tool list differs). GitHub-only by design: GitLab has no native stacks, so no GitLab gap.
