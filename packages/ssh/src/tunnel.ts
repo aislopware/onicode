@@ -533,6 +533,10 @@ if ! oni_runtime_ready; then
     *) printf 'Remote host %s has no onicode release archive.\\n' "$(uname -s) $(uname -m)" >&2; exit 1 ;;
   esac
   ONICODE_ARCHIVE="oni-$ONICODE_ARCHIVE_VERSION-$ONICODE_PLATFORM_KEY.tar.gz"
+  if ! command -v tar >/dev/null 2>&1; then
+    printf 'Remote host needs tar to unpack %s. Install tar on it and try again.\\n' "$ONICODE_ARCHIVE" >&2
+    exit 1
+  fi
   ONICODE_STAGING="$(mktemp -d "$HOME/.onicode/runtime/versions/.staging-XXXXXX")"
   trap 'rm -rf "$ONICODE_STAGING" "$ONICODE_LOCK"' EXIT
   oni_fetch() {
