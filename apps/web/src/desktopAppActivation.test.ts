@@ -181,8 +181,9 @@ describe("desktop app activation", () => {
     },
   );
 
-  function receiverHarness(claim: (requestId: string) => boolean = () => true) {
+  function receiverHarness(claim: (requestId: string) => boolean | Promise<boolean> = () => true) {
     let deliver: (input: DesktopAppActivationRequest) => void = () => undefined;
+    const claims: string[] = [];
     const completions: DesktopAppActivationResponse[] = [];
     let onComplete: () => void = () => undefined;
     const receiver = createDesktopAppActivationReceiver({
@@ -190,7 +191,10 @@ describe("desktop app activation", () => {
         deliver = listener;
         return () => undefined;
       },
-      claim: async (requestId) => claim(requestId),
+      claim: async (requestId) => {
+        claims.push(requestId);
+        return claim(requestId);
+      },
       complete: async (response) => {
         completions.push(response);
         onComplete();
@@ -203,20 +207,21 @@ describe("desktop app activation", () => {
     return {
       receiver,
       deliver: (input: DesktopAppActivationRequest = request) => deliver(input),
+      claims,
       completions,
       nextCompletion,
     };
   }
 
-  it("handles a request that arrived during a remount once the handler is back", async () => {
+  it("claims a request that arrived during a remount only once the handler is back", async () => {
     const harness = receiverHarness();
     const unmounted = vi.fn(async () => success("request-1"));
     harness.receiver.setHandler(unmounted);
     harness.receiver.setHandler(null);
     const completed = harness.nextCompletion();
     harness.deliver();
-    // Lets the request reach the wait for a handler while none is set.
-    await Promise.resolve();
+    // Claiming now would leave the command waiting on a page with no handler.
+    expect(harness.claims).toEqual([]);
     harness.receiver.setHandler(async (input) => success(input.requestId));
     await completed;
 
@@ -224,16 +229,39 @@ describe("desktop app activation", () => {
     expect(harness.completions).toEqual([success("request-1")]);
   });
 
-  it.each([
-    { name: "before a handler came back", handlerAtDelivery: false },
-    { name: "while the page was busy", handlerAtDelivery: true },
-  ])("skips a request the desktop app answered $name", async ({ handlerAtDelivery }) => {
+  it("runs the handler that is current once the claim returns", async () => {
+    let grant: (claimed: boolean) => void = () => undefined;
+    let claimRequested: () => void = () => undefined;
+    const claimed = new Promise<void>((resolve) => {
+      claimRequested = resolve;
+    });
+    const harness = receiverHarness(
+      () =>
+        new Promise<boolean>((resolve) => {
+          grant = resolve;
+          claimRequested();
+        }),
+    );
+    const unmounted = vi.fn(async () => success("request-1"));
+    const completed = harness.nextCompletion();
+    harness.receiver.setHandler(unmounted);
+    harness.deliver();
+    await claimed;
+    harness.receiver.setHandler(null);
+    harness.receiver.setHandler(async (input) => success(input.requestId));
+    grant(true);
+    await completed;
+
+    expect(unmounted).not.toHaveBeenCalled();
+    expect(harness.completions).toEqual([success("request-1")]);
+  });
+
+  it("skips a request the desktop app already answered", async () => {
     const harness = receiverHarness((requestId) => requestId !== request.requestId);
     const handled = vi.fn(async (input: DesktopAppActivationRequest) => success(input.requestId));
-    if (handlerAtDelivery) harness.receiver.setHandler(handled);
+    harness.receiver.setHandler(handled);
     const completed = harness.nextCompletion();
     harness.deliver();
-    harness.receiver.setHandler(handled);
     // A skipped request never completes, so a second request marks progress.
     harness.deliver({ ...request, requestId: "request-2" });
     await completed;
@@ -242,19 +270,39 @@ describe("desktop app activation", () => {
     expect(harness.completions).toEqual([success("request-2")]);
   });
 
-  it("handles the next request while an abandoned one is still stuck", async () => {
+  it("keeps an older open that finishes late from replacing a newer one", async () => {
     const harness = receiverHarness();
-    harness.receiver.setHandler((input) =>
-      input.requestId === request.requestId
-        ? new Promise<DesktopAppActivationResponse>(() => undefined)
-        : Promise.resolve(success(input.requestId)),
+    let projectAppeared: () => void = () => undefined;
+    const deps = dependencies({
+      findProject: (_environmentId, workspaceRoot) =>
+        workspaceRoot === request.workspaceRoot
+          ? null
+          : { id: existingProjectId, environmentId, workspaceRoot },
+      waitForProject: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            projectAppeared = resolve;
+          }),
+      ),
+    });
+    harness.receiver.setHandler((input, signal) =>
+      handleDesktopAppActivationRequest(input, deps, signal),
     );
-    const completed = harness.nextCompletion();
+    let completed = harness.nextCompletion();
     harness.deliver();
-    harness.deliver({ ...request, requestId: "request-2" });
+    harness.deliver({ ...request, requestId: "request-2", workspaceRoot: "/workspace/other" });
+    await completed;
+    completed = harness.nextCompletion();
+    projectAppeared();
     await completed;
 
-    expect(harness.completions).toEqual([success("request-2")]);
+    expect(vi.mocked(deps.openThread).mock.calls.map(([projectRef]) => projectRef)).toEqual([
+      { environmentId, projectId: existingProjectId },
+    ]);
+    expect(harness.completions.map((response) => response.requestId)).toEqual([
+      "request-2",
+      "request-1",
+    ]);
   });
 
   it.each([

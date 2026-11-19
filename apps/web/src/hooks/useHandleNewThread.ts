@@ -107,6 +107,8 @@ export function createNewThreadHandler(router: AnyRouter) {
        * it meanwhile, instead of null. Callers that edit the result must leave this off.
        */
       acceptOpenedMeanwhile?: boolean;
+      /** Once aborted, resolves to null instead of showing the draft. */
+      signal?: AbortSignal;
     },
   ): Promise<{ draftId: DraftId; threadId: ThreadId } | null> => {
     const projects = readProjects();
@@ -167,7 +169,9 @@ export function createNewThreadHandler(router: AnyRouter) {
         candidate.environmentId === projectRef.environmentId,
     );
     const abandonedSinceRequest = () =>
-      routeChangedSinceRequest() || (project !== undefined && readProject(projectRef) === null);
+      options?.signal?.aborted === true ||
+      routeChangedSinceRequest() ||
+      (project !== undefined && readProject(projectRef) === null);
     const projectSettings = resolveProjectSettings(
       targetServerSettings,
       project?.id ?? null,
@@ -240,7 +244,7 @@ export function createNewThreadHandler(router: AnyRouter) {
       : scopedProjectKey(projectRef);
     // Matches lag the location during a navigation, so compare against the location.
     const resultIfAbandoned = (envMode: DraftThreadEnvMode) => {
-      if (options?.acceptOpenedMeanwhile !== true) return null;
+      if (options?.acceptOpenedMeanwhile !== true || options.signal?.aborted) return null;
       const draft = getDraftSessionByLogicalProjectKey(logicalProjectKey);
       if (draft === null || draft.promotedTo != null || readProject(projectRef) === null) {
         return null;

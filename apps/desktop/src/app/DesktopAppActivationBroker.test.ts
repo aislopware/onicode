@@ -3,14 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 
 import { DesktopAppActivationBroker } from "./DesktopAppActivationBroker.ts";
 
-const success = {
-  version: 1,
-  requestId: "request-1",
-  ok: true,
-  projectId: ProjectId.make("project-1"),
-  threadId: ThreadId.make("thread-1"),
-} as const;
-
 const request: DesktopAppActivationRequest = {
   version: 1,
   requestId: "request-1",
@@ -51,25 +43,14 @@ describe("DesktopAppActivationBroker", () => {
       vi.useRealTimers();
     });
 
-    it("leaves a claimed request to the page's answer instead of timing it out", async () => {
-      const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate: vi.fn() });
-      broker.registerRenderer(vi.fn());
-
-      const response = broker.request(request);
-      expect(broker.claim(request.requestId)).toBe(true);
-      vi.advanceTimersByTime(1_000);
-      broker.complete(success);
-
-      await expect(response).resolves.toMatchObject({ ok: true });
-      broker.close();
-    });
-
     it.each([
+      { name: "is sent and unanswered", giveUp: () => undefined, claimed: true },
       {
         name: "timed out",
         giveUp: () => {
           vi.advanceTimersByTime(1_000);
         },
+        claimed: false,
       },
       {
         name: "was canceled while the handler remounted",
@@ -77,16 +58,40 @@ describe("DesktopAppActivationBroker", () => {
           broker.pauseRenderer();
           broker.cancel(request.requestId);
         },
+        claimed: false,
       },
-    ])("refuses a page's claim for a request that $name", async ({ giveUp }) => {
+    ])("lets the page claim a request only while it $name", ({ giveUp, claimed }) => {
+      const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate: vi.fn() });
+      broker.registerRenderer(vi.fn());
+
+      void broker.request(request);
+      giveUp(broker);
+
+      expect(broker.claim(request.requestId)).toBe(claimed);
+      broker.close();
+    });
+
+    it("refuses a claim for a request the page was never sent", () => {
+      const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate: vi.fn() });
+      broker.registerRenderer(vi.fn());
+      const secondRequest = { ...request, requestId: "request-2" };
+
+      void broker.request(request);
+      void broker.request(secondRequest);
+
+      expect(broker.claim(secondRequest.requestId)).toBe(false);
+      broker.close();
+    });
+
+    it("still times out a claimed request the page never answers", async () => {
       const broker = new DesktopAppActivationBroker({ requestTimeoutMs: 1_000, activate: vi.fn() });
       broker.registerRenderer(vi.fn());
 
       const response = broker.request(request);
-      giveUp(broker);
+      expect(broker.claim(request.requestId)).toBe(true);
+      vi.advanceTimersByTime(1_000);
 
-      await expect(response).resolves.toMatchObject({ ok: false });
-      expect(broker.claim(request.requestId)).toBe(false);
+      await expect(response).resolves.toMatchObject({ ok: false, code: "request-timeout" });
       broker.close();
     });
   });
