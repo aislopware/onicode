@@ -96,9 +96,10 @@ export function resolveNewTaskScratchOption(input: {
 }
 
 export function resolveEnvironmentProjectMatch(
-  projectsOnTarget: ReadonlyArray<EnvironmentProject>,
+  targetProjects: ReadonlyArray<EnvironmentProject>,
   selectedProject: EnvironmentProject | null,
 ): EnvironmentProject | null {
+  const projectsOnTarget = targetProjects.filter(isPickableProjectMember);
   const repositoryKey = selectedProject?.repositoryIdentity
     ? repositoryGroupingKeyOf(selectedProject.repositoryIdentity)
     : null;

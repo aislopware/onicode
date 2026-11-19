@@ -23,19 +23,26 @@ import {
 const PROMPT_LINK_REPOSITORY_HOSTS = ["github.com", "git.cafe", "staging.git.cafe"];
 
 /**
- * The repository's projects in the order given. Callers pass projects most recently active
- * first and open the first, so the user lands where they last worked.
+ * The repository's projects, open copies first, otherwise in the order given. Callers pass
+ * projects most recently active first and open the first, so the user lands where they last worked.
  */
 export function findPromptLinkProjects<
-  P extends { readonly repositoryIdentity?: RepositoryIdentity | null | undefined },
+  P extends {
+    readonly repositoryIdentity?: RepositoryIdentity | null | undefined;
+    readonly archivedAt?: string | null | undefined;
+  },
 >(projects: ReadonlyArray<P>, repository: PromptLinkRepository): P[] {
   const path = `${repository.owner}/${repository.name}`.toLowerCase();
   const keys = new Set(PROMPT_LINK_REPOSITORY_HOSTS.map((host) => `${host}/${path}`));
-  return projects.filter(
+  const matches = projects.filter(
     (project) =>
       project.repositoryIdentity != null &&
       keys.has(repositoryGroupingKeyOf(project.repositoryIdentity).toLowerCase()),
   );
+  return [
+    ...matches.filter((project) => project.archivedAt == null),
+    ...matches.filter((project) => project.archivedAt != null),
+  ];
 }
 
 export function findPromptLinkPullRequestThread<
