@@ -28,12 +28,16 @@ describe("browser target resolver", () => {
       "http://localhost.:5173",
       "http://app.localhost:5173",
       "http://127.0.0.2:5173",
+      "http://[::]:5173",
     ]) {
       expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), url)).toBeNull();
     }
     expect(
       resolveExternalServerUrl(EnvironmentId.make("environment-1"), "https://example.com/"),
     ).toBe("https://example.com/");
+    // The environment's own origin, such as a signed file URL, is what the connection reaches.
+    const asset = `${httpBaseUrl}/api/assets/report.pdf?ticket=t`;
+    expect(resolveExternalServerUrl(EnvironmentId.make("environment-1"), asset)).toBe(asset);
   });
 
   it("normalizes schemeless localhost server-picker values", async () => {

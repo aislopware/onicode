@@ -246,6 +246,12 @@ it.effect.each([
       'HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm="x"\r\nContent-Length: 0\r\n\r\n',
     head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close",
   },
+  {
+    // Passed on unread, it could keep the connection open for Chromium's next request.
+    case: "a response head over the size limit",
+    reply: `HTTP/1.1 200 OK\r\nX-Padding: ${"a".repeat(70_000)}\r\nContent-Length: 0\r\n\r\n`,
+    head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close",
+  },
 ])(
   "forwards a plain http request in origin form, answering $case on one connection",
   ({ reply, head: expectedHead }) =>
@@ -316,6 +322,26 @@ it.effect("forwards one framed request per connection, past informational respon
     expect(endpoint.received.join("")).toBe(
       "POST /first HTTP/1.1\r\nHost: localhost:5173\r\nContent-Length: 3\r\nConnection: close\r\n\r\nabc",
     );
+  }),
+);
+
+it.effect("streams a request body to the environment as it arrives", () =>
+  Effect.gen(function* () {
+    // A large upload must not sit in desktop main until its last byte.
+    const endpoint = yield* listenEndpoint({
+      text: "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok",
+      after: "abc",
+    });
+    const { proxyPort, authorization } = yield* routeThroughTunnel(
+      `ws://127.0.0.1:${addressPort(endpoint.server)}/api/preview/tunnel`,
+    );
+    const { received } = yield* readFromProxy(
+      proxyPort,
+      "POST http://localhost:5173/upload HTTP/1.1\r\nHost: localhost:5173\r\n" +
+        `Proxy-Authorization: ${authorization}\r\nContent-Length: 6\r\n\r\nabc`,
+      "\r\n\r\nok",
+    );
+    expect(received).toBe("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
   }),
 );
 
