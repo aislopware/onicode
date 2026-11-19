@@ -8,6 +8,7 @@ import {
 } from "~/components/chat/ComposerSpeechButton";
 import { VoiceInputSetup } from "~/components/chat/VoiceInputSetup";
 import { primaryServerKeybindingsAtom } from "~/state/server";
+import { mayRefocusAfterDictation } from "./dictationFocus";
 import { useDictationShortcut } from "./useDictationShortcut";
 import { useEnvironmentSpeechInput } from "./useEnvironmentSpeechInput";
 
@@ -45,7 +46,7 @@ export function useTextFieldSpeech(input: {
       latest.current.onTextChange(text);
       window.requestAnimationFrame(() => {
         const field = latest.current.textareaRef.current;
-        if (!field) return;
+        if (!field || !mayRefocusAfterDictation(field)) return;
         field.focus({ preventScroll: true });
         field.setSelectionRange(selection.start, selection.end);
       });

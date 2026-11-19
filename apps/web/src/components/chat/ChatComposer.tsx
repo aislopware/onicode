@@ -1954,7 +1954,11 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       if (!applied) return;
       const cursor = collapseExpandedComposerCursor(text, selection.start, isLiteralPendingAnswer);
       setComposerCursor(cursor);
-      window.requestAnimationFrame(() => composerEditorRef.current?.focusAt(cursor));
+      window.requestAnimationFrame(() => {
+        if (mayRefocusAfterDictation(composerFormRef.current)) {
+          composerEditorRef.current?.focusAt(cursor);
+        }
+      });
     },
   });
   const { blocksSubmission: voiceInputActive, submitAfterDictation } = speechInput;
