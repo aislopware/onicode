@@ -11128,5 +11128,15 @@
   "5ddfea667ccceecf": "Atualizar um pull request",
   "c87d85c418b791a5": "Responder em um pull request",
   "4bcd613be5a48aa2": "Revisar um pull request",
-  "81b284c3afb54ec6": "Mesclar um pull request"
+  "81b284c3afb54ec6": "Mesclar um pull request",
+  "978e75afd6bcd1b1": "{count, plural, one {Leu logs de CI {count} vez} other {Leu logs de CI {count} vezes}}",
+  "1cf829d3d6dec9a4": "{count, plural, one {Tentou ler logs de CI {count} vez} other {Tentou ler logs de CI {count} vezes}}",
+  "9b0b9f9c4bc84265": "{count, plural, one {Tentou executar CI novamente {count} vez} other {Tentou executar CI novamente {count} vezes}}",
+  "d38466778437bfa9": "Nenhuma verificação com falha para executar novamente",
+  "8982283666c8c3d5": "{count, plural, one {Executou CI novamente {count} vez} other {Executou CI novamente {count} vezes}}",
+  "39949fd3853031e5": "{count, plural, one {Não foi possível executar novamente {count} verificação} other {Não foi possível executar novamente {count} verificações}}",
+  "15d8d7174c79fc23": "{count, plural, one {Executou novamente {count} verificação} other {Executou novamente {count} verificações}}",
+  "24d802debbab31e0": "{rerun, plural, one {Executou novamente {rerun} verificação, {refused} recusadas} other {Executou novamente {rerun} verificações, {refused} recusadas}}",
+  "9f0d37a2ec338e59": "Ler logs de CI",
+  "dcca0dff7324e0f0": "Executar CI novamente"
 }

@@ -11081,5 +11081,15 @@
   "5ddfea667ccceecf": "プルリクエストを更新",
   "c87d85c418b791a5": "プルリクエストに返信",
   "4bcd613be5a48aa2": "プルリクエストをレビュー",
-  "81b284c3afb54ec6": "プルリクエストをマージ"
+  "81b284c3afb54ec6": "プルリクエストをマージ",
+  "978e75afd6bcd1b1": "{count, plural, other {CI ログを {count} 回読み取りました}}",
+  "1cf829d3d6dec9a4": "{count, plural, other {CI ログの読み取りを {count} 回試みました}}",
+  "9b0b9f9c4bc84265": "{count, plural, other {CI の再実行を {count} 回試みました}}",
+  "d38466778437bfa9": "再実行する失敗したチェックはありませんでした",
+  "8982283666c8c3d5": "{count, plural, other {CI を {count} 回再実行しました}}",
+  "39949fd3853031e5": "{count, plural, other {{count} 件のチェックを再実行できませんでした}}",
+  "15d8d7174c79fc23": "{count, plural, other {{count} 件のチェックを再実行しました}}",
+  "24d802debbab31e0": "{rerun, plural, other {{rerun} 件のチェックを再実行し、{refused} 件は拒否されました}}",
+  "9f0d37a2ec338e59": "CI ログを読む",
+  "dcca0dff7324e0f0": "CI を再実行"
 }

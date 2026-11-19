@@ -11124,5 +11124,15 @@
   "5ddfea667ccceecf": "Actualizar una pull request",
   "c87d85c418b791a5": "Responder en una pull request",
   "4bcd613be5a48aa2": "Revisar una pull request",
-  "81b284c3afb54ec6": "Fusionar una pull request"
+  "81b284c3afb54ec6": "Fusionar una pull request",
+  "978e75afd6bcd1b1": "{count, plural, one {Leyó registros de CI {count} vez} other {Leyó registros de CI {count} veces}}",
+  "1cf829d3d6dec9a4": "{count, plural, one {Intentó leer registros de CI {count} vez} other {Intentó leer registros de CI {count} veces}}",
+  "9b0b9f9c4bc84265": "{count, plural, one {Intentó volver a ejecutar CI {count} vez} other {Intentó volver a ejecutar CI {count} veces}}",
+  "d38466778437bfa9": "No encontró checks fallidos para volver a ejecutar",
+  "8982283666c8c3d5": "{count, plural, one {Volvió a ejecutar CI {count} vez} other {Volvió a ejecutar CI {count} veces}}",
+  "39949fd3853031e5": "{count, plural, one {No pudo volver a ejecutar {count} check} other {No pudo volver a ejecutar {count} checks}}",
+  "15d8d7174c79fc23": "{count, plural, one {Volvió a ejecutar {count} check} other {Volvió a ejecutar {count} checks}}",
+  "24d802debbab31e0": "{rerun, plural, one {Volvió a ejecutar {rerun} check, {refused} rechazados} other {Volvió a ejecutar {rerun} checks, {refused} rechazados}}",
+  "9f0d37a2ec338e59": "Leer registros de CI",
+  "dcca0dff7324e0f0": "Volver a ejecutar CI"
 }
