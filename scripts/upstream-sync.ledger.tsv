@@ -2780,3 +2780,4 @@ f0f9de46c6	take	fix(web): localize compact restart countdown
 02c5270a11	take	fix(web): keep SSH connection checks pending until they finish (#39328)
 b5bef4d939	take	/logout in chat needs providers:manage; guest-link and analytics parts left out
 f8d7f48913	take	desktop SSH reaches one-time-code hosts through a signed-in ControlMaster; kept Onicode's Effect.onError tunnel cleanup
+34a7ab3641	skip	kept Onicode's single mcp__onicode__ Pi registration: upstream's public mcp__t3-code__ and alias mcp__t3_code__ names both translate to mcp__onicode__, which is already Pi's own name for the server and is registered direct or deferred; Onicode dropped the hidden alias in 829d4cf43a
