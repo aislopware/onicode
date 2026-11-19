@@ -169,6 +169,12 @@ describe("GitLabIssueTracker", () => {
       });
       const target = { cwd: "/w", host: "gitlab.example.com", scope: "acme/web", key: "42" };
       const issue = yield* api.getIssue(target);
+      const summary = yield* api.getIssueSummary!(target);
+      expect(summary).toMatchObject({
+        key: "42",
+        commentCount: 3,
+        labels: [{ name: "bug", color: "#E24329", description: "Something is broken" }],
+      });
       // A later page of comments carries its own awards, found by the cursor's second half.
       const later = yield* api.getComments({ ...target, cursor: "2:after-100" });
       expect(later.comments.map((comment) => comment.reactions?.[0]?.count)).toEqual([2]);

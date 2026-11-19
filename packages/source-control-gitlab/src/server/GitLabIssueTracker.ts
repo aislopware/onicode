@@ -485,14 +485,23 @@ export const make: Effect.Effect<IssueTrackerApi, never, GitLabCli.GitLabCli> = 
       // The issue's own row: its comment count rides on it, so no notes are read.
       getIssueSummary: (input) =>
         issuePath(input, "getIssueSummary").pipe(
-          Effect.flatMap(({ path }) =>
+          Effect.flatMap(({ number }) =>
             read({
               cwd: input.cwd,
               host: input.host,
               operation: "getIssueSummary",
-              path,
-              decode: decodeIssueDetailJson,
-            }),
+              path: `projects/${projectPath(input.scope)}/issues?${query([
+                ["iids[]", String(number)],
+                ["with_labels_details", "true"],
+                ["per_page", "1"],
+              ])}`,
+              decode: decodeIssueDetailListJson,
+            }).pipe(
+              Effect.filterOrFail(
+                (issue) => issue !== null,
+                () => notFound("getIssueSummary"),
+              ),
+            ),
           ),
         ),
 
