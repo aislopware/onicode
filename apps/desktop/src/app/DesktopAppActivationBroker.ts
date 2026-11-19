@@ -96,15 +96,9 @@ export class DesktopAppActivationBroker {
     }
   }
 
-  /**
-   * The page starts opening a sent request only once this returns true; from then on the page
-   * answers it, so the timeout no longer can. A request already answered returns false.
-   */
+  /** The page opens a sent request only while this holds, so an answered command opens nothing. */
   claim(requestId: string): boolean {
-    const pending = this.#pending.get(requestId);
-    if (!pending?.dispatched) return false;
-    clearTimeout(pending.timeout);
-    return true;
+    return this.#pending.get(requestId)?.dispatched === true;
   }
 
   complete(response: DesktopAppActivationResponse): void {

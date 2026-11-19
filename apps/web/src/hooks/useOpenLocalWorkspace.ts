@@ -67,53 +67,62 @@ export function useOpenLocalWorkspace() {
   });
   const openThread = useNewThreadHandler();
 
-  const open = (request: DesktopAppActivationRequest) =>
-    handleDesktopAppActivationRequest(request, {
-      getTarget: () => appAtomRegistry.get(localWorkspaceAtom).target,
-      findProject: (environmentId, workspaceRoot) =>
-        findProjectByPath(
-          readProjects().filter((project) => project.environmentId === environmentId),
-          workspaceRoot,
-        ) ?? null,
-      createProject: async (environmentId, workspaceRoot) => {
-        const projectId = newProjectId();
-        const result = await createProject({
-          environmentId,
-          input: {
-            projectId,
-            title: inferProjectTitleFromPath(workspaceRoot),
+  const open = (request: DesktopAppActivationRequest, signal?: AbortSignal) =>
+    handleDesktopAppActivationRequest(
+      request,
+      {
+        getTarget: () => appAtomRegistry.get(localWorkspaceAtom).target,
+        findProject: (environmentId, workspaceRoot) =>
+          findProjectByPath(
+            readProjects().filter((project) => project.environmentId === environmentId),
             workspaceRoot,
-            createWorkspaceRootIfMissing: false,
-            defaultModelSelection: null,
-          },
-        });
-        if (result._tag === "Failure") {
-          const error = squashAtomCommandFailure(result);
-          throw error instanceof Error
-            ? error
-            : new Error(m(msg("Onicode could not add the project.")));
-        }
-        return projectId;
+          ) ?? null,
+        createProject: async (environmentId, workspaceRoot) => {
+          const projectId = newProjectId();
+          const result = await createProject({
+            environmentId,
+            input: {
+              projectId,
+              title: inferProjectTitleFromPath(workspaceRoot),
+              workspaceRoot,
+              createWorkspaceRootIfMissing: false,
+              defaultModelSelection: null,
+            },
+          });
+          if (result._tag === "Failure") {
+            const error = squashAtomCommandFailure(result);
+            throw error instanceof Error
+              ? error
+              : new Error(m(msg("Onicode could not add the project.")));
+          }
+          return projectId;
+        },
+        waitForProject: async (projectRef) => {
+          await waitForProject(projectRef);
+        },
+        openThread: (projectRef, openSignal) => {
+          const project = readProjects().find(
+            (candidate) =>
+              candidate.environmentId === projectRef.environmentId &&
+              candidate.id === projectRef.projectId,
+          );
+          // Opening an archived project's folder again brings the project back.
+          if (project?.archivedAt != null) {
+            void updateProject({
+              environmentId: projectRef.environmentId,
+              input: { projectId: projectRef.projectId, archived: false },
+            }).then((result) =>
+              reportProjectFailure(m(msg("Failed to unarchive project")), result),
+            );
+          }
+          return openThread(projectRef, {
+            acceptOpenedMeanwhile: true,
+            ...(openSignal ? { signal: openSignal } : {}),
+          });
+        },
       },
-      waitForProject: async (projectRef) => {
-        await waitForProject(projectRef);
-      },
-      openThread: (projectRef) => {
-        const project = readProjects().find(
-          (candidate) =>
-            candidate.environmentId === projectRef.environmentId &&
-            candidate.id === projectRef.projectId,
-        );
-        // Opening an archived project's folder again brings the project back.
-        if (project?.archivedAt != null) {
-          void updateProject({
-            environmentId: projectRef.environmentId,
-            input: { projectId: projectRef.projectId, archived: false },
-          }).then((result) => reportProjectFailure(m(msg("Failed to unarchive project")), result));
-        }
-        return openThread(projectRef, { acceptOpenedMeanwhile: true });
-      },
-    });
+      signal,
+    );
 
   return { state, open };
 }

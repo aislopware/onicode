@@ -396,14 +396,18 @@ describe.each([
     );
   });
 
-  it("abandons a delayed draft open when the project is removed meanwhile", async () => {
+  it.each([
+    { name: "the project is removed", abandon: () => testState.removeProject() },
+    { name: "its caller aborts", abandon: (aborted: AbortController) => aborted.abort() },
+  ])("abandons a delayed draft open when $name meanwhile", async ({ abandon }) => {
     testState.reset(draft);
+    const aborted = new AbortController();
     const pendingOpen = useNewThreadHandler()(
       { environmentId: "environment-ssh", projectId: "project-remote" } as never,
-      { replace: true },
+      { replace: true, signal: aborted.signal },
     );
 
-    testState.removeProject();
+    abandon(aborted);
     testState.completeProjectFileRead(null);
 
     await expect(pendingOpen).resolves.toBeNull();
