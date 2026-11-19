@@ -14,7 +14,7 @@ import {
   type ThreadPullRequestWatch,
 } from "@onicode/contracts";
 import { resolveOniMcpToolId } from "@onicode/shared/oniMcpToolPresentation";
-import { commandIndicatesFailure } from "@onicode/shared/toolOutput";
+import { commandIndicatesFailure, compactDynamicToolOutput } from "@onicode/shared/toolOutput";
 import {
   changeRequestsClosedBy,
   isChangeRequestCloseCommand,
@@ -956,7 +956,10 @@ export const make = Effect.gen(function* () {
         // Some providers report a command that failed as completed.
         return Effect.andThen(
           item.status === "completed" &&
-            (item.type !== "command_execution" || !commandIndicatesFailure(item))
+            !(item.type === "command_execution"
+              ? commandIndicatesFailure(item)
+              : item.type === "dynamic_tool" &&
+                compactDynamicToolOutput(item.output)?.isError === true)
             ? Effect.void
             : done,
           FiberMap.run(
