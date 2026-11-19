@@ -593,6 +593,12 @@ const REMOTE_MANAGED_SERVER_RUNNING_SCRIPT = `managed_server_running() {
   ! ps -ww -o args= -p "$$" >/dev/null 2>&1
 }`;
 
+// NFS-shared homes can link ~/.onicode to a directory that does not exist yet, and
+// mkdir -p fails with EEXIST on a dangling symlink, so create its target first.
+const REMOTE_ENSURE_ONI_HOME_SCRIPT = `if [ -L "$HOME/.onicode" ] && [ ! -e "$HOME/.onicode" ]; then
+  (cd "$HOME" && mkdir -p "$(readlink .onicode)")
+fi`;
+
 const REMOTE_LAUNCH_SCRIPT = `set -eu
 @@ONICODE_NODE_ENV_SCRIPT@@
 STATE_KEY="$1"
@@ -608,6 +614,7 @@ RUNNER_FILE="$STATE_DIR/run-onicode.sh"
 RUNNER_NEXT="$STATE_DIR/run-onicode.next.$$"
 LAUNCH_LOCK="$DEFAULT_SERVER_HOME/ssh-launch/.launch.lock"
 LAUNCH_BREAK_LOCK="$LAUNCH_LOCK.break"
+@@ONICODE_ENSURE_ONI_HOME_SCRIPT@@
 mkdir -p "$STATE_DIR"
 cleanup_launch() {
   rm -f "$RUNNER_NEXT"
@@ -1030,6 +1037,7 @@ const REMOTE_PAIRING_SCRIPT = `set -eu
 STATE_DIR="$HOME/.onicode/ssh-launch/@@ONICODE_STATE_KEY@@"
 DEFAULT_SERVER_HOME="$HOME/.onicode"
 RUNNER_FILE="$STATE_DIR/run-onicode.sh"
+@@ONICODE_ENSURE_ONI_HOME_SCRIPT@@
 mkdir -p "$STATE_DIR"
 cat >"$RUNNER_FILE" <<'SH'
 @@ONICODE_RUNNER_SCRIPT@@
@@ -1141,6 +1149,7 @@ export function buildRemoteLaunchScript(input?: RemoteOniRunnerOptions): string 
     ONICODE_PICK_PORT_SCRIPT: stripTrailingNewlines(REMOTE_PICK_PORT_SCRIPT),
     ONICODE_WAIT_READY_SCRIPT: stripTrailingNewlines(REMOTE_WAIT_READY_SCRIPT),
     ONICODE_MANAGED_SERVER_RUNNING_SCRIPT: REMOTE_MANAGED_SERVER_RUNNING_SCRIPT,
+    ONICODE_ENSURE_ONI_HOME_SCRIPT: REMOTE_ENSURE_ONI_HOME_SCRIPT,
     ONICODE_DEFAULT_REMOTE_PORT: String(DEFAULT_REMOTE_PORT),
     ONICODE_REMOTE_PORT_SCAN_WINDOW: String(REMOTE_PORT_SCAN_WINDOW),
     ONICODE_READY_TIMEOUT_MS: String(REMOTE_READY_TIMEOUT_MS),
@@ -1156,6 +1165,7 @@ export function buildRemoteLaunchScript(input?: RemoteOniRunnerOptions): string 
 function buildRemotePairingScript(stateKey: string, input?: RemoteOniRunnerOptions): string {
   return applyScriptPlaceholders(REMOTE_PAIRING_SCRIPT, {
     ONICODE_STATE_KEY: stateKey,
+    ONICODE_ENSURE_ONI_HOME_SCRIPT: REMOTE_ENSURE_ONI_HOME_SCRIPT,
     ONICODE_RUNNER_SCRIPT: stripTrailingNewlines(buildRemoteOniRunnerScript(input)),
   });
 }
