@@ -2,6 +2,7 @@ import { useAtomValue } from "@effect/atom-react";
 import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import { visibleLinkedThreads } from "@onicode/client-runtime/state/threads";
 import { AuthOrchestrationOperateScope, threadIssueKeysEqual } from "@onicode/contracts";
+import { issueLinkWorkspace } from "@onicode/client-runtime/issue-links";
 import type {
   EnvironmentId,
   IssueDetail,
@@ -60,11 +61,15 @@ export function IssueThreadLinks({
   const hiddenKeys = useAtomValue(environmentThreadShells.hiddenThreadKeysAtom);
   const hidingAnywhere = useAnyEnvironmentHiding();
   const loadedThreadRefs = useEnvironmentThreadRefs(environmentId);
+  // The canonical URL's workspace, as the server's agent tools store it: after a rename the
+  // reference may still name the old key.
+  const workspace = issueLinkWorkspace(issue.url) ?? reference.workspace;
   const key = {
     tracker: reference.tracker,
     host: reference.host,
     scope: reference.scope,
     key: reference.key,
+    ...(workspace === undefined ? {} : { workspace }),
   };
   const relationsAtom = issueEnvironment.linkedThreads({
     environmentId,

@@ -15,6 +15,7 @@ import { expect, it, vi } from "vite-plus/test";
 
 const state = vi.hoisted(() => ({
   issuesSupported: false,
+  prState: "open" as "open" | "merged",
   isDraft: false,
   status: "success" as PullRequestCheck["status"],
   extraStatus: null as PullRequestCheck["status"] | null,
@@ -56,7 +57,7 @@ const queryData = () => ({
   url: "https://github.com/owner/repo/pull/1",
   number: 1,
   title: "Test PR",
-  state: "open",
+  state: state.prState,
   isDraft: state.isDraft,
   mergeability: "mergeable",
   headBranch: "feature",
@@ -64,7 +65,10 @@ const queryData = () => ({
   changedFiles: 1,
   additions: 1,
   deletions: 0,
-  checks: [state.status, ...(state.extraStatus ? [state.extraStatus] : [])].map((status) => ({
+  checks: (state.prState === "merged"
+    ? []
+    : [state.status, ...(state.extraStatus ? [state.extraStatus] : [])]
+  ).map((status) => ({
     name: `CI-${status}`,
     status,
     description: null,
@@ -185,7 +189,6 @@ it("merges with the last selected merge method", async () => {
         number={1}
         status={null}
         project={repositoryProject}
-        label="Test PR"
         onOpen={vi.fn()}
       />,
     );
@@ -217,7 +220,6 @@ it("requires a new merge click after passing checks become pending and pass agai
       number={1}
       status={null}
       project={repositoryProject}
-      label="Test PR"
       onOpen={vi.fn()}
     />
   );
@@ -259,6 +261,7 @@ async function setup() {
   state.updateToast.mockReset();
 
   state.issuesSupported = false;
+  state.prState = "open";
   state.isDraft = false;
   state.status = "success";
   state.extraStatus = null;
@@ -282,7 +285,6 @@ it("adds the failing checks to a given composer instead of opening a new thread"
         number={1}
         status={null}
         project={repositoryProject}
-        label="Test PR"
         onOpen={vi.fn()}
         composerTarget={threadRef}
       />,
@@ -387,6 +389,41 @@ it("names a linked pull request row by its kind, number and title, not its URL",
   expect(exposedNumbers).toHaveLength(0);
 });
 
+it("shows a linked pull request's live title, not the one its snapshot kept", async () => {
+  await using screen = await setup();
+  state.projects = [repositoryProject];
+  state.prState = "merged";
+  const link = (number: number, title: string) => ({
+    host: "github.com",
+    repository: "owner/repo",
+    number,
+    url: `https://github.com/owner/repo/pull/${number}`,
+    source: "manual",
+    linkedAt: "2026-10-30T00:00:00.000Z",
+    snapshot: {
+      title,
+      state: "merged",
+      isDraft: false,
+      headBranch: "feature",
+      baseBranch: "main",
+      updatedAt: null,
+    },
+    stack: null,
+  });
+  state.pullRequests = [link(1, "Renamed since"), link(2, "Renamed since too")];
+  await act(async () => {
+    await screen.rerender(
+      <ThreadDetailsThreadPrRows threadRef={threadRef} project={repositoryProject as never} />,
+    );
+  });
+  await clickButton(screen.container, "Show 1 more");
+  const texts = [...screen.container.querySelectorAll("button")].map(
+    (button) => button.textContent ?? "",
+  );
+  expect(texts.filter((text) => text.includes("Test PR"))).toHaveLength(2);
+  expect(texts.some((text) => text.includes("Renamed since"))).toBe(false);
+});
+
 it("names a linked issue row by its kind, number and title, not its URL", async () => {
   await using screen = await setup();
   await act(async () => {
@@ -437,7 +474,6 @@ it("keeps Ready pending when refreshed detail becomes mergeable before the actio
       number={1}
       status={null}
       project={repositoryProject}
-      label="Test PR"
       onOpen={vi.fn()}
     />
   );

@@ -88,6 +88,7 @@ export function useOpenIssueLink(
         tracker: target.ref.tracker,
         scope: target.ref.scope,
         key: target.ref.key,
+        selectedIssueUrl: targetUrl,
       };
       // Already on the Issues page, the list keeps the filters it is showing.
       if (window.location.pathname === "/issues") {

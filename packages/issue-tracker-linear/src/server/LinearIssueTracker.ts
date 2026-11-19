@@ -332,30 +332,45 @@ const notFound = (operation: string) =>
 const failed = (operation: string, detail: string) =>
   new IssueTrackerError({ tracker: LinearApi.KIND, operation, reason: "failed", detail });
 
-/** Keys repeat across workspaces, so an issue outside the one its link named is not that issue. */
-function requireWorkspace(operation: string, issueUrl: string, workspace: string | undefined) {
-  if (workspace === undefined) return Effect.void;
-  let named: string | undefined;
+function workspaceOfIssueUrl(url: string): string | undefined {
   try {
-    named = parseLinearIssueUrl(new URL(issueUrl))?.workspace;
+    return parseLinearIssueUrl(new URL(url))?.workspace;
   } catch {
-    named = undefined;
+    return undefined;
   }
-  return named?.toLowerCase() === workspace.toLowerCase()
-    ? Effect.void
-    : Effect.fail(
-        new IssueTrackerError({
-          tracker: LinearApi.KIND,
-          operation,
-          reason: "not-found",
-          detail: "This issue link names another Linear workspace than the connected one.",
-        }),
-      );
 }
 
 export const make: Effect.Effect<StandaloneIssueTrackerApi, never, LinearApi.LinearApi> =
   Effect.gen(function* () {
     const linear = yield* LinearApi.LinearApi;
+
+    /**
+     * Keys repeat across workspaces, so an issue outside the one its link named is not that issue.
+     * A link saved before the workspace was renamed names an old key, which Linear still redirects.
+     */
+    const requireWorkspace = Effect.fn("LinearIssueTracker.requireWorkspace")(function* (
+      operation: string,
+      issueUrl: string,
+      workspace: string | undefined,
+    ) {
+      if (workspace === undefined) return;
+      const wanted = workspace.toLowerCase();
+      const current = workspaceOfIssueUrl(issueUrl);
+      if (current?.toLowerCase() === wanted) return;
+      const connected = current === undefined ? null : yield* linear.viewer();
+      if (
+        connected?.workspace.toLowerCase() === current?.toLowerCase() &&
+        connected?.previousWorkspaces.some((key) => key.toLowerCase() === wanted)
+      ) {
+        return;
+      }
+      return yield* new IssueTrackerError({
+        tracker: LinearApi.KIND,
+        operation,
+        reason: "not-found",
+        detail: "This issue link names another Linear workspace than the connected one.",
+      });
+    });
 
     const requireIdentifier = (operation: string, key: string) => {
       const identifier = parseIdentifier(key);

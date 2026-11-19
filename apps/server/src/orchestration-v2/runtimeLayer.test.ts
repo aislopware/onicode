@@ -4157,6 +4157,42 @@ it.layer(layerTest)("OrchestrationV2LayerLive lifecycle", (it) => {
       yield* worker.drain();
       assert.deepEqual((yield* orchestrator.getThreadShell(threadId))?.issues, []);
       assert.deepEqual((yield* orchestrator.getThreadProjection(threadId)).thread.issues, []);
+
+      // Two Linear workspaces can both have ENG-7: each links and unlinks on its own.
+      const linear = {
+        tracker: IssueTrackerKind.make("linear"),
+        host: "linear.app",
+        scope: "ENG",
+        key: "ENG-7",
+      };
+      for (const workspace of ["acme", "othercorp"]) {
+        yield* orchestrator.dispatch({
+          type: "thread.issue.link",
+          commandId: CommandId.make(`issue-link-${workspace}`),
+          threadId,
+          ...linear,
+          workspace,
+          projectId,
+          url: `https://linear.app/${workspace}/issue/ENG-7`,
+          displayKey: "ENG-7",
+          title: `ENG-7 in ${workspace}`,
+          source: "agent",
+        });
+      }
+      yield* orchestrator.dispatch({
+        type: "thread.issue.unlink",
+        commandId: CommandId.make("issue-unlink-othercorp"),
+        threadId,
+        ...linear,
+        workspace: "othercorp",
+      });
+      yield* worker.drain();
+      assert.deepEqual(
+        (yield* orchestrator.getThreadProjection(threadId)).thread.issues?.map(
+          ({ workspace, title }) => ({ workspace, title }),
+        ),
+        [{ workspace: "acme", title: "ENG-7 in acme" }],
+      );
     }),
   );
 

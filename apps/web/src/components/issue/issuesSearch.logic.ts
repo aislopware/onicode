@@ -2,6 +2,8 @@ import { pullRequestFilterProjects } from "@onicode/client-runtime/pull-request-
 import type { EnvironmentProject } from "@onicode/client-runtime/state/models";
 import type { EnvironmentId, ProjectId } from "@onicode/contracts";
 
+import type { IssueSurfaceTarget } from "~/rightPanelStore";
+
 import type { IssuesSearch } from "./IssuesPage";
 
 // The router reads a bare `key=42` as a number.
@@ -36,7 +38,35 @@ export const issuesSearchFromUrl = (raw: Record<string, unknown>): IssuesSearch 
   tracker: text(raw.tracker),
   scope: text(raw.scope),
   key: text(raw.key),
+  selectedIssueUrl: text(raw.selectedIssueUrl),
 });
+
+/** The panel tab a link into the page names, before any row was pressed. */
+export const issueSurfaceTargetFromSearch = (
+  search: Pick<
+    IssuesSearch,
+    | "selectedEnvironmentId"
+    | "selectedProjectId"
+    | "selectedHost"
+    | "tracker"
+    | "scope"
+    | "key"
+    | "selectedIssueUrl"
+  >,
+): IssueSurfaceTarget | null =>
+  !search.tracker || !search.scope || !search.key || !search.selectedProjectId
+    ? null
+    : {
+        ...(search.selectedEnvironmentId === undefined
+          ? {}
+          : { environmentId: search.selectedEnvironmentId }),
+        projectId: search.selectedProjectId,
+        ...(search.selectedHost === undefined ? {} : { host: search.selectedHost }),
+        tracker: search.tracker,
+        scope: search.scope,
+        key: search.key,
+        ...(search.selectedIssueUrl === undefined ? {} : { url: search.selectedIssueUrl }),
+      };
 
 /** One choice per project: projects on one repository can read different Linear teams. */
 export const issueFilterProjects = (

@@ -507,6 +507,11 @@ export const ThreadIssueKey = Schema.Struct({
   host: TrimmedNonEmptyString,
   scope: TrimmedNonEmptyString,
   key: TrimmedNonEmptyString,
+  /**
+   * The workspace a standalone tracker's link named, as `IssueRef.workspace`. Absent on links
+   * made before it was kept, and from older clients; such a key matches any workspace's.
+   */
+  workspace: Schema.optional(TrimmedNonEmptyString),
 });
 export type ThreadIssueKey = typeof ThreadIssueKey.Type;
 
@@ -526,13 +531,22 @@ export const ThreadIssueLink = Schema.Struct({
 });
 export type ThreadIssueLink = typeof ThreadIssueLink.Type;
 
+const issueKeyOf = (key: ThreadIssueKey) =>
+  `${key.tracker}\u0000${key.host.trim().toLowerCase()}\u0000${key.scope.trim().toLowerCase()}\u0000${key.key.trim().toLowerCase()}`;
+
 /** Case-insensitive throughout: issue keys are numbers or, like Linear's `ENG-7`, any case. */
 export function threadIssueKeyOf(key: ThreadIssueKey): string {
-  return `${key.tracker}\u0000${key.host.trim().toLowerCase()}\u0000${key.scope.trim().toLowerCase()}\u0000${key.key.trim().toLowerCase()}`;
+  return `${issueKeyOf(key)}\u0000${key.workspace?.trim().toLowerCase() ?? ""}`;
 }
 
+/** Two workspaces' `ENG-7` differ; a key without a workspace matches either. */
 export function threadIssueKeysEqual(left: ThreadIssueKey, right: ThreadIssueKey): boolean {
-  return threadIssueKeyOf(left) === threadIssueKeyOf(right);
+  return (
+    issueKeyOf(left) === issueKeyOf(right) &&
+    (left.workspace === undefined ||
+      right.workspace === undefined ||
+      left.workspace.trim().toLowerCase() === right.workspace.trim().toLowerCase())
+  );
 }
 
 /**

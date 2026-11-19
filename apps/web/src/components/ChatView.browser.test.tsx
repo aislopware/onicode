@@ -358,6 +358,15 @@ it("reads only the linked issues a thread shows", async () => {
   // Expanding one thread's issues leaves the next thread's collapsed.
   await userEvent.click(details.getByRole("button", { name: "Show 97 more" }));
   await vi.waitFor(() => expect(detailsIssues.elements()).toHaveLength(100));
+  // Revealed rows read as they scroll into view, not all at once; the panel skipped the middle.
+  await act(() =>
+    details
+      .getByRole("link", { name: "Issue #40: Issue number 40" })
+      .element()
+      .scrollIntoView({ block: "start" }),
+  );
+  await vi.waitFor(() => expect(read.has("40")).toBe(true));
+  expect(read.has("70")).toBe(false);
   await act(() => router.navigate({ to: `/${ENVIRONMENT_ID}/${few.id}` }));
   await expect.element(details.getByRole("button", { name: "Show 2 more" })).toBeVisible();
   expect(detailsIssues.elements()).toHaveLength(3);

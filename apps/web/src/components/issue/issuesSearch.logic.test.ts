@@ -3,7 +3,12 @@ import { describe, expect, it } from "vite-plus/test";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/models";
 import { EnvironmentId, ProjectId } from "@onicode/contracts";
 
-import { issueFilterProjects, issueProjectScope, issuesSearchFromUrl } from "./issuesSearch.logic";
+import {
+  issueFilterProjects,
+  issueProjectScope,
+  issueSurfaceTargetFromSearch,
+  issuesSearchFromUrl,
+} from "./issuesSearch.logic";
 
 describe("issuesSearchFromUrl", () => {
   it("replaces a malformed filter instead of letting the raw value through", () => {
@@ -39,6 +44,29 @@ describe("issuesSearchFromUrl", () => {
     });
     expect(issuesSearchFromUrl({ issueProject: 42 }).issueProject).toBe("42");
     expect(issuesSearchFromUrl({ q: long("query") }).q).toHaveLength(200);
+  });
+
+  it("reopens the selected issue with its link, so a tab Back recreates reads its workspace", () => {
+    const url = "https://linear.app/acme/issue/ENG-7/a-long-title";
+    const search = issuesSearchFromUrl({
+      selectedEnvironmentId: "server",
+      selectedProjectId: "project",
+      selectedHost: "linear.app",
+      tracker: "linear",
+      scope: "ENG",
+      key: "ENG-7",
+      selectedIssueUrl: url,
+    });
+    expect(issueSurfaceTargetFromSearch(search)).toEqual({
+      environmentId: "server",
+      projectId: "project",
+      host: "linear.app",
+      tracker: "linear",
+      scope: "ENG",
+      key: "ENG-7",
+      url,
+    });
+    expect(issueSurfaceTargetFromSearch({ ...search, key: undefined })).toBeNull();
   });
 });
 

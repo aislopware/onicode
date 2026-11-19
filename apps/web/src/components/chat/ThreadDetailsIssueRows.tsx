@@ -4,6 +4,7 @@ import { T, useGT, Var } from "gt-react";
 import { ChevronDownIcon, ChevronUpIcon, MessageSquareIcon } from "lucide-react";
 import { memo, useState, type MouseEvent } from "react";
 
+import { useSeenOnce } from "~/hooks/useSeenOnce";
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "~/rightPanelStore";
 import { useServerConfigs } from "~/state/entities";
@@ -31,16 +32,24 @@ function LinkedIssueRowImpl({
   compact,
   mountScope,
   onOpen,
+  deferRead = false,
 }: {
   link: ThreadIssueLink;
   threadRef: ScopedThreadRef;
   compact: boolean;
   mountScope: IssueRowMountScope;
   onOpen: (() => void) | undefined;
+  /** Waits to read the summary until the row is on screen. */
+  deferRead?: boolean;
 }) {
   const gt = useGT();
   const configs = useServerConfigs();
-  const detail = useLinkedIssueSummary(threadRef.environmentId, link, mountScope);
+  const { seen, ref } = useSeenOnce(deferRead);
+  const detail = useLinkedIssueSummary(
+    threadRef.environmentId,
+    seen ? link : undefined,
+    mountScope,
+  );
   const trackerPresentation = issueTrackerPresentation(link.tracker);
   const state = detail === null ? null : issueStatePresentation(detail.state);
   const Icon = state?.Icon ?? IssueGlyph.issue;
@@ -108,7 +117,7 @@ function LinkedIssueRowImpl({
     </>
   );
   return compact ? (
-    <div className="pb-1.5">
+    <div ref={ref} className="pb-1.5">
       <Tooltip>
         <TooltipTrigger
           render={<ThreadDetailsControl part="title" render={<a {...anchorProps} />} />}
@@ -134,6 +143,7 @@ function LinkedIssueRowImpl({
   ) : (
     <a
       {...anchorProps}
+      ref={ref}
       className={cn(
         PULL_REQUEST_ROW_CLASS,
         "px-2 hover:bg-accent/60 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
@@ -167,7 +177,7 @@ export function ThreadDetailsIssueRows({
   const [expandedThreadKey, setExpandedThreadKey] = useState<string | null>(null);
   const expanded = expandedThreadKey === threadKey;
   const hidden = links.length - COLLAPSED_ISSUE_ROWS;
-  const row = (link: ThreadIssueLink) => (
+  const row = (link: ThreadIssueLink, index: number) => (
     <LinkedIssueRow
       // Links made before keys compared case-insensitively may repeat an issue.
       key={`${threadIssueKeyOf(link)} ${link.key}`}
@@ -176,6 +186,7 @@ export function ThreadDetailsIssueRows({
       compact={compact}
       mountScope={mountScope}
       onOpen={onOpen}
+      deferRead={index >= COLLAPSED_ISSUE_ROWS}
     />
   );
   return (
@@ -183,7 +194,7 @@ export function ThreadDetailsIssueRows({
       {links.slice(0, COLLAPSED_ISSUE_ROWS).map(row)}
       {expanded ? (
         <div data-thread-details-issue-list className="flex flex-col">
-          {links.slice(COLLAPSED_ISSUE_ROWS).map(row)}
+          {links.map(row).slice(COLLAPSED_ISSUE_ROWS)}
         </div>
       ) : null}
       {hidden > 0 ? (

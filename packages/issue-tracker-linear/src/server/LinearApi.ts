@@ -102,6 +102,8 @@ export class LinearApi extends Context.Service<
         readonly viewer: LinearUser;
         /** The workspace's URL key, the first path segment of its issue links. */
         readonly workspace: string;
+        /** Keys the workspace was renamed from, which Linear still redirects to it. */
+        readonly previousWorkspaces: ReadonlyArray<string>;
         readonly teams: ReadonlyArray<{
           readonly id: string;
           readonly key: string;
@@ -314,6 +316,7 @@ export const make = Effect.gen(function* () {
       Effect.map((data) => ({
         viewer: data.viewer,
         workspace: data.organization.urlKey,
+        previousWorkspaces: data.organization.previousUrlKeys,
         teams: data.teams.nodes,
       })),
     );

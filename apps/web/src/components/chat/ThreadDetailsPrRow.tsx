@@ -92,7 +92,6 @@ export function ThreadDetailsPrRow({
   reference: linkedReference,
   status,
   project,
-  label,
   onOpen,
   onActed,
   onStopWatching,
@@ -104,7 +103,6 @@ export function ThreadDetailsPrRow({
   reference?: Pick<PullRequestRef, "host" | "repository" | "number"> | null;
   status: PrStatusIndicator | null;
   project: EnvironmentProject | null;
-  label: string;
   onOpen: (event: ReactMouseEvent<HTMLElement>) => void;
   onActed?: () => void;
   onStopWatching?: (() => void) | undefined;
@@ -278,6 +276,7 @@ export function ThreadDetailsPrRow({
     (pr ? resolvePullRequestState({ state: pr.state, isDraft: pr.isDraft === true }, m) : null)
   )?.label.toLowerCase();
   const title = (detail?.title ?? pr?.title)?.trim();
+  const label = title ? `#${number}: ${title}` : `#${number}`;
   const openAriaLabel =
     stateLabel && title
       ? gt(
