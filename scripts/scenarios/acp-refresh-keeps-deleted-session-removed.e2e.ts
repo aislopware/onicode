@@ -137,6 +137,16 @@ test(
       releaseSnapshot.resolve();
       state.close();
       state.closeAllConnections();
+      // The server outlives the test; a second enabled provider breaks later scenarios.
+      await runPromise(
+        Effect.gen(function* () {
+          const client = yield* rpcClient(ONICODE_HOME, app.baseUrl ?? "");
+          yield* client["server.updateSettings"]({
+            patch: {},
+            providerInstanceMutation: { operation: "remove", instanceId },
+          });
+        }).pipe(Effect.scoped, Effect.ignore),
+      );
     }
   },
 );
