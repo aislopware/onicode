@@ -174,6 +174,19 @@ describe("parseSideChatCommand", () => {
     expect(parseSideChatCommand("/btw check @src/a.ts")).toEqual({ prompt: "check @src/a.ts" });
   });
 
+  it("reads /side after context added to an empty composer, and keeps that context", () => {
+    const terminal = "[Terminal 1 lines 1-4](oni-context://v1/terminal/term-1)";
+    const file = "[log.txt](oni-context://v1/file/file-1)";
+    expect(parseSideChatCommand(`${terminal} /side why did this fail?`)).toEqual({
+      prompt: `${terminal} why did this fail?`,
+    });
+    expect(parseSideChatCommand(`${terminal} ${file}\n/btw`)).toEqual({
+      prompt: `${terminal} ${file}`,
+    });
+    expect(parseSideChatCommand(`${terminal} ask /side later`)).toBeNull();
+    expect(parseSideChatCommand("[notes](https://example.com) /side why?")).toBeNull();
+  });
+
   it("ignores other commands and inline mentions", () => {
     expect(parseSideChatCommand("/sidebar")).toBeNull();
     expect(parseSideChatCommand("/btwx")).toBeNull();

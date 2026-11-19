@@ -2867,9 +2867,7 @@ export default function ChatView(props: ChatViewProps) {
       runtimeMode,
       modelSelection: composerRef.current?.getSendContext().selectedModelSelection,
     }),
-    onError: (message) => {
-      if (activeThread) setThreadError(activeThread.id, message);
-    },
+    onError: (message, threadRef) => setThreadError(threadRef.threadId, message),
   });
   // A maximized panel covers the terminal drawer the command runs in.
   const runSideChatShellCommandStable = useStableCallback((command: string) => {

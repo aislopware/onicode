@@ -51,7 +51,6 @@ const state = vi.hoisted(() => ({
   clearDraft: vi.fn(),
   appendAttachments: vi.fn(),
   mergeDraft: vi.fn(),
-  fileHolds: [] as string[],
   questionDrafts: {} as Record<
     string,
     { text: string; attachments: DraftComposerImageAttachment[] }
@@ -129,14 +128,6 @@ vi.mock("../lib/attachmentUpload", async () => {
   };
 });
 vi.mock("../lib/uuid", () => ({ uuidv4: () => "uuid" }));
-vi.mock("../lib/composerAttachmentPreviewRetention", () => ({
-  retainComposerAttachmentFileForPreview: (attachment: { readonly fileUri: string }) => {
-    state.fileHolds.push(attachment.fileUri);
-    return () => {
-      state.fileHolds.splice(state.fileHolds.indexOf(attachment.fileUri), 1);
-    };
-  },
-}));
 vi.mock("./queued-run-edit", () => ({
   useQueuedRunEdit: () => null,
   getQueuedRunEdit: () => null,
@@ -460,7 +451,11 @@ describe("mobile task permissions", () => {
       modelSelection: selection,
       runtimeMode: "approval-required",
     };
-    const startSideChat = vi.fn(async () => true);
+    // The draft stays until the side chat has it, so a restart or a failed start keeps it.
+    const startSideChat = vi.fn(async () => {
+      expect(state.clearDraft).not.toHaveBeenCalled();
+      return true;
+    });
     const composer = useThreadComposerState({ startSideChat });
     expect(composer.sideChatUnavailableReason).toBeNull();
     expect(await composer.onSendMessage()).toBeNull();
@@ -505,33 +500,33 @@ describe("mobile task permissions", () => {
     expect(state.clearDraft).toHaveBeenCalled();
     state.draft = { ...state.draft, context: undefined };
 
-    // A failed start restores the draft: text first, since the merge caps attachments, then
-    // the uncapped attachments. The local file stays on disk meanwhile, and no send runs from
-    // the half-restored draft.
+    // Edits made while it starts stay, with what was sent.
     vi.clearAllMocks();
-    let heldDuringStart: string[] = [];
     startSideChat.mockImplementationOnce(async () => {
-      heldDuringStart = [...state.fileHolds];
+      state.draft = { ...state.draft, text: `${state.draft.text} next draft` };
+      return true;
+    });
+    expect(await useThreadComposerState({ startSideChat }).onSendMessage()).toBeNull();
+    expect(state.clearDraft).not.toHaveBeenCalled();
+    state.draft = { ...state.draft, text: "/side what is this?" };
+
+    // A failed start leaves the draft as sent, and a send meanwhile says why it waits.
+    vi.clearAllMocks();
+    const failing = useThreadComposerState({ startSideChat });
+    startSideChat.mockImplementationOnce(async () => {
+      expect(await failing.onSendMessage()).toBeNull();
       return false;
     });
-    const shot = { id: "shot", fileUri: "file:///shot.png" } as DraftComposerImageAttachment;
-    const sent = { ...state.draft, attachments: [shot] };
-    state.draft = sent;
-    const restoring = useThreadComposerState({ startSideChat });
-    const restoreOrder: string[] = [];
-    state.mergeDraft.mockImplementationOnce(async (_key, content) => {
-      state.draft = { ...sent, text: "new text" };
-      await restoring.onSendMessage();
-      restoreOrder.push(`merge ${content.text}`);
-    });
-    state.appendAttachments.mockImplementationOnce((_key, attachments, options) =>
-      restoreOrder.push(`append ${attachments.length} restore=${options.restore}`),
+    expect(await failing.onSendMessage()).toBeNull();
+    expect(startSideChat).toHaveBeenCalledOnce();
+    expect(Alert.alert).toHaveBeenCalledExactlyOnceWith(
+      "Still sending your previous message.",
+      "Send again once it goes through or fails.",
     );
-    expect(await restoring.onSendMessage()).toBeNull();
-    expect(restoreOrder).toEqual(["merge /side what is this?", "append 1 restore=true"]);
+    expect(state.clearDraft).not.toHaveBeenCalled();
+    expect(state.mergeDraft).not.toHaveBeenCalled();
+    expect(state.appendAttachments).not.toHaveBeenCalled();
     expect(state.enqueue).not.toHaveBeenCalled();
-    expect(heldDuringStart).toEqual(["file:///shot.png"]);
-    expect(state.fileHolds).toEqual([]);
     // A model the send would refuse does not start a side chat either.
     vi.clearAllMocks();
     state.serverConfig = {

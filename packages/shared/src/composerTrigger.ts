@@ -1,3 +1,5 @@
+import { collectComposerContextReferences } from "./composerContextReferences.ts";
+
 export type ComposerTriggerKind = "path" | "pull-request" | "slash-command" | "skill";
 export type ComposerSlashCommand = "model" | "plan" | "default";
 
@@ -142,8 +144,20 @@ export function isClearComposerCommand(text: string): boolean {
   return /^\/clear\s*$/i.test(text.trim());
 }
 
-/** `/side [prompt]`, or its alias `/btw [prompt]`, as the whole message. */
+/**
+ * `/side [prompt]`, or its alias `/btw [prompt]`, as the whole message. Context added to an
+ * empty composer lands before the command, so leading references go with the prompt.
+ */
 export function parseSideChatCommand(text: string): { prompt: string } | null {
-  const match = /^\/(?:side|btw)(?:\s+([\s\S]*))?$/i.exec(text.trim());
-  return match ? { prompt: match[1]?.trim() ?? "" } : null;
+  const leading: string[] = [];
+  let commandStart = 0;
+  for (const reference of collectComposerContextReferences(text)) {
+    if (text.slice(commandStart, reference.start).trim() !== "") break;
+    leading.push(reference.source);
+    commandStart = reference.end;
+  }
+  const match = /^\/(?:side|btw)(?:\s+([\s\S]*))?$/i.exec(text.slice(commandStart).trim());
+  if (!match) return null;
+  const prompt = match[1]?.trim() ?? "";
+  return { prompt: [...leading, prompt].filter(Boolean).join(" ") };
 }

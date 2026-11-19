@@ -112,12 +112,13 @@ import {
   referencedThreadContexts,
 } from "./composerSend.logic";
 import { useMultipleModelSend } from "./useMultipleModelSend";
-import type { SideChatMessage } from "./useSideChat";
+import type { SideChatMessage, SideChatSource } from "./useSideChat";
 import { type ComposerDispatchMode } from "@onicode/client-runtime/state/composer-dispatch";
 import {
   getUploadedAttachments,
   refreshExpiredAttachmentUploads,
   readAttachmentUpload,
+  releaseDraftAttachment,
   releaseDraftAttachments,
   retryAttachmentUpload,
   startAttachmentUpload,
@@ -281,7 +282,9 @@ interface ComposerSendInput {
   readonly anchorNewTurn: TimelineFollow["anchorNewTurn"];
   readonly acknowledgeActiveThreadWoke: () => void;
   /** Resolves true once the side chat started and got the message. */
-  readonly onSideChat?: ((message: SideChatMessage | undefined) => Promise<boolean>) | undefined;
+  readonly onSideChat?:
+    | ((message: SideChatMessage | undefined, source: SideChatSource) => Promise<boolean>)
+    | undefined;
   /** Refuses `/side` with this reason and keeps the draft. */
   readonly sideChatDisabledReason: string | null;
   readonly handleNewThreadInActiveProject: () => void;
@@ -653,78 +656,92 @@ export function useComposerSend(input: ComposerSendInput) {
         return;
       }
       const sendsDraft = hasSendableContent && !sendCtx.answeringPendingUserInput;
+      // Read at Send: the upload below can outlast a change of mode, model or thread.
+      const source = {
+        threadRef: scopeThreadRef(activeThread.environmentId, activeThread.id),
+        runtimeMode,
+        modelSelection: sendCtx.selectedModelSelection,
+      };
+      // The draft keeps the question, its uploads and their progress until the side chat has
+      // them, so a reload or a failed start leaves it to send again.
+      const draftAtSend = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
       sendInFlightRef.current = true;
       if (capabilities.supportsAttachmentUploads) startDraftAttachmentUploads(snapshot.attachments);
-      // Cleared at send, like a regular message, so nothing in it can change or vanish mid-start.
-      if (sendsDraft) {
-        clearComposerDraftContent(composerDraftTarget);
-        promptRef.current = "";
-        composerRef.current?.resetCursorState();
-      }
       const started = await settlePromise(async () => {
-        if (!hasSendableContent) return onSideChat(undefined);
+        if (!hasSendableContent) return onSideChat(undefined, source);
         const attachments = await prepareTurnAttachments({
           environmentId,
           attachments: snapshot.attachments,
           usesAttachmentUploads: capabilities.supportsAttachmentUploads,
           draftTarget: composerDraftTarget,
         });
-        // `onSideChat` forks the thread on screen, which may have changed during the upload.
-        if (currentRouteThreadKeyRef.current !== routeThreadKey) return false;
         const attachmentIds = boundAttachmentIds(attachments, snapshot.attachments);
-        return onSideChat({
-          attachments,
-          ...withMessageContext({
-            text: snapshot.messageText || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
-            context: buildMessageContext({
-              ...snapshot,
-              attachments: snapshot.attachments.map((attachment, index) => ({
-                attachment,
-                attachmentId: attachmentIds[index]!,
-              })),
+        return onSideChat(
+          {
+            attachments,
+            ...withMessageContext({
+              text: snapshot.messageText || ATTACHMENT_ONLY_BOOTSTRAP_PROMPT,
+              context: buildMessageContext({
+                ...snapshot,
+                attachments: snapshot.attachments.map((attachment, index) => ({
+                  attachment,
+                  attachmentId: attachmentIds[index]!,
+                })),
+              }),
             }),
-          }),
-          titleSeed: deriveThreadTitleSeed(
-            {
-              text: snapshot.messageText,
-              attachments: snapshot.attachments,
-              fallbackLabels: sendTitleFallbackLabels(snapshot),
-            },
-            m,
-          ),
-        });
+            titleSeed: deriveThreadTitleSeed(
+              {
+                text: snapshot.messageText,
+                attachments: snapshot.attachments,
+                fallbackLabels: sendTitleFallbackLabels(snapshot),
+              },
+              m,
+            ),
+          },
+          source,
+        );
       }).finally(() => {
         sendInFlightRef.current = false;
       });
-      const startedOk = started._tag === "Success" && started.value;
       if (started._tag === "Failure") {
         const error = squashAtomCommandFailure(started);
         setThreadError(
           activeThread.id,
           error instanceof Error ? error.message : m(msg("Could not start a side chat.")),
         );
+        return;
       }
+      if (!started.value) return;
+      const onRoute = currentRouteThreadKeyRef.current === routeThreadKey;
       if (sendsDraft) {
-        if (startedOk && capabilities.supportsAttachmentUploads) {
-          releaseDraftAttachments(snapshot.attachments);
+        // Edits made meanwhile stay, along with what was sent.
+        if (
+          !composerDraftContentChanged(
+            draftAtSend,
+            useComposerDraftStore.getState().getComposerDraft(composerDraftTarget),
+          )
+        ) {
+          clearComposerDraftContent(composerDraftTarget);
+          if (onRoute) {
+            promptRef.current = "";
+            composerRef.current?.resetCursorState();
+          }
         }
-        // A restore clones the images first, so the sent previews can go either way.
-        if (!startedOk)
-          restoreComposerDraft(composerDraftTarget, { ...snapshot, draftText: promptAtSend });
-        for (const image of snapshot.images) {
-          if (image.previewUrl.startsWith("blob:")) URL.revokeObjectURL(image.previewUrl);
-        }
-        if (!startedOk && currentRouteThreadKeyRef.current === routeThreadKey) {
-          const prompt =
-            useComposerDraftStore.getState().getComposerDraft(composerDraftTarget)?.prompt ??
-            promptAtSend;
-          promptRef.current = prompt;
-          composerRef.current?.resetCursorState({ prompt });
+        const kept = useComposerDraftStore.getState().getComposerDraft(composerDraftTarget);
+        const keptIds = new Set(
+          [...(kept?.images ?? []), ...(kept?.files ?? [])].map((attachment) => attachment.id),
+        );
+        for (const attachment of snapshot.attachments) {
+          if (keptIds.has(attachment.id)) continue;
+          if (capabilities.supportsAttachmentUploads) releaseDraftAttachment(attachment);
+          if (attachment.type === "image" && attachment.previewUrl.startsWith("blob:")) {
+            URL.revokeObjectURL(attachment.previewUrl);
+          }
         }
         return;
       }
       // Answering a question, the composer shows the answer, which lives apart from this draft.
-      if (startedOk && currentRouteThreadKeyRef.current === routeThreadKey) {
+      if (onRoute) {
         if (!sendCtx.answeringPendingUserInput && promptRef.current === promptAtSend) {
           setComposerDraftPrompt(composerDraftTarget, "");
           promptRef.current = "";

@@ -308,6 +308,8 @@ A side chat lets you ask a question about a thread without adding to it. It star
 with what the thread knows, and the thread keeps working while you ask.
 
 On desktop, start a message with `/side` or `/btw`, then your question.
+Attachments and context in the message go with it. The message stays in the composer
+until the side chat opens, so if it can't start, it is still there to send again.
 You can also choose **Side chat** from the **+** menu in the right panel. The side
 chat opens as a tab there, with its own composer. Side chats do not show in the
 sidebar. Find one again under **Side chats** in thread details.
