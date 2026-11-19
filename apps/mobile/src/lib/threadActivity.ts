@@ -1,3 +1,4 @@
+import { makeTurnItemAttemptResolver } from "@onicode/client-runtime/work-log/turn-item-attempt";
 import type {
   ThreadPendingApproval,
   ThreadPendingUserInput,
@@ -2532,26 +2533,9 @@ export function buildThreadFeed(
   const anchoredMessages = options?.anchoredMessages ?? [];
   const resolve = options?.resolve ?? m;
   const locale = options?.locale;
-  const attemptByRootNodeId = new Map(
-    (options?.attempts ?? []).map((attempt) => [attempt.rootNodeId, attempt] as const),
-  );
-  const nodeById = new Map((options?.nodes ?? []).map((node) => [node.id, node] as const));
-  const resolveAttemptId = (item: OrchestrationV2TurnItem): RunAttemptId | null => {
-    if (item.nodeId === null || item.runId === null) return null;
-    let nodeId: OrchestrationV2ExecutionNode["id"] | null = item.nodeId;
-    const visited = new Set<OrchestrationV2ExecutionNode["id"]>();
-    while (nodeId !== null && !visited.has(nodeId)) {
-      visited.add(nodeId);
-      const directAttempt = attemptByRootNodeId.get(nodeId);
-      if (directAttempt?.runId === item.runId) return directAttempt.id;
-      const node = nodeById.get(nodeId);
-      if (node === undefined) return null;
-      const rootAttempt = attemptByRootNodeId.get(node.rootNodeId);
-      if (rootAttempt?.runId === item.runId) return rootAttempt.id;
-      nodeId = node.parentNodeId;
-    }
-    return null;
-  };
+  const resolveAttempt = makeTurnItemAttemptResolver(options?.attempts ?? [], options?.nodes ?? []);
+  const resolveAttemptId = (item: OrchestrationV2TurnItem): RunAttemptId | null =>
+    resolveAttempt(item)?.id ?? null;
   // Thread-wide facts that change rows anywhere in the feed. A cached prefix
   // is reused only while these match the build that produced it.
   // An answer that started a later run stays a normal message at that run's position.
