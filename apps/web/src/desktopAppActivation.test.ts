@@ -408,21 +408,7 @@ describe("desktop app activation", () => {
     await expect(activation).resolves.toMatchObject({ ok: true, projectId: createdProjectId });
   });
 
-  it("keeps a later folder of an older drop from replacing a newer open that showed", async () => {
-    const deps = dependencies();
-    const dropOrder = reserveDesktopAppActivationOrder();
-    await handleDesktopAppActivationRequest(request, deps, dropOrder);
-    await expect(
-      handleDesktopAppActivationRequest({ ...request, requestId: "request-2" }, deps),
-    ).resolves.toMatchObject({ ok: true });
-
-    await expect(
-      handleDesktopAppActivationRequest({ ...request, requestId: "request-3" }, deps, dropOrder),
-    ).resolves.toBeNull();
-    expect(deps.openThread).toHaveBeenCalledTimes(2);
-  });
-
-  it("ranks an activation by when the page received it, not when it was claimed", async () => {
+  it("gives way to a drop made while an activation's claim was in flight", async () => {
     let grant: (claimed: boolean) => void = () => undefined;
     let claimRequested: () => void = () => undefined;
     const claimed = new Promise<void>((resolve) => {
@@ -435,21 +421,34 @@ describe("desktop app activation", () => {
           claimRequested();
         }),
     );
-    const orders: Array<number | undefined> = [];
-    harness.receiver.setHandler(async (input, order) => {
-      orders.push(order);
-      return success(input.requestId);
+    const deps = dependencies({
+      findProject: (_environmentId, workspaceRoot) =>
+        workspaceRoot === request.workspaceRoot
+          ? null
+          : { id: existingProjectId, environmentId, workspaceRoot },
     });
-    const completed = harness.nextCompletion();
+    harness.receiver.setHandler((input, order) =>
+      handleDesktopAppActivationRequest(input, deps, order),
+    );
     harness.deliver();
     await claimed;
-    // A drop made while the claim is in flight.
-    const dropOrder = reserveDesktopAppActivationOrder();
+    await expect(
+      handleDesktopAppActivationRequest(
+        { ...request, requestId: "drop", workspaceRoot: "/workspace/other" },
+        deps,
+        reserveDesktopAppActivationOrder(),
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    const completed = harness.nextCompletion();
     grant(true);
     await completed;
 
-    expect(orders).toHaveLength(1);
-    expect(orders[0]).toBeLessThan(dropOrder);
+    expect(harness.completions).toEqual([
+      expect.objectContaining({ requestId: request.requestId, code: "thread-open-failed" }),
+    ]);
+    // Nor does it add its folder, which the drop may be about to add too.
+    expect(deps.createProject).not.toHaveBeenCalled();
+    expect(deps.openThread).toHaveBeenCalledOnce();
   });
 
   it("lets an older open show its thread when a newer one fails before it could", async () => {

@@ -114,6 +114,8 @@ export async function handleDesktopAppActivationRequest(
   dependencies: DesktopAppActivationDependencies,
   order = reserveDesktopAppActivationOrder(),
 ): Promise<DesktopAppActivationResponse | null> {
+  // Before any write: the newer open may be adding the same folder.
+  if (order < highestShownOrder) return null;
   const open = { order, abort: new AbortController() };
   runningOpens.add(open);
   try {
