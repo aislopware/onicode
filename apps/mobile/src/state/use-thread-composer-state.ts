@@ -125,6 +125,7 @@ import {
 } from "./queued-run-edit";
 import { msg, useLocale, useMessages } from "gt-react-native";
 import { m } from "../i18n/messages";
+import { alertIfSideChatStarting, beginSideChatStart } from "./side-chat-starts";
 import { setPendingConnectionError } from "./use-remote-environment-registry";
 import { clearThreadComposerError, setThreadComposerError } from "./thread-composer-error";
 import {
@@ -249,7 +250,6 @@ export function useThreadComposerState(input: {
   });
   const [isSavingQueuedEdit, setIsSavingQueuedEdit] = useState(false);
   const savingQueuedEditRef = useRef(false);
-  const startingSideChatRef = useRef(false);
 
   const selectedThreadKey = selectedThreadShell
     ? scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id)
@@ -641,15 +641,8 @@ export function useThreadComposerState(input: {
       return null;
     }
 
-    // The draft holds the side question until its side chat starts, so a send now would resend it.
-    if (startingSideChatRef.current) {
-      Dialog.alert(
-        m(msg("Still sending your previous message.")),
-        m(msg("Send again once it goes through or fails.")),
-      );
-      return null;
-    }
     const threadKey = scopedThreadKey(selectedThreadShell.environmentId, selectedThreadShell.id);
+    if (alertIfSideChatStarting(threadKey)) return null;
     const draft = getComposerDraftSnapshot(threadKey);
     if (appAtomRegistry.get(composerContextImportsAtom)[threadKey]) return null;
     const thread = selectedThreadShell;
@@ -717,9 +710,25 @@ export function useThreadComposerState(input: {
       } else if (modelUnavailable) {
         alertModelUnavailable();
       } else {
-        startingSideChatRef.current = true;
+        const endStart = beginSideChatStart(threadKey);
         // The draft keeps the question, its uploads and their progress until the side chat has
         // them, so a restart or a failed start leaves it to send again.
+        const unchanged = () => {
+          const current = getComposerDraftSnapshot(threadKey);
+          return (
+            current.text === draft.text &&
+            JSON.stringify(current.context) === JSON.stringify(draft.context) &&
+            current.attachments.length === attachments.length &&
+            current.attachments.every(
+              (attachment, index) => attachment.id === attachments[index]?.id,
+            )
+          );
+        };
+        // A removed attachment loses its upload, so a change before the fork waits for Send again.
+        const draftChanged = () =>
+          new Error(
+            m(msg("Draft changed while preparing this message. Review it and send again.")),
+          );
         const started = await settlePromise(async () => {
           const prepared = await Effect.runPromise(
             prepareTurnAttachments({
@@ -729,7 +738,10 @@ export function useThreadComposerState(input: {
               uploadAttachment: (attachment) =>
                 uploadComposerAttachmentShared(thread.environmentId, attachment),
             }),
-          );
+          ).catch((error: unknown) => {
+            throw unchanged() ? error : draftChanged();
+          });
+          if (!unchanged()) throw draftChanged();
           if (prepared.status !== "ready") return false;
           return input.startSideChat(
             { environmentId: thread.environmentId, threadId: thread.id },
@@ -751,18 +763,8 @@ export function useThreadComposerState(input: {
           );
         });
         if (AsyncResult.isSuccess(started) && started.value) {
-          // Edits made meanwhile stay, along with what was sent.
-          const current = getComposerDraftSnapshot(threadKey);
-          if (
-            current.text === draft.text &&
-            JSON.stringify(current.context) === JSON.stringify(draft.context) &&
-            current.attachments.length === attachments.length &&
-            current.attachments.every(
-              (attachment, index) => attachment.id === attachments[index]?.id,
-            )
-          ) {
-            clearComposerDraftContent(threadKey);
-          }
+          // Edits made while it forked stay, along with what was sent.
+          if (unchanged()) clearComposerDraftContent(threadKey);
         } else if (AsyncResult.isFailure(started)) {
           const error = squashAtomCommandFailure(started);
           Dialog.alert(
@@ -770,7 +772,7 @@ export function useThreadComposerState(input: {
             error instanceof Error ? error.message : m(msg("Could not start a side chat.")),
           );
         }
-        startingSideChatRef.current = false;
+        endStart();
       }
       return null;
     }

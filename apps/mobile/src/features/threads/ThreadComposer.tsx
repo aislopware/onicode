@@ -1,6 +1,7 @@
 import { threadTitleText } from "@onicode/client-runtime/operations";
 import { Button } from "../../components/ui/Button";
 import * as Dialog from "../../components/ui/Dialog";
+import { alertIfSideChatStarting } from "../../state/side-chat-starts";
 import type { ComposerTextPaste } from "../../native/OniComposerEditor.types";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import type { EnvironmentThreadShell } from "@onicode/client-runtime/state/shell";
@@ -617,6 +618,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       return;
     }
     const threadKey = scopedThreadKey(props.environmentId, props.selectedThread.id);
+    if (alertIfSideChatStarting(threadKey)) return;
     if (inFlightThreadIdsRef.current.has(threadKey)) return;
     inFlightThreadIdsRef.current.add(threadKey);
     await inputRef.current?.flushPendingInput();

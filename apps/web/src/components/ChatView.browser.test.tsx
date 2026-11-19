@@ -61,8 +61,10 @@ const PNG = Uint8Array.from(
   (char) => char.charCodeAt(0),
 );
 
-/** Accepts every attachment upload without sending its bytes, until disposed. */
-/** Answers uploads; each waits for `gate`, when given, before it lands. */
+/**
+ * Accepts every attachment upload without sending its bytes, until disposed. Each waits for
+ * `gate`, when given, before it lands.
+ */
 function acceptAttachmentUploads(gate?: () => Promise<void>): Disposable {
   const mint = answerRpc(WS_METHODS.attachmentsCreateUploadUrl, () =>
     Effect.succeed({ attachmentId: "upload-1", relativeUrl: "/upload", expiresAt: 0 }),
@@ -950,4 +952,34 @@ it("/side sends the draft's attachments and context, and keeps them until it sta
   await vi.waitFor(() =>
     expect((editor.element() as HTMLElement).innerText.trim()).toBe("/side what is this? next"),
   );
+  holdFork = false;
+  await userEvent.keyboard("{Enter}");
+  await sentMessage({ text: "what is this? next" });
+  await expect.element(image).not.toBeInTheDocument();
+
+  // A change before the fork, such as removing an attachment and its upload, waits for Send.
+  uploadGate = new Promise((resolve) => {
+    releaseUpload = resolve;
+  });
+  const uploadsBeforeEdit = uploadsStarted;
+  await sendImageToSideChat();
+  await vi.waitFor(() => expect(uploadsStarted).toBeGreaterThan(uploadsBeforeEdit));
+  await userEvent.keyboard("!");
+  releaseUpload();
+  uploadGate = null;
+  await expect
+    .element(
+      page.getByText("Draft changed while preparing this message. Review it and send again."),
+    )
+    .toBeVisible();
+  expect(forks()).toHaveLength(5);
+  await expect.element(image).toBeVisible();
+
+  // A start that fails after the user left says so where they are.
+  holdFork = true;
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => expect(forks()).toHaveLength(6));
+  await open(other.id, `Answer 0 for ${other.id}.`);
+  await rejectPendingCommand("Side chats are paused.");
+  await expect.element(page.getByText("Side chats are paused.")).toBeVisible();
 });
