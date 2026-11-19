@@ -2682,3 +2682,4 @@ b0e469ceb9	take	fix(updates): a stalled release download retries and resumes (#3
 b6afe8109c	take	fix(web): home paths like ~/.claude/CLAUDE.md no longer show under the workspace folder (#39146); scenario ported as is (mobile shows changedFiles as written, no counterpart)
 ff9efe89f6	take	fix(web): copying items within one list keeps their list markers (#39150)
 9d2db4b23f	take	fix(provider-acp): an ACP compaction no longer keeps a summary its agent cleared (#39151)
+541be77b1b	take	fix(provider-acp): a running tool shows the file a location-only update names (#39147)
