@@ -125,8 +125,9 @@ sessions. The orchestrator still validates the current thread before applying se
 
 Read receipts use `ProjectionStore.getThread` to load only canonical thread metadata. A visit
 advances `lastVisitedAt` monotonically without changing `updatedAt` or decoding history. Shell
-queries read item counts from a per-thread, per-run table that turn-item triggers keep exact, and
-use a partial index for nonterminal background items, including idle items. Latest user-message
+queries read item counts from a per-thread total that triggers keep exact, subtract only
+rolled-back, queued and cancelled runs, and use a partial index for nonterminal background items,
+including idle items. Latest user-message
 reads use an index ordered by update time.
 
 A projection read that orders messages by their first user or assistant turn item groups those
