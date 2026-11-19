@@ -2552,3 +2552,4 @@ a7522ff02f	skip	relay monitoring dashboard only (infra/relay); relay is a remove
 e58d0e9f03	take	adapted: insertText in Onicode's /side test; the draft-changed step still types key by key (paste race handed to a fix thread)
 63899c16b9	take	scenario adapted to the desktop target (second-environment.ts, unpairs after)
 6ea01d4cbe	take	taken as is; scenario runs on the desktop target unchanged
+66235c7f2a	take	taken as is (orchestration; orchestration-v2 suite green)
