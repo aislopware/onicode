@@ -1,4 +1,4 @@
-import { DEFAULT_SERVER_SETTINGS, ProviderInstanceId } from "@onicode/contracts";
+import { DEFAULT_SERVER_SETTINGS, ProjectId, ProviderInstanceId } from "@onicode/contracts";
 import { DEFAULT_CLIENT_SETTINGS, type ClientSettings } from "@onicode/contracts/settings";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -20,6 +20,7 @@ import {
   persistClientSettingsPatch,
   persistClientSettingsUpdate,
   prepareModelPreferencesPatch,
+  splitPatch,
 } from "./useSettings";
 import { applyServerSettingsPatch } from "@onicode/shared/serverSettings";
 
@@ -283,6 +284,15 @@ describe("persistClientSettingsUpdate", () => {
     expect(getClientSettings().wordWrap).toBe(false);
     expect(getClientSettings().browserProfiles).toContainEqual(importedProfile);
   });
+});
+
+it("sends patch-only server keys to the server, not to this device's settings", () => {
+  const { serverPatch, clientPatch } = splitPatch({
+    projectSettingsOverrideKeys: { [ProjectId.make("project")]: { unset: ["defaultAutoPull"] } },
+    diffIgnoreWhitespace: true,
+  });
+  expect(Object.keys(serverPatch)).toEqual(["projectSettingsOverrideKeys"]);
+  expect(clientPatch).toEqual({ diffIgnoreWhitespace: true });
 });
 
 describe("mergeEnvironmentSettings", () => {

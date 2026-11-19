@@ -10,7 +10,7 @@ import {
   type ProviderInstanceMutation,
   type ProviderInstanceId,
   ServerSettings,
-  type ServerSettingsPatch,
+  ServerSettingsPatch,
   sessionGrantsScope,
 } from "@onicode/contracts";
 import {
@@ -259,9 +259,12 @@ export async function persistClientSettingsUpdate(
   });
 }
 
-const SERVER_SETTINGS_KEYS = new Set<string>(Struct.keys(ServerSettings.fields));
+const SERVER_SETTINGS_KEYS = new Set<string>([
+  ...Struct.keys(ServerSettings.fields),
+  ...Struct.keys(ServerSettingsPatch.fields),
+]);
 
-function splitPatch(patch: UnifiedSettingsPatch): {
+export function splitPatch(patch: UnifiedSettingsPatch): {
   serverPatch: ServerSettingsPatch;
   clientPatch: ClientSettingsPatch;
 } {
