@@ -251,6 +251,11 @@ it.effect.each([
     head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0",
   },
   {
+    case: "a proxy challenge without a reason phrase",
+    reply: 'HTTP/1.1 407\r\nProxy-Authenticate: Basic realm="x"\r\nContent-Length: 0\r\n\r\n',
+    head: "HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0",
+  },
+  {
     // Passed on unread, it would desynchronise the next request's response.
     case: "a response head over the size limit",
     reply: `HTTP/1.1 200 OK\r\nX-Padding: ${"a".repeat(300_000)}\r\nContent-Length: 0\r\n\r\n`,
@@ -329,7 +334,12 @@ const openProxyConnection = (proxyPort: number) =>
         );
       return {
         send,
-        closed: (request: string) => Effect.promise(() => (socket.write(request), closed)),
+        closed: (request: string) =>
+          Effect.promise(() => {
+            const from = received.length;
+            socket.write(request);
+            return closed.then((all) => all.slice(from));
+          }),
       };
     }),
   );
@@ -352,12 +362,21 @@ it.effect("keeps a connection to one server for Chromium's next request", () =>
     const response = "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
     expect(yield* connection.send(get("localhost:5173", "/first"), "\r\n\r\nok")).toBe(response);
     expect(yield* connection.send(get("localhost:5173", "/second"), "\r\n\r\nok")).toBe(response);
+    // Each request on the connection is checked again.
+    const anonymous = "GET http://localhost:5173/third HTTP/1.1\r\nHost: localhost:5173\r\n\r\n";
+    expect(yield* connection.closed(anonymous)).toMatch(/^HTTP\/1\.1 407 /);
     // Another server needs its own tunnel; Chromium retries on a new connection.
-    yield* connection.closed(get("localhost:5174", "/third"));
-    expect(endpoint.requests).toEqual(["/api/preview/tunnel?port=5173"]);
+    const other = yield* openProxyConnection(proxyPort);
+    yield* other.send(get("localhost:5173", "/fourth"), "\r\n\r\nok");
+    yield* other.closed(get("localhost:5174", "/fifth"));
+    expect(endpoint.requests).toEqual([
+      "/api/preview/tunnel?port=5173",
+      "/api/preview/tunnel?port=5173",
+    ]);
     expect(endpoint.received.join("")).toBe(
       "GET /first HTTP/1.1\r\nHost: localhost:5173\r\n\r\n" +
-        "GET /second HTTP/1.1\r\nHost: localhost:5173\r\n\r\n",
+        "GET /second HTTP/1.1\r\nHost: localhost:5173\r\n\r\n" +
+        "GET /fourth HTTP/1.1\r\nHost: localhost:5173\r\n\r\n",
     );
   }),
 );
@@ -477,7 +496,9 @@ it.effect("connects straight to the environment's own forwarded origin port", ()
     expect(head).toBe("HTTP/1.1 200 Connection Established");
     expect(yield* exchange(socket, Uint8Array.of(7, 8))).toEqual([7, 8]);
     expect(received).toEqual([7, 8]);
-    // The same port at another loopback address is a server on the environment, so it tunnels.
+    // `localhost` names the forward too; another address at that port is a server there.
+    const named = yield* sendToProxy(proxyPort, connectRequest(`localhost:${port}`, authorization));
+    expect(named.head).toBe("HTTP/1.1 200 Connection Established");
     const other = yield* sendToProxy(proxyPort, connectRequest(`[::1]:${port}`, authorization));
     expect(other.head).toBe("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\nConnection: close");
   }),
