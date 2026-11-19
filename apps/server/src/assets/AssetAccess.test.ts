@@ -1099,6 +1099,10 @@ describe("AssetAccess", () => {
             expect(resolved).toBeNull();
           }
         }
+
+        yield* fs.rename(reportsDirectory, path.join(root, "reports-old"));
+        yield* fs.symlink(path.join(root, ".secret"), reportsDirectory);
+        expect(yield* resolveAsset(token, "key.css")).toBeNull();
       }).pipe(Effect.provide(layerTest)),
   );
 

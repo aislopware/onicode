@@ -1518,12 +1518,24 @@ export const makeGitVcsDriverCore = Effect.fn("makeGitVcsDriverCore")(function* 
         // A dry run names each ref it would move on stderr and is silent when none would.
         if (stderr.trim() === "") return;
         // This fetch may only move refs to objects the repository now holds. If the remote moved
-        // on since the dry run it would download, so it gets an object directory where `pack` is
-        // a file and every transfer is a pack: it then fails, moves nothing, and the next poll
-        // downloads. Git reports the unreadable `pack` on stderr and carries on.
+        // since the dry run it would download, so `pack` is a file and each loose fanout folder a
+        // dangling link (dumb HTTP writes loose objects): writes fail, reads stay silent ENOENT.
+        // The fetch then moves nothing and the next poll downloads. Git warns about `pack` once.
         const sealedObjects = path.join(privateObjects, "sealed");
         yield* fileSystem.makeDirectory(sealedObjects);
         yield* fileSystem.writeFileString(path.join(sealedObjects, "pack"), "");
+        // Where a link cannot be made (Windows without symlink rights) a file seals it too, at the
+        // cost of a "Not a directory" line per object read.
+        yield* Effect.forEach(
+          Array.from({ length: 256 }, (_, n) =>
+            path.join(sealedObjects, n.toString(16).padStart(2, "0")),
+          ),
+          (fanout) =>
+            fileSystem
+              .symlink("unwritable", fanout)
+              .pipe(Effect.catch(() => fileSystem.writeFileString(fanout, ""))),
+          { concurrency: 16, discard: true },
+        );
         yield* executeGit(
           "GitVcsDriver.fetchRemoteForStatus",
           fetchCwd,

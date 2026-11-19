@@ -1,6 +1,7 @@
 // @effect-diagnostics nodeBuiltinImport:off - realpathSync.native resolves Windows 8.3 short names, which the Effect realPath does not.
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFS from "node:fs";
+import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
@@ -5696,6 +5697,97 @@ it.layer(layerTest)("GitVcsDriver core integration", (it) => {
                   .toSorted(),
                 ["tmp_pack_other"],
               );
+            }),
+        );
+
+        it.effect(
+          "keeps the remote branch on objects the repository holds when a dumb HTTP remote moves between fetches",
+          () =>
+            Effect.gen(function* () {
+              const path = yield* Path.Path;
+              const cwd = yield* makeTmpDir();
+              const remote = yield* makeTmpDir("git-vcs-driver-remote-");
+              const updater = yield* makeTmpDir("git-vcs-driver-updater-");
+              const { initialBranch } = yield* initRepoWithCommit(cwd);
+              yield* git(remote, ["init", "--bare"]);
+              NodeChildProcess.execFileSync("git", [
+                "--git-dir",
+                remote,
+                "config",
+                "receive.unpackLimit",
+                "100",
+              ]);
+              yield* git(cwd, ["remote", "add", "origin", remote]);
+              yield* git(cwd, ["push", "-u", "origin", initialBranch]);
+              yield* git(updater, ["clone", remote, "."]);
+              yield* git(updater, ["config", "user.email", "test@test.com"]);
+              yield* git(updater, ["config", "user.name", "Test"]);
+              yield* writeTextFile(updater, "remote.txt", "remote\n");
+              yield* git(updater, ["add", "remote.txt"]);
+              yield* git(updater, ["commit", "-m", "remote commit"]);
+              yield* git(updater, ["push", "origin", initialBranch]);
+              yield* writeTextFile(updater, "pushed.txt", "pushed\n");
+              yield* git(updater, ["add", "pushed.txt"]);
+              yield* git(updater, ["commit", "-m", "pushed between connections"]);
+              // Small pushes land loose, so the static walker downloads loose objects.
+              yield* git(updater, ["push", "origin", "HEAD:refs/pending/push"]);
+              const pending = yield* git(updater, ["rev-parse", "HEAD"]);
+              assert.isTrue(
+                NodeFS.existsSync(
+                  path.join(remote, "objects", pending.slice(0, 2), pending.slice(2)),
+                ),
+              );
+              NodeChildProcess.execFileSync("git", ["--git-dir", remote, "update-server-info"]);
+
+              let refListings = 0;
+              const server = yield* Effect.acquireRelease(
+                Effect.sync(() =>
+                  NodeHttp.createServer((request, response) => {
+                    const urlPath = decodeURIComponent((request.url ?? "/").split("?")[0] ?? "/");
+                    if (urlPath === "/info/refs" && ++refListings === 2) {
+                      NodeChildProcess.execFileSync("git", [
+                        "--git-dir",
+                        remote,
+                        "update-ref",
+                        `refs/heads/${initialBranch}`,
+                        "refs/pending/push",
+                      ]);
+                      NodeChildProcess.execFileSync("git", [
+                        "--git-dir",
+                        remote,
+                        "update-server-info",
+                      ]);
+                    }
+                    const file = path.join(remote, path.normalize(urlPath));
+                    if (!file.startsWith(remote) || !NodeFS.existsSync(file)) {
+                      response.writeHead(404).end();
+                      return;
+                    }
+                    response.writeHead(200, { "content-type": "text/plain" });
+                    response.end(NodeFS.readFileSync(file));
+                  }),
+                ),
+                (server) => Effect.sync(() => server.close()),
+              );
+              yield* Effect.promise(
+                () =>
+                  new Promise<void>((resolve, reject) => {
+                    server.once("error", reject);
+                    server.listen(0, "127.0.0.1", resolve);
+                  }),
+              );
+              const address = server.address();
+              if (address === null || typeof address === "string") {
+                assert.fail("the HTTP fixture has no port");
+                return;
+              }
+              yield* git(cwd, ["remote", "set-url", "origin", `http://127.0.0.1:${address.port}/`]);
+
+              yield* (yield* GitVcsDriver.GitVcsDriver).statusDetailsRemote(cwd);
+
+              assert.equal(refListings, 2);
+              yield* git(cwd, ["cat-file", "-e", `origin/${initialBranch}^{commit}`]);
+              yield* git(cwd, ["fsck", "--connectivity-only"]);
             }),
         );
       },
