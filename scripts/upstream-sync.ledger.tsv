@@ -2557,3 +2557,4 @@ e58d0e9f03	take	adapted: insertText in Onicode's /side test; the draft-changed s
 eb46038e3a	take	taken; import conflict merged with Onicode's backgroundWorkTextPreview
 38e946455a	take	adopted upstream's candidate-loop relabelThreadLinks over Onicode's inline decode (same behavior, simpler); hosted-link wording dropped
 6845207825	skip	relay only (infra/relay managed endpoints); relay is a removed surface
+7bae751d89	take	taken as is; scenario runs on the desktop target unchanged
