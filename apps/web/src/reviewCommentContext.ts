@@ -474,6 +474,8 @@ export function buildDiffReviewComment(input: {
   fileDiff: FileDiffMetadata;
   range: SelectedLineRange;
   text: string;
+  /** Split view shows a selection in the old column with that side's text. */
+  splitView?: boolean;
 }): ReviewCommentContext | null {
   const includeExpandedContext = !input.fileDiff.isPartial;
   const startIndex = findDiffReviewLineIndex(
@@ -496,7 +498,9 @@ export function buildDiffReviewComment(input: {
     input.fileDiff,
     includeExpandedContext,
     { startIndex: normalizedStartIndex, endIndex: normalizedEndIndex },
-    input.range.side === "deletions" && (input.range.endSide ?? input.range.side) === "deletions",
+    input.splitView === true &&
+      input.range.side === "deletions" &&
+      (input.range.endSide ?? input.range.side) === "deletions",
   );
   const oldRange = getDiffRange(selectedLines, "oldLineNumber");
   const newRange = getDiffRange(selectedLines, "newLineNumber");

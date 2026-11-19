@@ -160,8 +160,8 @@ describe("diff comment drafts", () => {
     ]);
     expect(container.querySelector("p")?.textContent).toBe("Keep this draft");
 
-    // A patch replaced before submit, without the line the draft was opened on, still takes
-    // the comment as the user saw it.
+    // A partial patch replaced before submit can lack the line a hydrated viewer still shows;
+    // the comment is still the one the user selected.
     await click("Comment on shared.ts");
     await typeComment("Second thought");
     const moved = file("shared.ts", 3, "rename-pure", "old.ts");

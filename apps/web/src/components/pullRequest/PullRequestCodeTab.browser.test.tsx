@@ -15,7 +15,7 @@ import { __setClientSettingsForTests } from "../../hooks/useSettings";
 import { setAppearanceMode } from "../../hooks/useTheme";
 import { DEFAULT_CLIENT_SETTINGS } from "@onicode/contracts/settings";
 
-const { diffAtom, pagedDiffAtom } = await vi.hoisted(async () => {
+const { diffAtom, pagedDiffAtom, singlePage } = await vi.hoisted(async () => {
   const { AsyncResult, Atom } = await import("effect/reactivity");
   const filePatch = (path: string) =>
     [
@@ -48,10 +48,12 @@ const { diffAtom, pagedDiffAtom } = await vi.hoisted(async () => {
     },
     "page-2": { patch: filePatch("late.test.ts"), truncated: false, nextCursor: null },
   };
+  const singlePage = { current: firstPage, first: firstPage };
   return {
+    singlePage,
     // An environment query whose refetch returns equal content hands back the previous value
     // itself, so a refresh publishes a new result around the very same page.
-    diffAtom: Atom.make(() => AsyncResult.success(firstPage)),
+    diffAtom: Atom.make(() => AsyncResult.success(singlePage.current)),
     pagedDiffAtom: Atom.family((cursor: string) =>
       Atom.make(() => AsyncResult.success(pages[cursor]!)),
     ),
@@ -173,6 +175,7 @@ function setup({ paged }: { paged: boolean }) {
   window.localStorage.removeItem("onicode.diffHideTestFiles");
   __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS);
   mocks.paged = paged;
+  singlePage.current = singlePage.first;
   mocks.diffCommits = [];
   mocks.viewedPaths = null;
   mocks.viewedListeners.clear();
@@ -559,4 +562,59 @@ it("keeps an unsent reply when the appearance switches between light and dark", 
   setAppearanceMode("light");
 
   await expect.element(reply()).toHaveValue("Unsent");
+});
+
+it("keeps an open line comment and its text through a refresh that changes the page", async () => {
+  setup({ paged: false });
+  __setClientSettingsForTests({ ...DEFAULT_CLIENT_SETTINGS, diffFilesCollapsed: false });
+  using _settings = {
+    [Symbol.dispose]: () => __setClientSettingsForTests(DEFAULT_CLIENT_SETTINGS),
+  };
+  const commentable: PullRequestDetailView = {
+    ...detail,
+    capabilities: {
+      ...detail.capabilities,
+      review: { ...detail.capabilities.review, inlineComment: true },
+    },
+    viewerPermissions: { ...detail.viewerPermissions, comment: true },
+  };
+  const view = (refreshToken: number) => (
+    <PullRequestCodeTab
+      scrollerRef={() => {}}
+      environmentId={EnvironmentId.make("environment")}
+      reference={commentable}
+      detail={commentable}
+      selectedCommitOid={null}
+      onSelectedCommitChange={() => {}}
+      onRefresh={() => {}}
+      refreshToken={refreshToken}
+    />
+  );
+  const container = document.createElement("div");
+  container.className = "flex h-[700px] w-[900px]";
+  await using screen = await render(view(0), { container });
+  const numberCell = (line: number) =>
+    Array.from(container.querySelectorAll("diffs-container"))
+      .map((host) =>
+        host.shadowRoot?.querySelector<HTMLElement>(
+          `[data-additions] [data-column-number="${line}"], [data-column-number="${line}"]`,
+        ),
+      )
+      .find((cell) => cell != null) ?? null;
+  await vi.waitFor(() => expect(numberCell(3)).not.toBeNull());
+  await userEvent.click(numberCell(3)!);
+  const draft = screen.getByRole("textbox");
+  await draft.fill("Unsent");
+
+  // A push changes the page, and with it every file's render key on it.
+  singlePage.current = {
+    ...singlePage.first,
+    patch: singlePage.first.patch
+      .replace("@@ -1,6 +1,6 @@", "@@ -1,6 +1,7 @@")
+      .replace(" five()", "+six()\n five()"),
+  };
+  await screen.rerender(view(1));
+
+  await expect.element(screen.getByText("six()")).toBeVisible();
+  await expect.element(draft).toHaveValue("Unsent");
 });

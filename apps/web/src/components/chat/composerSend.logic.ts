@@ -160,6 +160,7 @@ export interface ComposerSendSettings extends ComposerModelSettings {
  */
 export interface SendAtPress {
   readonly approvals: ApprovalsAtPress;
-  /** Absent once the draft moved to another environment, whose composer then decides. */
-  readonly settings?: ComposerSendSettings;
+  /** A draft moved to another environment since goes with that composer's mode and model. */
+  readonly environmentId: EnvironmentId;
+  readonly settings: ComposerSendSettings;
 }

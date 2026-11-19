@@ -340,7 +340,8 @@ export interface ChatComposerHandle {
     detectTrigger?: boolean;
   }) => void;
   addTerminalContext: (selection: TerminalContextSelection) => void;
-  getSendContext: () => {
+  /** With `pressed`, the model is the one Send was pressed with, and availability is judged for it. */
+  getSendContext: (pressed?: ComposerModelSettings) => {
     answeringPendingUserInput: boolean;
     prompt: string;
     images: ComposerImageAttachment[];
@@ -1005,6 +1006,20 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     selectedProvider,
     selectedModel,
     selectedProviderModels,
+  };
+  // A held send goes with the model of its press, which the catalog may have dropped since.
+  const pressedProviderAvailable = (pressed: ComposerModelSettings) => {
+    if (pressed.multipleModelSelections !== null) return true;
+    const entry = providerInstanceEntries.find(
+      (candidate) =>
+        candidate.instanceId === pressed.selectedModelSelection.instanceId &&
+        candidate.enabled &&
+        candidate.isAvailable,
+    );
+    return (
+      entry !== undefined &&
+      getAntigravitySendBlockReason(entry.snapshot, pressed.selectedModel, m) === null
+    );
   };
   const selectedModelForPicker = selectedModel;
   const modelOptionsByInstance = new Map<ProviderInstanceId, ReadonlyArray<AppModelOption>>();
@@ -2235,6 +2250,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           .filter((requestId) => !heldRequestIds.has(requestId)),
         pending: pendingApprovals.map((approval) => approval.requestId),
       },
+      environmentId,
       settings: { runtimeMode, ...sendModelSettings },
     };
     if (voiceInputActive) {
@@ -3310,7 +3326,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
           composerEditorRef.current?.focusAt(nextCollapsedCursor);
         });
       },
-      getSendContext: () => ({
+      getSendContext: (pressed) => ({
         answeringPendingUserInput: activePendingProgress !== null,
         shownPendingApprovalIds: pendingApprovals
           .map((approval) => approval.requestId)
@@ -3323,10 +3339,12 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
         reviewComments: composerReviewComments,
         threadContexts: composerThreadContexts,
         environmentContexts: composerEnvironmentContexts,
-        ...sendModelSettings,
+        ...(pressed ?? sendModelSettings),
         providerAvailable:
-          multipleModelSelections !== null ||
-          (!noProviderAvailable && providerSendBlockReason === null),
+          pressed === undefined
+            ? multipleModelSelections !== null ||
+              (!noProviderAvailable && providerSendBlockReason === null)
+            : pressedProviderAvailable(pressed),
       }),
       setMultipleModelSelections,
       validateProviderInput: (providerInput: string) => {
@@ -3390,6 +3408,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       selectedProvider,
       selectedProviderModels,
       sendModelSettings,
+      pressedProviderAvailable,
       compactThreadContextStable,
     ],
   );

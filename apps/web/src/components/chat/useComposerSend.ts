@@ -461,11 +461,10 @@ export function useComposerSend(input: ComposerSendInput) {
       return;
     }
 
-    const liveSendCtx = composerRef.current?.getSendContext();
     // The draft's content is read now, the mode and model as they were at Send.
-    const sendCtx =
-      liveSendCtx && atPress?.settings ? { ...liveSendCtx, ...atPress.settings } : liveSendCtx;
-    const sendRuntimeMode = atPress?.settings?.runtimeMode ?? runtimeMode;
+    const pressed = atPress?.environmentId === environmentId ? atPress.settings : undefined;
+    const sendCtx = composerRef.current?.getSendContext(pressed);
+    const sendRuntimeMode = pressed?.runtimeMode ?? runtimeMode;
     const shownIdsAtSend = sendCtx?.shownPendingApprovalIds ?? [];
     const approvalsAtPress = atPress?.approvals ?? {
       shown: shownIdsAtSend,
@@ -1776,17 +1775,7 @@ export function useComposerSend(input: ComposerSendInput) {
     const ready = await refresh.finally(() => {
       sendInFlightRef.current = false;
     });
-    // The draft may have moved to another environment, whose composer picks the mode and model.
-    const [event, dispatchMode, submissionIntent, atPress, directAnnotation] = args;
-    if (ready) {
-      return onSendLatest(
-        event,
-        dispatchMode,
-        submissionIntent,
-        atPress && { approvals: atPress.approvals },
-        directAnnotation,
-      );
-    }
+    if (ready) return onSendLatest(...args);
   };
   return { onSend: onSendWithRouting };
 }

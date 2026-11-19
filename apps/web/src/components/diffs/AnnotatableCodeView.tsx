@@ -232,6 +232,7 @@ export function AnnotatableCodeView({
       fileDiff: item.fileDiff,
       range,
       text: "",
+      splitView: options.diffStyle === "split",
     });
     if (!comment) return;
     setDraftText("");
