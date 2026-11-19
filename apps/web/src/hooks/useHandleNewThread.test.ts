@@ -335,14 +335,26 @@ describe.each([
       expected: null,
       remapped: false,
     },
-  ])("$name", async ({ acceptOpenedMeanwhile, shown, userText, expected, remapped }) => {
+    {
+      name: "leaves another machine's draft shown meanwhile alone once the caller aborts",
+      acceptOpenedMeanwhile: true,
+      aborted: true,
+      shown: { environmentId: "environment-primary", projectId: "project-local" },
+      userText: false,
+      expected: null,
+      remapped: false,
+    },
+  ])("$name", async ({ acceptOpenedMeanwhile, aborted, shown, userText, expected, remapped }) => {
     // No configured mode, so the open waits on the project file.
     testState.reset(draft, { envMode: null, startFromOrigin: false });
     const projectRef = { environmentId: "environment-ssh", projectId: "project-remote" };
+    const abort = new AbortController();
     const pendingOpen = useNewThreadHandler()(projectRef as never, {
       replace: true,
       ...(acceptOpenedMeanwhile ? { acceptOpenedMeanwhile } : {}),
+      signal: abort.signal,
     });
+    if (aborted) abort.abort();
 
     // The location moves before the route matches do.
     testState.registerDraft({

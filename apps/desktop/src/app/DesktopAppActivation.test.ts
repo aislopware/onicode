@@ -165,4 +165,23 @@ describe("desktop app control server", () => {
       });
     }),
   );
+
+  it.effect("hands on the request id the renderer's answer will be decoded to", () =>
+    Effect.gen(function* () {
+      const platform = yield* HostProcess.Platform;
+      const userId = yield* HostProcess.UserId;
+      if (platform === "win32") return;
+      yield* Effect.promise(async () => {
+        const root = await NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "oni-app-trim-test-"));
+        const target = makeTarget(NodePath.join(root, "userdata"), platform, userId);
+        await startOkServer(target, userId);
+
+        // The completion IPC trims ids, so "abc" and " abc " must not be two pending requests.
+        await expect(
+          exchange(target.address, request(" padded ", platform)),
+        ).resolves.toMatchObject({ ok: true, requestId: "padded" });
+        await NodeFSP.rm(root, { recursive: true, force: true });
+      });
+    }),
+  );
 });
