@@ -66,6 +66,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../components/sidebar/mainAppLocation", () => ({
   getMainAppLocationVersion: () => 0,
+  isAppModalPage: (pathname: string) => pathname.startsWith("/settings") || pathname === "/usage",
+  markAppModalFocusSettled: () => {},
   useCloseAppModal: () => () => Promise.resolve(),
 }));
 vi.mock("../state/session", () => ({
