@@ -2771,3 +2771,4 @@ b68d29b2f7	take	fix(server): storage cleanup removes clean detached worktrees wh
 e7b61491a3	take	fix(server): a delivered handoff of a failed run is not re-sent to later fresh sessions (#39281)
 56cd653164	take	goal pill can be cleared or resumed; onSendCommand stays stable and destructured for the React Compiler
 b5481adcd8	take	scheduled tasks start from the project's default branch; webhook parts left out
+4b697be849	take	fix(web): keep deleted ACP sessions out of pending listings (#39331)
