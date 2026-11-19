@@ -2589,9 +2589,16 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
         yield* service.updateSettings({ enableAgentDeviceAccess: false, defaultAutoPull: true });
         assert.isTrue((yield* service.getSettings).defaultAutoPull);
 
+        // A project's defaults write keeps its stored locked value instead of being refused for it.
+        yield* service.updateProjectSettingsOverride(projectId, { defaultAutoPull: true });
+
         // The user's own value stays on disk, ready for when the policy is removed.
         const stored = JSON.parse(yield* fs.readFileString(config.settingsPath));
         assert.isTrue(stored.enableAgentDeviceAccess);
+        assert.deepEqual(stored.projectSettingsOverrides[projectId], {
+          enableAgentDeviceAccess: true,
+          defaultAutoPull: true,
+        });
       }).pipe(Effect.provide(layerServerSettings(policy))),
     );
     it.effect("accepts a project override that brings the locked value inside a new setting", () =>
