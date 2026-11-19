@@ -398,6 +398,11 @@ const STANDARD_WEB_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
     sidebar: "#f3f3f5",
     sidebarControlSurface: "#eaeaed",
     sidebarRowHover: "#f9f9fa",
+    focus: "#3b5de8",
+    accent: "#3b5de8",
+    update: "#3b5de8",
+    updateForeground: "#3b5de8",
+    messageAction: "#3b5de8",
   },
   dark: {
     canvas: "#121213",
@@ -416,6 +421,10 @@ const STANDARD_WEB_COLORS: Record<ThemeAppearance, Partial<ThemeColors>> = {
     sidebarMutedForeground: "#a0a0a2",
     sidebarControlSurface: "#111112",
     terminalBackground: "#121213",
+    focus: "#456af6",
+    accent: "#456af6",
+    update: "#456af6",
+    messageAction: "#456af6",
   },
 };
 
