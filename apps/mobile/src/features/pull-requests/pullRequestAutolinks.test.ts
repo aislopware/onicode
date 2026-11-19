@@ -26,6 +26,9 @@ describe("nativePullRequestMarkdown", () => {
     expect(nativePullRequestMarkdown(text, github, false).markdown).toBe(
       'See <a href="https://example.com">#12</a> and <code>#13</code>, then [#14](https://github.com/team/repo/issues/14).',
     );
+    expect(nativePullRequestMarkdown("<!-- <code> -->\n\n#15", github, false).markdown).toBe(
+      "<!-- <code> -->\n\n[#15](https://github.com/team/repo/issues/15)",
+    );
   });
 
   it("leaves markdown unchanged for a host that links nothing", () => {

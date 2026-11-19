@@ -1588,7 +1588,7 @@ export function decodeMergeMessagesJson(
 /** What a listed merge request needs beyond REST: its approval, reviewer and pipeline state. */
 const LIST_STATE_GRAPHQL_FIELDS = `iid approved approvedBy(first: 1) { nodes { username } }
   reviewers(first: 20) { nodes { username mergeRequestInteraction { reviewState } } }
-  headPipeline { status failed: jobs(retried: false, statuses: [FAILED], first: 20) {
+  headPipeline { status failed: jobs(retried: false, statuses: [FAILED, CANCELED], first: 20) {
     nodes { allowFailure } } }`;
 
 export const LIST_STATES_GRAPHQL_QUERY = `query($fullPath: ID!, $iids: [String!]) {
@@ -1692,8 +1692,9 @@ function toChecksState(
 ): PullRequestChecksState | null {
   if (pipeline?.status == null) return null;
   const status = toPipelineStatus(pipeline.status);
-  // A running pipeline can already hold a failed job; as on GitHub, a failure outranks pending.
-  // Allowed failures past the first page say nothing, so only a listed real one counts.
+  // A running pipeline can already hold a failed or canceled job; as on GitHub, a failure
+  // outranks pending. Allowed failures past the first page say nothing, so only a listed real one
+  // counts.
   if (
     status === "pending" &&
     pipeline.failed?.nodes?.some((job) => job !== null && job.allowFailure !== true) === true
