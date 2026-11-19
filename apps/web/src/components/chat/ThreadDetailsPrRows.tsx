@@ -24,6 +24,7 @@ import {
 } from "@onicode/client-runtime/change-request-links";
 
 import type { ComposerThreadTarget } from "~/composerDraftStore";
+import { useSeenOnce } from "~/hooks/useSeenOnce";
 import { useProjects, useQuietThreadShell } from "~/state/entities";
 import { threadEnvironment } from "~/state/threads";
 import { useAtomCommand } from "~/state/use-atom-command";
@@ -64,20 +65,24 @@ function ThreadDetailsPrLinkRow({
         ) ?? null);
   const linked = linkedPullRequestSnapshotStatus(link);
   const pr = linked?.pr ?? null;
+  // Each row reads the pull request and its checks, and polls them; only once it is on screen.
+  const { seen, ref } = useSeenOnce(true);
   return (
-    <ThreadDetailsPrRow
-      environmentId={environmentId}
-      pr={pr}
-      number={link.number}
-      reference={link}
-      status={prStatusIndicator(pr, linked?.sourceControlProvider, m)}
-      project={project}
-      label={`#${link.number}${link.snapshot === null ? "" : `: ${link.snapshot.title}`}`}
-      onOpen={onOpen}
-      onStopWatching={onStopWatching}
-      composerTarget={composerTarget}
-      {...(onActed ? { onActed } : {})}
-    />
+    <div ref={ref}>
+      <ThreadDetailsPrRow
+        environmentId={environmentId}
+        pr={pr}
+        number={link.number}
+        reference={link}
+        status={prStatusIndicator(pr, linked?.sourceControlProvider, m)}
+        // A row without a project reads nothing.
+        project={seen ? project : null}
+        onOpen={onOpen}
+        onStopWatching={onStopWatching}
+        composerTarget={composerTarget}
+        {...(onActed ? { onActed } : {})}
+      />
+    </div>
   );
 }
 
@@ -213,7 +218,6 @@ export function ThreadDetailsThreadPrRows({
       reference={currentLink}
       status={displayed.status}
       project={rowProject}
-      label={`#${number}${pr?.title.trim() ? `: ${pr.title}` : ""}`}
       onOpen={(event) => openPrLink(event, url)}
       composerTarget={composerTarget}
       {...(onActed ? { onActed } : {})}

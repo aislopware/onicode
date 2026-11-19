@@ -197,7 +197,9 @@ export interface LinearPageInfo extends Schema.Struct.Type<typeof LinearPageInfo
 /** A workspace (referred to as Organization in the API). Workspaces are the root-level container for all teams, users, projects, issues, and settings. Every user belongs to at least one workspace, and all data is scoped within a workspace boundary. */
 export const Organization = Schema.Struct({
   /** The workspace's unique URL key, used in URLs to identify the workspace. */
-  urlKey: Schema.String
+  urlKey: Schema.String,
+  /** Previously used URL keys for the workspace. The last 3 are kept and automatically redirected to the current URL key. */
+  previousUrlKeys: Schema.Array(Schema.String)
 })
 export interface Organization extends Schema.Struct.Type<typeof Organization.fields> {}
 
@@ -223,7 +225,7 @@ export const OniViewer = GraphQL.query("OniViewer", {
     variables: [],
     selections: [
       { name: "viewer", body: ["{...LinearUser}"] },
-      { name: "organization", body: ["{urlKey}"] },
+      { name: "organization", body: ["{urlKey previousUrlKeys}"] },
       { name: "teams", body: ["(first:250){nodes{id key name}}"] }
     ],
     fragments: [

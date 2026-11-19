@@ -4947,6 +4947,9 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
                 host: command.host.trim().toLowerCase(),
                 scope: command.scope.trim(),
                 key: command.key.trim(),
+                ...(command.workspace === undefined
+                  ? {}
+                  : { workspace: command.workspace.trim().toLowerCase() }),
                 projectId: command.projectId,
                 url: command.url,
                 displayKey: command.displayKey,

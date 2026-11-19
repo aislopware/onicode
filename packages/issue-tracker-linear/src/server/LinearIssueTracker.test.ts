@@ -166,7 +166,7 @@ describe("LinearIssueTracker", () => {
       const { tracker, requests } = fakeLinear({
         OniViewer: () => ({
           viewer: JULIUS,
-          organization: { urlKey: "acme" },
+          organization: { urlKey: "acme", previousUrlKeys: [] },
           teams: { nodes: [] },
         }),
         OniIssues: (variables) => {
@@ -257,7 +257,7 @@ describe("LinearIssueTracker", () => {
       const { tracker } = fakeLinear({
         OniViewer: () => ({
           viewer: JULIUS,
-          organization: { urlKey: "acme" },
+          organization: { urlKey: "acme", previousUrlKeys: [] },
           teams: { nodes: [] },
         }),
         OniIssue: (variables) => {
@@ -302,7 +302,7 @@ describe("LinearIssueTracker", () => {
       const { tracker } = fakeLinear({
         OniViewer: () => ({
           viewer: JULIUS,
-          organization: { urlKey: "acme" },
+          organization: { urlKey: "acme", previousUrlKeys: [] },
           teams: { nodes: [] },
         }),
         OniIssue: () => ({
@@ -418,6 +418,11 @@ describe("LinearIssueTracker", () => {
             comments: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
           },
         }),
+        OniViewer: () => ({
+          viewer: JULIUS,
+          organization: { urlKey: "acme", previousUrlKeys: ["acme-old"] },
+          teams: { nodes: [] },
+        }),
       });
       const api = yield* tracker;
       expect(yield* api.getIssueSummary({ ...target, key: "ENG-7" })).toMatchObject({
@@ -436,6 +441,14 @@ describe("LinearIssueTracker", () => {
         api.getComments({ ...target, key: "ENG-7", cursor: "c", workspace: "othercorp" }),
       );
       expect(olderElsewhere.reason).toBe("not-found");
+      // A link saved before the workspace was renamed names its old key, which Linear redirects.
+      expect(
+        (yield* api.getIssueSummary({ ...target, key: "ENG-7", workspace: "Acme-Old" })).key,
+      ).toBe("ENG-7");
+      expect(
+        (yield* api.getComments({ ...target, key: "ENG-7", cursor: "c", workspace: "acme-old" }))
+          .comments,
+      ).toEqual([]);
     }),
   );
 
@@ -481,6 +494,11 @@ describe("LinearIssueTracker", () => {
       expect(unauthenticated.reason).toBe("unauthenticated");
 
       const connected = fakeLinear({
+        OniViewer: () => ({
+          viewer: JULIUS,
+          organization: { urlKey: "acme", previousUrlKeys: [] },
+          teams: { nodes: [] },
+        }),
         OniTeam: () => ({
           teams: {
             nodes: [

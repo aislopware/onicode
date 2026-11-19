@@ -660,12 +660,14 @@ function previewFaviconOf(
 
 function SurfaceIcon({
   surface,
+  active,
   previewUrl,
   previewCapturedUrl,
   theme,
   environmentId,
   pullRequestStatusSeed,
 }: {
+  active: boolean;
   surface: RightPanelSurface;
   previewUrl: string | null;
   previewCapturedUrl: string | null;
@@ -702,7 +704,7 @@ function SurfaceIcon({
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
     case "issue":
-      return <IssueSurfaceIcon surface={surface} environmentId={environmentId} />;
+      return <IssueSurfaceIcon surface={surface} environmentId={environmentId} active={active} />;
     case "side-chat":
       return <SideChatTabIcon environmentId={environmentId} threadId={surface.threadId} />;
     case "device":
@@ -785,19 +787,20 @@ export function resolvePullRequestTabLink(
 function IssueSurfaceIcon({
   surface,
   environmentId,
+  active,
 }: {
   surface: Extract<RightPanelSurface, { kind: "issue" }>;
   environmentId: EnvironmentId | null;
+  active: boolean;
 }) {
   const resolvedEnvironmentId =
     (surface.environmentId as EnvironmentId | undefined) ?? environmentId;
+  // The open tab's panel already reads the detail; any other tab needs only the summary's state.
+  const read = active ? issueEnvironment.detail : issueEnvironment.summary;
   const detail = useEnvironmentQuery(
     resolvedEnvironmentId === null
       ? null
-      : issueEnvironment.detail({
-          environmentId: resolvedEnvironmentId,
-          input: issueSurfaceRef(surface),
-        }),
+      : read({ environmentId: resolvedEnvironmentId, input: issueSurfaceRef(surface) }),
   ).data;
   if (detail === null) return <CircleDotIcon className="size-3 shrink-0" />;
   const presentation = issueStatePresentation(detail.state);
@@ -965,6 +968,7 @@ function RightPanelTab(
       <PanelTabCloseButton label={gt("Close {title}", { title })} onClick={() => onClose(surface)}>
         <SurfaceIcon
           surface={surface}
+          active={props.active}
           previewUrl={props.previewUrl}
           previewCapturedUrl={props.previewCapturedUrl}
           theme={props.theme}

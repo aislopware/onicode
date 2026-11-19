@@ -90,6 +90,7 @@ const make = Effect.gen(function* () {
         host: input.ref.host,
         scope: input.ref.scope,
         key: input.ref.key,
+        ...(input.ref.workspace === undefined ? {} : { workspace: input.ref.workspace }),
         projectId: input.ref.projectId,
         url: input.url,
         displayKey: input.displayKey,
@@ -111,6 +112,7 @@ const make = Effect.gen(function* () {
         host: input.key.host,
         scope: input.key.scope,
         key: input.key.key,
+        ...(input.key.workspace === undefined ? {} : { workspace: input.key.workspace }),
       });
       return { wasLinked: true };
     },

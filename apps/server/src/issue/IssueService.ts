@@ -745,30 +745,22 @@ const make = Effect.gen(function* () {
         writable: served.writable,
       };
       if (standalone === null) return resolved;
-      // Team keys repeat across workspaces; only the credential's canonical issue URL identifies one.
+      // Team keys repeat across workspaces: the tracker refuses an issue outside the one the URL
+      // names, and its canonical URL names the workspace by the key later calls should carry.
       const issue = yield* lender.api
         .getIssue({
           cwd: lender.project.workspaceRoot,
           host: lender.host,
           scope: link.scope,
           key: link.key,
+          workspace: standalone.link.workspace,
         })
         .pipe(Effect.mapError(toIssueError("resolveUrl")));
       const canonicalUrl = parseUrl(issue.url);
       const canonical = canonicalUrl === null ? null : standalone.api.parseIssueUrl(canonicalUrl);
-      if (
-        canonical === null ||
-        canonical.workspace.toLowerCase() !== standalone.link.workspace.toLowerCase()
-      ) {
-        return yield* new IssueOperationError({
-          operation: "resolveUrl",
-          reason: "not-found",
-          detail: "This issue URL does not belong to the connected workspace.",
-        });
-      }
       return {
         ...resolved,
-        workspace: canonical.workspace.toLowerCase(),
+        workspace: (canonical?.workspace ?? standalone.link.workspace).toLowerCase(),
         issue: toDetail(served, issue),
       };
     },

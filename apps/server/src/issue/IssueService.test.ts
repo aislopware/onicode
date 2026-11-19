@@ -36,13 +36,24 @@ function fakeStandaloneTracker(
   return {
     ...fakeTracker({
       getViewer: () => Effect.succeed("usr_julius"),
+      // As Linear does: the connected workspace, or a key it was renamed from.
       getIssue: (input) =>
-        Effect.succeed({
-          ...issue(input.key),
-          url: `https://linear.app/acme/issue/${input.key}/canonical-title`,
-          displayKey: input.key,
-          viewer: "usr_julius",
-        }),
+        input.workspace === undefined ||
+        ["acme", "acme-old"].includes(input.workspace.toLowerCase())
+          ? Effect.succeed({
+              ...issue(input.key),
+              url: `https://linear.app/acme/issue/${input.key}/canonical-title`,
+              displayKey: input.key,
+              viewer: "usr_julius",
+            })
+          : Effect.fail(
+              new IssueTrackerError({
+                tracker: LINEAR,
+                operation: "getIssue",
+                reason: "not-found",
+                detail: "This issue link names another Linear workspace than the connected one.",
+              }),
+            ),
       ...overrides,
     }),
     kind: LINEAR,
@@ -60,6 +71,7 @@ function fakeStandaloneTracker(
         ["https://linear.app/acme/issue/ENG-1/canonical-title", "acme"],
         ["https://linear.app/other-workspace/issue/ENG-1/old-title", "other-workspace"],
         ["https://linear.app/Acme/issue/ENG-1/old-title", "Acme"],
+        ["https://linear.app/acme-old/issue/ENG-1/old-title", "acme-old"],
       ]);
       const workspace = links.get(url.href);
       return workspace === undefined
@@ -574,6 +586,10 @@ describe("IssueService with a standalone tracker", () => {
       expect(
         yield* service.resolveUrl("https://linear.app/Acme/issue/ENG-1/old-title"),
       ).toMatchObject({ key: "ENG-1" });
+      // A link from before the workspace was renamed reads on, under the key it has now.
+      expect(
+        yield* service.resolveUrl("https://linear.app/acme-old/issue/ENG-1/old-title"),
+      ).toMatchObject({ key: "ENG-1", workspace: "acme" });
       // The workspace a reference names reaches the tracker on reads and writes alike.
       const asked: Array<string | undefined> = [];
       const recording = yield* makeService({
@@ -609,7 +625,7 @@ describe("IssueService with a standalone tracker", () => {
           _tag: "IssueOperationError",
           operation: "resolveUrl",
           reason: "not-found",
-          detail: "This issue URL does not belong to the connected workspace.",
+          detail: "This issue link names another Linear workspace than the connected one.",
         },
       });
     }),

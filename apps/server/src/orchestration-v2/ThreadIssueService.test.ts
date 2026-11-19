@@ -73,6 +73,49 @@ describe("ThreadIssueService", () => {
     ),
   );
 
+  it.effect("links and unlinks one Linear key in another workspace as its own issue", () => {
+    const dispatched: Array<Record<string, unknown>> = [];
+    const acme = {
+      tracker: LINEAR,
+      host: "linear.app",
+      scope: "ENG",
+      key: "ENG-7",
+      workspace: "acme",
+    };
+    return Effect.gen(function* () {
+      const service = yield* ThreadIssueService.ThreadIssueService;
+      const othercorp = { ...acme, workspace: "othercorp" };
+      expect(
+        yield* service.link({
+          threadId: THREAD_ID,
+          ref: { ...othercorp, projectId: "project-1" as never },
+          url: "https://linear.app/othercorp/issue/ENG-7",
+          displayKey: "ENG-7",
+          title: "Elsewhere",
+          source: "agent",
+        }),
+      ).toEqual({ alreadyLinked: false });
+      expect(dispatched).toMatchObject([{ type: "thread.issue.link", workspace: "othercorp" }]);
+      expect(yield* service.unlink({ threadId: THREAD_ID, key: othercorp })).toEqual({
+        wasLinked: false,
+      });
+      expect(dispatched).toHaveLength(1);
+    }).pipe(
+      Effect.provide(
+        testLayer({
+          getThreadShell: () =>
+            Effect.succeed({
+              issues: [{ ...acme, url: "https://linear.app/acme/issue/ENG-7" }],
+            } as never),
+          dispatch: (command) =>
+            Effect.sync(() => {
+              dispatched.push(command as never);
+            }) as never,
+        }),
+      ),
+    );
+  });
+
   it.effect("tells one Linear team key in two workspaces apart by the issue's URL", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;

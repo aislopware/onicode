@@ -102,6 +102,7 @@ query OniViewer {
   }
   organization {
     urlKey
+    previousUrlKeys
   }
   teams(first: 250) {
     nodes {

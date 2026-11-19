@@ -54,7 +54,11 @@ import {
 import { m, type MessageResolver } from "~/i18n/messages";
 import { resolveFilterOptions } from "../pullRequest/pullRequestListOptions";
 import { IssueFiltersMenu } from "./IssueListFilterPickers";
-import { issueFilterProjects, issueProjectScope } from "./issuesSearch.logic";
+import {
+  issueFilterProjects,
+  issueProjectScope,
+  issueSurfaceTargetFromSearch,
+} from "./issuesSearch.logic";
 import { ISSUE_SAVED_VIEWS } from "./issueSavedViews";
 import { SavedViewsMenu } from "~/components/SavedViewsMenu";
 import { PullRequestCompactFilterMenu } from "../pullRequest/PullRequestCompactFilterMenu";
@@ -107,6 +111,8 @@ export interface IssuesSearch extends IssueListPreferences {
   readonly tracker?: string | undefined;
   readonly scope?: string | undefined;
   readonly key?: string | undefined;
+  /** The issue's link: a tab Back recreates reads in the workspace it names. */
+  readonly selectedIssueUrl?: string | undefined;
 }
 
 const STATE_TABS = [
@@ -319,6 +325,7 @@ export function IssuesPage() {
       ...(merged.tracker ? { tracker: merged.tracker } : {}),
       ...(merged.scope ? { scope: merged.scope } : {}),
       ...(merged.key ? { key: merged.key } : {}),
+      ...(merged.selectedIssueUrl ? { selectedIssueUrl: merged.selectedIssueUrl } : {}),
     };
     writeIssueListPreferences(issueListPreferences(next));
     void navigate({ search: next });
@@ -330,6 +337,7 @@ export function IssuesPage() {
     tracker: undefined,
     scope: undefined,
     key: undefined,
+    selectedIssueUrl: undefined,
   } as const;
 
   // One shared panel for the page, with a fixed sentinel ref, as the pull-request page does.
@@ -388,6 +396,7 @@ export function IssuesPage() {
             tracker: surface.tracker,
             scope: surface.scope,
             key: surface.key,
+            selectedIssueUrl: surface.url,
           }
         : clearedSelection,
     );
@@ -402,38 +411,42 @@ export function IssuesPage() {
       tracker: entry.tracker,
       scope: entry.scope,
       key: entry.key,
+      selectedIssueUrl: entry.url,
     });
   };
 
   // A link into the page names an issue before any row was pressed.
+  const {
+    selectedEnvironmentId,
+    selectedProjectId,
+    selectedHost,
+    tracker,
+    scope,
+    key: issueKey,
+    selectedIssueUrl,
+  } = search;
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- opens the URL-linked issue in the right panel store
   useEffect(() => {
-    if (
-      rightPanelRef === null ||
-      !search.tracker ||
-      !search.scope ||
-      !search.key ||
-      !search.selectedProjectId
-    )
-      return;
-    useRightPanelStore.getState().openIssue(rightPanelRef, {
-      ...(search.selectedEnvironmentId === undefined
-        ? {}
-        : { environmentId: search.selectedEnvironmentId }),
-      projectId: search.selectedProjectId,
-      ...(search.selectedHost === undefined ? {} : { host: search.selectedHost }),
-      tracker: search.tracker,
-      scope: search.scope,
-      key: search.key,
+    const target = issueSurfaceTargetFromSearch({
+      selectedEnvironmentId,
+      selectedProjectId,
+      selectedHost,
+      tracker,
+      scope,
+      key: issueKey,
+      selectedIssueUrl,
     });
+    if (rightPanelRef === null || target === null) return;
+    useRightPanelStore.getState().openIssue(rightPanelRef, target);
   }, [
     rightPanelRef,
-    search.tracker,
-    search.scope,
-    search.key,
-    search.selectedProjectId,
-    search.selectedHost,
-    search.selectedEnvironmentId,
+    selectedEnvironmentId,
+    selectedProjectId,
+    selectedHost,
+    tracker,
+    scope,
+    issueKey,
+    selectedIssueUrl,
   ]);
 
   const closeSurface = (surface: RightPanelSurface) => {
