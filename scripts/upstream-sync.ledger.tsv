@@ -2719,3 +2719,4 @@ ff4197c480	take	taken as is
 3c08684f1d	take	fix(client-runtime): CamelCase account names get distinct badge initials (#35343)
 5533151d77	take	fix(server): delegated completion wakes name the child thread (#39297)
 4e39664248	take	fix(server): preview_resize sizes hidden desktop tabs without a snapshot (#39269)
+7922611cee	take	fix(i18n): correct wrong and ambiguous Simplified Chinese strings (#37978); marketing zh.ts dropped (Onicode has no marketing i18n)
