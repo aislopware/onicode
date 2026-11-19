@@ -1792,7 +1792,9 @@ function startAnnotation(
         teardown(true);
       });
   };
-  submit.addEventListener("click", () => submitAnnotation("attach"));
+  submit.addEventListener("click", (event) => {
+    if (event.isTrusted) submitAnnotation("attach");
+  });
   const handleOverlayKey = (event: KeyboardEvent): void => {
     if (event.type === "keyup") onVoiceKeyUp(event);
     if (event.type !== "keydown") return;
