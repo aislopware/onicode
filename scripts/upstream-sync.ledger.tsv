@@ -2544,6 +2544,6 @@ b6ac2449f1	take	taken as is; warns on non-loopback plain-HTTP serve addresses, t
 cbd8267c2d	take	taken as is; Full access only where fx status lists the full-access mode, explicit approval/sandbox policy still runs ask
 ba640037e8	take	taken as is; geolocation now asks per origin like clipboard reads, annotation keys and pick buttons ignore synthetic events, Windows prompt is unparented
 5d3434bab2	skip	marketing site is a removed surface
-685c2ebd45	take	adapted: Onicode has no Side chat tabs, so the test waits for the draft to clear (the start finished) before the next /side; same useSideChat guard refuses a second start
+685c2ebd45	take	adapted to Onicode's diverged /side test: waits for the second Side chat tab before the next /side, as upstream does; same useSideChat guard refuses a second start
 cbae97f620	take	adapted: route registered beside Onicode's PreviewCdpBridge, no static/dev UI route; session invalidation without DPoP thumbprint (Onicode has none); test mock drops cookie fields Onicode's SessionStore lacks
 0226239a41	take	adopted upstream's local rendering of other environments' localhost tabs over Onicode's host streaming for desktop tabs (keeps devtools/picker/annotations local; works over every connection). Adapted: no isElectron (Onicode's renderer is always desktop), so in-app tabs always tunnel and system-browser links use resolveExternalServerUrl; mintMediaTicket without relay DPoP signer; remote.md drops the hosted-web section; user doc names only mobile as streaming
