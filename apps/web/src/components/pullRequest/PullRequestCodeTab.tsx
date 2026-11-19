@@ -475,8 +475,10 @@ function PullRequestCodeTab({
     range: SelectedLineRange;
   } | null>(null);
   const [draft, setDraft] = useState<DraftAnchor | null>(null);
-  // Held here: a page refresh remounts the file, and with it the editor.
+  // Held here: a page refresh remounts the file, and with it the editor, which then must not
+  // take focus from wherever the user went.
   const [draftText, setDraftText] = useState("");
+  const [focusedDraft, setFocusedDraft] = useState<DraftAnchor | null>(null);
   const [threadPending, setThreadPending] = useState(false);
   const [orphansOpen, setOrphansOpen] = useState(false);
   // Scope slices before reset to prevent using a previous pull request's data or cursor.
@@ -953,6 +955,9 @@ function PullRequestCodeTab({
 
   const foldsAsViewed = (path: string) =>
     filesViewedEnabled && isFileViewed(path) && !isFileViewedStale(path);
+  // A refresh can drop the draft's file, and its editor with Cancel; selection then reopens.
+  const draftLocksSelection =
+    draft !== null && annotatedFiles.some((file) => file.path === draft.path);
   const items: CodeViewDiffItem<ReviewAnnotationGroup>[] = annotatedFiles.map(
     ({ fileKey, path, fileDiff, annotations, annotationsVersion }) => {
       const collapsed = isFileDiffCollapsed(
@@ -1197,8 +1202,8 @@ function PullRequestCodeTab({
             new Error(m(msg("Unchanged lines are unavailable in a file with cut lines."))),
           )
         : loadDiffFiles(fileDiff),
-    enableGutterUtility: canSelectLines && draft === null && !withheldRefetching,
-    enableLineSelection: canSelectLines && draft === null && !withheldRefetching,
+    enableGutterUtility: canSelectLines && !draftLocksSelection && !withheldRefetching,
+    enableLineSelection: canSelectLines && !draftLocksSelection && !withheldRefetching,
     onGutterUtilityClick: beginComment,
     onLineSelectionEnd: beginComment,
     onPostRender: (fileContainer: HTMLElement, instance: object) => {
@@ -1344,6 +1349,8 @@ function PullRequestCodeTab({
           rangeLabel={`${draft.path}:${getReviewPositionAnchor(draft.position).line}`}
           text={draftText}
           onTextChange={setDraftText}
+          focusOnMount={focusedDraft !== draft}
+          onFocus={() => setFocusedDraft(draft)}
           completionScope={canCommentOnLines ? completionScope : null}
           submitLabel={canCommentOnLines ? gt("Add to review") : gt("Add to agent")}
           {...(canCommentOnLines && onAddToAgentSelection && draft.agentComment !== null
