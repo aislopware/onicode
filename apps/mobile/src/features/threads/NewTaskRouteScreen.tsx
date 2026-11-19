@@ -19,7 +19,7 @@ import {
   squashAtomCommandFailure,
 } from "@onicode/client-runtime/state/runtime";
 import type { EnvironmentProject } from "@onicode/client-runtime/state/shell";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Platform, Pressable, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { cn } from "../../lib/cn";
@@ -237,6 +237,22 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
   const canStartScratch = scratchOption?.ready === true;
   const scratchStartInFlightRef = useRef(false);
 
+  // A new draft under the picker keeps its flow when the picker closes; reopening it as a
+  // Thread route would restart that flow and import the share again.
+  function stackedNewDraftRoot() {
+    const root = navigation.getState()?.routeNames.includes("NewTaskProject")
+      ? navigation
+      : navigation.getParent();
+    const rootState = root?.getState();
+    const threadRoute = rootState?.routes[rootState.index - 1];
+    return routeDraftId === undefined && isDraftThreadRoute(threadRoute) ? root : null;
+  }
+  const closeOntoStackedDraft = useEffectEvent(() => {
+    const stacked = stackedNewDraftRoot();
+    stacked?.goBack();
+    return stacked !== null;
+  });
+
   async function selectProject(project: EnvironmentProject): Promise<void> {
     if (incomingShare?.destination && !reservedDestinationProject) {
       try {
@@ -250,14 +266,10 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
         return;
       }
     }
-    const root = navigation.getState()?.routeNames.includes("NewTaskProject")
-      ? navigation
-      : navigation.getParent();
-    const rootState = root?.getState();
-    const threadRoute = rootState?.routes[rootState.index - 1];
-    if (routeDraftId === undefined && isDraftThreadRoute(threadRoute)) {
+    const stacked = stackedNewDraftRoot();
+    if (stacked) {
       setProject(project);
-      root?.goBack();
+      stacked.goBack();
       return;
     }
     // Restamp only on choice, so backing out leaves the draft as it was.
@@ -334,6 +346,8 @@ export function NewTaskRouteScreen({ route }: StaticScreenProps<NewTaskRoutePara
       return;
     }
     resumedDestinationKeyRef.current = destinationKey;
+    // The draft underneath starts in the reserved project itself.
+    if (closeOntoStackedDraft()) return;
     selectDetail({
       name: "Thread",
       params: {
