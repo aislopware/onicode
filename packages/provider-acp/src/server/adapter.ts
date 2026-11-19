@@ -1677,7 +1677,7 @@ interface ActiveAcpTurn {
   foregroundIdle: Deferred.Deferred<void>;
   /** Counts the turn's prompts; only the latest one settles the turn. */
   promptSequence: number;
-  /** Records this prompt's notes as delivered; runs on release so a late response cannot. */
+  /** Records the latest prompt's notes as delivered, once: on its idle release or its own response. */
   recordPromptDelivery: Effect.Effect<void>;
   /** Clock millis just before `session/prompt` was handed to the runtime. */
   promptSentAt: number | null;
@@ -8881,6 +8881,20 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           });
         });
 
+        // A prompt released on `assistant.idle` records there; its late response, maybe after a
+        // newer turn's prompt, must not record again.
+        const recordPromptDeliveryOnce = (
+          sessionId: string,
+          promptParts: Effect.Success<ReturnType<typeof resolvePromptParts>> | null,
+        ) => {
+          let recorded = false;
+          return Effect.suspend(() => {
+            if (recorded) return Effect.void;
+            recorded = true;
+            return recordPromptDeliveryFor(sessionId, promptParts);
+          });
+        };
+
         /** Follows a turn's `session/prompt`; a prompt-steer's prompt supersedes the one before. */
         const followPrompt = (
           context: ActiveAcpTurn,
@@ -8898,12 +8912,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
         ) => {
           const sequence = ++context.promptSequence;
           const superseded = () => context.promptSequence !== sequence;
-          // Read before a steer replaces it: a released prompt's late response records nothing.
-          const released = context.foregroundIdle;
-          context.recordPromptDelivery =
+          const recordPromptDelivery =
             settle.compactSession !== undefined
               ? Effect.void
-              : recordPromptDeliveryFor(context.nativeThreadId, settle.promptParts);
+              : recordPromptDeliveryOnce(context.nativeThreadId, settle.promptParts);
+          context.recordPromptDelivery = recordPromptDelivery;
           return prompt(superseded).pipe(
             // Settle the wire before the completion callback's permit so a settled-soft
             // Stop sees the native return. Capture usage only before finalize: a late
@@ -8931,10 +8944,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   } else if (
                     result.stopReason !== "cancelled" &&
                     result.stopReason !== "refusal" &&
-                    result.stopReason !== "error" &&
-                    !(yield* Deferred.isDone(released))
+                    result.stopReason !== "error"
                   ) {
-                    yield* recordPromptDeliveryFor(context.nativeThreadId, settle.promptParts);
+                    yield* recordPromptDelivery;
                   }
                   if (context.finalized || followsAgentWorkState || superseded()) return;
                   // ACP v2 reports a failed prompt through its idle stop reason, not an RPC error.
@@ -9485,7 +9497,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   if (context.finalized || context.interrupted) return false;
                   // The steer prompt carries the turn on, also past a prompt that already settled.
                   const released = context.foregroundIdle;
-                  const recordReleasedDelivery = context.recordPromptDelivery;
                   context.foregroundIdle = yield* Deferred.make<void>();
                   if (yield* Deferred.isDone(context.promptWireSettled)) {
                     context.promptWireSettled = yield* Deferred.make<void, never>();
@@ -9527,7 +9538,6 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                       compactSession: undefined,
                     },
                   ).pipe(Effect.forkIn(sessionScope));
-                  yield* recordReleasedDelivery;
                   yield* Deferred.succeed(released, undefined);
                   return true;
                 }),

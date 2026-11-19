@@ -2687,7 +2687,7 @@ da33a53d18	take	fix(server): wake when CI fails during the PR watch baseline rea
 dc7216ca23	take	fix(mobile): new-task link no longer blanks a scheduled task while it saves (#39154)
 a1e7ac2b24	take	adapted: ChatView CONFLICT resolved keeping Onicode's provider session views next to the moved freshSessionArmed hook
 2526691ea5	take	fix(mobile): cancelling a model download keeps the current transcription model (#39157)
-cfd24da4a7	take	adapted: adapter.ts CONFLICT; adopted upstream's followPrompt refactor; kept Onicode's release-time prompt-delivery record (bf56d07904): upstream records on the response, which a late Copilot response would use to overwrite a newer turn's notes; it now lives in followPrompt keyed to each prompt's own release, and a prompt-steer records the prompt it releases
+cfd24da4a7	take	adapted: adapter.ts CONFLICT; adopted upstream's followPrompt refactor; kept Onicode's release-time prompt-delivery record (bf56d07904): upstream records on the response, which a late Copilot response would use to overwrite a newer turn's notes; it now lives in followPrompt and records each prompt once, on the idle release or its own successful response
 b5be2ff8da	take	perf(server): read issue tracker bindings once per listing (#39169)
 e231dafb76	take	fix(mobile): a changed-file pick no longer resets an earlier diff of the same PR (#39171)
 8d5e0b241d	take	fix(ssh): connect when ~/.onicode is a symlink to a missing directory (#39184)
