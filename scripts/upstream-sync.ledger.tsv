@@ -2597,3 +2597,4 @@ fc6c68b773	take	taken as is
 b48a20bc85	take	taken as is
 6b45d90047	skip	T3 Connect relay linking (cloud link, Clerk tokens, connect docs) only; Onicode removed Connect/relay
 447c0129cc	take	taken as is
+7dceb76f4c	take	taken as is; new PullRequestDetail fields are optional (wire-compatible); GitLab/Bitbucket/Azure leave them unset as upstream
