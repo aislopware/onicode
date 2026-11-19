@@ -2714,3 +2714,4 @@ d3da5c6f32	skip	marketing site copy only; Onicode removed apps/marketing's T3 ho
 2ab3b7f59c	skip	kept Onicode's DevToolsActivePort wait (578ef81f43): it waits for the port Chromium reports, while upstream's reserve-then-release port can be taken by another process before Chromium binds
 c8625cafce	take	taken as is
 ff4197c480	take	taken as is
+42d2387285	take	taken as is; Onicode hook order untouched, sidebar row re-render test green
