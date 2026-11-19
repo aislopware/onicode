@@ -386,23 +386,26 @@ const make = Effect.gen(function* () {
         const forwardHead = Buffer.from(request.forwardHead, "latin1");
         // One request goes on; anything Chromium sends after its body never leaves this machine.
         const forwardBody = Effect.gen(function* () {
-          let received = rest;
-          while (received.length < request.bodyLength) {
-            received = Buffer.concat([received, ...(yield* pull)]);
+          let remaining = request.bodyLength;
+          const take = (chunk: Uint8Array) => {
+            const part = chunk.subarray(0, remaining);
+            remaining -= part.length;
+            return part;
+          };
+          yield* target.writer.write(Buffer.concat([forwardHead, take(rest)]));
+          while (true) {
+            for (const chunk of yield* pull) {
+              const part = take(chunk);
+              if (part.length > 0) yield* target.writer.write(part);
+            }
           }
-          yield* target.writer.write(
-            Buffer.concat([forwardHead, received.subarray(0, request.bodyLength)]),
-          );
-          return yield* Effect.forever(pull);
         });
         const relayResponse = Effect.gen(function* () {
           let received: Buffer = Buffer.alloc(0);
           while (true) {
             const response = yield* readHead(target.pull, received);
-            if (response.head === undefined) {
-              yield* writer.write(response.rest);
-              break;
-            }
+            // Unread, the response could keep the connection open for Chromium's next request.
+            if (response.head === undefined) return yield* writer.write(refusal(502));
             const status = statusCode(response.head);
             if (status >= 200 || status === 101 || !(status >= 100)) {
               yield* writer.write(

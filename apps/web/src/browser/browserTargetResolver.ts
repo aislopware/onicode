@@ -59,6 +59,7 @@ const resolveEnvironmentPortTarget = (
 export const namesLoopback = (host: string): boolean =>
   isLoopbackHost(host) ||
   isLocalLoopbackHost(host) ||
+  normalizeHostname(host) === "::" ||
   normalizeHostname(host).endsWith(".localhost");
 
 // Loopback servers on the desktop's own primary and WSL backends answer on this machine's localhost.
@@ -99,7 +100,12 @@ export const resolveExternalServerUrl = (
   if (!namesLoopback(parsed.hostname)) return parsed.toString();
   const connection = readPreparedConnection(environmentId);
   if (!connection) return null;
-  if (reachesEnvironmentLoopback(connection.target)) return parsed.toString();
+  if (
+    reachesEnvironmentLoopback(connection.target) ||
+    parsed.origin === URL.parse(connection.httpBaseUrl)?.origin
+  ) {
+    return parsed.toString();
+  }
   // An SSH forward's loopback address is this computer, not the environment.
   if (connection.target._tag === "SshConnectionTarget") return null;
   try {
