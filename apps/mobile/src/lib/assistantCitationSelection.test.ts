@@ -379,6 +379,21 @@ it("uses the web math representation around a selected passage", () => {
     start: 0,
     end: 1,
   });
+  // Authored TeX may hold the private character that marks a native-only break.
+  expect(
+    collectMobileAssistantTextSelectors(
+      "A $\ue003x$ B $\ue003x$ C",
+      "0:0",
+      "\uFFFC",
+      true,
+      "ios",
+    ).map((choice) =>
+      findAssistantCitationText("A \\(\ue003x\\) B \\(\ue003x\\) C", choice.selector),
+    ),
+  ).toEqual([
+    { start: 2, end: 8 },
+    { start: 11, end: 17 },
+  ]);
   const [linked] = collectMobileAssistantTextSelectors(
     "- [a ](u)\\[x\\]B\n- C",
     "0:0",
