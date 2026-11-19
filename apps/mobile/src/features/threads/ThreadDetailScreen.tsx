@@ -138,6 +138,7 @@ import {
   getComposerDraftSnapshot,
   setFreshSessionPending,
   insertComposerDraftText,
+  type ComposerSendPress,
 } from "../../state/use-composer-drafts";
 import { assistantCitationDraftWithinLimit } from "../../lib/composerContext";
 import { serializeAssistantCitation } from "@onicode/shared/assistantCitations";
@@ -313,6 +314,7 @@ export interface ThreadDetailScreenProps {
     ) => Promise<boolean | "responded">,
     onWillEnqueue?: () => void,
     approvalsAsSeen?: () => boolean,
+    press?: ComposerSendPress,
   ) => Promise<MessageId | null>;
   readonly onReconnectEnvironment: () => void;
   readonly canSwitchThreadProvider: boolean;
@@ -1270,6 +1272,7 @@ function ThreadDetailBody(
     followUp?: ActiveTurnComposerAction,
     stillSendable?: () => boolean,
     approvalIdsAtPress?: ReadonlyArray<RuntimeRequestId>,
+    press?: ComposerSendPress,
   ) => {
     const scope = threadScope.current.signal;
     const targetThreadKey = selectedThreadKey;
@@ -1336,6 +1339,7 @@ function ThreadDetailBody(
         dismissingKeyboard = true;
       },
       approvalsAsSeen,
+      press,
     );
     if (messageId === null || scope.aborted) {
       return messageId;

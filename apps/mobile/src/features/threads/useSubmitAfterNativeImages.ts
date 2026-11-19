@@ -3,6 +3,7 @@ import type { RuntimeRequestId } from "@onicode/contracts";
 import type { ActiveTurnComposerAction } from "@onicode/client-runtime/state/composer-dispatch";
 import { useStableCallback } from "../../lib/useStableCallback";
 import { composerDraftAbortGeneration } from "../../state/composerDraftOperations";
+import type { ComposerDraftSendSettings } from "../../state/use-composer-drafts";
 
 /** Pastes into a draft count until it is discarded or the composer leaves it for a queued edit. */
 export function nativeImagePasteKey(draftKey: string): string {
@@ -19,6 +20,7 @@ export function useSubmitAfterNativeImages(props: {
   readonly onSubmit: (
     followUp: ActiveTurnComposerAction | undefined,
     approvalIdsAtPress: ReadonlyArray<RuntimeRequestId>,
+    settingsAtPress: ComposerDraftSendSettings | undefined,
   ) => void;
 }) {
   type HeldSend = {
@@ -27,6 +29,7 @@ export function useSubmitAfterNativeImages(props: {
     /** The pastes it waits on; once they are aborted, nothing later releases it. */
     readonly pasteKey: string;
     readonly approvalIds: ReadonlyArray<RuntimeRequestId>;
+    readonly settings: ComposerDraftSendSettings | undefined;
     readonly followUp?: ActiveTurnComposerAction;
   };
   // A paste aborted with its draft (discarded, or left for a queued edit) must not hold or drop a
@@ -43,7 +46,7 @@ export function useSubmitAfterNativeImages(props: {
       if (heldSend.current === null) heldSend.current = { ...held };
       return;
     }
-    props.onSubmit(held.followUp, held.approvalIds);
+    props.onSubmit(held.followUp, held.approvalIds, held.settings);
   });
   // oxlint-disable-next-line onicode/no-unreasoned-state-sync -- submits from the render where the native images joined the draft
   useEffect(() => {
@@ -52,18 +55,21 @@ export function useSubmitAfterNativeImages(props: {
     sendReleased(releasedSend);
   }, [releasedSend, props.blocked]);
   // Stable so the composer's send handler, which calls these, stays in the compiler's cache.
-  const deferSend = useStableCallback((followUp?: ActiveTurnComposerAction) => {
-    const pasteKey = nativeImagePasteKey(props.draftKey);
-    if (!pastes.current.has(pasteKey)) return false;
-    heldSend.current = {
-      draftKey: props.draftKey,
-      generation: props.readResetGeneration(),
-      pasteKey,
-      approvalIds: props.approvalIds,
-      followUp,
-    };
-    return true;
-  });
+  const deferSend = useStableCallback(
+    (followUp?: ActiveTurnComposerAction, settings?: ComposerDraftSendSettings) => {
+      const pasteKey = nativeImagePasteKey(props.draftKey);
+      if (!pastes.current.has(pasteKey)) return false;
+      heldSend.current = {
+        draftKey: props.draftKey,
+        generation: props.readResetGeneration(),
+        pasteKey,
+        approvalIds: props.approvalIds,
+        settings,
+        followUp,
+      };
+      return true;
+    },
+  );
   const pasteImages = useStableCallback((uris: ReadonlyArray<string>) => {
     const draftKey = props.draftKey;
     const key = nativeImagePasteKey(draftKey);

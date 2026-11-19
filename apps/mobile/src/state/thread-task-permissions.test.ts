@@ -317,6 +317,49 @@ describe("mobile task permissions", () => {
     expect(state.enqueue).not.toHaveBeenCalled();
     expect(state.clearDraft).not.toHaveBeenCalled();
     expect(state.draft.text).toBe("New feedback");
+
+    // An edit iOS reports only when asked counts too.
+    const press = {
+      runtimeMode: undefined,
+      modelSelection: undefined,
+      flushInput: async () => {
+        state.draft = { ...state.draft, text: "Newer feedback" };
+      },
+    };
+    const send = composer.onSendMessage(
+      undefined,
+      async () => "responded" as const,
+      undefined,
+      undefined,
+      press,
+    );
+    expect(await send).toBeNull();
+    expect(state.clearDraft).not.toHaveBeenCalled();
+  });
+
+  it("sends with the mode and model set when Send was pressed", async () => {
+    state.grantedEnvironments.add("secondary");
+    const atPress: ModelSelection = {
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.4",
+    };
+    state.draft = {
+      ...state.draft,
+      runtimeMode: "full-access",
+      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" },
+    };
+    const press = {
+      runtimeMode: "approval-required" as const,
+      modelSelection: atPress,
+      flushInput: async () => {},
+    };
+    const composer = useThreadComposerState(NO_SIDE_CHATS);
+    expect(await composer.onSendMessage(undefined, undefined, undefined, undefined, press)).toBe(
+      "message",
+    );
+    expect(state.enqueue).toHaveBeenLastCalledWith(
+      expect.objectContaining({ runtimeMode: "approval-required", modelSelection: atPress }),
+    );
   });
 
   it("keeps a connected read-only task's draft instead of queueing it with another environment's grant", async () => {
@@ -510,6 +553,26 @@ describe("mobile task permissions", () => {
       return true;
     });
     expect(await useThreadComposerState({ startSideChat }).onSendMessage()).toBeNull();
+    expect(state.clearDraft).not.toHaveBeenCalled();
+    state.draft = { ...state.draft, text: "/side what is this?" };
+    // So does one iOS has not reported yet when the start lands.
+    const press = {
+      runtimeMode: undefined,
+      modelSelection: undefined,
+      flushInput: async () => {
+        state.draft = { ...state.draft, text: `${state.draft.text} n` };
+      },
+    };
+    expect(
+      await useThreadComposerState({ startSideChat }).onSendMessage(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        press,
+      ),
+    ).toBeNull();
+    expect(startSideChat).toHaveBeenCalled();
     expect(state.clearDraft).not.toHaveBeenCalled();
     state.draft = { ...state.draft, text: "/side what is this?" };
 

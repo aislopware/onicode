@@ -98,6 +98,7 @@ import {
   setFreshSessionPending,
   useComposerDraft,
   useComposerDraftSettings,
+  type ComposerSendPress,
 } from "./use-composer-drafts";
 import { isClearComposerCommand, parseSideChatCommand } from "@onicode/shared/composerTrigger";
 import { orchestrationV2WorktreePending } from "@onicode/shared/orchestrationV2ThreadError";
@@ -620,6 +621,7 @@ export function useThreadComposerState(input: {
     onWillEnqueue?: () => void,
     // False when an approval the user never saw is pending; the message then stays in the draft.
     approvalsAsSeen?: () => boolean,
+    press?: ComposerSendPress,
   ) => {
     if (
       selectedThreadShell &&
@@ -661,7 +663,9 @@ export function useThreadComposerState(input: {
     if (text.length === 0 && attachments.length === 0) {
       return null;
     }
-    const modelSelection = draft.modelSelection ?? thread.modelSelection;
+    // A send held for a pasted image goes with the mode and model set when Send was pressed.
+    const modelSelection = (press ?? draft).modelSelection ?? thread.modelSelection;
+    const runtimeMode = (press ?? draft).runtimeMode ?? thread.runtimeMode;
     const serverConfig = selectedEnvironmentRuntime?.serverConfig;
     const modelUnavailable =
       selectedEnvironmentRuntime?.connectionState === "connected" &&
@@ -756,14 +760,13 @@ export function useThreadComposerState(input: {
               attachments: prepared.attachments,
               titleSeed: deriveThreadTitleSeed({ text: sideChatCommand.prompt, attachments }, m),
             },
-            {
-              runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
-              modelSelection,
-            },
+            { runtimeMode, modelSelection },
           );
         });
+        const sent = AsyncResult.isSuccess(started) && started.value;
+        if (sent) await press?.flushInput();
         endStart();
-        if (AsyncResult.isSuccess(started) && started.value) {
+        if (sent) {
           // Edits made while it forked stay, along with what was sent.
           if (unchanged()) clearComposerDraftContent(threadKey);
         } else if (AsyncResult.isFailure(started)) {
@@ -850,6 +853,7 @@ export function useThreadComposerState(input: {
         attachments.length > 0 || draft.context !== undefined,
       );
       if (!response) return null;
+      await press?.flushInput();
       // A context paste still landing, or any draft or settings change while approvals were
       // declined, means this snapshot is no longer what the user sent.
       if (appAtomRegistry.get(composerContextImportsAtom)[threadKey]) return null;
@@ -913,7 +917,7 @@ export function useThreadComposerState(input: {
       attachments,
       context: draft.context,
       modelSelection,
-      runtimeMode: draft.runtimeMode ?? thread.runtimeMode,
+      runtimeMode,
       interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
       ...(compactBeforeSend
         ? { compactBeforeSend, dispatchMode: "queue" as const }
