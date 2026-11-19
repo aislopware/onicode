@@ -846,7 +846,8 @@ const make = Effect.gen(function* () {
     let legacySourceControl: Parameters<typeof migrateLegacySourceControlSettings>[1] = {};
     let parseFailure = Option.none<unknown>();
 
-    if (yield* readConfigExists) {
+    const configExists = yield* readConfigExists;
+    if (configExists) {
       const raw = yield* readRawConfig;
       const parsed = decodeSettingsFileJsonExit(raw);
       const decoded = Exit.isFailure(parsed)
@@ -974,10 +975,19 @@ const make = Effect.gen(function* () {
     const migrated = settingsFileTrusted
       ? yield* moveInlineSettingsSecrets(sourceControlMigration.settings)
       : folded;
+    // A link whose target is missing is mid-replacement, as in a dotfiles restore; writing
+    // would recreate the target's directory and block the restore's rename onto it.
+    const danglingLink =
+      !configExists &&
+      (yield* fs.readLink(settingsPath).pipe(
+        Effect.as(true),
+        Effect.orElseSucceed(() => false),
+      ));
     if (
-      migrated !== loaded ||
-      (settingsFileTrusted && legacyProviders !== undefined) ||
-      hasLegacySourceControl
+      !danglingLink &&
+      (migrated !== loaded ||
+        (settingsFileTrusted && legacyProviders !== undefined) ||
+        hasLegacySourceControl)
     ) {
       yield* writeSettingsAtomically(migrated);
       for (const move of sourceControlMigration.secretMoves) {
