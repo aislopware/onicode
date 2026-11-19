@@ -11,7 +11,7 @@ import {
   noIssuePicks,
 } from "@onicode/client-runtime/issue-selection";
 import { isSelected, toggleSelection } from "@onicode/client-runtime/pull-request-selection";
-import { squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
+import { executeAtomQuery, squashAtomCommandFailure } from "@onicode/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   IssueAssigneeCandidate,
@@ -587,7 +587,10 @@ export function IssueDetailPanel({
                 void pager.refresh(registry, () => {
                   // The tab icon and linked rows read the summary.
                   registry.refresh(issueEnvironment.summary({ environmentId, input: reference }));
-                  return detailQuery.refresh();
+                  return executeAtomQuery(registry, detailAtom, {
+                    refresh: true,
+                    reportFailure: false,
+                  });
                 })
               }
             >

@@ -2641,3 +2641,4 @@ b45ca716f9	take	CONFLICT resolved: kept Onicode's stacked new-draft path in sele
 86b5734cfc	take	taken as is (Windows-only launcher parsing, inert on macOS/Linux)
 60e54867fc	take	CONFLICT resolved: kept Onicode's refreshDetail (also refreshes the hover summary) and linkChanges stream instead of upstream's linkedThreadSignals; test passes linkChanges; new IssueListInput.refresh is optional (wire-compatible); scenario ported
 26b872b46a	take	taken as is
+1d5ebe3f8e	take	taken as is; mobile's pull-to-refresh already passes an awaited read; scenario ported
