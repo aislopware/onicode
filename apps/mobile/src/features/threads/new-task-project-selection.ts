@@ -140,6 +140,8 @@ export function resolveDraftProjectSelection(
     readonly pickerClosed: boolean;
     readonly useLastProject?: boolean | undefined;
     readonly lastProject?: ProjectRef | undefined;
+    /** The project an interrupted import already reserved the share for. */
+    readonly reservedDestination?: ProjectRef | undefined;
   },
 ): DraftProjectSelectionResolution {
   const hasExplicitProjectSelection =
@@ -157,6 +159,15 @@ export function resolveDraftProjectSelection(
 
   if (draft.incomingShareId === undefined) {
     return { kind: "pick" };
+  }
+  // Any other project fails the import, and the picker resumes or releases a reservation it cannot find.
+  const reserved = draft.reservedDestination;
+  if (reserved) {
+    const project = projects.find(
+      (candidate) =>
+        candidate.environmentId === reserved.environmentId && candidate.id === reserved.projectId,
+    );
+    return project ? { kind: "select", project } : { kind: "pick" };
   }
   const last =
     draft.useLastProject === false

@@ -224,6 +224,25 @@ describe("resolveDraftProjectSelection", () => {
       kind: "pick",
     });
   });
+
+  it("starts a share draft in the project its share is already reserved for", () => {
+    const scratch = makeProject("scratch");
+    const all = [...projects, scratch];
+    const reservedDraft = {
+      incomingShareId: "share",
+      pickerClosed: false,
+      reservedDestination: { environmentId: "environment", projectId: "scratch" },
+      lastProject: { environmentId: "environment", projectId: "onicode-2" },
+    };
+    expect(resolveDraftProjectSelection(null, all, [makeScope(projects)], reservedDraft)).toEqual({
+      kind: "select",
+      project: scratch,
+    });
+    // The picker resumes or releases a reservation whose project is not loaded yet.
+    expect(
+      resolveDraftProjectSelection(null, projects, [makeScope(projects)], reservedDraft),
+    ).toEqual({ kind: "pick" });
+  });
 });
 
 describe("newTaskDestination", () => {

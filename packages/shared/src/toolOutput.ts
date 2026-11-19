@@ -59,6 +59,13 @@ interface CompactToolOutput {
   sentMessage?: string;
 }
 
+// Output past the budget would be dropped anyway, so it is never scanned.
+function terminalResult(output: unknown, maxLength: number): string | undefined {
+  if (typeof output !== "string" || output.length > maxLength) return undefined;
+  const marker = output.indexOf(TERMINAL_OUTPUT_MARKER);
+  return marker === -1 ? undefined : output.slice(marker + TERMINAL_OUTPUT_MARKER.length);
+}
+
 function readResult(value: unknown, budget: ResultReadBudget, depth = 0): ResultEnvelope {
   if (depth > MAX_ENVELOPE_DEPTH || budget.remainingNodes-- <= 0) {
     budget.exceeded = true;
@@ -107,12 +114,8 @@ function readResult(value: unknown, budget: ResultReadBudget, depth = 0): Result
     value.is_error === true ||
     value._tag === "OrchestratorMcpFailure" ||
     value.error != null;
-  const terminal = typeof value.output === "string" ? value.output : "";
-  const marker = terminal.indexOf(TERMINAL_OUTPUT_MARKER);
   const content =
-    value.structuredContent ??
-    value.content ??
-    (marker === -1 ? undefined : terminal.slice(marker + TERMINAL_OUTPUT_MARKER.length));
+    value.structuredContent ?? value.content ?? terminalResult(value.output, budget.remainingBytes);
   if (content !== undefined) {
     const nested = readResult(content, budget, depth + 1);
     return { ...nested, failed: failed || nested.failed };
