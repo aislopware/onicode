@@ -50,7 +50,6 @@ import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { themeColorWithAlpha } from "../../lib/mobileTheme";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import {
-  composerDraftSendSettings,
   getComposerDraftSnapshot,
   setComposerDraftText,
   type ComposerDraftSendSettings,
@@ -608,7 +607,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const handleSend = async (
     followUp: ActiveTurnComposerAction | undefined,
     approvalIdsAtPress: ReadonlyArray<RuntimeRequestId>,
-    settingsAtPress: ComposerDraftSendSettings | undefined,
+    settingsAtPress: ComposerDraftSendSettings,
   ) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
     if (pendingPastedTextAttachmentCountRef.current > 0) return;
@@ -640,12 +639,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
         )
       );
     };
-    const settings = settingsAtPress ?? composerDraftSendSettings(draftAtSend);
     const press: ComposerSendPress = {
-      ...settings,
-      flushInput: async () => {
-        await inputRef.current?.flushPendingInput();
-      },
+      ...settingsAtPress,
+      draftKey: composerDraftKey,
+      flushInput: async () => (await inputRef.current?.flushPendingInput()) ?? true,
     };
     const sent = await settlePromise(() =>
       onSendMessage(followUp, stillSendable, approvalIdsAtPress, press),
@@ -670,7 +667,10 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
   const sendOrDefer = (followUp?: ActiveTurnComposerAction) => {
     if (isSubmissionLocked || sendBlockedReason !== null) return;
     // Sending now would leave a still-converting pasted image out of the turn, so wait for it.
-    const settings = composerDraftSendSettings(getComposerDraftSnapshot(composerDraftKey));
+    const settings: ComposerDraftSendSettings = {
+      runtimeMode: props.selectedThread.runtimeMode,
+      modelSelection: currentModelSelection,
+    };
     if (nativeImageSubmit.deferSend(followUp, settings)) return;
     void handleSend(followUp, props.pendingApprovalIds, settings);
   };

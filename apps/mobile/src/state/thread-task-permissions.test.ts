@@ -241,8 +241,20 @@ import { prepareTurnAttachments } from "../lib/attachmentUpload";
 import { useThreadComposerState } from "./use-thread-composer-state";
 import { useSelectedThreadRequests } from "./use-selected-thread-requests";
 import { questionAttachmentDraftKey } from "./question-attachments";
+import type { ComposerSendPress } from "./use-composer-drafts";
 
 const NO_SIDE_CHATS = { startSideChat: async () => false };
+
+/** A press on the thread's own draft that shows the thread's mode and model. */
+function pressAt(overrides: Partial<ComposerSendPress> = {}): ComposerSendPress {
+  return {
+    runtimeMode: state.thread.runtimeMode as RuntimeMode,
+    modelSelection: state.thread.modelSelection as ModelSelection,
+    draftKey: "secondary:thread",
+    flushInput: async () => true,
+    ...overrides,
+  };
+}
 
 beforeEach(() => {
   state.grantedEnvironments = new Set(["primary"]);
@@ -318,22 +330,24 @@ describe("mobile task permissions", () => {
     expect(state.clearDraft).not.toHaveBeenCalled();
     expect(state.draft.text).toBe("New feedback");
 
-    // An edit iOS reports only when asked counts too.
-    const press = {
-      runtimeMode: undefined,
-      modelSelection: undefined,
-      flushInput: async () => {
+    // An edit iOS reports only when asked counts too, and so does a paste it has yet to report.
+    const flushes = [
+      async () => {
         state.draft = { ...state.draft, text: "Newer feedback" };
+        return true;
       },
-    };
-    const send = composer.onSendMessage(
-      undefined,
-      async () => "responded" as const,
-      undefined,
-      undefined,
-      press,
-    );
-    expect(await send).toBeNull();
+      async () => false,
+    ];
+    for (const flushInput of flushes) {
+      const send = composer.onSendMessage(
+        undefined,
+        async () => "responded" as const,
+        undefined,
+        undefined,
+        pressAt({ flushInput }),
+      );
+      expect(await send).toBeNull();
+    }
     expect(state.clearDraft).not.toHaveBeenCalled();
   });
 
@@ -348,11 +362,7 @@ describe("mobile task permissions", () => {
       runtimeMode: "full-access",
       modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.5" },
     };
-    const press = {
-      runtimeMode: "approval-required" as const,
-      modelSelection: atPress,
-      flushInput: async () => {},
-    };
+    const press = pressAt({ runtimeMode: "approval-required", modelSelection: atPress });
     const composer = useThreadComposerState(NO_SIDE_CHATS);
     expect(await composer.onSendMessage(undefined, undefined, undefined, undefined, press)).toBe(
       "message",
@@ -360,6 +370,32 @@ describe("mobile task permissions", () => {
     expect(state.enqueue).toHaveBeenLastCalledWith(
       expect.objectContaining({ runtimeMode: "approval-required", modelSelection: atPress }),
     );
+
+    // A press in a queued edit that closed while the editor flushed sends nothing.
+    vi.clearAllMocks();
+    const fromEdit = pressAt({ draftKey: "secondary:thread:queued-edit:run" });
+    expect(
+      await composer.onSendMessage(undefined, undefined, undefined, undefined, fromEdit),
+    ).toBeNull();
+    expect(state.enqueue).not.toHaveBeenCalled();
+
+    // Nor does a redirect when an approval arrived while the editor flushed.
+    let seen = true;
+    const redirect = composer.onSendMessage(
+      undefined,
+      async () => true,
+      undefined,
+      () => seen,
+      pressAt({
+        flushInput: async () => {
+          seen = false;
+          return true;
+        },
+      }),
+    );
+    expect(await redirect).toBeNull();
+    expect(state.enqueue).not.toHaveBeenCalled();
+    expect(state.clearDraft).not.toHaveBeenCalled();
   });
 
   it("keeps a connected read-only task's draft instead of queueing it with another environment's grant", async () => {
@@ -555,23 +591,26 @@ describe("mobile task permissions", () => {
     expect(await useThreadComposerState({ startSideChat }).onSendMessage()).toBeNull();
     expect(state.clearDraft).not.toHaveBeenCalled();
     state.draft = { ...state.draft, text: "/side what is this?" };
-    // So does one iOS has not reported yet when the start lands.
-    const press = {
-      runtimeMode: undefined,
-      modelSelection: undefined,
-      flushInput: async () => {
+    // So does one iOS has not reported yet when the start lands, or a paste still on its way.
+    const flushes = [
+      async () => {
         state.draft = { ...state.draft, text: `${state.draft.text} n` };
+        return true;
       },
-    };
-    expect(
-      await useThreadComposerState({ startSideChat }).onSendMessage(
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        press,
-      ),
-    ).toBeNull();
+      async () => false,
+    ];
+    for (const flushInput of flushes) {
+      state.draft = { ...state.draft, text: "/side what is this?" };
+      expect(
+        await useThreadComposerState({ startSideChat }).onSendMessage(
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          pressAt({ flushInput }),
+        ),
+      ).toBeNull();
+    }
     expect(startSideChat).toHaveBeenCalled();
     expect(state.clearDraft).not.toHaveBeenCalled();
     state.draft = { ...state.draft, text: "/side what is this?" };
