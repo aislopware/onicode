@@ -8506,12 +8506,21 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
         : (sourceProjection.runs.find(
             (candidate) => candidate.id === pendingForkTransfer.sourcePoint.runId,
           ) ?? null);
-    // A scheduled fresh session is a conversation of its own, not the main thread beside it.
+    // The anchor's conversation decides: one from before the parent's fresh session, or a
+    // scheduled fresh session's own, is not the main thread the side chat sits beside.
+    const anchorProviderThread =
+      sourceProjection === null || anchorRun === null
+        ? undefined
+        : providerThreadForRun(sourceProjection, anchorRun);
     const sideChatAnchorDiscarded =
       sideChatFork &&
       anchorRun !== null &&
       (anchorRun.ordinal < sideChatParentBoundary ||
-        scheduledFreshRunOrdinals(sideChatParentContext).has(anchorRun.ordinal));
+        (anchorProviderThread !== undefined &&
+          providerThreadPredatesBoundary(anchorProviderThread, sideChatParentBoundary)) ||
+        scheduledFreshRunOrdinals(sideChatParentContext).has(
+          anchorProviderThread?.firstRunOrdinal ?? anchorRun.ordinal,
+        ));
     const sourceRun = sideChatAnchorDiscarded ? null : anchorRun;
     const sourceProviderThread =
       sourceProjection === null || sourceRun === null

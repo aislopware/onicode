@@ -491,8 +491,8 @@ function makeLocalCommandHarness(input: {
    */
   readonly sideChat?: {
     readonly contextRun: "current" | "failed" | "cancelled" | "delivered";
-    /** Makes this run a fresh session. */
-    readonly fresh?: boolean;
+    /** A fresh session in this run, or in a completed run between the earlier one and this. */
+    readonly fresh?: "current" | "between";
     readonly unsentResume?: boolean;
     readonly repeatedResume?: boolean;
     readonly acceptedResume?: boolean;
@@ -793,7 +793,21 @@ function makeLocalCommandHarness(input: {
                     : input.sideChat.contextRun,
                 completedAt: now,
               },
-              input.sideChat.fresh ? { ...run, freshContext: true } : run,
+              ...(input.sideChat.fresh === "between"
+                ? [
+                    {
+                      ...run,
+                      id: RunId.make("side-chat-fresh-run"),
+                      userMessageId: MessageId.make("side-chat-fresh-message"),
+                      activeAttemptId: RunAttemptId.make("side-chat-fresh-attempt"),
+                      status: "completed" as const,
+                      startedAt: now,
+                      completedAt: now,
+                      freshContext: true,
+                    },
+                    { ...run, ordinal: 3 },
+                  ]
+                : [input.sideChat.fresh === "current" ? { ...run, freshContext: true } : run]),
             ],
       contextTransfers:
         input.sideChat.nativeForkFrom === undefined
@@ -2272,21 +2286,23 @@ effectIt.effect.each([
     }),
 );
 
-effectIt.effect("a fresh side chat turn leaves a failed turn's undelivered context behind", () =>
-  Effect.gen(function* () {
-    const harness = makeLocalCommandHarness({
-      text: "",
-      manualContinuation: true,
-      sideChat: { contextRun: "failed", fresh: true },
-    });
+effectIt.effect.each(["current", "between"] as const)(
+  "a fresh side chat session leaves a failed turn's undelivered context behind (fresh run: %s)",
+  (fresh) =>
+    Effect.gen(function* () {
+      const harness = makeLocalCommandHarness({
+        text: "",
+        manualContinuation: true,
+        sideChat: { contextRun: "failed", fresh },
+      });
 
-    yield* harness.start;
+      yield* harness.start;
 
-    const texts = harness.startTurn.mock.calls.map(([turn]) => turn.message.text);
-    expect(texts).toHaveLength(1);
-    expect(texts[0]).not.toContain("SIDE_CHAT_CONTEXT");
-    expect(harness.projection().contextHandoffs[0]?.delivery).toBeUndefined();
-  }),
+      const texts = harness.startTurn.mock.calls.map(([turn]) => turn.message.text);
+      expect(texts).toHaveLength(1);
+      expect(texts[0]).not.toContain("SIDE_CHAT_CONTEXT");
+      expect(harness.projection().contextHandoffs[0]?.delivery).toBeUndefined();
+    }),
 );
 
 effectIt.effect.each([
