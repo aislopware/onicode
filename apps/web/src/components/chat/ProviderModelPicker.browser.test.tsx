@@ -243,6 +243,69 @@ it("lists a model reported twice by one provider once, with contiguous jump shor
   );
 });
 
+it("folds a provider's models under each backend, opening the thread's backend", async () => {
+  const instanceId = ProviderInstanceId.make("fx");
+  const entries = deriveProviderInstanceEntries([
+    {
+      instanceId,
+      driver: ProviderDriverKind.make("fx"),
+      enabled: true,
+      installed: true,
+      version: null,
+      status: "ready",
+      auth: { status: "authenticated" },
+      checkedAt: "2026-01-01T00:00:00.000Z",
+      models: [],
+      subProviders: [
+        { name: "Vercel AI Gateway" },
+        { name: "Codex" },
+        { name: "Grok", unavailableReason: "Signed out. Run `fx login grok` on this machine." },
+      ],
+      slashCommands: [],
+      skills: [],
+    },
+  ]);
+  const options = new Map([
+    [
+      instanceId,
+      [
+        { slug: "default", name: "Default" },
+        { slug: "gateway:opus", name: "Opus", subProvider: "Vercel AI Gateway" },
+        { slug: "codex:gpt", name: "GPT", subProvider: "Codex" },
+      ],
+    ],
+  ]);
+
+  await using screen = await render(
+    <ProviderModelPicker
+      environmentId={null}
+      activeInstanceId={instanceId}
+      model="codex:gpt"
+      lockedProvider={null}
+      instanceEntries={entries}
+      modelOptionsByInstance={options}
+      triggerAriaLabel="Choose model"
+      onInstanceModelChange={() => {}}
+    />,
+  );
+  await screen.getByRole("button", { name: "Choose model" }).click();
+  await expect.element(page.getByRole("option", { name: /GPT/ })).toBeVisible();
+  const optionNames = () =>
+    page
+      .getByRole("option")
+      .elements()
+      .map((row) => row.textContent?.match(/^(Default|Vercel AI Gateway|Codex|GPT|Opus)/)?.[1]);
+  expect(optionNames()).toEqual(["Default", "Vercel AI Gateway", "Codex", "GPT"]);
+  await expect
+    .element(page.getByText("Signed out. Run `fx login grok` on this machine."))
+    .toBeVisible();
+
+  await page.getByRole("option", { name: /Vercel AI Gateway/ }).click();
+  await vi.waitFor(() =>
+    expect(optionNames()).toEqual(["Default", "Vercel AI Gateway", "Opus", "Codex", "GPT"]),
+  );
+});
+
 it("opens on the active provider when every favorite belongs to a disabled provider", async () => {
   const entries = deriveProviderInstanceEntries(
     ["Codex", "Claude"].map((name) => ({

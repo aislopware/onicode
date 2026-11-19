@@ -4,6 +4,7 @@ const MODEL_KEY_PREFIX = "model:";
 const LEGACY_SECTION_KEY_PREFIX = "legacy-models:";
 const FAVORITE_KEY_PREFIX = "favorite:";
 const RECENT_KEY_PREFIX = "recent:";
+const SUB_PROVIDER_SECTION_KEY_PREFIX = "sub-provider:";
 /** The row that opens the whole catalogue under Favorites and Recent. */
 export const MODEL_PICKER_ALL_MODELS_KEY = "all-models";
 
@@ -64,4 +65,11 @@ export function parseModelPickerLegacySectionKey(key: string): ProviderInstanceI
   return key.startsWith(LEGACY_SECTION_KEY_PREFIX)
     ? (key.slice(LEGACY_SECTION_KEY_PREFIX.length) as ProviderInstanceId)
     : null;
+}
+
+export function modelPickerSubProviderSectionKey(
+  instanceId: ProviderInstanceId,
+  subProvider: string,
+): string {
+  return `${SUB_PROVIDER_SECTION_KEY_PREFIX}${instanceId.length}:${instanceId}${subProvider}`;
 }

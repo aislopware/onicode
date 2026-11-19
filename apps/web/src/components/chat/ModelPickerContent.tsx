@@ -12,6 +12,7 @@ import {
 import { resolveSelectableModel } from "@onicode/shared/model";
 import { useAtomValue } from "@effect/atom-react";
 import { formatProviderUpdateRequiredNotice } from "@onicode/client-runtime/providerUpdateRequiredModels";
+import { groupModelsBySubProvider } from "@onicode/client-runtime/providerSubProviders";
 import { useNavigate } from "@tanstack/react-router";
 import { LegendList, type LegendListRef } from "@legendapp/list/react";
 import {
@@ -24,6 +25,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { ChevronRightIcon } from "lucide-react";
 import { ModelListRow, ModelPickerRowItem } from "./ModelListRow";
 import { useProviderWorkspaceSnapshotRefresh } from "./useProviderWorkspaceSnapshotRefresh";
 import { getProviderStatusMessage, hasProviderSetup } from "./ProviderStatusBanner";
@@ -33,6 +35,7 @@ import {
   modelPickerLegacySectionKey,
   modelPickerModelKey,
   modelPickerRecentKey,
+  modelPickerSubProviderSectionKey,
   parseModelPickerLegacySectionKey,
   parseModelPickerModelKey,
 } from "./modelPickerKeys";
@@ -155,8 +158,24 @@ type ListRow =
     }
   /** The line between two sections. Its own row, so a header that sticks leaves it behind. */
   | { kind: "rule"; key: string }
-  | { kind: "model"; key: string; model: ModelPickerItem; inFavorites: boolean }
+  | {
+      kind: "model";
+      key: string;
+      model: ModelPickerItem;
+      inFavorites: boolean;
+      /** Listed under its backend's row, which already names it. */
+      underSubProvider?: true;
+    }
   | { kind: "legacy"; key: string; expanded: boolean }
+  /** A backend a provider's models run on, such as one of fx's. Folds its models. */
+  | {
+      kind: "subProvider";
+      key: string;
+      name: string;
+      unavailableReason: string | undefined;
+      count: number;
+      expanded: boolean;
+    }
   /** Opens every provider's models under Favorites and Recent. */
   | { kind: "all"; key: string; count: number }
   /** Why a provider lists no models, with the way to set it up when there is one. */
@@ -164,12 +183,23 @@ type ListRow =
   | { kind: "notice"; key: string; notice: string };
 
 function isHighlightableRow(row: ListRow): boolean {
-  return row.kind === "model" || row.kind === "legacy" || row.kind === "all";
+  return (
+    row.kind === "model" ||
+    row.kind === "legacy" ||
+    row.kind === "all" ||
+    (row.kind === "subProvider" && row.unavailableReason === undefined)
+  );
 }
 
 /** Null for rows that size to their text. */
 function fixedRowHeight(row: ListRow): number | null {
-  if (row.kind === "status" || row.kind === "notice") return null;
+  if (
+    row.kind === "status" ||
+    row.kind === "notice" ||
+    (row.kind === "subProvider" && row.unavailableReason !== undefined)
+  ) {
+    return null;
+  }
   return row.kind === "rule" ? RULE_PX : ROW_PX;
 }
 
@@ -463,6 +493,15 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
           : [],
       ),
   );
+  // The thread's backend opens expanded, so its models show without a click.
+  const [expandedSubProviderKeys, setExpandedSubProviderKeys] = useState(
+    () =>
+      new Set<string>(
+        activeModel?.subProvider
+          ? [modelPickerSubProviderSectionKey(props.activeInstanceId, activeModel.subProvider)]
+          : [],
+      ),
+  );
   const serverKeybindings = useAtomValue(primaryServerKeybindingsAtom);
   const keybindings = providedKeybindings ?? serverKeybindings;
   const [searchHeight, setSearchHeight] = useState(0);
@@ -483,6 +522,14 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       } else {
         next.add(instanceId);
       }
+      return next;
+    });
+  };
+
+  const toggleSubProviderSection = (key: string) => {
+    setExpandedSubProviderKeys((expanded) => {
+      const next = new Set(expanded);
+      if (!next.delete(key)) next.add(key);
       return next;
     });
   };
@@ -588,7 +635,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   const pickableModels =
     lockedProvider === null ? flatModels : flatModels.filter((m) => matchesLockedProvider(m));
   const instanceOrder = instanceEntries.map((entry) => entry.instanceId);
-  const modelRow = (model: ModelPickerItem, pinned?: "favorite" | "recent"): ListRow => ({
+  const modelRow = (
+    model: ModelPickerItem,
+    pinned?: "favorite" | "recent",
+  ): Extract<ListRow, { kind: "model" }> => ({
     kind: "model",
     key:
       pinned === "favorite"
@@ -673,13 +723,48 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
         pickableModels.filter((model) => model.instanceId === entry.instanceId),
         { favoriteModelKeys: favoritesSet, groupFavorites: false, instanceOrder: [] },
       );
+      const subProviders = entry.snapshot.subProviders ?? [];
+      const section: ListRow[] = [];
+      if (subProviders.length > 0) {
+        // A provider whose models run on several backends folds each backend's models under it.
+        const { ungrouped, groups } = groupModelsBySubProvider(
+          models,
+          subProviders,
+          (model) => model.subProvider,
+        );
+        section.push(...ungrouped.map((model) => modelRow(model)));
+        for (const { subProvider, models: subProviderModels } of groups) {
+          const key = modelPickerSubProviderSectionKey(entry.instanceId, subProvider.name);
+          const expanded =
+            subProvider.unavailableReason === undefined && expandedSubProviderKeys.has(key);
+          section.push(
+            {
+              kind: "subProvider",
+              key,
+              name: subProvider.name,
+              unavailableReason: subProvider.unavailableReason,
+              count: subProviderModels.length,
+              expanded,
+            },
+            ...(expanded
+              ? subProviderModels.map((model) => ({
+                  ...modelRow(model),
+                  underSubProvider: true as const,
+                }))
+              : []),
+          );
+        }
+      }
       const isOlder = (model: ModelPickerItem) => model.isLegacy === true && !isFavorite(model);
-      const older = models.filter(isOlder);
+      const older = subProviders.length > 0 ? [] : models.filter(isOlder);
       const expanded = expandedLegacyInstances.has(entry.instanceId);
-      const section: ListRow[] = [
-        ...models.filter((model) => !isOlder(model)),
-        ...(expanded ? older : []),
-      ].map((model) => modelRow(model));
+      if (subProviders.length === 0) {
+        section.push(
+          ...[...models.filter((model) => !isOlder(model)), ...(expanded ? older : [])].map(
+            (model) => modelRow(model),
+          ),
+        );
+      }
       // The toggle trails the section, so expanding it reveals older models above it.
       if (older.length > 0) {
         section.push({
@@ -713,6 +798,9 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
   })();
 
   const rowIndexByKey = new Map(rows.map((row, index) => [row.key, index] as const));
+  const subProviderRowKeys = new Set(
+    rows.flatMap((row) => (row.kind === "subProvider" ? [row.key] : [])),
+  );
   const filteredItemKeys = rows.filter(isHighlightableRow).map((row) => row.key);
   const comboIndexByKey = new Map(filteredItemKeys.map((key, index) => [key, index] as const));
   const headerIndices = isSearching
@@ -730,6 +818,11 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
       ...flatModels
         .filter((model) => model.isLegacy)
         .map((model) => modelPickerLegacySectionKey(model.instanceId)),
+      ...instanceEntries.flatMap((entry) =>
+        (entry.snapshot.subProviders ?? []).map((subProvider) =>
+          modelPickerSubProviderSectionKey(entry.instanceId, subProvider.name),
+        ),
+      ),
     ]),
   ];
   const pinnedKey = (model: ModelPickerItem | undefined) =>
@@ -949,6 +1042,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
               toggleLegacySection(legacyInstanceId);
               return;
             }
+            if (subProviderRowKeys.has(modelKey)) {
+              toggleSubProviderSection(modelKey);
+              return;
+            }
             const model = parseModelPickerModelKey(modelKey);
             if (model) {
               handleModelSelect(
@@ -1043,6 +1140,10 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                       toggleLegacySection(legacyInstanceId);
                       return;
                     }
+                    if (subProviderRowKeys.has(highlightedModelKeyRef.current)) {
+                      toggleSubProviderSection(highlightedModelKeyRef.current);
+                      return;
+                    }
                     const model = parseModelPickerModelKey(highlightedModelKeyRef.current);
                     if (model) {
                       handleModelSelect(model.slug, model.instanceId, e.shiftKey);
@@ -1096,6 +1197,32 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                           : gt("Show more", { $context: "expands the list of older models" })}
                       </ModelPickerRowItem>
                     );
+                  case "subProvider":
+                    return row.unavailableReason === undefined ? (
+                      <ModelPickerRowItem
+                        index={comboIndexByKey.get(row.key) ?? -1}
+                        value={row.key}
+                        aria-expanded={row.expanded}
+                        className="gap-2 text-muted-foreground data-highlighted:text-foreground"
+                      >
+                        <ChevronRightIcon
+                          aria-hidden="true"
+                          className={cn("size-3.5 shrink-0", row.expanded && "rotate-90")}
+                        />
+                        <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                        <span className="tabular-nums">{row.count}</span>
+                      </ModelPickerRowItem>
+                    ) : (
+                      <div className="px-2 py-1.5 text-xs leading-snug text-muted-foreground">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate">{row.name}</span>
+                          <span>
+                            {gt("Unavailable", { $context: "backend cannot be used right now" })}
+                          </span>
+                        </div>
+                        <p className="mt-0.5">{row.unavailableReason}</p>
+                      </div>
+                    );
                   case "all":
                     return (
                       <ModelPickerRowItem
@@ -1119,7 +1246,7 @@ export const ModelPickerContent = memo(function ModelPickerContent(props: {
                         instanceId={model.instanceId}
                         slug={model.slug}
                         name={model.name}
-                        subProvider={model.subProvider}
+                        subProvider={row.underSubProvider ? undefined : model.subProvider}
                         driverKind={model.driverKind}
                         providerDisplayName={model.instanceDisplayName}
                         providerAccentColor={model.instanceAccentColor}
