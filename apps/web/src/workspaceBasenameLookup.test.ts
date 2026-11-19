@@ -152,23 +152,37 @@ describe("chat file links into another project", () => {
   });
 
   it.each([
-    { cited: "handoff.txt", other: "archive/handoff.txt" },
-    { cited: "HANDOFF.txt", other: "archive/Handoff.txt" },
-  ])("opens nothing when overlapping projects also list $other", ({ cited, other }) => {
-    expect(
-      pickProjectLinkMatch("handoff.txt", [
-        {
-          root: "/home/user/reports",
-          entries: [
-            { path: `team/docs/${cited}`, kind: "file" },
-            { path: other, kind: "file" },
-          ],
-        },
-        { root: "/home/user/reports/team", entries: [{ path: `docs/${cited}`, kind: "file" }] },
-        { root: "/home/user/reports/team/docs", entries: [{ path: cited, kind: "file" }] },
-      ]),
-    ).toBeNull();
-  });
+    { cited: "handoff.txt", other: "archive/handoff.txt", roots: 3 },
+    { cited: "HANDOFF.txt", other: "archive/Handoff.txt", roots: 3 },
+    // The outer project alone is ambiguous by case; only one nested project lists the file.
+    { cited: "HANDOFF.txt", other: "archive/Handoff.txt", roots: 2 },
+  ])(
+    "opens nothing when $roots overlapping projects also list $other",
+    ({ cited, other, roots }) => {
+      expect(
+        pickProjectLinkMatch(
+          "handoff.txt",
+          [
+            {
+              root: "/home/user/reports",
+              entries: [
+                { path: `team/docs/${cited}`, kind: "file" as const },
+                { path: other, kind: "file" as const },
+              ],
+            },
+            {
+              root: "/home/user/reports/team",
+              entries: [{ path: `docs/${cited}`, kind: "file" as const }],
+            },
+            {
+              root: "/home/user/reports/team/docs",
+              entries: [{ path: cited, kind: "file" as const }],
+            },
+          ].slice(0, roots),
+        ),
+      ).toBeNull();
+    },
+  );
 });
 
 // regression: #35337 a path the agent cited inside a checkout no project is rooted at

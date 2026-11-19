@@ -138,10 +138,17 @@ export function pickProjectLinkMatch(
     const key = isWindowsAbsolutePath(path) ? path.replaceAll("/", "\\") : path;
     if (!matches.has(key)) matches.set(key, path);
   };
+  const folded = target.toLowerCase();
+  const listsFolded = (entry: WorkspaceEntryCandidate) =>
+    entry.kind === "file" && basenameOfPath(entry.path).toLowerCase() === folded;
   for (const { root, entries } of searches) {
     if (isBasename) {
       const match = pickWorkspaceBasenameMatch(target, entries);
-      if (match === null) continue;
+      // A root left ambiguous by case still lists the name, so the scan below must run.
+      if (match === null) {
+        if (entries.some(listsFolded)) rootHits += 1;
+        continue;
+      }
       rootHits += 1;
       addMatch(resolveWorkspaceFilePath(match, root));
     } else {
@@ -152,12 +159,9 @@ export function pickProjectLinkMatch(
   }
   if (isBasename && rootHits > 1) {
     // A root's pick, or a root left ambiguous by case, can hide another file elsewhere.
-    const folded = target.toLowerCase();
     for (const { root, entries } of searches) {
       for (const entry of entries) {
-        if (entry.kind === "file" && basenameOfPath(entry.path).toLowerCase() === folded) {
-          addMatch(resolveWorkspaceFilePath(entry.path, root));
-        }
+        if (listsFolded(entry)) addMatch(resolveWorkspaceFilePath(entry.path, root));
       }
     }
   }

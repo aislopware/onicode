@@ -1,8 +1,8 @@
 diff --git a/out/electronHttpExecutor.js b/out/electronHttpExecutor.js
-index b701311..5643485 100644
+index b701311..d61d29a 100644
 --- a/out/electronHttpExecutor.js
 +++ b/out/electronHttpExecutor.js
-@@ -3,7 +3,34 @@ Object.defineProperty(exports, "__esModule", { value: true });
+@@ -3,7 +3,36 @@ Object.defineProperty(exports, "__esModule", { value: true });
  exports.ElectronHttpExecutor = exports.NET_SESSION_NAME = void 0;
  exports.getNetSession = getNetSession;
  const builder_util_runtime_1 = require("builder-util-runtime");
@@ -11,8 +11,10 @@ index b701311..5643485 100644
  exports.NET_SESSION_NAME = "electron-updater";
 +// A stall on a slow link is retried, resuming after the bytes earlier attempts wrote.
 +const DOWNLOAD_STALL_RETRIES = 3;
++// A mirror can end a 206 before the total it declared; a retry asks for the rest.
++const PARTIAL_CONTENT_ENDED = "Partial content ended before the declared total";
 +function isDownloadStall(error) {
-+    return error != null && (error.message === "Request timed out" || error.message === "net::ERR_TIMED_OUT");
++    return error != null && (error.message === "Request timed out" || error.message === "net::ERR_TIMED_OUT" || error.message === PARTIAL_CONTENT_ENDED);
 +}
 +// doDownload turns any status >= 400 into this error before a response handler sees it.
 +function isRangeNotSatisfiable(error) {
@@ -37,7 +39,7 @@ index b701311..5643485 100644
  function getNetSession() {
      return require("electron").session.fromPartition(exports.NET_SESSION_NAME, {
          cache: false,
-@@ -16,27 +43,133 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
+@@ -16,27 +45,139 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
          this.cachedSession = null;
      }
      async download(url, destination, options) {
@@ -143,6 +145,7 @@ index b701311..5643485 100644
 +                            return;
 +                        }
 +                        const start = resumed ? offset : 0;
++                        const total = resumed ? Number(/\/(\d+)$/.exec(contentRange)?.[1]) : NaN;
 +                        const streams = [];
 +                        const contentLength = (0, builder_util_runtime_1.safeGetHeader)(response, "content-length");
 +                        if (options.onProgress != null && contentLength != null) {
@@ -170,6 +173,11 @@ index b701311..5643485 100644
 +                                return;
 +                            }
 +                            fileOut.once("close", () => {
++                                const end = start + fileOut.bytesWritten;
++                                if (end > offset && end < total) {
++                                    callback(new Error(PARTIAL_CONTENT_ENDED));
++                                    return;
++                                }
 +                                const fileDigest = resumed ? createDigest(options) : null;
 +                                if (fileDigest == null) {
 +                                    callback(null);
@@ -187,7 +195,7 @@ index b701311..5643485 100644
          });
      }
      createRequest(options, callback) {
-@@ -61,6 +194,35 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
+@@ -61,6 +202,35 @@ class ElectronHttpExecutor extends builder_util_runtime_1.HttpExecutor {
          }
          return request;
      }

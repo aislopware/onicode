@@ -1,3 +1,4 @@
+import { isProviderPickerReady } from "@onicode/client-runtime/providerPickerReadiness";
 import { threadPullRequestKeyOf } from "@onicode/client-runtime/thread-pull-requests";
 import * as Dialog from "../../components/ui/Dialog";
 import type {
@@ -214,15 +215,7 @@ export function buildComposerModelItems(
 ): ComposerCommandItem[] {
   // The picker retains saved selections even when their provider is no longer usable.
   const readyProviderIds = new Set(
-    providers
-      .filter(
-        (provider) =>
-          provider.installed &&
-          provider.status === "ready" &&
-          provider.auth.status !== "unauthenticated" &&
-          provider.availability !== "unavailable",
-      )
-      .map((provider) => provider.instanceId),
+    providers.filter(isProviderPickerReady).map((provider) => provider.instanceId),
   );
   return rankComposerModelMentions(
     modelOptions.filter(

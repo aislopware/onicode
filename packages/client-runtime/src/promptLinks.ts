@@ -10,6 +10,7 @@ import {
   type ThreadPullRequestLink,
 } from "@onicode/contracts";
 import { resolveSelectableModel, type SelectableModelOption } from "@onicode/shared/model";
+import { isProviderPickerReady } from "./providerPickerReadiness.ts";
 import type { AsyncResult } from "effect/reactivity";
 import type { PromptLinkPullRequest, PromptLinkRepository } from "@onicode/shared/promptLinks";
 import {
@@ -101,24 +102,34 @@ const PROVIDER_ALIASES: Record<string, string> = { claude: "claudeagent" };
  */
 export function resolvePromptLinkModelSelection(
   providers: ReadonlyArray<
-    Pick<ServerProvider, "instanceId" | "driver" | "enabled" | "availability" | "status"> & {
+    Pick<
+      ServerProvider,
+      | "instanceId"
+      | "driver"
+      | "enabled"
+      | "availability"
+      | "status"
+      | "installed"
+      | "auth"
+      | "subProviders"
+      | "modelsRetained"
+    > & {
       readonly models: ReadonlyArray<
-        SelectableModelOption & { readonly isDefault?: boolean | undefined }
+        SelectableModelOption & {
+          readonly isDefault?: boolean | undefined;
+          readonly subProvider?: string | undefined;
+        }
       >;
     }
   >,
   request: { readonly provider: string; readonly model: string | null },
 ): { readonly selection: ModelSelection; readonly exact: boolean } | null {
   const driver = PROVIDER_ALIASES[request.provider] ?? request.provider;
+  // The pickers offer the same instances.
   const usable = providers.filter(
-    (provider) =>
-      provider.driver.toLowerCase() === driver &&
-      provider.enabled &&
-      provider.availability !== "unavailable",
+    (provider) => provider.driver.toLowerCase() === driver && isProviderPickerReady(provider),
   );
-  const instance =
-    usable.find((provider) => provider.status === "ready") ??
-    usable.find((provider) => provider.status === "warning");
+  const instance = usable.find((provider) => provider.status === "ready") ?? usable[0];
   if (instance === undefined) return null;
   const requested =
     request.model === null
