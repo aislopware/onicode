@@ -271,6 +271,10 @@ do. These tabs ignore your system proxy settings, so they can't reach a host
 you connect to only through a proxy or over HTTPS with a privately issued
 certificate. The mobile app always streams tabs from the host.
 
+If the host runs an older Onicode, or your connection to it has no terminal
+access, `localhost` tabs you open in the desktop app stream from the host
+instead.
+
 The first tab downloads a headless Chrome, about 120 MB, into the Onicode home. It
 is the same browser [HTML renders](html-renders.md) use, so a host downloads it
 only once. Some Linux hosts need [setup](#browser-host-setup) before it can

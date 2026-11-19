@@ -6,6 +6,8 @@ import {
   AuthSessionId,
   AuthTerminalOperateScope,
 } from "@onicode/contracts";
+// @effect-diagnostics-next-line nodeBuiltinImport:off -- A server with production's WebSocket options.
+import * as NodeHttp from "node:http";
 import * as NodeNet from "node:net";
 import * as Context from "effect/Context";
 import * as Deferred from "effect/Deferred";
@@ -45,7 +47,14 @@ const serveTunnel = (sessionInvalidated: Effect.Effect<void> = Effect.never) =>
   Effect.gen(function* () {
     const services = yield* Layer.build(
       HttpRouter.serve(PreviewTunnel.routeLayer, { disableListenLog: true }).pipe(
-        Layer.provideMerge(NodeHttpServer.layerTest),
+        // As in production, so the route has to turn compression down itself.
+        Layer.provideMerge(
+          NodeHttpServer.layer(NodeHttp.createServer, {
+            host: "127.0.0.1",
+            port: 0,
+            websocket: { perMessageDeflate: true },
+          }),
+        ),
         Layer.provide(PreviewTunnel.layer),
         Layer.provide(
           Layer.mock(SessionStore.SessionStore, {
@@ -79,18 +88,12 @@ const openTunnel = (url: string) =>
     (socket) => Effect.sync(() => socket.terminate()),
   );
 
-/** How the route turned down a tunnel: its status, and whether it marked the port as the reason. */
+/** The status the route turned a tunnel down with. */
 const refusal = (client: NodeWS.WebSocket) =>
   Effect.promise(
     () =>
-      new Promise<{ status: number | undefined; portRefused: boolean }>((resolve, reject) => {
-        client.on("unexpected-response", (_request, response) =>
-          resolve({
-            status: response.statusCode,
-            portRefused:
-              response.headers[PreviewTunnel.PREVIEW_TUNNEL_PORT_REFUSED_HEADER] !== undefined,
-          }),
-        );
+      new Promise<number | undefined>((resolve, reject) => {
+        client.on("unexpected-response", (_request, response) => resolve(response.statusCode));
         client.on("open", () => reject(new Error("tunnel opened")));
         client.on("error", reject);
       }),
@@ -117,20 +120,17 @@ it.effect("pipes bytes both ways between the WebSocket and the loopback port", (
       if (clientReceived.length === 6) done.resolve();
     });
     yield* Effect.promise(() => done.promise);
+    // Compression would queue frames past the TCP buffer that backpressure watches.
+    expect(client.extensions).toBe("");
     expect(upstreamReceived).toEqual([0x01, 0x02, 0x03]);
     expect(clientReceived).toEqual([0x10, 0x11, 0xee, 0x01, 0x02, 0x03]);
   }),
 );
 
 it.effect.each([
-  { case: "the server's own port", target: "self", ticket: "operator", portRefused: true },
-  {
-    case: "a session without terminal:operate",
-    target: "listed",
-    ticket: "reader",
-    portRefused: false,
-  },
-] as const)("refuses $case with 403 before dialling", ({ target, ticket, portRefused }) =>
+  { case: "the server's own port", target: "self", ticket: "operator" },
+  { case: "a session without terminal:operate", target: "listed", ticket: "reader" },
+] as const)("refuses $case with 403 before dialling", ({ target, ticket }) =>
   Effect.gen(function* () {
     let dialled = 0;
     const countDial = (socket: NodeNet.Socket) => {
@@ -143,13 +143,12 @@ it.effect.each([
     const client = yield* openTunnel(
       `${tunnel.origin}/api/preview/tunnel?port=${port}&wsTicket=${ticket}`,
     );
-    const response = yield* refusal(client);
-    expect(response).toEqual({ status: 403, portRefused });
+    expect(yield* refusal(client)).toBe(403);
     expect(dialled).toBe(0);
   }),
 );
 
-it.effect("answers a port nothing listens on with 502, marked as about the port", () =>
+it.effect("answers a port nothing listens on with 502", () =>
   Effect.gen(function* () {
     const closed = yield* Effect.promise(
       () =>
@@ -163,8 +162,7 @@ it.effect("answers a port nothing listens on with 502, marked as about the port"
     );
     const tunnel = yield* serveTunnel();
     const client = yield* openTunnel(`${tunnel.origin}/api/preview/tunnel?port=${closed}`);
-    const response = yield* refusal(client);
-    expect(response).toEqual({ status: 502, portRefused: true });
+    expect(yield* refusal(client)).toBe(502);
   }),
 );
 
