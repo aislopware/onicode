@@ -656,6 +656,14 @@ export const layer = Layer.effect(
       )
         return;
       if (run.status === "completed") {
+        const cleared = yield* sql`
+          UPDATE scheduled_tasks
+          SET last_run_status = 'succeeded', last_run_error = NULL
+          WHERE task_id = ${taskId} AND last_run_at = ${startedAtIso}
+            AND last_run_status = 'failed' AND last_run_error = ${HELD_OCCURRENCE_ERROR}
+          RETURNING task_id
+        `;
+        if (cleared.length > 0) yield* notifyChanged;
         const removed = yield* sql`
           DELETE FROM scheduled_tasks
           WHERE task_id = ${taskId} AND last_run_at = ${startedAtIso}
