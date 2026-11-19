@@ -2005,7 +2005,7 @@ function OpenCommandPaletteDialog(props: {
     readonly rawCwd: string;
     readonly platform: string;
     readonly currentProjectCwd: string | null;
-    /** From the folder picker: used as is, so a name ending in a space is refused, not trimmed. */
+    /** A real folder (picker, server listing): used as is, so a trailing space is refused, not trimmed. */
     readonly picked?: boolean;
   }) => {
     const environment = environments.find(
@@ -2460,9 +2460,11 @@ function OpenCommandPaletteDialog(props: {
     );
   };
 
-  const resolvedAddProjectPath = hasTrailingPathSeparator(query)
-    ? (browseResult?.parentPath ?? query.trim())
-    : (exactBrowseEntry?.fullPath ?? query.trim());
+  // A folder the server listed is a real path; only typed text is trimmed.
+  const browsedAddProjectPath = hasTrailingPathSeparator(query)
+    ? browseResult?.parentPath
+    : exactBrowseEntry?.fullPath;
+  const resolvedAddProjectPath = browsedAddProjectPath ?? query.trim();
 
   const canBrowseUp = !relativePathNeedsActiveProject && browsePath.canBrowseUp;
 
@@ -2646,6 +2648,7 @@ function OpenCommandPaletteDialog(props: {
                       folderSearchEnvironment?.serverConfig?.environment.platform.os,
                     ),
                     currentProjectCwd: null,
+                    picked: true,
                   })
                 : undefined,
           });
@@ -2862,7 +2865,7 @@ function OpenCommandPaletteDialog(props: {
       if (isCloneDestinationStep) {
         void submitAddProjectCloneFlow(resolvedAddProjectPath);
       } else {
-        void handleAddProject(resolvedAddProjectPath);
+        void handleAddProject(resolvedAddProjectPath, browsedAddProjectPath !== undefined);
       }
       return;
     }
@@ -3133,7 +3136,7 @@ function OpenCommandPaletteDialog(props: {
           if (isCloneDestinationStep) {
             void submitAddProjectCloneFlow(resolvedAddProjectPath);
           } else {
-            void handleAddProject(resolvedAddProjectPath);
+            void handleAddProject(resolvedAddProjectPath, browsedAddProjectPath !== undefined);
           }
         }}
       />

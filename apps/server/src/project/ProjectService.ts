@@ -485,6 +485,8 @@ export const make = Effect.gen(function* () {
         workspaceRoot: input.workspaceRoot,
         createIfMissing: input.createWorkspaceRootIfMissing ?? false,
       });
+      // Again once resolved: `foo /` and `foo /.` resolve to `foo `.
+      yield* rejectUntrimmedWorkspaceRoot(input.projectId, workspaceRoot);
       yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
       yield* commit(
         {
@@ -524,6 +526,7 @@ export const make = Effect.gen(function* () {
               workspaceRoot: input.workspaceRoot,
             });
       if (workspaceRoot !== previousRoot) {
+        yield* rejectUntrimmedWorkspaceRoot(input.projectId, workspaceRoot);
         yield* rejectWorktreeContainer(input.projectId, workspaceRoot);
       }
       yield* commit(

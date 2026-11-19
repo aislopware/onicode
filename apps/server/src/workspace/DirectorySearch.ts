@@ -29,10 +29,7 @@ const MAX_OUTPUT_BYTES = 4 * 1024 * 1024;
 const FZF_NO_MATCH = 1;
 
 const splitLines = (stdout: string) =>
-  stdout
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
+  stdout.split(/\r?\n/).filter((line) => line.trim().length > 0);
 
 /** @public */
 export const make = Effect.gen(function* () {

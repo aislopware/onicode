@@ -59,11 +59,12 @@ describe("DirectorySearch.find", () => {
         (input) =>
           input.command === "zoxide"
             ? { code: 0, stdout: ZOXIDE_LIST }
-            : { code: 0, stdout: "/home/u/work/oni-docs\n/home/u/work/onicode\n" },
+            : { code: 0, stdout: "/home/u/work/oni-docs \n/home/u/work/onicode\n" },
         "oni",
         1,
       );
-      expect(result.entries).toEqual([{ name: "oni-docs", fullPath: "/home/u/work/oni-docs" }]);
+      // A folder name can end in a space; trimming would name its neighbour.
+      expect(result.entries).toEqual([{ name: "oni-docs ", fullPath: "/home/u/work/oni-docs " }]);
       expect(calls[1]).toMatchObject({ command: "fzf", stdin: ZOXIDE_LIST });
       expect(isAvailable).toBe(true);
       expect(calls[1]?.args[0]).toBe("--filter=oni");

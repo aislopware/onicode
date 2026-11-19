@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 
-import { FilesystemBrowseError } from "./filesystem.ts";
+import { FilesystemBrowseError, FilesystemBrowseResult } from "./filesystem.ts";
 
 describe("FilesystemBrowseError", () => {
   it("derives a stable message from browse context while retaining the cause", () => {
@@ -29,5 +29,20 @@ describe("FilesystemBrowseError", () => {
     expect(error.message).toBe("Legacy filesystem browse failure.");
     expect(error.partialPath).toBeUndefined();
     expect(error.failure).toBeUndefined();
+  });
+});
+
+describe("FilesystemBrowseResult", () => {
+  it("keeps a space that ends a listed folder's path", () => {
+    const schema = FilesystemBrowseResult;
+    const result = Schema.decodeSync(schema)(
+      Schema.encodeSync(schema)({
+        parentPath: "/workspace/foo ",
+        entries: [{ name: "bar ", fullPath: "/workspace/foo /bar " }],
+      }),
+    );
+
+    expect(result.parentPath).toBe("/workspace/foo ");
+    expect(result.entries[0]?.fullPath).toBe("/workspace/foo /bar ");
   });
 });

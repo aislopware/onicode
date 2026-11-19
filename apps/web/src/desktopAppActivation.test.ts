@@ -322,26 +322,29 @@ describe("desktop app activation", () => {
   });
 
   it("adds a new folder once when two opens ask for it together", async () => {
-    const projects = new Map<string, ProjectId>();
+    // The server owns a folder once it is created; the page sees it only when its event arrives.
+    const onServer = new Set<string>();
+    const shown = new Map<string, ProjectId>();
     const deps = dependencies({
       findProject: (_environmentId, workspaceRoot) => {
-        const id = projects.get(workspaceRoot);
+        const id = shown.get(workspaceRoot);
         return id === undefined ? null : { id, environmentId, workspaceRoot };
       },
       createProject: vi.fn(async (_environmentId, workspaceRoot) => {
-        if (projects.has(workspaceRoot)) {
+        if (onServer.has(workspaceRoot)) {
           throw new Error("Active project already exists for workspace root");
         }
+        onServer.add(workspaceRoot);
         return createdProjectId;
       }),
       waitForProject: vi.fn(async ({ projectId }) => {
-        projects.set(request.workspaceRoot, projectId);
+        shown.set(request.workspaceRoot, projectId);
       }),
     });
     const harness = receiverHarness();
     harness.receiver.setHandler((input) => handleDesktopAppActivationRequest(input, deps));
     const completed = harness.completed(2);
-    // A drop takes its turn the same way.
+    // A command and a drop share this queue; two commands stand in for them.
     harness.deliver();
     harness.deliver({ ...request, requestId: "request-2" });
     await completed;
