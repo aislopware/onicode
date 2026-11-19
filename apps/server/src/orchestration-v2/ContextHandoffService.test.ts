@@ -9,6 +9,7 @@ import {
   ThreadId,
   TurnItemId,
   type OrchestrationV2AppThread,
+  type OrchestrationV2Run,
   type OrchestrationV2TurnItem,
 } from "@onicode/contracts";
 import * as DateTime from "effect/DateTime";
@@ -258,39 +259,146 @@ it("covers the run range of a very long delta", () => {
   );
 });
 
+const forkTestNow = DateTime.makeUnsafe("2026-01-01T00:00:00.000Z");
+
+function forkTestThread(
+  id: ThreadId,
+  forkedFrom: OrchestrationV2AppThread["forkedFrom"] = null,
+): OrchestrationV2AppThread {
+  return {
+    createdBy: "user",
+    creationSource: "web",
+    id,
+    projectId: ProjectId.make("project:fork-history"),
+    title: "Fork history",
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+    runtimeMode: "full-access",
+    interactionMode: "default",
+    branch: null,
+    worktreePath: null,
+    activeProviderThreadId: null,
+    lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: id },
+    forkedFrom,
+    createdAt: forkTestNow,
+    updatedAt: forkTestNow,
+    archivedAt: null,
+    settledOverride: null,
+    settledAt: null,
+    lastVisitedAt: null,
+    snoozedUntil: null,
+    snoozedAt: null,
+    deletedAt: null,
+  };
+}
+
+/** One completed run of `threadId` whose user message is `text`. */
+function forkTestRun(threadId: ThreadId, ordinal: number, text: string, freshContext?: true) {
+  const runId = RunId.make(`${threadId}:run-${ordinal}`);
+  const messageId = MessageId.make(`${runId}:message`);
+  const run: OrchestrationV2Run = {
+    id: runId,
+    threadId,
+    ordinal,
+    providerInstanceId: ProviderInstanceId.make("codex"),
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
+    providerThreadId: null,
+    userMessageId: messageId,
+    rootNodeId: null,
+    activeAttemptId: null,
+    status: "completed",
+    requestedAt: forkTestNow,
+    startedAt: forkTestNow,
+    completedAt: forkTestNow,
+    checkpointId: null,
+    contextHandoffId: null,
+    ...(freshContext ? { freshContext } : {}),
+  };
+  const item: OrchestrationV2TurnItem = {
+    id: TurnItemId.make(`${runId}:item`),
+    threadId,
+    runId,
+    nodeId: null,
+    providerThreadId: null,
+    providerTurnId: null,
+    nativeItemRef: null,
+    parentItemId: null,
+    ordinal,
+    status: "completed",
+    title: null,
+    startedAt: forkTestNow,
+    completedAt: forkTestNow,
+    updatedAt: forkTestNow,
+    createdBy: "user",
+    creationSource: "web",
+    type: "user_message",
+    inputIntent: "turn_start",
+    messageId,
+    text,
+    attachments: [],
+  };
+  return { run, item };
+}
+
+it.effect("a portable fork carries no context its source discarded for a fresh session", () =>
+  Effect.gen(function* () {
+    const parentId = ThreadId.make("thread:fork-history-parent");
+    const forkId = ThreadId.make("thread:fork-history-fork");
+    const parentRun = forkTestRun(parentId, 1, "PARENT_WORK");
+    const forkFresh = forkTestRun(forkId, 1, "FRESH_START", true);
+    const forkLater = forkTestRun(forkId, 2, "FORK_FOLLOW_UP");
+    const fork = {
+      thread: forkTestThread(forkId, { type: "run", threadId: parentId, runId: parentRun.run.id }),
+      runs: [forkFresh.run, forkLater.run],
+      attempts: [],
+      turnItems: [forkFresh.item, forkLater.item],
+      contextTransfers: [],
+    };
+    const projections = new Map([
+      [
+        parentId,
+        {
+          thread: forkTestThread(parentId),
+          runs: [parentRun.run],
+          attempts: [],
+          turnItems: [parentRun.item],
+          contextTransfers: [],
+        },
+      ],
+      [forkId, fork],
+    ]);
+    const items = yield* ContextHandoffService.readForkHistoryItems(
+      {
+        getThreadRecords: (threadId, _fields, filter) => {
+          const projection = projections.get(threadId);
+          if (projection === undefined)
+            return Effect.fail(new ProjectionStoreThreadNotFoundError({ threadId }));
+          const runIds = filter?.turnItemRunIds;
+          return Effect.succeed({
+            ...projection,
+            turnItems: projection.turnItems.filter(
+              (item) => runIds === undefined || runIds.includes(item.runId),
+            ),
+          } as never);
+        },
+      },
+      fork,
+      forkLater.run,
+    );
+    assert.deepEqual(
+      items.flatMap((item) => (item.type === "user_message" ? [item.text] : [])),
+      ["FRESH_START", "FORK_FOLLOW_UP"],
+    );
+  }),
+);
+
 it.effect("inherited history stops at a missing fork ancestor", () =>
   Effect.gen(function* () {
-    const now = DateTime.makeUnsafe("2026-01-01T00:00:00.000Z");
-    const threadId = ThreadId.make("thread:fork-of-missing");
-    const thread: OrchestrationV2AppThread = {
-      createdBy: "user",
-      creationSource: "web",
-      id: threadId,
-      projectId: ProjectId.make("project:fork-of-missing"),
-      title: "Fork of a missing thread",
-      providerInstanceId: ProviderInstanceId.make("codex"),
-      modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "gpt-5.4" },
-      runtimeMode: "full-access",
-      interactionMode: "default",
-      branch: null,
-      worktreePath: null,
-      activeProviderThreadId: null,
-      lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
-      forkedFrom: {
-        type: "run",
-        threadId: ThreadId.make("thread:missing-ancestor"),
-        runId: RunId.make("run:missing-ancestor"),
-      },
-      createdAt: now,
-      updatedAt: now,
-      archivedAt: null,
-      settledOverride: null,
-      settledAt: null,
-      lastVisitedAt: null,
-      snoozedUntil: null,
-      snoozedAt: null,
-      deletedAt: null,
-    };
+    const thread = forkTestThread(ThreadId.make("thread:fork-of-missing"), {
+      type: "run",
+      threadId: ThreadId.make("thread:missing-ancestor"),
+      runId: RunId.make("run:missing-ancestor"),
+    });
     const items = yield* ContextHandoffService.readInheritedHandoffItems(
       {
         getThreadRecords: (missing) =>

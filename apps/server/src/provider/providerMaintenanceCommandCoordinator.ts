@@ -24,7 +24,9 @@ class MachineLockError extends Schema.TaggedError<MachineLockError>()("MachineLo
   cause: Schema.Defect(),
 }) {}
 
-const lockDirectory = () => NodePath.join(NodeOS.tmpdir(), "onicode-provider-updates");
+// The updated CLI belongs to one OS user, so its servers share this lock whatever TMPDIR or
+// Onicode home each was started with; a shared temp directory can belong to another user.
+const lockDirectory = () => NodePath.join(NodeOS.homedir(), ".onicode", "provider-updates");
 
 /** @internal */
 export const machineLockFile = (lockKey: string) =>
