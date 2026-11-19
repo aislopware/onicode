@@ -72,7 +72,8 @@ export const resolveCodexHomeLayout = Effect.fn("resolveCodexHomeLayout")(functi
 });
 
 // Codex accepts bundled plugins only from this path under CODEX_HOME. The shared
-// config names the original home, so shadow homes must override it through their .tmp link.
+// config names the original home, so shadow homes must override it through their .tmp, a
+// link to the shared one or a directory Codex made before the shared one existed.
 const BUNDLED_MARKETPLACE = "openai-bundled";
 
 const quoteCliArg = (value: string) => `"${value.replace(/["\\$`]/g, "\\$&")}"`;
@@ -96,7 +97,14 @@ export class CodexShadowHomeFileSystemError extends Schema.TaggedError<CodexShad
   "CodexShadowHomeFileSystemError",
   {
     ...CodexShadowHomeContext,
-    operation: Schema.Literals(["readLink", "makeDirectory", "readDirectory", "remove", "symlink"]),
+    operation: Schema.Literals([
+      "readLink",
+      "makeDirectory",
+      "readDirectory",
+      "remove",
+      "stat",
+      "symlink",
+    ]),
     path: Schema.String,
     targetPath: Schema.optional(Schema.String),
     entryName: Schema.optional(Schema.String),
@@ -235,6 +243,29 @@ const removePrivateSymlink = Effect.fn("CodexHomeLayout.removePrivateSymlink")(f
   }
 });
 
+const isDirectory = Effect.fn("CodexHomeLayout.isDirectory")(function* (input: {
+  readonly fileSystem: FileSystem.FileSystem;
+  readonly sharedHomePath: string;
+  readonly effectiveHomePath: string;
+  readonly entryName: string;
+  readonly path: string;
+}): Effect.fn.Return<boolean, CodexShadowHomeError> {
+  const info = yield* input.fileSystem.stat(input.path).pipe(
+    Effect.catchTags({
+      PlatformError: (cause) =>
+        new CodexShadowHomeFileSystemError({
+          sharedHomePath: input.sharedHomePath,
+          effectiveHomePath: input.effectiveHomePath,
+          operation: "stat",
+          path: input.path,
+          entryName: input.entryName,
+          cause,
+        }),
+    }),
+  );
+  return info.type === "Directory";
+});
+
 const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (input: {
   readonly fileSystem: FileSystem.FileSystem;
   readonly sharedHomePath: string;
@@ -265,6 +296,12 @@ const ensureSymlink = Effect.fn("CodexHomeLayout.ensureSymlink")(function* (inpu
   );
 
   if (state._tag === "NotSymlink") {
+    // Codex created this before the shared .tmp existed and may be writing to it now.
+    if (input.entryName === ".tmp" && (yield* isDirectory({ ...input, path: link }))) {
+      return yield* Effect.logInfo("Codex shadow home keeps its own .tmp directory.", {
+        path: link,
+      });
+    }
     if (!REPLACEABLE_SHARED_RUNTIME_ENTRIES.has(input.entryName)) {
       return yield* new CodexShadowHomeEntryConflictError({
         sharedHomePath: input.sharedHomePath,
