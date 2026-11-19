@@ -2700,3 +2700,4 @@ f03ce68691	take	fix(server): self-settle survives a delegated wake cancelled bef
 a73cdc4df1	take	fix(provider-acp-registry): a failed terminal sign-in shows what the login command printed
 8edefc8818	take	fix(desktop): Edit, Window, and context menu items follow the UI language
 3b4041a97a	take	fix(shared): theme CSS saves with escaped quotes and quoted comment markers
+803f21f6a5	take	taken; CONFLICT in PullRequestCodeTab.browser.test.tsx resolved keeping Onicode's singlePage refresh mock beside upstream's testFileDiffAtom/shortPages; scenario ported on the desktop (WEB) target
