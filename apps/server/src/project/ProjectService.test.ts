@@ -677,10 +677,20 @@ it.effect("project defaults reach new threads once legacy project settings are f
       projectId,
       defaultModelSelection: null,
       defaultThreadEnvMode: null,
+      scripts: [],
+    });
+    // A retried earlier command replays its receipt without restoring its values.
+    yield* service.update({
+      commandId: CommandId.make("command:folded:update"),
+      projectId,
+      defaultThreadEnvMode: "worktree",
+      scripts,
+      autoPull: true,
     });
     const cleared = yield* resolve();
     assert.equal(cleared.sources.defaultModelSelection, "environment");
     assert.equal(cleared.sources.defaultThreadEnvMode, "environment");
+    assert.notProperty(cleared.overrides, "defaultProjectScripts");
     assert.isTrue(cleared.settings.defaultAutoPull);
   }).pipe(Effect.provide(layerTestFor(layerMetadata, { projectSettingsFolded: true }))),
 );

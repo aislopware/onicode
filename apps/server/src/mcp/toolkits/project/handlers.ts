@@ -44,6 +44,11 @@ import { ProjectToolkit } from "./tools.ts";
 const isAboveCeilingError = Schema.is(OrchestratorRuntimeModeAboveCeilingError);
 
 function projectFailure(error: Project.ProjectServiceError) {
+  if (error._tag === "ProjectOperationError" && error.operation === "write-project-settings")
+    return new OrchestratorMcpFailure({
+      code: "orchestration_error",
+      message: `The project was updated, but Settings did not save its defaults: ${error.cause instanceof Error ? error.cause.message : String(error.cause)}`,
+    });
   if (error._tag === "ProjectOperationError") return unavailable();
   const message =
     error._tag === "ProjectInvalidError"
@@ -183,7 +188,8 @@ const withSavedProjectSettings = Effect.gen(function* () {
       defaultThreadEnvMode:
         sources.defaultThreadEnvMode === "project" ? effective.defaultThreadEnvMode : null,
       autoPull: effective.defaultAutoPull,
-      scripts: resolveProjectScripts(settings, project),
+      // The project's own scripts; empty means it uses the environment's.
+      scripts: resolveProjectScripts({ ...settings, defaultProjectScripts: [] }, project),
     };
   };
 });
